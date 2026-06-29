@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from .operations import Operation
-from .registers import QuantumRegister, RegisterRef
+from .registers import QuantumRegister, RegisterRef, ClassicalRegister, Register
 
 ConditionTerm = tuple[RegisterRef, int]
 Condition = tuple[ConditionTerm, ...] | None
@@ -39,3 +39,74 @@ class Measurement:
     qreg: RegisterRef
     clreg: RegisterRef
     metadata: Mapping[str, Any] = field(default_factory=dict)
+
+
+class Program:
+    def __init__(
+        self,
+        qreg: int | list[QuantumRegister],
+        clreg: int | list[ClassicalRegister] = 0,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.qreg: list[QuantumRegister] = self._coerce_registers(
+            qreg, QuantumRegister, "q"
+        )
+        self.creg: list[ClassicalRegister] = self._coerce_registers(
+            clreg, ClassicalRegister, "c"
+        )
+        self.operations: list[AppliedOperation | Measurement] = []
+        self.metadata: dict[str, Any] = dict(metadata) if metadata else {}
+
+    @classmethod
+    def registers(
+        cls,
+        *,
+        qreg: list[QuantumRegister],
+        clreg: list[ClassicalRegister] | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> "Program":
+        p = cls.__new__(cls)
+        p.qreg = list(qreg)
+        p.creg = list(clreg) if clreg is not None else []
+        p.operations = []
+        p.metadata = dict(metadata) if metadata else {}
+        return p
+
+    @staticmethod
+    def _coerce_registers(spec, cls, default_name):
+        if isinstance(spec, int) and not isinstance(spec, bool):
+            if spec < 0:
+                raise ValueError(f"register count must be >= 0, got {spec}")
+            return [cls(spec, name=default_name)] if spec > 0 else []
+        return list(spec)
+
+    @staticmethod
+    def _flat_from_int(i: int, regs: list[Register]) -> RegisterRef:
+        if not isinstance(i, int) or isinstance(i, bool):
+            raise TypeError(f"operand must be int or RegisterRef, got {type(i)!r}")
+        if i < 0:
+            raise IndexError(i)
+        remaining = i
+        for reg in regs:
+            if remaining < reg.size:
+                return reg[remaining]
+            remaining -= reg.size
+        raise IndexError(i)
+
+    def _resolve_ref(self, operand, regs, kind_cls, kind_name) -> RegisterRef:
+        if isinstance(operand, RegisterRef):
+            if not isinstance(operand.register, kind_cls):
+                raise TypeError(f"expected a {kind_name} ref")
+            if not any(operand.register is r for r in regs):
+                raise ValueError(f"ref does not belong to this program's {kind_name}s")
+            return operand
+        return self._flat_from_int(operand, regs)
+
+    def _resolve_qubit(self, operand) -> RegisterRef:
+        return self._resolve_ref(operand, self.qreg, QuantumRegister, "quantum register")
+
+    def _resolve_clbit(self, operand) -> RegisterRef:
+        return self._resolve_ref(
+            operand, self.creg, ClassicalRegister, "classical register"
+        )
