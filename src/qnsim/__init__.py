@@ -8,6 +8,7 @@ from .registers import (
     Register,
     RegisterRef,
 )
+from .errors import ResultFieldUnavailableError
 from .result import ResultConfig
 
 __version__ = "0.0.1"
@@ -22,4 +23,5 @@ __all__ = [
     "ClassicalRegister",
     "RegisterRef",
     "ResultConfig",
+    "ResultFieldUnavailableError",
 ]

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 
 from . import engine
-from .errors import BackendValidationError, UnsupportedOperationError
+from .errors import BackendValidationError, NoMeasurementWarning, UnsupportedOperationError
 from .implementation import default_implementation_map
 from .job import Job
 from .layout import ResourceLayout
@@ -56,26 +58,76 @@ class StateVectorBackend:
             raise BackendValidationError(
                 f"counts require shots > 0, got shots={shots}"
             )
+        if (
+            config.statevector is True
+            and any(isinstance(s, Measurement) for s in program.operations)
+            and shots > 1
+        ):
+            raise BackendValidationError(
+                "statevector with measurement is only supported for shots == 1 "
+                "in Phase 1"
+            )
 
     # --- execution ---
     def _execute(self, program, config, shots, layout) -> Result:
         state = self._evolve(program, layout)
         measurements = self._measurement_map(program, layout)
         has_measurement = len(measurements) > 0
-        effective_counts = config.counts if config.counts is not None else has_measurement
+        rng = np.random.default_rng(self._seed)
 
         counts = None
+        statevector = None
         available = set()
+
+        # Decide statevector delivery.
+        want_sv = config.statevector
+        if want_sv is None:
+            want_sv = not has_measurement
+
+        collapsed_state = None
+        collapsed_index = None
+        if want_sv and has_measurement:
+            # Only reached for shots == 1 (validated). Collapse on measured qubits.
+            measured_qubits = [q for q, _c in measurements]
+            collapsed_state, bits = engine.collapse(
+                state, layout.n_qubits, measured_qubits, rng
+            )
+            collapsed_index = 0
+            for q, b in bits.items():
+                collapsed_index |= b << q
+
+        # Counts.
+        effective_counts = config.counts if config.counts is not None else has_measurement
         if effective_counts:
-            rng = np.random.default_rng(self._seed)
             if has_measurement:
-                indices = engine.sample_indices(state, shots, rng)
+                if collapsed_index is not None:
+                    indices = np.array([collapsed_index], dtype=int)
+                else:
+                    indices = engine.sample_indices(state, shots, rng)
             else:
-                indices = np.zeros(shots, dtype=int)  # nothing measured -> all-zero clbits
+                indices = np.zeros(shots, dtype=int)
             counts = build_counts(indices, layout.n_clbits, measurements)
             available.add("counts")
 
-        return Result(counts=counts, available=frozenset(available))
+        # Statevector.
+        if want_sv:
+            statevector = collapsed_state if has_measurement else state
+            available.add("statevector")
+
+        # NoMeasurementWarning: counts produced, some clbit never written, no state.
+        if effective_counts and "statevector" not in available:
+            written = {c for _q, c in measurements}
+            if any(c not in written for c in range(layout.n_clbits)):
+                warnings.warn(
+                    "counts contain clbits that were never measured; "
+                    "returning zero-filled counts",
+                    NoMeasurementWarning,
+                    stacklevel=2,
+                )
+
+        return Result(
+            counts=counts, statevector=statevector, available=frozenset(available)
+        )
 
     def _evolve(self, program, layout) -> np.ndarray:
         state = engine.zero_state(layout.n_qubits)
