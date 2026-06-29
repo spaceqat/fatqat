@@ -1833,7 +1833,7 @@ git commit -m "feat: engine measurement sampling and collapse"
 
 **Interfaces:**
 - Produces:
-  - `ResultConfig(counts: bool = True, statevector: bool | None = None)` frozen.
+  - `ResultConfig(counts: bool | None = None, statevector: bool | None = None)` frozen; `None` means backend default.
   - `build_counts(indices, n_clbits, measurements) -> dict[str, int]` — `measurements` is a list of `(qubit_flat, clbit_flat)` in program order (later writes override earlier); key is little-endian over clbits, unwritten clbits `0`.
   - `Result(counts=None, statevector=None, available=frozenset())` with `get_counts()` / `get_statevector()` raising `ResultFieldUnavailableError` when unavailable.
 
@@ -1851,7 +1851,7 @@ from qnsim.errors import ResultFieldUnavailableError
 
 def test_resultconfig_defaults():
     rc = ResultConfig()
-    assert rc.counts is True
+    assert rc.counts is None
     assert rc.statevector is None
 
 
@@ -1917,7 +1917,7 @@ from .errors import ResultFieldUnavailableError
 
 @dataclass(frozen=True)
 class ResultConfig:
-    counts: bool = True
+    counts: bool | None = None
     statevector: bool | None = None
 
 
@@ -2184,9 +2184,11 @@ class StateVectorBackend:
     # --- validation (raises directly from run) ---
     def _validate(self, program, config, shots, layout) -> None:
         seen_measurement = False
+        has_measurement = False
         for step in program.operations:
             if isinstance(step, Measurement):
                 seen_measurement = True
+                has_measurement = True
                 continue
             if isinstance(step, AppliedOperation):
                 if seen_measurement:
@@ -2200,7 +2202,8 @@ class StateVectorBackend:
                     )
                 if self._impl_map.get(type(step.operation)) is None:
                     raise UnsupportedOperationError(type(step.operation).__name__)
-        if config.counts and shots <= 0:
+        effective_counts = config.counts if config.counts is not None else has_measurement
+        if effective_counts and shots <= 0:
             raise BackendValidationError(
                 f"counts require shots > 0, got shots={shots}"
             )
@@ -2210,10 +2213,11 @@ class StateVectorBackend:
         state = self._evolve(program, layout)
         measurements = self._measurement_map(program, layout)
         has_measurement = len(measurements) > 0
+        effective_counts = config.counts if config.counts is not None else has_measurement
 
         counts = None
         available = set()
-        if config.counts:
+        if effective_counts:
             rng = np.random.default_rng(self._seed)
             if has_measurement:
                 indices = engine.sample_indices(state, shots, rng)
@@ -2401,7 +2405,8 @@ Replace `_execute` with:
                 collapsed_index |= b << q
 
         # Counts.
-        if config.counts:
+        effective_counts = config.counts if config.counts is not None else has_measurement
+        if effective_counts:
             if has_measurement:
                 if collapsed_index is not None:
                     indices = np.array([collapsed_index], dtype=int)
@@ -2418,7 +2423,7 @@ Replace `_execute` with:
             available.add("statevector")
 
         # NoMeasurementWarning: counts produced, some clbit never written, no state.
-        if config.counts and "statevector" not in available:
+        if effective_counts and "statevector" not in available:
             written = {c for _q, c in measurements}
             if any(c not in written for c in range(layout.n_clbits)):
                 warnings.warn(
@@ -2579,9 +2584,9 @@ git commit -m "feat: expose backend public API; end-to-end workflow green (Phase
 - §4.2 counts little-endian / unwritten zero / last-write → Task 15. ✅
 - §4.2 statevector little-endian bit order → Task 13 engine convention + tests. ✅
 - §4.2 statevector default/projected/shots>1 reject → Task 18. ✅
-- §4.2 ResultConfig defaults / result_config=None normalize → Task 15 + Task 17 (`config = result_config or ResultConfig()`). ✅
+- §4.2 ResultConfig defaults / result_config=None normalize → Task 15 + Task 17 (`config = result_config or ResultConfig()`, then effective counts defaults from program shape). ✅
 - §4.2 get_counts/get_statevector raise when unavailable → Task 15. ✅
-- §4.2 shots default 1024 / >0 only when sampling → Task 17 (`shots: int = 1024`, check gated on `config.counts`). ✅
+- §4.2 shots default 1024 / >0 only when sampling → Task 17 (`shots: int = 1024`, check gated on effective counts). ✅
 - §4.2 NoMeasurementWarning condition → Task 18. ✅
 - §4.2 Job DONE/ERROR, validation raises in run, execution → ERROR re-raised → Task 16 + Task 17 (`run` raises in `_validate`, wraps `_execute`). ✅
 - §4.2 resolve_layout default + rule-not-index → Task 11 + Task 12 + Task 17 `_evolve`. ✅
