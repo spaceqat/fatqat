@@ -58,11 +58,7 @@ class StateVectorBackend:
             raise BackendValidationError(
                 f"counts require shots > 0, got shots={shots}"
             )
-        if (
-            config.statevector is True
-            and any(isinstance(s, Measurement) for s in program.operations)
-            and shots > 1
-        ):
+        if config.statevector is True and has_measurement and shots > 1:
             raise BackendValidationError(
                 "statevector with measurement is only supported for shots == 1 "
                 "in Phase 1"
@@ -122,7 +118,7 @@ class StateVectorBackend:
                     "counts contain clbits that were never measured; "
                     "returning zero-filled counts",
                     NoMeasurementWarning,
-                    stacklevel=2,
+                    stacklevel=3,
                 )
 
         return Result(
