@@ -1,6 +1,16 @@
 """qnsim — quantum noisy simulator (MVP Phase 1)."""
 
+from . import backends
 from . import operations as ops
+from .backends import StateVectorBackend
+from .errors import (
+    BackendValidationError,
+    NoMeasurementWarning,
+    QnsimError,
+    ResultFieldUnavailableError,
+    UnsupportedOperationError,
+)
+from .job import Job
 from .program import AppliedOperation, Measurement, Program
 from .registers import (
     ClassicalRegister,
@@ -8,13 +18,13 @@ from .registers import (
     Register,
     RegisterRef,
 )
-from .errors import ResultFieldUnavailableError
-from .result import ResultConfig
+from .result import Result, ResultConfig
 
 __version__ = "0.0.1"
 
 __all__ = [
     "ops",
+    "backends",
     "Program",
     "AppliedOperation",
     "Measurement",
@@ -22,6 +32,13 @@ __all__ = [
     "QuantumRegister",
     "ClassicalRegister",
     "RegisterRef",
+    "StateVectorBackend",
+    "Job",
+    "Result",
     "ResultConfig",
+    "QnsimError",
+    "BackendValidationError",
+    "UnsupportedOperationError",
     "ResultFieldUnavailableError",
+    "NoMeasurementWarning",
 ]
