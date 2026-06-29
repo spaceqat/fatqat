@@ -132,10 +132,23 @@ class Program:
         )
 
     def _normalize_condition(self, condition):
-        # Full normalization arrives in Task 7; until then only None is supported.
         if condition is None:
             return None
-        raise NotImplementedError("condition normalization not yet implemented")
+        # Discriminate single term `(slot, lit)` from a sequence of terms.
+        terms = condition if isinstance(condition[0], tuple) else (condition,)
+        return tuple(
+            (self._resolve_classical_slot(slot), int(literal))
+            for slot, literal in terms
+        )
+
+    def _resolve_classical_slot(self, slot) -> RegisterRef:
+        if isinstance(slot, RegisterRef):
+            if not isinstance(slot.register, ClassicalRegister):
+                raise TypeError("condition slot ref must reference a ClassicalRegister")
+            if not any(slot.register is r for r in self.creg):
+                raise ValueError("condition slot ref not in this program")
+            return slot
+        return self._resolve_clbit(slot)
 
     def add_measurement(
         self,
