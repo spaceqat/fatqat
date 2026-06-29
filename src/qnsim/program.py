@@ -75,6 +75,7 @@ class Program:
 
     @staticmethod
     def _coerce_registers(spec, cls, default_name):
+        # TODO: why bool? We should only allow int
         if isinstance(spec, int) and not isinstance(spec, bool):
             if spec < 0:
                 raise ValueError(f"register count must be >= 0, got {spec}")
@@ -135,3 +136,16 @@ class Program:
         if condition is None:
             return None
         raise NotImplementedError("condition normalization not yet implemented")
+
+    def add_measurement(
+        self,
+        qreg: int | RegisterRef,
+        clreg: int | RegisterRef,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        q = self._resolve_qubit(qreg)
+        c = self._resolve_clbit(clreg)
+        self.operations.append(
+            Measurement(qreg=q, clreg=c, metadata=dict(metadata) if metadata else {})
+        )
