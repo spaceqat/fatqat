@@ -162,3 +162,11 @@ class Program:
         self.operations.append(
             Measurement(qreg=q, clreg=c, metadata=dict(metadata) if metadata else {})
         )
+
+    def copy(self) -> "Program":
+        new = Program.__new__(Program)
+        new.qreg = list(self.qreg)
+        new.creg = list(self.creg)
+        new.operations = list(self.operations)
+        new.metadata = dict(self.metadata)
+        return new
