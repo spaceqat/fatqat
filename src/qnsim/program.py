@@ -110,3 +110,28 @@ class Program:
         return self._resolve_ref(
             operand, self.creg, ClassicalRegister, "classical register"
         )
+
+    def add(
+        self,
+        op: Operation,
+        qreg: int | RegisterRef | tuple[int | RegisterRef, ...],
+        *,
+        condition=None,
+    ) -> None:
+        if not isinstance(op, Operation):
+            raise TypeError(
+                f"op must be an Operation instance, got {type(op)!r} "
+                "(did you forget to call a parametric gate, e.g. ops.RX(0.2)?)"
+            )
+        operands = qreg if isinstance(qreg, tuple) else (qreg,)
+        targets = tuple(self._resolve_qubit(o) for o in operands)
+        normalized = self._normalize_condition(condition)
+        self.operations.append(
+            AppliedOperation(operation=op, targets=targets, condition=normalized)
+        )
+
+    def _normalize_condition(self, condition):
+        # Full normalization arrives in Task 7; until then only None is supported.
+        if condition is None:
+            return None
+        raise NotImplementedError("condition normalization not yet implemented")
