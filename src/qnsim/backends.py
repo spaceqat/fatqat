@@ -6,9 +6,9 @@ import warnings
 
 import numpy as np
 
-from . import engine
+from .engine import StateVectorEngine
 from .errors import BackendValidationError, NoMeasurementWarning, UnsupportedOperationError
-from .implementation import default_implementation_map
+from .implementation import MatrixImplementation, default_implementation_map
 from .job import Job
 from .layout import ResourceLayout
 from .program import AppliedOperation, Measurement, Program
@@ -66,7 +66,7 @@ class StateVectorBackend:
 
     # --- execution ---
     def _execute(self, program, config, shots, layout) -> Result:
-        state = self._evolve(program, layout)
+        engine = self._evolve(program, layout)
         measurements = self._measurement_map(program, layout)
         has_measurement = len(measurements) > 0
         rng = np.random.default_rng(self._seed)
@@ -80,14 +80,12 @@ class StateVectorBackend:
         if want_sv is None:
             want_sv = not has_measurement
 
-        collapsed_state = None
         collapsed_index = None
         if want_sv and has_measurement:
-            # Only reached for shots == 1 (validated). Collapse on measured qubits.
+            # Only reached for shots == 1 (validated). Collapse on measured qubits;
+            # the engine's internal state becomes the projected statevector.
             measured_qubits = [q for q, _c in measurements]
-            collapsed_state, bits = engine.collapse(
-                state, layout.n_qubits, measured_qubits, rng
-            )
+            bits = engine.collapse(measured_qubits, rng)
             collapsed_index = 0
             for q, b in bits.items():
                 collapsed_index |= b << q
@@ -99,7 +97,7 @@ class StateVectorBackend:
                 if collapsed_index is not None:
                     indices = np.array([collapsed_index], dtype=int)
                 else:
-                    indices = engine.sample_indices(state, shots, rng)
+                    indices = engine.sample_indices(shots, rng)
             else:
                 indices = np.zeros(shots, dtype=int)
             counts = build_counts(indices, layout.n_clbits, measurements)
@@ -107,7 +105,7 @@ class StateVectorBackend:
 
         # Statevector.
         if want_sv:
-            statevector = collapsed_state if has_measurement else state
+            statevector = engine.export_state()
             available.add("statevector")
 
         # NoMeasurementWarning: counts produced, some clbit never written, no state.
@@ -125,15 +123,19 @@ class StateVectorBackend:
             counts=counts, statevector=statevector, available=frozenset(available)
         )
 
-    def _evolve(self, program, layout) -> np.ndarray:
-        state = engine.zero_state(layout.n_qubits)
+    def _evolve(self, program, layout) -> StateVectorEngine:
+        """Resolve each gate to a MatrixImplementation and feed a stateful engine."""
+        engine = StateVectorEngine()
+        engine.initialize(layout.n_qubits)
         for step in program.operations:
             if isinstance(step, AppliedOperation):
                 rule = self._impl_map.get(type(step.operation))
                 matrix = rule(step)
-                targets = tuple(layout.qubit_index(t) for t in step.targets)
-                state = engine.apply(state, matrix, targets, layout.n_qubits)
-        return state
+                target_indices = tuple(layout.qubit_index(t) for t in step.targets)
+                engine.apply(
+                    MatrixImplementation(matrix=matrix, target_indices=target_indices)
+                )
+        return engine
 
     @staticmethod
     def _measurement_map(program, layout):

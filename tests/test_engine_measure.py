@@ -1,38 +1,47 @@
 import numpy as np
 
-from qnsim.engine import zero_state, apply, probabilities, sample_indices, collapse
+from qnsim.engine import StateVectorEngine
+from qnsim.implementation import MatrixImplementation
 
 
 _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
 
 
+def _h_engine(n_qubits, target):
+    eng = StateVectorEngine()
+    eng.initialize(n_qubits)
+    eng.apply(MatrixImplementation(matrix=_H, target_indices=(target,)))
+    return eng
+
+
 def test_probabilities():
-    s = apply(zero_state(1), _H, (0,), 1)
-    assert np.allclose(probabilities(s), [0.5, 0.5])
+    eng = _h_engine(1, 0)
+    assert np.allclose(eng.probabilities(), [0.5, 0.5])
 
 
 def test_sample_indices_deterministic_state():
-    s = zero_state(2)  # always |00> -> index 0
+    eng = StateVectorEngine()
+    eng.initialize(2)  # always |00> -> index 0
     rng = np.random.default_rng(0)
-    idx = sample_indices(s, 100, rng)
+    idx = eng.sample_indices(100, rng)
     assert idx.shape == (100,)
     assert np.all(idx == 0)
 
 
 def test_sample_indices_balanced_with_seed():
-    s = apply(zero_state(1), _H, (0,), 1)
+    eng = _h_engine(1, 0)
     rng = np.random.default_rng(42)
-    idx = sample_indices(s, 2000, rng)
+    idx = eng.sample_indices(2000, rng)
     frac_one = np.mean(idx == 1)
     assert 0.45 < frac_one < 0.55
 
 
-def test_collapse_projects_to_basis_state():
-    s = apply(zero_state(1), _H, (0,), 1)
+def test_collapse_projects_internal_state_to_basis():
+    eng = _h_engine(1, 0)
     rng = np.random.default_rng(1)
-    collapsed, bits = collapse(s, 1, [0], rng)
+    bits = eng.collapse([0], rng)
     outcome = bits[0]
     expected = np.zeros(2, dtype=complex)
     expected[outcome] = 1.0
-    assert np.allclose(collapsed, expected)
-    assert np.isclose(np.linalg.norm(collapsed), 1.0)
+    assert np.allclose(eng.export_state(), expected)
+    assert np.isclose(np.linalg.norm(eng.export_state()), 1.0)
