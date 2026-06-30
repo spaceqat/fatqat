@@ -19,7 +19,7 @@ def test_single_register_layout():
 def test_multi_register_flat_concatenation():
     qa = QuantumRegister(2, name="a")
     qb = QuantumRegister(2, name="b")
-    p = Program.registers(qreg=[qa, qb])
+    p = Program([qa, qb])
     layout = ResourceLayout.from_program(p)
     assert layout.qubit_index(qa[0]) == 0
     assert layout.qubit_index(qa[1]) == 1

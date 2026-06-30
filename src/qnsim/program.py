@@ -63,21 +63,6 @@ class Program:
         self.operations: list[AppliedOperation | Measurement] = []
         self.metadata: dict[str, Any] = dict(metadata) if metadata else {}
 
-    @classmethod
-    def registers(
-        cls,
-        *,
-        qreg: list[QuantumRegister],
-        clreg: list[ClassicalRegister] | None = None,
-        metadata: Mapping[str, Any] | None = None,
-    ) -> "Program":
-        p = cls.__new__(cls)
-        p.qreg = list(qreg)
-        p.creg = list(clreg) if clreg is not None else []
-        p.operations = []
-        p.metadata = dict(metadata) if metadata else {}
-        return p
-
     @staticmethod
     def _coerce_registers(spec, cls, default_name):
         if type(spec) is int:

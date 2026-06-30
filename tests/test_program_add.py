@@ -55,7 +55,7 @@ def test_add_rejects_non_operation():
 def test_add_rejects_int_target_with_multiple_quantum_registers():
     qr0 = QuantumRegister(1, name="a")
     qr1 = QuantumRegister(1, name="b")
-    p = Program.registers(qreg=[qr0, qr1])
+    p = Program([qr0, qr1])
 
     with pytest.raises(TypeError, match="explicit RegisterRef"):
         p.add(ops.X, 0)
@@ -64,7 +64,7 @@ def test_add_rejects_int_target_with_multiple_quantum_registers():
 def test_add_accepts_explicit_refs_across_multiple_quantum_registers():
     qr0 = QuantumRegister(1, name="a")
     qr1 = QuantumRegister(1, name="b")
-    p = Program.registers(qreg=[qr0, qr1])
+    p = Program([qr0, qr1])
 
     p.add(ops.X, qr0[0])
     p.add(ops.X, qr1[0])

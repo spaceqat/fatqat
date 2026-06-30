@@ -16,7 +16,4 @@ def test_top_level_frontend_surface():
 
 def test_register_types_exposed():
     qr = qs.QuantumRegister(2, name="q")
-    cr = qs.ClassicalRegister(2, name="c")
-    p = qs.Program.registers(qreg=[qr], clreg=[cr])
     assert isinstance(qr[0], qs.RegisterRef)
-    assert p.qreg == [qr]

@@ -17,10 +17,10 @@ def test_zero_classical_means_no_classical_register():
     assert p.creg == []
 
 
-def test_registers_classmethod_with_explicit_registers():
+def test_list_construction_with_explicit_registers():
     qr = QuantumRegister(3, name="data")
     cr = ClassicalRegister(2, name="ro")
-    p = Program.registers(qreg=[qr], clreg=[cr])
+    p = Program([qr], [cr])
     assert p.qreg == [qr]
     assert p.creg == [cr]
 

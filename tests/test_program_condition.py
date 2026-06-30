@@ -38,9 +38,9 @@ def test_condition_rejects_quantum_ref_slot():
 
 
 def test_condition_int_slot_rejects_multiple_classical_registers():
-    p = Program.registers(
-        qreg=[QuantumRegister(1)],
-        clreg=[ClassicalRegister(2, name="a"), ClassicalRegister(2, name="b")],
+    p = Program(
+        [QuantumRegister(1)],
+        [ClassicalRegister(2, name="a"), ClassicalRegister(2, name="b")],
     )
 
     with pytest.raises(TypeError, match="explicit RegisterRef"):
@@ -48,9 +48,9 @@ def test_condition_int_slot_rejects_multiple_classical_registers():
 
 
 def test_condition_explicit_slot_refs_work_across_multiple_classical_registers():
-    p = Program.registers(
-        qreg=[QuantumRegister(1)],
-        clreg=[ClassicalRegister(2, name="a"), ClassicalRegister(2, name="b")],
+    p = Program(
+        [QuantumRegister(1)],
+        [ClassicalRegister(2, name="a"), ClassicalRegister(2, name="b")],
     )
 
     p.add(ops.X, 0, condition=(p.creg[1][0], 1))

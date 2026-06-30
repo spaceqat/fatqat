@@ -38,9 +38,9 @@ def test_add_measurement_rejects_quantum_ref_as_clreg():
 
 
 def test_add_measurement_int_clreg_rejects_multiple_classical_registers():
-    p = Program.registers(
-        qreg=[QuantumRegister(2, name="q")],
-        clreg=[ClassicalRegister(1, name="a"), ClassicalRegister(1, name="b")],
+    p = Program(
+        [QuantumRegister(2, name="q")],
+        [ClassicalRegister(1, name="a"), ClassicalRegister(1, name="b")],
     )
 
     with pytest.raises(TypeError, match="explicit RegisterRef"):
@@ -48,9 +48,9 @@ def test_add_measurement_int_clreg_rejects_multiple_classical_registers():
 
 
 def test_add_measurement_explicit_clreg_ref_works_with_multiple_classical_registers():
-    p = Program.registers(
-        qreg=[QuantumRegister(2, name="q")],
-        clreg=[ClassicalRegister(1, name="a"), ClassicalRegister(1, name="b")],
+    p = Program(
+        [QuantumRegister(2, name="q")],
+        [ClassicalRegister(1, name="a"), ClassicalRegister(1, name="b")],
     )
 
     p.add_measurement(1, p.creg[1][0])

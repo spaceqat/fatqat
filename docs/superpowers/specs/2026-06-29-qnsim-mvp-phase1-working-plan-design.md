@@ -91,8 +91,7 @@ print(result.get_counts())
   - `Program.add(...)` 负责把公开 `qreg` 输入归一化为 `RegisterRef` tuple，并确认 ref 属于当前 Program 的 quantum registers。
   - `AppliedOperation.__post_init__` 负责维护绑定后的结构不变量：`targets` 必须是 `RegisterRef` tuple，target 数量必须等于 `operation.num_qubits`，且 target 必须指向 `QuantumRegister`。
 - 构造：`Program(qreg: int | list[QuantumRegister], clreg: int | list[ClassicalRegister] = 0, *, metadata=None)`；
-  - 传 `int` 时展开成一个默认 `QuantumRegister` / `ClassicalRegister`。
-  - 另有 `Program.registers(*, qreg=[...], clreg=[...])` 显式 register 构造入口。
+  - 传 `int` 时展开成一个默认 `QuantumRegister` / `ClassicalRegister`；传 list 时直接使用传入的 register 对象。
 - 内部状态：`qreg: list[QuantumRegister]`、`creg: list[ClassicalRegister]`、`operations: list[AppliedOperation | Measurement]`、`metadata`。
 - `add(op, qreg, *, condition=None)`：
   - `qreg` 单 operand 接受 `int | RegisterRef`，多 operand 必须是 flat `tuple`；**不支持** `add(op, 0, 1)` variadic。
