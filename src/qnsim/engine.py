@@ -68,8 +68,10 @@ class StateVectorEngine:
         return bits
 
     def export_state(self) -> np.ndarray:
+        # Hand back a copy so the backend's Result never aliases the engine's
+        # internal buffer.
         self._require_state()
-        return self._state
+        return self._state.copy()
 
     def _require_state(self) -> None:
         if self._state is None:

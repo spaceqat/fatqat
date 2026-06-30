@@ -45,3 +45,11 @@ def test_bell_state_h_then_cx():
     eng.apply(MatrixImplementation(matrix=_H, target_indices=(0,)))
     eng.apply(MatrixImplementation(matrix=_CX, target_indices=(0, 1)))  # control=qubit0
     assert np.allclose(eng.export_state(), [1, 0, 0, 1] / np.sqrt(2))
+
+
+def test_export_state_returns_independent_copy():
+    eng = _engine(1)
+    first = eng.export_state()
+    first[0] = 999.0
+    second = eng.export_state()
+    assert second[0] != 999.0
