@@ -56,3 +56,9 @@ def test_condition_explicit_slot_refs_work_across_multiple_classical_registers()
     p.add(ops.X, 0, condition=(p.creg[1][0], 1))
 
     assert p.operations[0].condition == ((p.creg[1][0], 1),)
+
+
+def test_empty_condition_raises_valueerror():
+    p = Program(2, 2)
+    with pytest.raises(ValueError, match="condition is empty"):
+        p.add(ops.X, 0, condition=())

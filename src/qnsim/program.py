@@ -104,7 +104,7 @@ class Program:
             if not any(operand.register is r for r in regs):
                 raise ValueError(f"ref does not belong to this program's {kind_name}s")
             return operand
-        if not isinstance(operand, int) or isinstance(operand, bool):
+        if type(operand) is not int:
             raise TypeError(f"operand must be int or RegisterRef, got {type(operand)!r}")
         if len(regs) != 1:
             raise TypeError(
@@ -146,6 +146,10 @@ class Program:
     def _normalize_condition(self, condition):
         if condition is None:
             return None
+        if len(condition) == 0:
+            raise ValueError(
+                "condition is empty; pass None or omit the argument for an unconditional operation"
+            )
         # Discriminate single term `(slot, lit)` from a sequence of terms.
         terms = condition if isinstance(condition[0], tuple) else (condition,)
         return tuple(
