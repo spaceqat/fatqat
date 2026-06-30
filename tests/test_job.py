@@ -14,3 +14,9 @@ def test_error_job_reraises():
     assert job.status == "ERROR"
     with pytest.raises(ValueError, match="boom"):
         job.result()
+
+
+def test_result_raises_for_non_terminal_status():
+    job = Job(status="PENDING")
+    with pytest.raises(RuntimeError, match="not complete"):
+        job.result()

@@ -49,3 +49,9 @@ def test_unregistered_class_returns_none():
 def test_matrix_implementation_holds_target_indices():
     impl = MatrixImplementation(matrix=np.eye(2), target_indices=(3,))
     assert impl.target_indices == (3,)
+
+
+def test_matrix_implementation_matrix_is_read_only():
+    impl = MatrixImplementation(matrix=np.eye(2, dtype=complex), target_indices=(0,))
+    with pytest.raises(ValueError):
+        impl.matrix[0, 0] = 5.0

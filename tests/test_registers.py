@@ -41,3 +41,10 @@ def test_registers_are_frozen():
     qr = QuantumRegister(1)
     with pytest.raises(Exception):
         qr.size = 5
+
+
+def test_register_metadata_is_copied_not_aliased():
+    meta = {"k": 1}
+    qr = QuantumRegister(1, metadata=meta)
+    meta["k"] = 2
+    assert qr.metadata == {"k": 1}

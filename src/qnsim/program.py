@@ -40,6 +40,11 @@ class Measurement:
     clreg: RegisterRef
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # Copy metadata so a caller's later mutation can't reach into this frozen
+        # value object.
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
 
 class Program:
     def __init__(

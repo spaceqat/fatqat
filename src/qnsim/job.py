@@ -18,6 +18,8 @@ class Job:
         return cls(status="ERROR", error=error)
 
     def result(self):
+        if self.status == "DONE":
+            return self._result
         if self.status == "ERROR":
             raise self._error
-        return self._result
+        raise RuntimeError(f"job is not complete (status={self.status!r})")

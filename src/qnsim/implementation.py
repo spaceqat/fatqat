@@ -19,6 +19,11 @@ class MatrixImplementation:
     matrix: np.ndarray
     target_indices: tuple[int, ...]
 
+    def __post_init__(self) -> None:
+        # The engine consumes the matrix read-only; lock it so this frozen
+        # dataclass is truly immutable (Python cannot freeze array contents).
+        self.matrix.flags.writeable = False
+
 
 # Module-level constant matrices (reused; do not rebuild per call).
 _X = np.array([[0, 1], [1, 0]], dtype=complex)

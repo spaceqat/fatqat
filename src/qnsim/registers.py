@@ -17,6 +17,9 @@ class Register:
             raise TypeError(f"register size must be int, got {type(self.size)!r}")
         if self.size <= 0:
             raise ValueError(f"register size must be positive, got {self.size}")
+        # Copy metadata so a caller's later mutation can't reach into this frozen
+        # value object.
+        object.__setattr__(self, "metadata", dict(self.metadata))
 
     def __getitem__(self, index: int) -> "RegisterRef":
         if not isinstance(index, int) or isinstance(index, bool):
