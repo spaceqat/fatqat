@@ -19,6 +19,11 @@ class StateVectorBackend:
     def __init__(self, *, seed=None):
         self._seed = seed
         self._impl_map = default_implementation_map()
+        # The engine is constructed once and re-initialized per run so its
+        # compiled kernels can be reused. Because it holds per-run state, a
+        # single backend instance is NOT safe for concurrent run() calls
+        # (single-threaded use only in Phase 1).
+        self._engine = StateVectorEngine()
 
     def resolve_layout(self, program: Program) -> ResourceLayout:
         return ResourceLayout.from_program(program)
@@ -66,7 +71,8 @@ class StateVectorBackend:
 
     # --- execution ---
     def _execute(self, program, config, shots, layout) -> Result:
-        engine = self._evolve(program, layout)
+        self._evolve(program, layout)
+        engine = self._engine
         measurements = self._measurement_map(program, layout)
         has_measurement = len(measurements) > 0
         rng = np.random.default_rng(self._seed)
@@ -123,9 +129,9 @@ class StateVectorBackend:
             counts=counts, statevector=statevector, available=frozenset(available)
         )
 
-    def _evolve(self, program, layout) -> StateVectorEngine:
-        """Resolve each gate to a MatrixImplementation and feed a stateful engine."""
-        engine = StateVectorEngine()
+    def _evolve(self, program, layout) -> None:
+        """Reset the owned engine and apply each gate as a MatrixImplementation."""
+        engine = self._engine
         engine.initialize(layout.n_qubits)
         for step in program.operations:
             if isinstance(step, AppliedOperation):
@@ -135,7 +141,6 @@ class StateVectorBackend:
                 engine.apply(
                     MatrixImplementation(matrix=matrix, target_indices=target_indices)
                 )
-        return engine
 
     @staticmethod
     def _measurement_map(program, layout):
