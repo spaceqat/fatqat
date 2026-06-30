@@ -96,17 +96,17 @@ print(result.get_counts())
 - 内部状态：`qreg: list[QuantumRegister]`、`creg: list[ClassicalRegister]`、`operations: list[AppliedOperation | Measurement]`、`metadata`。
 - `add(op, qreg, *, condition=None)`：
   - `qreg` 单 operand 接受 `int | RegisterRef`，多 operand 必须是 flat `tuple`；**不支持** `add(op, 0, 1)` variadic。
-  - 裸 `int` = **全局 flat 索引**（按 register 声明顺序拼接解析）。
+  - 裸 `int` operand 仅在该 program 的 quantum register 恰好只有一个时有效（解析为该 register 的 `RegisterRef`）；存在多个或零个 register 时抛 `TypeError`，要求改用显式 `RegisterRef`（如 `qreg[0]`）。
   - 校验解析出的 `RegisterRef` 属于当前 Program 的 `QuantumRegister` 集合。
   - 构造 `AppliedOperation`，由 `AppliedOperation` 校验 target 数量等于 `op.num_qubits`；例如 `X` 必须 1 个 target，`CX` / `CZ` 必须 2 个 target。
   - in-place mutation，返回 `None`，向 `operations` 追加 `AppliedOperation`。
 - `add_measurement(qreg, clreg, *, metadata=None)`：
-  - in-place，追加 `Measurement`；`clreg` 接受 `int | RegisterRef`，裸 int 按全局 classical flat 解析。
+  - in-place，追加 `Measurement`；`clreg` 接受 `int | RegisterRef`，裸 int 仅在 classical register 恰好只有一个时有效，否则要求显式 `RegisterRef`。
   - MVP 只支持 computational-basis measurement，不提供 `basis` / `observable` 参数或扩展点。
 - `condition=` 归一化（核心，本阶段必须实现）：
   - 公开输入两种糖：单 `(slot, lit)` 或 `((slot, lit), ...)`；判别规则 = `c[0]` 是否为 tuple。
   - 存储规范形唯一：`tuple[ConditionTerm, ...] | None`，`ConditionTerm = (RegisterRef, int)`。
-  - 裸 int slot 解析成 `ClassicalRegister` 上的 `RegisterRef`；非 classical ref 拒绝。
+  - 裸 int slot 仅在 classical register 恰好只有一个时解析成该 register 的 `RegisterRef`，否则要求显式 `RegisterRef`；非 classical ref 拒绝。
   - 多条件语义固定为 `AND`。
   - `add(...)` 复用同一个 `_normalize_condition`。
 - `copy()`：返回独立可变副本。值对象（`Operation`/`AppliedOperation`/`Measurement`/`RegisterRef`）不可变，但容器需各自复制：`copy()` 必须复制 `operations` / `qreg` / `creg` 三个列表 **以及** `metadata` dict，使改动副本的 metadata 不会漏回原对象。
@@ -122,7 +122,7 @@ print(result.get_counts())
 ### 3.4 第一阶段测试要点（纯前端、零数值依赖）
 
 - register 取 ref / 越界 / size-first 构造
-- 裸 int → 全局 flat 索引解析（多 register 拼接）
+- 裸 int 仅在单 register 时解析；多/零 register 时抛 `TypeError`，需显式 `RegisterRef`
 - gate 按 class 区分；`qs.ops.X` 是实例、`qs.ops.RX(0.2)` 是带参实例
 - `add` / `add_measurement` 的 in-place 与 operations 顺序、类型（`AppliedOperation` vs `Measurement`）
 - `condition=` 单条件 / 多条件归一化到统一 AND 规范形；非 classical ref 报错

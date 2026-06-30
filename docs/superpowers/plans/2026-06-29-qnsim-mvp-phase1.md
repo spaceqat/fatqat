@@ -14,7 +14,7 @@
 - src layout: package at `src/qnsim/`, tests at `tests/`. Test runner: `uv run pytest`.
 - TDD: every task writes the failing test first, runs it red, implements minimally, runs it green, commits.
 - Gate `operation.name` is **uppercase** (`"H"`, `"CX"`, `"RX"`).
-- Bare `int` operands = **global flat index** across registers in declaration order.
+- Bare `int` operands resolve only when the relevant register kind has exactly one register; with multiple (or zero) registers they raise `TypeError` directing the caller to an explicit `RegisterRef`. (The backend `ResourceLayout` still concatenates registers for flat indices — that flattening is unchanged.)
 - statevector basis = **little-endian**: amplitude index bit `q` is the value of flat qubit `q` (qubit 0 = least-significant bit).
 - counts key = little-endian over clbits: clbit 0 is the **rightmost** char; unwritten clbits stay `0`; same slot → last write wins.
 - Multi-qubit gate matrix convention: operand 0 is the **most-significant** bit of the gate's local index (e.g. `CX` = `(control, target)` with control as MSB).
