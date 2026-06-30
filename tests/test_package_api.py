@@ -17,3 +17,20 @@ def test_top_level_frontend_surface():
 def test_register_types_exposed():
     qr = qs.QuantumRegister(2, name="q")
     assert isinstance(qr[0], qs.RegisterRef)
+
+
+def test_backends_module_alias():
+    assert qs.backends.StateVectorBackend is qs.StateVectorBackend
+
+
+def test_error_classes_exported():
+    from qnsim.errors import (
+        QnsimError,
+        BackendValidationError,
+        UnsupportedOperationError,
+        NoMeasurementWarning,
+    )
+    assert qs.QnsimError is QnsimError
+    assert qs.BackendValidationError is BackendValidationError
+    assert qs.UnsupportedOperationError is UnsupportedOperationError
+    assert qs.NoMeasurementWarning is NoMeasurementWarning

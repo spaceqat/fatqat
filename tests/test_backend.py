@@ -16,13 +16,16 @@ def _h_cz_program():
     return p
 
 
-def test_counts_happy_path_keys():
-    backend = StateVectorBackend(seed=123)
-    job = backend.run(_h_cz_program(), shots=500, result_config=qs.ResultConfig(counts=True))
-    counts = job.result().get_counts()
-    assert sum(counts.values()) == 500
-    # H on q0 then CZ (no effect here): q1 always 0, q0 ~ 50/50 -> keys "00"/"01"
-    assert set(counts) <= {"00", "01"}
+def test_backend_run_is_repeatable():
+    p = Program(1, 1)
+    p.add(ops.X, 0)
+    p.add_measurement(0, 0)
+    backend = StateVectorBackend(seed=0)
+    first = backend.run(p, shots=10).result().get_counts()
+    second = backend.run(p, shots=10).result().get_counts()
+    # X|0> = |1>; second run must re-initialize, not continue from leftover |1>
+    assert first == {"1": 10}
+    assert second == {"1": 10}
 
 
 def test_unsupported_operation_raises():

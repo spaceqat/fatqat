@@ -4,21 +4,18 @@ from qnsim import operations as ops
 from qnsim.operations import Operation
 
 
-def test_fixed_gate_instances_exist_with_uppercase_names():
-    assert ops.H.name == "H"
-    assert ops.X.name == "X"
-    assert ops.Y.name == "Y"
-    assert ops.Z.name == "Z"
-    assert ops.T.name == "T"
-    assert ops.CX.name == "CX"
-    assert ops.CZ.name == "CZ"
-
-
-def test_num_qubits():
-    assert ops.H.num_qubits == 1
-    assert ops.X.num_qubits == 1
-    assert ops.CX.num_qubits == 2
-    assert ops.CZ.num_qubits == 2
+@pytest.mark.parametrize("gate,name,n_qubits", [
+    (ops.H,  "H",  1),
+    (ops.X,  "X",  1),
+    (ops.Y,  "Y",  1),
+    (ops.Z,  "Z",  1),
+    (ops.T,  "T",  1),
+    (ops.CX, "CX", 2),
+    (ops.CZ, "CZ", 2),
+])
+def test_fixed_gate_name_and_arity(gate, name, n_qubits):
+    assert gate.name == name
+    assert gate.num_qubits == n_qubits
 
 
 def test_parametric_gate_is_class_storing_theta():

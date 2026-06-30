@@ -7,17 +7,13 @@ from qnsim.registers import QuantumRegister, ClassicalRegister
 
 def test_add_measurement_appends_measurement():
     p = Program(2, 2)
-    p.add_measurement(0, 0)
+    result = p.add_measurement(0, 0)
+    assert result is None
     assert len(p.operations) == 1
     m = p.operations[0]
     assert isinstance(m, Measurement)
     assert m.qreg == p.qreg[0][0]
     assert m.clreg == p.creg[0][0]
-
-
-def test_add_measurement_returns_none():
-    p = Program(1, 1)
-    assert p.add_measurement(0, 0) is None
 
 
 def test_operations_preserve_order_and_type_mix():

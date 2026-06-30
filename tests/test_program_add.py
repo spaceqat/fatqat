@@ -7,18 +7,13 @@ from qnsim.registers import QuantumRegister
 
 def test_add_single_operand_int():
     p = Program(2)
-    p.add(ops.H, 0)
+    result = p.add(ops.H, 0)
+    assert result is None
     assert len(p.operations) == 1
     ao = p.operations[0]
     assert isinstance(ao, AppliedOperation)
     assert ao.operation is ops.H
     assert ao.targets == (p.qreg[0][0],)
-
-
-def test_add_returns_none_and_mutates_in_place():
-    p = Program(1)
-    assert p.add(ops.X, 0) is None
-    assert len(p.operations) == 1
 
 
 def test_add_multi_operand_tuple():
