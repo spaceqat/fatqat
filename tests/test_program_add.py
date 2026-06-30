@@ -61,6 +61,12 @@ def test_add_rejects_int_target_with_multiple_quantum_registers():
         p.add(ops.X, 0)
 
 
+def test_add_rejects_duplicate_qubit_targets():
+    p = Program(2)
+    with pytest.raises(ValueError, match="more than once"):
+        p.add(ops.CZ, (0, 0))
+
+
 def test_add_accepts_explicit_refs_across_multiple_quantum_registers():
     qr0 = QuantumRegister(1, name="a")
     qr1 = QuantumRegister(1, name="b")

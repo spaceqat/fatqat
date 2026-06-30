@@ -27,11 +27,18 @@ class AppliedOperation:
                 f"{self.operation.name} expects {expected} target(s), "
                 f"got {len(self.targets)}"
             )
+        seen: set[tuple[int, int]] = set()
         for t in self.targets:
             if not isinstance(t, RegisterRef):
                 raise TypeError(f"target must be RegisterRef, got {type(t)!r}")
             if not isinstance(t.register, QuantumRegister):
                 raise TypeError("operation targets must reference a QuantumRegister")
+            key = (id(t.register), t.index)
+            if key in seen:
+                raise ValueError(
+                    f"{self.operation.name}: target qubit {t!r} appears more than once"
+                )
+            seen.add(key)
 
 
 @dataclass(frozen=True)
@@ -138,11 +145,11 @@ class Program:
         # Discriminate single term `(slot, lit)` from a sequence of terms.
         terms = condition if isinstance(condition[0], tuple) else (condition,)
         return tuple(
-            (self._resolve_classical_slot(slot), int(literal))
+            (self._resolve_conditional_slot(slot), int(literal))
             for slot, literal in terms
         )
 
-    def _resolve_classical_slot(self, slot) -> RegisterRef:
+    def _resolve_conditional_slot(self, slot) -> RegisterRef:
         if isinstance(slot, RegisterRef):
             if not isinstance(slot.register, ClassicalRegister):
                 raise TypeError("condition slot ref must reference a ClassicalRegister")
