@@ -2,6 +2,7 @@ import pytest
 
 from qnsim.program import Program
 from qnsim import operations as ops
+from qnsim.registers import QuantumRegister, ClassicalRegister
 
 
 def test_single_condition_normalized_to_and_list():
@@ -36,13 +37,22 @@ def test_condition_rejects_quantum_ref_slot():
         p.add(ops.X, 0, condition=(p.qreg[0][1], 1))
 
 
-def test_condition_int_slot_resolves_global_classical_flat():
-    cr = []
-    from qnsim.registers import QuantumRegister, ClassicalRegister
-
+def test_condition_int_slot_rejects_multiple_classical_registers():
     p = Program.registers(
         qreg=[QuantumRegister(1)],
         clreg=[ClassicalRegister(2, name="a"), ClassicalRegister(2, name="b")],
     )
-    p.add(ops.X, 0, condition=(2, 1))  # flat clbit 2 -> creg[1][0]
+
+    with pytest.raises(TypeError, match="explicit RegisterRef"):
+        p.add(ops.X, 0, condition=(0, 1))
+
+
+def test_condition_explicit_slot_refs_work_across_multiple_classical_registers():
+    p = Program.registers(
+        qreg=[QuantumRegister(1)],
+        clreg=[ClassicalRegister(2, name="a"), ClassicalRegister(2, name="b")],
+    )
+
+    p.add(ops.X, 0, condition=(p.creg[1][0], 1))
+
     assert p.operations[0].condition == ((p.creg[1][0], 1),)

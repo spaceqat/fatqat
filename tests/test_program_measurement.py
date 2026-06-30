@@ -2,6 +2,7 @@ import pytest
 
 from qnsim.program import Program, Measurement
 from qnsim import operations as ops
+from qnsim.registers import QuantumRegister, ClassicalRegister
 
 
 def test_add_measurement_appends_measurement():
@@ -34,3 +35,25 @@ def test_add_measurement_rejects_quantum_ref_as_clreg():
     p = Program(2, 2)
     with pytest.raises(TypeError):
         p.add_measurement(0, p.qreg[0][1])  # quantum ref as classical slot
+
+
+def test_add_measurement_int_clreg_rejects_multiple_classical_registers():
+    p = Program.registers(
+        qreg=[QuantumRegister(2, name="q")],
+        clreg=[ClassicalRegister(1, name="a"), ClassicalRegister(1, name="b")],
+    )
+
+    with pytest.raises(TypeError, match="explicit RegisterRef"):
+        p.add_measurement(0, 0)
+
+
+def test_add_measurement_explicit_clreg_ref_works_with_multiple_classical_registers():
+    p = Program.registers(
+        qreg=[QuantumRegister(2, name="q")],
+        clreg=[ClassicalRegister(1, name="a"), ClassicalRegister(1, name="b")],
+    )
+
+    p.add_measurement(1, p.creg[1][0])
+
+    assert p.operations[0].qreg == p.qreg[0][1]
+    assert p.operations[0].clreg == p.creg[1][0]

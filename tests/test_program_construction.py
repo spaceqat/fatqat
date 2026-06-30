@@ -25,16 +25,6 @@ def test_registers_classmethod_with_explicit_registers():
     assert p.creg == [cr]
 
 
-def test_flat_qubit_resolution_across_registers():
-    qr0 = QuantumRegister(2, name="a")
-    qr1 = QuantumRegister(2, name="b")
-    p = Program.registers(qreg=[qr0, qr1])
-    assert p._resolve_qubit(0) == qr0[0]
-    assert p._resolve_qubit(1) == qr0[1]
-    assert p._resolve_qubit(2) == qr1[0]
-    assert p._resolve_qubit(3) == qr1[1]
-
-
 def test_flat_qubit_resolution_out_of_range_raises():
     p = Program(2)
     with pytest.raises(IndexError):

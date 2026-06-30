@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from .operations import Operation
-from .registers import QuantumRegister, RegisterRef, ClassicalRegister, Register
+from .registers import QuantumRegister, RegisterRef, ClassicalRegister
 
 ConditionTerm = tuple[RegisterRef, int]
 Condition = tuple[ConditionTerm, ...] | None
@@ -82,19 +82,6 @@ class Program:
             return [cls(spec, name=default_name)] if spec > 0 else []
         return list(spec)
 
-    @staticmethod
-    def _flat_from_int(i: int, regs: list[Register]) -> RegisterRef:
-        if not isinstance(i, int) or isinstance(i, bool):
-            raise TypeError(f"operand must be int or RegisterRef, got {type(i)!r}")
-        if i < 0:
-            raise IndexError(i)
-        remaining = i
-        for reg in regs:
-            if remaining < reg.size:
-                return reg[remaining]
-            remaining -= reg.size
-        raise IndexError(i)
-
     def _resolve_ref(self, operand, regs, kind_cls, kind_name) -> RegisterRef:
         if isinstance(operand, RegisterRef):
             if not isinstance(operand.register, kind_cls):
@@ -102,7 +89,17 @@ class Program:
             if not any(operand.register is r for r in regs):
                 raise ValueError(f"ref does not belong to this program's {kind_name}s")
             return operand
-        return self._flat_from_int(operand, regs)
+        if not isinstance(operand, int) or isinstance(operand, bool):
+            raise TypeError(f"operand must be int or RegisterRef, got {type(operand)!r}")
+        if len(regs) != 1:
+            raise TypeError(
+                "integer operands are only allowed when there is exactly one "
+                "register of the relevant kind; pass an explicit RegisterRef "
+                "(e.g. qreg[0] or creg[0]) instead"
+            )
+        # Bounds and negative-index checks are delegated to Register.__getitem__,
+        # which raises IndexError.
+        return regs[0][operand]
 
     def _resolve_qubit(self, operand) -> RegisterRef:
         return self._resolve_ref(operand, self.qreg, QuantumRegister, "quantum register")
