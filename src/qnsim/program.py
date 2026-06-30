@@ -80,11 +80,21 @@ class Program:
 
     @staticmethod
     def _coerce_registers(spec, cls, default_name):
-        # TODO: why bool? We should only allow int
-        if isinstance(spec, int) and not isinstance(spec, bool):
+        if type(spec) is int:
             if spec < 0:
                 raise ValueError(f"register count must be >= 0, got {spec}")
             return [cls(spec, name=default_name)] if spec > 0 else []
+        if not isinstance(spec, (list, tuple)):
+            raise TypeError(
+                f"registers must be an int count or a list of {cls.__name__}, "
+                f"got {type(spec).__name__!r}"
+            )
+        for r in spec:
+            if not isinstance(r, cls):
+                raise TypeError(
+                    f"register list must contain {cls.__name__} instances, "
+                    f"got {type(r).__name__!r}"
+                )
         return list(spec)
 
     def _resolve_ref(self, operand, regs, kind_cls, kind_name) -> RegisterRef:

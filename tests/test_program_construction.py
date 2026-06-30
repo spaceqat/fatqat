@@ -41,3 +41,24 @@ def test_resolve_qubit_rejects_foreign_ref():
 def test_metadata_defaults_to_empty_dict():
     p = Program(1)
     assert p.metadata == {}
+
+
+def test_construction_rejects_float_count():
+    with pytest.raises(TypeError, match="int count"):
+        Program(2.0, 2)
+
+
+def test_construction_rejects_bool_count():
+    with pytest.raises(TypeError, match="int count"):
+        Program(True, 1)
+
+
+def test_construction_rejects_non_register_in_list():
+    with pytest.raises(TypeError, match="QuantumRegister instances"):
+        Program([1, 2], 0)
+
+
+def test_construction_rejects_wrong_register_type_in_list():
+    cr = ClassicalRegister(1)
+    with pytest.raises(TypeError, match="QuantumRegister instances"):
+        Program([cr], 0)
