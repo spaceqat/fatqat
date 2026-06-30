@@ -36,12 +36,12 @@ def test_sample_indices_balanced_with_seed():
     assert 0.45 < frac_one < 0.55
 
 
-def test_collapse_projects_internal_state_to_basis():
+def test_collapse_returns_flat_index_and_projects():
     eng = _h_engine(1, 0)
     rng = np.random.default_rng(1)
-    bits = eng.collapse([0], rng)
-    outcome = bits[0]
+    idx = eng.collapse([0], rng)
+    assert idx in (0, 1)
     expected = np.zeros(2, dtype=complex)
-    expected[outcome] = 1.0
+    expected[idx] = 1.0
     assert np.allclose(eng.export_state(), expected)
     assert np.isclose(np.linalg.norm(eng.export_state()), 1.0)

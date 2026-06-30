@@ -51,21 +51,21 @@ class StateVectorEngine:
         self._require_state()
         return rng.choice(len(self._state), size=shots, p=self.probabilities())
 
-    def collapse(self, measured_qubits, rng) -> dict[int, int]:
-        """Sample one outcome, project the internal state, return measured bits."""
+    def collapse(self, measured_qubits, rng) -> int:
+        """Sample one outcome, project the internal state, return the flat index."""
         self._require_state()
         idx = int(rng.choice(len(self._state), p=self.probabilities()))
-        bits = {q: (idx >> q) & 1 for q in measured_qubits}
         arange = np.arange(len(self._state))
         keep = np.ones(len(self._state), dtype=bool)
-        for q, b in bits.items():
-            keep &= ((arange >> q) & 1) == b
+        for q in measured_qubits:
+            bit = (idx >> q) & 1
+            keep &= ((arange >> q) & 1) == bit
         new = np.where(keep, self._state, 0.0).astype(complex)
         norm = np.linalg.norm(new)
         if norm > 0:
             new = new / norm
         self._state = new
-        return bits
+        return idx
 
     def export_state(self) -> np.ndarray:
         # Hand back a copy so the backend's Result never aliases the engine's

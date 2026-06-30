@@ -89,12 +89,10 @@ class StateVectorBackend:
         collapsed_index = None
         if want_sv and has_measurement:
             # Only reached for shots == 1 (validated). Collapse on measured qubits;
-            # the engine's internal state becomes the projected statevector.
+            # the engine's internal state becomes the projected statevector and the
+            # flat outcome index feeds counts directly.
             measured_qubits = [q for q, _c in measurements]
-            bits = engine.collapse(measured_qubits, rng)
-            collapsed_index = 0
-            for q, b in bits.items():
-                collapsed_index |= b << q
+            collapsed_index = engine.collapse(measured_qubits, rng)
 
         # Counts.
         effective_counts = config.counts if config.counts is not None else has_measurement
