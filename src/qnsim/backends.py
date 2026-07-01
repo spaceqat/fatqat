@@ -10,6 +10,7 @@ import numpy as np
 from .engine import StateVectorEngine
 from .errors import BackendValidationError, NoMeasurementWarning, UnsupportedOperationError
 from .implementation import ApplyMatrixStep, default_implementation_map
+from .implementation import MatrixImplementationMap
 from .job import Job
 from .layout import ResourceLayout
 from .program import AppliedOperation, Measurement, Program
@@ -36,7 +37,7 @@ class StateVectorBackend:
     repeated single-threaded use but not concurrent `run` calls.
     """
 
-    def __init__(self, *, seed=None):
+    def __init__(self, *, seed: int | None = None) -> None:
         """Create a statevector backend.
 
         Args:
@@ -63,7 +64,13 @@ class StateVectorBackend:
         """
         return ResourceLayout.from_program(program)
 
-    def run(self, program, *, shots: int = 1024, result_config=None) -> Job:
+    def run(
+        self,
+        program: Program,
+        *,
+        shots: int = 1024,
+        result_config: ResultConfig | None = None,
+    ) -> Job:
         """Validate and execute a program.
 
         Counts default to available when the program contains measurements.
@@ -111,7 +118,13 @@ class StateVectorBackend:
             return Job.failed(exc)
 
     # --- validation (raises directly from run) ---
-    def _validate(self, program, config, shots, layout) -> None:
+    def _validate(
+        self,
+        program: Program,
+        config: ResultConfig,
+        shots: int,
+        layout: ResourceLayout,
+    ) -> None:
         """Validate Phase 1 backend constraints before execution begins."""
         seen_measurement = False
         has_measurement = False
@@ -144,7 +157,13 @@ class StateVectorBackend:
             )
 
     # --- execution ---
-    def _execute(self, program, config, shots, layout) -> Result:
+    def _execute(
+        self,
+        program: Program,
+        config: ResultConfig,
+        shots: int,
+        layout: ResourceLayout,
+    ) -> Result:
         """Execute a validated program and assemble the requested result fields."""
         plan = self._resolve_program(program, self._impl_map, layout)
         engine = self._engine
@@ -209,7 +228,11 @@ class StateVectorBackend:
         )
 
     @staticmethod
-    def _resolve_program(program, impl_map, layout) -> list[ResolvedStep]:
+    def _resolve_program(
+        program: Program,
+        impl_map: MatrixImplementationMap,
+        layout: ResourceLayout,
+    ) -> list[ResolvedStep]:
         """Lower a validated program into an ordered execution plan.
 
         Assumes validation has already run: every gate has a registered rule,

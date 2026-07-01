@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
+from .program import Program
 from .registers import RegisterRef
 
 
@@ -12,7 +15,13 @@ class ResourceLayout:
     are concatenated independently in program order.
     """
 
-    def __init__(self, system_dims, q_offsets, c_offsets, n_clbits):
+    def __init__(
+        self,
+        system_dims: tuple[int, ...],
+        q_offsets: Mapping[int, int],
+        c_offsets: Mapping[int, int],
+        n_clbits: int,
+    ) -> None:
         """Create a resource layout from precomputed flat offsets.
 
         Args:
@@ -22,8 +31,8 @@ class ResourceLayout:
             n_clbits: Total number of classical bits.
         """
         self.system_dims: tuple[int, ...] = system_dims
-        self._q_offsets = q_offsets  # id(register) -> base flat index
-        self._c_offsets = c_offsets
+        self._q_offsets = dict(q_offsets)  # id(register) -> base flat index
+        self._c_offsets = dict(c_offsets)
         self._n_clbits = n_clbits
 
     @property
@@ -61,7 +70,7 @@ class ResourceLayout:
         return base + ref.index
 
     @classmethod
-    def from_program(cls, program) -> "ResourceLayout":
+    def from_program(cls, program: Program) -> "ResourceLayout":
         """Build a layout by flattening a program's registers in order."""
         q_offsets: dict[int, int] = {}
         offset = 0

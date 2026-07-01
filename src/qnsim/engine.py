@@ -13,6 +13,8 @@ Conventions:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 
 from .implementation import ApplyMatrixStep
@@ -55,7 +57,7 @@ class StateVectorEngine:
         self._require_state()
         return _probabilities(self._state)
 
-    def sample_indices(self, shots, rng) -> np.ndarray:
+    def sample_indices(self, shots: int, rng: np.random.Generator) -> np.ndarray:
         """Sample flat basis-state indices from the current state.
 
         Args:
@@ -68,7 +70,7 @@ class StateVectorEngine:
         self._require_state()
         return rng.choice(len(self._state), size=shots, p=self.probabilities())
 
-    def collapse(self, measured_qubits, rng) -> int:
+    def collapse(self, measured_qubits: Sequence[int], rng: np.random.Generator) -> int:
         """Sample one outcome, project the internal state, return the flat index."""
         self._require_state()
         idx, new = _collapse_state(self._state, measured_qubits, rng)
@@ -85,7 +87,12 @@ class StateVectorEngine:
             raise RuntimeError("engine not initialized; call initialize(n_qubits) first")
 
 
-def _apply_matrix(state, matrix, targets, n_qubits) -> np.ndarray:
+def _apply_matrix(
+    state: np.ndarray,
+    matrix: np.ndarray,
+    targets: Sequence[int],
+    n_qubits: int,
+) -> np.ndarray:
     """Apply a 2**k matrix to flat ``targets`` of a little-endian state.
 
     The matrix's local index treats ``targets[0]`` as the MSB and
@@ -117,7 +124,11 @@ def _apply_matrix(state, matrix, targets, n_qubits) -> np.ndarray:
     return psi.reshape(-1)
 
 
-def _collapse_state(state, measured_qubits, rng) -> tuple[int, np.ndarray]:
+def _collapse_state(
+    state: np.ndarray,
+    measured_qubits: Sequence[int],
+    rng: np.random.Generator,
+) -> tuple[int, np.ndarray]:
     """Sample one computational-basis outcome and return the projected state."""
     idx = int(rng.choice(len(state), p=_probabilities(state)))
     qubits = np.asarray(measured_qubits, dtype=np.uintp)
@@ -143,7 +154,7 @@ def _collapse_state(state, measured_qubits, rng) -> tuple[int, np.ndarray]:
     return idx, new
 
 
-def _probabilities(state) -> np.ndarray:
+def _probabilities(state: np.ndarray) -> np.ndarray:
     """Return normalized computational-basis probabilities for a statevector."""
     probabilities = np.abs(state) ** 2
     total = probabilities.sum()

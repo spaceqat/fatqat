@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .result import Result
+
 
 class Job:
     """Eager job handle returned by backends.
@@ -10,7 +12,12 @@ class Job:
     result, while `ERROR` jobs re-raise their stored exception from `result()`.
     """
 
-    def __init__(self, status: str, result=None, error: BaseException | None = None):
+    def __init__(
+        self,
+        status: str,
+        result: Result | None = None,
+        error: BaseException | None = None,
+    ) -> None:
         """Create a job with a terminal or non-terminal status.
 
         Args:
@@ -23,7 +30,7 @@ class Job:
         self._error = error
 
     @classmethod
-    def done(cls, result) -> "Job":
+    def done(cls, result: Result) -> "Job":
         """Create a completed job carrying `result`."""
         return cls(status="DONE", result=result)
 
@@ -32,7 +39,7 @@ class Job:
         """Create an error job carrying `error`."""
         return cls(status="ERROR", error=error)
 
-    def result(self):
+    def result(self) -> Result:
         """Return the result payload or raise the terminal job error.
 
         Raises:

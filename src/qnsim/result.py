@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -25,7 +26,11 @@ class ResultConfig:
     statevector: bool | None = None
 
 
-def build_counts(indices, n_clbits, measurements) -> dict[str, int]:
+def build_counts(
+    indices: Iterable[int],
+    n_clbits: int,
+    measurements: Sequence[tuple[int, int]],
+) -> dict[str, int]:
     """Build little-endian count keys from sampled basis-state indices.
 
     Measurement mappings are applied in program order, so later writes to the
@@ -58,7 +63,12 @@ class Result:
     optional fields.
     """
 
-    def __init__(self, counts=None, statevector=None, available=frozenset()):
+    def __init__(
+        self,
+        counts: dict[str, int] | None = None,
+        statevector: np.ndarray | None = None,
+        available: frozenset[str] = frozenset(),
+    ) -> None:
         """Create a result from backend-produced fields.
 
         Args:

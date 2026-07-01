@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Mapping, TypeVar
 
 from .operations import Operation
 from .registers import QuantumRegister, RegisterRef, ClassicalRegister
 
 ConditionTerm = tuple[RegisterRef, int]
 Condition = tuple[ConditionTerm, ...] | None
+RegisterT = TypeVar("RegisterT", QuantumRegister, ClassicalRegister)
 
 
 @dataclass(frozen=True)
@@ -129,7 +130,11 @@ class Program:
         self.metadata: dict[str, Any] = dict(metadata) if metadata else {}
 
     @staticmethod
-    def _coerce_registers(spec, cls, default_name):
+    def _coerce_registers(
+        spec: int | list[RegisterT] | tuple[RegisterT, ...],
+        cls: type[RegisterT],
+        default_name: str,
+    ) -> list[RegisterT]:
         """Normalize an integer count or explicit register list to a list."""
         if type(spec) is int:
             if spec < 0:
@@ -148,7 +153,13 @@ class Program:
                 )
         return list(spec)
 
-    def _resolve_ref(self, operand, regs, kind_cls, kind_name) -> RegisterRef:
+    def _resolve_ref(
+        self,
+        operand: int | RegisterRef,
+        regs: list[RegisterT],
+        kind_cls: type[RegisterT],
+        kind_name: str,
+    ) -> RegisterRef:
         """Resolve an integer or explicit ref against one register kind.
 
         Bare integers are only accepted when there is exactly one register of
@@ -172,10 +183,10 @@ class Program:
         # which raises IndexError.
         return regs[0][operand]
 
-    def _resolve_qubit(self, operand) -> RegisterRef:
+    def _resolve_qubit(self, operand: int | RegisterRef) -> RegisterRef:
         return self._resolve_ref(operand, self.qreg, QuantumRegister, "quantum register")
 
-    def _resolve_clbit(self, operand) -> RegisterRef:
+    def _resolve_clbit(self, operand: int | RegisterRef) -> RegisterRef:
         return self._resolve_ref(
             operand, self.creg, ClassicalRegister, "classical register"
         )
@@ -230,7 +241,7 @@ class Program:
             AppliedOperation(operation=op, targets=targets, condition=normalized)
         )
 
-    def _normalize_condition(self, condition):
+    def _normalize_condition(self, condition: Any) -> Condition:
         """Normalize user conditions to an AND tuple of classical refs and values."""
         if condition is None:
             return None
@@ -245,7 +256,7 @@ class Program:
             for slot, literal in terms
         )
 
-    def _resolve_conditional_slot(self, slot) -> RegisterRef:
+    def _resolve_conditional_slot(self, slot: int | RegisterRef) -> RegisterRef:
         """Resolve a condition slot and require it to reference a clbit."""
         if isinstance(slot, RegisterRef):
             if not isinstance(slot.register, ClassicalRegister):
