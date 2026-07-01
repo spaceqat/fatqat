@@ -80,11 +80,13 @@ class Measurement:
 class Program:
     """User-facing quantum program container.
 
-    A program owns quantum and classical registers plus an ordered sequence of
-    applied operations and measurements stored in `operations`. Operations are
-    executed in insertion order. Integer operands are accepted only when there is
-    exactly one register of the relevant kind; otherwise users must pass explicit
-    `RegisterRef` objects such as `program.qreg[0][1]`.
+    A program owns read-only public quantum/classical register tuples plus an
+    ordered read-only view of applied operations and measurements. Public
+    mutation goes through `add()` and `add_measurement()`, which keep the
+    internal instruction list well formed. Operations are executed in insertion
+    order. Integer operands are accepted only when there is exactly one register
+    of the relevant kind; otherwise users must pass explicit `RegisterRef`
+    objects such as `program.qreg[0][1]`.
 
     Examples:
         Build a two-qubit program, add gates, then measure both qubits:
@@ -111,8 +113,10 @@ class Program:
 
         Args:
             qreg: Number of default quantum bits, or explicit quantum registers.
+                Stored publicly as a read-only tuple.
             clreg: Number of default classical bits, or explicit classical
-                registers. A value of `0` creates no classical register.
+                registers. A value of `0` creates no classical register. Stored
+                publicly as a read-only tuple.
             metadata: Optional user metadata copied into the program.
 
         Raises:
@@ -132,7 +136,7 @@ class Program:
 
     @property
     def operations(self) -> tuple[AppliedOperation | Measurement, ...]:
-        """Ordered operation and measurement steps as a read-only tuple view."""
+        """Ordered operation and measurement steps as a cached read-only tuple view."""
         if self._operations_view is None:
             self._operations_view = tuple(self._operations)
         return self._operations_view
@@ -316,7 +320,7 @@ class Program:
         self._operations_view = None
 
     def copy(self) -> "Program":
-        """Return an independent copy with its own operation list, register lists, and metadata."""
+        """Return an independent copy with private operation storage and copied metadata."""
         new = Program.__new__(Program)
         new.qreg = tuple(self.qreg)
         new.creg = tuple(self.creg)

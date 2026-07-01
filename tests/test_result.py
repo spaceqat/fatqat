@@ -40,6 +40,13 @@ def test_result_get_counts_available():
     assert r.get_counts() == {"00": 5}
 
 
+def test_result_metadata_defaults_and_is_copied():
+    metadata = {"shots": 10}
+    r = Result(metadata=metadata)
+    metadata["shots"] = 20
+    assert r.metadata == {"shots": 10}
+
+
 def test_result_get_counts_unavailable_raises():
     r = Result(available=frozenset())
     with pytest.raises(ResultFieldUnavailableError):

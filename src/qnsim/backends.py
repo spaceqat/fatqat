@@ -84,8 +84,10 @@ class StateVectorBackend:
             result_config: Optional `ResultConfig` controlling produced fields.
 
         Returns:
-            A completed `Job`. Validation failures raise directly; execution
-            failures are captured in an error job whose `result()` re-raises.
+            A completed `Job`. The job result includes metadata with the shot
+            count, backend name, and effective result config. Validation
+            failures raise directly; execution failures are captured in an
+            error job whose `result()` re-raises.
 
         Raises:
             BackendValidationError: If requested fields are incompatible with
@@ -224,7 +226,14 @@ class StateVectorBackend:
                 )
 
         return Result(
-            counts=counts, statevector=statevector, available=frozenset(available)
+            counts=counts,
+            statevector=statevector,
+            available=frozenset(available),
+            metadata={
+                "shots": shots,
+                "backend_name": type(self).__name__,
+                "result_config": config,
+            },
         )
 
     @staticmethod

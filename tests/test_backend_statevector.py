@@ -29,6 +29,21 @@ def test_statevector_not_attached_by_default_with_measurement():
         result.get_statevector()
 
 
+def test_result_metadata_records_backend_shots_and_config():
+    p = Program(1, 1)
+    p.add(ops.X, 0)
+    p.add_measurement(0, 0)
+    config = qs.ResultConfig(counts=True, statevector=False)
+
+    result = StateVectorBackend(seed=0).run(
+        p, shots=7, result_config=config
+    ).result()
+
+    assert result.metadata["shots"] == 7
+    assert result.metadata["backend_name"] == "StateVectorBackend"
+    assert result.metadata["result_config"] == config
+
+
 def test_projected_statevector_shots_one():
     p = Program(1, 1)
     p.add(ops.H, 0)

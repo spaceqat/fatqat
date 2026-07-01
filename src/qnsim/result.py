@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import Any, Mapping
 
 import numpy as np
 
@@ -60,7 +61,8 @@ class Result:
 
     Accessors raise `ResultFieldUnavailableError` when a field was not produced
     by the backend. Check `available_data` or use the accessor errors to handle
-    optional fields.
+    optional fields. `metadata` always exists and stores backend/run context
+    such as shots, backend name, and the effective result configuration.
     """
 
     def __init__(
@@ -68,6 +70,7 @@ class Result:
         counts: dict[str, int] | None = None,
         statevector: np.ndarray | None = None,
         available: frozenset[str] = frozenset(),
+        metadata: Mapping[str, Any] | None = None,
     ) -> None:
         """Create a result from backend-produced fields.
 
@@ -75,10 +78,13 @@ class Result:
             counts: Optional measurement-count dictionary.
             statevector: Optional statevector array.
             available: Field names that accessors are allowed to return.
+            metadata: Optional backend/run metadata copied into the public
+                `metadata` dictionary.
         """
         self._counts = counts
         self._statevector = statevector
         self.available_data = frozenset(available)
+        self.metadata = dict(metadata) if metadata is not None else {}
 
     def get_counts(self) -> dict[str, int]:
         """Return measurement counts.
