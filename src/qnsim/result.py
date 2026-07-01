@@ -56,6 +56,30 @@ def build_counts(
     return counts
 
 
+def build_counts_from_clbits(
+    snapshots: Iterable[Sequence[int]],
+    n_clbits: int,
+) -> dict[str, int]:
+    """Aggregate per-shot classical-register snapshots into counts.
+
+    Each snapshot is one shot's final classical-register state: a sequence of
+    ``n_clbits`` bit values indexed by flat clbit index. Keys are little-endian
+    bitstrings with classical bit 0 rightmost, matching ``build_counts``.
+
+    Args:
+        snapshots: One classical-register snapshot per shot.
+        n_clbits: Number of classical bits in each key.
+
+    Returns:
+        Count dictionary keyed by little-endian classical bitstrings.
+    """
+    counts: dict[str, int] = {}
+    for snap in snapshots:
+        key = "".join(str(snap[c]) for c in range(n_clbits - 1, -1, -1))
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 class Result:
     """Execution result with explicitly available data fields.
 
