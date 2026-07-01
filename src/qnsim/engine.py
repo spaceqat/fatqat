@@ -19,6 +19,9 @@ import numpy as np
 
 from .implementation import ApplyMatrixStep
 
+# Single-qubit X used to flip a measured qubit back to |0> during reset.
+_X = np.array([[0, 1], [1, 0]], dtype=complex)
+
 
 class StateVectorEngine:
     """Stateful numerical core for statevector evolution.
@@ -76,6 +79,27 @@ class StateVectorEngine:
         idx, new = _collapse_state(self._state, measured_qubits, rng)
         self._state = new
         return idx
+
+    def measure_qubit(self, index: int, rng: np.random.Generator) -> int:
+        """Sample and collapse a single qubit in the computational basis.
+
+        Projects the internal state onto the sampled outcome for ``index`` and
+        returns that qubit's measured bit. Consumes exactly one rng draw.
+        """
+        self._require_state()
+        flat = self.collapse([index], rng)
+        return (flat >> index) & 1
+
+    def reset_qubit(self, index: int, rng: np.random.Generator) -> None:
+        """Measure a qubit and reprepare it in ``|0>``.
+
+        Samples an outcome (one rng draw), projects, and flips the target with X
+        when the outcome is 1. The rest of an entangled state is left correctly
+        conditioned on the sampled branch.
+        """
+        self._require_state()
+        if self.measure_qubit(index, rng) == 1:
+            self._state = _apply_matrix(self._state, _X, (index,), self._n_qubits)
 
     def export_state(self) -> np.ndarray:
         """Return a copy of the current statevector."""
