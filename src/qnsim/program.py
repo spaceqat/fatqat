@@ -120,14 +120,22 @@ class Program:
                 the expected register type.
             ValueError: If an integer register count is negative.
         """
-        self.qreg: list[QuantumRegister] = self._coerce_registers(
-            qreg, QuantumRegister, "q"
+        self.qreg: tuple[QuantumRegister, ...] = tuple(
+            self._coerce_registers(qreg, QuantumRegister, "q")
         )
-        self.creg: list[ClassicalRegister] = self._coerce_registers(
-            clreg, ClassicalRegister, "c"
+        self.creg: tuple[ClassicalRegister, ...] = tuple(
+            self._coerce_registers(clreg, ClassicalRegister, "c")
         )
-        self.operations: list[AppliedOperation | Measurement] = []
+        self._operations: list[AppliedOperation | Measurement] = []
+        self._operations_view: tuple[AppliedOperation | Measurement, ...] | None = ()
         self.metadata: dict[str, Any] = dict(metadata) if metadata else {}
+
+    @property
+    def operations(self) -> tuple[AppliedOperation | Measurement, ...]:
+        """Ordered operation and measurement steps as a read-only tuple view."""
+        if self._operations_view is None:
+            self._operations_view = tuple(self._operations)
+        return self._operations_view
 
     @staticmethod
     def _coerce_registers(
@@ -237,9 +245,10 @@ class Program:
         operands = qreg if isinstance(qreg, tuple) else (qreg,)
         targets = tuple(self._resolve_qubit(o) for o in operands)
         normalized = self._normalize_condition(condition)
-        self.operations.append(
+        self._operations.append(
             AppliedOperation(operation=op, targets=targets, condition=normalized)
         )
+        self._operations_view = None
 
     def _normalize_condition(self, condition: Any) -> Condition:
         """Normalize user conditions to an AND tuple of classical refs and values."""
@@ -301,15 +310,17 @@ class Program:
         """
         q = self._resolve_qubit(qreg)
         c = self._resolve_clbit(clreg)
-        self.operations.append(
+        self._operations.append(
             Measurement(qreg=q, clreg=c, metadata=dict(metadata) if metadata else {})
         )
+        self._operations_view = None
 
     def copy(self) -> "Program":
         """Return an independent copy with its own operation list, register lists, and metadata."""
         new = Program.__new__(Program)
-        new.qreg = list(self.qreg)
-        new.creg = list(self.creg)
-        new.operations = list(self.operations)
+        new.qreg = tuple(self.qreg)
+        new.creg = tuple(self.creg)
+        new._operations = list(self._operations)
+        new._operations_view = tuple(new._operations)
         new.metadata = dict(self.metadata)
         return new

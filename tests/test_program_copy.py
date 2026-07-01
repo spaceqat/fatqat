@@ -20,8 +20,10 @@ def test_copy_isolates_metadata():
     assert p.metadata["src"] == "orig"
 
 
-def test_copy_isolates_register_lists():
+def test_copy_preserves_register_tuples():
     p = Program(1)
     q = p.copy()
     assert q.qreg == p.qreg
-    assert q.qreg is not p.qreg
+    assert isinstance(q.qreg, tuple)
+    assert q.creg == p.creg
+    assert isinstance(q.creg, tuple)

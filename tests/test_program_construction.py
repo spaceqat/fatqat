@@ -10,21 +10,51 @@ def test_int_construction_creates_default_registers():
     p = Program(2, 2)
     assert len(p.qreg) == 1 and p.qreg[0].size == 2
     assert len(p.creg) == 1 and p.creg[0].size == 2
-    assert p.operations == []
+    assert p.operations == ()
+
+
+def test_operations_is_read_only_tuple_view():
+    p = Program(1)
+    assert isinstance(p.operations, tuple)
+    with pytest.raises(AttributeError):
+        p.operations.append("bad")
+
+
+def test_operations_tuple_view_is_cached_until_mutation():
+    p = Program(2)
+    before = p.operations
+    assert p.operations is before
+
+    from qnsim import operations as ops
+
+    p.add(ops.H, 0)
+    after = p.operations
+    assert after is not before
+    assert p.operations is after
 
 
 def test_zero_classical_means_no_classical_register():
     p = Program(2)
     assert len(p.qreg) == 1
-    assert p.creg == []
+    assert p.creg == ()
 
 
 def test_list_construction_with_explicit_registers():
     qr = QuantumRegister(3, name="data")
     cr = ClassicalRegister(2, name="ro")
     p = Program([qr], [cr])
-    assert p.qreg == [qr]
-    assert p.creg == [cr]
+    assert p.qreg == (qr,)
+    assert p.creg == (cr,)
+
+
+def test_register_collections_are_public_read_only_tuples():
+    p = Program(1, 1)
+    assert isinstance(p.qreg, tuple)
+    assert isinstance(p.creg, tuple)
+    with pytest.raises(AttributeError):
+        p.qreg.append(QuantumRegister(1))
+    with pytest.raises(AttributeError):
+        p.creg.clear()
 
 
 def test_flat_qubit_resolution_out_of_range_raises():
