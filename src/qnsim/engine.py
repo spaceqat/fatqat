@@ -1,21 +1,21 @@
 """Statevector engine: a stateful simulator that owns the quantum state.
 
 The engine is the matrix family's numerical core. The backend initializes it,
-feeds it resolved ``MatrixImplementation`` payloads, and reads results back
-through sampling / collapse / export. The state never leaves the engine until
+feeds it resolved ``ApplyMatrixStep`` payloads, and reads results back through
+sampling / collapse / export. The state never leaves the engine until
 ``export_state`` is called.
 
 Conventions:
 - little-endian: amplitude index bit ``q`` is the value of qubit ``q``.
-- a ``MatrixImplementation``'s ``target_indices`` map to the matrix's local
-  index with ``target_indices[0]`` as the most-significant bit.
+- an ``ApplyMatrixStep``'s ``target_indices`` map to the matrix's local index
+  with ``target_indices[0]`` as the most-significant bit.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from .implementation import MatrixImplementation
+from .implementation import ApplyMatrixStep
 
 
 class StateVectorEngine:
@@ -43,19 +43,17 @@ class StateVectorEngine:
         self._state = state
         self._n_qubits = n_qubits
 
-    def apply(self, impl: MatrixImplementation) -> None:
-        """Evolve the state by one resolved matrix implementation in place."""
+    def apply(self, step: ApplyMatrixStep) -> None:
+        """Evolve the state by one resolved matrix step in place."""
         self._require_state()
         self._state = _apply_matrix(
-            self._state, impl.matrix, impl.target_indices, self._n_qubits
+            self._state, step.matrix, step.target_indices, self._n_qubits
         )
 
     def probabilities(self) -> np.ndarray:
         """Return normalized computational-basis probabilities."""
         self._require_state()
-        p = np.abs(self._state) ** 2
-        total = p.sum()
-        return p / total if total > 0 else p
+        return _probabilities(self._state)
 
     def sample_indices(self, shots, rng) -> np.ndarray:
         """Sample flat basis-state indices from the current state.
@@ -73,16 +71,7 @@ class StateVectorEngine:
     def collapse(self, measured_qubits, rng) -> int:
         """Sample one outcome, project the internal state, return the flat index."""
         self._require_state()
-        idx = int(rng.choice(len(self._state), p=self.probabilities()))
-        arange = np.arange(len(self._state))
-        keep = np.ones(len(self._state), dtype=bool)
-        for q in measured_qubits:
-            bit = (idx >> q) & 1
-            keep &= ((arange >> q) & 1) == bit
-        new = np.where(keep, self._state, 0.0).astype(complex)
-        norm = np.linalg.norm(new)
-        if norm > 0:
-            new = new / norm
+        idx, new = _collapse_state(self._state, measured_qubits, rng)
         self._state = new
         return idx
 
@@ -101,6 +90,15 @@ def _apply_matrix(state, matrix, targets, n_qubits) -> np.ndarray:
 
     The matrix's local index treats ``targets[0]`` as the MSB and
     ``targets[k-1]`` as the LSB.
+
+    Complexity: this is a matrix-vector contraction equivalent to an einsum
+    ``M[out, in] * psi[in, rest] -> psi[out, rest]``. Work is O(2**k * 2**n)
+    FLOPs (O(2**n) for fixed small k), and peak memory is ~2x the state:
+    ``tensordot`` allocates a new O(2**n) tensor and ``transpose`` may copy it
+    again to reorder axes. An in-place variant (looping over the 2**(n-k)
+    non-target slices and multiplying each 2**k vector by M) would drop the
+    intermediate allocation and improve cache locality, at the cost of more
+    complex code. Deferred for now.
     """
     k = len(targets)
     psi = state.reshape((2,) * n_qubits)  # axis p corresponds to qubit (n_qubits-1-p)
@@ -117,3 +115,36 @@ def _apply_matrix(state, matrix, targets, n_qubits) -> np.ndarray:
         perm[ax] = k + idx
     psi = np.transpose(psi, perm)
     return psi.reshape(-1)
+
+
+def _collapse_state(state, measured_qubits, rng) -> tuple[int, np.ndarray]:
+    """Sample one computational-basis outcome and return the projected state."""
+    idx = int(rng.choice(len(state), p=_probabilities(state)))
+    qubits = np.asarray(measured_qubits, dtype=np.uintp)
+    n_qubits = int(np.log2(len(state)))
+
+    if qubits.size == n_qubits and np.unique(qubits).size == n_qubits:
+        new = np.zeros_like(state)
+        new[idx] = state[idx]
+    else:
+        measured_mask = (
+            np.uintp(0)
+            if qubits.size == 0
+            else np.bitwise_or.reduce(np.left_shift(np.uintp(1), qubits))
+        )
+        basis = np.arange(len(state), dtype=np.uintp)
+        keep = ((basis ^ np.uintp(idx)) & measured_mask) == 0
+        new = state.copy()
+        new[~keep] = 0.0
+
+    norm = np.linalg.norm(new)
+    if norm > 0:
+        new = new / norm
+    return idx, new
+
+
+def _probabilities(state) -> np.ndarray:
+    """Return normalized computational-basis probabilities for a statevector."""
+    probabilities = np.abs(state) ** 2
+    total = probabilities.sum()
+    return probabilities / total if total > 0 else probabilities

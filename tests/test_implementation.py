@@ -5,7 +5,7 @@ import pytest
 
 from qnsim import operations as ops
 from qnsim.implementation import (
-    MatrixImplementation,
+    ApplyMatrixStep,
     MatrixImplementationMap,
     default_implementation_map,
 )
@@ -48,8 +48,8 @@ def test_unregistered_class_returns_none():
     assert m.get(type(ops.X)) is None
 
 
-def test_matrix_implementation_value_object():
-    impl = MatrixImplementation(matrix=np.eye(2, dtype=complex), target_indices=(3,))
-    assert impl.target_indices == (3,)
+def test_apply_matrix_step_value_object():
+    step = ApplyMatrixStep(matrix=np.eye(2, dtype=complex), target_indices=(3,))
+    assert step.target_indices == (3,)
     with pytest.raises(ValueError):
-        impl.matrix[0, 0] = 5.0
+        step.matrix[0, 0] = 5.0

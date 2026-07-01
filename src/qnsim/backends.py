@@ -3,16 +3,28 @@
 from __future__ import annotations
 
 import warnings
+from dataclasses import dataclass
 
 import numpy as np
 
 from .engine import StateVectorEngine
 from .errors import BackendValidationError, NoMeasurementWarning, UnsupportedOperationError
-from .implementation import MatrixImplementation, default_implementation_map
+from .implementation import ApplyMatrixStep, default_implementation_map
 from .job import Job
 from .layout import ResourceLayout
 from .program import AppliedOperation, Measurement, Program
 from .result import Result, ResultConfig, build_counts
+
+
+@dataclass(frozen=True)
+class MeasurementStep:
+    """Resolved terminal measurement: flat qubit index into flat clbit index."""
+
+    qubit_index: int
+    clbit_index: int
+
+
+ResolvedStep = ApplyMatrixStep | MeasurementStep
 
 
 class StateVectorBackend:
@@ -134,9 +146,15 @@ class StateVectorBackend:
     # --- execution ---
     def _execute(self, program, config, shots, layout) -> Result:
         """Execute a validated program and assemble the requested result fields."""
-        self._evolve(program, layout)
+        plan = self._resolve_program(program, self._impl_map, layout)
         engine = self._engine
-        measurements = self._measurement_map(program, layout)
+        engine.initialize(layout.n_qubits)
+        measurements: list[tuple[int, int]] = []
+        for step in plan:
+            if isinstance(step, ApplyMatrixStep):
+                engine.apply(step)
+            else:  # MeasurementStep
+                measurements.append((step.qubit_index, step.clbit_index))
         has_measurement = len(measurements) > 0
         rng = np.random.default_rng(self._seed)
 
@@ -190,26 +208,27 @@ class StateVectorBackend:
             counts=counts, statevector=statevector, available=frozenset(available)
         )
 
-    def _evolve(self, program, layout) -> None:
-        """Reset the owned engine and apply each gate as a MatrixImplementation."""
-        engine = self._engine
-        engine.initialize(layout.n_qubits)
+    @staticmethod
+    def _resolve_program(program, impl_map, layout) -> list[ResolvedStep]:
+        """Lower a validated program into an ordered execution plan.
+
+        Assumes validation has already run: every gate has a registered rule,
+        conditions are rejected, and measurements are terminal. Register
+        references are flattened to engine-ready integer indices here.
+        """
+        plan: list[ResolvedStep] = []
         for step in program.operations:
             if isinstance(step, AppliedOperation):
-                rule = self._impl_map.get(type(step.operation))
-                matrix = rule(step)
+                matrix = impl_map.get(type(step.operation))(step)
                 target_indices = tuple(layout.qubit_index(t) for t in step.targets)
-                engine.apply(
-                    MatrixImplementation(matrix=matrix, target_indices=target_indices)
+                plan.append(
+                    ApplyMatrixStep(matrix=matrix, target_indices=target_indices)
                 )
-
-    @staticmethod
-    def _measurement_map(program, layout):
-        """Return terminal measurement pairs as flat `(qubit, clbit)` indices."""
-        out = []
-        for step in program.operations:
-            if isinstance(step, Measurement):
-                out.append(
-                    (layout.qubit_index(step.qreg), layout.clbit_index(step.clreg))
+            elif isinstance(step, Measurement):
+                plan.append(
+                    MeasurementStep(
+                        qubit_index=layout.qubit_index(step.qreg),
+                        clbit_index=layout.clbit_index(step.clreg),
+                    )
                 )
-        return out
+        return plan

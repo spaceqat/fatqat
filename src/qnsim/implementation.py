@@ -1,4 +1,10 @@
-"""Class-keyed matrix rules. Rules return only the local matrix; indices come from layout."""
+"""Class-keyed matrix implementations and the flat payload the engine consumes.
+
+A matrix implementation maps an operation to its local matrix (physics only).
+The backend pairs that matrix with layout-resolved target indices to build an
+``ApplyMatrixStep`` — the plain data container the statevector engine reads
+directly.
+"""
 
 from __future__ import annotations
 
@@ -11,15 +17,16 @@ from . import operations as ops
 from .operations import Operation
 from .program import AppliedOperation
 
-MatrixRule = Callable[[AppliedOperation], np.ndarray]
+MatrixImplementation = Callable[[AppliedOperation], np.ndarray]
 
 
 @dataclass(frozen=True)
-class MatrixImplementation:
+class ApplyMatrixStep:
     """Resolved local matrix payload consumed by the statevector engine.
 
-    The matrix is marked read-only after construction so this frozen value object
-    cannot be mutated through the NumPy array buffer.
+    Doubles as the "apply a matrix" entry in a backend execution plan and as the
+    payload the engine applies. The matrix is marked read-only after construction
+    so this frozen value object cannot be mutated through the NumPy array buffer.
 
     Attributes:
         matrix: Local operation matrix.
@@ -71,14 +78,14 @@ def _rz(applied: AppliedOperation) -> np.ndarray:
 
 
 class MatrixImplementationMap:
-    """Class-keyed registry from operation classes to matrix rules."""
+    """Class-keyed registry from operation classes to matrix implementations."""
 
     def __init__(self) -> None:
         """Create an empty implementation map."""
-        self._rules: dict[type[Operation], MatrixRule] = {}
+        self._rules: dict[type[Operation], MatrixImplementation] = {}
 
-    def register(self, op_cls: type[Operation], rule: MatrixRule) -> None:
-        """Register a matrix rule for an operation class.
+    def register(self, op_cls: type[Operation], rule: MatrixImplementation) -> None:
+        """Register a matrix implementation for an operation class.
 
         Args:
             op_cls: Operation class used as the lookup key.
@@ -87,8 +94,8 @@ class MatrixImplementationMap:
         """
         self._rules[op_cls] = rule
 
-    def get(self, op_cls: type[Operation]) -> MatrixRule | None:
-        """Return the matrix rule for an operation class, if registered."""
+    def get(self, op_cls: type[Operation]) -> MatrixImplementation | None:
+        """Return the matrix implementation for an operation class, if registered."""
         return self._rules.get(op_cls)
 
 
