@@ -148,11 +148,16 @@ class StateVectorBackend:
                 if self._impl_map.get(type(step.operation)) is None:
                     raise UnsupportedOperationError(type(step.operation).__name__)
         effective_counts = config.counts if config.counts is not None else has_measurement
+        measured_statevector = config.statevector is True and has_measurement
+        if (effective_counts or measured_statevector) and type(shots) is not int:
+            raise BackendValidationError(
+                f"shots must be an int when requested results depend on it, got {shots!r}"
+            )
         if effective_counts and shots <= 0:
             raise BackendValidationError(
                 f"counts require shots > 0, got shots={shots}"
             )
-        if config.statevector is True and has_measurement and shots > 1:
+        if measured_statevector and shots != 1:
             raise BackendValidationError(
                 "statevector with measurement is only supported for shots == 1 "
                 "in Phase 1"

@@ -65,6 +65,22 @@ def test_nonpositive_shots_with_counts_raises():
         StateVectorBackend().run(_h_cz_program(), shots=0)
 
 
+@pytest.mark.parametrize("shots", [1.5, True, "10"])
+def test_non_integer_shots_with_counts_raises(shots):
+    with pytest.raises(BackendValidationError):
+        StateVectorBackend().run(_h_cz_program(), shots=shots)
+
+
+@pytest.mark.parametrize("shots", [0, -1, 2])
+def test_measured_statevector_requires_exactly_one_shot(shots):
+    with pytest.raises(BackendValidationError):
+        StateVectorBackend().run(
+            _h_cz_program(),
+            shots=shots,
+            result_config=qs.ResultConfig(counts=False, statevector=True),
+        )
+
+
 def test_deterministic_with_seed():
     a = StateVectorBackend(seed=7).run(_h_cz_program(), shots=300).result().get_counts()
     b = StateVectorBackend(seed=7).run(_h_cz_program(), shots=300).result().get_counts()
