@@ -101,7 +101,6 @@ class StateVectorBackend:
             result = qs.StateVectorBackend().run(
                 program,
                 shots=100,
-                seed=0,
                 result_config=qs.ResultConfig(counts=True),
             ).result()
             counts = result.get_counts()

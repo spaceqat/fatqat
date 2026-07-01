@@ -3,6 +3,7 @@
 import pytest
 
 import qnsim as qs
+import qnsim.backends as backends
 from qnsim.backends import StateVectorBackend
 from qnsim.errors import BackendValidationError, UnsupportedOperationError
 from qnsim import operations as ops
@@ -38,6 +39,24 @@ def test_seed_is_a_run_kwarg_and_repeatable():
     a = backend.run(p, shots=10, seed=5).result().get_counts()
     b = backend.run(p, shots=10, seed=5).result().get_counts()
     assert a == b == {"1": 10}
+
+
+def test_run_without_seed_uses_random_rng_seed(monkeypatch):
+    observed = []
+
+    def fake_default_rng(seed=None):
+        observed.append(seed)
+        return object()
+
+    monkeypatch.setattr(backends.np.random, "default_rng", fake_default_rng)
+
+    p = Program(1)
+    p.add(ops.X, 0)
+    StateVectorBackend().run(
+        p, result_config=qs.ResultConfig(counts=False)
+    ).result().get_statevector()
+
+    assert observed == [None]
 
 
 def test_unsupported_operation_raises():
