@@ -128,6 +128,18 @@ class RZ(Operation):
     _num_qubits: ClassVar[int] = 1
 
 
+@dataclass(frozen=True)
+class ResetGate(Operation):
+    """Reset operation: repreparation of a target qubit in ``|0>``.
+
+    Has no matrix; the matrix-family backend resolves it to a boundary reset
+    step by operation type.
+    """
+
+    name: ClassVar[str] = "Reset"
+    _num_qubits: ClassVar[int] = 1
+
+
 # Pre-built fixed-gate instances (parametric gates are used as classes: RX(theta)).
 H = HGate()
 T = TGate()
@@ -136,3 +148,6 @@ Y = YGate()
 Z = ZGate()
 CX = CXGate()
 CZ = CZGate()
+
+# Reset takes no parameters but is used with call syntax: qs.ops.Reset().
+Reset = ResetGate
