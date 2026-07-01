@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 dist/
 *.egg-info/
+
+# Superpowers working artifacts (specs, plans, reviews) — not part of the code
+docs/superpowers/
