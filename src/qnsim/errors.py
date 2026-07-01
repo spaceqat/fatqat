@@ -20,4 +20,4 @@ class ResultFieldUnavailableError(QnsimError):
 
 
 class NoMeasurementWarning(UserWarning):
-    """Warned when one or more clbits were never written by any measurement and no statevector is delivered."""
+    """Warned when counts include clbits that no measurement wrote."""

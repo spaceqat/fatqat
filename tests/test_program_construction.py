@@ -1,3 +1,5 @@
+"""Tests Program construction, register coercion, and reference resolution."""
+
 import pytest
 
 from qnsim.program import Program

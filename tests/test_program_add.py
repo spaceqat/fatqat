@@ -1,3 +1,5 @@
+"""Tests Program.add operation insertion, target resolution, and validation."""
+
 import pytest
 
 from qnsim.program import Program, AppliedOperation

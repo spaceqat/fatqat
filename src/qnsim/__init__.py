@@ -1,4 +1,4 @@
-"""qnsim — quantum noisy simulator (MVP Phase 1)."""
+"""Public package surface for qnsim MVP Phase 1."""
 
 from . import backends
 from . import operations as ops

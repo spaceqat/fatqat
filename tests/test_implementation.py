@@ -1,3 +1,5 @@
+"""Tests matrix implementation rules and immutable matrix payloads."""
+
 import numpy as np
 import pytest
 

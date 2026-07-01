@@ -1,3 +1,5 @@
+"""Tests register construction, indexing, metadata copying, and immutability."""
+
 import pytest
 
 from qnsim.registers import (

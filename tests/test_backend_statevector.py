@@ -1,3 +1,5 @@
+"""Tests statevector result availability and measurement-related backend behavior."""
+
 import warnings
 
 import numpy as np

@@ -1,3 +1,5 @@
+"""Tests statevector backend execution, validation, repeatability, and counts."""
+
 import pytest
 
 import qnsim as qs

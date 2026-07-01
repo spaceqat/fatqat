@@ -1,3 +1,5 @@
+"""Tests statevector engine initialization, gate application, and state export."""
+
 import numpy as np
 
 from qnsim.engine import StateVectorEngine

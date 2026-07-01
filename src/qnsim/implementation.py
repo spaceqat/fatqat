@@ -16,6 +16,16 @@ MatrixRule = Callable[[AppliedOperation], np.ndarray]
 
 @dataclass(frozen=True)
 class MatrixImplementation:
+    """Resolved local matrix payload consumed by the statevector engine.
+
+    The matrix is marked read-only after construction so this frozen value object
+    cannot be mutated through the NumPy array buffer.
+
+    Attributes:
+        matrix: Local operation matrix.
+        target_indices: Flat qubit indices the matrix acts on.
+    """
+
     matrix: np.ndarray
     target_indices: tuple[int, ...]
 
@@ -39,18 +49,21 @@ _CZ = np.diag([1, 1, 1, -1]).astype(complex)
 
 
 def _rx(applied: AppliedOperation) -> np.ndarray:
+    """Build the RX matrix from the applied operation's angle."""
     theta = applied.operation.theta
     c, s = np.cos(theta / 2), np.sin(theta / 2)
     return np.array([[c, -1j * s], [-1j * s, c]], dtype=complex)
 
 
 def _ry(applied: AppliedOperation) -> np.ndarray:
+    """Build the RY matrix from the applied operation's angle."""
     theta = applied.operation.theta
     c, s = np.cos(theta / 2), np.sin(theta / 2)
     return np.array([[c, -s], [s, c]], dtype=complex)
 
 
 def _rz(applied: AppliedOperation) -> np.ndarray:
+    """Build the RZ matrix from the applied operation's angle."""
     theta = applied.operation.theta
     return np.array(
         [[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=complex
@@ -58,17 +71,29 @@ def _rz(applied: AppliedOperation) -> np.ndarray:
 
 
 class MatrixImplementationMap:
+    """Class-keyed registry from operation classes to matrix rules."""
+
     def __init__(self) -> None:
+        """Create an empty implementation map."""
         self._rules: dict[type[Operation], MatrixRule] = {}
 
     def register(self, op_cls: type[Operation], rule: MatrixRule) -> None:
+        """Register a matrix rule for an operation class.
+
+        Args:
+            op_cls: Operation class used as the lookup key.
+            rule: Callable that receives an `AppliedOperation` and returns a
+                local matrix.
+        """
         self._rules[op_cls] = rule
 
     def get(self, op_cls: type[Operation]) -> MatrixRule | None:
+        """Return the matrix rule for an operation class, if registered."""
         return self._rules.get(op_cls)
 
 
 def default_implementation_map() -> MatrixImplementationMap:
+    """Build the Phase 1 matrix implementation map."""
     m = MatrixImplementationMap()
     m.register(ops.XGate, lambda _ao: _X)
     m.register(ops.YGate, lambda _ao: _Y)

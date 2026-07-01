@@ -1,3 +1,5 @@
+"""Tests operation objects, gate metadata, and immutability."""
+
 import pytest
 
 from qnsim import operations as ops

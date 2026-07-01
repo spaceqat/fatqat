@@ -1,3 +1,5 @@
+"""Tests resource layout flattening and reference lookup."""
+
 import pytest
 
 from qnsim.layout import ResourceLayout

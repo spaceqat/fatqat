@@ -19,12 +19,21 @@ from .implementation import MatrixImplementation
 
 
 class StateVectorEngine:
+    """Stateful numerical core for statevector evolution.
+
+    The engine owns the current state buffer. Backends initialize the state,
+    apply resolved matrix payloads, then sample, collapse, or export copies of
+    the state.
+    """
+
     def __init__(self) -> None:
+        """Create an uninitialized engine."""
         self._state: np.ndarray | None = None
         self._n_qubits: int = 0
 
     @property
     def n_qubits(self) -> int:
+        """Number of qubits in the currently initialized state."""
         return self._n_qubits
 
     def initialize(self, n_qubits: int) -> None:
@@ -42,12 +51,22 @@ class StateVectorEngine:
         )
 
     def probabilities(self) -> np.ndarray:
+        """Return normalized computational-basis probabilities."""
         self._require_state()
         p = np.abs(self._state) ** 2
         total = p.sum()
         return p / total if total > 0 else p
 
     def sample_indices(self, shots, rng) -> np.ndarray:
+        """Sample flat basis-state indices from the current state.
+
+        Args:
+            shots: Number of samples to draw.
+            rng: NumPy random generator used for sampling.
+
+        Returns:
+            One-dimensional array of sampled flat basis-state indices.
+        """
         self._require_state()
         return rng.choice(len(self._state), size=shots, p=self.probabilities())
 
@@ -68,8 +87,7 @@ class StateVectorEngine:
         return idx
 
     def export_state(self) -> np.ndarray:
-        # Hand back a copy so the backend's Result never aliases the engine's
-        # internal buffer.
+        """Return a copy of the current statevector."""
         self._require_state()
         return self._state.copy()
 

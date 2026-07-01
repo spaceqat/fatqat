@@ -1,3 +1,5 @@
+"""Tests Program.add_measurement insertion, ordering, and validation."""
+
 import pytest
 
 from qnsim.program import Program, Measurement

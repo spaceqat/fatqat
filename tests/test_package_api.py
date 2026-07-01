@@ -1,3 +1,5 @@
+"""Tests the top-level qnsim public API surface."""
+
 import qnsim as qs
 
 

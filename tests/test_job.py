@@ -1,3 +1,5 @@
+"""Tests eager Job terminal-state behavior."""
+
 import pytest
 
 from qnsim.job import Job

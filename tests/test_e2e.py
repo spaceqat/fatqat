@@ -1,3 +1,5 @@
+"""Tests a minimal public qnsim workflow from program construction to counts."""
+
 import qnsim as qs
 
 

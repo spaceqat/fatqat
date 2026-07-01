@@ -1,3 +1,5 @@
+"""Tests Program.add condition normalization and validation."""
+
 import pytest
 
 from qnsim.program import Program

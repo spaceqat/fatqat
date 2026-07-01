@@ -1,3 +1,5 @@
+"""Tests qnsim exception and warning hierarchy."""
+
 from qnsim.errors import (
     QnsimError,
     BackendValidationError,

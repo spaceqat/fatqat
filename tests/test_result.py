@@ -1,3 +1,5 @@
+"""Tests result configuration, count-key assembly, and result accessors."""
+
 import numpy as np
 import pytest
 

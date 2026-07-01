@@ -8,6 +8,17 @@ from typing import ClassVar
 
 @dataclass(frozen=True)
 class Operation:
+    """Base class for immutable operation objects.
+
+    Fixed gates are exposed as pre-built singleton values in `qnsim.ops`.
+    Parametric gates are exposed as classes and should be instantiated, such as
+    `RX(theta)`.
+
+    Attributes:
+        name: Public operation name.
+        _num_qubits: Number of quantum targets required by the operation.
+    """
+
     name: ClassVar[str] = "OP"
     _num_qubits: ClassVar[int] = 1
 
@@ -18,53 +29,74 @@ class Operation:
 
     @property
     def num_qubits(self) -> int:
+        """Number of quantum targets required by this operation."""
         return type(self)._num_qubits
 
 
 @dataclass(frozen=True)
 class HGate(Operation):
+    """Hadamard gate operation."""
+
     name: ClassVar[str] = "H"
     _num_qubits: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
 class TGate(Operation):
+    """T phase gate operation."""
+
     name: ClassVar[str] = "T"
     _num_qubits: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
 class XGate(Operation):
+    """Pauli-X gate operation."""
+
     name: ClassVar[str] = "X"
     _num_qubits: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
 class YGate(Operation):
+    """Pauli-Y gate operation."""
+
     name: ClassVar[str] = "Y"
     _num_qubits: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
 class ZGate(Operation):
+    """Pauli-Z gate operation."""
+
     name: ClassVar[str] = "Z"
     _num_qubits: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
 class CXGate(Operation):
+    """Controlled-X gate operation."""
+
     name: ClassVar[str] = "CX"
     _num_qubits: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
 class CZGate(Operation):
+    """Controlled-Z gate operation."""
+
     name: ClassVar[str] = "CZ"
     _num_qubits: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
 class RX(Operation):
+    """Rotation around the X axis.
+
+    Attributes:
+        theta: Rotation angle in radians.
+    """
+
     theta: float
     name: ClassVar[str] = "RX"
     _num_qubits: ClassVar[int] = 1
@@ -72,6 +104,12 @@ class RX(Operation):
 
 @dataclass(frozen=True)
 class RY(Operation):
+    """Rotation around the Y axis.
+
+    Attributes:
+        theta: Rotation angle in radians.
+    """
+
     theta: float
     name: ClassVar[str] = "RY"
     _num_qubits: ClassVar[int] = 1
@@ -79,6 +117,12 @@ class RY(Operation):
 
 @dataclass(frozen=True)
 class RZ(Operation):
+    """Rotation around the Z axis.
+
+    Attributes:
+        theta: Rotation angle in radians.
+    """
+
     theta: float
     name: ClassVar[str] = "RZ"
     _num_qubits: ClassVar[int] = 1

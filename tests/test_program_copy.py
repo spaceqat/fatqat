@@ -1,3 +1,5 @@
+"""Tests Program.copy isolation behavior."""
+
 from qnsim.program import Program
 from qnsim import operations as ops
 

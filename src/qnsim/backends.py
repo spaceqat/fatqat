@@ -16,7 +16,22 @@ from .result import Result, ResultConfig, build_counts
 
 
 class StateVectorBackend:
+    """Phase 1 statevector backend for qubit programs.
+
+    The backend validates a `Program`, evolves supported operations with the
+    matrix engine, samples terminal measurements, and returns an eager `Job`.
+    A backend instance reuses one engine across runs, so it is suitable for
+    repeated single-threaded use but not concurrent `run` calls.
+    """
+
     def __init__(self, *, seed=None):
+        """Create a statevector backend.
+
+        Args:
+            seed: Optional seed used to initialize the random number generator
+                for each run. Reusing the same seed makes sampling repeatable for
+                equivalent programs and shot counts.
+        """
         self._seed = seed
         self._impl_map = default_implementation_map()
         # The engine is constructed once and re-initialized per run so its
@@ -26,9 +41,55 @@ class StateVectorBackend:
         self._engine = StateVectorEngine()
 
     def resolve_layout(self, program: Program) -> ResourceLayout:
+        """Build the flat resource layout used by this backend.
+
+        Args:
+            program: Program whose registers should be flattened.
+
+        Returns:
+            Resource layout mapping register references to flat indices.
+        """
         return ResourceLayout.from_program(program)
 
     def run(self, program, *, shots: int = 1024, result_config=None) -> Job:
+        """Validate and execute a program.
+
+        Counts default to available when the program contains measurements.
+        Statevector output defaults to available only when there are no
+        measurements. Measurement is terminal in Phase 1: gates after a
+        measurement and conditional operations are rejected.
+
+        Args:
+            program: Program to execute.
+            shots: Number of samples used when counts are requested.
+            result_config: Optional `ResultConfig` controlling produced fields.
+
+        Returns:
+            A completed `Job`. Validation failures raise directly; execution
+            failures are captured in an error job whose `result()` re-raises.
+
+        Raises:
+            BackendValidationError: If requested fields are incompatible with
+                the program or shot count.
+            UnsupportedOperationError: If the program uses unsupported
+                operations, conditions, or mid-circuit measurement.
+
+        Examples:
+            ```python
+            import qnsim as qs
+
+            program = qs.Program(1, 1)
+            program.add(qs.ops.X, 0)
+            program.add_measurement(0, 0)
+
+            result = qs.StateVectorBackend(seed=0).run(
+                program,
+                shots=100,
+                result_config=qs.ResultConfig(counts=True),
+            ).result()
+            counts = result.get_counts()
+            ```
+        """
         config = result_config if result_config is not None else ResultConfig()
         layout = self.resolve_layout(program)
         self._validate(program, config, shots, layout)
@@ -39,6 +100,7 @@ class StateVectorBackend:
 
     # --- validation (raises directly from run) ---
     def _validate(self, program, config, shots, layout) -> None:
+        """Validate Phase 1 backend constraints before execution begins."""
         seen_measurement = False
         has_measurement = False
         for step in program.operations:
@@ -71,6 +133,7 @@ class StateVectorBackend:
 
     # --- execution ---
     def _execute(self, program, config, shots, layout) -> Result:
+        """Execute a validated program and assemble the requested result fields."""
         self._evolve(program, layout)
         engine = self._engine
         measurements = self._measurement_map(program, layout)
@@ -142,6 +205,7 @@ class StateVectorBackend:
 
     @staticmethod
     def _measurement_map(program, layout):
+        """Return terminal measurement pairs as flat `(qubit, clbit)` indices."""
         out = []
         for step in program.operations:
             if isinstance(step, Measurement):

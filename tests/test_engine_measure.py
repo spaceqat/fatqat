@@ -1,3 +1,5 @@
+"""Tests statevector engine probabilities, sampling, and collapse."""
+
 import numpy as np
 
 from qnsim.engine import StateVectorEngine
