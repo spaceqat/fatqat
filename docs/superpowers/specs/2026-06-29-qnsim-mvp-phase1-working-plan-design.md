@@ -89,9 +89,10 @@ print(result.get_counts())
   - 每个具体 `Operation` class 用 class-level private `_num_qubits` 声明固定作用比特数。
   - `Operation.__init__` 只校验 `_num_qubits` 本身是合理的正整数；它不接收 target，因此不校验实际 operand 数量。
   - `Program.add(...)` 负责把公开 `qreg` 输入归一化为 `RegisterRef` tuple，并确认 ref 属于当前 Program 的 quantum registers。
-  - `AppliedOperation.__post_init__` 负责维护绑定后的结构不变量：`targets` 必须是 `RegisterRef` tuple，target 数量必须等于 `operation.num_qubits`，且 target 必须指向 `QuantumRegister`。
+  - `AppliedOperation.__post_init__` 负责维护绑定后的结构不变量：`targets` 必须是 `RegisterRef` tuple，target 数量必须等于 `operation.num_qubits`，target 必须指向 `QuantumRegister`，且同一比特不可在 `targets` 中重复出现（拒绝 `CZ(0, 0)` 这类把同一比特同时当控制位与目标位的自纠缠输入，抛 `ValueError`）。
 - 构造：`Program(qreg: int | list[QuantumRegister], clreg: int | list[ClassicalRegister] = 0, *, metadata=None)`；
   - 传 `int` 时展开成一个默认 `QuantumRegister` / `ClassicalRegister`；传 list 时直接使用传入的 register 对象。
+  - 输入严格校验：计数必须是**真正的 `int`**（`bool` / `float` 一律拒绝，抛 `TypeError`）；list 形式必须只含对应类型的 register 实例，否则在构造期抛 `TypeError`。同理，`add` / `add_measurement` / `condition` 里的裸 int operand 也必须是真正的 `int`（拒绝 `bool`）。
 - 内部状态：`qreg: list[QuantumRegister]`、`creg: list[ClassicalRegister]`、`operations: list[AppliedOperation | Measurement]`、`metadata`。
 - `add(op, qreg, *, condition=None)`：
   - `qreg` 单 operand 接受 `int | RegisterRef`，多 operand 必须是 flat `tuple`；**不支持** `add(op, 0, 1)` variadic。
@@ -106,6 +107,7 @@ print(result.get_counts())
   - 公开输入两种糖：单 `(slot, lit)` 或 `((slot, lit), ...)`；判别规则 = `c[0]` 是否为 tuple。
   - 存储规范形唯一：`tuple[ConditionTerm, ...] | None`，`ConditionTerm = (RegisterRef, int)`。
   - 裸 int slot 仅在 classical register 恰好只有一个时解析成该 register 的 `RegisterRef`，否则要求显式 `RegisterRef`；非 classical ref 拒绝。
+  - 空 condition（`()`）被拒绝（抛 `ValueError`）：无条件操作请用 `condition=None` 或省略该参数，不接受“空合取等价于无条件”的隐式语义。
   - 多条件语义固定为 `AND`。
   - `add(...)` 复用同一个 `_normalize_condition`。
 - `copy()`：返回独立可变副本。值对象（`Operation`/`AppliedOperation`/`Measurement`/`RegisterRef`）不可变，但容器需各自复制：`copy()` 必须复制 `operations` / `qreg` / `creg` 三个列表 **以及** `metadata` dict，使改动副本的 metadata 不会漏回原对象。
@@ -124,7 +126,8 @@ print(result.get_counts())
 - 裸 int 仅在单 register 时解析；多/零 register 时抛 `TypeError`，需显式 `RegisterRef`
 - gate 按 class 区分；`qs.ops.X` 是实例、`qs.ops.RX(0.2)` 是带参实例
 - `add` / `add_measurement` 的 in-place 与 operations 顺序、类型（`AppliedOperation` vs `Measurement`）
-- `condition=` 单条件 / 多条件归一化到统一 AND 规范形；非 classical ref 报错
+- `condition=` 单条件 / 多条件归一化到统一 AND 规范形；非 classical ref 报错；空 `()` 报错
+- 输入严格性：`bool` / `float` 计数被拒、list 含非 register 元素被拒、重复 target 比特被拒
 - 多 operand 必须 tuple、variadic 写法被拒
 - MVP 文档里的最小样例断言（`len(program.operations)`、`operations[0].operation.name`、`isinstance(operations[3], Measurement)`）
 
