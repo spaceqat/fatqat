@@ -51,9 +51,14 @@ def build_counts(
         clbits = [0] * n_clbits
         for q, c in measurements:
             clbits[c] = (idx >> q) & 1
-        key = "".join(str(clbits[c]) for c in range(n_clbits - 1, -1, -1))
+        key = count_key_from_clbits(clbits, n_clbits)
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def count_key_from_clbits(clbits: Sequence[int], n_clbits: int) -> str:
+    """Build a little-endian count key from one classical-register snapshot."""
+    return "".join(str(clbits[c]) for c in range(n_clbits - 1, -1, -1))
 
 
 def build_counts_from_clbits(
@@ -75,7 +80,7 @@ def build_counts_from_clbits(
     """
     counts: dict[str, int] = {}
     for snap in snapshots:
-        key = "".join(str(snap[c]) for c in range(n_clbits - 1, -1, -1))
+        key = count_key_from_clbits(snap, n_clbits)
         counts[key] = counts.get(key, 0) + 1
     return counts
 

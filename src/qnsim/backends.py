@@ -10,22 +10,80 @@ import numpy as np
 from .engine import StateVectorEngine
 from .errors import BackendValidationError, NoMeasurementWarning, UnsupportedOperationError
 from .implementation import ApplyMatrixStep, default_implementation_map
-from .implementation import MatrixImplementationMap
 from .job import Job
 from .layout import ResourceLayout
+from .operations import ResetGate
 from .program import AppliedOperation, Measurement, Program
-from .result import Result, ResultConfig, build_counts
+from .result import Result, ResultConfig, build_counts, count_key_from_clbits
 
 
 @dataclass(frozen=True)
 class MeasurementStep:
-    """Resolved terminal measurement: flat qubit index into flat clbit index."""
+    """Resolved measurement: flat qubit index into flat clbit index."""
 
     qubit_index: int
     clbit_index: int
 
 
-ResolvedStep = ApplyMatrixStep | MeasurementStep
+@dataclass(frozen=True)
+class ResetStep:
+    """Resolved reset of one flat qubit index to |0>, with optional condition.
+
+    `Reset` is an `AppliedOperation`, so it can carry a feedforward `condition`
+    just like a gate. The lowered form stores it as ``(clbit_index, value)``
+    AND-terms; the per-shot loop skips the reset when the guard fails.
+    """
+
+    qubit_index: int
+    condition: tuple[tuple[int, int], ...] | None = None
+
+
+ResolvedStep = ApplyMatrixStep | MeasurementStep | ResetStep
+
+
+@dataclass(frozen=True)
+class _PlanFacts:
+    """Classification facts computed while lowering a program."""
+
+    is_dynamic: bool
+    has_measurement: bool
+    has_reset: bool
+
+
+@dataclass(frozen=True)
+class _ResultRequest:
+    """Resolved result fields requested for one execution."""
+
+    counts: bool
+    statevector: bool
+
+
+def _resolve_condition(
+    condition: tuple[tuple[object, int], ...] | None,
+    layout: ResourceLayout,
+) -> tuple[tuple[int, int], ...] | None:
+    """Lower a frontend condition to ``(clbit_index, value)`` AND-terms."""
+    if condition is None:
+        return None
+    return tuple((layout.clbit_index(ref), int(val)) for ref, val in condition)
+
+
+def _condition_matches(
+    condition: tuple[tuple[int, int], ...] | None,
+    clbits: list[int],
+) -> bool:
+    """Return whether a lowered feedforward condition passes."""
+    return condition is None or all(clbits[c] == v for c, v in condition)
+
+
+def _resolve_result_request(config: ResultConfig, facts: _PlanFacts) -> _ResultRequest:
+    """Resolve default result fields from config and lowered program facts."""
+    stochastic = facts.has_measurement or facts.has_reset
+    counts = config.counts if config.counts is not None else facts.has_measurement
+    statevector = config.statevector
+    if statevector is None:
+        statevector = not stochastic
+    return _ResultRequest(counts=counts, statevector=statevector)
 
 
 class StateVectorBackend:
@@ -68,9 +126,8 @@ class StateVectorBackend:
         """Validate and execute a program.
 
         Counts default to available when the program contains measurements.
-        Statevector output defaults to available only when there are no
-        measurements. Measurement is terminal in Phase 1: gates after a
-        measurement and conditional operations are rejected.
+        Statevector output defaults to available only when execution is
+        deterministic (no measurement/reset sampling).
 
         Args:
             program: Program to execute.
@@ -88,7 +145,7 @@ class StateVectorBackend:
             BackendValidationError: If requested fields are incompatible with
                 the program or shot count.
             UnsupportedOperationError: If the program uses unsupported
-                operations, conditions, or mid-circuit measurement.
+                operations.
 
         Examples:
             ```python
@@ -108,117 +165,79 @@ class StateVectorBackend:
         """
         config = result_config if result_config is not None else ResultConfig()
         layout = self.resolve_layout(program)
-        self._validate(program, config, shots, layout)
+        plan, facts = self._lower(program, layout)
+        self._validate(config, shots, facts)
         try:
-            return Job.done(self._execute(program, config, shots, layout, seed))
+            return Job.done(
+                self._execute(
+                    config, shots, plan, facts, layout.n_qubits, layout.n_clbits, seed
+                )
+            )
         except Exception as exc:  # execution-stage failure
             return Job.failed(exc)
 
     # --- validation (raises directly from run) ---
     def _validate(
         self,
-        program: Program,
         config: ResultConfig,
         shots: int,
-        layout: ResourceLayout,
+        facts: _PlanFacts,
     ) -> None:
-        """Validate Phase 1 backend constraints before execution begins."""
-        seen_measurement = False
-        has_measurement = False
-        for step in program.operations:
-            if isinstance(step, Measurement):
-                seen_measurement = True
-                has_measurement = True
-                continue
-            if isinstance(step, AppliedOperation):
-                if seen_measurement:
-                    raise UnsupportedOperationError(
-                        "mid-circuit measurement is not supported in Phase 1 "
-                        "(a gate appears after a measurement)"
-                    )
-                if step.condition is not None:
-                    raise UnsupportedOperationError(
-                        "conditional (feedforward) operations are not supported in Phase 1"
-                    )
-                if self._impl_map.get(type(step.operation)) is None:
-                    raise UnsupportedOperationError(type(step.operation).__name__)
-        effective_counts = config.counts if config.counts is not None else has_measurement
-        measured_statevector = config.statevector is True and has_measurement
-        if (effective_counts or measured_statevector) and type(shots) is not int:
+        """Validate result-config / shots constraints against the lowered program.
+
+        Operation support and dynamic classification were already resolved in
+        `_lower`. Mid-circuit measurement and conditional operations are now
+        supported, so they are not rejected here.
+        """
+        request = _resolve_result_request(config, facts)
+        stochastic = facts.has_measurement or facts.has_reset
+        requested_sv = config.statevector is True
+
+        if (request.counts or (requested_sv and stochastic)) and type(shots) is not int:
             raise BackendValidationError(
                 f"shots must be an int when requested results depend on it, got {shots!r}"
             )
-        if effective_counts and shots <= 0:
+        if request.counts and shots <= 0:
+            raise BackendValidationError(f"counts require shots > 0, got shots={shots}")
+        if requested_sv and stochastic and shots != 1:
             raise BackendValidationError(
-                f"counts require shots > 0, got shots={shots}"
-            )
-        if measured_statevector and shots != 1:
-            raise BackendValidationError(
-                "statevector with measurement is only supported for shots == 1 "
-                "in Phase 1"
+                "statevector with measurement or reset is only supported for shots == 1"
             )
 
     # --- execution ---
     def _execute(
         self,
-        program: Program,
         config: ResultConfig,
         shots: int,
-        layout: ResourceLayout,
+        plan: list[ResolvedStep],
+        facts: _PlanFacts,
+        n_qubits: int,
+        n_clbits: int,
         seed: int | None,
     ) -> Result:
-        """Execute a validated program and assemble the requested result fields."""
-        plan = self._resolve_program(program, self._impl_map, layout)
-        engine = self._engine
-        engine.initialize(layout.n_qubits)
-        measurements: list[tuple[int, int]] = []
-        for step in plan:
-            if isinstance(step, ApplyMatrixStep):
-                engine.apply(step)
-            else:  # MeasurementStep
-                measurements.append((step.qubit_index, step.clbit_index))
-        has_measurement = len(measurements) > 0
+        """Execute a lowered program and assemble the requested result fields."""
         rng = np.random.default_rng(seed)
+        request = _resolve_result_request(config, facts)
 
-        counts = None
-        statevector = None
-        available = set()
-
-        # Decide statevector delivery.
-        want_sv = config.statevector
-        if want_sv is None:
-            want_sv = not has_measurement
-
-        collapsed_index = None
-        if want_sv and has_measurement:
-            # Only reached for shots == 1 (validated). Collapse on measured qubits;
-            # the engine's internal state becomes the projected statevector and the
-            # flat outcome index feeds counts directly.
-            measured_qubits = [q for q, _c in measurements]
-            collapsed_index = engine.collapse(measured_qubits, rng)
-
-        # Counts.
-        effective_counts = config.counts if config.counts is not None else has_measurement
-        if effective_counts:
-            if has_measurement:
-                if collapsed_index is not None:
-                    indices = np.array([collapsed_index], dtype=int)
-                else:
-                    indices = engine.sample_indices(shots, rng)
-            else:
-                indices = np.zeros(shots, dtype=int)
-            counts = build_counts(indices, layout.n_clbits, measurements)
-            available.add("counts")
-
-        # Statevector.
-        if want_sv:
-            statevector = engine.export_state()
-            available.add("statevector")
+        if facts.is_dynamic:
+            counts, statevector, available = self._run_per_shot(
+                plan, n_qubits, n_clbits, shots, rng, request
+            )
+        else:
+            counts, statevector, available = self._run_fast(
+                plan,
+                facts,
+                n_qubits,
+                n_clbits,
+                shots,
+                rng,
+                request,
+            )
 
         # NoMeasurementWarning: counts produced, some clbit never written, no state.
-        if effective_counts and "statevector" not in available:
-            written = {c for _q, c in measurements}
-            if any(c not in written for c in range(layout.n_clbits)):
+        if request.counts and "statevector" not in available:
+            written = {s.clbit_index for s in plan if isinstance(s, MeasurementStep)}
+            if any(c not in written for c in range(n_clbits)):
                 warnings.warn(
                     "counts contain clbits that were never measured; "
                     "returning zero-filled counts",
@@ -237,31 +256,154 @@ class StateVectorBackend:
             },
         )
 
-    @staticmethod
-    def _resolve_program(
-        program: Program,
-        impl_map: MatrixImplementationMap,
-        layout: ResourceLayout,
-    ) -> list[ResolvedStep]:
-        """Lower a validated program into an ordered execution plan.
+    def _run_fast(
+        self,
+        plan: list[ResolvedStep],
+        facts: _PlanFacts,
+        n_qubits: int,
+        n_clbits: int,
+        shots: int,
+        rng: np.random.Generator,
+        request: _ResultRequest,
+    ) -> tuple[dict[str, int] | None, np.ndarray | None, set[str]]:
+        """Phase 1 path: evolve once, then sample terminal measurements."""
+        engine = self._engine
+        engine.initialize(n_qubits)
+        measurements: list[tuple[int, int]] = []
+        for step in plan:
+            if isinstance(step, ApplyMatrixStep):
+                engine.apply(step)
+            else:  # MeasurementStep (no ResetStep on the fast path)
+                measurements.append((step.qubit_index, step.clbit_index))
 
-        Assumes validation has already run: every gate has a registered rule,
-        conditions are rejected, and measurements are terminal. Register
-        references are flattened to engine-ready integer indices here.
+        counts: dict[str, int] | None = None
+        statevector: np.ndarray | None = None
+        available: set[str] = set()
+
+        collapsed_index = None
+        if request.statevector and facts.has_measurement:
+            measured_qubits = [q for q, _c in measurements]
+            collapsed_index = engine.collapse(measured_qubits, rng)
+
+        if request.counts:
+            if facts.has_measurement:
+                if collapsed_index is not None:
+                    indices = np.array([collapsed_index], dtype=int)
+                else:
+                    indices = engine.sample_indices(shots, rng)
+            else:
+                indices = np.zeros(shots, dtype=int)
+            counts = build_counts(indices, n_clbits, measurements)
+            available.add("counts")
+
+        if request.statevector:
+            statevector = engine.export_state()
+            available.add("statevector")
+
+        return counts, statevector, available
+
+    def _run_per_shot(
+        self,
+        plan: list[ResolvedStep],
+        n_qubits: int,
+        n_clbits: int,
+        shots: int,
+        rng: np.random.Generator,
+        request: _ResultRequest,
+    ) -> tuple[dict[str, int] | None, np.ndarray | None, set[str]]:
+        """Per-shot path: run each shot independently with its own clbits."""
+        engine = self._engine
+        # Counts need one trajectory per shot; statevector-only runs need one
+        # representative trajectory, so shots=0 cannot leave the engine
+        # uninitialized.
+        n_iters = shots if request.counts else (1 if request.statevector else 0)
+        counts: dict[str, int] | None = {} if request.counts else None
+        for _ in range(n_iters):
+            engine.initialize(n_qubits)
+            clbits = [0] * n_clbits
+            for step in plan:
+                if isinstance(step, ApplyMatrixStep):
+                    if _condition_matches(step.condition, clbits):
+                        engine.apply(step)
+                elif isinstance(step, MeasurementStep):
+                    clbits[step.clbit_index] = engine.measure_qubit(
+                        step.qubit_index, rng
+                    )
+                else:  # ResetStep also honors its feedforward condition.
+                    if _condition_matches(step.condition, clbits):
+                        engine.reset_qubit(step.qubit_index, rng)
+            if counts is not None:
+                key = count_key_from_clbits(clbits, n_clbits)
+                counts[key] = counts.get(key, 0) + 1
+
+        statevector: np.ndarray | None = None
+        available: set[str] = set()
+
+        if request.counts:
+            available.add("counts")
+        if request.statevector:
+            statevector = engine.export_state()
+            available.add("statevector")
+
+        return counts, statevector, available
+
+    def _lower(
+        self, program: Program, layout: ResourceLayout
+    ) -> tuple[list[ResolvedStep], _PlanFacts]:
+        """Lower a program into an execution plan and classify it, in one pass.
+
+        Raises `UnsupportedOperationError` for a gate with no matrix rule.
+        `Reset` is recognized by type and routed to a `ResetStep`. The pass also
+        computes `is_dynamic` (reset, a condition, or a gate on an
+        already-measured qubit), `has_measurement`, and `has_reset`.
         """
         plan: list[ResolvedStep] = []
+        measured_qubits: set[int] = set()
+        is_dynamic = False
+        has_measurement = False
+        has_reset = False
+
         for step in program.operations:
+            if isinstance(step, Measurement):
+                has_measurement = True
+                q = layout.qubit_index(step.qreg)
+                c = layout.clbit_index(step.clreg)
+                measured_qubits.add(q)
+                plan.append(MeasurementStep(qubit_index=q, clbit_index=c))
+                continue
+
             if isinstance(step, AppliedOperation):
-                matrix = impl_map.get(type(step.operation))(step)
                 target_indices = tuple(layout.qubit_index(t) for t in step.targets)
+                if step.condition is not None:
+                    is_dynamic = True
+                if any(t in measured_qubits for t in target_indices):
+                    is_dynamic = True
+
+                if isinstance(step.operation, ResetGate):
+                    has_reset = True
+                    is_dynamic = True
+                    cond = _resolve_condition(step.condition, layout)
+                    plan.append(
+                        ResetStep(qubit_index=target_indices[0], condition=cond)
+                    )
+                    continue
+
+                rule = self._impl_map.get(type(step.operation))
+                if rule is None:
+                    raise UnsupportedOperationError(type(step.operation).__name__)
+                matrix = rule(step)
+                cond = _resolve_condition(step.condition, layout)
                 plan.append(
-                    ApplyMatrixStep(matrix=matrix, target_indices=target_indices)
-                )
-            elif isinstance(step, Measurement):
-                plan.append(
-                    MeasurementStep(
-                        qubit_index=layout.qubit_index(step.qreg),
-                        clbit_index=layout.clbit_index(step.clreg),
+                    ApplyMatrixStep(
+                        matrix=matrix, target_indices=target_indices, condition=cond
                     )
                 )
-        return plan
+
+        return (
+            plan,
+            _PlanFacts(
+                is_dynamic=is_dynamic,
+                has_measurement=has_measurement,
+                has_reset=has_reset,
+            ),
+        )

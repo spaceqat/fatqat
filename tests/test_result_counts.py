@@ -1,4 +1,8 @@
-from qnsim.result import build_counts, build_counts_from_clbits
+from qnsim.result import build_counts, build_counts_from_clbits, count_key_from_clbits
+
+
+def test_count_key_from_clbits_uses_little_endian_order():
+    assert count_key_from_clbits([1, 0, 1], n_clbits=3) == "101"
 
 
 def test_from_clbits_key_ordering_matches_build_counts():

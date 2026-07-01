@@ -31,10 +31,14 @@ class ApplyMatrixStep:
     Attributes:
         matrix: Local operation matrix.
         target_indices: Flat qubit indices the matrix acts on.
+        condition: Optional feedforward guard as lowered ``(clbit_index, value)``
+            AND-terms. ``None`` means unconditional. The engine ignores this
+            field; the backend's per-shot loop evaluates it.
     """
 
     matrix: np.ndarray
     target_indices: tuple[int, ...]
+    condition: tuple[tuple[int, int], ...] | None = None
 
     def __post_init__(self) -> None:
         # The engine consumes the matrix read-only; lock it so this frozen

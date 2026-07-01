@@ -5,7 +5,11 @@ import pytest
 import qnsim as qs
 import qnsim.backends as backends
 from qnsim.backends import StateVectorBackend
-from qnsim.errors import BackendValidationError, UnsupportedOperationError
+from qnsim.errors import (
+    BackendValidationError,
+    NoMeasurementWarning,
+    UnsupportedOperationError,
+)
 from qnsim import operations as ops
 from qnsim.program import Program
 
@@ -71,22 +75,24 @@ def test_unsupported_operation_raises():
         StateVectorBackend().run(p, shots=10)
 
 
-def test_condition_rejected():
+def test_condition_now_runs():
+    # condition reads unwritten slot (0); X applies -> qubit 1 becomes |1>.
     p = Program(2, 2)
-    p.add(ops.X, 1, condition=(0, 1))
-    p.add_measurement(0, 0)
-    with pytest.raises(UnsupportedOperationError):
-        StateVectorBackend().run(p, shots=10)
+    p.add(ops.X, 1, condition=(0, 0))
+    p.add_measurement(1, 1)
+    with pytest.warns(NoMeasurementWarning):
+        counts = StateVectorBackend().run(p, shots=16, seed=0).result().get_counts()
+    assert counts == {"10": 16}  # c1=1, c0=0 -> "10"
 
 
-def test_mid_circuit_measurement_rejected():
+def test_mid_circuit_measurement_now_runs():
     p = Program(2, 2)
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
-    p.add(ops.X, 1)  # gate after a measurement
+    p.add(ops.X, 1)
     p.add_measurement(1, 1)
-    with pytest.raises(UnsupportedOperationError):
-        StateVectorBackend().run(p, shots=10)
+    counts = StateVectorBackend().run(p, shots=64, seed=0).result().get_counts()
+    assert set(counts) <= {"10", "11"}  # c1 always 1; c0 either
 
 
 def test_nonpositive_shots_with_counts_raises():

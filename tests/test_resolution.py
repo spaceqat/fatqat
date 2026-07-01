@@ -4,16 +4,14 @@ import numpy as np
 
 from qnsim import operations as ops
 from qnsim.backends import StateVectorBackend, MeasurementStep
-from qnsim.implementation import ApplyMatrixStep, default_implementation_map
-from qnsim.layout import ResourceLayout
+from qnsim.implementation import ApplyMatrixStep
 from qnsim.program import Program
 
 
 def _resolve(program):
-    layout = ResourceLayout.from_program(program)
-    return StateVectorBackend._resolve_program(
-        program, default_implementation_map(), layout
-    )
+    backend = StateVectorBackend()
+    plan, _facts = backend._lower(program, backend.resolve_layout(program))
+    return plan
 
 
 def test_resolve_preserves_order_and_step_types():
