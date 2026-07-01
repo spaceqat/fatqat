@@ -10,8 +10,10 @@ def test_minimal_workflow_from_spec():
     program.add_measurement(0, 0)
     program.add_measurement(1, 1)
 
-    backend = qs.StateVectorBackend(seed=2024)
-    job = backend.run(program, shots=1000, result_config=qs.ResultConfig(counts=True))
+    backend = qs.StateVectorBackend()
+    job = backend.run(
+        program, shots=1000, seed=2024, result_config=qs.ResultConfig(counts=True)
+    )
     result = job.result()
     counts = result.get_counts()
 

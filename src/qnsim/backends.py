@@ -37,20 +37,13 @@ class StateVectorBackend:
     repeated single-threaded use but not concurrent `run` calls.
     """
 
-    def __init__(self, *, seed: int | None = None) -> None:
-        """Create a statevector backend.
-
-        Args:
-            seed: Optional seed used to initialize the random number generator
-                for each run. Reusing the same seed makes sampling repeatable for
-                equivalent programs and shot counts.
-        """
-        self._seed = seed
+    def __init__(self) -> None:
+        """Create a statevector backend."""
         self._impl_map = default_implementation_map()
         # The engine is constructed once and re-initialized per run so its
         # compiled kernels can be reused. Because it holds per-run state, a
         # single backend instance is NOT safe for concurrent run() calls
-        # (single-threaded use only in Phase 1).
+        # (single-threaded use only).
         self._engine = StateVectorEngine()
 
     def resolve_layout(self, program: Program) -> ResourceLayout:
@@ -70,6 +63,7 @@ class StateVectorBackend:
         *,
         shots: int = 1024,
         result_config: ResultConfig | None = None,
+        seed: int | None = None,
     ) -> Job:
         """Validate and execute a program.
 
@@ -82,6 +76,7 @@ class StateVectorBackend:
             program: Program to execute.
             shots: Number of samples used when counts are requested.
             result_config: Optional `ResultConfig` controlling produced fields.
+            seed: Optional random seed for this run.
 
         Returns:
             A completed `Job`. The job result includes metadata with the shot
@@ -103,9 +98,10 @@ class StateVectorBackend:
             program.add(qs.ops.X, 0)
             program.add_measurement(0, 0)
 
-            result = qs.StateVectorBackend(seed=0).run(
+            result = qs.StateVectorBackend().run(
                 program,
                 shots=100,
+                seed=0,
                 result_config=qs.ResultConfig(counts=True),
             ).result()
             counts = result.get_counts()
@@ -115,7 +111,7 @@ class StateVectorBackend:
         layout = self.resolve_layout(program)
         self._validate(program, config, shots, layout)
         try:
-            return Job.done(self._execute(program, config, shots, layout))
+            return Job.done(self._execute(program, config, shots, layout, seed))
         except Exception as exc:  # execution-stage failure
             return Job.failed(exc)
 
@@ -170,6 +166,7 @@ class StateVectorBackend:
         config: ResultConfig,
         shots: int,
         layout: ResourceLayout,
+        seed: int | None,
     ) -> Result:
         """Execute a validated program and assemble the requested result fields."""
         plan = self._resolve_program(program, self._impl_map, layout)
@@ -182,7 +179,7 @@ class StateVectorBackend:
             else:  # MeasurementStep
                 measurements.append((step.qubit_index, step.clbit_index))
         has_measurement = len(measurements) > 0
-        rng = np.random.default_rng(self._seed)
+        rng = np.random.default_rng(seed)
 
         counts = None
         statevector = None

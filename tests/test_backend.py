@@ -22,12 +22,22 @@ def test_backend_run_is_repeatable():
     p = Program(1, 1)
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
-    backend = StateVectorBackend(seed=0)
-    first = backend.run(p, shots=10).result().get_counts()
-    second = backend.run(p, shots=10).result().get_counts()
+    backend = StateVectorBackend()
+    first = backend.run(p, shots=10, seed=0).result().get_counts()
+    second = backend.run(p, shots=10, seed=0).result().get_counts()
     # X|0> = |1>; second run must re-initialize, not continue from leftover |1>
     assert first == {"1": 10}
     assert second == {"1": 10}
+
+
+def test_seed_is_a_run_kwarg_and_repeatable():
+    p = Program(1, 1)
+    p.add(ops.X, 0)
+    p.add_measurement(0, 0)
+    backend = StateVectorBackend()
+    a = backend.run(p, shots=10, seed=5).result().get_counts()
+    b = backend.run(p, shots=10, seed=5).result().get_counts()
+    assert a == b == {"1": 10}
 
 
 def test_unsupported_operation_raises():
@@ -82,6 +92,6 @@ def test_measured_statevector_requires_exactly_one_shot(shots):
 
 
 def test_deterministic_with_seed():
-    a = StateVectorBackend(seed=7).run(_h_cz_program(), shots=300).result().get_counts()
-    b = StateVectorBackend(seed=7).run(_h_cz_program(), shots=300).result().get_counts()
+    a = StateVectorBackend().run(_h_cz_program(), shots=300, seed=7).result().get_counts()
+    b = StateVectorBackend().run(_h_cz_program(), shots=300, seed=7).result().get_counts()
     assert a == b
