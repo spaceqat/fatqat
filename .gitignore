@@ -7,3 +7,4 @@ dist/
 
 # Superpowers working artifacts (specs, plans, reviews) — not part of the code
 docs/superpowers/
+.claude/
