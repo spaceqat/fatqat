@@ -21,10 +21,9 @@ from .operations import ResetGate
 from .program import AppliedOperation, Measurement, Program
 from .result import (
     Result,
-    ResultConfig,
+    _ResultConfig,
     build_counts,
     build_counts_from_clbits,
-    count_key_from_clbits,
 )
 
 
@@ -87,21 +86,37 @@ class _BackendConfig:
     parallel_backend: Any = "auto"
 
 
-def _normalize_backend_options(options: dict[str, Any] | None) -> _BackendConfig:
+def _normalize_dict_options(
+    options: dict[str, Any] | None,
+    known_keys: set[str],
+    config_cls: type,
+    param_name: str,
+    warning_noun: str,
+) -> Any:
+    """Normalize a plain dict of options into a frozen config dataclass.
+
+    `None` returns `config_cls()` (all defaults). A non-dict, non-`None` value
+    raises `TypeError`. Unknown keys are dropped with an aggregated warning;
+    known keys are passed through to `config_cls`, so any key the caller
+    omits falls back to that dataclass field's own default.
+
+    Shared by `StateVectorBackend.__init__`'s `options` and `run`'s
+    `result_config` so both dict-configured surfaces validate and warn
+    identically instead of drifting (see `_BackendConfig`/`_ResultConfig`).
+    """
     if options is None:
-        return _BackendConfig()
-    known = {"max_workers", "parallel_backend"}
-    ignored = {key: value for key, value in options.items() if key not in known}
+        return config_cls()
+    if not isinstance(options, dict):
+        raise TypeError(f"{param_name} must be a dict or None, got {type(options)!r}")
+    known = {key: value for key, value in options.items() if key in known_keys}
+    ignored = {key: value for key, value in options.items() if key not in known_keys}
     if ignored:
         warnings.warn(
-            f"StateVectorBackend ignored unsupported backend options: {ignored!r}",
+            f"StateVectorBackend ignored unsupported {warning_noun} options: {ignored!r}",
             UserWarning,
             stacklevel=3,
         )
-    return _BackendConfig(
-        max_workers=options.get("max_workers"),
-        parallel_backend=options.get("parallel_backend", "auto"),
-    )
+    return config_cls(**known)
 
 
 def _resolve_condition(
@@ -155,23 +170,6 @@ def _execute_dynamic_plan_one_shot(
     return tuple(clbits)
 
 
-def _run_dynamic_shot(
-    plan: list[ResolvedStep],
-    n_qubits: int,
-    n_clbits: int,
-    seed_sequence: np.random.SeedSequence,
-) -> tuple[int, ...]:
-    """Pickle-safe, top-level single-shot worker for parallel dynamic execution.
-
-    Builds its own engine and RNG from its own child seed sequence, so it has
-    no shared mutable state with any other shot.
-    """
-    rng = np.random.default_rng(seed_sequence)
-    engine = StateVectorEngine()
-    engine.initialize(n_qubits)
-    return _execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng)
-
-
 def _loky_available() -> bool:
     return importlib.util.find_spec("loky") is not None
 
@@ -193,22 +191,22 @@ def _effective_max_workers(max_workers: object, n_iters: int) -> int:
     return int(max_workers)
 
 
-def _should_parallelize(
+def _planned_workers(
     config: _BackendConfig,
     request: _ResultRequest,
     n_iters: int,
-) -> bool:
+) -> int | None:
     if not request.counts:
-        return False
+        return None
     if n_iters <= 1:
-        return False
+        return None
     if config.parallel_backend == "serial":
-        return False
+        return None
     if config.max_workers is None and n_iters < _PARALLEL_MIN_SHOTS:
         # Automatic mode stays serial for small runs; explicit max_workers wins.
-        return False
-    workers = _effective_max_workers(config.max_workers, n_iters)
-    return workers > 1
+        return None
+    workers = min(_effective_max_workers(config.max_workers, n_iters), n_iters)
+    return workers if workers > 1 else None
 
 
 def _resolve_parallel_backend_name(name: object) -> str:
@@ -304,14 +302,16 @@ def _run_dynamic_shots_parallel(
     n_qubits: int,
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
+    max_workers: int,
 ) -> list[tuple[int, ...]]:
-    max_workers = min(
-        _effective_max_workers(config.max_workers, len(seed_sequences)),
-        len(seed_sequences),
-    )
+    """Dispatch shots to worker processes. Caller must supply `max_workers`.
+
+    `max_workers` is the same value `_planned_workers` already returned to
+    decide whether to call this function at all; it is passed through rather
+    than recomputed here, so there is exactly one source of truth for the
+    parallel/serial decision.
+    """
     backend_name = _resolve_parallel_backend_name(config.parallel_backend)
-    if backend_name == "serial":
-        return [_run_dynamic_shot(plan, n_qubits, n_clbits, ss) for ss in seed_sequences]
     if backend_name == "multiprocessing":
         return _run_dynamic_shots_multiprocessing(
             plan, n_qubits, n_clbits, seed_sequences, max_workers
@@ -333,7 +333,7 @@ def _run_dynamic_shots_parallel(
     raise BackendValidationError(f"unsupported parallel_backend={backend_name!r}")
 
 
-def _resolve_result_request(config: ResultConfig, facts: _PlanFacts) -> _ResultRequest:
+def _resolve_result_request(config: _ResultConfig, facts: _PlanFacts) -> _ResultRequest:
     """Resolve default result fields from config and lowered program facts."""
     stochastic = facts.has_measurement or facts.has_reset
     counts = config.counts if config.counts is not None else facts.has_measurement
@@ -344,17 +344,45 @@ def _resolve_result_request(config: ResultConfig, facts: _PlanFacts) -> _ResultR
 
 
 class StateVectorBackend:
-    """Phase 1 statevector backend for qubit programs.
+    """Statevector backend for `qnsim.Program` execution.
 
-    The backend validates a `Program`, evolves supported operations with the
-    matrix engine, samples terminal measurements, and returns an eager `Job`.
-    A backend instance reuses one engine across runs, so it is suitable for
-    repeated single-threaded use but not concurrent `run` calls.
+    The backend supports matrix-evolvable gates, grouped measurement,
+    feedforward conditions, and reset. Each run is classified into one of two
+    execution strategies:
+
+    - Fast path: used when the program has no reset, no classically
+      conditioned operations, and no operation that acts on a qubit after that
+      qubit has been measured. The statevector is evolved once; requested
+      counts are then sampled from the resulting measurement distribution.
+    - Dynamic path: used when the program contains reset, a classical
+      condition, or reuse of a measured qubit. The backend executes one shot
+      at a time while tracking the classical register explicitly, because later
+      operations may depend on earlier measurement outcomes.
+
+    Backend constructor options affect only dynamic counts execution:
+
+    - `max_workers`: maximum worker processes for dynamic counts parallelism.
+      `None` means automatic selection.
+    - `parallel_backend`: one of `"auto"`, `"serial"`, `"multiprocessing"`,
+      or `"loky"`. `"auto"` prefers `loky` when available and otherwise uses
+      `multiprocessing`. `"serial"` disables process-based parallel execution.
+
+    A backend instance reuses one engine across runs, so it is efficient for
+    repeated single-threaded use but is not safe for concurrent `run()` calls.
     """
 
     def __init__(self, options: dict[str, Any] | None = None) -> None:
-        """Create a statevector backend."""
-        self._config = _normalize_backend_options(options)
+        """Create a statevector backend.
+
+        Args:
+            options: Optional execution-strategy options. Supported keys are
+                `max_workers` and `parallel_backend`; unknown keys are ignored
+                with a warning. These options only affect the dynamic counts
+                path and do not change numerical semantics.
+        """
+        self._config = _normalize_dict_options(
+            options, {"max_workers", "parallel_backend"}, _BackendConfig, "options", "backend"
+        )
         self._impl_map = default_implementation_map()
         # The engine is constructed once and re-initialized per run so its
         # compiled kernels can be reused. Because it holds per-run state, a
@@ -378,34 +406,104 @@ class StateVectorBackend:
         program: Program,
         *,
         shots: int = 1024,
-        result_config: ResultConfig | None = None,
+        result_config: dict[str, Any] | None = None,
         seed: int | None = None,
     ) -> Job:
-        """Validate and execute a program.
+        """Validate, execute, and package one program run.
 
-        Counts default to available when the program contains measurements.
-        Statevector output defaults to available only when execution is
-        deterministic (no measurement/reset sampling).
+        This is the main user-facing execution entry point. It resolves the
+        program to the backend's flat layout, chooses an execution strategy,
+        runs the circuit, and returns an eager `Job` whose `result()` yields a
+        `Result`.
+
+        Result selection via `result_config`:
+
+        - `{"counts": None}`: counts are produced when the program contains at
+          least one measurement.
+        - `{"counts": True}`: counts are always requested.
+        - `{"counts": False}`: counts are
+          suppressed, even if the
+          program measures qubits.
+        - `{"statevector": None}`: a statevector is produced only when
+          execution is non-stochastic, meaning the program contains no
+          measurement and no reset.
+        - `{"statevector": True}`: explicitly request a final statevector.
+        - `{"statevector": False}`:
+          suppress statevector output.
+
+        Output consequences:
+
+        - Counts are returned through `Result.get_counts()` as little-endian
+          classical bitstrings.
+        - A statevector, when produced, is returned through
+          `Result.get_statevector()`.
+        - If a field was not produced, its accessor raises
+          `ResultFieldUnavailableError`.
+        - `Result.metadata` always includes `shots`, `backend_name`, and the
+          effective `result_config`.
+
+        Execution strategy:
+
+        - Fast path: programs without reset, classical conditions, or reuse of
+          a measured qubit are evolved once. Requested counts are sampled from
+          terminal measurement mappings without replaying the full circuit shot
+          by shot.
+        - Dynamic path: programs with reset, classical conditions, or reuse of
+          measured qubits are executed shot by shot with an explicit classical
+          register. This path preserves feedforward semantics and repeated
+          measurement/reset behavior.
+        - Parallel dynamic counts: when the dynamic path is used, counts are
+          requested, multiple iterations are needed, and backend options allow
+          it, shots may be distributed across worker processes. The counts are
+          reproducible for a fixed `seed` regardless of serial vs parallel
+          scheduling.
+
+        Statevector semantics:
+
+        - For non-stochastic programs, a produced statevector is the final
+          evolved state after all operations.
+        - For stochastic programs (any measurement or reset),
+          `statevector=True` is only supported for `shots == 1`; the returned
+          statevector is the single-shot post-measurement/post-reset state.
+        - A program may take the dynamic execution path yet still be
+          non-stochastic, for example when it contains only classical
+          conditions on never-written clbits. Such a program may still produce
+          a default statevector.
+
+        Shot semantics and validation:
+
+        - `shots` matters whenever counts are requested.
+        - `shots` must be an `int` whenever requested results depend on it.
+        - Counts require `shots > 0`.
+        - Requesting a statevector for a stochastic program requires
+          `shots == 1`.
 
         Args:
             program: Program to execute.
-            shots: Number of samples used when counts are requested.
-            result_config: Optional `ResultConfig` controlling produced fields.
-            seed: Optional random seed for this run.
+            shots: Number of logical shots to run when counts are requested.
+                For statevector-only deterministic execution, the value may be
+                ignored.
+            result_config: Optional plain dictionary describing which result
+                fields to produce. Supported keys are `counts` and
+                `statevector`; unknown keys are ignored with a warning. When
+                omitted, backend defaults are used.
+            seed: Optional root seed for the run. For dynamic counts, one
+                reproducible child RNG stream is derived per logical shot.
 
         Returns:
-            A completed `Job`. The job result includes metadata with the shot
-            count, backend name, and effective result config. Validation
-            failures raise directly; execution failures are captured in an
-            error job whose `result()` re-raises.
+            A completed `Job`. Validation failures raise directly from `run()`;
+            execution-stage failures are captured in a failed job whose
+            `result()` re-raises the underlying exception.
 
         Raises:
-            BackendValidationError: If requested fields are incompatible with
-                the program or shot count.
-            UnsupportedOperationError: If the program uses unsupported
-                operations.
+            BackendValidationError: If requested outputs are incompatible with
+                the program shape or `shots`.
+            UnsupportedOperationError: If the program contains an operation
+                without a backend implementation.
 
         Examples:
+            Sample counts from a measured program:
+
             ```python
             import qnsim as qs
 
@@ -416,12 +514,27 @@ class StateVectorBackend:
             result = qs.StateVectorBackend().run(
                 program,
                 shots=100,
-                result_config=qs.ResultConfig(counts=True),
+                result_config={"counts": True},
             ).result()
             counts = result.get_counts()
             ```
+
+            Request a deterministic statevector:
+
+            ```python
+            program = qs.Program(1)
+            program.add(qs.ops.H, 0)
+
+            result = qs.StateVectorBackend().run(
+                program,
+                result_config={"counts": False, "statevector": True},
+            ).result()
+            statevector = result.get_statevector()
+            ```
         """
-        config = result_config if result_config is not None else ResultConfig()
+        config = _normalize_dict_options(
+            result_config, {"counts", "statevector"}, _ResultConfig, "result_config", "result_config"
+        )
         layout = self.resolve_layout(program)
         plan, facts = self._lower(program, layout)
         self._validate(config, shots, facts)
@@ -437,7 +550,7 @@ class StateVectorBackend:
     # --- validation (raises directly from run) ---
     def _validate(
         self,
-        config: ResultConfig,
+        config: _ResultConfig,
         shots: int,
         facts: _PlanFacts,
     ) -> None:
@@ -465,7 +578,7 @@ class StateVectorBackend:
     # --- execution ---
     def _execute(
         self,
-        config: ResultConfig,
+        config: _ResultConfig,
         shots: int,
         plan: list[ResolvedStep],
         facts: _PlanFacts,
@@ -514,7 +627,10 @@ class StateVectorBackend:
             metadata={
                 "shots": shots,
                 "backend_name": type(self).__name__,
-                "result_config": config,
+                "result_config": {
+                    "counts": config.counts,
+                    "statevector": config.statevector,
+                },
             },
         )
 
@@ -588,13 +704,15 @@ class StateVectorBackend:
         seed_sequences = _shot_seed_sequences(seed, n_iters)
 
         ran_parallel = False
-        if _should_parallelize(self._config, request, n_iters):
+        max_workers = _planned_workers(self._config, request, n_iters)
+        if max_workers is not None:
             snapshots = _run_dynamic_shots_parallel(
                 self._config,
                 plan,
                 n_qubits,
                 n_clbits,
                 seed_sequences,
+                max_workers,
             )
             ran_parallel = True
         else:

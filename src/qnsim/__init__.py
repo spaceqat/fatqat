@@ -18,7 +18,7 @@ from .registers import (
     Register,
     RegisterRef,
 )
-from .result import Result, ResultConfig
+from .result import Result
 
 __version__ = "0.0.1"
 
@@ -35,7 +35,6 @@ __all__ = [
     "StateVectorBackend",
     "Job",
     "Result",
-    "ResultConfig",
     "QnsimError",
     "BackendValidationError",
     "UnsupportedOperationError",

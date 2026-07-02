@@ -58,9 +58,7 @@ def test_run_without_seed_uses_random_rng_seed(monkeypatch):
 
     p = Program(1)
     p.add(ops.X, 0)
-    StateVectorBackend().run(
-        p, result_config=qs.ResultConfig(counts=False)
-    ).result().get_statevector()
+    StateVectorBackend().run(p, result_config={"counts": False}).result().get_statevector()
 
     assert observed == [None]
 
@@ -114,7 +112,7 @@ def test_measured_statevector_requires_exactly_one_shot(shots):
         StateVectorBackend().run(
             _h_cz_program(),
             shots=shots,
-            result_config=qs.ResultConfig(counts=False, statevector=True),
+            result_config={"counts": False, "statevector": True},
         )
 
 

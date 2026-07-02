@@ -11,9 +11,7 @@ def test_minimal_workflow_from_spec():
     program.add_measurement(1, 1)
 
     backend = qs.StateVectorBackend()
-    job = backend.run(
-        program, shots=1000, seed=2024, result_config=qs.ResultConfig(counts=True)
-    )
+    job = backend.run(program, shots=1000, seed=2024, result_config={"counts": True})
     result = job.result()
     counts = result.get_counts()
 
@@ -37,7 +35,7 @@ def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
         program,
         shots=12,
         seed=2026,
-        result_config=qs.ResultConfig(counts=True),
+        result_config={"counts": True},
     ).result()
 
     assert result.get_counts() == {"00": 12}

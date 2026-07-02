@@ -57,13 +57,11 @@ def test_add_measurement_explicit_clreg_ref_works_with_multiple_classical_regist
     assert p.operations[0].clreg == (p.creg[1][0],)
 
 
-def test_measurement_metadata_is_copied_not_aliased():
-    qr = QuantumRegister(1)
-    cr = ClassicalRegister(1)
-    meta = {"k": 1}
-    m = Measurement(qreg=(qr[0],), clreg=(cr[0],), metadata=meta)
-    meta["k"] = 2
-    assert m.metadata == {"k": 1}
+def test_add_measurement_rejects_metadata_argument():
+    p = Program(1, 1)
+
+    with pytest.raises(TypeError):
+        p.add_measurement(0, 0, metadata={"k": 1})
 
 
 def test_add_measurement_stores_single_as_one_tuples():

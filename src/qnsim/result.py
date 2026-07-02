@@ -1,4 +1,4 @@
-"""Result and ResultConfig, plus the counts assembly helper."""
+"""Result objects and counts assembly helpers."""
 
 from __future__ import annotations
 
@@ -12,15 +12,29 @@ from .errors import ResultFieldUnavailableError
 
 
 @dataclass(frozen=True)
-class ResultConfig:
-    """Requested result fields for backend execution.
+class _ResultConfig:
+    """Internal normalized result-field selection for one backend execution.
 
-    `None` asks the backend to choose the phase-appropriate default. `True`
-    explicitly requests a field, and `False` explicitly suppresses it.
+    Each field is tri-state:
 
-    Attributes:
-        counts: Whether to include sampled measurement counts.
-        statevector: Whether to include a statevector snapshot.
+    - `None`: let the backend choose the default for the given program
+    - `True`: explicitly request the field
+    - `False`: explicitly suppress the field
+
+    For `StateVectorBackend`, the defaults are:
+
+    - `counts=None`: produce counts when the program contains at least one
+      measurement
+    - `statevector=None`: produce a statevector only when execution is
+      non-stochastic, meaning the program contains no measurement and no reset
+
+    Explicit requests can further constrain `shots`. In particular, requesting
+    `statevector=True` for a stochastic program (one with measurement or reset)
+    is only supported for `shots == 1`.
+
+    This helper is backend-internal. User-facing APIs accept plain dictionaries
+    such as `{"counts": True, "statevector": False}` and normalize them into
+    this shape before execution.
     """
 
     counts: bool | None = None
@@ -157,7 +171,7 @@ class Result:
             program.add(qs.ops.X, 0)
             result = qs.StateVectorBackend().run(
                 program,
-                result_config=qs.ResultConfig(counts=False, statevector=True),
+                result_config={"counts": False, "statevector": True},
             ).result()
 
             statevector = result.get_statevector()

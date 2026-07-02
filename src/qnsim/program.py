@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Mapping, TypeVar
 
 from .operations import Operation
@@ -20,6 +20,16 @@ class AppliedOperation:
     `Program.add` creates these objects after validating the operation and
     resolving integer operands or explicit `RegisterRef` objects.
 
+    `__post_init__` intentionally does not re-validate `targets`' element
+    types or tuple-ness: `Program.add()` already guarantees well-formed
+    `RegisterRef` tuples via `_resolve_qubit`, and duplicating that check here
+    would just be the same validation twice for the path essentially all
+    callers use. Constructing this class directly (bypassing `Program`) skips
+    that guarantee - malformed input (wrong register kind, a list instead of
+    a tuple) will not raise here, and will instead surface later as a less
+    specific error during backend lowering, or make the instance unhashable.
+    This is a deliberate no-duplicate-validation tradeoff, not an oversight.
+
     Attributes:
         operation: Operation instance to execute.
         targets: Quantum register references consumed by the operation.
@@ -31,8 +41,6 @@ class AppliedOperation:
     condition: Condition = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.targets, tuple):
-            raise TypeError("targets must be a tuple of RegisterRef")
         expected = self.operation.num_qubits
         if expected is None:
             if len(self.targets) < 1:
@@ -44,10 +52,6 @@ class AppliedOperation:
             )
         seen: set[tuple[int, int]] = set()
         for t in self.targets:
-            if not isinstance(t, RegisterRef):
-                raise TypeError(f"target must be RegisterRef, got {type(t)!r}")
-            if not isinstance(t.register, QuantumRegister):
-                raise TypeError("operation targets must reference a QuantumRegister")
             key = (id(t.register), t.index)
             if key in seen:
                 raise ValueError(
@@ -61,39 +65,28 @@ class Measurement:
     """A measurement from one or more quantum refs into matching classical slots.
 
     Measurements live in `Program.operations` alongside applied operations and
-    preserve insertion order. Metadata is copied at construction time so later
-    caller mutations do not alias the frozen value object.
+    preserve insertion order.
+
+    Like `AppliedOperation`, `__post_init__` intentionally does not
+    re-validate `qreg`/`clreg` element types or tuple-ness: `add_measurement`
+    already guarantees well-formed `RegisterRef` tuples of the right register
+    kind via `_resolve_qubit`/`_resolve_clbit`. Constructing this class
+    directly skips that guarantee - see `AppliedOperation` for the same
+    tradeoff and its consequences.
 
     Attributes:
         qreg: Quantum register references to measure, stored as a tuple.
         clreg: Classical register references to write, stored as a tuple.
-        metadata: User metadata copied into the measurement.
     """
 
     qreg: tuple[RegisterRef, ...]
     clreg: tuple[RegisterRef, ...]
-    metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.qreg, tuple):
-            raise TypeError("qreg must be a tuple of RegisterRef")
-        if not isinstance(self.clreg, tuple):
-            raise TypeError("clreg must be a tuple of RegisterRef")
         if len(self.qreg) != len(self.clreg):
             raise ValueError("measurement qreg and clreg must have the same number of entries")
         if len(self.qreg) < 1:
             raise ValueError("measurement requires at least one qreg/clreg pair")
-        for q in self.qreg:
-            if not isinstance(q, RegisterRef):
-                raise TypeError(f"qreg entries must be RegisterRef, got {type(q)!r}")
-            if not isinstance(q.register, QuantumRegister):
-                raise TypeError("measurement qreg entries must reference a QuantumRegister")
-        for c in self.clreg:
-            if not isinstance(c, RegisterRef):
-                raise TypeError(f"clreg entries must be RegisterRef, got {type(c)!r}")
-            if not isinstance(c.register, ClassicalRegister):
-                raise TypeError("measurement clreg entries must reference a ClassicalRegister")
-        object.__setattr__(self, "metadata", dict(self.metadata))
 
 
 class Program:
@@ -302,8 +295,6 @@ class Program:
         self,
         qreg: int | RegisterRef | tuple[int | RegisterRef, ...],
         clreg: int | RegisterRef | tuple[int | RegisterRef, ...],
-        *,
-        metadata: Mapping[str, Any] | None = None,
     ) -> None:
         """Append a measurement from one or more qubits into classical bits.
 
@@ -312,7 +303,6 @@ class Program:
                 `RegisterRef`, or tuple of operands for a grouped measurement.
             clreg: Classical operand(s) to write, as an integer, explicit
                 `RegisterRef`, or tuple of operands matching `qreg` in count.
-            metadata: Optional measurement metadata copied into the measurement.
 
         Raises:
             TypeError: If operands have the wrong register kind or integer
@@ -348,9 +338,7 @@ class Program:
             raise ValueError("measurement requires at least one qreg/clreg pair")
         qs = tuple(self._resolve_qubit(q) for q in q_operands)
         cs = tuple(self._resolve_clbit(c) for c in c_operands)
-        self._operations.append(
-            Measurement(qreg=qs, clreg=cs, metadata=dict(metadata) if metadata else {})
-        )
+        self._operations.append(Measurement(qreg=qs, clreg=cs))
         self._operations_view = None
 
     def measure_all(self) -> None:

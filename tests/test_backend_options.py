@@ -1,7 +1,12 @@
 import pytest
 
 import qnsim as qs
-from qnsim.backends import StateVectorBackend
+from qnsim.backends import (
+    StateVectorBackend,
+    _BackendConfig,
+    _ResultRequest,
+    _planned_workers,
+)
 
 
 def test_backend_accepts_known_options():
@@ -35,3 +40,28 @@ def test_serial_backend_option_runs_dynamic_program():
     )
 
     assert sum(counts.values()) == 16
+
+
+def test_planned_workers_disables_parallel_serial_backend():
+    workers = _planned_workers(
+        _BackendConfig(max_workers=4, parallel_backend="serial"),
+        _ResultRequest(counts=True, statevector=False),
+        n_iters=16,
+    )
+
+    assert workers is None
+
+
+def test_planned_workers_clamps_explicit_workers_to_iterations():
+    workers = _planned_workers(
+        _BackendConfig(max_workers=8, parallel_backend="multiprocessing"),
+        _ResultRequest(counts=True, statevector=False),
+        n_iters=3,
+    )
+
+    assert workers == 3
+
+
+def test_backend_rejects_non_dict_options():
+    with pytest.raises(TypeError, match="dict or None"):
+        StateVectorBackend(options=object())

@@ -3,14 +3,8 @@
 import numpy as np
 import pytest
 
-from qnsim.result import ResultConfig, Result, build_counts
+from qnsim.result import Result, build_counts
 from qnsim.errors import ResultFieldUnavailableError
-
-
-def test_resultconfig_defaults():
-    rc = ResultConfig()
-    assert rc.counts is None
-    assert rc.statevector is None
 
 
 def test_build_counts_little_endian_key():

@@ -110,9 +110,7 @@ def test_statevector_with_reset_and_many_shots_rejected():
     p = Program(1)
     p.add(qs.ops.Reset(), 0)
     with pytest.raises(qs.BackendValidationError):
-        StateVectorBackend().run(
-            p, shots=10, result_config=qs.ResultConfig(statevector=True)
-        )
+        StateVectorBackend().run(p, shots=10, result_config={"statevector": True})
 
 
 def test_conditional_reset_fires_when_guard_true():
@@ -145,7 +143,7 @@ def test_condition_only_statevector_ignores_shots_value():
     p.add(ops.X, 1, condition=(0, 0))
     sv = (
         StateVectorBackend()
-        .run(p, shots=0, result_config=qs.ResultConfig(statevector=True))
+        .run(p, shots=0, result_config={"statevector": True})
         .result()
         .get_statevector()
     )
@@ -241,7 +239,7 @@ def test_dynamic_statevector_single_shot_stays_serial_and_available():
         p,
         shots=1,
         seed=2026,
-        result_config=qs.ResultConfig(counts=True, statevector=True),
+        result_config={"counts": True, "statevector": True},
     ).result()
 
     assert sum(result.get_counts().values()) == 1

@@ -23,16 +23,10 @@ def test_applied_operation_wrong_arity_raises():
         AppliedOperation(operation=ops.CX, targets=(qr[0],))  # CX is 2-qubit
 
 
-def test_applied_operation_targets_must_be_quantum():
-    cr = ClassicalRegister(1)
-    with pytest.raises(TypeError):
-        AppliedOperation(operation=ops.X, targets=(cr[0],))
-
-
-def test_applied_operation_targets_must_be_tuple():
+def test_applied_operation_rejects_duplicate_targets():
     qr = QuantumRegister(1)
-    with pytest.raises(TypeError):
-        AppliedOperation(operation=ops.X, targets=[qr[0]])  # list, not tuple
+    with pytest.raises(ValueError, match="appears more than once"):
+        AppliedOperation(operation=ops.CX, targets=(qr[0], qr[0]))
 
 
 def test_measurement_fields():

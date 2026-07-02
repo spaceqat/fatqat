@@ -25,6 +25,10 @@ def test_backends_module_alias():
     assert qs.backends.StateVectorBackend is qs.StateVectorBackend
 
 
+def test_resultconfig_not_exported_from_top_level():
+    assert not hasattr(qs, "ResultConfig")
+
+
 def test_error_classes_exported():
     from qnsim.errors import (
         QnsimError,
