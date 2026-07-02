@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -68,6 +69,31 @@ class _ResultRequest:
     statevector: bool
 
 
+@dataclass(frozen=True)
+class _BackendConfig:
+    """Normalized backend execution-strategy options."""
+
+    max_workers: Any = None
+    parallel_backend: Any = "auto"
+
+
+def _normalize_backend_options(options: dict[str, Any] | None) -> _BackendConfig:
+    if options is None:
+        return _BackendConfig()
+    known = {"max_workers", "parallel_backend"}
+    ignored = {key: value for key, value in options.items() if key not in known}
+    if ignored:
+        warnings.warn(
+            f"StateVectorBackend ignored unsupported backend options: {ignored!r}",
+            UserWarning,
+            stacklevel=3,
+        )
+    return _BackendConfig(
+        max_workers=options.get("max_workers"),
+        parallel_backend=options.get("parallel_backend", "auto"),
+    )
+
+
 def _resolve_condition(
     condition: tuple[tuple[object, int], ...] | None,
     layout: ResourceLayout,
@@ -105,8 +131,9 @@ class StateVectorBackend:
     repeated single-threaded use but not concurrent `run` calls.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, options: dict[str, Any] | None = None) -> None:
         """Create a statevector backend."""
+        self._config = _normalize_backend_options(options)
         self._impl_map = default_implementation_map()
         # The engine is constructed once and re-initialized per run so its
         # compiled kernels can be reused. Because it holds per-run state, a
