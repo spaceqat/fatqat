@@ -9,7 +9,7 @@ def test_reset_is_exposed_and_constructible():
     r = qs.ops.Reset()
     assert isinstance(r, ops.Operation)
     assert r.name == "Reset"
-    assert r.num_qubits == 1
+    assert r.num_qubits is None
 
 
 def test_reset_added_to_program_as_applied_operation():
@@ -21,7 +21,20 @@ def test_reset_added_to_program_as_applied_operation():
     assert len(step.targets) == 1
 
 
-def test_reset_arity_is_one():
-    p = Program(2)
-    with pytest.raises(ValueError):
-        p.add(qs.ops.Reset(), (0, 1))
+def test_reset_accepts_one_or_many_targets():
+    p = qs.Program(3)
+    p.add(qs.ops.Reset(), 0)
+    p.add(qs.ops.Reset(), (0, 1, 2))
+
+    assert p.operations[0].targets == (p.qreg[0][0],)
+    assert p.operations[1].targets == (
+        p.qreg[0][0],
+        p.qreg[0][1],
+        p.qreg[0][2],
+    )
+
+
+def test_reset_rejects_empty_targets():
+    p = qs.Program(1)
+    with pytest.raises(ValueError, match="at least one target"):
+        p.add(qs.ops.Reset(), ())

@@ -1,5 +1,7 @@
 """Tests statevector backend execution, validation, repeatability, and counts."""
 
+import warnings
+
 import pytest
 
 import qnsim as qs
@@ -120,3 +122,17 @@ def test_deterministic_with_seed():
     a = StateVectorBackend().run(_h_cz_program(), shots=300, seed=7).result().get_counts()
     b = StateVectorBackend().run(_h_cz_program(), shots=300, seed=7).result().get_counts()
     assert a == b
+
+
+def test_no_measurement_warning_understands_grouped_measurements():
+    p = Program(2, 2)
+    p.add(ops.X, 0)
+    p.add(ops.X, 1)
+    p.add_measurement((0, 1), (0, 1))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        counts = StateVectorBackend().run(p, shots=4, seed=0).result().get_counts()
+
+    assert counts == {"11": 4}
+    assert not any(issubclass(w.category, NoMeasurementWarning) for w in caught)

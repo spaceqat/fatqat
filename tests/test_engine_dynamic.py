@@ -55,3 +55,60 @@ def test_reset_qubit_on_entangled_pair_conditions_the_partner():
         outcomes.append(int(nz[0] == 2))  # partner==1
     frac = sum(outcomes) / len(outcomes)
     assert 0.35 < frac < 0.65
+
+
+def test_measure_qubits_returns_bits_in_requested_order():
+    eng = StateVectorEngine()
+    eng.initialize(3)
+    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
+    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(2,)))
+
+    bits = eng.measure_qubits((2, 0), np.random.default_rng(0))
+
+    assert bits == (1, 1)
+    assert np.allclose(eng.export_state()[0b101], 1.0)
+
+
+def test_measure_qubits_consumes_one_rng_draw_for_grouped_event():
+    eng_grouped = StateVectorEngine()
+    eng_grouped.initialize(2)
+    eng_grouped.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
+    eng_grouped.apply(
+        ApplyMatrixStep(
+            matrix=np.array(
+                [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]],
+                dtype=complex,
+            ),
+            target_indices=(0, 1),
+        )
+    )
+    rng_grouped = np.random.default_rng(11)
+    eng_grouped.measure_qubits((0, 1), rng_grouped)
+    after_grouped = rng_grouped.random()
+
+    rng_one_draw = np.random.default_rng(11)
+    rng_one_draw.choice(4, p=np.array([0.5, 0.0, 0.0, 0.5]))
+    after_one_draw = rng_one_draw.random()
+
+    assert after_grouped == after_one_draw
+
+
+def test_reset_qubits_resets_all_targets_with_one_grouped_collapse():
+    eng = StateVectorEngine()
+    eng.initialize(2)
+    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
+    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(1,)))
+
+    eng.reset_qubits((0, 1), np.random.default_rng(0))
+
+    assert np.allclose(eng.export_state(), np.array([1, 0, 0, 0], dtype=complex))
+
+
+def test_single_qubit_wrappers_delegate_to_grouped_methods():
+    eng = StateVectorEngine()
+    eng.initialize(1)
+    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
+
+    bit = eng.measure_qubit(0, np.random.default_rng(0))
+
+    assert bit == 1

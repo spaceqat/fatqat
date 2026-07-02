@@ -80,15 +80,35 @@ class StateVectorEngine:
         self._state = new
         return idx
 
+    def measure_qubits(
+        self,
+        indices: Sequence[int],
+        rng: np.random.Generator,
+    ) -> tuple[int, ...]:
+        """Sample and collapse a group of qubits in one computational-basis event."""
+        self._require_state()
+        if len(indices) < 1:
+            raise ValueError("measure_qubits requires at least one index")
+        flat = self.collapse(indices, rng)
+        return tuple((flat >> index) & 1 for index in indices)
+
     def measure_qubit(self, index: int, rng: np.random.Generator) -> int:
         """Sample and collapse a single qubit in the computational basis.
 
         Projects the internal state onto the sampled outcome for ``index`` and
         returns that qubit's measured bit. Consumes exactly one rng draw.
         """
+        return self.measure_qubits((index,), rng)[0]
+
+    def reset_qubits(self, indices: Sequence[int], rng: np.random.Generator) -> None:
+        """Measure a group of qubits and reprepare them in ``|0>``."""
         self._require_state()
-        flat = self.collapse([index], rng)
-        return (flat >> index) & 1
+        if len(indices) < 1:
+            raise ValueError("reset_qubits requires at least one index")
+        bits = self.measure_qubits(indices, rng)
+        for index, bit in zip(indices, bits):
+            if bit == 1:
+                self._state = _apply_matrix(self._state, _X, (index,), self._n_qubits)
 
     def reset_qubit(self, index: int, rng: np.random.Generator) -> None:
         """Measure a qubit and reprepare it in ``|0>``.
@@ -97,9 +117,7 @@ class StateVectorEngine:
         when the outcome is 1. The rest of an entangled state is left correctly
         conditioned on the sampled branch.
         """
-        self._require_state()
-        if self.measure_qubit(index, rng) == 1:
-            self._state = _apply_matrix(self._state, _X, (index,), self._n_qubits)
+        self.reset_qubits((index,), rng)
 
     def export_state(self) -> np.ndarray:
         """Return a copy of the current statevector."""

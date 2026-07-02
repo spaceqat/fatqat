@@ -40,4 +40,4 @@ def test_resolve_measurement_step_has_flat_indices():
     p.add_measurement(0, 0)
     step = _resolve(p)[0]
     assert isinstance(step, MeasurementStep)
-    assert (step.qubit_index, step.clbit_index) == (0, 0)
+    assert (step.measured_indices, step.classical_indices) == ((0,), (0,))

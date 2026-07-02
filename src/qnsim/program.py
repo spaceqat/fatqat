@@ -34,7 +34,10 @@ class AppliedOperation:
         if not isinstance(self.targets, tuple):
             raise TypeError("targets must be a tuple of RegisterRef")
         expected = self.operation.num_qubits
-        if len(self.targets) != expected:
+        if expected is None:
+            if len(self.targets) < 1:
+                raise ValueError(f"{self.operation.name} expects at least one target")
+        elif len(self.targets) != expected:
             raise ValueError(
                 f"{self.operation.name} expects {expected} target(s), "
                 f"got {len(self.targets)}"
@@ -55,25 +58,41 @@ class AppliedOperation:
 
 @dataclass(frozen=True)
 class Measurement:
-    """A measurement from one quantum register reference into one classical slot.
+    """A measurement from one or more quantum refs into matching classical slots.
 
     Measurements live in `Program.operations` alongside applied operations and
     preserve insertion order. Metadata is copied at construction time so later
     caller mutations do not alias the frozen value object.
 
     Attributes:
-        qreg: Quantum register reference to measure.
-        clreg: Classical register reference to write.
+        qreg: Quantum register references to measure, stored as a tuple.
+        clreg: Classical register references to write, stored as a tuple.
         metadata: User metadata copied into the measurement.
     """
 
-    qreg: RegisterRef
-    clreg: RegisterRef
+    qreg: tuple[RegisterRef, ...]
+    clreg: tuple[RegisterRef, ...]
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        # Copy metadata so a caller's later mutation can't reach into this frozen
-        # value object.
+        if not isinstance(self.qreg, tuple):
+            raise TypeError("qreg must be a tuple of RegisterRef")
+        if not isinstance(self.clreg, tuple):
+            raise TypeError("clreg must be a tuple of RegisterRef")
+        if len(self.qreg) != len(self.clreg):
+            raise ValueError("measurement qreg and clreg must have the same number of entries")
+        if len(self.qreg) < 1:
+            raise ValueError("measurement requires at least one qreg/clreg pair")
+        for q in self.qreg:
+            if not isinstance(q, RegisterRef):
+                raise TypeError(f"qreg entries must be RegisterRef, got {type(q)!r}")
+            if not isinstance(q.register, QuantumRegister):
+                raise TypeError("measurement qreg entries must reference a QuantumRegister")
+        for c in self.clreg:
+            if not isinstance(c, RegisterRef):
+                raise TypeError(f"clreg entries must be RegisterRef, got {type(c)!r}")
+            if not isinstance(c.register, ClassicalRegister):
+                raise TypeError("measurement clreg entries must reference a ClassicalRegister")
         object.__setattr__(self, "metadata", dict(self.metadata))
 
 
@@ -281,24 +300,25 @@ class Program:
 
     def add_measurement(
         self,
-        qreg: int | RegisterRef,
-        clreg: int | RegisterRef,
+        qreg: int | RegisterRef | tuple[int | RegisterRef, ...],
+        clreg: int | RegisterRef | tuple[int | RegisterRef, ...],
         *,
         metadata: Mapping[str, Any] | None = None,
     ) -> None:
-        """Append a measurement from a qubit into a classical bit.
+        """Append a measurement from one or more qubits into classical bits.
 
         Args:
-            qreg: Quantum operand to measure, as an integer or explicit
-                `RegisterRef`.
-            clreg: Classical operand to write, as an integer or explicit
-                `RegisterRef`.
+            qreg: Quantum operand(s) to measure, as an integer, explicit
+                `RegisterRef`, or tuple of operands for a grouped measurement.
+            clreg: Classical operand(s) to write, as an integer, explicit
+                `RegisterRef`, or tuple of operands matching `qreg` in count.
             metadata: Optional measurement metadata copied into the measurement.
 
         Raises:
             TypeError: If operands have the wrong register kind or integer
                 operands are ambiguous.
-            ValueError: If an explicit ref is foreign to the program.
+            ValueError: If `qreg`/`clreg` have mismatched or zero length, or an
+                explicit ref is foreign to the program.
             IndexError: If an integer operand is outside the relevant register.
 
         Examples:
@@ -311,13 +331,44 @@ class Program:
             program.add(qs.ops.X, 0)
             program.add_measurement(0, 0)
             ```
+
+            Add a grouped measurement:
+
+            ```python
+            program.add_measurement((0, 1), (0, 1))
+            ```
         """
-        q = self._resolve_qubit(qreg)
-        c = self._resolve_clbit(clreg)
+        q_operands = qreg if isinstance(qreg, tuple) else (qreg,)
+        c_operands = clreg if isinstance(clreg, tuple) else (clreg,)
+        if len(q_operands) != len(c_operands):
+            raise ValueError(
+                "measurement requires the same number of quantum and classical operands"
+            )
+        if len(q_operands) < 1:
+            raise ValueError("measurement requires at least one qreg/clreg pair")
+        qs = tuple(self._resolve_qubit(q) for q in q_operands)
+        cs = tuple(self._resolve_clbit(c) for c in c_operands)
         self._operations.append(
-            Measurement(qreg=q, clreg=c, metadata=dict(metadata) if metadata else {})
+            Measurement(qreg=qs, clreg=cs, metadata=dict(metadata) if metadata else {})
         )
         self._operations_view = None
+
+    def measure_all(self) -> None:
+        """Measure every qubit into every clbit in flat declaration order.
+
+        Raises:
+            ValueError: If the program has a different number of quantum bits
+                than classical bits, or has no registers of either kind.
+        """
+        qubits = tuple(ref for reg in self.qreg for ref in (reg[i] for i in range(reg.size)))
+        clbits = tuple(ref for reg in self.creg for ref in (reg[i] for i in range(reg.size)))
+        if len(qubits) != len(clbits):
+            raise ValueError(
+                "measure_all requires the same number of qubits and classical bits"
+            )
+        if len(qubits) < 1:
+            raise ValueError("measure_all requires at least one qubit and one clbit")
+        self.add_measurement(qubits, clbits)
 
     def copy(self) -> "Program":
         """Return an independent copy with private operation storage and copied metadata."""

@@ -60,7 +60,7 @@ def test_lower_reset_is_dynamic_and_emits_reset_step():
     plan, facts = _lower(p)
     assert facts.is_dynamic is True
     assert facts.has_reset is True
-    assert plan == [ResetStep(qubit_index=0)]
+    assert plan == [ResetStep(reset_indices=(0,))]
 
 
 def test_lower_unknown_gate_raises():
@@ -152,3 +152,63 @@ def test_condition_only_statevector_ignores_shots_value():
     expected = np.zeros(4, dtype=complex)
     expected[0b10] = 1.0
     assert np.allclose(sv, expected)
+
+
+def test_lower_grouped_measurement_emits_one_grouped_step():
+    p = Program(3, 3)
+    p.add_measurement((0, 2), (1, 0))
+
+    plan, facts = _lower(p)
+
+    assert facts.has_measurement is True
+    assert facts.is_dynamic is False
+    assert plan == [MeasurementStep(measured_indices=(0, 2), classical_indices=(1, 0))]
+
+
+def test_lower_adjacent_single_measurements_stay_separate_steps():
+    p = Program(2, 2)
+    p.add_measurement(0, 0)
+    p.add_measurement(1, 1)
+
+    plan, facts = _lower(p)
+
+    assert facts.is_dynamic is False
+    assert plan == [
+        MeasurementStep(measured_indices=(0,), classical_indices=(0,)),
+        MeasurementStep(measured_indices=(1,), classical_indices=(1,)),
+    ]
+
+
+def test_lower_grouped_reset_uses_all_targets():
+    p = Program(3)
+    p.add(qs.ops.Reset(), (0, 2))
+
+    plan, facts = _lower(p)
+
+    assert facts.is_dynamic is True
+    assert facts.has_reset is True
+    assert plan == [ResetStep(reset_indices=(0, 2))]
+
+
+def test_grouped_reset_resets_all_targets_in_dynamic_path():
+    p = Program(2, 2)
+    p.add(ops.X, 0)
+    p.add(ops.X, 1)
+    p.add(qs.ops.Reset(), (0, 1))
+    p.add_measurement((0, 1), (0, 1))
+
+    counts = StateVectorBackend().run(p, shots=8, seed=0).result().get_counts()
+
+    assert counts == {"00": 8}
+
+
+def test_grouped_measurement_writes_all_classical_slots_in_dynamic_path():
+    p = Program(2, 2)
+    p.add(ops.X, 0)
+    p.add(ops.X, 1)
+    p.add_measurement((0, 1), (1, 0))
+    p.add(ops.X, 0)  # makes the program dynamic because q0 was measured
+
+    counts = StateVectorBackend().run(p, shots=8, seed=0).result().get_counts()
+
+    assert counts == {"11": 8}

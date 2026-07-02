@@ -16,20 +16,23 @@ class Operation:
 
     Attributes:
         name: Public operation name.
-        _num_qubits: Number of quantum targets required by the operation.
+        _num_qubits: Number of quantum targets required by the operation, or
+            None for variable arity with at least one target.
     """
 
     name: ClassVar[str] = "OP"
-    _num_qubits: ClassVar[int] = 1
+    _num_qubits: ClassVar[int | None] = 1
 
     def __post_init__(self) -> None:
         n = type(self)._num_qubits
+        if n is None:
+            return
         if not isinstance(n, int) or isinstance(n, bool) or n <= 0:
-            raise ValueError(f"_num_qubits must be a positive int, got {n!r}")
+            raise ValueError(f"_num_qubits must be a positive int or None, got {n!r}")
 
     @property
-    def num_qubits(self) -> int:
-        """Number of quantum targets required by this operation."""
+    def num_qubits(self) -> int | None:
+        """Number of quantum targets required, or None for variable arity."""
         return type(self)._num_qubits
 
 
@@ -130,14 +133,14 @@ class RZ(Operation):
 
 @dataclass(frozen=True)
 class ResetGate(Operation):
-    """Reset operation: repreparation of a target qubit in ``|0>``.
+    """Reset operation: repreparation of one or more target qubits in ``|0>``.
 
     Has no matrix; the matrix-family backend resolves it to a boundary reset
     step by operation type.
     """
 
     name: ClassVar[str] = "Reset"
-    _num_qubits: ClassVar[int] = 1
+    _num_qubits: ClassVar[int | None] = None
 
 
 # Pre-built fixed-gate instances (parametric gates are used as classes: RX(theta)).

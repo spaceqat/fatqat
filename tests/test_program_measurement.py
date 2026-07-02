@@ -14,8 +14,8 @@ def test_add_measurement_appends_measurement():
     assert len(p.operations) == 1
     m = p.operations[0]
     assert isinstance(m, Measurement)
-    assert m.qreg == p.qreg[0][0]
-    assert m.clreg == p.creg[0][0]
+    assert m.qreg == (p.qreg[0][0],)
+    assert m.clreg == (p.creg[0][0],)
 
 
 def test_operations_preserve_order_and_type_mix():
@@ -53,14 +53,74 @@ def test_add_measurement_explicit_clreg_ref_works_with_multiple_classical_regist
 
     p.add_measurement(1, p.creg[1][0])
 
-    assert p.operations[0].qreg == p.qreg[0][1]
-    assert p.operations[0].clreg == p.creg[1][0]
+    assert p.operations[0].qreg == (p.qreg[0][1],)
+    assert p.operations[0].clreg == (p.creg[1][0],)
 
 
 def test_measurement_metadata_is_copied_not_aliased():
     qr = QuantumRegister(1)
     cr = ClassicalRegister(1)
     meta = {"k": 1}
-    m = Measurement(qreg=qr[0], clreg=cr[0], metadata=meta)
+    m = Measurement(qreg=(qr[0],), clreg=(cr[0],), metadata=meta)
     meta["k"] = 2
     assert m.metadata == {"k": 1}
+
+
+def test_add_measurement_stores_single_as_one_tuples():
+    p = Program(2, 2)
+    p.add_measurement(0, 1)
+
+    m = p.operations[0]
+    assert isinstance(m, Measurement)
+    assert m.qreg == (p.qreg[0][0],)
+    assert m.clreg == (p.creg[0][1],)
+
+
+def test_add_measurement_accepts_grouped_operands():
+    p = Program(3, 3)
+    p.add_measurement((0, 2), (1, 0))
+
+    m = p.operations[0]
+    assert isinstance(m, Measurement)
+    assert m.qreg == (p.qreg[0][0], p.qreg[0][2])
+    assert m.clreg == (p.creg[0][1], p.creg[0][0])
+
+
+def test_add_measurement_rejects_mismatched_group_sizes():
+    p = Program(3, 2)
+    with pytest.raises(ValueError, match="same number"):
+        p.add_measurement((0, 1, 2), (0, 1))
+
+
+def test_add_measurement_rejects_empty_group():
+    p = Program(1, 1)
+    with pytest.raises(ValueError, match="at least one"):
+        p.add_measurement((), ())
+
+
+def test_measure_all_appends_one_grouped_instruction_in_flat_order():
+    p = Program(
+        [QuantumRegister(2, name="qa"), QuantumRegister(1, name="qb")],
+        [ClassicalRegister(1, name="ca"), ClassicalRegister(2, name="cb")],
+    )
+
+    result = p.measure_all()
+
+    assert result is None
+    assert len(p.operations) == 1
+    m = p.operations[0]
+    assert isinstance(m, Measurement)
+    assert m.qreg == (p.qreg[0][0], p.qreg[0][1], p.qreg[1][0])
+    assert m.clreg == (p.creg[0][0], p.creg[1][0], p.creg[1][1])
+
+
+def test_measure_all_rejects_mismatched_resource_counts():
+    p = Program(2, 1)
+    with pytest.raises(ValueError, match="same number"):
+        p.measure_all()
+
+
+def test_measure_all_rejects_empty_program():
+    p = Program(0, 0)
+    with pytest.raises(ValueError, match="at least one"):
+        p.measure_all()

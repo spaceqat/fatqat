@@ -38,6 +38,6 @@ def test_applied_operation_targets_must_be_tuple():
 def test_measurement_fields():
     qr = QuantumRegister(1)
     cr = ClassicalRegister(1)
-    m = Measurement(qreg=qr[0], clreg=cr[0])
-    assert m.qreg == qr[0]
-    assert m.clreg == cr[0]
+    m = Measurement(qreg=(qr[0],), clreg=(cr[0],))
+    assert m.qreg == (qr[0],)
+    assert m.clreg == (cr[0],)

@@ -19,23 +19,33 @@ from .result import Result, ResultConfig, build_counts, count_key_from_clbits
 
 @dataclass(frozen=True)
 class MeasurementStep:
-    """Resolved measurement: flat qubit index into flat clbit index."""
+    """Resolved measurement: flat qubit indices into matching flat clbit indices."""
 
-    qubit_index: int
-    clbit_index: int
+    measured_indices: tuple[int, ...]
+    classical_indices: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.measured_indices) != len(self.classical_indices):
+            raise ValueError("measurement step indices must have equal length")
+        if len(self.measured_indices) < 1:
+            raise ValueError("measurement step requires at least one index")
 
 
 @dataclass(frozen=True)
 class ResetStep:
-    """Resolved reset of one flat qubit index to |0>, with optional condition.
+    """Resolved reset of one or more flat qubits to |0>, with optional condition.
 
     `Reset` is an `AppliedOperation`, so it can carry a feedforward `condition`
     just like a gate. The lowered form stores it as ``(clbit_index, value)``
     AND-terms; the per-shot loop skips the reset when the guard fails.
     """
 
-    qubit_index: int
+    reset_indices: tuple[int, ...]
     condition: tuple[tuple[int, int], ...] | None = None
+
+    def __post_init__(self) -> None:
+        if len(self.reset_indices) < 1:
+            raise ValueError("reset step requires at least one index")
 
 
 ResolvedStep = ApplyMatrixStep | MeasurementStep | ResetStep
@@ -236,7 +246,12 @@ class StateVectorBackend:
 
         # NoMeasurementWarning: counts produced, some clbit never written, no state.
         if request.counts and "statevector" not in available:
-            written = {s.clbit_index for s in plan if isinstance(s, MeasurementStep)}
+            written = {
+                c
+                for s in plan
+                if isinstance(s, MeasurementStep)
+                for c in s.classical_indices
+            }
             if any(c not in written for c in range(n_clbits)):
                 warnings.warn(
                     "counts contain clbits that were never measured; "
@@ -274,7 +289,7 @@ class StateVectorBackend:
             if isinstance(step, ApplyMatrixStep):
                 engine.apply(step)
             else:  # MeasurementStep (no ResetStep on the fast path)
-                measurements.append((step.qubit_index, step.clbit_index))
+                measurements.extend(zip(step.measured_indices, step.classical_indices))
 
         counts: dict[str, int] | None = None
         statevector: np.ndarray | None = None
@@ -326,12 +341,12 @@ class StateVectorBackend:
                     if _condition_matches(step.condition, clbits):
                         engine.apply(step)
                 elif isinstance(step, MeasurementStep):
-                    clbits[step.clbit_index] = engine.measure_qubit(
-                        step.qubit_index, rng
-                    )
+                    bits = engine.measure_qubits(step.measured_indices, rng)
+                    for c, bit in zip(step.classical_indices, bits):
+                        clbits[c] = bit
                 else:  # ResetStep also honors its feedforward condition.
                     if _condition_matches(step.condition, clbits):
-                        engine.reset_qubit(step.qubit_index, rng)
+                        engine.reset_qubits(step.reset_indices, rng)
             if counts is not None:
                 key = count_key_from_clbits(clbits, n_clbits)
                 counts[key] = counts.get(key, 0) + 1
@@ -366,10 +381,15 @@ class StateVectorBackend:
         for step in program.operations:
             if isinstance(step, Measurement):
                 has_measurement = True
-                q = layout.qubit_index(step.qreg)
-                c = layout.clbit_index(step.clreg)
-                measured_qubits.add(q)
-                plan.append(MeasurementStep(qubit_index=q, clbit_index=c))
+                measured_indices = tuple(layout.qubit_index(q) for q in step.qreg)
+                classical_indices = tuple(layout.clbit_index(c) for c in step.clreg)
+                measured_qubits.update(measured_indices)
+                plan.append(
+                    MeasurementStep(
+                        measured_indices=measured_indices,
+                        classical_indices=classical_indices,
+                    )
+                )
                 continue
 
             if isinstance(step, AppliedOperation):
@@ -384,7 +404,7 @@ class StateVectorBackend:
                     is_dynamic = True
                     cond = _resolve_condition(step.condition, layout)
                     plan.append(
-                        ResetStep(qubit_index=target_indices[0], condition=cond)
+                        ResetStep(reset_indices=target_indices, condition=cond)
                     )
                     continue
 
