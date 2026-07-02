@@ -36,3 +36,10 @@ def test_error_classes_exported():
     assert qs.BackendValidationError is BackendValidationError
     assert qs.UnsupportedOperationError is UnsupportedOperationError
     assert qs.NoMeasurementWarning is NoMeasurementWarning
+
+
+def test_program_measure_all_is_public_instance_method():
+    program = qs.Program(1, 1)
+    program.measure_all()
+
+    assert len(program.operations) == 1

@@ -21,3 +21,23 @@ def test_minimal_workflow_from_spec():
     assert set(counts) <= {"00", "01"}
     # roughly balanced between the two reachable outcomes
     assert all(150 < v < 850 for v in counts.values())
+
+
+def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
+    program = qs.Program(2, 2)
+    program.add(qs.ops.X, 0)
+    program.add(qs.ops.X, 1)
+    program.add_measurement((0, 1), (0, 1))
+    program.add(qs.ops.Reset(), (0, 1))
+    program.measure_all()
+
+    result = qs.StateVectorBackend(
+        options={"max_workers": 2, "parallel_backend": "multiprocessing"}
+    ).run(
+        program,
+        shots=12,
+        seed=2026,
+        result_config=qs.ResultConfig(counts=True),
+    ).result()
+
+    assert result.get_counts() == {"00": 12}

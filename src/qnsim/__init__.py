@@ -1,4 +1,4 @@
-"""Public package surface for qnsim MVP Phase 1."""
+"""Public package surface for qnsim."""
 
 from . import backends
 from . import operations as ops
