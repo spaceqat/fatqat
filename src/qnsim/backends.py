@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
+import os
 import warnings
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from itertools import repeat
 from typing import Any
 
 import numpy as np
@@ -166,6 +170,167 @@ def _run_dynamic_shot(
     engine = StateVectorEngine()
     engine.initialize(n_qubits)
     return _execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng)
+
+
+def _loky_available() -> bool:
+    return importlib.util.find_spec("loky") is not None
+
+
+# Minimum shot count before automatic parallelism (max_workers=None) kicks in.
+# Below this, process-pool startup and per-batch pickling cost more than the
+# per-shot simulation they save, so automatic mode stays serial — this keeps the
+# default backend and small runs (including the existing Phase 2 dynamic tests)
+# fast instead of spawning workers for a handful of shots. The value is a tunable
+# heuristic (it keys off shot count, not per-shot cost); 32 is chosen to stay
+# serial for typical small/interactive runs while parallelizing real multishot
+# jobs. An explicit max_workers > 1 always parallelizes and bypasses this floor.
+_PARALLEL_MIN_SHOTS = 32
+
+
+def _effective_max_workers(max_workers: object, n_iters: int) -> int:
+    if max_workers is None:
+        return min(n_iters, os.process_cpu_count() or 1)
+    return int(max_workers)
+
+
+def _should_parallelize(
+    config: _BackendConfig,
+    request: _ResultRequest,
+    n_iters: int,
+) -> bool:
+    if not request.counts:
+        return False
+    if n_iters <= 1:
+        return False
+    if config.parallel_backend == "serial":
+        return False
+    if config.max_workers is None and n_iters < _PARALLEL_MIN_SHOTS:
+        # Automatic mode stays serial for small runs; explicit max_workers wins.
+        return False
+    workers = _effective_max_workers(config.max_workers, n_iters)
+    return workers > 1
+
+
+def _resolve_parallel_backend_name(name: object) -> str:
+    if name == "auto":
+        return "loky" if _loky_available() else "multiprocessing"
+    if name in {"serial", "multiprocessing", "loky"}:
+        return str(name)
+    raise BackendValidationError(f"unsupported parallel_backend={name!r}")
+
+
+def _split_into_batches(
+    seed_sequences: list[np.random.SeedSequence],
+    n_batches: int,
+) -> list[list[np.random.SeedSequence]]:
+    """Split shots into up to n_batches contiguous batches, one task per worker.
+
+    Batching pickles the (matrix-carrying) plan once per worker instead of once
+    per shot, and lets each worker reuse a single engine across its batch. Shot i
+    keeps ``seed_sequences[i]`` regardless of batching, so aggregated counts are
+    byte-for-byte identical to the serial path.
+    """
+    n_items = len(seed_sequences)
+    n_batches = max(1, min(n_batches, n_items))
+    base, extra = divmod(n_items, n_batches)
+    batches: list[list[np.random.SeedSequence]] = []
+    start = 0
+    for i in range(n_batches):
+        size = base + (1 if i < extra else 0)
+        batches.append(seed_sequences[start : start + size])
+        start += size
+    return batches
+
+
+def _run_dynamic_shot_batch(
+    plan: list[ResolvedStep],
+    n_qubits: int,
+    n_clbits: int,
+    seed_batch: list[np.random.SeedSequence],
+) -> list[tuple[int, ...]]:
+    """Run a contiguous batch of dynamic shots in one worker with one engine."""
+    engine = StateVectorEngine()
+    snapshots: list[tuple[int, ...]] = []
+    for seed_sequence in seed_batch:
+        rng = np.random.default_rng(seed_sequence)
+        engine.initialize(n_qubits)
+        snapshots.append(_execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng))
+    return snapshots
+
+
+def _run_dynamic_shots_multiprocessing(
+    plan: list[ResolvedStep],
+    n_qubits: int,
+    n_clbits: int,
+    seed_sequences: list[np.random.SeedSequence],
+    max_workers: int,
+) -> list[tuple[int, ...]]:
+    batches = _split_into_batches(seed_sequences, max_workers)
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        results = executor.map(
+            _run_dynamic_shot_batch,
+            repeat(plan),
+            repeat(n_qubits),
+            repeat(n_clbits),
+            batches,
+        )
+        return [snapshot for batch in results for snapshot in batch]
+
+
+def _run_dynamic_shots_loky(
+    plan: list[ResolvedStep],
+    n_qubits: int,
+    n_clbits: int,
+    seed_sequences: list[np.random.SeedSequence],
+    max_workers: int,
+) -> list[tuple[int, ...]]:
+    from loky import get_reusable_executor
+
+    batches = _split_into_batches(seed_sequences, max_workers)
+    executor = get_reusable_executor(max_workers=max_workers)
+    results = executor.map(
+        _run_dynamic_shot_batch,
+        repeat(plan),
+        repeat(n_qubits),
+        repeat(n_clbits),
+        batches,
+    )
+    return [snapshot for batch in results for snapshot in batch]
+
+
+def _run_dynamic_shots_parallel(
+    config: _BackendConfig,
+    plan: list[ResolvedStep],
+    n_qubits: int,
+    n_clbits: int,
+    seed_sequences: list[np.random.SeedSequence],
+) -> list[tuple[int, ...]]:
+    max_workers = min(
+        _effective_max_workers(config.max_workers, len(seed_sequences)),
+        len(seed_sequences),
+    )
+    backend_name = _resolve_parallel_backend_name(config.parallel_backend)
+    if backend_name == "serial":
+        return [_run_dynamic_shot(plan, n_qubits, n_clbits, ss) for ss in seed_sequences]
+    if backend_name == "multiprocessing":
+        return _run_dynamic_shots_multiprocessing(
+            plan, n_qubits, n_clbits, seed_sequences, max_workers
+        )
+    if backend_name == "loky":
+        if not _loky_available():
+            warnings.warn(
+                "parallel_backend='loky' requested but loky is unavailable; "
+                "falling back to multiprocessing",
+                UserWarning,
+                stacklevel=3,
+            )
+            return _run_dynamic_shots_multiprocessing(
+                plan, n_qubits, n_clbits, seed_sequences, max_workers
+            )
+        return _run_dynamic_shots_loky(
+            plan, n_qubits, n_clbits, seed_sequences, max_workers
+        )
+    raise BackendValidationError(f"unsupported parallel_backend={backend_name!r}")
 
 
 def _resolve_result_request(config: ResultConfig, facts: _PlanFacts) -> _ResultRequest:
@@ -421,12 +586,25 @@ class StateVectorBackend:
         # uninitialized.
         n_iters = shots if request.counts else (1 if request.statevector else 0)
         seed_sequences = _shot_seed_sequences(seed, n_iters)
-        snapshots: list[tuple[int, ...]] = []
 
-        for seed_sequence in seed_sequences:
-            rng = np.random.default_rng(seed_sequence)
-            engine.initialize(n_qubits)
-            snapshots.append(_execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng))
+        ran_parallel = False
+        if _should_parallelize(self._config, request, n_iters):
+            snapshots = _run_dynamic_shots_parallel(
+                self._config,
+                plan,
+                n_qubits,
+                n_clbits,
+                seed_sequences,
+            )
+            ran_parallel = True
+        else:
+            snapshots = []
+            for seed_sequence in seed_sequences:
+                rng = np.random.default_rng(seed_sequence)
+                engine.initialize(n_qubits)
+                snapshots.append(
+                    _execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng)
+                )
 
         counts: dict[str, int] | None = None
         statevector: np.ndarray | None = None
@@ -436,6 +614,10 @@ class StateVectorBackend:
             counts = build_counts_from_clbits(snapshots, n_clbits)
             available.add("counts")
         if request.statevector:
+            if ran_parallel:
+                raise BackendValidationError(
+                    "statevector output is not available from parallel dynamic execution"
+                )
             statevector = engine.export_state()
             available.add("statevector")
 
