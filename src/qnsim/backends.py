@@ -15,7 +15,13 @@ from .job import Job
 from .layout import ResourceLayout
 from .operations import ResetGate
 from .program import AppliedOperation, Measurement, Program
-from .result import Result, ResultConfig, build_counts, count_key_from_clbits
+from .result import (
+    Result,
+    ResultConfig,
+    build_counts,
+    build_counts_from_clbits,
+    count_key_from_clbits,
+)
 
 
 @dataclass(frozen=True)
@@ -110,6 +116,56 @@ def _condition_matches(
 ) -> bool:
     """Return whether a lowered feedforward condition passes."""
     return condition is None or all(clbits[c] == v for c, v in condition)
+
+
+def _shot_seed_sequences(seed: int | None, n_iters: int) -> list[np.random.SeedSequence]:
+    """Spawn one independent child `SeedSequence` per logical shot.
+
+    Child streams are derived from a single root sequence in shot order, so
+    serial and (future) parallel execution draw from the same reproducible
+    per-shot streams regardless of how shots are distributed across workers.
+    """
+    root = np.random.SeedSequence(seed)
+    return root.spawn(n_iters)
+
+
+def _execute_dynamic_plan_one_shot(
+    engine: StateVectorEngine,
+    plan: list[ResolvedStep],
+    n_clbits: int,
+    rng: np.random.Generator,
+) -> tuple[int, ...]:
+    """Run one dynamic-path shot to completion and return its clbit snapshot."""
+    clbits = [0] * n_clbits
+    for step in plan:
+        if isinstance(step, ApplyMatrixStep):
+            if _condition_matches(step.condition, clbits):
+                engine.apply(step)
+        elif isinstance(step, MeasurementStep):
+            bits = engine.measure_qubits(step.measured_indices, rng)
+            for c, bit in zip(step.classical_indices, bits):
+                clbits[c] = bit
+        else:  # ResetStep
+            if _condition_matches(step.condition, clbits):
+                engine.reset_qubits(step.reset_indices, rng)
+    return tuple(clbits)
+
+
+def _run_dynamic_shot(
+    plan: list[ResolvedStep],
+    n_qubits: int,
+    n_clbits: int,
+    seed_sequence: np.random.SeedSequence,
+) -> tuple[int, ...]:
+    """Pickle-safe, top-level single-shot worker for parallel dynamic execution.
+
+    Builds its own engine and RNG from its own child seed sequence, so it has
+    no shared mutable state with any other shot.
+    """
+    rng = np.random.default_rng(seed_sequence)
+    engine = StateVectorEngine()
+    engine.initialize(n_qubits)
+    return _execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng)
 
 
 def _resolve_result_request(config: ResultConfig, facts: _PlanFacts) -> _ResultRequest:
@@ -253,12 +309,11 @@ class StateVectorBackend:
         seed: int | None,
     ) -> Result:
         """Execute a lowered program and assemble the requested result fields."""
-        rng = np.random.default_rng(seed)
         request = _resolve_result_request(config, facts)
 
         if facts.is_dynamic:
             counts, statevector, available = self._run_per_shot(
-                plan, n_qubits, n_clbits, shots, rng, request
+                plan, n_qubits, n_clbits, shots, seed, request
             )
         else:
             counts, statevector, available = self._run_fast(
@@ -267,7 +322,7 @@ class StateVectorBackend:
                 n_qubits,
                 n_clbits,
                 shots,
-                rng,
+                np.random.default_rng(seed),
                 request,
             )
 
@@ -350,38 +405,35 @@ class StateVectorBackend:
         n_qubits: int,
         n_clbits: int,
         shots: int,
-        rng: np.random.Generator,
+        seed: int | None,
         request: _ResultRequest,
     ) -> tuple[dict[str, int] | None, np.ndarray | None, set[str]]:
-        """Per-shot path: run each shot independently with its own clbits."""
+        """Per-shot path: run each shot independently with its own clbits.
+
+        Each shot draws from its own child `SeedSequence`, spawned from the
+        run's root seed up front and in shot order. Serial execution here
+        consumes the same per-shot streams that parallel execution will use,
+        so results stay identical regardless of how shots are distributed.
+        """
         engine = self._engine
         # Counts need one trajectory per shot; statevector-only runs need one
         # representative trajectory, so shots=0 cannot leave the engine
         # uninitialized.
         n_iters = shots if request.counts else (1 if request.statevector else 0)
-        counts: dict[str, int] | None = {} if request.counts else None
-        for _ in range(n_iters):
-            engine.initialize(n_qubits)
-            clbits = [0] * n_clbits
-            for step in plan:
-                if isinstance(step, ApplyMatrixStep):
-                    if _condition_matches(step.condition, clbits):
-                        engine.apply(step)
-                elif isinstance(step, MeasurementStep):
-                    bits = engine.measure_qubits(step.measured_indices, rng)
-                    for c, bit in zip(step.classical_indices, bits):
-                        clbits[c] = bit
-                else:  # ResetStep also honors its feedforward condition.
-                    if _condition_matches(step.condition, clbits):
-                        engine.reset_qubits(step.reset_indices, rng)
-            if counts is not None:
-                key = count_key_from_clbits(clbits, n_clbits)
-                counts[key] = counts.get(key, 0) + 1
+        seed_sequences = _shot_seed_sequences(seed, n_iters)
+        snapshots: list[tuple[int, ...]] = []
 
+        for seed_sequence in seed_sequences:
+            rng = np.random.default_rng(seed_sequence)
+            engine.initialize(n_qubits)
+            snapshots.append(_execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng))
+
+        counts: dict[str, int] | None = None
         statevector: np.ndarray | None = None
         available: set[str] = set()
 
         if request.counts:
+            counts = build_counts_from_clbits(snapshots, n_clbits)
             available.add("counts")
         if request.statevector:
             statevector = engine.export_state()

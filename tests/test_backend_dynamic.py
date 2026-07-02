@@ -212,3 +212,37 @@ def test_grouped_measurement_writes_all_classical_slots_in_dynamic_path():
     counts = StateVectorBackend().run(p, shots=8, seed=0).result().get_counts()
 
     assert counts == {"11": 8}
+
+
+def _random_dynamic_program():
+    p = Program(1, 1)
+    p.add(ops.H, 0)
+    p.add_measurement(0, 0)
+    p.add(qs.ops.Reset(), 0)
+    return p
+
+
+def test_dynamic_seed_is_repeatable_with_per_shot_streams():
+    p = _random_dynamic_program()
+    backend = StateVectorBackend(options={"max_workers": 1})
+
+    a = backend.run(p, shots=64, seed=2026).result().get_counts()
+    b = backend.run(p, shots=64, seed=2026).result().get_counts()
+
+    assert a == b
+
+
+def test_dynamic_statevector_single_shot_stays_serial_and_available():
+    p = Program(1, 1)
+    p.add(ops.H, 0)
+    p.add_measurement(0, 0)
+    p.add(qs.ops.Reset(), 0)
+    result = StateVectorBackend(options={"max_workers": 4}).run(
+        p,
+        shots=1,
+        seed=2026,
+        result_config=qs.ResultConfig(counts=True, statevector=True),
+    ).result()
+
+    assert sum(result.get_counts().values()) == 1
+    assert result.get_statevector().shape == (2,)
