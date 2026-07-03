@@ -28,26 +28,16 @@ def _h_cz_program():
     return p
 
 
-def test_backend_run_is_repeatable():
+def test_run_with_seed_is_repeatable_and_reinitializes():
+    # `seed` is a run kwarg; two runs with the same seed give identical counts,
+    # and each run re-initializes (X|0> = |1>, not continuing from leftover |1>).
     p = Program(1, 1)
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
     backend = StateVectorBackend()
-    first = backend.run(p, shots=10, seed=0).result().get_counts()
-    second = backend.run(p, shots=10, seed=0).result().get_counts()
-    # X|0> = |1>; second run must re-initialize, not continue from leftover |1>
-    assert first == {"1": 10}
-    assert second == {"1": 10}
-
-
-def test_seed_is_a_run_kwarg_and_repeatable():
-    p = Program(1, 1)
-    p.add(ops.X, 0)
-    p.add_measurement(0, 0)
-    backend = StateVectorBackend()
-    a = backend.run(p, shots=10, seed=5).result().get_counts()
-    b = backend.run(p, shots=10, seed=5).result().get_counts()
-    assert a == b == {"1": 10}
+    first = backend.run(p, shots=10, seed=5).result().get_counts()
+    second = backend.run(p, shots=10, seed=5).result().get_counts()
+    assert first == second == {"1": 10}
 
 
 def test_run_without_seed_uses_random_rng_seed(monkeypatch):

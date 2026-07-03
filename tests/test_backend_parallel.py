@@ -14,41 +14,20 @@ def _random_dynamic_program():
     return p
 
 
-def test_multiprocessing_parallel_counts_match_serial_for_same_seed():
+@pytest.mark.parametrize("parallel_backend,seed", [
+    ("multiprocessing", 2026),
+    ("loky", 7),
+    ("auto", 99),
+])
+def test_parallel_counts_match_serial_for_same_seed(parallel_backend, seed):
     p = _random_dynamic_program()
 
     serial = StateVectorBackend(options={"max_workers": 1}).run(
-        p, shots=40, seed=2026
+        p, shots=40, seed=seed
     ).result().get_counts()
     parallel = StateVectorBackend(
-        options={"max_workers": 2, "parallel_backend": "multiprocessing"}
-    ).run(p, shots=40, seed=2026).result().get_counts()
-
-    assert parallel == serial
-
-
-def test_loky_parallel_counts_match_serial_for_same_seed():
-    p = _random_dynamic_program()
-
-    serial = StateVectorBackend(options={"max_workers": 1}).run(
-        p, shots=40, seed=7
-    ).result().get_counts()
-    parallel = StateVectorBackend(
-        options={"max_workers": 2, "parallel_backend": "loky"}
-    ).run(p, shots=40, seed=7).result().get_counts()
-
-    assert parallel == serial
-
-
-def test_auto_parallel_counts_match_serial_for_same_seed():
-    p = _random_dynamic_program()
-
-    serial = StateVectorBackend(options={"max_workers": 1}).run(
-        p, shots=40, seed=99
-    ).result().get_counts()
-    parallel = StateVectorBackend(
-        options={"max_workers": 2, "parallel_backend": "auto"}
-    ).run(p, shots=40, seed=99).result().get_counts()
+        options={"max_workers": 2, "parallel_backend": parallel_backend}
+    ).run(p, shots=40, seed=seed).result().get_counts()
 
     assert parallel == serial
 
