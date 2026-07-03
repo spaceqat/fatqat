@@ -82,6 +82,13 @@ _CS = np.diag([1, 1, 1, 1j]).astype(complex)
 _ISWAP = np.array(
     [[1, 0, 0, 0], [0, 0, 1j, 0], [0, 1j, 0, 0], [0, 0, 0, 1]], dtype=complex
 )
+# 3-qubit fixed gates. Basis index bits are (operand0, operand1, operand2)
+# from MSB to LSB, matching the control-first convention above.
+_CCX = np.eye(8, dtype=complex)
+_CCX[[6, 7]] = _CCX[[7, 6]]  # swap |110> <-> |111>: flip target iff both controls=1
+
+_CSWAP = np.eye(8, dtype=complex)
+_CSWAP[[5, 6]] = _CSWAP[[6, 5]]  # swap |101> <-> |110>: exchange targets iff control=1
 
 
 def _rx(applied: AppliedOperation) -> np.ndarray:
@@ -158,6 +165,8 @@ def default_implementation_map() -> MatrixImplementationMap:
     m.register(ops.CYGate, lambda _ao: _CY)
     m.register(ops.CSGate, lambda _ao: _CS)
     m.register(ops.iSwapGate, lambda _ao: _ISWAP)
+    m.register(ops.CCXGate, lambda _ao: _CCX)
+    m.register(ops.CSwapGate, lambda _ao: _CSWAP)
     m.register(ops.RX, _rx)
     m.register(ops.RY, _ry)
     m.register(ops.RZ, _rz)

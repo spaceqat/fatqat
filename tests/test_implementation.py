@@ -97,3 +97,19 @@ def test_parametric_cphase_reads_theta():
     theta = 1.1
     cphase = m.get(ops.CPhase)(_applied(ops.CPhase(theta)))
     assert np.allclose(cphase, np.diag([1, 1, 1, np.exp(1j * theta)]))
+
+
+def test_batch2_fixed_three_qubit_gate_matrices():
+    m = default_implementation_map()
+
+    ccx = m.get(type(ops.CCX))(_applied(ops.CCX, n=3))
+    expected_ccx = np.eye(8, dtype=complex)
+    expected_ccx[[6, 7]] = expected_ccx[[7, 6]]
+    assert ccx.shape == (8, 8)
+    assert np.allclose(ccx, expected_ccx)
+
+    cswap = m.get(type(ops.CSwap))(_applied(ops.CSwap, n=3))
+    expected_cswap = np.eye(8, dtype=complex)
+    expected_cswap[[5, 6]] = expected_cswap[[6, 5]]
+    assert cswap.shape == (8, 8)
+    assert np.allclose(cswap, expected_cswap)

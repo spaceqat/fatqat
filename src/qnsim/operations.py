@@ -11,6 +11,7 @@ __all__ = [
     "CX", "CZ", "Swap", "CY", "CS", "iSwap",
     "RX", "RY", "RZ", "Phase",
     "CPhase",
+    "CCX", "CSwap",
     "Reset",
 ]
 
@@ -188,6 +189,29 @@ class iSwapGate(Operation):
     _num_qubits: ClassVar[int] = 2
 
 
+@dataclass(frozen=True)
+class CCXGate(Operation):
+    """Doubly-controlled-X (Toffoli) gate operation.
+
+    ``targets = (control0, control1, target)``; operands 0 and 1 are the
+    controls.
+    """
+
+    name: ClassVar[str] = "CCX"
+    _num_qubits: ClassVar[int] = 3
+
+
+@dataclass(frozen=True)
+class CSwapGate(Operation):
+    """Controlled-swap (Fredkin) gate operation.
+
+    ``targets = (control, target0, target1)``; operand 0 is the control.
+    """
+
+    name: ClassVar[str] = "CSwap"
+    _num_qubits: ClassVar[int] = 3
+
+
 # ---------------------------------------------------------------------------
 # Parametric single-qubit unitary gates
 # ---------------------------------------------------------------------------
@@ -306,4 +330,6 @@ Swap = SwapGate()
 CY = CYGate()
 CS = CSGate()
 iSwap = iSwapGate()
+CCX = CCXGate()
+CSwap = CSwapGate()
 Reset = ResetGate()
