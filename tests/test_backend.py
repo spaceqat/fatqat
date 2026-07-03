@@ -2,6 +2,7 @@
 
 import warnings
 
+import numpy as np
 import pytest
 
 import qnsim as qs
@@ -13,7 +14,7 @@ from qnsim.errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from qnsim.implementation import MatrixImplementationMap
+from qnsim.implementation import MatrixImplementationMap, default_implementation_map
 from qnsim import operations as ops
 from qnsim.program import Program
 
@@ -155,3 +156,40 @@ def test_rule_failure_is_wrapped_with_operation_context():
 
     assert isinstance(excinfo.value.__cause__, RuntimeError)
     assert str(excinfo.value.__cause__) == "boom"
+
+
+def test_custom_operation_runs_end_to_end_via_bare_callable():
+    class MyX(ops.Operation):
+        name = "MyX"
+        _num_qubits = 1
+
+    def my_x_rule(op):
+        return np.array([[0, 1], [1, 0]], dtype=complex)
+
+    m = default_implementation_map()
+    m.register(MyX, my_x_rule)
+    backend = StateVectorBackend(implementation_map=m)
+
+    p = Program(1)
+    p.add(MyX(), 0)
+
+    statevector = (
+        backend.run(p, result_config={"counts": False, "statevector": True})
+        .result()
+        .get_statevector()
+    )
+
+    assert np.allclose(statevector, [0, 1])
+
+
+def test_unregistered_gate_raises_after_unregister():
+    m = default_implementation_map()
+    m.unregister(ops.T)
+    backend = StateVectorBackend(implementation_map=m)
+
+    p = Program(1, 1)
+    p.add(ops.T, 0)
+    p.add_measurement(0, 0)
+
+    with pytest.raises(UnsupportedOperationError):
+        backend.run(p, shots=10)
