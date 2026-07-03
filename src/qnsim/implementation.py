@@ -28,7 +28,58 @@ from . import operations as ops
 from .operations import Operation
 from .program import AppliedOperation
 
-MatrixImplementation = Callable[[AppliedOperation], np.ndarray]
+class MatrixImplementation:
+    """Base class for a matrix-family implementation rule.
+
+    A rule receives the bare `Operation` instance that was applied (e.g. an
+    `RX(0.3)` value) and returns its local matrix. Most callers never need to
+    subclass this directly: `MatrixImplementationMap.register` auto-wraps a
+    plain `np.ndarray` (as `FixedMatrix`) or a bare callable. Subclass and
+    override `__call__` for a stateful or configured implementation.
+    """
+
+    def __call__(self, op: Operation) -> np.ndarray:
+        raise NotImplementedError
+
+
+def _validate_square_matrix(matrix: np.ndarray) -> None:
+    """Raise `ValueError` unless `matrix` is square with side length >= 2.
+
+    Deliberately does not require a power-of-two side length: `FixedMatrix`
+    has no way to know what dimension its caller intends (it never sees the
+    target operation or register), and a fixed-dimension restriction here
+    would reject legitimate non-qubit matrices (e.g. a qutrit's dim=3 gate)
+    with no compensating safety benefit — the arity-aware shape check against
+    a specific operation happens separately, in `_wrap_rule`.
+    """
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        raise ValueError(f"matrix must be square, got shape {matrix.shape}")
+    n = matrix.shape[0]
+    if n < 2:
+        raise ValueError(f"matrix side length must be >= 2, got {n}")
+
+
+class FixedMatrix(MatrixImplementation):
+    """A constant matrix, independent of the applied operation's fields."""
+
+    def __init__(self, matrix: np.ndarray) -> None:
+        """Copy, validate, and freeze `matrix` as this rule's constant value.
+
+        Args:
+            matrix: Square matrix with side length >= 2. Copied on
+                construction, so later mutation of the caller's array does
+                not affect this rule.
+
+        Raises:
+            ValueError: If `matrix` is not square or its side length is < 2.
+        """
+        matrix = np.array(matrix, dtype=complex, copy=True)
+        _validate_square_matrix(matrix)
+        matrix.flags.writeable = False
+        self._matrix = matrix
+
+    def __call__(self, op: Operation) -> np.ndarray:
+        return self._matrix
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,8 @@ import pytest
 from qnsim import operations as ops
 from qnsim.implementation import (
     ApplyMatrixStep,
+    FixedMatrix,
+    MatrixImplementation,
     MatrixImplementationMap,
     default_implementation_map,
 )
@@ -113,3 +115,46 @@ def test_batch2_fixed_three_qubit_gate_matrices():
     expected_cswap[[5, 6]] = expected_cswap[[6, 5]]
     assert cswap.shape == (8, 8)
     assert np.allclose(cswap, expected_cswap)
+
+
+def test_fixed_matrix_is_a_matrix_implementation():
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+    assert isinstance(rule, MatrixImplementation)
+
+
+def test_fixed_matrix_returns_stored_matrix_regardless_of_operation():
+    rule = FixedMatrix(np.array([[0, 1], [1, 0]], dtype=complex))
+    assert np.allclose(rule(ops.X), [[0, 1], [1, 0]])
+    assert np.allclose(rule(ops.RX(1.23)), [[0, 1], [1, 0]])
+
+
+def test_fixed_matrix_rejects_non_square_matrix():
+    with pytest.raises(ValueError, match="square"):
+        FixedMatrix(np.zeros((2, 3)))
+
+
+def test_fixed_matrix_accepts_non_power_of_two_side_length():
+    # Deliberately not restricted to qubit-only power-of-two sizes: FixedMatrix
+    # has no way to know what dimension its caller intends (e.g. a qutrit's
+    # dim=3 gate), so it only requires squareness, not a power-of-two side.
+    rule = FixedMatrix(np.eye(3, dtype=complex))
+    assert np.allclose(rule(ops.X), np.eye(3))
+
+
+def test_fixed_matrix_rejects_side_length_below_two():
+    with pytest.raises(ValueError, match="side length"):
+        FixedMatrix(np.eye(1))
+
+
+def test_fixed_matrix_buffer_is_read_only():
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+    matrix = rule(ops.X)
+    with pytest.raises(ValueError):
+        matrix[0, 0] = 5.0
+
+
+def test_fixed_matrix_copies_input_array():
+    source = np.eye(2, dtype=complex)
+    rule = FixedMatrix(source)
+    source[0, 0] = 99.0
+    assert rule(ops.X)[0, 0] == 1.0
