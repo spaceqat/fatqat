@@ -346,6 +346,19 @@ class MatrixImplementationMap:
         op_cls = _resolve_operation_class(op)
         return self._rules.get(op_cls)
 
+    def copy(self) -> "MatrixImplementationMap":
+        """Return a new map with an independent copy of this map's registrations.
+
+        Rule objects themselves are shared (not deep-copied) between the
+        original and the copy — rules are expected to be immutable or
+        self-contained, so sharing them across independent map copies is
+        safe. Mutating one map's registrations (`register`/`unregister`)
+        never affects the other.
+        """
+        clone = MatrixImplementationMap()
+        clone._rules = dict(self._rules)
+        return clone
+
 
 def default_implementation_map() -> MatrixImplementationMap:
     """Build the default matrix implementation map."""

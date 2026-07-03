@@ -343,3 +343,19 @@ def test_register_accepts_callable_when_signature_raises_type_error(monkeypatch)
 
     m.register(ops.RX, some_rule)  # must not raise despite uninspectable signature
     assert np.allclose(m.get(ops.RX)(ops.RX(0.3)), np.eye(2))
+
+
+def test_copy_is_independent_of_original():
+    m = default_implementation_map()
+    clone = m.copy()
+
+    clone.unregister(ops.X)
+
+    assert m.get(ops.X) is not None
+    assert clone.get(ops.X) is None
+
+
+def test_copy_preserves_existing_registrations():
+    m = default_implementation_map()
+    clone = m.copy()
+    assert clone.get(ops.X) is m.get(ops.X)
