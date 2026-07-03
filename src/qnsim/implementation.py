@@ -4,6 +4,17 @@ A matrix implementation maps an operation to its local matrix (physics only).
 The backend pairs that matrix with layout-resolved target indices to build an
 ``ApplyMatrixStep`` — the plain data container the statevector engine reads
 directly.
+
+Local matrix convention (binding for every entry in this module):
+    - ``AppliedOperation.targets`` operand order defines the local
+      tensor-factor order; ``targets[0]`` is the local most-significant bit
+      (MSB), ``targets[-1]`` the local least-significant bit (LSB). See
+      ``engine._apply_matrix`` for the little-endian contraction this feeds.
+    - For every controlled gate below (``CX``, ``CZ``, ``CY``, and the
+      controlled gates added in later batches), the control operand(s) come
+      first and the target operand(s) come last — operand 0 (and operand 1
+      for doubly-controlled gates) is the control, occupying the local MSB
+      position(s).
 """
 
 from __future__ import annotations
@@ -56,11 +67,17 @@ _S = np.array([[1, 0], [0, 1j]], dtype=complex)
 _SDG = np.array([[1, 0], [0, -1j]], dtype=complex)
 _T = np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]], dtype=complex)
 _TDG = np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]], dtype=complex)
-# 2-qubit, operand 0 = MSB (control), operand 1 = LSB (target).
+# 2-qubit fixed gates (see module docstring for the control/target convention).
 _CX = np.array(
     [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=complex
 )
 _CZ = np.diag([1, 1, 1, -1]).astype(complex)
+_SWAP = np.array(
+    [[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=complex
+)
+_CY = np.array(
+    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]], dtype=complex
+)
 
 
 def _rx(applied: AppliedOperation) -> np.ndarray:
@@ -127,6 +144,8 @@ def default_implementation_map() -> MatrixImplementationMap:
     m.register(ops.TdgGate, lambda _ao: _TDG)
     m.register(ops.CXGate, lambda _ao: _CX)
     m.register(ops.CZGate, lambda _ao: _CZ)
+    m.register(ops.SwapGate, lambda _ao: _SWAP)
+    m.register(ops.CYGate, lambda _ao: _CY)
     m.register(ops.RX, _rx)
     m.register(ops.RY, _ry)
     m.register(ops.RZ, _rz)

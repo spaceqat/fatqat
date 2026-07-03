@@ -9,6 +9,8 @@ from qnsim.implementation import ApplyMatrixStep
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
 _CX = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=complex)
+_SWAP = np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=complex)
+_CY = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]], dtype=complex)
 
 
 def _engine(n):
@@ -55,3 +57,17 @@ def test_export_state_returns_independent_copy():
     first[0] = 999.0
     second = eng.export_state()
     assert second[0] != 999.0
+
+
+def test_swap_exchanges_two_qubits():
+    eng = _engine(2)
+    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))  # qubit0=1, qubit1=0
+    eng.apply(ApplyMatrixStep(matrix=_SWAP, target_indices=(0, 1)))
+    assert np.allclose(eng.export_state(), [0, 0, 1, 0])  # qubit0=0, qubit1=1
+
+
+def test_cy_flips_target_with_i_when_control_is_one():
+    eng = _engine(2)
+    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))  # control qubit0=1
+    eng.apply(ApplyMatrixStep(matrix=_CY, target_indices=(0, 1)))  # control=qubit0
+    assert np.allclose(eng.export_state(), [0, 0, 0, 1j])  # qubit0=1, qubit1=1, phase i

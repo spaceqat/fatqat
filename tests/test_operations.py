@@ -18,6 +18,8 @@ from qnsim.operations import Operation
     (ops.Tdg, "Tdg", 1),
     (ops.CX, "CX", 2),
     (ops.CZ, "CZ", 2),
+    (ops.Swap, "Swap", 2),
+    (ops.CY, "CY", 2),
 ])
 def test_fixed_gate_name_and_arity(gate, name, n_qubits):
     assert gate.name == name

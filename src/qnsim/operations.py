@@ -8,7 +8,7 @@ from typing import ClassVar
 __all__ = [
     "Operation",
     "I", "H", "S", "Sdg", "T", "Tdg", "X", "Y", "Z",
-    "CX", "CZ",
+    "CX", "CZ", "Swap", "CY",
     "RX", "RY", "RZ", "Phase",
     "Reset",
 ]
@@ -147,6 +147,25 @@ class CZGate(Operation):
     _num_qubits: ClassVar[int] = 2
 
 
+@dataclass(frozen=True)
+class SwapGate(Operation):
+    """Swap gate operation: exchanges the state of its two targets."""
+
+    name: ClassVar[str] = "Swap"
+    _num_qubits: ClassVar[int] = 2
+
+
+@dataclass(frozen=True)
+class CYGate(Operation):
+    """Controlled-Y gate operation.
+
+    ``targets = (control, target)``; operand 0 is the control.
+    """
+
+    name: ClassVar[str] = "CY"
+    _num_qubits: ClassVar[int] = 2
+
+
 # ---------------------------------------------------------------------------
 # Parametric single-qubit unitary gates
 # ---------------------------------------------------------------------------
@@ -240,4 +259,6 @@ Y = YGate()
 Z = ZGate()
 CX = CXGate()
 CZ = CZGate()
+Swap = SwapGate()
+CY = CYGate()
 Reset = ResetGate()

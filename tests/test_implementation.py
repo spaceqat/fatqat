@@ -72,3 +72,11 @@ def test_apply_matrix_step_value_object():
     assert step.target_indices == (3,)
     with pytest.raises(ValueError):
         step.matrix[0, 0] = 5.0
+
+
+def test_batch1_fixed_two_qubit_gate_matrices():
+    m = default_implementation_map()
+    swap = m.get(type(ops.Swap))(_applied(ops.Swap))
+    assert np.allclose(swap, [[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
+    cy = m.get(type(ops.CY))(_applied(ops.CY))
+    assert np.allclose(cy, [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]])
