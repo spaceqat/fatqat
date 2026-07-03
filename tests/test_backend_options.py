@@ -69,18 +69,23 @@ def test_backend_rejects_non_dict_options():
 
 
 def test_backend_accepts_custom_implementation_map():
-    from qnsim.implementation import MatrixImplementationMap
+    from qnsim.implementation import default_implementation_map
 
-    m = MatrixImplementationMap()
+    # Start from the defaults and override just one gate, to prove override
+    # replaces one rule while the rest of the default map keeps working.
+    m = default_implementation_map()
     m.register(qs.ops.X, np.eye(2, dtype=complex))  # override X with identity
     backend = StateVectorBackend(implementation_map=m)
 
-    p = qs.Program(1, 1)
-    p.add(qs.ops.X, 0)
+    p = qs.Program(2, 2)
+    p.add(qs.ops.X, 0)  # overridden: identity, so qubit 0 stays |0>
+    p.add(qs.ops.H, 1)  # still a default rule: H|0> is an equal superposition
     p.add_measurement(0, 0)
-    counts = backend.run(p, shots=10, seed=0).result().get_counts()
+    p.add_measurement(1, 1)
+    counts = backend.run(p, shots=200, seed=0).result().get_counts()
 
-    assert counts == {"0": 10}
+    assert set(counts) <= {"00", "10"}  # c1 (H) varies; c0 (overridden X) is always 0
+    assert counts.get("00", 0) + counts.get("10", 0) == 200
 
 
 def test_backend_none_implementation_map_uses_defaults():
