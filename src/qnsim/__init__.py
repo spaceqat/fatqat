@@ -5,6 +5,7 @@ from . import operations as ops
 from .backends import StateVectorBackend
 from .errors import (
     BackendValidationError,
+    MatrixImplementationError,
     NoMeasurementWarning,
     QnsimError,
     ResultFieldUnavailableError,
@@ -38,6 +39,7 @@ __all__ = [
     "QnsimError",
     "BackendValidationError",
     "UnsupportedOperationError",
+    "MatrixImplementationError",
     "ResultFieldUnavailableError",
     "NoMeasurementWarning",
 ]

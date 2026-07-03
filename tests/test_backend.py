@@ -9,9 +9,11 @@ import qnsim.backends as backends
 from qnsim.backends import StateVectorBackend
 from qnsim.errors import (
     BackendValidationError,
+    MatrixImplementationError,
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
+from qnsim.implementation import MatrixImplementationMap
 from qnsim import operations as ops
 from qnsim.program import Program
 
@@ -134,3 +136,22 @@ def test_no_measurement_warning_understands_grouped_measurements():
 
     assert counts == {"11": 4}
     assert not any(issubclass(w.category, NoMeasurementWarning) for w in caught)
+
+
+def test_rule_failure_is_wrapped_with_operation_context():
+    def broken_rule(op):
+        raise RuntimeError("boom")
+
+    m = MatrixImplementationMap()
+    m.register(ops.X, broken_rule)
+    backend = StateVectorBackend(implementation_map=m)
+
+    p = Program(1, 1)
+    p.add(ops.X, 0)
+    p.add_measurement(0, 0)
+
+    with pytest.raises(MatrixImplementationError, match="XGate") as excinfo:
+        backend.run(p, shots=10)
+
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    assert str(excinfo.value.__cause__) == "boom"

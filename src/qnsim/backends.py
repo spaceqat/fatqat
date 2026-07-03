@@ -13,7 +13,12 @@ from typing import Any
 import numpy as np
 
 from .engine import StateVectorEngine
-from .errors import BackendValidationError, NoMeasurementWarning, UnsupportedOperationError
+from .errors import (
+    BackendValidationError,
+    MatrixImplementationError,
+    NoMeasurementWarning,
+    UnsupportedOperationError,
+)
 from .implementation import ApplyMatrixStep, MatrixImplementationMap, default_implementation_map
 from .job import Job
 from .layout import ResourceLayout
@@ -802,7 +807,12 @@ class StateVectorBackend:
                 rule = self._impl_map.get(type(step.operation))
                 if rule is None:
                     raise UnsupportedOperationError(type(step.operation).__name__)
-                matrix = rule(step.operation)
+                try:
+                    matrix = rule(step.operation)
+                except Exception as exc:
+                    raise MatrixImplementationError(
+                        f"implementation for {type(step.operation).__name__} raised: {exc}"
+                    ) from exc
                 cond = _resolve_condition(step.condition, layout)
                 plan.append(
                     ApplyMatrixStep(

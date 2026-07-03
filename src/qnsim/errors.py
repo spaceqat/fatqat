@@ -15,6 +15,11 @@ class UnsupportedOperationError(BackendValidationError):
     """Raised when the backend does not support an operation or feature."""
 
 
+class MatrixImplementationError(QnsimError):
+    """Raised when a registered implementation rule fails while building a
+    plan's matrix step."""
+
+
 class ResultFieldUnavailableError(QnsimError):
     """Raised when a Result field was not produced by this run."""
 
