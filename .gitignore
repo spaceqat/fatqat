@@ -11,3 +11,5 @@ docs/superpowers/
 
 # Local git worktrees used for isolated subagent-driven development
 .worktrees/
+benchmarks/
+benchmarks_qiskit/
