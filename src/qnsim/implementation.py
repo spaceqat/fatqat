@@ -148,7 +148,7 @@ class MatrixImplementationMap:
 
 
 def default_implementation_map() -> MatrixImplementationMap:
-    """Build the Phase 1 matrix implementation map."""
+    """Build the default matrix implementation map."""
     m = MatrixImplementationMap()
     m.register(ops.XGate, lambda _ao: _X)
     m.register(ops.YGate, lambda _ao: _Y)
