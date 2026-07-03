@@ -58,7 +58,7 @@ def test_reset_seed_independence_matches_born_rule():
         p = qs.Program(2, 1)
         p.add(ops.H, 0)
         p.add(ops.CX, (0, 1))
-        p.add(qs.ops.Reset(), 0)
+        p.add(qs.ops.Reset, 0)
         p.add_measurement(1, 0)
         return p
 

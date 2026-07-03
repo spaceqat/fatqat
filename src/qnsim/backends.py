@@ -13,8 +13,13 @@ from typing import Any
 import numpy as np
 
 from .engine import StateVectorEngine
-from .errors import BackendValidationError, NoMeasurementWarning, UnsupportedOperationError
-from .implementation import ApplyMatrixStep, default_implementation_map
+from .errors import (
+    BackendValidationError,
+    MatrixImplementationError,
+    NoMeasurementWarning,
+    UnsupportedOperationError,
+)
+from .implementation import ApplyMatrixStep, MatrixImplementationMap, default_implementation_map
 from .job import Job
 from .layout import ResourceLayout
 from .operations import ResetGate
@@ -371,7 +376,11 @@ class StateVectorBackend:
     repeated single-threaded use but is not safe for concurrent `run()` calls.
     """
 
-    def __init__(self, options: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        options: dict[str, Any] | None = None,
+        implementation_map: MatrixImplementationMap | None = None,
+    ) -> None:
         """Create a statevector backend.
 
         Args:
@@ -379,11 +388,19 @@ class StateVectorBackend:
                 `max_workers` and `parallel_backend`; unknown keys are ignored
                 with a warning. These options only affect the dynamic counts
                 path and do not change numerical semantics.
+            implementation_map: Optional matrix implementation map controlling
+                which operations this backend supports and how their matrices
+                are built. `None` (the default) uses
+                `default_implementation_map()`. The backend copies whatever
+                map it receives, so mutating the caller's map object after
+                construction does not change this backend's behavior.
         """
         self._config = _normalize_dict_options(
             options, {"max_workers", "parallel_backend"}, _BackendConfig, "options", "backend"
         )
-        self._impl_map = default_implementation_map()
+        if implementation_map is None:
+            implementation_map = default_implementation_map()
+        self._impl_map = implementation_map.copy()
         # The engine is constructed once and re-initialized per run so its
         # compiled kernels can be reused. Because it holds per-run state, a
         # single backend instance is NOT safe for concurrent run() calls
@@ -790,7 +807,12 @@ class StateVectorBackend:
                 rule = self._impl_map.get(type(step.operation))
                 if rule is None:
                     raise UnsupportedOperationError(type(step.operation).__name__)
-                matrix = rule(step)
+                try:
+                    matrix = rule(step.operation)
+                except Exception as exc:
+                    raise MatrixImplementationError(
+                        f"implementation for {type(step.operation).__name__} raised: {exc}"
+                    ) from exc
                 cond = _resolve_condition(step.condition, layout)
                 plan.append(
                     ApplyMatrixStep(

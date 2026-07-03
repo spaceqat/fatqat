@@ -2,6 +2,7 @@
 
 import warnings
 
+import numpy as np
 import pytest
 
 import qnsim as qs
@@ -9,9 +10,11 @@ import qnsim.backends as backends
 from qnsim.backends import StateVectorBackend
 from qnsim.errors import (
     BackendValidationError,
+    MatrixImplementationError,
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
+from qnsim.implementation import MatrixImplementationMap, default_implementation_map
 from qnsim import operations as ops
 from qnsim.program import Program
 
@@ -25,26 +28,16 @@ def _h_cz_program():
     return p
 
 
-def test_backend_run_is_repeatable():
+def test_run_with_seed_is_repeatable_and_reinitializes():
+    # `seed` is a run kwarg; two runs with the same seed give identical counts,
+    # and each run re-initializes (X|0> = |1>, not continuing from leftover |1>).
     p = Program(1, 1)
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
     backend = StateVectorBackend()
-    first = backend.run(p, shots=10, seed=0).result().get_counts()
-    second = backend.run(p, shots=10, seed=0).result().get_counts()
-    # X|0> = |1>; second run must re-initialize, not continue from leftover |1>
-    assert first == {"1": 10}
-    assert second == {"1": 10}
-
-
-def test_seed_is_a_run_kwarg_and_repeatable():
-    p = Program(1, 1)
-    p.add(ops.X, 0)
-    p.add_measurement(0, 0)
-    backend = StateVectorBackend()
-    a = backend.run(p, shots=10, seed=5).result().get_counts()
-    b = backend.run(p, shots=10, seed=5).result().get_counts()
-    assert a == b == {"1": 10}
+    first = backend.run(p, shots=10, seed=5).result().get_counts()
+    second = backend.run(p, shots=10, seed=5).result().get_counts()
+    assert first == second == {"1": 10}
 
 
 def test_run_without_seed_uses_random_rng_seed(monkeypatch):
@@ -134,3 +127,59 @@ def test_no_measurement_warning_understands_grouped_measurements():
 
     assert counts == {"11": 4}
     assert not any(issubclass(w.category, NoMeasurementWarning) for w in caught)
+
+
+def test_rule_failure_is_wrapped_with_operation_context():
+    def broken_rule(op):
+        raise RuntimeError("boom")
+
+    m = MatrixImplementationMap()
+    m.register(ops.X, broken_rule)
+    backend = StateVectorBackend(implementation_map=m)
+
+    p = Program(1, 1)
+    p.add(ops.X, 0)
+    p.add_measurement(0, 0)
+
+    with pytest.raises(MatrixImplementationError, match="XGate") as excinfo:
+        backend.run(p, shots=10)
+
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    assert str(excinfo.value.__cause__) == "boom"
+
+
+def test_custom_operation_runs_end_to_end_via_bare_callable():
+    class MyX(ops.Operation):
+        name = "MyX"
+        _num_qubits = 1
+
+    def my_x_rule(op):
+        return np.array([[0, 1], [1, 0]], dtype=complex)
+
+    m = default_implementation_map()
+    m.register(MyX, my_x_rule)
+    backend = StateVectorBackend(implementation_map=m)
+
+    p = Program(1)
+    p.add(MyX(), 0)
+
+    statevector = (
+        backend.run(p, result_config={"counts": False, "statevector": True})
+        .result()
+        .get_statevector()
+    )
+
+    assert np.allclose(statevector, [0, 1])
+
+
+def test_unregistered_gate_raises_after_unregister():
+    m = default_implementation_map()
+    m.unregister(ops.T)
+    backend = StateVectorBackend(implementation_map=m)
+
+    p = Program(1, 1)
+    p.add(ops.T, 0)
+    p.add_measurement(0, 0)
+
+    with pytest.raises(UnsupportedOperationError):
+        backend.run(p, shots=10)

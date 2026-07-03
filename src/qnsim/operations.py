@@ -1,9 +1,23 @@
-"""Operation base and the Phase 1 gate set, exposed as the `qs.ops` namespace."""
+"""Operation base class and the built-in gate set, exposed as the `qs.ops` namespace."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import ClassVar
+
+__all__ = [
+    "Operation",
+    "I", "H", "S", "Sdg", "T", "Tdg", "X", "Y", "Z",
+    "CX", "CZ", "Swap", "CY", "CS", "iSwap", "CCX", "CSwap",
+    "RX", "RY", "RZ", "Phase",
+    "CPhase",
+    "Reset",
+]
+
+
+# ---------------------------------------------------------------------------
+# Operation base class
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -36,6 +50,11 @@ class Operation:
         return type(self)._num_qubits
 
 
+# ---------------------------------------------------------------------------
+# Fixed single-qubit unitary gates
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class HGate(Operation):
     """Hadamard gate operation."""
@@ -45,10 +64,42 @@ class HGate(Operation):
 
 
 @dataclass(frozen=True)
+class IGate(Operation):
+    """Identity gate operation."""
+
+    name: ClassVar[str] = "I"
+    _num_qubits: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class SGate(Operation):
+    """S phase gate operation (square root of Z)."""
+
+    name: ClassVar[str] = "S"
+    _num_qubits: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class SdgGate(Operation):
+    """Inverse S phase gate operation."""
+
+    name: ClassVar[str] = "Sdg"
+    _num_qubits: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
 class TGate(Operation):
     """T phase gate operation."""
 
     name: ClassVar[str] = "T"
+    _num_qubits: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class TdgGate(Operation):
+    """Inverse T phase gate operation."""
+
+    name: ClassVar[str] = "Tdg"
     _num_qubits: ClassVar[int] = 1
 
 
@@ -76,6 +127,11 @@ class ZGate(Operation):
     _num_qubits: ClassVar[int] = 1
 
 
+# ---------------------------------------------------------------------------
+# Fixed multi-qubit unitary gates (2+ qubits)
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class CXGate(Operation):
     """Controlled-X gate operation."""
@@ -90,6 +146,74 @@ class CZGate(Operation):
 
     name: ClassVar[str] = "CZ"
     _num_qubits: ClassVar[int] = 2
+
+
+@dataclass(frozen=True)
+class SwapGate(Operation):
+    """Swap gate operation: exchanges the state of its two targets."""
+
+    name: ClassVar[str] = "Swap"
+    _num_qubits: ClassVar[int] = 2
+
+
+@dataclass(frozen=True)
+class CYGate(Operation):
+    """Controlled-Y gate operation.
+
+    ``targets = (control, target)``; operand 0 is the control.
+    """
+
+    name: ClassVar[str] = "CY"
+    _num_qubits: ClassVar[int] = 2
+
+
+@dataclass(frozen=True)
+class CSGate(Operation):
+    """Controlled-S gate operation.
+
+    ``targets = (control, target)``; operand 0 is the control.
+    """
+
+    name: ClassVar[str] = "CS"
+    _num_qubits: ClassVar[int] = 2
+
+
+@dataclass(frozen=True)
+class iSwapGate(Operation):
+    """iSWAP gate operation: swaps its two targets, applying an i phase to
+    the swapped amplitudes.
+    """
+
+    name: ClassVar[str] = "iSwap"
+    _num_qubits: ClassVar[int] = 2
+
+
+@dataclass(frozen=True)
+class CCXGate(Operation):
+    """Doubly-controlled-X (Toffoli) gate operation.
+
+    ``targets = (control0, control1, target)``; operands 0 and 1 are the
+    controls.
+    """
+
+    name: ClassVar[str] = "CCX"
+    _num_qubits: ClassVar[int] = 3
+
+
+@dataclass(frozen=True)
+class CSwapGate(Operation):
+    """Controlled-swap (Fredkin) gate operation.
+
+    ``targets = (control, target0, target1)``; operand 0 is the control.
+    """
+
+    name: ClassVar[str] = "CSwap"
+    _num_qubits: ClassVar[int] = 3
+
+
+# ---------------------------------------------------------------------------
+# Parametric single-qubit unitary gates
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -132,6 +256,45 @@ class RZ(Operation):
 
 
 @dataclass(frozen=True)
+class Phase(Operation):
+    """General single-qubit phase gate: diag(1, e^{i theta}).
+
+    Attributes:
+        theta: Phase angle in radians.
+    """
+
+    theta: float
+    name: ClassVar[str] = "Phase"
+    _num_qubits: ClassVar[int] = 1
+
+
+# ---------------------------------------------------------------------------
+# Parametric controlled / multi-qubit unitary gates
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CPhase(Operation):
+    """Controlled phase gate: applies diag(1, e^{i theta}) to the target when
+    the control is |1>.
+
+    ``targets = (control, target)``; operand 0 is the control.
+
+    Attributes:
+        theta: Phase angle in radians.
+    """
+
+    theta: float
+    name: ClassVar[str] = "CPhase"
+    _num_qubits: ClassVar[int] = 2
+
+
+# ---------------------------------------------------------------------------
+# Non-unitary frontend operations
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
 class ResetGate(Operation):
     """Reset operation: repreparation of one or more target qubits in ``|0>``.
 
@@ -143,14 +306,29 @@ class ResetGate(Operation):
     _num_qubits: ClassVar[int | None] = None
 
 
-# Pre-built fixed-gate instances (parametric gates are used as classes: RX(theta)).
+# ---------------------------------------------------------------------------
+# Public fixed-gate instances
+# ---------------------------------------------------------------------------
+# Fixed gates (no parameters) are exported as singleton values. Parametric
+# gates are exported as classes above and instantiated by callers, e.g.
+# RX(theta). `Reset` takes no parameters, so it follows the fixed-gate rule
+# too: `qs.ops.Reset`, not `qs.ops.Reset()`.
+
 H = HGate()
+I = IGate()
+S = SGate()
+Sdg = SdgGate()
 T = TGate()
+Tdg = TdgGate()
 X = XGate()
 Y = YGate()
 Z = ZGate()
 CX = CXGate()
 CZ = CZGate()
-
-# Reset takes no parameters but is used with call syntax: qs.ops.Reset().
-Reset = ResetGate
+Swap = SwapGate()
+CY = CYGate()
+CS = CSGate()
+iSwap = iSwapGate()
+CCX = CCXGate()
+CSwap = CSwapGate()
+Reset = ResetGate()

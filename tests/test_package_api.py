@@ -33,11 +33,13 @@ def test_error_classes_exported():
     from qnsim.errors import (
         QnsimError,
         BackendValidationError,
+        MatrixImplementationError,
         UnsupportedOperationError,
         NoMeasurementWarning,
     )
     assert qs.QnsimError is QnsimError
     assert qs.BackendValidationError is BackendValidationError
+    assert qs.MatrixImplementationError is MatrixImplementationError
     assert qs.UnsupportedOperationError is UnsupportedOperationError
     assert qs.NoMeasurementWarning is NoMeasurementWarning
 
