@@ -790,7 +790,7 @@ class StateVectorBackend:
                 rule = self._impl_map.get(type(step.operation))
                 if rule is None:
                     raise UnsupportedOperationError(type(step.operation).__name__)
-                matrix = rule(step)
+                matrix = rule(step.operation)
                 cond = _resolve_condition(step.condition, layout)
                 plan.append(
                     ApplyMatrixStep(

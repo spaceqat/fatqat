@@ -15,6 +15,10 @@ Local matrix convention (binding for every entry in this module):
       first and the target operand(s) come last — operand 0 (and operand 1
       for doubly-controlled gates) is the control, occupying the local MSB
       position(s).
+
+A matrix implementation rule receives the bare `Operation` instance that was
+applied (e.g. `RX(0.3)`), never the surrounding `AppliedOperation` — target
+and feedforward-condition resolution both happen separately, in the backend.
 """
 
 from __future__ import annotations
@@ -26,7 +30,6 @@ import numpy as np
 
 from . import operations as ops
 from .operations import Operation
-from .program import AppliedOperation
 
 class MatrixImplementation:
     """Base class for a matrix-family implementation rule.
@@ -142,37 +145,37 @@ _CSWAP = np.eye(8, dtype=complex)
 _CSWAP[[5, 6]] = _CSWAP[[6, 5]]  # swap |101> <-> |110>: exchange targets iff control=1
 
 
-def _rx(applied: AppliedOperation) -> np.ndarray:
-    """Build the RX matrix from the applied operation's angle."""
-    theta = applied.operation.theta
+def _rx(op: ops.RX) -> np.ndarray:
+    """Build the RX matrix from the operation's angle."""
+    theta = op.theta
     c, s = np.cos(theta / 2), np.sin(theta / 2)
     return np.array([[c, -1j * s], [-1j * s, c]], dtype=complex)
 
 
-def _ry(applied: AppliedOperation) -> np.ndarray:
-    """Build the RY matrix from the applied operation's angle."""
-    theta = applied.operation.theta
+def _ry(op: ops.RY) -> np.ndarray:
+    """Build the RY matrix from the operation's angle."""
+    theta = op.theta
     c, s = np.cos(theta / 2), np.sin(theta / 2)
     return np.array([[c, -s], [s, c]], dtype=complex)
 
 
-def _rz(applied: AppliedOperation) -> np.ndarray:
-    """Build the RZ matrix from the applied operation's angle."""
-    theta = applied.operation.theta
+def _rz(op: ops.RZ) -> np.ndarray:
+    """Build the RZ matrix from the operation's angle."""
+    theta = op.theta
     return np.array(
         [[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=complex
     )
 
 
-def _phase(applied: AppliedOperation) -> np.ndarray:
-    """Build the Phase matrix from the applied operation's angle."""
-    theta = applied.operation.theta
+def _phase(op: ops.Phase) -> np.ndarray:
+    """Build the Phase matrix from the operation's angle."""
+    theta = op.theta
     return np.array([[1, 0], [0, np.exp(1j * theta)]], dtype=complex)
 
 
-def _cphase(applied: AppliedOperation) -> np.ndarray:
-    """Build the CPhase matrix from the applied operation's angle."""
-    theta = applied.operation.theta
+def _cphase(op: ops.CPhase) -> np.ndarray:
+    """Build the CPhase matrix from the operation's angle."""
+    theta = op.theta
     return np.diag([1, 1, 1, np.exp(1j * theta)]).astype(complex)
 
 
@@ -188,8 +191,8 @@ class MatrixImplementationMap:
 
         Args:
             op_cls: Operation class used as the lookup key.
-            rule: Callable that receives an `AppliedOperation` and returns a
-                local matrix.
+            rule: Callable that receives the bare `Operation` instance and
+                returns a local matrix.
         """
         self._rules[op_cls] = rule
 
@@ -201,23 +204,23 @@ class MatrixImplementationMap:
 def default_implementation_map() -> MatrixImplementationMap:
     """Build the default matrix implementation map."""
     m = MatrixImplementationMap()
-    m.register(ops.XGate, lambda _ao: _X)
-    m.register(ops.YGate, lambda _ao: _Y)
-    m.register(ops.ZGate, lambda _ao: _Z)
-    m.register(ops.HGate, lambda _ao: _H)
-    m.register(ops.IGate, lambda _ao: _I)
-    m.register(ops.SGate, lambda _ao: _S)
-    m.register(ops.SdgGate, lambda _ao: _SDG)
-    m.register(ops.TGate, lambda _ao: _T)
-    m.register(ops.TdgGate, lambda _ao: _TDG)
-    m.register(ops.CXGate, lambda _ao: _CX)
-    m.register(ops.CZGate, lambda _ao: _CZ)
-    m.register(ops.SwapGate, lambda _ao: _SWAP)
-    m.register(ops.CYGate, lambda _ao: _CY)
-    m.register(ops.CSGate, lambda _ao: _CS)
-    m.register(ops.iSwapGate, lambda _ao: _ISWAP)
-    m.register(ops.CCXGate, lambda _ao: _CCX)
-    m.register(ops.CSwapGate, lambda _ao: _CSWAP)
+    m.register(ops.XGate, FixedMatrix(_X))
+    m.register(ops.YGate, FixedMatrix(_Y))
+    m.register(ops.ZGate, FixedMatrix(_Z))
+    m.register(ops.HGate, FixedMatrix(_H))
+    m.register(ops.IGate, FixedMatrix(_I))
+    m.register(ops.SGate, FixedMatrix(_S))
+    m.register(ops.SdgGate, FixedMatrix(_SDG))
+    m.register(ops.TGate, FixedMatrix(_T))
+    m.register(ops.TdgGate, FixedMatrix(_TDG))
+    m.register(ops.CXGate, FixedMatrix(_CX))
+    m.register(ops.CZGate, FixedMatrix(_CZ))
+    m.register(ops.SwapGate, FixedMatrix(_SWAP))
+    m.register(ops.CYGate, FixedMatrix(_CY))
+    m.register(ops.CSGate, FixedMatrix(_CS))
+    m.register(ops.iSwapGate, FixedMatrix(_ISWAP))
+    m.register(ops.CCXGate, FixedMatrix(_CCX))
+    m.register(ops.CSwapGate, FixedMatrix(_CSWAP))
     m.register(ops.RX, _rx)
     m.register(ops.RY, _ry)
     m.register(ops.RZ, _rz)
