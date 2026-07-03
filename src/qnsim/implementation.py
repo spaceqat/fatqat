@@ -23,6 +23,7 @@ and feedforward-condition resolution both happen separately, in the backend.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from typing import Callable
 
@@ -209,6 +210,86 @@ def _require_fixed_arity(op_cls: type[Operation]) -> None:
         )
 
 
+_ARITY_CHECK_SENTINEL = object()
+
+
+class _CallableMatrixImplementation(MatrixImplementation):
+    """Adapts a bare `Operation -> np.ndarray` callable to `MatrixImplementation`."""
+
+    def __init__(self, func: Callable[[Operation], np.ndarray]) -> None:
+        self._func = func
+
+    def __call__(self, op: Operation) -> np.ndarray:
+        return self._func(op)
+
+
+def _check_callable_arity(op_cls: type[Operation], rule: Callable) -> None:
+    """Raise `TypeError` if `rule` cannot be called with one positional argument.
+
+    Uses `inspect.signature(rule).bind(...)` rather than counting parameters:
+    this accepts a `*args`-only callable or one with an optional second
+    parameter (one positional slot is enough) and rejects a required
+    keyword-only parameter (no positional slot can satisfy it), matching
+    what `rule(op)` will actually do at call time. If the signature cannot
+    be introspected at all (`inspect.signature` can raise either `ValueError`
+    or `TypeError` for some C-implemented or otherwise uninspectable
+    callables — a different `TypeError` than the one this function itself
+    raises below for a genuine arity mismatch), the check is skipped and the
+    callable is accepted — this is a best-effort early warning, not a hard
+    gate.
+    """
+    try:
+        signature = inspect.signature(rule)
+    except (ValueError, TypeError):
+        return
+    try:
+        signature.bind(_ARITY_CHECK_SENTINEL)
+    except TypeError:
+        raise TypeError(
+            f"rule for {op_cls.__name__} must accept one positional argument "
+            f"(the Operation instance), got signature {signature}"
+        ) from None
+
+
+def _wrap_rule(
+    op_cls: type[Operation],
+    rule: "MatrixImplementation | Callable[[Operation], np.ndarray] | np.ndarray",
+) -> MatrixImplementation:
+    """Normalize a `register()` rule argument into a `MatrixImplementation`.
+
+    Accepts an already-built `MatrixImplementation` (returned as-is), a plain
+    `np.ndarray` (wrapped in `FixedMatrix`, shape-validated against `op_cls`'s
+    fixed arity), or a bare callable (arity-checked and wrapped). Every
+    stored rule is a `MatrixImplementation` instance, so `get()` always
+    returns a uniform type regardless of how the rule was registered.
+
+    Raises:
+        TypeError: If `rule` is none of the above (e.g. a string or a plain
+            object) — checked explicitly here so the error names the
+            operation and the bad value, rather than surfacing whatever raw
+            `TypeError` `inspect.signature` happens to raise for a
+            non-callable.
+    """
+    if isinstance(rule, MatrixImplementation):
+        return rule
+    if isinstance(rule, np.ndarray):
+        n = op_cls._num_qubits
+        expected_shape = (2**n, 2**n)
+        if rule.shape != expected_shape:
+            raise ValueError(
+                f"matrix for {op_cls.__name__} must have shape {expected_shape}, "
+                f"got {rule.shape}"
+            )
+        return FixedMatrix(rule)
+    if not callable(rule):
+        raise TypeError(
+            f"rule for {op_cls.__name__} must be a MatrixImplementation, "
+            f"np.ndarray, or callable, got {rule!r}"
+        )
+    _check_callable_arity(op_cls, rule)
+    return _CallableMatrixImplementation(rule)
+
+
 class MatrixImplementationMap:
     """Class-keyed registry from operation classes to matrix implementations."""
 
@@ -216,22 +297,31 @@ class MatrixImplementationMap:
         """Create an empty implementation map."""
         self._rules: dict[type[Operation], MatrixImplementation] = {}
 
-    def register(self, op: Operation | type[Operation], rule: MatrixImplementation) -> None:
+    def register(
+        self,
+        op: Operation | type[Operation],
+        rule: "MatrixImplementation | Callable[[Operation], np.ndarray] | np.ndarray",
+    ) -> None:
         """Register a matrix implementation for an operation.
 
         Args:
             op: An `Operation` instance (e.g. `qs.ops.X`) or subclass (e.g. a
                 custom gate class). Normalized to the operation's class for
                 the registry key.
-            rule: A `MatrixImplementation` instance.
+            rule: A `MatrixImplementation` instance, a bare `np.ndarray`
+                (wrapped in `FixedMatrix`), or a bare callable taking the
+                operation and returning its matrix (wrapped automatically).
 
         Raises:
             TypeError: If `op` is neither an `Operation` instance nor
-                subclass, or if its operation class has variable arity.
+                subclass; if its operation class has variable arity; or if a
+                bare callable cannot accept one positional argument.
+            ValueError: If a bare `np.ndarray` does not match the shape
+                required by `op`'s arity.
         """
         op_cls = _resolve_operation_class(op)
         _require_fixed_arity(op_cls)
-        self._rules[op_cls] = rule
+        self._rules[op_cls] = _wrap_rule(op_cls, rule)
 
     def unregister(self, op: Operation | type[Operation]) -> None:
         """Remove a registered matrix implementation, if present.
@@ -245,6 +335,10 @@ class MatrixImplementationMap:
 
     def get(self, op: Operation | type[Operation]) -> MatrixImplementation | None:
         """Return the matrix implementation registered for an operation, if any.
+
+        Always a `MatrixImplementation` instance regardless of what was
+        registered — a bare callable is wrapped, a bare ndarray becomes a
+        `FixedMatrix`.
 
         Args:
             op: An `Operation` instance or subclass.

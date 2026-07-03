@@ -204,3 +204,142 @@ def test_unregister_removes_by_instance_or_class():
 def test_unregister_missing_operation_is_a_noop():
     m = MatrixImplementationMap()
     m.unregister(ops.X)
+
+
+def test_register_wraps_bare_ndarray_in_fixed_matrix():
+    m = MatrixImplementationMap()
+    matrix = np.array([[0, 1], [1, 0]], dtype=complex)
+    m.register(ops.X, matrix)
+    rule = m.get(ops.X)
+    assert isinstance(rule, FixedMatrix)
+    assert np.allclose(rule(ops.X), matrix)
+
+
+def test_register_rejects_ndarray_with_wrong_shape_for_operation():
+    m = MatrixImplementationMap()
+    with pytest.raises(ValueError, match="shape"):
+        m.register(ops.X, np.eye(4, dtype=complex))
+
+
+def test_register_wraps_bare_callable():
+    m = MatrixImplementationMap()
+
+    def noisy_rx(gate):
+        return np.eye(2, dtype=complex)
+
+    m.register(ops.RX, noisy_rx)
+    rule = m.get(ops.RX)
+    assert not isinstance(rule, FixedMatrix)
+    assert np.allclose(rule(ops.RX(0.3)), np.eye(2))
+
+
+def test_register_rejects_callable_with_zero_positional_args():
+    m = MatrixImplementationMap()
+
+    def bad_rule():
+        return np.eye(2, dtype=complex)
+
+    with pytest.raises(TypeError, match="one positional argument"):
+        m.register(ops.RX, bad_rule)
+
+
+def test_register_rejects_callable_with_two_required_positional_args():
+    m = MatrixImplementationMap()
+
+    def bad_rule(op, extra):
+        return np.eye(2, dtype=complex)
+
+    with pytest.raises(TypeError, match="one positional argument"):
+        m.register(ops.RX, bad_rule)
+
+
+def test_register_accepts_args_only_callable():
+    m = MatrixImplementationMap()
+
+    def flexible_rule(*args):
+        return np.eye(2, dtype=complex)
+
+    m.register(ops.RX, flexible_rule)
+    assert np.allclose(m.get(ops.RX)(ops.RX(0.3)), np.eye(2))
+
+
+def test_register_accepts_callable_with_optional_second_argument():
+    m = MatrixImplementationMap()
+
+    def rule_with_default(op, extra=None):
+        return np.eye(2, dtype=complex)
+
+    m.register(ops.RX, rule_with_default)
+
+
+def test_register_rejects_callable_with_required_keyword_only_argument():
+    m = MatrixImplementationMap()
+
+    def bad_rule(*, theta):
+        return np.eye(2, dtype=complex)
+
+    with pytest.raises(TypeError, match="one positional argument"):
+        m.register(ops.RX, bad_rule)
+
+
+def test_register_rejects_ndarray_for_variable_arity_operation():
+    class VariableGate(ops.Operation):
+        name = "VariableGate"
+        _num_qubits = None
+
+    m = MatrixImplementationMap()
+    with pytest.raises(TypeError, match="variable arity"):
+        m.register(VariableGate, np.eye(2, dtype=complex))
+
+
+def test_register_rejects_callable_for_variable_arity_operation():
+    class VariableGate(ops.Operation):
+        name = "VariableGate"
+        _num_qubits = None
+
+    def some_rule(op):
+        return np.eye(2, dtype=complex)
+
+    m = MatrixImplementationMap()
+    with pytest.raises(TypeError, match="variable arity"):
+        m.register(VariableGate, some_rule)
+
+
+def test_register_rejects_non_callable_non_ndarray_rule():
+    m = MatrixImplementationMap()
+    with pytest.raises(TypeError, match="MatrixImplementation, np.ndarray, or callable"):
+        m.register(ops.X, "not a rule")
+
+
+def test_register_accepts_callable_when_signature_raises_value_error(monkeypatch):
+    import qnsim.implementation as implementation
+
+    def raise_value_error(_rule):
+        raise ValueError("no signature found")
+
+    monkeypatch.setattr(implementation.inspect, "signature", raise_value_error)
+
+    m = MatrixImplementationMap()
+
+    def some_rule(op):
+        return np.eye(2, dtype=complex)
+
+    m.register(ops.RX, some_rule)  # must not raise despite uninspectable signature
+    assert np.allclose(m.get(ops.RX)(ops.RX(0.3)), np.eye(2))
+
+
+def test_register_accepts_callable_when_signature_raises_type_error(monkeypatch):
+    import qnsim.implementation as implementation
+
+    def raise_type_error(_rule):
+        raise TypeError("unsupported callable")
+
+    monkeypatch.setattr(implementation.inspect, "signature", raise_type_error)
+
+    m = MatrixImplementationMap()
+
+    def some_rule(op):
+        return np.eye(2, dtype=complex)
+
+    m.register(ops.RX, some_rule)  # must not raise despite uninspectable signature
+    assert np.allclose(m.get(ops.RX)(ops.RX(0.3)), np.eye(2))
