@@ -39,6 +39,14 @@ def test_gates_distinguished_by_class():
     assert isinstance(ops.X, Operation)
 
 
+def test_phase_gate_is_class_storing_theta():
+    g = ops.Phase(0.7)
+    assert isinstance(g, Operation)
+    assert g.name == "Phase"
+    assert g.theta == 0.7
+    assert g.num_qubits == 1
+
+
 def test_operations_are_frozen():
     with pytest.raises(Exception):
         ops.RX(0.1).theta = 9.0

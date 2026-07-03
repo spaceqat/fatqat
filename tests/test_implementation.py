@@ -55,6 +55,13 @@ def test_parametric_rx_reads_theta():
     assert np.allclose(rx, [[c, -1j * s], [-1j * s, c]])
 
 
+def test_parametric_phase_reads_theta():
+    m = default_implementation_map()
+    theta = 0.9
+    phase = m.get(ops.Phase)(_applied(ops.Phase(theta)))
+    assert np.allclose(phase, [[1, 0], [0, np.exp(1j * theta)]])
+
+
 def test_unregistered_class_returns_none():
     m = MatrixImplementationMap()
     assert m.get(type(ops.X)) is None

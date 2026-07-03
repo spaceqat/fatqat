@@ -9,7 +9,7 @@ __all__ = [
     "Operation",
     "I", "H", "S", "Sdg", "T", "Tdg", "X", "Y", "Z",
     "CX", "CZ",
-    "RX", "RY", "RZ",
+    "RX", "RY", "RZ", "Phase",
     "Reset",
 ]
 
@@ -188,6 +188,19 @@ class RZ(Operation):
 
     theta: float
     name: ClassVar[str] = "RZ"
+    _num_qubits: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class Phase(Operation):
+    """General single-qubit phase gate: diag(1, e^{i theta}).
+
+    Attributes:
+        theta: Phase angle in radians.
+    """
+
+    theta: float
+    name: ClassVar[str] = "Phase"
     _num_qubits: ClassVar[int] = 1
 
 

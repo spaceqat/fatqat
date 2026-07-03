@@ -85,6 +85,12 @@ def _rz(applied: AppliedOperation) -> np.ndarray:
     )
 
 
+def _phase(applied: AppliedOperation) -> np.ndarray:
+    """Build the Phase matrix from the applied operation's angle."""
+    theta = applied.operation.theta
+    return np.array([[1, 0], [0, np.exp(1j * theta)]], dtype=complex)
+
+
 class MatrixImplementationMap:
     """Class-keyed registry from operation classes to matrix implementations."""
 
@@ -124,4 +130,5 @@ def default_implementation_map() -> MatrixImplementationMap:
     m.register(ops.RX, _rx)
     m.register(ops.RY, _ry)
     m.register(ops.RZ, _rz)
+    m.register(ops.Phase, _phase)
     return m
