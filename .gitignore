@@ -8,3 +8,6 @@ dist/
 # Superpowers working artifacts (specs, plans, reviews) — not part of the code
 docs/superpowers/
 .claude/
+
+# Local git worktrees used for isolated subagent-driven development
+.worktrees/
