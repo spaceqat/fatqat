@@ -8,10 +8,9 @@ from typing import ClassVar
 __all__ = [
     "Operation",
     "I", "H", "S", "Sdg", "T", "Tdg", "X", "Y", "Z",
-    "CX", "CZ", "Swap", "CY", "CS", "iSwap",
+    "CX", "CZ", "Swap", "CY", "CS", "iSwap", "CCX", "CSwap",
     "RX", "RY", "RZ", "Phase",
     "CPhase",
-    "CCX", "CSwap",
     "Reset",
 ]
 
