@@ -90,3 +90,10 @@ def test_batch2_fixed_two_qubit_gate_matrices():
     assert np.allclose(
         iswap, [[1, 0, 0, 0], [0, 0, 1j, 0], [0, 1j, 0, 0], [0, 0, 0, 1]]
     )
+
+
+def test_parametric_cphase_reads_theta():
+    m = default_implementation_map()
+    theta = 1.1
+    cphase = m.get(ops.CPhase)(_applied(ops.CPhase(theta)))
+    assert np.allclose(cphase, np.diag([1, 1, 1, np.exp(1j * theta)]))

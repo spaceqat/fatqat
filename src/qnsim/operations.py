@@ -10,6 +10,7 @@ __all__ = [
     "I", "H", "S", "Sdg", "T", "Tdg", "X", "Y", "Z",
     "CX", "CZ", "Swap", "CY", "CS", "iSwap",
     "RX", "RY", "RZ", "Phase",
+    "CPhase",
     "Reset",
 ]
 
@@ -242,6 +243,27 @@ class Phase(Operation):
     theta: float
     name: ClassVar[str] = "Phase"
     _num_qubits: ClassVar[int] = 1
+
+
+# ---------------------------------------------------------------------------
+# Parametric controlled / multi-qubit unitary gates
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CPhase(Operation):
+    """Controlled phase gate: applies diag(1, e^{i theta}) to the target when
+    the control is |1>.
+
+    ``targets = (control, target)``; operand 0 is the control.
+
+    Attributes:
+        theta: Phase angle in radians.
+    """
+
+    theta: float
+    name: ClassVar[str] = "CPhase"
+    _num_qubits: ClassVar[int] = 2
 
 
 # ---------------------------------------------------------------------------

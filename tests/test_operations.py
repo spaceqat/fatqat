@@ -54,3 +54,11 @@ def test_phase_gate_is_class_storing_theta():
 def test_operations_are_frozen():
     with pytest.raises(Exception):
         ops.RX(0.1).theta = 9.0
+
+
+def test_cphase_gate_is_class_storing_theta():
+    g = ops.CPhase(0.4)
+    assert isinstance(g, Operation)
+    assert g.name == "CPhase"
+    assert g.theta == 0.4
+    assert g.num_qubits == 2
