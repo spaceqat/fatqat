@@ -1,9 +1,22 @@
-"""Operation base and the Phase 1 gate set, exposed as the `qs.ops` namespace."""
+"""Operation base class and the built-in gate set, exposed as the `qs.ops` namespace."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import ClassVar
+
+__all__ = [
+    "Operation",
+    "H", "T", "X", "Y", "Z",
+    "CX", "CZ",
+    "RX", "RY", "RZ",
+    "Reset",
+]
+
+
+# ---------------------------------------------------------------------------
+# Operation base class
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -34,6 +47,11 @@ class Operation:
     def num_qubits(self) -> int | None:
         """Number of quantum targets required, or None for variable arity."""
         return type(self)._num_qubits
+
+
+# ---------------------------------------------------------------------------
+# Fixed single-qubit unitary gates
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -76,6 +94,11 @@ class ZGate(Operation):
     _num_qubits: ClassVar[int] = 1
 
 
+# ---------------------------------------------------------------------------
+# Fixed multi-qubit unitary gates (2+ qubits)
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class CXGate(Operation):
     """Controlled-X gate operation."""
@@ -90,6 +113,11 @@ class CZGate(Operation):
 
     name: ClassVar[str] = "CZ"
     _num_qubits: ClassVar[int] = 2
+
+
+# ---------------------------------------------------------------------------
+# Parametric single-qubit unitary gates
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -131,6 +159,11 @@ class RZ(Operation):
     _num_qubits: ClassVar[int] = 1
 
 
+# ---------------------------------------------------------------------------
+# Non-unitary frontend operations
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class ResetGate(Operation):
     """Reset operation: repreparation of one or more target qubits in ``|0>``.
@@ -143,7 +176,14 @@ class ResetGate(Operation):
     _num_qubits: ClassVar[int | None] = None
 
 
-# Pre-built fixed-gate instances (parametric gates are used as classes: RX(theta)).
+# ---------------------------------------------------------------------------
+# Public fixed-gate instances
+# ---------------------------------------------------------------------------
+# Fixed gates (no parameters) are exported as singleton values. Parametric
+# gates are exported as classes above and instantiated by callers, e.g.
+# RX(theta). `Reset` takes no parameters, so it follows the fixed-gate rule
+# too: `qs.ops.Reset`, not `qs.ops.Reset()`.
+
 H = HGate()
 T = TGate()
 X = XGate()
@@ -151,6 +191,4 @@ Y = YGate()
 Z = ZGate()
 CX = CXGate()
 CZ = CZGate()
-
-# Reset takes no parameters but is used with call syntax: qs.ops.Reset().
-Reset = ResetGate
+Reset = ResetGate()

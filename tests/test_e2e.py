@@ -26,7 +26,7 @@ def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
     program.add(qs.ops.X, 0)
     program.add(qs.ops.X, 1)
     program.add_measurement((0, 1), (0, 1))
-    program.add(qs.ops.Reset(), (0, 1))
+    program.add(qs.ops.Reset, (0, 1))
     program.measure_all()
 
     result = qs.StateVectorBackend(

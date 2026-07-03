@@ -30,7 +30,7 @@ def test_serial_backend_option_runs_dynamic_program():
     p = qs.Program(1, 1)
     p.add(qs.ops.H, 0)
     p.add_measurement(0, 0)
-    p.add(qs.ops.Reset(), 0)
+    p.add(qs.ops.Reset, 0)
 
     counts = (
         StateVectorBackend(options={"max_workers": 4, "parallel_backend": "serial"})

@@ -10,7 +10,7 @@ def _random_dynamic_program():
     p.add(ops.H, 0)
     p.add(ops.CX, (0, 1))
     p.add_measurement((0, 1), (0, 1))
-    p.add(qs.ops.Reset(), (0, 1))
+    p.add(qs.ops.Reset, (0, 1))
     return p
 
 
