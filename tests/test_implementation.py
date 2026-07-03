@@ -80,3 +80,13 @@ def test_batch1_fixed_two_qubit_gate_matrices():
     assert np.allclose(swap, [[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
     cy = m.get(type(ops.CY))(_applied(ops.CY))
     assert np.allclose(cy, [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]])
+
+
+def test_batch2_fixed_two_qubit_gate_matrices():
+    m = default_implementation_map()
+    cs = m.get(type(ops.CS))(_applied(ops.CS))
+    assert np.allclose(cs, np.diag([1, 1, 1, 1j]))
+    iswap = m.get(type(ops.iSwap))(_applied(ops.iSwap))
+    assert np.allclose(
+        iswap, [[1, 0, 0, 0], [0, 0, 1j, 0], [0, 1j, 0, 0], [0, 0, 0, 1]]
+    )

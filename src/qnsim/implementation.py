@@ -78,6 +78,10 @@ _SWAP = np.array(
 _CY = np.array(
     [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]], dtype=complex
 )
+_CS = np.diag([1, 1, 1, 1j]).astype(complex)
+_ISWAP = np.array(
+    [[1, 0, 0, 0], [0, 0, 1j, 0], [0, 1j, 0, 0], [0, 0, 0, 1]], dtype=complex
+)
 
 
 def _rx(applied: AppliedOperation) -> np.ndarray:
@@ -146,6 +150,8 @@ def default_implementation_map() -> MatrixImplementationMap:
     m.register(ops.CZGate, lambda _ao: _CZ)
     m.register(ops.SwapGate, lambda _ao: _SWAP)
     m.register(ops.CYGate, lambda _ao: _CY)
+    m.register(ops.CSGate, lambda _ao: _CS)
+    m.register(ops.iSwapGate, lambda _ao: _ISWAP)
     m.register(ops.RX, _rx)
     m.register(ops.RY, _ry)
     m.register(ops.RZ, _rz)

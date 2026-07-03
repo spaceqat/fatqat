@@ -8,7 +8,7 @@ from typing import ClassVar
 __all__ = [
     "Operation",
     "I", "H", "S", "Sdg", "T", "Tdg", "X", "Y", "Z",
-    "CX", "CZ", "Swap", "CY",
+    "CX", "CZ", "Swap", "CY", "CS", "iSwap",
     "RX", "RY", "RZ", "Phase",
     "Reset",
 ]
@@ -166,6 +166,27 @@ class CYGate(Operation):
     _num_qubits: ClassVar[int] = 2
 
 
+@dataclass(frozen=True)
+class CSGate(Operation):
+    """Controlled-S gate operation.
+
+    ``targets = (control, target)``; operand 0 is the control.
+    """
+
+    name: ClassVar[str] = "CS"
+    _num_qubits: ClassVar[int] = 2
+
+
+@dataclass(frozen=True)
+class iSwapGate(Operation):
+    """iSWAP gate operation: swaps its two targets, applying an i phase to
+    the swapped amplitudes.
+    """
+
+    name: ClassVar[str] = "iSwap"
+    _num_qubits: ClassVar[int] = 2
+
+
 # ---------------------------------------------------------------------------
 # Parametric single-qubit unitary gates
 # ---------------------------------------------------------------------------
@@ -261,4 +282,6 @@ CX = CXGate()
 CZ = CZGate()
 Swap = SwapGate()
 CY = CYGate()
+CS = CSGate()
+iSwap = iSwapGate()
 Reset = ResetGate()
