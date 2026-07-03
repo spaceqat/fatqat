@@ -51,7 +51,11 @@ _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
 _Z = np.array([[1, 0], [0, -1]], dtype=complex)
 _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
+_I = np.eye(2, dtype=complex)
+_S = np.array([[1, 0], [0, 1j]], dtype=complex)
+_SDG = np.array([[1, 0], [0, -1j]], dtype=complex)
 _T = np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]], dtype=complex)
+_TDG = np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]], dtype=complex)
 # 2-qubit, operand 0 = MSB (control), operand 1 = LSB (target).
 _CX = np.array(
     [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=complex
@@ -110,7 +114,11 @@ def default_implementation_map() -> MatrixImplementationMap:
     m.register(ops.YGate, lambda _ao: _Y)
     m.register(ops.ZGate, lambda _ao: _Z)
     m.register(ops.HGate, lambda _ao: _H)
+    m.register(ops.IGate, lambda _ao: _I)
+    m.register(ops.SGate, lambda _ao: _S)
+    m.register(ops.SdgGate, lambda _ao: _SDG)
     m.register(ops.TGate, lambda _ao: _T)
+    m.register(ops.TdgGate, lambda _ao: _TDG)
     m.register(ops.CXGate, lambda _ao: _CX)
     m.register(ops.CZGate, lambda _ao: _CZ)
     m.register(ops.RX, _rx)

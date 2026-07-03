@@ -7,11 +7,15 @@ from qnsim.operations import Operation
 
 
 @pytest.mark.parametrize("gate,name,n_qubits", [
+    (ops.I,  "I",  1),
     (ops.H,  "H",  1),
+    (ops.S,  "S",  1),
+    (ops.Sdg, "Sdg", 1),
     (ops.X,  "X",  1),
     (ops.Y,  "Y",  1),
     (ops.Z,  "Z",  1),
     (ops.T,  "T",  1),
+    (ops.Tdg, "Tdg", 1),
     (ops.CX, "CX", 2),
     (ops.CZ, "CZ", 2),
 ])

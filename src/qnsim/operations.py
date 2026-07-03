@@ -7,7 +7,7 @@ from typing import ClassVar
 
 __all__ = [
     "Operation",
-    "H", "T", "X", "Y", "Z",
+    "I", "H", "S", "Sdg", "T", "Tdg", "X", "Y", "Z",
     "CX", "CZ",
     "RX", "RY", "RZ",
     "Reset",
@@ -63,10 +63,42 @@ class HGate(Operation):
 
 
 @dataclass(frozen=True)
+class IGate(Operation):
+    """Identity gate operation."""
+
+    name: ClassVar[str] = "I"
+    _num_qubits: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class SGate(Operation):
+    """S phase gate operation (square root of Z)."""
+
+    name: ClassVar[str] = "S"
+    _num_qubits: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class SdgGate(Operation):
+    """Inverse S phase gate operation."""
+
+    name: ClassVar[str] = "Sdg"
+    _num_qubits: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
 class TGate(Operation):
     """T phase gate operation."""
 
     name: ClassVar[str] = "T"
+    _num_qubits: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class TdgGate(Operation):
+    """Inverse T phase gate operation."""
+
+    name: ClassVar[str] = "Tdg"
     _num_qubits: ClassVar[int] = 1
 
 
@@ -185,7 +217,11 @@ class ResetGate(Operation):
 # too: `qs.ops.Reset`, not `qs.ops.Reset()`.
 
 H = HGate()
+I = IGate()
+S = SGate()
+Sdg = SdgGate()
 T = TGate()
+Tdg = TdgGate()
 X = XGate()
 Y = YGate()
 Z = ZGate()

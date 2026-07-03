@@ -35,6 +35,18 @@ def test_h_matrix_is_unitary_and_correct():
     assert np.allclose(h, np.array([[1, 1], [1, -1]]) / np.sqrt(2))
 
 
+def test_batch1_fixed_single_qubit_gate_matrices():
+    m = default_implementation_map()
+    i_matrix = m.get(type(ops.I))(_applied(ops.I))
+    assert np.allclose(i_matrix, np.eye(2))
+    s = m.get(type(ops.S))(_applied(ops.S))
+    assert np.allclose(s, [[1, 0], [0, 1j]])
+    sdg = m.get(type(ops.Sdg))(_applied(ops.Sdg))
+    assert np.allclose(sdg, [[1, 0], [0, -1j]])
+    tdg = m.get(type(ops.Tdg))(_applied(ops.Tdg))
+    assert np.allclose(tdg, [[1, 0], [0, np.exp(-1j * np.pi / 4)]])
+
+
 def test_parametric_rx_reads_theta():
     m = default_implementation_map()
     theta = 0.5
