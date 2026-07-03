@@ -150,3 +150,57 @@ def test_fixed_matrix_copies_input_array():
     rule = FixedMatrix(source)
     source[0, 0] = 99.0
     assert rule(ops.X)[0, 0] == 1.0
+
+
+def test_register_accepts_operation_instance_key():
+    m = MatrixImplementationMap()
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+    m.register(ops.X, rule)
+    assert m.get(ops.X) is rule
+    assert m.get(type(ops.X)) is rule
+
+
+def test_register_accepts_operation_class_key():
+    class MyGate(ops.Operation):
+        name = "MyGate"
+        _num_qubits = 1
+
+    m = MatrixImplementationMap()
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+    m.register(MyGate, rule)
+    assert m.get(MyGate) is rule
+    assert m.get(MyGate()) is rule
+
+
+def test_register_rejects_non_operation_key():
+    m = MatrixImplementationMap()
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+    with pytest.raises(TypeError):
+        m.register("not an operation", rule)
+
+
+def test_register_rejects_variable_arity_operation():
+    class VariableGate(ops.Operation):
+        name = "VariableGate"
+        _num_qubits = None
+
+    m = MatrixImplementationMap()
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+    with pytest.raises(TypeError, match="variable arity"):
+        m.register(VariableGate, rule)
+
+
+def test_unregister_removes_by_instance_or_class():
+    m = default_implementation_map()
+    m.unregister(ops.T)
+    assert m.get(ops.T) is None
+    assert m.get(type(ops.T)) is None
+
+    m2 = default_implementation_map()
+    m2.unregister(type(ops.T))
+    assert m2.get(ops.T) is None
+
+
+def test_unregister_missing_operation_is_a_noop():
+    m = MatrixImplementationMap()
+    m.unregister(ops.X)

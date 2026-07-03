@@ -179,6 +179,36 @@ def _cphase(op: ops.CPhase) -> np.ndarray:
     return np.diag([1, 1, 1, np.exp(1j * theta)]).astype(complex)
 
 
+def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]:
+    """Normalize an `Operation` instance or subclass to its registry key.
+
+    Accepts either an `Operation` instance (e.g. `qs.ops.X`) or an `Operation`
+    subclass (e.g. a custom gate class) and returns the class to key the
+    registry by. Applying `type(...)` unconditionally would be wrong for the
+    class case: `type(MyGate)` is the metaclass `type`, not `MyGate`.
+    """
+    if isinstance(op, Operation):
+        return type(op)
+    if isinstance(op, type) and issubclass(op, Operation):
+        return op
+    raise TypeError(f"expected an Operation instance or subclass, got {op!r}")
+
+
+def _require_fixed_arity(op_cls: type[Operation]) -> None:
+    """Raise `TypeError` if `op_cls` has variable arity (`_num_qubits is None`).
+
+    A matrix map rule receives only the bare `Operation` instance, never the
+    application's target count, so there is no way for a rule to know what
+    size matrix to build for a variable-arity operation. Such operations are
+    out of scope for this registry.
+    """
+    if op_cls._num_qubits is None:
+        raise TypeError(
+            f"{op_cls.__name__} has variable arity (_num_qubits is None); "
+            "the matrix implementation map only supports fixed-arity operations"
+        )
+
+
 class MatrixImplementationMap:
     """Class-keyed registry from operation classes to matrix implementations."""
 
@@ -186,18 +216,40 @@ class MatrixImplementationMap:
         """Create an empty implementation map."""
         self._rules: dict[type[Operation], MatrixImplementation] = {}
 
-    def register(self, op_cls: type[Operation], rule: MatrixImplementation) -> None:
-        """Register a matrix implementation for an operation class.
+    def register(self, op: Operation | type[Operation], rule: MatrixImplementation) -> None:
+        """Register a matrix implementation for an operation.
 
         Args:
-            op_cls: Operation class used as the lookup key.
-            rule: Callable that receives the bare `Operation` instance and
-                returns a local matrix.
+            op: An `Operation` instance (e.g. `qs.ops.X`) or subclass (e.g. a
+                custom gate class). Normalized to the operation's class for
+                the registry key.
+            rule: A `MatrixImplementation` instance.
+
+        Raises:
+            TypeError: If `op` is neither an `Operation` instance nor
+                subclass, or if its operation class has variable arity.
         """
+        op_cls = _resolve_operation_class(op)
+        _require_fixed_arity(op_cls)
         self._rules[op_cls] = rule
 
-    def get(self, op_cls: type[Operation]) -> MatrixImplementation | None:
-        """Return the matrix implementation for an operation class, if registered."""
+    def unregister(self, op: Operation | type[Operation]) -> None:
+        """Remove a registered matrix implementation, if present.
+
+        Args:
+            op: An `Operation` instance or subclass to remove. Removing an
+                operation that was never registered is a no-op.
+        """
+        op_cls = _resolve_operation_class(op)
+        self._rules.pop(op_cls, None)
+
+    def get(self, op: Operation | type[Operation]) -> MatrixImplementation | None:
+        """Return the matrix implementation registered for an operation, if any.
+
+        Args:
+            op: An `Operation` instance or subclass.
+        """
+        op_cls = _resolve_operation_class(op)
         return self._rules.get(op_cls)
 
 
