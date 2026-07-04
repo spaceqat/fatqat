@@ -59,7 +59,7 @@ def test_run_without_seed_uses_random_rng_seed(monkeypatch):
 def test_unsupported_operation_raises():
     class FooGate(ops.Operation):
         name = "FOO"
-        _num_qubits = 1
+        _num_subsystems = 1
 
     p = Program(1, 1)
     p.add(FooGate(), 0)
@@ -151,7 +151,7 @@ def test_rule_failure_is_wrapped_with_operation_context():
 def test_custom_operation_runs_end_to_end_via_bare_callable():
     class MyX(ops.Operation):
         name = "MyX"
-        _num_qubits = 1
+        _num_subsystems = 1
 
     def my_x_rule(op):
         return np.array([[0, 1], [1, 0]], dtype=complex)

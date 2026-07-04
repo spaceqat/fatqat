@@ -6,7 +6,7 @@ from qnsim import operations as ops
 from qnsim.operations import Operation
 
 
-@pytest.mark.parametrize("gate,name,n_qubits", [
+@pytest.mark.parametrize("gate,name,n_subsystems", [
     (ops.I,  "I",  1),
     (ops.H,  "H",  1),
     (ops.S,  "S",  1),
@@ -25,9 +25,9 @@ from qnsim.operations import Operation
     (ops.CCX, "CCX", 3),
     (ops.CSwap, "CSwap", 3),
 ])
-def test_fixed_gate_name_and_arity(gate, name, n_qubits):
+def test_fixed_gate_name_and_arity(gate, name, n_subsystems):
     assert gate.name == name
-    assert gate.num_qubits == n_qubits
+    assert gate.num_subsystems == n_subsystems
 
 
 def test_parametric_gate_is_class_storing_theta():
@@ -35,7 +35,7 @@ def test_parametric_gate_is_class_storing_theta():
     assert isinstance(g, Operation)
     assert g.name == "RX"
     assert g.theta == 0.2
-    assert g.num_qubits == 1
+    assert g.num_subsystems == 1
     assert ops.RY(0.3).name == "RY"
     assert ops.RZ(0.4).name == "RZ"
 
@@ -50,7 +50,7 @@ def test_phase_gate_is_class_storing_theta():
     assert isinstance(g, Operation)
     assert g.name == "Phase"
     assert g.theta == 0.7
-    assert g.num_qubits == 1
+    assert g.num_subsystems == 1
 
 
 def test_operations_are_frozen():
@@ -63,4 +63,21 @@ def test_cphase_gate_is_class_storing_theta():
     assert isinstance(g, Operation)
     assert g.name == "CPhase"
     assert g.theta == 0.4
-    assert g.num_qubits == 2
+    assert g.num_subsystems == 2
+
+
+def test_shift_clock_are_single_subsystem_parametric():
+    assert ops.Shift(1)._num_subsystems == 1
+    assert ops.Clock(2)._num_subsystems == 1
+    assert ops.Shift(1).power == 1
+
+
+def test_sum_is_two_subsystem_singleton():
+    assert ops.Sum._num_subsystems == 2
+    assert isinstance(ops.Sum, ops.SumGate)
+
+
+def test_new_gates_carry_no_dim_field():
+    # No dim attribute on the symbols.
+    assert not hasattr(ops.Shift(1), "dim")
+    assert not hasattr(ops.Sum, "dim")

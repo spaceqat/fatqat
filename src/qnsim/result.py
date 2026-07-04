@@ -45,58 +45,87 @@ def build_counts(
     indices: Iterable[int],
     n_clbits: int,
     measurements: Sequence[tuple[int, int]],
-) -> dict[str, int]:
-    """Build little-endian count keys from sampled basis-state indices.
+    system_dims: Sequence[int],
+) -> dict[tuple[int, ...], int]:
+    """Decode sampled flat basis indices into tuple-keyed counts.
 
-    Measurement mappings are applied in program order, so later writes to the
-    same classical bit replace earlier writes. Unwritten classical bits stay 0.
+    Each measured subsystem's digit is extracted by its own radix
+    ``system_dims[qubit_flat]`` via little-endian place value. Later writes to
+    the same clbit replace earlier ones; unwritten clbits stay 0.
 
     Args:
         indices: Sampled flat basis-state indices.
         n_clbits: Number of classical bits in the result key.
         measurements: `(qubit_flat, clbit_flat)` pairs in program order.
+        system_dims: Per-subsystem dimensions of the quantum register, used to
+            decode each measured subsystem's digit from the flat index.
 
     Returns:
-        Count dictionary keyed by bitstrings with classical bit 0 rightmost.
+        Count dictionary keyed by ascending flat clbit index (clbit 0 first).
     """
-    counts: dict[str, int] = {}
+    strides = _radix_strides(system_dims)
+    counts: dict[tuple[int, ...], int] = {}
     for idx in indices:
         idx = int(idx)
         clbits = [0] * n_clbits
         for q, c in measurements:
-            clbits[c] = (idx >> q) & 1
-        key = count_key_from_clbits(clbits, n_clbits)
+            clbits[c] = (idx // strides[q]) % system_dims[q]
+        key = tuple(clbits)
         counts[key] = counts.get(key, 0) + 1
     return counts
-
-
-def count_key_from_clbits(clbits: Sequence[int], n_clbits: int) -> str:
-    """Build a little-endian count key from one classical-register snapshot."""
-    return "".join(str(clbits[c]) for c in range(n_clbits - 1, -1, -1))
 
 
 def build_counts_from_clbits(
     snapshots: Iterable[Sequence[int]],
     n_clbits: int,
-) -> dict[str, int]:
-    """Aggregate per-shot classical-register snapshots into counts.
+) -> dict[tuple[int, ...], int]:
+    """Aggregate per-shot classical-register snapshots into tuple-keyed counts.
 
     Each snapshot is one shot's final classical-register state: a sequence of
-    ``n_clbits`` bit values indexed by flat clbit index. Keys are little-endian
-    bitstrings with classical bit 0 rightmost, matching ``build_counts``.
+    ``n_clbits`` digit values indexed by flat clbit index, matching
+    ``build_counts``.
 
     Args:
         snapshots: One classical-register snapshot per shot.
         n_clbits: Number of classical bits in each key.
 
     Returns:
-        Count dictionary keyed by little-endian classical bitstrings.
+        Count dictionary keyed by ascending flat clbit index (clbit 0 first).
     """
-    counts: dict[str, int] = {}
+    counts: dict[tuple[int, ...], int] = {}
     for snap in snapshots:
-        key = count_key_from_clbits(snap, n_clbits)
+        key = tuple(snap[c] for c in range(n_clbits))
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def _radix_strides(dims: Sequence[int]) -> list[int]:
+    """Return the mixed-radix place value (stride) for each subsystem."""
+    strides = [1] * len(dims)
+    for q in range(1, len(dims)):
+        strides[q] = strides[q - 1] * dims[q - 1]
+    return strides
+
+
+def format_count_key(key: tuple[int, ...], classical_dims: Sequence[int]) -> str:
+    """Render a tuple-keyed count as a little-endian display string.
+
+    Single-character concatenation when every classical register dim is
+    <= 9; a comma-delimited little-endian form once any classical dim is
+    >= 10. The trigger is `classical_dims` (never quantum `system_dims`).
+
+    Args:
+        key: Tuple-keyed count in ascending flat clbit index order.
+        classical_dims: Per-clbit classical dimensions, used only to decide
+            the rendering form.
+
+    Returns:
+        A little-endian string (highest clbit first).
+    """
+    order = range(len(key) - 1, -1, -1)
+    if all(d <= 9 for d in classical_dims):
+        return "".join(str(key[c]) for c in order)
+    return ",".join(str(key[c]) for c in order)
 
 
 class Result:
@@ -110,30 +139,37 @@ class Result:
 
     def __init__(
         self,
-        counts: dict[str, int] | None = None,
+        counts: dict[tuple[int, ...], int] | None = None,
         statevector: np.ndarray | None = None,
         available: frozenset[str] = frozenset(),
         metadata: Mapping[str, Any] | None = None,
+        classical_dims: Sequence[int] = (),
     ) -> None:
         """Create a result from backend-produced fields.
 
         Args:
-            counts: Optional measurement-count dictionary.
+            counts: Optional measurement-count dictionary, keyed by ascending
+                flat clbit index (clbit 0 first).
             statevector: Optional statevector array.
             available: Field names that accessors are allowed to return.
             metadata: Optional backend/run metadata copied into the public
                 `metadata` dictionary.
+            classical_dims: Per-clbit classical dimensions, used to render
+                `get_counts()` display strings.
         """
         self._counts = counts
         self._statevector = statevector
         self.available_data = frozenset(available)
         self.metadata = dict(metadata) if metadata is not None else {}
+        self._classical_dims = tuple(classical_dims)
 
     def get_counts(self) -> dict[str, int]:
-        """Return measurement counts.
+        """Return measurement counts as little-endian display strings.
 
         Returns:
-            Count dictionary keyed by little-endian classical bitstrings.
+            Count dictionary keyed by little-endian classical bitstrings
+            (single-character digits when every classical dim is <= 9,
+            otherwise a comma-delimited little-endian form).
 
         Raises:
             ResultFieldUnavailableError: If counts were not produced.
@@ -149,6 +185,23 @@ class Result:
 
             assert result.get_counts() == {"1": 10}
             ```
+        """
+        if "counts" not in self.available_data:
+            raise ResultFieldUnavailableError("counts not available in this result")
+        return {
+            format_count_key(key, self._classical_dims): n
+            for key, n in self._counts.items()
+        }
+
+    def get_counts_as_tuples(self) -> dict[tuple[int, ...], int]:
+        """Return measurement counts keyed by ascending flat clbit index.
+
+        Returns:
+            Count dictionary keyed by tuples with clbit 0 first, the same
+            representation the backend produces internally.
+
+        Raises:
+            ResultFieldUnavailableError: If counts were not produced.
         """
         if "counts" not in self.available_data:
             raise ResultFieldUnavailableError("counts not available in this result")

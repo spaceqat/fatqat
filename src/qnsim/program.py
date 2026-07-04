@@ -41,7 +41,7 @@ class AppliedOperation:
     condition: Condition = None
 
     def __post_init__(self) -> None:
-        expected = self.operation.num_qubits
+        expected = self.operation.num_subsystems
         if expected is None:
             if len(self.targets) < 1:
                 raise ValueError(f"{self.operation.name} expects at least one target")
@@ -276,10 +276,17 @@ class Program:
             )
         # Discriminate single term `(slot, lit)` from a sequence of terms.
         terms = condition if isinstance(condition[0], tuple) else (condition,)
-        return tuple(
-            (self._resolve_conditional_slot(slot), int(literal))
-            for slot, literal in terms
-        )
+        normalized: list[ConditionTerm] = []
+        for slot, literal in terms:
+            ref = self._resolve_conditional_slot(slot)
+            value = int(literal)
+            if not 0 <= value < ref.register.dim:
+                raise ValueError(
+                    f"condition literal {value} out of range for clbit dim "
+                    f"{ref.register.dim} (must be 0 <= literal < dim)"
+                )
+            normalized.append((ref, value))
+        return tuple(normalized)
 
     def _resolve_conditional_slot(self, slot: int | RegisterRef) -> RegisterRef:
         """Resolve a condition slot and require it to reference a clbit."""
@@ -338,6 +345,12 @@ class Program:
             raise ValueError("measurement requires at least one qreg/clreg pair")
         qs = tuple(self._resolve_qubit(q) for q in q_operands)
         cs = tuple(self._resolve_clbit(c) for c in c_operands)
+        for pos, (q, c) in enumerate(zip(qs, cs)):
+            if q.register.dim != c.register.dim:
+                raise ValueError(
+                    f"measurement operand {pos}: quantum dim {q.register.dim} "
+                    f"!= classical dim {c.register.dim}"
+                )
         self._operations.append(Measurement(qreg=qs, clreg=cs))
         self._operations_view = None
 

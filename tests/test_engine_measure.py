@@ -11,7 +11,7 @@ _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
 
 def _h_engine(n_qubits, target):
     eng = StateVectorEngine()
-    eng.initialize(n_qubits)
+    eng.initialize((2,) * n_qubits)
     eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(target,)))
     return eng
 
@@ -23,7 +23,7 @@ def test_probabilities():
 
 def test_sample_indices_deterministic_state():
     eng = StateVectorEngine()
-    eng.initialize(2)  # always |00> -> index 0
+    eng.initialize((2, 2))  # always |00> -> index 0
     rng = np.random.default_rng(0)
     idx = eng.sample_indices(100, rng)
     assert idx.shape == (100,)
@@ -81,7 +81,7 @@ def test_collapse_state_returns_index_and_projected_copy_without_mutating_input(
     original = state.copy()
     rng = np.random.default_rng(1)
 
-    idx, collapsed = _collapse_state(state, [1], rng)
+    idx, collapsed = _collapse_state(state, [1], (2, 2), rng)
 
     bit = (idx >> 1) & 1
     expected = np.zeros(4, dtype=complex)
@@ -91,3 +91,13 @@ def test_collapse_state_returns_index_and_projected_copy_without_mutating_input(
     assert np.allclose(state, original)
     assert np.allclose(collapsed, expected)
     assert np.isclose(np.linalg.norm(collapsed), 1.0)
+
+
+def test_measure_qutrit_digit_extraction():
+    from qnsim.implementation import shift_matrix
+
+    eng = StateVectorEngine()
+    eng.initialize((3,))
+    eng._state = shift_matrix(3, 2) @ eng.export_state()
+    (digit,) = eng.measure_subsystems((0,), np.random.default_rng(0))
+    assert digit == 2

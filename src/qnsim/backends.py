@@ -1,4 +1,4 @@
-"""Qubit statevector backend: validate, execute, assemble Result, return Job."""
+"""Statevector backend: validate, execute, assemble Result, return Job."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import warnings
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from itertools import repeat
+from math import prod
 from typing import Any
 
 import numpy as np
@@ -34,7 +35,7 @@ from .result import (
 
 @dataclass(frozen=True)
 class MeasurementStep:
-    """Resolved measurement: flat qubit indices into matching flat clbit indices."""
+    """Resolved measurement: flat subsystem indices into matching flat clbit indices."""
 
     measured_indices: tuple[int, ...]
     classical_indices: tuple[int, ...]
@@ -48,7 +49,7 @@ class MeasurementStep:
 
 @dataclass(frozen=True)
 class ResetStep:
-    """Resolved reset of one or more flat qubits to |0>, with optional condition.
+    """Resolved reset of one or more flat subsystems to |0>, with optional condition.
 
     `Reset` is an `AppliedOperation`, so it can carry a feedforward `condition`
     just like a gate. The lowered form stores it as ``(clbit_index, value)``
@@ -166,12 +167,12 @@ def _execute_dynamic_plan_one_shot(
             if _condition_matches(step.condition, clbits):
                 engine.apply(step)
         elif isinstance(step, MeasurementStep):
-            bits = engine.measure_qubits(step.measured_indices, rng)
+            bits = engine.measure_subsystems(step.measured_indices, rng)
             for c, bit in zip(step.classical_indices, bits):
                 clbits[c] = bit
         else:  # ResetStep
             if _condition_matches(step.condition, clbits):
-                engine.reset_qubits(step.reset_indices, rng)
+                engine.reset_subsystems(step.reset_indices, rng)
     return tuple(clbits)
 
 
@@ -247,7 +248,7 @@ def _split_into_batches(
 
 def _run_dynamic_shot_batch(
     plan: list[ResolvedStep],
-    n_qubits: int,
+    system_dims: tuple[int, ...],
     n_clbits: int,
     seed_batch: list[np.random.SeedSequence],
 ) -> list[tuple[int, ...]]:
@@ -256,14 +257,14 @@ def _run_dynamic_shot_batch(
     snapshots: list[tuple[int, ...]] = []
     for seed_sequence in seed_batch:
         rng = np.random.default_rng(seed_sequence)
-        engine.initialize(n_qubits)
+        engine.initialize(system_dims)
         snapshots.append(_execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng))
     return snapshots
 
 
 def _run_dynamic_shots_multiprocessing(
     plan: list[ResolvedStep],
-    n_qubits: int,
+    system_dims: tuple[int, ...],
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
@@ -273,7 +274,7 @@ def _run_dynamic_shots_multiprocessing(
         results = executor.map(
             _run_dynamic_shot_batch,
             repeat(plan),
-            repeat(n_qubits),
+            repeat(system_dims),
             repeat(n_clbits),
             batches,
         )
@@ -282,7 +283,7 @@ def _run_dynamic_shots_multiprocessing(
 
 def _run_dynamic_shots_loky(
     plan: list[ResolvedStep],
-    n_qubits: int,
+    system_dims: tuple[int, ...],
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
@@ -294,7 +295,7 @@ def _run_dynamic_shots_loky(
     results = executor.map(
         _run_dynamic_shot_batch,
         repeat(plan),
-        repeat(n_qubits),
+        repeat(system_dims),
         repeat(n_clbits),
         batches,
     )
@@ -304,7 +305,7 @@ def _run_dynamic_shots_loky(
 def _run_dynamic_shots_parallel(
     config: _BackendConfig,
     plan: list[ResolvedStep],
-    n_qubits: int,
+    system_dims: tuple[int, ...],
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
@@ -319,7 +320,7 @@ def _run_dynamic_shots_parallel(
     backend_name = _resolve_parallel_backend_name(config.parallel_backend)
     if backend_name == "multiprocessing":
         return _run_dynamic_shots_multiprocessing(
-            plan, n_qubits, n_clbits, seed_sequences, max_workers
+            plan, system_dims, n_clbits, seed_sequences, max_workers
         )
     if backend_name == "loky":
         if not _loky_available():
@@ -330,10 +331,10 @@ def _run_dynamic_shots_parallel(
                 stacklevel=3,
             )
             return _run_dynamic_shots_multiprocessing(
-                plan, n_qubits, n_clbits, seed_sequences, max_workers
+                plan, system_dims, n_clbits, seed_sequences, max_workers
             )
         return _run_dynamic_shots_loky(
-            plan, n_qubits, n_clbits, seed_sequences, max_workers
+            plan, system_dims, n_clbits, seed_sequences, max_workers
         )
     raise BackendValidationError(f"unsupported parallel_backend={backend_name!r}")
 
@@ -356,13 +357,14 @@ class StateVectorBackend:
     execution strategies:
 
     - Fast path: used when the program has no reset, no classically
-      conditioned operations, and no operation that acts on a qubit after that
-      qubit has been measured. The statevector is evolved once; requested
-      counts are then sampled from the resulting measurement distribution.
+      conditioned operations, and no operation that acts on a subsystem after
+      that subsystem has been measured. The statevector is evolved once;
+      requested counts are then sampled from the resulting measurement
+      distribution.
     - Dynamic path: used when the program contains reset, a classical
-      condition, or reuse of a measured qubit. The backend executes one shot
-      at a time while tracking the classical register explicitly, because later
-      operations may depend on earlier measurement outcomes.
+      condition, or reuse of a measured subsystem. The backend executes one
+      shot at a time while tracking the classical register explicitly,
+      because later operations may depend on earlier measurement outcomes.
 
     Backend constructor options affect only dynamic counts execution:
 
@@ -440,7 +442,7 @@ class StateVectorBackend:
         - `{"counts": True}`: counts are always requested.
         - `{"counts": False}`: counts are
           suppressed, even if the
-          program measures qubits.
+          program measures subsystems.
         - `{"statevector": None}`: a statevector is produced only when
           execution is non-stochastic, meaning the program contains no
           measurement and no reset.
@@ -451,7 +453,7 @@ class StateVectorBackend:
         Output consequences:
 
         - Counts are returned through `Result.get_counts()` as little-endian
-          classical bitstrings.
+          classical count-key strings.
         - A statevector, when produced, is returned through
           `Result.get_statevector()`.
         - If a field was not produced, its accessor raises
@@ -462,13 +464,13 @@ class StateVectorBackend:
         Execution strategy:
 
         - Fast path: programs without reset, classical conditions, or reuse of
-          a measured qubit are evolved once. Requested counts are sampled from
-          terminal measurement mappings without replaying the full circuit shot
-          by shot.
+          a measured subsystem are evolved once. Requested counts are sampled
+          from terminal measurement mappings without replaying the full
+          circuit shot by shot.
         - Dynamic path: programs with reset, classical conditions, or reuse of
-          measured qubits are executed shot by shot with an explicit classical
-          register. This path preserves feedforward semantics and repeated
-          measurement/reset behavior.
+          measured subsystems are executed shot by shot with an explicit
+          classical register. This path preserves feedforward semantics and
+          repeated measurement/reset behavior.
         - Parallel dynamic counts: when the dynamic path is used, counts are
           requested, multiple iterations are needed, and backend options allow
           it, shots may be distributed across worker processes. The counts are
@@ -558,7 +560,14 @@ class StateVectorBackend:
         try:
             return Job.done(
                 self._execute(
-                    config, shots, plan, facts, layout.n_qubits, layout.n_clbits, seed
+                    config,
+                    shots,
+                    plan,
+                    facts,
+                    layout.system_dims,
+                    layout.classical_dims,
+                    layout.n_clbits,
+                    seed,
                 )
             )
         except Exception as exc:  # execution-stage failure
@@ -599,7 +608,8 @@ class StateVectorBackend:
         shots: int,
         plan: list[ResolvedStep],
         facts: _PlanFacts,
-        n_qubits: int,
+        system_dims: tuple[int, ...],
+        classical_dims: tuple[int, ...],
         n_clbits: int,
         seed: int | None,
     ) -> Result:
@@ -608,13 +618,13 @@ class StateVectorBackend:
 
         if facts.is_dynamic:
             counts, statevector, available = self._run_per_shot(
-                plan, n_qubits, n_clbits, shots, seed, request
+                plan, system_dims, n_clbits, shots, seed, request
             )
         else:
             counts, statevector, available = self._run_fast(
                 plan,
                 facts,
-                n_qubits,
+                system_dims,
                 n_clbits,
                 shots,
                 np.random.default_rng(seed),
@@ -641,6 +651,7 @@ class StateVectorBackend:
             counts=counts,
             statevector=statevector,
             available=frozenset(available),
+            classical_dims=classical_dims,
             metadata={
                 "shots": shots,
                 "backend_name": type(self).__name__,
@@ -655,15 +666,15 @@ class StateVectorBackend:
         self,
         plan: list[ResolvedStep],
         facts: _PlanFacts,
-        n_qubits: int,
+        system_dims: tuple[int, ...],
         n_clbits: int,
         shots: int,
         rng: np.random.Generator,
         request: _ResultRequest,
-    ) -> tuple[dict[str, int] | None, np.ndarray | None, set[str]]:
+    ) -> tuple[dict[tuple[int, ...], int] | None, np.ndarray | None, set[str]]:
         """Phase 1 path: evolve once, then sample terminal measurements."""
         engine = self._engine
-        engine.initialize(n_qubits)
+        engine.initialize(system_dims)
         measurements: list[tuple[int, int]] = []
         for step in plan:
             if isinstance(step, ApplyMatrixStep):
@@ -671,14 +682,14 @@ class StateVectorBackend:
             else:  # MeasurementStep (no ResetStep on the fast path)
                 measurements.extend(zip(step.measured_indices, step.classical_indices))
 
-        counts: dict[str, int] | None = None
+        counts: dict[tuple[int, ...], int] | None = None
         statevector: np.ndarray | None = None
         available: set[str] = set()
 
         collapsed_index = None
         if request.statevector and facts.has_measurement:
-            measured_qubits = [q for q, _c in measurements]
-            collapsed_index = engine.collapse(measured_qubits, rng)
+            measured_subsystems = [q for q, _c in measurements]
+            collapsed_index = engine.collapse(measured_subsystems, rng)
 
         if request.counts:
             if facts.has_measurement:
@@ -688,7 +699,7 @@ class StateVectorBackend:
                     indices = engine.sample_indices(shots, rng)
             else:
                 indices = np.zeros(shots, dtype=int)
-            counts = build_counts(indices, n_clbits, measurements)
+            counts = build_counts(indices, n_clbits, measurements, system_dims)
             available.add("counts")
 
         if request.statevector:
@@ -700,12 +711,12 @@ class StateVectorBackend:
     def _run_per_shot(
         self,
         plan: list[ResolvedStep],
-        n_qubits: int,
+        system_dims: tuple[int, ...],
         n_clbits: int,
         shots: int,
         seed: int | None,
         request: _ResultRequest,
-    ) -> tuple[dict[str, int] | None, np.ndarray | None, set[str]]:
+    ) -> tuple[dict[tuple[int, ...], int] | None, np.ndarray | None, set[str]]:
         """Per-shot path: run each shot independently with its own clbits.
 
         Each shot draws from its own child `SeedSequence`, spawned from the
@@ -726,7 +737,7 @@ class StateVectorBackend:
             snapshots = _run_dynamic_shots_parallel(
                 self._config,
                 plan,
-                n_qubits,
+                system_dims,
                 n_clbits,
                 seed_sequences,
                 max_workers,
@@ -736,12 +747,12 @@ class StateVectorBackend:
             snapshots = []
             for seed_sequence in seed_sequences:
                 rng = np.random.default_rng(seed_sequence)
-                engine.initialize(n_qubits)
+                engine.initialize(system_dims)
                 snapshots.append(
                     _execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng)
                 )
 
-        counts: dict[str, int] | None = None
+        counts: dict[tuple[int, ...], int] | None = None
         statevector: np.ndarray | None = None
         available: set[str] = set()
 
@@ -766,10 +777,10 @@ class StateVectorBackend:
         Raises `UnsupportedOperationError` for a gate with no matrix rule.
         `Reset` is recognized by type and routed to a `ResetStep`. The pass also
         computes `is_dynamic` (reset, a condition, or a gate on an
-        already-measured qubit), `has_measurement`, and `has_reset`.
+        already-measured subsystem), `has_measurement`, and `has_reset`.
         """
         plan: list[ResolvedStep] = []
-        measured_qubits: set[int] = set()
+        measured_subsystems: set[int] = set()
         is_dynamic = False
         has_measurement = False
         has_reset = False
@@ -777,9 +788,9 @@ class StateVectorBackend:
         for step in program.operations:
             if isinstance(step, Measurement):
                 has_measurement = True
-                measured_indices = tuple(layout.qubit_index(q) for q in step.qreg)
+                measured_indices = tuple(layout.subsystem_index(q) for q in step.qreg)
                 classical_indices = tuple(layout.clbit_index(c) for c in step.clreg)
-                measured_qubits.update(measured_indices)
+                measured_subsystems.update(measured_indices)
                 plan.append(
                     MeasurementStep(
                         measured_indices=measured_indices,
@@ -789,10 +800,10 @@ class StateVectorBackend:
                 continue
 
             if isinstance(step, AppliedOperation):
-                target_indices = tuple(layout.qubit_index(t) for t in step.targets)
+                target_indices = tuple(layout.subsystem_index(t) for t in step.targets)
                 if step.condition is not None:
                     is_dynamic = True
-                if any(t in measured_qubits for t in target_indices):
+                if any(t in measured_subsystems for t in target_indices):
                     is_dynamic = True
 
                 if isinstance(step.operation, ResetGate):
@@ -808,11 +819,23 @@ class StateVectorBackend:
                 if rule is None:
                     raise UnsupportedOperationError(type(step.operation).__name__)
                 try:
-                    matrix = rule(step.operation)
+                    matrix = rule(step.operation, targets=step.targets)
                 except Exception as exc:
                     raise MatrixImplementationError(
                         f"implementation for {type(step.operation).__name__} raised: {exc}"
                     ) from exc
+
+                # Check matrix shape matches target dimensions
+                target_dims = tuple(layout.system_dims[i] for i in target_indices)
+                expected = prod(target_dims)
+                if matrix.shape != (expected, expected):
+                    raise BackendValidationError(
+                        f"{type(step.operation).__name__} resolved to a "
+                        f"{matrix.shape} matrix, incompatible with target "
+                        f"dimensions {target_dims} (expected "
+                        f"{(expected, expected)})"
+                    )
+
                 cond = _resolve_condition(step.condition, layout)
                 plan.append(
                     ApplyMatrixStep(
