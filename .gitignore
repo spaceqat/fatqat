@@ -9,6 +9,9 @@ dist/
 docs/superpowers/
 .claude/
 
+# Design docs — nested git repo with its own history, versioned separately
+docs/design/
+
 # Local git worktrees used for isolated subagent-driven development
 .worktrees/
 benchmarks/
