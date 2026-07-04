@@ -50,3 +50,30 @@ def test_register_metadata_is_copied_not_aliased():
     qr = QuantumRegister(1, metadata=meta)
     meta["k"] = 2
     assert qr.metadata == {"k": 1}
+
+
+def test_dim_defaults_to_two():
+    assert QuantumRegister(3).dim == 2
+    assert ClassicalRegister(2).dim == 2
+
+
+def test_dim_can_be_set():
+    qr = QuantumRegister(3, dim=3)
+    assert qr.dim == 3
+    assert qr[0].register.dim == 3
+
+
+def test_dim_below_two_rejected():
+    with pytest.raises(ValueError):
+        QuantumRegister(2, dim=1)
+    with pytest.raises(ValueError):
+        QuantumRegister(2, dim=0)
+    with pytest.raises(ValueError):
+        ClassicalRegister(2, dim=-3)
+
+
+def test_dim_non_int_rejected():
+    with pytest.raises(TypeError):
+        QuantumRegister(2, dim=2.0)
+    with pytest.raises(TypeError):
+        QuantumRegister(2, dim=True)

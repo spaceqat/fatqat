@@ -17,17 +17,25 @@ class Register:
         size: Number of slots in the register. Must be a positive integer.
         name: Optional user-facing register name.
         metadata: User metadata copied into the register.
+        dim: Dimension of each slot (default 2 for qubits). Must be an integer >= 2.
     """
 
     size: int
     name: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    dim: int = 2
 
     def __post_init__(self) -> None:
         if not isinstance(self.size, int) or isinstance(self.size, bool):
             raise TypeError(f"register size must be int, got {type(self.size)!r}")
         if self.size <= 0:
             raise ValueError(f"register size must be positive, got {self.size}")
+        if not isinstance(self.dim, int) or isinstance(self.dim, bool):
+            raise TypeError(f"register dim must be int, got {type(self.dim)!r}")
+        if self.dim < 2:
+            raise ValueError(
+                f"register dim must be >= 2 (a nontrivial system), got {self.dim}"
+            )
         # Copy metadata so a caller's later mutation can't reach into this frozen
         # value object.
         object.__setattr__(self, "metadata", dict(self.metadata))
