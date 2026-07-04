@@ -8,6 +8,7 @@ import warnings
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from itertools import repeat
+from math import prod
 from typing import Any
 
 import numpy as np
@@ -822,6 +823,18 @@ class StateVectorBackend:
                     raise MatrixImplementationError(
                         f"implementation for {type(step.operation).__name__} raised: {exc}"
                     ) from exc
+
+                # Check matrix shape matches target dimensions
+                target_dims = tuple(layout.system_dims[i] for i in target_indices)
+                expected = prod(target_dims)
+                if matrix.shape != (expected, expected):
+                    raise BackendValidationError(
+                        f"{type(step.operation).__name__} resolved to a "
+                        f"{matrix.shape} matrix, incompatible with target "
+                        f"dimensions {target_dims} (expected "
+                        f"{(expected, expected)})"
+                    )
+
                 cond = _resolve_condition(step.condition, layout)
                 plan.append(
                     ApplyMatrixStep(

@@ -124,3 +124,21 @@ def test_no_measurement_warning_when_counts_only_and_no_state():
             result_config={"counts": True, "statevector": False},
         ).result()
     assert any(issubclass(w.category, NoMeasurementWarning) for w in caught)
+
+
+def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():
+    qt = qs.QuantumRegister(1, dim=3)
+    program = qs.Program([qt])
+    program.add(qs.ops.H, qt[0])  # frontend must NOT raise here
+    with pytest.raises(BackendValidationError) as exc:
+        qs.StateVectorBackend().run(
+            program, result_config={"counts": False, "statevector": True}
+        ).result()
+    msg = str(exc.value)
+    assert "H" in msg and "3" in msg  # names the op and the target dimension
+
+
+def test_dim2_gate_frontend_add_does_not_raise():
+    qt = qs.QuantumRegister(1, dim=3)
+    program = qs.Program([qt])
+    program.add(qs.ops.X, qt[0])  # no exception at add-time
