@@ -817,7 +817,7 @@ class StateVectorBackend:
                 if rule is None:
                     raise UnsupportedOperationError(type(step.operation).__name__)
                 try:
-                    matrix = rule(step.operation)
+                    matrix = rule(step.operation, targets=step.targets)
                 except Exception as exc:
                     raise MatrixImplementationError(
                         f"implementation for {type(step.operation).__name__} raised: {exc}"

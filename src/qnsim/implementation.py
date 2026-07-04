@@ -17,8 +17,13 @@ Local matrix convention (binding for every entry in this module):
       position(s).
 
 A matrix implementation rule receives the bare `Operation` instance that was
-applied (e.g. `RX(0.3)`), never the surrounding `AppliedOperation` — target
-and feedforward-condition resolution both happen separately, in the backend.
+applied (e.g. `RX(0.3)`) plus the `targets: tuple[RegisterRef, ...]` operand
+tuple by keyword, and returns the local matrix — never the surrounding
+`AppliedOperation`, and never a feedforward `condition`: condition resolution
+happens separately, in the backend. `targets` lets a rule read
+`targets[0].register.dim` to build a dimension-dependent matrix (e.g. a
+qudit `Shift`/`Clock`/`Sum` gate); a rule whose matrix never depends on
+target dimension (every fixed qubit gate here) simply ignores the argument.
 """
 
 from __future__ import annotations
@@ -31,18 +36,21 @@ import numpy as np
 
 from . import operations as ops
 from .operations import Operation
+from .registers import RegisterRef
 
 class MatrixImplementation:
     """Base class for a matrix-family implementation rule.
 
     A rule receives the bare `Operation` instance that was applied (e.g. an
-    `RX(0.3)` value) and returns its local matrix. Most callers never need to
-    subclass this directly: `MatrixImplementationMap.register` auto-wraps a
-    plain `np.ndarray` (as `FixedMatrix`) or a bare callable. Subclass and
-    override `__call__` for a stateful or configured implementation.
+    `RX(0.3)` value) plus the `targets` `RegisterRef` tuple by keyword, and
+    returns its local matrix. Most callers never need to subclass this
+    directly: `MatrixImplementationMap.register` auto-wraps a plain
+    `np.ndarray` (as `FixedMatrix`), a `_DimMatrix`, or a bare
+    callable. Subclass and override `__call__` for a stateful or configured
+    implementation.
     """
 
-    def __call__(self, op: Operation) -> np.ndarray:
+    def __call__(self, op: Operation, *, targets: tuple[RegisterRef, ...]) -> np.ndarray:
         raise NotImplementedError
 
 
@@ -82,8 +90,33 @@ class FixedMatrix(MatrixImplementation):
         matrix.flags.writeable = False
         self._matrix = matrix
 
-    def __call__(self, op: Operation) -> np.ndarray:
+    def __call__(self, op: Operation, *, targets: tuple[RegisterRef, ...] = ()) -> np.ndarray:
         return self._matrix
+
+
+class _DimMatrix(MatrixImplementation):
+    """A rule whose matrix depends only on the target subsystem dimensions.
+
+    Use this when a gate's matrix is fixed *given* the dimensions of its
+    targets but is not itself a single constant matrix (e.g. a qudit `Shift`
+    gate, whose permutation matrix depends on `targets[0].register.dim`).
+    Unlike `FixedMatrix`, this always reads `targets`, so it cannot be used
+    with the `targets=()` default — the caller (backend resolution) always
+    supplies the real target tuple.
+    """
+
+    def __init__(self, fn: "Callable[[tuple[int, ...]], np.ndarray]") -> None:
+        """Store `fn`, called on demand with the target dimensions tuple.
+
+        Args:
+            fn: Callable taking a `tuple[int, ...]` of target subsystem
+                dimensions (in target order) and returning the local matrix.
+        """
+        self._fn = fn
+
+    def __call__(self, op: Operation, *, targets: tuple[RegisterRef, ...]) -> np.ndarray:
+        dims = tuple(t.register.dim for t in targets)
+        return self._fn(dims)
 
 
 @dataclass(frozen=True)
@@ -226,25 +259,51 @@ def _require_fixed_arity(op_cls: type[Operation]) -> None:
 _ARITY_CHECK_SENTINEL = object()
 
 
+def _callable_wants_targets(rule: Callable) -> bool:
+    """True if a bare callable declares a `targets` parameter (or **kwargs).
+
+    A rule is targets-aware if it names a `targets` parameter explicitly, or
+    accepts arbitrary keyword arguments (`**kwargs`) and so can absorb a
+    `targets=` keyword regardless. If the signature cannot be introspected
+    (`inspect.signature` can raise `ValueError` or `TypeError` for some
+    C-implemented or otherwise uninspectable callables), the callable is
+    conservatively treated as not wanting `targets` — `_check_callable_arity`
+    makes the same best-effort trade-off for the op-only shape.
+    """
+    try:
+        params = inspect.signature(rule).parameters
+    except (ValueError, TypeError):
+        return False
+    if "targets" in params:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+
 class _CallableMatrixImplementation(MatrixImplementation):
-    """Adapts a bare `Operation -> np.ndarray` callable to `MatrixImplementation`."""
+    """Adapts a bare `f(op)` or `f(op, targets)` callable to `MatrixImplementation`."""
 
-    def __init__(self, func: Callable[[Operation], np.ndarray]) -> None:
+    def __init__(self, func: Callable, wants_targets: bool) -> None:
         self._func = func
+        self._wants_targets = wants_targets
 
-    def __call__(self, op: Operation) -> np.ndarray:
+    def __call__(self, op: Operation, *, targets: tuple[RegisterRef, ...]) -> np.ndarray:
+        if self._wants_targets:
+            return self._func(op, targets=targets)
         return self._func(op)
 
 
-def _check_callable_arity(op_cls: type[Operation], rule: Callable) -> None:
-    """Raise `TypeError` if `rule` cannot be called with one positional argument.
+def _check_callable_arity(
+    op_cls: type[Operation], rule: Callable, wants_targets: bool
+) -> None:
+    """Raise `TypeError` if `rule` cannot be called in its detected shape.
 
     Uses `inspect.signature(rule).bind(...)` rather than counting parameters:
-    this accepts a `*args`-only callable or one with an optional second
-    parameter (one positional slot is enough) and rejects a required
-    keyword-only parameter (no positional slot can satisfy it), matching
-    what `rule(op)` will actually do at call time. If the signature cannot
-    be introspected at all (`inspect.signature` can raise either `ValueError`
+    this accepts a `*args`-only callable or one with an optional extra
+    parameter (a slot is enough) and rejects a required parameter that
+    cannot be satisfied, matching what the rule will actually be called with
+    at resolution time — `rule(op)` if `wants_targets` is `False`, or
+    `rule(op, targets=targets)` if it is `True`. If the signature cannot be
+    introspected at all (`inspect.signature` can raise either `ValueError`
     or `TypeError` for some C-implemented or otherwise uninspectable
     callables — a different `TypeError` than the one this function itself
     raises below for a genuine arity mismatch), the check is skipped and the
@@ -256,25 +315,30 @@ def _check_callable_arity(op_cls: type[Operation], rule: Callable) -> None:
     except (ValueError, TypeError):
         return
     try:
-        signature.bind(_ARITY_CHECK_SENTINEL)
+        if wants_targets:
+            signature.bind(_ARITY_CHECK_SENTINEL, targets=())
+        else:
+            signature.bind(_ARITY_CHECK_SENTINEL)
     except TypeError:
         raise TypeError(
-            f"rule for {op_cls.__name__} must accept one positional argument "
-            f"(the Operation instance), got signature {signature}"
+            f"rule for {op_cls.__name__} must accept (op) or (op, targets), "
+            f"got signature {signature}"
         ) from None
 
 
 def _wrap_rule(
     op_cls: type[Operation],
-    rule: "MatrixImplementation | Callable[[Operation], np.ndarray] | np.ndarray",
+    rule: "MatrixImplementation | Callable | np.ndarray",
 ) -> MatrixImplementation:
     """Normalize a `register()` rule argument into a `MatrixImplementation`.
 
-    Accepts an already-built `MatrixImplementation` (returned as-is), a plain
-    `np.ndarray` (wrapped in `FixedMatrix`, shape-validated against `op_cls`'s
-    fixed arity), or a bare callable (arity-checked and wrapped). Every
-    stored rule is a `MatrixImplementation` instance, so `get()` always
-    returns a uniform type regardless of how the rule was registered.
+    Accepts an already-built `MatrixImplementation` (returned as-is, e.g. a
+    `FixedMatrix` or `_DimMatrix`), a plain `np.ndarray` (wrapped in
+    `FixedMatrix`, which only requires it be square with side length >= 2 —
+    see `_validate_square_matrix`), or a bare `f(op)`/`f(op, targets)`
+    callable (arity-checked and wrapped). Every stored rule is a
+    `MatrixImplementation` instance, so `get()` always returns a uniform type
+    regardless of how the rule was registered.
 
     Raises:
         TypeError: If `rule` is none of the above (e.g. a string or a plain
@@ -286,21 +350,15 @@ def _wrap_rule(
     if isinstance(rule, MatrixImplementation):
         return rule
     if isinstance(rule, np.ndarray):
-        n = op_cls._num_subsystems
-        expected_shape = (2**n, 2**n)
-        if rule.shape != expected_shape:
-            raise ValueError(
-                f"matrix for {op_cls.__name__} must have shape {expected_shape}, "
-                f"got {rule.shape}"
-            )
-        return FixedMatrix(rule)
+        return FixedMatrix(rule)  # square-only validation lives in FixedMatrix
     if not callable(rule):
         raise TypeError(
             f"rule for {op_cls.__name__} must be a MatrixImplementation, "
             f"np.ndarray, or callable, got {rule!r}"
         )
-    _check_callable_arity(op_cls, rule)
-    return _CallableMatrixImplementation(rule)
+    wants_targets = _callable_wants_targets(rule)
+    _check_callable_arity(op_cls, rule, wants_targets)
+    return _CallableMatrixImplementation(rule, wants_targets)
 
 
 class MatrixImplementationMap:
@@ -313,7 +371,7 @@ class MatrixImplementationMap:
     def register(
         self,
         op: Operation | type[Operation],
-        rule: "MatrixImplementation | Callable[[Operation], np.ndarray] | np.ndarray",
+        rule: "MatrixImplementation | Callable | np.ndarray",
     ) -> None:
         """Register a matrix implementation for an operation.
 
@@ -321,16 +379,20 @@ class MatrixImplementationMap:
             op: An `Operation` instance (e.g. `qs.ops.X`) or subclass (e.g. a
                 custom gate class). Normalized to the operation's class for
                 the registry key.
-            rule: A `MatrixImplementation` instance, a bare `np.ndarray`
-                (wrapped in `FixedMatrix`), or a bare callable taking the
-                operation and returning its matrix (wrapped automatically).
+            rule: A `MatrixImplementation` instance (e.g. `FixedMatrix` or
+                `_DimMatrix`), a bare `np.ndarray` (wrapped in
+                `FixedMatrix`), or a bare callable — either `f(op)` or
+                `f(op, targets)`, detected by a parameter literally named
+                `targets` (or `**kwargs`) — returning the operation's matrix
+                (wrapped automatically).
 
         Raises:
             TypeError: If `op` is neither an `Operation` instance nor
                 subclass; if its operation class has variable arity; or if a
-                bare callable cannot accept one positional argument.
-            ValueError: If a bare `np.ndarray` does not match the shape
-                required by `op`'s arity.
+                bare callable cannot be called in its detected `f(op)` or
+                `f(op, targets)` shape.
+            ValueError: If a bare `np.ndarray` is not square with side
+                length >= 2.
         """
         op_cls = _resolve_operation_class(op)
         _require_fixed_arity(op_cls)
