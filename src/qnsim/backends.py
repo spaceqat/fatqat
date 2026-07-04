@@ -1,4 +1,4 @@
-"""Qubit statevector backend: validate, execute, assemble Result, return Job."""
+"""Statevector backend: validate, execute, assemble Result, return Job."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ from .result import (
 
 @dataclass(frozen=True)
 class MeasurementStep:
-    """Resolved measurement: flat qubit indices into matching flat clbit indices."""
+    """Resolved measurement: flat subsystem indices into matching flat clbit indices."""
 
     measured_indices: tuple[int, ...]
     classical_indices: tuple[int, ...]
@@ -49,7 +49,7 @@ class MeasurementStep:
 
 @dataclass(frozen=True)
 class ResetStep:
-    """Resolved reset of one or more flat qubits to |0>, with optional condition.
+    """Resolved reset of one or more flat subsystems to |0>, with optional condition.
 
     `Reset` is an `AppliedOperation`, so it can carry a feedforward `condition`
     just like a gate. The lowered form stores it as ``(clbit_index, value)``
@@ -357,13 +357,14 @@ class StateVectorBackend:
     execution strategies:
 
     - Fast path: used when the program has no reset, no classically
-      conditioned operations, and no operation that acts on a qubit after that
-      qubit has been measured. The statevector is evolved once; requested
-      counts are then sampled from the resulting measurement distribution.
+      conditioned operations, and no operation that acts on a subsystem after
+      that subsystem has been measured. The statevector is evolved once;
+      requested counts are then sampled from the resulting measurement
+      distribution.
     - Dynamic path: used when the program contains reset, a classical
-      condition, or reuse of a measured qubit. The backend executes one shot
-      at a time while tracking the classical register explicitly, because later
-      operations may depend on earlier measurement outcomes.
+      condition, or reuse of a measured subsystem. The backend executes one
+      shot at a time while tracking the classical register explicitly,
+      because later operations may depend on earlier measurement outcomes.
 
     Backend constructor options affect only dynamic counts execution:
 
@@ -441,7 +442,7 @@ class StateVectorBackend:
         - `{"counts": True}`: counts are always requested.
         - `{"counts": False}`: counts are
           suppressed, even if the
-          program measures qubits.
+          program measures subsystems.
         - `{"statevector": None}`: a statevector is produced only when
           execution is non-stochastic, meaning the program contains no
           measurement and no reset.
@@ -452,7 +453,7 @@ class StateVectorBackend:
         Output consequences:
 
         - Counts are returned through `Result.get_counts()` as little-endian
-          classical bitstrings.
+          classical count-key strings.
         - A statevector, when produced, is returned through
           `Result.get_statevector()`.
         - If a field was not produced, its accessor raises
@@ -463,13 +464,13 @@ class StateVectorBackend:
         Execution strategy:
 
         - Fast path: programs without reset, classical conditions, or reuse of
-          a measured qubit are evolved once. Requested counts are sampled from
-          terminal measurement mappings without replaying the full circuit shot
-          by shot.
+          a measured subsystem are evolved once. Requested counts are sampled
+          from terminal measurement mappings without replaying the full
+          circuit shot by shot.
         - Dynamic path: programs with reset, classical conditions, or reuse of
-          measured qubits are executed shot by shot with an explicit classical
-          register. This path preserves feedforward semantics and repeated
-          measurement/reset behavior.
+          measured subsystems are executed shot by shot with an explicit
+          classical register. This path preserves feedforward semantics and
+          repeated measurement/reset behavior.
         - Parallel dynamic counts: when the dynamic path is used, counts are
           requested, multiple iterations are needed, and backend options allow
           it, shots may be distributed across worker processes. The counts are
@@ -776,7 +777,7 @@ class StateVectorBackend:
         Raises `UnsupportedOperationError` for a gate with no matrix rule.
         `Reset` is recognized by type and routed to a `ResetStep`. The pass also
         computes `is_dynamic` (reset, a condition, or a gate on an
-        already-measured qubit), `has_measurement`, and `has_reset`.
+        already-measured subsystem), `has_measurement`, and `has_reset`.
         """
         plan: list[ResolvedStep] = []
         measured_subsystems: set[int] = set()

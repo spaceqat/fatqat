@@ -1,4 +1,4 @@
-"""ResourceLayout: the single source of truth for flat qubit/clbit indices."""
+"""ResourceLayout: the single source of truth for flat subsystem/clbit indices."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ class ResourceLayout:
         Args:
             system_dims: Per-subsystem Hilbert-space dimensions for quantum registers.
             classical_dims: Per-subsystem dimensions for classical registers.
-            q_offsets: Mapping from `id(QuantumRegister)` to flat qubit offset.
+            q_offsets: Mapping from `id(QuantumRegister)` to flat subsystem offset.
             c_offsets: Mapping from `id(ClassicalRegister)` to flat clbit offset.
             n_clbits: Total number of classical bits.
         """

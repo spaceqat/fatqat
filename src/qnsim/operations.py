@@ -297,7 +297,7 @@ class CPhase(Operation):
 
 @dataclass(frozen=True)
 class ResetGate(Operation):
-    """Reset operation: repreparation of one or more target qubits in ``|0>``.
+    """Reset operation: repreparation of one or more target subsystems in ``|0>``.
 
     Has no matrix; the matrix-family backend resolves it to a boundary reset
     step by operation type.

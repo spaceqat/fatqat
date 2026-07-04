@@ -129,7 +129,7 @@ class ApplyMatrixStep:
 
     Attributes:
         matrix: Local operation matrix.
-        target_indices: Flat qubit indices the matrix acts on.
+        target_indices: Flat subsystem indices the matrix acts on.
         condition: Optional feedforward guard as lowered ``(clbit_index, value)``
             AND-terms. ``None`` means unconditional. The engine ignores this
             field; the backend's per-shot loop evaluates it.

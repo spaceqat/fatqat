@@ -57,7 +57,7 @@ def test_reset_qubit_on_entangled_pair_conditions_the_partner():
     assert 0.35 < frac < 0.65
 
 
-def test_measure_qubits_returns_bits_in_requested_order():
+def test_measure_subsystems_returns_bits_in_requested_order():
     eng = StateVectorEngine()
     eng.initialize((2, 2, 2))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
@@ -69,7 +69,7 @@ def test_measure_qubits_returns_bits_in_requested_order():
     assert np.allclose(eng.export_state()[0b101], 1.0)
 
 
-def test_measure_qubits_consumes_one_rng_draw_for_grouped_event():
+def test_measure_subsystems_consumes_one_rng_draw_for_grouped_event():
     eng_grouped = StateVectorEngine()
     eng_grouped.initialize((2, 2))
     eng_grouped.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
@@ -93,7 +93,7 @@ def test_measure_qubits_consumes_one_rng_draw_for_grouped_event():
     assert after_grouped == after_one_draw
 
 
-def test_reset_qubits_resets_all_targets_with_one_grouped_collapse():
+def test_reset_subsystems_resets_all_targets_with_one_grouped_collapse():
     eng = StateVectorEngine()
     eng.initialize((2, 2))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
