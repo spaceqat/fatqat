@@ -32,7 +32,7 @@ class StateVectorEngine:
         self._reversed_dims: tuple[int, ...] = ()
 
     @property
-    def n_qubits(self) -> int:
+    def n_subsystems(self) -> int:
         """Number of subsystems in the currently initialized state."""
         return len(self._dims)
 
@@ -77,52 +77,52 @@ class StateVectorEngine:
         self._require_state()
         return rng.choice(len(self._state), size=shots, p=self.probabilities())
 
-    def collapse(self, measured_qubits: Sequence[int], rng: np.random.Generator) -> int:
+    def collapse(self, measured_subsystems: Sequence[int], rng: np.random.Generator) -> int:
         """Sample one outcome, project the internal state, return the flat index."""
         self._require_state()
-        idx, new = _collapse_state(self._state, measured_qubits, self._dims, rng)
+        idx, new = _collapse_state(self._state, measured_subsystems, self._dims, rng)
         self._state = new
         return idx
 
-    def measure_qubits(
+    def measure_subsystems(
         self,
         indices: Sequence[int],
         rng: np.random.Generator,
     ) -> tuple[int, ...]:
-        """Sample and collapse a group of qubits in one computational-basis event."""
+        """Sample and collapse a group of subsystems in one computational-basis event."""
         self._require_state()
         if len(indices) < 1:
-            raise ValueError("measure_qubits requires at least one index")
+            raise ValueError("measure_subsystems requires at least one index")
         flat = self.collapse(indices, rng)
         return tuple(_digit(flat, index, self._dims) for index in indices)
 
-    def measure_qubit(self, index: int, rng: np.random.Generator) -> int:
-        """Sample and collapse a single qubit in the computational basis.
+    def measure_subsystem(self, index: int, rng: np.random.Generator) -> int:
+        """Sample and collapse a single subsystem in the computational basis.
 
         Projects the internal state onto the sampled outcome for ``index`` and
-        returns that qubit's measured digit. Consumes exactly one rng draw.
+        returns that subsystem's measured digit. Consumes exactly one rng draw.
         """
-        return self.measure_qubits((index,), rng)[0]
+        return self.measure_subsystems((index,), rng)[0]
 
-    def reset_qubits(self, indices: Sequence[int], rng: np.random.Generator) -> None:
-        """Measure a group of qubits and reprepare them in ``|0>``."""
+    def reset_subsystems(self, indices: Sequence[int], rng: np.random.Generator) -> None:
+        """Measure a group of subsystems and reprepare them in ``|0>``."""
         self._require_state()
         if len(indices) < 1:
-            raise ValueError("reset_qubits requires at least one index")
-        outcomes = self.measure_qubits(indices, rng)
+            raise ValueError("reset_subsystems requires at least one index")
+        outcomes = self.measure_subsystems(indices, rng)
         for index, outcome in zip(indices, outcomes):
             if outcome != 0:
                 inv = shift_matrix(self._dims[index], -outcome)
                 self._state = _apply_matrix(self._state, inv, (index,), self._dims)
 
-    def reset_qubit(self, index: int, rng: np.random.Generator) -> None:
-        """Measure a qubit and reprepare it in ``|0>``.
+    def reset_subsystem(self, index: int, rng: np.random.Generator) -> None:
+        """Measure a subsystem and reprepare it in ``|0>``.
 
         Samples an outcome (one rng draw), projects, and shifts the target back
         to ``|0>`` when the outcome is nonzero. The rest of an entangled state
         is left correctly conditioned on the sampled branch.
         """
-        self.reset_qubits((index,), rng)
+        self.reset_subsystems((index,), rng)
 
     def export_state(self) -> np.ndarray:
         """Return a copy of the current statevector."""
@@ -199,30 +199,30 @@ def _apply_matrix(
 
 def _collapse_state(
     state: np.ndarray,
-    measured_qubits: Sequence[int],
+    measured_subsystems: Sequence[int],
     dims: Sequence[int],
     rng: np.random.Generator,
 ) -> tuple[int, np.ndarray]:
     """Sample one computational-basis outcome and return the projected state."""
     idx = int(rng.choice(len(state), p=_probabilities(state)))
-    qubits = list(measured_qubits)
+    subsystems = list(measured_subsystems)
     n = len(dims)
 
-    # Worst case for the broadcast below is m = n-1 (all but one qubit
+    # Worst case for the broadcast below is m = n-1 (all but one subsystem
     # measured): cost is O(N*(n-1)), just shy of the fast path above. Could
     # drop to O(N*min(m, n-m)) by checking whichever of measured/unmeasured
     # is smaller; deferred for now.
-    if len(set(qubits)) == n:
+    if len(set(subsystems)) == n:
         new = np.zeros_like(state)
         new[idx] = state[idx]
     else:
         strides = _strides(dims)
         basis = np.arange(len(state))
         # One (N, m) broadcast instead of a Python loop of m separate O(N)
-        # passes: digits/idx_digits below fold every measured qubit's stride
+        # passes: digits/idx_digits below fold every measured subsystem's stride
         # and modulus into a single vectorized divide/mod/compare.
-        stride_arr = np.array([strides[q] for q in qubits])
-        dim_arr = np.array([dims[q] for q in qubits])
+        stride_arr = np.array([strides[q] for q in subsystems])
+        dim_arr = np.array([dims[q] for q in subsystems])
         digits = (basis[:, None] // stride_arr) % dim_arr
         idx_digits = (idx // stride_arr) % dim_arr
         keep = np.all(digits == idx_digits, axis=1)

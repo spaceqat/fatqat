@@ -9,7 +9,7 @@ def test_reset_is_a_non_callable_singleton():
     assert isinstance(qs.ops.Reset, ops.ResetGate)
     assert isinstance(qs.ops.Reset, ops.Operation)
     assert qs.ops.Reset.name == "Reset"
-    assert qs.ops.Reset.num_qubits is None
+    assert qs.ops.Reset.num_subsystems is None
     with pytest.raises(TypeError):
         qs.ops.Reset()
 

@@ -30,24 +30,24 @@ class Operation:
 
     Attributes:
         name: Public operation name.
-        _num_qubits: Number of quantum targets required by the operation, or
+        _num_subsystems: Number of quantum targets required by the operation, or
             None for variable arity with at least one target.
     """
 
     name: ClassVar[str] = "OP"
-    _num_qubits: ClassVar[int | None] = 1
+    _num_subsystems: ClassVar[int | None] = 1
 
     def __post_init__(self) -> None:
-        n = type(self)._num_qubits
+        n = type(self)._num_subsystems
         if n is None:
             return
         if not isinstance(n, int) or isinstance(n, bool) or n <= 0:
-            raise ValueError(f"_num_qubits must be a positive int or None, got {n!r}")
+            raise ValueError(f"_num_subsystems must be a positive int or None, got {n!r}")
 
     @property
-    def num_qubits(self) -> int | None:
+    def num_subsystems(self) -> int | None:
         """Number of quantum targets required, or None for variable arity."""
-        return type(self)._num_qubits
+        return type(self)._num_subsystems
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ class HGate(Operation):
     """Hadamard gate operation."""
 
     name: ClassVar[str] = "H"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,7 @@ class IGate(Operation):
     """Identity gate operation."""
 
     name: ClassVar[str] = "I"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -76,7 +76,7 @@ class SGate(Operation):
     """S phase gate operation (square root of Z)."""
 
     name: ClassVar[str] = "S"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -84,7 +84,7 @@ class SdgGate(Operation):
     """Inverse S phase gate operation."""
 
     name: ClassVar[str] = "Sdg"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,7 @@ class TGate(Operation):
     """T phase gate operation."""
 
     name: ClassVar[str] = "T"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -100,7 +100,7 @@ class TdgGate(Operation):
     """Inverse T phase gate operation."""
 
     name: ClassVar[str] = "Tdg"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -108,7 +108,7 @@ class XGate(Operation):
     """Pauli-X gate operation."""
 
     name: ClassVar[str] = "X"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -116,7 +116,7 @@ class YGate(Operation):
     """Pauli-Y gate operation."""
 
     name: ClassVar[str] = "Y"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -124,7 +124,7 @@ class ZGate(Operation):
     """Pauli-Z gate operation."""
 
     name: ClassVar[str] = "Z"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ class CXGate(Operation):
     """Controlled-X gate operation."""
 
     name: ClassVar[str] = "CX"
-    _num_qubits: ClassVar[int] = 2
+    _num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -145,7 +145,7 @@ class CZGate(Operation):
     """Controlled-Z gate operation."""
 
     name: ClassVar[str] = "CZ"
-    _num_qubits: ClassVar[int] = 2
+    _num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -153,7 +153,7 @@ class SwapGate(Operation):
     """Swap gate operation: exchanges the state of its two targets."""
 
     name: ClassVar[str] = "Swap"
-    _num_qubits: ClassVar[int] = 2
+    _num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -164,7 +164,7 @@ class CYGate(Operation):
     """
 
     name: ClassVar[str] = "CY"
-    _num_qubits: ClassVar[int] = 2
+    _num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -175,7 +175,7 @@ class CSGate(Operation):
     """
 
     name: ClassVar[str] = "CS"
-    _num_qubits: ClassVar[int] = 2
+    _num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -185,7 +185,7 @@ class iSwapGate(Operation):
     """
 
     name: ClassVar[str] = "iSwap"
-    _num_qubits: ClassVar[int] = 2
+    _num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -197,7 +197,7 @@ class CCXGate(Operation):
     """
 
     name: ClassVar[str] = "CCX"
-    _num_qubits: ClassVar[int] = 3
+    _num_subsystems: ClassVar[int] = 3
 
 
 @dataclass(frozen=True)
@@ -208,7 +208,7 @@ class CSwapGate(Operation):
     """
 
     name: ClassVar[str] = "CSwap"
-    _num_qubits: ClassVar[int] = 3
+    _num_subsystems: ClassVar[int] = 3
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ class RX(Operation):
 
     theta: float
     name: ClassVar[str] = "RX"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -239,7 +239,7 @@ class RY(Operation):
 
     theta: float
     name: ClassVar[str] = "RY"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -252,7 +252,7 @@ class RZ(Operation):
 
     theta: float
     name: ClassVar[str] = "RZ"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -265,7 +265,7 @@ class Phase(Operation):
 
     theta: float
     name: ClassVar[str] = "Phase"
-    _num_qubits: ClassVar[int] = 1
+    _num_subsystems: ClassVar[int] = 1
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +286,7 @@ class CPhase(Operation):
 
     theta: float
     name: ClassVar[str] = "CPhase"
-    _num_qubits: ClassVar[int] = 2
+    _num_subsystems: ClassVar[int] = 2
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +303,7 @@ class ResetGate(Operation):
     """
 
     name: ClassVar[str] = "Reset"
-    _num_qubits: ClassVar[int | None] = None
+    _num_subsystems: ClassVar[int | None] = None
 
 
 # ---------------------------------------------------------------------------

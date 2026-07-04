@@ -209,16 +209,16 @@ def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]
 
 
 def _require_fixed_arity(op_cls: type[Operation]) -> None:
-    """Raise `TypeError` if `op_cls` has variable arity (`_num_qubits is None`).
+    """Raise `TypeError` if `op_cls` has variable arity (`_num_subsystems is None`).
 
     A matrix map rule receives only the bare `Operation` instance, never the
     application's target count, so there is no way for a rule to know what
     size matrix to build for a variable-arity operation. Such operations are
     out of scope for this registry.
     """
-    if op_cls._num_qubits is None:
+    if op_cls._num_subsystems is None:
         raise TypeError(
-            f"{op_cls.__name__} has variable arity (_num_qubits is None); "
+            f"{op_cls.__name__} has variable arity (_num_subsystems is None); "
             "the matrix implementation map only supports fixed-arity operations"
         )
 
@@ -286,7 +286,7 @@ def _wrap_rule(
     if isinstance(rule, MatrixImplementation):
         return rule
     if isinstance(rule, np.ndarray):
-        n = op_cls._num_qubits
+        n = op_cls._num_subsystems
         expected_shape = (2**n, 2**n)
         if rule.shape != expected_shape:
             raise ValueError(

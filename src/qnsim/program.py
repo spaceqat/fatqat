@@ -41,7 +41,7 @@ class AppliedOperation:
     condition: Condition = None
 
     def __post_init__(self) -> None:
-        expected = self.operation.num_qubits
+        expected = self.operation.num_subsystems
         if expected is None:
             if len(self.targets) < 1:
                 raise ValueError(f"{self.operation.name} expects at least one target")

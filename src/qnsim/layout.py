@@ -39,8 +39,8 @@ class ResourceLayout:
         self._n_clbits = n_clbits
 
     @property
-    def n_qubits(self) -> int:
-        """Total number of qubits in the layout."""
+    def n_subsystems(self) -> int:
+        """Total number of subsystems in the layout."""
         return len(self.system_dims)
 
     @property
@@ -48,8 +48,8 @@ class ResourceLayout:
         """Total number of classical bits in the layout."""
         return self._n_clbits
 
-    def qubit_index(self, ref: RegisterRef) -> int:
-        """Return the flat qubit index for a quantum register reference.
+    def subsystem_index(self, ref: RegisterRef) -> int:
+        """Return the flat subsystem index for a quantum register reference.
 
         Raises:
             KeyError: If the reference's register is not part of this layout.
@@ -57,7 +57,7 @@ class ResourceLayout:
         try:
             base = self._q_offsets[id(ref.register)]
         except KeyError:
-            raise KeyError("qubit ref not part of this layout") from None
+            raise KeyError("subsystem ref not part of this layout") from None
         return base + ref.index
 
     def clbit_index(self, ref: RegisterRef) -> int:

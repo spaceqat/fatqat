@@ -99,5 +99,5 @@ def test_measure_qutrit_digit_extraction():
     eng = StateVectorEngine()
     eng.initialize((3,))
     eng._state = shift_matrix(3, 2) @ eng.export_state()
-    (digit,) = eng.measure_qubits((0,), np.random.default_rng(0))
+    (digit,) = eng.measure_subsystems((0,), np.random.default_rng(0))
     assert digit == 2

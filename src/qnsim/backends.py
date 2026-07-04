@@ -166,12 +166,12 @@ def _execute_dynamic_plan_one_shot(
             if _condition_matches(step.condition, clbits):
                 engine.apply(step)
         elif isinstance(step, MeasurementStep):
-            bits = engine.measure_qubits(step.measured_indices, rng)
+            bits = engine.measure_subsystems(step.measured_indices, rng)
             for c, bit in zip(step.classical_indices, bits):
                 clbits[c] = bit
         else:  # ResetStep
             if _condition_matches(step.condition, clbits):
-                engine.reset_qubits(step.reset_indices, rng)
+                engine.reset_subsystems(step.reset_indices, rng)
     return tuple(clbits)
 
 
@@ -686,8 +686,8 @@ class StateVectorBackend:
 
         collapsed_index = None
         if request.statevector and facts.has_measurement:
-            measured_qubits = [q for q, _c in measurements]
-            collapsed_index = engine.collapse(measured_qubits, rng)
+            measured_subsystems = [q for q, _c in measurements]
+            collapsed_index = engine.collapse(measured_subsystems, rng)
 
         if request.counts:
             if facts.has_measurement:
@@ -778,7 +778,7 @@ class StateVectorBackend:
         already-measured qubit), `has_measurement`, and `has_reset`.
         """
         plan: list[ResolvedStep] = []
-        measured_qubits: set[int] = set()
+        measured_subsystems: set[int] = set()
         is_dynamic = False
         has_measurement = False
         has_reset = False
@@ -786,9 +786,9 @@ class StateVectorBackend:
         for step in program.operations:
             if isinstance(step, Measurement):
                 has_measurement = True
-                measured_indices = tuple(layout.qubit_index(q) for q in step.qreg)
+                measured_indices = tuple(layout.subsystem_index(q) for q in step.qreg)
                 classical_indices = tuple(layout.clbit_index(c) for c in step.clreg)
-                measured_qubits.update(measured_indices)
+                measured_subsystems.update(measured_indices)
                 plan.append(
                     MeasurementStep(
                         measured_indices=measured_indices,
@@ -798,10 +798,10 @@ class StateVectorBackend:
                 continue
 
             if isinstance(step, AppliedOperation):
-                target_indices = tuple(layout.qubit_index(t) for t in step.targets)
+                target_indices = tuple(layout.subsystem_index(t) for t in step.targets)
                 if step.condition is not None:
                     is_dynamic = True
-                if any(t in measured_qubits for t in target_indices):
+                if any(t in measured_subsystems for t in target_indices):
                     is_dynamic = True
 
                 if isinstance(step.operation, ResetGate):

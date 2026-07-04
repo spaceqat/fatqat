@@ -129,7 +129,7 @@ def test_register_accepts_operation_instance_key():
 def test_register_accepts_operation_class_key():
     class MyGate(ops.Operation):
         name = "MyGate"
-        _num_qubits = 1
+        _num_subsystems = 1
 
     m = MatrixImplementationMap()
     rule = FixedMatrix(np.eye(2, dtype=complex))
@@ -157,7 +157,7 @@ def _callable_rule(op):
 def test_register_rejects_variable_arity_operation(rule):
     class VariableGate(ops.Operation):
         name = "VariableGate"
-        _num_qubits = None
+        _num_subsystems = None
 
     m = MatrixImplementationMap()
     with pytest.raises(TypeError, match="variable arity"):

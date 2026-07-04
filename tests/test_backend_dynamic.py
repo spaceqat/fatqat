@@ -66,7 +66,7 @@ def test_lower_reset_is_dynamic_and_emits_reset_step():
 def test_lower_unknown_gate_raises():
     class FooGate(ops.Operation):
         name = "FOO"
-        _num_qubits = 1
+        _num_subsystems = 1
 
     p = Program(1)
     p.add(FooGate(), 0)
