@@ -247,7 +247,7 @@ def _split_into_batches(
 
 def _run_dynamic_shot_batch(
     plan: list[ResolvedStep],
-    n_qubits: int,
+    system_dims: tuple[int, ...],
     n_clbits: int,
     seed_batch: list[np.random.SeedSequence],
 ) -> list[tuple[int, ...]]:
@@ -256,14 +256,14 @@ def _run_dynamic_shot_batch(
     snapshots: list[tuple[int, ...]] = []
     for seed_sequence in seed_batch:
         rng = np.random.default_rng(seed_sequence)
-        engine.initialize(n_qubits)
+        engine.initialize(system_dims)
         snapshots.append(_execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng))
     return snapshots
 
 
 def _run_dynamic_shots_multiprocessing(
     plan: list[ResolvedStep],
-    n_qubits: int,
+    system_dims: tuple[int, ...],
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
@@ -273,7 +273,7 @@ def _run_dynamic_shots_multiprocessing(
         results = executor.map(
             _run_dynamic_shot_batch,
             repeat(plan),
-            repeat(n_qubits),
+            repeat(system_dims),
             repeat(n_clbits),
             batches,
         )
@@ -282,7 +282,7 @@ def _run_dynamic_shots_multiprocessing(
 
 def _run_dynamic_shots_loky(
     plan: list[ResolvedStep],
-    n_qubits: int,
+    system_dims: tuple[int, ...],
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
@@ -294,7 +294,7 @@ def _run_dynamic_shots_loky(
     results = executor.map(
         _run_dynamic_shot_batch,
         repeat(plan),
-        repeat(n_qubits),
+        repeat(system_dims),
         repeat(n_clbits),
         batches,
     )
@@ -304,7 +304,7 @@ def _run_dynamic_shots_loky(
 def _run_dynamic_shots_parallel(
     config: _BackendConfig,
     plan: list[ResolvedStep],
-    n_qubits: int,
+    system_dims: tuple[int, ...],
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
@@ -319,7 +319,7 @@ def _run_dynamic_shots_parallel(
     backend_name = _resolve_parallel_backend_name(config.parallel_backend)
     if backend_name == "multiprocessing":
         return _run_dynamic_shots_multiprocessing(
-            plan, n_qubits, n_clbits, seed_sequences, max_workers
+            plan, system_dims, n_clbits, seed_sequences, max_workers
         )
     if backend_name == "loky":
         if not _loky_available():
@@ -330,10 +330,10 @@ def _run_dynamic_shots_parallel(
                 stacklevel=3,
             )
             return _run_dynamic_shots_multiprocessing(
-                plan, n_qubits, n_clbits, seed_sequences, max_workers
+                plan, system_dims, n_clbits, seed_sequences, max_workers
             )
         return _run_dynamic_shots_loky(
-            plan, n_qubits, n_clbits, seed_sequences, max_workers
+            plan, system_dims, n_clbits, seed_sequences, max_workers
         )
     raise BackendValidationError(f"unsupported parallel_backend={backend_name!r}")
 
@@ -558,7 +558,7 @@ class StateVectorBackend:
         try:
             return Job.done(
                 self._execute(
-                    config, shots, plan, facts, layout.n_qubits, layout.n_clbits, seed
+                    config, shots, plan, facts, layout.system_dims, layout.n_clbits, seed
                 )
             )
         except Exception as exc:  # execution-stage failure
@@ -599,7 +599,7 @@ class StateVectorBackend:
         shots: int,
         plan: list[ResolvedStep],
         facts: _PlanFacts,
-        n_qubits: int,
+        system_dims: tuple[int, ...],
         n_clbits: int,
         seed: int | None,
     ) -> Result:
@@ -608,13 +608,13 @@ class StateVectorBackend:
 
         if facts.is_dynamic:
             counts, statevector, available = self._run_per_shot(
-                plan, n_qubits, n_clbits, shots, seed, request
+                plan, system_dims, n_clbits, shots, seed, request
             )
         else:
             counts, statevector, available = self._run_fast(
                 plan,
                 facts,
-                n_qubits,
+                system_dims,
                 n_clbits,
                 shots,
                 np.random.default_rng(seed),
@@ -655,7 +655,7 @@ class StateVectorBackend:
         self,
         plan: list[ResolvedStep],
         facts: _PlanFacts,
-        n_qubits: int,
+        system_dims: tuple[int, ...],
         n_clbits: int,
         shots: int,
         rng: np.random.Generator,
@@ -663,7 +663,7 @@ class StateVectorBackend:
     ) -> tuple[dict[str, int] | None, np.ndarray | None, set[str]]:
         """Phase 1 path: evolve once, then sample terminal measurements."""
         engine = self._engine
-        engine.initialize(n_qubits)
+        engine.initialize(system_dims)
         measurements: list[tuple[int, int]] = []
         for step in plan:
             if isinstance(step, ApplyMatrixStep):
@@ -700,7 +700,7 @@ class StateVectorBackend:
     def _run_per_shot(
         self,
         plan: list[ResolvedStep],
-        n_qubits: int,
+        system_dims: tuple[int, ...],
         n_clbits: int,
         shots: int,
         seed: int | None,
@@ -726,7 +726,7 @@ class StateVectorBackend:
             snapshots = _run_dynamic_shots_parallel(
                 self._config,
                 plan,
-                n_qubits,
+                system_dims,
                 n_clbits,
                 seed_sequences,
                 max_workers,
@@ -736,7 +736,7 @@ class StateVectorBackend:
             snapshots = []
             for seed_sequence in seed_sequences:
                 rng = np.random.default_rng(seed_sequence)
-                engine.initialize(n_qubits)
+                engine.initialize(system_dims)
                 snapshots.append(
                     _execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng)
                 )

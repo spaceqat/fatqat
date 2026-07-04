@@ -112,6 +112,19 @@ class ApplyMatrixStep:
         self.matrix.flags.writeable = False
 
 
+def shift_matrix(dim: int, power: int) -> np.ndarray:
+    """Generalized-Pauli shift: ``|k> -> |(k + power) mod dim>``.
+
+    Returns a ``dim x dim`` permutation matrix. ``power`` is reduced modulo
+    ``dim``, so ``shift_matrix(3, 5)`` equals ``shift_matrix(3, 2)``.
+    """
+    power %= dim
+    m = np.zeros((dim, dim), dtype=complex)
+    for k in range(dim):
+        m[(k + power) % dim, k] = 1.0
+    return m
+
+
 # Module-level constant matrices (reused; do not rebuild per call).
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _Y = np.array([[0, -1j], [1j, 0]], dtype=complex)

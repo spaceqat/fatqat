@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from qnsim.engine import StateVectorEngine
-from qnsim.implementation import ApplyMatrixStep
+from qnsim.engine import StateVectorEngine, _apply_matrix
+from qnsim.implementation import ApplyMatrixStep, shift_matrix
 
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
@@ -17,7 +17,7 @@ _CCX[[6, 7]] = _CCX[[7, 6]]
 
 def _engine(n):
     eng = StateVectorEngine()
-    eng.initialize(n)
+    eng.initialize((2,) * n)
     return eng
 
 
@@ -92,3 +92,32 @@ def test_ccx_leaves_target_when_one_control_is_zero():
     expected = np.zeros(8, dtype=complex)
     expected[1] = 1.0  # qubit0=1, qubit1=0, qubit2=0 (unchanged)
     assert np.allclose(eng.export_state(), expected)
+
+
+def test_shift_matrix_qutrit_cycles_basis():
+    s = shift_matrix(3, 1)
+    # |0>->|1>, |1>->|2>, |2>->|0>
+    assert np.allclose(s @ np.array([1, 0, 0], dtype=complex), [0, 1, 0])
+    assert np.allclose(s @ np.array([0, 1, 0], dtype=complex), [0, 0, 1])
+    assert np.allclose(s @ np.array([0, 0, 1], dtype=complex), [1, 0, 0])
+
+
+def test_apply_shift_on_single_qutrit():
+    eng = StateVectorEngine()
+    eng.initialize((3,))
+    state = eng.export_state()
+    new = _apply_matrix(state, shift_matrix(3, 1), (0,), (3,))
+    assert np.allclose(new, [0, 1, 0])  # |0> -> |1>
+
+
+def test_apply_matrix_mixed_radix_qutrit_qubit():
+    # 2 subsystems: dim-3 (subsystem 0) and dim-2 (subsystem 1); state size 6.
+    eng = StateVectorEngine()
+    eng.initialize((3, 2))
+    state = eng.export_state()
+    # Shift subsystem 0 (the qutrit) by 1: |0,0> -> |1,0>.
+    new = _apply_matrix(state, shift_matrix(3, 1), (0,), (3, 2))
+    # Flat index of |q0=1, q1=0> little-endian: 1 * stride0(=prod(dims[:0])=1) = 1.
+    expected = np.zeros(6, dtype=complex)
+    expected[1] = 1.0
+    assert np.allclose(new, expected)

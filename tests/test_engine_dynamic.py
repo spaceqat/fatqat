@@ -9,7 +9,7 @@ _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
 
 def test_measure_qubit_deterministic_one():
     eng = StateVectorEngine()
-    eng.initialize(1)
+    eng.initialize((2,))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))  # |1>
     bit = eng.measure_qubit(0, np.random.default_rng(0))
     assert bit == 1
@@ -18,7 +18,7 @@ def test_measure_qubit_deterministic_one():
 
 def test_measure_qubit_collapses_and_is_repeatable():
     eng = StateVectorEngine()
-    eng.initialize(1)
+    eng.initialize((2,))
     eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))  # (|0>+|1>)/sqrt2
     first = eng.measure_qubit(0, np.random.default_rng(0))
     # after collapse the state is a basis state; re-measuring returns the same bit
@@ -28,7 +28,7 @@ def test_measure_qubit_collapses_and_is_repeatable():
 
 def test_reset_qubit_from_one_returns_zero():
     eng = StateVectorEngine()
-    eng.initialize(1)
+    eng.initialize((2,))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))  # |1>
     eng.reset_qubit(0, np.random.default_rng(0))
     assert np.allclose(eng.export_state(), np.array([1, 0], dtype=complex))
@@ -39,7 +39,7 @@ def test_reset_qubit_on_entangled_pair_conditions_the_partner():
     outcomes = []
     for s in range(200):
         eng = StateVectorEngine()
-        eng.initialize(2)
+        eng.initialize((2, 2))
         eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
         cx = np.array(
             [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]],
@@ -59,7 +59,7 @@ def test_reset_qubit_on_entangled_pair_conditions_the_partner():
 
 def test_measure_qubits_returns_bits_in_requested_order():
     eng = StateVectorEngine()
-    eng.initialize(3)
+    eng.initialize((2, 2, 2))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(2,)))
 
@@ -71,7 +71,7 @@ def test_measure_qubits_returns_bits_in_requested_order():
 
 def test_measure_qubits_consumes_one_rng_draw_for_grouped_event():
     eng_grouped = StateVectorEngine()
-    eng_grouped.initialize(2)
+    eng_grouped.initialize((2, 2))
     eng_grouped.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
     eng_grouped.apply(
         ApplyMatrixStep(
@@ -95,7 +95,7 @@ def test_measure_qubits_consumes_one_rng_draw_for_grouped_event():
 
 def test_reset_qubits_resets_all_targets_with_one_grouped_collapse():
     eng = StateVectorEngine()
-    eng.initialize(2)
+    eng.initialize((2, 2))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(1,)))
 
@@ -106,7 +106,7 @@ def test_reset_qubits_resets_all_targets_with_one_grouped_collapse():
 
 def test_single_qubit_wrappers_delegate_to_grouped_methods():
     eng = StateVectorEngine()
-    eng.initialize(1)
+    eng.initialize((2,))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
 
     bit = eng.measure_qubit(0, np.random.default_rng(0))
