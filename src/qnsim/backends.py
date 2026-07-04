@@ -558,7 +558,14 @@ class StateVectorBackend:
         try:
             return Job.done(
                 self._execute(
-                    config, shots, plan, facts, layout.system_dims, layout.n_clbits, seed
+                    config,
+                    shots,
+                    plan,
+                    facts,
+                    layout.system_dims,
+                    layout.classical_dims,
+                    layout.n_clbits,
+                    seed,
                 )
             )
         except Exception as exc:  # execution-stage failure
@@ -600,6 +607,7 @@ class StateVectorBackend:
         plan: list[ResolvedStep],
         facts: _PlanFacts,
         system_dims: tuple[int, ...],
+        classical_dims: tuple[int, ...],
         n_clbits: int,
         seed: int | None,
     ) -> Result:
@@ -641,6 +649,7 @@ class StateVectorBackend:
             counts=counts,
             statevector=statevector,
             available=frozenset(available),
+            classical_dims=classical_dims,
             metadata={
                 "shots": shots,
                 "backend_name": type(self).__name__,
@@ -660,7 +669,7 @@ class StateVectorBackend:
         shots: int,
         rng: np.random.Generator,
         request: _ResultRequest,
-    ) -> tuple[dict[str, int] | None, np.ndarray | None, set[str]]:
+    ) -> tuple[dict[tuple[int, ...], int] | None, np.ndarray | None, set[str]]:
         """Phase 1 path: evolve once, then sample terminal measurements."""
         engine = self._engine
         engine.initialize(system_dims)
@@ -671,7 +680,7 @@ class StateVectorBackend:
             else:  # MeasurementStep (no ResetStep on the fast path)
                 measurements.extend(zip(step.measured_indices, step.classical_indices))
 
-        counts: dict[str, int] | None = None
+        counts: dict[tuple[int, ...], int] | None = None
         statevector: np.ndarray | None = None
         available: set[str] = set()
 
@@ -688,7 +697,7 @@ class StateVectorBackend:
                     indices = engine.sample_indices(shots, rng)
             else:
                 indices = np.zeros(shots, dtype=int)
-            counts = build_counts(indices, n_clbits, measurements)
+            counts = build_counts(indices, n_clbits, measurements, system_dims)
             available.add("counts")
 
         if request.statevector:
@@ -705,7 +714,7 @@ class StateVectorBackend:
         shots: int,
         seed: int | None,
         request: _ResultRequest,
-    ) -> tuple[dict[str, int] | None, np.ndarray | None, set[str]]:
+    ) -> tuple[dict[tuple[int, ...], int] | None, np.ndarray | None, set[str]]:
         """Per-shot path: run each shot independently with its own clbits.
 
         Each shot draws from its own child `SeedSequence`, spawned from the
@@ -741,7 +750,7 @@ class StateVectorBackend:
                     _execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng)
                 )
 
-        counts: dict[str, int] | None = None
+        counts: dict[tuple[int, ...], int] | None = None
         statevector: np.ndarray | None = None
         available: set[str] = set()
 
