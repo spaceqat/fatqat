@@ -64,3 +64,24 @@ def test_empty_condition_raises_valueerror():
     p = Program(2, 2)
     with pytest.raises(ValueError, match="condition is empty"):
         p.add(ops.X, 0, condition=())
+
+
+def test_condition_literal_out_of_range_raises():
+    qt = QuantumRegister(1, dim=3)
+    ct = ClassicalRegister(1, dim=3)
+    program = Program([qt], [ct])
+    with pytest.raises(ValueError):
+        program.add(ops.Shift(1), qt[0], condition=(ct[0], 7))  # 7 >= dim 3
+
+
+def test_condition_literal_in_range_ok():
+    qt = QuantumRegister(1, dim=3)
+    ct = ClassicalRegister(1, dim=3)
+    program = Program([qt], [ct])
+    program.add(ops.Shift(1), qt[0], condition=(ct[0], 2))  # 2 < dim 3, ok
+
+
+def test_dim2_condition_literal_two_still_rejected():
+    p = Program(2, 2)
+    with pytest.raises(ValueError):
+        p.add(ops.X, 0, condition=(0, 2))

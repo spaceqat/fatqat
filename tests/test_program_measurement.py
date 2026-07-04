@@ -122,3 +122,29 @@ def test_measure_all_rejects_empty_program():
     p = Program(0, 0)
     with pytest.raises(ValueError, match="at least one"):
         p.measure_all()
+
+
+def test_add_measurement_dim_mismatch_raises():
+    qt = QuantumRegister(1, dim=3)
+    cb = ClassicalRegister(1, dim=2)
+    program = Program([qt], [cb])
+    with pytest.raises(ValueError):
+        program.add_measurement(qt[0], cb[0])
+
+
+def test_add_measurement_matching_dims_ok():
+    qt = QuantumRegister(1, dim=3)
+    ct = ClassicalRegister(1, dim=3)
+    program = Program([qt], [ct])
+    program.add_measurement(qt[0], ct[0])  # no raise
+
+
+def test_measure_all_dim_mismatch_raises():
+    qt = QuantumRegister(1, dim=3)
+    qb = QuantumRegister(1, dim=2)
+    cb = ClassicalRegister(1, dim=2)
+    ct = ClassicalRegister(1, dim=3)
+    # quantum order (3, 2) vs classical order (2, 3): flat pairing mismatches.
+    program = Program([qt, qb], [cb, ct])
+    with pytest.raises(ValueError):
+        program.measure_all()
