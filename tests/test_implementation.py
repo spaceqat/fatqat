@@ -10,7 +10,9 @@ from qnsim.implementation import (
     FixedMatrix,
     MatrixImplementation,
     MatrixImplementationMap,
+    clock_matrix,
     default_implementation_map,
+    sum_matrix,
 )
 from qnsim.registers import QuantumRegister
 
@@ -348,3 +350,46 @@ def test_non_square_ndarray_still_rejected():
     m = MatrixImplementationMap()
     with pytest.raises(ValueError):
         m.register(ops.X, np.ones((2, 3), dtype=complex))
+
+
+# --- Shift/Clock/Sum: dimension-generic gates -------------------------------
+
+
+def _qutrit_targets(n):
+    reg = QuantumRegister(n, dim=3)
+    return tuple(reg[i] for i in range(n))
+
+
+def test_clock_matrix_qutrit_phases():
+    c = clock_matrix(3, 1)
+    omega = np.exp(2j * np.pi / 3)
+    assert np.allclose(np.diag(c), [1, omega, omega**2])
+
+
+def test_sum_matrix_controlled_add_qutrits():
+    s = sum_matrix((3, 3))
+    # |i,j> -> |i, (i+j) mod 3>; local index = i*3 + j (operand0 = control = MSB).
+    # |2,2> (index 8) -> |2, (2+2)%3=1> (index 2*3+1 = 7).
+    vec = np.zeros(9, dtype=complex)
+    vec[8] = 1.0
+    out = s @ vec
+    assert np.argmax(np.abs(out)) == 7
+
+
+def test_sum_matrix_mismatched_dims_raises():
+    with pytest.raises(ValueError):
+        sum_matrix((3, 2))
+
+
+def test_default_map_has_new_gates():
+    m = default_implementation_map()
+    assert m.get(ops.Shift(1))(ops.Shift(1), targets=_qutrit_targets(1)).shape == (3, 3)
+    assert m.get(ops.Clock(1))(ops.Clock(1), targets=_qutrit_targets(1)).shape == (3, 3)
+    assert m.get(ops.Sum)(ops.Sum, targets=_qutrit_targets(2)).shape == (9, 9)
+
+
+def test_shift_reduces_to_x_at_dim2():
+    m = default_implementation_map()
+    qb = QuantumRegister(1, dim=2)
+    got = m.get(ops.Shift(1))(ops.Shift(1), targets=(qb[0],))
+    assert np.allclose(got, np.array([[0, 1], [1, 0]], dtype=complex))

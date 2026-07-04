@@ -64,3 +64,20 @@ def test_cphase_gate_is_class_storing_theta():
     assert g.name == "CPhase"
     assert g.theta == 0.4
     assert g.num_subsystems == 2
+
+
+def test_shift_clock_are_single_subsystem_parametric():
+    assert ops.Shift(1)._num_subsystems == 1
+    assert ops.Clock(2)._num_subsystems == 1
+    assert ops.Shift(1).power == 1
+
+
+def test_sum_is_two_subsystem_singleton():
+    assert ops.Sum._num_subsystems == 2
+    assert isinstance(ops.Sum, ops.SumGate)
+
+
+def test_new_gates_carry_no_dim_field():
+    # No dim attribute on the symbols.
+    assert not hasattr(ops.Shift(1), "dim")
+    assert not hasattr(ops.Sum, "dim")

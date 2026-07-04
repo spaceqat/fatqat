@@ -39,3 +39,31 @@ def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
     ).result()
 
     assert result.get_counts() == {"00": 12}
+
+
+def test_heterogeneous_qutrit_qubit_program():
+    qt = qs.QuantumRegister(1, dim=3)
+    qb = qs.QuantumRegister(1, dim=2)
+    ct = qs.ClassicalRegister(1, dim=3)
+    cb = qs.ClassicalRegister(1, dim=2)
+    program = qs.Program([qt, qb], [ct, cb])
+    program.add(qs.ops.Shift(1), qt[0])  # qutrit |0> -> |1>
+    program.add(qs.ops.X, qb[0])         # qubit  |0> -> |1>
+    program.add_measurement(qt[0], ct[0])
+    program.add_measurement(qb[0], cb[0])
+    result = qs.StateVectorBackend().run(program, shots=16).result()
+    assert result.get_counts_as_tuples() == {(1, 1): 16}
+
+
+def test_sum_across_mismatched_dims_fails_at_lowering():
+    import pytest
+    from qnsim.errors import MatrixImplementationError
+
+    qt = qs.QuantumRegister(1, dim=3)
+    qb = qs.QuantumRegister(1, dim=2)
+    program = qs.Program([qt, qb])
+    program.add(qs.ops.Sum, (qt[0], qb[0]))  # frontend does not raise
+    with pytest.raises(MatrixImplementationError):
+        qs.StateVectorBackend().run(
+            program, result_config={"counts": False, "statevector": True}
+        ).result()

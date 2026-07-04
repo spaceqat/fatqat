@@ -158,6 +158,39 @@ def shift_matrix(dim: int, power: int) -> np.ndarray:
     return m
 
 
+def clock_matrix(dim: int, power: int) -> np.ndarray:
+    """Generalized-Pauli clock: diag(omega^(k*power)), omega = e^{2πi/dim}."""
+    power %= dim
+    omega = np.exp(2j * np.pi / dim)
+    return np.diag([omega ** ((k * power) % dim) for k in range(dim)]).astype(complex)
+
+
+def sum_matrix(dims: tuple[int, ...]) -> np.ndarray:
+    """Controlled mod-d add on two equal-dimension subsystems.
+
+    Local index is ``i*d + j`` with operand 0 (control ``i``) the MSB. Maps
+    ``|i, j> -> |i, (i + j) mod d>``.
+    """
+    if len(dims) != 2 or dims[0] != dims[1]:
+        raise ValueError(
+            f"default Sum requires two equal-dimension targets, got {dims}"
+        )
+    d = dims[0]
+    m = np.zeros((d * d, d * d), dtype=complex)
+    for i in range(d):
+        for j in range(d):
+            m[i * d + (i + j) % d, i * d + j] = 1.0
+    return m
+
+
+def _shift_rule(op: "ops.Shift", targets) -> np.ndarray:
+    return shift_matrix(targets[0].register.dim, op.power)
+
+
+def _clock_rule(op: "ops.Clock", targets) -> np.ndarray:
+    return clock_matrix(targets[0].register.dim, op.power)
+
+
 # Module-level constant matrices (reused; do not rebuild per call).
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
@@ -460,4 +493,7 @@ def default_implementation_map() -> MatrixImplementationMap:
     m.register(ops.RZ, _rz)
     m.register(ops.Phase, _phase)
     m.register(ops.CPhase, _cphase)
+    m.register(ops.Shift, _shift_rule)
+    m.register(ops.Clock, _clock_rule)
+    m.register(ops.SumGate, _DimMatrix(sum_matrix))
     return m
