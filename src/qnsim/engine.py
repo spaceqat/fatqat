@@ -113,7 +113,9 @@ class StateVectorEngine:
         for index, outcome in zip(indices, outcomes):
             if outcome != 0:
                 inv = shift_matrix(self._dims[index], -outcome)
-                self._state = _apply_matrix(self._state, inv, (index,), self._dims)
+                self._state = _apply_matrix(
+                    self._state, inv, (index,), self._dims, self._reversed_dims
+                )
 
     def reset_subsystem(self, index: int, rng: np.random.Generator) -> None:
         """Measure a subsystem and reprepare it in ``|0>``.
