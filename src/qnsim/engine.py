@@ -208,6 +208,10 @@ def _collapse_state(
     qubits = list(measured_qubits)
     n = len(dims)
 
+    # Worst case for the broadcast below is m = n-1 (all but one qubit
+    # measured): cost is O(N*(n-1)), just shy of the fast path above. Could
+    # drop to O(N*min(m, n-m)) by checking whichever of measured/unmeasured
+    # is smaller; deferred for now.
     if len(set(qubits)) == n:
         new = np.zeros_like(state)
         new[idx] = state[idx]
