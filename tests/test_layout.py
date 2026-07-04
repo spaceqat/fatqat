@@ -36,3 +36,18 @@ def test_unknown_ref_raises():
     layout = ResourceLayout.from_program(p)
     with pytest.raises(KeyError):
         layout.qubit_index(foreign[0])
+
+
+def test_heterogeneous_system_dims():
+    qt = QuantumRegister(3, dim=3, name="t")
+    qb = QuantumRegister(2, dim=2, name="b")
+    p = Program([qt, qb], [ClassicalRegister(3, dim=3), ClassicalRegister(2, dim=2)])
+    layout = ResourceLayout.from_program(p)
+    assert layout.system_dims == (3, 3, 3, 2, 2)
+    assert layout.classical_dims == (3, 3, 3, 2, 2)
+
+
+def test_classical_dims_default_binary():
+    p = Program(2, 2)
+    layout = ResourceLayout.from_program(p)
+    assert layout.classical_dims == (2, 2)

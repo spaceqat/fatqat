@@ -18,6 +18,7 @@ class ResourceLayout:
     def __init__(
         self,
         system_dims: tuple[int, ...],
+        classical_dims: tuple[int, ...],
         q_offsets: Mapping[int, int],
         c_offsets: Mapping[int, int],
         n_clbits: int,
@@ -25,12 +26,14 @@ class ResourceLayout:
         """Create a resource layout from precomputed flat offsets.
 
         Args:
-            system_dims: Per-qubit Hilbert-space dimensions.
+            system_dims: Per-subsystem Hilbert-space dimensions for quantum registers.
+            classical_dims: Per-subsystem dimensions for classical registers.
             q_offsets: Mapping from `id(QuantumRegister)` to flat qubit offset.
             c_offsets: Mapping from `id(ClassicalRegister)` to flat clbit offset.
             n_clbits: Total number of classical bits.
         """
         self.system_dims: tuple[int, ...] = system_dims
+        self.classical_dims: tuple[int, ...] = classical_dims
         self._q_offsets = dict(q_offsets)  # id(register) -> base flat index
         self._c_offsets = dict(c_offsets)
         self._n_clbits = n_clbits
@@ -73,20 +76,24 @@ class ResourceLayout:
     def from_program(cls, program: Program) -> "ResourceLayout":
         """Build a layout by flattening a program's registers in order."""
         q_offsets: dict[int, int] = {}
+        system_dims: list[int] = []
         offset = 0
         for reg in program.qreg:
             q_offsets[id(reg)] = offset
+            system_dims.extend(reg.dim for _ in range(reg.size))
             offset += reg.size
-        n_qubits = offset
 
         c_offsets: dict[int, int] = {}
+        classical_dims: list[int] = []
         coffset = 0
         for reg in program.creg:
             c_offsets[id(reg)] = coffset
+            classical_dims.extend(reg.dim for _ in range(reg.size))
             coffset += reg.size
 
         return cls(
-            system_dims=(2,) * n_qubits,
+            system_dims=tuple(system_dims),
+            classical_dims=tuple(classical_dims),
             q_offsets=q_offsets,
             c_offsets=c_offsets,
             n_clbits=coffset,
