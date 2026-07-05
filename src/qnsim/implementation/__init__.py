@@ -10,6 +10,9 @@ from .matrices import (
     fourier_matrix,
     fourierdg_matrix,
     shift_matrix,
+    subspace_rx_matrix,
+    subspace_ry_matrix,
+    subspace_rz_matrix,
     sum_matrix,
     swap_levels_matrix,
 )
@@ -27,4 +30,7 @@ __all__ = [
     "swap_levels_matrix",
     "fourier_matrix",
     "fourierdg_matrix",
+    "subspace_rx_matrix",
+    "subspace_ry_matrix",
+    "subspace_rz_matrix",
 ]

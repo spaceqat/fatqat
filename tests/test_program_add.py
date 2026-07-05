@@ -88,3 +88,19 @@ def test_add_swap_levels_in_range_succeeds():
     p = Program([qr])
     p.add(ops.SwapLevels(0, 2), 0)
     assert p.operations[0].operation.j == 0
+
+
+@pytest.mark.parametrize("op_cls", [ops.SubspaceRX, ops.SubspaceRY, ops.SubspaceRZ])
+def test_add_subspace_rotation_out_of_range_raises(op_cls):
+    qr = QuantumRegister(1, dim=3)
+    p = Program([qr])
+    with pytest.raises(ValueError, match="0 <= j, k < dim"):
+        p.add(op_cls(0.3, (1, 3)), 0)
+
+
+@pytest.mark.parametrize("op_cls", [ops.SubspaceRX, ops.SubspaceRY, ops.SubspaceRZ])
+def test_add_subspace_rotation_in_range_succeeds(op_cls):
+    qr = QuantumRegister(1, dim=3)
+    p = Program([qr])
+    p.add(op_cls(0.3, (1, 2)), 0)
+    assert p.operations[0].operation.subspace == (1, 2)

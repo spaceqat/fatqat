@@ -14,6 +14,9 @@ from qnsim.implementation import (
     fourier_matrix,
     fourierdg_matrix,
     sum_matrix,
+    subspace_rx_matrix,
+    subspace_ry_matrix,
+    subspace_rz_matrix,
     swap_levels_matrix,
 )
 from qnsim.implementation.base import _DimMatrix
@@ -439,3 +442,56 @@ def test_default_map_has_fourier_and_fourierdg():
     got_fdg = m.get(ops.Fourierdg)(ops.Fourierdg, targets=_qutrit_targets(1))
     assert got_f.shape == (3, 3)
     assert got_fdg.shape == (3, 3)
+
+
+def test_subspace_rx_matches_rx_block_on_dim3_subspace():
+    theta = 0.5
+    m = subspace_rx_matrix(3, (0, 2), theta)
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    expected = np.array(
+        [[c, 0, -1j * s], [0, 1, 0], [-1j * s, 0, c]], dtype=complex
+    )
+    assert np.allclose(m, expected)
+
+
+def test_subspace_ry_matches_ry_block_on_dim3_subspace():
+    theta = 0.5
+    m = subspace_ry_matrix(3, (1, 2), theta)
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    expected = np.array(
+        [[1, 0, 0], [0, c, -s], [0, s, c]], dtype=complex
+    )
+    assert np.allclose(m, expected)
+
+
+def test_subspace_rz_matches_rz_block_on_dim3_subspace():
+    theta = 0.5
+    m = subspace_rz_matrix(3, (0, 1), theta)
+    expected = np.array(
+        [[np.exp(-1j * theta / 2), 0, 0], [0, np.exp(1j * theta / 2), 0], [0, 0, 1]],
+        dtype=complex,
+    )
+    assert np.allclose(m, expected)
+
+
+def test_subspace_rotations_reduce_to_qubit_rotations_at_dim2():
+    # Inline the same RX/RY/RZ formulas implementation/matrices.py's _rx/_ry/_rz
+    # use, matching this file's existing convention (see test_parametric_rx_reads_theta)
+    # of asserting against the hand-written expected matrix rather than
+    # importing the private rule function.
+    theta = 0.7
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    assert np.allclose(subspace_rx_matrix(2, (0, 1), theta), [[c, -1j * s], [-1j * s, c]])
+    assert np.allclose(subspace_ry_matrix(2, (0, 1), theta), [[c, -s], [s, c]])
+    assert np.allclose(
+        subspace_rz_matrix(2, (0, 1), theta),
+        [[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]],
+    )
+
+
+@pytest.mark.parametrize("op_cls", [ops.SubspaceRX, ops.SubspaceRY, ops.SubspaceRZ])
+def test_default_map_has_subspace_rotations(op_cls):
+    m = default_matrix_implementation_map()
+    op = op_cls(0.4, (0, 2))
+    got = m.get(op)(op, targets=_qutrit_targets(1))
+    assert got.shape == (3, 3)

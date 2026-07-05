@@ -120,3 +120,28 @@ def test_fourier_gate_classes_are_not_public():
     # qs.ops has no FourierGate/FourierdgGate attribute at all.
     assert not hasattr(ops, "FourierGate")
     assert not hasattr(ops, "FourierdgGate")
+
+
+@pytest.mark.parametrize("cls,name", [
+    (ops.SubspaceRX, "SubspaceRX"),
+    (ops.SubspaceRY, "SubspaceRY"),
+    (ops.SubspaceRZ, "SubspaceRZ"),
+])
+def test_subspace_rotation_is_single_subsystem_parametric(cls, name):
+    g = cls(0.3, (0, 2))
+    assert g.name == name
+    assert g.num_subsystems == 1
+    assert g.theta == 0.3
+    assert g.subspace == (0, 2)
+
+
+@pytest.mark.parametrize("cls", [ops.SubspaceRX, ops.SubspaceRY, ops.SubspaceRZ])
+def test_subspace_rotation_rejects_equal_subspace_indices(cls):
+    with pytest.raises(ValueError, match="distinct"):
+        cls(0.1, (1, 1))
+
+
+@pytest.mark.parametrize("cls", [ops.SubspaceRX, ops.SubspaceRY, ops.SubspaceRZ])
+def test_subspace_rotation_rejects_negative_subspace_indices(cls):
+    with pytest.raises(ValueError, match="non-negative"):
+        cls(0.1, (-1, 0))

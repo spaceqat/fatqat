@@ -173,3 +173,102 @@ class FourierdgGate(Operation):
 # the classes themselves are not imported into operations/__init__.py.
 Fourier = FourierGate()
 Fourierdg = FourierdgGate()
+
+
+@dataclass(frozen=True)
+class SubspaceRX(Operation):
+    """Rotation around X embedded in a 2-level subspace of a d-level qudit,
+    identity on the complementary levels. subspace[0] plays the |0> role,
+    subspace[1] the |1> role. Reduces to RX(theta) at dim=2, subspace=(0,1).
+
+    Attributes:
+        theta: Rotation angle in radians.
+        subspace: Pair of distinct, non-negative level indices (j, k).
+    """
+
+    theta: float
+    subspace: tuple[int, int]
+    name: ClassVar[str] = "SubspaceRX"
+    _num_subsystems: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        j, k = self.subspace
+        if j == k:
+            raise ValueError(f"SubspaceRX subspace requires distinct levels, got ({j}, {k})")
+        if j < 0 or k < 0:
+            raise ValueError(f"SubspaceRX subspace levels must be non-negative, got ({j}, {k})")
+
+    def validate_targets(self, targets) -> None:
+        dim = targets[0].register.dim
+        j, k = self.subspace
+        if j >= dim or k >= dim:
+            raise ValueError(
+                f"SubspaceRX subspace {self.subspace} invalid for target "
+                f"dimension {dim}: indices must satisfy 0 <= j, k < dim"
+            )
+
+
+@dataclass(frozen=True)
+class SubspaceRY(Operation):
+    """Rotation around Y embedded in a 2-level subspace of a d-level qudit,
+    identity on the complementary levels. subspace[0] plays the |0> role,
+    subspace[1] the |1> role. Reduces to RY(theta) at dim=2, subspace=(0,1).
+
+    Attributes:
+        theta: Rotation angle in radians.
+        subspace: Pair of distinct, non-negative level indices (j, k).
+    """
+
+    theta: float
+    subspace: tuple[int, int]
+    name: ClassVar[str] = "SubspaceRY"
+    _num_subsystems: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        j, k = self.subspace
+        if j == k:
+            raise ValueError(f"SubspaceRY subspace requires distinct levels, got ({j}, {k})")
+        if j < 0 or k < 0:
+            raise ValueError(f"SubspaceRY subspace levels must be non-negative, got ({j}, {k})")
+
+    def validate_targets(self, targets) -> None:
+        dim = targets[0].register.dim
+        j, k = self.subspace
+        if j >= dim or k >= dim:
+            raise ValueError(
+                f"SubspaceRY subspace {self.subspace} invalid for target "
+                f"dimension {dim}: indices must satisfy 0 <= j, k < dim"
+            )
+
+
+@dataclass(frozen=True)
+class SubspaceRZ(Operation):
+    """Rotation around Z embedded in a 2-level subspace of a d-level qudit,
+    identity on the complementary levels. subspace[0] plays the |0> role,
+    subspace[1] the |1> role. Reduces to RZ(theta) at dim=2, subspace=(0,1).
+
+    Attributes:
+        theta: Rotation angle in radians.
+        subspace: Pair of distinct, non-negative level indices (j, k).
+    """
+
+    theta: float
+    subspace: tuple[int, int]
+    name: ClassVar[str] = "SubspaceRZ"
+    _num_subsystems: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        j, k = self.subspace
+        if j == k:
+            raise ValueError(f"SubspaceRZ subspace requires distinct levels, got ({j}, {k})")
+        if j < 0 or k < 0:
+            raise ValueError(f"SubspaceRZ subspace levels must be non-negative, got ({j}, {k})")
+
+    def validate_targets(self, targets) -> None:
+        dim = targets[0].register.dim
+        j, k = self.subspace
+        if j >= dim or k >= dim:
+            raise ValueError(
+                f"SubspaceRZ subspace {self.subspace} invalid for target "
+                f"dimension {dim}: indices must satisfy 0 <= j, k < dim"
+            )

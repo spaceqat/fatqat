@@ -91,6 +91,51 @@ def _fourierdg_rule(dims: tuple[int, ...]) -> np.ndarray:
     return fourierdg_matrix(dims[0])
 
 
+def subspace_rx_matrix(dim: int, subspace: tuple[int, int], theta: float) -> np.ndarray:
+    """RX(theta) embedded in the 2-level subspace (j, k), identity elsewhere."""
+    j, k = subspace
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    m = np.eye(dim, dtype=complex)
+    m[j, j] = c
+    m[k, k] = c
+    m[j, k] = -1j * s
+    m[k, j] = -1j * s
+    return m
+
+
+def subspace_ry_matrix(dim: int, subspace: tuple[int, int], theta: float) -> np.ndarray:
+    """RY(theta) embedded in the 2-level subspace (j, k), identity elsewhere."""
+    j, k = subspace
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    m = np.eye(dim, dtype=complex)
+    m[j, j] = c
+    m[k, k] = c
+    m[j, k] = -s
+    m[k, j] = s
+    return m
+
+
+def subspace_rz_matrix(dim: int, subspace: tuple[int, int], theta: float) -> np.ndarray:
+    """RZ(theta) embedded in the 2-level subspace (j, k), identity elsewhere."""
+    j, k = subspace
+    m = np.eye(dim, dtype=complex)
+    m[j, j] = np.exp(-1j * theta / 2)
+    m[k, k] = np.exp(1j * theta / 2)
+    return m
+
+
+def _subspace_rx_rule(op: "ops.SubspaceRX", targets) -> np.ndarray:
+    return subspace_rx_matrix(targets[0].register.dim, op.subspace, op.theta)
+
+
+def _subspace_ry_rule(op: "ops.SubspaceRY", targets) -> np.ndarray:
+    return subspace_ry_matrix(targets[0].register.dim, op.subspace, op.theta)
+
+
+def _subspace_rz_rule(op: "ops.SubspaceRZ", targets) -> np.ndarray:
+    return subspace_rz_matrix(targets[0].register.dim, op.subspace, op.theta)
+
+
 # Module-level constant matrices (reused; do not rebuild per call).
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
