@@ -145,3 +145,14 @@ def test_subspace_rotation_rejects_equal_subspace_indices(cls):
 def test_subspace_rotation_rejects_negative_subspace_indices(cls):
     with pytest.raises(ValueError, match="non-negative"):
         cls(0.1, (-1, 0))
+
+
+def test_cclock_is_two_subsystem_parametric():
+    g = ops.CClock(1)
+    assert g.name == "CClock"
+    assert g.num_subsystems == 2
+    assert g.power == 1
+
+
+def test_cclock_carries_no_dim_field():
+    assert not hasattr(ops.CClock(1), "dim")

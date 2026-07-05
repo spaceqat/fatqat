@@ -136,6 +136,25 @@ def _subspace_rz_rule(op: "ops.SubspaceRZ", targets) -> np.ndarray:
     return subspace_rz_matrix(targets[0].register.dim, op.subspace, op.theta)
 
 
+def cclock_matrix(dims: tuple[int, int], power: int) -> np.ndarray:
+    """Controlled-Clock: |i, k> -> omega_t^((i*k*power) mod d_t) |i, k>,
+    omega_t = exp(2*pi*i/d_t). Local index i*d_t + k (control i is the MSB).
+    dims need not be equal.
+    """
+    d_c, d_t = dims
+    power %= d_t
+    omega_t = np.exp(2j * np.pi / d_t)
+    diag_vals = [
+        omega_t ** ((i * k * power) % d_t) for i in range(d_c) for k in range(d_t)
+    ]
+    return np.diag(diag_vals).astype(complex)
+
+
+def _cclock_rule(op: "ops.CClock", targets) -> np.ndarray:
+    dims = (targets[0].register.dim, targets[1].register.dim)
+    return cclock_matrix(dims, op.power)
+
+
 # Module-level constant matrices (reused; do not rebuild per call).
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _Y = np.array([[0, -1j], [1j, 0]], dtype=complex)

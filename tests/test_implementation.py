@@ -11,6 +11,7 @@ from qnsim.implementation import (
     MatrixImplementationMap,
     clock_matrix,
     default_matrix_implementation_map,
+    cclock_matrix,
     fourier_matrix,
     fourierdg_matrix,
     sum_matrix,
@@ -495,3 +496,50 @@ def test_default_map_has_subspace_rotations(op_cls):
     op = op_cls(0.4, (0, 2))
     got = m.get(op)(op, targets=_qutrit_targets(1))
     assert got.shape == (3, 3)
+
+
+def test_cclock_matrix_qutrits():
+    m = cclock_matrix((3, 3), 1)
+    omega = np.exp(2j * np.pi / 3)
+    # local index i*3+k; diagonal entry omega^((i*k) mod 3)
+    expected_diag = [omega ** ((i * k) % 3) for i in range(3) for k in range(3)]
+    assert np.allclose(np.diag(m), expected_diag)
+
+
+def test_cclock_reduces_to_cz_at_dim2():
+    m = cclock_matrix((2, 2), 1)
+    assert np.allclose(m, np.diag([1, 1, 1, -1]))
+
+
+def test_cclock_accepts_unequal_dimensions():
+    m = cclock_matrix((3, 2), 1)
+    assert m.shape == (6, 6)
+    # unitary (diagonal, unit modulus)
+    assert np.allclose(np.abs(np.diag(m)), 1.0)
+
+
+def test_cclock_power_reduces_modulo_target_dim():
+    assert np.allclose(cclock_matrix((3, 3), 4), cclock_matrix((3, 3), 1))
+
+
+def test_default_map_has_cclock():
+    m = default_matrix_implementation_map()
+    got = m.get(ops.CClock(1))(ops.CClock(1), targets=_qutrit_targets(2))
+    assert got.shape == (9, 9)
+
+
+def test_default_map_cclock_unequal_dims_reads_correct_targets():
+    # Regresses a control/target dim swap in _cclock_rule: the two orderings
+    # of (d_c, d_t) both give shape (6, 6) but different diagonal values, so
+    # only checking shape (as test_cclock_accepts_unequal_dimensions does on
+    # the raw builder) would not catch targets[0]/targets[1] being read in
+    # the wrong order.
+    m = default_matrix_implementation_map()
+    qt = QuantumRegister(1, dim=3)
+    qb = QuantumRegister(1, dim=2)
+    op = ops.CClock(1)
+    got = m.get(op)(op, targets=(qt[0], qb[0]))
+    assert got.shape == (6, 6)
+    omega_2 = np.exp(2j * np.pi / 2)
+    expected_diag = [omega_2 ** ((i * k * 1) % 2) for i in range(3) for k in range(2)]
+    assert np.allclose(np.diag(got), expected_diag)

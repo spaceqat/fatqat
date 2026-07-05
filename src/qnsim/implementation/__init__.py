@@ -6,6 +6,7 @@ import inspect
 
 from .base import ApplyMatrixStep, FixedMatrix, MatrixImplementation, MatrixImplementationMap
 from .matrices import (
+    cclock_matrix,
     clock_matrix,
     fourier_matrix,
     fourierdg_matrix,
@@ -33,4 +34,5 @@ __all__ = [
     "subspace_rx_matrix",
     "subspace_ry_matrix",
     "subspace_rz_matrix",
+    "cclock_matrix",
 ]

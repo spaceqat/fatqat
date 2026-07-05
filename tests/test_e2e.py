@@ -1,5 +1,7 @@
 """Tests a minimal public qnsim workflow from program construction to counts."""
 
+import numpy as np
+
 import qnsim as qs
 
 
@@ -108,3 +110,27 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
         qs.backends.StateVectorBackend().run(build(True), shots=8, seed=7).result().get_counts_as_tuples()
     )
     assert fast_counts == dyn_counts == {(2,): 8}
+
+
+def test_cclock_unequal_dimensions_runs_through_backend():
+    qt = qs.QuantumRegister(1, dim=3)
+    qb = qs.QuantumRegister(1, dim=2)
+    program = qs.Program([qt, qb])
+    program.add(qs.ops.Shift(1), qt[0])  # control -> |1>
+    program.add(qs.ops.X, qb[0])         # target -> |1>
+    program.add(qs.ops.CClock(1), (qt[0], qb[0]))
+    result = qs.backends.StateVectorBackend().run(
+        program, result_config={"counts": False, "statevector": True}
+    ).result()
+    sv = result.get_statevector()
+    # The engine's global statevector index is little-endian across program
+    # subsystems (subsystem 0 is the least-significant digit, place value
+    # prod(dims[:0])=1; subsystem 1 has place value dims[0]=3) - qt (control,
+    # subsystem 0) contributes i*1, qb (target, subsystem 1) contributes k*3.
+    # This is unrelated to CClock's own local matrix convention (control as
+    # local MSB), which only governs the gate's own target_indices ordering.
+    # omega_2^(1*1*1 mod 2) = exp(i*pi) = -1.
+    assert sv.shape == (6,)
+    expected = np.zeros(6, dtype=complex)
+    expected[1 * 1 + 1 * 3] = -1.0
+    assert np.allclose(sv, expected)

@@ -28,6 +28,7 @@ from .matrices import (
     _rx,
     _ry,
     _rz,
+    _cclock_rule,
     _fourier_rule,
     _fourierdg_rule,
     _shift_rule,
@@ -79,4 +80,5 @@ def default_matrix_implementation_map() -> MatrixImplementationMap:
     m.register(ops.SubspaceRX, _subspace_rx_rule)
     m.register(ops.SubspaceRY, _subspace_ry_rule)
     m.register(ops.SubspaceRZ, _subspace_rz_rule)
+    m.register(ops.CClock, _cclock_rule)
     return m

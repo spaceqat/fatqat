@@ -272,3 +272,20 @@ class SubspaceRZ(Operation):
                 f"SubspaceRZ subspace {self.subspace} invalid for target "
                 f"dimension {dim}: indices must satisfy 0 <= j, k < dim"
             )
+
+
+@dataclass(frozen=True)
+class CClock(Operation):
+    """Generalized controlled-phase: applies Clock(i*power) to the target
+    when the control is |i>. targets = (control, target); operand 0 is the
+    control. Unlike Sum, does not require equal control/target dimensions.
+    power is reduced modulo the target dimension at lowering (a cyclic
+    count, like Clock's power). Reduces to CZ at dim=2, power=1.
+
+    Attributes:
+        power: Phase power (reduced modulo the target dimension at lowering).
+    """
+
+    power: int
+    name: ClassVar[str] = "CClock"
+    _num_subsystems: ClassVar[int] = 2

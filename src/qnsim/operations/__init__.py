@@ -25,6 +25,7 @@ from .fixed_gates import (
 from .measurement import Measurement
 from .parametric_gates import CPhase, Phase, RX, RY, RZ
 from .qudit_gates import (
+    CClock,
     Clock,
     Fourier,
     Fourierdg,
@@ -47,5 +48,5 @@ __all__ = [
     "Reset",
     "Measurement",
     "Shift", "Clock", "Sum", "SwapLevels", "Fourier", "Fourierdg",
-    "SubspaceRX", "SubspaceRY", "SubspaceRZ",
+    "SubspaceRX", "SubspaceRY", "SubspaceRZ", "CClock",
 ]
