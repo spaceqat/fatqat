@@ -48,9 +48,10 @@ def test_error_classes_only_under_errors_namespace():
     assert not hasattr(qs, "QnsimError")
 
 
-def test_sumgate_class_not_in_ops_public_surface():
+def test_sumgate_class_not_public():
     assert "SumGate" not in qs.ops.__all__
-    assert isinstance(qs.ops.Sum, qs.ops.SumGate)
+    assert not hasattr(qs.ops, "SumGate")
+    assert isinstance(qs.ops.Sum, qs.ops.Operation)
 
 
 def test_program_measure_all_is_public_instance_method():

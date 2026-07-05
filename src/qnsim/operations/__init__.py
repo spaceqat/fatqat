@@ -31,7 +31,6 @@ from .qudit_gates import (
     Fourierdg,
     Shift,
     Sum,
-    SumGate,
     SubspaceRX,
     SubspaceRY,
     SubspaceRZ,

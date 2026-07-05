@@ -74,7 +74,13 @@ def test_shift_clock_are_single_subsystem_parametric():
 
 def test_sum_is_two_subsystem_singleton():
     assert ops.Sum._num_subsystems == 2
-    assert isinstance(ops.Sum, ops.SumGate)
+    assert ops.Sum.name == "Sum"
+    assert isinstance(ops.Sum, Operation)
+    assert not isinstance(ops.Sum, type)
+
+
+def test_sumgate_class_not_public_from_operations():
+    assert not hasattr(ops, "SumGate")
 
 
 def test_new_gates_carry_no_dim_field():
