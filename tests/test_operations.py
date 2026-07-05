@@ -99,3 +99,24 @@ def test_swap_levels_rejects_equal_indices():
 def test_swap_levels_rejects_negative_indices():
     with pytest.raises(ValueError, match="non-negative"):
         ops.SwapLevels(-1, 0)
+
+
+def test_fourier_is_single_subsystem_singleton():
+    assert ops.Fourier._num_subsystems == 1
+    assert ops.Fourier.name == "Fourier"
+    assert isinstance(ops.Fourier, Operation)
+    assert not isinstance(ops.Fourier, type)
+    assert ops.Fourierdg._num_subsystems == 1
+    assert ops.Fourierdg.name == "Fourierdg"
+    assert isinstance(ops.Fourierdg, Operation)
+    assert not isinstance(ops.Fourierdg, type)
+
+
+def test_fourier_gate_classes_are_not_public():
+    # Unlike SumGate (attribute-accessible via qs.ops.SumGate, excluded only
+    # from __all__), FourierGate/FourierdgGate are internal-only: they exist
+    # in operations/qudit_gates.py to build the singletons and to key the
+    # matrix registry, but are never imported into operations/__init__.py, so
+    # qs.ops has no FourierGate/FourierdgGate attribute at all.
+    assert not hasattr(ops, "FourierGate")
+    assert not hasattr(ops, "FourierdgGate")

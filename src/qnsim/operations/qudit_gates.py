@@ -134,3 +134,42 @@ class SwapLevels(Operation):
                 f"SwapLevels({self.j}, {self.k}) invalid for target dimension "
                 f"{dim}: level indices must satisfy 0 <= j, k < dim"
             )
+
+
+@dataclass(frozen=True)
+class FourierGate(Operation):
+    """Single-qudit discrete Fourier transform (Chrestenson gate): the H
+    analogue for any dimension. Dimension-free; matrix built from the target
+    dimension at backend lowering. Reduces to H at dim=2.
+
+    Known in the qutrit literature as THadamard at dim=3.
+
+    Internal only: unlike `SumGate` (attribute-accessible via `qs.ops.SumGate`
+    though excluded from `__all__`), this class is not imported into
+    `operations/__init__.py` at all, so it is not reachable as `qs.ops.
+    FourierGate`. `Fourier` (the singleton) is the only public surface.
+    """
+
+    name: ClassVar[str] = "Fourier"
+    _num_subsystems: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class FourierdgGate(Operation):
+    """Inverse of FourierGate (conjugate transpose). Coincides with Fourier
+    at dim=2 (H is self-adjoint) but differs for d > 2.
+
+    Internal only: not imported into `operations/__init__.py`, so it is not
+    reachable as `qs.ops.FourierdgGate`. `Fourierdg` (the singleton) is the
+    only public surface.
+    """
+
+    name: ClassVar[str] = "Fourierdg"
+    _num_subsystems: ClassVar[int] = 1
+
+
+# Parameterless, so exported only as singleton values (see the "Public
+# fixed-gate instances" convention already used for Sum). Unlike SumGate,
+# the classes themselves are not imported into operations/__init__.py.
+Fourier = FourierGate()
+Fourierdg = FourierdgGate()

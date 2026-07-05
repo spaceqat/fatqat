@@ -28,6 +28,8 @@ from .matrices import (
     _rx,
     _ry,
     _rz,
+    _fourier_rule,
+    _fourierdg_rule,
     _shift_rule,
     _swap_levels_rule,
     sum_matrix,
@@ -69,4 +71,6 @@ def default_matrix_implementation_map() -> MatrixImplementationMap:
     m.register(ops.Clock, _clock_rule)
     m.register(ops.Sum, _DimMatrix(sum_matrix))
     m.register(ops.SwapLevels, _swap_levels_rule)
+    m.register(ops.Fourier, _DimMatrix(_fourier_rule))
+    m.register(ops.Fourierdg, _DimMatrix(_fourierdg_rule))
     return m

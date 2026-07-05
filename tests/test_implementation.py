@@ -11,6 +11,8 @@ from qnsim.implementation import (
     MatrixImplementationMap,
     clock_matrix,
     default_matrix_implementation_map,
+    fourier_matrix,
+    fourierdg_matrix,
     sum_matrix,
     swap_levels_matrix,
 )
@@ -405,3 +407,35 @@ def test_default_map_has_swap_levels():
     m = default_matrix_implementation_map()
     got = m.get(ops.SwapLevels(0, 1))(ops.SwapLevels(0, 1), targets=_qutrit_targets(1))
     assert got.shape == (3, 3)
+
+
+def test_fourier_matrix_qutrit_is_unitary_dft():
+    f = fourier_matrix(3)
+    omega = np.exp(2j * np.pi / 3)
+    expected = np.array(
+        [[1, 1, 1], [1, omega, omega**2], [1, omega**2, omega**4]], dtype=complex
+    ) / np.sqrt(3)
+    assert np.allclose(f, expected)
+    assert np.allclose(f @ f.conj().T, np.eye(3))
+
+
+def test_fourierdg_is_conjugate_transpose_of_fourier():
+    f = fourier_matrix(3)
+    fdg = fourierdg_matrix(3)
+    assert np.allclose(fdg, f.conj().T)
+    assert np.allclose(f @ fdg, np.eye(3))
+
+
+def test_fourier_reduces_to_h_at_dim2():
+    f = fourier_matrix(2)
+    h = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
+    assert np.allclose(f, h)
+    assert np.allclose(fourierdg_matrix(2), h)
+
+
+def test_default_map_has_fourier_and_fourierdg():
+    m = default_matrix_implementation_map()
+    got_f = m.get(ops.Fourier)(ops.Fourier, targets=_qutrit_targets(1))
+    got_fdg = m.get(ops.Fourierdg)(ops.Fourierdg, targets=_qutrit_targets(1))
+    assert got_f.shape == (3, 3)
+    assert got_fdg.shape == (3, 3)

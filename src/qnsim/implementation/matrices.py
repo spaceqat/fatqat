@@ -71,6 +71,26 @@ def _swap_levels_rule(op: "ops.SwapLevels", targets) -> np.ndarray:
     return swap_levels_matrix(targets[0].register.dim, op.j, op.k)
 
 
+def fourier_matrix(dim: int) -> np.ndarray:
+    """Single-qudit discrete Fourier transform: F[m,n] = omega^(m*n)/sqrt(d)."""
+    omega = np.exp(2j * np.pi / dim)
+    idx = np.arange(dim)
+    return (omega ** np.outer(idx, idx)) / np.sqrt(dim)
+
+
+def fourierdg_matrix(dim: int) -> np.ndarray:
+    """Conjugate transpose of fourier_matrix(dim)."""
+    return fourier_matrix(dim).conj().T
+
+
+def _fourier_rule(dims: tuple[int, ...]) -> np.ndarray:
+    return fourier_matrix(dims[0])
+
+
+def _fourierdg_rule(dims: tuple[int, ...]) -> np.ndarray:
+    return fourierdg_matrix(dims[0])
+
+
 # Module-level constant matrices (reused; do not rebuild per call).
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
