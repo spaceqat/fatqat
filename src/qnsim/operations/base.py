@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
+from ..registers import RegisterRef
+
 
 @dataclass(frozen=True)
 class Operation:
@@ -38,3 +40,12 @@ class Operation:
     def num_subsystems(self) -> int | None:
         """Number of quantum targets required, or None for variable arity."""
         return type(self)._num_subsystems
+
+    def validate_targets(self, targets: tuple[RegisterRef, ...]) -> None:
+        """Raise ValueError if this operation's parameters are invalid for the
+        resolved target references. Default no-op; override for gates whose
+        parameters name basis levels (or otherwise depend on target identity
+        or dimension). Reads dimension as targets[i].register.dim, consistent
+        with the matrix-rule contract.
+        """
+        return

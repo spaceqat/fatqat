@@ -59,6 +59,7 @@ class AppliedOperation:
                     f"{self.operation.name}: target qubit {t!r} appears more than once"
                 )
             seen.add(key)
+        self.operation.validate_targets(self.targets)
 
 
 class Program:
