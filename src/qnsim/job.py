@@ -8,8 +8,9 @@ from .result import Result
 class Job:
     """Eager job handle returned by backends.
 
-    Phase 1 jobs are already terminal when returned. `DONE` jobs return their
-    result, while `ERROR` jobs re-raise their stored exception from `result()`.
+    Phase 1 jobs are already terminal when returned. ``DONE`` jobs return
+    their result, while ``ERROR`` jobs re-raise their stored exception from
+    ``result()``.
     """
 
     def __init__(
@@ -31,19 +32,19 @@ class Job:
 
     @classmethod
     def done(cls, result: Result) -> "Job":
-        """Create a completed job carrying `result`."""
+        """Create a completed job carrying ``result``."""
         return cls(status="DONE", result=result)
 
     @classmethod
     def failed(cls, error: BaseException) -> "Job":
-        """Create an error job carrying `error`."""
+        """Create an error job carrying ``error``."""
         return cls(status="ERROR", error=error)
 
     def result(self) -> Result:
         """Return the result payload or raise the terminal job error.
 
         Raises:
-            BaseException: Re-raises the stored error for `ERROR` jobs.
+            BaseException: Re-raises the stored error for ``ERROR`` jobs.
             RuntimeError: If the job is not in a terminal state.
         """
         if self.status == "DONE":

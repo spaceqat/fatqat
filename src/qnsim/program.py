@@ -17,18 +17,19 @@ RegisterT = TypeVar("RegisterT", QuantumRegister, ClassicalRegister)
 class AppliedOperation:
     """An operation bound to resolved quantum register references.
 
-    `Program.add` creates these objects after validating the operation and
-    resolving integer operands or explicit `RegisterRef` objects.
+    ``Program.add`` creates these objects after validating the operation and
+    resolving integer operands or explicit ``RegisterRef`` objects.
 
-    `__post_init__` intentionally does not re-validate `targets`' element
-    types or tuple-ness: `Program.add()` already guarantees well-formed
-    `RegisterRef` tuples via `_resolve_qubit`, and duplicating that check here
-    would just be the same validation twice for the path essentially all
-    callers use. Constructing this class directly (bypassing `Program`) skips
-    that guarantee - malformed input (wrong register kind, a list instead of
-    a tuple) will not raise here, and will instead surface later as a less
-    specific error during backend lowering, or make the instance unhashable.
-    This is a deliberate no-duplicate-validation tradeoff, not an oversight.
+    ``__post_init__`` intentionally does not re-validate ``targets``' element
+    types or tuple-ness: ``Program.add()`` already guarantees well-formed
+    ``RegisterRef`` tuples via ``_resolve_qubit``, and duplicating that check
+    here would just be the same validation twice for the path essentially all
+    callers use. Constructing this class directly (bypassing ``Program``)
+    skips that guarantee - malformed input (wrong register kind, a list
+    instead of a tuple) will not raise here, and will instead surface later
+    as a less specific error during backend lowering, or make the instance
+    unhashable. This is a deliberate no-duplicate-validation tradeoff, not an
+    oversight.
 
     Attributes:
         operation: Operation instance to execute.
@@ -65,24 +66,24 @@ class Program:
 
     A program owns read-only public quantum/classical register tuples plus an
     ordered read-only view of applied operations and measurements. Public
-    mutation goes through `add()` and `add_measurement()`, which keep the
-    internal instruction list well formed. Operations are executed in insertion
-    order. Integer operands are accepted only when there is exactly one register
-    of the relevant kind; otherwise users must pass explicit `RegisterRef`
-    objects such as `program.qreg[0][1]`.
+    mutation goes through ``add()`` and ``add_measurement()``, which keep the
+    internal instruction list well formed. Operations are executed in
+    insertion order. Integer operands are accepted only when there is exactly
+    one register of the relevant kind; otherwise users must pass explicit
+    ``RegisterRef`` objects such as ``program.qreg[0][1]``.
 
     Examples:
         Build a two-qubit program, add gates, then measure both qubits:
 
-        ```python
-        import qnsim as qs
+        .. code-block:: python
 
-        program = qs.Program(2, 2)
-        program.add(qs.ops.H, 0)
-        program.add(qs.ops.CZ, (0, 1))
-        program.add_measurement(0, 0)
-        program.add_measurement(1, 1)
-        ```
+            import qnsim as qs
+
+            program = qs.Program(2, 2)
+            program.add(qs.ops.H, 0)
+            program.add(qs.ops.CZ, (0, 1))
+            program.add_measurement(0, 0)
+            program.add_measurement(1, 1)
     """
 
     def __init__(
@@ -197,32 +198,34 @@ class Program:
 
         Args:
             op: Operation instance to append. Fixed gates are available as
-                singleton values such as `ops.X`; parametric gates should be
-                instantiated, such as `ops.RX(0.2)`.
+                singleton values such as ``ops.X``; parametric gates should be
+                instantiated, such as ``ops.RX(0.2)``.
             qreg: Target qubit operand, or tuple of target operands for
-                multi-qubit gates (e.g. `(0, 1)` for `CZ`). Each operand may
-                be an integer when unambiguous or an explicit `RegisterRef`.
-            condition: Optional single condition `(clbit, value)` or sequence of
-                conditions. Conditions are normalized to an AND tuple.
+                multi-qubit gates (e.g. ``(0, 1)`` for ``CZ``). Each operand
+                may be an integer when unambiguous or an explicit
+                ``RegisterRef``.
+            condition: Optional single condition ``(clbit, value)`` or
+                sequence of conditions. Conditions are normalized to an AND
+                tuple.
 
         Raises:
-            TypeError: If `op` is not an `Operation`, if operands have the wrong
-                register kind, or if integer operands are ambiguous.
-            ValueError: If target arity is wrong, a target is repeated, a ref is
-                foreign to the program, or `condition` is empty.
+            TypeError: If ``op`` is not an ``Operation``, if operands have the
+                wrong register kind, or if integer operands are ambiguous.
+            ValueError: If target arity is wrong, a target is repeated, a ref
+                is foreign to the program, or ``condition`` is empty.
             IndexError: If an integer operand is outside the relevant register.
 
         Examples:
             Add fixed and parametric gates:
 
-            ```python
-            import qnsim as qs
+            .. code-block:: python
 
-            program = qs.Program(2)
-            program.add(qs.ops.H, 0)
-            program.add(qs.ops.CZ, (0, 1))
-            program.add(qs.ops.RX(0.2), 0)
-            ```
+                import qnsim as qs
+
+                program = qs.Program(2)
+                program.add(qs.ops.H, 0)
+                program.add(qs.ops.CZ, (0, 1))
+                program.add(qs.ops.RX(0.2), 0)
         """
         if not isinstance(op, Operation):
             raise TypeError(
@@ -276,33 +279,35 @@ class Program:
 
         Args:
             qreg: Quantum operand(s) to measure, as an integer, explicit
-                `RegisterRef`, or tuple of operands for a grouped measurement.
+                ``RegisterRef``, or tuple of operands for a grouped
+                measurement.
             clreg: Classical operand(s) to write, as an integer, explicit
-                `RegisterRef`, or tuple of operands matching `qreg` in count.
+                ``RegisterRef``, or tuple of operands matching ``qreg`` in
+                count.
 
         Raises:
             TypeError: If operands have the wrong register kind or integer
                 operands are ambiguous.
-            ValueError: If `qreg`/`clreg` have mismatched or zero length, or an
-                explicit ref is foreign to the program.
+            ValueError: If ``qreg``/``clreg`` have mismatched or zero length,
+                or an explicit ref is foreign to the program.
             IndexError: If an integer operand is outside the relevant register.
 
         Examples:
             Add a terminal measurement:
 
-            ```python
-            import qnsim as qs
+            .. code-block:: python
 
-            program = qs.Program(1, 1)
-            program.add(qs.ops.X, 0)
-            program.add_measurement(0, 0)
-            ```
+                import qnsim as qs
+
+                program = qs.Program(1, 1)
+                program.add(qs.ops.X, 0)
+                program.add_measurement(0, 0)
 
             Add a grouped measurement:
 
-            ```python
-            program.add_measurement((0, 1), (0, 1))
-            ```
+            .. code-block:: python
+
+                program.add_measurement((0, 1), (0, 1))
         """
         q_operands = qreg if isinstance(qreg, tuple) else (qreg,)
         c_operands = clreg if isinstance(clreg, tuple) else (clreg,)

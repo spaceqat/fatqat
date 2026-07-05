@@ -11,7 +11,7 @@ class Register:
     """Base value object for a fixed-size resource register.
 
     Register metadata is copied at construction time, and register objects are
-    frozen. Use indexing to create `RegisterRef` values.
+    frozen. Use indexing to create ``RegisterRef`` values.
 
     Attributes:
         size: Number of slots in the register. Must be a positive integer.
@@ -47,11 +47,11 @@ class Register:
             index: Zero-based slot index. Negative indexing is not supported.
 
         Returns:
-            A `RegisterRef` pointing at this register and index.
+            A ``RegisterRef`` pointing at this register and index.
 
         Raises:
-            TypeError: If `index` is not an integer.
-            IndexError: If `index` is outside `0 <= index < size`.
+            TypeError: If ``index`` is not an integer.
+            IndexError: If ``index`` is outside ``0 <= index < size``.
         """
         if not isinstance(index, int) or isinstance(index, bool):
             raise TypeError(f"register index must be int, got {type(index)!r}")
@@ -80,7 +80,7 @@ class RegisterRef:
 
     Attributes:
         register: Register object being referenced.
-        index: Zero-based slot index within `register`.
+        index: Zero-based slot index within ``register``.
     """
 
     register: Register

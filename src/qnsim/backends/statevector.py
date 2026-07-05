@@ -193,7 +193,7 @@ def _resolve_result_request(config: _ResultConfig, facts: _PlanFacts) -> _Result
 
 
 class StateVectorBackend:
-    """Statevector backend for `qnsim.Program` execution.
+    """Statevector backend for ``qnsim.Program`` execution.
 
     The backend supports matrix-evolvable gates, grouped measurement,
     feedforward conditions, and reset. Each run is classified into one of two
@@ -211,14 +211,16 @@ class StateVectorBackend:
 
     Backend constructor options affect only dynamic counts execution:
 
-    - `max_workers`: maximum worker processes for dynamic counts parallelism.
-      `None` means automatic selection.
-    - `parallel_mode`: one of `"auto"`, `"serial"`, `"multiprocessing"`,
-      or `"loky"`. `"auto"` prefers `loky` when available and otherwise uses
-      `multiprocessing`. `"serial"` disables process-based parallel execution.
+    - ``max_workers``: maximum worker processes for dynamic counts
+      parallelism. ``None`` means automatic selection.
+    - ``parallel_mode``: one of ``"auto"``, ``"serial"``, ``"multiprocessing"``,
+      or ``"loky"``. ``"auto"`` prefers ``loky`` when available and otherwise
+      uses ``multiprocessing``. ``"serial"`` disables process-based parallel
+      execution.
 
     A backend instance reuses one engine across runs, so it is efficient for
-    repeated single-threaded use but is not safe for concurrent `run()` calls.
+    repeated single-threaded use but is not safe for concurrent ``run()``
+    calls.
     """
 
     def __init__(
@@ -230,15 +232,15 @@ class StateVectorBackend:
 
         Args:
             options: Optional execution-strategy options. Supported keys are
-                `max_workers` and `parallel_mode`; unknown keys are ignored
-                with a warning. These options only affect the dynamic counts
-                path and do not change numerical semantics.
+                ``max_workers`` and ``parallel_mode``; unknown keys are
+                ignored with a warning. These options only affect the dynamic
+                counts path and do not change numerical semantics.
             implementation_map: Optional matrix implementation map controlling
                 which operations this backend supports and how their matrices
-                are built. `None` (the default) uses
-                `default_matrix_implementation_map()`. The backend copies whatever
-                map it receives, so mutating the caller's map object after
-                construction does not change this backend's behavior.
+                are built. ``None`` (the default) uses
+                ``default_matrix_implementation_map()``. The backend copies
+                whatever map it receives, so mutating the caller's map object
+                after construction does not change this backend's behavior.
         """
         self._config = _normalize_dict_options(
             options, {"max_workers", "parallel_mode"}, _BackendConfig, "options", "backend"
@@ -275,34 +277,32 @@ class StateVectorBackend:
 
         This is the main user-facing execution entry point. It resolves the
         program to the backend's flat layout, chooses an execution strategy,
-        runs the circuit, and returns an eager `Job` whose `result()` yields a
-        `Result`.
+        runs the circuit, and returns an eager ``Job`` whose ``result()``
+        yields a ``Result``.
 
-        Result selection via `result_config`:
+        Result selection via ``result_config``:
 
-        - `{"counts": None}`: counts are produced when the program contains at
-          least one measurement.
-        - `{"counts": True}`: counts are always requested.
-        - `{"counts": False}`: counts are
-          suppressed, even if the
-          program measures subsystems.
-        - `{"statevector": None}`: a statevector is produced only when
+        - ``{"counts": None}``: counts are produced when the program contains
+          at least one measurement.
+        - ``{"counts": True}``: counts are always requested.
+        - ``{"counts": False}``: counts are suppressed, even if the program
+          measures subsystems.
+        - ``{"statevector": None}``: a statevector is produced only when
           execution is non-stochastic, meaning the program contains no
           measurement and no reset.
-        - `{"statevector": True}`: explicitly request a final statevector.
-        - `{"statevector": False}`:
-          suppress statevector output.
+        - ``{"statevector": True}``: explicitly request a final statevector.
+        - ``{"statevector": False}``: suppress statevector output.
 
         Output consequences:
 
-        - Counts are returned through `Result.get_counts()` as little-endian
-          classical count-key strings.
+        - Counts are returned through ``Result.get_counts()`` as
+          little-endian classical count-key strings.
         - A statevector, when produced, is returned through
-          `Result.get_statevector()`.
+          ``Result.get_statevector()``.
         - If a field was not produced, its accessor raises
-          `ResultFieldUnavailableError`.
-        - `Result.metadata` always includes `shots`, `backend_name`, and the
-          effective `result_config`.
+          ``ResultFieldUnavailableError``.
+        - ``Result.metadata`` always includes ``shots``, ``backend_name``,
+          and the effective ``result_config``.
 
         Execution strategy:
 
@@ -315,30 +315,32 @@ class StateVectorBackend:
           classical register. This path preserves feedforward semantics and
           repeated measurement/reset behavior.
         - Parallel dynamic counts: when the dynamic path is used, counts are
-          requested, multiple iterations are needed, and backend options allow
-          it, shots may be distributed across worker processes. The counts are
-          reproducible for a fixed `seed` regardless of serial vs parallel
-          scheduling.
+          requested, multiple iterations are needed, and backend options
+          allow it, shots may be distributed across worker processes. The
+          counts are reproducible for a fixed ``seed`` regardless of serial
+          vs parallel scheduling.
 
         Statevector semantics:
 
         - For non-stochastic programs, a produced statevector is the final
           evolved state after all operations.
         - For stochastic programs (any measurement or reset),
-          `statevector=True` is only supported for `shots == 1`; the returned
-          statevector is the single-shot post-measurement/post-reset state.
+          ``statevector=True`` is only supported for ``shots == 1``; the
+          returned statevector is the single-shot post-measurement/post-reset
+          state.
         - A program may take the dynamic execution path yet still be
           non-stochastic, for example when it contains only classical
-          conditions on never-written clbits. Such a program may still produce
-          a default statevector.
+          conditions on never-written clbits. Such a program may still
+          produce a default statevector.
 
         Shot semantics and validation:
 
-        - `shots` matters whenever counts are requested.
-        - `shots` must be an `int` whenever requested results depend on it.
-        - Counts require `shots > 0`.
+        - ``shots`` matters whenever counts are requested.
+        - ``shots`` must be an ``int`` whenever requested results depend on
+          it.
+        - Counts require ``shots > 0``.
         - Requesting a statevector for a stochastic program requires
-          `shots == 1`.
+          ``shots == 1``.
 
         Args:
             program: Program to execute.
@@ -346,53 +348,53 @@ class StateVectorBackend:
                 For statevector-only deterministic execution, the value may be
                 ignored.
             result_config: Optional plain dictionary describing which result
-                fields to produce. Supported keys are `counts` and
-                `statevector`; unknown keys are ignored with a warning. When
-                omitted, backend defaults are used.
+                fields to produce. Supported keys are ``counts`` and
+                ``statevector``; unknown keys are ignored with a warning.
+                When omitted, backend defaults are used.
             seed: Optional root seed for the run. For dynamic counts, one
                 reproducible child RNG stream is derived per logical shot.
 
         Returns:
-            A completed `Job`. Validation failures raise directly from `run()`;
-            execution-stage failures are captured in a failed job whose
-            `result()` re-raises the underlying exception.
+            A completed ``Job``. Validation failures raise directly from
+            ``run()``; execution-stage failures are captured in a failed job
+            whose ``result()`` re-raises the underlying exception.
 
         Raises:
             BackendValidationError: If requested outputs are incompatible with
-                the program shape or `shots`.
+                the program shape or ``shots``.
             UnsupportedOperationError: If the program contains an operation
                 without a backend implementation.
 
         Examples:
             Sample counts from a measured program:
 
-            ```python
-            import qnsim as qs
+            .. code-block:: python
 
-            program = qs.Program(1, 1)
-            program.add(qs.ops.X, 0)
-            program.add_measurement(0, 0)
+                import qnsim as qs
 
-            result = qs.backends.StateVectorBackend().run(
-                program,
-                shots=100,
-                result_config={"counts": True},
-            ).result()
-            counts = result.get_counts()
-            ```
+                program = qs.Program(1, 1)
+                program.add(qs.ops.X, 0)
+                program.add_measurement(0, 0)
+
+                result = qs.backends.StateVectorBackend().run(
+                    program,
+                    shots=100,
+                    result_config={"counts": True},
+                ).result()
+                counts = result.get_counts()
 
             Request a deterministic statevector:
 
-            ```python
-            program = qs.Program(1)
-            program.add(qs.ops.H, 0)
+            .. code-block:: python
 
-            result = qs.backends.StateVectorBackend().run(
-                program,
-                result_config={"counts": False, "statevector": True},
-            ).result()
-            statevector = result.get_statevector()
-            ```
+                program = qs.Program(1)
+                program.add(qs.ops.H, 0)
+
+                result = qs.backends.StateVectorBackend().run(
+                    program,
+                    result_config={"counts": False, "statevector": True},
+                ).result()
+                statevector = result.get_statevector()
         """
         config = _normalize_dict_options(
             result_config, {"counts", "statevector"}, _ResultConfig, "result_config", "result_config"

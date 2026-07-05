@@ -47,9 +47,9 @@ class SumGate(Operation):
     ``targets = (control, target)``; operand 0 is the control. The default
     implementation requires equal target dimensions.
 
-    The class itself is not part of the `qs.ops` public surface (not in
-    `__all__`) but stays attribute-accessible for `isinstance` checks; `Sum`
-    (the singleton) is the one users add to a program.
+    The class itself is not part of the ``qs.ops`` public surface (not in
+    ``__all__``) but stays attribute-accessible for ``isinstance`` checks;
+    ``Sum`` (the singleton) is the one users add to a program.
     """
 
     name: ClassVar[str] = "Sum"

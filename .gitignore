@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 dist/
 *.egg-info/
+docs/sphinx/_build/
 
 # Superpowers working artifacts (specs, plans, reviews) — not part of the code
 docs/superpowers/
@@ -16,3 +17,6 @@ docs/design/
 .worktrees/
 benchmarks/
 benchmarks_qiskit/
+
+# Lockfile churns heavily with every dependency-group sync; not worth tracking
+uv.lock

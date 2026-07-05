@@ -131,10 +131,11 @@ def format_count_key(key: tuple[int, ...], classical_dims: Sequence[int]) -> str
 class Result:
     """Execution result with explicitly available data fields.
 
-    Accessors raise `ResultFieldUnavailableError` when a field was not produced
-    by the backend. Check `available_data` or use the accessor errors to handle
-    optional fields. `metadata` always exists and stores backend/run context
-    such as shots, backend name, and the effective result configuration.
+    Accessors raise ``ResultFieldUnavailableError`` when a field was not
+    produced by the backend. Check ``available_data`` or use the accessor
+    errors to handle optional fields. ``metadata`` always exists and stores
+    backend/run context such as shots, backend name, and the effective result
+    configuration.
     """
 
     def __init__(
@@ -175,16 +176,16 @@ class Result:
             ResultFieldUnavailableError: If counts were not produced.
 
         Examples:
-            ```python
-            import qnsim as qs
+            .. code-block:: python
 
-            program = qs.Program(1, 1)
-            program.add(qs.ops.X, 0)
-            program.add_measurement(0, 0)
-            result = qs.backends.StateVectorBackend().run(program, shots=10).result()
+                import qnsim as qs
 
-            assert result.get_counts() == {"1": 10}
-            ```
+                program = qs.Program(1, 1)
+                program.add(qs.ops.X, 0)
+                program.add_measurement(0, 0)
+                result = qs.backends.StateVectorBackend().run(program, shots=10).result()
+
+                assert result.get_counts() == {"1": 10}
         """
         if "counts" not in self.available_data:
             raise ResultFieldUnavailableError("counts not available in this result")
@@ -217,18 +218,18 @@ class Result:
             ResultFieldUnavailableError: If a statevector was not produced.
 
         Examples:
-            ```python
-            import qnsim as qs
+            .. code-block:: python
 
-            program = qs.Program(1)
-            program.add(qs.ops.X, 0)
-            result = qs.backends.StateVectorBackend().run(
-                program,
-                result_config={"counts": False, "statevector": True},
-            ).result()
+                import qnsim as qs
 
-            statevector = result.get_statevector()
-            ```
+                program = qs.Program(1)
+                program.add(qs.ops.X, 0)
+                result = qs.backends.StateVectorBackend().run(
+                    program,
+                    result_config={"counts": False, "statevector": True},
+                ).result()
+
+                statevector = result.get_statevector()
         """
         if "statevector" not in self.available_data:
             raise ResultFieldUnavailableError(

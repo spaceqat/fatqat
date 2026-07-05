@@ -53,7 +53,7 @@ class RZ(Operation):
 
 @dataclass(frozen=True)
 class Phase(Operation):
-    """General single-qubit phase gate: diag(1, e^{i theta}).
+    """General single-qubit phase gate: ``diag(1, e^{i theta})``.
 
     Attributes:
         theta: Phase angle in radians.
@@ -71,8 +71,8 @@ class Phase(Operation):
 
 @dataclass(frozen=True)
 class CPhase(Operation):
-    """Controlled phase gate: applies diag(1, e^{i theta}) to the target when
-    the control is |1>.
+    """Controlled phase gate: applies ``diag(1, e^{i theta})`` to the target
+    when the control is ``|1>``.
 
     ``targets = (control, target)``; operand 0 is the control.
 

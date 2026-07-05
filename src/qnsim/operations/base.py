@@ -10,9 +10,9 @@ from typing import ClassVar
 class Operation:
     """Base class for immutable operation objects.
 
-    Fixed gates are exposed as pre-built singleton values in `qnsim.ops`.
+    Fixed gates are exposed as pre-built singleton values in ``qnsim.ops``.
     Parametric gates are exposed as classes and should be instantiated, such as
-    `RX(theta)`.
+    ``RX(theta)``.
 
     Attributes:
         name: Public operation name.

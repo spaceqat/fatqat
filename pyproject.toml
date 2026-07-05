@@ -14,6 +14,7 @@ packages = ["src/qnsim"]
 
 [dependency-groups]
 dev = ["pytest>=8"]
+docs = ["sphinx", "pydata-sphinx-theme", "myst-parser"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
