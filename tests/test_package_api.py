@@ -58,3 +58,18 @@ def test_program_measure_all_is_public_instance_method():
     program.measure_all()
 
     assert len(program.operations) == 1
+
+
+def test_new_qudit_gates_are_public():
+    for name in (
+        "SwapLevels", "Fourier", "Fourierdg",
+        "SubspaceRX", "SubspaceRY", "SubspaceRZ", "CClock",
+    ):
+        assert name in qs.ops.__all__
+        assert hasattr(qs.ops, name)
+
+
+def test_fourier_and_fourierdg_are_singleton_instances():
+    assert isinstance(qs.ops.Fourier, qs.ops.Operation)
+    assert isinstance(qs.ops.Fourierdg, qs.ops.Operation)
+    assert not isinstance(qs.ops.Fourier, type)

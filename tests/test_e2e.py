@@ -134,3 +134,50 @@ def test_cclock_unequal_dimensions_runs_through_backend():
     expected = np.zeros(6, dtype=complex)
     expected[1 * 1 + 1 * 3] = -1.0
     assert np.allclose(sv, expected)
+
+
+def test_qutrit_circuit_with_new_gates_produces_expected_counts():
+    # Every step below is chosen so the final state is a single computational
+    # basis state with certainty, so the expected outcome is hand-computable
+    # (an "independently computed reference," not just a shape/range check).
+    qreg = qs.QuantumRegister(2, dim=3)
+    creg = qs.ClassicalRegister(2, dim=3)
+    program = qs.Program([qreg], [creg])
+    # q0: |0> -> Fourier -> Fourierdg -> |0> (round-trip identity; exercises
+    # Fourier/Fourierdg through the real backend without changing the state).
+    program.add(qs.ops.Fourier, 0)
+    program.add(qs.ops.Fourierdg, 0)
+    # q0: |0> -> SwapLevels(0, 2) -> |2>
+    program.add(qs.ops.SwapLevels(0, 2), 0)
+    # q0: |2> -> SubspaceRX(pi, (0, 2)) -> -i|0>. The subspace's "k" role
+    # (level 2, the current state) maps to -i times its "j" role (level 0):
+    # with c=cos(pi/2)=0, s=sin(pi/2)=1, the (0,2) block sends the k-column
+    # to [-i*s, 0's for the untouched level, c] = [-i, 0]. The global phase
+    # is unobservable in measurement counts.
+    program.add(qs.ops.SubspaceRX(np.pi, (0, 2)), 0)
+    # q1 stays |0>, so CClock(1)'s control is always |0>: this exercises
+    # CClock's wiring/dimension handling through the real backend without
+    # changing the (phase-invisible-to-counts) expected outcome. CClock's
+    # own phase computation is independently verified in Task 5's
+    # test_cclock_unequal_dimensions_runs_through_backend, where the control
+    # is prepared in a nonzero level specifically to make the phase visible.
+    program.add(qs.ops.CClock(1), (0, 1))
+    program.measure_all()
+
+    result = qs.backends.StateVectorBackend().run(
+        program, shots=50, seed=0, result_config={"counts": True}
+    ).result()
+    assert result.get_counts_as_tuples() == {(0, 0): 50}
+
+
+def test_qubit_only_gate_on_qutrit_does_not_raise_at_add_but_raises_at_run():
+    import pytest
+    from qnsim.errors import BackendValidationError
+
+    qreg = qs.QuantumRegister(1, dim=3)
+    program = qs.Program([qreg])
+    program.add(qs.ops.H, 0)  # frontend stays neutral: does not raise here
+    with pytest.raises(BackendValidationError):
+        qs.backends.StateVectorBackend().run(
+            program, result_config={"counts": False, "statevector": True}
+        ).result()
