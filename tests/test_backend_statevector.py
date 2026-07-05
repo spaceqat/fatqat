@@ -25,7 +25,7 @@ def test_statevector_not_attached_by_default_with_measurement():
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
     result = StateVectorBackend().run(p, shots=10, seed=0).result()
-    with pytest.raises(qs.ResultFieldUnavailableError):
+    with pytest.raises(qs.errors.ResultFieldUnavailableError):
         result.get_statevector()
 
 
@@ -131,7 +131,7 @@ def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():
     program = qs.Program([qt])
     program.add(qs.ops.H, qt[0])  # frontend must NOT raise here
     with pytest.raises(BackendValidationError) as exc:
-        qs.StateVectorBackend().run(
+        qs.backends.StateVectorBackend().run(
             program, result_config={"counts": False, "statevector": True}
         ).result()
     msg = str(exc.value)

@@ -21,15 +21,18 @@ def test_register_types_exposed():
     assert isinstance(qr[0], qs.RegisterRef)
 
 
-def test_backends_module_alias():
-    assert qs.backends.StateVectorBackend is qs.StateVectorBackend
+def test_statevector_backend_only_under_backends_namespace():
+    from qnsim.backends import StateVectorBackend
+
+    assert qs.backends.StateVectorBackend is StateVectorBackend
+    assert not hasattr(qs, "StateVectorBackend")
 
 
 def test_resultconfig_not_exported_from_top_level():
     assert not hasattr(qs, "ResultConfig")
 
 
-def test_error_classes_exported():
+def test_error_classes_only_under_errors_namespace():
     from qnsim.errors import (
         QnsimError,
         BackendValidationError,
@@ -37,11 +40,17 @@ def test_error_classes_exported():
         UnsupportedOperationError,
         NoMeasurementWarning,
     )
-    assert qs.QnsimError is QnsimError
-    assert qs.BackendValidationError is BackendValidationError
-    assert qs.MatrixImplementationError is MatrixImplementationError
-    assert qs.UnsupportedOperationError is UnsupportedOperationError
-    assert qs.NoMeasurementWarning is NoMeasurementWarning
+    assert qs.errors.QnsimError is QnsimError
+    assert qs.errors.BackendValidationError is BackendValidationError
+    assert qs.errors.MatrixImplementationError is MatrixImplementationError
+    assert qs.errors.UnsupportedOperationError is UnsupportedOperationError
+    assert qs.errors.NoMeasurementWarning is NoMeasurementWarning
+    assert not hasattr(qs, "QnsimError")
+
+
+def test_sumgate_class_not_in_ops_public_surface():
+    assert "SumGate" not in qs.ops.__all__
+    assert isinstance(qs.ops.Sum, qs.ops.SumGate)
 
 
 def test_program_measure_all_is_public_instance_method():

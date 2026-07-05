@@ -549,7 +549,7 @@ class StateVectorBackend:
             program.add(qs.ops.X, 0)
             program.add_measurement(0, 0)
 
-            result = qs.StateVectorBackend().run(
+            result = qs.backends.StateVectorBackend().run(
                 program,
                 shots=100,
                 result_config={"counts": True},
@@ -563,7 +563,7 @@ class StateVectorBackend:
             program = qs.Program(1)
             program.add(qs.ops.H, 0)
 
-            result = qs.StateVectorBackend().run(
+            result = qs.backends.StateVectorBackend().run(
                 program,
                 result_config={"counts": False, "statevector": True},
             ).result()

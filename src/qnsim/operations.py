@@ -12,7 +12,7 @@ __all__ = [
     "RX", "RY", "RZ", "Phase",
     "CPhase",
     "Reset",
-    "Shift", "Clock", "Sum", "SumGate",
+    "Shift", "Clock", "Sum",
 ]
 
 

@@ -70,7 +70,7 @@ def test_lower_unknown_gate_raises():
 
     p = Program(1)
     p.add(FooGate(), 0)
-    with pytest.raises(qs.UnsupportedOperationError):
+    with pytest.raises(qs.errors.UnsupportedOperationError):
         _lower(p)
 
 
@@ -109,7 +109,7 @@ def test_condition_only_statevector_default_at_many_shots():
 def test_statevector_with_reset_and_many_shots_rejected():
     p = Program(1)
     p.add(qs.ops.Reset, 0)
-    with pytest.raises(qs.BackendValidationError):
+    with pytest.raises(qs.errors.BackendValidationError):
         StateVectorBackend().run(p, shots=10, result_config={"statevector": True})
 
 

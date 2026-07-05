@@ -46,5 +46,5 @@ def test_unknown_parallel_mode_rejected_at_construction():
     # Option values are validated when the backend is constructed, so an
     # unknown parallel_mode fails fast here rather than being deferred to a
     # run and swallowed into a failed Job.
-    with pytest.raises(qs.BackendValidationError, match="unsupported parallel_mode"):
+    with pytest.raises(qs.errors.BackendValidationError, match="unsupported parallel_mode"):
         StateVectorBackend(options={"max_workers": 2, "parallel_mode": "not-a-mode"})
