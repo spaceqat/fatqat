@@ -12,6 +12,7 @@ from qnsim.implementation import (
     clock_matrix,
     default_matrix_implementation_map,
     sum_matrix,
+    swap_levels_matrix,
 )
 from qnsim.implementation.base import _DimMatrix
 from qnsim.registers import QuantumRegister
@@ -385,3 +386,22 @@ def test_shift_reduces_to_x_at_dim2():
     qb = QuantumRegister(1, dim=2)
     got = m.get(ops.Shift(1))(ops.Shift(1), targets=(qb[0],))
     assert np.allclose(got, np.array([[0, 1], [1, 0]], dtype=complex))
+
+
+def test_swap_levels_matrix_qutrit():
+    m = swap_levels_matrix(3, 0, 2)
+    expected = np.array(
+        [[0, 0, 1], [0, 1, 0], [1, 0, 0]], dtype=complex
+    )
+    assert np.allclose(m, expected)
+
+
+def test_swap_levels_reduces_to_x_at_dim2():
+    got = swap_levels_matrix(2, 0, 1)
+    assert np.allclose(got, np.array([[0, 1], [1, 0]], dtype=complex))
+
+
+def test_default_map_has_swap_levels():
+    m = default_matrix_implementation_map()
+    got = m.get(ops.SwapLevels(0, 1))(ops.SwapLevels(0, 1), targets=_qutrit_targets(1))
+    assert got.shape == (3, 3)

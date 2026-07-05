@@ -81,3 +81,21 @@ def test_new_gates_carry_no_dim_field():
     # No dim attribute on the symbols.
     assert not hasattr(ops.Shift(1), "dim")
     assert not hasattr(ops.Sum, "dim")
+
+
+def test_swap_levels_is_single_subsystem_parametric():
+    g = ops.SwapLevels(0, 2)
+    assert g.name == "SwapLevels"
+    assert g.num_subsystems == 1
+    assert g.j == 0
+    assert g.k == 2
+
+
+def test_swap_levels_rejects_equal_indices():
+    with pytest.raises(ValueError, match="j != k"):
+        ops.SwapLevels(1, 1)
+
+
+def test_swap_levels_rejects_negative_indices():
+    with pytest.raises(ValueError, match="non-negative"):
+        ops.SwapLevels(-1, 0)

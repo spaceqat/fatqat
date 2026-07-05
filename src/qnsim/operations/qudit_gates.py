@@ -97,3 +97,40 @@ class SumGate(Operation):
 # `Sum` takes no parameters, so - like the fixed gates - it is exported only
 # as a singleton value.
 Sum = SumGate()
+
+
+@dataclass(frozen=True)
+class SwapLevels(Operation):
+    """Level-transposition gate: swaps basis levels ``j`` and ``k``, identity
+    on every other level. Dimension-free: its matrix is built from the target
+    dimension at backend lowering. Reduces to X at ``dim=2, (j,k)=(0,1)``.
+    Hermitian and self-inverse (no ``dg`` variant).
+
+    Known in the qutrit literature as X01/X02/X12 (the Muthukrishnan-Stroud
+    gates) at dim=3.
+
+    Attributes:
+        j: First level index (distinct from k, non-negative).
+        k: Second level index (distinct from j, non-negative).
+    """
+
+    j: int
+    k: int
+    name: ClassVar[str] = "SwapLevels"
+    _num_subsystems: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        if self.j == self.k:
+            raise ValueError(f"SwapLevels requires j != k, got j=k={self.j}")
+        if self.j < 0 or self.k < 0:
+            raise ValueError(
+                f"SwapLevels level indices must be non-negative, got ({self.j}, {self.k})"
+            )
+
+    def validate_targets(self, targets) -> None:
+        dim = targets[0].register.dim
+        if self.j >= dim or self.k >= dim:
+            raise ValueError(
+                f"SwapLevels({self.j}, {self.k}) invalid for target dimension "
+                f"{dim}: level indices must satisfy 0 <= j, k < dim"
+            )

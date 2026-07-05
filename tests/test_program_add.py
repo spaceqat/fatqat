@@ -74,3 +74,17 @@ def test_add_accepts_explicit_refs_across_multiple_quantum_registers():
 
     assert p.operations[0].targets == (qr0[0],)
     assert p.operations[1].targets == (qr1[0],)
+
+
+def test_add_swap_levels_out_of_range_raises():
+    qr = QuantumRegister(1, dim=3)
+    p = Program([qr])
+    with pytest.raises(ValueError, match="0 <= j, k < dim"):
+        p.add(ops.SwapLevels(0, 5), 0)
+
+
+def test_add_swap_levels_in_range_succeeds():
+    qr = QuantumRegister(1, dim=3)
+    p = Program([qr])
+    p.add(ops.SwapLevels(0, 2), 0)
+    assert p.operations[0].operation.j == 0

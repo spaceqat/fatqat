@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 
 from .base import ApplyMatrixStep, FixedMatrix, MatrixImplementation, MatrixImplementationMap
-from .matrices import clock_matrix, shift_matrix, sum_matrix
+from .matrices import clock_matrix, shift_matrix, sum_matrix, swap_levels_matrix
 from .registry import default_matrix_implementation_map
 
 __all__ = [
@@ -17,4 +17,5 @@ __all__ = [
     "shift_matrix",
     "clock_matrix",
     "sum_matrix",
+    "swap_levels_matrix",
 ]

@@ -58,6 +58,19 @@ def _clock_rule(op: "ops.Clock", targets) -> np.ndarray:
     return clock_matrix(targets[0].register.dim, op.power)
 
 
+def swap_levels_matrix(dim: int, j: int, k: int) -> np.ndarray:
+    """Level-transposition permutation: swaps basis levels j and k, identity
+    elsewhere. Returns a dim x dim matrix.
+    """
+    m = np.eye(dim, dtype=complex)
+    m[[j, k]] = m[[k, j]]
+    return m
+
+
+def _swap_levels_rule(op: "ops.SwapLevels", targets) -> np.ndarray:
+    return swap_levels_matrix(targets[0].register.dim, op.j, op.k)
+
+
 # Module-level constant matrices (reused; do not rebuild per call).
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _Y = np.array([[0, -1j], [1j, 0]], dtype=complex)

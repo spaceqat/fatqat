@@ -24,7 +24,7 @@ from .fixed_gates import (
 )
 from .measurement import Measurement
 from .parametric_gates import CPhase, Phase, RX, RY, RZ
-from .qudit_gates import Clock, Shift, Sum, SumGate
+from .qudit_gates import Clock, Shift, Sum, SumGate, SwapLevels
 from .reset import Reset, ResetGate
 
 __all__ = [
@@ -35,5 +35,5 @@ __all__ = [
     "CPhase",
     "Reset",
     "Measurement",
-    "Shift", "Clock", "Sum",
+    "Shift", "Clock", "Sum", "SwapLevels",
 ]
