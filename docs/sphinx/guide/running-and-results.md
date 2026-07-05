@@ -7,11 +7,12 @@ backend = qs.backends.StateVectorBackend()
 result = backend.run(program, shots=1000).result()
 ```
 
-`run()` returns a `Job` immediately — Phase 1 jobs are already terminal, so
-`.result()` either returns a `Result` or re-raises the exception from a
-failed run. `run()` itself still raises directly for validation failures
-(e.g. an unsupported operation, or `shots` incompatible with the requested
-result fields).
+{py:meth}`~qnsim.backends.StateVectorBackend.run` returns a
+{py:class}`~qnsim.Job` immediately — Phase 1 jobs are already terminal, so
+{py:meth}`~qnsim.Job.result` either returns a {py:class}`~qnsim.Result` or
+re-raises the exception from a failed run. `run()` itself still raises
+directly for validation failures (e.g. an unsupported operation, or `shots`
+incompatible with the requested result fields).
 
 Key arguments:
 
@@ -52,26 +53,30 @@ result.metadata                 # shots, backend_name, effective result_config
 ```
 
 Calling an accessor for a field that wasn't produced raises
-`qs.errors.ResultFieldUnavailableError` rather than returning `None` —
-check `available_data` first if a field is optional in your workflow.
+{py:exc}`~qnsim.errors.ResultFieldUnavailableError` rather than returning
+`None` — check `available_data` first if a field is optional in your
+workflow.
 
 If you request counts on a program where some declared clbit was never
 written by a measurement, the backend still returns zero-filled counts for
-that bit but raises a `qs.errors.NoMeasurementWarning` — usually a sign a
-measurement was forgotten.
+that bit but raises a {py:exc}`~qnsim.errors.NoMeasurementWarning` —
+usually a sign a measurement was forgotten.
 
 ## Advanced: qudits, custom implementations, parallel execution
 
 Everything above applies equally to qudits (registers with `dim > 2`) —
-`Shift`/`Clock`/`Sum` generalize the qubit gates rather than requiring
-separate handling.
+{py:class}`~qnsim.operations.Shift`/{py:class}`~qnsim.operations.Clock`/
+{py:data}`~qnsim.operations.Sum` generalize the qubit gates rather than
+requiring separate handling.
 
-`StateVectorBackend(implementation_map=...)` accepts a custom
-`MatrixImplementationMap` to control how operations are lowered to
-matrices, or to add support for operations the default map doesn't cover.
+{py:class}`~qnsim.backends.StateVectorBackend`'s `implementation_map=`
+argument accepts a custom `MatrixImplementationMap` to control how
+operations are lowered to matrices, or to add support for operations the
+default map doesn't cover.
 
-For programs on the dynamic path, `StateVectorBackend(options={...})`
-accepts `max_workers` and `parallel_mode` (`"auto"`, `"serial"`,
+For programs on the dynamic path,
+{py:class}`~qnsim.backends.StateVectorBackend`'s `options={...}` accepts
+`max_workers` and `parallel_mode` (`"auto"`, `"serial"`,
 `"multiprocessing"`, or `"loky"`) to control whether shots are distributed
 across worker processes. This only affects execution strategy, never
 numerical results.

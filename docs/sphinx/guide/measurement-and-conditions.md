@@ -2,8 +2,8 @@
 
 ## Adding measurements
 
-`add_measurement(qreg, clreg)` reads one or more qubits into matching
-classical bits, in the order given:
+{py:meth}`~qnsim.Program.add_measurement` reads one or more qubits into
+matching classical bits, in the order given:
 
 ```python
 program = qs.Program(1, 1)
@@ -18,8 +18,9 @@ Grouped measurement reads several qubits into several clbits in one call —
 program.add_measurement((0, 1), (0, 1))
 ```
 
-`measure_all()` is shorthand for measuring every qubit into every clbit, in
-flat declaration order; it requires equal quantum and classical bit counts:
+{py:meth}`~qnsim.Program.measure_all` is shorthand for measuring every qubit
+into every clbit, in flat declaration order; it requires equal quantum and
+classical bit counts:
 
 ```python
 program = qs.Program(2, 2)
@@ -30,11 +31,11 @@ program.measure_all()   # equivalent to add_measurement((0, 1), (0, 1))
 
 ## Feedforward conditions
 
-`program.add(op, targets, condition=(clbit, value))` makes an operation
-conditional on a classical bit already written earlier in the program — the
-operation only applies if that bit equals `value` when execution reaches
-it. Pass a sequence of `(clbit, value)` pairs to AND several conditions
-together:
+{py:meth}`~qnsim.Program.add`'s `condition=(clbit, value)` argument makes an
+operation conditional on a classical bit already written earlier in the
+program — the operation only applies if that bit equals `value` when
+execution reaches it. Pass a sequence of `(clbit, value)` pairs to AND
+several conditions together:
 
 ```python
 program = qs.Program(2, 1)
@@ -45,10 +46,10 @@ program.add(qs.ops.X, 1, condition=(0, 1))   # flip qubit 1 iff clbit 0 == 1
 
 ## Reset
 
-`qs.ops.Reset` reprepares one or more target subsystems in `|0>`. Unlike
-every other operation in `qs.ops`, it isn't a unitary gate — it has no
-matrix — so it can only be run on backends that special-case it (the
-statevector backend does):
+{py:data}`~qnsim.operations.Reset` reprepares one or more target subsystems
+in `|0>`. Unlike every other operation in `qs.ops`, it isn't a unitary gate
+— it has no matrix — so it can only be run on backends that special-case it
+(the statevector backend does):
 
 ```python
 program.add(qs.ops.Reset, 0)

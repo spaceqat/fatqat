@@ -20,7 +20,8 @@ result = qs.backends.StateVectorBackend().run(program, shots=1000).result()
 print(result.get_counts())          # e.g. {"00": 512, "11": 488}
 ```
 
-That's the whole shape of every qnsim program: build a `Program`, add gates
-and measurements, run it on a backend, read the `Result`. The rest of this
-guide fills in the details — see [Concepts](concepts.md) for the mental
-model behind these four objects.
+That's the whole shape of every qnsim program: build a
+{py:class}`~qnsim.Program`, add gates and measurements, run it on a backend,
+read the {py:class}`~qnsim.Result`. The rest of this guide fills in the
+details — see [Concepts](concepts.md) for the mental model behind these four
+objects.

@@ -14,12 +14,16 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
     "myst_parser",
+    "sphinx_design",
+    "sphinx_copybutton",
 ]
 
 source_suffix = {
     ".rst": "restructuredtext",
     ".md": "markdown",
 }
+
+myst_enable_extensions = ["colon_fence", "dollarmath", "amsmath"]
 
 templates_path: list[str] = []
 exclude_patterns: list[str] = ["_build", "Thumbs.db", ".DS_Store", "README.md"]
@@ -37,3 +41,9 @@ intersphinx_mapping = {
 
 html_theme = "pydata_sphinx_theme"
 html_static_path: list[str] = []
+html_theme_options = {
+    "navigation_depth": 2,
+    "show_toc_level": 2,
+    "navigation_with_keys": False,
+    "icon_links": [],
+}
