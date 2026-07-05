@@ -16,6 +16,18 @@ class Shift(Operation):
     built from the target dimension at backend lowering. Reduces to X at
     ``dim=2, power=1``.
 
+    .. math::
+
+        \\mathrm{Shift}(d, p) : |k\\rangle \\mapsto |(k + p) \\bmod d\\rangle
+
+    For example, at :math:`d = 3, p = 1`:
+
+    .. math::
+
+        \\mathrm{Shift}(3, 1) = \\begin{pmatrix}
+        0&0&1\\\\ 1&0&0\\\\ 0&1&0
+        \\end{pmatrix}
+
     Attributes:
         power: Shift amount (reduced modulo the target dimension at lowering).
     """
@@ -30,6 +42,19 @@ class Clock(Operation):
     """Generalized-Pauli phase: ``|k> -> omega^(k*power) |k>``, omega=e^{2πi/d}.
 
     Reduces to Z at ``dim=2, power=1``.
+
+    .. math::
+
+        \\mathrm{Clock}(d, p) : |k\\rangle \\mapsto \\omega^{kp} |k\\rangle,
+        \\quad \\omega = e^{2\\pi i/d}
+
+    For example, at :math:`d = 3, p = 1`:
+
+    .. math::
+
+        \\mathrm{Clock}(3, 1) = \\begin{pmatrix}
+        1&0&0\\\\ 0&\\omega&0\\\\ 0&0&\\omega^2
+        \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
 
     Attributes:
         power: Phase power (reduced modulo the target dimension at lowering).
@@ -46,6 +71,19 @@ class SumGate(Operation):
 
     ``targets = (control, target)``; operand 0 is the control. The default
     implementation requires equal target dimensions.
+
+    .. math::
+
+        \\mathrm{Sum} : |i, j\\rangle \\mapsto |i, (i + j) \\bmod d\\rangle
+
+    At its smallest dimension, :math:`d = 2`, this reduces to exactly
+    :class:`CXGate`:
+
+    .. math::
+
+        \\mathrm{Sum}\\big|_{d=2} = \\begin{pmatrix}
+        1&0&0&0\\\\ 0&1&0&0\\\\ 0&0&0&1\\\\ 0&0&1&0
+        \\end{pmatrix}
 
     The class itself is not part of the ``qs.ops`` public surface (not in
     ``__all__``) but stays attribute-accessible for ``isinstance`` checks;
