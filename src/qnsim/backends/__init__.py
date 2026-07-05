@@ -4,13 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from .parallel import _planned_workers
-from .statevector import (
-    MeasurementStep,
-    ResetStep,
-    StateVectorBackend,
-    _BackendConfig,
-    _ResultRequest,
-)
+from .statevector import MeasurementStep, ResetStep, StateVectorBackend
 
 __all__ = ["StateVectorBackend"]

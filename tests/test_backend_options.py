@@ -2,12 +2,9 @@
 import pytest
 
 import qnsim as qs
-from qnsim.backends import (
-    StateVectorBackend,
-    _BackendConfig,
-    _ResultRequest,
-    _planned_workers,
-)
+from qnsim.backends import StateVectorBackend
+from qnsim.backends.parallel import _planned_workers
+from qnsim.backends.statevector import _BackendConfig, _ResultRequest
 
 
 def test_backend_accepts_known_options():

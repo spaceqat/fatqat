@@ -6,7 +6,6 @@ import pytest
 from qnsim import operations as ops
 from qnsim.implementation import (
     ApplyMatrixStep,
-    _DimMatrix,
     FixedMatrix,
     MatrixImplementation,
     MatrixImplementationMap,
@@ -14,6 +13,7 @@ from qnsim.implementation import (
     default_matrix_implementation_map,
     sum_matrix,
 )
+from qnsim.implementation.base import _DimMatrix
 from qnsim.registers import QuantumRegister
 
 
