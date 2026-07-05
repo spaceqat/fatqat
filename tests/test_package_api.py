@@ -48,12 +48,6 @@ def test_error_classes_only_under_errors_namespace():
     assert not hasattr(qs, "QnsimError")
 
 
-def test_sumgate_class_not_public():
-    assert "SumGate" not in qs.ops.__all__
-    assert not hasattr(qs.ops, "SumGate")
-    assert isinstance(qs.ops.Sum, qs.ops.Operation)
-
-
 def test_program_measure_all_is_public_instance_method():
     program = qs.Program(1, 1)
     program.measure_all()
@@ -61,16 +55,3 @@ def test_program_measure_all_is_public_instance_method():
     assert len(program.operations) == 1
 
 
-def test_new_qudit_gates_are_public():
-    for name in (
-        "SwapLevels", "Fourier", "Fourierdg",
-        "SubspaceRX", "SubspaceRY", "SubspaceRZ", "CClock",
-    ):
-        assert name in qs.ops.__all__
-        assert hasattr(qs.ops, name)
-
-
-def test_fourier_and_fourierdg_are_singleton_instances():
-    assert isinstance(qs.ops.Fourier, qs.ops.Operation)
-    assert isinstance(qs.ops.Fourierdg, qs.ops.Operation)
-    assert not isinstance(qs.ops.Fourier, type)

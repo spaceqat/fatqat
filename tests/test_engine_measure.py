@@ -94,7 +94,7 @@ def test_collapse_state_returns_index_and_projected_copy_without_mutating_input(
 
 
 def test_measure_qutrit_digit_extraction():
-    from qnsim.implementation import shift_matrix
+    from qnsim.implementation.matrices import shift_matrix
 
     eng = StateVectorEngine()
     eng.initialize((3,))

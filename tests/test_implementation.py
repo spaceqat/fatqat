@@ -9,9 +9,12 @@ from qnsim.implementation import (
     FixedMatrix,
     MatrixImplementation,
     MatrixImplementationMap,
-    clock_matrix,
     default_matrix_implementation_map,
+)
+from qnsim.implementation.base import _DimMatrix
+from qnsim.implementation.matrices import (
     cclock_matrix,
+    clock_matrix,
     fourier_matrix,
     fourierdg_matrix,
     sum_matrix,
@@ -20,7 +23,6 @@ from qnsim.implementation import (
     subspace_rz_matrix,
     swap_levels_matrix,
 )
-from qnsim.implementation.base import _DimMatrix
 from qnsim.registers import QuantumRegister
 
 

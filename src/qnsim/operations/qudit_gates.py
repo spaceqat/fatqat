@@ -109,6 +109,19 @@ class SwapLevels(Operation):
     Known in the qutrit literature as X01/X02/X12 (the Muthukrishnan-Stroud
     gates) at dim=3.
 
+    .. math::
+
+        \\mathrm{SwapLevels}(j, k) : |j\\rangle \\leftrightarrow |k\\rangle,
+        \\quad |m\\rangle \\mapsto |m\\rangle \\ (m \\neq j, k)
+
+    For example, at :math:`d = 3, (j, k) = (0, 1)` (the X01 gate):
+
+    .. math::
+
+        \\mathrm{SwapLevels}(0, 1) = \\begin{pmatrix}
+        0&1&0\\\\ 1&0&0\\\\ 0&0&1
+        \\end{pmatrix}
+
     Attributes:
         j: First level index (distinct from k, non-negative).
         k: Second level index (distinct from j, non-negative).
@@ -144,6 +157,19 @@ class FourierGate(Operation):
 
     Known in the qutrit literature as THadamard at dim=3.
 
+    .. math::
+
+        \\mathrm{Fourier} : |j\\rangle \\mapsto \\frac{1}{\\sqrt{d}}
+        \\sum_{k=0}^{d-1} \\omega^{jk} |k\\rangle, \\quad \\omega = e^{2\\pi i/d}
+
+    For example, at :math:`d = 3`:
+
+    .. math::
+
+        \\mathrm{Fourier}\\big|_{d=3} = \\frac{1}{\\sqrt{3}}\\begin{pmatrix}
+        1&1&1\\\\ 1&\\omega&\\omega^2\\\\ 1&\\omega^2&\\omega
+        \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
+
     Internal only: unlike `SumGate` (attribute-accessible via `qs.ops.SumGate`
     though excluded from `__all__`), this class is not imported into
     `operations/__init__.py` at all, so it is not reachable as `qs.ops.
@@ -158,6 +184,19 @@ class FourierGate(Operation):
 class FourierdgGate(Operation):
     """Inverse of FourierGate (conjugate transpose). Coincides with Fourier
     at dim=2 (H is self-adjoint) but differs for d > 2.
+
+    .. math::
+
+        \\mathrm{Fourier}^\\dagger : |j\\rangle \\mapsto \\frac{1}{\\sqrt{d}}
+        \\sum_{k=0}^{d-1} \\omega^{-jk} |k\\rangle, \\quad \\omega = e^{2\\pi i/d}
+
+    For example, at :math:`d = 3`:
+
+    .. math::
+
+        \\mathrm{Fourier}^\\dagger\\big|_{d=3} = \\frac{1}{\\sqrt{3}}\\begin{pmatrix}
+        1&1&1\\\\ 1&\\omega^2&\\omega\\\\ 1&\\omega&\\omega^2
+        \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
 
     Internal only: not imported into `operations/__init__.py`, so it is not
     reachable as `qs.ops.FourierdgGate`. `Fourierdg` (the singleton) is the
@@ -178,8 +217,28 @@ Fourierdg = FourierdgGate()
 @dataclass(frozen=True)
 class SubspaceRX(Operation):
     """Rotation around X embedded in a 2-level subspace of a d-level qudit,
-    identity on the complementary levels. subspace[0] plays the |0> role,
-    subspace[1] the |1> role. Reduces to RX(theta) at dim=2, subspace=(0,1).
+    identity on the complementary levels. subspace[0] plays the ``|0>`` role,
+    subspace[1] the ``|1>`` role. Reduces to RX(theta) at dim=2, subspace=(0,1).
+
+    .. math::
+
+        \\mathrm{SubspaceRX}(\\theta, (j, k)) : \\begin{cases}
+        |j\\rangle \\mapsto \\cos\\frac{\\theta}{2}|j\\rangle
+            - i\\sin\\frac{\\theta}{2}|k\\rangle \\\\
+        |k\\rangle \\mapsto -i\\sin\\frac{\\theta}{2}|j\\rangle
+            + \\cos\\frac{\\theta}{2}|k\\rangle \\\\
+        |m\\rangle \\mapsto |m\\rangle & (m \\neq j, k)
+        \\end{cases}
+
+    For example, at :math:`d = 3, (j, k) = (0, 1)`:
+
+    .. math::
+
+        \\mathrm{SubspaceRX}(\\theta, (0, 1))\\big|_{d=3} = \\begin{pmatrix}
+        \\cos\\frac{\\theta}{2} & -i\\sin\\frac{\\theta}{2} & 0 \\\\
+        -i\\sin\\frac{\\theta}{2} & \\cos\\frac{\\theta}{2} & 0 \\\\
+        0 & 0 & 1
+        \\end{pmatrix}
 
     Attributes:
         theta: Rotation angle in radians.
@@ -211,8 +270,28 @@ class SubspaceRX(Operation):
 @dataclass(frozen=True)
 class SubspaceRY(Operation):
     """Rotation around Y embedded in a 2-level subspace of a d-level qudit,
-    identity on the complementary levels. subspace[0] plays the |0> role,
-    subspace[1] the |1> role. Reduces to RY(theta) at dim=2, subspace=(0,1).
+    identity on the complementary levels. subspace[0] plays the ``|0>`` role,
+    subspace[1] the ``|1>`` role. Reduces to RY(theta) at dim=2, subspace=(0,1).
+
+    .. math::
+
+        \\mathrm{SubspaceRY}(\\theta, (j, k)) : \\begin{cases}
+        |j\\rangle \\mapsto \\cos\\frac{\\theta}{2}|j\\rangle
+            + \\sin\\frac{\\theta}{2}|k\\rangle \\\\
+        |k\\rangle \\mapsto -\\sin\\frac{\\theta}{2}|j\\rangle
+            + \\cos\\frac{\\theta}{2}|k\\rangle \\\\
+        |m\\rangle \\mapsto |m\\rangle & (m \\neq j, k)
+        \\end{cases}
+
+    For example, at :math:`d = 3, (j, k) = (0, 1)`:
+
+    .. math::
+
+        \\mathrm{SubspaceRY}(\\theta, (0, 1))\\big|_{d=3} = \\begin{pmatrix}
+        \\cos\\frac{\\theta}{2} & -\\sin\\frac{\\theta}{2} & 0 \\\\
+        \\sin\\frac{\\theta}{2} & \\cos\\frac{\\theta}{2} & 0 \\\\
+        0 & 0 & 1
+        \\end{pmatrix}
 
     Attributes:
         theta: Rotation angle in radians.
@@ -244,8 +323,26 @@ class SubspaceRY(Operation):
 @dataclass(frozen=True)
 class SubspaceRZ(Operation):
     """Rotation around Z embedded in a 2-level subspace of a d-level qudit,
-    identity on the complementary levels. subspace[0] plays the |0> role,
-    subspace[1] the |1> role. Reduces to RZ(theta) at dim=2, subspace=(0,1).
+    identity on the complementary levels. subspace[0] plays the ``|0>`` role,
+    subspace[1] the ``|1>`` role. Reduces to RZ(theta) at dim=2, subspace=(0,1).
+
+    .. math::
+
+        \\mathrm{SubspaceRZ}(\\theta, (j, k)) : \\begin{cases}
+        |j\\rangle \\mapsto e^{-i\\theta/2}|j\\rangle \\\\
+        |k\\rangle \\mapsto e^{i\\theta/2}|k\\rangle \\\\
+        |m\\rangle \\mapsto |m\\rangle & (m \\neq j, k)
+        \\end{cases}
+
+    For example, at :math:`d = 3, (j, k) = (0, 1)`:
+
+    .. math::
+
+        \\mathrm{SubspaceRZ}(\\theta, (0, 1))\\big|_{d=3} = \\begin{pmatrix}
+        e^{-i\\theta/2} & 0 & 0 \\\\
+        0 & e^{i\\theta/2} & 0 \\\\
+        0 & 0 & 1
+        \\end{pmatrix}
 
     Attributes:
         theta: Rotation angle in radians.
@@ -277,10 +374,24 @@ class SubspaceRZ(Operation):
 @dataclass(frozen=True)
 class CClock(Operation):
     """Generalized controlled-phase: applies Clock(i*power) to the target
-    when the control is |i>. targets = (control, target); operand 0 is the
+    when the control is ``|i>``. targets = (control, target); operand 0 is the
     control. Unlike Sum, does not require equal control/target dimensions.
     power is reduced modulo the target dimension at lowering (a cyclic
     count, like Clock's power). Reduces to CZ at dim=2, power=1.
+
+    .. math::
+
+        C\\text{-}\\mathrm{Clock}(p) : |i, j\\rangle \\mapsto
+        \\omega^{ipj} |i, j\\rangle, \\quad \\omega = e^{2\\pi i/d_t}
+
+    where :math:`d_t` is the target dimension. At its smallest dimension,
+    :math:`d_c = d_t = 2, p = 1`, this reduces to exactly :class:`CZGate`:
+
+    .. math::
+
+        C\\text{-}\\mathrm{Clock}(1)\\big|_{d=2} = \\begin{pmatrix}
+        1&0&0&0\\\\ 0&1&0&0\\\\ 0&0&1&0\\\\ 0&0&0&-1
+        \\end{pmatrix}
 
     Attributes:
         power: Phase power (reduced modulo the target dimension at lowering).

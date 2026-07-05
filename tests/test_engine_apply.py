@@ -3,7 +3,8 @@
 import numpy as np
 
 from qnsim.backends.engine import StateVectorEngine, _apply_matrix
-from qnsim.implementation import ApplyMatrixStep, shift_matrix
+from qnsim.implementation import ApplyMatrixStep
+from qnsim.implementation.matrices import shift_matrix
 
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)

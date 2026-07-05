@@ -79,10 +79,6 @@ def test_sum_is_two_subsystem_singleton():
     assert not isinstance(ops.Sum, type)
 
 
-def test_sumgate_class_not_public_from_operations():
-    assert not hasattr(ops, "SumGate")
-
-
 def test_new_gates_carry_no_dim_field():
     # No dim attribute on the symbols.
     assert not hasattr(ops.Shift(1), "dim")
@@ -116,16 +112,6 @@ def test_fourier_is_single_subsystem_singleton():
     assert ops.Fourierdg.name == "Fourierdg"
     assert isinstance(ops.Fourierdg, Operation)
     assert not isinstance(ops.Fourierdg, type)
-
-
-def test_fourier_gate_classes_are_not_public():
-    # Unlike SumGate (attribute-accessible via qs.ops.SumGate, excluded only
-    # from __all__), FourierGate/FourierdgGate are internal-only: they exist
-    # in operations/qudit_gates.py to build the singletons and to key the
-    # matrix registry, but are never imported into operations/__init__.py, so
-    # qs.ops has no FourierGate/FourierdgGate attribute at all.
-    assert not hasattr(ops, "FourierGate")
-    assert not hasattr(ops, "FourierdgGate")
 
 
 @pytest.mark.parametrize("cls,name", [

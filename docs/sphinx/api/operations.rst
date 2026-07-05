@@ -58,8 +58,10 @@ Multi-qubit fixed gates
 Dimension-generic (qudit) gates
 ---------------------------------
 
-``Shift`` and ``Clock`` are exported as classes (parameterized by
-``power``); ``Sum`` takes no parameters and is exported as a singleton.
+``Shift``, ``Clock``, ``SwapLevels``, ``SubspaceRX``, ``SubspaceRY``,
+``SubspaceRZ``, and ``CClock`` are exported as classes and must be
+instantiated with their parameters; ``Sum``, ``Fourier``, and ``Fourierdg``
+take no parameters and are exported as singletons.
 
 .. autoclass:: qnsim.operations.Shift
    :members:
@@ -68,6 +70,23 @@ Dimension-generic (qudit) gates
    :members:
    :show-inheritance:
 .. autodata:: qnsim.operations.Sum
+.. autoclass:: qnsim.operations.SwapLevels
+   :members:
+   :show-inheritance:
+.. autodata:: qnsim.operations.Fourier
+.. autodata:: qnsim.operations.Fourierdg
+.. autoclass:: qnsim.operations.SubspaceRX
+   :members:
+   :show-inheritance:
+.. autoclass:: qnsim.operations.SubspaceRY
+   :members:
+   :show-inheritance:
+.. autoclass:: qnsim.operations.SubspaceRZ
+   :members:
+   :show-inheritance:
+.. autoclass:: qnsim.operations.CClock
+   :members:
+   :show-inheritance:
 
 Reset
 ------
