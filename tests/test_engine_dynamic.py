@@ -1,6 +1,6 @@
 import numpy as np
 
-from qnsim.engine import StateVectorEngine
+from qnsim.backends.engine import StateVectorEngine
 from qnsim.implementation import ApplyMatrixStep
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)

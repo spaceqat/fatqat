@@ -1,19 +1,20 @@
-"""Class-keyed matrix implementations and the flat payload the engine consumes.
+"""Matrix-implementation abstraction: the rule protocol, its wrappers, and the
+class-keyed registry, plus the flat payload the engine consumes.
 
 A matrix implementation maps an operation to its local matrix (physics only).
 The backend pairs that matrix with layout-resolved target indices to build an
 ``ApplyMatrixStep`` — the plain data container the statevector engine reads
 directly.
 
-Local matrix convention (binding for every entry in this module):
+Local matrix convention (binding for every entry in this package):
     - ``AppliedOperation.targets`` operand order defines the local
       tensor-factor order; ``targets[0]`` is the local most-significant bit
       (MSB), ``targets[-1]`` the local least-significant bit (LSB). See
       ``engine._apply_matrix`` for the little-endian contraction this feeds.
-    - For every controlled gate below (``CX``, ``CZ``, ``CY``, and the
-      controlled gates added in later batches), the control operand(s) come
-      first and the target operand(s) come last — operand 0 (and operand 1
-      for doubly-controlled gates) is the control, occupying the local MSB
+    - For every controlled gate (``CX``, ``CZ``, ``CY``, and the controlled
+      gates added in later batches), the control operand(s) come first and the
+      target operand(s) come last — operand 0 (and operand 1 for
+      doubly-controlled gates) is the control, occupying the local MSB
       position(s).
 
 A matrix implementation rule receives the bare `Operation` instance that was
@@ -23,7 +24,7 @@ tuple by keyword, and returns the local matrix — never the surrounding
 happens separately, in the backend. `targets` lets a rule read
 `targets[0].register.dim` to build a dimension-dependent matrix (e.g. a
 qudit `Shift`/`Clock`/`Sum` gate); a rule whose matrix never depends on
-target dimension (every fixed qubit gate here) simply ignores the argument.
+target dimension (every fixed qubit gate) simply ignores the argument.
 """
 
 from __future__ import annotations
@@ -34,9 +35,9 @@ from typing import Callable
 
 import numpy as np
 
-from . import operations as ops
-from .operations import Operation
-from .registers import RegisterRef
+from ..operations import Operation
+from ..registers import RegisterRef
+
 
 class MatrixImplementation:
     """Base class for a matrix-family implementation rule.
@@ -149,120 +150,6 @@ class ApplyMatrixStep:
         if self.matrix.flags.writeable:
             object.__setattr__(self, "matrix", np.array(self.matrix, copy=True))
         self.matrix.flags.writeable = False
-
-
-def shift_matrix(dim: int, power: int) -> np.ndarray:
-    """Generalized-Pauli shift: ``|k> -> |(k + power) mod dim>``.
-
-    Returns a ``dim x dim`` permutation matrix. ``power`` is reduced modulo
-    ``dim``, so ``shift_matrix(3, 5)`` equals ``shift_matrix(3, 2)``.
-    """
-    power %= dim
-    m = np.zeros((dim, dim), dtype=complex)
-    for k in range(dim):
-        m[(k + power) % dim, k] = 1.0
-    return m
-
-
-def clock_matrix(dim: int, power: int) -> np.ndarray:
-    """Generalized-Pauli clock: diag(omega^(k*power)), omega = e^{2πi/dim}."""
-    power %= dim
-    omega = np.exp(2j * np.pi / dim)
-    return np.diag([omega ** ((k * power) % dim) for k in range(dim)]).astype(complex)
-
-
-def sum_matrix(dims: tuple[int, ...]) -> np.ndarray:
-    """Controlled mod-d add on two equal-dimension subsystems.
-
-    Local index is ``i*d + j`` with operand 0 (control ``i``) the MSB. Maps
-    ``|i, j> -> |i, (i + j) mod d>``.
-    """
-    if len(dims) != 2 or dims[0] != dims[1]:
-        raise ValueError(
-            f"default Sum requires two equal-dimension targets, got {dims}"
-        )
-    d = dims[0]
-    m = np.zeros((d * d, d * d), dtype=complex)
-    for i in range(d):
-        for j in range(d):
-            m[i * d + (i + j) % d, i * d + j] = 1.0
-    return m
-
-
-def _shift_rule(op: "ops.Shift", targets) -> np.ndarray:
-    return shift_matrix(targets[0].register.dim, op.power)
-
-
-def _clock_rule(op: "ops.Clock", targets) -> np.ndarray:
-    return clock_matrix(targets[0].register.dim, op.power)
-
-
-# Module-level constant matrices (reused; do not rebuild per call).
-_X = np.array([[0, 1], [1, 0]], dtype=complex)
-_Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
-_Z = np.array([[1, 0], [0, -1]], dtype=complex)
-_H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
-_I = np.eye(2, dtype=complex)
-_S = np.array([[1, 0], [0, 1j]], dtype=complex)
-_SDG = np.array([[1, 0], [0, -1j]], dtype=complex)
-_T = np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]], dtype=complex)
-_TDG = np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]], dtype=complex)
-# 2-qubit fixed gates (see module docstring for the control/target convention).
-_CX = np.array(
-    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=complex
-)
-_CZ = np.diag([1, 1, 1, -1]).astype(complex)
-_SWAP = np.array(
-    [[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=complex
-)
-_CY = np.array(
-    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]], dtype=complex
-)
-_CS = np.diag([1, 1, 1, 1j]).astype(complex)
-_ISWAP = np.array(
-    [[1, 0, 0, 0], [0, 0, 1j, 0], [0, 1j, 0, 0], [0, 0, 0, 1]], dtype=complex
-)
-# 3-qubit fixed gates. Basis index bits are (operand0, operand1, operand2)
-# from MSB to LSB, matching the control-first convention above.
-_CCX = np.eye(8, dtype=complex)
-_CCX[[6, 7]] = _CCX[[7, 6]]  # swap |110> <-> |111>: flip target iff both controls=1
-
-_CSWAP = np.eye(8, dtype=complex)
-_CSWAP[[5, 6]] = _CSWAP[[6, 5]]  # swap |101> <-> |110>: exchange targets iff control=1
-
-
-def _rx(op: ops.RX) -> np.ndarray:
-    """Build the RX matrix from the operation's angle."""
-    theta = op.theta
-    c, s = np.cos(theta / 2), np.sin(theta / 2)
-    return np.array([[c, -1j * s], [-1j * s, c]], dtype=complex)
-
-
-def _ry(op: ops.RY) -> np.ndarray:
-    """Build the RY matrix from the operation's angle."""
-    theta = op.theta
-    c, s = np.cos(theta / 2), np.sin(theta / 2)
-    return np.array([[c, -s], [s, c]], dtype=complex)
-
-
-def _rz(op: ops.RZ) -> np.ndarray:
-    """Build the RZ matrix from the operation's angle."""
-    theta = op.theta
-    return np.array(
-        [[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=complex
-    )
-
-
-def _phase(op: ops.Phase) -> np.ndarray:
-    """Build the Phase matrix from the operation's angle."""
-    theta = op.theta
-    return np.array([[1, 0], [0, np.exp(1j * theta)]], dtype=complex)
-
-
-def _cphase(op: ops.CPhase) -> np.ndarray:
-    """Build the CPhase matrix from the operation's angle."""
-    theta = op.theta
-    return np.diag([1, 1, 1, np.exp(1j * theta)]).astype(complex)
 
 
 def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]:
@@ -437,34 +324,3 @@ class MatrixImplementationMap:
         clone = MatrixImplementationMap()
         clone._rules = dict(self._rules)
         return clone
-
-
-def default_implementation_map() -> MatrixImplementationMap:
-    """Build the default matrix implementation map."""
-    m = MatrixImplementationMap()
-    m.register(ops.XGate, FixedMatrix(_X))
-    m.register(ops.YGate, FixedMatrix(_Y))
-    m.register(ops.ZGate, FixedMatrix(_Z))
-    m.register(ops.HGate, FixedMatrix(_H))
-    m.register(ops.IGate, FixedMatrix(_I))
-    m.register(ops.SGate, FixedMatrix(_S))
-    m.register(ops.SdgGate, FixedMatrix(_SDG))
-    m.register(ops.TGate, FixedMatrix(_T))
-    m.register(ops.TdgGate, FixedMatrix(_TDG))
-    m.register(ops.CXGate, FixedMatrix(_CX))
-    m.register(ops.CZGate, FixedMatrix(_CZ))
-    m.register(ops.SwapGate, FixedMatrix(_SWAP))
-    m.register(ops.CYGate, FixedMatrix(_CY))
-    m.register(ops.CSGate, FixedMatrix(_CS))
-    m.register(ops.iSwapGate, FixedMatrix(_ISWAP))
-    m.register(ops.CCXGate, FixedMatrix(_CCX))
-    m.register(ops.CSwapGate, FixedMatrix(_CSWAP))
-    m.register(ops.RX, _rx)
-    m.register(ops.RY, _ry)
-    m.register(ops.RZ, _rz)
-    m.register(ops.Phase, _phase)
-    m.register(ops.CPhase, _cphase)
-    m.register(ops.Shift, _shift_rule)
-    m.register(ops.Clock, _clock_rule)
-    m.register(ops.SumGate, _DimMatrix(sum_matrix))
-    return m

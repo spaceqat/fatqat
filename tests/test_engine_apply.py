@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from qnsim.engine import StateVectorEngine, _apply_matrix
+from qnsim.backends.engine import StateVectorEngine, _apply_matrix
 from qnsim.implementation import ApplyMatrixStep, shift_matrix
 
 

@@ -2,7 +2,8 @@
 
 import pytest
 
-from qnsim.program import Program, Measurement
+from qnsim.program import Program
+from qnsim.operations import Measurement
 from qnsim import operations as ops
 from qnsim.registers import QuantumRegister, ClassicalRegister
 

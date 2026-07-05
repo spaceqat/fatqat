@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from qnsim.engine import StateVectorEngine, _collapse_state
+from qnsim.backends.engine import StateVectorEngine, _collapse_state
 from qnsim.implementation import ApplyMatrixStep
 
 

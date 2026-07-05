@@ -4,7 +4,8 @@ import pytest
 
 from qnsim.registers import QuantumRegister, ClassicalRegister
 from qnsim import operations as ops
-from qnsim.program import AppliedOperation, Measurement
+from qnsim.operations import Measurement
+from qnsim.program import AppliedOperation
 
 
 def test_applied_operation_accepts_correct_arity():

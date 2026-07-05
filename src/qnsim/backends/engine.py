@@ -14,7 +14,7 @@ from math import prod
 
 import numpy as np
 
-from .implementation import ApplyMatrixStep, shift_matrix
+from ..implementation import ApplyMatrixStep, shift_matrix
 
 
 class StateVectorEngine:

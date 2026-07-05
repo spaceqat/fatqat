@@ -4,7 +4,8 @@ from . import backends
 from . import errors
 from . import operations as ops
 from .job import Job
-from .program import AppliedOperation, Measurement, Program
+from .operations import Measurement
+from .program import AppliedOperation, Program
 from .registers import (
     ClassicalRegister,
     QuantumRegister,
