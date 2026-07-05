@@ -12,11 +12,11 @@ from qnsim.backends import (
 
 def test_backend_accepts_known_options():
     backend = StateVectorBackend(
-        options={"max_workers": 1, "parallel_backend": "serial"}
+        options={"max_workers": 1, "parallel_mode": "serial"}
     )
 
     assert backend._config.max_workers == 1
-    assert backend._config.parallel_backend == "serial"
+    assert backend._config.parallel_mode == "serial"
 
 
 def test_backend_warns_and_ignores_unknown_options():
@@ -24,7 +24,7 @@ def test_backend_warns_and_ignores_unknown_options():
         backend = StateVectorBackend(options={"gpu": True, "foo": 3})
 
     assert backend._config.max_workers is None
-    assert backend._config.parallel_backend == "auto"
+    assert backend._config.parallel_mode == "auto"
 
 
 def test_serial_backend_option_runs_dynamic_program():
@@ -34,7 +34,7 @@ def test_serial_backend_option_runs_dynamic_program():
     p.add(qs.ops.Reset, 0)
 
     counts = (
-        StateVectorBackend(options={"max_workers": 4, "parallel_backend": "serial"})
+        StateVectorBackend(options={"max_workers": 4, "parallel_mode": "serial"})
         .run(p, shots=16, seed=123)
         .result()
         .get_counts()
@@ -45,7 +45,7 @@ def test_serial_backend_option_runs_dynamic_program():
 
 def test_planned_workers_disables_parallel_serial_backend():
     workers = _planned_workers(
-        _BackendConfig(max_workers=4, parallel_backend="serial"),
+        _BackendConfig(max_workers=4, parallel_mode="serial"),
         _ResultRequest(counts=True, statevector=False),
         n_iters=16,
     )
@@ -55,7 +55,7 @@ def test_planned_workers_disables_parallel_serial_backend():
 
 def test_planned_workers_clamps_explicit_workers_to_iterations():
     workers = _planned_workers(
-        _BackendConfig(max_workers=8, parallel_backend="multiprocessing"),
+        _BackendConfig(max_workers=8, parallel_mode="multiprocessing"),
         _ResultRequest(counts=True, statevector=False),
         n_iters=3,
     )

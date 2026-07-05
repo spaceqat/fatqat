@@ -142,6 +142,12 @@ class ApplyMatrixStep:
     def __post_init__(self) -> None:
         # The engine consumes the matrix read-only; lock it so this frozen
         # dataclass is truly immutable (Python cannot freeze array contents).
+        # A rule may hand back a shared/cached array (a `FixedMatrix` copies,
+        # but a bare callable need not), so copy before freezing when the array
+        # is still writeable - freezing in place would mutate the rule's own
+        # object as a side effect. An already read-only array is left as-is.
+        if self.matrix.flags.writeable:
+            object.__setattr__(self, "matrix", np.array(self.matrix, copy=True))
         self.matrix.flags.writeable = False
 
 
@@ -277,19 +283,17 @@ def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]
 def _require_fixed_arity(op_cls: type[Operation]) -> None:
     """Raise `TypeError` if `op_cls` has variable arity (`_num_subsystems is None`).
 
-    A matrix map rule receives only the bare `Operation` instance, never the
-    application's target count, so there is no way for a rule to know what
-    size matrix to build for a variable-arity operation. Such operations are
-    out of scope for this registry.
+    This is a deliberate scope policy, not a technical limit: rules do receive
+    `targets` and could in principle size a matrix from `len(targets)`. But a
+    variable-arity operation has no single canonical matrix shape to validate
+    a rule's output against, so it stays out of scope for this registry unless
+    a concrete variadic-matrix gate need appears.
     """
     if op_cls._num_subsystems is None:
         raise TypeError(
             f"{op_cls.__name__} has variable arity (_num_subsystems is None); "
             "the matrix implementation map only supports fixed-arity operations"
         )
-
-
-_ARITY_CHECK_SENTINEL = object()
 
 
 def _callable_wants_targets(rule: Callable) -> bool:
@@ -300,8 +304,7 @@ def _callable_wants_targets(rule: Callable) -> bool:
     `targets=` keyword regardless. If the signature cannot be introspected
     (`inspect.signature` can raise `ValueError` or `TypeError` for some
     C-implemented or otherwise uninspectable callables), the callable is
-    conservatively treated as not wanting `targets` — `_check_callable_arity`
-    makes the same best-effort trade-off for the op-only shape.
+    conservatively treated as not wanting `targets` and called as `rule(op)`.
     """
     try:
         params = inspect.signature(rule).parameters
@@ -325,40 +328,6 @@ class _CallableMatrixImplementation(MatrixImplementation):
         return self._func(op)
 
 
-def _check_callable_arity(
-    op_cls: type[Operation], rule: Callable, wants_targets: bool
-) -> None:
-    """Raise `TypeError` if `rule` cannot be called in its detected shape.
-
-    Uses `inspect.signature(rule).bind(...)` rather than counting parameters:
-    this accepts a `*args`-only callable or one with an optional extra
-    parameter (a slot is enough) and rejects a required parameter that
-    cannot be satisfied, matching what the rule will actually be called with
-    at resolution time — `rule(op)` if `wants_targets` is `False`, or
-    `rule(op, targets=targets)` if it is `True`. If the signature cannot be
-    introspected at all (`inspect.signature` can raise either `ValueError`
-    or `TypeError` for some C-implemented or otherwise uninspectable
-    callables — a different `TypeError` than the one this function itself
-    raises below for a genuine arity mismatch), the check is skipped and the
-    callable is accepted — this is a best-effort early warning, not a hard
-    gate.
-    """
-    try:
-        signature = inspect.signature(rule)
-    except (ValueError, TypeError):
-        return
-    try:
-        if wants_targets:
-            signature.bind(_ARITY_CHECK_SENTINEL, targets=())
-        else:
-            signature.bind(_ARITY_CHECK_SENTINEL)
-    except TypeError:
-        raise TypeError(
-            f"rule for {op_cls.__name__} must accept (op) or (op, targets), "
-            f"got signature {signature}"
-        ) from None
-
-
 def _wrap_rule(
     op_cls: type[Operation],
     rule: "MatrixImplementation | Callable | np.ndarray",
@@ -369,16 +338,20 @@ def _wrap_rule(
     `FixedMatrix` or `_DimMatrix`), a plain `np.ndarray` (wrapped in
     `FixedMatrix`, which only requires it be square with side length >= 2 —
     see `_validate_square_matrix`), or a bare `f(op)`/`f(op, targets)`
-    callable (arity-checked and wrapped). Every stored rule is a
-    `MatrixImplementation` instance, so `get()` always returns a uniform type
-    regardless of how the rule was registered.
+    callable (wrapped). Every stored rule is a `MatrixImplementation`
+    instance, so `get()` always returns a uniform type regardless of how the
+    rule was registered.
+
+    A callable is not arity-checked at registration: a rule that cannot be
+    called in its detected `f(op)`/`f(op, targets)` shape raises the first
+    time it is used, where the backend wraps it in a `MatrixImplementationError`
+    naming the operation. Registration only distinguishes the two shapes (via
+    `_callable_wants_targets`) so the call site passes `targets=` iff wanted.
 
     Raises:
         TypeError: If `rule` is none of the above (e.g. a string or a plain
             object) — checked explicitly here so the error names the
-            operation and the bad value, rather than surfacing whatever raw
-            `TypeError` `inspect.signature` happens to raise for a
-            non-callable.
+            operation and the bad value.
     """
     if isinstance(rule, MatrixImplementation):
         return rule
@@ -389,9 +362,7 @@ def _wrap_rule(
             f"rule for {op_cls.__name__} must be a MatrixImplementation, "
             f"np.ndarray, or callable, got {rule!r}"
         )
-    wants_targets = _callable_wants_targets(rule)
-    _check_callable_arity(op_cls, rule, wants_targets)
-    return _CallableMatrixImplementation(rule, wants_targets)
+    return _CallableMatrixImplementation(rule, _callable_wants_targets(rule))
 
 
 class MatrixImplementationMap:
@@ -421,9 +392,9 @@ class MatrixImplementationMap:
 
         Raises:
             TypeError: If `op` is neither an `Operation` instance nor
-                subclass; if its operation class has variable arity; or if a
-                bare callable cannot be called in its detected `f(op)` or
-                `f(op, targets)` shape.
+                subclass, or if its operation class has variable arity. A bare
+                callable of the wrong shape is not rejected here; it fails on
+                first use (see `_wrap_rule`).
             ValueError: If a bare `np.ndarray` is not square with side
                 length >= 2.
         """

@@ -235,27 +235,19 @@ def test_register_accepts_valid_callable_signatures(rule):
     assert np.allclose(wrapped(ops.RX(0.3), targets=()), np.eye(2))
 
 
-def _rejects_zero_args():
+def _wrong_shape_zero_args():
     return np.eye(2, dtype=complex)
 
 
-def _rejects_two_required(op, extra):
-    return np.eye(2, dtype=complex)
-
-
-def _rejects_keyword_only(*, theta):
-    return np.eye(2, dtype=complex)
-
-
-@pytest.mark.parametrize("rule", [
-    _rejects_zero_args,
-    _rejects_two_required,
-    _rejects_keyword_only,
-], ids=["zero_args", "two_required", "keyword_only"])
-def test_register_rejects_invalid_callable_signatures(rule):
+def test_wrong_shape_callable_fails_at_use_not_registration():
+    # register() no longer arity-checks callables; a wrong-shape rule registers
+    # cleanly and instead fails the first time it is invoked (where the backend
+    # wraps it in a MatrixImplementationError). Here we invoke the wrapped rule
+    # directly and expect the raw call-time TypeError.
     m = MatrixImplementationMap()
-    with pytest.raises(TypeError, match="must accept"):
-        m.register(ops.RX, rule)
+    m.register(ops.RX, _wrong_shape_zero_args)  # accepted at registration
+    with pytest.raises(TypeError):
+        m.get(ops.RX)(ops.RX(0.3), targets=())
 
 
 def test_register_rejects_non_callable_non_ndarray_rule():

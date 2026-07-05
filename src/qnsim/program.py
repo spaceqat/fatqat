@@ -72,7 +72,10 @@ class Measurement:
     already guarantees well-formed `RegisterRef` tuples of the right register
     kind via `_resolve_qubit`/`_resolve_clbit`. Constructing this class
     directly skips that guarantee - see `AppliedOperation` for the same
-    tradeoff and its consequences.
+    tradeoff and its consequences. It does, however, own the structural
+    invariants that hold for any well-typed refs - equal length, non-empty,
+    and per-pair quantum/classical dimension match - so those are checked once
+    here and not duplicated in `add_measurement`/`measure_all`.
 
     Attributes:
         qreg: Quantum register references to measure, stored as a tuple.
@@ -87,6 +90,12 @@ class Measurement:
             raise ValueError("measurement qreg and clreg must have the same number of entries")
         if len(self.qreg) < 1:
             raise ValueError("measurement requires at least one qreg/clreg pair")
+        for pos, (q, c) in enumerate(zip(self.qreg, self.clreg)):
+            if q.register.dim != c.register.dim:
+                raise ValueError(
+                    f"measurement operand {pos}: quantum dim {q.register.dim} "
+                    f"!= classical dim {c.register.dim}"
+                )
 
 
 class Program:
@@ -278,7 +287,15 @@ class Program:
         terms = condition if isinstance(condition[0], tuple) else (condition,)
         normalized: list[ConditionTerm] = []
         for slot, literal in terms:
-            ref = self._resolve_conditional_slot(slot)
+            ref = self._resolve_clbit(slot)
+            # bool is deliberately accepted here (not just tolerated): a
+            # condition literal is itself boolean in spirit for a dim=2 clbit,
+            # so `condition=(c, True)` is a legitimate spelling of `(c, 1)`,
+            # unlike the strict int-only fields elsewhere (size, dim, index).
+            if not isinstance(literal, int):
+                raise TypeError(
+                    f"condition literal must be int, got {type(literal).__name__!r}"
+                )
             value = int(literal)
             if not 0 <= value < ref.register.dim:
                 raise ValueError(
@@ -287,16 +304,6 @@ class Program:
                 )
             normalized.append((ref, value))
         return tuple(normalized)
-
-    def _resolve_conditional_slot(self, slot: int | RegisterRef) -> RegisterRef:
-        """Resolve a condition slot and require it to reference a clbit."""
-        if isinstance(slot, RegisterRef):
-            if not isinstance(slot.register, ClassicalRegister):
-                raise TypeError("condition slot ref must reference a ClassicalRegister")
-            if not any(slot.register is r for r in self.creg):
-                raise ValueError("condition slot ref not in this program")
-            return slot
-        return self._resolve_clbit(slot)
 
     def add_measurement(
         self,
@@ -337,20 +344,10 @@ class Program:
         """
         q_operands = qreg if isinstance(qreg, tuple) else (qreg,)
         c_operands = clreg if isinstance(clreg, tuple) else (clreg,)
-        if len(q_operands) != len(c_operands):
-            raise ValueError(
-                "measurement requires the same number of quantum and classical operands"
-            )
-        if len(q_operands) < 1:
-            raise ValueError("measurement requires at least one qreg/clreg pair")
         qs = tuple(self._resolve_qubit(q) for q in q_operands)
         cs = tuple(self._resolve_clbit(c) for c in c_operands)
-        for pos, (q, c) in enumerate(zip(qs, cs)):
-            if q.register.dim != c.register.dim:
-                raise ValueError(
-                    f"measurement operand {pos}: quantum dim {q.register.dim} "
-                    f"!= classical dim {c.register.dim}"
-                )
+        # Length, non-empty, and per-pair dim invariants are enforced once in
+        # Measurement.__post_init__.
         self._operations.append(Measurement(qreg=qs, clreg=cs))
         self._operations_view = None
 
@@ -363,12 +360,8 @@ class Program:
         """
         qubits = tuple(ref for reg in self.qreg for ref in (reg[i] for i in range(reg.size)))
         clbits = tuple(ref for reg in self.creg for ref in (reg[i] for i in range(reg.size)))
-        if len(qubits) != len(clbits):
-            raise ValueError(
-                "measure_all requires the same number of qubits and classical bits"
-            )
-        if len(qubits) < 1:
-            raise ValueError("measure_all requires at least one qubit and one clbit")
+        # Equal-count and non-empty invariants are enforced once in
+        # Measurement.__post_init__, reached through add_measurement.
         self.add_measurement(qubits, clbits)
 
     def copy(self) -> "Program":

@@ -85,3 +85,18 @@ def test_dim2_condition_literal_two_still_rejected():
     p = Program(2, 2)
     with pytest.raises(ValueError):
         p.add(ops.X, 0, condition=(0, 2))
+
+
+def test_condition_literal_accepts_bool_as_int():
+    # Deliberate: a condition literal is boolean in spirit for a dim=2 clbit,
+    # so True/False are legitimate spellings of 1/0, unlike the strict
+    # int-only fields elsewhere (register size, dim, index).
+    p = Program(2, 2)
+    p.add(ops.X, 0, condition=(0, True))
+    assert p.operations[0].condition == ((p.creg[0][0], 1),)
+
+
+def test_condition_literal_rejects_non_int():
+    p = Program(2, 2)
+    with pytest.raises(TypeError, match="condition literal must be int"):
+        p.add(ops.X, 0, condition=(0, 1.5))

@@ -30,7 +30,7 @@ def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
     program.measure_all()
 
     result = qs.StateVectorBackend(
-        options={"max_workers": 2, "parallel_backend": "multiprocessing"}
+        options={"max_workers": 2, "parallel_mode": "multiprocessing"}
     ).run(
         program,
         shots=12,

@@ -40,12 +40,6 @@ class MeasurementStep:
     measured_indices: tuple[int, ...]
     classical_indices: tuple[int, ...]
 
-    def __post_init__(self) -> None:
-        if len(self.measured_indices) != len(self.classical_indices):
-            raise ValueError("measurement step indices must have equal length")
-        if len(self.measured_indices) < 1:
-            raise ValueError("measurement step requires at least one index")
-
 
 @dataclass(frozen=True)
 class ResetStep:
@@ -59,17 +53,19 @@ class ResetStep:
     reset_indices: tuple[int, ...]
     condition: tuple[tuple[int, int], ...] | None = None
 
-    def __post_init__(self) -> None:
-        if len(self.reset_indices) < 1:
-            raise ValueError("reset step requires at least one index")
-
 
 ResolvedStep = ApplyMatrixStep | MeasurementStep | ResetStep
 
 
 @dataclass(frozen=True)
 class _PlanFacts:
-    """Classification facts computed while lowering a program."""
+    """Classification facts computed while lowering a program.
+
+    `is_dynamic` picks the execution strategy (per-shot loop vs. one-shot
+    evolve-then-sample); it is true for a condition, reset, or measurement.
+    This is a different axis from `stochastic` (see `_resolve_result_request`)
+    - a condition-only program is dynamic but not stochastic.
+    """
 
     is_dynamic: bool
     has_measurement: bool
@@ -84,12 +80,31 @@ class _ResultRequest:
     statevector: bool
 
 
+_PARALLEL_MODE_NAMES = frozenset({"auto", "serial", "multiprocessing", "loky"})
+
+
 @dataclass(frozen=True)
 class _BackendConfig:
-    """Normalized backend execution-strategy options."""
+    """Normalized backend execution-strategy options.
+
+    Option *values* are validated here, at construction, so an invalid
+    `max_workers` or `parallel_mode` fails from `StateVectorBackend(...)`
+    rather than being deferred to a run and swallowed into a failed `Job`.
+    """
 
     max_workers: Any = None
-    parallel_backend: Any = "auto"
+    parallel_mode: Any = "auto"
+
+    def __post_init__(self) -> None:
+        mw = self.max_workers
+        if mw is not None and (type(mw) is not int or mw < 1):
+            raise BackendValidationError(
+                f"max_workers must be a positive int or None, got {mw!r}"
+            )
+        if self.parallel_mode not in _PARALLEL_MODE_NAMES:
+            raise BackendValidationError(
+                f"unsupported parallel_mode={self.parallel_mode!r}"
+            )
 
 
 def _normalize_dict_options(
@@ -132,7 +147,9 @@ def _resolve_condition(
     """Lower a frontend condition to ``(clbit_index, value)`` AND-terms."""
     if condition is None:
         return None
-    return tuple((layout.clbit_index(ref), int(val)) for ref, val in condition)
+    # `val` is already an int (Program._normalize_condition guarantees it); no
+    # re-coercion here.
+    return tuple((layout.clbit_index(ref), val) for ref, val in condition)
 
 
 def _condition_matches(
@@ -206,7 +223,7 @@ def _planned_workers(
         return None
     if n_iters <= 1:
         return None
-    if config.parallel_backend == "serial":
+    if config.parallel_mode == "serial":
         return None
     if config.max_workers is None and n_iters < _PARALLEL_MIN_SHOTS:
         # Automatic mode stays serial for small runs; explicit max_workers wins.
@@ -215,12 +232,15 @@ def _planned_workers(
     return workers if workers > 1 else None
 
 
-def _resolve_parallel_backend_name(name: object) -> str:
+def _resolve_parallel_mode_name(name: str) -> str:
+    """Resolve `"auto"` to a concrete backend; other names are passed through.
+
+    `name` is already one of the validated `_PARALLEL_MODE_NAMES` (checked
+    in `_BackendConfig.__post_init__`), so this only expands `"auto"`.
+    """
     if name == "auto":
         return "loky" if _loky_available() else "multiprocessing"
-    if name in {"serial", "multiprocessing", "loky"}:
-        return str(name)
-    raise BackendValidationError(f"unsupported parallel_backend={name!r}")
+    return name
 
 
 def _split_into_batches(
@@ -317,30 +337,29 @@ def _run_dynamic_shots_parallel(
     than recomputed here, so there is exactly one source of truth for the
     parallel/serial decision.
     """
-    backend_name = _resolve_parallel_backend_name(config.parallel_backend)
-    if backend_name == "multiprocessing":
-        return _run_dynamic_shots_multiprocessing(
-            plan, system_dims, n_clbits, seed_sequences, max_workers
-        )
-    if backend_name == "loky":
-        if not _loky_available():
-            warnings.warn(
-                "parallel_backend='loky' requested but loky is unavailable; "
-                "falling back to multiprocessing",
-                UserWarning,
-                stacklevel=3,
-            )
-            return _run_dynamic_shots_multiprocessing(
+    mode_name = _resolve_parallel_mode_name(config.parallel_mode)
+    if mode_name == "loky":
+        if _loky_available():
+            return _run_dynamic_shots_loky(
                 plan, system_dims, n_clbits, seed_sequences, max_workers
             )
-        return _run_dynamic_shots_loky(
-            plan, system_dims, n_clbits, seed_sequences, max_workers
+        warnings.warn(
+            "parallel_mode='loky' requested but loky is unavailable; "
+            "falling back to multiprocessing",
+            UserWarning,
+            stacklevel=3,
         )
-    raise BackendValidationError(f"unsupported parallel_backend={backend_name!r}")
+    # "multiprocessing", plus the loky-unavailable fallback above.
+    return _run_dynamic_shots_multiprocessing(
+        plan, system_dims, n_clbits, seed_sequences, max_workers
+    )
 
 
 def _resolve_result_request(config: _ResultConfig, facts: _PlanFacts) -> _ResultRequest:
     """Resolve default result fields from config and lowered program facts."""
+    # stochastic: whether shots can actually differ from each other. Only
+    # measurement/reset can cause that; a bare condition just gates whether an
+    # operation applies, so a condition-only program is never stochastic.
     stochastic = facts.has_measurement or facts.has_reset
     counts = config.counts if config.counts is not None else facts.has_measurement
     statevector = config.statevector
@@ -370,7 +389,7 @@ class StateVectorBackend:
 
     - `max_workers`: maximum worker processes for dynamic counts parallelism.
       `None` means automatic selection.
-    - `parallel_backend`: one of `"auto"`, `"serial"`, `"multiprocessing"`,
+    - `parallel_mode`: one of `"auto"`, `"serial"`, `"multiprocessing"`,
       or `"loky"`. `"auto"` prefers `loky` when available and otherwise uses
       `multiprocessing`. `"serial"` disables process-based parallel execution.
 
@@ -387,7 +406,7 @@ class StateVectorBackend:
 
         Args:
             options: Optional execution-strategy options. Supported keys are
-                `max_workers` and `parallel_backend`; unknown keys are ignored
+                `max_workers` and `parallel_mode`; unknown keys are ignored
                 with a warning. These options only affect the dynamic counts
                 path and do not change numerical semantics.
             implementation_map: Optional matrix implementation map controlling
@@ -398,7 +417,7 @@ class StateVectorBackend:
                 construction does not change this backend's behavior.
         """
         self._config = _normalize_dict_options(
-            options, {"max_workers", "parallel_backend"}, _BackendConfig, "options", "backend"
+            options, {"max_workers", "parallel_mode"}, _BackendConfig, "options", "backend"
         )
         if implementation_map is None:
             implementation_map = default_implementation_map()
@@ -587,9 +606,13 @@ class StateVectorBackend:
         supported, so they are not rejected here.
         """
         request = _resolve_result_request(config, facts)
-        stochastic = facts.has_measurement or facts.has_reset
+        stochastic = facts.has_measurement or facts.has_reset  # see _resolve_result_request
         requested_sv = config.statevector is True
 
+        # shots is only checked when the result actually depends on it: counts
+        # always sample per shot, and a stochastic statevector needs shots==1
+        # below. A non-stochastic statevector-only request ignores shots
+        # entirely (see _run_per_shot), so any value - including 0 - is fine.
         if (request.counts or (requested_sv and stochastic)) and type(shots) is not int:
             raise BackendValidationError(
                 f"shots must be an int when requested results depend on it, got {shots!r}"
@@ -723,6 +746,13 @@ class StateVectorBackend:
         run's root seed up front and in shot order. Serial execution here
         consumes the same per-shot streams that parallel execution will use,
         so results stay identical regardless of how shots are distributed.
+
+        A requested statevector forces the serial path: the exported state is
+        read off this backend's single engine after the last trajectory, which
+        worker processes do not share. Any program reaching here with a
+        statevector request is non-stochastic (measurement/reset with a
+        statevector is rejected for `shots > 1` in `_validate`), so every
+        trajectory produces the same state and the serial run stays correct.
         """
         engine = self._engine
         # Counts need one trajectory per shot; statevector-only runs need one
@@ -731,8 +761,10 @@ class StateVectorBackend:
         n_iters = shots if request.counts else (1 if request.statevector else 0)
         seed_sequences = _shot_seed_sequences(seed, n_iters)
 
-        ran_parallel = False
-        max_workers = _planned_workers(self._config, request, n_iters)
+        max_workers = (
+            None if request.statevector
+            else _planned_workers(self._config, request, n_iters)
+        )
         if max_workers is not None:
             snapshots = _run_dynamic_shots_parallel(
                 self._config,
@@ -742,7 +774,6 @@ class StateVectorBackend:
                 seed_sequences,
                 max_workers,
             )
-            ran_parallel = True
         else:
             snapshots = []
             for seed_sequence in seed_sequences:
@@ -760,10 +791,6 @@ class StateVectorBackend:
             counts = build_counts_from_clbits(snapshots, n_clbits)
             available.add("counts")
         if request.statevector:
-            if ran_parallel:
-                raise BackendValidationError(
-                    "statevector output is not available from parallel dynamic execution"
-                )
             statevector = engine.export_state()
             available.add("statevector")
 

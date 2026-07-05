@@ -38,8 +38,12 @@ class Operation:
     name: ClassVar[str] = "OP"
     _num_subsystems: ClassVar[int | None] = 1
 
-    def __post_init__(self) -> None:
-        n = type(self)._num_subsystems
+    def __init_subclass__(cls, **kwargs) -> None:
+        # Validate the arity class constant once, at class-definition time,
+        # where a bad value is actually a developer error - rather than on
+        # every instantiation of an already-correct class.
+        super().__init_subclass__(**kwargs)
+        n = cls._num_subsystems
         if n is None:
             return
         if not isinstance(n, int) or isinstance(n, bool) or n <= 0:
