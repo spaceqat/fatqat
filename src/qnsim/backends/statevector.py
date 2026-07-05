@@ -1,4 +1,4 @@
-"""Statevector backend: validate, execute, assemble Result, return Job."""
+﻿"""Statevector backend: validate, execute, assemble Result, return Job."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from ..errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from ..implementation import ApplyMatrixStep, MatrixImplementationMap, default_implementation_map
+from ..implementation import ApplyMatrixStep, MatrixImplementationMap, default_matrix_implementation_map
 from ..job import Job
 from ..layout import ResourceLayout
 from ..operations import Measurement, ResetGate
@@ -236,7 +236,7 @@ class StateVectorBackend:
             implementation_map: Optional matrix implementation map controlling
                 which operations this backend supports and how their matrices
                 are built. `None` (the default) uses
-                `default_implementation_map()`. The backend copies whatever
+                `default_matrix_implementation_map()`. The backend copies whatever
                 map it receives, so mutating the caller's map object after
                 construction does not change this backend's behavior.
         """
@@ -244,7 +244,7 @@ class StateVectorBackend:
             options, {"max_workers", "parallel_mode"}, _BackendConfig, "options", "backend"
         )
         if implementation_map is None:
-            implementation_map = default_implementation_map()
+            implementation_map = default_matrix_implementation_map()
         self._impl_map = implementation_map.copy()
         # The engine is constructed once and re-initialized per run so its
         # compiled kernels can be reused. Because it holds per-run state, a

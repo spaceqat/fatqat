@@ -1,4 +1,4 @@
-"""Class-keyed matrix implementations and the flat payload the engine consumes."""
+﻿"""Class-keyed matrix implementations and the flat payload the engine consumes."""
 
 from __future__ import annotations
 
@@ -29,14 +29,14 @@ from .matrices import (
     shift_matrix,
     sum_matrix,
 )
-from .registry import default_implementation_map
+from .registry import default_matrix_implementation_map
 
 __all__ = [
     "MatrixImplementation",
     "FixedMatrix",
     "ApplyMatrixStep",
     "MatrixImplementationMap",
-    "default_implementation_map",
+    "default_matrix_implementation_map",
     "shift_matrix",
     "clock_matrix",
     "sum_matrix",

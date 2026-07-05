@@ -1,4 +1,4 @@
-"""Default matrix implementation map: wires built-in gates to their matrices."""
+﻿"""Default matrix implementation map: wires built-in gates to their matrices."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from .matrices import (
 )
 
 
-def default_implementation_map() -> MatrixImplementationMap:
+def default_matrix_implementation_map() -> MatrixImplementationMap:
     """Build the default matrix implementation map.
 
     Registers against the public singleton instances (e.g. `ops.X`), not the

@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 import pytest
 
 import qnsim as qs
@@ -69,11 +69,11 @@ def test_backend_rejects_non_dict_options():
 
 
 def test_backend_accepts_custom_implementation_map():
-    from qnsim.implementation import default_implementation_map
+    from qnsim.implementation import default_matrix_implementation_map
 
     # Start from the defaults and override just one gate, to prove override
     # replaces one rule while the rest of the default map keeps working.
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     m.register(qs.ops.X, np.eye(2, dtype=complex))  # override X with identity
     backend = StateVectorBackend(implementation_map=m)
 
@@ -100,9 +100,9 @@ def test_backend_none_implementation_map_uses_defaults():
 
 
 def test_backend_copies_implementation_map_defensively():
-    from qnsim.implementation import default_implementation_map
+    from qnsim.implementation import default_matrix_implementation_map
 
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     backend = StateVectorBackend(implementation_map=m)
 
     m.unregister(qs.ops.X)  # mutate the caller's map after construction

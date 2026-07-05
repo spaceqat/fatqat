@@ -1,4 +1,4 @@
-"""Tests statevector backend execution, validation, repeatability, and counts."""
+﻿"""Tests statevector backend execution, validation, repeatability, and counts."""
 
 import warnings
 
@@ -14,7 +14,7 @@ from qnsim.errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from qnsim.implementation import MatrixImplementationMap, default_implementation_map
+from qnsim.implementation import MatrixImplementationMap, default_matrix_implementation_map
 from qnsim import operations as ops
 from qnsim.program import Program
 
@@ -156,7 +156,7 @@ def test_custom_operation_runs_end_to_end_via_bare_callable():
     def my_x_rule(op):
         return np.array([[0, 1], [1, 0]], dtype=complex)
 
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     m.register(MyX, my_x_rule)
     backend = StateVectorBackend(implementation_map=m)
 
@@ -173,7 +173,7 @@ def test_custom_operation_runs_end_to_end_via_bare_callable():
 
 
 def test_unregistered_gate_raises_after_unregister():
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     m.unregister(ops.T)
     backend = StateVectorBackend(implementation_map=m)
 

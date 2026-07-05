@@ -1,4 +1,4 @@
-"""Tests matrix implementation rules and immutable matrix payloads."""
+﻿"""Tests matrix implementation rules and immutable matrix payloads."""
 
 import numpy as np
 import pytest
@@ -11,7 +11,7 @@ from qnsim.implementation import (
     MatrixImplementation,
     MatrixImplementationMap,
     clock_matrix,
-    default_implementation_map,
+    default_matrix_implementation_map,
     sum_matrix,
 )
 from qnsim.registers import QuantumRegister
@@ -32,7 +32,7 @@ from qnsim.registers import QuantumRegister
     (ops.CCX, 3), (ops.CSwap, 3),
 ])
 def test_fixed_gate_is_registered_with_correct_shape(gate, n_qubits):
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     matrix = m.get(type(gate))(gate)
     dim = 2 ** n_qubits
     assert matrix.shape == (dim, dim)
@@ -43,7 +43,7 @@ def test_fixed_gate_is_registered_with_correct_shape(gate, n_qubits):
 # reads `op.theta` off the bare Operation and builds the matrix from it.
 
 def test_parametric_rx_reads_theta():
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     theta = 0.5
     rx = m.get(ops.RX)(ops.RX(theta), targets=())
     c, s = np.cos(theta / 2), np.sin(theta / 2)
@@ -51,14 +51,14 @@ def test_parametric_rx_reads_theta():
 
 
 def test_parametric_phase_reads_theta():
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     theta = 0.9
     phase = m.get(ops.Phase)(ops.Phase(theta), targets=())
     assert np.allclose(phase, [[1, 0], [0, np.exp(1j * theta)]])
 
 
 def test_parametric_cphase_reads_theta():
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     theta = 1.1
     cphase = m.get(ops.CPhase)(ops.CPhase(theta), targets=())
     assert np.allclose(cphase, np.diag([1, 1, 1, np.exp(1j * theta)]))
@@ -171,12 +171,12 @@ def test_register_rejects_variable_arity_operation(rule):
 # --- unregister -------------------------------------------------------------
 
 def test_unregister_removes_by_instance_or_class():
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     m.unregister(ops.T)
     assert m.get(ops.T) is None
     assert m.get(type(ops.T)) is None
 
-    m2 = default_implementation_map()
+    m2 = default_matrix_implementation_map()
     m2.unregister(type(ops.T))
     assert m2.get(ops.T) is None
 
@@ -277,7 +277,7 @@ def test_register_accepts_callable_when_signature_is_uninspectable(monkeypatch, 
 # --- copy -------------------------------------------------------------------
 
 def test_copy_is_independent_of_original():
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     clone = m.copy()
 
     clone.unregister(ops.X)
@@ -287,7 +287,7 @@ def test_copy_is_independent_of_original():
 
 
 def test_copy_preserves_existing_registrations():
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     clone = m.copy()
     assert clone.get(ops.X) is m.get(ops.X)
 
@@ -374,14 +374,14 @@ def test_sum_matrix_mismatched_dims_raises():
 
 
 def test_default_map_has_new_gates():
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     assert m.get(ops.Shift(1))(ops.Shift(1), targets=_qutrit_targets(1)).shape == (3, 3)
     assert m.get(ops.Clock(1))(ops.Clock(1), targets=_qutrit_targets(1)).shape == (3, 3)
     assert m.get(ops.Sum)(ops.Sum, targets=_qutrit_targets(2)).shape == (9, 9)
 
 
 def test_shift_reduces_to_x_at_dim2():
-    m = default_implementation_map()
+    m = default_matrix_implementation_map()
     qb = QuantumRegister(1, dim=2)
     got = m.get(ops.Shift(1))(ops.Shift(1), targets=(qb[0],))
     assert np.allclose(got, np.array([[0, 1], [1, 0]], dtype=complex))
