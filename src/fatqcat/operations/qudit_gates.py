@@ -76,14 +76,33 @@ class SumGate(Operation):
 
         \\mathrm{Sum} : |i, j\\rangle \\mapsto |i, (i + j) \\bmod d\\rangle
 
-    At its smallest dimension, :math:`d = 2`, this reduces to exactly
-    :class:`CXGate`:
+    For example, on two qutrits (:math:`d = 3`), the sum wraps modulo 3:
 
     .. math::
 
-        \\mathrm{Sum}\\big|_{d=2} = \\begin{pmatrix}
-        1&0&0&0\\\\ 0&1&0&0\\\\ 0&0&0&1\\\\ 0&0&1&0
+        \\mathrm{Sum} |2, 2\\rangle = |2, (2 + 2) \\bmod 3\\rangle = |2, 1\\rangle
+
+    In matrix form, ``targets = (control, target)`` puts the control on the
+    local most-significant digit, so the :math:`d = 3` matrix is block
+    diagonal, one :math:`3 \\times 3` block per control value:
+
+    .. math::
+
+        \\mathrm{Sum}\\big|_{d=3} = \\begin{pmatrix}
+        I_3 & 0 & 0 \\\\ 0 & P_1 & 0 \\\\ 0 & 0 & P_2
         \\end{pmatrix}
+
+    where :math:`P_k` is the permutation matrix that cyclically shifts the
+    target level by :math:`k \\bmod 3`:
+
+    .. math::
+
+        P_1 = \\begin{pmatrix} 0&0&1\\\\ 1&0&0\\\\ 0&1&0 \\end{pmatrix}
+        \\qquad
+        P_2 = \\begin{pmatrix} 0&1&0\\\\ 0&0&1\\\\ 1&0&0 \\end{pmatrix}
+
+    At its smallest dimension, :math:`d = 2`, this reduces to exactly
+    :class:`CXGate`.
 
     The class itself is not part of the ``fqc.ops`` public surface (not in
     ``__all__``) but stays attribute-accessible for ``isinstance`` checks;

@@ -62,21 +62,5 @@ written by a measurement, the backend still returns zero-filled counts for
 that bit but raises a {py:exc}`~fatqcat.errors.NoMeasurementWarning` —
 usually a sign a measurement was forgotten.
 
-## Advanced: qudits, custom implementations, parallel execution
-
-Everything above applies equally to qudits (registers with `dim > 2`) —
-{py:class}`~fatqcat.operations.Shift`/{py:class}`~fatqcat.operations.Clock`/
-{py:data}`~fatqcat.operations.Sum` generalize the qubit gates rather than
-requiring separate handling.
-
-{py:class}`~fatqcat.backends.StateVectorBackend`'s `implementation_map=`
-argument accepts a custom `MatrixImplementationMap` to control how
-operations are lowered to matrices, or to add support for operations the
-default map doesn't cover.
-
-For programs on the dynamic path,
-{py:class}`~fatqcat.backends.StateVectorBackend`'s `options={...}` accepts
-`max_workers` and `parallel_mode` (`"auto"`, `"serial"`,
-`"multiprocessing"`, or `"loky"`) to control whether shots are distributed
-across worker processes. This only affects execution strategy, never
-numerical results.
+For qudits, custom matrix implementations, and parallel shot execution, see
+[Advanced](advanced.md).
