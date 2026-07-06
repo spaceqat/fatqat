@@ -2,7 +2,7 @@
 
 import pytest
 
-from qnsim.registers import (
+from fatqcat.registers import (
     Register,
     QuantumRegister,
     ClassicalRegister,

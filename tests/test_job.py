@@ -2,7 +2,7 @@
 
 import pytest
 
-from qnsim.job import Job
+from fatqcat.job import Job
 
 
 def test_done_job_returns_result():

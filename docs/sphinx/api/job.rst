@@ -1,6 +1,6 @@
 Job
 ===
 
-.. autoclass:: qnsim.Job
+.. autoclass:: fatqcat.Job
    :members:
    :show-inheritance:

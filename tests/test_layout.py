@@ -2,9 +2,9 @@
 
 import pytest
 
-from qnsim.layout import ResourceLayout
-from qnsim.program import Program
-from qnsim.registers import QuantumRegister, ClassicalRegister
+from fatqcat.layout import ResourceLayout
+from fatqcat.program import Program
+from fatqcat.registers import QuantumRegister, ClassicalRegister
 
 
 def test_single_register_layout():

@@ -1,7 +1,7 @@
 """Tests Program.copy isolation behavior."""
 
-from qnsim.program import Program
-from qnsim import operations as ops
+from fatqcat.program import Program
+from fatqcat import operations as ops
 
 
 def test_copy_is_independent_for_operations():

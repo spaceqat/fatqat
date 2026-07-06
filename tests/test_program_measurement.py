@@ -2,10 +2,10 @@
 
 import pytest
 
-from qnsim.program import Program
-from qnsim.operations import Measurement
-from qnsim import operations as ops
-from qnsim.registers import QuantumRegister, ClassicalRegister
+from fatqcat.program import Program
+from fatqcat.operations import Measurement
+from fatqcat import operations as ops
+from fatqcat.registers import QuantumRegister, ClassicalRegister
 
 
 def test_add_measurement_appends_measurement():

@@ -1,7 +1,7 @@
 import numpy as np
 
-from qnsim.backends.engine import StateVectorEngine
-from qnsim.implementation import ApplyMatrixStep
+from fatqcat.backends.engine import StateVectorEngine
+from fatqcat.implementation import ApplyMatrixStep
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)

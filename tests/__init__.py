@@ -1,1 +1,1 @@
-"""Test package for qnsim."""
+"""Test package for fatqcat."""

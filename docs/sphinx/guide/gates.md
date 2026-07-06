@@ -1,10 +1,10 @@
 # Gates
 
-All gates live in the `qs.ops` namespace. The full list with signatures is
+All gates live in the `fqc.ops` namespace. The full list with signatures is
 in the [API reference](../api/operations.rst); this page covers how to use
 them.
 
-```{currentmodule} qnsim.operations
+```{currentmodule} fatqcat.operations
 ```
 
 ## Singletons vs. classes
@@ -12,21 +12,21 @@ them.
 Fixed (parameter-free) gates are exported as ready-to-use singleton values:
 
 ```python
-program.add(qs.ops.H, 0)
-program.add(qs.ops.X, 0)
+program.add(fqc.ops.H, 0)
+program.add(fqc.ops.X, 0)
 ```
 
 Parametric gates are exported as classes and must be instantiated with their
 parameter before use:
 
 ```python
-program.add(qs.ops.RX(0.2), 0)
-program.add(qs.ops.CPhase(1.5), (0, 1))
+program.add(fqc.ops.RX(0.2), 0)
+program.add(fqc.ops.CPhase(1.5), (0, 1))
 ```
 
 Passing an unparameterized class where a value is expected (e.g.
-`qs.ops.RX` instead of `qs.ops.RX(0.2)`) raises a {py:exc}`TypeError` from
-{py:meth}`~qnsim.Program.add` that names the mistake.
+`fqc.ops.RX` instead of `fqc.ops.RX(0.2)`) raises a {py:exc}`TypeError` from
+{py:meth}`~fatqcat.Program.add` that names the mistake.
 
 ## Gate categories
 
@@ -59,18 +59,18 @@ A gate's targets are passed as a single operand (one-qubit gates) or a
 tuple of operands (multi-qubit gates):
 
 ```python
-program.add(qs.ops.H, 0)              # single target
-program.add(qs.ops.CX, (0, 1))        # two targets, control first
+program.add(fqc.ops.H, 0)              # single target
+program.add(fqc.ops.CX, (0, 1))        # two targets, control first
 ```
 
 Each operand is either a bare integer or an explicit
-{py:class}`~qnsim.RegisterRef`. A bare integer is only accepted when the
+{py:class}`~fatqcat.RegisterRef`. A bare integer is only accepted when the
 program has exactly one register of the relevant kind — with multiple
 quantum registers, address a specific one explicitly:
 
 ```python
-program = qs.Program([qs.QuantumRegister(2, name="a"), qs.QuantumRegister(2, name="b")])
-program.add(qs.ops.H, program.qreg[1][0])   # qubit 0 of register "b"
+program = fqc.Program([fqc.QuantumRegister(2, name="a"), fqc.QuantumRegister(2, name="b")])
+program.add(fqc.ops.H, program.qreg[1][0])   # qubit 0 of register "b"
 ```
 
 ## Example: qudit gates on qutrits
@@ -82,19 +82,19 @@ with `SubspaceRX`, and applies a controlled phase with `CClock`:
 
 ```python
 import numpy as np
-import qnsim as qs
+import fatqcat as fqc
 
-qreg = qs.QuantumRegister(2, dim=3)   # two qutrits
-creg = qs.ClassicalRegister(2, dim=3)
-program = qs.Program([qreg], [creg])
+qreg = fqc.QuantumRegister(2, dim=3)   # two qutrits
+creg = fqc.ClassicalRegister(2, dim=3)
+program = fqc.Program([qreg], [creg])
 
-program.add(qs.ops.Fourier, 0)                    # qudit Hadamard analogue...
-program.add(qs.ops.Fourierdg, 0)                   # ...immediately undone
-program.add(qs.ops.SwapLevels(0, 2), 0)            # |0> -> |2>
-program.add(qs.ops.SubspaceRX(np.pi, (0, 2)), 0)   # |2> -> |0> (up to global phase)
-program.add(qs.ops.CClock(1), (0, 1))              # phase-only here: qubit 1 stays |0>
+program.add(fqc.ops.Fourier, 0)                    # qudit Hadamard analogue...
+program.add(fqc.ops.Fourierdg, 0)                   # ...immediately undone
+program.add(fqc.ops.SwapLevels(0, 2), 0)            # |0> -> |2>
+program.add(fqc.ops.SubspaceRX(np.pi, (0, 2)), 0)   # |2> -> |0> (up to global phase)
+program.add(fqc.ops.CClock(1), (0, 1))              # phase-only here: qubit 1 stays |0>
 program.measure_all()
 
-result = qs.backends.StateVectorBackend().run(program, shots=100).result()
+result = fqc.backends.StateVectorBackend().run(program, shots=100).result()
 print(result.get_counts_as_tuples())               # {(0, 0): 100}
 ```

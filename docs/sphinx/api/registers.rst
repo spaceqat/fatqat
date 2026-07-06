@@ -1,18 +1,18 @@
 Registers
 =========
 
-.. autoclass:: qnsim.Register
+.. autoclass:: fatqcat.Register
    :members:
    :show-inheritance:
 
-.. autoclass:: qnsim.QuantumRegister
+.. autoclass:: fatqcat.QuantumRegister
    :members:
    :show-inheritance:
 
-.. autoclass:: qnsim.ClassicalRegister
+.. autoclass:: fatqcat.ClassicalRegister
    :members:
    :show-inheritance:
 
-.. autoclass:: qnsim.RegisterRef
+.. autoclass:: fatqcat.RegisterRef
    :members:
    :show-inheritance:

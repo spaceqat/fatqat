@@ -2,8 +2,8 @@
 
 import pytest
 
-from qnsim.program import Program
-from qnsim.registers import QuantumRegister, ClassicalRegister
+from fatqcat.program import Program
+from fatqcat.registers import QuantumRegister, ClassicalRegister
 
 
 def test_int_construction_creates_default_registers():
@@ -25,7 +25,7 @@ def test_operations_tuple_view_is_cached_until_mutation():
     before = p.operations
     assert p.operations is before
 
-    from qnsim import operations as ops
+    from fatqcat import operations as ops
 
     p.add(ops.H, 0)
     after = p.operations

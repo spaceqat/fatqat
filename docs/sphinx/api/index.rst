@@ -2,7 +2,7 @@ API reference
 =============
 
 Autodoc-generated reference for every public class, function, and gate in
-``qnsim``, grouped by namespace.
+``fatqcat``, grouped by namespace.
 
 .. toctree::
    :maxdepth: 1

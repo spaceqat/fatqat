@@ -1,16 +1,16 @@
 import pytest
 
-import qnsim as qs
-from qnsim import operations as ops
-from qnsim.backends import StateVectorBackend
+import fatqcat as fqc
+from fatqcat import operations as ops
+from fatqcat.backends import StateVectorBackend
 
 
 def _random_dynamic_program():
-    p = qs.Program(2, 2)
+    p = fqc.Program(2, 2)
     p.add(ops.H, 0)
     p.add(ops.CX, (0, 1))
     p.add_measurement((0, 1), (0, 1))
-    p.add(qs.ops.Reset, (0, 1))
+    p.add(fqc.ops.Reset, (0, 1))
     return p
 
 
@@ -46,5 +46,5 @@ def test_unknown_parallel_mode_rejected_at_construction():
     # Option values are validated when the backend is constructed, so an
     # unknown parallel_mode fails fast here rather than being deferred to a
     # run and swallowed into a failed Job.
-    with pytest.raises(qs.errors.BackendValidationError, match="unsupported parallel_mode"):
+    with pytest.raises(fqc.errors.BackendValidationError, match="unsupported parallel_mode"):
         StateVectorBackend(options={"max_workers": 2, "parallel_mode": "not-a-mode"})

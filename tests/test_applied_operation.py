@@ -5,10 +5,10 @@ from typing import ClassVar
 
 import pytest
 
-from qnsim.registers import QuantumRegister, ClassicalRegister
-from qnsim import operations as ops
-from qnsim.operations import Measurement
-from qnsim.program import AppliedOperation
+from fatqcat.registers import QuantumRegister, ClassicalRegister
+from fatqcat import operations as ops
+from fatqcat.operations import Measurement
+from fatqcat.program import AppliedOperation
 
 
 def test_applied_operation_accepts_correct_arity():

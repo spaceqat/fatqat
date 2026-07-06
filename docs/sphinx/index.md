@@ -1,18 +1,18 @@
-# qnsim
+# fatqcat
 
-qnsim is a quantum simulator: build a {py:class}`~qnsim.Program` out of
+fatqcat is a quantum simulator: build a {py:class}`~fatqcat.Program` out of
 registers, gates, and measurements, run it on a backend, and read back
 counts or a statevector.
 
 ```python
-import qnsim as qs
+import fatqcat as fqc
 
-program = qs.Program(2, 2)          # 2 qubits, 2 clbits
-program.add(qs.ops.H, 0)
-program.add(qs.ops.CX, (0, 1))
+program = fqc.Program(2, 2)          # 2 qubits, 2 clbits
+program.add(fqc.ops.H, 0)
+program.add(fqc.ops.CX, (0, 1))
 program.add_measurement((0, 1), (0, 1))
 
-result = qs.backends.StateVectorBackend().run(program, shots=1000).result()
+result = fqc.backends.StateVectorBackend().run(program, shots=1000).result()
 print(result.get_counts())          # e.g. {"00": 512, "11": 488}
 ```
 
@@ -32,7 +32,7 @@ measurement/conditions, and running programs to read back results.
 :link-type: doc
 
 Autodoc-generated reference for every public class, function, and gate,
-grouped by namespace (``qs``, ``qs.ops``, ``qs.backends``, ``qs.errors``).
+grouped by namespace (``qs``, ``fqc.ops``, ``fqc.backends``, ``fqc.errors``).
 :::
 
 ::::

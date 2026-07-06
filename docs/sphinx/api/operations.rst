@@ -1,7 +1,7 @@
-Operations (``qs.ops``)
+Operations (``fqc.ops``)
 ========================
 
-.. autoclass:: qnsim.operations.Operation
+.. autoclass:: fatqcat.operations.Operation
    :members:
    :show-inheritance:
 
@@ -9,51 +9,51 @@ Single-qubit fixed gates
 ------------------------
 
 Fixed gates take no parameters and are exported as ready-to-use singleton
-values (e.g. ``qs.ops.H``, not ``qs.ops.H()``).
+values (e.g. ``fqc.ops.H``, not ``fqc.ops.H()``).
 
-.. autodata:: qnsim.operations.I
-.. autodata:: qnsim.operations.H
-.. autodata:: qnsim.operations.S
-.. autodata:: qnsim.operations.Sdg
-.. autodata:: qnsim.operations.T
-.. autodata:: qnsim.operations.Tdg
-.. autodata:: qnsim.operations.X
-.. autodata:: qnsim.operations.Y
-.. autodata:: qnsim.operations.Z
+.. autodata:: fatqcat.operations.I
+.. autodata:: fatqcat.operations.H
+.. autodata:: fatqcat.operations.S
+.. autodata:: fatqcat.operations.Sdg
+.. autodata:: fatqcat.operations.T
+.. autodata:: fatqcat.operations.Tdg
+.. autodata:: fatqcat.operations.X
+.. autodata:: fatqcat.operations.Y
+.. autodata:: fatqcat.operations.Z
 
 Parametric gates
 -----------------
 
 Parametric gates are exported as classes and must be instantiated with their
-parameter, e.g. ``qs.ops.RX(0.2)``.
+parameter, e.g. ``fqc.ops.RX(0.2)``.
 
-.. autoclass:: qnsim.operations.RX
+.. autoclass:: fatqcat.operations.RX
    :members:
    :show-inheritance:
-.. autoclass:: qnsim.operations.RY
+.. autoclass:: fatqcat.operations.RY
    :members:
    :show-inheritance:
-.. autoclass:: qnsim.operations.RZ
+.. autoclass:: fatqcat.operations.RZ
    :members:
    :show-inheritance:
-.. autoclass:: qnsim.operations.Phase
+.. autoclass:: fatqcat.operations.Phase
    :members:
    :show-inheritance:
-.. autoclass:: qnsim.operations.CPhase
+.. autoclass:: fatqcat.operations.CPhase
    :members:
    :show-inheritance:
 
 Multi-qubit fixed gates
 ------------------------
 
-.. autodata:: qnsim.operations.CX
-.. autodata:: qnsim.operations.CZ
-.. autodata:: qnsim.operations.Swap
-.. autodata:: qnsim.operations.CY
-.. autodata:: qnsim.operations.CS
-.. autodata:: qnsim.operations.iSwap
-.. autodata:: qnsim.operations.CCX
-.. autodata:: qnsim.operations.CSwap
+.. autodata:: fatqcat.operations.CX
+.. autodata:: fatqcat.operations.CZ
+.. autodata:: fatqcat.operations.Swap
+.. autodata:: fatqcat.operations.CY
+.. autodata:: fatqcat.operations.CS
+.. autodata:: fatqcat.operations.iSwap
+.. autodata:: fatqcat.operations.CCX
+.. autodata:: fatqcat.operations.CSwap
 
 Dimension-generic (qudit) gates
 ---------------------------------
@@ -63,32 +63,32 @@ Dimension-generic (qudit) gates
 instantiated with their parameters; ``Sum``, ``Fourier``, and ``Fourierdg``
 take no parameters and are exported as singletons.
 
-.. autoclass:: qnsim.operations.Shift
+.. autoclass:: fatqcat.operations.Shift
    :members:
    :show-inheritance:
-.. autoclass:: qnsim.operations.Clock
+.. autoclass:: fatqcat.operations.Clock
    :members:
    :show-inheritance:
-.. autodata:: qnsim.operations.Sum
-.. autoclass:: qnsim.operations.SwapLevels
+.. autodata:: fatqcat.operations.Sum
+.. autoclass:: fatqcat.operations.SwapLevels
    :members:
    :show-inheritance:
-.. autodata:: qnsim.operations.Fourier
-.. autodata:: qnsim.operations.Fourierdg
-.. autoclass:: qnsim.operations.SubspaceRX
+.. autodata:: fatqcat.operations.Fourier
+.. autodata:: fatqcat.operations.Fourierdg
+.. autoclass:: fatqcat.operations.SubspaceRX
    :members:
    :show-inheritance:
-.. autoclass:: qnsim.operations.SubspaceRY
+.. autoclass:: fatqcat.operations.SubspaceRY
    :members:
    :show-inheritance:
-.. autoclass:: qnsim.operations.SubspaceRZ
+.. autoclass:: fatqcat.operations.SubspaceRZ
    :members:
    :show-inheritance:
-.. autoclass:: qnsim.operations.CClock
+.. autoclass:: fatqcat.operations.CClock
    :members:
    :show-inheritance:
 
 Reset
 ------
 
-.. autodata:: qnsim.operations.Reset
+.. autodata:: fatqcat.operations.Reset

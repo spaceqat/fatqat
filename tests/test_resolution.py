@@ -2,10 +2,10 @@
 
 import numpy as np
 
-from qnsim import operations as ops
-from qnsim.backends import StateVectorBackend, MeasurementStep
-from qnsim.implementation import ApplyMatrixStep
-from qnsim.program import Program
+from fatqcat import operations as ops
+from fatqcat.backends import StateVectorBackend, MeasurementStep
+from fatqcat.implementation import ApplyMatrixStep
+from fatqcat.program import Program
 
 
 def _resolve(program):

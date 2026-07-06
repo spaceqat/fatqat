@@ -2,9 +2,9 @@
 
 import pytest
 
-from qnsim.program import Program
-from qnsim import operations as ops
-from qnsim.registers import QuantumRegister, ClassicalRegister
+from fatqcat.program import Program
+from fatqcat import operations as ops
+from fatqcat.registers import QuantumRegister, ClassicalRegister
 
 
 def test_single_condition_normalized_to_and_list():

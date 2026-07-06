@@ -1,7 +1,7 @@
-"""Tests qnsim exception and warning hierarchy."""
+"""Tests fatqcat exception and warning hierarchy."""
 
-from qnsim.errors import (
-    QnsimError,
+from fatqcat.errors import (
+    FatqcatError,
     BackendValidationError,
     MatrixImplementationError,
     UnsupportedOperationError,
@@ -11,8 +11,8 @@ from qnsim.errors import (
 
 
 def test_hierarchy():
-    assert issubclass(BackendValidationError, QnsimError)
+    assert issubclass(BackendValidationError, FatqcatError)
     assert issubclass(UnsupportedOperationError, BackendValidationError)
-    assert issubclass(ResultFieldUnavailableError, QnsimError)
+    assert issubclass(ResultFieldUnavailableError, FatqcatError)
     assert issubclass(NoMeasurementWarning, UserWarning)
-    assert issubclass(MatrixImplementationError, QnsimError)
+    assert issubclass(MatrixImplementationError, FatqcatError)

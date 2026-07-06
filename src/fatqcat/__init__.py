@@ -1,4 +1,4 @@
-"""Public package surface for qnsim."""
+"""Public package surface for fatqcat."""
 
 from . import backends
 from . import errors

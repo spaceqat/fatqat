@@ -1,10 +1,10 @@
-"""Sphinx configuration for qnsim's API reference and user guide."""
+"""Sphinx configuration for fatqcat's API reference and user guide."""
 
 from __future__ import annotations
 
-project = "qnsim"
-copyright = "2026, qnsim contributors"
-author = "qnsim contributors"
+project = "fatqcat"
+copyright = "2026, fatqcat contributors"
+author = "fatqcat contributors"
 release = "0.0.1"
 
 extensions = [

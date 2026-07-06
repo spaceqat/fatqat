@@ -1,10 +1,10 @@
 Program
 =======
 
-.. autoclass:: qnsim.Program
+.. autoclass:: fatqcat.Program
    :members:
    :show-inheritance:
 
-.. autoclass:: qnsim.Measurement
+.. autoclass:: fatqcat.Measurement
    :members:
    :show-inheritance:

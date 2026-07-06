@@ -1,4 +1,4 @@
-"""Operation base class and the built-in gate set, exposed as the `qs.ops` namespace."""
+"""Operation base class and the built-in gate set, exposed as the `fqc.ops` namespace."""
 
 from __future__ import annotations
 

@@ -178,12 +178,12 @@ class Result:
         Examples:
             .. code-block:: python
 
-                import qnsim as qs
+                import fatqcat as fqc
 
-                program = qs.Program(1, 1)
-                program.add(qs.ops.X, 0)
+                program = fqc.Program(1, 1)
+                program.add(fqc.ops.X, 0)
                 program.add_measurement(0, 0)
-                result = qs.backends.StateVectorBackend().run(program, shots=10).result()
+                result = fqc.backends.StateVectorBackend().run(program, shots=10).result()
 
                 assert result.get_counts() == {"1": 10}
         """
@@ -220,11 +220,11 @@ class Result:
         Examples:
             .. code-block:: python
 
-                import qnsim as qs
+                import fatqcat as fqc
 
-                program = qs.Program(1)
-                program.add(qs.ops.X, 0)
-                result = qs.backends.StateVectorBackend().run(
+                program = fqc.Program(1)
+                program.add(fqc.ops.X, 0)
+                result = fqc.backends.StateVectorBackend().run(
                     program,
                     result_config={"counts": False, "statevector": True},
                 ).result()

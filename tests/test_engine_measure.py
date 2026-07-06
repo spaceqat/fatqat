@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from qnsim.backends.engine import StateVectorEngine, _collapse_state
-from qnsim.implementation import ApplyMatrixStep
+from fatqcat.backends.engine import StateVectorEngine, _collapse_state
+from fatqcat.implementation import ApplyMatrixStep
 
 
 _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
@@ -94,7 +94,7 @@ def test_collapse_state_returns_index_and_projected_copy_without_mutating_input(
 
 
 def test_measure_qutrit_digit_extraction():
-    from qnsim.implementation.matrices import shift_matrix
+    from fatqcat.implementation.matrices import shift_matrix
 
     eng = StateVectorEngine()
     eng.initialize((3,))

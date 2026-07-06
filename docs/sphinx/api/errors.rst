@@ -1,26 +1,26 @@
-Errors (``qs.errors``)
+Errors (``fqc.errors``)
 ========================
 
-.. autoclass:: qnsim.errors.QnsimError
+.. autoclass:: fatqcat.errors.FatqcatError
    :members:
    :show-inheritance:
 
-.. autoclass:: qnsim.errors.BackendValidationError
+.. autoclass:: fatqcat.errors.BackendValidationError
    :members:
    :show-inheritance:
 
-.. autoclass:: qnsim.errors.UnsupportedOperationError
+.. autoclass:: fatqcat.errors.UnsupportedOperationError
    :members:
    :show-inheritance:
 
-.. autoclass:: qnsim.errors.MatrixImplementationError
+.. autoclass:: fatqcat.errors.MatrixImplementationError
    :members:
    :show-inheritance:
 
-.. autoclass:: qnsim.errors.ResultFieldUnavailableError
+.. autoclass:: fatqcat.errors.ResultFieldUnavailableError
    :members:
    :show-inheritance:
 
-.. autoclass:: qnsim.errors.NoMeasurementWarning
+.. autoclass:: fatqcat.errors.NoMeasurementWarning
    :members:
    :show-inheritance:

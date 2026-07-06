@@ -5,18 +5,18 @@ import warnings
 import numpy as np
 import pytest
 
-import qnsim as qs
-import qnsim.backends as backends
-from qnsim.backends import StateVectorBackend
-from qnsim.errors import (
+import fatqcat as fqc
+import fatqcat.backends as backends
+from fatqcat.backends import StateVectorBackend
+from fatqcat.errors import (
     BackendValidationError,
     MatrixImplementationError,
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from qnsim.implementation import MatrixImplementationMap, default_matrix_implementation_map
-from qnsim import operations as ops
-from qnsim.program import Program
+from fatqcat.implementation import MatrixImplementationMap, default_matrix_implementation_map
+from fatqcat import operations as ops
+from fatqcat.program import Program
 
 
 def _h_cz_program():

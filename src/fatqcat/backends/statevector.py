@@ -193,7 +193,7 @@ def _resolve_result_request(config: _ResultConfig, facts: _PlanFacts) -> _Result
 
 
 class StateVectorBackend:
-    """Statevector backend for ``qnsim.Program`` execution.
+    """Statevector backend for ``fatqcat.Program`` execution.
 
     The backend supports matrix-evolvable gates, grouped measurement,
     feedforward conditions, and reset. Each run is classified into one of two
@@ -370,13 +370,13 @@ class StateVectorBackend:
 
             .. code-block:: python
 
-                import qnsim as qs
+                import fatqcat as fqc
 
-                program = qs.Program(1, 1)
-                program.add(qs.ops.X, 0)
+                program = fqc.Program(1, 1)
+                program.add(fqc.ops.X, 0)
                 program.add_measurement(0, 0)
 
-                result = qs.backends.StateVectorBackend().run(
+                result = fqc.backends.StateVectorBackend().run(
                     program,
                     shots=100,
                     result_config={"counts": True},
@@ -387,10 +387,10 @@ class StateVectorBackend:
 
             .. code-block:: python
 
-                program = qs.Program(1)
-                program.add(qs.ops.H, 0)
+                program = fqc.Program(1)
+                program.add(fqc.ops.H, 0)
 
-                result = qs.backends.StateVectorBackend().run(
+                result = fqc.backends.StateVectorBackend().run(
                     program,
                     result_config={"counts": False, "statevector": True},
                 ).result()

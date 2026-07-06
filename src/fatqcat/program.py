@@ -78,11 +78,11 @@ class Program:
 
         .. code-block:: python
 
-            import qnsim as qs
+            import fatqcat as fqc
 
-            program = qs.Program(2, 2)
-            program.add(qs.ops.H, 0)
-            program.add(qs.ops.CZ, (0, 1))
+            program = fqc.Program(2, 2)
+            program.add(fqc.ops.H, 0)
+            program.add(fqc.ops.CZ, (0, 1))
             program.add_measurement(0, 0)
             program.add_measurement(1, 1)
     """
@@ -221,12 +221,12 @@ class Program:
 
             .. code-block:: python
 
-                import qnsim as qs
+                import fatqcat as fqc
 
-                program = qs.Program(2)
-                program.add(qs.ops.H, 0)
-                program.add(qs.ops.CZ, (0, 1))
-                program.add(qs.ops.RX(0.2), 0)
+                program = fqc.Program(2)
+                program.add(fqc.ops.H, 0)
+                program.add(fqc.ops.CZ, (0, 1))
+                program.add(fqc.ops.RX(0.2), 0)
         """
         if not isinstance(op, Operation):
             raise TypeError(
@@ -298,10 +298,10 @@ class Program:
 
             .. code-block:: python
 
-                import qnsim as qs
+                import fatqcat as fqc
 
-                program = qs.Program(1, 1)
-                program.add(qs.ops.X, 0)
+                program = fqc.Program(1, 1)
+                program.add(fqc.ops.X, 0)
                 program.add_measurement(0, 0)
 
             Add a grouped measurement:
