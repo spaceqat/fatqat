@@ -1,18 +1,18 @@
-# fatqcat
+# fatqat
 
-fatqcat is a quantum simulator: build a {py:class}`~fatqcat.Program` out of
+fatqat is a quantum simulator: build a {py:class}`~fatqat.Program` out of
 registers, gates, and measurements, run it on a backend, and read back
 counts or a statevector.
 
 ```python
-import fatqcat as fqc
+import fatqat as fc
 
-program = fqc.Program(2, 2)          # 2 qubits, 2 clbits
-program.add(fqc.ops.H, 0)
-program.add(fqc.ops.CX, (0, 1))
+program = fc.Program(2, 2)          # 2 qubits, 2 clbits
+program.add(fc.ops.H, 0)
+program.add(fc.ops.CX, (0, 1))
 program.add_measurement((0, 1), (0, 1))
 
-result = fqc.backends.StateVectorBackend().run(program, shots=1000).result()
+result = fc.backends.StateVectorBackend().run(program, shots=1000).result()
 print(result.get_counts())          # e.g. {"00": 512, "11": 488}
 ```
 
@@ -32,7 +32,7 @@ measurement/conditions, and running programs to read back results.
 :link-type: doc
 
 Autodoc-generated reference for every public class, function, and gate,
-grouped by namespace (``qs``, ``fqc.ops``, ``fqc.backends``, ``fqc.errors``).
+grouped by namespace (``qs``, ``fc.ops``, ``fc.backends``, ``fc.errors``).
 :::
 
 ::::

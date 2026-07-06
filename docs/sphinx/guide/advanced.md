@@ -7,8 +7,8 @@ implementations, and parallel shot execution.
 ## Qudits
 
 Registers with `dim > 2` are qudits, and use the same `Program` and backend
-API as qubits — {py:class}`~fatqcat.operations.Shift`,
-{py:class}`~fatqcat.operations.Clock`, and {py:data}`~fatqcat.operations.Sum`
+API as qubits — {py:class}`~fatqat.operations.Shift`,
+{py:class}`~fatqat.operations.Clock`, and {py:data}`~fatqat.operations.Sum`
 generalize the qubit `X`/`Z`/`CX` gates rather than requiring separate
 handling. See [Gates](gates.md) for the full qudit gate list and a worked
 example on qutrits.
@@ -18,20 +18,20 @@ There's no mixed qubit-qutrit gate yet, but a qubit register and a qutrit
 register can each be driven independently with their own gates:
 
 ```python
-import fatqcat as fqc
+import fatqat as fc
 
-qubit = fqc.QuantumRegister(1, name="qubit")            # dim=2
-qutrit = fqc.QuantumRegister(1, dim=3, name="qutrit")
-cbit = fqc.ClassicalRegister(1, name="c_qubit")
-ctrit = fqc.ClassicalRegister(1, dim=3, name="c_qutrit")
+qubit = fc.QuantumRegister(1, name="qubit")            # dim=2
+qutrit = fc.QuantumRegister(1, dim=3, name="qutrit")
+cbit = fc.ClassicalRegister(1, name="c_qubit")
+ctrit = fc.ClassicalRegister(1, dim=3, name="c_qutrit")
 
-program = fqc.Program([qubit, qutrit], [cbit, ctrit])
-program.add(fqc.ops.X, program.qreg[0][0])            # qubit: |0> -> |1>
-program.add(fqc.ops.Shift(1), program.qreg[1][0])     # qutrit: |0> -> |1>
+program = fc.Program([qubit, qutrit], [cbit, ctrit])
+program.add(fc.ops.X, program.qreg[0][0])            # qubit: |0> -> |1>
+program.add(fc.ops.Shift(1), program.qreg[1][0])     # qutrit: |0> -> |1>
 program.add_measurement(program.qreg[0][0], program.creg[0][0])
 program.add_measurement(program.qreg[1][0], program.creg[1][0])
 
-result = fqc.backends.StateVectorBackend().run(program, shots=100).result()
+result = fc.backends.StateVectorBackend().run(program, shots=100).result()
 print(result.get_counts())   # {"11": 100}
 ```
 
@@ -42,7 +42,7 @@ explicitly (see [Gates](gates.md) for how targets are addressed).
 
 ## Custom implementations
 
-{py:class}`~fatqcat.backends.StateVectorBackend`'s `implementation_map=`
+{py:class}`~fatqat.backends.StateVectorBackend`'s `implementation_map=`
 argument accepts a custom `MatrixImplementationMap` to control how
 operations are lowered to matrices, or to add support for operations the
 default map doesn't cover.
@@ -57,11 +57,11 @@ working, then register your gate's matrix on top of it. This example adds a
 
 ```python
 import numpy as np
-import fatqcat as fqc
-from fatqcat.implementation import FixedMatrix, default_matrix_implementation_map
+import fatqat as fc
+from fatqat.implementation import FixedMatrix, default_matrix_implementation_map
 
 
-class SqrtX(fqc.ops.Operation):
+class SqrtX(fc.ops.Operation):
     name = "SqrtX"
     _num_subsystems = 1
 
@@ -74,9 +74,9 @@ SQRT_X_MATRIX = 0.5 * np.array(
 implementation_map = default_matrix_implementation_map()
 implementation_map.register(SqrtX, FixedMatrix(SQRT_X_MATRIX))
 
-backend = fqc.backends.StateVectorBackend(implementation_map=implementation_map)
+backend = fc.backends.StateVectorBackend(implementation_map=implementation_map)
 
-program = fqc.Program(1)
+program = fc.Program(1)
 program.add(SqrtX(), 0)
 program.add(SqrtX(), 0)   # two SqrtX == one X
 
@@ -112,7 +112,7 @@ which shape you passed by inspecting the callable's signature.
 ## Parallel execution
 
 For programs on the dynamic path,
-{py:class}`~fatqcat.backends.StateVectorBackend`'s `options={...}` accepts
+{py:class}`~fatqat.backends.StateVectorBackend`'s `options={...}` accepts
 `max_workers` and `parallel_mode` (`"auto"`, `"serial"`,
 `"multiprocessing"`, or `"loky"`) to control whether shots are distributed
 across worker processes. This only affects execution strategy, never

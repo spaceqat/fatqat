@@ -1,26 +1,26 @@
-Errors (``fqc.errors``)
+Errors (``fc.errors``)
 ========================
 
-.. autoclass:: fatqcat.errors.FatqcatError
+.. autoclass:: fatqat.errors.FatqcatError
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqcat.errors.BackendValidationError
+.. autoclass:: fatqat.errors.BackendValidationError
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqcat.errors.UnsupportedOperationError
+.. autoclass:: fatqat.errors.UnsupportedOperationError
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqcat.errors.MatrixImplementationError
+.. autoclass:: fatqat.errors.MatrixImplementationError
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqcat.errors.ResultFieldUnavailableError
+.. autoclass:: fatqat.errors.ResultFieldUnavailableError
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqcat.errors.NoMeasurementWarning
+.. autoclass:: fatqat.errors.NoMeasurementWarning
    :members:
    :show-inheritance:

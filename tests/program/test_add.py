@@ -2,9 +2,9 @@
 
 import pytest
 
-from fatqcat.program import Program, AppliedOperation
-from fatqcat import operations as ops
-from fatqcat.registers import QuantumRegister
+from fatqat.program import Program, AppliedOperation
+from fatqat import operations as ops
+from fatqat.registers import QuantumRegister
 
 
 def test_add_single_operand_int():

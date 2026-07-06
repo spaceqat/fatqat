@@ -2,10 +2,10 @@
 
 import numpy as np
 
-from fatqcat import operations as ops
-from fatqcat.backends import StateVectorBackend, MeasurementStep
-from fatqcat.implementation import ApplyMatrixStep
-from fatqcat.program import Program
+from fatqat import operations as ops
+from fatqat.backends import StateVectorBackend, MeasurementStep
+from fatqat.implementation import ApplyMatrixStep
+from fatqat.program import Program
 
 
 def _resolve(program):

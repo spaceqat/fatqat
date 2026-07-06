@@ -1,10 +1,10 @@
-"""fatqcat exception hierarchy and warnings."""
+"""fatqat exception hierarchy and warnings."""
 
 from __future__ import annotations
 
 
 class FatqcatError(Exception):
-    """Base class for all fatqcat errors."""
+    """Base class for all fatqat errors."""
 
 
 class BackendValidationError(FatqcatError):

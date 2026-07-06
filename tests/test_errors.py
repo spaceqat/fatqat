@@ -1,6 +1,6 @@
-"""Tests fatqcat exception and warning hierarchy."""
+"""Tests fatqat exception and warning hierarchy."""
 
-from fatqcat.errors import (
+from fatqat.errors import (
     FatqcatError,
     BackendValidationError,
     MatrixImplementationError,

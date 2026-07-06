@@ -1,6 +1,6 @@
 Result
 ======
 
-.. autoclass:: fatqcat.Result
+.. autoclass:: fatqat.Result
    :members:
    :show-inheritance:

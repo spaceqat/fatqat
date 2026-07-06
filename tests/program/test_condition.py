@@ -2,9 +2,9 @@
 
 import pytest
 
-from fatqcat.program import Program
-from fatqcat import operations as ops
-from fatqcat.registers import QuantumRegister, ClassicalRegister
+from fatqat.program import Program
+from fatqat import operations as ops
+from fatqat.registers import QuantumRegister, ClassicalRegister
 
 
 def test_single_condition_normalized_to_and_list():

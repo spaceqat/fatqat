@@ -2,8 +2,8 @@
 
 import pytest
 
-from fatqcat import operations as ops
-from fatqcat.operations import Operation
+from fatqat import operations as ops
+from fatqat.operations import Operation
 
 
 @pytest.mark.parametrize("gate,name,n_subsystems", [

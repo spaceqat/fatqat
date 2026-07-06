@@ -1,11 +1,11 @@
-import fatqcat as fqc
-from fatqcat import operations as ops
-from fatqcat.backends import StateVectorBackend
+import fatqat as fc
+from fatqat import operations as ops
+from fatqat.backends import StateVectorBackend
 
 
 def _teleport_program(prep):
     # q0 = payload, q1/q2 = Bell pair; teleport payload onto q2.
-    p = fqc.Program(3, 2)
+    p = fc.Program(3, 2)
     for gate in prep:
         p.add(gate, 0)
     p.add(ops.H, 1)
@@ -35,7 +35,7 @@ def test_teleportation_moves_plus_state_to_target():
 
 
 def test_bit_flip_code_corrects_single_x_error():
-    p = fqc.Program(5, 5)
+    p = fc.Program(5, 5)
     p.add(ops.X, 1)
     p.add(ops.CX, (0, 3))
     p.add(ops.CX, (1, 3))
@@ -55,10 +55,10 @@ def test_bit_flip_code_corrects_single_x_error():
 
 def test_reset_seed_independence_matches_born_rule():
     def program():
-        p = fqc.Program(2, 1)
+        p = fc.Program(2, 1)
         p.add(ops.H, 0)
         p.add(ops.CX, (0, 1))
-        p.add(fqc.ops.Reset, 0)
+        p.add(fc.ops.Reset, 0)
         p.add_measurement(1, 0)
         return p
 

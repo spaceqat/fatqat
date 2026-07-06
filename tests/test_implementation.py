@@ -3,16 +3,16 @@
 import numpy as np
 import pytest
 
-from fatqcat import operations as ops
-from fatqcat.implementation import (
+from fatqat import operations as ops
+from fatqat.implementation import (
     ApplyMatrixStep,
     FixedMatrix,
     MatrixImplementation,
     MatrixImplementationMap,
     default_matrix_implementation_map,
 )
-from fatqcat.implementation.base import _DimMatrix
-from fatqcat.implementation.matrices import (
+from fatqat.implementation.base import _DimMatrix
+from fatqat.implementation.matrices import (
     cclock_matrix,
     clock_matrix,
     fourier_matrix,
@@ -23,7 +23,7 @@ from fatqcat.implementation.matrices import (
     subspace_rz_matrix,
     swap_levels_matrix,
 )
-from fatqcat.registers import QuantumRegister
+from fatqat.registers import QuantumRegister
 
 
 # --- Fixed-gate registration ------------------------------------------------
@@ -267,7 +267,7 @@ def test_register_rejects_non_callable_non_ndarray_rule():
 
 @pytest.mark.parametrize("exc", [ValueError, TypeError])
 def test_register_accepts_callable_when_signature_is_uninspectable(monkeypatch, exc):
-    import fatqcat.implementation as implementation
+    import fatqat.implementation as implementation
 
     def raise_exc(_rule):
         raise exc("uninspectable signature")

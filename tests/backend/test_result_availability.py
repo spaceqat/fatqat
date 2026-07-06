@@ -5,11 +5,11 @@ import warnings
 import numpy as np
 import pytest
 
-import fatqcat as fqc
-from fatqcat.backends import StateVectorBackend
-from fatqcat.errors import BackendValidationError, NoMeasurementWarning
-from fatqcat import operations as ops
-from fatqcat.program import Program
+import fatqat as fc
+from fatqat.backends import StateVectorBackend
+from fatqat.errors import BackendValidationError, NoMeasurementWarning
+from fatqat import operations as ops
+from fatqat.program import Program
 
 
 def test_statevector_default_attached_when_no_measurement():
@@ -25,7 +25,7 @@ def test_statevector_not_attached_by_default_with_measurement():
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
     result = StateVectorBackend().run(p, shots=10, seed=0).result()
-    with pytest.raises(fqc.errors.ResultFieldUnavailableError):
+    with pytest.raises(fc.errors.ResultFieldUnavailableError):
         result.get_statevector()
 
 
@@ -127,11 +127,11 @@ def test_no_measurement_warning_when_counts_only_and_no_state():
 
 
 def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():
-    qt = fqc.QuantumRegister(1, dim=3)
-    program = fqc.Program([qt])
-    program.add(fqc.ops.H, qt[0])  # frontend must NOT raise here
+    qt = fc.QuantumRegister(1, dim=3)
+    program = fc.Program([qt])
+    program.add(fc.ops.H, qt[0])  # frontend must NOT raise here
     with pytest.raises(BackendValidationError) as exc:
-        fqc.backends.StateVectorBackend().run(
+        fc.backends.StateVectorBackend().run(
             program, result_config={"counts": False, "statevector": True}
         ).result()
     msg = str(exc.value)
@@ -139,6 +139,6 @@ def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():
 
 
 def test_dim2_gate_frontend_add_does_not_raise():
-    qt = fqc.QuantumRegister(1, dim=3)
-    program = fqc.Program([qt])
-    program.add(fqc.ops.X, qt[0])  # no exception at add-time
+    qt = fc.QuantumRegister(1, dim=3)
+    program = fc.Program([qt])
+    program.add(fc.ops.X, qt[0])  # no exception at add-time

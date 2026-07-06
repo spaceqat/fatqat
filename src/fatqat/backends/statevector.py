@@ -1,4 +1,4 @@
-﻿"""Statevector backend: validate, execute, assemble Result, return Job."""
+"""Statevector backend: validate, execute, assemble Result, return Job."""
 
 from __future__ import annotations
 
@@ -193,7 +193,7 @@ def _resolve_result_request(config: _ResultConfig, facts: _PlanFacts) -> _Result
 
 
 class StateVectorBackend:
-    """Statevector backend for ``fatqcat.Program`` execution.
+    """Statevector backend for ``fatqat.Program`` execution.
 
     The backend supports matrix-evolvable gates, grouped measurement,
     feedforward conditions, and reset. Each run is classified into one of two
@@ -370,13 +370,13 @@ class StateVectorBackend:
 
             .. code-block:: python
 
-                import fatqcat as fqc
+                import fatqat as fc
 
-                program = fqc.Program(1, 1)
-                program.add(fqc.ops.X, 0)
+                program = fc.Program(1, 1)
+                program.add(fc.ops.X, 0)
                 program.add_measurement(0, 0)
 
-                result = fqc.backends.StateVectorBackend().run(
+                result = fc.backends.StateVectorBackend().run(
                     program,
                     shots=100,
                     result_config={"counts": True},
@@ -387,10 +387,10 @@ class StateVectorBackend:
 
             .. code-block:: python
 
-                program = fqc.Program(1)
-                program.add(fqc.ops.H, 0)
+                program = fc.Program(1)
+                program.add(fc.ops.H, 0)
 
-                result = fqc.backends.StateVectorBackend().run(
+                result = fc.backends.StateVectorBackend().run(
                     program,
                     result_config={"counts": False, "statevector": True},
                 ).result()

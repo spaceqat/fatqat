@@ -2,9 +2,9 @@
 
 import numpy as np
 
-from fatqcat.backends.engine import StateVectorEngine, _apply_matrix
-from fatqcat.implementation import ApplyMatrixStep
-from fatqcat.implementation.matrices import shift_matrix
+from fatqat.backends.engine import StateVectorEngine, _apply_matrix
+from fatqat.implementation import ApplyMatrixStep
+from fatqat.implementation.matrices import shift_matrix
 
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)

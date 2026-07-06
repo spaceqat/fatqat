@@ -3,13 +3,13 @@
 ## Running a program
 
 ```python
-backend = fqc.backends.StateVectorBackend()
+backend = fc.backends.StateVectorBackend()
 result = backend.run(program, shots=1000).result()
 ```
 
-{py:meth}`~fatqcat.backends.StateVectorBackend.run` returns a
-{py:class}`~fatqcat.Job` immediately — Phase 1 jobs are already terminal, so
-{py:meth}`~fatqcat.Job.result` either returns a {py:class}`~fatqcat.Result` or
+{py:meth}`~fatqat.backends.StateVectorBackend.run` returns a
+{py:class}`~fatqat.Job` immediately — Phase 1 jobs are already terminal, so
+{py:meth}`~fatqat.Job.result` either returns a {py:class}`~fatqat.Result` or
 re-raises the exception from a failed run. `run()` itself still raises
 directly for validation failures (e.g. an unsupported operation, or `shots`
 incompatible with the requested result fields).
@@ -53,13 +53,13 @@ result.metadata                 # shots, backend_name, effective result_config
 ```
 
 Calling an accessor for a field that wasn't produced raises
-{py:exc}`~fatqcat.errors.ResultFieldUnavailableError` rather than returning
+{py:exc}`~fatqat.errors.ResultFieldUnavailableError` rather than returning
 `None` — check `available_data` first if a field is optional in your
 workflow.
 
 If you request counts on a program where some declared clbit was never
 written by a measurement, the backend still returns zero-filled counts for
-that bit but raises a {py:exc}`~fatqcat.errors.NoMeasurementWarning` —
+that bit but raises a {py:exc}`~fatqat.errors.NoMeasurementWarning` —
 usually a sign a measurement was forgotten.
 
 For qudits, custom matrix implementations, and parallel shot execution, see

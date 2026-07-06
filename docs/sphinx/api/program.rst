@@ -1,10 +1,10 @@
 Program
 =======
 
-.. autoclass:: fatqcat.Program
+.. autoclass:: fatqat.Program
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqcat.Measurement
+.. autoclass:: fatqat.Measurement
    :members:
    :show-inheritance:

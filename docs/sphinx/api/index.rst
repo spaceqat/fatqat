@@ -2,7 +2,7 @@ API reference
 =============
 
 Autodoc-generated reference for every public class, function, and gate in
-``fatqcat``, grouped by namespace.
+``fatqat``, grouped by namespace.
 
 .. toctree::
    :maxdepth: 1

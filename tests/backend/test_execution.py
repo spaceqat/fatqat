@@ -1,22 +1,22 @@
-﻿"""Tests statevector backend execution, validation, repeatability, and counts."""
+"""Tests statevector backend execution, validation, repeatability, and counts."""
 
 import warnings
 
 import numpy as np
 import pytest
 
-import fatqcat as fqc
-import fatqcat.backends as backends
-from fatqcat.backends import StateVectorBackend
-from fatqcat.errors import (
+import fatqat as fc
+import fatqat.backends as backends
+from fatqat.backends import StateVectorBackend
+from fatqat.errors import (
     BackendValidationError,
     MatrixImplementationError,
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from fatqcat.implementation import MatrixImplementationMap, default_matrix_implementation_map
-from fatqcat import operations as ops
-from fatqcat.program import Program
+from fatqat.implementation import MatrixImplementationMap, default_matrix_implementation_map
+from fatqat import operations as ops
+from fatqat.program import Program
 
 
 def _h_cz_program():

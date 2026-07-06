@@ -1,4 +1,4 @@
-from fatqcat.result import (
+from fatqat.result import (
     build_counts,
     build_counts_from_clbits,
     format_count_key,
@@ -58,35 +58,35 @@ def test_format_count_key_high_quantum_dim_stays_plain():
 
 
 def test_delimited_key_threshold_end_to_end():
-    import fatqcat as fqc
+    import fatqat as fc
 
     # Two classical slots so plain concatenation ("310") and the delimited
     # little-endian form ("3,10") are visibly different strings -- a single
     # dim>=10 clbit can't distinguish the two formats (e.g. "10" is the same
     # string either way), so this must use >= 2 slots to actually pin the
     # delimited branch.
-    qreg = fqc.QuantumRegister(2, dim=11)
-    creg = fqc.ClassicalRegister(2, dim=11)
-    program = fqc.Program([qreg], [creg])
-    program.add(fqc.ops.Shift(10), qreg[0])  # |0> -> |10>
-    program.add(fqc.ops.Shift(3), qreg[1])   # |0> -> |3>
+    qreg = fc.QuantumRegister(2, dim=11)
+    creg = fc.ClassicalRegister(2, dim=11)
+    program = fc.Program([qreg], [creg])
+    program.add(fc.ops.Shift(10), qreg[0])  # |0> -> |10>
+    program.add(fc.ops.Shift(3), qreg[1])   # |0> -> |3>
     program.add_measurement((qreg[0], qreg[1]), (creg[0], creg[1]))
-    result = fqc.backends.StateVectorBackend().run(program, shots=4).result()
+    result = fc.backends.StateVectorBackend().run(program, shots=4).result()
     # clbit0=10, clbit1=3; little-endian (highest clbit first): "3,10".
     assert result.get_counts() == {"3,10": 4}
     assert result.get_counts_as_tuples() == {(10, 3): 4}
 
 
 def test_high_quantum_dim_low_classical_stays_plain():
-    import fatqcat as fqc
+    import fatqat as fc
 
     # dim-11 quantum register measured into... impossible (dims must match);
     # instead: a dim-11 quantum register left UNMEASURED, low-dim classical slots.
-    qbig = fqc.QuantumRegister(1, dim=11)
-    qb = fqc.QuantumRegister(1, dim=2)
-    cb = fqc.ClassicalRegister(1, dim=2)
-    program = fqc.Program([qbig, qb], [cb])
-    program.add(fqc.ops.X, qb[0])
+    qbig = fc.QuantumRegister(1, dim=11)
+    qb = fc.QuantumRegister(1, dim=2)
+    cb = fc.ClassicalRegister(1, dim=2)
+    program = fc.Program([qbig, qb], [cb])
+    program.add(fc.ops.X, qb[0])
     program.add_measurement(qb[0], cb[0])
-    result = fqc.backends.StateVectorBackend().run(program, shots=4).result()
+    result = fc.backends.StateVectorBackend().run(program, shots=4).result()
     assert result.get_counts() == {"1": 4}  # plain string; classical dims are all <= 9

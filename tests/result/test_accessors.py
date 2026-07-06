@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from fatqcat.result import Result, build_counts
-from fatqcat.errors import ResultFieldUnavailableError
+from fatqat.result import Result, build_counts
+from fatqat.errors import ResultFieldUnavailableError
 
 
 def test_build_counts_little_endian_key():

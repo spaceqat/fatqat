@@ -1,7 +1,7 @@
-Operations (``fqc.ops``)
+Operations (``fc.ops``)
 ========================
 
-.. autoclass:: fatqcat.operations.Operation
+.. autoclass:: fatqat.operations.Operation
    :members:
    :show-inheritance:
 
@@ -9,51 +9,51 @@ Single-qubit fixed gates
 ------------------------
 
 Fixed gates take no parameters and are exported as ready-to-use singleton
-values (e.g. ``fqc.ops.H``, not ``fqc.ops.H()``).
+values (e.g. ``fc.ops.H``, not ``fc.ops.H()``).
 
-.. autodata:: fatqcat.operations.I
-.. autodata:: fatqcat.operations.H
-.. autodata:: fatqcat.operations.S
-.. autodata:: fatqcat.operations.Sdg
-.. autodata:: fatqcat.operations.T
-.. autodata:: fatqcat.operations.Tdg
-.. autodata:: fatqcat.operations.X
-.. autodata:: fatqcat.operations.Y
-.. autodata:: fatqcat.operations.Z
+.. autodata:: fatqat.operations.I
+.. autodata:: fatqat.operations.H
+.. autodata:: fatqat.operations.S
+.. autodata:: fatqat.operations.Sdg
+.. autodata:: fatqat.operations.T
+.. autodata:: fatqat.operations.Tdg
+.. autodata:: fatqat.operations.X
+.. autodata:: fatqat.operations.Y
+.. autodata:: fatqat.operations.Z
 
 Parametric gates
 -----------------
 
 Parametric gates are exported as classes and must be instantiated with their
-parameter, e.g. ``fqc.ops.RX(0.2)``.
+parameter, e.g. ``fc.ops.RX(0.2)``.
 
-.. autoclass:: fatqcat.operations.RX
+.. autoclass:: fatqat.operations.RX
    :members:
    :show-inheritance:
-.. autoclass:: fatqcat.operations.RY
+.. autoclass:: fatqat.operations.RY
    :members:
    :show-inheritance:
-.. autoclass:: fatqcat.operations.RZ
+.. autoclass:: fatqat.operations.RZ
    :members:
    :show-inheritance:
-.. autoclass:: fatqcat.operations.Phase
+.. autoclass:: fatqat.operations.Phase
    :members:
    :show-inheritance:
-.. autoclass:: fatqcat.operations.CPhase
+.. autoclass:: fatqat.operations.CPhase
    :members:
    :show-inheritance:
 
 Multi-qubit fixed gates
 ------------------------
 
-.. autodata:: fatqcat.operations.CX
-.. autodata:: fatqcat.operations.CZ
-.. autodata:: fatqcat.operations.Swap
-.. autodata:: fatqcat.operations.CY
-.. autodata:: fatqcat.operations.CS
-.. autodata:: fatqcat.operations.iSwap
-.. autodata:: fatqcat.operations.CCX
-.. autodata:: fatqcat.operations.CSwap
+.. autodata:: fatqat.operations.CX
+.. autodata:: fatqat.operations.CZ
+.. autodata:: fatqat.operations.Swap
+.. autodata:: fatqat.operations.CY
+.. autodata:: fatqat.operations.CS
+.. autodata:: fatqat.operations.iSwap
+.. autodata:: fatqat.operations.CCX
+.. autodata:: fatqat.operations.CSwap
 
 Dimension-generic (qudit) gates
 ---------------------------------
@@ -63,32 +63,32 @@ Dimension-generic (qudit) gates
 instantiated with their parameters; ``Sum``, ``Fourier``, and ``Fourierdg``
 take no parameters and are exported as singletons.
 
-.. autoclass:: fatqcat.operations.Shift
+.. autoclass:: fatqat.operations.Shift
    :members:
    :show-inheritance:
-.. autoclass:: fatqcat.operations.Clock
+.. autoclass:: fatqat.operations.Clock
    :members:
    :show-inheritance:
-.. autodata:: fatqcat.operations.Sum
-.. autoclass:: fatqcat.operations.SwapLevels
+.. autodata:: fatqat.operations.Sum
+.. autoclass:: fatqat.operations.SwapLevels
    :members:
    :show-inheritance:
-.. autodata:: fatqcat.operations.Fourier
-.. autodata:: fatqcat.operations.Fourierdg
-.. autoclass:: fatqcat.operations.SubspaceRX
+.. autodata:: fatqat.operations.Fourier
+.. autodata:: fatqat.operations.Fourierdg
+.. autoclass:: fatqat.operations.SubspaceRX
    :members:
    :show-inheritance:
-.. autoclass:: fatqcat.operations.SubspaceRY
+.. autoclass:: fatqat.operations.SubspaceRY
    :members:
    :show-inheritance:
-.. autoclass:: fatqcat.operations.SubspaceRZ
+.. autoclass:: fatqat.operations.SubspaceRZ
    :members:
    :show-inheritance:
-.. autoclass:: fatqcat.operations.CClock
+.. autoclass:: fatqat.operations.CClock
    :members:
    :show-inheritance:
 
 Reset
 ------
 
-.. autodata:: fatqcat.operations.Reset
+.. autodata:: fatqat.operations.Reset

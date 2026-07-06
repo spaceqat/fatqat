@@ -1,6 +1,6 @@
-Backends (``fqc.backends``)
+Backends (``fc.backends``)
 ============================
 
-.. autoclass:: fatqcat.backends.StateVectorBackend
+.. autoclass:: fatqat.backends.StateVectorBackend
    :members:
    :show-inheritance:

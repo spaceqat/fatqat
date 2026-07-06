@@ -12,7 +12,7 @@ from ..registers import RegisterRef
 class Operation:
     """Base class for immutable operation objects.
 
-    Fixed gates are exposed as pre-built singleton values in ``fatqcat.ops``.
+    Fixed gates are exposed as pre-built singleton values in ``fatqat.ops``.
     Parametric gates are exposed as classes and should be instantiated, such as
     ``RX(theta)``.
 

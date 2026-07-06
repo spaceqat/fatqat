@@ -1,18 +1,18 @@
 Registers
 =========
 
-.. autoclass:: fatqcat.Register
+.. autoclass:: fatqat.Register
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqcat.QuantumRegister
+.. autoclass:: fatqat.QuantumRegister
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqcat.ClassicalRegister
+.. autoclass:: fatqat.ClassicalRegister
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqcat.RegisterRef
+.. autoclass:: fatqat.RegisterRef
    :members:
    :show-inheritance:

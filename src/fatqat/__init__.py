@@ -1,4 +1,4 @@
-"""Public package surface for fatqcat."""
+"""Public package surface for fatqat."""
 
 from . import backends
 from . import errors

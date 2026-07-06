@@ -1,10 +1,10 @@
-"""Sphinx configuration for fatqcat's API reference and user guide."""
+"""Sphinx configuration for fatqat's API reference and user guide."""
 
 from __future__ import annotations
 
-project = "fatqcat"
-copyright = "2026, fatqcat contributors"
-author = "fatqcat contributors"
+project = "fatqat"
+copyright = "2026, fatqat contributors"
+author = "fatqat contributors"
 release = "0.0.1"
 
 extensions = [

@@ -1,10 +1,10 @@
-﻿import numpy as np
+import numpy as np
 import pytest
 
-import fatqcat as fqc
-from fatqcat.backends import StateVectorBackend
-from fatqcat.backends.parallel import _planned_workers
-from fatqcat.backends.statevector import _BackendConfig, _ResultRequest
+import fatqat as fc
+from fatqat.backends import StateVectorBackend
+from fatqat.backends.parallel import _planned_workers
+from fatqat.backends.statevector import _BackendConfig, _ResultRequest
 
 
 def test_backend_accepts_known_options():
@@ -25,10 +25,10 @@ def test_backend_warns_and_ignores_unknown_options():
 
 
 def test_serial_backend_option_runs_dynamic_program():
-    p = fqc.Program(1, 1)
-    p.add(fqc.ops.H, 0)
+    p = fc.Program(1, 1)
+    p.add(fc.ops.H, 0)
     p.add_measurement(0, 0)
-    p.add(fqc.ops.Reset, 0)
+    p.add(fc.ops.Reset, 0)
 
     counts = (
         StateVectorBackend(options={"max_workers": 4, "parallel_mode": "serial"})
@@ -66,17 +66,17 @@ def test_backend_rejects_non_dict_options():
 
 
 def test_backend_accepts_custom_implementation_map():
-    from fatqcat.implementation import default_matrix_implementation_map
+    from fatqat.implementation import default_matrix_implementation_map
 
     # Start from the defaults and override just one gate, to prove override
     # replaces one rule while the rest of the default map keeps working.
     m = default_matrix_implementation_map()
-    m.register(fqc.ops.X, np.eye(2, dtype=complex))  # override X with identity
+    m.register(fc.ops.X, np.eye(2, dtype=complex))  # override X with identity
     backend = StateVectorBackend(implementation_map=m)
 
-    p = fqc.Program(2, 2)
-    p.add(fqc.ops.X, 0)  # overridden: identity, so qubit 0 stays |0>
-    p.add(fqc.ops.H, 1)  # still a default rule: H|0> is an equal superposition
+    p = fc.Program(2, 2)
+    p.add(fc.ops.X, 0)  # overridden: identity, so qubit 0 stays |0>
+    p.add(fc.ops.H, 1)  # still a default rule: H|0> is an equal superposition
     p.add_measurement(0, 0)
     p.add_measurement(1, 1)
     counts = backend.run(p, shots=200, seed=0).result().get_counts()
@@ -88,8 +88,8 @@ def test_backend_accepts_custom_implementation_map():
 def test_backend_none_implementation_map_uses_defaults():
     backend = StateVectorBackend(implementation_map=None)
 
-    p = fqc.Program(1, 1)
-    p.add(fqc.ops.X, 0)
+    p = fc.Program(1, 1)
+    p.add(fc.ops.X, 0)
     p.add_measurement(0, 0)
     counts = backend.run(p, shots=10, seed=0).result().get_counts()
 
@@ -97,15 +97,15 @@ def test_backend_none_implementation_map_uses_defaults():
 
 
 def test_backend_copies_implementation_map_defensively():
-    from fatqcat.implementation import default_matrix_implementation_map
+    from fatqat.implementation import default_matrix_implementation_map
 
     m = default_matrix_implementation_map()
     backend = StateVectorBackend(implementation_map=m)
 
-    m.unregister(fqc.ops.X)  # mutate the caller's map after construction
+    m.unregister(fc.ops.X)  # mutate the caller's map after construction
 
-    p = fqc.Program(1, 1)
-    p.add(fqc.ops.X, 0)
+    p = fc.Program(1, 1)
+    p.add(fc.ops.X, 0)
     p.add_measurement(0, 0)
     counts = backend.run(p, shots=10, seed=0).result().get_counts()
 

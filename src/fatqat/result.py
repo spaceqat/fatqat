@@ -178,12 +178,12 @@ class Result:
         Examples:
             .. code-block:: python
 
-                import fatqcat as fqc
+                import fatqat as fc
 
-                program = fqc.Program(1, 1)
-                program.add(fqc.ops.X, 0)
+                program = fc.Program(1, 1)
+                program.add(fc.ops.X, 0)
                 program.add_measurement(0, 0)
-                result = fqc.backends.StateVectorBackend().run(program, shots=10).result()
+                result = fc.backends.StateVectorBackend().run(program, shots=10).result()
 
                 assert result.get_counts() == {"1": 10}
         """
@@ -220,11 +220,11 @@ class Result:
         Examples:
             .. code-block:: python
 
-                import fatqcat as fqc
+                import fatqat as fc
 
-                program = fqc.Program(1)
-                program.add(fqc.ops.X, 0)
-                result = fqc.backends.StateVectorBackend().run(
+                program = fc.Program(1)
+                program.add(fc.ops.X, 0)
+                result = fc.backends.StateVectorBackend().run(
                     program,
                     result_config={"counts": False, "statevector": True},
                 ).result()
