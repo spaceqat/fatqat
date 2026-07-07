@@ -3,7 +3,7 @@ name = "fatqat"
 version = "0.0.1"
 description = "Quantum noisy simulator (MVP Phase 1)"
 requires-python = ">=3.11"
-dependencies = ["numpy>=2.0", "loky>=3.4"]
+dependencies = ["numpy>=1.23.2", "loky>=3.0.0"]
 
 [build-system]
 requires = ["hatchling"]
