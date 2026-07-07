@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .engine import StateVectorEngine
+from .statevectorengine import StateVectorEngine
 
 if TYPE_CHECKING:
     from .statevector import ResolvedStep, _BackendConfig, _ResultRequest

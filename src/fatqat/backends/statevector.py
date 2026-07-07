@@ -26,7 +26,7 @@ from ..result import (
     build_counts,
     build_counts_from_clbits,
 )
-from .engine import StateVectorEngine
+from .statevectorengine import StateVectorEngine
 from .parallel import _planned_workers, _run_dynamic_shots_parallel, _shot_seed_sequences
 
 
