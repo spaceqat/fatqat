@@ -52,7 +52,8 @@ _PARALLEL_MIN_SHOTS = 32
 
 def _effective_max_workers(max_workers: object, n_iters: int) -> int:
     if max_workers is None:
-        return min(n_iters, os.process_cpu_count() or 1)
+        cpu_count = getattr(os, "process_cpu_count", os.cpu_count)
+        return min(n_iters, cpu_count() or 1)
     return int(max_workers)
 
 
