@@ -16,8 +16,6 @@ result = fc.backends.StateVectorBackend().run(program, shots=1000).result()
 print(result.get_counts())          # e.g. {"00": 512, "11": 488}
 ```
 
-Requires Python >= 3.13.
-
 ## Dev setup
 
 This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
