@@ -16,7 +16,6 @@ docs/design/
 # Local git worktrees used for isolated subagent-driven development
 .worktrees/
 benchmarks/
-benchmarks_qiskit/
 
 # Lockfile churns heavily with every dependency-group sync; not worth tracking
 uv.lock
