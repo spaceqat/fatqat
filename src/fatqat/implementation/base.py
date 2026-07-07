@@ -1,10 +1,10 @@
 """Matrix-implementation abstraction: the rule protocol, its wrappers, and the
-class-keyed registry, plus the flat payload the engine consumes.
+class-keyed registry.
 
 A matrix implementation maps an operation to its local matrix (physics only).
 The backend pairs that matrix with layout-resolved target indices to build an
-``ApplyMatrixStep`` — the plain data container the statevector engine reads
-directly.
+``ApplyMatrixStep`` (see ``backends.steps``) — the plain data container the
+statevector engine reads directly.
 
 Local matrix convention (binding for every entry in this package):
     - ``AppliedOperation.targets`` operand order defines the local
@@ -30,7 +30,6 @@ target dimension (every fixed qubit gate) simply ignores the argument.
 from __future__ import annotations
 
 import inspect
-from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
@@ -118,38 +117,6 @@ class _DimMatrix(MatrixImplementation):
     def __call__(self, op: Operation, *, targets: tuple[RegisterRef, ...]) -> np.ndarray:
         dims = tuple(t.register.dim for t in targets)
         return self._fn(dims)
-
-
-@dataclass(frozen=True)
-class ApplyMatrixStep:
-    """Resolved local matrix payload consumed by the statevector engine.
-
-    Doubles as the "apply a matrix" entry in a backend execution plan and as the
-    payload the engine applies. The matrix is marked read-only after construction
-    so this frozen value object cannot be mutated through the NumPy array buffer.
-
-    Attributes:
-        matrix: Local operation matrix.
-        target_indices: Flat subsystem indices the matrix acts on.
-        condition: Optional feedforward guard as lowered ``(clbit_index, value)``
-            AND-terms. ``None`` means unconditional. The engine ignores this
-            field; the backend's per-shot loop evaluates it.
-    """
-
-    matrix: np.ndarray
-    target_indices: tuple[int, ...]
-    condition: tuple[tuple[int, int], ...] | None = None
-
-    def __post_init__(self) -> None:
-        # The engine consumes the matrix read-only; lock it so this frozen
-        # dataclass is truly immutable (Python cannot freeze array contents).
-        # A rule may hand back a shared/cached array (a `FixedMatrix` copies,
-        # but a bare callable need not), so copy before freezing when the array
-        # is still writeable - freezing in place would mutate the rule's own
-        # object as a side effect. An already read-only array is left as-is.
-        if self.matrix.flags.writeable:
-            object.__setattr__(self, "matrix", np.array(self.matrix, copy=True))
-        self.matrix.flags.writeable = False
 
 
 def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]:

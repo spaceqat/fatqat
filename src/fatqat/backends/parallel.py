@@ -19,9 +19,10 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from .statevectorengine import StateVectorEngine
+from .steps import ResolvedStep
 
 if TYPE_CHECKING:
-    from .statevector import ResolvedStep, _BackendConfig, _ResultRequest
+    from .statevector import _BackendConfig, _ResultRequest
 
 
 def _shot_seed_sequences(seed: int | None, n_iters: int) -> list[np.random.SeedSequence]:
@@ -110,7 +111,7 @@ def _split_into_batches(
 
 
 def _run_dynamic_shot_batch(
-    plan: "list[ResolvedStep]",
+    plan: list[ResolvedStep],
     system_dims: tuple[int, ...],
     n_clbits: int,
     seed_batch: list[np.random.SeedSequence],
@@ -128,7 +129,7 @@ def _run_dynamic_shot_batch(
 
 
 def _run_dynamic_shots_multiprocessing(
-    plan: "list[ResolvedStep]",
+    plan: list[ResolvedStep],
     system_dims: tuple[int, ...],
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
@@ -147,7 +148,7 @@ def _run_dynamic_shots_multiprocessing(
 
 
 def _run_dynamic_shots_loky(
-    plan: "list[ResolvedStep]",
+    plan: list[ResolvedStep],
     system_dims: tuple[int, ...],
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
@@ -169,7 +170,7 @@ def _run_dynamic_shots_loky(
 
 def _run_dynamic_shots_parallel(
     config: "_BackendConfig",
-    plan: "list[ResolvedStep]",
+    plan: list[ResolvedStep],
     system_dims: tuple[int, ...],
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],

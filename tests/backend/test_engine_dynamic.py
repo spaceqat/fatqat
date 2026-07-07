@@ -1,7 +1,7 @@
 import numpy as np
 
 from fatqat.backends.statevectorengine import StateVectorEngine
-from fatqat.implementation import ApplyMatrixStep
+from fatqat.backends.steps import ApplyMatrixStep
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)

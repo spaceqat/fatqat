@@ -3,7 +3,7 @@
 import numpy as np
 
 from fatqat.backends.statevectorengine import StateVectorEngine, _collapse_state
-from fatqat.implementation import ApplyMatrixStep
+from fatqat.backends.steps import ApplyMatrixStep
 
 
 _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)

@@ -15,7 +15,7 @@ from ..errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from ..implementation import ApplyMatrixStep, MatrixImplementationMap, default_matrix_implementation_map
+from ..implementation import MatrixImplementationMap, default_matrix_implementation_map
 from ..job import Job
 from ..layout import ResourceLayout
 from ..operations import Measurement, ResetGate
@@ -28,30 +28,7 @@ from ..result import (
 )
 from .statevectorengine import StateVectorEngine
 from .parallel import _planned_workers, _run_dynamic_shots_parallel, _shot_seed_sequences
-
-
-@dataclass(frozen=True)
-class MeasurementStep:
-    """Resolved measurement: flat subsystem indices into matching flat clbit indices."""
-
-    measured_indices: tuple[int, ...]
-    classical_indices: tuple[int, ...]
-
-
-@dataclass(frozen=True)
-class ResetStep:
-    """Resolved reset of one or more flat subsystems to |0>, with optional condition.
-
-    `Reset` is an `AppliedOperation`, so it can carry a feedforward `condition`
-    just like a gate. The lowered form stores it as ``(clbit_index, value)``
-    AND-terms; the per-shot loop skips the reset when the guard fails.
-    """
-
-    reset_indices: tuple[int, ...]
-    condition: tuple[tuple[int, int], ...] | None = None
-
-
-ResolvedStep = ApplyMatrixStep | MeasurementStep | ResetStep
+from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
 
 
 @dataclass(frozen=True)

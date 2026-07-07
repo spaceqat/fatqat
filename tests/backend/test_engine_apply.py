@@ -3,7 +3,7 @@
 import numpy as np
 
 from fatqat.backends.statevectorengine import StateVectorEngine, _apply_matrix
-from fatqat.implementation import ApplyMatrixStep
+from fatqat.backends.steps import ApplyMatrixStep
 from fatqat.implementation.matrices import shift_matrix
 
 

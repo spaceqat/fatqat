@@ -3,8 +3,7 @@ import pytest
 
 import fatqat as fc
 from fatqat import operations as ops
-from fatqat.backends import MeasurementStep, ResetStep, StateVectorBackend
-from fatqat.implementation import ApplyMatrixStep
+from fatqat.backends import ApplyMatrixStep, MeasurementStep, ResetStep, StateVectorBackend
 from fatqat.program import Program
 
 

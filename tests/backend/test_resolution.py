@@ -3,8 +3,7 @@
 import numpy as np
 
 from fatqat import operations as ops
-from fatqat.backends import StateVectorBackend, MeasurementStep
-from fatqat.implementation import ApplyMatrixStep
+from fatqat.backends import ApplyMatrixStep, MeasurementStep, StateVectorBackend
 from fatqat.program import Program
 
 
