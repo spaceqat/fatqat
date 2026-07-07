@@ -117,6 +117,9 @@ def _run_dynamic_shot_batch(
     seed_batch: list[np.random.SeedSequence],
 ) -> list[tuple[int, ...]]:
     """Run a contiguous batch of dynamic shots in one worker with one engine."""
+    # Deferred: statevector.py imports this module at top level, so importing
+    # it back at module scope here would cycle. Also cheap to re-import per
+    # worker process (each ProcessPoolExecutor/loky worker starts fresh).
     from .statevector import _execute_dynamic_plan_one_shot
 
     engine = StateVectorEngine()

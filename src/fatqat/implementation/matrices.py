@@ -3,6 +3,18 @@ dimension-generic (qudit) gate families.
 
 See `implementation.base` for the local-matrix convention every builder here
 follows (target/control operand ordering, MSB/LSB layout).
+
+Adding a new gate's rule (registered in `implementation.registry`):
+    - Gate reads its own fields (e.g. `Shift.power`, `RX.theta`): write a bare
+      ``def _foo_rule(op: ops.Foo, targets: tuple[RegisterRef, ...]) -> np.ndarray``
+      and register it directly. The parameter must be named exactly
+      ``targets`` (or the rule must accept ``**kwargs``) - that literal name
+      is how `_wrap_rule`/`_callable_wants_targets` detect that the rule wants
+      it; a differently-named parameter is silently called as ``rule(op)``
+      instead and only fails the first time the rule runs.
+    - Gate's matrix depends only on target dimensions, not on any of its own
+      fields (e.g. `Fourier`): write ``def _foo_rule(dims: tuple[int, ...]) ->
+      np.ndarray`` and register it wrapped as ``_DimMatrix(_foo_rule)``.
 """
 
 from __future__ import annotations
@@ -10,6 +22,7 @@ from __future__ import annotations
 import numpy as np
 
 from .. import operations as ops
+from ..registers import RegisterRef
 
 
 def shift_matrix(dim: int, power: int) -> np.ndarray:
@@ -50,11 +63,11 @@ def sum_matrix(dims: tuple[int, ...]) -> np.ndarray:
     return m
 
 
-def _shift_rule(op: "ops.Shift", targets) -> np.ndarray:
+def _shift_rule(op: "ops.Shift", targets: tuple[RegisterRef, ...]) -> np.ndarray:
     return shift_matrix(targets[0].register.dim, op.power)
 
 
-def _clock_rule(op: "ops.Clock", targets) -> np.ndarray:
+def _clock_rule(op: "ops.Clock", targets: tuple[RegisterRef, ...]) -> np.ndarray:
     return clock_matrix(targets[0].register.dim, op.power)
 
 
@@ -67,7 +80,7 @@ def swap_levels_matrix(dim: int, j: int, k: int) -> np.ndarray:
     return m
 
 
-def _swap_levels_rule(op: "ops.SwapLevels", targets) -> np.ndarray:
+def _swap_levels_rule(op: "ops.SwapLevels", targets: tuple[RegisterRef, ...]) -> np.ndarray:
     return swap_levels_matrix(targets[0].register.dim, op.j, op.k)
 
 
@@ -124,15 +137,15 @@ def subspace_rz_matrix(dim: int, subspace: tuple[int, int], theta: float) -> np.
     return m
 
 
-def _subspace_rx_rule(op: "ops.SubspaceRX", targets) -> np.ndarray:
+def _subspace_rx_rule(op: "ops.SubspaceRX", targets: tuple[RegisterRef, ...]) -> np.ndarray:
     return subspace_rx_matrix(targets[0].register.dim, op.subspace, op.theta)
 
 
-def _subspace_ry_rule(op: "ops.SubspaceRY", targets) -> np.ndarray:
+def _subspace_ry_rule(op: "ops.SubspaceRY", targets: tuple[RegisterRef, ...]) -> np.ndarray:
     return subspace_ry_matrix(targets[0].register.dim, op.subspace, op.theta)
 
 
-def _subspace_rz_rule(op: "ops.SubspaceRZ", targets) -> np.ndarray:
+def _subspace_rz_rule(op: "ops.SubspaceRZ", targets: tuple[RegisterRef, ...]) -> np.ndarray:
     return subspace_rz_matrix(targets[0].register.dim, op.subspace, op.theta)
 
 
@@ -150,7 +163,7 @@ def cclock_matrix(dims: tuple[int, int], power: int) -> np.ndarray:
     return np.diag(diag_vals).astype(complex)
 
 
-def _cclock_rule(op: "ops.CClock", targets) -> np.ndarray:
+def _cclock_rule(op: "ops.CClock", targets: tuple[RegisterRef, ...]) -> np.ndarray:
     dims = (targets[0].register.dim, targets[1].register.dim)
     return cclock_matrix(dims, op.power)
 
