@@ -25,6 +25,12 @@ class ApplyMatrixStep:
     payload the engine applies. The matrix is marked read-only after construction
     so this frozen value object cannot be mutated through the NumPy array buffer.
 
+    A future `ApplyChannelStep` (Kraus operators + target indices, for
+    channel-representable noise) belongs here alongside this type once noise
+    support lands - see `docs/design/architecture/noise-model/matrix-channel-noise.md`
+    §4.3-4.4. It is resolved the same way, right after a gate's `ApplyMatrixStep`,
+    and would join `ResolvedStep` as a fourth member.
+
     Attributes:
         matrix: Local operation matrix.
         target_indices: Flat subsystem indices the matrix acts on.
