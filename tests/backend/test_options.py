@@ -3,8 +3,8 @@ import pytest
 
 import fatqat as fc
 from fatqat.backends import StateVectorBackend
+from fatqat.backends.engine_contract import _EngineConfig, _ResultRequest
 from fatqat.backends.parallel import _planned_workers
-from fatqat.backends.statevector import _BackendConfig, _ResultRequest
 
 
 def test_backend_accepts_known_options():
@@ -12,16 +12,16 @@ def test_backend_accepts_known_options():
         options={"max_workers": 1, "parallel_mode": "serial"}
     )
 
-    assert backend._config.max_workers == 1
-    assert backend._config.parallel_mode == "serial"
+    assert backend._engine._config.max_workers == 1
+    assert backend._engine._config.parallel_mode == "serial"
 
 
 def test_backend_warns_and_ignores_unknown_options():
     with pytest.warns(UserWarning, match="ignored unsupported backend options"):
         backend = StateVectorBackend(options={"gpu": True, "foo": 3})
 
-    assert backend._config.max_workers is None
-    assert backend._config.parallel_mode == "auto"
+    assert backend._engine._config.max_workers is None
+    assert backend._engine._config.parallel_mode == "auto"
 
 
 def test_serial_backend_option_runs_dynamic_program():
@@ -42,7 +42,7 @@ def test_serial_backend_option_runs_dynamic_program():
 
 def test_planned_workers_disables_parallel_serial_backend():
     workers = _planned_workers(
-        _BackendConfig(max_workers=4, parallel_mode="serial"),
+        _EngineConfig(max_workers=4, parallel_mode="serial"),
         _ResultRequest(counts=True, statevector=False),
         n_iters=16,
     )
@@ -52,7 +52,7 @@ def test_planned_workers_disables_parallel_serial_backend():
 
 def test_planned_workers_clamps_explicit_workers_to_iterations():
     workers = _planned_workers(
-        _BackendConfig(max_workers=8, parallel_mode="multiprocessing"),
+        _EngineConfig(max_workers=8, parallel_mode="multiprocessing"),
         _ResultRequest(counts=True, statevector=False),
         n_iters=3,
     )

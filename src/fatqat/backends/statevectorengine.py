@@ -14,8 +14,9 @@ from math import prod
 
 import numpy as np
 
+from .engine_contract import _EngineConfig
 from ..implementation.matrices import shift_matrix
-from .steps import ApplyMatrixStep
+from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
 
 
 class StateVectorEngine:
@@ -26,20 +27,22 @@ class StateVectorEngine:
     the state.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, config: _EngineConfig | None = None) -> None:
         """Create an uninitialized engine."""
+        self._config = config if config is not None else _EngineConfig()
         self._state: np.ndarray | None = None
         self._dims: tuple[int, ...] = ()
         self._reversed_dims: tuple[int, ...] = ()
+        self._n_clbits = 0
 
     @property
     def n_subsystems(self) -> int:
         """Number of subsystems in the currently initialized state."""
         return len(self._dims)
 
-    def initialize(self, dims: Sequence[int]) -> None:
-        """Prepare the all-zero computational basis state over ``dims``."""
-        dims = tuple(int(d) for d in dims)
+    def initialize(self, system_dims: Sequence[int], n_clbits: int = 0) -> None:
+        """Configure dimensions and reset to the all-zero computational state."""
+        dims = tuple(int(d) for d in system_dims)
         state = np.zeros(prod(dims) if dims else 1, dtype=complex)
         state[0] = 1.0
         self._state = state
@@ -48,6 +51,7 @@ class StateVectorEngine:
         # the engine's lifetime between initialize() calls, so recomputing this
         # reshape shape on every apply() would be pure per-call Python overhead.
         self._reversed_dims = tuple(reversed(dims))
+        self._n_clbits = int(n_clbits)
 
     def apply(self, step: ApplyMatrixStep) -> None:
         """Evolve the state by one resolved matrix step in place."""
@@ -135,6 +139,33 @@ class StateVectorEngine:
     def _require_state(self) -> None:
         if self._state is None:
             raise RuntimeError("engine not initialized; call initialize(dims) first")
+
+
+def _analyze_plan_for_run(plan: list[ResolvedStep]) -> tuple[bool, list[tuple[int, int]]]:
+    """Return this engine's dynamic-path decision and fast-path measurement pairs."""
+    measured_subsystems: set[int] = set()
+    measurements: list[tuple[int, int]] = []
+    is_dynamic = False
+    for step in plan:
+        if isinstance(step, MeasurementStep):
+            measured_subsystems.update(step.measured_indices)
+            measurements.extend(zip(step.measured_indices, step.classical_indices))
+            continue
+        if isinstance(step, ResetStep):
+            is_dynamic = True
+            continue
+        if isinstance(step, ApplyMatrixStep):
+            if step.condition is not None:
+                is_dynamic = True
+            if any(t in measured_subsystems for t in step.target_indices):
+                is_dynamic = True
+    return is_dynamic, measurements
+
+
+def _requires_dynamic_execution(plan: list[ResolvedStep]) -> bool:
+    """Return whether this engine must use per-shot execution for the plan."""
+    is_dynamic, _measurements = _analyze_plan_for_run(plan)
+    return is_dynamic
 
 
 def _strides(dims: Sequence[int]) -> list[int]:

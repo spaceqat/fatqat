@@ -4,6 +4,7 @@ import pytest
 import fatqat as fc
 from fatqat import operations as ops
 from fatqat.backends import ApplyMatrixStep, MeasurementStep, ResetStep, StateVectorBackend
+from fatqat.backends.statevectorengine import _requires_dynamic_execution
 from fatqat.program import Program
 
 
@@ -18,8 +19,8 @@ def test_lower_terminal_measurement_is_not_dynamic():
     p.add(ops.CZ, (0, 1))
     p.add_measurement(0, 0)
     p.add_measurement(1, 1)
-    _plan, facts = _lower(p)
-    assert facts.is_dynamic is False
+    plan, facts = _lower(p)
+    assert _requires_dynamic_execution(plan) is False
     assert facts.has_measurement is True
     assert facts.has_reset is False
 
@@ -30,8 +31,8 @@ def test_lower_measure_then_gate_on_disjoint_qubit_is_not_dynamic():
     p.add_measurement(0, 0)
     p.add(ops.X, 1)  # different qubit -> still fast path
     p.add_measurement(1, 1)
-    _plan, facts = _lower(p)
-    assert facts.is_dynamic is False
+    plan, facts = _lower(p)
+    assert _requires_dynamic_execution(plan) is False
 
 
 def test_lower_gate_on_measured_qubit_is_dynamic():
@@ -39,15 +40,15 @@ def test_lower_gate_on_measured_qubit_is_dynamic():
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
     p.add(ops.X, 0)  # gate on already-measured qubit
-    _plan, facts = _lower(p)
-    assert facts.is_dynamic is True
+    plan, facts = _lower(p)
+    assert _requires_dynamic_execution(plan) is True
 
 
 def test_lower_condition_is_dynamic_and_resolves_indices():
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 1))
     plan, facts = _lower(p)
-    assert facts.is_dynamic is True
+    assert _requires_dynamic_execution(plan) is True
     gate = plan[0]
     assert isinstance(gate, ApplyMatrixStep)
     assert gate.condition == ((0, 1),)
@@ -57,7 +58,7 @@ def test_lower_reset_is_dynamic_and_emits_reset_step():
     p = Program(1)
     p.add(fc.ops.Reset, 0)
     plan, facts = _lower(p)
-    assert facts.is_dynamic is True
+    assert _requires_dynamic_execution(plan) is True
     assert facts.has_reset is True
     assert plan == [ResetStep(reset_indices=(0,))]
 
@@ -158,7 +159,7 @@ def test_lower_grouped_measurement_emits_one_grouped_step():
     plan, facts = _lower(p)
 
     assert facts.has_measurement is True
-    assert facts.is_dynamic is False
+    assert _requires_dynamic_execution(plan) is False
     assert plan == [MeasurementStep(measured_indices=(0, 2), classical_indices=(1, 0))]
 
 
@@ -169,7 +170,7 @@ def test_lower_adjacent_single_measurements_stay_separate_steps():
 
     plan, facts = _lower(p)
 
-    assert facts.is_dynamic is False
+    assert _requires_dynamic_execution(plan) is False
     assert plan == [
         MeasurementStep(measured_indices=(0,), classical_indices=(0,)),
         MeasurementStep(measured_indices=(1,), classical_indices=(1,)),
@@ -182,7 +183,7 @@ def test_lower_grouped_reset_uses_all_targets():
 
     plan, facts = _lower(p)
 
-    assert facts.is_dynamic is True
+    assert _requires_dynamic_execution(plan) is True
     assert facts.has_reset is True
     assert plan == [ResetStep(reset_indices=(0, 2))]
 
