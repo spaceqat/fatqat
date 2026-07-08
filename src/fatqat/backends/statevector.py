@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from math import prod
 from typing import Any
 
-import numpy as np
-
 from ..errors import (
     BackendValidationError,
     MatrixImplementationError,
@@ -23,62 +21,19 @@ from ..program import AppliedOperation, Program
 from ..result import (
     Result,
     _ResultConfig,
-    build_counts,
-    build_counts_from_clbits,
+    counts_dict_from_arrays,
 )
+from .engine_contract import _EngineConfig, _ResultRequest
 from .statevectorengine import StateVectorEngine
-from .parallel import _planned_workers, _run_dynamic_shots_parallel, _shot_seed_sequences
 from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
 
 
 @dataclass(frozen=True)
 class _PlanFacts:
-    """Classification facts computed while lowering a program.
+    """Program facts needed for backend result defaults and validation."""
 
-    `is_dynamic` picks the execution strategy (per-shot loop vs. one-shot
-    evolve-then-sample); it is true for a condition, reset, or measurement.
-    This is a different axis from `stochastic` (see `_resolve_result_request`)
-    - a condition-only program is dynamic but not stochastic.
-    """
-
-    is_dynamic: bool
     has_measurement: bool
     has_reset: bool
-
-
-@dataclass(frozen=True)
-class _ResultRequest:
-    """Resolved result fields requested for one execution."""
-
-    counts: bool
-    statevector: bool
-
-
-_PARALLEL_MODE_NAMES = frozenset({"auto", "serial", "multiprocessing", "loky"})
-
-
-@dataclass(frozen=True)
-class _BackendConfig:
-    """Normalized backend execution-strategy options.
-
-    Option *values* are validated here, at construction, so an invalid
-    `max_workers` or `parallel_mode` fails from `StateVectorBackend(...)`
-    rather than being deferred to a run and swallowed into a failed `Job`.
-    """
-
-    max_workers: Any = None
-    parallel_mode: Any = "auto"
-
-    def __post_init__(self) -> None:
-        mw = self.max_workers
-        if mw is not None and (type(mw) is not int or mw < 1):
-            raise BackendValidationError(
-                f"max_workers must be a positive int or None, got {mw!r}"
-            )
-        if self.parallel_mode not in _PARALLEL_MODE_NAMES:
-            raise BackendValidationError(
-                f"unsupported parallel_mode={self.parallel_mode!r}"
-            )
 
 
 def _normalize_dict_options(
@@ -97,7 +52,7 @@ def _normalize_dict_options(
 
     Shared by `StateVectorBackend.__init__`'s `options` and `run`'s
     `result_config` so both dict-configured surfaces validate and warn
-    identically instead of drifting (see `_BackendConfig`/`_ResultConfig`).
+    identically instead of drifting (see `_EngineConfig`/`_ResultConfig`).
     """
     if options is None:
         return config_cls()
@@ -124,36 +79,6 @@ def _resolve_condition(
     # `val` is already an int (Program._normalize_condition guarantees it); no
     # re-coercion here.
     return tuple((layout.clbit_index(ref), val) for ref, val in condition)
-
-
-def _condition_matches(
-    condition: tuple[tuple[int, int], ...] | None,
-    clbits: list[int],
-) -> bool:
-    """Return whether a lowered feedforward condition passes."""
-    return condition is None or all(clbits[c] == v for c, v in condition)
-
-
-def _execute_dynamic_plan_one_shot(
-    engine: StateVectorEngine,
-    plan: list[ResolvedStep],
-    n_clbits: int,
-    rng: np.random.Generator,
-) -> tuple[int, ...]:
-    """Run one dynamic-path shot to completion and return its clbit snapshot."""
-    clbits = [0] * n_clbits
-    for step in plan:
-        if isinstance(step, ApplyMatrixStep):
-            if _condition_matches(step.condition, clbits):
-                engine.apply(step)
-        elif isinstance(step, MeasurementStep):
-            bits = engine.measure_subsystems(step.measured_indices, rng)
-            for c, bit in zip(step.classical_indices, bits):
-                clbits[c] = bit
-        else:  # ResetStep
-            if _condition_matches(step.condition, clbits):
-                engine.reset_subsystems(step.reset_indices, rng)
-    return tuple(clbits)
 
 
 def _resolve_result_request(config: _ResultConfig, facts: _PlanFacts) -> _ResultRequest:
@@ -219,8 +144,8 @@ class StateVectorBackend:
                 whatever map it receives, so mutating the caller's map object
                 after construction does not change this backend's behavior.
         """
-        self._config = _normalize_dict_options(
-            options, {"max_workers", "parallel_mode"}, _BackendConfig, "options", "backend"
+        config = _normalize_dict_options(
+            options, {"max_workers", "parallel_mode"}, _EngineConfig, "options", "backend"
         )
         if implementation_map is None:
             implementation_map = default_matrix_implementation_map()
@@ -229,7 +154,8 @@ class StateVectorBackend:
         # compiled kernels can be reused. Because it holds per-run state, a
         # single backend instance is NOT safe for concurrent run() calls
         # (single-threaded use only).
-        self._engine = StateVectorEngine()
+        self._engine = StateVectorEngine(config)
+        self._engine_system: tuple[tuple[int, ...], int] | None = None
 
     def resolve_layout(self, program: Program) -> ResourceLayout:
         """Build the flat resource layout used by this backend.
@@ -442,20 +368,20 @@ class StateVectorBackend:
         """Execute a lowered program and assemble the requested result fields."""
         request = _resolve_result_request(config, facts)
 
-        if facts.is_dynamic:
-            counts, statevector, available = self._run_per_shot(
-                plan, system_dims, n_clbits, shots, seed, request
-            )
-        else:
-            counts, statevector, available = self._run_fast(
-                plan,
-                facts,
-                system_dims,
-                n_clbits,
-                shots,
-                np.random.default_rng(seed),
-                request,
-            )
+        system_key = (tuple(system_dims), n_clbits)
+        if self._engine_system != system_key:
+            self._engine.initialize(system_dims, n_clbits)
+            self._engine_system = system_key
+
+        raw = self._engine.run(plan, shots, seed, request)
+        counts = None
+        statevector = raw.state
+        available: set[str] = set()
+        if request.counts:
+            counts = counts_dict_from_arrays(raw.outcome_keys, raw.outcome_counts)
+            available.add("counts")
+        if request.statevector:
+            available.add("statevector")
 
         # NoMeasurementWarning: counts produced, some clbit never written, no state.
         if request.counts and "statevector" not in available:
@@ -488,117 +414,6 @@ class StateVectorBackend:
             },
         )
 
-    def _run_fast(
-        self,
-        plan: list[ResolvedStep],
-        facts: _PlanFacts,
-        system_dims: tuple[int, ...],
-        n_clbits: int,
-        shots: int,
-        rng: np.random.Generator,
-        request: _ResultRequest,
-    ) -> tuple[dict[tuple[int, ...], int] | None, np.ndarray | None, set[str]]:
-        """Phase 1 path: evolve once, then sample terminal measurements."""
-        engine = self._engine
-        engine.initialize(system_dims)
-        measurements: list[tuple[int, int]] = []
-        for step in plan:
-            if isinstance(step, ApplyMatrixStep):
-                engine.apply(step)
-            else:  # MeasurementStep (no ResetStep on the fast path)
-                measurements.extend(zip(step.measured_indices, step.classical_indices))
-
-        counts: dict[tuple[int, ...], int] | None = None
-        statevector: np.ndarray | None = None
-        available: set[str] = set()
-
-        collapsed_index = None
-        if request.statevector and facts.has_measurement:
-            measured_subsystems = [q for q, _c in measurements]
-            collapsed_index = engine.collapse(measured_subsystems, rng)
-
-        if request.counts:
-            if facts.has_measurement:
-                if collapsed_index is not None:
-                    indices = np.array([collapsed_index], dtype=int)
-                else:
-                    indices = engine.sample_indices(shots, rng)
-            else:
-                indices = np.zeros(shots, dtype=int)
-            counts = build_counts(indices, n_clbits, measurements, system_dims)
-            available.add("counts")
-
-        if request.statevector:
-            statevector = engine.export_state()
-            available.add("statevector")
-
-        return counts, statevector, available
-
-    def _run_per_shot(
-        self,
-        plan: list[ResolvedStep],
-        system_dims: tuple[int, ...],
-        n_clbits: int,
-        shots: int,
-        seed: int | None,
-        request: _ResultRequest,
-    ) -> tuple[dict[tuple[int, ...], int] | None, np.ndarray | None, set[str]]:
-        """Per-shot path: run each shot independently with its own clbits.
-
-        Each shot draws from its own child `SeedSequence`, spawned from the
-        run's root seed up front and in shot order. Serial execution here
-        consumes the same per-shot streams that parallel execution will use,
-        so results stay identical regardless of how shots are distributed.
-
-        A requested statevector forces the serial path: the exported state is
-        read off this backend's single engine after the last trajectory, which
-        worker processes do not share. Any program reaching here with a
-        statevector request is non-stochastic (measurement/reset with a
-        statevector is rejected for `shots > 1` in `_validate`), so every
-        trajectory produces the same state and the serial run stays correct.
-        """
-        engine = self._engine
-        # Counts need one trajectory per shot; statevector-only runs need one
-        # representative trajectory, so shots=0 cannot leave the engine
-        # uninitialized.
-        n_iters = shots if request.counts else (1 if request.statevector else 0)
-        seed_sequences = _shot_seed_sequences(seed, n_iters)
-
-        max_workers = (
-            None if request.statevector
-            else _planned_workers(self._config, request, n_iters)
-        )
-        if max_workers is not None:
-            snapshots = _run_dynamic_shots_parallel(
-                self._config,
-                plan,
-                system_dims,
-                n_clbits,
-                seed_sequences,
-                max_workers,
-            )
-        else:
-            snapshots = []
-            for seed_sequence in seed_sequences:
-                rng = np.random.default_rng(seed_sequence)
-                engine.initialize(system_dims)
-                snapshots.append(
-                    _execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng)
-                )
-
-        counts: dict[tuple[int, ...], int] | None = None
-        statevector: np.ndarray | None = None
-        available: set[str] = set()
-
-        if request.counts:
-            counts = build_counts_from_clbits(snapshots, n_clbits)
-            available.add("counts")
-        if request.statevector:
-            statevector = engine.export_state()
-            available.add("statevector")
-
-        return counts, statevector, available
-
     def _lower(
         self, program: Program, layout: ResourceLayout
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
@@ -606,12 +421,9 @@ class StateVectorBackend:
 
         Raises `UnsupportedOperationError` for a gate with no matrix rule.
         `Reset` is recognized by type and routed to a `ResetStep`. The pass also
-        computes `is_dynamic` (reset, a condition, or a gate on an
-        already-measured subsystem), `has_measurement`, and `has_reset`.
+        computes `has_measurement` and `has_reset`.
         """
         plan: list[ResolvedStep] = []
-        measured_subsystems: set[int] = set()
-        is_dynamic = False
         has_measurement = False
         has_reset = False
 
@@ -620,7 +432,6 @@ class StateVectorBackend:
                 has_measurement = True
                 measured_indices = tuple(layout.subsystem_index(q) for q in step.qreg)
                 classical_indices = tuple(layout.clbit_index(c) for c in step.clreg)
-                measured_subsystems.update(measured_indices)
                 plan.append(
                     MeasurementStep(
                         measured_indices=measured_indices,
@@ -631,14 +442,9 @@ class StateVectorBackend:
 
             if isinstance(step, AppliedOperation):
                 target_indices = tuple(layout.subsystem_index(t) for t in step.targets)
-                if step.condition is not None:
-                    is_dynamic = True
-                if any(t in measured_subsystems for t in target_indices):
-                    is_dynamic = True
 
                 if isinstance(step.operation, ResetGate):
                     has_reset = True
-                    is_dynamic = True
                     cond = _resolve_condition(step.condition, layout)
                     plan.append(
                         ResetStep(reset_indices=target_indices, condition=cond)
@@ -676,7 +482,6 @@ class StateVectorBackend:
         return (
             plan,
             _PlanFacts(
-                is_dynamic=is_dynamic,
                 has_measurement=has_measurement,
                 has_reset=has_reset,
             ),
