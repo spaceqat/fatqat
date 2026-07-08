@@ -16,6 +16,8 @@ import numpy as np
 
 from .engine_contract import _EngineConfig
 from ..implementation.matrices import shift_matrix
+from ..result import decode_indices_to_clbit_rows, reduce_to_counts
+from .engine_contract import _ResultRequest, RawResult
 from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
 
 
@@ -135,6 +137,65 @@ class StateVectorEngine:
         """Return a copy of the current statevector."""
         self._require_state()
         return self._state.copy()
+
+    def run(
+        self,
+        plan: list[ResolvedStep],
+        shots: int,
+        seed: int | None,
+        request: _ResultRequest,
+    ) -> RawResult:
+        """Execute a lowered plan using this engine's configured system."""
+        self._require_state()
+        rng = np.random.default_rng(seed)
+        is_dynamic, measurements = _analyze_plan_for_run(plan)
+        if is_dynamic:
+            return self._run_per_shot(plan, shots, seed, request)
+        return self._run_fast(plan, measurements, shots, rng, request)
+
+    def _run_fast(
+        self,
+        plan: list[ResolvedStep],
+        measurements: list[tuple[int, int]],
+        shots: int,
+        rng: np.random.Generator,
+        request: _ResultRequest,
+    ) -> RawResult:
+        """Evolve once, optionally sample counts, optionally export state."""
+        self.initialize(self._dims, self._n_clbits)
+        for step in plan:
+            if isinstance(step, ApplyMatrixStep):
+                self.apply(step)
+
+        outcome_keys: np.ndarray | None = None
+        outcome_counts: np.ndarray | None = None
+        state: np.ndarray | None = None
+
+        collapsed_index: int | None = None
+        if request.statevector and measurements:
+            collapsed_index = self.collapse([q for q, _c in measurements], rng)
+
+        if request.counts:
+            if measurements:
+                if collapsed_index is not None:
+                    indices = np.array([collapsed_index], dtype=int)
+                else:
+                    indices = self.sample_indices(shots, rng)
+            else:
+                indices = np.zeros(shots, dtype=int)
+            rows = decode_indices_to_clbit_rows(
+                indices, measurements, self._dims, self._n_clbits
+            )
+            outcome_keys, outcome_counts = reduce_to_counts(rows)
+
+        if request.statevector:
+            state = self.export_state()
+
+        return RawResult(
+            outcome_keys=outcome_keys,
+            outcome_counts=outcome_counts,
+            state=state,
+        )
 
     def _require_state(self) -> None:
         if self._state is None:
