@@ -97,7 +97,7 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
             # Inert no-op: Shift(0) is the identity, and its condition can
             # never be satisfied (the measured clbit is always 2), so this
             # cannot change the outcome distribution. Its mere presence
-            # (a condition) forces backends.py's is_dynamic classification,
+            # (a condition) forces the statevector engine's dynamic classification,
             # letting the dynamic path be compared against the fast path for
             # the identical program shape and seed.
             p.add(fc.ops.Shift(0), 0, condition=(p.creg[0][0], 0))

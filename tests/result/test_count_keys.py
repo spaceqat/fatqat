@@ -41,7 +41,7 @@ def test_reduce_to_counts_empty_rows():
     assert counts_dict_from_arrays(keys, counts) == {}
 
 
-def test_build_counts_binary_tuple_keys():
+def test_decode_indices_to_clbit_rows_binary_tuple_keys():
     # 2 qubits measured into clbits 0,1; sampled flat index 0b10 = 2 -> q1=1,q0=0.
     rows = decode_indices_to_clbit_rows(
         [2, 2], measurements=[(0, 0), (1, 1)], system_dims=(2, 2), n_clbits=2
@@ -49,7 +49,7 @@ def test_build_counts_binary_tuple_keys():
     assert np.array_equal(rows, np.array([[0, 1], [0, 1]], dtype=int))
 
 
-def test_build_counts_qutrit_digit_decode():
+def test_decode_indices_to_clbit_rows_qutrit_digit_decode():
     # 1 qutrit (subsystem 0) measured into clbit 0. Flat index 2 -> digit 2.
     rows = decode_indices_to_clbit_rows(
         [2, 1, 0], measurements=[(0, 0)], system_dims=(3,), n_clbits=1

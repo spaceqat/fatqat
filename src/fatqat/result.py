@@ -101,30 +101,6 @@ def counts_dict_from_arrays(
     }
 
 
-def build_counts(
-    indices: Iterable[int],
-    n_clbits: int,
-    measurements: Sequence[tuple[int, int]],
-    system_dims: Sequence[int],
-) -> dict[tuple[int, ...], int]:
-    """Backward-compatible wrapper pending engine/backend call-site migration."""
-    rows = decode_indices_to_clbit_rows(indices, measurements, system_dims, n_clbits)
-    outcome_keys, outcome_counts = reduce_to_counts(rows)
-    return counts_dict_from_arrays(outcome_keys, outcome_counts)
-
-
-def build_counts_from_clbits(
-    snapshots: Iterable[Sequence[int]],
-    n_clbits: int,
-) -> dict[tuple[int, ...], int]:
-    """Backward-compatible wrapper pending engine/backend call-site migration."""
-    rows = np.asarray(list(snapshots), dtype=int)
-    if rows.size == 0:
-        rows = rows.reshape((0, n_clbits))
-    outcome_keys, outcome_counts = reduce_to_counts(rows)
-    return counts_dict_from_arrays(outcome_keys, outcome_counts)
-
-
 def _radix_strides(dims: Sequence[int]) -> list[int]:
     """Return the mixed-radix place value (stride) for each subsystem."""
     strides = [1] * len(dims)
