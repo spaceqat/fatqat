@@ -41,13 +41,13 @@ class _ResultConfig:
     statevector: bool | None = None
 
 
-def build_counts(
+def decode_indices_to_clbit_rows(
     indices: Iterable[int],
-    n_clbits: int,
     measurements: Sequence[tuple[int, int]],
     system_dims: Sequence[int],
-) -> dict[tuple[int, ...], int]:
-    """Decode sampled flat basis indices into tuple-keyed counts.
+    n_clbits: int,
+) -> np.ndarray:
+    """Decode sampled flat basis indices into per-shot clbit rows.
 
     Each measured subsystem's digit is extracted by its own radix
     ``system_dims[qubit_flat]`` via little-endian place value. Later writes to
@@ -61,42 +61,68 @@ def build_counts(
             decode each measured subsystem's digit from the flat index.
 
     Returns:
-        Count dictionary keyed by ascending flat clbit index (clbit 0 first).
+        One row per shot, with clbit 0 in column 0.
     """
+    index_array = np.asarray(list(indices), dtype=int)
+    rows = np.zeros((len(index_array), n_clbits), dtype=int)
+    if len(index_array) == 0:
+        return rows
+
     strides = _radix_strides(system_dims)
-    counts: dict[tuple[int, ...], int] = {}
-    for idx in indices:
-        idx = int(idx)
-        clbits = [0] * n_clbits
-        for q, c in measurements:
-            clbits[c] = (idx // strides[q]) % system_dims[q]
-        key = tuple(clbits)
-        counts[key] = counts.get(key, 0) + 1
-    return counts
+    for q, c in measurements:
+        rows[:, c] = (index_array // strides[q]) % system_dims[q]
+    return rows
+
+
+def reduce_to_counts(
+    rows: Iterable[Sequence[int]] | np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Reduce per-shot clbit rows to distinct rows and counts."""
+    row_array = np.asarray(rows, dtype=int)
+    if row_array.ndim == 1:
+        row_array = (
+            row_array.reshape((0, 0))
+            if row_array.size == 0
+            else row_array.reshape((1, -1))
+        )
+    if row_array.shape[0] == 0:
+        return row_array, np.zeros(0, dtype=int)
+    return np.unique(row_array, axis=0, return_counts=True)
+
+
+def counts_dict_from_arrays(
+    outcome_keys: np.ndarray,
+    outcome_counts: np.ndarray,
+) -> dict[tuple[int, ...], int]:
+    """Package engine count arrays into the public tuple-keyed dict shape."""
+    return {
+        tuple(int(k) for k in row): int(count)
+        for row, count in zip(outcome_keys, outcome_counts)
+    }
+
+
+def build_counts(
+    indices: Iterable[int],
+    n_clbits: int,
+    measurements: Sequence[tuple[int, int]],
+    system_dims: Sequence[int],
+) -> dict[tuple[int, ...], int]:
+    """Backward-compatible wrapper pending engine/backend call-site migration."""
+    rows = decode_indices_to_clbit_rows(indices, measurements, system_dims, n_clbits)
+    outcome_keys, outcome_counts = reduce_to_counts(rows)
+    return counts_dict_from_arrays(outcome_keys, outcome_counts)
 
 
 def build_counts_from_clbits(
     snapshots: Iterable[Sequence[int]],
     n_clbits: int,
 ) -> dict[tuple[int, ...], int]:
-    """Aggregate per-shot classical-register snapshots into tuple-keyed counts.
-
-    Each snapshot is one shot's final classical-register state: a sequence of
-    ``n_clbits`` digit values indexed by flat clbit index, matching
-    ``build_counts``.
-
-    Args:
-        snapshots: One classical-register snapshot per shot.
-        n_clbits: Number of classical bits in each key.
-
-    Returns:
-        Count dictionary keyed by ascending flat clbit index (clbit 0 first).
-    """
-    counts: dict[tuple[int, ...], int] = {}
-    for snap in snapshots:
-        key = tuple(snap[c] for c in range(n_clbits))
-        counts[key] = counts.get(key, 0) + 1
-    return counts
+    """Backward-compatible wrapper pending engine/backend call-site migration."""
+    rows = np.asarray(list(snapshots), dtype=int)
+    if rows.size == 0:
+        rows = rows.reshape((0, n_clbits))
+    outcome_keys, outcome_counts = reduce_to_counts(rows)
+    return counts_dict_from_arrays(outcome_keys, outcome_counts)
 
 
 def _radix_strides(dims: Sequence[int]) -> list[int]:

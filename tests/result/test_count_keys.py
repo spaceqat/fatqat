@@ -1,44 +1,78 @@
+import json
+
+import numpy as np
+
 from fatqat.result import (
-    build_counts,
-    build_counts_from_clbits,
+    counts_dict_from_arrays,
+    decode_indices_to_clbit_rows,
     format_count_key,
+    reduce_to_counts,
 )
 
 
-def test_from_clbits_key_ordering_matches_build_counts():
-    # clbit 0 first in the tuple key. snapshot [c0, c1] = [1, 0] -> (1, 0).
-    counts = build_counts_from_clbits([[1, 0], [1, 0], [0, 1]], n_clbits=2)
-    assert counts == {(1, 0): 2, (0, 1): 1}
+def test_reduce_to_counts_key_ordering_from_clbit_rows():
+    rows = np.array([[1, 0], [1, 0], [0, 1]], dtype=int)
+    keys, counts = reduce_to_counts(rows)
+    assert counts_dict_from_arrays(keys, counts) == {(1, 0): 2, (0, 1): 1}
 
 
-def test_from_clbits_agrees_with_build_counts_on_static_case():
-    # A single measured qubit q0 -> c0; sampled index 1 means c0 == 1.
-    via_indices = build_counts(
-        [1, 1, 0], n_clbits=1, measurements=[(0, 0)], system_dims=(2,)
+def test_reduce_to_counts_agrees_with_decoded_static_case():
+    via_indices = decode_indices_to_clbit_rows(
+        [1, 1, 0], measurements=[(0, 0)], system_dims=(2,), n_clbits=1
     )
-    via_clbits = build_counts_from_clbits([[1], [1], [0]], n_clbits=1)
-    assert via_indices == via_clbits == {(1,): 2, (0,): 1}
+    keys_from_indices, counts_from_indices = reduce_to_counts(via_indices)
+    keys_from_clbits, counts_from_clbits = reduce_to_counts(
+        np.array([[1], [1], [0]], dtype=int)
+    )
+    assert counts_dict_from_arrays(keys_from_indices, counts_from_indices) == {
+        (1,): 2,
+        (0,): 1,
+    }
+    assert counts_dict_from_arrays(keys_from_clbits, counts_from_clbits) == {
+        (1,): 2,
+        (0,): 1,
+    }
 
 
-def test_from_clbits_empty():
-    assert build_counts_from_clbits([], n_clbits=2) == {}
+def test_reduce_to_counts_empty_rows():
+    keys, counts = reduce_to_counts(np.empty((0, 2), dtype=int))
+    assert keys.shape == (0, 2)
+    assert counts.shape == (0,)
+    assert counts_dict_from_arrays(keys, counts) == {}
 
 
 def test_build_counts_binary_tuple_keys():
     # 2 qubits measured into clbits 0,1; sampled flat index 0b10 = 2 -> q1=1,q0=0.
-    counts = build_counts([2, 2], n_clbits=2, measurements=[(0, 0), (1, 1)], system_dims=(2, 2))
-    assert counts == {(0, 1): 2}  # clbit0=0, clbit1=1
+    rows = decode_indices_to_clbit_rows(
+        [2, 2], measurements=[(0, 0), (1, 1)], system_dims=(2, 2), n_clbits=2
+    )
+    assert np.array_equal(rows, np.array([[0, 1], [0, 1]], dtype=int))
 
 
 def test_build_counts_qutrit_digit_decode():
     # 1 qutrit (subsystem 0) measured into clbit 0. Flat index 2 -> digit 2.
-    counts = build_counts([2, 1, 0], n_clbits=1, measurements=[(0, 0)], system_dims=(3,))
-    assert counts == {(2,): 1, (1,): 1, (0,): 1}
+    rows = decode_indices_to_clbit_rows(
+        [2, 1, 0], measurements=[(0, 0)], system_dims=(3,), n_clbits=1
+    )
+    assert np.array_equal(rows, np.array([[2], [1], [0]], dtype=int))
 
 
-def test_build_counts_from_clbits_tuple_keys():
-    counts = build_counts_from_clbits([(0, 1), (0, 1), (2, 0)], n_clbits=2)
-    assert counts == {(0, 1): 2, (2, 0): 1}
+def test_reduce_to_counts_tuple_keys():
+    rows = np.array([(0, 1), (0, 1), (2, 0)], dtype=int)
+    keys, counts = reduce_to_counts(rows)
+    assert counts_dict_from_arrays(keys, counts) == {(0, 1): 2, (2, 0): 1}
+
+
+def test_counts_dict_from_arrays_returns_python_ints():
+    keys = np.array([[1, 0]], dtype=np.int64)
+    counts = np.array([3], dtype=np.int64)
+    result = counts_dict_from_arrays(keys, counts)
+    key = next(iter(result))
+    value = result[key]
+    assert key == (1, 0)
+    assert all(type(part) is int for part in key)
+    assert type(value) is int
+    json.dumps({"counts": [(key, value)]})
 
 
 def test_format_count_key_single_digit_little_endian():

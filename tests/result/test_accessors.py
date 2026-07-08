@@ -3,36 +3,29 @@
 import numpy as np
 import pytest
 
-from fatqat.result import Result, build_counts
+from fatqat.result import Result, decode_indices_to_clbit_rows
 from fatqat.errors import ResultFieldUnavailableError
 
 
-def test_build_counts_little_endian_key():
-    # 2 clbits; measurement maps qubit0->clbit0, qubit1->clbit1
-    # index 1 = qubit0=1, qubit1=0 -> clbit0=1,clbit1=0 -> key (1, 0)
-    indices = [1, 1, 0]
-    counts = build_counts(
-        indices, n_clbits=2, measurements=[(0, 0), (1, 1)], system_dims=(2, 2)
+def test_decode_indices_little_endian_key():
+    rows = decode_indices_to_clbit_rows(
+        [1, 1, 0], measurements=[(0, 0), (1, 1)], system_dims=(2, 2), n_clbits=2
     )
-    assert counts == {(1, 0): 2, (0, 0): 1}
+    assert np.array_equal(rows, np.array([[1, 0], [1, 0], [0, 0]], dtype=int))
 
 
-def test_build_counts_unwritten_clbit_stays_zero():
-    # 2 clbits but only clbit0 written from qubit0
-    indices = [1, 1]
-    counts = build_counts(
-        indices, n_clbits=2, measurements=[(0, 0)], system_dims=(2,)
+def test_decode_indices_unwritten_clbit_stays_zero():
+    rows = decode_indices_to_clbit_rows(
+        [1, 1], measurements=[(0, 0)], system_dims=(2,), n_clbits=2
     )
-    assert counts == {(1, 0): 2}
+    assert np.array_equal(rows, np.array([[1, 0], [1, 0]], dtype=int))
 
 
-def test_build_counts_last_write_wins():
-    # both measurements target clbit0; second uses qubit1
-    # index 2 = qubit1=1, qubit0=0 -> clbit0 set by qubit1 -> 1 -> key (1, 0)
-    counts = build_counts(
-        [2], n_clbits=2, measurements=[(0, 0), (1, 0)], system_dims=(2, 2)
+def test_decode_indices_last_write_wins():
+    rows = decode_indices_to_clbit_rows(
+        [2], measurements=[(0, 0), (1, 0)], system_dims=(2, 2), n_clbits=2
     )
-    assert counts == {(1, 0): 1}
+    assert np.array_equal(rows, np.array([[1, 0]], dtype=int))
 
 
 def test_result_get_counts_available():
