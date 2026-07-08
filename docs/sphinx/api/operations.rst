@@ -1,4 +1,4 @@
-Operations (``fc.ops``)
+Operations (``fq.ops``)
 ========================
 
 .. autoclass:: fatqat.operations.Operation
@@ -9,7 +9,7 @@ Single-qubit fixed gates
 ------------------------
 
 Fixed gates take no parameters and are exported as ready-to-use singleton
-values (e.g. ``fc.ops.H``, not ``fc.ops.H()``).
+values (e.g. ``fq.ops.H``, not ``fq.ops.H()``).
 
 .. autodata:: fatqat.operations.I
 .. autodata:: fatqat.operations.H
@@ -25,7 +25,7 @@ Parametric gates
 -----------------
 
 Parametric gates are exported as classes and must be instantiated with their
-parameter, e.g. ``fc.ops.RX(0.2)``.
+parameter, e.g. ``fq.ops.RX(0.2)``.
 
 .. autoclass:: fatqat.operations.RX
    :members:

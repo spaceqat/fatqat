@@ -1,4 +1,4 @@
-Errors (``fc.errors``)
+Errors (``fq.errors``)
 ========================
 
 .. autoclass:: fatqat.errors.FatqcatError

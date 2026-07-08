@@ -6,8 +6,8 @@
 matching classical bits, in the order given:
 
 ```python
-program = fc.Program(1, 1)
-program.add(fc.ops.X, 0)
+program = fq.Program(1, 1)
+program.add(fq.ops.X, 0)
 program.add_measurement(0, 0)
 ```
 
@@ -23,9 +23,9 @@ into every clbit, in flat declaration order; it requires equal quantum and
 classical bit counts:
 
 ```python
-program = fc.Program(2, 2)
-program.add(fc.ops.H, 0)
-program.add(fc.ops.CX, (0, 1))
+program = fq.Program(2, 2)
+program.add(fq.ops.H, 0)
+program.add(fq.ops.CX, (0, 1))
 program.measure_all()   # equivalent to add_measurement((0, 1), (0, 1))
 ```
 
@@ -38,27 +38,27 @@ execution reaches it. Pass a sequence of `(clbit, value)` pairs to AND
 several conditions together:
 
 ```python
-program = fc.Program(2, 1)
-program.add(fc.ops.H, 0)
+program = fq.Program(2, 1)
+program.add(fq.ops.H, 0)
 program.add_measurement(0, 0)
-program.add(fc.ops.X, 1, condition=(0, 1))   # flip qubit 1 iff clbit 0 == 1
+program.add(fq.ops.X, 1, condition=(0, 1))   # flip qubit 1 iff clbit 0 == 1
 ```
 
 ## Reset
 
 {py:data}`~fatqat.operations.Reset` reprepares one or more target subsystems
-in `|0>`. Unlike every other operation in `fc.ops`, it isn't a unitary gate
+in `|0>`. Unlike every other operation in `fq.ops`, it isn't a unitary gate
 — it has no matrix — so it can only be run on backends that special-case it
 (the statevector backend does):
 
 ```python
-program.add(fc.ops.Reset, 0)
+program.add(fq.ops.Reset, 0)
 ```
 
 `Reset` accepts more than one target at once, resetting every listed qubit:
 
 ```python
-program.add(fc.ops.Reset, (0, 1))   # reset qubits 0 and 1 together
+program.add(fq.ops.Reset, (0, 1))   # reset qubits 0 and 1 together
 ```
 
 Like any operation, `Reset` can carry a `condition=` guard.

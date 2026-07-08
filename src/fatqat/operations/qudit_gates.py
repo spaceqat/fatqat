@@ -104,7 +104,7 @@ class SumGate(Operation):
     At its smallest dimension, :math:`d = 2`, this reduces to exactly
     :class:`CXGate`.
 
-    The class itself is not part of the ``fc.ops`` public surface (not in
+    The class itself is not part of the ``fq.ops`` public surface (not in
     ``__all__``) but stays attribute-accessible for ``isinstance`` checks;
     ``Sum`` (the singleton) is the one users add to a program.
     """
@@ -189,9 +189,9 @@ class FourierGate(Operation):
         1&1&1\\\\ 1&\\omega&\\omega^2\\\\ 1&\\omega^2&\\omega
         \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
 
-    Internal only: unlike `SumGate` (attribute-accessible via `fc.ops.SumGate`
+    Internal only: unlike `SumGate` (attribute-accessible via `fq.ops.SumGate`
     though excluded from `__all__`), this class is not imported into
-    `operations/__init__.py` at all, so it is not reachable as `fc.ops.
+    `operations/__init__.py` at all, so it is not reachable as `fq.ops.
     FourierGate`. `Fourier` (the singleton) is the only public surface.
     """
 
@@ -218,7 +218,7 @@ class FourierdgGate(Operation):
         \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
 
     Internal only: not imported into `operations/__init__.py`, so it is not
-    reachable as `fc.ops.FourierdgGate`. `Fourierdg` (the singleton) is the
+    reachable as `fq.ops.FourierdgGate`. `Fourierdg` (the singleton) is the
     only public surface.
     """
 

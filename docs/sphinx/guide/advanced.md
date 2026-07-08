@@ -18,20 +18,20 @@ There's no mixed qubit-qutrit gate yet, but a qubit register and a qutrit
 register can each be driven independently with their own gates:
 
 ```python
-import fatqat as fc
+import fatqat as fq
 
-qubit = fc.QuantumRegister(1, name="qubit")            # dim=2
-qutrit = fc.QuantumRegister(1, dim=3, name="qutrit")
-cbit = fc.ClassicalRegister(1, name="c_qubit")
-ctrit = fc.ClassicalRegister(1, dim=3, name="c_qutrit")
+qubit = fq.QuantumRegister(1, name="qubit")            # dim=2
+qutrit = fq.QuantumRegister(1, dim=3, name="qutrit")
+cbit = fq.ClassicalRegister(1, name="c_qubit")
+ctrit = fq.ClassicalRegister(1, dim=3, name="c_qutrit")
 
-program = fc.Program([qubit, qutrit], [cbit, ctrit])
-program.add(fc.ops.X, program.qreg[0][0])            # qubit: |0> -> |1>
-program.add(fc.ops.Shift(1), program.qreg[1][0])     # qutrit: |0> -> |1>
+program = fq.Program([qubit, qutrit], [cbit, ctrit])
+program.add(fq.ops.X, program.qreg[0][0])            # qubit: |0> -> |1>
+program.add(fq.ops.Shift(1), program.qreg[1][0])     # qutrit: |0> -> |1>
 program.add_measurement(program.qreg[0][0], program.creg[0][0])
 program.add_measurement(program.qreg[1][0], program.creg[1][0])
 
-result = fc.backends.StateVectorBackend().run(program, shots=100).result()
+result = fq.backends.StateVectorBackend().run(program, shots=100).result()
 print(result.get_counts())   # {"11": 100}
 ```
 
@@ -57,11 +57,11 @@ working, then register your gate's matrix on top of it. This example adds a
 
 ```python
 import numpy as np
-import fatqat as fc
+import fatqat as fq
 from fatqat.implementation import FixedMatrix, default_matrix_implementation_map
 
 
-class SqrtX(fc.ops.Operation):
+class SqrtX(fq.ops.Operation):
     name = "SqrtX"
     _num_subsystems = 1
 
@@ -74,9 +74,9 @@ SQRT_X_MATRIX = 0.5 * np.array(
 implementation_map = default_matrix_implementation_map()
 implementation_map.register(SqrtX, FixedMatrix(SQRT_X_MATRIX))
 
-backend = fc.backends.StateVectorBackend(implementation_map=implementation_map)
+backend = fq.backends.StateVectorBackend(implementation_map=implementation_map)
 
-program = fc.Program(1)
+program = fq.Program(1)
 program.add(SqrtX(), 0)
 program.add(SqrtX(), 0)   # two SqrtX == one X
 

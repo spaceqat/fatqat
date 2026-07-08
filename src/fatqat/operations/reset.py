@@ -13,7 +13,7 @@ class ResetGate(Operation):
     """Reset operation: repreparation of one or more target subsystems in ``|0>``.
 
     Has no matrix; the matrix-family backend resolves it to a boundary reset
-    step by operation type. The class itself is not part of the ``fc.ops``
+    step by operation type. The class itself is not part of the ``fq.ops``
     public surface (not in ``__all__``) but stays attribute-accessible for
     ``isinstance`` checks against ``Reset`` steps; ``Reset`` (the singleton)
     is the one users construct programs with.
@@ -24,5 +24,5 @@ class ResetGate(Operation):
 
 
 # `Reset` takes no parameters, so - like the fixed gates - it is exported only
-# as a singleton value: `fc.ops.Reset`, not `fc.ops.Reset()`.
+# as a singleton value: `fq.ops.Reset`, not `fq.ops.Reset()`.
 Reset = ResetGate()

@@ -3,7 +3,7 @@
 ## Running a program
 
 ```python
-backend = fc.backends.StateVectorBackend()
+backend = fq.backends.StateVectorBackend()
 result = backend.run(program, shots=1000).result()
 ```
 

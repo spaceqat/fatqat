@@ -45,7 +45,7 @@ def default_matrix_implementation_map() -> MatrixImplementationMap:
 
     Registers against the public singleton instances (e.g. `ops.X`), not the
     underlying `*Gate` classes: `register()` resolves either to the same
-    class key, and the fixed-gate classes are not part of the `fc.ops` public
+    class key, and the fixed-gate classes are not part of the `fq.ops` public
     surface (see `operations.fixed_gates`).
     """
     m = MatrixImplementationMap()

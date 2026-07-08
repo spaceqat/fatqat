@@ -1,6 +1,6 @@
 # Gates
 
-All gates live in the `fc.ops` namespace. The full list with signatures is
+All gates live in the `fq.ops` namespace. The full list with signatures is
 in the [API reference](../api/operations.rst); this page covers how to use
 them.
 
@@ -12,26 +12,26 @@ them.
 Fixed (parameter-free) gates are exported as ready-to-use singleton values:
 
 ```python
-program.add(fc.ops.H, 0)
-program.add(fc.ops.X, 0)
+program.add(fq.ops.H, 0)
+program.add(fq.ops.X, 0)
 ```
 
 Parametric gates are exported as classes and must be instantiated with their
 parameter before use:
 
 ```python
-program.add(fc.ops.RX(0.2), 0)
-program.add(fc.ops.CPhase(1.5), (0, 1))
+program.add(fq.ops.RX(0.2), 0)
+program.add(fq.ops.CPhase(1.5), (0, 1))
 ```
 
 Passing an unparameterized class where a value is expected (e.g.
-`fc.ops.RX` instead of `fc.ops.RX(0.2)`) raises a {py:exc}`TypeError` from
+`fq.ops.RX` instead of `fq.ops.RX(0.2)`) raises a {py:exc}`TypeError` from
 {py:meth}`~fatqat.Program.add` that names the mistake.
 
 ### Importing gates directly
 
-`fc.ops.H` is fine for the odd gate here and there, but for a long circuit
-with hundreds of `program.add(...)` calls, repeating the `fc.ops.` prefix
+`fq.ops.H` is fine for the odd gate here and there, but for a long circuit
+with hundreds of `program.add(...)` calls, repeating the `fq.ops.` prefix
 gets tedious. Every gate name is a plain top-level import, so it's fine to
 pull out just the ones a script uses:
 
@@ -80,8 +80,8 @@ A gate's targets are passed as a single operand (one-qubit gates) or a
 tuple of operands (multi-qubit gates):
 
 ```python
-program.add(fc.ops.H, 0)              # single target
-program.add(fc.ops.CX, (0, 1))        # two targets, control first
+program.add(fq.ops.H, 0)              # single target
+program.add(fq.ops.CX, (0, 1))        # two targets, control first
 ```
 
 Each operand is either a bare integer or an explicit
@@ -90,8 +90,8 @@ program has exactly one register of the relevant kind — with multiple
 quantum registers, address a specific one explicitly:
 
 ```python
-program = fc.Program([fc.QuantumRegister(2, name="a"), fc.QuantumRegister(2, name="b")])
-program.add(fc.ops.H, program.qreg[1][0])   # qubit 0 of register "b"
+program = fq.Program([fq.QuantumRegister(2, name="a"), fq.QuantumRegister(2, name="b")])
+program.add(fq.ops.H, program.qreg[1][0])   # qubit 0 of register "b"
 ```
 
 ## Qudit gates
@@ -104,19 +104,19 @@ with {py:class}`CClock`:
 
 ```python
 import numpy as np
-import fatqat as fc
+import fatqat as fq
 
-qreg = fc.QuantumRegister(2, dim=3)   # two qutrits
-creg = fc.ClassicalRegister(2, dim=3)
-program = fc.Program([qreg], [creg])
+qreg = fq.QuantumRegister(2, dim=3)   # two qutrits
+creg = fq.ClassicalRegister(2, dim=3)
+program = fq.Program([qreg], [creg])
 
-program.add(fc.ops.Fourier, 0)                    # qudit Hadamard analogue...
-program.add(fc.ops.Fourierdg, 0)                   # ...immediately undone
-program.add(fc.ops.SwapLevels(0, 2), 0)            # |0> -> |2>
-program.add(fc.ops.SubspaceRX(np.pi, (0, 2)), 0)   # |2> -> |0> (up to global phase)
-program.add(fc.ops.CClock(1), (0, 1))              # phase-only here: qubit 1 stays |0>
+program.add(fq.ops.Fourier, 0)                    # qudit Hadamard analogue...
+program.add(fq.ops.Fourierdg, 0)                   # ...immediately undone
+program.add(fq.ops.SwapLevels(0, 2), 0)            # |0> -> |2>
+program.add(fq.ops.SubspaceRX(np.pi, (0, 2)), 0)   # |2> -> |0> (up to global phase)
+program.add(fq.ops.CClock(1), (0, 1))              # phase-only here: qubit 1 stays |0>
 program.measure_all()
 
-result = fc.backends.StateVectorBackend().run(program, shots=100).result()
+result = fq.backends.StateVectorBackend().run(program, shots=100).result()
 print(result.get_counts_as_tuples())               # {(0, 0): 100}
 ```

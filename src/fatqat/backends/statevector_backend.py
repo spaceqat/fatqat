@@ -211,13 +211,13 @@ class StateVectorBackend:
 
             .. code-block:: python
 
-                import fatqat as fc
+                import fatqat as fq
 
-                program = fc.Program(1, 1)
-                program.add(fc.ops.X, 0)
+                program = fq.Program(1, 1)
+                program.add(fq.ops.X, 0)
                 program.add_measurement(0, 0)
 
-                result = fc.backends.StateVectorBackend().run(
+                result = fq.backends.StateVectorBackend().run(
                     program,
                     shots=100,
                     result_config={"counts": True},
@@ -228,10 +228,10 @@ class StateVectorBackend:
 
             .. code-block:: python
 
-                program = fc.Program(1)
-                program.add(fc.ops.H, 0)
+                program = fq.Program(1)
+                program.add(fq.ops.H, 0)
 
-                result = fc.backends.StateVectorBackend().run(
+                result = fq.backends.StateVectorBackend().run(
                     program,
                     result_config={"counts": False, "statevector": True},
                 ).result()

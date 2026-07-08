@@ -297,7 +297,7 @@ class CSwapGate(Operation):
 # Public fixed-gate instances
 # ---------------------------------------------------------------------------
 # These classes have no parameters, so each is exported only as a singleton
-# value (e.g. `fc.ops.H`), not as a class - unlike parametric gates, there is
+# value (e.g. `fq.ops.H`), not as a class - unlike parametric gates, there is
 # no reason for a caller to ever name `HGate` itself.
 
 H = HGate()

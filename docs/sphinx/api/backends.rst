@@ -1,4 +1,4 @@
-Backends (``fc.backends``)
+Backends (``fq.backends``)
 ============================
 
 .. autoclass:: fatqat.backends.StateVectorBackend

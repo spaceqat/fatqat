@@ -5,7 +5,7 @@ import warnings
 import numpy as np
 import pytest
 
-import fatqat as fc
+import fatqat as fq
 import fatqat.backends as backends
 from fatqat.backends import StateVectorBackend
 from fatqat.errors import (

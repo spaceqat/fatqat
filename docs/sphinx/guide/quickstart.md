@@ -9,14 +9,14 @@ pip install -e .
 Build a program, run it, and read back the measurement counts:
 
 ```python
-import fatqat as fc
+import fatqat as fq
 
-program = fc.Program(2, 2)          # 2 qubits, 2 clbits
-program.add(fc.ops.H, 0)
-program.add(fc.ops.CX, (0, 1))
+program = fq.Program(2, 2)          # 2 qubits, 2 clbits
+program.add(fq.ops.H, 0)
+program.add(fq.ops.CX, (0, 1))
 program.add_measurement((0, 1), (0, 1))
 
-result = fc.backends.StateVectorBackend().run(program, shots=1000).result()
+result = fq.backends.StateVectorBackend().run(program, shots=1000).result()
 print(result.get_counts())          # e.g. {"00": 512, "11": 488}
 ```
 

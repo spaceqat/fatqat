@@ -122,7 +122,7 @@ class _DimMatrix(MatrixImplementation):
 def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]:
     """Normalize an `Operation` instance or subclass to its registry key.
 
-    Accepts either an `Operation` instance (e.g. `fc.ops.X`) or an `Operation`
+    Accepts either an `Operation` instance (e.g. `fq.ops.X`) or an `Operation`
     subclass (e.g. a custom gate class) and returns the class to key the
     registry by. Applying `type(...)` unconditionally would be wrong for the
     class case: `type(MyGate)` is the metaclass `type`, not `MyGate`.
@@ -234,7 +234,7 @@ class MatrixImplementationMap:
         """Register a matrix implementation for an operation.
 
         Args:
-            op: An `Operation` instance (e.g. `fc.ops.X`) or subclass (e.g. a
+            op: An `Operation` instance (e.g. `fq.ops.X`) or subclass (e.g. a
                 custom gate class). Normalized to the operation's class for
                 the registry key.
             rule: A `MatrixImplementation` instance (e.g. `FixedMatrix` or
