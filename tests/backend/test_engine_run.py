@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from fatqat.backends.engine_contract import _ResultRequest
+from fatqat.backends.engine_contract import _EngineConfig, _ResultRequest
 from fatqat.backends.statevectorengine import StateVectorEngine
-from fatqat.backends.steps import ApplyMatrixStep, MeasurementStep
+from fatqat.backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep
 
 
 def test_engine_run_requires_initialize():
@@ -67,3 +67,54 @@ def test_engine_run_fast_counts_and_state_share_collapse_event():
     assert result.outcome_counts.tolist() == [1]
     assert np.isclose(abs(result.state[measured]), 1.0)
     assert np.count_nonzero(np.abs(result.state) > 1e-12) == 1
+
+
+def test_engine_run_dynamic_counts_use_clbit_snapshots():
+    engine = StateVectorEngine(_EngineConfig(max_workers=1))
+    engine.initialize((2,), n_clbits=1)
+    x = np.array([[0, 1], [1, 0]], dtype=complex)
+    result = engine.run(
+        [
+            ApplyMatrixStep(matrix=x, target_indices=(0,)),
+            MeasurementStep((0,), (0,)),
+            ResetStep((0,)),
+        ],
+        shots=5,
+        seed=0,
+        request=_ResultRequest(counts=True, statevector=False),
+    )
+    assert result.outcome_keys.tolist() == [[1]]
+    assert result.outcome_counts.tolist() == [5]
+
+
+def test_engine_run_dynamic_statevector_only_runs_one_trajectory():
+    engine = StateVectorEngine()
+    engine.initialize((2, 2), n_clbits=2)
+    x = np.array([[0, 1], [1, 0]], dtype=complex)
+    result = engine.run(
+        [ApplyMatrixStep(matrix=x, target_indices=(1,), condition=((0, 0),))],
+        shots=0,
+        seed=0,
+        request=_ResultRequest(counts=False, statevector=True),
+    )
+    assert result.outcome_keys is None
+    assert result.outcome_counts is None
+    assert np.allclose(result.state, [0, 0, 1, 0])
+
+
+def test_engine_run_dynamic_reinitializes_each_shot():
+    engine = StateVectorEngine(_EngineConfig(max_workers=1))
+    engine.initialize((2,), n_clbits=1)
+    x = np.array([[0, 1], [1, 0]], dtype=complex)
+    result = engine.run(
+        [
+            ApplyMatrixStep(matrix=x, target_indices=(0,)),
+            ResetStep((0,)),
+            MeasurementStep((0,), (0,)),
+        ],
+        shots=4,
+        seed=123,
+        request=_ResultRequest(counts=True, statevector=False),
+    )
+    assert result.outcome_keys.tolist() == [[0]]
+    assert result.outcome_counts.tolist() == [4]

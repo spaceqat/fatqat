@@ -197,9 +197,93 @@ class StateVectorEngine:
             state=state,
         )
 
+    def _run_per_shot(
+        self,
+        plan: list[ResolvedStep],
+        shots: int,
+        seed: int | None,
+        request: _ResultRequest,
+    ) -> RawResult:
+        """Run dynamic execution one trajectory at a time or via worker batches."""
+        from .parallel import (
+            _planned_workers,
+            _run_dynamic_shots_parallel,
+            _shot_seed_sequences,
+        )
+
+        n_iters = shots if request.counts else (1 if request.statevector else 0)
+        seed_sequences = _shot_seed_sequences(seed, n_iters)
+
+        max_workers = (
+            None if request.statevector else _planned_workers(self._config, request, n_iters)
+        )
+        if max_workers is not None:
+            snapshots = _run_dynamic_shots_parallel(
+                self._config,
+                plan,
+                self._dims,
+                self._n_clbits,
+                seed_sequences,
+                max_workers,
+            )
+        else:
+            snapshots: list[tuple[int, ...]] = []
+            for seed_sequence in seed_sequences:
+                rng = np.random.default_rng(seed_sequence)
+                self.initialize(self._dims, self._n_clbits)
+                snapshots.append(
+                    _execute_dynamic_plan_one_shot(self, plan, self._n_clbits, rng)
+                )
+
+        outcome_keys: np.ndarray | None = None
+        outcome_counts: np.ndarray | None = None
+        state: np.ndarray | None = None
+
+        if request.counts:
+            rows = np.asarray(snapshots, dtype=int).reshape((len(snapshots), self._n_clbits))
+            outcome_keys, outcome_counts = reduce_to_counts(rows)
+        if request.statevector:
+            state = self.export_state()
+
+        return RawResult(
+            outcome_keys=outcome_keys,
+            outcome_counts=outcome_counts,
+            state=state,
+        )
+
     def _require_state(self) -> None:
         if self._state is None:
             raise RuntimeError("engine not initialized; call initialize(dims) first")
+
+
+def _condition_matches(
+    condition: tuple[tuple[int, int], ...] | None,
+    clbits: list[int],
+) -> bool:
+    """Return whether a lowered feedforward condition passes."""
+    return condition is None or all(clbits[c] == v for c, v in condition)
+
+
+def _execute_dynamic_plan_one_shot(
+    engine: StateVectorEngine,
+    plan: list[ResolvedStep],
+    n_clbits: int,
+    rng: np.random.Generator,
+) -> tuple[int, ...]:
+    """Run one dynamic-path shot and return its final clbit snapshot."""
+    clbits = [0] * n_clbits
+    for step in plan:
+        if isinstance(step, ApplyMatrixStep):
+            if _condition_matches(step.condition, clbits):
+                engine.apply(step)
+        elif isinstance(step, MeasurementStep):
+            bits = engine.measure_subsystems(step.measured_indices, rng)
+            for c, bit in zip(step.classical_indices, bits):
+                clbits[c] = bit
+        else:
+            if _condition_matches(step.condition, clbits):
+                engine.reset_subsystems(step.reset_indices, rng)
+    return tuple(clbits)
 
 
 def _analyze_plan_for_run(plan: list[ResolvedStep]) -> tuple[bool, list[tuple[int, int]]]:

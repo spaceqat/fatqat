@@ -14,15 +14,13 @@ import os
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
-from .statevectorengine import StateVectorEngine
+from .engine_contract import _EngineConfig, _ResultRequest
+from .statevectorengine import StateVectorEngine, _execute_dynamic_plan_one_shot
 from .steps import ResolvedStep
-
-if TYPE_CHECKING:
-    from .statevector import _BackendConfig, _ResultRequest
 
 
 def _shot_seed_sequences(seed: int | None, n_iters: int) -> list[np.random.SeedSequence]:
@@ -59,8 +57,8 @@ def _effective_max_workers(max_workers: object, n_iters: int) -> int:
 
 
 def _planned_workers(
-    config: "_BackendConfig",
-    request: "_ResultRequest",
+    config: _EngineConfig,
+    request: _ResultRequest,
     n_iters: int,
 ) -> int | None:
     if not request.counts:
@@ -80,7 +78,7 @@ def _resolve_parallel_mode_name(name: str) -> str:
     """Resolve `"auto"` to a concrete backend; other names are passed through.
 
     `name` is already one of the validated `_PARALLEL_MODE_NAMES` (checked
-    in `_BackendConfig.__post_init__`), so this only expands `"auto"`.
+    in `_EngineConfig.__post_init__`), so this only expands `"auto"`.
     """
     if name == "auto":
         return "loky" if _loky_available() else "multiprocessing"
@@ -117,16 +115,11 @@ def _run_dynamic_shot_batch(
     seed_batch: list[np.random.SeedSequence],
 ) -> list[tuple[int, ...]]:
     """Run a contiguous batch of dynamic shots in one worker with one engine."""
-    # Deferred: statevector.py imports this module at top level, so importing
-    # it back at module scope here would cycle. Also cheap to re-import per
-    # worker process (each ProcessPoolExecutor/loky worker starts fresh).
-    from .statevector import _execute_dynamic_plan_one_shot
-
     engine = StateVectorEngine()
     snapshots: list[tuple[int, ...]] = []
     for seed_sequence in seed_batch:
         rng = np.random.default_rng(seed_sequence)
-        engine.initialize(system_dims)
+        engine.initialize(system_dims, n_clbits)
         snapshots.append(_execute_dynamic_plan_one_shot(engine, plan, n_clbits, rng))
     return snapshots
 
@@ -172,7 +165,7 @@ def _run_dynamic_shots_loky(
 
 
 def _run_dynamic_shots_parallel(
-    config: "_BackendConfig",
+    config: _EngineConfig,
     plan: list[ResolvedStep],
     system_dims: tuple[int, ...],
     n_clbits: int,
