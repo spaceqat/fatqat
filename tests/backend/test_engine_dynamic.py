@@ -1,6 +1,6 @@
 import numpy as np
 
-from fatqat.backends.statevectorengine import StateVectorEngine
+from fatqat.backends.statevector_engine import StateVectorEngine
 from fatqat.backends.steps import ApplyMatrixStep
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)

@@ -24,7 +24,7 @@ from ..result import (
     counts_dict_from_arrays,
 )
 from .engine_contract import _EngineConfig, _ResultRequest
-from .statevectorengine import StateVectorEngine
+from .statevector_engine import StateVectorEngine
 from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
 
 

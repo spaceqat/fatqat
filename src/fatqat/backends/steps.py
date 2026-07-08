@@ -5,7 +5,7 @@ A `Program` lowers to a `list[ResolvedStep]`: each step is either an
 rule plus layout-resolved target indices), a `MeasurementStep`, or a
 `ResetStep`. Defined here, separate from both `implementation/` (the rule
 protocol that only ever produces a bare matrix, never a step) and
-`statevector.py`/`statevectorengine.py` (which would otherwise need to import
+`statevector_backend.py`/`statevector_engine.py` (which would otherwise need to import
 this type from each other and cycle), so both the backend and the engine can
 import it without depending on one another.
 """

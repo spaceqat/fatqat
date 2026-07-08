@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from fatqat.backends.statevectorengine import StateVectorEngine, _collapse_state
+from fatqat.backends.statevector_engine import StateVectorEngine, _collapse_state
 from fatqat.backends.steps import ApplyMatrixStep
 
 

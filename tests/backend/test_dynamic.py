@@ -4,7 +4,7 @@ import pytest
 import fatqat as fc
 from fatqat import operations as ops
 from fatqat.backends import ApplyMatrixStep, MeasurementStep, ResetStep, StateVectorBackend
-from fatqat.backends.statevectorengine import _requires_dynamic_execution
+from fatqat.backends.statevector_engine import _requires_dynamic_execution
 from fatqat.program import Program
 
 

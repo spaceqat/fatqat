@@ -2,7 +2,7 @@
 
 Shared by `StateVectorBackend`'s dynamic (per-shot) execution path when counts
 are requested, multiple shots are needed, and backend options allow it. Kept
-separate from `statevector.py` because it is pure execution-strategy plumbing
+separate from `statevector_backend.py` because it is pure execution-strategy plumbing
 (worker counts, batching, process-pool dispatch) with no state/physics
 content of its own.
 """
@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 
 from .engine_contract import _EngineConfig, _ResultRequest
-from .statevectorengine import StateVectorEngine, _execute_dynamic_plan_one_shot
+from .statevector_engine import StateVectorEngine, _execute_dynamic_plan_one_shot
 from .steps import ResolvedStep
 
 
