@@ -1,10 +1,12 @@
 """Parallel dynamic-shot execution: multiprocessing/loky worker dispatch.
 
-Shared by `StateVectorBackend`'s dynamic (per-shot) execution path when counts
-are requested, multiple shots are needed, and backend options allow it. Kept
-separate from `statevector_backend.py` because it is pure execution-strategy plumbing
-(worker counts, batching, process-pool dispatch) with no state/physics
-content of its own.
+Shared by the matrix-family backends' dynamic (per-shot) execution paths when
+counts are requested, multiple shots are needed, and backend options allow it.
+Kept separate from the backend modules because it is pure execution-strategy
+plumbing (worker counts, batching, process-pool dispatch) with no
+state/physics content of its own: the engine is duck-typed through
+``engine_factory`` (default ``StateVectorEngine``), so any engine exposing
+``initialize``/``apply``/``measure_subsystems``/``reset_subsystems`` works.
 """
 
 from __future__ import annotations
@@ -113,9 +115,10 @@ def _run_dynamic_shot_batch(
     system_dims: tuple[int, ...],
     n_clbits: int,
     seed_batch: list[np.random.SeedSequence],
+    engine_factory: type = StateVectorEngine,
 ) -> list[tuple[int, ...]]:
     """Run a contiguous batch of dynamic shots in one worker with one engine."""
-    engine = StateVectorEngine()
+    engine = engine_factory()
     snapshots: list[tuple[int, ...]] = []
     for seed_sequence in seed_batch:
         rng = np.random.default_rng(seed_sequence)
@@ -130,6 +133,7 @@ def _run_dynamic_shots_multiprocessing(
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
+    engine_factory: type,
 ) -> list[tuple[int, ...]]:
     batches = _split_into_batches(seed_sequences, max_workers)
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -139,6 +143,7 @@ def _run_dynamic_shots_multiprocessing(
             repeat(system_dims),
             repeat(n_clbits),
             batches,
+            repeat(engine_factory),
         )
         return [snapshot for batch in results for snapshot in batch]
 
@@ -149,6 +154,7 @@ def _run_dynamic_shots_loky(
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
+    engine_factory: type,
 ) -> list[tuple[int, ...]]:
     from loky import get_reusable_executor
 
@@ -160,6 +166,7 @@ def _run_dynamic_shots_loky(
         repeat(system_dims),
         repeat(n_clbits),
         batches,
+        repeat(engine_factory),
     )
     return [snapshot for batch in results for snapshot in batch]
 
@@ -171,19 +178,21 @@ def _run_dynamic_shots_parallel(
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
+    engine_factory: type = StateVectorEngine,
 ) -> list[tuple[int, ...]]:
     """Dispatch shots to worker processes. Caller must supply `max_workers`.
 
     `max_workers` is the same value `_planned_workers` already returned to
     decide whether to call this function at all; it is passed through rather
     than recomputed here, so there is exactly one source of truth for the
-    parallel/serial decision.
+    parallel/serial decision. `engine_factory` is the (picklable) engine class
+    each worker constructs; the default preserves statevector behavior.
     """
     mode_name = _resolve_parallel_mode_name(config.parallel_mode)
     if mode_name == "loky":
         if _loky_available():
             return _run_dynamic_shots_loky(
-                plan, system_dims, n_clbits, seed_sequences, max_workers
+                plan, system_dims, n_clbits, seed_sequences, max_workers, engine_factory
             )
         warnings.warn(
             "parallel_mode='loky' requested but loky is unavailable; "
@@ -193,5 +202,5 @@ def _run_dynamic_shots_parallel(
         )
     # "multiprocessing", plus the loky-unavailable fallback above.
     return _run_dynamic_shots_multiprocessing(
-        plan, system_dims, n_clbits, seed_sequences, max_workers
+        plan, system_dims, n_clbits, seed_sequences, max_workers, engine_factory
     )

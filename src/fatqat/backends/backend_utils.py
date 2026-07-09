@@ -25,6 +25,7 @@ def _normalize_dict_options(
     config_cls: type,
     param_name: str,
     warning_noun: str,
+    backend_name: str = "StateVectorBackend",
 ) -> Any:
     """Normalize a plain dict of options into a frozen config dataclass."""
     if options is None:
@@ -35,7 +36,7 @@ def _normalize_dict_options(
     ignored = {key: value for key, value in options.items() if key not in known_keys}
     if ignored:
         warnings.warn(
-            f"StateVectorBackend ignored unsupported {warning_noun} options: {ignored!r}",
+            f"{backend_name} ignored unsupported {warning_noun} options: {ignored!r}",
             UserWarning,
             stacklevel=3,
         )

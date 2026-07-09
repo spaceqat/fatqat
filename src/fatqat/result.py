@@ -41,6 +41,32 @@ class _ResultConfig:
     statevector: bool | None = None
 
 
+@dataclass(frozen=True)
+class _DensityMatrixResultConfig:
+    """Internal normalized result-field selection for one density-matrix execution.
+
+    Each field is tri-state with the same meaning as `_ResultConfig`:
+    `None` lets the backend choose, `True` requests, `False` suppresses.
+
+    For `DensityMatrixBackend`, the defaults are:
+
+    - `counts=None`: produce counts when the program contains at least one
+      measurement
+    - `density_matrix=None`: produce a density matrix only when the program
+      contains no measurement. Reset does not suppress the default: on a
+      density matrix, reset is a deterministic channel (partial trace plus
+      repreparation), so a reset-bearing program still has a well-defined
+      ensemble state.
+
+    Requesting `density_matrix=True` for a program with measurement is only
+    supported for `shots == 1`; the exported state is that single trajectory's
+    post-measurement density matrix.
+    """
+
+    counts: bool | None = None
+    density_matrix: bool | None = None
+
+
 def decode_indices_to_clbit_rows(
     indices: Iterable[int],
     measurements: Sequence[tuple[int, int]],
@@ -147,6 +173,7 @@ class Result:
         available: frozenset[str] = frozenset(),
         metadata: Mapping[str, Any] | None = None,
         classical_dims: Sequence[int] = (),
+        density_matrix: np.ndarray | None = None,
     ) -> None:
         """Create a result from backend-produced fields.
 
@@ -159,9 +186,11 @@ class Result:
                 `metadata` dictionary.
             classical_dims: Per-clbit classical dimensions, used to render
                 `get_counts()` display strings.
+            density_matrix: Optional density-matrix array.
         """
         self._counts = counts
         self._statevector = statevector
+        self._density_matrix = density_matrix
         self.available_data = frozenset(available)
         self.metadata = dict(metadata) if metadata is not None else {}
         self._classical_dims = tuple(classical_dims)
@@ -238,3 +267,32 @@ class Result:
                 "statevector not available in this result"
             )
         return self._statevector
+
+    def get_density_matrix(self) -> np.ndarray:
+        """Return the density-matrix snapshot.
+
+        Returns:
+            A density-matrix array produced by the backend.
+
+        Raises:
+            ResultFieldUnavailableError: If a density matrix was not produced.
+
+        Examples:
+            .. code-block:: python
+
+                import fatqat as fq
+
+                program = fq.Program(1)
+                program.add(fq.ops.H, 0)
+                result = fq.backends.DensityMatrixBackend().run(
+                    program,
+                    result_config={"counts": False, "density_matrix": True},
+                ).result()
+
+                density_matrix = result.get_density_matrix()
+        """
+        if "density_matrix" not in self.available_data:
+            raise ResultFieldUnavailableError(
+                "density_matrix not available in this result"
+            )
+        return self._density_matrix

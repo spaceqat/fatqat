@@ -1,10 +1,27 @@
-"""Statevector engine: a stateful simulator that owns the quantum state.
+"""Density-matrix engine: a stateful simulator that owns the quantum state.
 
-Conventions:
+Sibling of ``statevector_engine.py`` (see the backend/engine parallel handoff):
+same ``initialize(...)`` / ``run(...)`` seam, same ``RawResult`` shape, but the
+owned state is a dense density matrix ``rho`` of shape ``(N, N)`` with
+``N = prod(system_dims)``.
+
+Conventions (matching the statevector engine):
 - little-endian: flat basis index digit for subsystem ``q`` has place value
   ``prod(dims[:q])``; subsystem 0 is the least-significant digit.
 - an ``ApplyMatrixStep``'s ``target_indices`` map to the matrix's local index
   with ``target_indices[0]`` as the most-significant digit.
+- ``rho`` reshaped to ``reversed(dims) + reversed(dims)`` exposes ket axes
+  ``[0, n)`` and bra axes ``[n, 2n)``; subsystem ``q``'s ket axis is
+  ``n - 1 - q`` and its bra axis is ``2n - 1 - q``.
+
+Semantics that differ from the statevector engine (per
+``design/architecture/backend/matrix-family/density-matrix-backend.md``):
+- ordinary evolution is ``rho' = U_T rho U_T^dagger``.
+- measurement is trajectory-style: Born sampling from ``diag(rho)``,
+  projector posterior, trace normalization.
+- reset is a deterministic channel: partial trace over the targets, then
+  repreparation in ``|0><0|``. It consumes no randomness, so reset alone
+  neither makes a program stochastic nor forces per-shot execution.
 """
 
 from __future__ import annotations
@@ -14,19 +31,17 @@ from math import prod
 
 import numpy as np
 
-from .engine_contract import _EngineConfig
-from ..implementation.matrices import shift_matrix
 from ..result import decode_indices_to_clbit_rows, reduce_to_counts
-from .engine_contract import _ResultRequest, RawResult
+from .engine_contract import _DensityMatrixResultRequest, _EngineConfig, RawResult
 from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
 
 
-class StateVectorEngine:
-    """Stateful numerical core for statevector evolution.
+class DensityMatrixEngine:
+    """Stateful numerical core for density-matrix evolution.
 
-    The engine owns the current state buffer. Backends initialize the state,
-    apply resolved matrix payloads, then sample, collapse, or export copies of
-    the state.
+    The engine owns the current density matrix. Backends initialize the state,
+    apply resolved matrix payloads, then sample, collapse, reset, or export
+    copies of the state.
     """
 
     def __init__(self, config: _EngineConfig | None = None) -> None:
@@ -45,20 +60,20 @@ class StateVectorEngine:
     def initialize(self, system_dims: Sequence[int], n_clbits: int = 0) -> None:
         """Configure dimensions and reset to the all-zero computational state."""
         dims = tuple(int(d) for d in system_dims)
-        state = np.zeros(prod(dims) if dims else 1, dtype=complex)
-        state[0] = 1.0
+        size = prod(dims) if dims else 1
+        state = np.zeros((size, size), dtype=complex)
+        state[0, 0] = 1.0
         self._state = state
         self._dims = dims
-        # Cached once per circuit execution (not per gate): dims are fixed for
-        # the engine's lifetime between initialize() calls, so recomputing this
-        # reshape shape on every apply() would be pure per-call Python overhead.
+        # Cached once per circuit execution (not per gate), same rationale as
+        # the statevector engine: dims are fixed between initialize() calls.
         self._reversed_dims = tuple(reversed(dims))
         self._n_clbits = int(n_clbits)
 
     def apply(self, step: ApplyMatrixStep) -> None:
-        """Evolve the state by one resolved matrix step in place."""
+        """Evolve the state by one resolved matrix step: ``U rho U^dagger``."""
         self._require_state()
-        self._state = _apply_matrix(
+        self._state = _apply_matrix_rho(
             self._state,
             step.matrix,
             step.target_indices,
@@ -67,9 +82,9 @@ class StateVectorEngine:
         )
 
     def probabilities(self) -> np.ndarray:
-        """Return normalized computational-basis probabilities."""
+        """Return normalized computational-basis probabilities (``diag(rho)``)."""
         self._require_state()
-        return _probabilities(self._state)
+        return _probabilities_from_rho(self._state)
 
     def sample_indices(self, shots: int, rng: np.random.Generator) -> np.ndarray:
         """Sample flat basis-state indices from the current state.
@@ -82,12 +97,14 @@ class StateVectorEngine:
             One-dimensional array of sampled flat basis-state indices.
         """
         self._require_state()
-        return rng.choice(len(self._state), size=shots, p=self.probabilities())
+        return rng.choice(self._state.shape[0], size=shots, p=self.probabilities())
 
     def collapse(self, measured_subsystems: Sequence[int], rng: np.random.Generator) -> int:
         """Sample one outcome, project the internal state, return the flat index."""
         self._require_state()
-        idx, new = _collapse_state(self._state, measured_subsystems, self._dims, rng)
+        idx, new = _collapse_density_matrix(
+            self._state, measured_subsystems, self._dims, rng
+        )
         self._state = new
         return idx
 
@@ -111,30 +128,31 @@ class StateVectorEngine:
         """
         return self.measure_subsystems((index,), rng)[0]
 
-    def reset_subsystems(self, indices: Sequence[int], rng: np.random.Generator) -> None:
-        """Measure a group of subsystems and reprepare them in ``|0>``."""
+    def reset_subsystems(
+        self, indices: Sequence[int], rng: np.random.Generator | None = None
+    ) -> None:
+        """Discard a group of subsystems and reprepare them in ``|0><0|``.
+
+        On a density matrix, reset is the deterministic channel
+        ``rho' = |0><0|_targets (x) Tr_targets(rho)``: no outcome is sampled and
+        ``rng`` is accepted only for signature parity with the statevector
+        engine (it is never consumed).
+        """
         self._require_state()
         if len(indices) < 1:
             raise ValueError("reset_subsystems requires at least one index")
-        outcomes = self.measure_subsystems(indices, rng)
-        for index, outcome in zip(indices, outcomes):
-            if outcome != 0:
-                inv = shift_matrix(self._dims[index], -outcome)
-                self._state = _apply_matrix(
-                    self._state, inv, (index,), self._dims, self._reversed_dims
-                )
+        self._state = _reset_density_matrix(
+            self._state, indices, self._dims, self._reversed_dims
+        )
 
-    def reset_subsystem(self, index: int, rng: np.random.Generator) -> None:
-        """Measure a subsystem and reprepare it in ``|0>``.
-
-        Samples an outcome (one rng draw), projects, and shifts the target back
-        to ``|0>`` when the outcome is nonzero. The rest of an entangled state
-        is left correctly conditioned on the sampled branch.
-        """
+    def reset_subsystem(
+        self, index: int, rng: np.random.Generator | None = None
+    ) -> None:
+        """Discard a single subsystem and reprepare it in ``|0><0|``."""
         self.reset_subsystems((index,), rng)
 
     def export_state(self) -> np.ndarray:
-        """Return a copy of the current statevector."""
+        """Return a copy of the current density matrix."""
         self._require_state()
         return self._state.copy()
 
@@ -143,7 +161,7 @@ class StateVectorEngine:
         plan: list[ResolvedStep],
         shots: int,
         seed: int | None,
-        request: _ResultRequest,
+        request: _DensityMatrixResultRequest,
     ) -> RawResult:
         """Execute a lowered plan using this engine's configured system."""
         self._require_state()
@@ -159,20 +177,28 @@ class StateVectorEngine:
         measurements: list[tuple[int, int]],
         shots: int,
         rng: np.random.Generator,
-        request: _ResultRequest,
+        request: _DensityMatrixResultRequest,
     ) -> RawResult:
-        """Evolve once, optionally sample counts, optionally export state."""
+        """Evolve once, optionally sample counts, optionally export state.
+
+        Unlike the statevector fast path, unconditional resets stay on this
+        path: they are applied inline as the deterministic partial-trace
+        channel, so the evolved density matrix already holds the exact
+        ensemble average.
+        """
         self.initialize(self._dims, self._n_clbits)
         for step in plan:
             if isinstance(step, ApplyMatrixStep):
                 self.apply(step)
+            elif isinstance(step, ResetStep):
+                self.reset_subsystems(step.reset_indices)
 
         outcome_keys: np.ndarray | None = None
         outcome_counts: np.ndarray | None = None
         state: np.ndarray | None = None
 
         collapsed_index: int | None = None
-        if request.statevector and measurements:
+        if request.density_matrix and measurements:
             collapsed_index = self.collapse([q for q, _c in measurements], rng)
 
         if request.counts:
@@ -188,7 +214,7 @@ class StateVectorEngine:
             )
             outcome_keys, outcome_counts = reduce_to_counts(rows)
 
-        if request.statevector:
+        if request.density_matrix:
             state = self.export_state()
 
         return RawResult(
@@ -202,7 +228,7 @@ class StateVectorEngine:
         plan: list[ResolvedStep],
         shots: int,
         seed: int | None,
-        request: _ResultRequest,
+        request: _DensityMatrixResultRequest,
     ) -> RawResult:
         """Run dynamic execution one trajectory at a time or via worker batches."""
         from .parallel import (
@@ -211,11 +237,13 @@ class StateVectorEngine:
             _shot_seed_sequences,
         )
 
-        n_iters = shots if request.counts else (1 if request.statevector else 0)
+        n_iters = shots if request.counts else (1 if request.density_matrix else 0)
         seed_sequences = _shot_seed_sequences(seed, n_iters)
 
         max_workers = (
-            None if request.statevector else _planned_workers(self._config, request, n_iters)
+            None
+            if request.density_matrix
+            else _planned_workers(self._config, request, n_iters)
         )
         if max_workers is not None:
             snapshots = _run_dynamic_shots_parallel(
@@ -225,6 +253,7 @@ class StateVectorEngine:
                 self._n_clbits,
                 seed_sequences,
                 max_workers,
+                engine_factory=DensityMatrixEngine,
             )
         else:
             snapshots: list[tuple[int, ...]] = []
@@ -242,7 +271,7 @@ class StateVectorEngine:
         if request.counts:
             rows = np.asarray(snapshots, dtype=int).reshape((len(snapshots), self._n_clbits))
             outcome_keys, outcome_counts = reduce_to_counts(rows)
-        if request.statevector:
+        if request.density_matrix:
             state = self.export_state()
 
         return RawResult(
@@ -265,22 +294,21 @@ def _condition_matches(
 
 
 def _execute_dynamic_plan_one_shot(
-    engine: StateVectorEngine,
+    engine: DensityMatrixEngine,
     plan: list[ResolvedStep],
     n_clbits: int,
     rng: np.random.Generator,
 ) -> tuple[int, ...]:
     """Run one dynamic-path shot and return its final clbit snapshot.
 
-    SHARED CONTRACT despite living in this module: `parallel.py` dispatches
-    worker batches through this loop for *any* matrix-family engine selected
-    via `engine_factory` (currently also `DensityMatrixEngine`), so it must
-    stay duck-typed - touch the engine only through `apply`,
-    `measure_subsystems`, and `reset_subsystems`, never statevector internals.
-    A statevector-specific rewrite (e.g. Numba) must go in a separate variant,
-    and `density_matrix_engine._execute_dynamic_plan_one_shot` must stay
-    behaviorally in sync. Candidate to move to `backend_utils.py` once the
-    statevector optimization branch lands.
+    Serial-path twin of `statevector_engine._execute_dynamic_plan_one_shot`,
+    which the parallel path reuses via `parallel.py`'s `engine_factory`
+    dispatch; the two must stay behaviorally in sync (the equality is pinned
+    by the parallel-vs-serial backend test). The only textual difference is
+    that reset takes no rng here: it consumes no draws on this engine, so
+    per-shot rng streams are not draw-for-draw aligned with the statevector
+    engine's - counts for a fixed seed are reproducible per backend, not
+    across backends.
     """
     clbits = [0] * n_clbits
     for step in plan:
@@ -293,12 +321,20 @@ def _execute_dynamic_plan_one_shot(
                 clbits[c] = bit
         else:
             if _condition_matches(step.condition, clbits):
-                engine.reset_subsystems(step.reset_indices, rng)
+                engine.reset_subsystems(step.reset_indices)
     return tuple(clbits)
 
 
 def _analyze_plan_for_run(plan: list[ResolvedStep]) -> tuple[bool, list[tuple[int, int]]]:
-    """Return this engine's dynamic-path decision and fast-path measurement pairs."""
+    """Return this engine's dynamic-path decision and fast-path measurement pairs.
+
+    Differs from the statevector analysis in one way: an unconditional
+    ``ResetStep`` on never-measured subsystems does not force the dynamic
+    path, because density-matrix reset is a deterministic channel the fast
+    path applies inline. A reset still goes dynamic when it is conditioned or
+    when it touches an already-measured subsystem (end-of-run sampling for
+    that subsystem would otherwise read the post-reset state).
+    """
     measured_subsystems: set[int] = set()
     measurements: list[tuple[int, int]] = []
     is_dynamic = False
@@ -308,7 +344,10 @@ def _analyze_plan_for_run(plan: list[ResolvedStep]) -> tuple[bool, list[tuple[in
             measurements.extend(zip(step.measured_indices, step.classical_indices))
             continue
         if isinstance(step, ResetStep):
-            is_dynamic = True
+            if step.condition is not None:
+                is_dynamic = True
+            if any(t in measured_subsystems for t in step.reset_indices):
+                is_dynamic = True
             continue
         if isinstance(step, ApplyMatrixStep):
             if step.condition is not None:
@@ -339,94 +378,149 @@ def _digit(flat: int, index: int, dims: Sequence[int]) -> int:
     return (flat // stride) % dims[index]
 
 
-def _apply_matrix(
-    state: np.ndarray,
+def _contract_local(
+    m: np.ndarray,
+    tensor: np.ndarray,
+    axes: Sequence[int],
+    total: int,
+    k: int,
+) -> np.ndarray:
+    """Contract a local ``[out, in]`` operator into ``axes`` of a tensor.
+
+    ``m`` has ``2k`` axes (k out, then k in); ``tensor`` has ``total`` axes.
+    The k input axes of ``m`` are contracted with ``axes`` and the resulting
+    out axes are permuted back into their positions, mirroring the statevector
+    engine's ``_apply_matrix`` axis bookkeeping.
+    """
+    out = np.tensordot(m, tensor, axes=(list(range(k, 2 * k)), list(axes)))
+    # Result axes: [out_0..out_{k-1}] + remaining tensor axes (original order).
+    remaining = [ax for ax in range(total) if ax not in axes]
+    perm = [0] * total
+    for j, ax in enumerate(axes):
+        perm[ax] = j
+    for idx, ax in enumerate(remaining):
+        perm[ax] = k + idx
+    return np.transpose(out, perm)
+
+
+def _apply_matrix_rho(
+    rho: np.ndarray,
     matrix: np.ndarray,
     targets: Sequence[int],
     dims: Sequence[int],
     reversed_dims: Sequence[int] | None = None,
 ) -> np.ndarray:
-    """Apply a local matrix to flat ``targets`` of a little-endian mixed-radix state.
+    """Apply ``rho' = U_T rho U_T^dagger`` for a local matrix on flat ``targets``.
 
-    The matrix's local index treats ``targets[0]`` as the MSB and
-    ``targets[k-1]`` as the LSB, sized by each target's own radix from
-    ``dims``.
+    The full ``prod(dims)``-dimensional ``U_T`` is never materialized: ``rho``
+    is viewed as a ``2n``-axis ket/bra tensor and ``U`` (resp. ``conj(U)``) is
+    contracted into the target ket (resp. bra) axes, matching the recommended
+    dense reference path in ``matrix-engine.md`` §5.1.
 
-    ``reversed_dims`` is ``tuple(reversed(dims))``, the state's reshape shape.
-    Callers that invoke this once per gate on a fixed ``dims`` (the engine's
-    hot path) should precompute and pass it; direct/test callers may omit it
-    and it is derived from ``dims`` at O(n) cost.
-
-    Complexity: this is a matrix-vector contraction equivalent to an einsum
-    ``M[out, in] * psi[in, rest] -> psi[out, rest]``. Work is O(prod(local_dims)
-    * prod(dims)) FLOPs, and peak memory is ~2x the state: ``tensordot``
-    allocates a new tensor and ``transpose`` may copy it again to reorder
-    axes. An in-place variant (looping over the non-target slices and
-    multiplying each local-dimension vector by M) would drop the intermediate
-    allocation and improve cache locality, at the cost of more complex code.
-    Deferred for now.
+    Complexity: two tensor contractions of O(prod(local_dims) * prod(dims)^2)
+    FLOPs each, with ~2x-state peak memory per contraction (tensordot
+    allocates, transpose may copy).
     """
     n = len(dims)
     k = len(targets)
     local_dims = [dims[t] for t in targets]
     if reversed_dims is None:
         reversed_dims = tuple(dims[n - 1 - p] for p in range(n))
-    psi = state.reshape(tuple(reversed_dims))
-    target_axes = [n - 1 - q for q in targets]
+    tensor = rho.reshape(tuple(reversed_dims) * 2)
     m = np.asarray(matrix, dtype=complex).reshape(tuple(local_dims) + tuple(local_dims))
-    # m axes: [out_0..out_{k-1}, in_0..in_{k-1}]; contract inputs with target axes.
-    psi = np.tensordot(m, psi, axes=(list(range(k, 2 * k)), target_axes))
-    # Result axes: [out_0..out_{k-1}] + remaining state axes (original relative order).
-    remaining = [ax for ax in range(n) if ax not in target_axes]
-    perm = [0] * n
-    for j, ax in enumerate(target_axes):
-        perm[ax] = j
-    for idx, ax in enumerate(remaining):
-        perm[ax] = k + idx
-    psi = np.transpose(psi, perm)
-    return psi.reshape(-1)
+    ket_axes = [n - 1 - q for q in targets]
+    bra_axes = [2 * n - 1 - q for q in targets]
+    tensor = _contract_local(m, tensor, ket_axes, 2 * n, k)
+    tensor = _contract_local(m.conj(), tensor, bra_axes, 2 * n, k)
+    return tensor.reshape(rho.shape)
 
 
-def _collapse_state(
-    state: np.ndarray,
+def _collapse_density_matrix(
+    rho: np.ndarray,
     measured_subsystems: Sequence[int],
     dims: Sequence[int],
     rng: np.random.Generator,
 ) -> tuple[int, np.ndarray]:
-    """Sample one computational-basis outcome and return the projected state."""
-    idx = int(rng.choice(len(state), p=_probabilities(state)))
-    subsystems = list(measured_subsystems)
-    n = len(dims)
+    """Sample one computational-basis outcome and return the projected state.
 
-    # Worst case for the broadcast below is m = n-1 (all but one subsystem
-    # measured): cost is O(N*(n-1)), just shy of the fast path above. Could
-    # drop to O(N*min(m, n-m)) by checking whichever of measured/unmeasured
-    # is smaller; deferred for now.
-    if len(set(subsystems)) == n:
-        new = np.zeros_like(state)
-        new[idx] = state[idx]
+    Born rule on ``diag(rho)``, then ``rho' = P rho P / p`` where ``P`` keeps
+    every flat basis state whose measured digits match the sampled outcome.
+    """
+    size = rho.shape[0]
+    idx = int(rng.choice(size, p=_probabilities_from_rho(rho)))
+    subsystems = list(measured_subsystems)
+
+    if len(set(subsystems)) == len(dims):
+        keep = np.zeros(size, dtype=bool)
+        keep[idx] = True
     else:
         strides = _strides(dims)
-        basis = np.arange(len(state))
-        # One (N, m) broadcast instead of a Python loop of m separate O(N)
-        # passes: digits/idx_digits below fold every measured subsystem's stride
-        # and modulus into a single vectorized divide/mod/compare.
+        basis = np.arange(size)
         stride_arr = np.array([strides[q] for q in subsystems])
         dim_arr = np.array([dims[q] for q in subsystems])
         digits = (basis[:, None] // stride_arr) % dim_arr
         idx_digits = (idx // stride_arr) % dim_arr
         keep = np.all(digits == idx_digits, axis=1)
-        new = state.copy()
-        new[~keep] = 0.0
 
-    norm = np.linalg.norm(new)
-    if norm > 0:
-        new = new / norm
+    new = rho * keep[:, None] * keep[None, :]
+    trace = np.real(np.trace(new))
+    if trace > 0:
+        new = new / trace
     return idx, new
 
 
-def _probabilities(state: np.ndarray) -> np.ndarray:
-    """Return normalized computational-basis probabilities for a statevector."""
-    probabilities = np.abs(state) ** 2
+def _reset_density_matrix(
+    rho: np.ndarray,
+    targets: Sequence[int],
+    dims: Sequence[int],
+    reversed_dims: Sequence[int] | None = None,
+) -> np.ndarray:
+    """Deterministically reset flat ``targets``: partial trace, then reprepare.
+
+    Reference update from ``density-matrix-backend.md`` §5:
+    ``rho' = |0..0><0..0|_targets (x) Tr_targets(rho)``. Working view is the
+    ``(dt, dt, R, R)`` block structure of ``matrix-engine.md`` §5.2; the
+    discard step traces the target ket/bra pair and the reprepare step writes
+    the reduced state into the all-zero target block. Trace-preserving, so no
+    renormalization is needed.
+    """
+    n = len(dims)
+    k = len(targets)
+    if reversed_dims is None:
+        reversed_dims = tuple(dims[n - 1 - p] for p in range(n))
+    local_dims = tuple(dims[t] for t in targets)
+    dt = prod(local_dims)
+    rest = rho.shape[0] // dt
+
+    tensor = rho.reshape(tuple(reversed_dims) * 2)
+    ket_axes = [n - 1 - q for q in targets]
+    bra_axes = [2 * n - 1 - q for q in targets]
+    moved = ket_axes + bra_axes
+    # `remaining` keeps ascending axis order, so rest-ket axes stay contiguous
+    # before rest-bra axes and the (dt, dt, rest, rest) regroup below is valid.
+    remaining = [ax for ax in range(2 * n) if ax not in moved]
+    block = np.transpose(tensor, moved + remaining).reshape(dt, dt, rest, rest)
+
+    rho_rest = np.trace(block, axis1=0, axis2=1)
+    post = np.zeros_like(block)
+    post[0, 0] = rho_rest
+
+    rest_shape = tuple(
+        (tuple(reversed_dims) * 2)[ax] for ax in remaining
+    )
+    post = post.reshape(local_dims + local_dims + rest_shape)
+    inverse_perm = np.argsort(moved + remaining)
+    return np.transpose(post, inverse_perm).reshape(rho.shape)
+
+
+def _probabilities_from_rho(rho: np.ndarray) -> np.ndarray:
+    """Return normalized computational-basis probabilities for a density matrix.
+
+    The diagonal of a valid ``rho`` is real and non-negative; tiny negative
+    round-off is clipped so the values remain a valid sampling distribution.
+    """
+    probabilities = np.clip(np.real(np.diagonal(rho)), 0.0, None)
     total = probabilities.sum()
     return probabilities / total if total > 0 else probabilities
+
+

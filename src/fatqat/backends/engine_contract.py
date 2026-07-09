@@ -1,4 +1,4 @@
-"""Value objects crossing the statevector backend/engine boundary."""
+"""Value objects crossing the matrix-family backend/engine boundary."""
 
 from __future__ import annotations
 
@@ -34,10 +34,18 @@ class _EngineConfig:
 
 @dataclass(frozen=True)
 class _ResultRequest:
-    """Resolved result fields requested for one execution."""
+    """Resolved result fields requested for one statevector execution."""
 
     counts: bool
     statevector: bool
+
+
+@dataclass(frozen=True)
+class _DensityMatrixResultRequest:
+    """Resolved result fields requested for one density-matrix execution."""
+
+    counts: bool
+    density_matrix: bool
 
 
 @dataclass(frozen=True)
