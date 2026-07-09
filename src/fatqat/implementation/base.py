@@ -153,7 +153,7 @@ def _require_fixed_arity(op_cls: type[Operation]) -> None:
         )
 
 
-def _normalize_target_key(target_key: "tuple[Hashable, ...]") -> TargetKey:
+def _normalize_target_key(target_key: TargetKey) -> TargetKey:
     """Normalize a device target key and verify it can be used as a dict key."""
     key = tuple(target_key)
     hash(key)
@@ -286,7 +286,7 @@ class MatrixImplementationMap:
     def register_for(
         self,
         op: Operation | type[Operation],
-        target_key: "tuple[Hashable, ...]",
+        target_key: TargetKey,
         rule: "MatrixImplementation | Callable | np.ndarray",
     ) -> None:
         """Register a matrix implementation for one operation on one device target key.
@@ -333,7 +333,7 @@ class MatrixImplementationMap:
     def resolve_for(
         self,
         op: Operation | type[Operation],
-        target_key: "tuple[Hashable, ...]",
+        target_key: TargetKey,
     ) -> MatrixImplementation | None:
         """Resolve the matrix implementation for an operation on a device target key.
 
@@ -354,7 +354,7 @@ class MatrixImplementationMap:
             return table.get(_normalize_target_key(target_key))
         return self._rules.get(op_cls)
 
-    def target_keys(self, op: Operation | type[Operation]) -> frozenset:
+    def target_keys(self, op: Operation | type[Operation]) -> frozenset[TargetKey]:
         """Return the finite set of target keys registered for an operation.
 
         Empty if the operation has no target-aware registrations, even if it
