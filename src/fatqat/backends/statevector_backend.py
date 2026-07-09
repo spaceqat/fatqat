@@ -11,10 +11,15 @@ from ..errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from ..implementation import MatrixImplementationMap, default_matrix_implementation_map
+from ..implementation import (
+    MatrixImplementation,
+    MatrixImplementationMap,
+    TargetKey,
+    default_matrix_implementation_map,
+)
 from ..job import Job
 from ..layout import ResourceLayout
-from ..operations import Measurement, ResetGate
+from ..operations import Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
 from ..result import (
     Result,
@@ -352,6 +357,28 @@ class StateVectorBackend:
             },
         )
 
+    def _implementation_for(
+        self, operation: Operation, target_key: TargetKey
+    ) -> MatrixImplementation:
+        """Resolve the matrix rule for an operation on a device target key.
+
+        Distinguishes the two failure cases a target-aware map can report:
+        an operation family with no rule at all (`UnsupportedOperationError`)
+        versus a supported family on an illegal target key
+        (`BackendValidationError`). For a `register`-only map (no
+        target-aware data), `resolve_for` returns the class-keyed rule for
+        every target key, so this behaves exactly like the previous bare
+        `get()` lookup.
+        """
+        if not self._impl_map.supports(operation):
+            raise UnsupportedOperationError(type(operation).__name__)
+        rule = self._impl_map.resolve_for(operation, target_key)
+        if rule is None:
+            raise BackendValidationError(
+                f"{type(operation).__name__} is not supported on target key {target_key}"
+            )
+        return rule
+
     def _lower(
         self, program: Program, layout: ResourceLayout
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
@@ -389,9 +416,7 @@ class StateVectorBackend:
                     )
                     continue
 
-                rule = self._impl_map.get(type(step.operation))
-                if rule is None:
-                    raise UnsupportedOperationError(type(step.operation).__name__)
+                rule = self._implementation_for(step.operation, target_indices)
                 try:
                     matrix = rule(step.operation, targets=step.targets)
                 except Exception as exc:

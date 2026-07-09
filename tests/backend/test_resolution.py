@@ -1,9 +1,12 @@
 """Tests backend resolution of a validated program into an ordered plan."""
 
 import numpy as np
+import pytest
 
 from fatqat import operations as ops
 from fatqat.backends import ApplyMatrixStep, MeasurementStep, StateVectorBackend
+from fatqat.errors import BackendValidationError, UnsupportedOperationError
+from fatqat.implementation import MatrixImplementationMap, default_matrix_implementation_map
 from fatqat.program import Program
 
 
@@ -40,3 +43,60 @@ def test_resolve_measurement_step_has_flat_indices():
     step = _resolve(p)[0]
     assert isinstance(step, MeasurementStep)
     assert (step.measured_indices, step.classical_indices) == ((0,), (0,))
+
+
+# --- target-aware resolution -------------------------------------------------
+
+def test_target_aware_map_allows_registered_target_key():
+    cz_rule = default_matrix_implementation_map().get(ops.CZ)
+    m = MatrixImplementationMap()
+    m.register_for(ops.CZ, (0, 1), cz_rule)
+    backend = StateVectorBackend(implementation_map=m)
+
+    p = Program(2)
+    p.add(ops.CZ, (0, 1))
+
+    plan, _facts = backend._lower(p, backend.resolve_layout(p))
+
+    assert len(plan) == 1
+    assert isinstance(plan[0], ApplyMatrixStep)
+    assert plan[0].target_indices == (0, 1)
+
+
+def test_target_aware_map_rejects_illegal_target_key_as_validation_error():
+    cz_rule = default_matrix_implementation_map().get(ops.CZ)
+    m = MatrixImplementationMap()
+    m.register_for(ops.CZ, (0, 1), cz_rule)
+    backend = StateVectorBackend(implementation_map=m)
+
+    p = Program(2)
+    p.add(ops.CZ, (1, 0))
+
+    with pytest.raises(BackendValidationError, match="target key") as excinfo:
+        backend.run(p, result_config={"counts": False, "statevector": True})
+
+    assert not isinstance(excinfo.value, UnsupportedOperationError)
+
+
+def test_target_aware_map_unsupported_family_still_raises_unsupported_operation():
+    cz_rule = default_matrix_implementation_map().get(ops.CZ)
+    m = MatrixImplementationMap()
+    m.register_for(ops.CZ, (0, 1), cz_rule)
+    backend = StateVectorBackend(implementation_map=m)
+
+    p = Program(1)
+    p.add(ops.X, 0)
+
+    with pytest.raises(UnsupportedOperationError):
+        backend.run(p, result_config={"counts": False, "statevector": True})
+
+
+def test_legacy_default_map_still_resolves_any_target_key():
+    backend = StateVectorBackend()
+    p = Program(2)
+    p.add(ops.CZ, (1, 0))
+
+    plan, _facts = backend._lower(p, backend.resolve_layout(p))
+
+    assert isinstance(plan[0], ApplyMatrixStep)
+    assert plan[0].target_indices == (1, 0)
