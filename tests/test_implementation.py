@@ -204,6 +204,107 @@ def test_unregister_missing_operation_is_a_noop():
     m.unregister(ops.X)
 
 
+# --- target-aware registration/resolution -----------------------------------
+
+def test_register_for_resolves_by_target_key():
+    m = MatrixImplementationMap()
+    rule_0 = FixedMatrix(np.eye(2, dtype=complex))
+    rule_1 = FixedMatrix(np.array([[0, 1], [1, 0]], dtype=complex))
+
+    m.register_for(ops.X, (0,), rule_0)
+    m.register_for(ops.X, (1,), rule_1)
+
+    assert m.supports(ops.X)
+    assert m.resolve_for(ops.X, (0,)) is rule_0
+    assert m.resolve_for(ops.X, (1,)) is rule_1
+    assert m.resolve_for(ops.X, (2,)) is None
+    assert m.target_keys(ops.X) == frozenset({(0,), (1,)})
+    assert m.get(ops.X) is None
+
+
+def test_register_for_accepts_non_integer_hashable_target_key():
+    m = MatrixImplementationMap()
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+
+    m.register_for(ops.X, ("zone-a",), rule)
+
+    assert m.resolve_for(ops.X, ("zone-a",)) is rule
+    assert m.target_keys(ops.X) == frozenset({("zone-a",)})
+
+
+def test_register_for_rejects_wrong_target_key_arity():
+    m = MatrixImplementationMap()
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+
+    with pytest.raises(ValueError, match="expects 1 target key element"):
+        m.register_for(ops.X, (0, 1), rule)
+
+
+def test_resolve_for_legacy_rule_falls_back_to_class_keyed_rule():
+    m = MatrixImplementationMap()
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+
+    m.register(ops.X, rule)
+
+    assert m.supports(ops.X)
+    assert m.resolve_for(ops.X, (100,)) is rule
+    assert m.target_keys(ops.X) == frozenset()
+
+
+def test_resolve_for_target_rules_do_not_fall_back_to_default_rule():
+    m = MatrixImplementationMap()
+    default_rule = FixedMatrix(np.eye(2, dtype=complex))
+    target_rule = FixedMatrix(np.array([[0, 1], [1, 0]], dtype=complex))
+
+    m.register(ops.X, default_rule)
+    m.register_for(ops.X, (0,), target_rule)
+
+    assert m.resolve_for(ops.X, (0,)) is target_rule
+    assert m.resolve_for(ops.X, (1,)) is None
+
+
+def test_supports_is_false_for_unregistered_operation():
+    m = MatrixImplementationMap()
+    assert not m.supports(ops.X)
+    assert m.resolve_for(ops.X, (0,)) is None
+
+
+def test_unregister_removes_target_aware_rules():
+    m = MatrixImplementationMap()
+    m.register_for(ops.X, (0,), FixedMatrix(np.eye(2, dtype=complex)))
+
+    m.unregister(ops.X)
+
+    assert not m.supports(ops.X)
+    assert m.target_keys(ops.X) == frozenset()
+
+
+def test_copy_preserves_target_aware_rules_independently():
+    m = MatrixImplementationMap()
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+    m.register_for(ops.X, (0,), rule)
+
+    clone = m.copy()
+    clone.unregister(ops.X)
+
+    assert m.resolve_for(ops.X, (0,)) is rule
+    assert clone.resolve_for(ops.X, (0,)) is None
+
+
+def test_copy_target_tables_are_independently_mutable():
+    # Regression: copy() must deep-copy the per-operation target-key dict,
+    # not just the outer op_cls -> dict mapping, or mutating one map's
+    # target-aware registrations for an operation leaks into the other.
+    m = MatrixImplementationMap()
+    m.register_for(ops.X, (0,), FixedMatrix(np.eye(2, dtype=complex)))
+
+    clone = m.copy()
+    clone.register_for(ops.X, (1,), FixedMatrix(np.eye(2, dtype=complex)))
+
+    assert m.target_keys(ops.X) == frozenset({(0,)})
+    assert clone.target_keys(ops.X) == frozenset({(0,), (1,)})
+
+
 # --- register: rule wrapping (ndarray) --------------------------------------
 
 def test_register_wraps_bare_ndarray_in_fixed_matrix():
