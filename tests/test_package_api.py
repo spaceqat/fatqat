@@ -28,6 +28,13 @@ def test_statevector_backend_only_under_backends_namespace():
     assert not hasattr(fq, "StateVectorBackend")
 
 
+def test_fake_superconducting_backend_exported_under_backends_namespace():
+    from fatqat.backends import FakeSuperconducting4x4Backend
+
+    assert fq.backends.FakeSuperconducting4x4Backend is FakeSuperconducting4x4Backend
+    assert not hasattr(fq, "FakeSuperconducting4x4Backend")
+
+
 def test_resultconfig_not_exported_from_top_level():
     assert not hasattr(fq, "ResultConfig")
 
