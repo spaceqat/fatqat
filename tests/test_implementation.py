@@ -34,7 +34,7 @@ from fatqat.registers import QuantumRegister
 # right dimension.
 
 @pytest.mark.parametrize("gate,n_qubits", [
-    (ops.I, 1), (ops.H, 1), (ops.S, 1), (ops.Sdg, 1), (ops.X, 1),
+    (ops.I, 1), (ops.H, 1), (ops.S, 1), (ops.Sdg, 1), (ops.SX, 1), (ops.X, 1),
     (ops.Y, 1), (ops.Z, 1), (ops.T, 1), (ops.Tdg, 1),
     (ops.CX, 2), (ops.CZ, 2), (ops.Swap, 2), (ops.CY, 2),
     (ops.CS, 2), (ops.iSwap, 2),
@@ -45,6 +45,15 @@ def test_fixed_gate_is_registered_with_correct_shape(gate, n_qubits):
     matrix = m.get(type(gate))(gate)
     dim = 2 ** n_qubits
     assert matrix.shape == (dim, dim)
+
+
+def test_sx_matrix_squares_to_x():
+    m = default_matrix_implementation_map()
+    sx = m.get(ops.SX)(ops.SX)
+    x = m.get(ops.X)(ops.X)
+
+    assert np.allclose(sx @ sx, x)
+    assert np.allclose(sx.conj().T @ sx, np.eye(2))
 
 
 # --- Parametric rules read their operation's theta --------------------------

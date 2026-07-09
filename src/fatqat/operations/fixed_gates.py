@@ -65,6 +65,19 @@ class SdgGate(Operation):
 
 
 @dataclass(frozen=True)
+class SXGate(Operation):
+    """Square-root-X gate operation.
+
+    .. math::
+
+        SX = \\frac{1}{2}\\begin{pmatrix} 1+i & 1-i \\\\ 1-i & 1+i \\end{pmatrix}
+    """
+
+    name: ClassVar[str] = "SX"
+    _num_subsystems: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
 class TGate(Operation):
     """T phase gate operation.
 
@@ -304,6 +317,7 @@ H = HGate()
 I = IGate()
 S = SGate()
 Sdg = SdgGate()
+SX = SXGate()
 T = TGate()
 Tdg = TdgGate()
 X = XGate()

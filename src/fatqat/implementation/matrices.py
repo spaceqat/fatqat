@@ -176,6 +176,7 @@ _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
 _I = np.eye(2, dtype=complex)
 _S = np.array([[1, 0], [0, 1j]], dtype=complex)
 _SDG = np.array([[1, 0], [0, -1j]], dtype=complex)
+_SX = 0.5 * np.array([[1 + 1j, 1 - 1j], [1 - 1j, 1 + 1j]], dtype=complex)
 _T = np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]], dtype=complex)
 _TDG = np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]], dtype=complex)
 # 2-qubit fixed gates (see module docstring for the control/target convention).

@@ -11,6 +11,7 @@ from fatqat.operations import Operation
     (ops.H,  "H",  1),
     (ops.S,  "S",  1),
     (ops.Sdg, "Sdg", 1),
+    (ops.SX, "SX", 1),
     (ops.X,  "X",  1),
     (ops.Y,  "Y",  1),
     (ops.Z,  "Z",  1),

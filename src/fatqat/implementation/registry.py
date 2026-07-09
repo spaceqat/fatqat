@@ -17,6 +17,7 @@ from .matrices import (
     _S,
     _SDG,
     _SWAP,
+    _SX,
     _T,
     _TDG,
     _X,
@@ -56,6 +57,7 @@ def default_matrix_implementation_map() -> MatrixImplementationMap:
     m.register(ops.I, FixedMatrix(_I))
     m.register(ops.S, FixedMatrix(_S))
     m.register(ops.Sdg, FixedMatrix(_SDG))
+    m.register(ops.SX, FixedMatrix(_SX))
     m.register(ops.T, FixedMatrix(_T))
     m.register(ops.Tdg, FixedMatrix(_TDG))
     m.register(ops.CX, FixedMatrix(_CX))

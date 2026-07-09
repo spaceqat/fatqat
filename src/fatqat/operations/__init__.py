@@ -14,6 +14,7 @@ from .fixed_gates import (
     I,
     S,
     Sdg,
+    SX,
     Swap,
     T,
     Tdg,
@@ -40,7 +41,7 @@ from .reset import Reset, ResetGate
 
 __all__ = [
     "Operation",
-    "I", "H", "S", "Sdg", "T", "Tdg", "X", "Y", "Z",
+    "I", "H", "S", "Sdg", "SX", "T", "Tdg", "X", "Y", "Z",
     "CX", "CZ", "Swap", "CY", "CS", "iSwap", "CCX", "CSwap",
     "RX", "RY", "RZ", "Phase",
     "CPhase",
