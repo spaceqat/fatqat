@@ -120,7 +120,27 @@ class FakeSuperconducting4x4Backend(StateVectorBackend):
 
     @property
     def implementation_map(self) -> ImplementationMap:
-        """Return a copy of the compiler-facing device-aware implementation map."""
+        """Return a copy of the compiler-facing device-aware implementation map.
+
+        A compiler targeting this device introspects the map rather than
+        hardcoding the native gate set: ``supported_operations()`` lists which
+        operation families have any implementation, and
+        ``device_operands_for(op)`` lists the legal device-operand tuples for
+        an operation constrained to specific qubits (empty for an operation
+        registered uniformly, like ``RZ``/``SX``, meaning "legal on any
+        target of the right arity").
+
+        Examples:
+            >>> import fatqat as fq
+            >>> backend = fq.backends.FakeSuperconducting4x4Backend()
+            >>> impl_map = backend.implementation_map
+            >>> sorted(op.name for op in impl_map.supported_operations())
+            ['CZ', 'RZ', 'SX']
+            >>> impl_map.supports(fq.ops.CX)
+            False
+            >>> sorted(impl_map.device_operands_for(fq.ops.CZ))[:4]
+            [(0, 1), (0, 4), (1, 0), (1, 2)]
+        """
         return self._impl_map.copy()
 
     def resolve_layout(self, program: Program) -> ResourceLayout:

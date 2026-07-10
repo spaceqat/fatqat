@@ -11,6 +11,7 @@ Autodoc-generated reference for every public class, function, and gate in
    registers
    operations
    backends
+   implementation
    job
    result
    errors
