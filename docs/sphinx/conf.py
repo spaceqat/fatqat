@@ -23,6 +23,12 @@ source_suffix = {
     ".md": "markdown",
 }
 
+# Docstrings mix single- and double-backtick code spans; RST only treats
+# double backticks as inline code by default, silently rendering the rest as
+# italic title-references instead of erroring. Make both spellings render as
+# code so neither style silently looks wrong.
+default_role = "py:obj"
+
 myst_enable_extensions = ["colon_fence", "dollarmath", "amsmath"]
 
 templates_path: list[str] = []
