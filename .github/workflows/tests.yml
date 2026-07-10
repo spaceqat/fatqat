@@ -33,3 +33,6 @@ jobs:
 
       - name: Run tests
         run: uv run pytest
+
+      - name: Run doctests
+        run: uv run pytest --doctest-modules src/fatqat

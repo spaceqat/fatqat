@@ -229,33 +229,29 @@ class DensityMatrixBackend:
         Examples:
             Sample counts from a measured program:
 
-            .. code-block:: python
-
-                import fatqat as fq
-
-                program = fq.Program(1, 1)
-                program.add(fq.ops.X, 0)
-                program.add_measurement(0, 0)
-
-                result = fq.backends.DensityMatrixBackend().run(
-                    program,
-                    shots=100,
-                    result_config={"counts": True},
-                ).result()
-                counts = result.get_counts()
+            >>> import fatqat as fq
+            >>> program = fq.Program(1, 1)
+            >>> program.add(fq.ops.X, 0)
+            >>> program.add_measurement(0, 0)
+            >>> result = fq.backends.DensityMatrixBackend().run(
+            ...     program,
+            ...     shots=100,
+            ...     result_config={"counts": True},
+            ... ).result()
+            >>> result.get_counts()
+            {'1': 100}
 
             Request a deterministic density matrix:
 
-            .. code-block:: python
-
-                program = fq.Program(1)
-                program.add(fq.ops.H, 0)
-
-                result = fq.backends.DensityMatrixBackend().run(
-                    program,
-                    result_config={"counts": False, "density_matrix": True},
-                ).result()
-                density_matrix = result.get_density_matrix()
+            >>> program = fq.Program(1)
+            >>> program.add(fq.ops.H, 0)
+            >>> result = fq.backends.DensityMatrixBackend().run(
+            ...     program,
+            ...     result_config={"counts": False, "density_matrix": True},
+            ... ).result()
+            >>> result.get_density_matrix()
+            array([[0.5+0.j, 0.5+0.j],
+                   [0.5+0.j, 0.5+0.j]])
         """
         config = _normalize_dict_options(
             result_config,

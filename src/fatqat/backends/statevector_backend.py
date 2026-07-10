@@ -215,33 +215,28 @@ class StateVectorBackend:
         Examples:
             Sample counts from a measured program:
 
-            .. code-block:: python
-
-                import fatqat as fq
-
-                program = fq.Program(1, 1)
-                program.add(fq.ops.X, 0)
-                program.add_measurement(0, 0)
-
-                result = fq.backends.StateVectorBackend().run(
-                    program,
-                    shots=100,
-                    result_config={"counts": True},
-                ).result()
-                counts = result.get_counts()
+            >>> import fatqat as fq
+            >>> program = fq.Program(1, 1)
+            >>> program.add(fq.ops.X, 0)
+            >>> program.add_measurement(0, 0)
+            >>> result = fq.backends.StateVectorBackend().run(
+            ...     program,
+            ...     shots=100,
+            ...     result_config={"counts": True},
+            ... ).result()
+            >>> result.get_counts()
+            {'1': 100}
 
             Request a deterministic statevector:
 
-            .. code-block:: python
-
-                program = fq.Program(1)
-                program.add(fq.ops.H, 0)
-
-                result = fq.backends.StateVectorBackend().run(
-                    program,
-                    result_config={"counts": False, "statevector": True},
-                ).result()
-                statevector = result.get_statevector()
+            >>> program = fq.Program(1)
+            >>> program.add(fq.ops.H, 0)
+            >>> result = fq.backends.StateVectorBackend().run(
+            ...     program,
+            ...     result_config={"counts": False, "statevector": True},
+            ... ).result()
+            >>> result.get_statevector()
+            array([0.70710678+0.j, 0.70710678+0.j])
         """
         config = _normalize_dict_options(
             result_config, {"counts", "statevector"}, _ResultConfig, "result_config", "result_config"

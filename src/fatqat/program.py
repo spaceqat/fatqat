@@ -76,15 +76,14 @@ class Program:
     Examples:
         Build a two-qubit program, add gates, then measure both qubits:
 
-        .. code-block:: python
-
-            import fatqat as fq
-
-            program = fq.Program(2, 2)
-            program.add(fq.ops.H, 0)
-            program.add(fq.ops.CZ, (0, 1))
-            program.add_measurement(0, 0)
-            program.add_measurement(1, 1)
+        >>> import fatqat as fq
+        >>> program = fq.Program(2, 2)
+        >>> program.add(fq.ops.H, 0)
+        >>> program.add(fq.ops.CZ, (0, 1))
+        >>> program.add_measurement(0, 0)
+        >>> program.add_measurement(1, 1)
+        >>> len(program.operations)
+        4
     """
 
     def __init__(
@@ -219,14 +218,11 @@ class Program:
         Examples:
             Add fixed and parametric gates:
 
-            .. code-block:: python
-
-                import fatqat as fq
-
-                program = fq.Program(2)
-                program.add(fq.ops.H, 0)
-                program.add(fq.ops.CZ, (0, 1))
-                program.add(fq.ops.RX(0.2), 0)
+            >>> import fatqat as fq
+            >>> program = fq.Program(2)
+            >>> program.add(fq.ops.H, 0)
+            >>> program.add(fq.ops.CZ, (0, 1))
+            >>> program.add(fq.ops.RX(0.2), 0)
         """
         if not isinstance(op, Operation):
             raise TypeError(
@@ -296,19 +292,17 @@ class Program:
         Examples:
             Add a terminal measurement:
 
-            .. code-block:: python
-
-                import fatqat as fq
-
-                program = fq.Program(1, 1)
-                program.add(fq.ops.X, 0)
-                program.add_measurement(0, 0)
+            >>> import fatqat as fq
+            >>> program = fq.Program(1, 1)
+            >>> program.add(fq.ops.X, 0)
+            >>> program.add_measurement(0, 0)
 
             Add a grouped measurement:
 
-            .. code-block:: python
-
-                program.add_measurement((0, 1), (0, 1))
+            >>> program2 = fq.Program(2, 2)
+            >>> program2.add(fq.ops.H, 0)
+            >>> program2.add(fq.ops.CZ, (0, 1))
+            >>> program2.add_measurement((0, 1), (0, 1))
         """
         q_operands = qreg if isinstance(qreg, tuple) else (qreg,)
         c_operands = clreg if isinstance(clreg, tuple) else (clreg,)

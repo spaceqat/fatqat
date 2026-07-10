@@ -207,16 +207,13 @@ class Result:
             ResultFieldUnavailableError: If counts were not produced.
 
         Examples:
-            .. code-block:: python
-
-                import fatqat as fq
-
-                program = fq.Program(1, 1)
-                program.add(fq.ops.X, 0)
-                program.add_measurement(0, 0)
-                result = fq.backends.StateVectorBackend().run(program, shots=10).result()
-
-                assert result.get_counts() == {"1": 10}
+            >>> import fatqat as fq
+            >>> program = fq.Program(1, 1)
+            >>> program.add(fq.ops.X, 0)
+            >>> program.add_measurement(0, 0)
+            >>> result = fq.backends.StateVectorBackend().run(program, shots=10).result()
+            >>> result.get_counts()
+            {'1': 10}
         """
         if "counts" not in self.available_data:
             raise ResultFieldUnavailableError("counts not available in this result")
@@ -249,18 +246,15 @@ class Result:
             ResultFieldUnavailableError: If a statevector was not produced.
 
         Examples:
-            .. code-block:: python
-
-                import fatqat as fq
-
-                program = fq.Program(1)
-                program.add(fq.ops.X, 0)
-                result = fq.backends.StateVectorBackend().run(
-                    program,
-                    result_config={"counts": False, "statevector": True},
-                ).result()
-
-                statevector = result.get_statevector()
+            >>> import fatqat as fq
+            >>> program = fq.Program(1)
+            >>> program.add(fq.ops.X, 0)
+            >>> result = fq.backends.StateVectorBackend().run(
+            ...     program,
+            ...     result_config={"counts": False, "statevector": True},
+            ... ).result()
+            >>> result.get_statevector()
+            array([0.+0.j, 1.+0.j])
         """
         if "statevector" not in self.available_data:
             raise ResultFieldUnavailableError(
@@ -278,18 +272,16 @@ class Result:
             ResultFieldUnavailableError: If a density matrix was not produced.
 
         Examples:
-            .. code-block:: python
-
-                import fatqat as fq
-
-                program = fq.Program(1)
-                program.add(fq.ops.H, 0)
-                result = fq.backends.DensityMatrixBackend().run(
-                    program,
-                    result_config={"counts": False, "density_matrix": True},
-                ).result()
-
-                density_matrix = result.get_density_matrix()
+            >>> import fatqat as fq
+            >>> program = fq.Program(1)
+            >>> program.add(fq.ops.H, 0)
+            >>> result = fq.backends.DensityMatrixBackend().run(
+            ...     program,
+            ...     result_config={"counts": False, "density_matrix": True},
+            ... ).result()
+            >>> result.get_density_matrix()
+            array([[0.5+0.j, 0.5+0.j],
+                   [0.5+0.j, 0.5+0.j]])
         """
         if "density_matrix" not in self.available_data:
             raise ResultFieldUnavailableError(
