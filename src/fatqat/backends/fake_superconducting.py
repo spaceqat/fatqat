@@ -100,7 +100,7 @@ class FakeSuperconducting4x4Backend(StateVectorBackend):
     A thin `StateVectorBackend` specialization: same execution engine, same
     `Result`/`Job` semantics. The only differences are a fixed 16-qubit
     device, a fixed native gate set (`RZ`, `SX`, nearest-neighbor `CZ`), and
-    rejecting programs that do not fit that device shape (wrong qubit count,
+    rejecting programs that do not fit that device shape (too many qubits,
     or any non-qubit-dimension register).
     """
 
@@ -126,17 +126,20 @@ class FakeSuperconducting4x4Backend(StateVectorBackend):
     def resolve_layout(self, program: Program) -> ResourceLayout:
         """Build the flat layout, then reject any shape the fake device can't run.
 
+        A program may declare up to 16 qubits — fewer is fine, since flat
+        subsystem indices are assigned in declaration order (see
+        `ResourceLayout.from_program`), so an N-qubit program always maps
+        onto physical qubits `0..N-1`, the same rule used for a full
+        16-qubit program.
+
         Raises:
-            BackendValidationError: If the program does not declare exactly
-                16 qubits, or declares any non-qubit-dimension (`dim != 2`)
-                register. This prototype does not perform qubit mapping, so
-                a smaller or differently-shaped program is rejected rather
-                than silently mapped onto a subset of the device.
+            BackendValidationError: If the program declares more than 16
+                qubits, or any non-qubit-dimension (`dim != 2`) register.
         """
         layout = super().resolve_layout(program)
-        if layout.n_subsystems != N_QUBITS:
+        if layout.n_subsystems > N_QUBITS:
             raise BackendValidationError(
-                f"FakeSuperconducting4x4Backend requires exactly 16 qubits, "
+                f"FakeSuperconducting4x4Backend supports at most 16 qubits, "
                 f"got {layout.n_subsystems}"
             )
         if any(dim != 2 for dim in layout.system_dims):

@@ -88,11 +88,30 @@ def test_fake_backend_rejects_non_native_operation_family():
         )
 
 
-def test_fake_backend_requires_exactly_sixteen_qubits():
+def test_fake_backend_accepts_fewer_than_sixteen_qubits():
+    # Flat subsystem indices are assigned in declaration order, so a
+    # smaller program maps deterministically onto physical qubits 0..N-1 —
+    # same rule as a full 16-qubit program, no ambiguity to guard against.
     p = Program(2)
     p.add(ops.SX, 0)
+    p.add(ops.CZ, (0, 1))
 
-    with pytest.raises(BackendValidationError, match="exactly 16"):
+    result = (
+        FakeSuperconducting4x4Backend()
+        .run(p, result_config={"counts": False, "statevector": True})
+        .result()
+    )
+
+    state = result.get_statevector()
+    assert state.shape == (2**2,)
+    assert np.isclose(np.linalg.norm(state), 1.0)
+
+
+def test_fake_backend_rejects_more_than_sixteen_qubits():
+    p = Program(17)
+    p.add(ops.SX, 0)
+
+    with pytest.raises(BackendValidationError, match="at most 16"):
         FakeSuperconducting4x4Backend().run(
             p,
             result_config={"counts": False, "statevector": True},
