@@ -253,11 +253,11 @@ class ImplementationMap:
     def __init__(self) -> None:
         """Create an empty implementation map.
 
-        `_rules` holds unconstrained per-operation implementations.
+        `_unconstrained_rules` holds unconstrained per-operation implementations.
         `_device_operand_rules` holds implementations for explicit device
         operands. An operation family uses at most one mode.
         """
-        self._rules: dict[type[Operation], MatrixImplementation] = {}
+        self._unconstrained_rules: dict[type[Operation], MatrixImplementation] = {}
         self._device_operand_rules: dict[
             type[Operation], dict[DeviceOperands, MatrixImplementation]
         ] = {}
@@ -305,7 +305,7 @@ class ImplementationMap:
                 "the same operation. Call remove(op) first if you want "
                 "to replace its registrations."
             )
-        self._rules[op_cls] = _wrap_rule(op_cls, implementation)
+        self._unconstrained_rules[op_cls] = _wrap_rule(op_cls, implementation)
 
     def _add_for_device_operands(
         self,
@@ -340,7 +340,7 @@ class ImplementationMap:
         """
         op_cls = _resolve_operation_class(op)
         _require_fixed_arity(op_cls)
-        if op_cls in self._rules:
+        if op_cls in self._unconstrained_rules:
             raise ValueError(
                 f"{op_cls.__name__} already has an unconstrained rule "
                 "(add); cannot also add a device-specific implementation for "
@@ -373,7 +373,7 @@ class ImplementationMap:
                 op, device_operands=device_operands
             ) is not None
         op_cls = _resolve_operation_class(op)
-        return op_cls in self._rules or op_cls in self._device_operand_rules
+        return op_cls in self._unconstrained_rules or op_cls in self._device_operand_rules
 
     def implementation_for(
         self,
@@ -404,15 +404,15 @@ class ImplementationMap:
         """
         op_cls = _resolve_operation_class(op)
         if device_operands is None:
-            return self._rules.get(op_cls)
+            return self._unconstrained_rules.get(op_cls)
         table = self._device_operand_rules.get(op_cls)
         if table is not None:
             return table.get(_normalize_device_operands(device_operands))
-        return self._rules.get(op_cls)
+        return self._unconstrained_rules.get(op_cls)
 
     def supported_operations(self) -> frozenset[type[Operation]]:
         """Return every operation family with at least one implementation."""
-        return frozenset(self._rules | self._device_operand_rules)
+        return frozenset(self._unconstrained_rules | self._device_operand_rules)
 
     def device_operands_for(
         self, op: Operation | type[Operation]
@@ -441,7 +441,7 @@ class ImplementationMap:
                 operation that was never registered is a no-op.
         """
         op_cls = _resolve_operation_class(op)
-        self._rules.pop(op_cls, None)
+        self._unconstrained_rules.pop(op_cls, None)
         self._device_operand_rules.pop(op_cls, None)
 
     def copy(self) -> "ImplementationMap":
@@ -457,7 +457,7 @@ class ImplementationMap:
         into the other map's table for that same operation.
         """
         clone = ImplementationMap()
-        clone._rules = dict(self._rules)
+        clone._unconstrained_rules = dict(self._unconstrained_rules)
         clone._device_operand_rules = {
             op_cls: dict(operand_rules)
             for op_cls, operand_rules in self._device_operand_rules.items()
