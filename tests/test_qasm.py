@@ -165,6 +165,35 @@ def test_qudit_dim_gt_2_rejected():
         program_to_qasm(p, version=3)
 
 
+def test_export_same_named_qreg_and_creg_do_not_collide():
+    # Regression test: a quantum register and a classical register that
+    # happen to share a name (or sanitize to the same identifier) used to
+    # be tracked in separate "taken names" sets on export, so both could
+    # silently render as the same QASM identifier -- e.g. `qubit[2] r;`
+    # and `bit[2] r;`, which is invalid QASM (a single identifier
+    # namespace is shared between quantum and classical declarations) and
+    # which this module's own importer rejects on round-trip.
+    qreg = fc.QuantumRegister(2, name="r")
+    creg = fc.ClassicalRegister(2, name="r")
+    p = fc.Program([qreg], [creg])
+    p.add(fc.ops.H, 0)
+    p.add_measurement(0, 0)
+
+    out = program_to_qasm(p, version=3)
+
+    declared_names = set()
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("qubit[") or line.startswith("bit["):
+            name = line.split("]", 1)[1].strip().rstrip(";").strip()
+            assert name not in declared_names, f"duplicate identifier {name!r} in emitted QASM:\n{out}"
+            declared_names.add(name)
+
+    # And the result must actually round-trip back through from_qasm.
+    program = from_qasm(out)
+    assert len(program.qreg) == 1 and len(program.creg) == 1
+
+
 
 # ===========================================================================
 # Import direction: OpenQASM -> fatqat.Program

@@ -14,26 +14,8 @@ definition on the export side) was checked by direct matrix
 multiplication against the textbook target unitary before being written
 down here -- see `tests/test_qasm.py`.
 
-Known limitations (import direction, OpenQASM -> Program)
-------------------------------------------------------------
-* Gate coverage: `from_qasm` only has built-in mappings for a fixed set of
-  gates (see `fixed`/`parametric` in `_builtin_gate`, plus `u`/`u2`/`u3`).
-  Gates with no built-in mapping -- e.g. `crz`/`cry`/`crx`, `ch`, `cu`/
-  `cu3`, `sx`/`sxdg`, `rxx`/`ryy`/`rzz`/`rzx`, multi-controlled gates like
-  `c3x`/`c4x`/`mcx` -- raise `unsupported gate 'name'` if called directly.
-  They *do* work if the QASM source itself provides a local `gate`
-  definition for them built from supported primitives (custom `gate`
-  blocks are expanded recursively). This matters most for QASM exported
-  from real hardware/other toolchains, which commonly uses `sx` and the
-  controlled-rotation gates as part of their basis gate set.
-* Classical control flow is not supported: `for`/`while` loops, the
-  `else` branch of `if` (only a bare `if` is handled), subroutines
-  (`def`), and gate modifiers (`ctrl @` / `inv @` / `pow(n) @`).
-* All of the above fail loudly with `QASMTranspileError` rather than
-  silently producing an incorrect translation -- but a few of them
-  (`if/else`, `for`, gate modifiers) currently surface as a generic
-  "invalid quantum operand" parse error rather than a targeted message
-  naming the specific unsupported construct.
+See the `from_qasm` and `to_qasm` docstrings below for the full list of
+what each direction supports and does not support.
 """
 
 from __future__ import annotations
@@ -120,13 +102,47 @@ _MATH_FUNCS: dict[str, Callable[..., float]] = {
 def from_qasm(source: str) -> Program:
     """Convert an OpenQASM 2.0 or 3.0 string into a fatqat ``Program``.
 
-    Supported instructions include register declarations, measurements,
-    barriers, resets, classical conditions (``if(register==integer)`` and
-    the bit-level form ``if(c[0]==1 && c[2]==0)``), user-defined ``gate``
-    macros (expanded inline, recursively, at every call site), and the
-    built-in gates that have direct fatqat equivalents or simple
-    decompositions. ``opaque`` declarations (which have no body to expand)
-    are rejected.
+    Supported:
+        * Register declarations: ``qreg``/``creg`` (QASM2) and
+          ``qubit``/``bit`` (QASM3), including whole-register broadcast
+          (``h q;``, ``reset q;``).
+        * Measurements (``measure q -> c;`` and ``c = measure q;``),
+          ``reset``, ``barrier`` (accepted and ignored -- it is a
+          scheduling hint with no fatqat equivalent).
+        * Classical conditions: the whole-register form
+          ``if (creg == integer)`` and the bit-level AND form
+          ``if (c[0] == 1 && c[2] == 0)``. A single bare ``if`` (no
+          ``else``) is supported.
+        * User-defined ``gate name(params) qargs { ... }`` macros, expanded
+          inline and recursively at every call site.
+        * Built-in gates: ``id``/``x``/``y``/``z``/``h``/``s``/``sdg``/
+          ``t``/``tdg``, ``rx``/``ry``/``rz``, ``p``/``phase``/``u1``,
+          ``cx``/``cnot``/``cy``/``cz``/``swap``/``ccx``/``toffoli``/
+          ``cswap``/``fredkin``, ``cp``/``cu1``, and ``u``/``u2``/``u3``
+          (decomposed into ``rz``/``ry``/``rz``, exact up to a global
+          phase -- fatqat has no global-phase primitive, and this never
+          affects measurement probabilities).
+
+    Not supported (raises ``QASMTranspileError``):
+        * Gates with no built-in mapping above and no local ``gate``
+          definition -- e.g. ``crz``/``cry``/``crx``, ``ch``, ``cu``/
+          ``cu3``, ``sx``/``sxdg``, ``rxx``/``ryy``/``rzz``/``rzx``, and
+          multi-controlled gates (``c3x``/``c4x``/``mcx``). These *do*
+          work if the QASM source itself provides a local ``gate``
+          definition for them built from supported primitives. This
+          matters most for QASM exported from real hardware or other
+          toolchains, which commonly use ``sx`` and controlled-rotation
+          gates as basis gates.
+        * ``opaque`` declarations (no body to expand).
+        * Classical control flow: ``for``/``while`` loops, the ``else``
+          branch of ``if``, subroutines (``def``), and gate modifiers
+          (``ctrl @`` / ``inv @`` / ``pow(n) @``).
+        * ``||`` (OR) and whole-register ``!=`` inside conditions.
+
+    All unsupported constructs fail loudly rather than silently producing
+    an incorrect translation, though a few (``if``/``else``, ``for``, gate
+    modifiers) currently surface as a generic parse error rather than a
+    message naming the specific construct.
     """
 
     builder = _QASMBuilder(source)
@@ -715,17 +731,23 @@ class _Layout:
     def __init__(self, program: Program) -> None:
         self.q_info: dict[int, _RegInfo] = {}
         self.c_info: dict[int, _RegInfo] = {}
-        taken_q: set[str] = set()
-        taken_c: set[str] = set()
+        # OpenQASM has a single flat identifier namespace shared by quantum
+        # and classical declarations -- `qubit[2] r; bit[2] r;` redeclares
+        # `r` and is invalid, and this module's own importer (`from_qasm`)
+        # correctly rejects that. Use ONE shared `taken` set here too, or a
+        # same-named qreg/creg pair would silently sanitize to the same
+        # identifier and produce QASM that is invalid (and that this same
+        # module's importer would then reject on round-trip).
+        taken: set[str] = set()
 
         for i, reg in enumerate(program.qreg):
             self._check_dim(reg, "quantum")
-            name = _sanitize_identifier(reg.name, f"q{i}", taken_q)
+            name = _sanitize_identifier(reg.name, f"q{i}", taken)
             self.q_info[id(reg)] = _RegInfo(name, reg.size)
 
         for i, reg in enumerate(program.creg):
             self._check_dim(reg, "classical")
-            name = _sanitize_identifier(reg.name, f"c{i}", taken_c)
+            name = _sanitize_identifier(reg.name, f"c{i}", taken)
             self.c_info[id(reg)] = _RegInfo(name, reg.size)
 
     @staticmethod
@@ -952,6 +974,31 @@ def _condition_value_qasm2(condition, layout: _Layout):
 
 def to_qasm(program: Program, version: int = 3) -> str:
     """Translate a fatqat `Program` into OpenQASM source text.
+
+    Supported:
+        * Fixed gates (H/X/Y/Z/S/Sdg/T/Tdg/I, CX/CY/CZ/Swap/CCX/CSwap),
+          parametric gates (RX/RY/RZ/Phase/CPhase), CS (emitted as
+          `cp(pi/2)`), and iSwap (emitted as a self-contained custom `gate
+          iswap a, b {...}` definition, numerically verified equal to
+          fatqat's iSwap).
+        * Reset, measurement, and conditions -- QASM 3 supports arbitrary
+          bit-level AND conditions; QASM 2 only when the condition pins
+          down every bit of a single classical register (see `version`
+          below).
+        * fatqat's qudit-family gates (Shift/Clock/Sum/SwapLevels/
+          Fourier(dg)/SubspaceRX/RY/RZ/CClock) *only* when every register
+          involved has `dim == 2` -- each reduces to a standard qubit gate
+          in that case (e.g. `Sum` -> `cx`), verified against fatqat's own
+          matrix implementations.
+
+    Not supported (raises `QasmExportError`):
+        * Any register with `dim != 2` (a qudit) -- OpenQASM has no
+          representation for qudits at all, so this is a hard limitation
+          of the target format, not just of this function.
+        * Any operation with no QASM lowering defined above.
+        * QASM 2 export of a condition that does not pin down every bit of
+          exactly one classical register (use `version=3` instead, which
+          has no such restriction).
 
     Args:
         program: The fatqat program to translate.
