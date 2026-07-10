@@ -1,6 +1,6 @@
 """Resolved execution-plan step types shared by the statevector backend and engine.
 
-A `Program` lowers to a `list[ResolvedStep]`: each step is either an
+A :py:class:`~fatqat.Program` lowers to a `list[ResolvedStep]`: each step is either an
 `ApplyMatrixStep` (a local matrix payload built from a matrix-implementation
 rule plus layout-resolved target indices), a `MeasurementStep`, or a
 `ResetStep`. Defined here, separate from both `implementation/` (the rule

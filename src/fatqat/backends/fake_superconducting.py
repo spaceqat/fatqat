@@ -97,8 +97,8 @@ def fake_superconducting_4x4_implementation_map() -> ImplementationMap:
 class FakeSuperconducting4x4Backend(StateVectorBackend):
     """Statevector backend constrained to a fake 4x4 superconducting target.
 
-    A thin `StateVectorBackend` specialization: same execution engine, same
-    `Result`/`Job` semantics. The only differences are a fixed 16-qubit
+    A thin :py:class:`~fatqat.backends.StateVectorBackend` specialization: same execution engine, same
+    :py:class:`~fatqat.Result`/:py:class:`~fatqat.Job` semantics. The only differences are a fixed 16-qubit
     device, a fixed native gate set (`RZ`, `SX`, nearest-neighbor `CZ`), and
     rejecting programs that do not fit that device shape (too many qubits,
     or any non-qubit-dimension register).
@@ -108,7 +108,7 @@ class FakeSuperconducting4x4Backend(StateVectorBackend):
         """Create a fake 4x4 superconducting backend.
 
         Args:
-            options: Same execution-strategy options as `StateVectorBackend`
+            options: Same execution-strategy options as :py:class:`~fatqat.backends.StateVectorBackend`
                 (``max_workers``, ``parallel_mode``). The implementation map
                 is fixed to `fake_superconducting_4x4_implementation_map()`
                 and cannot be overridden.

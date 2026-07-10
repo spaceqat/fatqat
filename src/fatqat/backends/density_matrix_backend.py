@@ -379,7 +379,7 @@ class DensityMatrixBackend:
     ) -> MatrixImplementation:
         """Resolve the matrix rule for an operation on a device target key.
 
-        Raises `UnsupportedOperationError` if the operation has no rule at
+        Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` if the operation has no rule at
         all, or if it has rules but none for this target key — the message
         distinguishes the two. Mirrors `StateVectorBackend._implementation_for`.
         """
@@ -401,7 +401,7 @@ class DensityMatrixBackend:
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Lower a program into an execution plan and classify it, in one pass.
 
-        Raises `UnsupportedOperationError` for a gate with no matrix rule.
+        Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` for a gate with no matrix rule.
         `Reset` is recognized by type and routed to a `ResetStep`. The pass also
         computes `has_measurement` and `has_reset`. Kept as a per-backend copy
         of the statevector lowering for now, per the parallel-branch handoff

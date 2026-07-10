@@ -17,7 +17,7 @@ Local matrix convention (binding for every entry in this package):
       doubly-controlled gates) is the control, occupying the local MSB
       position(s).
 
-A matrix implementation rule receives the bare `Operation` instance that was
+A matrix implementation rule receives the bare :py:class:`~fatqat.operations.Operation` instance that was
 applied (e.g. `RX(0.3)`) plus the `targets: tuple[RegisterRef, ...]` operand
 tuple by keyword, and returns the local matrix, never the surrounding
 `AppliedOperation`, and never a feedforward `condition`: condition resolution
@@ -44,8 +44,8 @@ DeviceOperands = tuple[Hashable, ...]
 class MatrixImplementation:
     """Base class for a matrix-family implementation rule.
 
-    A rule receives the bare `Operation` instance that was applied (e.g. an
-    `RX(0.3)` value) plus the `targets` `RegisterRef` tuple by keyword, and
+    A rule receives the bare :py:class:`~fatqat.operations.Operation` instance that was applied (e.g. an
+    `RX(0.3)` value) plus the `targets` :py:class:`~fatqat.registers.RegisterRef` tuple by keyword, and
     returns its local matrix. Most callers never need to subclass this
     directly: `ImplementationMap.add` auto-wraps a plain
     `np.ndarray` (as `FixedMatrix`), a `_DimMatrix`, or a bare
@@ -123,9 +123,9 @@ class _DimMatrix(MatrixImplementation):
 
 
 def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]:
-    """Normalize an `Operation` instance or subclass to its registry key.
+    """Normalize an :py:class:`~fatqat.operations.Operation` instance or subclass to its registry key.
 
-    Accepts either an `Operation` instance (e.g. `fq.ops.X`) or an `Operation`
+    Accepts either an :py:class:`~fatqat.operations.Operation` instance (e.g. `fq.ops.X`) or an :py:class:`~fatqat.operations.Operation`
     subclass (e.g. a custom gate class) and returns the class to key the
     registry by. Applying `type(...)` unconditionally would be wrong for the
     class case: `type(MyGate)` is the metaclass `type`, not `MyGate`.
@@ -226,7 +226,7 @@ def _wrap_rule(
 
     A callable is not arity-checked at registration: a rule that cannot be
     called in its detected `f(op)`/`f(op, targets)` shape raises the first
-    time it is used, where the backend wraps it in a `MatrixImplementationError`
+    time it is used, where the backend wraps it in a :py:exc:`~fatqat.errors.MatrixImplementationError`
     naming the operation. Registration only distinguishes the two shapes (via
     `_callable_wants_targets`) so the call site passes `targets=` iff wanted.
 
@@ -272,7 +272,7 @@ class ImplementationMap:
         """Add an unconstrained or device-specific implementation.
 
         Args:
-            op: An `Operation` instance (e.g. `fq.ops.X`) or subclass (e.g. a
+            op: An :py:class:`~fatqat.operations.Operation` instance (e.g. `fq.ops.X`) or subclass (e.g. a
                 custom gate class). Normalized to the operation's class for
                 the registry key.
             implementation: A `MatrixImplementation` instance (e.g. `FixedMatrix` or
@@ -283,7 +283,7 @@ class ImplementationMap:
                 (wrapped automatically).
 
         Raises:
-            TypeError: If `op` is neither an `Operation` instance nor
+            TypeError: If `op` is neither an :py:class:`~fatqat.operations.Operation` instance nor
                 subclass, or if its operation class has variable arity. A bare
                 callable of the wrong shape is not rejected here; it fails on
                 first use (see `_wrap_rule`).
@@ -321,7 +321,7 @@ class ImplementationMap:
         call `remove(op)` before switching modes.
 
         Args:
-            op: An `Operation` instance or subclass. Normalized to the
+            op: An :py:class:`~fatqat.operations.Operation` instance or subclass. Normalized to the
                 operation's class for the registry key, same as `add`.
             device_operands: An ordered hashable tuple identifying the device-level
                 target (e.g. a flat integer subsystem tuple like `(0, 1)`).
@@ -331,7 +331,7 @@ class ImplementationMap:
             implementation: Same accepted shapes as `add`.
 
         Raises:
-            TypeError: If `op` is neither an `Operation` instance nor
+            TypeError: If `op` is neither an :py:class:`~fatqat.operations.Operation` instance nor
                 subclass, or if its operation class has variable arity.
             ValueError: If `device_operands`' length does not match the
                 operation's arity, if a bare `np.ndarray` rule is not square
@@ -398,7 +398,7 @@ class ImplementationMap:
         unchanged under device-specific lookup.
 
         Args:
-            op: An `Operation` instance or subclass.
+            op: An :py:class:`~fatqat.operations.Operation` instance or subclass.
             device_operands: An ordered hashable tuple identifying the device-level
                 target. Omit to look up only the unconstrained rule.
         """
@@ -437,7 +437,7 @@ class ImplementationMap:
         this operation.
 
         Args:
-            op: An `Operation` instance or subclass to remove. Removing an
+            op: An :py:class:`~fatqat.operations.Operation` instance or subclass to remove. Removing an
                 operation that was never registered is a no-op.
         """
         op_cls = _resolve_operation_class(op)

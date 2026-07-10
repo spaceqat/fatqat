@@ -21,7 +21,7 @@ class _ResultConfig:
     - `True`: explicitly request the field
     - `False`: explicitly suppress the field
 
-    For `StateVectorBackend`, the defaults are:
+    For :py:class:`~fatqat.backends.StateVectorBackend`, the defaults are:
 
     - `counts=None`: produce counts when the program contains at least one
       measurement
@@ -48,7 +48,7 @@ class _DensityMatrixResultConfig:
     Each field is tri-state with the same meaning as `_ResultConfig`:
     `None` lets the backend choose, `True` requests, `False` suppresses.
 
-    For `DensityMatrixBackend`, the defaults are:
+    For :py:class:`~fatqat.backends.DensityMatrixBackend`, the defaults are:
 
     - `counts=None`: produce counts when the program contains at least one
       measurement
