@@ -63,7 +63,7 @@ def test_target_aware_map_allows_registered_target_key():
     assert plan[0].target_indices == (0, 1)
 
 
-def test_target_aware_map_rejects_illegal_target_key_as_validation_error():
+def test_target_aware_map_rejects_illegal_target_key():
     cz_rule = default_matrix_implementation_map().get(ops.CZ)
     m = MatrixImplementationMap()
     m.register_for(ops.CZ, (0, 1), cz_rule)
@@ -72,10 +72,13 @@ def test_target_aware_map_rejects_illegal_target_key_as_validation_error():
     p = Program(2)
     p.add(ops.CZ, (1, 0))
 
-    with pytest.raises(BackendValidationError, match="target key") as excinfo:
+    # Same UnsupportedOperationError type as a wholly-unsupported family
+    # (see test below) — only the message distinguishes "illegal target"
+    # from "no rule at all."
+    with pytest.raises(UnsupportedOperationError, match="target key") as excinfo:
         backend.run(p, result_config={"counts": False, "statevector": True})
 
-    assert not isinstance(excinfo.value, UnsupportedOperationError)
+    assert isinstance(excinfo.value, BackendValidationError)
 
 
 def test_target_aware_map_unsupported_family_still_raises_unsupported_operation():

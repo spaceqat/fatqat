@@ -254,8 +254,8 @@ class MatrixImplementationMap:
         `_rules` holds uniform per-operation rules (`register`);
         `_target_rules` holds per-target-key rules (`register_for`). An
         operation lives in at most one of the two — see `register` and
-        `register_for` for the mutual-exclusion rule and `resolve_for` for
-        how each mode resolves.
+        `register_for` for the mutual-exclusion rule and `get` for how each
+        mode resolves.
         """
         self._rules: dict[type[Operation], MatrixImplementation] = {}
         self._target_rules: dict[type[Operation], dict[TargetKey, MatrixImplementation]] = {}
@@ -307,8 +307,8 @@ class MatrixImplementationMap:
     ) -> None:
         """Register a matrix implementation for one operation on one device target key.
 
-        Once an operation has any target-aware registration, `resolve_for`
-        stops falling back to a class-keyed `register()` rule for that
+        Once an operation has any target-aware registration, `get` stops
+        falling back to a class-keyed `register()` rule for that
         operation: an absent target key means the target is illegal, not
         that the caller should fall back to a default. `register` and
         `register_for` are therefore mutually exclusive per operation, each
@@ -351,33 +351,44 @@ class MatrixImplementationMap:
     def supports(self, op: Operation | type[Operation]) -> bool:
         """Return whether this map has any rule for the operation family.
 
-        True if the operation has a class-keyed rule (`register`), a
-        target-aware rule for at least one target key (`register_for`), or
-        both. Does not check whether any particular target key is legal —
-        use `resolve_for` for that.
+        True if the operation has a class-keyed rule (`register`) or a
+        target-aware rule for at least one target key (`register_for`) —
+        the two are mutually exclusive per operation, so never both. Does
+        not check whether any particular target key is legal — use `get`
+        for that.
         """
         op_cls = _resolve_operation_class(op)
         return op_cls in self._rules or op_cls in self._target_rules
 
-    def resolve_for(
+    def get(
         self,
         op: Operation | type[Operation],
-        target_key: TargetKey,
+        target_key: TargetKey | None = None,
     ) -> MatrixImplementation | None:
-        """Resolve the matrix implementation for an operation on a device target key.
+        """Return the matrix implementation registered for an operation.
 
-        If the operation has any target-aware registrations, only those are
-        consulted: `None` means this operation family is supported but this
-        specific target key is not legal. If the operation has no
-        target-aware registrations at all, the class-keyed `register()` rule
-        (if any) is returned for every target key — this is what keeps
-        `register`-only maps working unchanged under target-aware lookup.
+        Always a `MatrixImplementation` instance regardless of what was
+        registered — a bare callable is wrapped, a bare ndarray becomes a
+        `FixedMatrix`.
+
+        With `target_key` omitted, only the class-keyed `register()` rule is
+        consulted, regardless of any target-aware registrations for the
+        operation. With `target_key` given: if the operation has any
+        target-aware registrations, only those are consulted — `None` means
+        the operation family is supported but this specific target key is
+        not legal. If the operation has no target-aware registrations at
+        all, the class-keyed `register()` rule (if any) is returned for
+        every target key — this is what keeps `register`-only maps working
+        unchanged under target-aware lookup.
 
         Args:
             op: An `Operation` instance or subclass.
-            target_key: A hashable tuple identifying the device-level target.
+            target_key: A hashable tuple identifying the device-level
+                target. Omit to look up only the class-keyed rule.
         """
         op_cls = _resolve_operation_class(op)
+        if target_key is None:
+            return self._rules.get(op_cls)
         table = self._target_rules.get(op_cls)
         if table is not None:
             return table.get(_normalize_target_key(target_key))
@@ -388,7 +399,7 @@ class MatrixImplementationMap:
 
         Empty if the operation has no target-aware registrations, even if it
         has a class-keyed `register()` rule (that rule has no fixed set of
-        legal target keys — see `resolve_for`).
+        legal target keys — see `get`).
         """
         op_cls = _resolve_operation_class(op)
         return frozenset(self._target_rules.get(op_cls, ()))
@@ -406,19 +417,6 @@ class MatrixImplementationMap:
         op_cls = _resolve_operation_class(op)
         self._rules.pop(op_cls, None)
         self._target_rules.pop(op_cls, None)
-
-    def get(self, op: Operation | type[Operation]) -> MatrixImplementation | None:
-        """Return the matrix implementation registered for an operation, if any.
-
-        Always a `MatrixImplementation` instance regardless of what was
-        registered — a bare callable is wrapped, a bare ndarray becomes a
-        `FixedMatrix`.
-
-        Args:
-            op: An `Operation` instance or subclass.
-        """
-        op_cls = _resolve_operation_class(op)
-        return self._rules.get(op_cls)
 
     def copy(self) -> "MatrixImplementationMap":
         """Return a new map with an independent copy of this map's registrations.

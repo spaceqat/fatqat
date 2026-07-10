@@ -11,10 +11,15 @@ from ..errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from ..implementation import MatrixImplementationMap, default_matrix_implementation_map
+from ..implementation import (
+    MatrixImplementation,
+    MatrixImplementationMap,
+    TargetKey,
+    default_matrix_implementation_map,
+)
 from ..job import Job
 from ..layout import ResourceLayout
-from ..operations import Measurement, ResetGate
+from ..operations import Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
 from ..result import (
     Result,
@@ -218,7 +223,8 @@ class DensityMatrixBackend:
             BackendValidationError: If requested outputs are incompatible with
                 the program shape or ``shots``.
             UnsupportedOperationError: If the program contains an operation
-                without a backend implementation.
+                without a backend implementation, or one whose target key
+                (e.g. a non-neighbor qubit pair) is illegal for this backend.
 
         Examples:
             Sample counts from a measured program:
@@ -372,6 +378,35 @@ class DensityMatrixBackend:
             },
         )
 
+    def _implementation_for(
+        self, operation: Operation, target_key: TargetKey
+    ) -> MatrixImplementation:
+        """Resolve the matrix rule for an operation on a device target key.
+
+        Both failure cases a target-aware map can report — an operation
+        family with no rule at all, or a supported family on an illegal
+        target key — raise the same `UnsupportedOperationError`, with a
+        message specific to which one occurred; callers that only need to
+        know "this can't run" don't need to know the two cases exist, and
+        `UnsupportedOperationError` is a `BackendValidationError` for
+        callers that catch the broader family. For a `register`-only map
+        (no target-aware data — the only kind `DensityMatrixBackend` is
+        currently exercised with), `get(operation, target_key)` returns the
+        class-keyed rule for every target key, so this behaves exactly like
+        a bare `get(operation)` lookup. Mirrors
+        `StateVectorBackend._implementation_for`.
+        """
+        if not self._impl_map.supports(operation):
+            raise UnsupportedOperationError(
+                f"{type(operation).__name__} is not supported by this backend"
+            )
+        rule = self._impl_map.get(operation, target_key)
+        if rule is None:
+            raise UnsupportedOperationError(
+                f"{type(operation).__name__} is not supported on target key {target_key}"
+            )
+        return rule
+
     def _lower(
         self, program: Program, layout: ResourceLayout
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
@@ -411,9 +446,7 @@ class DensityMatrixBackend:
                     )
                     continue
 
-                rule = self._impl_map.get(type(step.operation))
-                if rule is None:
-                    raise UnsupportedOperationError(type(step.operation).__name__)
+                rule = self._implementation_for(step.operation, target_indices)
                 try:
                     matrix = rule(step.operation, targets=step.targets)
                 except Exception as exc:

@@ -28,7 +28,7 @@ def test_fake_superconducting_map_exposes_native_target_keys():
 
 def test_fake_superconducting_map_has_no_default_class_keyed_rules():
     # Every entry must be target-aware; a stray register()-style rule would
-    # let resolve_for silently accept illegal target keys via fallback.
+    # let get() silently accept illegal target keys via fallback.
     m = fake_superconducting_4x4_implementation_map()
     assert m.get(ops.RZ) is None
     assert m.get(ops.SX) is None
@@ -52,17 +52,20 @@ def test_fake_backend_runs_native_neighbor_operations():
     assert np.isclose(np.linalg.norm(state), 1.0)
 
 
-def test_fake_backend_rejects_non_neighbor_cz_as_backend_validation_error():
+def test_fake_backend_rejects_non_neighbor_cz():
     p = Program(16)
     p.add(ops.CZ, (0, 5))
 
-    with pytest.raises(BackendValidationError, match="target key") as excinfo:
+    # Same UnsupportedOperationError type as an unsupported family (see
+    # test below) — only the message distinguishes "illegal target" from
+    # "no rule at all."
+    with pytest.raises(UnsupportedOperationError, match="target key") as excinfo:
         FakeSuperconducting4x4Backend().run(
             p,
             result_config={"counts": False, "statevector": True},
         )
 
-    assert not isinstance(excinfo.value, UnsupportedOperationError)
+    assert isinstance(excinfo.value, BackendValidationError)
 
 
 def test_fake_backend_rejects_non_native_operation_family():
