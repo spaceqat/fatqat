@@ -19,7 +19,7 @@ The native-gate-set restriction applies to unitary operations only.
 Measurement and reset are resolved by `StateVectorBackend._lower` before any
 implementation-map lookup happens (see the `isinstance` dispatch there), so
 this backend accepts them on any of the 16 qubits regardless of the
-target-aware map's contents.
+implementation map's contents.
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ from typing import Any
 from .. import operations as ops
 from ..errors import BackendValidationError
 from ..implementation import (
+    ImplementationMap,
     MatrixImplementation,
-    MatrixImplementationMap,
     default_matrix_implementation_map,
 )
 from ..layout import ResourceLayout
@@ -63,21 +63,21 @@ def _nearest_neighbor_edges() -> tuple[tuple[int, int], ...]:
 
 
 def _require_rule(
-    implementation_map: MatrixImplementationMap,
+    implementation_map: ImplementationMap,
     op: Operation,
 ) -> MatrixImplementation:
-    rule = implementation_map.get(op)
+    rule = implementation_map.implementation_for(op)
     if rule is None:
         raise RuntimeError(f"default matrix implementation missing for {op!r}")
     return rule
 
 
-def fake_superconducting_4x4_implementation_map() -> MatrixImplementationMap:
+def fake_superconducting_4x4_implementation_map() -> ImplementationMap:
     """Build the native gate map for the fake 4x4 superconducting backend.
 
     `RZ` and `SX` are legal on any qubit label (registered uniformly via
-    `register`); `CZ` is legal only on nearest-neighbor grid edges, both
-    directions (registered via `register_for`, one call per edge). Every
+    `add`); `CZ` is legal only on nearest-neighbor grid edges, both
+    directions (added with explicit `device_operands`, one call per edge). Every
     other operation family (including `CX`) has no entry and is therefore
     unsupported.
     """
@@ -86,11 +86,11 @@ def fake_superconducting_4x4_implementation_map() -> MatrixImplementationMap:
     sx_rule = _require_rule(defaults, ops.SX)
     cz_rule = _require_rule(defaults, ops.CZ)
 
-    m = MatrixImplementationMap()
-    m.register(ops.RZ, rz_rule)
-    m.register(ops.SX, sx_rule)
+    m = ImplementationMap()
+    m.add(ops.RZ, rz_rule)
+    m.add(ops.SX, sx_rule)
     for edge in _nearest_neighbor_edges():
-        m.register_for(ops.CZ, edge, cz_rule)
+        m.add(ops.CZ, cz_rule, device_operands=edge)
     return m
 
 
@@ -119,14 +119,14 @@ class FakeSuperconducting4x4Backend(StateVectorBackend):
         )
 
     @property
-    def implementation_map(self) -> MatrixImplementationMap:
-        """Return a copy of the compiler-facing target-aware implementation map."""
+    def implementation_map(self) -> ImplementationMap:
+        """Return a copy of the compiler-facing device-aware implementation map."""
         return self._impl_map.copy()
 
     def resolve_layout(self, program: Program) -> ResourceLayout:
         """Build the flat layout, then reject any shape the fake device can't run.
 
-        A program may declare up to 16 qubits — fewer is fine, since flat
+        A program may declare up to 16 qubits; fewer is fine, since flat
         subsystem indices are assigned in declaration order (see
         `ResourceLayout.from_program`), so an N-qubit program always maps
         onto physical qubits `0..N-1`, the same rule used for a full

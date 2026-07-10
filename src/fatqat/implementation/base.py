@@ -1,9 +1,9 @@
 """Matrix-implementation abstraction: the rule protocol, its wrappers, and the
-class-keyed registry.
+implementation map (unconstrained and device-specific).
 
 A matrix implementation maps an operation to its local matrix (physics only).
 The backend pairs that matrix with layout-resolved target indices to build an
-``ApplyMatrixStep`` (see ``backends.steps``) — the plain data container the
+``ApplyMatrixStep`` (see ``backends.steps``), the plain data container the
 statevector engine reads directly.
 
 Local matrix convention (binding for every entry in this package):
@@ -13,13 +13,13 @@ Local matrix convention (binding for every entry in this package):
       ``engine._apply_matrix`` for the little-endian contraction this feeds.
     - For every controlled gate (``CX``, ``CZ``, ``CY``, and the controlled
       gates added in later batches), the control operand(s) come first and the
-      target operand(s) come last — operand 0 (and operand 1 for
+      target operand(s) come last: operand 0 (and operand 1 for
       doubly-controlled gates) is the control, occupying the local MSB
       position(s).
 
 A matrix implementation rule receives the bare `Operation` instance that was
 applied (e.g. `RX(0.3)`) plus the `targets: tuple[RegisterRef, ...]` operand
-tuple by keyword, and returns the local matrix — never the surrounding
+tuple by keyword, and returns the local matrix, never the surrounding
 `AppliedOperation`, and never a feedforward `condition`: condition resolution
 happens separately, in the backend. `targets` lets a rule read
 `targets[0].register.dim` to build a dimension-dependent matrix (e.g. a
@@ -38,7 +38,7 @@ import numpy as np
 from ..operations import Operation
 from ..registers import RegisterRef
 
-TargetKey = tuple[Hashable, ...]
+DeviceOperands = tuple[Hashable, ...]
 
 
 class MatrixImplementation:
@@ -47,7 +47,7 @@ class MatrixImplementation:
     A rule receives the bare `Operation` instance that was applied (e.g. an
     `RX(0.3)` value) plus the `targets` `RegisterRef` tuple by keyword, and
     returns its local matrix. Most callers never need to subclass this
-    directly: `MatrixImplementationMap.register` auto-wraps a plain
+    directly: `ImplementationMap.add` auto-wraps a plain
     `np.ndarray` (as `FixedMatrix`), a `_DimMatrix`, or a bare
     callable. Subclass and override `__call__` for a stateful or configured
     implementation.
@@ -64,7 +64,7 @@ def _validate_square_matrix(matrix: np.ndarray) -> None:
     has no way to know what dimension its caller intends (it never sees the
     target operation or register), and a fixed-dimension restriction here
     would reject legitimate non-qubit matrices (e.g. a qutrit's dim=3 gate)
-    with no compensating safety benefit — the arity-aware shape check against
+    with no compensating safety benefit. The arity-aware shape check against
     a specific operation happens separately, in `_wrap_rule`.
     """
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
@@ -104,7 +104,7 @@ class _DimMatrix(MatrixImplementation):
     targets but is not itself a single constant matrix (e.g. a qudit `Shift`
     gate, whose permutation matrix depends on `targets[0].register.dim`).
     Unlike `FixedMatrix`, this always reads `targets`, so it cannot be used
-    with the `targets=()` default — the caller (backend resolution) always
+    with the `targets=()` default; the caller (backend resolution) always
     supplies the real target tuple.
     """
 
@@ -153,15 +153,17 @@ def _require_fixed_arity(op_cls: type[Operation]) -> None:
         )
 
 
-def _normalize_target_key(target_key: TargetKey) -> TargetKey:
-    """Normalize a device target key and verify it can be used as a dict key."""
-    key = tuple(target_key)
+def _normalize_device_operands(device_operands: DeviceOperands) -> DeviceOperands:
+    """Normalize device operands and verify they can be used as a dict key."""
+    key = tuple(device_operands)
     hash(key)
     return key
 
 
-def _require_target_key_arity(op_cls: type[Operation], target_key: TargetKey) -> None:
-    """Raise `ValueError` if `target_key`'s length does not match `op_cls` arity.
+def _require_device_operands_arity(
+    op_cls: type[Operation], device_operands: DeviceOperands
+) -> None:
+    """Raise `ValueError` if device operands do not match `op_cls` arity.
 
     Only arity is checked here: the general map does not know what a target
     key element means (an integer device label, a zone name, ...), so it
@@ -169,10 +171,10 @@ def _require_target_key_arity(op_cls: type[Operation], target_key: TargetKey) ->
     the backend that constructs a device-specific map.
     """
     expected = op_cls._num_subsystems
-    if len(target_key) != expected:
+    if len(device_operands) != expected:
         raise ValueError(
-            f"{op_cls.__name__} expects {expected} target key element(s), "
-            f"got {len(target_key)}"
+            f"{op_cls.__name__} expects {expected} device operand(s), "
+            f"got {len(device_operands)}"
         )
 
 
@@ -212,14 +214,14 @@ def _wrap_rule(
     op_cls: type[Operation],
     rule: "MatrixImplementation | Callable | np.ndarray",
 ) -> MatrixImplementation:
-    """Normalize a `register()` rule argument into a `MatrixImplementation`.
+    """Normalize an `add()` implementation argument into a `MatrixImplementation`.
 
     Accepts an already-built `MatrixImplementation` (returned as-is, e.g. a
     `FixedMatrix` or `_DimMatrix`), a plain `np.ndarray` (wrapped in
-    `FixedMatrix`, which only requires it be square with side length >= 2 —
+    `FixedMatrix`, which only requires it be square with side length >= 2,
     see `_validate_square_matrix`), or a bare `f(op)`/`f(op, targets)`
     callable (wrapped). Every stored rule is a `MatrixImplementation`
-    instance, so `get()` always returns a uniform type regardless of how the
+    instance, so `implementation_for()` always returns a uniform type regardless of how the
     rule was registered.
 
     A callable is not arity-checked at registration: a rule that cannot be
@@ -230,7 +232,7 @@ def _wrap_rule(
 
     Raises:
         TypeError: If `rule` is none of the above (e.g. a string or a plain
-            object) — checked explicitly here so the error names the
+            object), checked explicitly here so the error names the
             operation and the bad value.
     """
     if isinstance(rule, MatrixImplementation):
@@ -245,37 +247,39 @@ def _wrap_rule(
     return _CallableMatrixImplementation(rule, _callable_wants_targets(rule))
 
 
-class MatrixImplementationMap:
-    """Class-keyed registry from operation classes to matrix implementations."""
+class ImplementationMap:
+    """Resolve operation families and device operands to implementations."""
 
     def __init__(self) -> None:
         """Create an empty implementation map.
 
-        `_rules` holds uniform per-operation rules (`register`);
-        `_target_rules` holds per-target-key rules (`register_for`). An
-        operation lives in at most one of the two — see `register` and
-        `register_for` for the mutual-exclusion rule and `get` for how each
-        mode resolves.
+        `_rules` holds unconstrained per-operation implementations.
+        `_device_operand_rules` holds implementations for explicit device
+        operands. An operation family uses at most one mode.
         """
         self._rules: dict[type[Operation], MatrixImplementation] = {}
-        self._target_rules: dict[type[Operation], dict[TargetKey, MatrixImplementation]] = {}
+        self._device_operand_rules: dict[
+            type[Operation], dict[DeviceOperands, MatrixImplementation]
+        ] = {}
 
-    def register(
+    def add(
         self,
         op: Operation | type[Operation],
-        rule: "MatrixImplementation | Callable | np.ndarray",
+        implementation: "MatrixImplementation | Callable | np.ndarray",
+        *,
+        device_operands: DeviceOperands | None = None,
     ) -> None:
-        """Register a matrix implementation for an operation.
+        """Add an unconstrained or device-specific implementation.
 
         Args:
             op: An `Operation` instance (e.g. `fq.ops.X`) or subclass (e.g. a
                 custom gate class). Normalized to the operation's class for
                 the registry key.
-            rule: A `MatrixImplementation` instance (e.g. `FixedMatrix` or
+            implementation: A `MatrixImplementation` instance (e.g. `FixedMatrix` or
                 `_DimMatrix`), a bare `np.ndarray` (wrapped in
-                `FixedMatrix`), or a bare callable — either `f(op)` or
+                `FixedMatrix`), or a bare callable, either `f(op)` or
                 `f(op, targets)`, detected by a parameter literally named
-                `targets` (or `**kwargs`) — returning the operation's matrix
+                `targets` (or `**kwargs`), returning the operation's matrix
                 (wrapped automatically).
 
         Raises:
@@ -284,135 +288,152 @@ class MatrixImplementationMap:
                 callable of the wrong shape is not rejected here; it fails on
                 first use (see `_wrap_rule`).
             ValueError: If a bare `np.ndarray` is not square with side
-                length >= 2, or if `op` already has target-aware
-                registrations — mutually exclusive with `register_for`, see
+                length >= 2, or if `op` already has device-specific
+                registrations, mutually exclusive with `add(..., device_operands=...)`; see
                 its docstring for why.
         """
+        if device_operands is not None:
+            self._add_for_device_operands(op, device_operands, implementation)
+            return
+
         op_cls = _resolve_operation_class(op)
         _require_fixed_arity(op_cls)
-        if op_cls in self._target_rules:
+        if op_cls in self._device_operand_rules:
             raise ValueError(
-                f"{op_cls.__name__} already has target-aware registrations "
-                "(register_for); cannot also register a class-keyed rule for "
-                "the same operation. Call unregister(op) first if you want "
+                f"{op_cls.__name__} already has device-specific implementations, "
+                "cannot also add an unconstrained implementation for "
+                "the same operation. Call remove(op) first if you want "
                 "to replace its registrations."
             )
-        self._rules[op_cls] = _wrap_rule(op_cls, rule)
+        self._rules[op_cls] = _wrap_rule(op_cls, implementation)
 
-    def register_for(
+    def _add_for_device_operands(
         self,
         op: Operation | type[Operation],
-        target_key: TargetKey,
-        rule: "MatrixImplementation | Callable | np.ndarray",
+        device_operands: DeviceOperands,
+        implementation: "MatrixImplementation | Callable | np.ndarray",
     ) -> None:
-        """Register a matrix implementation for one operation on one device target key.
+        """Add an implementation for one operation and device-operand tuple.
 
-        Once an operation has any target-aware registration, `get` stops
-        falling back to a class-keyed `register()` rule for that
-        operation: an absent target key means the target is illegal, not
-        that the caller should fall back to a default. `register` and
-        `register_for` are therefore mutually exclusive per operation, each
-        raising if the other already has an entry — `unregister(op)` first
-        if you need to switch modes. Calling `register_for` again for an
-        operation that already has target-aware entries is fine and normal
-        (e.g. one call per grid edge).
+        `add` supports two mutually exclusive modes per operation family:
+        one unconstrained implementation, or explicit implementations for
+        device-operand tuples. An absent tuple in the latter mode is illegal;
+        call `remove(op)` before switching modes.
 
         Args:
             op: An `Operation` instance or subclass. Normalized to the
-                operation's class for the registry key, same as `register`.
-            target_key: A hashable tuple identifying the device-level
+                operation's class for the registry key, same as `add`.
+            device_operands: An ordered hashable tuple identifying the device-level
                 target (e.g. a flat integer subsystem tuple like `(0, 1)`).
                 Its length must match the operation's arity; its element
-                types and values are not otherwise validated here — that is
+                types and values are not otherwise validated here; that is
                 a device-specific concern owned by the caller.
-            rule: Same accepted shapes as `register`.
+            implementation: Same accepted shapes as `add`.
 
         Raises:
             TypeError: If `op` is neither an `Operation` instance nor
                 subclass, or if its operation class has variable arity.
-            ValueError: If `target_key`'s length does not match the
+            ValueError: If `device_operands`' length does not match the
                 operation's arity, if a bare `np.ndarray` rule is not square
-                with side length >= 2, or if `op` already has a class-keyed
+                with side length >= 2, or if `op` already has an unconstrained
                 rule (see above).
         """
         op_cls = _resolve_operation_class(op)
         _require_fixed_arity(op_cls)
         if op_cls in self._rules:
             raise ValueError(
-                f"{op_cls.__name__} already has a class-keyed rule "
-                "(register); cannot also register a target-aware rule for "
-                "the same operation. Call unregister(op) first if you want "
+                f"{op_cls.__name__} already has an unconstrained rule "
+                "(add); cannot also add a device-specific implementation for "
+                "the same operation. Call remove(op) first if you want "
                 "to replace its registrations."
             )
-        key = _normalize_target_key(target_key)
-        _require_target_key_arity(op_cls, key)
-        self._target_rules.setdefault(op_cls, {})[key] = _wrap_rule(op_cls, rule)
+        operands = _normalize_device_operands(device_operands)
+        _require_device_operands_arity(op_cls, operands)
+        self._device_operand_rules.setdefault(op_cls, {})[operands] = _wrap_rule(
+            op_cls, implementation
+        )
 
-    def supports(self, op: Operation | type[Operation]) -> bool:
-        """Return whether this map has any rule for the operation family.
-
-        True if the operation has a class-keyed rule (`register`) or a
-        target-aware rule for at least one target key (`register_for`) —
-        the two are mutually exclusive per operation, so never both. Does
-        not check whether any particular target key is legal — use `get`
-        for that, or `target_keys` to distinguish uniform from explicit
-        support.
-        """
-        op_cls = _resolve_operation_class(op)
-        return op_cls in self._rules or op_cls in self._target_rules
-
-    def get(
+    def supports(
         self,
         op: Operation | type[Operation],
-        target_key: TargetKey | None = None,
+        *,
+        device_operands: DeviceOperands | None = None,
+    ) -> bool:
+        """Return whether this map has any rule for the operation family.
+
+        True if the operation has an unconstrained implementation (`add`) or a
+        device-specific implementation for at least one operand tuple.
+        The two are mutually exclusive per operation, so never both. Does
+        not check whether any particular device operands is legal; use `implementation_for`
+        for that, or `device_operands_for` to distinguish uniform from explicit
+        support.
+        """
+        if device_operands is not None:
+            return self.implementation_for(
+                op, device_operands=device_operands
+            ) is not None
+        op_cls = _resolve_operation_class(op)
+        return op_cls in self._rules or op_cls in self._device_operand_rules
+
+    def implementation_for(
+        self,
+        op: Operation | type[Operation],
+        *,
+        device_operands: DeviceOperands | None = None,
     ) -> MatrixImplementation | None:
-        """Return the matrix implementation registered for an operation.
+        """Return the matrix implementation selected for an operation.
 
         Always a `MatrixImplementation` instance regardless of what was
-        registered — a bare callable is wrapped, a bare ndarray becomes a
+        registered: a bare callable is wrapped, a bare ndarray becomes a
         `FixedMatrix`.
 
-        With `target_key` omitted, only the class-keyed `register()` rule is
-        consulted, regardless of any target-aware registrations for the
-        operation. With `target_key` given: if the operation has any
-        target-aware registrations, only those are consulted — `None` means
-        the operation family is supported but this specific target key is
-        not legal. If the operation has no target-aware registrations at
-        all, the class-keyed `register()` rule (if any) is returned for
-        every target key — this is what keeps `register`-only maps working
-        unchanged under target-aware lookup.
+        With `device_operands` omitted, only the unconstrained `add()` implementation is
+        consulted, regardless of any device-specific implementations for the
+        operation. With `device_operands` given: if the operation has any
+        device-specific implementations, only those are consulted. `None` means
+        the operation family is supported but this specific device operands is
+        not legal. If the operation has no device-specific implementations at
+        all, the unconstrained `add()` implementation (if any) is returned for
+        every device operands. This is what keeps maps with only an unconstrained implementation working
+        unchanged under device-specific lookup.
 
         Args:
             op: An `Operation` instance or subclass.
-            target_key: A hashable tuple identifying the device-level
-                target. Omit to look up only the class-keyed rule.
+            device_operands: An ordered hashable tuple identifying the device-level
+                target. Omit to look up only the unconstrained rule.
         """
         op_cls = _resolve_operation_class(op)
-        if target_key is None:
+        if device_operands is None:
             return self._rules.get(op_cls)
-        table = self._target_rules.get(op_cls)
+        table = self._device_operand_rules.get(op_cls)
         if table is not None:
-            return table.get(_normalize_target_key(target_key))
+            return table.get(_normalize_device_operands(device_operands))
         return self._rules.get(op_cls)
 
-    def target_keys(self, op: Operation | type[Operation]) -> frozenset[TargetKey]:
-        """Return the finite set of target keys registered for an operation.
+    def supported_operations(self) -> frozenset[type[Operation]]:
+        """Return every operation family with at least one implementation."""
+        return frozenset(self._rules | self._device_operand_rules)
 
-        Empty if the operation has no target-aware registrations — including
-        when it has a class-keyed `register()` rule instead, which has no
+    def device_operands_for(
+        self, op: Operation | type[Operation]
+    ) -> frozenset[DeviceOperands]:
+        """Return the finite set of device operands selected for an operation.
+
+        Empty if the operation has no device-specific implementations, including
+        when it has an unconstrained `add()` implementation instead, which has no
         fixed set of legal keys. Combine with `supports` to tell the two
-        apart: `supports(op) and not target_keys(op)` means `op` is legal
+        apart: `supports(op) and not device_operands_for(op)` means `op` is legal
         on any target of the correct arity (uniform); a non-empty result
         means legal only on those keys; `not supports(op)` means not
         supported at all.
         """
         op_cls = _resolve_operation_class(op)
-        return frozenset(self._target_rules.get(op_cls, ()))
+        return frozenset(self._device_operand_rules.get(op_cls, ()))
 
-    def unregister(self, op: Operation | type[Operation]) -> None:
+    def remove(self, op: Operation | type[Operation]) -> None:
         """Remove a registered matrix implementation, if present.
 
-        Removes both the class-keyed rule and any target-aware rules for
+        Removes both the unconstrained rule and any device-specific implementations for
         this operation.
 
         Args:
@@ -421,23 +442,24 @@ class MatrixImplementationMap:
         """
         op_cls = _resolve_operation_class(op)
         self._rules.pop(op_cls, None)
-        self._target_rules.pop(op_cls, None)
+        self._device_operand_rules.pop(op_cls, None)
 
-    def copy(self) -> "MatrixImplementationMap":
+    def copy(self) -> "ImplementationMap":
         """Return a new map with an independent copy of this map's registrations.
 
         Rule objects themselves are shared (not deep-copied) between the
-        original and the copy — rules are expected to be immutable or
+        original and the copy; rules are expected to be immutable or
         self-contained, so sharing them across independent map copies is
-        safe. Mutating one map's registrations (`register`/`register_for`/
-        `unregister`) never affects the other. The per-operation target-key
+        safe. Mutating one map's registrations (`add`/`add(..., device_operands=...)`/
+        `remove`) never affects the other. The per-operation device-operand
         tables are copied individually (not just the outer dict), so mutating
-        one map's target-aware registrations for an operation cannot leak
+        one map's device-specific implementations for an operation cannot leak
         into the other map's table for that same operation.
         """
-        clone = MatrixImplementationMap()
+        clone = ImplementationMap()
         clone._rules = dict(self._rules)
-        clone._target_rules = {
-            op_cls: dict(target_rules) for op_cls, target_rules in self._target_rules.items()
+        clone._device_operand_rules = {
+            op_cls: dict(operand_rules)
+            for op_cls, operand_rules in self._device_operand_rules.items()
         }
         return clone

@@ -13,8 +13,8 @@ from ..errors import (
 )
 from ..implementation import (
     MatrixImplementation,
-    MatrixImplementationMap,
-    TargetKey,
+    DeviceOperands,
+    ImplementationMap,
     default_matrix_implementation_map,
 )
 from ..job import Job
@@ -71,7 +71,7 @@ class StateVectorBackend:
     def __init__(
         self,
         options: dict[str, Any] | None = None,
-        implementation_map: MatrixImplementationMap | None = None,
+        implementation_map: ImplementationMap | None = None,
     ) -> None:
         """Create a statevector backend.
 
@@ -359,7 +359,7 @@ class StateVectorBackend:
         )
 
     def _implementation_for(
-        self, operation: Operation, target_key: TargetKey
+        self, operation: Operation, device_operands: DeviceOperands
     ) -> MatrixImplementation:
         """Resolve the matrix rule for an operation on a device target key.
 
@@ -371,10 +371,12 @@ class StateVectorBackend:
             raise UnsupportedOperationError(
                 f"{type(operation).__name__} is not supported by this backend"
             )
-        rule = self._impl_map.get(operation, target_key)
+        rule = self._impl_map.implementation_for(
+            operation, device_operands=device_operands
+        )
         if rule is None:
             raise UnsupportedOperationError(
-                f"{type(operation).__name__} is not supported on target key {target_key}"
+                f"{type(operation).__name__} is not supported on device operands {device_operands}"
             )
         return rule
 

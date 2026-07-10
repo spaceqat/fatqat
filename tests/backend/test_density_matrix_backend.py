@@ -290,9 +290,9 @@ def test_unsupported_operation_raises():
 # --- target-aware resolution (mirrors StateVectorBackend, see test_resolution.py) --
 
 def test_target_aware_map_allows_registered_target_key():
-    cz_rule = fq.implementation.default_matrix_implementation_map().get(ops.CZ)
-    m = fq.implementation.MatrixImplementationMap()
-    m.register_for(ops.CZ, (0, 1), cz_rule)
+    cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(ops.CZ)
+    m = fq.implementation.ImplementationMap()
+    m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = DensityMatrixBackend(implementation_map=m)
 
     p = Program(2)
@@ -303,27 +303,27 @@ def test_target_aware_map_allows_registered_target_key():
 
 
 def test_target_aware_map_rejects_illegal_target_key():
-    cz_rule = fq.implementation.default_matrix_implementation_map().get(ops.CZ)
-    m = fq.implementation.MatrixImplementationMap()
-    m.register_for(ops.CZ, (0, 1), cz_rule)
+    cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(ops.CZ)
+    m = fq.implementation.ImplementationMap()
+    m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = DensityMatrixBackend(implementation_map=m)
 
     p = Program(2)
     p.add(ops.CZ, (1, 0))
 
     # Same UnsupportedOperationError type as an unsupported family (see
-    # test below) — only the message distinguishes "illegal target" from
+    # test below); only the message distinguishes "illegal target" from
     # "no rule at all."
-    with pytest.raises(fq.errors.UnsupportedOperationError, match="target key") as excinfo:
+    with pytest.raises(fq.errors.UnsupportedOperationError, match="device operands") as excinfo:
         backend.run(p, result_config={"counts": False, "density_matrix": True})
 
     assert isinstance(excinfo.value, BackendValidationError)
 
 
 def test_target_aware_map_unsupported_family_still_raises_unsupported_operation():
-    cz_rule = fq.implementation.default_matrix_implementation_map().get(ops.CZ)
-    m = fq.implementation.MatrixImplementationMap()
-    m.register_for(ops.CZ, (0, 1), cz_rule)
+    cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(ops.CZ)
+    m = fq.implementation.ImplementationMap()
+    m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = DensityMatrixBackend(implementation_map=m)
 
     p = Program(1)

@@ -1,16 +1,21 @@
-﻿"""Class-keyed matrix implementations."""
+"""Matrix implementations and device-aware implementation maps."""
 
 from __future__ import annotations
 
 import inspect
 
-from .base import FixedMatrix, MatrixImplementation, MatrixImplementationMap, TargetKey
+from .base import (
+    DeviceOperands,
+    FixedMatrix,
+    ImplementationMap,
+    MatrixImplementation,
+)
 from .registry import default_matrix_implementation_map
 
 __all__ = [
     "MatrixImplementation",
     "FixedMatrix",
-    "MatrixImplementationMap",
-    "TargetKey",
+    "ImplementationMap",
+    "DeviceOperands",
     "default_matrix_implementation_map",
 ]

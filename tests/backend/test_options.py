@@ -71,7 +71,7 @@ def test_backend_accepts_custom_implementation_map():
     # Start from the defaults and override just one gate, to prove override
     # replaces one rule while the rest of the default map keeps working.
     m = default_matrix_implementation_map()
-    m.register(fq.ops.X, np.eye(2, dtype=complex))  # override X with identity
+    m.add(fq.ops.X, np.eye(2, dtype=complex))  # override X with identity
     backend = StateVectorBackend(implementation_map=m)
 
     p = fq.Program(2, 2)
@@ -102,7 +102,7 @@ def test_backend_copies_implementation_map_defensively():
     m = default_matrix_implementation_map()
     backend = StateVectorBackend(implementation_map=m)
 
-    m.unregister(fq.ops.X)  # mutate the caller's map after construction
+    m.remove(fq.ops.X)  # mutate the caller's map after construction
 
     p = fq.Program(1, 1)
     p.add(fq.ops.X, 0)

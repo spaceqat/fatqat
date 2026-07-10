@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .. import operations as ops
-from .base import FixedMatrix, MatrixImplementationMap, _DimMatrix
+from .base import FixedMatrix, ImplementationMap, _DimMatrix
 from .matrices import (
     _CCX,
     _CS,
@@ -41,46 +41,46 @@ from .matrices import (
 )
 
 
-def default_matrix_implementation_map() -> MatrixImplementationMap:
+def default_matrix_implementation_map() -> ImplementationMap:
     """Build the default matrix implementation map.
 
     Registers against the public singleton instances (e.g. `ops.X`), not the
-    underlying `*Gate` classes: `register()` resolves either to the same
+    underlying `*Gate` classes: `add()` resolves either to the same
     class key, and the fixed-gate classes are not part of the `fq.ops` public
     surface (see `operations.fixed_gates`).
     """
-    m = MatrixImplementationMap()
-    m.register(ops.X, FixedMatrix(_X))
-    m.register(ops.Y, FixedMatrix(_Y))
-    m.register(ops.Z, FixedMatrix(_Z))
-    m.register(ops.H, FixedMatrix(_H))
-    m.register(ops.I, FixedMatrix(_I))
-    m.register(ops.S, FixedMatrix(_S))
-    m.register(ops.Sdg, FixedMatrix(_SDG))
-    m.register(ops.SX, FixedMatrix(_SX))
-    m.register(ops.T, FixedMatrix(_T))
-    m.register(ops.Tdg, FixedMatrix(_TDG))
-    m.register(ops.CX, FixedMatrix(_CX))
-    m.register(ops.CZ, FixedMatrix(_CZ))
-    m.register(ops.Swap, FixedMatrix(_SWAP))
-    m.register(ops.CY, FixedMatrix(_CY))
-    m.register(ops.CS, FixedMatrix(_CS))
-    m.register(ops.iSwap, FixedMatrix(_ISWAP))
-    m.register(ops.CCX, FixedMatrix(_CCX))
-    m.register(ops.CSwap, FixedMatrix(_CSWAP))
-    m.register(ops.RX, _rx)
-    m.register(ops.RY, _ry)
-    m.register(ops.RZ, _rz)
-    m.register(ops.Phase, _phase)
-    m.register(ops.CPhase, _cphase)
-    m.register(ops.Shift, _shift_rule)
-    m.register(ops.Clock, _clock_rule)
-    m.register(ops.Sum, _DimMatrix(sum_matrix))
-    m.register(ops.SwapLevels, _swap_levels_rule)
-    m.register(ops.Fourier, _DimMatrix(_fourier_rule))
-    m.register(ops.Fourierdg, _DimMatrix(_fourierdg_rule))
-    m.register(ops.SubspaceRX, _subspace_rx_rule)
-    m.register(ops.SubspaceRY, _subspace_ry_rule)
-    m.register(ops.SubspaceRZ, _subspace_rz_rule)
-    m.register(ops.CClock, _cclock_rule)
+    m = ImplementationMap()
+    m.add(ops.X, FixedMatrix(_X))
+    m.add(ops.Y, FixedMatrix(_Y))
+    m.add(ops.Z, FixedMatrix(_Z))
+    m.add(ops.H, FixedMatrix(_H))
+    m.add(ops.I, FixedMatrix(_I))
+    m.add(ops.S, FixedMatrix(_S))
+    m.add(ops.Sdg, FixedMatrix(_SDG))
+    m.add(ops.SX, FixedMatrix(_SX))
+    m.add(ops.T, FixedMatrix(_T))
+    m.add(ops.Tdg, FixedMatrix(_TDG))
+    m.add(ops.CX, FixedMatrix(_CX))
+    m.add(ops.CZ, FixedMatrix(_CZ))
+    m.add(ops.Swap, FixedMatrix(_SWAP))
+    m.add(ops.CY, FixedMatrix(_CY))
+    m.add(ops.CS, FixedMatrix(_CS))
+    m.add(ops.iSwap, FixedMatrix(_ISWAP))
+    m.add(ops.CCX, FixedMatrix(_CCX))
+    m.add(ops.CSwap, FixedMatrix(_CSWAP))
+    m.add(ops.RX, _rx)
+    m.add(ops.RY, _ry)
+    m.add(ops.RZ, _rz)
+    m.add(ops.Phase, _phase)
+    m.add(ops.CPhase, _cphase)
+    m.add(ops.Shift, _shift_rule)
+    m.add(ops.Clock, _clock_rule)
+    m.add(ops.Sum, _DimMatrix(sum_matrix))
+    m.add(ops.SwapLevels, _swap_levels_rule)
+    m.add(ops.Fourier, _DimMatrix(_fourier_rule))
+    m.add(ops.Fourierdg, _DimMatrix(_fourierdg_rule))
+    m.add(ops.SubspaceRX, _subspace_rx_rule)
+    m.add(ops.SubspaceRY, _subspace_ry_rule)
+    m.add(ops.SubspaceRZ, _subspace_rz_rule)
+    m.add(ops.CClock, _cclock_rule)
     return m

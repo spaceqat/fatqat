@@ -11,37 +11,37 @@ from fatqat.program import Program
 from fatqat.registers import QuantumRegister
 
 
-def test_fake_superconducting_map_exposes_native_target_keys():
+def test_fake_superconducting_map_exposes_native_device_operands_for():
     m = fake_superconducting_4x4_implementation_map()
 
     assert m.supports(ops.RZ)
     assert m.supports(ops.SX)
     assert m.supports(ops.CZ)
-    assert (0, 1) in m.target_keys(ops.CZ)
-    assert (1, 0) in m.target_keys(ops.CZ)
-    assert (0, 4) in m.target_keys(ops.CZ)
-    assert (4, 0) in m.target_keys(ops.CZ)
-    assert (0, 5) not in m.target_keys(ops.CZ)
+    assert (0, 1) in m.device_operands_for(ops.CZ)
+    assert (1, 0) in m.device_operands_for(ops.CZ)
+    assert (0, 4) in m.device_operands_for(ops.CZ)
+    assert (4, 0) in m.device_operands_for(ops.CZ)
+    assert (0, 5) not in m.device_operands_for(ops.CZ)
 
 
 def test_fake_superconducting_map_rz_and_sx_are_uniform():
     # RZ/SX are legal on any of the 16 qubits, so they are registered via
-    # plain register() rather than one register_for call per qubit.
-    # supports() + empty target_keys() is how a compiler infers "uniform,
-    # legal on any target" instead of "not supported" — see
-    # MatrixImplementationMap.target_keys's docstring.
+    # plain one unconstrained add() rather than explicit device-operand additions.
+    # supports() + empty device_operands_for() is how a compiler infers "uniform,
+    # legal on any target" instead of "not supported"; see
+    # ImplementationMap.device_operands_for's docstring.
     m = fake_superconducting_4x4_implementation_map()
-    assert m.supports(ops.RZ) and not m.target_keys(ops.RZ)
-    assert m.supports(ops.SX) and not m.target_keys(ops.SX)
-    assert m.get(ops.RZ) is not None
-    assert m.get(ops.SX) is not None
+    assert m.supports(ops.RZ) and not m.device_operands_for(ops.RZ)
+    assert m.supports(ops.SX) and not m.device_operands_for(ops.SX)
+    assert m.implementation_for(ops.RZ) is not None
+    assert m.implementation_for(ops.SX) is not None
 
 
 def test_fake_superconducting_map_cz_has_no_class_keyed_rule():
-    # CZ must be entirely target-aware; a stray register()-style rule would
+    # CZ must be entirely target-aware; a stray unconstrained implementation would
     # let get() silently accept non-neighbor pairs via fallback.
     m = fake_superconducting_4x4_implementation_map()
-    assert m.get(ops.CZ) is None
+    assert m.implementation_for(ops.CZ) is None
 
 
 def test_fake_backend_runs_native_neighbor_operations():
@@ -66,9 +66,9 @@ def test_fake_backend_rejects_non_neighbor_cz():
     p.add(ops.CZ, (0, 5))
 
     # Same UnsupportedOperationError type as an unsupported family (see
-    # test below) — only the message distinguishes "illegal target" from
+    # test below); only the message distinguishes "illegal target" from
     # "no rule at all."
-    with pytest.raises(UnsupportedOperationError, match="target key") as excinfo:
+    with pytest.raises(UnsupportedOperationError, match="device operands") as excinfo:
         FakeSuperconducting4x4Backend().run(
             p,
             result_config={"counts": False, "statevector": True},
@@ -90,7 +90,7 @@ def test_fake_backend_rejects_non_native_operation_family():
 
 def test_fake_backend_accepts_fewer_than_sixteen_qubits():
     # Flat subsystem indices are assigned in declaration order, so a
-    # smaller program maps deterministically onto physical qubits 0..N-1 —
+    # smaller program maps deterministically onto physical qubits 0..N-1;
     # same rule as a full 16-qubit program, no ambiguity to guard against.
     p = Program(2)
     p.add(ops.SX, 0)

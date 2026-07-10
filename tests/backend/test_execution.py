@@ -14,7 +14,7 @@ from fatqat.errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from fatqat.implementation import MatrixImplementationMap, default_matrix_implementation_map
+from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
 from fatqat import operations as ops
 from fatqat.program import Program
 
@@ -133,8 +133,8 @@ def test_rule_failure_is_wrapped_with_operation_context():
     def broken_rule(op):
         raise RuntimeError("boom")
 
-    m = MatrixImplementationMap()
-    m.register(ops.X, broken_rule)
+    m = ImplementationMap()
+    m.add(ops.X, broken_rule)
     backend = StateVectorBackend(implementation_map=m)
 
     p = Program(1, 1)
@@ -157,7 +157,7 @@ def test_custom_operation_runs_end_to_end_via_bare_callable():
         return np.array([[0, 1], [1, 0]], dtype=complex)
 
     m = default_matrix_implementation_map()
-    m.register(MyX, my_x_rule)
+    m.add(MyX, my_x_rule)
     backend = StateVectorBackend(implementation_map=m)
 
     p = Program(1)
@@ -172,9 +172,9 @@ def test_custom_operation_runs_end_to_end_via_bare_callable():
     assert np.allclose(statevector, [0, 1])
 
 
-def test_unregistered_gate_raises_after_unregister():
+def test_unregistered_gate_raises_after_remove():
     m = default_matrix_implementation_map()
-    m.unregister(ops.T)
+    m.remove(ops.T)
     backend = StateVectorBackend(implementation_map=m)
 
     p = Program(1, 1)
