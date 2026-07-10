@@ -17,6 +17,21 @@ class ResetGate(Operation):
     public surface (not in ``__all__``) but stays attribute-accessible for
     ``isinstance`` checks against ``Reset`` steps; ``Reset`` (the singleton)
     is the one users construct programs with.
+
+    Examples:
+        Flip a qubit to ``|1>`` then reset it back to ``|0>``:
+
+        >>> import fatqat as fq
+        >>> program = fq.Program(1)
+        >>> program.add(fq.ops.X, 0)
+        >>> program.add(fq.ops.Reset, 0)
+        >>> result = fq.backends.StateVectorBackend().run(
+        ...     program,
+        ...     shots=1,
+        ...     result_config={"counts": False, "statevector": True},
+        ... ).result()
+        >>> result.get_statevector()
+        array([1.+0.j, 0.+0.j])
     """
 
     name: ClassVar[str] = "Reset"

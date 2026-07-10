@@ -1,4 +1,19 @@
-"""Fixed (parameter-free) unitary gates: single-qubit and multi-qubit."""
+"""Fixed (parameter-free) unitary gates: single-qubit and multi-qubit.
+
+Examples:
+    Build a Bell pair with ``H`` then ``CX``:
+
+    >>> import fatqat as fq
+    >>> program = fq.Program(2)
+    >>> program.add(fq.ops.H, 0)
+    >>> program.add(fq.ops.CX, (0, 1))
+    >>> result = fq.backends.StateVectorBackend().run(
+    ...     program,
+    ...     result_config={"counts": False, "statevector": True},
+    ... ).result()
+    >>> result.get_statevector()
+    array([0.70710678+0.j, 0.        +0.j, 0.        +0.j, 0.70710678+0.j])
+"""
 
 from __future__ import annotations
 

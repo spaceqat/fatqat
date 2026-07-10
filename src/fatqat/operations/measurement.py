@@ -28,6 +28,13 @@ class Measurement:
     Attributes:
         qreg: Quantum register references to measure, stored as a tuple.
         clreg: Classical register references to write, stored as a tuple.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> program = fq.Program(1, 1)
+        >>> m = fq.ops.Measurement(qreg=(program.qreg[0][0],), clreg=(program.creg[0][0],))
+        >>> m.qreg
+        (RegisterRef(register=QuantumRegister(size=1, name='q', metadata={}, dim=2), index=0),)
     """
 
     qreg: tuple[RegisterRef, ...]

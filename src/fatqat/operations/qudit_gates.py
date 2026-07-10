@@ -1,4 +1,20 @@
-"""Dimension-generic gates (generalized Pauli group + controlled add)."""
+"""Dimension-generic gates (generalized Pauli group + controlled add).
+
+Examples:
+    ``Shift`` on a qutrit (``dim=3``) cyclically shifts the basis level:
+
+    >>> import fatqat as fq
+    >>> qutrit = fq.QuantumRegister(1, dim=3)
+    >>> program = fq.Program([qutrit])
+    >>> program.add(fq.ops.Shift(1), 0)
+    >>> result = fq.backends.StateVectorBackend().run(
+    ...     program,
+    ...     shots=1,
+    ...     result_config={"counts": False, "statevector": True},
+    ... ).result()
+    >>> result.get_statevector()
+    array([0.+0.j, 1.+0.j, 0.+0.j])
+"""
 
 from __future__ import annotations
 

@@ -18,6 +18,24 @@ class Register:
         name: Optional user-facing register name.
         metadata: User metadata copied into the register.
         dim: Dimension of each slot (default 2 for qubits). Must be an integer >= 2.
+
+    Examples:
+        Index into a register to get a ``RegisterRef``:
+
+        >>> import fatqat as fq
+        >>> qreg = fq.QuantumRegister(2, name="q")
+        >>> qreg[0]
+        RegisterRef(register=QuantumRegister(size=2, name='q', metadata={}, dim=2), index=0)
+        >>> qreg[5]
+        Traceback (most recent call last):
+            ...
+        IndexError: 5
+
+        A qutrit register uses ``dim=3``:
+
+        >>> qutrit = fq.QuantumRegister(1, dim=3)
+        >>> qutrit.dim
+        3
     """
 
     size: int

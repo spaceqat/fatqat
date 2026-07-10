@@ -20,6 +20,17 @@ class Operation:
         name: Public operation name.
         _num_subsystems: Number of quantum targets required by the operation, or
             None for variable arity with at least one target.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> fq.ops.H.name
+        'H'
+        >>> fq.ops.H.num_subsystems
+        1
+        >>> fq.ops.CX.num_subsystems
+        2
+        >>> fq.ops.RX(0.2).num_subsystems
+        1
     """
 
     name: ClassVar[str] = "OP"

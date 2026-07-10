@@ -1,4 +1,20 @@
-"""Parametric unitary gates: single-qubit rotations/phase and a controlled phase."""
+"""Parametric unitary gates: single-qubit rotations/phase and a controlled phase.
+
+Examples:
+    ``RX(pi)`` on ``|0>`` matches ``X`` up to the global phase ``-i``:
+
+    >>> import math
+    >>> import fatqat as fq
+    >>> program = fq.Program(1)
+    >>> program.add(fq.ops.RX(math.pi), 0)
+    >>> result = fq.backends.StateVectorBackend().run(
+    ...     program,
+    ...     shots=1,
+    ...     result_config={"counts": False, "statevector": True},
+    ... ).result()
+    >>> result.get_statevector()
+    array([0.-0.j, 0.-1.j])
+"""
 
 from __future__ import annotations
 
