@@ -251,16 +251,31 @@ def test_resolve_for_legacy_rule_falls_back_to_class_keyed_rule():
     assert m.target_keys(ops.X) == frozenset()
 
 
-def test_resolve_for_target_rules_do_not_fall_back_to_default_rule():
+def test_register_rejects_operation_with_target_aware_registrations():
     m = MatrixImplementationMap()
-    default_rule = FixedMatrix(np.eye(2, dtype=complex))
-    target_rule = FixedMatrix(np.array([[0, 1], [1, 0]], dtype=complex))
+    m.register_for(ops.X, (0,), FixedMatrix(np.eye(2, dtype=complex)))
 
-    m.register(ops.X, default_rule)
-    m.register_for(ops.X, (0,), target_rule)
+    with pytest.raises(ValueError, match="target-aware registrations"):
+        m.register(ops.X, FixedMatrix(np.eye(2, dtype=complex)))
 
-    assert m.resolve_for(ops.X, (0,)) is target_rule
-    assert m.resolve_for(ops.X, (1,)) is None
+
+def test_register_for_rejects_operation_with_class_keyed_rule():
+    m = MatrixImplementationMap()
+    m.register(ops.X, FixedMatrix(np.eye(2, dtype=complex)))
+
+    with pytest.raises(ValueError, match="class-keyed rule"):
+        m.register_for(ops.X, (0,), FixedMatrix(np.eye(2, dtype=complex)))
+
+
+def test_unregister_allows_switching_registration_mode():
+    m = MatrixImplementationMap()
+    m.register_for(ops.X, (0,), FixedMatrix(np.eye(2, dtype=complex)))
+    m.unregister(ops.X)
+
+    rule = FixedMatrix(np.eye(2, dtype=complex))
+    m.register(ops.X, rule)
+
+    assert m.resolve_for(ops.X, (100,)) is rule
 
 
 def test_supports_is_false_for_unregistered_operation():

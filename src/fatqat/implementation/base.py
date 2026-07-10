@@ -249,7 +249,14 @@ class MatrixImplementationMap:
     """Class-keyed registry from operation classes to matrix implementations."""
 
     def __init__(self) -> None:
-        """Create an empty implementation map."""
+        """Create an empty implementation map.
+
+        `_rules` holds uniform per-operation rules (`register`);
+        `_target_rules` holds per-target-key rules (`register_for`). An
+        operation lives in at most one of the two — see `register` and
+        `register_for` for the mutual-exclusion rule and `resolve_for` for
+        how each mode resolves.
+        """
         self._rules: dict[type[Operation], MatrixImplementation] = {}
         self._target_rules: dict[type[Operation], dict[TargetKey, MatrixImplementation]] = {}
 
@@ -277,10 +284,19 @@ class MatrixImplementationMap:
                 callable of the wrong shape is not rejected here; it fails on
                 first use (see `_wrap_rule`).
             ValueError: If a bare `np.ndarray` is not square with side
-                length >= 2.
+                length >= 2, or if `op` already has target-aware
+                registrations — mutually exclusive with `register_for`, see
+                its docstring for why.
         """
         op_cls = _resolve_operation_class(op)
         _require_fixed_arity(op_cls)
+        if op_cls in self._target_rules:
+            raise ValueError(
+                f"{op_cls.__name__} already has target-aware registrations "
+                "(register_for); cannot also register a class-keyed rule for "
+                "the same operation. Call unregister(op) first if you want "
+                "to replace its registrations."
+            )
         self._rules[op_cls] = _wrap_rule(op_cls, rule)
 
     def register_for(
@@ -294,7 +310,12 @@ class MatrixImplementationMap:
         Once an operation has any target-aware registration, `resolve_for`
         stops falling back to a class-keyed `register()` rule for that
         operation: an absent target key means the target is illegal, not
-        that the caller should fall back to a default.
+        that the caller should fall back to a default. `register` and
+        `register_for` are therefore mutually exclusive per operation, each
+        raising if the other already has an entry — `unregister(op)` first
+        if you need to switch modes. Calling `register_for` again for an
+        operation that already has target-aware entries is fine and normal
+        (e.g. one call per grid edge).
 
         Args:
             op: An `Operation` instance or subclass. Normalized to the
@@ -310,11 +331,19 @@ class MatrixImplementationMap:
             TypeError: If `op` is neither an `Operation` instance nor
                 subclass, or if its operation class has variable arity.
             ValueError: If `target_key`'s length does not match the
-                operation's arity, or if a bare `np.ndarray` rule is not
-                square with side length >= 2.
+                operation's arity, if a bare `np.ndarray` rule is not square
+                with side length >= 2, or if `op` already has a class-keyed
+                rule (see above).
         """
         op_cls = _resolve_operation_class(op)
         _require_fixed_arity(op_cls)
+        if op_cls in self._rules:
+            raise ValueError(
+                f"{op_cls.__name__} already has a class-keyed rule "
+                "(register); cannot also register a target-aware rule for "
+                "the same operation. Call unregister(op) first if you want "
+                "to replace its registrations."
+            )
         key = _normalize_target_key(target_key)
         _require_target_key_arity(op_cls, key)
         self._target_rules.setdefault(op_cls, {})[key] = _wrap_rule(op_cls, rule)
