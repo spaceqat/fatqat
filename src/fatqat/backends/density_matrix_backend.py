@@ -383,18 +383,9 @@ class DensityMatrixBackend:
     ) -> MatrixImplementation:
         """Resolve the matrix rule for an operation on a device target key.
 
-        Both failure cases a target-aware map can report — an operation
-        family with no rule at all, or a supported family on an illegal
-        target key — raise the same `UnsupportedOperationError`, with a
-        message specific to which one occurred; callers that only need to
-        know "this can't run" don't need to know the two cases exist, and
-        `UnsupportedOperationError` is a `BackendValidationError` for
-        callers that catch the broader family. For a `register`-only map
-        (no target-aware data — the only kind `DensityMatrixBackend` is
-        currently exercised with), `get(operation, target_key)` returns the
-        class-keyed rule for every target key, so this behaves exactly like
-        a bare `get(operation)` lookup. Mirrors
-        `StateVectorBackend._implementation_for`.
+        Raises `UnsupportedOperationError` if the operation has no rule at
+        all, or if it has rules but none for this target key — the message
+        distinguishes the two. Mirrors `StateVectorBackend._implementation_for`.
         """
         if not self._impl_map.supports(operation):
             raise UnsupportedOperationError(

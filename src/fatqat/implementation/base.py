@@ -355,7 +355,8 @@ class MatrixImplementationMap:
         target-aware rule for at least one target key (`register_for`) —
         the two are mutually exclusive per operation, so never both. Does
         not check whether any particular target key is legal — use `get`
-        for that.
+        for that, or `target_keys` to distinguish uniform from explicit
+        support.
         """
         op_cls = _resolve_operation_class(op)
         return op_cls in self._rules or op_cls in self._target_rules
@@ -397,9 +398,13 @@ class MatrixImplementationMap:
     def target_keys(self, op: Operation | type[Operation]) -> frozenset[TargetKey]:
         """Return the finite set of target keys registered for an operation.
 
-        Empty if the operation has no target-aware registrations, even if it
-        has a class-keyed `register()` rule (that rule has no fixed set of
-        legal target keys — see `get`).
+        Empty if the operation has no target-aware registrations — including
+        when it has a class-keyed `register()` rule instead, which has no
+        fixed set of legal keys. Combine with `supports` to tell the two
+        apart: `supports(op) and not target_keys(op)` means `op` is legal
+        on any target of the correct arity (uniform); a non-empty result
+        means legal only on those keys; `not supports(op)` means not
+        supported at all.
         """
         op_cls = _resolve_operation_class(op)
         return frozenset(self._target_rules.get(op_cls, ()))

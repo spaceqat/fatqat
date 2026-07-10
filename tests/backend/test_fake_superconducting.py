@@ -17,8 +17,6 @@ def test_fake_superconducting_map_exposes_native_target_keys():
     assert m.supports(ops.RZ)
     assert m.supports(ops.SX)
     assert m.supports(ops.CZ)
-    assert m.target_keys(ops.RZ) == frozenset((i,) for i in range(16))
-    assert m.target_keys(ops.SX) == frozenset((i,) for i in range(16))
     assert (0, 1) in m.target_keys(ops.CZ)
     assert (1, 0) in m.target_keys(ops.CZ)
     assert (0, 4) in m.target_keys(ops.CZ)
@@ -26,12 +24,23 @@ def test_fake_superconducting_map_exposes_native_target_keys():
     assert (0, 5) not in m.target_keys(ops.CZ)
 
 
-def test_fake_superconducting_map_has_no_default_class_keyed_rules():
-    # Every entry must be target-aware; a stray register()-style rule would
-    # let get() silently accept illegal target keys via fallback.
+def test_fake_superconducting_map_rz_and_sx_are_uniform():
+    # RZ/SX are legal on any of the 16 qubits, so they are registered via
+    # plain register() rather than one register_for call per qubit.
+    # supports() + empty target_keys() is how a compiler infers "uniform,
+    # legal on any target" instead of "not supported" — see
+    # MatrixImplementationMap.target_keys's docstring.
     m = fake_superconducting_4x4_implementation_map()
-    assert m.get(ops.RZ) is None
-    assert m.get(ops.SX) is None
+    assert m.supports(ops.RZ) and not m.target_keys(ops.RZ)
+    assert m.supports(ops.SX) and not m.target_keys(ops.SX)
+    assert m.get(ops.RZ) is not None
+    assert m.get(ops.SX) is not None
+
+
+def test_fake_superconducting_map_cz_has_no_class_keyed_rule():
+    # CZ must be entirely target-aware; a stray register()-style rule would
+    # let get() silently accept non-neighbor pairs via fallback.
+    m = fake_superconducting_4x4_implementation_map()
     assert m.get(ops.CZ) is None
 
 

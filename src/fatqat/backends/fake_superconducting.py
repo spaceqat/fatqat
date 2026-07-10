@@ -75,9 +75,11 @@ def _require_rule(
 def fake_superconducting_4x4_implementation_map() -> MatrixImplementationMap:
     """Build the native gate map for the fake 4x4 superconducting backend.
 
-    `RZ` and `SX` are legal on all 16 qubit labels; `CZ` is legal only on
-    nearest-neighbor grid edges, both directions. Every other operation
-    family (including `CX`) has no entry and is therefore unsupported.
+    `RZ` and `SX` are legal on any qubit label (registered uniformly via
+    `register`); `CZ` is legal only on nearest-neighbor grid edges, both
+    directions (registered via `register_for`, one call per edge). Every
+    other operation family (including `CX`) has no entry and is therefore
+    unsupported.
     """
     defaults = default_matrix_implementation_map()
     rz_rule = _require_rule(defaults, ops.RZ)
@@ -85,9 +87,8 @@ def fake_superconducting_4x4_implementation_map() -> MatrixImplementationMap:
     cz_rule = _require_rule(defaults, ops.CZ)
 
     m = MatrixImplementationMap()
-    for q in range(N_QUBITS):
-        m.register_for(ops.RZ, (q,), rz_rule)
-        m.register_for(ops.SX, (q,), sx_rule)
+    m.register(ops.RZ, rz_rule)
+    m.register(ops.SX, sx_rule)
     for edge in _nearest_neighbor_edges():
         m.register_for(ops.CZ, edge, cz_rule)
     return m
