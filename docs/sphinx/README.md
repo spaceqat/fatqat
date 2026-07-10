@@ -9,6 +9,9 @@ uv sync --group docs
 sphinx-build -b html -W docs/sphinx docs/sphinx/_build
 ```
 
-Open `docs/sphinx/_build/index.html`. There is no CI job or hosting for this
-yet (internal use only) — run the command above locally before trusting a
-docs change.
+Open `docs/sphinx/_build/index.html`.
+
+The `Build HTML documentation` GitHub Actions workflow builds the same way
+on every push/PR to `main` and uploads the result as a workflow artifact
+(`fatqat_html_docs`) — there is no hosting/publishing step yet, so download
+the artifact from the run to view it.
