@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..layout import ResourceLayout
-from ..result import _ResultConfig
-from .engine_contract import _ResultRequest
 
 
 @dataclass(frozen=True)
@@ -51,13 +49,3 @@ def _resolve_condition(
     if condition is None:
         return None
     return tuple((layout.clbit_index(ref), val) for ref, val in condition)
-
-
-def _resolve_result_request(config: _ResultConfig, facts: _PlanFacts) -> _ResultRequest:
-    """Resolve default result fields from config and lowered program facts."""
-    stochastic = facts.has_measurement or facts.has_reset
-    counts = config.counts if config.counts is not None else facts.has_measurement
-    statevector = config.statevector
-    if statevector is None:
-        statevector = not stochastic
-    return _ResultRequest(counts=counts, statevector=statevector)

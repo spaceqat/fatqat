@@ -2,42 +2,16 @@
 
 from __future__ import annotations
 
-import warnings
-from math import prod
-
-from ..errors import (
-    BackendValidationError,
-    MatrixImplementationError,
-    NoMeasurementWarning,
-    UnsupportedOperationError,
-)
-from ..implementation import (
-    MatrixImplementation,
-    DeviceOperands,
-    ImplementationMap,
-    default_matrix_implementation_map,
-)
+from ..implementation import ImplementationMap
 from ..job import Job
-from ..layout import ResourceLayout
-from ..operations import Measurement, Operation, ResetGate
-from ..program import AppliedOperation, Program
-from ..result import (
-    Result,
-    _ResultConfig,
-    counts_dict_from_arrays,
-)
-from .backend_utils import (
-    _PlanFacts,
-    _normalize_dict_options,
-    _resolve_condition,
-    _resolve_result_request,
-)
-from .engine_contract import _EngineConfig
+from ..program import Program
+from ..result import _ResultConfig
+from .engine_contract import _ResultRequest
+from .matrix_backend import _MatrixBackendBase
 from .statevector_engine import StateVectorEngine
-from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
 
 
-class StateVectorBackend:
+class StateVectorBackend(_MatrixBackendBase):
     """Statevector backend for ``fatqat.Program`` execution.
 
     The backend supports matrix-evolvable gates, grouped measurement,
@@ -68,6 +42,12 @@ class StateVectorBackend:
     calls.
     """
 
+    _engine_cls = StateVectorEngine
+    _result_config_cls = _ResultConfig
+    _request_cls = _ResultRequest
+    _state_field = "statevector"
+    _reset_is_stochastic = True
+
     def __init__(
         self,
         options: dict[str, Any] | None = None,
@@ -87,29 +67,7 @@ class StateVectorBackend:
                 whatever map it receives, so mutating the caller's map object
                 after construction does not change this backend's behavior.
         """
-        config = _normalize_dict_options(
-            options, {"max_workers", "parallel_mode"}, _EngineConfig, "options", "backend"
-        )
-        if implementation_map is None:
-            implementation_map = default_matrix_implementation_map()
-        self._impl_map = implementation_map.copy()
-        # The engine is constructed once and re-initialized per run so its
-        # compiled kernels can be reused. Because it holds per-run state, a
-        # single backend instance is NOT safe for concurrent run() calls
-        # (single-threaded use only).
-        self._engine = StateVectorEngine(config)
-        self._engine_system: tuple[tuple[int, ...], int] | None = None
-
-    def resolve_layout(self, program: Program) -> ResourceLayout:
-        """Build the flat resource layout used by this backend.
-
-        Args:
-            program: Program whose registers should be flattened.
-
-        Returns:
-            Resource layout mapping register references to flat indices.
-        """
-        return ResourceLayout.from_program(program)
+        super().__init__(options=options, implementation_map=implementation_map)
 
     def run(
         self,
@@ -238,210 +196,6 @@ class StateVectorBackend:
             >>> result.get_statevector()
             array([0.70710678+0.j, 0.70710678+0.j])
         """
-        config = _normalize_dict_options(
-            result_config, {"counts", "statevector"}, _ResultConfig, "result_config", "result_config"
-        )
-        layout = self.resolve_layout(program)
-        plan, facts = self._lower(program, layout)
-        self._validate(config, shots, facts)
-        try:
-            return Job.done(
-                self._execute(
-                    config,
-                    shots,
-                    plan,
-                    facts,
-                    layout.system_dims,
-                    layout.classical_dims,
-                    layout.n_clbits,
-                    seed,
-                )
-            )
-        except Exception as exc:  # execution-stage failure
-            return Job.failed(exc)
-
-    # --- validation (raises directly from run) ---
-    def _validate(
-        self,
-        config: _ResultConfig,
-        shots: int,
-        facts: _PlanFacts,
-    ) -> None:
-        """Validate result-config / shots constraints against the lowered program.
-
-        Operation support and dynamic classification were already resolved in
-        `_lower`. Mid-circuit measurement and conditional operations are now
-        supported, so they are not rejected here.
-        """
-        request = _resolve_result_request(config, facts)
-        stochastic = facts.has_measurement or facts.has_reset  # see _resolve_result_request
-        requested_sv = config.statevector is True
-
-        # shots is only checked when the result actually depends on it: counts
-        # always sample per shot, and a stochastic statevector needs shots==1
-        # below. A non-stochastic statevector-only request ignores shots
-        # entirely (see _run_per_shot), so any value - including 0 - is fine.
-        if (request.counts or (requested_sv and stochastic)) and type(shots) is not int:
-            raise BackendValidationError(
-                f"shots must be an int when requested results depend on it, got {shots!r}"
-            )
-        if request.counts and shots <= 0:
-            raise BackendValidationError(f"counts require shots > 0, got shots={shots}")
-        if requested_sv and stochastic and shots != 1:
-            raise BackendValidationError(
-                "statevector with measurement or reset is only supported for shots == 1"
-            )
-
-    # --- execution ---
-    def _execute(
-        self,
-        config: _ResultConfig,
-        shots: int,
-        plan: list[ResolvedStep],
-        facts: _PlanFacts,
-        system_dims: tuple[int, ...],
-        classical_dims: tuple[int, ...],
-        n_clbits: int,
-        seed: int | None,
-    ) -> Result:
-        """Execute a lowered program and assemble the requested result fields."""
-        request = _resolve_result_request(config, facts)
-
-        system_key = (tuple(system_dims), n_clbits)
-        if self._engine_system != system_key:
-            self._engine.initialize(system_dims, n_clbits)
-            self._engine_system = system_key
-
-        raw = self._engine.run(plan, shots, seed, request)
-        counts = None
-        statevector = raw.state
-        available: set[str] = set()
-        if request.counts:
-            counts = counts_dict_from_arrays(raw.outcome_keys, raw.outcome_counts)
-            available.add("counts")
-        if request.statevector:
-            available.add("statevector")
-
-        # NoMeasurementWarning: counts produced, some clbit never written, no state.
-        if request.counts and "statevector" not in available:
-            written = {
-                c
-                for s in plan
-                if isinstance(s, MeasurementStep)
-                for c in s.classical_indices
-            }
-            if any(c not in written for c in range(n_clbits)):
-                warnings.warn(
-                    "counts contain clbits that were never measured; "
-                    "returning zero-filled counts",
-                    NoMeasurementWarning,
-                    stacklevel=3,
-                )
-
-        return Result(
-            counts=counts,
-            statevector=statevector,
-            available=frozenset(available),
-            classical_dims=classical_dims,
-            metadata={
-                "shots": shots,
-                "backend_name": type(self).__name__,
-                "result_config": {
-                    "counts": config.counts,
-                    "statevector": config.statevector,
-                },
-            },
-        )
-
-    def _implementation_for(
-        self, operation: Operation, device_operands: DeviceOperands
-    ) -> MatrixImplementation:
-        """Resolve the matrix rule for an operation on a device target key.
-
-        Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` if the operation has no rule at
-        all, or if it has rules but none for this target key — the message
-        distinguishes the two.
-        """
-        if not self._impl_map.supports(operation):
-            raise UnsupportedOperationError(
-                f"{type(operation).__name__} is not supported by this backend"
-            )
-        rule = self._impl_map.implementation_for(
-            operation, device_operands=device_operands
-        )
-        if rule is None:
-            raise UnsupportedOperationError(
-                f"{type(operation).__name__} is not supported on device operands {device_operands}"
-            )
-        return rule
-
-    def _lower(
-        self, program: Program, layout: ResourceLayout
-    ) -> tuple[list[ResolvedStep], _PlanFacts]:
-        """Lower a program into an execution plan and classify it, in one pass.
-
-        Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` for a gate with no matrix rule.
-        `Reset` is recognized by type and routed to a `ResetStep`. The pass also
-        computes `has_measurement` and `has_reset`.
-        """
-        plan: list[ResolvedStep] = []
-        has_measurement = False
-        has_reset = False
-
-        for step in program.operations:
-            if isinstance(step, Measurement):
-                has_measurement = True
-                measured_indices = tuple(layout.subsystem_index(q) for q in step.qreg)
-                classical_indices = tuple(layout.clbit_index(c) for c in step.clreg)
-                plan.append(
-                    MeasurementStep(
-                        measured_indices=measured_indices,
-                        classical_indices=classical_indices,
-                    )
-                )
-                continue
-
-            if isinstance(step, AppliedOperation):
-                target_indices = tuple(layout.subsystem_index(t) for t in step.targets)
-
-                if isinstance(step.operation, ResetGate):
-                    has_reset = True
-                    cond = _resolve_condition(step.condition, layout)
-                    plan.append(
-                        ResetStep(reset_indices=target_indices, condition=cond)
-                    )
-                    continue
-
-                rule = self._implementation_for(step.operation, target_indices)
-                try:
-                    matrix = rule(step.operation, targets=step.targets)
-                except Exception as exc:
-                    raise MatrixImplementationError(
-                        f"implementation for {type(step.operation).__name__} raised: {exc}"
-                    ) from exc
-
-                # Check matrix shape matches target dimensions
-                target_dims = tuple(layout.system_dims[i] for i in target_indices)
-                expected = prod(target_dims)
-                if matrix.shape != (expected, expected):
-                    raise BackendValidationError(
-                        f"{type(step.operation).__name__} resolved to a "
-                        f"{matrix.shape} matrix, incompatible with target "
-                        f"dimensions {target_dims} (expected "
-                        f"{(expected, expected)})"
-                    )
-
-                cond = _resolve_condition(step.condition, layout)
-                plan.append(
-                    ApplyMatrixStep(
-                        matrix=matrix, target_indices=target_indices, condition=cond
-                    )
-                )
-
-        return (
-            plan,
-            _PlanFacts(
-                has_measurement=has_measurement,
-                has_reset=has_reset,
-            ),
+        return super().run(
+            program, shots=shots, result_config=result_config, seed=seed
         )
