@@ -8,13 +8,13 @@ only declarative class attributes plus their user-facing docstrings.
 
 The per-backend variation points are class attributes, not overridable hooks:
 
-- ``_engine_cls``: engine class constructed once per backend instance.
 - ``_result_config_cls`` / ``_request_cls``: the backend's frozen result-config
   and engine-request value objects. The supported ``result_config`` keys are
   derived from ``_result_config_cls``'s dataclass fields.
 - ``_state_field``: the backend's native state field name (``"statevector"``
-  or ``"density_matrix"``). Drives the result-config flag read, the `Result`
-  keyword, the availability name, the metadata echo, and validation wording.
+  or ``"density_matrix"``). Drives the engine's ``state_semantics``, the
+  result-config flag read, the `Result` keyword, the availability name, the
+  metadata echo, and validation wording.
 - ``_reset_is_stochastic``: whether reset makes execution stochastic for this
   state representation (`True` for the statevector backend, where reset
   samples a branch; `False` for the density-matrix backend, where reset is a
@@ -57,6 +57,7 @@ from .backend_utils import (
     _resolve_condition,
 )
 from .engine_contract import _EngineConfig
+from .numpy_engine import NumpyEngine
 from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
 
 
@@ -67,7 +68,6 @@ class _MatrixBackendBase:
     docstring; every method below is state-representation-agnostic.
     """
 
-    _engine_cls: ClassVar[type]
     _result_config_cls: ClassVar[type]
     _request_cls: ClassVar[type]
     _state_field: ClassVar[str]
@@ -103,7 +103,7 @@ class _MatrixBackendBase:
         # buffers can be reused. Because it holds per-run state, a single
         # backend instance is NOT safe for concurrent run() calls
         # (single-threaded use only).
-        self._engine = self._engine_cls(config)
+        self._engine = NumpyEngine(config, state_semantics=self._state_field)
         self._engine_system: tuple[tuple[int, ...], int] | None = None
 
     def resolve_layout(self, program: Program) -> ResourceLayout:

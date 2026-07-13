@@ -8,7 +8,6 @@ from ..program import Program
 from ..result import _ResultConfig
 from .engine_contract import _ResultRequest
 from .matrix_backend import _MatrixBackendBase
-from .statevector_engine import StateVectorEngine
 
 
 class StateVectorBackend(_MatrixBackendBase):
@@ -42,7 +41,6 @@ class StateVectorBackend(_MatrixBackendBase):
     calls.
     """
 
-    _engine_cls = StateVectorEngine
     _result_config_cls = _ResultConfig
     _request_cls = _ResultRequest
     _state_field = "statevector"

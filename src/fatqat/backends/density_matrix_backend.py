@@ -6,7 +6,6 @@ from ..implementation import ImplementationMap
 from ..job import Job
 from ..program import Program
 from ..result import _DensityMatrixResultConfig
-from .density_matrix_engine import DensityMatrixEngine
 from .engine_contract import _DensityMatrixResultRequest
 from .matrix_backend import _MatrixBackendBase
 
@@ -49,7 +48,6 @@ class DensityMatrixBackend(_MatrixBackendBase):
     calls.
     """
 
-    _engine_cls = DensityMatrixEngine
     _result_config_cls = _DensityMatrixResultConfig
     _request_cls = _DensityMatrixResultRequest
     _state_field = "density_matrix"
