@@ -19,7 +19,7 @@ from typing import Any
 
 import numpy as np
 
-from .engine_contract import _EngineConfig, _ResultRequest
+from .engine_contract import _EngineConfig, _StateVectorResultRequest
 from .numpy_engine import NumpyEngine, _execute_dynamic_plan_one_shot
 from .steps import ResolvedStep
 
@@ -59,7 +59,7 @@ def _effective_max_workers(max_workers: object, n_iters: int) -> int:
 
 def _planned_workers(
     config: _EngineConfig,
-    request: _ResultRequest,
+    request: _StateVectorResultRequest,
     n_iters: int,
 ) -> int | None:
     if not request.counts:

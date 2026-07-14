@@ -56,7 +56,7 @@ from ..result import decode_indices_to_clbit_rows, reduce_to_counts
 from .engine_contract import (
     _DensityMatrixResultRequest,
     _EngineConfig,
-    _ResultRequest,
+    _StateVectorResultRequest,
     RawResult,
 )
 from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
@@ -71,7 +71,7 @@ class NumpyEngine:
     apply resolved matrix payloads, then sample, collapse, reset, or export
     copies of the state. The request object passed to ``run`` must carry a
     boolean field named after this engine's ``state_semantics``
-    (``_ResultRequest.statevector`` / ``_DensityMatrixResultRequest.density_matrix``).
+    (``_StateVectorResultRequest.statevector`` / ``_DensityMatrixResultRequest.density_matrix``).
     """
 
     def __init__(
@@ -103,6 +103,9 @@ class NumpyEngine:
             self._probabilities_kernel = _probabilities_sv
             self._collapse_kernel = _collapse_sv
             self._reset_kernel = _reset_sv
+            # A pure state cannot hold the mixed post-reset ensemble, so
+            # _reset_sv samples a branch (one rng draw); any reset therefore
+            # requires per-shot replay.
             self._reset_forces_dynamic = True
         else:
             self._allocate = _allocate_dm
@@ -110,6 +113,9 @@ class NumpyEngine:
             self._probabilities_kernel = _probabilities_dm
             self._collapse_kernel = _collapse_dm
             self._reset_kernel = _reset_dm
+            # rho holds the full ensemble, so _reset_dm is the deterministic
+            # partial-trace channel (no rng draw); an unconditional reset can
+            # stay on the single-evolution fast path.
             self._reset_forces_dynamic = False
         self._state: np.ndarray | None = None
         self._dims: tuple[int, ...] = ()
@@ -223,7 +229,7 @@ class NumpyEngine:
         plan: list[ResolvedStep],
         shots: int,
         seed: int | None,
-        request: _ResultRequest | _DensityMatrixResultRequest,
+        request: _StateVectorResultRequest | _DensityMatrixResultRequest,
     ) -> RawResult:
         """Execute a lowered plan using this engine's configured system."""
         self._require_state()
@@ -241,7 +247,7 @@ class NumpyEngine:
         measurements: list[tuple[int, int]],
         shots: int,
         rng: np.random.Generator,
-        request: _ResultRequest | _DensityMatrixResultRequest,
+        request: _StateVectorResultRequest | _DensityMatrixResultRequest,
     ) -> RawResult:
         """Evolve once, optionally sample counts, optionally export state.
 
@@ -293,7 +299,7 @@ class NumpyEngine:
         plan: list[ResolvedStep],
         shots: int,
         seed: int | None,
-        request: _ResultRequest | _DensityMatrixResultRequest,
+        request: _StateVectorResultRequest | _DensityMatrixResultRequest,
     ) -> RawResult:
         """Run dynamic execution one trajectory at a time or via worker batches."""
         from .parallel import (

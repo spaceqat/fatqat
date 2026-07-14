@@ -1,17 +1,17 @@
 from fatqat.backends.backend_utils import _PlanFacts
 from fatqat.backends.engine_contract import (
     _DensityMatrixResultRequest,
-    _ResultRequest,
+    _StateVectorResultRequest,
 )
 from fatqat.backends.matrix_backend import _resolve_result_request
-from fatqat.result import _DensityMatrixResultConfig, _ResultConfig
+from fatqat.result import _DensityMatrixResultConfig, _StateVectorResultConfig
 
 
 def test_resolve_result_request_defaults_statevector_for_nonstochastic_program():
     request = _resolve_result_request(
-        _ResultConfig(counts=None, statevector=None),
+        _StateVectorResultConfig(counts=None, statevector=None),
         _PlanFacts(has_measurement=False, has_reset=False),
-        _ResultRequest,
+        _StateVectorResultRequest,
         "statevector",
         reset_is_stochastic=True,
     )
@@ -22,9 +22,9 @@ def test_resolve_result_request_defaults_statevector_for_nonstochastic_program()
 
 def test_resolve_result_request_reset_suppresses_statevector_default():
     request = _resolve_result_request(
-        _ResultConfig(counts=None, statevector=None),
+        _StateVectorResultConfig(counts=None, statevector=None),
         _PlanFacts(has_measurement=False, has_reset=True),
-        _ResultRequest,
+        _StateVectorResultRequest,
         "statevector",
         reset_is_stochastic=True,
     )

@@ -12,7 +12,7 @@ from .errors import ResultFieldUnavailableError
 
 
 @dataclass(frozen=True)
-class _ResultConfig:
+class _StateVectorResultConfig:
     """Internal normalized result-field selection for one backend execution.
 
     Each field is tri-state:
@@ -45,7 +45,7 @@ class _ResultConfig:
 class _DensityMatrixResultConfig:
     """Internal normalized result-field selection for one density-matrix execution.
 
-    Each field is tri-state with the same meaning as `_ResultConfig`:
+    Each field is tri-state with the same meaning as `_StateVectorResultConfig`:
     `None` lets the backend choose, `True` requests, `False` suppresses.
 
     For :py:class:`~fatqat.backends.DensityMatrixBackend`, the defaults are:

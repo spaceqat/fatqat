@@ -33,7 +33,7 @@ class _EngineConfig:
 
 
 @dataclass(frozen=True)
-class _ResultRequest:
+class _StateVectorResultRequest:
     """Resolved result fields requested for one statevector execution."""
 
     counts: bool

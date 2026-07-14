@@ -51,6 +51,12 @@ class DensityMatrixBackend(_MatrixBackendBase):
     _result_config_cls = _DensityMatrixResultConfig
     _request_cls = _DensityMatrixResultRequest
     _state_field = "density_matrix"
+    # A density matrix holds the full ensemble, so reset is the deterministic
+    # channel |0><0| (x) Tr_target(rho): no branch is sampled and no
+    # randomness is consumed. Only measurement (whose outcome is recorded to
+    # a clbit) is stochastic here - hence a reset-bearing, measurement-free
+    # program still exports its exact state by default and never needs
+    # shots == 1. The statevector backend is the contrasting True case.
     _reset_is_stochastic = False
 
     def __init__(

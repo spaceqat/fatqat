@@ -5,8 +5,8 @@ from __future__ import annotations
 from ..implementation import ImplementationMap
 from ..job import Job
 from ..program import Program
-from ..result import _ResultConfig
-from .engine_contract import _ResultRequest
+from ..result import _StateVectorResultConfig
+from .engine_contract import _StateVectorResultRequest
 from .matrix_backend import _MatrixBackendBase
 
 
@@ -41,9 +41,13 @@ class StateVectorBackend(_MatrixBackendBase):
     calls.
     """
 
-    _result_config_cls = _ResultConfig
-    _request_cls = _ResultRequest
+    _result_config_cls = _StateVectorResultConfig
+    _request_cls = _StateVectorResultRequest
     _state_field = "statevector"
+    # A pure state cannot represent the mixed post-reset ensemble, so reset
+    # must sample one branch (measure, then shift back to |0>) - a random
+    # event, like measurement. See the density-matrix backend for the
+    # contrasting False case.
     _reset_is_stochastic = True
 
     def __init__(

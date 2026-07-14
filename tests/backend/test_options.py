@@ -3,7 +3,7 @@ import pytest
 
 import fatqat as fq
 from fatqat.backends import StateVectorBackend
-from fatqat.backends.engine_contract import _EngineConfig, _ResultRequest
+from fatqat.backends.engine_contract import _EngineConfig, _StateVectorResultRequest
 from fatqat.backends.parallel import _planned_workers
 
 
@@ -43,7 +43,7 @@ def test_serial_backend_option_runs_dynamic_program():
 def test_planned_workers_disables_parallel_serial_backend():
     workers = _planned_workers(
         _EngineConfig(max_workers=4, parallel_mode="serial"),
-        _ResultRequest(counts=True, statevector=False),
+        _StateVectorResultRequest(counts=True, statevector=False),
         n_iters=16,
     )
 
@@ -53,7 +53,7 @@ def test_planned_workers_disables_parallel_serial_backend():
 def test_planned_workers_clamps_explicit_workers_to_iterations():
     workers = _planned_workers(
         _EngineConfig(max_workers=8, parallel_mode="multiprocessing"),
-        _ResultRequest(counts=True, statevector=False),
+        _StateVectorResultRequest(counts=True, statevector=False),
         n_iters=3,
     )
 

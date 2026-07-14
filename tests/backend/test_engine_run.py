@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from fatqat.backends.engine_contract import _EngineConfig, _ResultRequest
+from fatqat.backends.engine_contract import _EngineConfig, _StateVectorResultRequest
 from fatqat.backends.numpy_engine import NumpyEngine
 from fatqat.backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep
 
@@ -10,7 +10,7 @@ def test_engine_run_requires_initialize():
     engine = NumpyEngine(state_semantics="statevector")
     with pytest.raises(RuntimeError, match="engine not initialized"):
         engine.run(
-            [], shots=1, seed=0, request=_ResultRequest(counts=False, statevector=False)
+            [], shots=1, seed=0, request=_StateVectorResultRequest(counts=False, statevector=False)
         )
 
 
@@ -22,7 +22,7 @@ def test_engine_run_fast_counts_returns_arrays():
         [ApplyMatrixStep(matrix=x, target_indices=(0,)), MeasurementStep((0,), (0,))],
         shots=4,
         seed=0,
-        request=_ResultRequest(counts=True, statevector=False),
+        request=_StateVectorResultRequest(counts=True, statevector=False),
     )
     assert result.state is None
     assert result.outcome_keys.shape == (1, 1)
@@ -39,7 +39,7 @@ def test_engine_run_fast_state_copies_only_when_requested():
         [ApplyMatrixStep(matrix=x, target_indices=(0,))],
         shots=1,
         seed=0,
-        request=_ResultRequest(counts=False, statevector=False),
+        request=_StateVectorResultRequest(counts=False, statevector=False),
     )
     assert without_state.state is None
 
@@ -48,7 +48,7 @@ def test_engine_run_fast_state_copies_only_when_requested():
         [ApplyMatrixStep(matrix=x, target_indices=(0,))],
         shots=1,
         seed=0,
-        request=_ResultRequest(counts=False, statevector=True),
+        request=_StateVectorResultRequest(counts=False, statevector=True),
     )
     assert np.allclose(with_state.state, [0, 1])
 
@@ -61,7 +61,7 @@ def test_engine_run_fast_counts_and_state_share_collapse_event():
         [ApplyMatrixStep(matrix=h, target_indices=(0,)), MeasurementStep((0,), (0,))],
         shots=1,
         seed=2026,
-        request=_ResultRequest(counts=True, statevector=True),
+        request=_StateVectorResultRequest(counts=True, statevector=True),
     )
     measured = int(result.outcome_keys[0, 0])
     assert result.outcome_counts.tolist() == [1]
@@ -81,7 +81,7 @@ def test_engine_run_dynamic_counts_use_clbit_snapshots():
         ],
         shots=5,
         seed=0,
-        request=_ResultRequest(counts=True, statevector=False),
+        request=_StateVectorResultRequest(counts=True, statevector=False),
     )
     assert result.outcome_keys.tolist() == [[1]]
     assert result.outcome_counts.tolist() == [5]
@@ -95,7 +95,7 @@ def test_engine_run_dynamic_statevector_only_runs_one_trajectory():
         [ApplyMatrixStep(matrix=x, target_indices=(1,), condition=((0, 0),))],
         shots=0,
         seed=0,
-        request=_ResultRequest(counts=False, statevector=True),
+        request=_StateVectorResultRequest(counts=False, statevector=True),
     )
     assert result.outcome_keys is None
     assert result.outcome_counts is None
@@ -114,7 +114,7 @@ def test_engine_run_dynamic_reinitializes_each_shot():
         ],
         shots=4,
         seed=123,
-        request=_ResultRequest(counts=True, statevector=False),
+        request=_StateVectorResultRequest(counts=True, statevector=False),
     )
     assert result.outcome_keys.tolist() == [[0]]
     assert result.outcome_counts.tolist() == [4]
