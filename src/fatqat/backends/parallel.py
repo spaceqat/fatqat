@@ -4,9 +4,8 @@ Shared by the matrix-family backends' dynamic (per-shot) execution paths when
 counts are requested, multiple shots are needed, and backend options allow it.
 Kept separate from the backend modules because it is pure execution-strategy
 plumbing (worker counts, batching, process-pool dispatch) with no
-state/physics content of its own: the engine is duck-typed through
-``engine_factory`` (default ``StateVectorEngine``), so any engine exposing
-``initialize``/``apply``/``measure_subsystems``/``reset_subsystems`` works.
+state/physics content of its own: each worker constructs a `NumpyEngine`
+for the requested ``state_semantics`` and runs the shared per-shot loop.
 """
 
 from __future__ import annotations
@@ -20,8 +19,8 @@ from typing import Any
 
 import numpy as np
 
-from .engine_contract import _EngineConfig, _ResultRequest
-from .statevector_engine import StateVectorEngine, _execute_dynamic_plan_one_shot
+from .engine_contract import _EngineConfig, _StateVectorResultRequest
+from .numpy_engine import NumpyEngine, _execute_dynamic_plan_one_shot
 from .steps import ResolvedStep
 
 
@@ -60,7 +59,7 @@ def _effective_max_workers(max_workers: object, n_iters: int) -> int:
 
 def _planned_workers(
     config: _EngineConfig,
-    request: _ResultRequest,
+    request: _StateVectorResultRequest,
     n_iters: int,
 ) -> int | None:
     if not request.counts:
@@ -115,10 +114,10 @@ def _run_dynamic_shot_batch(
     system_dims: tuple[int, ...],
     n_clbits: int,
     seed_batch: list[np.random.SeedSequence],
-    engine_factory: type = StateVectorEngine,
+    state_semantics: str,
 ) -> list[tuple[int, ...]]:
     """Run a contiguous batch of dynamic shots in one worker with one engine."""
-    engine = engine_factory()
+    engine = NumpyEngine(state_semantics=state_semantics)
     snapshots: list[tuple[int, ...]] = []
     for seed_sequence in seed_batch:
         rng = np.random.default_rng(seed_sequence)
@@ -133,7 +132,7 @@ def _run_dynamic_shots_multiprocessing(
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
-    engine_factory: type,
+    state_semantics: str,
 ) -> list[tuple[int, ...]]:
     batches = _split_into_batches(seed_sequences, max_workers)
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -143,7 +142,7 @@ def _run_dynamic_shots_multiprocessing(
             repeat(system_dims),
             repeat(n_clbits),
             batches,
-            repeat(engine_factory),
+            repeat(state_semantics),
         )
         return [snapshot for batch in results for snapshot in batch]
 
@@ -154,7 +153,7 @@ def _run_dynamic_shots_loky(
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
-    engine_factory: type,
+    state_semantics: str,
 ) -> list[tuple[int, ...]]:
     from loky import get_reusable_executor
 
@@ -166,7 +165,7 @@ def _run_dynamic_shots_loky(
         repeat(system_dims),
         repeat(n_clbits),
         batches,
-        repeat(engine_factory),
+        repeat(state_semantics),
     )
     return [snapshot for batch in results for snapshot in batch]
 
@@ -178,21 +177,22 @@ def _run_dynamic_shots_parallel(
     n_clbits: int,
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
-    engine_factory: type = StateVectorEngine,
+    state_semantics: str,
 ) -> list[tuple[int, ...]]:
     """Dispatch shots to worker processes. Caller must supply `max_workers`.
 
     `max_workers` is the same value `_planned_workers` already returned to
     decide whether to call this function at all; it is passed through rather
     than recomputed here, so there is exactly one source of truth for the
-    parallel/serial decision. `engine_factory` is the (picklable) engine class
-    each worker constructs; the default preserves statevector behavior.
+    parallel/serial decision. `state_semantics` selects which semantics each
+    worker's `NumpyEngine` is constructed with (a plain string, so it pickles
+    trivially to worker processes).
     """
     mode_name = _resolve_parallel_mode_name(config.parallel_mode)
     if mode_name == "loky":
         if _loky_available():
             return _run_dynamic_shots_loky(
-                plan, system_dims, n_clbits, seed_sequences, max_workers, engine_factory
+                plan, system_dims, n_clbits, seed_sequences, max_workers, state_semantics
             )
         warnings.warn(
             "parallel_mode='loky' requested but loky is unavailable; "
@@ -202,5 +202,5 @@ def _run_dynamic_shots_parallel(
         )
     # "multiprocessing", plus the loky-unavailable fallback above.
     return _run_dynamic_shots_multiprocessing(
-        plan, system_dims, n_clbits, seed_sequences, max_workers, engine_factory
+        plan, system_dims, n_clbits, seed_sequences, max_workers, state_semantics
     )

@@ -47,7 +47,7 @@ def test_run_without_seed_uses_random_rng_seed(monkeypatch):
         observed.append(seed)
         return object()
 
-    monkeypatch.setattr(backends.statevector_engine.np.random, "default_rng", fake_default_rng)
+    monkeypatch.setattr(backends.numpy_engine.np.random, "default_rng", fake_default_rng)
 
     p = Program(1)
     p.add(ops.X, 0)

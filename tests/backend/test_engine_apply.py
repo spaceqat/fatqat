@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from fatqat.backends.statevector_engine import StateVectorEngine, _apply_matrix
+from fatqat.backends.numpy_engine import NumpyEngine, _apply_sv
 from fatqat.backends.steps import ApplyMatrixStep
 from fatqat.implementation.matrices import shift_matrix
 
@@ -17,7 +17,7 @@ _CCX[[6, 7]] = _CCX[[7, 6]]
 
 
 def _engine(n):
-    eng = StateVectorEngine()
+    eng = NumpyEngine(state_semantics="statevector")
     eng.initialize((2,) * n)
     return eng
 
@@ -104,20 +104,20 @@ def test_shift_matrix_qutrit_cycles_basis():
 
 
 def test_apply_shift_on_single_qutrit():
-    eng = StateVectorEngine()
+    eng = NumpyEngine(state_semantics="statevector")
     eng.initialize((3,))
     state = eng.export_state()
-    new = _apply_matrix(state, shift_matrix(3, 1), (0,), (3,))
+    new = _apply_sv(state, shift_matrix(3, 1), (0,), (3,))
     assert np.allclose(new, [0, 1, 0])  # |0> -> |1>
 
 
 def test_apply_matrix_mixed_radix_qutrit_qubit():
     # 2 subsystems: dim-3 (subsystem 0) and dim-2 (subsystem 1); state size 6.
-    eng = StateVectorEngine()
+    eng = NumpyEngine(state_semantics="statevector")
     eng.initialize((3, 2))
     state = eng.export_state()
     # Shift subsystem 0 (the qutrit) by 1: |0,0> -> |1,0>.
-    new = _apply_matrix(state, shift_matrix(3, 1), (0,), (3, 2))
+    new = _apply_sv(state, shift_matrix(3, 1), (0,), (3, 2))
     # Flat index of |q0=1, q1=0> little-endian: 1 * stride0(=prod(dims[:0])=1) = 1.
     expected = np.zeros(6, dtype=complex)
     expected[1] = 1.0

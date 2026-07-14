@@ -3,12 +3,11 @@
 import numpy as np
 import pytest
 
-from fatqat.backends.density_matrix_engine import (
-    DensityMatrixEngine,
-    _apply_matrix_rho,
+from fatqat.backends.numpy_engine import (
+    NumpyEngine,
+    _apply_dm,
     _requires_dynamic_execution,
 )
-from fatqat.backends.statevector_engine import StateVectorEngine
 from fatqat.backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep
 
 
@@ -19,7 +18,7 @@ _S = np.array([[1, 0], [0, 1j]], dtype=complex)
 
 
 def _engine(n):
-    eng = DensityMatrixEngine()
+    eng = NumpyEngine(state_semantics="density_matrix")
     eng.initialize((2,) * n)
     return eng
 
@@ -52,7 +51,7 @@ def test_bell_state_h_then_cx():
     assert np.allclose(eng.export_state(), _pure(bell))
 
 
-def test_apply_matches_statevector_engine_on_pure_states():
+def test_apply_matches_statevector_semantics_on_pure_states():
     # rho evolution must track |psi><psi| through a non-trivial circuit,
     # including a complex-phase gate and a reversed-order two-qubit target.
     steps = [
@@ -62,7 +61,7 @@ def test_apply_matches_statevector_engine_on_pure_states():
         ApplyMatrixStep(matrix=_H, target_indices=(2,)),
         ApplyMatrixStep(matrix=_CX, target_indices=(2, 1)),
     ]
-    sv = StateVectorEngine()
+    sv = NumpyEngine(state_semantics="statevector")
     sv.initialize((2, 2, 2))
     dm = _engine(3)
     for step in steps:
@@ -75,7 +74,7 @@ def test_apply_matrix_rho_qutrit():
     shift = np.roll(np.eye(3, dtype=complex), 1, axis=0)  # |k> -> |k+1 mod 3>
     rho = np.zeros((3, 3), dtype=complex)
     rho[0, 0] = 1.0
-    out = _apply_matrix_rho(rho, shift, (0,), (3,))
+    out = _apply_dm(rho, shift, (0,), (3,))
     expected = np.zeros((3, 3), dtype=complex)
     expected[1, 1] = 1.0
     assert np.allclose(out, expected)
@@ -147,7 +146,7 @@ def test_reset_requires_at_least_one_index():
 
 
 def test_uninitialized_engine_raises():
-    eng = DensityMatrixEngine()
+    eng = NumpyEngine(state_semantics="density_matrix")
     with pytest.raises(RuntimeError, match="initialize"):
         eng.export_state()
 
@@ -159,12 +158,12 @@ def test_plan_with_unconditional_reset_is_not_dynamic():
         ApplyMatrixStep(matrix=_H, target_indices=(0,)),
         ResetStep(reset_indices=(0,)),
     ]
-    assert _requires_dynamic_execution(plan) is False
+    assert _requires_dynamic_execution(plan, reset_forces_dynamic=False) is False
 
 
 def test_plan_with_conditioned_reset_is_dynamic():
     plan = [ResetStep(reset_indices=(0,), condition=((0, 1),))]
-    assert _requires_dynamic_execution(plan) is True
+    assert _requires_dynamic_execution(plan, reset_forces_dynamic=False) is True
 
 
 def test_plan_with_reset_on_measured_subsystem_is_dynamic():
@@ -172,7 +171,7 @@ def test_plan_with_reset_on_measured_subsystem_is_dynamic():
         MeasurementStep(measured_indices=(0,), classical_indices=(0,)),
         ResetStep(reset_indices=(0,)),
     ]
-    assert _requires_dynamic_execution(plan) is True
+    assert _requires_dynamic_execution(plan, reset_forces_dynamic=False) is True
 
 
 def test_plan_with_gate_on_measured_subsystem_is_dynamic():
@@ -180,4 +179,4 @@ def test_plan_with_gate_on_measured_subsystem_is_dynamic():
         MeasurementStep(measured_indices=(0,), classical_indices=(0,)),
         ApplyMatrixStep(matrix=_X, target_indices=(0,)),
     ]
-    assert _requires_dynamic_execution(plan) is True
+    assert _requires_dynamic_execution(plan, reset_forces_dynamic=False) is True

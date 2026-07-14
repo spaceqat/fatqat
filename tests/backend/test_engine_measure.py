@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from fatqat.backends.statevector_engine import StateVectorEngine, _collapse_state
+from fatqat.backends.numpy_engine import NumpyEngine, _collapse_sv
 from fatqat.backends.steps import ApplyMatrixStep
 
 
@@ -10,7 +10,7 @@ _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
 
 
 def _h_engine(n_qubits, target):
-    eng = StateVectorEngine()
+    eng = NumpyEngine(state_semantics="statevector")
     eng.initialize((2,) * n_qubits)
     eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(target,)))
     return eng
@@ -22,7 +22,7 @@ def test_probabilities():
 
 
 def test_sample_indices_deterministic_state():
-    eng = StateVectorEngine()
+    eng = NumpyEngine(state_semantics="statevector")
     eng.initialize((2, 2))  # always |00> -> index 0
     rng = np.random.default_rng(0)
     idx = eng.sample_indices(100, rng)
@@ -81,7 +81,7 @@ def test_collapse_state_returns_index_and_projected_copy_without_mutating_input(
     original = state.copy()
     rng = np.random.default_rng(1)
 
-    idx, collapsed = _collapse_state(state, [1], (2, 2), rng)
+    idx, collapsed = _collapse_sv(state, [1], (2, 2), rng)
 
     bit = (idx >> 1) & 1
     expected = np.zeros(4, dtype=complex)
@@ -96,7 +96,7 @@ def test_collapse_state_returns_index_and_projected_copy_without_mutating_input(
 def test_measure_qutrit_digit_extraction():
     from fatqat.implementation.matrices import shift_matrix
 
-    eng = StateVectorEngine()
+    eng = NumpyEngine(state_semantics="statevector")
     eng.initialize((3,))
     eng._state = shift_matrix(3, 2) @ eng.export_state()
     (digit,) = eng.measure_subsystems((0,), np.random.default_rng(0))
