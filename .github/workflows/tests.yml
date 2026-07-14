@@ -36,3 +36,28 @@ jobs:
 
       - name: Run doctests
         run: uv run pytest --doctest-modules src/fatqat
+
+  # Separate job so the base matrix keeps exercising the package on an
+  # unconstrained numpy, while this job installs the optional `numba` group
+  # (which pins numpy < 2.5) and actually runs the Numba engine tests instead
+  # of skipping them. `--group numba` is passed to `uv run` too, otherwise it
+  # would re-sync the environment without the group and drop numba.
+  test-numba:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.3.1
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies (with numba)
+        run: uv sync --group numba
+
+      - name: Run tests
+        run: uv run --group numba pytest
+
+      - name: Run doctests
+        run: uv run --group numba pytest --doctest-modules src/fatqat
