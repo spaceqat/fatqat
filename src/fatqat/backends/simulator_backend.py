@@ -8,8 +8,8 @@ case-insensitive) select the state representation, exactly like Qiskit Aer's
 per-representation backend classes do not exist.
 
 Everything method-independent lives here once: options/result-config
-normalization, lowering, validation, execution orchestration, and public
-`Result` assembly. The
+normalization, lowering (including the compiler-facing `Barrier` skip),
+validation, execution orchestration, and public `Result` assembly. The
 method-dependent facts are bound as instance attributes in ``__init__`` -
 the backend never branches on method afterwards:
 
@@ -53,7 +53,7 @@ from ..implementation import (
 )
 from ..job import Job
 from ..layout import ResourceLayout
-from ..operations import Measurement, Operation, ResetGate
+from ..operations import BarrierGate, Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
 from ..result import (
     Result,
@@ -408,8 +408,11 @@ class SimulatorBackend:
         """Lower a program into an execution plan and classify it, in one pass.
 
         Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` for a gate with no matrix rule.
-        `Reset` is recognized by type and routed to a `ResetStep`. The pass also
-        computes `has_measurement` and `has_reset`.
+        `Reset` is recognized by type and routed to a `ResetStep`; `Barrier`
+        is recognized by type and skipped entirely - it is a compiler-facing
+        marker with no simulation semantics, so it emits no step and cannot
+        affect execution strategy or result defaults. The pass also computes
+        `has_measurement` and `has_reset`.
         """
         plan: list[ResolvedStep] = []
         has_measurement = False
@@ -429,6 +432,9 @@ class SimulatorBackend:
                 continue
 
             if isinstance(step, AppliedOperation):
+                if isinstance(step.operation, BarrierGate):
+                    continue
+
                 target_indices = tuple(layout.subsystem_index(t) for t in step.targets)
 
                 if isinstance(step.operation, ResetGate):
