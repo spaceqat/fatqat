@@ -7,7 +7,7 @@ Examples:
     >>> qutrit = fq.QuantumRegister(1, dim=3)
     >>> program = fq.Program([qutrit])
     >>> program.add(fq.ops.Shift(1), 0)
-    >>> result = fq.backends.StateVectorBackend().run(
+    >>> result = fq.backends.SimulatorBackend("SV").run(
     ...     program,
     ...     shots=1,
     ...     result_config={"counts": False, "statevector": True},

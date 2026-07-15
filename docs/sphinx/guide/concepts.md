@@ -35,9 +35,9 @@ matching classical refs. Both live side by side in
 
 ## Backend, Job, Result
 
-A backend (currently {py:class}`~fatqat.backends.StateVectorBackend`) is what
+A backend (currently {py:class}`~fatqat.backends.SimulatorBackend`) is what
 actually executes a `Program`. Its
-{py:meth}`~fatqat.backends.StateVectorBackend.run` method returns a
+{py:meth}`~fatqat.backends.SimulatorBackend.run` method returns a
 {py:class}`~fatqat.Job` — an eager, already-completed handle — whose
 {py:meth}`~fatqat.Job.result` yields a {py:class}`~fatqat.Result` or
 re-raises an execution error. `Result` exposes whichever fields the run

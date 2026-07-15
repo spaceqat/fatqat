@@ -105,7 +105,7 @@ def test_delimited_key_threshold_end_to_end():
     program.add(fq.ops.Shift(10), qreg[0])  # |0> -> |10>
     program.add(fq.ops.Shift(3), qreg[1])   # |0> -> |3>
     program.add_measurement((qreg[0], qreg[1]), (creg[0], creg[1]))
-    result = fq.backends.StateVectorBackend().run(program, shots=4).result()
+    result = fq.backends.SimulatorBackend("SV").run(program, shots=4).result()
     # clbit0=10, clbit1=3; little-endian (highest clbit first): "3,10".
     assert result.get_counts() == {"3,10": 4}
     assert result.get_counts_as_tuples() == {(10, 3): 4}
@@ -122,5 +122,5 @@ def test_high_quantum_dim_low_classical_stays_plain():
     program = fq.Program([qbig, qb], [cb])
     program.add(fq.ops.X, qb[0])
     program.add_measurement(qb[0], cb[0])
-    result = fq.backends.StateVectorBackend().run(program, shots=4).result()
+    result = fq.backends.SimulatorBackend("SV").run(program, shots=4).result()
     assert result.get_counts() == {"1": 4}  # plain string; classical dims are all <= 9

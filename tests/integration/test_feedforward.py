@@ -1,6 +1,6 @@
 import fatqat as fq
 from fatqat import operations as ops
-from fatqat.backends import StateVectorBackend
+from fatqat.backends import SimulatorBackend
 
 
 def _teleport_program(prep):
@@ -22,7 +22,7 @@ def _teleport_program(prep):
 def test_teleportation_moves_one_state_to_target():
     p = _teleport_program(prep=[ops.X])
     p.add_measurement(2, 0)
-    counts = StateVectorBackend().run(p, shots=64, seed=1).result().get_counts()
+    counts = SimulatorBackend("SV").run(p, shots=64, seed=1).result().get_counts()
     assert all(key[-1] == "1" for key in counts)
 
 
@@ -30,7 +30,7 @@ def test_teleportation_moves_plus_state_to_target():
     p = _teleport_program(prep=[ops.H])
     p.add(ops.H, 2)
     p.add_measurement(2, 0)
-    counts = StateVectorBackend().run(p, shots=64, seed=3).result().get_counts()
+    counts = SimulatorBackend("SV").run(p, shots=64, seed=3).result().get_counts()
     assert all(key[-1] == "0" for key in counts)
 
 
@@ -47,7 +47,7 @@ def test_bit_flip_code_corrects_single_x_error():
     p.add_measurement(0, 2)
     p.add_measurement(1, 3)
     p.add_measurement(2, 4)
-    counts = StateVectorBackend().run(p, shots=32, seed=2).result().get_counts()
+    counts = SimulatorBackend("SV").run(p, shots=32, seed=2).result().get_counts()
     assert all(
         key[0] == "0" and key[1] == "0" and key[2] == "0" for key in counts
     )
@@ -64,7 +64,7 @@ def test_reset_seed_independence_matches_born_rule():
 
     ones = 0
     n = 1000
-    backend = StateVectorBackend()
+    backend = SimulatorBackend("SV")
     for s in range(n):
         counts = backend.run(program(), shots=1, seed=s).result().get_counts()
         ones += counts.get("1", 0)

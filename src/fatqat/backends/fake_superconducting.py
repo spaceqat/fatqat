@@ -16,7 +16,7 @@ device model: no routing, no timing, no noise. See
 ``docs/superpowers/specs/2026-07-09-fatqat-target-aware-implementation-map-and-4x4-fake-superconducting-backend-design.md``.
 
 The native-gate-set restriction applies to unitary operations only.
-Measurement and reset are resolved by `StateVectorBackend._lower` before any
+Measurement and reset are resolved by `SimulatorBackend._lower` before any
 implementation-map lookup happens (see the `isinstance` dispatch there), so
 this backend accepts them on any of the 16 qubits regardless of the
 implementation map's contents.
@@ -36,7 +36,7 @@ from ..implementation import (
 from ..layout import ResourceLayout
 from ..operations import Operation
 from ..program import Program
-from .statevector_backend import StateVectorBackend
+from .simulator_backend import SimulatorBackend
 
 GRID_ROWS = 4
 GRID_COLS = 4
@@ -94,10 +94,10 @@ def fake_superconducting_4x4_implementation_map() -> ImplementationMap:
     return m
 
 
-class FakeSuperconducting4x4Backend(StateVectorBackend):
+class FakeSuperconducting4x4Backend(SimulatorBackend):
     """Statevector backend constrained to a fake 4x4 superconducting target.
 
-    A thin :py:class:`~fatqat.backends.StateVectorBackend` specialization: same execution engine, same
+    A thin statevector-method :py:class:`~fatqat.backends.SimulatorBackend` specialization: same execution engine, same
     :py:class:`~fatqat.Result`/:py:class:`~fatqat.Job` semantics. The only differences are a fixed 16-qubit
     device, a fixed native gate set (`RZ`, `SX`, nearest-neighbor `CZ`), and
     rejecting programs that do not fit that device shape (too many qubits,
@@ -108,12 +108,13 @@ class FakeSuperconducting4x4Backend(StateVectorBackend):
         """Create a fake 4x4 superconducting backend.
 
         Args:
-            options: Same execution-strategy options as :py:class:`~fatqat.backends.StateVectorBackend`
+            options: Same execution-strategy options as :py:class:`~fatqat.backends.SimulatorBackend`
                 (``max_workers``, ``parallel_mode``). The implementation map
                 is fixed to `fake_superconducting_4x4_implementation_map()`
                 and cannot be overridden.
         """
         super().__init__(
+            method="statevector",
             options=options,
             implementation_map=fake_superconducting_4x4_implementation_map(),
         )

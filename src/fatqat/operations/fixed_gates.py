@@ -7,7 +7,7 @@ Examples:
     >>> program = fq.Program(2)
     >>> program.add(fq.ops.H, 0)
     >>> program.add(fq.ops.CX, (0, 1))
-    >>> result = fq.backends.StateVectorBackend().run(
+    >>> result = fq.backends.SimulatorBackend("SV").run(
     ...     program,
     ...     result_config={"counts": False, "statevector": True},
     ... ).result()
