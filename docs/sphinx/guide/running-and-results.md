@@ -3,11 +3,11 @@
 ## Running a program
 
 ```python
-backend = fq.backends.StateVectorBackend()
+backend = fq.backends.SimulatorBackend("SV")
 result = backend.run(program, shots=1000).result()
 ```
 
-{py:meth}`~fatqat.backends.StateVectorBackend.run` returns a
+{py:meth}`~fatqat.backends.SimulatorBackend.run` returns a
 {py:class}`~fatqat.Job` immediately — Phase 1 jobs are already terminal, so
 {py:meth}`~fatqat.Job.result` either returns a {py:class}`~fatqat.Result` or
 re-raises the exception from a failed run. `run()` itself still raises

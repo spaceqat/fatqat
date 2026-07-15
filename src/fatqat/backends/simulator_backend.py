@@ -1,30 +1,35 @@
-"""Shared matrix-family backend skeleton.
+"""Unified matrix-family simulator backend with Qiskit-style method selection.
 
-`_MatrixBackendBase` carries everything that is identical between the
-matrix-family backends: options/result-config normalization, lowering,
-validation, execution orchestration, and public `Result` assembly. The
-concrete backends (`StateVectorBackend`, `DensityMatrixBackend`) contribute
-only declarative class attributes plus their user-facing docstrings.
+`SimulatorBackend` is the single entry point for matrix-family simulation:
+``SimulatorBackend(method="statevector")`` and
+``SimulatorBackend(method="density_matrix")`` (aliases ``"SV"`` / ``"DM"``,
+case-insensitive) select the state representation, exactly like Qiskit Aer's
+``AerSimulator(method=...)``. It is the only simulator backend:
+per-representation backend classes do not exist.
 
-The per-backend variation points are class attributes, not overridable hooks:
+Everything method-independent lives here once: options/result-config
+normalization, lowering, validation, execution orchestration, and public
+`Result` assembly. The
+method-dependent facts are bound as instance attributes in ``__init__`` -
+the backend never branches on method afterwards:
 
-- ``_result_config_cls`` / ``_request_cls``: the backend's frozen result-config
-  and engine-request value objects. The supported ``result_config`` keys are
-  derived from ``_result_config_cls``'s dataclass fields.
-- ``_state_field``: the backend's native state field name (``"statevector"``
-  or ``"density_matrix"``). Drives the engine's ``state_semantics``, the
+- ``_state_field``: the native state field name (``"statevector"`` or
+  ``"density_matrix"``). Drives the engine's ``state_semantics``, the
   result-config flag read, the `Result` keyword, the availability name, the
   metadata echo, and validation wording.
-- ``_reset_is_stochastic``: whether reset makes execution stochastic for this
-  state representation (`True` for the statevector backend, where reset
-  samples a branch; `False` for the density-matrix backend, where reset is a
-  deterministic channel).
+- ``_result_config_cls`` / ``_request_cls``: the method's frozen
+  result-config and engine-request value objects. Supported
+  ``result_config`` keys are derived from the config dataclass fields.
+- ``_reset_is_stochastic``: whether reset makes execution stochastic for the
+  state representation (`True` for statevector, where reset samples a
+  branch; `False` for density matrix, where reset is a deterministic
+  channel).
 
-This class is backend-internal: it is not exported from the package and is
-not part of the public API. The backend/engine seam is unchanged: the base
-calls ``engine.initialize(system_dims, n_clbits)`` and
+The backend/engine seam is unchanged: this class calls
+``NumpyEngine(config, state_semantics=...)``,
+``engine.initialize(system_dims, n_clbits)``, and
 ``engine.run(plan, shots, seed, request) -> RawResult`` exactly as the
-concrete backends did before extraction.
+per-method backends did before compaction.
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from __future__ import annotations
 import warnings
 from dataclasses import fields
 from math import prod
-from typing import Any, ClassVar
+from typing import Any
 
 from ..errors import (
     BackendValidationError,
@@ -50,44 +55,131 @@ from ..job import Job
 from ..layout import ResourceLayout
 from ..operations import Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
-from ..result import Result, counts_dict_from_arrays
+from ..result import (
+    Result,
+    _DensityMatrixResultConfig,
+    _StateVectorResultConfig,
+    counts_dict_from_arrays,
+)
 from .backend_utils import (
     _PlanFacts,
     _normalize_dict_options,
     _resolve_condition,
 )
-from .engine_contract import _EngineConfig
+from .engine_contract import (
+    _DensityMatrixResultRequest,
+    _EngineConfig,
+    _StateVectorResultRequest,
+)
 from .numpy_engine import NumpyEngine
 from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
 
+# Canonical method names plus Qiskit-style short aliases, all case-insensitive.
+_METHOD_ALIASES = {
+    "statevector": "statevector",
+    "sv": "statevector",
+    "density_matrix": "density_matrix",
+    "dm": "density_matrix",
+}
 
-class _MatrixBackendBase:
-    """Execution skeleton shared by the matrix-family backends.
 
-    Subclasses declare the class attributes documented in the module
-    docstring; every method below is state-representation-agnostic.
+class SimulatorBackend:
+    """Matrix-family simulator backend for ``fatqat.Program`` execution.
+
+    The simulation method selects the state representation and its
+    semantics; everything else (supported operations, grouped measurement,
+    feedforward conditions, reset, execution strategies, result handling) is
+    method-independent:
+
+    - ``method="statevector"`` (alias ``"SV"``): pure-state simulation. The
+      native result field is ``statevector``. Reset samples a branch, so any
+      reset makes execution stochastic and forces per-shot replay.
+    - ``method="density_matrix"`` (alias ``"DM"``): exact mixed-state
+      simulation. The native result field is ``density_matrix``. Reset is
+      the deterministic partial-trace channel, so reset alone neither makes
+      a program stochastic nor forces per-shot execution.
+
+    Each run is classified into a fast path (evolve once, sample requested
+    counts from the terminal measurement distribution) or a dynamic path
+    (per-shot replay with an explicit classical register) when the program
+    contains classical conditions, reuse of measured subsystems, or - under
+    statevector semantics - reset.
+
+    Backend constructor options affect only dynamic counts execution:
+
+    - ``max_workers``: maximum worker processes for dynamic counts
+      parallelism. ``None`` means automatic selection.
+    - ``parallel_mode``: one of ``"auto"``, ``"serial"``, ``"multiprocessing"``,
+      or ``"loky"``. ``"auto"`` prefers ``loky`` when available and otherwise
+      uses ``multiprocessing``. ``"serial"`` disables process-based parallel
+      execution.
+
+    A backend instance reuses one engine across runs, so it is efficient for
+    repeated single-threaded use but is not safe for concurrent ``run()``
+    calls.
+
+    Examples:
+        Density-matrix simulation, Qiskit style:
+
+        >>> import fatqat as fq
+        >>> program = fq.Program(1)
+        >>> program.add(fq.ops.H, 0)
+        >>> result = fq.backends.SimulatorBackend(method="DM").run(
+        ...     program,
+        ...     result_config={"counts": False, "density_matrix": True},
+        ... ).result()
+        >>> result.get_density_matrix()
+        array([[0.5+0.j, 0.5+0.j],
+               [0.5+0.j, 0.5+0.j]])
     """
-
-    _result_config_cls: ClassVar[type]
-    _request_cls: ClassVar[type]
-    _state_field: ClassVar[str]
-    _reset_is_stochastic: ClassVar[bool]
 
     def __init__(
         self,
+        method: str = "statevector",
         options: dict[str, Any] | None = None,
         implementation_map: ImplementationMap | None = None,
     ) -> None:
-        """Create a matrix-family backend.
+        """Create a simulator backend for the given method.
 
         Args:
+            method: Simulation method: ``"statevector"`` or
+                ``"density_matrix"``, or the case-insensitive short aliases
+                ``"SV"`` / ``"DM"``.
             options: Optional execution-strategy options. Supported keys are
                 ``max_workers`` and ``parallel_mode``; unknown keys are
-                ignored with a warning.
-            implementation_map: Optional matrix implementation map. ``None``
-                uses ``default_matrix_implementation_map()``. The backend
-                copies whatever map it receives.
+                ignored with a warning. These options only affect the dynamic
+                counts path and do not change numerical semantics.
+            implementation_map: Optional matrix implementation map controlling
+                which operations this backend supports and how their matrices
+                are built. ``None`` (the default) uses
+                ``default_matrix_implementation_map()``. The backend copies
+                whatever map it receives, so mutating the caller's map object
+                after construction does not change this backend's behavior.
         """
+        normalized = _METHOD_ALIASES.get(str(method).lower())
+        if normalized is None:
+            raise BackendValidationError(
+                f"unsupported method={method!r}; expected one of "
+                "'statevector'/'SV' or 'density_matrix'/'DM'"
+            )
+        # Method-dependent facts, bound once. This block is the single
+        # dispatch point: the methods below read the bound attributes and
+        # never branch on the method themselves.
+        self._state_field = normalized
+        if normalized == "statevector":
+            self._result_config_cls = _StateVectorResultConfig
+            self._request_cls = _StateVectorResultRequest
+            # A pure state cannot represent the mixed post-reset ensemble, so
+            # reset must sample one branch - a random event, like measurement.
+            self._reset_is_stochastic = True
+        else:
+            self._result_config_cls = _DensityMatrixResultConfig
+            self._request_cls = _DensityMatrixResultRequest
+            # A density matrix holds the full ensemble, so reset is the
+            # deterministic channel |0><0| (x) Tr_target(rho): only
+            # measurement (whose outcome is recorded) is stochastic.
+            self._reset_is_stochastic = False
+
         config = _normalize_dict_options(
             options,
             {"max_workers", "parallel_mode"},
@@ -127,10 +219,38 @@ class _MatrixBackendBase:
     ) -> Job:
         """Validate, execute, and package one program run.
 
-        Shared skeleton: normalize ``result_config``, resolve the layout,
-        lower the program, validate, execute, and wrap the outcome in an
-        eager `Job`. See each concrete backend's ``run`` docstring for the
-        user-facing result-selection and shot semantics.
+        Resolves the program to the backend's flat layout, chooses an
+        execution strategy, runs the circuit, and returns an eager ``Job``
+        whose ``result()`` yields a ``Result``.
+
+        ``result_config`` accepts ``counts`` plus the method's native state
+        field (``statevector`` or ``density_matrix``), each tri-state:
+        ``None`` (backend default), ``True`` (request), ``False`` (suppress).
+        Counts default to measurement presence; the state field defaults to
+        non-stochastic execution. Requesting the state field for a stochastic
+        program requires ``shots == 1``. ``Result.metadata`` always includes
+        ``shots``, ``backend_name``, ``method``, and the effective
+        ``result_config``.
+
+        Args:
+            program: Program to execute.
+            shots: Number of logical shots to run when counts are requested.
+            result_config: Optional plain dictionary describing which result
+                fields to produce; unknown keys are ignored with a warning.
+            seed: Optional root seed for the run. For dynamic counts, one
+                reproducible child RNG stream is derived per logical shot.
+
+        Returns:
+            A completed ``Job``. Validation failures raise directly from
+            ``run()``; execution-stage failures are captured in a failed job
+            whose ``result()`` re-raises the underlying exception.
+
+        Raises:
+            BackendValidationError: If requested outputs are incompatible with
+                the program shape or ``shots``.
+            UnsupportedOperationError: If the program contains an operation
+                without a backend implementation, or one whose target key is
+                illegal for this backend.
         """
         known_keys = {field.name for field in fields(self._result_config_cls)}
         config = _normalize_dict_options(
@@ -251,6 +371,7 @@ class _MatrixBackendBase:
             metadata={
                 "shots": shots,
                 "backend_name": type(self).__name__,
+                "method": self._state_field,
                 "result_config": {
                     "counts": config.counts,
                     self._state_field: getattr(config, self._state_field),

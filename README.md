@@ -1,20 +1,25 @@
 # fatqat
 
 fatqat is a quantum noisy simulator (MVP Phase 1). Build a `Program` out of
-registers, gates, and measurements, run it on a backend, and read back counts
-or a statevector.
+registers, gates, and measurements, run it on the simulator backend, and read
+back counts, a statevector, or a density matrix.
 
 ```python
-import fatqat as fc
+import fatqat as fq
 
-program = fc.Program(2, 2)          # 2 qubits, 2 clbits
-program.add(fc.ops.H, 0)
-program.add(fc.ops.CX, (0, 1))
+program = fq.Program(2, 2)          # 2 qubits, 2 clbits
+program.add(fq.ops.H, 0)
+program.add(fq.ops.CX, (0, 1))
 program.add_measurement((0, 1), (0, 1))
 
-result = fc.backends.StateVectorBackend().run(program, shots=1000).result()
+backend = fq.backends.SimulatorBackend(method="SV")   # or method="DM"
+result = backend.run(program, shots=1000).result()
 print(result.get_counts())          # e.g. {"00": 512, "11": 488}
 ```
+
+The `method` selects the state representation: `"SV"`/`"statevector"` for
+pure-state simulation, `"DM"`/`"density_matrix"` for exact mixed-state
+simulation (e.g. reset acting on entangled qubits).
 
 ## Dev setup
 

@@ -22,10 +22,10 @@ def test_register_types_exposed():
 
 
 def test_statevector_backend_only_under_backends_namespace():
-    from fatqat.backends import StateVectorBackend
+    from fatqat.backends import SimulatorBackend
 
-    assert fq.backends.StateVectorBackend is StateVectorBackend
-    assert not hasattr(fq, "StateVectorBackend")
+    assert fq.backends.SimulatorBackend is SimulatorBackend
+    assert not hasattr(fq, "SimulatorBackend")
 
 
 def test_fake_superconducting_backend_exported_under_backends_namespace():

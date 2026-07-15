@@ -7,7 +7,7 @@ Examples:
     >>> import fatqat as fq
     >>> program = fq.Program(1)
     >>> program.add(fq.ops.RX(math.pi), 0)
-    >>> result = fq.backends.StateVectorBackend().run(
+    >>> result = fq.backends.SimulatorBackend("SV").run(
     ...     program,
     ...     shots=1,
     ...     result_config={"counts": False, "statevector": True},

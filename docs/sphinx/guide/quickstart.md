@@ -16,7 +16,7 @@ program.add(fq.ops.H, 0)
 program.add(fq.ops.CX, (0, 1))
 program.add_measurement((0, 1), (0, 1))
 
-result = fq.backends.StateVectorBackend().run(program, shots=1000).result()
+result = fq.backends.SimulatorBackend("SV").run(program, shots=1000).result()
 print(result.get_counts())          # e.g. {"00": 512, "11": 488}
 ```
 

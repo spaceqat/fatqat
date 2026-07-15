@@ -23,7 +23,7 @@ def _normalize_dict_options(
     config_cls: type,
     param_name: str,
     warning_noun: str,
-    backend_name: str = "StateVectorBackend",
+    backend_name: str = "SimulatorBackend",
 ) -> Any:
     """Normalize a plain dict of options into a frozen config dataclass."""
     if options is None:
