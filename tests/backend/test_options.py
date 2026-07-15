@@ -2,13 +2,13 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat.backends import StateVectorBackend
+from fatqat.backends import SimulatorBackend
 from fatqat.backends.engine_contract import _EngineConfig, _StateVectorResultRequest
 from fatqat.backends.parallel import _planned_workers
 
 
 def test_backend_accepts_known_options():
-    backend = StateVectorBackend(
+    backend = SimulatorBackend("SV", 
         options={"max_workers": 1, "parallel_mode": "serial"}
     )
 
@@ -18,7 +18,7 @@ def test_backend_accepts_known_options():
 
 def test_backend_warns_and_ignores_unknown_options():
     with pytest.warns(UserWarning, match="ignored unsupported backend options"):
-        backend = StateVectorBackend(options={"gpu": True, "foo": 3})
+        backend = SimulatorBackend("SV", options={"gpu": True, "foo": 3})
 
     assert backend._engine._config.max_workers is None
     assert backend._engine._config.parallel_mode == "auto"
@@ -31,7 +31,7 @@ def test_serial_backend_option_runs_dynamic_program():
     p.add(fq.ops.Reset, 0)
 
     counts = (
-        StateVectorBackend(options={"max_workers": 4, "parallel_mode": "serial"})
+        SimulatorBackend("SV", options={"max_workers": 4, "parallel_mode": "serial"})
         .run(p, shots=16, seed=123)
         .result()
         .get_counts()
@@ -62,7 +62,7 @@ def test_planned_workers_clamps_explicit_workers_to_iterations():
 
 def test_backend_rejects_non_dict_options():
     with pytest.raises(TypeError, match="dict or None"):
-        StateVectorBackend(options=object())
+        SimulatorBackend("SV", options=object())
 
 
 def test_backend_accepts_custom_implementation_map():
@@ -72,7 +72,7 @@ def test_backend_accepts_custom_implementation_map():
     # replaces one rule while the rest of the default map keeps working.
     m = default_matrix_implementation_map()
     m.add(fq.ops.X, np.eye(2, dtype=complex))  # override X with identity
-    backend = StateVectorBackend(implementation_map=m)
+    backend = SimulatorBackend("SV", implementation_map=m)
 
     p = fq.Program(2, 2)
     p.add(fq.ops.X, 0)  # overridden: identity, so qubit 0 stays |0>
@@ -86,7 +86,7 @@ def test_backend_accepts_custom_implementation_map():
 
 
 def test_backend_none_implementation_map_uses_defaults():
-    backend = StateVectorBackend(implementation_map=None)
+    backend = SimulatorBackend("SV", implementation_map=None)
 
     p = fq.Program(1, 1)
     p.add(fq.ops.X, 0)
@@ -100,7 +100,7 @@ def test_backend_copies_implementation_map_defensively():
     from fatqat.implementation import default_matrix_implementation_map
 
     m = default_matrix_implementation_map()
-    backend = StateVectorBackend(implementation_map=m)
+    backend = SimulatorBackend("SV", implementation_map=m)
 
     m.remove(fq.ops.X)  # mutate the caller's map after construction
 

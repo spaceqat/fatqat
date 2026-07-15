@@ -31,7 +31,7 @@ program.add(fq.ops.Shift(1), program.qreg[1][0])     # qutrit: |0> -> |1>
 program.add_measurement(program.qreg[0][0], program.creg[0][0])
 program.add_measurement(program.qreg[1][0], program.creg[1][0])
 
-result = fq.backends.StateVectorBackend().run(program, shots=100).result()
+result = fq.backends.SimulatorBackend("SV").run(program, shots=100).result()
 print(result.get_counts())   # {"11": 100}
 ```
 
@@ -42,7 +42,7 @@ explicitly (see [Gates](gates.md) for how targets are addressed).
 
 ## Custom implementations
 
-{py:class}`~fatqat.backends.StateVectorBackend`'s `implementation_map=`
+{py:class}`~fatqat.backends.SimulatorBackend`'s `implementation_map=`
 argument accepts a custom `MatrixImplementationMap` to control how
 operations are lowered to matrices, or to add support for operations the
 default map doesn't cover.
@@ -74,7 +74,7 @@ SQRT_X_MATRIX = 0.5 * np.array(
 implementation_map = default_matrix_implementation_map()
 implementation_map.register(SqrtX, FixedMatrix(SQRT_X_MATRIX))
 
-backend = fq.backends.StateVectorBackend(implementation_map=implementation_map)
+backend = fq.backends.SimulatorBackend("SV", implementation_map=implementation_map)
 
 program = fq.Program(1)
 program.add(SqrtX(), 0)
@@ -101,7 +101,7 @@ A few things worth noting about the shape of this API:
   register raises a clear error rather than an opaque shape mismatch deeper
   in the engine.
 - `implementation_map` is copied internally by the backend
-  (`StateVectorBackend` never mutates the map you pass in), so the same map
+  (`SimulatorBackend` never mutates the map you pass in), so the same map
   can be reused across multiple backend instances.
 
 If the matrix instead depends on the operation's parameters (e.g. a rotation
@@ -112,7 +112,7 @@ which shape you passed by inspecting the callable's signature.
 ## Parallel execution
 
 For programs on the dynamic path,
-{py:class}`~fatqat.backends.StateVectorBackend`'s `options={...}` accepts
+{py:class}`~fatqat.backends.SimulatorBackend`'s `options={...}` accepts
 `max_workers` and `parallel_mode` (`"auto"`, `"serial"`,
 `"multiprocessing"`, or `"loky"`) to control whether shots are distributed
 across worker processes. This only affects execution strategy, never

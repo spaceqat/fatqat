@@ -130,7 +130,7 @@ def test_fake_backend_rejects_non_qubit_dimension_registers():
 
 
 def test_fake_backend_allows_measurement_and_reset_on_any_qubit():
-    # Measurement and reset are dispatched by StateVectorBackend._lower before
+    # Measurement and reset are dispatched by SimulatorBackend._lower before
     # any implementation-map lookup, so they are not gated by the fake
     # backend's native-gate-only map even though it declares no rule for
     # Measurement or Reset. This test pins that intentional bypass.

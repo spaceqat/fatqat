@@ -12,7 +12,7 @@ def test_minimal_workflow_from_spec():
     program.add_measurement(0, 0)
     program.add_measurement(1, 1)
 
-    backend = fq.backends.StateVectorBackend()
+    backend = fq.backends.SimulatorBackend("SV")
     job = backend.run(program, shots=1000, seed=2024, result_config={"counts": True})
     result = job.result()
     counts = result.get_counts()
@@ -31,7 +31,7 @@ def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
     program.add(fq.ops.Reset, (0, 1))
     program.measure_all()
 
-    result = fq.backends.StateVectorBackend(
+    result = fq.backends.SimulatorBackend("SV", 
         options={"max_workers": 2, "parallel_mode": "multiprocessing"}
     ).run(
         program,
@@ -53,7 +53,7 @@ def test_heterogeneous_qutrit_qubit_program():
     program.add(fq.ops.X, qb[0])         # qubit  |0> -> |1>
     program.add_measurement(qt[0], ct[0])
     program.add_measurement(qb[0], cb[0])
-    result = fq.backends.StateVectorBackend().run(program, shots=16).result()
+    result = fq.backends.SimulatorBackend("SV").run(program, shots=16).result()
     assert result.get_counts_as_tuples() == {(1, 1): 16}
 
 
@@ -66,7 +66,7 @@ def test_sum_across_mismatched_dims_fails_at_lowering():
     program = fq.Program([qt, qb])
     program.add(fq.ops.Sum, (qt[0], qb[0]))  # frontend does not raise
     with pytest.raises(MatrixImplementationError):
-        fq.backends.StateVectorBackend().run(
+        fq.backends.SimulatorBackend("SV").run(
             program, result_config={"counts": False, "statevector": True}
         ).result()
 
@@ -82,7 +82,7 @@ def test_sum_entangles_two_qutrits():
     # equality rather than truthiness for dim > 2.
     program.add(fq.ops.Sum, (0, 1), condition=(creg[0], 2))  # target -> (2+0)%3 = 2
     program.add_measurement(1, 1)
-    result = fq.backends.StateVectorBackend().run(program, shots=32).result()
+    result = fq.backends.SimulatorBackend("SV").run(program, shots=32).result()
     assert result.get_counts_as_tuples() == {(2, 2): 32}
 
 
@@ -104,10 +104,10 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
         return p
 
     fast_counts = (
-        fq.backends.StateVectorBackend().run(build(False), shots=8, seed=7).result().get_counts_as_tuples()
+        fq.backends.SimulatorBackend("SV").run(build(False), shots=8, seed=7).result().get_counts_as_tuples()
     )
     dyn_counts = (
-        fq.backends.StateVectorBackend().run(build(True), shots=8, seed=7).result().get_counts_as_tuples()
+        fq.backends.SimulatorBackend("SV").run(build(True), shots=8, seed=7).result().get_counts_as_tuples()
     )
     assert fast_counts == dyn_counts == {(2,): 8}
 
@@ -119,7 +119,7 @@ def test_cclock_unequal_dimensions_runs_through_backend():
     program.add(fq.ops.Shift(1), qt[0])  # control -> |1>
     program.add(fq.ops.X, qb[0])         # target -> |1>
     program.add(fq.ops.CClock(1), (qt[0], qb[0]))
-    result = fq.backends.StateVectorBackend().run(
+    result = fq.backends.SimulatorBackend("SV").run(
         program, result_config={"counts": False, "statevector": True}
     ).result()
     sv = result.get_statevector()
@@ -164,7 +164,7 @@ def test_qutrit_circuit_with_new_gates_produces_expected_counts():
     program.add(fq.ops.CClock(1), (0, 1))
     program.measure_all()
 
-    result = fq.backends.StateVectorBackend().run(
+    result = fq.backends.SimulatorBackend("SV").run(
         program, shots=50, seed=0, result_config={"counts": True}
     ).result()
     assert result.get_counts_as_tuples() == {(0, 0): 50}
@@ -178,6 +178,6 @@ def test_qubit_only_gate_on_qutrit_does_not_raise_at_add_but_raises_at_run():
     program = fq.Program([qreg])
     program.add(fq.ops.H, 0)  # frontend stays neutral: does not raise here
     with pytest.raises(BackendValidationError):
-        fq.backends.StateVectorBackend().run(
+        fq.backends.SimulatorBackend("SV").run(
             program, result_config={"counts": False, "statevector": True}
         ).result()

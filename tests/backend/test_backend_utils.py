@@ -3,7 +3,7 @@ from fatqat.backends.engine_contract import (
     _DensityMatrixResultRequest,
     _StateVectorResultRequest,
 )
-from fatqat.backends.matrix_backend import _resolve_result_request
+from fatqat.backends.simulator_backend import _resolve_result_request
 from fatqat.result import _DensityMatrixResultConfig, _StateVectorResultConfig
 
 

@@ -21,7 +21,8 @@ class _StateVectorResultConfig:
     - `True`: explicitly request the field
     - `False`: explicitly suppress the field
 
-    For :py:class:`~fatqat.backends.StateVectorBackend`, the defaults are:
+    For :py:class:`~fatqat.backends.SimulatorBackend` with
+    ``method="statevector"``, the defaults are:
 
     - `counts=None`: produce counts when the program contains at least one
       measurement
@@ -48,7 +49,8 @@ class _DensityMatrixResultConfig:
     Each field is tri-state with the same meaning as `_StateVectorResultConfig`:
     `None` lets the backend choose, `True` requests, `False` suppresses.
 
-    For :py:class:`~fatqat.backends.DensityMatrixBackend`, the defaults are:
+    For :py:class:`~fatqat.backends.SimulatorBackend` with
+    ``method="density_matrix"``, the defaults are:
 
     - `counts=None`: produce counts when the program contains at least one
       measurement
@@ -211,7 +213,7 @@ class Result:
             >>> program = fq.Program(1, 1)
             >>> program.add(fq.ops.X, 0)
             >>> program.add_measurement(0, 0)
-            >>> result = fq.backends.StateVectorBackend().run(program, shots=10).result()
+            >>> result = fq.backends.SimulatorBackend("SV").run(program, shots=10).result()
             >>> result.get_counts()
             {'1': 10}
         """
@@ -249,7 +251,7 @@ class Result:
             >>> import fatqat as fq
             >>> program = fq.Program(1)
             >>> program.add(fq.ops.X, 0)
-            >>> result = fq.backends.StateVectorBackend().run(
+            >>> result = fq.backends.SimulatorBackend("SV").run(
             ...     program,
             ...     result_config={"counts": False, "statevector": True},
             ... ).result()
@@ -275,7 +277,7 @@ class Result:
             >>> import fatqat as fq
             >>> program = fq.Program(1)
             >>> program.add(fq.ops.H, 0)
-            >>> result = fq.backends.DensityMatrixBackend().run(
+            >>> result = fq.backends.SimulatorBackend("DM").run(
             ...     program,
             ...     result_config={"counts": False, "density_matrix": True},
             ... ).result()

@@ -4,14 +4,14 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
-from fatqat.backends import ApplyMatrixStep, MeasurementStep, StateVectorBackend
+from fatqat.backends import ApplyMatrixStep, MeasurementStep, SimulatorBackend
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
 from fatqat.program import Program
 
 
 def _resolve(program):
-    backend = StateVectorBackend()
+    backend = SimulatorBackend("SV")
     plan, _facts = backend._lower(program, backend.resolve_layout(program))
     return plan
 
@@ -51,7 +51,7 @@ def test_target_aware_map_allows_registered_target_key():
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
     m = ImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
-    backend = StateVectorBackend(implementation_map=m)
+    backend = SimulatorBackend("SV", implementation_map=m)
 
     p = Program(2)
     p.add(ops.CZ, (0, 1))
@@ -67,7 +67,7 @@ def test_target_aware_map_rejects_illegal_target_key():
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
     m = ImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
-    backend = StateVectorBackend(implementation_map=m)
+    backend = SimulatorBackend("SV", implementation_map=m)
 
     p = Program(2)
     p.add(ops.CZ, (1, 0))
@@ -85,7 +85,7 @@ def test_target_aware_map_unsupported_family_still_raises_unsupported_operation(
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
     m = ImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
-    backend = StateVectorBackend(implementation_map=m)
+    backend = SimulatorBackend("SV", implementation_map=m)
 
     p = Program(1)
     p.add(ops.X, 0)
@@ -95,7 +95,7 @@ def test_target_aware_map_unsupported_family_still_raises_unsupported_operation(
 
 
 def test_legacy_default_map_still_resolves_any_target_key():
-    backend = StateVectorBackend()
+    backend = SimulatorBackend("SV")
     p = Program(2)
     p.add(ops.CZ, (1, 0))
 

@@ -2,7 +2,7 @@ import pytest
 
 import fatqat as fq
 from fatqat import operations as ops
-from fatqat.backends import StateVectorBackend
+from fatqat.backends import SimulatorBackend
 
 
 def _random_dynamic_program():
@@ -22,10 +22,10 @@ def _random_dynamic_program():
 def test_parallel_counts_match_serial_for_same_seed(parallel_mode, seed):
     p = _random_dynamic_program()
 
-    serial = StateVectorBackend(options={"max_workers": 1}).run(
+    serial = SimulatorBackend("SV", options={"max_workers": 1}).run(
         p, shots=40, seed=seed
     ).result().get_counts()
-    parallel = StateVectorBackend(
+    parallel = SimulatorBackend("SV", 
         options={"max_workers": 2, "parallel_mode": parallel_mode}
     ).run(p, shots=40, seed=seed).result().get_counts()
 
@@ -35,7 +35,7 @@ def test_parallel_counts_match_serial_for_same_seed(parallel_mode, seed):
 def test_parallel_mode_serial_wins_over_max_workers():
     p = _random_dynamic_program()
 
-    counts = StateVectorBackend(
+    counts = SimulatorBackend("SV", 
         options={"max_workers": 2, "parallel_mode": "serial"}
     ).run(p, shots=12, seed=11).result().get_counts()
 
@@ -47,4 +47,4 @@ def test_unknown_parallel_mode_rejected_at_construction():
     # unknown parallel_mode fails fast here rather than being deferred to a
     # run and swallowed into a failed Job.
     with pytest.raises(fq.errors.BackendValidationError, match="unsupported parallel_mode"):
-        StateVectorBackend(options={"max_workers": 2, "parallel_mode": "not-a-mode"})
+        SimulatorBackend("SV", options={"max_workers": 2, "parallel_mode": "not-a-mode"})

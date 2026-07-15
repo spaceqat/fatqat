@@ -117,6 +117,6 @@ program.add(fq.ops.SubspaceRX(np.pi, (0, 2)), 0)   # |2> -> |0> (up to global ph
 program.add(fq.ops.CClock(1), (0, 1))              # phase-only here: qubit 1 stays |0>
 program.measure_all()
 
-result = fq.backends.StateVectorBackend().run(program, shots=100).result()
+result = fq.backends.SimulatorBackend("SV").run(program, shots=100).result()
 print(result.get_counts_as_tuples())               # {(0, 0): 100}
 ```

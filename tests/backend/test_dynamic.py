@@ -3,13 +3,13 @@ import pytest
 
 import fatqat as fq
 from fatqat import operations as ops
-from fatqat.backends import ApplyMatrixStep, MeasurementStep, ResetStep, StateVectorBackend
+from fatqat.backends import ApplyMatrixStep, MeasurementStep, ResetStep, SimulatorBackend
 from fatqat.backends.numpy_engine import _requires_dynamic_execution
 from fatqat.program import Program
 
 
 def _lower(p):
-    b = StateVectorBackend()
+    b = SimulatorBackend("SV")
     return b._lower(p, b.resolve_layout(p))
 
 
@@ -81,7 +81,7 @@ def test_reset_and_reuse_counts():
     p.add_measurement(0, 0)
     p.add(fq.ops.Reset, 0)
     p.add_measurement(0, 1)
-    counts = StateVectorBackend().run(p, shots=32, seed=0).result().get_counts()
+    counts = SimulatorBackend("SV").run(p, shots=32, seed=0).result().get_counts()
     assert counts == {"01": 32}  # c1=0 (left), c0=1 (right) -> "01"
 
 
@@ -92,7 +92,7 @@ def test_dynamic_counts_use_snapshots_not_final_index():
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
     p.add(fq.ops.Reset, 0)
-    counts = StateVectorBackend().run(p, shots=10, seed=0).result().get_counts()
+    counts = SimulatorBackend("SV").run(p, shots=10, seed=0).result().get_counts()
     assert counts == {"1": 10}
 
 
@@ -100,7 +100,7 @@ def test_condition_only_statevector_default_at_many_shots():
     # Dynamic (condition) but no measurement/reset -> statevector available/default.
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 0))  # applies (slot 0 == 0)
-    sv = StateVectorBackend().run(p, shots=8).result().get_statevector()
+    sv = SimulatorBackend("SV").run(p, shots=8).result().get_statevector()
     expected = np.zeros(4, dtype=complex)
     expected[0b10] = 1.0  # qubit 1 -> |1>
     assert np.allclose(sv, expected)
@@ -110,7 +110,7 @@ def test_statevector_with_reset_and_many_shots_rejected():
     p = Program(1)
     p.add(fq.ops.Reset, 0)
     with pytest.raises(fq.errors.BackendValidationError):
-        StateVectorBackend().run(p, shots=10, result_config={"statevector": True})
+        SimulatorBackend("SV").run(p, shots=10, result_config={"statevector": True})
 
 
 def test_conditional_reset_fires_when_guard_true():
@@ -120,7 +120,7 @@ def test_conditional_reset_fires_when_guard_true():
     p.add_measurement(0, 0)
     p.add(fq.ops.Reset, 0, condition=(0, 1))
     p.add_measurement(0, 1)
-    counts = StateVectorBackend().run(p, shots=16, seed=0).result().get_counts()
+    counts = SimulatorBackend("SV").run(p, shots=16, seed=0).result().get_counts()
     assert counts == {"01": 16}  # c1=0, c0=1
 
 
@@ -132,7 +132,7 @@ def test_conditional_reset_skipped_when_guard_false():
     p.add_measurement(0, 0)
     p.add(fq.ops.Reset, 0, condition=(0, 0))
     p.add_measurement(0, 1)
-    counts = StateVectorBackend().run(p, shots=16, seed=0).result().get_counts()
+    counts = SimulatorBackend("SV").run(p, shots=16, seed=0).result().get_counts()
     assert counts == {"11": 16}  # c1=1, c0=1 -> reset did not fire
 
 
@@ -142,7 +142,7 @@ def test_condition_only_statevector_ignores_shots_value():
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 0))
     sv = (
-        StateVectorBackend()
+        SimulatorBackend("SV")
         .run(p, shots=0, result_config={"statevector": True})
         .result()
         .get_statevector()
@@ -195,7 +195,7 @@ def test_grouped_reset_resets_all_targets_in_dynamic_path():
     p.add(fq.ops.Reset, (0, 1))
     p.add_measurement((0, 1), (0, 1))
 
-    counts = StateVectorBackend().run(p, shots=8, seed=0).result().get_counts()
+    counts = SimulatorBackend("SV").run(p, shots=8, seed=0).result().get_counts()
 
     assert counts == {"00": 8}
 
@@ -207,7 +207,7 @@ def test_grouped_measurement_writes_all_classical_slots_in_dynamic_path():
     p.add_measurement((0, 1), (1, 0))
     p.add(ops.X, 0)  # makes the program dynamic because q0 was measured
 
-    counts = StateVectorBackend().run(p, shots=8, seed=0).result().get_counts()
+    counts = SimulatorBackend("SV").run(p, shots=8, seed=0).result().get_counts()
 
     assert counts == {"11": 8}
 
@@ -222,7 +222,7 @@ def _random_dynamic_program():
 
 def test_dynamic_seed_is_repeatable_with_per_shot_streams():
     p = _random_dynamic_program()
-    backend = StateVectorBackend(options={"max_workers": 1})
+    backend = SimulatorBackend("SV", options={"max_workers": 1})
 
     a = backend.run(p, shots=64, seed=2026).result().get_counts()
     b = backend.run(p, shots=64, seed=2026).result().get_counts()
@@ -235,7 +235,7 @@ def test_dynamic_statevector_single_shot_stays_serial_and_available():
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
     p.add(fq.ops.Reset, 0)
-    result = StateVectorBackend(options={"max_workers": 4}).run(
+    result = SimulatorBackend("SV", options={"max_workers": 4}).run(
         p,
         shots=1,
         seed=2026,

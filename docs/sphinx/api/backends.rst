@@ -1,11 +1,7 @@
 Backends (``fq.backends``)
 ============================
 
-.. autoclass:: fatqat.backends.StateVectorBackend
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.backends.DensityMatrixBackend
+.. autoclass:: fatqat.backends.SimulatorBackend
    :members:
    :show-inheritance:
 
