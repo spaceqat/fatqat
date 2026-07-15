@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .base import Operation
+from .barrier import Barrier, BarrierGate
 from .fixed_gates import (
     CCX,
     CS,
@@ -46,6 +47,7 @@ __all__ = [
     "RX", "RY", "RZ", "Phase",
     "CPhase",
     "Reset",
+    "Barrier",
     "Measurement",
     "Shift", "Clock", "Sum", "SwapLevels", "Fourier", "Fourierdg",
     "SubspaceRX", "SubspaceRY", "SubspaceRZ", "CClock",
