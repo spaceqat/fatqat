@@ -1,13 +1,13 @@
-"""Resolved execution-plan step types shared by the statevector backend and engine.
+"""Resolved execution-plan step types shared by the simulator backend and simulators.
 
 A :py:class:`~fatqat.Program` lowers to a `list[ResolvedStep]`: each step is either an
 `ApplyMatrixStep` (a local matrix payload built from a matrix-implementation
 rule plus layout-resolved target indices), a `MeasurementStep`, or a
 `ResetStep`. Defined here, separate from both `implementation/` (the rule
 protocol that only ever produces a bare matrix, never a step) and
-`matrix_backend.py`/`numpy_engine.py` (which would otherwise need to import
-this type from each other and cycle), so both the backend and the engine can
-import it without depending on one another.
+`simulator_backend.py` / the `simulator/` package (which would otherwise need
+to import this type from each other and cycle), so both the backend and the
+simulators can import it without depending on one another.
 """
 
 from __future__ import annotations
