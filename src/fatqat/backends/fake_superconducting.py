@@ -12,8 +12,15 @@ Fixed 16-qubit device, row-major numbered:
 Native gate set is exactly ``RZ``, ``SX`` (single-qubit, any of the 16
 labels), and ``CZ`` (nearest-neighbor edges only, both directions stored).
 This is a prototype execution target for the compiler group, not a realistic
-device model: no routing, no timing, no noise. See
+device model: no routing, no timing, and ideal by default. See
 ``docs/superpowers/specs/2026-07-09-fatqat-target-aware-implementation-map-and-4x4-fake-superconducting-backend-design.md``.
+
+A calibration-derived noise profile is available on demand:
+``FakeSuperconducting4x4Backend.default_noise_model()`` builds a
+:py:class:`~fatqat.NoiseModel` from the fake device's per-qubit ``T1``/``T2``
+table (relaxation on ``SX``), a ``CZ`` depolarizing rate, and per-qubit
+readout confusion - the Qiskit ``NoiseModel.from_backend`` workflow. Pass it
+back via ``noise=`` to run noisy; the backend stays ideal unless asked.
 
 The native-gate-set restriction applies to unitary operations only.
 Measurement and reset are resolved by `SimulatorBackend._lower` before any
@@ -26,6 +33,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 from .. import operations as ops
 from ..errors import BackendValidationError
 from ..implementation import (
@@ -34,6 +43,7 @@ from ..implementation import (
     default_matrix_implementation_map,
 )
 from ..layout import ResourceLayout
+from ..noise import Depolarizing, NoiseModel, relaxation_channels
 from ..operations import Operation
 from ..program import Program
 from .simulator_backend import SimulatorBackend
@@ -41,6 +51,25 @@ from .simulator_backend import SimulatorBackend
 GRID_ROWS = 4
 GRID_COLS = 4
 N_QUBITS = GRID_ROWS * GRID_COLS
+
+# --- fake calibration profile (per-qubit facts a real device would measure) ---
+# Deliberately simple deterministic numbers: T1 varies a little across the
+# grid so per-qubit (integer-selector) noise entries are visibly per-qubit,
+# T2 stays within its physical bound T2 <= 2*T1, and readout is slightly
+# asymmetric (reporting 1 for a true 0 is rarer than the reverse), matching
+# the usual superconducting readout skew.
+_SX_DURATION = 40e-9  # seconds; RZ is virtual (zero duration -> no noise)
+_CZ_DEPOLARIZING_P = 0.01
+_READOUT_P01 = 0.02  # P(report 1 | true 0)
+_READOUT_P10 = 0.04  # P(report 0 | true 1)
+
+
+def _qubit_t1(qubit: int) -> float:
+    return 60e-6 + 2e-6 * qubit
+
+
+def _qubit_t2(qubit: int) -> float:
+    return 0.8 * _qubit_t1(qubit)
 
 
 def _nearest_neighbor_edges() -> tuple[tuple[int, int], ...]:
@@ -104,7 +133,11 @@ class FakeSuperconducting4x4Backend(SimulatorBackend):
     or any non-qubit-dimension register).
     """
 
-    def __init__(self, options: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        options: dict[str, Any] | None = None,
+        noise: NoiseModel | None = None,
+    ) -> None:
         """Create a fake 4x4 superconducting backend.
 
         Args:
@@ -112,12 +145,68 @@ class FakeSuperconducting4x4Backend(SimulatorBackend):
                 (``max_workers``, ``parallel_mode``). The implementation map
                 is fixed to `fake_superconducting_4x4_implementation_map()`
                 and cannot be overridden.
+            noise: Optional :py:class:`~fatqat.NoiseModel`, exactly as on
+                :py:class:`~fatqat.backends.SimulatorBackend`. ``None`` (the
+                default) keeps the backend ideal; pass
+                ``self.default_noise_model()`` for the device's
+                calibration-derived profile.
         """
         super().__init__(
             method="statevector",
             options=options,
             implementation_map=fake_superconducting_4x4_implementation_map(),
+            noise=noise,
         )
+
+    @classmethod
+    def default_noise_model(cls) -> NoiseModel:
+        """Build this device's calibration-derived noise model.
+
+        The from-backend workflow: the *backend* authors the model from its
+        own device facts, before any user program (or register) exists, so
+        every selector is a flat device qubit index. Per qubit, ``SX``
+        carries thermal relaxation converted from the qubit's ``T1``/``T2``
+        and the gate duration, and readout gets an asymmetric confusion
+        matrix; ``CZ`` carries a joint depolarizing channel on every edge.
+        ``RZ`` is virtual (zero duration), so it stays noise-free.
+
+        The returned model is a fresh, ordinary
+        :py:class:`~fatqat.NoiseModel`: inspect it, extend it with your own
+        channels, and pass it back via ``noise=``.
+
+        Examples:
+            >>> import fatqat as fq
+            >>> Fake = fq.backends.FakeSuperconducting4x4Backend
+            >>> backend = Fake(
+            ...     options={"parallel_mode": "serial"},
+            ...     noise=Fake.default_noise_model(),
+            ... )
+            >>> program = fq.Program(1, 1)
+            >>> program.add(fq.ops.SX, 0)
+            >>> program.add(fq.ops.SX, 0)  # SX SX = X, up to a phase
+            >>> program.add_measurement(0, 0)
+            >>> counts = backend.run(program, shots=2000, seed=1).result().get_counts()
+            >>> counts["1"] > 1800  # mostly 1, but noise leaks some 0s
+            True
+        """
+        noise = NoiseModel()
+        for qubit in range(N_QUBITS):
+            damping, dephasing = relaxation_channels(
+                _qubit_t1(qubit), _qubit_t2(qubit), _SX_DURATION
+            )
+            noise.add_noise(ops.SX, damping, targets=(qubit,))
+            noise.add_noise(ops.SX, dephasing, targets=(qubit,))
+            noise.add_readout_error(
+                np.array(
+                    [
+                        [1 - _READOUT_P01, _READOUT_P10],
+                        [_READOUT_P01, 1 - _READOUT_P10],
+                    ]
+                ),
+                target=qubit,
+            )
+        noise.add_noise(ops.CZ, Depolarizing(p=_CZ_DEPOLARIZING_P))
+        return noise
 
     @property
     def implementation_map(self) -> ImplementationMap:
