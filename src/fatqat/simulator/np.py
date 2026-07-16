@@ -36,6 +36,10 @@ Semantics differences:
   unravelling, one rng draw), forcing the per-shot path; the density matrix
   applies the exact Kraus sum ``sum_i K_i rho K_i^dagger`` (no rng draw), so
   an unconditional channel stays on the fast path.
+- classical readout error (``MeasurementStep.confusions``) is identical on
+  both: the collapse keeps the true outcome and only the reported clbit value
+  is resampled, so it never affects path classification. On the per-shot path
+  feedforward conditions read the (possibly corrupted) reported value.
 """
 
 from __future__ import annotations
@@ -130,6 +134,54 @@ def _condition_matches(
 ) -> bool:
     """Return whether a lowered feedforward condition passes."""
     return condition is None or all(clbits[c] == v for c, v in condition)
+
+
+def _report_digit(true_digit: int, confusion, rng: np.random.Generator) -> int:
+    """Sample the reported digit for one measurement through readout error.
+
+    ``confusion`` is column-stochastic (``C[i, j] = P(report i | true j)``)
+    or ``None`` for an error-free readout. Only the reported classical value
+    is affected; the caller's collapsed state keeps the true outcome.
+    """
+    if confusion is None:
+        return true_digit
+    return int(rng.choice(confusion.shape[0], p=confusion[:, true_digit]))
+
+
+def _confusions_by_clbit(plan: list[ResolvedStep]) -> dict[int, np.ndarray]:
+    """Map each clbit to the confusion of its *last* writer, mirroring decode.
+
+    Fast-path counts decode only each clbit's final value (later measurement
+    writes replace earlier ones, see ``decode_indices_to_clbit_rows``), so
+    readout error likewise applies the last writer's confusion - an earlier
+    writer's confusion must not survive an error-free overwrite, hence the
+    unconditional assignment.
+    """
+    by_clbit: dict[int, np.ndarray] = {}
+    for step in plan:
+        if isinstance(step, MeasurementStep):
+            confusions = step.confusions or (None,) * len(step.classical_indices)
+            for clbit, confusion in zip(step.classical_indices, confusions):
+                by_clbit[clbit] = confusion
+    return {clbit: c for clbit, c in by_clbit.items() if c is not None}
+
+
+def _apply_readout_confusion(
+    rows: np.ndarray,
+    by_clbit: dict[int, np.ndarray],
+    rng: np.random.Generator,
+) -> None:
+    """Resample confusion-bearing clbit columns of decoded rows, in place."""
+    for clbit, confusion in by_clbit.items():
+        dim = confusion.shape[0]
+        true_column = rows[:, clbit].copy()
+        for true_digit in range(dim):
+            mask = true_column == true_digit
+            hits = int(mask.sum())
+            if hits:
+                rows[mask, clbit] = rng.choice(
+                    dim, size=hits, p=confusion[:, true_digit]
+                )
 
 
 # --- shared orchestration ---
@@ -273,6 +325,7 @@ class _NumpyMatrixSimulator(Simulator):
             rows = decode_indices_to_clbit_rows(
                 indices, measurements, self._dims, self._n_clbits
             )
+            _apply_readout_confusion(rows, _confusions_by_clbit(plan), rng)
             outcome_keys, outcome_counts = reduce_to_counts(rows)
         if state_requested:
             state = self.export_state()
@@ -351,8 +404,11 @@ class _NumpyMatrixSimulator(Simulator):
                     self.apply_channel(step, rng)
             elif isinstance(step, MeasurementStep):
                 bits = self.measure_subsystems(step.measured_indices, rng)
-                for c, bit in zip(step.classical_indices, bits):
-                    clbits[c] = bit
+                confusions = step.confusions or (None,) * len(bits)
+                # The collapse keeps the true outcome; only the reported
+                # value is resampled, and later conditions read the report.
+                for c, bit, confusion in zip(step.classical_indices, bits, confusions):
+                    clbits[c] = _report_digit(bit, confusion, rng)
             elif _condition_matches(step.condition, clbits):
                 self.reset_subsystems(step.reset_indices, rng)
         return tuple(clbits)

@@ -493,6 +493,7 @@ class SimulatorBackend:
                     MeasurementStep(
                         measured_indices=measured_indices,
                         classical_indices=classical_indices,
+                        confusions=self._resolve_confusions(measured_indices, layout),
                     )
                 )
                 continue
@@ -563,6 +564,36 @@ class SimulatorBackend:
             ),
         )
 
+    def _resolve_confusions(
+        self,
+        measured_indices: tuple[int, ...],
+        layout: ResourceLayout,
+    ) -> tuple[Any, ...] | None:
+        """Resolve per-subsystem readout confusion matrices for one measurement.
+
+        Returns ``None`` when no readout error applies to any measured
+        subsystem, so the noise-free (and the common) case allocates nothing.
+
+        Raises :py:exc:`~fatqat.errors.BackendValidationError` if a selected
+        matrix's dimension does not match the measured subsystem.
+        """
+        if not self._noise_model.has_readout_error():
+            return None
+        resolved = []
+        for measured in measured_indices:
+            confusion = self._noise_model.readout_error_for(measured, layout)
+            if confusion is not None:
+                dim = layout.system_dims[measured]
+                if confusion.shape != (dim, dim):
+                    raise BackendValidationError(
+                        f"readout confusion matrix of shape {confusion.shape} "
+                        f"selected for subsystem {measured} of dimension {dim}"
+                    )
+            resolved.append(confusion)
+        if all(confusion is None for confusion in resolved):
+            return None
+        return tuple(resolved)
+
     def _resolve_channel_step(
         self,
         channel: Channel,
@@ -623,6 +654,8 @@ class SimulatorBackend:
                 )
             else:
                 accepted.append(channel_type.__name__)
+        if noise_model.has_readout_error():
+            accepted.append("readout_error")
         if noise_model.qubit_noise:
             rejected.append("qubit_noise")
             warnings_.append(

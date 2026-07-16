@@ -89,10 +89,34 @@ class ApplyChannelStep:
 
 @dataclass(frozen=True)
 class MeasurementStep:
-    """Resolved measurement: flat subsystem indices into matching flat clbit indices."""
+    """Resolved measurement: flat subsystem indices into matching flat clbit indices.
+
+    ``confusions`` carries classical readout error, resolved from the noise
+    model at lowering: one optional column-stochastic confusion matrix per
+    measured subsystem (aligned with ``measured_indices``), or ``None`` when
+    no readout error applies to this measurement at all. The physical
+    collapse always uses the true outcome; only the value written to the
+    classical register is resampled through the matrix, so state export and
+    qubit reuse are untouched and execution-strategy classification never
+    changes.
+    """
 
     measured_indices: tuple[int, ...]
     classical_indices: tuple[int, ...]
+    confusions: tuple[np.ndarray | None, ...] | None = None
+
+    def __post_init__(self) -> None:
+        # Same freezing policy as the array-carrying steps above.
+        if self.confusions is None:
+            return
+        frozen: list[np.ndarray | None] = []
+        for confusion in self.confusions:
+            if confusion is not None:
+                if confusion.flags.writeable:
+                    confusion = np.array(confusion, copy=True)
+                confusion.flags.writeable = False
+            frozen.append(confusion)
+        object.__setattr__(self, "confusions", tuple(frozen))
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,6 @@
 """NoiseModel routing: selector validation, lookup precedence, dual addressing."""
 
+import numpy as np
 import pytest
 
 import fatqat as fq
@@ -136,3 +137,72 @@ def test_channel_types_lists_every_attached_descriptor_type():
     noise.add_noise(fq.ops.H, PhaseDamping(p=0.2))
 
     assert noise.channel_types() == frozenset({Depolarizing, PhaseDamping})
+
+
+# --- readout error registration and lookup ---
+
+_C_MILD = np.array([[0.9, 0.2], [0.1, 0.8]])
+_C_STRONG = np.array([[0.5, 0.5], [0.5, 0.5]])
+
+
+def test_readout_error_all_target_default_and_specific_override():
+    noise = NoiseModel()
+    noise.add_readout_error(_C_MILD)
+    noise.add_readout_error(_C_STRONG, target=1)
+    layout = _layout_for(_two_qubit_program())
+
+    assert np.array_equal(noise.readout_error_for(0, layout), _C_MILD)
+    assert np.array_equal(noise.readout_error_for(1, layout), _C_STRONG)
+    assert noise.has_readout_error()
+
+
+def test_readout_error_ref_target_resolves_through_layout():
+    noise = NoiseModel()
+    program = _two_qubit_program()
+    layout = _layout_for(program)
+    noise.add_readout_error(_C_MILD, target=program.qreg[0][1])
+
+    assert noise.readout_error_for(1, layout) is not None
+    assert noise.readout_error_for(0, layout) is None
+    # A foreign register's ref can never match this program's layout.
+    other = NoiseModel()
+    other.add_readout_error(_C_MILD, target=fq.QuantumRegister(2)[1])
+    assert other.readout_error_for(1, layout) is None
+
+
+def test_readout_error_last_specific_entry_wins():
+    noise = NoiseModel()
+    noise.add_readout_error(_C_MILD, target=0)
+    noise.add_readout_error(_C_STRONG, target=0)
+    layout = _layout_for(_two_qubit_program())
+
+    assert np.array_equal(noise.readout_error_for(0, layout), _C_STRONG)
+
+
+def test_readout_error_matrix_is_copied_and_frozen():
+    noise = NoiseModel()
+    source = _C_MILD.copy()
+    noise.add_readout_error(source)
+    layout = _layout_for(_two_qubit_program())
+    source[0, 0] = 0.0  # caller mutation must not reach the stored matrix
+
+    stored = noise.readout_error_for(0, layout)
+    assert stored[0, 0] == 0.9
+    assert not stored.flags.writeable
+
+
+def test_readout_error_validation():
+    noise = NoiseModel()
+    with pytest.raises(ValueError, match="square"):
+        noise.add_readout_error(np.ones((2, 3)))
+    with pytest.raises(ValueError, match="column-stochastic"):
+        noise.add_readout_error(np.array([[0.9, 0.1], [0.2, 0.8]]))
+    with pytest.raises(ValueError, match="\\[0, 1\\]"):
+        noise.add_readout_error(np.array([[1.5, 0.0], [-0.5, 1.0]]))
+    with pytest.raises(TypeError, match="target"):
+        noise.add_readout_error(_C_MILD, target="q0")
+    with pytest.raises(ValueError, match=">= 0"):
+        noise.add_readout_error(_C_MILD, target=-1)
+    program = fq.Program(1, 1)
+    with pytest.raises(TypeError, match="QuantumRegister"):
+        noise.add_readout_error(_C_MILD, target=program.clreg[0][0])
