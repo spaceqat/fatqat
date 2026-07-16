@@ -1,16 +1,15 @@
-"""Tests statevector engine probabilities, sampling, and collapse."""
+"""Tests statevector simulator probabilities, sampling, and collapse."""
 
 import numpy as np
 
-from fatqat.backends.numpy_engine import NumpyEngine, _collapse_sv
+from fatqat.simulator.np import NumpySVSimulator
 from fatqat.backends.steps import ApplyMatrixStep
-
 
 _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
 
 
 def _h_engine(n_qubits, target):
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((2,) * n_qubits)
     eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(target,)))
     return eng
@@ -22,7 +21,7 @@ def test_probabilities():
 
 
 def test_sample_indices_deterministic_state():
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((2, 2))  # always |00> -> index 0
     rng = np.random.default_rng(0)
     idx = eng.sample_indices(100, rng)
@@ -76,27 +75,30 @@ def test_collapse_all_qubits_projects_to_single_basis_state():
     assert np.isclose(np.linalg.norm(eng.export_state()), 1.0)
 
 
-def test_collapse_state_returns_index_and_projected_copy_without_mutating_input():
-    state = np.array([0.5, 0.5, 0.5, 0.5], dtype=complex)
-    original = state.copy()
+def test_collapse_returns_index_and_projects_without_mutating_prior_buffer():
+    eng = NumpySVSimulator()
+    eng.initialize((2, 2))
+    eng.state = np.array([0.5, 0.5, 0.5, 0.5], dtype=complex)
+    prior = eng.state  # collapse must not mutate this buffer in place
+    original = prior.copy()
     rng = np.random.default_rng(1)
 
-    idx, collapsed = _collapse_sv(state, [1], (2, 2), rng)
+    idx = eng.collapse([1], rng)
 
     bit = (idx >> 1) & 1
     expected = np.zeros(4, dtype=complex)
     expected[bit << 1] = 1 / np.sqrt(2)
     expected[(bit << 1) | 1] = 1 / np.sqrt(2)
 
-    assert np.allclose(state, original)
-    assert np.allclose(collapsed, expected)
-    assert np.isclose(np.linalg.norm(collapsed), 1.0)
+    assert np.allclose(prior, original)  # prior buffer left untouched
+    assert np.allclose(eng.export_state(), expected)
+    assert np.isclose(np.linalg.norm(eng.export_state()), 1.0)
 
 
 def test_measure_qutrit_digit_extraction():
     from fatqat.implementation.matrices import shift_matrix
 
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((3,))
     eng._state = shift_matrix(3, 2) @ eng.export_state()
     (digit,) = eng.measure_subsystems((0,), np.random.default_rng(0))

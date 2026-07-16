@@ -14,9 +14,11 @@ method-dependent facts are bound as instance attributes in ``__init__`` -
 the backend never branches on method afterwards:
 
 - ``_state_field``: the native state field name (``"statevector"`` or
-  ``"density_matrix"``). Drives the engine's ``state_semantics``, the
-  result-config flag read, the `Result` keyword, the availability name, the
-  metadata echo, and validation wording.
+  ``"density_matrix"``). Drives the result-config flag read, the `Result`
+  keyword, the availability name, the metadata echo, and validation wording.
+- ``_simulator_cls``: the `Simulator` subclass this method drives
+  (`NumpySVSimulator` or `NumpyDMSimulator`); one instance is bound to
+  ``_simulator`` and reused across runs.
 - ``_result_config_cls`` / ``_request_cls``: the method's frozen
   result-config and engine-request value objects. Supported
   ``result_config`` keys are derived from the config dataclass fields.
@@ -25,11 +27,11 @@ the backend never branches on method afterwards:
   branch; `False` for density matrix, where reset is a deterministic
   channel).
 
-The backend/engine seam is unchanged: this class calls
-``NumpyEngine(config, state_semantics=...)``,
-``engine.initialize(system_dims, n_clbits)``, and
-``engine.run(plan, shots, seed, request) -> RawResult`` exactly as the
-per-method backends did before compaction.
+The backend/simulator seam: this class constructs the method's `Simulator`
+subclass once, then calls ``simulator.initialize(system_dims, n_clbits)``
+and ``simulator.run(plan, shots, seed, request) -> RawResult`` per run,
+exactly as the per-method backends did against the engine before this
+refactor.
 """
 
 from __future__ import annotations
@@ -61,6 +63,7 @@ from ..result import (
     _StateVectorResultConfig,
     counts_dict_from_arrays,
 )
+from ..simulator import NumpyDMSimulator, NumpySVSimulator, Simulator
 from .backend_utils import (
     _PlanFacts,
     _normalize_dict_options,
@@ -71,7 +74,6 @@ from .engine_contract import (
     _EngineConfig,
     _StateVectorResultRequest,
 )
-from .numpy_engine import NumpyEngine
 from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
 
 # Canonical method names plus Qiskit-style short aliases, all case-insensitive.
@@ -114,8 +116,8 @@ class SimulatorBackend:
       uses ``multiprocessing``. ``"serial"`` disables process-based parallel
       execution.
 
-    A backend instance reuses one engine across runs, so it is efficient for
-    repeated single-threaded use but is not safe for concurrent ``run()``
+    A backend instance reuses one simulator across runs, so it is efficient
+    for repeated single-threaded use but is not safe for concurrent ``run()``
     calls.
 
     Examples:
@@ -166,15 +168,18 @@ class SimulatorBackend:
         # dispatch point: the methods below read the bound attributes and
         # never branch on the method themselves.
         self._state_field = normalized
+        self._simulator_cls: type[Simulator]
         if normalized == "statevector":
             self._result_config_cls = _StateVectorResultConfig
             self._request_cls = _StateVectorResultRequest
+            self._simulator_cls = NumpySVSimulator
             # A pure state cannot represent the mixed post-reset ensemble, so
             # reset must sample one branch - a random event, like measurement.
             self._reset_is_stochastic = True
         else:
             self._result_config_cls = _DensityMatrixResultConfig
             self._request_cls = _DensityMatrixResultRequest
+            self._simulator_cls = NumpyDMSimulator
             # A density matrix holds the full ensemble, so reset is the
             # deterministic channel |0><0| (x) Tr_target(rho): only
             # measurement (whose outcome is recorded) is stochastic.
@@ -191,12 +196,12 @@ class SimulatorBackend:
         if implementation_map is None:
             implementation_map = default_matrix_implementation_map()
         self._impl_map = implementation_map.copy()
-        # The engine is constructed once and re-initialized per run so its
+        # The simulator is constructed once and re-initialized per run so its
         # buffers can be reused. Because it holds per-run state, a single
         # backend instance is NOT safe for concurrent run() calls
         # (single-threaded use only).
-        self._engine = NumpyEngine(config, state_semantics=self._state_field)
-        self._engine_system: tuple[tuple[int, ...], int] | None = None
+        self._simulator = self._simulator_cls(config=config)
+        self._simulator_system: tuple[tuple[int, ...], int] | None = None
 
     def resolve_layout(self, program: Program) -> ResourceLayout:
         """Build the flat resource layout used by this backend.
@@ -333,11 +338,11 @@ class SimulatorBackend:
         )
 
         system_key = (tuple(system_dims), n_clbits)
-        if self._engine_system != system_key:
-            self._engine.initialize(system_dims, n_clbits)
-            self._engine_system = system_key
+        if self._simulator_system != system_key:
+            self._simulator.initialize(system_dims, n_clbits)
+            self._simulator_system = system_key
 
-        raw = self._engine.run(plan, shots, seed, request)
+        raw = self._simulator.run(plan, shots, seed, request)
         counts = None
         state = raw.state
         state_requested = getattr(request, self._state_field)

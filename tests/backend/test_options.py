@@ -4,7 +4,7 @@ import pytest
 import fatqat as fq
 from fatqat.backends import SimulatorBackend
 from fatqat.backends.engine_contract import _EngineConfig, _StateVectorResultRequest
-from fatqat.backends.parallel import _planned_workers
+from fatqat.simulator.parallel import _planned_workers
 
 
 def test_backend_accepts_known_options():
@@ -12,16 +12,16 @@ def test_backend_accepts_known_options():
         options={"max_workers": 1, "parallel_mode": "serial"}
     )
 
-    assert backend._engine._config.max_workers == 1
-    assert backend._engine._config.parallel_mode == "serial"
+    assert backend._simulator.config.max_workers == 1
+    assert backend._simulator.config.parallel_mode == "serial"
 
 
 def test_backend_warns_and_ignores_unknown_options():
     with pytest.warns(UserWarning, match="ignored unsupported backend options"):
         backend = SimulatorBackend("SV", options={"gpu": True, "foo": 3})
 
-    assert backend._engine._config.max_workers is None
-    assert backend._engine._config.parallel_mode == "auto"
+    assert backend._simulator.config.max_workers is None
+    assert backend._simulator.config.parallel_mode == "auto"
 
 
 def test_serial_backend_option_runs_dynamic_program():

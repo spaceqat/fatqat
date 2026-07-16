@@ -2,20 +2,20 @@ import numpy as np
 import pytest
 
 from fatqat.backends.engine_contract import _EngineConfig, _StateVectorResultRequest
-from fatqat.backends.numpy_engine import NumpyEngine
+from fatqat.simulator.np import NumpySVSimulator
 from fatqat.backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep
 
 
 def test_engine_run_requires_initialize():
-    engine = NumpyEngine(state_semantics="statevector")
-    with pytest.raises(RuntimeError, match="engine not initialized"):
+    engine = NumpySVSimulator()
+    with pytest.raises(AssertionError, match="not initialized"):
         engine.run(
             [], shots=1, seed=0, request=_StateVectorResultRequest(counts=False, statevector=False)
         )
 
 
 def test_engine_run_fast_counts_returns_arrays():
-    engine = NumpyEngine(state_semantics="statevector")
+    engine = NumpySVSimulator()
     engine.initialize((2,), n_clbits=1)
     x = np.array([[0, 1], [1, 0]], dtype=complex)
     result = engine.run(
@@ -32,7 +32,7 @@ def test_engine_run_fast_counts_returns_arrays():
 
 
 def test_engine_run_fast_state_copies_only_when_requested():
-    engine = NumpyEngine(state_semantics="statevector")
+    engine = NumpySVSimulator()
     engine.initialize((2,), n_clbits=0)
     x = np.array([[0, 1], [1, 0]], dtype=complex)
     without_state = engine.run(
@@ -54,7 +54,7 @@ def test_engine_run_fast_state_copies_only_when_requested():
 
 
 def test_engine_run_fast_counts_and_state_share_collapse_event():
-    engine = NumpyEngine(state_semantics="statevector")
+    engine = NumpySVSimulator()
     engine.initialize((2,), n_clbits=1)
     h = (1 / np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=complex)
     result = engine.run(
@@ -70,7 +70,7 @@ def test_engine_run_fast_counts_and_state_share_collapse_event():
 
 
 def test_engine_run_dynamic_counts_use_clbit_snapshots():
-    engine = NumpyEngine(_EngineConfig(max_workers=1), state_semantics="statevector")
+    engine = NumpySVSimulator(config=_EngineConfig(max_workers=1))
     engine.initialize((2,), n_clbits=1)
     x = np.array([[0, 1], [1, 0]], dtype=complex)
     result = engine.run(
@@ -88,7 +88,7 @@ def test_engine_run_dynamic_counts_use_clbit_snapshots():
 
 
 def test_engine_run_dynamic_statevector_only_runs_one_trajectory():
-    engine = NumpyEngine(state_semantics="statevector")
+    engine = NumpySVSimulator()
     engine.initialize((2, 2), n_clbits=2)
     x = np.array([[0, 1], [1, 0]], dtype=complex)
     result = engine.run(
@@ -103,7 +103,7 @@ def test_engine_run_dynamic_statevector_only_runs_one_trajectory():
 
 
 def test_engine_run_dynamic_reinitializes_each_shot():
-    engine = NumpyEngine(_EngineConfig(max_workers=1), state_semantics="statevector")
+    engine = NumpySVSimulator(config=_EngineConfig(max_workers=1))
     engine.initialize((2,), n_clbits=1)
     x = np.array([[0, 1], [1, 0]], dtype=complex)
     result = engine.run(
