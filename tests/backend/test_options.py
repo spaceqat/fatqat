@@ -8,8 +8,8 @@ from fatqat.simulator.parallel import _planned_workers
 
 
 def test_backend_accepts_known_options():
-    backend = SimulatorBackend("SV", 
-        options={"max_workers": 1, "parallel_mode": "serial"}
+    backend = SimulatorBackend(
+        "SV", options={"max_workers": 1, "parallel_mode": "serial"}
     )
 
     assert backend._simulator.config.max_workers == 1

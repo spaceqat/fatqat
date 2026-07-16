@@ -3,7 +3,12 @@ import pytest
 
 import fatqat as fq
 from fatqat import operations as ops
-from fatqat.backends import ApplyMatrixStep, MeasurementStep, ResetStep, SimulatorBackend
+from fatqat.backends import (
+    ApplyMatrixStep,
+    MeasurementStep,
+    ResetStep,
+    SimulatorBackend,
+)
 from fatqat.program import Program
 from fatqat.simulator.np import NumpySVSimulator
 
@@ -36,7 +41,7 @@ def test_lower_measure_then_gate_on_disjoint_qubit_is_not_dynamic():
     p.add_measurement(0, 0)
     p.add(ops.X, 1)  # different qubit -> still fast path
     p.add_measurement(1, 1)
-    plan, facts = _lower(p)
+    plan, _ = _lower(p)
     assert _is_dynamic(plan) is False
 
 
@@ -45,14 +50,14 @@ def test_lower_gate_on_measured_qubit_is_dynamic():
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
     p.add(ops.X, 0)  # gate on already-measured qubit
-    plan, facts = _lower(p)
+    plan, _ = _lower(p)
     assert _is_dynamic(plan) is True
 
 
 def test_lower_condition_is_dynamic_and_resolves_indices():
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 1))
-    plan, facts = _lower(p)
+    plan, _ = _lower(p)
     assert _is_dynamic(plan) is True
     gate = plan[0]
     assert isinstance(gate, ApplyMatrixStep)
@@ -173,7 +178,7 @@ def test_lower_adjacent_single_measurements_stay_separate_steps():
     p.add_measurement(0, 0)
     p.add_measurement(1, 1)
 
-    plan, facts = _lower(p)
+    plan, _ = _lower(p)
 
     assert _is_dynamic(plan) is False
     assert plan == [
@@ -240,12 +245,16 @@ def test_dynamic_statevector_single_shot_stays_serial_and_available():
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
     p.add(fq.ops.Reset, 0)
-    result = SimulatorBackend("SV", options={"max_workers": 4}).run(
-        p,
-        shots=1,
-        seed=2026,
-        result_config={"counts": True, "statevector": True},
-    ).result()
+    result = (
+        SimulatorBackend("SV", options={"max_workers": 4})
+        .run(
+            p,
+            shots=1,
+            seed=2026,
+            result_config={"counts": True, "statevector": True},
+        )
+        .result()
+    )
 
     assert sum(result.get_counts().values()) == 1
     assert result.get_statevector().shape == (2,)

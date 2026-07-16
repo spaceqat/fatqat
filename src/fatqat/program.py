@@ -168,7 +168,9 @@ class Program:
                 raise ValueError(f"ref does not belong to this program's {kind_name}s")
             return operand
         if type(operand) is not int:
-            raise TypeError(f"operand must be int or RegisterRef, got {type(operand)!r}")
+            raise TypeError(
+                f"operand must be int or RegisterRef, got {type(operand)!r}"
+            )
         if len(regs) != 1:
             raise TypeError(
                 "integer operands are only allowed when there is exactly one "
@@ -180,7 +182,9 @@ class Program:
         return regs[0][operand]
 
     def _resolve_qubit(self, operand: int | RegisterRef) -> RegisterRef:
-        return self._resolve_ref(operand, self.qreg, QuantumRegister, "quantum register")
+        return self._resolve_ref(
+            operand, self.qreg, QuantumRegister, "quantum register"
+        )
 
     def _resolve_clbit(self, operand: int | RegisterRef) -> RegisterRef:
         return self._resolve_ref(
@@ -320,8 +324,12 @@ class Program:
             ValueError: If the program has a different number of quantum bits
                 than classical bits, or has no registers of either kind.
         """
-        qubits = tuple(ref for reg in self.qreg for ref in (reg[i] for i in range(reg.size)))
-        clbits = tuple(ref for reg in self.creg for ref in (reg[i] for i in range(reg.size)))
+        qubits = tuple(
+            ref for reg in self.qreg for ref in (reg[i] for i in range(reg.size))
+        )
+        clbits = tuple(
+            ref for reg in self.creg for ref in (reg[i] for i in range(reg.size))
+        )
         # Equal-count and non-empty invariants are enforced once in
         # Measurement.__post_init__, reached through add_measurement.
         self.add_measurement(qubits, clbits)

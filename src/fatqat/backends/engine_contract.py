@@ -9,7 +9,6 @@ import numpy as np
 
 from ..errors import BackendValidationError
 
-
 _PARALLEL_MODE_NAMES = frozenset({"auto", "serial", "multiprocessing", "loky"})
 
 

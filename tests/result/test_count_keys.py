@@ -103,7 +103,7 @@ def test_delimited_key_threshold_end_to_end():
     creg = fq.ClassicalRegister(2, dim=11)
     program = fq.Program([qreg], [creg])
     program.add(fq.ops.Shift(10), qreg[0])  # |0> -> |10>
-    program.add(fq.ops.Shift(3), qreg[1])   # |0> -> |3>
+    program.add(fq.ops.Shift(3), qreg[1])  # |0> -> |3>
     program.add_measurement((qreg[0], qreg[1]), (creg[0], creg[1]))
     result = fq.backends.SimulatorBackend("SV").run(program, shots=4).result()
     # clbit0=10, clbit1=3; little-endian (highest clbit first): "3,10".

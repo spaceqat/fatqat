@@ -1,0 +1,28 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.3.1
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies (with lint tools)
+        run: uv sync --group lint
+
+      - name: Check formatting (black)
+        run: uv run black --check --diff src tests conftest.py
+
+      - name: Static analysis (pylint)
+        run: uv run pylint src/fatqat tests conftest.py

@@ -294,7 +294,11 @@ class SimulatorBackend:
         always stochastic; reset only when ``_reset_is_stochastic``.
         """
         request = _resolve_result_request(
-            config, facts, self._request_cls, self._state_field, self._reset_is_stochastic
+            config,
+            facts,
+            self._request_cls,
+            self._state_field,
+            self._reset_is_stochastic,
         )
         stochastic = facts.has_measurement or (
             self._reset_is_stochastic and facts.has_reset
@@ -305,7 +309,9 @@ class SimulatorBackend:
         # always sample per shot, and a stochastic state export needs shots==1
         # below. A non-stochastic state-only request ignores shots entirely
         # (see the engine's per-shot path), so any value - including 0 - is fine.
-        if (request.counts or (requested_state and stochastic)) and type(shots) is not int:
+        if (request.counts or (requested_state and stochastic)) and type(
+            shots
+        ) is not int:
             raise BackendValidationError(
                 f"shots must be an int when requested results depend on it, got {shots!r}"
             )
@@ -334,7 +340,11 @@ class SimulatorBackend:
     ) -> Result:
         """Execute a lowered program and assemble the requested result fields."""
         request = _resolve_result_request(
-            config, facts, self._request_cls, self._state_field, self._reset_is_stochastic
+            config,
+            facts,
+            self._request_cls,
+            self._state_field,
+            self._reset_is_stochastic,
         )
 
         system_key = (tuple(system_dims), n_clbits)
@@ -445,9 +455,7 @@ class SimulatorBackend:
                 if isinstance(step.operation, ResetGate):
                     has_reset = True
                     cond = _resolve_condition(step.condition, layout)
-                    plan.append(
-                        ResetStep(reset_indices=target_indices, condition=cond)
-                    )
+                    plan.append(ResetStep(reset_indices=target_indices, condition=cond))
                     continue
 
                 rule = self._implementation_for(step.operation, target_indices)

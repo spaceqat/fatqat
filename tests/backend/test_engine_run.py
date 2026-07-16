@@ -10,7 +10,10 @@ def test_engine_run_requires_initialize():
     engine = NumpySVSimulator()
     with pytest.raises(AssertionError, match="not initialized"):
         engine.run(
-            [], shots=1, seed=0, request=_StateVectorResultRequest(counts=False, statevector=False)
+            [],
+            shots=1,
+            seed=0,
+            request=_StateVectorResultRequest(counts=False, statevector=False),
         )
 
 

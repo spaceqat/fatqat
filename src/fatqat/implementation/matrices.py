@@ -80,7 +80,9 @@ def swap_levels_matrix(dim: int, j: int, k: int) -> np.ndarray:
     return m
 
 
-def _swap_levels_rule(op: "ops.SwapLevels", targets: tuple[RegisterRef, ...]) -> np.ndarray:
+def _swap_levels_rule(
+    op: "ops.SwapLevels", targets: tuple[RegisterRef, ...]
+) -> np.ndarray:
     return swap_levels_matrix(targets[0].register.dim, op.j, op.k)
 
 
@@ -137,15 +139,21 @@ def subspace_rz_matrix(dim: int, subspace: tuple[int, int], theta: float) -> np.
     return m
 
 
-def _subspace_rx_rule(op: "ops.SubspaceRX", targets: tuple[RegisterRef, ...]) -> np.ndarray:
+def _subspace_rx_rule(
+    op: "ops.SubspaceRX", targets: tuple[RegisterRef, ...]
+) -> np.ndarray:
     return subspace_rx_matrix(targets[0].register.dim, op.subspace, op.theta)
 
 
-def _subspace_ry_rule(op: "ops.SubspaceRY", targets: tuple[RegisterRef, ...]) -> np.ndarray:
+def _subspace_ry_rule(
+    op: "ops.SubspaceRY", targets: tuple[RegisterRef, ...]
+) -> np.ndarray:
     return subspace_ry_matrix(targets[0].register.dim, op.subspace, op.theta)
 
 
-def _subspace_rz_rule(op: "ops.SubspaceRZ", targets: tuple[RegisterRef, ...]) -> np.ndarray:
+def _subspace_rz_rule(
+    op: "ops.SubspaceRZ", targets: tuple[RegisterRef, ...]
+) -> np.ndarray:
     return subspace_rz_matrix(targets[0].register.dim, op.subspace, op.theta)
 
 
@@ -180,9 +188,7 @@ _SX = 0.5 * np.array([[1 + 1j, 1 - 1j], [1 - 1j, 1 + 1j]], dtype=complex)
 _T = np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]], dtype=complex)
 _TDG = np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]], dtype=complex)
 # 2-qubit fixed gates (see module docstring for the control/target convention).
-_CX = np.array(
-    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=complex
-)
+_CX = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=complex)
 _CZ = np.diag([1, 1, 1, -1]).astype(complex)
 _SWAP = np.array(
     [[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=complex

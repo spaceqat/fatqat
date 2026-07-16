@@ -31,14 +31,18 @@ def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
     program.add(fq.ops.Reset, (0, 1))
     program.measure_all()
 
-    result = fq.backends.SimulatorBackend("SV", 
-        options={"max_workers": 2, "parallel_mode": "multiprocessing"}
-    ).run(
-        program,
-        shots=12,
-        seed=2026,
-        result_config={"counts": True},
-    ).result()
+    result = (
+        fq.backends.SimulatorBackend(
+            "SV", options={"max_workers": 2, "parallel_mode": "multiprocessing"}
+        )
+        .run(
+            program,
+            shots=12,
+            seed=2026,
+            result_config={"counts": True},
+        )
+        .result()
+    )
 
     assert result.get_counts() == {"00": 12}
 
@@ -50,7 +54,7 @@ def test_heterogeneous_qutrit_qubit_program():
     cb = fq.ClassicalRegister(1, dim=2)
     program = fq.Program([qt, qb], [ct, cb])
     program.add(fq.ops.Shift(1), qt[0])  # qutrit |0> -> |1>
-    program.add(fq.ops.X, qb[0])         # qubit  |0> -> |1>
+    program.add(fq.ops.X, qb[0])  # qubit  |0> -> |1>
     program.add_measurement(qt[0], ct[0])
     program.add_measurement(qb[0], cb[0])
     result = fq.backends.SimulatorBackend("SV").run(program, shots=16).result()
@@ -75,8 +79,8 @@ def test_sum_entangles_two_qutrits():
     qreg = fq.QuantumRegister(2, dim=3)
     creg = fq.ClassicalRegister(2, dim=3)
     program = fq.Program([qreg], [creg])
-    program.add(fq.ops.Shift(2), 0)      # control qutrit -> |2>
-    program.add_measurement(0, 0)        # clbit0 = 2 (mid-circuit; deterministic)
+    program.add(fq.ops.Shift(2), 0)  # control qutrit -> |2>
+    program.add_measurement(0, 0)  # clbit0 = 2 (mid-circuit; deterministic)
     # Condition genuinely fires (clbit0 == 2, a value only reachable by a
     # qudit, not just 0/1), proving condition literals are compared for exact
     # equality rather than truthiness for dim > 2.
@@ -91,7 +95,7 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
         qreg = fq.QuantumRegister(1, dim=3)
         creg = fq.ClassicalRegister(1, dim=3)
         p = fq.Program([qreg], [creg])
-        p.add(fq.ops.Shift(2), 0)          # deterministic |0> -> |2>
+        p.add(fq.ops.Shift(2), 0)  # deterministic |0> -> |2>
         p.add_measurement(0, 0)
         if force_dynamic:
             # Inert no-op: Shift(0) is the identity, and its condition can
@@ -104,10 +108,16 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
         return p
 
     fast_counts = (
-        fq.backends.SimulatorBackend("SV").run(build(False), shots=8, seed=7).result().get_counts_as_tuples()
+        fq.backends.SimulatorBackend("SV")
+        .run(build(False), shots=8, seed=7)
+        .result()
+        .get_counts_as_tuples()
     )
     dyn_counts = (
-        fq.backends.SimulatorBackend("SV").run(build(True), shots=8, seed=7).result().get_counts_as_tuples()
+        fq.backends.SimulatorBackend("SV")
+        .run(build(True), shots=8, seed=7)
+        .result()
+        .get_counts_as_tuples()
     )
     assert fast_counts == dyn_counts == {(2,): 8}
 
@@ -117,11 +127,13 @@ def test_cclock_unequal_dimensions_runs_through_backend():
     qb = fq.QuantumRegister(1, dim=2)
     program = fq.Program([qt, qb])
     program.add(fq.ops.Shift(1), qt[0])  # control -> |1>
-    program.add(fq.ops.X, qb[0])         # target -> |1>
+    program.add(fq.ops.X, qb[0])  # target -> |1>
     program.add(fq.ops.CClock(1), (qt[0], qb[0]))
-    result = fq.backends.SimulatorBackend("SV").run(
-        program, result_config={"counts": False, "statevector": True}
-    ).result()
+    result = (
+        fq.backends.SimulatorBackend("SV")
+        .run(program, result_config={"counts": False, "statevector": True})
+        .result()
+    )
     sv = result.get_statevector()
     # The engine's global statevector index is little-endian across program
     # subsystems (subsystem 0 is the least-significant digit, place value
@@ -164,9 +176,11 @@ def test_qutrit_circuit_with_new_gates_produces_expected_counts():
     program.add(fq.ops.CClock(1), (0, 1))
     program.measure_all()
 
-    result = fq.backends.SimulatorBackend("SV").run(
-        program, shots=50, seed=0, result_config={"counts": True}
-    ).result()
+    result = (
+        fq.backends.SimulatorBackend("SV")
+        .run(program, shots=50, seed=0, result_config={"counts": True})
+        .result()
+    )
     assert result.get_counts_as_tuples() == {(0, 0): 50}
 
 

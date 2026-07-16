@@ -25,7 +25,6 @@ from fatqat.implementation.matrices import (
 )
 from fatqat.registers import QuantumRegister
 
-
 # --- Fixed-gate registration ------------------------------------------------
 # We deliberately do not re-assert each fixed gate's literal matrix: those
 # constants live in the source and are unlikely to change, so a value check is
@@ -33,17 +32,34 @@ from fatqat.registers import QuantumRegister
 # wired into the default map under its class key and returns a matrix of the
 # right dimension.
 
-@pytest.mark.parametrize("gate,n_qubits", [
-    (ops.I, 1), (ops.H, 1), (ops.S, 1), (ops.Sdg, 1), (ops.SX, 1), (ops.X, 1),
-    (ops.Y, 1), (ops.Z, 1), (ops.T, 1), (ops.Tdg, 1),
-    (ops.CX, 2), (ops.CZ, 2), (ops.Swap, 2), (ops.CY, 2),
-    (ops.CS, 2), (ops.iSwap, 2),
-    (ops.CCX, 3), (ops.CSwap, 3),
-])
+
+@pytest.mark.parametrize(
+    "gate,n_qubits",
+    [
+        (ops.I, 1),
+        (ops.H, 1),
+        (ops.S, 1),
+        (ops.Sdg, 1),
+        (ops.SX, 1),
+        (ops.X, 1),
+        (ops.Y, 1),
+        (ops.Z, 1),
+        (ops.T, 1),
+        (ops.Tdg, 1),
+        (ops.CX, 2),
+        (ops.CZ, 2),
+        (ops.Swap, 2),
+        (ops.CY, 2),
+        (ops.CS, 2),
+        (ops.iSwap, 2),
+        (ops.CCX, 3),
+        (ops.CSwap, 3),
+    ],
+)
 def test_fixed_gate_is_registered_with_correct_shape(gate, n_qubits):
     m = default_matrix_implementation_map()
     matrix = m.implementation_for(type(gate))(gate)
-    dim = 2 ** n_qubits
+    dim = 2**n_qubits
     assert matrix.shape == (dim, dim)
 
 
@@ -59,6 +75,7 @@ def test_sx_matrix_squares_to_x():
 # --- Parametric rules read their operation's theta --------------------------
 # Unlike the fixed gates above, these are not tautologies: they verify the rule
 # reads `op.theta` off the bare Operation and builds the matrix from it.
+
 
 def test_parametric_rx_reads_theta():
     m = default_matrix_implementation_map()
@@ -120,6 +137,7 @@ def test_apply_matrix_step_value_object():
 
 # --- FixedMatrix payload behavior -------------------------------------------
 
+
 def test_fixed_matrix_is_a_matrix_implementation():
     rule = FixedMatrix(np.eye(2, dtype=complex))
     assert isinstance(rule, MatrixImplementation)
@@ -131,10 +149,14 @@ def test_fixed_matrix_returns_stored_matrix_regardless_of_operation():
     assert np.allclose(rule(ops.RX(1.23)), [[0, 1], [1, 0]])
 
 
-@pytest.mark.parametrize("matrix,match", [
-    (np.zeros((2, 3)), "square"),
-    (np.eye(1), "side length"),
-], ids=["non_square", "side_below_two"])
+@pytest.mark.parametrize(
+    "matrix,match",
+    [
+        (np.zeros((2, 3)), "square"),
+        (np.eye(1), "side length"),
+    ],
+    ids=["non_square", "side_below_two"],
+)
 def test_fixed_matrix_rejects_invalid_shape(matrix, match):
     with pytest.raises(ValueError, match=match):
         FixedMatrix(matrix)
@@ -163,6 +185,7 @@ def test_fixed_matrix_copies_input_array():
 
 
 # --- register: key normalization --------------------------------------------
+
 
 def test_add_accepts_operation_instance_key():
     m = ImplementationMap()
@@ -195,11 +218,15 @@ def _callable_rule(op):
     return np.eye(2, dtype=complex)
 
 
-@pytest.mark.parametrize("rule", [
-    FixedMatrix(np.eye(2, dtype=complex)),
-    np.eye(2, dtype=complex),
-    _callable_rule,
-], ids=["fixed_matrix", "ndarray", "callable"])
+@pytest.mark.parametrize(
+    "rule",
+    [
+        FixedMatrix(np.eye(2, dtype=complex)),
+        np.eye(2, dtype=complex),
+        _callable_rule,
+    ],
+    ids=["fixed_matrix", "ndarray", "callable"],
+)
 def test_add_rejects_variable_arity_operation(rule):
     class VariableGate(ops.Operation):
         name = "VariableGate"
@@ -211,6 +238,7 @@ def test_add_rejects_variable_arity_operation(rule):
 
 
 # --- remove -------------------------------------------------------------
+
 
 def test_remove_removes_by_instance_or_class():
     m = default_matrix_implementation_map()
@@ -229,6 +257,7 @@ def test_remove_missing_operation_is_a_noop():
 
 
 # --- target-aware registration/resolution -----------------------------------
+
 
 def test_add_resolves_by_device_operands():
     m = ImplementationMap()
@@ -346,6 +375,7 @@ def test_copy_device_operand_tables_are_independently_mutable():
 
 # --- register: rule wrapping (ndarray) --------------------------------------
 
+
 def test_add_wraps_bare_ndarray_in_fixed_matrix():
     m = ImplementationMap()
     matrix = np.array([[0, 1], [1, 0]], dtype=complex)
@@ -368,6 +398,7 @@ def test_add_accepts_ndarray_of_any_square_shape_for_operation():
 
 # --- register: rule wrapping (callable) -------------------------------------
 
+
 def _accepts_plain(gate):
     return np.eye(2, dtype=complex)
 
@@ -380,11 +411,15 @@ def _accepts_optional_second(op, extra=None):
     return np.eye(2, dtype=complex)
 
 
-@pytest.mark.parametrize("rule", [
-    _accepts_plain,
-    _accepts_varargs,
-    _accepts_optional_second,
-], ids=["plain", "varargs", "optional_second"])
+@pytest.mark.parametrize(
+    "rule",
+    [
+        _accepts_plain,
+        _accepts_varargs,
+        _accepts_optional_second,
+    ],
+    ids=["plain", "varargs", "optional_second"],
+)
 def test_add_accepts_valid_callable_signatures(rule):
     m = ImplementationMap()
     m.add(ops.RX, rule)
@@ -410,7 +445,9 @@ def test_wrong_shape_callable_fails_at_use_not_registration():
 
 def test_add_rejects_non_callable_non_ndarray_rule():
     m = ImplementationMap()
-    with pytest.raises(TypeError, match="MatrixImplementation, np.ndarray, or callable"):
+    with pytest.raises(
+        TypeError, match="MatrixImplementation, np.ndarray, or callable"
+    ):
         m.add(ops.X, "not a rule")
 
 
@@ -434,6 +471,7 @@ def test_add_accepts_callable_when_signature_is_uninspectable(monkeypatch, exc):
 
 # --- copy -------------------------------------------------------------------
 
+
 def test_copy_is_independent_of_original():
     m = default_matrix_implementation_map()
     clone = m.copy()
@@ -451,6 +489,7 @@ def test_copy_preserves_existing_registrations():
 
 
 # --- widened contract: rule(op, *, targets=...) -----------------------------
+
 
 def _targets(dim, n=1):
     reg = QuantumRegister(n, dim=dim)
@@ -533,9 +572,16 @@ def test_sum_matrix_mismatched_dims_raises():
 
 def test_default_map_has_new_gates():
     m = default_matrix_implementation_map()
-    assert m.implementation_for(ops.Shift(1))(ops.Shift(1), targets=_qutrit_targets(1)).shape == (3, 3)
-    assert m.implementation_for(ops.Clock(1))(ops.Clock(1), targets=_qutrit_targets(1)).shape == (3, 3)
-    assert m.implementation_for(ops.Sum)(ops.Sum, targets=_qutrit_targets(2)).shape == (9, 9)
+    assert m.implementation_for(ops.Shift(1))(
+        ops.Shift(1), targets=_qutrit_targets(1)
+    ).shape == (3, 3)
+    assert m.implementation_for(ops.Clock(1))(
+        ops.Clock(1), targets=_qutrit_targets(1)
+    ).shape == (3, 3)
+    assert m.implementation_for(ops.Sum)(ops.Sum, targets=_qutrit_targets(2)).shape == (
+        9,
+        9,
+    )
 
 
 def test_shift_reduces_to_x_at_dim2():
@@ -547,9 +593,7 @@ def test_shift_reduces_to_x_at_dim2():
 
 def test_swap_levels_matrix_qutrit():
     m = swap_levels_matrix(3, 0, 2)
-    expected = np.array(
-        [[0, 0, 1], [0, 1, 0], [1, 0, 0]], dtype=complex
-    )
+    expected = np.array([[0, 0, 1], [0, 1, 0], [1, 0, 0]], dtype=complex)
     assert np.allclose(m, expected)
 
 
@@ -560,7 +604,9 @@ def test_swap_levels_reduces_to_x_at_dim2():
 
 def test_default_map_has_swap_levels():
     m = default_matrix_implementation_map()
-    got = m.implementation_for(ops.SwapLevels(0, 1))(ops.SwapLevels(0, 1), targets=_qutrit_targets(1))
+    got = m.implementation_for(ops.SwapLevels(0, 1))(
+        ops.SwapLevels(0, 1), targets=_qutrit_targets(1)
+    )
     assert got.shape == (3, 3)
 
 
@@ -591,7 +637,9 @@ def test_fourier_reduces_to_h_at_dim2():
 def test_default_map_has_fourier_and_fourierdg():
     m = default_matrix_implementation_map()
     got_f = m.implementation_for(ops.Fourier)(ops.Fourier, targets=_qutrit_targets(1))
-    got_fdg = m.implementation_for(ops.Fourierdg)(ops.Fourierdg, targets=_qutrit_targets(1))
+    got_fdg = m.implementation_for(ops.Fourierdg)(
+        ops.Fourierdg, targets=_qutrit_targets(1)
+    )
     assert got_f.shape == (3, 3)
     assert got_fdg.shape == (3, 3)
 
@@ -600,9 +648,7 @@ def test_subspace_rx_matches_rx_block_on_dim3_subspace():
     theta = 0.5
     m = subspace_rx_matrix(3, (0, 2), theta)
     c, s = np.cos(theta / 2), np.sin(theta / 2)
-    expected = np.array(
-        [[c, 0, -1j * s], [0, 1, 0], [-1j * s, 0, c]], dtype=complex
-    )
+    expected = np.array([[c, 0, -1j * s], [0, 1, 0], [-1j * s, 0, c]], dtype=complex)
     assert np.allclose(m, expected)
 
 
@@ -610,9 +656,7 @@ def test_subspace_ry_matches_ry_block_on_dim3_subspace():
     theta = 0.5
     m = subspace_ry_matrix(3, (1, 2), theta)
     c, s = np.cos(theta / 2), np.sin(theta / 2)
-    expected = np.array(
-        [[1, 0, 0], [0, c, -s], [0, s, c]], dtype=complex
-    )
+    expected = np.array([[1, 0, 0], [0, c, -s], [0, s, c]], dtype=complex)
     assert np.allclose(m, expected)
 
 
@@ -633,7 +677,9 @@ def test_subspace_rotations_reduce_to_qubit_rotations_at_dim2():
     # importing the private rule function.
     theta = 0.7
     c, s = np.cos(theta / 2), np.sin(theta / 2)
-    assert np.allclose(subspace_rx_matrix(2, (0, 1), theta), [[c, -1j * s], [-1j * s, c]])
+    assert np.allclose(
+        subspace_rx_matrix(2, (0, 1), theta), [[c, -1j * s], [-1j * s, c]]
+    )
     assert np.allclose(subspace_ry_matrix(2, (0, 1), theta), [[c, -s], [s, c]])
     assert np.allclose(
         subspace_rz_matrix(2, (0, 1), theta),

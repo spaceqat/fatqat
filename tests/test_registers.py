@@ -3,7 +3,6 @@
 import pytest
 
 from fatqat.registers import (
-    Register,
     QuantumRegister,
     ClassicalRegister,
     RegisterRef,
