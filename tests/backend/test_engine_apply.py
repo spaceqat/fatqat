@@ -6,12 +6,15 @@ from fatqat.simulator.np import NumpySVSimulator
 from fatqat.backends.steps import ApplyMatrixStep
 from fatqat.implementation.matrices import shift_matrix
 
-
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
 _CX = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=complex)
-_SWAP = np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=complex)
-_CY = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]], dtype=complex)
+_SWAP = np.array(
+    [[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=complex
+)
+_CY = np.array(
+    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]], dtype=complex
+)
 _CCX = np.eye(8, dtype=complex)
 _CCX[[6, 7]] = _CCX[[7, 6]]
 
@@ -80,7 +83,9 @@ def test_ccx_flips_target_only_when_both_controls_are_one():
     eng = _engine(3)
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(1,)))
-    eng.apply(ApplyMatrixStep(matrix=_CCX, target_indices=(0, 1, 2)))  # controls=qubit0,qubit1
+    eng.apply(
+        ApplyMatrixStep(matrix=_CCX, target_indices=(0, 1, 2))
+    )  # controls=qubit0,qubit1
     expected = np.zeros(8, dtype=complex)
     expected[7] = 1.0  # qubit0=1, qubit1=1, qubit2=1
     assert np.allclose(eng.export_state(), expected)
@@ -89,7 +94,9 @@ def test_ccx_flips_target_only_when_both_controls_are_one():
 def test_ccx_leaves_target_when_one_control_is_zero():
     eng = _engine(3)
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
-    eng.apply(ApplyMatrixStep(matrix=_CCX, target_indices=(0, 1, 2)))  # controls=qubit0,qubit1
+    eng.apply(
+        ApplyMatrixStep(matrix=_CCX, target_indices=(0, 1, 2))
+    )  # controls=qubit0,qubit1
     expected = np.zeros(8, dtype=complex)
     expected[1] = 1.0  # qubit0=1, qubit1=0, qubit2=0 (unchanged)
     assert np.allclose(eng.export_state(), expected)

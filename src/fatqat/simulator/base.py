@@ -1,7 +1,8 @@
-import numpy as np
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from typing import Literal
+
+import numpy as np
 
 from ..backends.engine_contract import (
     _DensityMatrixResultRequest as DensityMatrixResultRequest,

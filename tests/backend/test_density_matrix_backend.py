@@ -201,7 +201,9 @@ def test_result_metadata_records_backend_shots_and_config():
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
     config = {"counts": True, "density_matrix": False}
-    result = SimulatorBackend("DM").run(p, shots=7, seed=0, result_config=config).result()
+    result = (
+        SimulatorBackend("DM").run(p, shots=7, seed=0, result_config=config).result()
+    )
     assert result.metadata["shots"] == 7
     assert result.metadata["backend_name"] == "SimulatorBackend"
     assert result.metadata["result_config"] == config
@@ -213,9 +215,11 @@ def test_run_warns_and_ignores_unknown_result_config_keys():
     with pytest.warns(
         UserWarning, match="SimulatorBackend ignored unsupported result_config options"
     ):
-        result = SimulatorBackend("DM").run(
-            p, result_config={"counts": False, "statevector": True}
-        ).result()
+        result = (
+            SimulatorBackend("DM")
+            .run(p, result_config={"counts": False, "statevector": True})
+            .result()
+        )
     assert result.metadata["result_config"] == {
         "counts": False,
         "density_matrix": None,
@@ -289,8 +293,11 @@ def test_unsupported_operation_raises():
 
 # --- target-aware resolution (mirrors SimulatorBackend, see test_resolution.py) --
 
+
 def test_target_aware_map_allows_registered_target_key():
-    cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(ops.CZ)
+    cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(
+        ops.CZ
+    )
     m = fq.implementation.ImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = SimulatorBackend("DM", implementation_map=m)
@@ -298,12 +305,16 @@ def test_target_aware_map_allows_registered_target_key():
     p = Program(2)
     p.add(ops.CZ, (0, 1))
 
-    result = backend.run(p, result_config={"counts": False, "density_matrix": True}).result()
+    result = backend.run(
+        p, result_config={"counts": False, "density_matrix": True}
+    ).result()
     assert result.get_density_matrix().shape == (4, 4)
 
 
 def test_target_aware_map_rejects_illegal_target_key():
-    cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(ops.CZ)
+    cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(
+        ops.CZ
+    )
     m = fq.implementation.ImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = SimulatorBackend("DM", implementation_map=m)
@@ -314,14 +325,18 @@ def test_target_aware_map_rejects_illegal_target_key():
     # Same UnsupportedOperationError type as an unsupported family (see
     # test below); only the message distinguishes "illegal target" from
     # "no rule at all."
-    with pytest.raises(fq.errors.UnsupportedOperationError, match="device operands") as excinfo:
+    with pytest.raises(
+        fq.errors.UnsupportedOperationError, match="device operands"
+    ) as excinfo:
         backend.run(p, result_config={"counts": False, "density_matrix": True})
 
     assert isinstance(excinfo.value, BackendValidationError)
 
 
 def test_target_aware_map_unsupported_family_still_raises_unsupported_operation():
-    cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(ops.CZ)
+    cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(
+        ops.CZ
+    )
     m = fq.implementation.ImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = SimulatorBackend("DM", implementation_map=m)

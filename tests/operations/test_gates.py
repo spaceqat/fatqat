@@ -6,26 +6,29 @@ from fatqat import operations as ops
 from fatqat.operations import Operation
 
 
-@pytest.mark.parametrize("gate,name,n_subsystems", [
-    (ops.I,  "I",  1),
-    (ops.H,  "H",  1),
-    (ops.S,  "S",  1),
-    (ops.Sdg, "Sdg", 1),
-    (ops.SX, "SX", 1),
-    (ops.X,  "X",  1),
-    (ops.Y,  "Y",  1),
-    (ops.Z,  "Z",  1),
-    (ops.T,  "T",  1),
-    (ops.Tdg, "Tdg", 1),
-    (ops.CX, "CX", 2),
-    (ops.CZ, "CZ", 2),
-    (ops.Swap, "Swap", 2),
-    (ops.CY, "CY", 2),
-    (ops.CS, "CS", 2),
-    (ops.iSwap, "iSwap", 2),
-    (ops.CCX, "CCX", 3),
-    (ops.CSwap, "CSwap", 3),
-])
+@pytest.mark.parametrize(
+    "gate,name,n_subsystems",
+    [
+        (ops.I, "I", 1),
+        (ops.H, "H", 1),
+        (ops.S, "S", 1),
+        (ops.Sdg, "Sdg", 1),
+        (ops.SX, "SX", 1),
+        (ops.X, "X", 1),
+        (ops.Y, "Y", 1),
+        (ops.Z, "Z", 1),
+        (ops.T, "T", 1),
+        (ops.Tdg, "Tdg", 1),
+        (ops.CX, "CX", 2),
+        (ops.CZ, "CZ", 2),
+        (ops.Swap, "Swap", 2),
+        (ops.CY, "CY", 2),
+        (ops.CS, "CS", 2),
+        (ops.iSwap, "iSwap", 2),
+        (ops.CCX, "CCX", 3),
+        (ops.CSwap, "CSwap", 3),
+    ],
+)
 def test_fixed_gate_name_and_arity(gate, name, n_subsystems):
     assert gate.name == name
     assert gate.num_subsystems == n_subsystems
@@ -115,11 +118,14 @@ def test_fourier_is_single_subsystem_singleton():
     assert not isinstance(ops.Fourierdg, type)
 
 
-@pytest.mark.parametrize("cls,name", [
-    (ops.SubspaceRX, "SubspaceRX"),
-    (ops.SubspaceRY, "SubspaceRY"),
-    (ops.SubspaceRZ, "SubspaceRZ"),
-])
+@pytest.mark.parametrize(
+    "cls,name",
+    [
+        (ops.SubspaceRX, "SubspaceRX"),
+        (ops.SubspaceRY, "SubspaceRY"),
+        (ops.SubspaceRZ, "SubspaceRZ"),
+    ],
+)
 def test_subspace_rotation_is_single_subsystem_parametric(cls, name):
     g = cls(0.3, (0, 2))
     assert g.name == name

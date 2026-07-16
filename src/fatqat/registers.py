@@ -82,14 +82,10 @@ class Register:
 class QuantumRegister(Register):
     """Register whose refs may be used as quantum operation targets."""
 
-    pass
-
 
 @dataclass(frozen=True)
 class ClassicalRegister(Register):
     """Register whose refs may receive measurement results and conditions."""
-
-    pass
 
 
 @dataclass(frozen=True)

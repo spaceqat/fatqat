@@ -5,7 +5,6 @@ import warnings
 import numpy as np
 import pytest
 
-import fatqat as fq
 from fatqat.backends import SimulatorBackend
 from fatqat.errors import (
     BackendValidationError,
@@ -50,7 +49,9 @@ def test_run_without_seed_uses_random_rng_seed(monkeypatch):
 
     p = Program(1)
     p.add(ops.X, 0)
-    SimulatorBackend("SV").run(p, result_config={"counts": False}).result().get_statevector()
+    SimulatorBackend("SV").run(
+        p, result_config={"counts": False}
+    ).result().get_statevector()
 
     assert observed == [None]
 
@@ -109,8 +110,18 @@ def test_measured_statevector_requires_exactly_one_shot(shots):
 
 
 def test_deterministic_with_seed():
-    a = SimulatorBackend("SV").run(_h_cz_program(), shots=300, seed=7).result().get_counts()
-    b = SimulatorBackend("SV").run(_h_cz_program(), shots=300, seed=7).result().get_counts()
+    a = (
+        SimulatorBackend("SV")
+        .run(_h_cz_program(), shots=300, seed=7)
+        .result()
+        .get_counts()
+    )
+    b = (
+        SimulatorBackend("SV")
+        .run(_h_cz_program(), shots=300, seed=7)
+        .result()
+        .get_counts()
+    )
     assert a == b
 
 

@@ -288,9 +288,13 @@ class SubspaceRX(Operation):
     def __post_init__(self) -> None:
         j, k = self.subspace
         if j == k:
-            raise ValueError(f"SubspaceRX subspace requires distinct levels, got ({j}, {k})")
+            raise ValueError(
+                f"SubspaceRX subspace requires distinct levels, got ({j}, {k})"
+            )
         if j < 0 or k < 0:
-            raise ValueError(f"SubspaceRX subspace levels must be non-negative, got ({j}, {k})")
+            raise ValueError(
+                f"SubspaceRX subspace levels must be non-negative, got ({j}, {k})"
+            )
 
     def validate_targets(self, targets) -> None:
         dim = targets[0].register.dim
@@ -341,9 +345,13 @@ class SubspaceRY(Operation):
     def __post_init__(self) -> None:
         j, k = self.subspace
         if j == k:
-            raise ValueError(f"SubspaceRY subspace requires distinct levels, got ({j}, {k})")
+            raise ValueError(
+                f"SubspaceRY subspace requires distinct levels, got ({j}, {k})"
+            )
         if j < 0 or k < 0:
-            raise ValueError(f"SubspaceRY subspace levels must be non-negative, got ({j}, {k})")
+            raise ValueError(
+                f"SubspaceRY subspace levels must be non-negative, got ({j}, {k})"
+            )
 
     def validate_targets(self, targets) -> None:
         dim = targets[0].register.dim
@@ -392,9 +400,13 @@ class SubspaceRZ(Operation):
     def __post_init__(self) -> None:
         j, k = self.subspace
         if j == k:
-            raise ValueError(f"SubspaceRZ subspace requires distinct levels, got ({j}, {k})")
+            raise ValueError(
+                f"SubspaceRZ subspace requires distinct levels, got ({j}, {k})"
+            )
         if j < 0 or k < 0:
-            raise ValueError(f"SubspaceRZ subspace levels must be non-negative, got ({j}, {k})")
+            raise ValueError(
+                f"SubspaceRZ subspace levels must be non-negative, got ({j}, {k})"
+            )
 
     def validate_targets(self, targets) -> None:
         dim = targets[0].register.dim

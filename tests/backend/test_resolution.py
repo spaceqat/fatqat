@@ -24,7 +24,10 @@ def test_resolve_preserves_order_and_step_types():
     p.add_measurement(1, 1)
     plan = _resolve(p)
     assert [type(s) for s in plan] == [
-        ApplyMatrixStep, ApplyMatrixStep, MeasurementStep, MeasurementStep
+        ApplyMatrixStep,
+        ApplyMatrixStep,
+        MeasurementStep,
+        MeasurementStep,
     ]
 
 
@@ -46,6 +49,7 @@ def test_resolve_measurement_step_has_flat_indices():
 
 
 # --- target-aware resolution -------------------------------------------------
+
 
 def test_target_aware_map_allows_registered_target_key():
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)

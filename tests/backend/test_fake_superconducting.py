@@ -5,7 +5,9 @@ import pytest
 
 from fatqat import operations as ops
 from fatqat.backends import FakeSuperconducting4x4Backend
-from fatqat.backends.fake_superconducting import fake_superconducting_4x4_implementation_map
+from fatqat.backends.fake_superconducting import (
+    fake_superconducting_4x4_implementation_map,
+)
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.program import Program
 from fatqat.registers import QuantumRegister

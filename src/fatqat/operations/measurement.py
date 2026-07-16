@@ -42,7 +42,9 @@ class Measurement:
 
     def __post_init__(self) -> None:
         if len(self.qreg) != len(self.clreg):
-            raise ValueError("measurement qreg and clreg must have the same number of entries")
+            raise ValueError(
+                "measurement qreg and clreg must have the same number of entries"
+            )
         if len(self.qreg) < 1:
             raise ValueError("measurement requires at least one qreg/clreg pair")
         for pos, (q, c) in enumerate(zip(self.qreg, self.clreg)):

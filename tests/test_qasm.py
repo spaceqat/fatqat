@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import math
 
-import fatqat as fc
 import pytest
 
+import fatqat as fc
 from fatqat import operations as ops
 from fatqat.operations import Measurement
 from fatqat.qasm import (
@@ -19,9 +19,7 @@ from fatqat.qasm import (
     from_qasm,
     program_to_qasm,
     qasm_to_program,
-    to_qasm,
 )
-
 
 # ===========================================================================
 # Export direction: fatqat.Program -> OpenQASM
@@ -55,8 +53,17 @@ def test_bell_state_v2():
 
 def test_all_fixed_gates():
     p = fc.Program(3)
-    for g in (fc.ops.H, fc.ops.I, fc.ops.S, fc.ops.Sdg, fc.ops.T,
-              fc.ops.Tdg, fc.ops.X, fc.ops.Y, fc.ops.Z):
+    for g in (
+        fc.ops.H,
+        fc.ops.I,
+        fc.ops.S,
+        fc.ops.Sdg,
+        fc.ops.T,
+        fc.ops.Tdg,
+        fc.ops.X,
+        fc.ops.Y,
+        fc.ops.Z,
+    ):
         p.add(g, 0)
     p.add(fc.ops.CX, (0, 1))
     p.add(fc.ops.CZ, (0, 1))
@@ -65,11 +72,23 @@ def test_all_fixed_gates():
     p.add(fc.ops.CCX, (0, 1, 2))
     p.add(fc.ops.CSwap, (0, 1, 2))
     out = program_to_qasm(p, version=3)
-    for expected in ("h q[0];", "id q[0];", "s q[0];", "sdg q[0];", "t q[0];",
-                      "tdg q[0];", "x q[0];", "y q[0];", "z q[0];",
-                      "cx q[0], q[1];", "cz q[0], q[1];", "swap q[0], q[1];",
-                      "cy q[0], q[1];", "ccx q[0], q[1], q[2];",
-                      "cswap q[0], q[1], q[2];"):
+    for expected in (
+        "h q[0];",
+        "id q[0];",
+        "s q[0];",
+        "sdg q[0];",
+        "t q[0];",
+        "tdg q[0];",
+        "x q[0];",
+        "y q[0];",
+        "z q[0];",
+        "cx q[0], q[1];",
+        "cz q[0], q[1];",
+        "swap q[0], q[1];",
+        "cy q[0], q[1];",
+        "ccx q[0], q[1], q[2];",
+        "cswap q[0], q[1], q[2];",
+    ):
         assert expected in out
 
 
@@ -134,13 +153,13 @@ def test_condition_v2_partial_register_rejected():
 
 def test_qudit_dim2_reductions():
     p = fc.Program(2)
-    p.add(fc.ops.Shift(1), 0)     # -> x
-    p.add(fc.ops.Shift(2), 0)     # -> elided
-    p.add(fc.ops.Clock(1), 0)     # -> z
-    p.add(fc.ops.Sum, (0, 1))     # -> cx
+    p.add(fc.ops.Shift(1), 0)  # -> x
+    p.add(fc.ops.Shift(2), 0)  # -> elided
+    p.add(fc.ops.Clock(1), 0)  # -> z
+    p.add(fc.ops.Sum, (0, 1))  # -> cx
     p.add(fc.ops.SwapLevels(0, 1), 0)  # -> x
-    p.add(fc.ops.Fourier, 0)      # -> h
-    p.add(fc.ops.Fourierdg, 0)    # -> h
+    p.add(fc.ops.Fourier, 0)  # -> h
+    p.add(fc.ops.Fourierdg, 0)  # -> h
     p.add(fc.ops.SubspaceRX(0.4, (0, 1)), 0)  # -> rx(0.4)
     p.add(fc.ops.SubspaceRY(0.4, (1, 0)), 0)  # -> ry(-0.4)
     p.add(fc.ops.SubspaceRZ(0.4, (1, 0)), 0)  # -> rz(-0.4)
@@ -186,7 +205,9 @@ def test_export_same_named_qreg_and_creg_do_not_collide():
         line = line.strip()
         if line.startswith("qubit[") or line.startswith("bit["):
             name = line.split("]", 1)[1].strip().rstrip(";").strip()
-            assert name not in declared_names, f"duplicate identifier {name!r} in emitted QASM:\n{out}"
+            assert (
+                name not in declared_names
+            ), f"duplicate identifier {name!r} in emitted QASM:\n{out}"
             declared_names.add(name)
 
     # And the result must actually round-trip back through from_qasm.
@@ -194,16 +215,13 @@ def test_export_same_named_qreg_and_creg_do_not_collide():
     assert len(program.qreg) == 1 and len(program.creg) == 1
 
 
-
 # ===========================================================================
 # Import direction: OpenQASM -> fatqat.Program
 # ===========================================================================
 
 
-
 def test_from_qasm_builds_bell_program():
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 2.0;
         include "qelib1.inc";
         qreg q[2];
@@ -211,8 +229,7 @@ def test_from_qasm_builds_bell_program():
         h q[0];
         cx q[0], q[1];
         measure q -> c;
-        """
-    )
+        """)
 
     assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
     measurement = program.operations[2]
@@ -222,43 +239,37 @@ def test_from_qasm_builds_bell_program():
 
 
 def test_from_qasm_preserves_multiple_register_names():
-    program = qasm_to_program(
-        """
+    program = qasm_to_program("""
         OPENQASM 2.0;
         qreg qa[1];
         qreg qb[1];
         creg ca[1];
         x qb[0];
         measure qb[0] -> ca[0];
-        """
-    )
+        """)
 
     assert [reg.name for reg in program.qreg] == ["qa", "qb"]
     assert program.operations[0].targets == (program.qreg[1][0],)
 
 
 def test_from_qasm_expands_whole_register_single_qubit_gate():
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 2.0;
         qreg q[3];
         x q;
-        """
-    )
+        """)
 
     assert [op.operation.name for op in program.operations] == ["X", "X", "X"]
     assert [op.targets[0].index for op in program.operations] == [0, 1, 2]
 
 
 def test_from_qasm_parses_parameter_expressions():
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 2.0;
         qreg q[1];
         rz(pi / 2) q[0];
         u2(0, pi) q[0];
-        """
-    )
+        """)
 
     assert math.isclose(program.operations[0].operation.theta, math.pi / 2)
     assert [op.operation.name for op in program.operations[1:]] == ["RZ", "RY", "RZ"]
@@ -266,14 +277,12 @@ def test_from_qasm_parses_parameter_expressions():
 
 
 def test_from_qasm_supports_classical_conditions():
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 2.0;
         qreg q[1];
         creg c[2];
         if(c==2) x q[0];
-        """
-    )
+        """)
 
     assert program.operations[0].condition == (
         (program.creg[0][0], 0),
@@ -283,24 +292,20 @@ def test_from_qasm_supports_classical_conditions():
 
 def test_from_qasm_rejects_unsupported_gate():
     with pytest.raises(QASMTranspileError, match="unsupported gate"):
-        from_qasm(
-            """
+        from_qasm("""
             OPENQASM 2.0;
             qreg q[1];
             sx q[0];
-            """
-        )
+            """)
 
 
 def test_from_qasm_expands_custom_gate_definition():
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 2.0;
         gate myx a { x a; }
         qreg q[1];
         myx q[0];
-        """
-    )
+        """)
 
     assert [op.operation.name for op in program.operations] == ["X"]
     assert program.operations[0].targets == (program.qreg[0][0],)
@@ -309,8 +314,7 @@ def test_from_qasm_expands_custom_gate_definition():
 def test_from_qasm_expands_iswap_custom_gate_matching_forward_tool_output():
     # This is exactly the custom gate block fatqat_to_qasm.py emits for
     # iSwap -- if this doesn't parse, the two tools cannot round-trip.
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 3.0;
         include "stdgates.inc";
 
@@ -326,10 +330,16 @@ def test_from_qasm_expands_iswap_custom_gate_matching_forward_tool_output():
         qubit[2] q;
 
         iswap q[0], q[1];
-        """
-    )
+        """)
 
-    assert [op.operation.name for op in program.operations] == ["S", "S", "H", "CX", "CX", "H"]
+    assert [op.operation.name for op in program.operations] == [
+        "S",
+        "S",
+        "H",
+        "CX",
+        "CX",
+        "H",
+    ]
     # cx a,b then cx b,a -- control/target must swap between the two CX calls.
     cx_ops = [op for op in program.operations if op.operation.name == "CX"]
     assert cx_ops[0].targets == (program.qreg[0][0], program.qreg[0][1])
@@ -337,8 +347,7 @@ def test_from_qasm_expands_iswap_custom_gate_matching_forward_tool_output():
 
 
 def test_from_qasm_custom_gate_with_parameter_expression():
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 2.0;
         gate my_crz(theta) a, b {
             rz(theta/2) b;
@@ -348,8 +357,7 @@ def test_from_qasm_custom_gate_with_parameter_expression():
         }
         qreg q[2];
         my_crz(pi/2) q[0], q[1];
-        """
-    )
+        """)
 
     assert [op.operation.name for op in program.operations] == ["RZ", "CX", "RZ", "CX"]
     assert math.isclose(program.operations[0].operation.theta, math.pi / 4)
@@ -358,26 +366,22 @@ def test_from_qasm_custom_gate_with_parameter_expression():
 
 def test_from_qasm_rejects_opaque_declaration():
     with pytest.raises(QASMTranspileError, match="opaque"):
-        from_qasm(
-            """
+        from_qasm("""
             OPENQASM 2.0;
             opaque myx a;
             qreg q[1];
-            """
-        )
+            """)
 
 
 def test_from_qasm3_bit_level_and_conditions():
     # This is exactly the form fatqat_to_qasm.py emits for QASM3
     # conditions -- if this doesn't parse, the two tools cannot round-trip.
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 3.0;
         qubit[2] q;
         bit[3] c;
         if (c[0] == 1 && c[2] == 0) { x q[1]; }
-        """
-    )
+        """)
 
     assert program.operations[0].operation.name == "X"
     assert program.operations[0].condition == (
@@ -392,20 +396,23 @@ def test_from_qasm_u3_gate_matches_exact_matrix_up_to_global_phase():
     from fatqat.backends import SimulatorBackend
 
     theta, phi, lam = 0.9, 0.4, -0.6
-    program = from_qasm(
-        f"""
+    program = from_qasm(f"""
         OPENQASM 2.0;
         qreg q[1];
         u3({theta}, {phi}, {lam}) q[0];
-        """
+        """)
+    job = SimulatorBackend("SV").run(
+        program, result_config={"counts": False, "statevector": True}, shots=1
     )
-    job = SimulatorBackend("SV").run(program, result_config={"counts": False, "statevector": True}, shots=1)
     sv = job.result().get_statevector()
 
     u3 = np.array(
         [
             [np.cos(theta / 2), -np.exp(1j * lam) * np.sin(theta / 2)],
-            [np.exp(1j * phi) * np.sin(theta / 2), np.exp(1j * (phi + lam)) * np.cos(theta / 2)],
+            [
+                np.exp(1j * phi) * np.sin(theta / 2),
+                np.exp(1j * (phi + lam)) * np.cos(theta / 2),
+            ],
         ]
     )
     target = u3 @ np.array([1, 0], dtype=complex)
@@ -417,8 +424,7 @@ def test_from_qasm_u3_gate_matches_exact_matrix_up_to_global_phase():
 
 
 def test_from_qasm_maps_supported_gate_names():
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 2.0;
         qreg q[3];
         h q[0];
@@ -426,16 +432,19 @@ def test_from_qasm_maps_supported_gate_names():
         cp(pi) q[0], q[2];
         reset q[0];
         barrier q;
-        """
-    )
+        """)
 
-    assert [op.operation.name for op in program.operations] == ["H", "CCX", "CPhase", "Reset"]
+    assert [op.operation.name for op in program.operations] == [
+        "H",
+        "CCX",
+        "CPhase",
+        "Reset",
+    ]
     assert isinstance(program.operations[0].operation, type(ops.H))
 
 
 def test_from_qasm3_builds_bell_program():
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 3;
         include "stdgates.inc";
         qubit[2] q;
@@ -443,8 +452,7 @@ def test_from_qasm3_builds_bell_program():
         h q[0];
         cnot q[0], q[1];
         c = measure q;
-        """
-    )
+        """)
 
     assert program.metadata["source"] == "openqasm3.0"
     assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
@@ -455,15 +463,13 @@ def test_from_qasm3_builds_bell_program():
 
 
 def test_from_qasm3_single_qubit_and_bit_declarations():
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 3.0;
         qubit q;
         bit c;
         x q;
         c = measure q;
-        """
-    )
+        """)
 
     assert program.qreg[0].size == 1
     assert program.creg[0].size == 1
@@ -471,14 +477,12 @@ def test_from_qasm3_single_qubit_and_bit_declarations():
 
 
 def test_from_qasm3_if_block_and_gate_aliases():
-    program = from_qasm(
-        """
+    program = from_qasm("""
         OPENQASM 3;
         qubit[3] q;
         bit[2] c;
         if (c == 1) { toffoli q[0], q[1], q[2]; }
-        """
-    )
+        """)
 
     assert program.operations[0].operation.name == "CCX"
     assert program.operations[0].condition == (

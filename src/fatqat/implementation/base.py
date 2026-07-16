@@ -53,7 +53,9 @@ class MatrixImplementation:
     implementation.
     """
 
-    def __call__(self, op: Operation, *, targets: tuple[RegisterRef, ...]) -> np.ndarray:
+    def __call__(
+        self, op: Operation, *, targets: tuple[RegisterRef, ...]
+    ) -> np.ndarray:
         raise NotImplementedError
 
 
@@ -93,7 +95,9 @@ class FixedMatrix(MatrixImplementation):
         matrix.flags.writeable = False
         self._matrix = matrix
 
-    def __call__(self, op: Operation, *, targets: tuple[RegisterRef, ...] = ()) -> np.ndarray:
+    def __call__(
+        self, op: Operation, *, targets: tuple[RegisterRef, ...] = ()
+    ) -> np.ndarray:
         return self._matrix
 
 
@@ -117,7 +121,9 @@ class _DimMatrix(MatrixImplementation):
         """
         self._fn = fn
 
-    def __call__(self, op: Operation, *, targets: tuple[RegisterRef, ...]) -> np.ndarray:
+    def __call__(
+        self, op: Operation, *, targets: tuple[RegisterRef, ...]
+    ) -> np.ndarray:
         dims = tuple(t.register.dim for t in targets)
         return self._fn(dims)
 
@@ -204,7 +210,9 @@ class _CallableMatrixImplementation(MatrixImplementation):
         self._func = func
         self._wants_targets = wants_targets
 
-    def __call__(self, op: Operation, *, targets: tuple[RegisterRef, ...]) -> np.ndarray:
+    def __call__(
+        self, op: Operation, *, targets: tuple[RegisterRef, ...]
+    ) -> np.ndarray:
         if self._wants_targets:
             return self._func(op, targets=targets)
         return self._func(op)
@@ -369,11 +377,13 @@ class ImplementationMap:
         support.
         """
         if device_operands is not None:
-            return self.implementation_for(
-                op, device_operands=device_operands
-            ) is not None
+            return (
+                self.implementation_for(op, device_operands=device_operands) is not None
+            )
         op_cls = _resolve_operation_class(op)
-        return op_cls in self._unconstrained_rules or op_cls in self._device_operand_rules
+        return (
+            op_cls in self._unconstrained_rules or op_cls in self._device_operand_rules
+        )
 
     def implementation_for(
         self,

@@ -35,9 +35,9 @@ def test_result_metadata_records_backend_shots_and_config():
     p.add_measurement(0, 0)
     config = {"counts": True, "statevector": False}
 
-    result = SimulatorBackend("SV").run(
-        p, shots=7, seed=0, result_config=config
-    ).result()
+    result = (
+        SimulatorBackend("SV").run(p, shots=7, seed=0, result_config=config).result()
+    )
 
     assert result.metadata["shots"] == 7
     assert result.metadata["backend_name"] == "SimulatorBackend"
@@ -49,12 +49,16 @@ def test_run_accepts_result_config_as_dict():
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
 
-    result = SimulatorBackend("SV").run(
-        p,
-        shots=7,
-        seed=0,
-        result_config={"counts": True, "statevector": False},
-    ).result()
+    result = (
+        SimulatorBackend("SV")
+        .run(
+            p,
+            shots=7,
+            seed=0,
+            result_config={"counts": True, "statevector": False},
+        )
+        .result()
+    )
 
     assert result.get_counts() == {"1": 7}
     assert result.metadata["result_config"] == {"counts": True, "statevector": False}
@@ -65,10 +69,14 @@ def test_run_warns_and_ignores_unknown_result_config_keys():
     p.add(ops.H, 0)
 
     with pytest.warns(UserWarning, match="ignored unsupported result_config options"):
-        result = SimulatorBackend("SV").run(
-            p,
-            result_config={"counts": False, "gpu": True},
-        ).result()
+        result = (
+            SimulatorBackend("SV")
+            .run(
+                p,
+                result_config={"counts": False, "gpu": True},
+            )
+            .result()
+        )
 
     assert result.metadata["result_config"] == {
         "counts": False,
@@ -109,7 +117,9 @@ def test_statevector_with_measurement_and_many_shots_rejected():
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
     with pytest.raises(BackendValidationError):
-        SimulatorBackend("SV").run(p, shots=10, result_config={"counts": True, "statevector": True})
+        SimulatorBackend("SV").run(
+            p, shots=10, result_config={"counts": True, "statevector": True}
+        )
 
 
 def test_no_measurement_warning_when_counts_only_and_no_state():

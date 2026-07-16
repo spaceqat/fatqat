@@ -19,6 +19,71 @@ docs = ["sphinx", "pydata-sphinx-theme", "myst-parser", "sphinx-design", "sphinx
 # and its tests. Not required by the base package. Note: numba currently pins
 # numpy < 2.5, so `uv sync --group numba` may downgrade numpy.
 numba = ["numba>=0.66"]
+# Formatting (black) and static analysis (pylint). Drives scripts/format.sh,
+# scripts/lint.sh, and the Lint CI workflow. See [tool.black] / [tool.pylint].
+lint = ["black>=24", "pylint>=3"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311", "py312", "py313"]
+
+[tool.pylint.main]
+py-version = "3.11"
+jobs = 0  # 0 = one process per available CPU core
+
+[tool.pylint.format]
+max-line-length = 88
+
+[tool.pylint.basic]
+# This library exposes gate singletons as module-level names spelled after the
+# gates themselves (Sdg, iSwap, Fourierdg, Reset, Barrier, ...) plus the conftest
+# hook `pytest_plugins`; none fit UPPER_CASE, so accept any constant name.
+const-naming-style = "any"
+# `iSwapGate` intentionally leads with a lowercase 'i' (the canonical gate name).
+good-names = ["i", "j", "k", "ex", "Run", "_", "iSwapGate"]
+
+[tool.pylint."messages control"]
+# Pragmatic gate: black owns formatting and the checks below flag deliberate,
+# documented patterns in this codebase rather than defects. Everything else
+# (real errors, unused names, undefined vars, bad returns, ...) stays enabled.
+disable = [
+    "line-too-long",                 # black owns line length
+    "duplicate-code",                # small test setups legitimately repeat similar lines
+    "missing-module-docstring",      # docstrings are placed by intent, not blanket-required
+    "missing-class-docstring",
+    "missing-function-docstring",    # test functions read as their own names
+    "protected-access",              # white-box tests use package-internal _names by design
+    "import-outside-toplevel",       # deliberate lazy imports break import cycles
+    "unidiomatic-typecheck",         # `type(x) is int` is an intentional exact-type guard
+    "unused-argument",               # args accepted for interface parity (e.g. rng on DM reset)
+    "too-few-public-methods",        # frozen value objects / dataclasses
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "too-many-locals",
+    "too-many-instance-attributes",
+    "too-many-return-statements",
+    "too-many-branches",
+    "too-many-statements",
+    "too-many-boolean-expressions",
+    "too-many-lines",
+    # pylint's static inference is unreliable on numpy arrays and on the
+    # deliberate "assert this misuse raises" test patterns (calling a gate
+    # singleton, mutating an immutable tuple view, capturing a None return),
+    # so these inference checks misfire here. pyright and the test suite cover
+    # the genuine cases.
+    "no-member",
+    "not-callable",
+    "assignment-from-no-return",
+    "too-many-function-args",
+    "unexpected-keyword-arg",
+    "unbalanced-tuple-unpacking",    # qasm `_lower` returns variable-length tuples by kind
+    "pointless-statement",           # bare `obj[i]` inside pytest.raises is the test action
+    # run() intentionally captures any execution-stage error into a failed Job.
+    "broad-exception-caught",
+    # Opinionated style that conflicts with intentional choices here.
+    "use-implicit-booleaness-not-comparison",  # explicit `== ()` / `== {}` in tests
+    "consider-using-from-import",
+]

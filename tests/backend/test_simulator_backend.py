@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 
-import fatqat as fq
 from fatqat.backends import SimulatorBackend
 from fatqat.errors import BackendValidationError
 from fatqat import operations as ops
@@ -95,12 +94,12 @@ def test_barrier_is_skipped_in_lowering():
 
 @pytest.mark.parametrize("method", ["SV", "DM"])
 def test_barrier_does_not_change_counts(method):
-    with_b = SimulatorBackend(method=method).run(
-        _bell(with_barriers=True), shots=128, seed=11
-    ).result()
-    without = SimulatorBackend(method=method).run(
-        _bell(), shots=128, seed=11
-    ).result()
+    with_b = (
+        SimulatorBackend(method=method)
+        .run(_bell(with_barriers=True), shots=128, seed=11)
+        .result()
+    )
+    without = SimulatorBackend(method=method).run(_bell(), shots=128, seed=11).result()
     assert with_b.get_counts() == without.get_counts()
 
 

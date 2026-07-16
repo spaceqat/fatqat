@@ -71,9 +71,7 @@ _IF_RE = re.compile(r"^if\s*\((.*?)\)\s*(.+)$", re.DOTALL)
 _IF_BLOCK_RE = re.compile(r"^if\s*\((.*?)\)\s*\{\s*(.*)\s*\}$", re.DOTALL)
 _GATE_RE = re.compile(r"^([A-Za-z_]\w*)\s*(?:\((.*)\))?\s*(.*)$")
 _REF_RE = re.compile(r"^([A-Za-z_]\w*)(?:\[\s*(\d+)\s*\])?$")
-_COND_TERM_RE = re.compile(
-    r"^([A-Za-z_]\w*)(?:\[\s*(\d+)\s*\])?\s*(==|!=)\s*(\d+)$"
-)
+_COND_TERM_RE = re.compile(r"^([A-Za-z_]\w*)(?:\[\s*(\d+)\s*\])?\s*(==|!=)\s*(\d+)$")
 _GATE_DEF_HEADER_RE = re.compile(
     r"^gate\s+([A-Za-z_]\w*)\s*(?:\((.*?)\))?\s*([A-Za-z_][\w\s,]*)$"
 )
@@ -263,12 +261,16 @@ class _QASMBuilder:
         body_text = body_text.rstrip()[:-1]  # drop the trailing '}'
         m = _GATE_DEF_HEADER_RE.match(header.strip())
         if not m:
-            raise QASMTranspileError(f"cannot parse gate definition header {header.strip()!r}")
+            raise QASMTranspileError(
+                f"cannot parse gate definition header {header.strip()!r}"
+            )
         name, params_text, qargs_text = m.groups()
         name = name.lower()
         if name in self._gate_defs:
             raise QASMTranspileError(f"gate {name!r} redefined")
-        param_names = [p.strip() for p in _split_top_level(params_text or "", ",") if p.strip()]
+        param_names = [
+            p.strip() for p in _split_top_level(params_text or "", ",") if p.strip()
+        ]
         qarg_names = [q.strip() for q in _split_top_level(qargs_text, ",") if q.strip()]
         if not qarg_names:
             raise QASMTranspileError(f"gate {name!r} declares no qubit parameters")
@@ -276,14 +278,22 @@ class _QASMBuilder:
         for inner in _split_statements(body_text):
             call = _GATE_RE.match(inner)
             if not call:
-                raise QASMTranspileError(f"cannot parse statement {inner!r} inside gate {name!r}")
+                raise QASMTranspileError(
+                    f"cannot parse statement {inner!r} inside gate {name!r}"
+                )
             call_name, call_params_text, call_qargs_text = call.groups()
             call_param_exprs = (
-                [p.strip() for p in _split_top_level(call_params_text, ",") if p.strip()]
+                [
+                    p.strip()
+                    for p in _split_top_level(call_params_text, ",")
+                    if p.strip()
+                ]
                 if call_params_text
                 else []
             )
-            call_qarg_names = [q.strip() for q in _split_top_level(call_qargs_text, ",") if q.strip()]
+            call_qarg_names = [
+                q.strip() for q in _split_top_level(call_qargs_text, ",") if q.strip()
+            ]
             body.append((call_name.lower(), call_param_exprs, call_qarg_names))
         self._gate_defs[name] = _GateDef(param_names, qarg_names, body)
 
@@ -301,7 +311,9 @@ class _QASMBuilder:
             cond_text, block = conditional.groups()
             nested = _split_statements(block)
             if len(nested) != 1:
-                raise QASMTranspileError("if blocks must contain exactly one supported instruction")
+                raise QASMTranspileError(
+                    "if blocks must contain exactly one supported instruction"
+                )
             statement = nested[0]
             condition = self._parse_condition_text(cond_text)
 
@@ -341,7 +353,9 @@ class _QASMBuilder:
             for op, positions in expanded:
                 targets = tuple(operands[p] for p in positions)
                 self.program.add(
-                    op, targets[0] if len(targets) == 1 else targets, condition=condition
+                    op,
+                    targets[0] if len(targets) == 1 else targets,
+                    condition=condition,
                 )
 
     def _expand_gate(
@@ -370,7 +384,9 @@ class _QASMBuilder:
             qarg_pos = {qname: i for i, qname in enumerate(gdef.qargs)}
             out: list[tuple[Any, tuple[int, ...]]] = []
             for call_name, call_param_exprs, call_qarg_names in gdef.body:
-                sub_params = tuple(_eval_angle(expr, param_env) for expr in call_param_exprs)
+                sub_params = tuple(
+                    _eval_angle(expr, param_env) for expr in call_param_exprs
+                )
                 try:
                     positions = tuple(qarg_pos[q] for q in call_qarg_names)
                 except KeyError as exc:
@@ -383,9 +399,14 @@ class _QASMBuilder:
                     out.append((sub_op, tuple(positions[p] for p in sub_positions)))
             return out
 
-        return [(op, tuple(range(n_operands))) for op in self._builtin_gate(name, params, n_operands)]
+        return [
+            (op, tuple(range(n_operands)))
+            for op in self._builtin_gate(name, params, n_operands)
+        ]
 
-    def _builtin_gate(self, name: str, params: tuple[float, ...], n_operands: int) -> tuple[Any, ...]:
+    def _builtin_gate(
+        self, name: str, params: tuple[float, ...], n_operands: int
+    ) -> tuple[Any, ...]:
         fixed = {
             "id": ops.I,
             "u0": ops.I,
@@ -477,7 +498,9 @@ class _QASMBuilder:
             )
         width = len(operand_groups[0])
         if any(len(group) != width for group in operand_groups):
-            raise QASMTranspileError(f"{op.name} register operands must have equal size")
+            raise QASMTranspileError(
+                f"{op.name} register operands must have equal size"
+            )
 
         for operands in zip(*operand_groups):
             self.program.add(op, tuple(operands), condition=condition)
@@ -499,7 +522,9 @@ class _QASMBuilder:
             return tuple(reg[i] for i in range(reg.size))
         return (reg[int(index_text)],)
 
-    def _parse_condition_text(self, cond_text: str) -> tuple[tuple[RegisterRef, int], ...]:
+    def _parse_condition_text(
+        self, cond_text: str
+    ) -> tuple[tuple[RegisterRef, int], ...]:
         """Parse an `if (...)` condition into fatqat's AND-of-equalities
         form. Supports the QASM2 whole-register form (`c == N`, decoded into
         every bit of `c`) and the QASM3 bit-level form (`c[0] == 1`), with
@@ -547,7 +572,9 @@ class _QASMBuilder:
                 bit = (1 - value) if op == "!=" else value
                 self._merge_condition_term(resolved, reg_name, idx, bit)
 
-        return tuple((self._creg_by_name[name][i], v) for (name, i), v in resolved.items())
+        return tuple(
+            (self._creg_by_name[name][i], v) for (name, i), v in resolved.items()
+        )
 
     @staticmethod
     def _merge_condition_term(
@@ -651,7 +678,11 @@ def _eval_angle_node(node: ast.AST, env: dict[str, float]) -> float:
             raise QASMTranspileError(f"unsupported function {node.func.id!r}")
         if node.keywords:
             raise QASMTranspileError("angle functions do not accept keyword arguments")
-        return float(_MATH_FUNCS[node.func.id](*(_eval_angle_node(arg, env) for arg in node.args)))
+        return float(
+            _MATH_FUNCS[node.func.id](
+                *(_eval_angle_node(arg, env) for arg in node.args)
+            )
+        )
     raise QASMTranspileError(f"unsupported angle expression {ast.unparse(node)!r}")
 
 
@@ -668,7 +699,11 @@ def _require_param_count(name: str, params: tuple[float, ...], expected: int) ->
 
 def _require_operand_count(name: str, expected: int | None, actual: int) -> None:
     if expected is not None and expected != actual:
-        raise QASMTranspileError(f"gate {name!r} expects {expected} qubit(s), got {actual}")
+        raise QASMTranspileError(
+            f"gate {name!r} expects {expected} qubit(s), got {actual}"
+        )
+
+
 # ===========================================================================
 # Export direction: fatqat.Program -> OpenQASM source text
 # ===========================================================================
@@ -686,11 +721,45 @@ class QasmExportError(Exception):
 # register identifier we generate. Not exhaustive of every future keyword,
 # but covers the practically-relevant ones.
 _QASM_RESERVED = {
-    "openqasm", "include", "qreg", "creg", "qubit", "bit", "gate", "opaque",
-    "if", "else", "for", "while", "measure", "reset", "barrier", "u", "cx",
-    "pi", "true", "false", "const", "let", "def", "return", "input",
-    "output", "extern", "box", "duration", "stretch", "delay", "reset",
-    "in", "int", "uint", "float", "angle", "bool", "complex", "array",
+    "openqasm",
+    "include",
+    "qreg",
+    "creg",
+    "qubit",
+    "bit",
+    "gate",
+    "opaque",
+    "if",
+    "else",
+    "for",
+    "while",
+    "measure",
+    "reset",
+    "barrier",
+    "u",
+    "cx",
+    "pi",
+    "true",
+    "false",
+    "const",
+    "let",
+    "def",
+    "return",
+    "input",
+    "output",
+    "extern",
+    "box",
+    "duration",
+    "stretch",
+    "delay",
+    "in",
+    "int",
+    "uint",
+    "float",
+    "angle",
+    "bool",
+    "complex",
+    "array",
 }
 
 
@@ -718,6 +787,7 @@ def _sanitize_identifier(raw: str | None, fallback: str, taken: set[str]) -> str
 # ---------------------------------------------------------------------------
 # Register layout: map every fatqat Register to a QASM array name + check dim
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class _RegInfo:
@@ -783,6 +853,7 @@ class _Layout:
 # Numeric formatting
 # ---------------------------------------------------------------------------
 
+
 def _fmt(theta: float) -> str:
     """Render a float angle as a compact QASM numeric literal."""
     theta = float(theta)
@@ -794,6 +865,7 @@ def _fmt(theta: float) -> str:
     ratio = theta / math.pi
     if abs(ratio) <= 8:
         from fractions import Fraction
+
         frac = Fraction(ratio).limit_denominator(64)
         # Only use the cosmetic pi/N form if it reconstructs theta to within
         # float round-off; otherwise this would silently change the angle.
@@ -819,10 +891,21 @@ def _fmt(theta: float) -> str:
 # definition.
 
 _FIXED_GATE_MAP = {
-    "H": "h", "I": "id", "S": "s", "Sdg": "sdg", "T": "t", "Tdg": "tdg",
-    "X": "x", "Y": "y", "Z": "z",
-    "CX": "cx", "CZ": "cz", "Swap": "swap", "CY": "cy",
-    "CCX": "ccx", "CSwap": "cswap",
+    "H": "h",
+    "I": "id",
+    "S": "s",
+    "Sdg": "sdg",
+    "T": "t",
+    "Tdg": "tdg",
+    "X": "x",
+    "Y": "y",
+    "Z": "z",
+    "CX": "cx",
+    "CZ": "cz",
+    "Swap": "swap",
+    "CY": "cy",
+    "CCX": "ccx",
+    "CSwap": "cswap",
 }
 
 
@@ -831,9 +914,23 @@ def _lower(op: ops.Operation, dim: int) -> tuple[str, ...]:
     checked == 2 by the caller)."""
     name = type(op).__name__
 
-    if name in ("HGate", "IGate", "SGate", "SdgGate", "TGate", "TdgGate",
-                "XGate", "YGate", "ZGate", "CXGate", "CZGate", "SwapGate",
-                "CYGate", "CCXGate", "CSwapGate"):
+    if name in (
+        "HGate",
+        "IGate",
+        "SGate",
+        "SdgGate",
+        "TGate",
+        "TdgGate",
+        "XGate",
+        "YGate",
+        "ZGate",
+        "CXGate",
+        "CZGate",
+        "SwapGate",
+        "CYGate",
+        "CCXGate",
+        "CSwapGate",
+    ):
         return ("gate", _FIXED_GATE_MAP[op.name], [])
 
     if name == "CSGate":
@@ -858,10 +955,18 @@ def _lower(op: ops.Operation, dim: int) -> tuple[str, ...]:
     # by the caller; each reduces to a fixed qubit gate per its docstring. ---
     if name == "Shift":
         power = op.power % 2
-        return ("gate", "x", []) if power == 1 else ("skip", f"Shift(power={op.power}) is identity at dim=2")
+        return (
+            ("gate", "x", [])
+            if power == 1
+            else ("skip", f"Shift(power={op.power}) is identity at dim=2")
+        )
     if name == "Clock":
         power = op.power % 2
-        return ("gate", "z", []) if power == 1 else ("skip", f"Clock(power={op.power}) is identity at dim=2")
+        return (
+            ("gate", "z", [])
+            if power == 1
+            else ("skip", f"Clock(power={op.power}) is identity at dim=2")
+        )
     if name == "SumGate":
         return ("gate", "cx", [])
     if name == "SwapLevels":
@@ -884,13 +989,19 @@ def _lower(op: ops.Operation, dim: int) -> tuple[str, ...]:
         return ("gate", "rz", [_fmt(theta)])
     if name == "CClock":
         power = op.power % 2
-        return ("gate", "cz", []) if power == 1 else ("skip", f"CClock(power={op.power}) is identity at dim=2")
+        return (
+            ("gate", "cz", [])
+            if power == 1
+            else ("skip", f"CClock(power={op.power}) is identity at dim=2")
+        )
     # (CClock's class name has no "Gate" suffix, matching Shift/Clock/SwapLevels
     # above -- fatqat's naming convention here is inconsistent with e.g.
     # SumGate/FourierGate, so this matcher is intentionally exhaustive rather
     # than pattern-based.)
 
-    raise QasmExportError(f"no QASM lowering is defined for operation {op.name!r} ({name})")
+    raise QasmExportError(
+        f"no QASM lowering is defined for operation {op.name!r} ({name})"
+    )
 
 
 def _qasm2_lower_name(qasm3_name: str) -> str:
@@ -927,6 +1038,7 @@ _ISWAP_DEF_QASM2 = (
 # ---------------------------------------------------------------------------
 # Condition rendering
 # ---------------------------------------------------------------------------
+
 
 def _condition_terms_qasm3(condition, layout: _Layout) -> str:
     parts = [f"{layout.cref(ref)} == {value}" for ref, value in condition]
@@ -971,6 +1083,7 @@ def _condition_value_qasm2(condition, layout: _Layout):
 # ---------------------------------------------------------------------------
 # Main translation
 # ---------------------------------------------------------------------------
+
 
 def to_qasm(program: Program, version: int = 3) -> str:
     """Translate a fatqat `Program` into OpenQASM source text.
@@ -1072,11 +1185,11 @@ def to_qasm(program: Program, version: int = 3) -> str:
 
     header: list[str]
     if version == 3:
-        header = ['OPENQASM 3.0;', 'include "stdgates.inc";']
+        header = ["OPENQASM 3.0;", 'include "stdgates.inc";']
         if uses_iswap:
             header += ["", _ISWAP_DEF_QASM3]
     else:
-        header = ['OPENQASM 2.0;', 'include "qelib1.inc";']
+        header = ["OPENQASM 2.0;", 'include "qelib1.inc";']
         if uses_iswap:
             header += ["", _ISWAP_DEF_QASM2]
 

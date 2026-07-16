@@ -47,6 +47,7 @@ def test_error_classes_only_under_errors_namespace():
         UnsupportedOperationError,
         NoMeasurementWarning,
     )
+
     assert fq.errors.FatqcatError is FatqcatError
     assert fq.errors.BackendValidationError is BackendValidationError
     assert fq.errors.MatrixImplementationError is MatrixImplementationError
@@ -60,5 +61,3 @@ def test_program_measure_all_is_public_instance_method():
     program.measure_all()
 
     assert len(program.operations) == 1
-
-

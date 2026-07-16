@@ -48,9 +48,7 @@ def test_bit_flip_code_corrects_single_x_error():
     p.add_measurement(1, 3)
     p.add_measurement(2, 4)
     counts = SimulatorBackend("SV").run(p, shots=32, seed=2).result().get_counts()
-    assert all(
-        key[0] == "0" and key[1] == "0" and key[2] == "0" for key in counts
-    )
+    assert all(key[0] == "0" and key[1] == "0" and key[2] == "0" for key in counts)
 
 
 def test_reset_seed_independence_matches_born_rule():
