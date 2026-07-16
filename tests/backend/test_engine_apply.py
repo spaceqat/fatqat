@@ -1,8 +1,8 @@
-"""Tests statevector engine initialization, gate application, and state export."""
+"""Tests statevector simulator initialization, gate application, and state export."""
 
 import numpy as np
 
-from fatqat.backends.numpy_engine import NumpyEngine, _apply_sv
+from fatqat.simulator.np import NumpySVSimulator
 from fatqat.backends.steps import ApplyMatrixStep
 from fatqat.implementation.matrices import shift_matrix
 
@@ -17,7 +17,7 @@ _CCX[[6, 7]] = _CCX[[7, 6]]
 
 
 def _engine(n):
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((2,) * n)
     return eng
 
@@ -104,21 +104,19 @@ def test_shift_matrix_qutrit_cycles_basis():
 
 
 def test_apply_shift_on_single_qutrit():
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((3,))
-    state = eng.export_state()
-    new = _apply_sv(state, shift_matrix(3, 1), (0,), (3,))
-    assert np.allclose(new, [0, 1, 0])  # |0> -> |1>
+    eng.apply(ApplyMatrixStep(matrix=shift_matrix(3, 1), target_indices=(0,)))
+    assert np.allclose(eng.export_state(), [0, 1, 0])  # |0> -> |1>
 
 
 def test_apply_matrix_mixed_radix_qutrit_qubit():
     # 2 subsystems: dim-3 (subsystem 0) and dim-2 (subsystem 1); state size 6.
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((3, 2))
-    state = eng.export_state()
     # Shift subsystem 0 (the qutrit) by 1: |0,0> -> |1,0>.
-    new = _apply_sv(state, shift_matrix(3, 1), (0,), (3, 2))
+    eng.apply(ApplyMatrixStep(matrix=shift_matrix(3, 1), target_indices=(0,)))
     # Flat index of |q0=1, q1=0> little-endian: 1 * stride0(=prod(dims[:0])=1) = 1.
     expected = np.zeros(6, dtype=complex)
     expected[1] = 1.0
-    assert np.allclose(new, expected)
+    assert np.allclose(eng.export_state(), expected)

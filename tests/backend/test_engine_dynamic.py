@@ -1,6 +1,6 @@
 import numpy as np
 
-from fatqat.backends.numpy_engine import NumpyEngine
+from fatqat.simulator.np import NumpySVSimulator
 from fatqat.backends.steps import ApplyMatrixStep
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
@@ -8,7 +8,7 @@ _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
 
 
 def test_measure_qubit_deterministic_one():
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((2,))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))  # |1>
     bit = eng.measure_subsystem(0, np.random.default_rng(0))
@@ -17,7 +17,7 @@ def test_measure_qubit_deterministic_one():
 
 
 def test_measure_qubit_collapses_and_is_repeatable():
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((2,))
     eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))  # (|0>+|1>)/sqrt2
     first = eng.measure_subsystem(0, np.random.default_rng(0))
@@ -27,7 +27,7 @@ def test_measure_qubit_collapses_and_is_repeatable():
 
 
 def test_reset_qubit_from_one_returns_zero():
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((2,))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))  # |1>
     eng.reset_subsystem(0, np.random.default_rng(0))
@@ -38,7 +38,7 @@ def test_reset_qubit_on_entangled_pair_conditions_the_partner():
     # Bell pair (|00>+|11>)/sqrt2; reset qubit 0 -> partner is |0> or |1>, 50/50.
     outcomes = []
     for s in range(200):
-        eng = NumpyEngine(state_semantics="statevector")
+        eng = NumpySVSimulator()
         eng.initialize((2, 2))
         eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
         cx = np.array(
@@ -58,7 +58,7 @@ def test_reset_qubit_on_entangled_pair_conditions_the_partner():
 
 
 def test_measure_subsystems_returns_bits_in_requested_order():
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((2, 2, 2))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(2,)))
@@ -70,7 +70,7 @@ def test_measure_subsystems_returns_bits_in_requested_order():
 
 
 def test_measure_subsystems_consumes_one_rng_draw_for_grouped_event():
-    eng_grouped = NumpyEngine(state_semantics="statevector")
+    eng_grouped = NumpySVSimulator()
     eng_grouped.initialize((2, 2))
     eng_grouped.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
     eng_grouped.apply(
@@ -94,7 +94,7 @@ def test_measure_subsystems_consumes_one_rng_draw_for_grouped_event():
 
 
 def test_reset_subsystems_resets_all_targets_with_one_grouped_collapse():
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((2, 2))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(1,)))
@@ -105,7 +105,7 @@ def test_reset_subsystems_resets_all_targets_with_one_grouped_collapse():
 
 
 def test_single_qubit_wrappers_delegate_to_grouped_methods():
-    eng = NumpyEngine(state_semantics="statevector")
+    eng = NumpySVSimulator()
     eng.initialize((2,))
     eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
 
