@@ -11,10 +11,15 @@ from ..layout import ResourceLayout
 
 @dataclass(frozen=True)
 class _PlanFacts:
-    """Program facts needed for backend result defaults and validation."""
+    """Program facts needed for backend result defaults and validation.
+
+    ``has_channel`` defaults to ``False`` so channel-free construction sites
+    (and the fake-backend lowering) stay unchanged.
+    """
 
     has_measurement: bool
     has_reset: bool
+    has_channel: bool = False
 
 
 def _normalize_dict_options(

@@ -2,12 +2,14 @@
 
 A :py:class:`~fatqat.Program` lowers to a `list[ResolvedStep]`: each step is either an
 `ApplyMatrixStep` (a local matrix payload built from a matrix-implementation
-rule plus layout-resolved target indices), a `MeasurementStep`, or a
-`ResetStep`. Defined here, separate from both `implementation/` (the rule
-protocol that only ever produces a bare matrix, never a step) and
-`simulator_backend.py` / the `simulator/` package (which would otherwise need
-to import this type from each other and cycle), so both the backend and the
-simulators can import it without depending on one another.
+rule plus layout-resolved target indices), an `ApplyChannelStep` (a Kraus
+payload built from a channel-implementation rule, for channel-representable
+noise), a `MeasurementStep`, or a `ResetStep`. Defined here, separate from
+both `implementation/` / `noise/` (the rule protocols that only ever produce
+bare arrays, never a step) and `simulator_backend.py` / the `simulator/`
+package (which would otherwise need to import this type from each other and
+cycle), so both the backend and the simulators can import it without
+depending on one another.
 """
 
 from __future__ import annotations
@@ -24,12 +26,6 @@ class ApplyMatrixStep:
     Doubles as the "apply a matrix" entry in a backend execution plan and as the
     payload the engine applies. The matrix is marked read-only after construction
     so this frozen value object cannot be mutated through the NumPy array buffer.
-
-    A future `ApplyChannelStep` (Kraus operators + target indices, for
-    channel-representable noise) belongs here alongside this type once noise
-    support lands - see `docs/design/architecture/noise-model/matrix-channel-noise.md`
-    §4.3-4.4. It is resolved the same way, right after a gate's `ApplyMatrixStep`,
-    and would join `ResolvedStep` as a fourth member.
 
     Attributes:
         matrix: Local operation matrix.
@@ -56,6 +52,42 @@ class ApplyMatrixStep:
 
 
 @dataclass(frozen=True)
+class ApplyChannelStep:
+    """Resolved channel payload: Kraus operators plus flat target indices.
+
+    Built at lowering, right after the `ApplyMatrixStep` of the gate the
+    channel is attached to (see `docs/design/architecture/noise-model/
+    matrix-channel-noise.md` §4.3-4.4). Carries concrete arrays only - no
+    descriptor or model handle survives into the engine or across a
+    parallel-execution boundary. Each Kraus array is marked read-only after
+    construction, same as `ApplyMatrixStep.matrix`.
+
+    Attributes:
+        kraus_ops: Resolved Kraus operators, CPTP-validated at lowering.
+        target_indices: Flat subsystem indices the channel acts on.
+        condition: The parent gate's lowered feedforward guard. A channel
+            models its gate's noise, so when the guard skips the gate it
+            skips the channel too. The engine ignores this field; the
+            backend's per-shot loop evaluates it.
+    """
+
+    kraus_ops: tuple[np.ndarray, ...]
+    target_indices: tuple[int, ...]
+    condition: tuple[tuple[int, int], ...] | None = None
+
+    def __post_init__(self) -> None:
+        # Same freezing policy as ApplyMatrixStep: copy any still-writeable
+        # array (a rule may hand back a shared/cached one) before locking it.
+        frozen = []
+        for kraus in self.kraus_ops:
+            if kraus.flags.writeable:
+                kraus = np.array(kraus, copy=True)
+            kraus.flags.writeable = False
+            frozen.append(kraus)
+        object.__setattr__(self, "kraus_ops", tuple(frozen))
+
+
+@dataclass(frozen=True)
 class MeasurementStep:
     """Resolved measurement: flat subsystem indices into matching flat clbit indices."""
 
@@ -76,4 +108,4 @@ class ResetStep:
     condition: tuple[tuple[int, int], ...] | None = None
 
 
-ResolvedStep = ApplyMatrixStep | MeasurementStep | ResetStep
+ResolvedStep = ApplyMatrixStep | ApplyChannelStep | MeasurementStep | ResetStep
