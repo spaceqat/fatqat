@@ -95,7 +95,7 @@ class ResourceLayout:
         c_offsets: dict[int, int] = {}
         classical_dims: list[int] = []
         coffset = 0
-        for reg in program.creg:
+        for reg in program.clreg:
             c_offsets[id(reg)] = coffset
             classical_dims.extend(reg.dim for _ in range(reg.size))
             coffset += reg.size

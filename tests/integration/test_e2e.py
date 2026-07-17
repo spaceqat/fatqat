@@ -104,7 +104,7 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
             # (a condition) forces the statevector engine's dynamic classification,
             # letting the dynamic path be compared against the fast path for
             # the identical program shape and seed.
-            p.add(fq.ops.Shift(0), 0, condition=(p.creg[0][0], 0))
+            p.add(fq.ops.Shift(0), 0, condition=(p.clreg[0][0], 0))
         return p
 
     fast_counts = (

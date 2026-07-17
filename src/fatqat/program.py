@@ -111,7 +111,7 @@ class Program:
         self.qreg: tuple[QuantumRegister, ...] = tuple(
             self._coerce_registers(qreg, QuantumRegister, "q")
         )
-        self.creg: tuple[ClassicalRegister, ...] = tuple(
+        self.clreg: tuple[ClassicalRegister, ...] = tuple(
             self._coerce_registers(clreg, ClassicalRegister, "c")
         )
         self._operations: list[AppliedOperation | Measurement] = []
@@ -175,7 +175,7 @@ class Program:
             raise TypeError(
                 "integer operands are only allowed when there is exactly one "
                 "register of the relevant kind; pass an explicit RegisterRef "
-                "(e.g. qreg[0] or creg[0]) instead"
+                "(e.g. qreg[0] or clreg[0]) instead"
             )
         # Bounds and negative-index checks are delegated to Register.__getitem__,
         # which raises IndexError.
@@ -188,7 +188,7 @@ class Program:
 
     def _resolve_classical_ref(self, operand: int | RegisterRef) -> RegisterRef:
         return self._resolve_ref(
-            operand, self.creg, ClassicalRegister, "classical register"
+            operand, self.clreg, ClassicalRegister, "classical register"
         )
 
     def add(
@@ -329,7 +329,7 @@ class Program:
             ref for reg in self.qreg for ref in (reg[i] for i in range(reg.size))
         )
         outputs = tuple(
-            ref for reg in self.creg for ref in (reg[i] for i in range(reg.size))
+            ref for reg in self.clreg for ref in (reg[i] for i in range(reg.size))
         )
         # Equal-count and non-empty invariants are enforced once in
         # Measurement.__post_init__, reached through add_measurement.
@@ -339,7 +339,7 @@ class Program:
         """Return an independent copy with private operation storage and copied metadata."""
         new = Program.__new__(Program)
         new.qreg = tuple(self.qreg)
-        new.creg = tuple(self.creg)
+        new.clreg = tuple(self.clreg)
         new._operations = list(self._operations)
         new._operations_view = tuple(new._operations)
         new.metadata = dict(self.metadata)

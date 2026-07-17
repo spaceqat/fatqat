@@ -16,7 +16,7 @@ def test_add_measurement_appends_measurement():
     m = p.operations[0]
     assert isinstance(m, Measurement)
     assert m.targets == (p.qreg[0][0],)
-    assert m.outputs == (p.creg[0][0],)
+    assert m.outputs == (p.clreg[0][0],)
 
 
 def test_operations_preserve_order_and_type_mix():
@@ -52,10 +52,10 @@ def test_add_measurement_explicit_output_ref_works_with_multiple_classical_regis
         [ClassicalRegister(1, name="a"), ClassicalRegister(1, name="b")],
     )
 
-    p.add_measurement(1, p.creg[1][0])
+    p.add_measurement(1, p.clreg[1][0])
 
     assert p.operations[0].targets == (p.qreg[0][1],)
-    assert p.operations[0].outputs == (p.creg[1][0],)
+    assert p.operations[0].outputs == (p.clreg[1][0],)
 
 
 def test_add_measurement_rejects_metadata_argument():
@@ -72,7 +72,7 @@ def test_add_measurement_stores_single_as_one_tuples():
     m = p.operations[0]
     assert isinstance(m, Measurement)
     assert m.targets == (p.qreg[0][0],)
-    assert m.outputs == (p.creg[0][1],)
+    assert m.outputs == (p.clreg[0][1],)
 
 
 def test_add_measurement_accepts_grouped_operands():
@@ -82,7 +82,7 @@ def test_add_measurement_accepts_grouped_operands():
     m = p.operations[0]
     assert isinstance(m, Measurement)
     assert m.targets == (p.qreg[0][0], p.qreg[0][2])
-    assert m.outputs == (p.creg[0][1], p.creg[0][0])
+    assert m.outputs == (p.clreg[0][1], p.clreg[0][0])
 
 
 def test_add_measurement_rejects_mismatched_group_sizes():
@@ -110,7 +110,7 @@ def test_measure_all_appends_one_grouped_instruction_in_flat_order():
     m = p.operations[0]
     assert isinstance(m, Measurement)
     assert m.targets == (p.qreg[0][0], p.qreg[0][1], p.qreg[1][0])
-    assert m.outputs == (p.creg[0][0], p.creg[1][0], p.creg[1][1])
+    assert m.outputs == (p.clreg[0][0], p.clreg[1][0], p.clreg[1][1])
 
 
 def test_measure_all_rejects_mismatched_resource_counts():

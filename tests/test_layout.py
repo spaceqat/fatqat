@@ -15,7 +15,7 @@ def test_single_register_layout():
     assert layout.n_clbits == 2
     assert layout.subsystem_index(p.qreg[0][0]) == 0
     assert layout.subsystem_index(p.qreg[0][2]) == 2
-    assert layout.clbit_index(p.creg[0][1]) == 1
+    assert layout.clbit_index(p.clreg[0][1]) == 1
 
 
 def test_multi_register_flat_concatenation():

@@ -38,7 +38,7 @@ class Measurement:
         >>> import fatqat as fq
         >>> program = fq.Program(1, 1)
         >>> m = fq.ops.Measurement(
-        ...     targets=(program.qreg[0][0],), outputs=(program.creg[0][0],)
+        ...     targets=(program.qreg[0][0],), outputs=(program.clreg[0][0],)
         ... )
         >>> m.targets
         (RegisterRef(register=QuantumRegister(size=1, name='q', metadata={}, dim=2), index=0),)

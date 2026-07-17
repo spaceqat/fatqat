@@ -815,7 +815,7 @@ class _Layout:
             name = _sanitize_identifier(reg.name, f"q{i}", taken)
             self.q_info[id(reg)] = _RegInfo(name, reg.size)
 
-        for i, reg in enumerate(program.creg):
+        for i, reg in enumerate(program.clreg):
             self._check_dim(reg, "classical")
             name = _sanitize_identifier(reg.name, f"c{i}", taken)
             self.c_info[id(reg)] = _RegInfo(name, reg.size)

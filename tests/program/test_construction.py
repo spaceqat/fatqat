@@ -9,7 +9,7 @@ from fatqat.registers import QuantumRegister, ClassicalRegister
 def test_int_construction_creates_default_registers():
     p = Program(2, 2)
     assert len(p.qreg) == 1 and p.qreg[0].size == 2
-    assert len(p.creg) == 1 and p.creg[0].size == 2
+    assert len(p.clreg) == 1 and p.clreg[0].size == 2
     assert p.operations == ()
 
 
@@ -36,7 +36,7 @@ def test_operations_tuple_view_is_cached_until_mutation():
 def test_zero_classical_means_no_classical_register():
     p = Program(2)
     assert len(p.qreg) == 1
-    assert p.creg == ()
+    assert p.clreg == ()
 
 
 def test_list_construction_with_explicit_registers():
@@ -44,17 +44,17 @@ def test_list_construction_with_explicit_registers():
     cr = ClassicalRegister(2, name="ro")
     p = Program([qr], [cr])
     assert p.qreg == (qr,)
-    assert p.creg == (cr,)
+    assert p.clreg == (cr,)
 
 
 def test_register_collections_are_public_read_only_tuples():
     p = Program(1, 1)
     assert isinstance(p.qreg, tuple)
-    assert isinstance(p.creg, tuple)
+    assert isinstance(p.clreg, tuple)
     with pytest.raises(AttributeError):
         p.qreg.append(QuantumRegister(1))
     with pytest.raises(AttributeError):
-        p.creg.clear()
+        p.clreg.clear()
 
 
 def test_flat_quantum_ref_resolution_out_of_range_raises():
