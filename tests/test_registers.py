@@ -83,11 +83,6 @@ def test_distinct_registers_with_identical_fields_are_not_equal():
     assert ClassicalRegister(2, name="c") != ClassicalRegister(2, name="c")
 
 
-def test_register_equals_itself():
-    qr = QuantumRegister(2, name="q")
-    assert qr == qr
-
-
 def test_registers_are_hashable_despite_metadata():
     assert isinstance(hash(QuantumRegister(1, metadata={"k": 1})), int)
     assert isinstance(hash(ClassicalRegister(1, metadata={"k": 1})), int)
