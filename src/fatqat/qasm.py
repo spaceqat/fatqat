@@ -1136,7 +1136,7 @@ def to_qasm(program: Program, version: int = 3) -> str:
 
     for step in program.operations:
         if isinstance(step, ops.Measurement):
-            for qref, cref in zip(step.qreg, step.clreg):
+            for qref, cref in zip(step.targets, step.outputs):
                 if version == 3:
                     body.append(f"{layout.cref(cref)} = measure {layout.qref(qref)};")
                 else:

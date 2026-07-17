@@ -234,8 +234,8 @@ def test_from_qasm_builds_bell_program():
     assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
     measurement = program.operations[2]
     assert isinstance(measurement, Measurement)
-    assert measurement.qreg == (program.qreg[0][0], program.qreg[0][1])
-    assert measurement.clreg == (program.creg[0][0], program.creg[0][1])
+    assert measurement.targets == (program.qreg[0][0], program.qreg[0][1])
+    assert measurement.outputs == (program.creg[0][0], program.creg[0][1])
 
 
 def test_from_qasm_preserves_multiple_register_names():
@@ -458,8 +458,8 @@ def test_from_qasm3_builds_bell_program():
     assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
     measurement = program.operations[2]
     assert isinstance(measurement, Measurement)
-    assert measurement.qreg == (program.qreg[0][0], program.qreg[0][1])
-    assert measurement.clreg == (program.creg[0][0], program.creg[0][1])
+    assert measurement.targets == (program.qreg[0][0], program.qreg[0][1])
+    assert measurement.outputs == (program.creg[0][0], program.creg[0][1])
 
 
 def test_from_qasm3_single_qubit_and_bit_declarations():

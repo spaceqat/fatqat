@@ -1,4 +1,13 @@
-"""ResourceLayout: the single source of truth for flat subsystem/clbit indices."""
+"""ResourceLayout: the single source of truth for flat subsystem/clbit indices.
+
+TODO: `clbit_index` / `n_clbits` assume two levels, unlike the neutral
+`subsystem_index` / `n_subsystems` beside them - a `ClassicalRegister` carries
+`dim`, so a slot holds a d-ary digit, not a bit. Do not rename either in
+isolation: `n_clbits` is the `Simulator.initialize(system_dims, n_clbits)`
+protocol parameter and renaming it here alone would feed a neutral name into a
+two-level one. See
+docs/superpowers/specs/2026-07-17-register-operand-vocabulary-design.md.
+"""
 
 from __future__ import annotations
 

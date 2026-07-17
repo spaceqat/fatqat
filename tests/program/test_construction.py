@@ -57,17 +57,17 @@ def test_register_collections_are_public_read_only_tuples():
         p.creg.clear()
 
 
-def test_flat_qubit_resolution_out_of_range_raises():
+def test_flat_quantum_ref_resolution_out_of_range_raises():
     p = Program(2)
     with pytest.raises(IndexError):
-        p._resolve_qubit(2)
+        p._resolve_quantum_ref(2)
 
 
-def test_resolve_qubit_rejects_foreign_ref():
+def test_resolve_quantum_ref_rejects_foreign_ref():
     p = Program(2)
     foreign = QuantumRegister(2, name="other")
     with pytest.raises(ValueError):
-        p._resolve_qubit(foreign[0])
+        p._resolve_quantum_ref(foreign[0])
 
 
 def test_metadata_defaults_to_empty_dict():
