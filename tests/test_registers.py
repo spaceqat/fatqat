@@ -76,3 +76,39 @@ def test_dim_non_int_rejected():
         QuantumRegister(2, dim=2.0)
     with pytest.raises(TypeError):
         QuantumRegister(2, dim=True)
+
+
+def test_distinct_registers_with_identical_fields_are_not_equal():
+    assert QuantumRegister(2, name="q") != QuantumRegister(2, name="q")
+    assert ClassicalRegister(2, name="c") != ClassicalRegister(2, name="c")
+
+
+def test_register_equals_itself():
+    qr = QuantumRegister(2, name="q")
+    assert qr == qr
+
+
+def test_registers_are_hashable_despite_metadata():
+    assert isinstance(hash(QuantumRegister(1, metadata={"k": 1})), int)
+    assert isinstance(hash(ClassicalRegister(1, metadata={"k": 1})), int)
+
+
+def test_distinct_registers_do_not_collapse_in_a_set():
+    assert len({QuantumRegister(1), QuantumRegister(1)}) == 2
+
+
+def test_registerref_compares_by_register_identity_and_index():
+    a = QuantumRegister(2, name="q")
+    b = QuantumRegister(2, name="q")
+    assert a[0] == a[0]
+    assert a[0] != a[1]
+    assert a[0] != b[0]
+
+
+def test_registerref_is_usable_as_a_dict_key():
+    a = QuantumRegister(2, name="q")
+    b = QuantumRegister(2, name="q")
+    offsets = {a[0]: "a0", b[0]: "b0"}
+    assert offsets[a[0]] == "a0"
+    assert offsets[b[0]] == "b0"
+    assert len(offsets) == 2

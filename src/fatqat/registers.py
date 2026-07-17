@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Register:
     """Base value object for a fixed-size resource register.
 
@@ -78,12 +78,12 @@ class Register:
         return RegisterRef(register=self, index=index)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class QuantumRegister(Register):
     """Register whose refs may be used as quantum operation targets."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class ClassicalRegister(Register):
     """Register whose refs may receive measurement results and conditions."""
 
