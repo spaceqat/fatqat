@@ -151,6 +151,24 @@ def test_condition_v2_partial_register_rejected():
         program_to_qasm(p, version=2)
 
 
+def test_condition_v2_across_two_registers_rejected():
+    a = fc.ClassicalRegister(1, name="a")
+    b = fc.ClassicalRegister(1, name="b")
+    p = fc.Program(2, [a, b])
+    p.add(fc.ops.X, 1, condition=((a[0], 1), (b[0], 1)))
+    with pytest.raises(QasmExportError, match="multiple classical registers"):
+        program_to_qasm(p, version=2)
+
+
+def test_condition_v2_across_lookalike_registers_rejected():
+    a = fc.ClassicalRegister(1, name="c")
+    b = fc.ClassicalRegister(1, name="c")
+    p = fc.Program(2, [a, b])
+    p.add(fc.ops.X, 1, condition=((a[0], 1), (b[0], 1)))
+    with pytest.raises(QasmExportError, match="multiple classical registers"):
+        program_to_qasm(p, version=2)
+
+
 def test_qudit_dim2_reductions():
     p = fc.Program(2)
     p.add(fc.ops.Shift(1), 0)  # -> x

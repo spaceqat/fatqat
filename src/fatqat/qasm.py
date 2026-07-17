@@ -799,8 +799,8 @@ class _Layout:
     """Maps fatqat registers to QASM identifiers, and refs to `name[idx]`."""
 
     def __init__(self, program: Program) -> None:
-        self.q_info: dict[int, _RegInfo] = {}
-        self.c_info: dict[int, _RegInfo] = {}
+        self.q_info: dict[Register, _RegInfo] = {}
+        self.c_info: dict[Register, _RegInfo] = {}
         # OpenQASM has a single flat identifier namespace shared by quantum
         # and classical declarations -- `qubit[2] r; bit[2] r;` redeclares
         # `r` and is invalid, and this module's own importer (`from_qasm`)
@@ -813,12 +813,12 @@ class _Layout:
         for i, reg in enumerate(program.qreg):
             self._check_dim(reg, "quantum")
             name = _sanitize_identifier(reg.name, f"q{i}", taken)
-            self.q_info[id(reg)] = _RegInfo(name, reg.size)
+            self.q_info[reg] = _RegInfo(name, reg.size)
 
         for i, reg in enumerate(program.clreg):
             self._check_dim(reg, "classical")
             name = _sanitize_identifier(reg.name, f"c{i}", taken)
-            self.c_info[id(reg)] = _RegInfo(name, reg.size)
+            self.c_info[reg] = _RegInfo(name, reg.size)
 
     @staticmethod
     def _check_dim(reg: Register, kind: str) -> None:
@@ -831,11 +831,11 @@ class _Layout:
             )
 
     def qref(self, ref: RegisterRef) -> str:
-        info = self.q_info[id(ref.register)]
+        info = self.q_info[ref.register]
         return f"{info.qasm_name}[{ref.index}]"
 
     def cref(self, ref: RegisterRef) -> str:
-        info = self.c_info[id(ref.register)]
+        info = self.c_info[ref.register]
         return f"{info.qasm_name}[{ref.index}]"
 
     def q_declarations(self, version: int) -> list[str]:
@@ -1052,15 +1052,13 @@ def _condition_value_qasm2(condition, layout: _Layout):
     Requires every term to reference the *same* classical register and every
     bit of that register to be pinned down by exactly one term.
     """
-    # Register is a frozen dataclass with a dict `metadata` field, so it is
-    # not hashable -- de-duplicate by `id()` instead of putting it in a set.
-    regs_by_id = {id(ref.register): ref.register for ref, _ in condition}
-    if len(regs_by_id) != 1:
+    regs = {ref.register for ref, _ in condition}
+    if len(regs) != 1:
         raise QasmExportError(
             "QASM 2 cannot express a condition spanning multiple classical "
             "registers; use --version 3 (OpenQASM 3) instead"
         )
-    (reg,) = regs_by_id.values()
+    (reg,) = regs
     seen = {}
     for ref, value in condition:
         if ref.index in seen:
@@ -1179,7 +1177,7 @@ def to_qasm(program: Program, version: int = 3) -> str:
                 body.append("}")
         else:
             reg, int_value = _condition_value_qasm2(step.condition, layout)
-            reg_name = layout.c_info[id(reg)].qasm_name
+            reg_name = layout.c_info[reg].qasm_name
             for ln in lines:
                 body.append(f"if ({reg_name} == {int_value}) {ln}")
 
