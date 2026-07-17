@@ -38,6 +38,16 @@ def test_unknown_ref_raises():
         layout.subsystem_index(foreign[0])
 
 
+def test_lookalike_registers_are_not_part_of_the_layout():
+    p = Program(1, 1)
+    layout = ResourceLayout.from_program(p)
+    qreg, clreg = p.qreg[0], p.clreg[0]
+    with pytest.raises(KeyError):
+        layout.subsystem_index(QuantumRegister(qreg.size, name=qreg.name)[0])
+    with pytest.raises(KeyError):
+        layout.clbit_index(ClassicalRegister(clreg.size, name=clreg.name)[0])
+
+
 def test_heterogeneous_system_dims():
     qt = QuantumRegister(3, dim=3, name="t")
     qb = QuantumRegister(2, dim=2, name="b")
