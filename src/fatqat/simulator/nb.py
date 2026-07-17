@@ -488,35 +488,43 @@ def _reset_step(
 
 @njit(cache=True, parallel=True)
 def _run_shots_kernel(
-    step_kind,
-    step_data,
-    step_cond_ptr,
-    step_cond_len,
-    cond_clbit,
-    cond_value,
-    ap_mat_ptr,
-    ap_dim,
-    ap_off_ptr,
-    ap_comp_ptr,
-    ap_comp_len,
-    mat_flat,
-    off_flat,
-    comp_stride_flat,
-    comp_dim_flat,
-    me_ptr,
-    me_len,
-    me_classical,
-    me_stride,
-    me_dim,
-    rs_ptr,
-    rs_len,
-    rs_stride,
-    rs_dim,
-    size,
-    n_clbits,
-    shots,
-    uniforms,
-    max_draws,
+    # per-step sequencer (one entry per plan step, in program order)
+    step_kind,  # 0=gate, 1=measurement, 2=reset
+    step_data,  # row index into this kind's table (gate/measure/reset)
+    step_cond_ptr,  # start of this step's condition in the condition pool
+    step_cond_len,  # number of (clbit, value) terms in the condition
+    # condition pool (flat, shared by all conditioned steps)
+    cond_clbit,  # clbit each feedforward term reads
+    cond_value,  # value that clbit must equal for the step to fire
+    # gate table (one entry per ApplyMatrixStep)
+    ap_mat_ptr,  # start of the d*d matrix in mat_flat
+    ap_dim,  # local dimension d (matrix is d*d, with d offsets)
+    ap_off_ptr,  # start of the d local->flat offsets in off_flat
+    ap_comp_ptr,  # start of the complement strides/dims in comp_*_flat
+    ap_comp_len,  # number of complement (non-target) subsystems
+    # gate flat backing
+    mat_flat,  # concatenated row-major gate matrices (complex128)
+    off_flat,  # concatenated local-index -> flat-offset tables
+    comp_stride_flat,  # concatenated complement strides
+    comp_dim_flat,  # concatenated complement dimensions
+    # measurement table (one entry per MeasurementStep)
+    me_ptr,  # start of this measurement's subsystems in me_*
+    me_len,  # number of measured subsystems
+    # measurement flat backing
+    me_classical,  # clbit each measured subsystem's digit is written to
+    me_stride,  # flat stride of each measured subsystem
+    me_dim,  # dimension of each measured subsystem
+    # reset table (one entry per ResetStep)
+    rs_ptr,  # start of this reset's subsystems in rs_*
+    rs_len,  # number of reset subsystems
+    # reset flat backing
+    rs_stride,  # flat stride of each reset subsystem
+    rs_dim,  # dimension of each reset subsystem
+    size,  # statevector length prod(dims); each shot allocates its own buffer
+    n_clbits,  # classical-register width: per-shot clbits and result columns
+    shots,  # number of independent trajectories - the `prange` extent
+    uniforms,  # pre-drawn uniforms, shots*max_draws in execution order
+    max_draws,  # per-shot uniform budget; shot s reads uniforms[s*max_draws:]
 ) -> np.ndarray:  # pragma: no cover - compiled by Numba
     """Run ``shots`` independent dynamic trajectories in parallel.
 
