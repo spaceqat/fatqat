@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from .program import Program
-from .registers import RegisterRef
+from .registers import Register, RegisterRef
 
 
 class ResourceLayout:
@@ -28,22 +28,26 @@ class ResourceLayout:
         self,
         system_dims: tuple[int, ...],
         classical_dims: tuple[int, ...],
-        q_offsets: Mapping[int, int],
-        c_offsets: Mapping[int, int],
+        q_offsets: Mapping[Register, int],
+        c_offsets: Mapping[Register, int],
         n_clbits: int,
     ) -> None:
         """Create a resource layout from precomputed flat offsets.
 
+        Registers key these maps by identity, not by field values: a register
+        is an entity, so a lookalike built with the same size and name is a
+        different register and is deliberately not found here.
+
         Args:
             system_dims: Per-subsystem Hilbert-space dimensions for quantum registers.
             classical_dims: Per-subsystem dimensions for classical registers.
-            q_offsets: Mapping from `id(QuantumRegister)` to flat subsystem offset.
-            c_offsets: Mapping from `id(ClassicalRegister)` to flat clbit offset.
+            q_offsets: Mapping from `QuantumRegister` to flat subsystem offset.
+            c_offsets: Mapping from `ClassicalRegister` to flat clbit offset.
             n_clbits: Total number of classical bits.
         """
         self.system_dims: tuple[int, ...] = system_dims
         self.classical_dims: tuple[int, ...] = classical_dims
-        self._q_offsets = dict(q_offsets)  # id(register) -> base flat index
+        self._q_offsets = dict(q_offsets)  # register -> base flat index
         self._c_offsets = dict(c_offsets)
         self._n_clbits = n_clbits
 
@@ -64,7 +68,7 @@ class ResourceLayout:
             KeyError: If the reference's register is not part of this layout.
         """
         try:
-            base = self._q_offsets[id(ref.register)]
+            base = self._q_offsets[ref.register]
         except KeyError:
             raise KeyError("subsystem ref not part of this layout") from None
         return base + ref.index
@@ -76,7 +80,7 @@ class ResourceLayout:
             KeyError: If the reference's register is not part of this layout.
         """
         try:
-            base = self._c_offsets[id(ref.register)]
+            base = self._c_offsets[ref.register]
         except KeyError:
             raise KeyError("clbit ref not part of this layout") from None
         return base + ref.index
@@ -84,19 +88,19 @@ class ResourceLayout:
     @classmethod
     def from_program(cls, program: Program) -> "ResourceLayout":
         """Build a layout by flattening a program's registers in order."""
-        q_offsets: dict[int, int] = {}
+        q_offsets: dict[Register, int] = {}
         system_dims: list[int] = []
         offset = 0
         for reg in program.qreg:
-            q_offsets[id(reg)] = offset
+            q_offsets[reg] = offset
             system_dims.extend(reg.dim for _ in range(reg.size))
             offset += reg.size
 
-        c_offsets: dict[int, int] = {}
+        c_offsets: dict[Register, int] = {}
         classical_dims: list[int] = []
         coffset = 0
         for reg in program.clreg:
-            c_offsets[id(reg)] = coffset
+            c_offsets[reg] = coffset
             classical_dims.extend(reg.dim for _ in range(reg.size))
             coffset += reg.size
 
