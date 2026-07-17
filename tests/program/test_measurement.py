@@ -15,8 +15,8 @@ def test_add_measurement_appends_measurement():
     assert len(p.operations) == 1
     m = p.operations[0]
     assert isinstance(m, Measurement)
-    assert m.qreg == (p.qreg[0][0],)
-    assert m.clreg == (p.creg[0][0],)
+    assert m.targets == (p.qreg[0][0],)
+    assert m.outputs == (p.clreg[0][0],)
 
 
 def test_operations_preserve_order_and_type_mix():
@@ -30,13 +30,13 @@ def test_operations_preserve_order_and_type_mix():
     assert isinstance(p.operations[2], Measurement)
 
 
-def test_add_measurement_rejects_quantum_ref_as_clreg():
+def test_add_measurement_rejects_quantum_ref_as_output():
     p = Program(2, 2)
     with pytest.raises(TypeError):
         p.add_measurement(0, p.qreg[0][1])  # quantum ref as classical slot
 
 
-def test_add_measurement_int_clreg_rejects_multiple_classical_registers():
+def test_add_measurement_int_output_rejects_multiple_classical_registers():
     p = Program(
         [QuantumRegister(2, name="q")],
         [ClassicalRegister(1, name="a"), ClassicalRegister(1, name="b")],
@@ -46,16 +46,16 @@ def test_add_measurement_int_clreg_rejects_multiple_classical_registers():
         p.add_measurement(0, 0)
 
 
-def test_add_measurement_explicit_clreg_ref_works_with_multiple_classical_registers():
+def test_add_measurement_explicit_output_ref_works_with_multiple_classical_registers():
     p = Program(
         [QuantumRegister(2, name="q")],
         [ClassicalRegister(1, name="a"), ClassicalRegister(1, name="b")],
     )
 
-    p.add_measurement(1, p.creg[1][0])
+    p.add_measurement(1, p.clreg[1][0])
 
-    assert p.operations[0].qreg == (p.qreg[0][1],)
-    assert p.operations[0].clreg == (p.creg[1][0],)
+    assert p.operations[0].targets == (p.qreg[0][1],)
+    assert p.operations[0].outputs == (p.clreg[1][0],)
 
 
 def test_add_measurement_rejects_metadata_argument():
@@ -71,8 +71,8 @@ def test_add_measurement_stores_single_as_one_tuples():
 
     m = p.operations[0]
     assert isinstance(m, Measurement)
-    assert m.qreg == (p.qreg[0][0],)
-    assert m.clreg == (p.creg[0][1],)
+    assert m.targets == (p.qreg[0][0],)
+    assert m.outputs == (p.clreg[0][1],)
 
 
 def test_add_measurement_accepts_grouped_operands():
@@ -81,8 +81,8 @@ def test_add_measurement_accepts_grouped_operands():
 
     m = p.operations[0]
     assert isinstance(m, Measurement)
-    assert m.qreg == (p.qreg[0][0], p.qreg[0][2])
-    assert m.clreg == (p.creg[0][1], p.creg[0][0])
+    assert m.targets == (p.qreg[0][0], p.qreg[0][2])
+    assert m.outputs == (p.clreg[0][1], p.clreg[0][0])
 
 
 def test_add_measurement_rejects_mismatched_group_sizes():
@@ -109,8 +109,8 @@ def test_measure_all_appends_one_grouped_instruction_in_flat_order():
     assert len(p.operations) == 1
     m = p.operations[0]
     assert isinstance(m, Measurement)
-    assert m.qreg == (p.qreg[0][0], p.qreg[0][1], p.qreg[1][0])
-    assert m.clreg == (p.creg[0][0], p.creg[1][0], p.creg[1][1])
+    assert m.targets == (p.qreg[0][0], p.qreg[0][1], p.qreg[1][0])
+    assert m.outputs == (p.clreg[0][0], p.clreg[1][0], p.clreg[1][1])
 
 
 def test_measure_all_rejects_mismatched_resource_counts():

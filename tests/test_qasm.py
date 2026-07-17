@@ -132,21 +132,21 @@ def test_reset():
 
 def test_condition_v3_multi_term():
     p = fc.Program(2, 3)
-    p.add(fc.ops.X, 1, condition=((p.creg[0][0], 1), (p.creg[0][2], 0)))
+    p.add(fc.ops.X, 1, condition=((p.clreg[0][0], 1), (p.clreg[0][2], 0)))
     out = program_to_qasm(p, version=3)
     assert "if (c[0] == 1 && c[2] == 0) { x q[1]; }" in out
 
 
 def test_condition_v2_full_register_ok():
     p = fc.Program(2, 1)
-    p.add(fc.ops.X, 1, condition=(p.creg[0][0], 1))
+    p.add(fc.ops.X, 1, condition=(p.clreg[0][0], 1))
     out = program_to_qasm(p, version=2)
     assert "if (c == 1) x q[1];" in out
 
 
 def test_condition_v2_partial_register_rejected():
     p = fc.Program(2, 3)
-    p.add(fc.ops.X, 1, condition=(p.creg[0][0], 1))
+    p.add(fc.ops.X, 1, condition=(p.clreg[0][0], 1))
     with pytest.raises(QasmExportError):
         program_to_qasm(p, version=2)
 
@@ -212,7 +212,7 @@ def test_export_same_named_qreg_and_creg_do_not_collide():
 
     # And the result must actually round-trip back through from_qasm.
     program = from_qasm(out)
-    assert len(program.qreg) == 1 and len(program.creg) == 1
+    assert len(program.qreg) == 1 and len(program.clreg) == 1
 
 
 # ===========================================================================
@@ -234,8 +234,8 @@ def test_from_qasm_builds_bell_program():
     assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
     measurement = program.operations[2]
     assert isinstance(measurement, Measurement)
-    assert measurement.qreg == (program.qreg[0][0], program.qreg[0][1])
-    assert measurement.clreg == (program.creg[0][0], program.creg[0][1])
+    assert measurement.targets == (program.qreg[0][0], program.qreg[0][1])
+    assert measurement.outputs == (program.clreg[0][0], program.clreg[0][1])
 
 
 def test_from_qasm_preserves_multiple_register_names():
@@ -285,8 +285,8 @@ def test_from_qasm_supports_classical_conditions():
         """)
 
     assert program.operations[0].condition == (
-        (program.creg[0][0], 0),
-        (program.creg[0][1], 1),
+        (program.clreg[0][0], 0),
+        (program.clreg[0][1], 1),
     )
 
 
@@ -385,8 +385,8 @@ def test_from_qasm3_bit_level_and_conditions():
 
     assert program.operations[0].operation.name == "X"
     assert program.operations[0].condition == (
-        (program.creg[0][0], 1),
-        (program.creg[0][2], 0),
+        (program.clreg[0][0], 1),
+        (program.clreg[0][2], 0),
     )
 
 
@@ -458,8 +458,8 @@ def test_from_qasm3_builds_bell_program():
     assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
     measurement = program.operations[2]
     assert isinstance(measurement, Measurement)
-    assert measurement.qreg == (program.qreg[0][0], program.qreg[0][1])
-    assert measurement.clreg == (program.creg[0][0], program.creg[0][1])
+    assert measurement.targets == (program.qreg[0][0], program.qreg[0][1])
+    assert measurement.outputs == (program.clreg[0][0], program.clreg[0][1])
 
 
 def test_from_qasm3_single_qubit_and_bit_declarations():
@@ -472,7 +472,7 @@ def test_from_qasm3_single_qubit_and_bit_declarations():
         """)
 
     assert program.qreg[0].size == 1
-    assert program.creg[0].size == 1
+    assert program.clreg[0].size == 1
     assert [op.operation.name for op in program.operations[:1]] == ["X"]
 
 
@@ -486,6 +486,6 @@ def test_from_qasm3_if_block_and_gate_aliases():
 
     assert program.operations[0].operation.name == "CCX"
     assert program.operations[0].condition == (
-        (program.creg[0][0], 1),
-        (program.creg[0][1], 0),
+        (program.clreg[0][0], 1),
+        (program.clreg[0][1], 0),
     )

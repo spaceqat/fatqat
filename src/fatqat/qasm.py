@@ -815,7 +815,7 @@ class _Layout:
             name = _sanitize_identifier(reg.name, f"q{i}", taken)
             self.q_info[id(reg)] = _RegInfo(name, reg.size)
 
-        for i, reg in enumerate(program.creg):
+        for i, reg in enumerate(program.clreg):
             self._check_dim(reg, "classical")
             name = _sanitize_identifier(reg.name, f"c{i}", taken)
             self.c_info[id(reg)] = _RegInfo(name, reg.size)
@@ -1136,7 +1136,7 @@ def to_qasm(program: Program, version: int = 3) -> str:
 
     for step in program.operations:
         if isinstance(step, ops.Measurement):
-            for qref, cref in zip(step.qreg, step.clreg):
+            for qref, cref in zip(step.targets, step.outputs):
                 if version == 3:
                     body.append(f"{layout.cref(cref)} = measure {layout.qref(qref)};")
                 else:

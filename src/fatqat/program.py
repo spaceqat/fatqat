@@ -22,7 +22,7 @@ class AppliedOperation:
 
     ``__post_init__`` intentionally does not re-validate ``targets``' element
     types or tuple-ness: ``Program.add()`` already guarantees well-formed
-    ``RegisterRef`` tuples via ``_resolve_qubit``, and duplicating that check
+    ``RegisterRef`` tuples via ``_resolve_quantum_ref``, and duplicating that check
     here would just be the same validation twice for the path essentially all
     callers use. Constructing this class directly (bypassing ``Program``)
     skips that guarantee - malformed input (wrong register kind, a list
@@ -111,7 +111,7 @@ class Program:
         self.qreg: tuple[QuantumRegister, ...] = tuple(
             self._coerce_registers(qreg, QuantumRegister, "q")
         )
-        self.creg: tuple[ClassicalRegister, ...] = tuple(
+        self.clreg: tuple[ClassicalRegister, ...] = tuple(
             self._coerce_registers(clreg, ClassicalRegister, "c")
         )
         self._operations: list[AppliedOperation | Measurement] = []
@@ -175,26 +175,26 @@ class Program:
             raise TypeError(
                 "integer operands are only allowed when there is exactly one "
                 "register of the relevant kind; pass an explicit RegisterRef "
-                "(e.g. qreg[0] or creg[0]) instead"
+                "(e.g. qreg[0] or clreg[0]) instead"
             )
         # Bounds and negative-index checks are delegated to Register.__getitem__,
         # which raises IndexError.
         return regs[0][operand]
 
-    def _resolve_qubit(self, operand: int | RegisterRef) -> RegisterRef:
+    def _resolve_quantum_ref(self, operand: int | RegisterRef) -> RegisterRef:
         return self._resolve_ref(
             operand, self.qreg, QuantumRegister, "quantum register"
         )
 
-    def _resolve_clbit(self, operand: int | RegisterRef) -> RegisterRef:
+    def _resolve_classical_ref(self, operand: int | RegisterRef) -> RegisterRef:
         return self._resolve_ref(
-            operand, self.creg, ClassicalRegister, "classical register"
+            operand, self.clreg, ClassicalRegister, "classical register"
         )
 
     def add(
         self,
         op: Operation,
-        qreg: int | RegisterRef | tuple[int | RegisterRef, ...],
+        targets: int | RegisterRef | tuple[int | RegisterRef, ...],
         *,
         condition=None,
     ) -> None:
@@ -204,8 +204,8 @@ class Program:
             op: Operation instance to append. Fixed gates are available as
                 singleton values such as ``ops.X``; parametric gates should be
                 instantiated, such as ``ops.RX(0.2)``.
-            qreg: Target qubit operand, or tuple of target operands for
-                multi-qubit gates (e.g. ``(0, 1)`` for ``CZ``). Each operand
+            targets: Target subsystem operand, or tuple of target operands for
+                multi-subsystem gates (e.g. ``(0, 1)`` for ``CZ``). Each operand
                 may be an integer when unambiguous or an explicit
                 ``RegisterRef``.
             condition: Optional single condition ``(clbit, value)`` or
@@ -233,11 +233,11 @@ class Program:
                 f"op must be an Operation instance, got {type(op)!r} "
                 "(did you forget to call a parametric gate, e.g. ops.RX(0.2)?)"
             )
-        operands = qreg if isinstance(qreg, tuple) else (qreg,)
-        targets = tuple(self._resolve_qubit(o) for o in operands)
+        operands = targets if isinstance(targets, tuple) else (targets,)
+        target_refs = tuple(self._resolve_quantum_ref(o) for o in operands)
         normalized = self._normalize_condition(condition)
         self._operations.append(
-            AppliedOperation(operation=op, targets=targets, condition=normalized)
+            AppliedOperation(operation=op, targets=target_refs, condition=normalized)
         )
         self._operations_view = None
 
@@ -253,7 +253,7 @@ class Program:
         terms = condition if isinstance(condition[0], tuple) else (condition,)
         normalized: list[ConditionTerm] = []
         for slot, literal in terms:
-            ref = self._resolve_clbit(slot)
+            ref = self._resolve_classical_ref(slot)
             # bool is deliberately accepted here (not just tolerated): a
             # condition literal is itself boolean in spirit for a dim=2 clbit,
             # so `condition=(c, True)` is a legitimate spelling of `(c, 1)`,
@@ -273,24 +273,24 @@ class Program:
 
     def add_measurement(
         self,
-        qreg: int | RegisterRef | tuple[int | RegisterRef, ...],
-        clreg: int | RegisterRef | tuple[int | RegisterRef, ...],
+        targets: int | RegisterRef | tuple[int | RegisterRef, ...],
+        outputs: int | RegisterRef | tuple[int | RegisterRef, ...],
     ) -> None:
-        """Append a measurement from one or more qubits into classical bits.
+        """Append a measurement of one or more subsystems into classical slots.
 
         Args:
-            qreg: Quantum operand(s) to measure, as an integer, explicit
+            targets: Quantum operand(s) to measure, as an integer, explicit
                 ``RegisterRef``, or tuple of operands for a grouped
                 measurement.
-            clreg: Classical operand(s) to write, as an integer, explicit
-                ``RegisterRef``, or tuple of operands matching ``qreg`` in
+            outputs: Classical operand(s) to write, as an integer, explicit
+                ``RegisterRef``, or tuple of operands matching ``targets`` in
                 count.
 
         Raises:
             TypeError: If operands have the wrong register kind or integer
                 operands are ambiguous.
-            ValueError: If ``qreg``/``clreg`` have mismatched or zero length,
-                or an explicit ref is foreign to the program.
+            ValueError: If ``targets``/``outputs`` have mismatched or zero
+                length, or an explicit ref is foreign to the program.
             IndexError: If an integer operand is outside the relevant register.
 
         Examples:
@@ -308,37 +308,38 @@ class Program:
             >>> program2.add(fq.ops.CZ, (0, 1))
             >>> program2.add_measurement((0, 1), (0, 1))
         """
-        q_operands = qreg if isinstance(qreg, tuple) else (qreg,)
-        c_operands = clreg if isinstance(clreg, tuple) else (clreg,)
-        qs = tuple(self._resolve_qubit(q) for q in q_operands)
-        cs = tuple(self._resolve_clbit(c) for c in c_operands)
+        q_operands = targets if isinstance(targets, tuple) else (targets,)
+        c_operands = outputs if isinstance(outputs, tuple) else (outputs,)
+        target_refs = tuple(self._resolve_quantum_ref(q) for q in q_operands)
+        output_refs = tuple(self._resolve_classical_ref(c) for c in c_operands)
         # Length, non-empty, and per-pair dim invariants are enforced once in
         # Measurement.__post_init__.
-        self._operations.append(Measurement(qreg=qs, clreg=cs))
+        self._operations.append(Measurement(targets=target_refs, outputs=output_refs))
         self._operations_view = None
 
     def measure_all(self) -> None:
-        """Measure every qubit into every clbit in flat declaration order.
+        """Measure every subsystem into every classical slot in declaration order.
 
         Raises:
-            ValueError: If the program has a different number of quantum bits
-                than classical bits, or has no registers of either kind.
+            ValueError: If the program has a different number of quantum
+                subsystems than classical slots, or has no registers of either
+                kind.
         """
-        qubits = tuple(
+        targets = tuple(
             ref for reg in self.qreg for ref in (reg[i] for i in range(reg.size))
         )
-        clbits = tuple(
-            ref for reg in self.creg for ref in (reg[i] for i in range(reg.size))
+        outputs = tuple(
+            ref for reg in self.clreg for ref in (reg[i] for i in range(reg.size))
         )
         # Equal-count and non-empty invariants are enforced once in
         # Measurement.__post_init__, reached through add_measurement.
-        self.add_measurement(qubits, clbits)
+        self.add_measurement(targets, outputs)
 
     def copy(self) -> "Program":
         """Return an independent copy with private operation storage and copied metadata."""
         new = Program.__new__(Program)
         new.qreg = tuple(self.qreg)
-        new.creg = tuple(self.creg)
+        new.clreg = tuple(self.clreg)
         new._operations = list(self._operations)
         new._operations_view = tuple(new._operations)
         new.metadata = dict(self.metadata)

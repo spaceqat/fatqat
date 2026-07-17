@@ -25,5 +25,5 @@ def test_copy_preserves_register_tuples():
     q = p.copy()
     assert q.qreg == p.qreg
     assert isinstance(q.qreg, tuple)
-    assert q.creg == p.creg
-    assert isinstance(q.creg, tuple)
+    assert q.clreg == p.clreg
+    assert isinstance(q.clreg, tuple)

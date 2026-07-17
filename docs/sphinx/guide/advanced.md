@@ -28,8 +28,8 @@ ctrit = fq.ClassicalRegister(1, dim=3, name="c_qutrit")
 program = fq.Program([qubit, qutrit], [cbit, ctrit])
 program.add(fq.ops.X, program.qreg[0][0])            # qubit: |0> -> |1>
 program.add(fq.ops.Shift(1), program.qreg[1][0])     # qutrit: |0> -> |1>
-program.add_measurement(program.qreg[0][0], program.creg[0][0])
-program.add_measurement(program.qreg[1][0], program.creg[1][0])
+program.add_measurement(program.qreg[0][0], program.clreg[0][0])
+program.add_measurement(program.qreg[1][0], program.clreg[1][0])
 
 result = fq.backends.SimulatorBackend("SV").run(program, shots=100).result()
 print(result.get_counts())   # {"11": 100}

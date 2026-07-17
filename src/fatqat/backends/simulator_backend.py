@@ -436,8 +436,10 @@ class SimulatorBackend:
         for step in program.operations:
             if isinstance(step, Measurement):
                 has_measurement = True
-                measured_indices = tuple(layout.subsystem_index(q) for q in step.qreg)
-                classical_indices = tuple(layout.clbit_index(c) for c in step.clreg)
+                measured_indices = tuple(
+                    layout.subsystem_index(q) for q in step.targets
+                )
+                classical_indices = tuple(layout.clbit_index(c) for c in step.outputs)
                 plan.append(
                     MeasurementStep(
                         measured_indices=measured_indices,
