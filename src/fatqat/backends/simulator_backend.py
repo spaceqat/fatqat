@@ -587,7 +587,15 @@ class SimulatorBackend:
                 cond = _resolve_condition(step.condition, layout)
                 plan.append(
                     ApplyMatrixStep(
-                        matrix=matrix, target_indices=target_indices, condition=cond
+                        matrix=matrix,
+                        target_indices=target_indices,
+                        condition=cond,
+                        # Identity, not mechanics: the backend forwards which
+                        # implementation was selected; the engine alone decides
+                        # what (if anything) that means for kernel choice.
+                        kernel_key=rule._kernel_key(
+                            step.operation, targets=step.targets
+                        ),
                     )
                 )
 

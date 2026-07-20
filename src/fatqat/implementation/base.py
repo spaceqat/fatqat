@@ -31,12 +31,15 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Hashable
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
 from ..operations import Operation
 from ..registers import RegisterRef
+
+if TYPE_CHECKING:
+    from ..backends.steps import BuiltinKernelKey
 
 DeviceOperands = tuple[Hashable, ...]
 
@@ -57,6 +60,44 @@ class MatrixImplementation:
         self, op: Operation, *, targets: tuple[RegisterRef, ...]
     ) -> np.ndarray:
         raise NotImplementedError
+
+    def _kernel_key(
+        self, op: Operation, *, targets: tuple[RegisterRef, ...]
+    ) -> "BuiltinKernelKey | None":
+        """Return this implementation's canonical kernel identity, or ``None``.
+
+        ``None`` (the default for every rule) means "no declared identity":
+        an engine must treat the resolved matrix as opaque content. Only the
+        canonical built-in registrations override this, via
+        `_KeyedImplementation` - identity is a fact about *which
+        implementation was selected*, so it must never be inferred from the
+        operation class or the matrix's numeric content.
+        """
+        return None
+
+
+class _KeyedImplementation(MatrixImplementation):
+    """Delegating wrapper that attaches canonical kernel identity to a rule.
+
+    Applied only by ``default_matrix_implementation_map()`` at registration
+    time. The wrapped rule keeps full ownership of matrix production; this
+    wrapper adds exactly one fact - the `BuiltinKernelKey` naming which
+    canonical implementation the caller selected.
+    """
+
+    def __init__(self, rule: MatrixImplementation, key: "BuiltinKernelKey") -> None:
+        self._rule = rule
+        self._key = key
+
+    def __call__(
+        self, op: Operation, *, targets: tuple[RegisterRef, ...] = ()
+    ) -> np.ndarray:
+        return self._rule(op, targets=targets)
+
+    def _kernel_key(
+        self, op: Operation, *, targets: tuple[RegisterRef, ...]
+    ) -> "BuiltinKernelKey | None":
+        return self._key
 
 
 def _validate_square_matrix(matrix: np.ndarray) -> None:

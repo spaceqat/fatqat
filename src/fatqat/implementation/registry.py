@@ -1,9 +1,25 @@
-"""Default matrix implementation map: wires built-in gates to their matrices."""
+"""Default matrix implementation map: wires built-in gates to their matrices.
+
+Every default registration is wrapped in `_KeyedImplementation`, attaching the
+gate's `BuiltinKernelKey` so engines can dispatch specialized kernels by
+declared identity instead of inspecting matrices (see ``backends.steps``).
+This is the *only* place keys are attached: custom rules, arrays, and
+device-specific overrides registered by users or device backends stay
+``None``-keyed by construction.
+"""
 
 from __future__ import annotations
 
 from .. import operations as ops
-from .base import FixedMatrix, ImplementationMap, _DimMatrix
+from ..backends.steps import BuiltinKernelKey as K
+from .base import (
+    FixedMatrix,
+    ImplementationMap,
+    _DimMatrix,
+    _KeyedImplementation,
+    _resolve_operation_class,
+    _wrap_rule,
+)
 from .matrices import (
     _CCX,
     _CS,
@@ -40,6 +56,43 @@ from .matrices import (
     sum_matrix,
 )
 
+# (gate singleton, rule, canonical kernel key) - one row per built-in gate.
+_DEFAULT_RULES = (
+    (ops.X, FixedMatrix(_X), K.X),
+    (ops.Y, FixedMatrix(_Y), K.Y),
+    (ops.Z, FixedMatrix(_Z), K.Z),
+    (ops.H, FixedMatrix(_H), K.H),
+    (ops.I, FixedMatrix(_I), K.I),
+    (ops.S, FixedMatrix(_S), K.S),
+    (ops.Sdg, FixedMatrix(_SDG), K.SDG),
+    (ops.SX, FixedMatrix(_SX), K.SX),
+    (ops.T, FixedMatrix(_T), K.T),
+    (ops.Tdg, FixedMatrix(_TDG), K.TDG),
+    (ops.CX, FixedMatrix(_CX), K.CX),
+    (ops.CZ, FixedMatrix(_CZ), K.CZ),
+    (ops.Swap, FixedMatrix(_SWAP), K.SWAP),
+    (ops.CY, FixedMatrix(_CY), K.CY),
+    (ops.CS, FixedMatrix(_CS), K.CS),
+    (ops.iSwap, FixedMatrix(_ISWAP), K.ISWAP),
+    (ops.CCX, FixedMatrix(_CCX), K.CCX),
+    (ops.CSwap, FixedMatrix(_CSWAP), K.CSWAP),
+    (ops.RX, _rx, K.RX),
+    (ops.RY, _ry, K.RY),
+    (ops.RZ, _rz, K.RZ),
+    (ops.Phase, _phase, K.PHASE),
+    (ops.CPhase, _cphase, K.CPHASE),
+    (ops.Shift, _shift_rule, K.SHIFT),
+    (ops.Clock, _clock_rule, K.CLOCK),
+    (ops.Sum, _DimMatrix(sum_matrix), K.SUM),
+    (ops.SwapLevels, _swap_levels_rule, K.SWAP_LEVELS),
+    (ops.Fourier, _DimMatrix(_fourier_rule), K.FOURIER),
+    (ops.Fourierdg, _DimMatrix(_fourierdg_rule), K.FOURIERDG),
+    (ops.SubspaceRX, _subspace_rx_rule, K.SUBSPACE_RX),
+    (ops.SubspaceRY, _subspace_ry_rule, K.SUBSPACE_RY),
+    (ops.SubspaceRZ, _subspace_rz_rule, K.SUBSPACE_RZ),
+    (ops.CClock, _cclock_rule, K.CCLOCK),
+)
+
 
 def default_matrix_implementation_map() -> ImplementationMap:
     """Build the default matrix implementation map.
@@ -47,40 +100,12 @@ def default_matrix_implementation_map() -> ImplementationMap:
     Registers against the public singleton instances (e.g. `ops.X`), not the
     underlying `*Gate` classes: `add()` resolves either to the same
     class key, and the fixed-gate classes are not part of the `fq.ops` public
-    surface (see `operations.fixed_gates`).
+    surface (see `operations.fixed_gates`). Each rule is normalized (bare
+    callables wrapped, exactly as `add()` would) and then keyed with its
+    gate's canonical `BuiltinKernelKey`.
     """
     m = ImplementationMap()
-    m.add(ops.X, FixedMatrix(_X))
-    m.add(ops.Y, FixedMatrix(_Y))
-    m.add(ops.Z, FixedMatrix(_Z))
-    m.add(ops.H, FixedMatrix(_H))
-    m.add(ops.I, FixedMatrix(_I))
-    m.add(ops.S, FixedMatrix(_S))
-    m.add(ops.Sdg, FixedMatrix(_SDG))
-    m.add(ops.SX, FixedMatrix(_SX))
-    m.add(ops.T, FixedMatrix(_T))
-    m.add(ops.Tdg, FixedMatrix(_TDG))
-    m.add(ops.CX, FixedMatrix(_CX))
-    m.add(ops.CZ, FixedMatrix(_CZ))
-    m.add(ops.Swap, FixedMatrix(_SWAP))
-    m.add(ops.CY, FixedMatrix(_CY))
-    m.add(ops.CS, FixedMatrix(_CS))
-    m.add(ops.iSwap, FixedMatrix(_ISWAP))
-    m.add(ops.CCX, FixedMatrix(_CCX))
-    m.add(ops.CSwap, FixedMatrix(_CSWAP))
-    m.add(ops.RX, _rx)
-    m.add(ops.RY, _ry)
-    m.add(ops.RZ, _rz)
-    m.add(ops.Phase, _phase)
-    m.add(ops.CPhase, _cphase)
-    m.add(ops.Shift, _shift_rule)
-    m.add(ops.Clock, _clock_rule)
-    m.add(ops.Sum, _DimMatrix(sum_matrix))
-    m.add(ops.SwapLevels, _swap_levels_rule)
-    m.add(ops.Fourier, _DimMatrix(_fourier_rule))
-    m.add(ops.Fourierdg, _DimMatrix(_fourierdg_rule))
-    m.add(ops.SubspaceRX, _subspace_rx_rule)
-    m.add(ops.SubspaceRY, _subspace_ry_rule)
-    m.add(ops.SubspaceRZ, _subspace_rz_rule)
-    m.add(ops.CClock, _cclock_rule)
+    for op, rule, key in _DEFAULT_RULES:
+        op_cls = _resolve_operation_class(op)
+        m.add(op, _KeyedImplementation(_wrap_rule(op_cls, rule), key))
     return m
