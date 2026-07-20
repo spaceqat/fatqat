@@ -57,13 +57,12 @@ from ..implementation import (
 from ..job import Job
 from ..layout import ResourceLayout
 from ..noise import (
-    Channel,
     ChannelImplementationMap,
     NoiseModel,
     NoiseSupportReport,
     default_channel_implementation_map,
 )
-from ..noise.base import _validate_cptp
+from ..noise.base import _validate_kraus_shapes
 from ..operations import BarrierGate, Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
 from ..result import (
@@ -544,13 +543,27 @@ class SimulatorBackend:
                     )
                 )
 
+                # Attached channels resolve inline, mirroring the gate
+                # path above: rule lookup, Kraus resolution, shape check,
+                # step append - one ApplyChannelStep per channel, inheriting
+                # the gate's condition.
                 for channel in self._noise_model.channels_for(
                     type(step.operation), target_indices, layout
                 ):
                     has_channel = True
+                    rule = self._channel_map.get(type(channel))
+                    if rule is None:
+                        raise UnsupportedOperationError(
+                            f"{type(channel).__name__} has no channel "
+                            "implementation on this backend"
+                        )
+                    kraus_ops = tuple(rule(channel, targets=step.targets))
+                    _validate_kraus_shapes(kraus_ops, expected, type(channel).__name__)
                     plan.append(
-                        self._resolve_channel_step(
-                            channel, step.targets, target_indices, expected, cond
+                        ApplyChannelStep(
+                            kraus_ops=kraus_ops,
+                            target_indices=target_indices,
+                            condition=cond,
                         )
                     )
 
@@ -561,36 +574,6 @@ class SimulatorBackend:
                 has_reset=has_reset,
                 has_channel=has_channel,
             ),
-        )
-
-    def _resolve_channel_step(
-        self,
-        channel: Channel,
-        targets: tuple[Any, ...],
-        target_indices: tuple[int, ...],
-        expected_dim: int,
-        condition: tuple[tuple[int, int], ...] | None,
-    ) -> ApplyChannelStep:
-        """Resolve one attached channel into its concrete Kraus payload.
-
-        Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` if the
-        descriptor type has no rule in this backend's channel map, and
-        :py:exc:`~fatqat.errors.BackendValidationError` (from
-        ``_validate_cptp``) if the resolved operators are mis-shaped or not
-        trace-preserving.
-        """
-        rule = self._channel_map.get(type(channel))
-        if rule is None:
-            raise UnsupportedOperationError(
-                f"{type(channel).__name__} has no channel implementation "
-                "on this backend"
-            )
-        kraus_ops = tuple(rule(channel, targets=targets))
-        _validate_cptp(kraus_ops, expected_dim, type(channel).__name__)
-        return ApplyChannelStep(
-            kraus_ops=kraus_ops,
-            target_indices=target_indices,
-            condition=condition,
         )
 
     def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:

@@ -385,9 +385,15 @@ class NumpySVSimulator(_NumpyMatrixSimulator):
         primitive gates use; its squared norm is the branch probability. One
         branch is drawn (consuming one rng draw, same posture as measurement
         and reset) and kept, normalized.
+
+        Each branch starts from a fresh copy of the state: ``_apply_local`` is
+        only contracted to *return* the new state, and a subclass kernel (the
+        Numba one) legitimately updates its input buffer in place - reusing
+        ``self.state`` across branches would then corrupt the source mid-loop.
         """
+        source = self.state
         branches = [
-            self._apply_local(self.state, kraus, step.target_indices)
+            self._apply_local(source.copy(), kraus, step.target_indices)
             for kraus in step.kraus_ops
         ]
         norms = np.array([np.real(np.vdot(b, b)) for b in branches])

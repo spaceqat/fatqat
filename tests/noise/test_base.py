@@ -1,4 +1,4 @@
-"""Channel registry (`ChannelImplementationMap`) and CPTP validation behavior."""
+"""Channel registry (`ChannelImplementationMap`) and Kraus shape validation."""
 
 import numpy as np
 import pytest
@@ -9,7 +9,7 @@ from fatqat.noise import (
     ChannelImplementationMap,
     default_channel_implementation_map,
 )
-from fatqat.noise.base import _validate_cptp
+from fatqat.noise.base import _validate_kraus_shapes
 from fatqat.noise.catalog import Depolarizing
 
 
@@ -58,23 +58,25 @@ def test_default_map_covers_catalog():
     assert names == {"Depolarizing", "AmplitudeDamping", "PhaseDamping"}
 
 
-def test_validate_cptp_accepts_complete_kraus_set():
+def test_validate_shapes_accepts_complete_kraus_set():
     gamma = 0.3
     k0 = np.diag([1.0, np.sqrt(1 - gamma)]).astype(complex)
     k1 = np.array([[0.0, np.sqrt(gamma)], [0.0, 0.0]], dtype=complex)
-    _validate_cptp((k0, k1), 2, "test")  # must not raise
+    _validate_kraus_shapes((k0, k1), 2, "test")  # must not raise
 
 
-def test_validate_cptp_rejects_incomplete_set():
-    with pytest.raises(BackendValidationError, match="not trace-preserving"):
-        _validate_cptp((0.5 * np.eye(2, dtype=complex),), 2, "test")
+def test_validate_shapes_accepts_non_cptp_set():
+    # Deliberate: trace preservation is not enforced at runtime, the same
+    # posture as gate matrices never being checked for unitarity. The
+    # built-in catalog's CPTP property is covered by its own tests.
+    _validate_kraus_shapes((0.5 * np.eye(2, dtype=complex),), 2, "test")
 
 
-def test_validate_cptp_rejects_wrong_shape():
+def test_validate_shapes_rejects_wrong_shape():
     with pytest.raises(BackendValidationError, match="shape"):
-        _validate_cptp((np.eye(3, dtype=complex),), 2, "test")
+        _validate_kraus_shapes((np.eye(3, dtype=complex),), 2, "test")
 
 
-def test_validate_cptp_rejects_empty_tuple():
+def test_validate_shapes_rejects_empty_tuple():
     with pytest.raises(BackendValidationError, match="empty"):
-        _validate_cptp((), 2, "test")
+        _validate_kraus_shapes((), 2, "test")

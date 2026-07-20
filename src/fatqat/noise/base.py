@@ -1,5 +1,5 @@
 """Channel-noise abstraction: the descriptor marker, the rule protocol, the
-rule registry, and the CPTP completeness check.
+rule registry, and the resolved-Kraus shape check.
 
 A channel descriptor (`Channel` subclass) carries physical parameters only,
 never arrays - the same way an :py:class:`~fatqat.operations.Operation` like
@@ -129,12 +129,20 @@ class NoiseSupportReport:
     warnings: tuple[str, ...] = ()
 
 
-def _validate_cptp(kraus_ops: tuple[np.ndarray, ...], dim: int, label: str) -> None:
-    """Validate a resolved Kraus tuple: shapes and CPTP completeness.
+def _validate_kraus_shapes(
+    kraus_ops: tuple[np.ndarray, ...], dim: int, label: str
+) -> None:
+    """Validate a resolved Kraus tuple's shapes against the target dimension.
 
     Checked at the resolution site, right after the rule returns - a bare
     tuple of arrays cannot validate itself, and the resolution site has both
     the data and the context (target dimension, channel name) to do it.
+
+    Deliberately shape-only: CPTP completeness of the built-in catalog is
+    covered by its tests, and user-supplied rules are not required to be
+    trace-preserving at runtime - the same posture as gate matrices, which
+    are never checked for unitarity. An unphysical channel may be
+    meaningless, but it is not an error.
 
     Args:
         kraus_ops: Resolved Kraus operators.
@@ -142,9 +150,8 @@ def _validate_cptp(kraus_ops: tuple[np.ndarray, ...], dim: int, label: str) -> N
         label: Channel name used in error messages.
 
     Raises:
-        BackendValidationError: If the tuple is empty, an operator is not a
-            ``(dim, dim)`` matrix, or completeness ``sum_i K_i^H K_i = I``
-            fails within tolerance.
+        BackendValidationError: If the tuple is empty or an operator is not a
+            ``(dim, dim)`` matrix.
     """
     if len(kraus_ops) == 0:
         raise BackendValidationError(f"{label} resolved to an empty Kraus tuple")
@@ -154,9 +161,3 @@ def _validate_cptp(kraus_ops: tuple[np.ndarray, ...], dim: int, label: str) -> N
                 f"{label} resolved to a Kraus operator of shape "
                 f"{getattr(kraus, 'shape', type(kraus))}, expected {(dim, dim)}"
             )
-    completeness = sum(kraus.conj().T @ kraus for kraus in kraus_ops)
-    if not np.allclose(completeness, np.eye(dim)):
-        raise BackendValidationError(
-            f"{label} is not trace-preserving: sum K^H K != I for its "
-            "resolved Kraus operators"
-        )

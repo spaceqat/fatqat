@@ -77,20 +77,29 @@ def test_unresolvable_channel_type_raises():
         backend._lower(program, backend.resolve_layout(program))
 
 
-def test_non_cptp_rule_rejected_at_lowering():
-    class Lossy(Channel):
+def test_mis_shaped_rule_rejected_but_non_cptp_accepted():
+    # Shape is checked at resolution; trace preservation deliberately is not
+    # (the same posture as gate matrices, which are never unitarity-checked).
+    class Custom(Channel):
         pass
 
     channel_map = default_channel_implementation_map()
     channel_map.register(
-        Lossy, lambda channel, *, targets: (0.5 * np.eye(2, dtype=complex),)
+        Custom, lambda channel, *, targets: (np.eye(3, dtype=complex),)
     )
     noise = NoiseModel()
-    noise.add_noise(fq.ops.X, Lossy())
+    noise.add_noise(fq.ops.X, Custom())
     backend = SimulatorBackend(noise=noise, channel_implementation_map=channel_map)
     program = _x_program()
-    with pytest.raises(BackendValidationError, match="trace-preserving"):
+    with pytest.raises(BackendValidationError, match="shape"):
         backend._lower(program, backend.resolve_layout(program))
+
+    channel_map.register(
+        Custom, lambda channel, *, targets: (0.5 * np.eye(2, dtype=complex),)
+    )
+    backend = SimulatorBackend(noise=noise, channel_implementation_map=channel_map)
+    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    assert any(isinstance(step, ApplyChannelStep) for step in plan)
 
 
 def test_reset_attached_channels_raise_until_wired():
@@ -279,3 +288,32 @@ def test_validate_noise_rejects_unknown_channel_and_qubit_noise_and_reset():
     assert set(report.rejected_sources) == {"Leakage", "qubit_noise", "Reset"}
     assert "Depolarizing" in report.accepted_sources
     assert len(report.warnings) == 3
+
+
+def test_numba_simulator_falls_back_correctly_on_channel_plans():
+    # The fused numba dynamic kernel only understands matrix/measure/reset
+    # steps; a channel-bearing plan must take the inherited NumPy per-shot
+    # path and produce identical counts, never reach the compiler.
+    pytest.importorskip("numba")
+    from fatqat.simulator.nb import NumbaSVSimulator, _plan_compilable
+
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.X, Depolarizing(p=0.3))
+    backend = SimulatorBackend(noise=noise)
+    program = fq.Program(1, 1)
+    program.add(fq.ops.X, 0)
+    program.add_measurement(0, 0)
+    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    assert _plan_compilable(plan) is False
+
+    # Below the auto-parallel floor so both simulators run in-process serial.
+    request = backend._request_cls(counts=True, statevector=False)
+    counts = {}
+    for cls in (NumpySVSimulator, NumbaSVSimulator):
+        simulator = cls()
+        simulator.initialize((2,), 1)
+        raw = simulator.run(plan, 20, 7, request)
+        counts[cls.__name__] = list(
+            zip(raw.outcome_keys.tolist(), raw.outcome_counts.tolist())
+        )
+    assert counts["NumpySVSimulator"] == counts["NumbaSVSimulator"]

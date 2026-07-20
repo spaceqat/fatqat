@@ -94,10 +94,8 @@ def test_phase_damping_preserves_populations_and_decays_coherence(dim):
     assert len(kraus_ops) == dim
     _assert_cptp(kraus_ops, dim)
     rho = _random_rho(dim)
-    out = _apply(kraus_ops, rho)
-    assert np.allclose(np.diag(out), np.diag(rho))
-    if dim == 2:
-        assert np.allclose(out[0, 1], (1 - p) * rho[0, 1])
+    expected = (1 - p) * rho + p * np.diag(np.diag(rho))
+    assert np.allclose(_apply(kraus_ops, rho), expected)
 
 
 def test_amplitude_damping_rejects_multi_target_gates():
