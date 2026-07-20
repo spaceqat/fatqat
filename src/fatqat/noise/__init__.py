@@ -1,10 +1,11 @@
-"""Channel-representable noise: descriptors, resolution rules, and the model.
+"""Noise simulation surface: channels, readout error, and calibration converters.
 
-Public surface for noise simulation on the matrix backend family. Users
-build a `NoiseModel` from catalog descriptors (``fq.noise.Depolarizing`` and
-friends) and pass it to a backend via ``noise=``; the backend resolves each
-attached descriptor into Kraus operators through its
-`ChannelImplementationMap` at lowering time.
+Users build a `NoiseModel` from catalog descriptors (``fq.noise.Depolarizing``
+and friends, or `relaxation_channels` for T1/T2-derived rates, all in the catalog) plus classical
+readout confusion matrices, and pass it to a backend via ``noise=``. The
+backend resolves each attached channel into Kraus operators through its
+`ChannelImplementationMap` at lowering time; readout error stays classical
+and only resamples reported measurement values.
 """
 
 from .base import (
@@ -13,7 +14,12 @@ from .base import (
     ChannelImplementationMap,
     NoiseSupportReport,
 )
-from .catalog import AmplitudeDamping, Depolarizing, PhaseDamping
+from .catalog import (
+    AmplitudeDamping,
+    Depolarizing,
+    PhaseDamping,
+    relaxation_channels,
+)
 from .model import NoiseModel
 from .registry import default_channel_implementation_map
 
@@ -27,4 +33,5 @@ __all__ = [
     "PhaseDamping",
     "NoiseModel",
     "default_channel_implementation_map",
+    "relaxation_channels",
 ]

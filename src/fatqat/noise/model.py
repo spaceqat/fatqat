@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 from ..implementation.base import _resolve_operation_class
 from ..layout import ResourceLayout
 from ..operations import BarrierGate, Operation
@@ -73,6 +75,7 @@ class NoiseModel:
         self._gate_channels: dict[
             type[Operation], list[tuple[_Selector, list[Channel]]]
         ] = {}
+        self._readout_errors: list[tuple[int | RegisterRef | None, np.ndarray]] = []
         self.qubit_noise: dict[Any, Any] = {}
         self.metadata: dict[str, Any] = {}
 
@@ -160,6 +163,93 @@ class NoiseModel:
             elif _selector_indices(selector, layout) == target_indices:
                 matched.extend(channels)
         return matched if matched else fallback
+
+    def add_readout_error(
+        self,
+        confusion_matrix: np.ndarray,
+        *,
+        target: int | RegisterRef | None = None,
+    ) -> None:
+        """Attach a classical readout confusion matrix to measurements.
+
+        Readout error is classical, not a quantum channel: the physical
+        collapse is always true, and only the *reported* classical value is
+        resampled through the confusion matrix. Feedforward conditions read
+        the reported value (real control electronics see only the readout
+        result); qubit reuse and state export see the true post-measurement
+        state. It therefore never changes execution-strategy classification.
+
+        Args:
+            confusion_matrix: ``(d, d)`` column-stochastic matrix with
+                ``C[i, j] = P(report i | true j)``. Copied and frozen; its
+                dimension is checked against the measured subsystem at
+                lowering.
+            target: ``None`` (default) applies to every measured subsystem.
+                A flat subsystem index (``int``) or a quantum
+                :py:class:`~fatqat.registers.RegisterRef` pins it to one
+                subsystem; a specific entry replaces the default there, and
+                a later specific entry replaces an earlier one.
+
+        Raises:
+            TypeError: If ``target`` is not ``None``, an ``int``, or a
+                quantum ref.
+            ValueError: If the matrix is not square, at least ``2 x 2``, with
+                entries in ``[0, 1]`` and columns summing to 1.
+        """
+        matrix = np.array(confusion_matrix, dtype=float, copy=True)
+        if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+            raise ValueError(
+                f"confusion matrix must be square, got shape {matrix.shape}"
+            )
+        if matrix.shape[0] < 2:
+            raise ValueError(
+                f"confusion matrix side length must be >= 2, got {matrix.shape[0]}"
+            )
+        if np.any(matrix < 0) or np.any(matrix > 1):
+            raise ValueError("confusion matrix entries must be in [0, 1]")
+        if not np.allclose(matrix.sum(axis=0), 1.0):
+            raise ValueError(
+                "confusion matrix must be column-stochastic: each column "
+                "C[:, j] = P(report | true j) must sum to 1"
+            )
+        if target is not None and type(target) is not int:
+            if not isinstance(target, RegisterRef):
+                raise TypeError(
+                    f"target must be None, a flat index, or a RegisterRef, "
+                    f"got {target!r}"
+                )
+            if not isinstance(target.register, QuantumRegister):
+                raise TypeError(
+                    "readout-error target refs must point into a "
+                    f"QuantumRegister, got a ref into "
+                    f"{type(target.register).__name__}"
+                )
+        if type(target) is int and target < 0:
+            raise ValueError(f"flat subsystem index must be >= 0, got {target}")
+        matrix.flags.writeable = False
+        self._readout_errors.append((target, matrix))
+
+    def readout_error_for(
+        self, measured_index: int, layout: ResourceLayout
+    ) -> np.ndarray | None:
+        """Return the confusion matrix selected for one measured subsystem.
+
+        A specific entry (flat index or ref, resolved through ``layout``)
+        replaces the all-target default; among specific entries for the same
+        subsystem, the last registered wins. Ref entries whose register is
+        not in the laid-out program can never match and are skipped.
+        """
+        specific = fallback = None
+        for target, matrix in self._readout_errors:
+            if target is None:
+                fallback = matrix
+            elif _selector_indices((target,), layout) == (measured_index,):
+                specific = matrix
+        return specific if specific is not None else fallback
+
+    def has_readout_error(self) -> bool:
+        """Return whether any readout-error entry is registered."""
+        return bool(self._readout_errors)
 
     def has_noise_for(self, operation: Operation | type[Operation]) -> bool:
         """Return whether any entry is keyed on this operation family."""
