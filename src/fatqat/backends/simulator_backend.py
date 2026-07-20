@@ -16,9 +16,10 @@ the backend never branches on method afterwards:
 - ``_state_field``: the native state field name (``"statevector"`` or
   ``"density_matrix"``). Drives the result-config flag read, the `Result`
   keyword, the availability name, the metadata echo, and validation wording.
-- ``_simulator_cls``: the `Simulator` subclass this method drives
-  (`NumpySVSimulator` or `NumpyDMSimulator`); one instance is bound to
-  ``_simulator`` and reused across runs.
+- ``_simulator_cls``: the `Simulator` subclass the (method, runtime) pair
+  drives (`NumpySVSimulator`, `NumpyDMSimulator`, or the optional
+  `NumbaSVSimulator`); one instance is bound to ``_simulator`` and reused
+  across runs.
 - ``_result_config_cls`` / ``_request_cls``: the method's frozen
   result-config and engine-request value objects. Supported
   ``result_config`` keys are derived from the config dataclass fields.
@@ -137,6 +138,12 @@ class SimulatorBackend:
       uses ``multiprocessing``. ``"serial"`` disables process-based parallel
       execution.
 
+    The ``runtime`` argument selects the execution technology for the chosen
+    representation - ``"numpy"`` (default) or ``"numba"`` (optional
+    dependency, statevector only for now). The runtime never changes
+    simulation semantics, only how fast the same numbers are computed;
+    dynamic-shot worker processes use the selected runtime as well.
+
     A backend instance reuses one simulator across runs, so it is efficient
     for repeated single-threaded use but is not safe for concurrent ``run()``
     calls.
@@ -161,10 +168,11 @@ class SimulatorBackend:
         method: str = "statevector",
         options: dict[str, Any] | None = None,
         implementation_map: ImplementationMap | None = None,
+        runtime: str = "numpy",
         noise: NoiseModel | None = None,
         channel_implementation_map: ChannelImplementationMap | None = None,
     ) -> None:
-        """Create a simulator backend for the given method.
+        """Create a simulator backend for the given method and runtime.
 
         Args:
             method: Simulation method: ``"statevector"`` or
@@ -180,6 +188,14 @@ class SimulatorBackend:
                 ``default_matrix_implementation_map()``. The backend copies
                 whatever map it receives, so mutating the caller's map object
                 after construction does not change this backend's behavior.
+            runtime: Execution technology: ``"numpy"`` (the default) or
+                ``"numba"``, case-insensitive. The runtime selects *how* the
+                chosen state representation is computed, never its semantics:
+                results are identical up to the documented per-simulator RNG
+                reproducibility contract. ``"numba"`` currently supports
+                ``method="statevector"`` only and requires the optional
+                ``numba`` dependency; both constraints raise here, at
+                construction, rather than at run time.
             noise: Optional :py:class:`~fatqat.NoiseModel` applied to every
                 run. ``None`` (the default) means noise-free execution. The
                 backend holds a reference (not a copy): a noise model is
@@ -189,6 +205,12 @@ class SimulatorBackend:
                 their Kraus operators are built. ``None`` (the default) uses
                 ``default_channel_implementation_map()``. Copied, like
                 ``implementation_map``.
+
+        Raises:
+            BackendValidationError: If ``method`` or ``runtime`` is not one
+                of the supported names, ``runtime="numba"`` is combined with
+                ``method="density_matrix"`` (no numba density-matrix
+                simulator exists yet), or numba is not installed.
         """
         normalized = _METHOD_ALIASES.get(str(method).lower())
         if normalized is None:
@@ -196,9 +218,14 @@ class SimulatorBackend:
                 f"unsupported method={method!r}; expected one of "
                 "'statevector'/'SV' or 'density_matrix'/'DM'"
             )
-        # Method-dependent facts, bound once. This block is the single
-        # dispatch point: the methods below read the bound attributes and
-        # never branch on the method themselves.
+        normalized_runtime = str(runtime).lower()
+        if normalized_runtime not in ("numpy", "numba"):
+            raise BackendValidationError(
+                f"unsupported runtime={runtime!r}; expected 'numpy' or 'numba'"
+            )
+        # Method- and runtime-dependent facts, bound once. This block is the
+        # single dispatch point: the methods below read the bound attributes
+        # and never branch on method or runtime themselves.
         self._state_field = normalized
         self._simulator_cls: type[Simulator]
         if normalized == "statevector":
@@ -218,6 +245,25 @@ class SimulatorBackend:
             # noise is the exact Kraus sum: only measurement (whose outcome
             # is recorded) is stochastic.
             self._nonunitary_is_stochastic = False
+        if normalized_runtime == "numba":
+            # The runtime axis swaps the simulator class only; every other
+            # method-bound fact above is representation semantics and stays.
+            if normalized == "density_matrix":
+                raise BackendValidationError(
+                    "runtime='numba' does not support method='density_matrix' "
+                    "yet; use runtime='numpy' for density-matrix simulation"
+                )
+            try:
+                # Lazy: numba is an optional dependency, and fatqat.simulator's
+                # package __init__ deliberately never imports the nb module.
+                from ..simulator.nb import NumbaSVSimulator
+            except ImportError as exc:
+                raise BackendValidationError(
+                    "runtime='numba' requires the optional numba dependency "
+                    "(install the 'numba' group)"
+                ) from exc
+            self._simulator_cls = NumbaSVSimulator
+        self._runtime = normalized_runtime
 
         config = _normalize_dict_options(
             options,
@@ -430,6 +476,7 @@ class SimulatorBackend:
                 "shots": shots,
                 "backend_name": type(self).__name__,
                 "method": self._state_field,
+                "runtime": self._runtime,
                 "result_config": {
                     "counts": config.counts,
                     self._state_field: getattr(config, self._state_field),
