@@ -1,8 +1,14 @@
 # fatqat
 
-fatqat is a quantum noisy simulator (MVP Phase 1). Build a `Program` out of
-registers, gates, and measurements, run it on the simulator backend, and read
-back counts, a statevector, or a density matrix.
+fatqat is a quantum circuit simulator built around a clean three-part split:
+a `Program` describes *what* to run (registers, gates, measurements,
+feedforward), a backend decides *how* to run it (state representation,
+execution technology, noise), and a `Result` reports what came out (counts,
+statevector, density matrix). Programs are backend-agnostic: the same
+program runs pure or mixed, ideal or noisy, NumPy or JIT-compiled, without
+changes.
+
+## Quick start
 
 ```python
 import fatqat as fq
@@ -12,22 +18,137 @@ program.add(fq.ops.H, 0)
 program.add(fq.ops.CX, (0, 1))
 program.add_measurement((0, 1), (0, 1))
 
-backend = fq.backends.SimulatorBackend(method="SV")   # or method="DM"
-result = backend.run(program, shots=1000).result()
-print(result.get_counts())          # e.g. {"00": 512, "11": 488}
+backend = fq.backends.SimulatorBackend(method="SV")
+result = backend.run(program, shots=1000, seed=7).result()
+print(result.get_counts())          # {'00': 502, '11': 498}
 ```
 
-The `method` selects the state representation: `"SV"`/`"statevector"` for
-pure-state simulation, `"DM"`/`"density_matrix"` for exact mixed-state
-simulation (e.g. reset acting on entangled qubits).
+## Simulation methods
+
+`method` selects the state representation, Qiskit style: `"SV"` /
+`"statevector"` for pure-state simulation, `"DM"` / `"density_matrix"` for
+exact mixed-state simulation. Each method can export its native state
+instead of (or alongside) counts:
+
+```python
+bell = fq.Program(2)
+bell.add(fq.ops.H, 0)
+bell.add(fq.ops.CX, (0, 1))
+
+rho = (
+    fq.backends.SimulatorBackend(method="DM")
+    .run(bell, result_config={"counts": False, "density_matrix": True})
+    .result()
+    .get_density_matrix()
+)
+print(rho.diagonal().real)          # [0.5 0.  0.  0.5]
+```
+
+## Runtimes
+
+`runtime` selects the execution technology for the chosen representation —
+`"numpy"` (the default) or `"numba"` for JIT-compiled kernels (statevector
+only for now; requires the optional `numba` dependency). The runtime never
+changes results, only how fast they are computed:
+
+```python
+backend = fq.backends.SimulatorBackend(method="SV", runtime="numba")
+```
+
+## Dynamic circuits
+
+Measurement, feedforward, and reset are first-class program constructs; a
+`Barrier` is a compiler-facing marker with no simulation effect. The backend
+automatically switches between a fast single-evolution path and per-shot
+replay (parallelized across processes for large shot counts) depending on
+what the program needs:
+
+```python
+dyn = fq.Program(2, 2)
+dyn.add(fq.ops.H, 0)
+dyn.add_measurement(0, 0)                # mid-circuit measurement
+dyn.add(fq.ops.X, 1, condition=(0, 1))   # applied only when clbit 0 read 1
+dyn.add(fq.ops.Reset, 0)                 # reprepare q0 in |0>
+dyn.add(fq.ops.Barrier, (0, 1))          # compiler marker, no-op here
+dyn.add_measurement(1, 1)
+```
+
+## Noise
+
+Noise lives in a `NoiseModel`, built separately from the program and passed
+to the backend, so the same program runs ideal or noisy without changes.
+Quantum channels attach to gate occurrences; readout error is classical
+(the collapse stays true, only the reported bit is resampled):
+
+```python
+import numpy as np
+
+noise = fq.NoiseModel()
+noise.add_noise(fq.ops.CX, fq.noise.Depolarizing(p=0.05))
+damping, dephasing = fq.noise.relaxation_channels(t1=60e-6, t2=80e-6, duration=2e-6)
+noise.add_noise(fq.ops.H, damping)
+noise.add_noise(fq.ops.H, dephasing)
+noise.add_readout_error(np.array([[0.98, 0.05], [0.02, 0.95]]))
+
+backend = fq.backends.SimulatorBackend(method="DM", noise=noise)
+```
+
+Under `method="DM"` channels apply exactly (one evolution); under
+`method="SV"` each shot samples one Kraus branch (quantum trajectories) —
+both converge to the same counts. A device backend can also author its own
+calibration-derived model:
+`FakeSuperconducting4x4Backend.default_noise_model()`. The full noise guide
+belongs to the Sphinx docs.
+
+## Qudits
+
+Registers take a per-slot dimension; gates like `Shift`, `Clock`, `Sum`, and
+`Fourier` resolve at whatever dimension their targets have:
+
+```python
+qutrits = fq.Program([fq.QuantumRegister(2, dim=3)], [fq.ClassicalRegister(2, dim=3)])
+qutrits.add(fq.ops.Fourier, 0)
+qutrits.add(fq.ops.Sum, (0, 1))          # |i, j> -> |i, i+j mod 3>
+qutrits.measure_all()
+# counts over trits: {'00': 314, '11': 293, '22': 293}
+```
+
+## Device backends
+
+`FakeSuperconducting4x4Backend` is a fixed 16-qubit prototype target with a
+native gate set (`RZ`, `SX`, nearest-neighbor `CZ`). Its implementation map
+is introspectable, so a compiler can discover the device's constraints
+instead of hardcoding them:
+
+```python
+fake = fq.backends.FakeSuperconducting4x4Backend()
+impl_map = fake.implementation_map
+sorted(op.name for op in impl_map.supported_operations())   # ['CZ', 'RZ', 'SX']
+impl_map.supports(fq.ops.CX)                                # False
+```
+
+## OpenQASM
+
+Programs translate to and from OpenQASM 2.0/3.0 text:
+
+```python
+from fatqat.qasm import from_qasm, to_qasm
+
+program = from_qasm(
+    'OPENQASM 2.0; include "qelib1.inc"; '
+    "qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q -> c;"
+)
+print(to_qasm(program))             # OpenQASM 3.0 by default
+```
 
 ## Dev setup
 
 This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 
 ```sh
-uv sync              # install runtime + dev dependencies into .venv
-uv run pytest        # run the test suite
+uv sync                 # install runtime + dev dependencies into .venv
+uv run pytest           # run the test suite
+uv sync --group numba   # optional: enables runtime="numba"
 ```
 
 ## Documentation
@@ -47,7 +168,10 @@ this yet — it's for local/internal use.
 ## Project layout
 
 - `src/fatqat/` — package source: `Program`, `operations` (gates,
-  measurement, reset), `backends` (statevector, parallel), `implementation`
-  (matrix backend), registers, jobs, results, errors.
+  measurement, reset, barrier), `backends` (the simulator backend, resolved
+  execution steps, the fake device), `simulator` (NumPy and Numba
+  simulators), `implementation` (gate-matrix rules and registry), `noise`
+  (channels, `NoiseModel`, readout error), registers, layout, jobs, results,
+  QASM translation, errors.
 - `tests/` — pytest suite.
 - `docs/sphinx/` — user guide and API reference (see above).
