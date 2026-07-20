@@ -100,6 +100,20 @@ class NoiseModel:
                 subsystem indices (``int``) pins it in the backend's device
                 address space. The two forms cannot be mixed in one selector.
 
+        Selection semantics, precisely:
+
+        - Entries resolving to the same subsystems accumulate, in
+          registration order - each is an independent mechanism, so
+          attaching a channel twice applies it twice.
+        - A specific-target entry replaces the all-targets default on the
+          occurrences it matches, and only those (Qiskit Aer's precedence).
+          It can therefore *lower* the noise on its target by evicting a
+          stronger default; restate the default at the specific level to
+          keep it.
+        - Selectors are compared by resolved flat index, not by syntax: an
+          ``int`` and a :py:class:`~fatqat.registers.RegisterRef` selector
+          landing on the same subsystems accumulate rather than override.
+
         Raises:
             TypeError: If ``operation`` is not an operation, ``channel`` is
                 not a `Channel`, or ``targets`` mixes or mistypes selector

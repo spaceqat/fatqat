@@ -38,7 +38,7 @@ import numpy as np
 from numba import get_num_threads, njit, prange
 
 from ..backends.engine_contract import _EngineConfig as EngineConfig, RawResult
-from ..backends.steps import ApplyMatrixStep, MeasurementStep
+from ..backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep
 from ..result import reduce_to_counts
 from .np import NumpySVSimulator
 
@@ -594,6 +594,20 @@ def _run_shots_kernel(
     return results
 
 
+def _plan_compilable(plan: list) -> bool:
+    """Whether the fused dynamic kernel understands every step in the plan.
+
+    The kernel compiles matrix, measurement, and reset steps only. Anything
+    else (an ``ApplyChannelStep`` from channel noise, for instance) must not
+    reach ``_compile_dynamic_plan``, whose step dispatch would misread it;
+    the caller falls back to the inherited NumPy per-shot path instead,
+    which executes every step type correctly at NumPy speed.
+    """
+    return all(
+        isinstance(step, (ApplyMatrixStep, MeasurementStep, ResetStep)) for step in plan
+    )
+
+
 class NumbaSVSimulator(NumpySVSimulator):
     """State-vector simulator with Numba-jitted numeric kernels."""
 
@@ -680,7 +694,7 @@ class NumbaSVSimulator(NumpySVSimulator):
         back to the serial base path, which keeps ``self._state`` for the export.
         """
         state_requested = getattr(request, self._state_field)
-        if state_requested or not request.counts:
+        if state_requested or not request.counts or not _plan_compilable(plan):
             return super()._run_per_shot(plan, shots, seed, request)
 
         from .parallel import _shot_seed_sequences
