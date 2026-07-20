@@ -13,7 +13,7 @@ def test_resolve_result_request_defaults_statevector_for_nonstochastic_program()
         _PlanFacts(has_measurement=False, has_reset=False),
         _StateVectorResultRequest,
         "statevector",
-        reset_is_stochastic=True,
+        nonunitary_is_stochastic=True,
     )
 
     assert request.counts is False
@@ -26,7 +26,7 @@ def test_resolve_result_request_reset_suppresses_statevector_default():
         _PlanFacts(has_measurement=False, has_reset=True),
         _StateVectorResultRequest,
         "statevector",
-        reset_is_stochastic=True,
+        nonunitary_is_stochastic=True,
     )
 
     assert request.statevector is False
@@ -38,7 +38,7 @@ def test_resolve_result_request_reset_keeps_density_matrix_default():
         _PlanFacts(has_measurement=False, has_reset=True),
         _DensityMatrixResultRequest,
         "density_matrix",
-        reset_is_stochastic=False,
+        nonunitary_is_stochastic=False,
     )
 
     assert request.counts is False

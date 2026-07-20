@@ -2,8 +2,10 @@
 
 from . import backends
 from . import errors
+from . import noise
 from . import operations as ops
 from .job import Job
+from .noise import NoiseModel
 from .operations import Measurement
 from .program import AppliedOperation, Program
 from .registers import (
@@ -20,6 +22,8 @@ __all__ = [
     "ops",
     "backends",
     "errors",
+    "noise",
+    "NoiseModel",
     "Program",
     "AppliedOperation",
     "Measurement",

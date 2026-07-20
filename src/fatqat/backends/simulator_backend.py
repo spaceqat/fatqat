@@ -22,10 +22,11 @@ the backend never branches on method afterwards:
 - ``_result_config_cls`` / ``_request_cls``: the method's frozen
   result-config and engine-request value objects. Supported
   ``result_config`` keys are derived from the config dataclass fields.
-- ``_reset_is_stochastic``: whether reset makes execution stochastic for the
-  state representation (`True` for statevector, where reset samples a
-  branch; `False` for density matrix, where reset is a deterministic
-  channel).
+- ``_nonunitary_is_stochastic``: whether non-unitary maps (reset, channel
+  noise) make execution stochastic for the state representation (`True`
+  for statevector, which must sample one branch of any non-unitary map;
+  `False` for density matrix, which applies them as deterministic
+  channels).
 
 The backend/simulator seam: this class constructs the method's `Simulator`
 subclass once, then calls ``simulator.initialize(system_dims, n_clbits)``
@@ -55,6 +56,13 @@ from ..implementation import (
 )
 from ..job import Job
 from ..layout import ResourceLayout
+from ..noise import (
+    ChannelImplementationMap,
+    NoiseModel,
+    NoiseSupportReport,
+    default_channel_implementation_map,
+)
+from ..noise.base import _validate_kraus_shapes
 from ..operations import BarrierGate, Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
 from ..result import (
@@ -74,7 +82,13 @@ from .engine_contract import (
     _EngineConfig,
     _StateVectorResultRequest,
 )
-from .steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
+from .steps import (
+    ApplyChannelStep,
+    ApplyMatrixStep,
+    MeasurementStep,
+    ResetStep,
+    ResolvedStep,
+)
 
 # Canonical method names plus Qiskit-style short aliases, all case-insensitive.
 _METHOD_ALIASES = {
@@ -105,7 +119,14 @@ class SimulatorBackend:
     counts from the terminal measurement distribution) or a dynamic path
     (per-shot replay with an explicit classical register) when the program
     contains classical conditions, reuse of measured subsystems, or - under
-    statevector semantics - reset.
+    statevector semantics - reset or channel noise.
+
+    Channel noise: a :py:class:`~fatqat.NoiseModel` passed via ``noise=``
+    attaches Kraus channels to gate occurrences; each is resolved at lowering
+    and applied right after its gate. Under density-matrix semantics a
+    channel is the exact Kraus sum (deterministic, fast-path compatible);
+    under statevector semantics each occurrence samples one trajectory
+    branch, which makes execution stochastic and forces per-shot replay.
 
     Backend constructor options affect only dynamic counts execution:
 
@@ -140,6 +161,8 @@ class SimulatorBackend:
         method: str = "statevector",
         options: dict[str, Any] | None = None,
         implementation_map: ImplementationMap | None = None,
+        noise: NoiseModel | None = None,
+        channel_implementation_map: ChannelImplementationMap | None = None,
     ) -> None:
         """Create a simulator backend for the given method.
 
@@ -157,6 +180,15 @@ class SimulatorBackend:
                 ``default_matrix_implementation_map()``. The backend copies
                 whatever map it receives, so mutating the caller's map object
                 after construction does not change this backend's behavior.
+            noise: Optional :py:class:`~fatqat.NoiseModel` applied to every
+                run. ``None`` (the default) means noise-free execution. The
+                backend holds a reference (not a copy): a noise model is
+                standalone, reusable state the user may keep building.
+            channel_implementation_map: Optional map controlling which
+                `Channel` descriptor types this backend can resolve and how
+                their Kraus operators are built. ``None`` (the default) uses
+                ``default_channel_implementation_map()``. Copied, like
+                ``implementation_map``.
         """
         normalized = _METHOD_ALIASES.get(str(method).lower())
         if normalized is None:
@@ -173,17 +205,19 @@ class SimulatorBackend:
             self._result_config_cls = _StateVectorResultConfig
             self._request_cls = _StateVectorResultRequest
             self._simulator_cls = NumpySVSimulator
-            # A pure state cannot represent the mixed post-reset ensemble, so
-            # reset must sample one branch - a random event, like measurement.
-            self._reset_is_stochastic = True
+            # A pure state cannot represent the mixed output of a non-unitary
+            # map, so reset and channel noise must each sample one branch - a
+            # random event, like measurement.
+            self._nonunitary_is_stochastic = True
         else:
             self._result_config_cls = _DensityMatrixResultConfig
             self._request_cls = _DensityMatrixResultRequest
             self._simulator_cls = NumpyDMSimulator
             # A density matrix holds the full ensemble, so reset is the
-            # deterministic channel |0><0| (x) Tr_target(rho): only
-            # measurement (whose outcome is recorded) is stochastic.
-            self._reset_is_stochastic = False
+            # deterministic channel |0><0| (x) Tr_target(rho) and channel
+            # noise is the exact Kraus sum: only measurement (whose outcome
+            # is recorded) is stochastic.
+            self._nonunitary_is_stochastic = False
 
         config = _normalize_dict_options(
             options,
@@ -196,6 +230,12 @@ class SimulatorBackend:
         if implementation_map is None:
             implementation_map = default_matrix_implementation_map()
         self._impl_map = implementation_map.copy()
+        # The noise model is held by reference (it is standalone, reusable
+        # user state); the channel map is copied, like the matrix map.
+        self._noise_model = noise if noise is not None else NoiseModel()
+        if channel_implementation_map is None:
+            channel_implementation_map = default_channel_implementation_map()
+        self._channel_map = channel_implementation_map.copy()
         # The simulator is constructed once and re-initialized per run so its
         # buffers can be reused. Because it holds per-run state, a single
         # backend instance is NOT safe for concurrent run() calls
@@ -291,17 +331,18 @@ class SimulatorBackend:
 
         Operation support and dynamic classification were already resolved in
         `_lower`. Stochasticity is representation-dependent: measurement is
-        always stochastic; reset only when ``_reset_is_stochastic``.
+        always stochastic; reset and channel noise only when
+        ``_nonunitary_is_stochastic``.
         """
         request = _resolve_result_request(
             config,
             facts,
             self._request_cls,
             self._state_field,
-            self._reset_is_stochastic,
+            self._nonunitary_is_stochastic,
         )
         stochastic = facts.has_measurement or (
-            self._reset_is_stochastic and facts.has_reset
+            self._nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
         )
         requested_state = getattr(config, self._state_field) is True
 
@@ -319,7 +360,9 @@ class SimulatorBackend:
             raise BackendValidationError(f"counts require shots > 0, got shots={shots}")
         if requested_state and stochastic and shots != 1:
             stochastic_sources = (
-                "measurement or reset" if self._reset_is_stochastic else "measurement"
+                "measurement, reset, or channel noise"
+                if self._nonunitary_is_stochastic
+                else "measurement"
             )
             raise BackendValidationError(
                 f"{self._state_field} with {stochastic_sources} is only supported "
@@ -344,7 +387,7 @@ class SimulatorBackend:
             facts,
             self._request_cls,
             self._state_field,
-            self._reset_is_stochastic,
+            self._nonunitary_is_stochastic,
         )
 
         system_key = (tuple(system_dims), n_clbits)
@@ -426,12 +469,17 @@ class SimulatorBackend:
         `Reset` is recognized by type and routed to a `ResetStep`; `Barrier`
         is recognized by type and skipped entirely - it is a compiler-facing
         marker with no simulation semantics, so it emits no step and cannot
-        affect execution strategy or result defaults. The pass also computes
-        `has_measurement` and `has_reset`.
+        affect execution strategy or result defaults. Channels the noise
+        model attaches to a gate occurrence are resolved here into
+        `ApplyChannelStep`s inserted right after the gate's own step, one per
+        channel in registration order, each inheriting the gate's condition.
+        The pass also computes `has_measurement`, `has_reset`, and
+        `has_channel`.
         """
         plan: list[ResolvedStep] = []
         has_measurement = False
         has_reset = False
+        has_channel = False
 
         for step in program.operations:
             if isinstance(step, Measurement):
@@ -456,6 +504,15 @@ class SimulatorBackend:
 
                 if isinstance(step.operation, ResetGate):
                     has_reset = True
+                    # Reset-attached channels ("apply after the ideal reset")
+                    # are designed but not wired yet; raising keeps the gap
+                    # loud instead of silently dropping registered noise.
+                    if self._noise_model.channels_for(
+                        ResetGate, target_indices, layout
+                    ):
+                        raise UnsupportedOperationError(
+                            "channel noise attached to Reset is not supported yet"
+                        )
                     cond = _resolve_condition(step.condition, layout)
                     plan.append(ResetStep(reset_indices=target_indices, condition=cond))
                     continue
@@ -486,12 +543,83 @@ class SimulatorBackend:
                     )
                 )
 
+                # Attached channels resolve inline, mirroring the gate
+                # path above: rule lookup, Kraus resolution, shape check,
+                # step append - one ApplyChannelStep per channel, inheriting
+                # the gate's condition.
+                for channel in self._noise_model.channels_for(
+                    type(step.operation), target_indices, layout
+                ):
+                    has_channel = True
+                    rule = self._channel_map.get(type(channel))
+                    if rule is None:
+                        raise UnsupportedOperationError(
+                            f"{type(channel).__name__} has no channel "
+                            "implementation on this backend"
+                        )
+                    kraus_ops = tuple(rule(channel, targets=step.targets))
+                    _validate_kraus_shapes(kraus_ops, expected, type(channel).__name__)
+                    plan.append(
+                        ApplyChannelStep(
+                            kraus_ops=kraus_ops,
+                            target_indices=target_indices,
+                            condition=cond,
+                        )
+                    )
+
         return (
             plan,
             _PlanFacts(
                 has_measurement=has_measurement,
                 has_reset=has_reset,
+                has_channel=has_channel,
             ),
+        )
+
+    def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
+        """Report which parts of a noise model this backend can execute.
+
+        A channel descriptor type is supported exactly when the backend's
+        channel implementation map has a rule for it - the map's coverage is
+        the capability declaration. Non-empty ``qubit_noise`` is rejected as
+        a structural mismatch (continuously-active per-subsystem noise is
+        pulse-family territory), and Reset-keyed entries are rejected until
+        reset-attached channels are wired.
+
+        Args:
+            noise_model: The noise model to check; it is not executed.
+
+        Returns:
+            A frozen report naming accepted and rejected sources.
+        """
+        accepted: list[str] = []
+        rejected: list[str] = []
+        warnings_: list[str] = []
+        for channel_type in sorted(
+            noise_model.channel_types(), key=lambda c: c.__name__
+        ):
+            if self._channel_map.get(channel_type) is None:
+                rejected.append(channel_type.__name__)
+                warnings_.append(
+                    f"{channel_type.__name__} has no channel implementation "
+                    "on this backend"
+                )
+            else:
+                accepted.append(channel_type.__name__)
+        if noise_model.qubit_noise:
+            rejected.append("qubit_noise")
+            warnings_.append(
+                "qubit_noise holds continuously-active noise for pulse-family "
+                "backends; the matrix family cannot consume it"
+            )
+        if noise_model.has_noise_for(ResetGate):
+            rejected.append("Reset")
+            warnings_.append("channel noise attached to Reset is not supported yet")
+        return NoiseSupportReport(
+            supported=not rejected,
+            accepted_sources=tuple(accepted),
+            rejected_sources=tuple(rejected),
+            warnings=tuple(warnings_),
         )
 
 
@@ -500,16 +628,19 @@ def _resolve_result_request(
     facts: _PlanFacts,
     request_cls: type,
     state_field: str,
-    reset_is_stochastic: bool,
+    nonunitary_is_stochastic: bool,
 ) -> Any:
     """Resolve default result fields from config and lowered program facts.
 
     Counts default to measurement presence. The state field defaults to
     non-stochastic execution, where stochasticity is representation-dependent:
-    measurement always; reset only when ``reset_is_stochastic`` (statevector
-    reset samples a branch; density-matrix reset is a deterministic channel).
+    measurement always; reset and channel noise only when
+    ``nonunitary_is_stochastic`` (a statevector samples one branch of any
+    non-unitary map; a density matrix applies it as a deterministic channel).
     """
-    stochastic = facts.has_measurement or (reset_is_stochastic and facts.has_reset)
+    stochastic = facts.has_measurement or (
+        nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
+    )
     counts = config.counts if config.counts is not None else facts.has_measurement
     state = getattr(config, state_field)
     if state is None:

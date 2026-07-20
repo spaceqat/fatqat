@@ -31,6 +31,11 @@ Semantics differences:
   fast path. Per-shot rng streams are therefore not draw-for-draw aligned across
   the two, so counts for a fixed seed are reproducible per simulator, not across
   simulators.
+- a channel (``ApplyChannelStep``) follows the same split as reset: the
+  statevector samples one Kraus branch per occurrence (quantum-jump
+  unravelling, one rng draw), forcing the per-shot path; the density matrix
+  applies the exact Kraus sum ``sum_i K_i rho K_i^dagger`` (no rng draw), so
+  an unconditional channel stays on the fast path.
 """
 
 from __future__ import annotations
@@ -42,7 +47,13 @@ from math import prod
 import numpy as np
 
 from ..backends.engine_contract import _EngineConfig as EngineConfig, RawResult
-from ..backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep, ResolvedStep
+from ..backends.steps import (
+    ApplyChannelStep,
+    ApplyMatrixStep,
+    MeasurementStep,
+    ResetStep,
+    ResolvedStep,
+)
 from ..implementation.matrices import shift_matrix
 from ..result import decode_indices_to_clbit_rows, reduce_to_counts
 from .base import ResultRequest, Simulator
@@ -129,7 +140,8 @@ class _NumpyMatrixSimulator(Simulator):
 
     Owns strategy selection and both run paths and expresses them purely through
     the abstract kernels. Subclasses supply ``_allocate``, ``apply``,
-    ``probabilities``, ``collapse``, ``reset_subsystems`` and two class knobs:
+    ``apply_channel``, ``probabilities``, ``collapse``, ``reset_subsystems``
+    and two class knobs:
 
     - ``_state_field``: the request/result state field this simulator populates
       (``"statevector"`` or ``"density_matrix"``).
@@ -148,6 +160,15 @@ class _NumpyMatrixSimulator(Simulator):
     @abstractmethod
     def _allocate(self, size: int) -> np.ndarray:
         """Return the all-zero computational state over ``size`` basis states."""
+
+    @abstractmethod
+    def apply_channel(self, step: ApplyChannelStep, rng: np.random.Generator) -> None:
+        """Apply a Kraus channel to the internal state in place.
+
+        Consumes ``rng`` only under statevector semantics (one draw to sample
+        the trajectory branch); the density-matrix kernel is deterministic
+        and accepts it for interface parity, like reset.
+        """
 
     def measure_subsystems(
         self, indices: Sequence[int], rng: np.random.Generator
@@ -178,10 +199,12 @@ class _NumpyMatrixSimulator(Simulator):
     ) -> tuple[bool, list[tuple[int, int]]]:
         """Return the dynamic-path decision and the fast-path measurement pairs.
 
-        A ``ResetStep`` forces the dynamic path when ``_reset_forces_dynamic``
-        (statevector reset samples a branch), and otherwise only when conditioned
-        or when it touches an already-measured subsystem (terminal sampling for
-        that subsystem would otherwise read the post-reset state). An
+        A ``ResetStep`` or ``ApplyChannelStep`` forces the dynamic path when
+        ``_reset_forces_dynamic`` - both are non-unitary maps, and a pure
+        state must sample one branch of each (a density matrix applies them
+        deterministically) - and otherwise only when conditioned or when it
+        touches an already-measured subsystem (terminal sampling for that
+        subsystem would otherwise read the post-map state). An
         ``ApplyMatrixStep`` forces it when conditioned or when it reuses an
         already-measured subsystem.
         """
@@ -192,11 +215,16 @@ class _NumpyMatrixSimulator(Simulator):
             if isinstance(step, MeasurementStep):
                 measured.update(step.measured_indices)
                 measurements.extend(zip(step.measured_indices, step.classical_indices))
-            elif isinstance(step, ResetStep):
+            elif isinstance(step, (ResetStep, ApplyChannelStep)):
+                indices = (
+                    step.reset_indices
+                    if isinstance(step, ResetStep)
+                    else step.target_indices
+                )
                 if (
                     self._reset_forces_dynamic
                     or step.condition is not None
-                    or any(t in measured for t in step.reset_indices)
+                    or any(t in measured for t in indices)
                 ):
                     is_dynamic = True
             elif step.condition is not None or any(
@@ -215,15 +243,18 @@ class _NumpyMatrixSimulator(Simulator):
     ) -> RawResult:
         """Evolve once, optionally sample counts, optionally export the state.
 
-        The ``ResetStep`` branch is only reachable under density-matrix semantics,
-        where an unconditional reset is a deterministic channel; statevector
-        semantics routes every reset-bearing plan to the dynamic path.
+        The ``ResetStep`` and ``ApplyChannelStep`` branches are only reachable
+        under density-matrix semantics, where both are deterministic channels;
+        statevector semantics routes every plan bearing them to the dynamic
+        path.
         """
         state_requested = getattr(request, self._state_field)
         self.initialize(self._dims, self._n_clbits)
         for step in plan:
             if isinstance(step, ApplyMatrixStep):
                 self.apply(step)
+            elif isinstance(step, ApplyChannelStep):
+                self.apply_channel(step, rng)
             elif isinstance(step, ResetStep):
                 self.reset_subsystems(step.reset_indices, rng)
 
@@ -315,6 +346,9 @@ class _NumpyMatrixSimulator(Simulator):
             if isinstance(step, ApplyMatrixStep):
                 if _condition_matches(step.condition, clbits):
                     self.apply(step)
+            elif isinstance(step, ApplyChannelStep):
+                if _condition_matches(step.condition, clbits):
+                    self.apply_channel(step, rng)
             elif isinstance(step, MeasurementStep):
                 bits = self.measure_subsystems(step.measured_indices, rng)
                 for c, bit in zip(step.classical_indices, bits):
@@ -343,6 +377,30 @@ class NumpySVSimulator(_NumpyMatrixSimulator):
 
     def apply(self, step: ApplyMatrixStep) -> None:
         self._state = self._apply_local(self.state, step.matrix, step.target_indices)
+
+    def apply_channel(self, step: ApplyChannelStep, rng: np.random.Generator) -> None:
+        """Sample one Kraus branch (quantum-jump unravelling) and renormalize.
+
+        Each candidate branch ``K_i |psi>`` is produced by the same local-apply
+        primitive gates use; its squared norm is the branch probability. One
+        branch is drawn (consuming one rng draw, same posture as measurement
+        and reset) and kept, normalized.
+
+        Each branch starts from a fresh copy of the state: ``_apply_local`` is
+        only contracted to *return* the new state, and a subclass kernel (the
+        Numba one) legitimately updates its input buffer in place - reusing
+        ``self.state`` across branches would then corrupt the source mid-loop.
+        """
+        source = self.state
+        branches = [
+            self._apply_local(source.copy(), kraus, step.target_indices)
+            for kraus in step.kraus_ops
+        ]
+        norms = np.array([np.real(np.vdot(b, b)) for b in branches])
+        # CPTP guarantees the norms sum to <psi|psi> = 1; renormalize anyway so
+        # rng.choice never rejects the distribution over float round-off.
+        chosen = int(rng.choice(len(branches), p=norms / norms.sum()))
+        self._state = branches[chosen] / np.sqrt(norms[chosen])
 
     def _apply_local(
         self, state: np.ndarray, matrix: np.ndarray, targets: Sequence[int]
@@ -408,23 +466,45 @@ class NumpyDMSimulator(_NumpyMatrixSimulator):
         return state
 
     def apply(self, step: ApplyMatrixStep) -> None:
-        """Apply ``rho' = U_T rho U_T^dagger`` without materializing ``U_T``.
+        """Apply ``rho' = U_T rho U_T^dagger`` without materializing ``U_T``."""
+        self._state = self._apply_local_sandwich(
+            self.state, step.matrix, step.target_indices
+        )
 
-        ``rho`` is viewed as a 2n-axis ket/bra tensor and ``U`` (resp.
-        ``conj(U)``) is contracted into the target ket (resp. bra) axes.
+    def apply_channel(self, step: ApplyChannelStep, rng: np.random.Generator) -> None:
+        """Apply the exact Kraus sum ``rho' = sum_i K_i rho K_i^dagger``.
+
+        Each term reuses the two-sided local-apply primitive gates use; the
+        branch weights are implicit in the ``K_i rho K_i^dagger`` sandwiches,
+        which is what makes this exact. No randomness is consumed (``rng`` is
+        accepted only for interface parity, like reset).
         """
         rho = self.state
+        new = np.zeros_like(rho)
+        for kraus in step.kraus_ops:
+            new += self._apply_local_sandwich(rho, kraus, step.target_indices)
+        self._state = new
+
+    def _apply_local_sandwich(
+        self, rho: np.ndarray, matrix: np.ndarray, targets: Sequence[int]
+    ) -> np.ndarray:
+        """Return ``M_T rho M_T^dagger`` for a local matrix on flat ``targets``.
+
+        ``rho`` is viewed as a 2n-axis ket/bra tensor and ``M`` (resp.
+        ``conj(M)``) is contracted into the target ket (resp. bra) axes. The
+        matrix need not be unitary: gates and Kraus operators share this
+        primitive, differing only in whether the caller sums over terms.
+        """
         n = len(self._dims)
-        targets = step.target_indices
         k = len(targets)
         local_dims = tuple(self._dims[t] for t in targets)
         tensor = rho.reshape(self._reversed_dims * 2)
-        m = np.asarray(step.matrix, dtype=complex).reshape(local_dims + local_dims)
+        m = np.asarray(matrix, dtype=complex).reshape(local_dims + local_dims)
         ket_axes = [n - 1 - q for q in targets]
         bra_axes = [2 * n - 1 - q for q in targets]
         tensor = _contract_local(m, tensor, ket_axes, 2 * n, k)
         tensor = _contract_local(m.conj(), tensor, bra_axes, 2 * n, k)
-        self._state = tensor.reshape(rho.shape)
+        return tensor.reshape(rho.shape)
 
     def probabilities(self) -> np.ndarray:
         # A valid rho's diagonal is real and non-negative; clip tiny round-off so
