@@ -97,17 +97,21 @@ def test_fast_path_counts_reproduce_the_confusion_rate(method):
 
 
 def test_specific_target_confuses_only_its_subsystem():
+    # Always-FLIP readout pinned to q1, state |10>: q1 (true 0) reports 1,
+    # and q0 (true 1) must report 1 unchanged - a leak of the confusion onto
+    # q0 would flip it to 0 and produce "10", so this discriminates, which
+    # an always-report-one matrix would not (1 maps to 1 either way).
+    always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
     program = fq.Program(2, 2)
-    program.add(fq.ops.X, (0))
+    program.add(fq.ops.X, 0)
     program.add_measurement((0, 1), (0, 1))
     counts = (
-        SimulatorBackend(noise=_readout_model(_ALWAYS_ONE, target=1))
+        SimulatorBackend(noise=_readout_model(always_flip, target=1))
         .run(program, shots=200, seed=4)
         .result()
         .get_counts()
     )
 
-    # q0 (true 1) reads correctly; q1 (true 0) is always misreported as 1.
     assert counts == {"11": 200}
 
 

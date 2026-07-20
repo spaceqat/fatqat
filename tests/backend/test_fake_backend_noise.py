@@ -26,7 +26,7 @@ def test_backend_is_ideal_by_default():
     assert counts == {"1": 100}  # SX SX = X up to phase, no noise
 
 
-def test_default_noise_model_is_fully_supported_and_int_keyed():
+def test_default_noise_model_is_fully_supported():
     model = FakeSuperconducting4x4Backend.default_noise_model()
     report = FakeSuperconducting4x4Backend().validate_noise(model)
 
@@ -37,7 +37,7 @@ def test_default_noise_model_is_fully_supported_and_int_keyed():
         "PhaseDamping",
         "readout_error",
     }
-    # Authored before any program exists, so it works against any program.
+    # Authored before any user program exists; applies to any program.
     assert model.channel_types() == frozenset(
         {AmplitudeDamping, Depolarizing, PhaseDamping}
     )

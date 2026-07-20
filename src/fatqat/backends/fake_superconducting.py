@@ -17,10 +17,10 @@ device model: no routing, no timing, and ideal by default. See
 
 A calibration-derived noise profile is available on demand:
 ``FakeSuperconducting4x4Backend.default_noise_model()`` builds a
-:py:class:`~fatqat.NoiseModel` from the fake device's per-qubit ``T1``/``T2``
-table (relaxation on ``SX``), a ``CZ`` depolarizing rate, and per-qubit
-readout confusion - the Qiskit ``NoiseModel.from_backend`` workflow. Pass it
-back via ``noise=`` to run noisy; the backend stays ideal unless asked.
+:py:class:`~fatqat.NoiseModel` from the fake device's ``T1``/``T2`` numbers
+(relaxation on ``SX``), a ``CZ`` depolarizing rate, and a readout confusion
+matrix - the Qiskit ``NoiseModel.from_backend`` workflow. Pass it back via
+``noise=`` to run noisy; the backend stays ideal unless asked.
 
 The native-gate-set restriction applies to unitary operations only.
 Measurement and reset are resolved by `SimulatorBackend._lower` before any
@@ -52,24 +52,17 @@ GRID_ROWS = 4
 GRID_COLS = 4
 N_QUBITS = GRID_ROWS * GRID_COLS
 
-# --- fake calibration profile (per-qubit facts a real device would measure) ---
-# Deliberately simple deterministic numbers: T1 varies a little across the
-# grid so per-qubit (integer-selector) noise entries are visibly per-qubit,
+# --- fake calibration profile (the facts a real device would measure) ---
+# Deliberately simple uniform numbers in realistic superconducting ranges;
 # T2 stays within its physical bound T2 <= 2*T1, and readout is slightly
 # asymmetric (reporting 1 for a true 0 is rarer than the reverse), matching
 # the usual superconducting readout skew.
-_SX_DURATION = 40e-9  # seconds; RZ is virtual (zero duration -> no noise)
-_CZ_DEPOLARIZING_P = 0.01
+_T1 = 60e-6  # seconds
+_T2 = 48e-6
+_SX_DURATION = 20e-9  # RZ is virtual (zero duration -> no noise)
+_CZ_DEPOLARIZING_P = 0.005
 _READOUT_P01 = 0.02  # P(report 1 | true 0)
 _READOUT_P10 = 0.04  # P(report 0 | true 1)
-
-
-def _qubit_t1(qubit: int) -> float:
-    return 60e-6 + 2e-6 * qubit
-
-
-def _qubit_t2(qubit: int) -> float:
-    return 0.8 * _qubit_t1(qubit)
 
 
 def _nearest_neighbor_edges() -> tuple[tuple[int, int], ...]:
@@ -163,11 +156,10 @@ class FakeSuperconducting4x4Backend(SimulatorBackend):
         """Build this device's calibration-derived noise model.
 
         The from-backend workflow: the *backend* authors the model from its
-        own device facts, before any user program (or register) exists, so
-        every selector is a flat device qubit index. Per qubit, ``SX``
-        carries thermal relaxation converted from the qubit's ``T1``/``T2``
-        and the gate duration, and readout gets an asymmetric confusion
-        matrix; ``CZ`` carries a joint depolarizing channel on every edge.
+        own device facts, before any user program (or register) exists.
+        ``SX`` carries thermal relaxation converted from the device
+        ``T1``/``T2`` and the gate duration, readout gets an asymmetric
+        confusion matrix, and ``CZ`` carries a joint depolarizing channel.
         ``RZ`` is virtual (zero duration), so it stays noise-free.
 
         The returned model is a fresh, ordinary
@@ -190,22 +182,18 @@ class FakeSuperconducting4x4Backend(SimulatorBackend):
             True
         """
         noise = NoiseModel()
-        for qubit in range(N_QUBITS):
-            damping, dephasing = relaxation_channels(
-                _qubit_t1(qubit), _qubit_t2(qubit), _SX_DURATION
-            )
-            noise.add_noise(ops.SX, damping, targets=(qubit,))
-            noise.add_noise(ops.SX, dephasing, targets=(qubit,))
-            noise.add_readout_error(
-                np.array(
-                    [
-                        [1 - _READOUT_P01, _READOUT_P10],
-                        [_READOUT_P01, 1 - _READOUT_P10],
-                    ]
-                ),
-                target=qubit,
-            )
+        damping, dephasing = relaxation_channels(_T1, _T2, _SX_DURATION)
+        noise.add_noise(ops.SX, damping)
+        noise.add_noise(ops.SX, dephasing)
         noise.add_noise(ops.CZ, Depolarizing(p=_CZ_DEPOLARIZING_P))
+        noise.add_readout_error(
+            np.array(
+                [
+                    [1 - _READOUT_P01, _READOUT_P10],
+                    [_READOUT_P01, 1 - _READOUT_P10],
+                ]
+            )
+        )
         return noise
 
     @property
