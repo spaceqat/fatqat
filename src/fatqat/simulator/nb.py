@@ -1,14 +1,32 @@
-"""Numba statevector simulator.
+"""Numba matrix-family simulators.
 
-`NumbaSVSimulator` is a statevector `Simulator` that reuses every
-semantics-agnostic piece of `NumpySVSimulator` - strategy selection, the fast
-and per-shot paths, ``initialize`` / ``measure_subsystems`` /
-``reset_subsystems`` dispatch - and replaces its numeric kernels with
-Numba-jitted loops: gate application (`_apply_local`), probability computation
-(`probabilities`), categorical sampling (`sample_indices`), and projective
-collapse (`collapse`). Because `measure_subsystems` and `reset_subsystems`
-delegate to ``collapse`` / ``_apply_local``, they are fully Numba-routed
-without being overridden.
+`NumbaSVSimulator` (statevector) and `NumbaDMSimulator` (density matrix) reuse
+every semantics-agnostic piece of their NumPy twins - strategy selection, the
+fast and per-shot paths, ``initialize`` / ``measure_subsystems`` dispatch - and
+replace only the numeric kernels with Numba-jitted loops.
+
+- `NumbaSVSimulator` replaces gate application (`_apply_local`), probability
+  computation (`probabilities`), categorical sampling (`sample_indices`), and
+  projective collapse (`collapse`). Because `measure_subsystems` and
+  `reset_subsystems` delegate to ``collapse`` / ``_apply_local``, they are
+  fully Numba-routed without being overridden.
+- `NumbaDMSimulator` replaces the sandwich (`_apply_local_sandwich`, which
+  powers both ``apply`` and ``apply_channel``), `probabilities`,
+  `sample_indices`, and `collapse`. It reuses the *same* coset-walk gate kernels
+  as the statevector path by viewing ``rho`` (shape ``(size, size)``) as a flat
+  vector over a doubled ``2n``-subsystem system: the ``n`` bra subsystems
+  (little-endian, strides ``prod(dims[:q])``) followed by the ``n`` ket
+  subsystems (strides ``size * prod(dims[:q])``). The sandwich
+  ``M rho M^dagger`` is the single super-operator ``kron(M, conj(M))`` acting on
+  ``vec(rho)`` - one coset walk with a ``D^2 x D^2`` matrix over the combined
+  ket+bra super-target, so half the memory traffic of a separate ket/bra pass
+  and one parallel region per gate, with diagonal/permutation structure
+  preserved through the Kronecker product. A channel is likewise the one
+  super-operator ``sum_i kron(K_i, conj(K_i))``, applied in a single in-place
+  pass. Because ``4^n`` is memory-bound and each gate is one pass, DM
+  parallelizes later than the statevector path (`_MIN_SIZE_TO_THREAD_DM`).
+  Reset stays the inherited NumPy partial-trace channel (a single ``O(size^2)``
+  pass, cheaper than a Kraus-sum reimplementation for grouped resets).
 
 The RNG draw itself stays in NumPy: a ``np.random.Generator`` cannot cross into
 Numba nopython code, so uniforms are drawn with the passed ``rng`` and the
@@ -38,26 +56,106 @@ import numpy as np
 from numba import get_num_threads, njit, prange
 
 from ..backends.engine_contract import _EngineConfig as EngineConfig, RawResult
-from ..backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep
+from ..backends.steps import (
+    ApplyChannelStep,
+    ApplyMatrixStep,
+    MeasurementStep,
+    ResetStep,
+)
 from ..result import reduce_to_counts
-from .np import NumpySVSimulator
+from .np import NumpyDMSimulator, NumpySVSimulator
 
 _MAX_THREADS = get_num_threads()
 # Below this many amplitudes a parallel region costs more than the gate work it
 # saves (the state is small and memory-bandwidth bound), so stay single-threaded.
 # A coarse machine-independent guard, not a tuned constant.
 _MIN_SIZE_TO_THREAD = 1 << 15
+# The density matrix's flat length is 4^n and each gate launches two parallel
+# regions (ket then bra pass), so per-region work must be larger to amortize the
+# dispatch: parallelize later than the statevector path (measured crossover near
+# 2^18 flat amplitudes, i.e. n=9). See `NumbaDMSimulator`.
+_MIN_SIZE_TO_THREAD_DM = 1 << 18
 
 
-def _plan_chunks(num_cosets: int, size: int) -> int:
+def _plan_chunks(
+    num_cosets: int, size: int, min_parallel_size: int = _MIN_SIZE_TO_THREAD
+) -> int:
     """Parallel chunk count for a gate on a ``size``-amplitude state.
 
     Returns 1 (the serial kernel, no parallel-region overhead) for states below
-    `_MIN_SIZE_TO_THREAD`; otherwise splits the cosets across all worker threads.
+    ``min_parallel_size``; otherwise splits the cosets across all worker threads.
     """
-    if size < _MIN_SIZE_TO_THREAD:
+    if size < min_parallel_size:
         return 1
     return max(1, min(_MAX_THREADS, num_cosets))
+
+
+def _compute_apply_plan(
+    dims: Sequence[int],
+    targets: Sequence[int],
+    min_parallel_size: int = _MIN_SIZE_TO_THREAD,
+) -> tuple:
+    """Precompute the strided-block kernel layout for a target tuple.
+
+    Returns ``offsets[c]`` (the flat offset of local index ``c``, with
+    ``targets[0]`` most-significant), the flat strides/dimensions of the
+    complement (non-target) subsystems the kernel odometers over, the coset
+    count, and the parallel chunk count for this many cosets.
+
+    Depends only on ``dims`` and ``targets``, so the statevector path calls it
+    with the physical system dims while the density-matrix path calls it with
+    the doubled ``bra + ket`` dims (see the module docstring).
+    """
+    n = len(dims)
+    local_dims = [dims[t] for t in targets]
+    local_dim = prod(local_dims)
+
+    strides = [prod(dims[:q]) for q in range(n)]
+    target_strides = [strides[t] for t in targets]
+    # Mixed-radix place values with targets[0] most-significant.
+    local_places = [1] * len(targets)
+    for j in range(len(targets) - 2, -1, -1):
+        local_places[j] = local_places[j + 1] * local_dims[j + 1]
+
+    offsets = np.empty(local_dim, dtype=np.int64)
+    for c in range(local_dim):
+        offset = 0
+        for j, stride in enumerate(target_strides):
+            offset += ((c // local_places[j]) % local_dims[j]) * stride
+        offsets[c] = offset
+
+    target_set = set(targets)
+    complement = [q for q in range(n) if q not in target_set]
+    comp_strides = np.array([strides[q] for q in complement], dtype=np.int64)
+    comp_dims = np.array([dims[q] for q in complement], dtype=np.int64)
+    size = prod(dims)
+    num_cosets = size // local_dim
+    n_chunks = _plan_chunks(num_cosets, size, min_parallel_size)
+    return offsets, comp_strides, comp_dims, num_cosets, n_chunks
+
+
+def _measured_layout(
+    dims: Sequence[int], subsystems: Sequence[int]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Flat strides and dimensions of the measured subsystems for the kernels."""
+    strides = np.array([prod(dims[:q]) for q in subsystems], dtype=np.int64)
+    measured_dims = np.array([dims[q] for q in subsystems], dtype=np.int64)
+    return strides, measured_dims
+
+
+def _run_apply(state: np.ndarray, matrix: np.ndarray, plan: tuple) -> None:
+    """Apply ``matrix`` to ``state`` in place via a precomputed apply plan.
+
+    Routes to the serial or parallel coset kernel by the plan's chunk count.
+    Shared by the statevector and density-matrix Numba paths.
+    """
+    offsets, comp_strides, comp_dims, num_cosets, n_chunks = plan
+    if n_chunks <= 1:
+        _apply_local_serial(state, matrix, offsets, comp_strides, comp_dims, num_cosets)
+    else:
+        _apply_local_parallel(
+            state, matrix, offsets, comp_strides, comp_dims, num_cosets, n_chunks
+        )
 
 
 # Gate-matrix structure codes. A diagonal or (phased) permutation matrix has at
@@ -644,40 +742,8 @@ class NumbaSVSimulator(NumpySVSimulator):
         )
 
     def _build_apply_plan(self, targets: tuple[int, ...]) -> tuple:
-        """Precompute the strided-block kernel layout for a target tuple.
-
-        Returns ``offsets[c]`` (the flat offset of local index ``c``, with
-        ``targets[0]`` most-significant), the flat strides/dimensions of the
-        complement (non-target) subsystems the kernel odometers over, the coset
-        count, and the parallel chunk count for this many cosets.
-        """
-        dims = self._dims
-        n = len(dims)
-        local_dims = [dims[t] for t in targets]
-        local_dim = prod(local_dims)
-
-        strides = [prod(dims[:q]) for q in range(n)]
-        target_strides = [strides[t] for t in targets]
-        # Mixed-radix place values with targets[0] most-significant.
-        local_places = [1] * len(targets)
-        for j in range(len(targets) - 2, -1, -1):
-            local_places[j] = local_places[j + 1] * local_dims[j + 1]
-
-        offsets = np.empty(local_dim, dtype=np.int64)
-        for c in range(local_dim):
-            offset = 0
-            for j, stride in enumerate(target_strides):
-                offset += ((c // local_places[j]) % local_dims[j]) * stride
-            offsets[c] = offset
-
-        target_set = set(targets)
-        complement = [q for q in range(n) if q not in target_set]
-        comp_strides = np.array([strides[q] for q in complement], dtype=np.int64)
-        comp_dims = np.array([dims[q] for q in complement], dtype=np.int64)
-        size = prod(dims)
-        num_cosets = size // local_dim
-        n_chunks = _plan_chunks(num_cosets, size)
-        return offsets, comp_strides, comp_dims, num_cosets, n_chunks
+        """Strided-block kernel layout for ``targets`` over the physical dims."""
+        return _compute_apply_plan(self._dims, targets)
 
     def _run_per_shot(
         self,
@@ -839,6 +905,174 @@ class NumbaSVSimulator(NumpySVSimulator):
         self, subsystems: Sequence[int]
     ) -> tuple[np.ndarray, np.ndarray]:
         """Flat strides and dimensions of the measured subsystems for the kernel."""
-        strides = np.array([prod(self._dims[:q]) for q in subsystems], dtype=np.int64)
-        dims = np.array([self._dims[q] for q in subsystems], dtype=np.int64)
-        return strides, dims
+        return _measured_layout(self._dims, subsystems)
+
+
+# --- density-matrix kernels ---
+
+
+@njit(cache=True)
+def _dm_probabilities_kernel(
+    rho: np.ndarray,
+) -> np.ndarray:  # pragma: no cover - compiled by Numba
+    """Computational-basis probabilities from the diagonal of ``rho``.
+
+    Mirrors ``clip(real(diag(rho)), 0, None)`` normalized by its sum: a valid
+    density matrix has a real, non-negative diagonal, so tiny negative round-off
+    is clamped before normalizing into a sampling distribution.
+    """
+    size = rho.shape[0]
+    probabilities = np.empty(size, dtype=np.float64)
+    total = 0.0
+    for i in range(size):
+        value = rho[i, i].real
+        value = max(value, 0.0)
+        probabilities[i] = value
+        total += value
+    if total > 0.0:
+        for i in range(size):
+            probabilities[i] = probabilities[i] / total
+    return probabilities
+
+
+@njit(cache=True)
+def _dm_project_kernel(
+    rho: np.ndarray,
+    measured_strides: np.ndarray,
+    measured_dims: np.ndarray,
+    index: int,
+) -> np.ndarray:  # pragma: no cover - compiled by Numba
+    """Project ``rho`` onto the measured digits of ``index`` and renormalize.
+
+    Keeps the block of basis states whose measured subsystem digits match those
+    of the sampled ``index`` (both row and column must match), zeros the rest,
+    then divides by the surviving trace - exactly the trace-normalized
+    projective collapse ``rho * keep[:, None] * keep[None, :] / Tr``.
+    """
+    size = rho.shape[0]
+    m = measured_strides.shape[0]
+    index_digits = np.empty(m, dtype=np.int64)
+    for j in range(m):
+        index_digits[j] = (index // measured_strides[j]) % measured_dims[j]
+
+    keep = np.empty(size, dtype=np.bool_)
+    for i in range(size):
+        match = True
+        for j in range(m):
+            if (i // measured_strides[j]) % measured_dims[j] != index_digits[j]:
+                match = False
+                break
+        keep[i] = match
+
+    trace = 0.0
+    for i in range(size):
+        if keep[i]:
+            trace += rho[i, i].real
+    # Mirror ``new / trace if trace > 0 else new``: on a zero-trace branch leave
+    # the (already all-zero) kept block unscaled instead of dividing by zero.
+    scale = 1.0 / trace if trace > 0.0 else 1.0
+
+    out = np.zeros((size, size), dtype=np.complex128)
+    for i in range(size):
+        if keep[i]:
+            for j in range(size):
+                if keep[j]:
+                    out[i, j] = rho[i, j] * scale
+    return out
+
+
+class NumbaDMSimulator(NumpyDMSimulator):
+    """Density-matrix simulator with Numba-jitted numeric kernels.
+
+    Overrides only the numeric kernels of `NumpyDMSimulator`; ``apply``,
+    ``apply_channel``, ``measure_subsystems``, ``run``, and the fast / per-shot
+    orchestration are inherited unchanged and route through the Numba kernels.
+    ``reset_subsystems`` stays the inherited NumPy partial-trace channel (see
+    the module docstring for why).
+    """
+
+    def __init__(self, name: str = "numba-dm", config: EngineConfig | None = None):
+        super().__init__(name, config)
+        # Per-target sandwich layout (ket + bra apply plans over the doubled
+        # bra/ket system) keyed by target tuple. Depends only on targets and the
+        # fixed dims, so it is reused across gates; `initialize` clears it.
+        self._sandwich_plans_cache: dict[tuple[int, ...], tuple] = {}
+
+    def initialize(self, system_dims: Sequence[int], n_clbits: int = 0) -> None:
+        super().initialize(system_dims, n_clbits)
+        self._sandwich_plans_cache = {}
+
+    def _sandwich_plan(self, targets: tuple[int, ...]) -> tuple:
+        """Single super-operator apply plan for ``targets`` over the doubled dims.
+
+        The sandwich ``M rho M^dagger`` is the linear map ``(M (x) conj(M))`` on
+        ``vec(rho)`` (row-major, ket = most-significant), so one coset walk with
+        a ``D^2 x D^2`` super-operator replaces the separate ket and bra passes -
+        half the memory traffic and one parallel region per gate, with structure
+        (diagonal / permutation) preserved through the Kronecker product.
+
+        The super-target combines each gate target's ket subsystem (doubled index
+        ``n + t``, stride ``size * prod(dims[:t])``) and bra subsystem (doubled
+        index ``t``, stride ``prod(dims[:t])``), ket group first so the local
+        index is ``ket * D + bra`` - matching ``kron(M, conj(M))``.
+        """
+        plan = self._sandwich_plans_cache.get(targets)
+        if plan is None:
+            n = len(self._dims)
+            doubled_dims = self._dims + self._dims
+            super_targets = [n + t for t in targets] + list(targets)
+            plan = _compute_apply_plan(
+                doubled_dims, super_targets, _MIN_SIZE_TO_THREAD_DM
+            )
+            self._sandwich_plans_cache[targets] = plan
+        return plan
+
+    def _apply_local_sandwich(
+        self, rho: np.ndarray, matrix: np.ndarray, targets: Sequence[int]
+    ) -> np.ndarray:
+        """Return ``M_T rho M_T^dagger`` via one super-operator coset-walk pass.
+
+        Applies ``kron(M, conj(M))`` to ``vec(rho)`` **in place** when ``rho`` is
+        a contiguous ``complex128`` buffer (the common case - ``self.state``):
+        the returned array aliases the input, and no per-gate copy of the ``4^n``
+        matrix is made.
+        """
+        targets = tuple(targets)
+        m = np.ascontiguousarray(matrix, dtype=np.complex128)
+        superop = np.ascontiguousarray(np.kron(m, m.conj()))
+        flat = np.ascontiguousarray(rho, dtype=np.complex128).reshape(-1)
+        _run_apply(flat, superop, self._sandwich_plan(targets))
+        return flat.reshape(rho.shape)
+
+    def apply_channel(self, step: ApplyChannelStep, rng: np.random.Generator) -> None:
+        """Apply the exact Kraus sum ``rho' = sum_i K_i rho K_i^dagger``.
+
+        The whole channel is the single super-operator ``sum_i kron(K_i,
+        conj(K_i))`` on ``vec(rho)``, applied in one in-place pass - no per-term
+        copies. Deterministic; no randomness is consumed (``rng`` is accepted for
+        interface parity, like reset).
+        """
+        targets = tuple(step.target_indices)
+        superop = sum(np.kron(k, np.asarray(k).conj()) for k in step.kraus_ops)
+        superop = np.ascontiguousarray(superop, dtype=np.complex128)
+        flat = np.ascontiguousarray(self.state, dtype=np.complex128).reshape(-1)
+        _run_apply(flat, superop, self._sandwich_plan(targets))
+        self._state = flat.reshape(self.state.shape)
+
+    def probabilities(self) -> np.ndarray:
+        return _dm_probabilities_kernel(np.ascontiguousarray(self.state))
+
+    def sample_indices(self, shots: int, rng: np.random.Generator) -> np.ndarray:
+        """Sample ``shots`` flat indices: draw uniforms in NumPy, invert in Numba."""
+        return _sample_indices_kernel(self.probabilities(), rng.random(shots))
+
+    def collapse(
+        self, measured_subsystems: Sequence[int], rng: np.random.Generator
+    ) -> int:
+        """Sample one outcome, project onto it in Numba, return the flat index."""
+        index = int(_sample_index_kernel(self.probabilities(), float(rng.random())))
+        strides, dims = _measured_layout(self._dims, measured_subsystems)
+        self._state = _dm_project_kernel(
+            np.ascontiguousarray(self.state), strides, dims, index
+        )
+        return index
