@@ -12,6 +12,7 @@ Autodoc-generated reference for every public class, function, and gate in
    operations
    backends
    implementation
+   noise
    job
    result
    errors
