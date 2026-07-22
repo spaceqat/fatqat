@@ -137,6 +137,31 @@ def test_physical_noise_selector_uses_device_label_not_engine_index():
     )
 
 
+# --- readout-error selectors: physical labels, not engine indices --------------
+
+
+def test_physical_readout_selector_uses_device_label_not_engine_index():
+    # Same divergence as the gate-channel case: atoms[3] is engine index 3
+    # but device label 5 on the default 4x5 backend. A physical readout
+    # selector must be written in device-label space.
+    atoms = GridRegister(2, 3, name="atoms")
+    program = Program([atoms])
+    backend = FakeAtomGridBackend()
+    resource_layout = backend._resolve_resource_layout(program)
+    ref = atoms[3]
+    assert resource_layout.device_label(ref) == 5
+
+    matrix = np.array([[0.9, 0.2], [0.1, 0.8]])
+    noise = NoiseModel()
+    noise.add_readout_error(matrix, target=5)
+
+    assert np.array_equal(noise.readout_error_for(ref, resource_layout), matrix)
+
+    stale_engine_index_selector = NoiseModel()
+    stale_engine_index_selector.add_readout_error(matrix, target=3)
+    assert stale_engine_index_selector.readout_error_for(ref, resource_layout) is None
+
+
 # --- sole-register / fit / multiplicity rules ----------------------------------
 #
 # All of these are resource-layout-level mapping/capacity concerns per the

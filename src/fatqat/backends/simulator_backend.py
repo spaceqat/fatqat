@@ -714,7 +714,9 @@ class SimulatorBackend:
                     MeasurementStep(
                         measured_indices=measured_indices,
                         classical_indices=classical_indices,
-                        confusions=self._resolve_confusions(measured_indices, engine),
+                        confusions=self._resolve_confusions(
+                            step.targets, measured_indices, resource_layout, engine
+                        ),
                     )
                 )
                 continue
@@ -826,23 +828,29 @@ class SimulatorBackend:
 
     def _resolve_confusions(
         self,
+        measured_targets: tuple[RegisterRef, ...],
         measured_indices: tuple[int, ...],
-        layout: _EngineAllocation,
+        resource_layout: ResourceLayout,
+        engine: _EngineAllocation,
     ) -> tuple[Any, ...] | None:
         """Resolve per-subsystem readout confusion matrices for one measurement.
 
         ``readout_error_for`` is the single source of truth per subsystem;
         this method only collapses an all-``None`` resolution back to ``None``
         so the noise-free (and the common) case allocates nothing on the step.
+        Selection matches against each measured ref's logical identity and/or
+        resource-layout device label (never an engine index); the paired
+        engine index is used only for the dimension check and is never
+        derived backward from a device label.
 
         Raises :py:exc:`~fatqat.errors.BackendValidationError` if a selected
         matrix's dimension does not match the measured subsystem.
         """
         resolved = []
-        for measured in measured_indices:
-            confusion = self._noise_model.readout_error_for(measured, layout)
+        for target, measured in zip(measured_targets, measured_indices):
+            confusion = self._noise_model.readout_error_for(target, resource_layout)
             if confusion is not None:
-                dim = layout.system_dims[measured]
+                dim = engine.system_dims[measured]
                 if confusion.shape != (dim, dim):
                     raise BackendValidationError(
                         f"readout confusion matrix of shape {confusion.shape} "

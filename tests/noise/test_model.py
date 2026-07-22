@@ -13,10 +13,6 @@ def _resource_layout_for(program):
     return fq.backends.SimulatorBackend()._resolve_resource_layout(program)
 
 
-def _engine_for(program):
-    return fq.backends.SimulatorBackend()._allocate_engine(program)
-
-
 def _two_qubit_program():
     program = fq.Program(2)
     program.add(fq.ops.X, 0)
@@ -181,56 +177,92 @@ def test_channel_types_lists_every_attached_descriptor_type():
 
 # --- readout error registration and lookup ---
 #
-# Unchanged in this task: readout_error_for()/add_readout_error() still
-# resolve int|RegisterRef selectors through the private _EngineAllocation.
-# See fatqat._engine_allocation._EngineAllocation.
+# Readout selectors mirror the gate-channel identity spaces (logical
+# RegisterRef vs. physical device-resource label), but the stored selector is
+# scalar (None | RegisterRef | device label), not a tuple, and matching
+# selection is single-winner (most-recently-registered specific match wins),
+# not accumulate-all like gate channels. `readout_error_for()` takes the
+# measured ref plus the run's resource layout - never an engine index.
 
 _C_MILD = np.array([[0.9, 0.2], [0.1, 0.8]])
 _C_STRONG = np.array([[0.5, 0.5], [0.5, 0.5]])
 
 
-def test_readout_error_all_target_default_and_specific_override():
+def test_readout_error_all_target_default_and_ref_override():
     noise = NoiseModel()
+    program = _two_qubit_program()
+    layout = _resource_layout_for(program)
+    q = program.qreg[0]
     noise.add_readout_error(_C_MILD)
-    noise.add_readout_error(_C_STRONG, target=1)
-    layout = _engine_for(_two_qubit_program())
+    noise.add_readout_error(_C_STRONG, target=q[1])
 
-    assert np.array_equal(noise.readout_error_for(0, layout), _C_MILD)
-    assert np.array_equal(noise.readout_error_for(1, layout), _C_STRONG)
+    assert np.array_equal(noise.readout_error_for(q[0], layout), _C_MILD)
+    assert np.array_equal(noise.readout_error_for(q[1], layout), _C_STRONG)
     assert noise.has_readout_error()
 
 
-def test_readout_error_ref_target_resolves_through_layout():
+def test_readout_error_physical_label_selector_matches_device_label():
     noise = NoiseModel()
     program = _two_qubit_program()
-    layout = _engine_for(program)
-    noise.add_readout_error(_C_MILD, target=program.qreg[0][1])
+    layout = _resource_layout_for(program)
+    q = program.qreg[0]
+    noise.add_readout_error(_C_STRONG, target=1)  # device label 1
 
-    assert noise.readout_error_for(1, layout) is not None
-    assert noise.readout_error_for(0, layout) is None
-    # A foreign register's ref can never match this program's layout.
-    other = NoiseModel()
-    other.add_readout_error(_C_MILD, target=fq.QuantumRegister(2)[1])
-    assert other.readout_error_for(1, layout) is None
+    assert np.array_equal(noise.readout_error_for(q[1], layout), _C_STRONG)
+    assert noise.readout_error_for(q[0], layout) is None
 
 
-def test_readout_error_last_specific_entry_wins():
+def test_readout_error_ref_selector_from_foreign_register_never_matches():
     noise = NoiseModel()
+    program = _two_qubit_program()
+    layout = _resource_layout_for(program)
+    q = program.qreg[0]
+    noise.add_readout_error(_C_MILD, target=fq.QuantumRegister(2)[1])
+
+    assert noise.readout_error_for(q[1], layout) is None
+
+
+def test_readout_error_last_specific_entry_wins_among_physical_selectors():
+    noise = NoiseModel()
+    program = _two_qubit_program()
+    layout = _resource_layout_for(program)
+    q = program.qreg[0]
     noise.add_readout_error(_C_MILD, target=0)
     noise.add_readout_error(_C_STRONG, target=0)
-    layout = _engine_for(_two_qubit_program())
 
-    assert np.array_equal(noise.readout_error_for(0, layout), _C_STRONG)
+    assert np.array_equal(noise.readout_error_for(q[0], layout), _C_STRONG)
+
+
+def test_readout_error_last_specific_entry_wins_across_logical_and_physical():
+    program = _two_qubit_program()
+    layout = _resource_layout_for(program)
+    q = program.qreg[0]
+
+    logical_then_physical = NoiseModel()
+    logical_then_physical.add_readout_error(_C_MILD, target=q[0])
+    logical_then_physical.add_readout_error(_C_STRONG, target=0)  # same subsystem
+    assert np.array_equal(
+        logical_then_physical.readout_error_for(q[0], layout), _C_STRONG
+    )
+
+    physical_then_logical = NoiseModel()
+    physical_then_logical.add_readout_error(_C_STRONG, target=0)
+    physical_then_logical.add_readout_error(_C_MILD, target=q[0])  # same subsystem
+    assert np.array_equal(
+        physical_then_logical.readout_error_for(q[0], layout), _C_MILD
+    )
 
 
 def test_readout_error_matrix_is_copied_and_frozen():
     noise = NoiseModel()
     source = _C_MILD.copy()
     noise.add_readout_error(source)
-    layout = _engine_for(_two_qubit_program())
+    program = _two_qubit_program()
+    layout = _resource_layout_for(program)
+    q = program.qreg[0]
     source[0, 0] = 0.0  # caller mutation must not reach the stored matrix
 
-    stored = noise.readout_error_for(0, layout)
+    stored = noise.readout_error_for(q[0], layout)
     assert stored[0, 0] == 0.9
     assert not stored.flags.writeable
 
@@ -243,10 +275,13 @@ def test_readout_error_validation():
         noise.add_readout_error(np.array([[0.9, 0.1], [0.2, 0.8]]))
     with pytest.raises(ValueError, match="\\[0, 1\\]"):
         noise.add_readout_error(np.array([[1.5, 0.0], [-0.5, 1.0]]))
-    with pytest.raises(TypeError, match="target"):
-        noise.add_readout_error(_C_MILD, target="q0")
-    with pytest.raises(ValueError, match=">= 0"):
-        noise.add_readout_error(_C_MILD, target=-1)
+    with pytest.raises(TypeError, match="RegisterView"):
+        atoms = GridRegister(2, 3, name="atoms")
+        noise.add_readout_error(_C_MILD, target=atoms.row(0))
     program = fq.Program(1, 1)
     with pytest.raises(TypeError, match="QuantumRegister"):
         noise.add_readout_error(_C_MILD, target=program.clreg[0][0])
+    # A physical selector is an opaque label now, not a flat index: negative
+    # ints and strings are both legal device-resource labels.
+    noise.add_readout_error(_C_MILD, target=-1)
+    noise.add_readout_error(_C_MILD, target="q0")

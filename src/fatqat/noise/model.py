@@ -24,8 +24,12 @@ A bare integer selector is a physical device-resource label, never a flat
 engine index and never converted into a `RegisterRef`. See
 docs/superpowers/specs/2026-07-22-fatqat-resource-layout-and-noise-selector-design.md.
 
-Readout-error selectors are unchanged in this module for now (still resolved
-through the private `_EngineAllocation`); that migration is separate scope.
+Readout-error selectors share the same two identity spaces, but the stored
+selector is scalar - ``None``, one `RegisterRef`, or one physical device
+resource label - never a tuple. A logical selector is matched by ref equality
+against the measured target; a physical selector is matched against
+:py:meth:`~fatqat.resource_layout.ResourceLayout.device_label` for that
+target. See `readout_error_for`.
 """
 
 from __future__ import annotations
@@ -35,7 +39,6 @@ from typing import Any
 
 import numpy as np
 
-from .._engine_allocation import _EngineAllocation
 from ..implementation.base import _resolve_operation_class
 from ..operations import BarrierGate, Operation
 from ..registers import QuantumRegister, RegisterRef, RegisterView
@@ -46,6 +49,12 @@ from .base import Channel
 # logical ref-tuple selector, or a physical device-label-tuple selector
 # (homogeneous, validated).
 _GateSelector = tuple[RegisterRef, ...] | tuple[Hashable, ...] | None
+
+# One entry per add_readout_error() call: an all-subsystems fallback (None),
+# a logical RegisterRef selector, or a physical device-label selector
+# (scalar, unlike _GateSelector - a readout error names one measured
+# subsystem, not an occurrence's whole target tuple).
+_ReadoutSelector = RegisterRef | Hashable | None
 
 
 class NoiseModel:
@@ -86,7 +95,7 @@ class NoiseModel:
         self._gate_channels: dict[
             type[Operation], list[tuple[_GateSelector, list[Channel]]]
         ] = {}
-        self._readout_errors: list[tuple[int | RegisterRef | None, np.ndarray]] = []
+        self._readout_errors: list[tuple[_ReadoutSelector, np.ndarray]] = []
         self.qubit_noise: dict[Any, Any] = {}
         self.metadata: dict[str, Any] = {}
 
@@ -193,7 +202,7 @@ class NoiseModel:
         self,
         confusion_matrix: np.ndarray,
         *,
-        target: int | RegisterRef | None = None,
+        target: RegisterRef | Hashable | None = None,
     ) -> None:
         """Attach a classical readout confusion matrix to measurements.
 
@@ -209,15 +218,21 @@ class NoiseModel:
                 ``C[i, j] = P(report i | true j)``. Copied and frozen; its
                 dimension is checked against the measured subsystem at
                 lowering.
-            target: ``None`` (default) applies to every measured subsystem.
-                A flat subsystem index (``int``) or a quantum
-                :py:class:`~fatqat.registers.RegisterRef` pins it to one
-                subsystem; a specific entry replaces the default there, and
-                a later specific entry replaces an earlier one.
+            target: ``None`` (default) applies to every measured subsystem. A
+                quantum :py:class:`~fatqat.registers.RegisterRef` pins it to
+                one logical subsystem (matched by ref equality); an opaque
+                device resource label (e.g. ``int``, ``str``) pins it to one
+                physical measured subsystem in the backend's device address
+                space (matched via
+                :py:meth:`~fatqat.resource_layout.ResourceLayout.device_label`).
+                A :py:class:`~fatqat.registers.RegisterView` is never
+                accepted (scalar refs only). Among entries matching the same
+                subsystem, the most recently registered one wins - readout
+                selection does not accumulate like gate-channel selection.
 
         Raises:
-            TypeError: If ``target`` is not ``None``, an ``int``, or a
-                quantum ref.
+            TypeError: If ``target`` is a `RegisterView`, or a `RegisterRef`
+                not into a `QuantumRegister`.
             ValueError: If the matrix is not square, at least ``2 x 2``, with
                 entries in ``[0, 1]`` and columns summing to 1.
         """
@@ -237,39 +252,54 @@ class NoiseModel:
                 "confusion matrix must be column-stochastic: each column "
                 "C[:, j] = P(report | true j) must sum to 1"
             )
-        if target is not None and type(target) is not int:
-            if not isinstance(target, RegisterRef):
-                raise TypeError(
-                    f"target must be None, a flat index, or a RegisterRef, "
-                    f"got {target!r}"
-                )
-            if not isinstance(target.register, QuantumRegister):
-                raise TypeError(
-                    "readout-error target refs must point into a "
-                    f"QuantumRegister, got a ref into "
-                    f"{type(target.register).__name__}"
-                )
-        if type(target) is int and target < 0:
-            raise ValueError(f"flat subsystem index must be >= 0, got {target}")
+        if isinstance(target, RegisterView):
+            raise TypeError(
+                "readout-error target must be a scalar RegisterRef or a "
+                f"device resource label, not a RegisterView; got {target!r}"
+            )
+        if isinstance(target, RegisterRef) and not isinstance(
+            target.register, QuantumRegister
+        ):
+            raise TypeError(
+                "readout-error target refs must point into a "
+                f"QuantumRegister, got a ref into {type(target.register).__name__}"
+            )
         matrix.flags.writeable = False
         self._readout_errors.append((target, matrix))
 
     def readout_error_for(
-        self, measured_index: int, layout: _EngineAllocation
+        self, target: RegisterRef, resource_layout: ResourceLayout
     ) -> np.ndarray | None:
         """Return the confusion matrix selected for one measured subsystem.
 
-        A specific entry (flat index or ref, resolved through ``layout``)
-        replaces the all-target default; among specific entries for the same
-        subsystem, the last registered wins. Ref entries whose register is
-        not in the laid-out program can never match and are skipped.
+        A logical selector matches when it equals ``target``; a physical
+        selector matches when it equals
+        ``resource_layout.device_label(target)``. Readout errors do not
+        accumulate: a matching specific selector replaces the all-target
+        (``None``) default, and among several matching specific selectors
+        the most recently registered one wins.
+
+        Args:
+            target: The measured subsystem's logical ref, as lowered from
+                the program (never an engine index).
+            resource_layout: The run's public resource layout, used to
+                resolve physical selectors.
         """
         specific = fallback = None
-        for target, matrix in self._readout_errors:
-            if target is None:
+        device_label_known = False
+        device_label: Hashable = None
+        for selector, matrix in self._readout_errors:
+            if selector is None:
                 fallback = matrix
-            elif _selector_indices((target,), layout) == (measured_index,):
-                specific = matrix
+            elif isinstance(selector, RegisterRef):
+                if selector == target:
+                    specific = matrix
+            else:
+                if not device_label_known:
+                    device_label = resource_layout.device_label(target)
+                    device_label_known = True
+                if device_label == selector:
+                    specific = matrix
         return specific if specific is not None else fallback
 
     def has_readout_error(self) -> bool:
@@ -339,16 +369,3 @@ def _normalize_selector(
             f"got a selector of length {len(selector)}"
         )
     return selector
-
-
-def _selector_indices(
-    selector: tuple[int, ...] | tuple[RegisterRef, ...],
-    layout: _EngineAllocation,
-) -> tuple[int, ...] | None:
-    """Resolve a specific selector to flat indices, or ``None`` if unmatchable."""
-    if type(selector[0]) is int:  # homogeneous, validated at add_noise
-        return selector
-    try:
-        return tuple(layout.subsystem_index(ref) for ref in selector)
-    except KeyError:
-        return None  # register not in this program's layout
