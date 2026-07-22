@@ -40,24 +40,28 @@ program's `GridRegister` maps onto that backend's device sites. This utility is 
 constructs, configures, or passes in; it never appears in the public API
 surface, only inside the backend that resolves the program.
 
-This split matters because of a numbering distinction that runs through the
-whole feature: **noise selectors and implementation-map lookups use two
-different numberings, and they are not always the same numbers.**
-{py:meth}`~fatqat.NoiseModel.channels_for` and
-{py:meth}`~fatqat.NoiseModel.readout_error_for` always operate in *flat
-engine-index* space — the same indices used to build the simulator's state
-vector, independent of any grid shape. An `ImplementationMap`
-device-capability lookup (what
+This split matters because of an identity distinction that runs through the
+whole feature: **gate-channel noise selectors and implementation-map lookups
+use two different identity spaces, and they are not always the same
+values.** {py:meth}`~fatqat.NoiseModel.channels_for` matches a gate
+occurrence's selector against either its *logical* {py:class}`~fatqat.RegisterRef`
+targets (ref equality) or its *physical* device resource labels
+(`resource_layout.device_operands(targets)` equality) — never against the
+private flat engine index used internally to build the simulator's state
+vector. An `ImplementationMap` device-capability lookup (what
 {py:attr}`~fatqat.backends.FakeAtomGridBackend.implementation_map` reports)
-instead uses *backend device-site labels*: positions on the physical device
-grid. For a plain, register-only program these two numberings coincide. But
-once a smaller `GridRegister` runs on a larger backend — say a 2x3 grid
-bound onto a 4x5 device — a program qubit's flat engine index and its
-backend device label are generally different numbers referring to the same
-qubit. Noise configuration should always be written in terms of flat engine
-indices (or refs, which resolve to them); device labels are strictly an
-internal detail of native-gate lookup and are never the right thing to use
-when configuring noise.
+also uses those same physical device-site labels: positions on the physical
+device grid. For a plain, register-only program running on the generic
+simulator, device labels and refs both coincide with declaration order. But
+once a smaller `GridRegister` runs on a larger backend — say a 2x3 grid bound
+onto a 4x5 device — a program qubit's device label is generally a different
+number from its position in declaration order. A gate-channel noise selector
+should be written either as the program's own `RegisterRef`s (logical) or as
+the backend's device resource labels (physical); a bare integer is always
+interpreted as a physical device label, never a flat engine index.
+{py:meth}`~fatqat.NoiseModel.readout_error_for` has not yet been migrated to
+this scheme and still operates in flat engine-index space — that
+distinction is temporary, tracked as follow-up work.
 
 ### What's not supported yet
 

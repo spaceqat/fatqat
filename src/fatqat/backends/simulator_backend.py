@@ -688,12 +688,13 @@ class SimulatorBackend:
         `has_channel`.
 
         The caller supplies a scalar-only instruction stream and the run's
-        private lowering context. `context.resource_layout` is used only for
-        `ImplementationMap` lookup (`device_operands`); `context.engine` is
-        used for every execution index/dimension - `ApplyMatrixStep`/
-        `MeasurementStep`/`ResetStep` targets, conditions, and noise
-        selection. Grouped frontend operations are expanded before this
-        method is called.
+        private lowering context. `context.resource_layout` is used for
+        `ImplementationMap` lookup (`device_operands`) and for
+        `NoiseModel.channels_for()` physical-selector matching (against the
+        occurrence's logical target refs); `context.engine` is used for every
+        execution index/dimension - `ApplyMatrixStep`/`MeasurementStep`/
+        `ResetStep` targets and conditions. Grouped frontend operations are
+        expanded before this method is called.
         """
         resource_layout = context.resource_layout
         engine = context.engine
@@ -730,8 +731,10 @@ class SimulatorBackend:
                     # Reset-attached channels ("apply after the ideal reset")
                     # are designed but not wired yet; raising keeps the gap
                     # loud instead of silently dropping registered noise.
+                    # The selector lookup runs against logical/physical
+                    # identity (never engine indices) before the guard raises.
                     if self._noise_model.channels_for(
-                        ResetGate, target_indices, engine
+                        ResetGate, step.targets, resource_layout
                     ):
                         raise UnsupportedOperationError(
                             "channel noise attached to Reset is not supported yet"
@@ -788,11 +791,12 @@ class SimulatorBackend:
                 # Attached channels resolve inline, mirroring the gate path
                 # above: rule lookup, Kraus resolution, shape check, step
                 # append - one ApplyChannelStep per channel, inheriting the
-                # gate's condition. Noise selection stays in engine-index
-                # space; device operands are exclusively for the
-                # implementation-map lookup above.
+                # gate's condition. Noise selection matches against the
+                # occurrence's logical targets and/or resource-layout device
+                # operands (never engine indices); engine indices are used
+                # only for the emitted ApplyChannelStep.
                 for channel in self._noise_model.channels_for(
-                    type(step.operation), engine_indices, engine
+                    type(step.operation), step.targets, resource_layout
                 ):
                     has_channel = True
                     rule = self._channel_map.get(type(channel))

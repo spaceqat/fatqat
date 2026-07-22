@@ -8,21 +8,29 @@ parameter. Resolution into concrete Kraus payloads happens at backend
 lowering, where descriptors meet the `ChannelImplementationMap` and the
 program's resource layout.
 
-Target selectors come in two address spaces, unified at lowering time:
+Gate-channel target selectors come in two identity spaces, both compared
+directly - never through the private engine allocation:
 
-- ``tuple[RegisterRef, ...]`` - frontend refs, how a user pins noise to their
-  own program's subsystems.
-- ``tuple[int, ...]`` - flat subsystem indices, how a backend authors default
-  noise for its device before any user program (or register) exists.
+- ``tuple[RegisterRef, ...]`` - logical, frontend refs, how a user pins noise
+  to their own program's subsystems. Matched by ref equality against the
+  lowered occurrence's targets.
+- ``tuple[Hashable, ...]`` - physical, opaque device resource labels, how a
+  backend authors default noise for its device before any user program (or
+  register) exists. Matched against
+  :py:meth:`~fatqat.resource_layout.ResourceLayout.device_operands` for the
+  lowered occurrence's targets.
 
-Refs are translated to flat indices through the run's private
-:py:class:`~fatqat._engine_allocation._EngineAllocation` (the existing
-identity authority for registers), so the model itself never compares or
-hashes refs.
+A bare integer selector is a physical device-resource label, never a flat
+engine index and never converted into a `RegisterRef`. See
+docs/superpowers/specs/2026-07-22-fatqat-resource-layout-and-noise-selector-design.md.
+
+Readout-error selectors are unchanged in this module for now (still resolved
+through the private `_EngineAllocation`); that migration is separate scope.
 """
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from typing import Any
 
 import numpy as np
@@ -30,12 +38,14 @@ import numpy as np
 from .._engine_allocation import _EngineAllocation
 from ..implementation.base import _resolve_operation_class
 from ..operations import BarrierGate, Operation
-from ..registers import QuantumRegister, RegisterRef
+from ..registers import QuantumRegister, RegisterRef, RegisterView
+from ..resource_layout import ResourceLayout
 from .base import Channel
 
-# One entry per add_noise() call: an all-targets fallback (None), a flat
-# device-index selector, or a frontend ref selector (homogeneous, validated).
-_Selector = tuple[int, ...] | tuple[RegisterRef, ...] | None
+# One entry per add_noise() call: an all-targets fallback (None), a
+# logical ref-tuple selector, or a physical device-label-tuple selector
+# (homogeneous, validated).
+_GateSelector = tuple[RegisterRef, ...] | tuple[Hashable, ...] | None
 
 
 class NoiseModel:
@@ -74,7 +84,7 @@ class NoiseModel:
 
     def __init__(self) -> None:
         self._gate_channels: dict[
-            type[Operation], list[tuple[_Selector, list[Channel]]]
+            type[Operation], list[tuple[_GateSelector, list[Channel]]]
         ] = {}
         self._readout_errors: list[tuple[int | RegisterRef | None, np.ndarray]] = []
         self.qubit_noise: dict[Any, Any] = {}
@@ -85,7 +95,7 @@ class NoiseModel:
         operation: Operation | type[Operation],
         channel: Channel,
         *,
-        targets: tuple[int | RegisterRef, ...] | None = None,
+        targets: tuple[Hashable, ...] | None = None,
     ) -> None:
         """Attach a channel to every occurrence of an operation, or one target.
 
@@ -97,28 +107,33 @@ class NoiseModel:
             channel: The `Channel` descriptor to apply after each occurrence.
             targets: ``None`` (default) applies to every occurrence. A tuple
                 of quantum :py:class:`~fatqat.registers.RegisterRef` pins the
-                channel to one program-level target tuple; a tuple of flat
-                subsystem indices (``int``) pins it in the backend's device
-                address space. The two forms cannot be mixed in one selector.
+                channel to one logical program-target tuple; a tuple of
+                opaque device resource labels (e.g. ``int``, ``str``) pins it
+                to one physical occurrence in the backend's device address
+                space. The two forms cannot be mixed in one selector, and a
+                :py:class:`~fatqat.registers.RegisterView` is never accepted
+                (scalar refs only).
 
         Selection semantics, precisely:
 
-        - Entries resolving to the same subsystems accumulate, in
-          registration order - each is an independent mechanism, so
-          attaching a channel twice applies it twice.
+        - Entries matching the same occurrence accumulate, in registration
+          order - each is an independent mechanism, so attaching a channel
+          twice applies it twice.
         - A specific-target entry replaces the all-targets default on the
           occurrences it matches, and only those (Qiskit Aer's precedence).
           It can therefore *lower* the noise on its target by evicting a
           stronger default; restate the default at the specific level to
           keep it.
-        - Selectors are compared by resolved flat index, not by syntax: an
-          ``int`` and a :py:class:`~fatqat.registers.RegisterRef` selector
-          landing on the same subsystems accumulate rather than override.
+        - A logical selector is compared to the lowered occurrence's target
+          refs by equality; a physical selector is compared to the lowered
+          occurrence's device resource labels
+          (:py:meth:`~fatqat.resource_layout.ResourceLayout.device_operands`)
+          by equality. See :py:meth:`channels_for`.
 
         Raises:
             TypeError: If ``operation`` is not an operation, ``channel`` is
                 not a `Channel`, or ``targets`` mixes or mistypes selector
-                elements.
+                elements (including a `RegisterView`).
             ValueError: If ``operation`` is `Barrier`, ``targets`` is empty,
                 or its length does not match a fixed-arity operation.
         """
@@ -136,33 +151,42 @@ class NoiseModel:
     def channels_for(
         self,
         operation: Operation | type[Operation],
-        target_indices: tuple[int, ...],
-        layout: _EngineAllocation,
+        targets: tuple[RegisterRef, ...],
+        resource_layout: ResourceLayout,
     ) -> list[Channel]:
         """Return the channels selected for one lowered operation occurrence.
 
-        Ref selectors are resolved to flat indices through ``layout``; a
-        selector whose register is not part of the laid-out program can never
-        match and is skipped. All matching specific-target entries accumulate
-        (in registration order); the all-targets entries apply only when no
-        specific entry matched.
+        A logical selector matches when it equals ``targets``; a physical
+        selector matches when it equals
+        ``resource_layout.device_operands(targets)``. Both kinds of specific
+        match accumulate (in registration order); the all-targets (``None``)
+        entries apply only when no specific selector matched.
 
         Args:
             operation: The occurrence's operation (instance or class).
-            target_indices: The occurrence's layout-resolved flat indices.
-            layout: The run's resource layout, used to resolve ref selectors.
+            targets: The occurrence's logical target refs, as lowered from
+                the program (never engine indices).
+            resource_layout: The run's public resource layout, used to
+                resolve physical selectors.
         """
         entries = self._gate_channels.get(_resolve_operation_class(operation))
         if not entries:
             return []
-        target_indices = tuple(target_indices)
+        targets = tuple(targets)
         matched: list[Channel] = []
         fallback: list[Channel] = []
+        device_operands: tuple[Hashable, ...] | None = None
         for selector, channels in entries:
             if selector is None:
                 fallback.extend(channels)
-            elif _selector_indices(selector, layout) == target_indices:
-                matched.extend(channels)
+            elif _is_logical_selector(selector):
+                if selector == targets:
+                    matched.extend(channels)
+            else:
+                if device_operands is None:
+                    device_operands = resource_layout.device_operands(targets)
+                if device_operands == selector:
+                    matched.extend(channels)
         return matched if matched else fallback
 
     def add_readout_error(
@@ -266,30 +290,47 @@ class NoiseModel:
         )
 
 
+def _is_logical_selector(selector: tuple[Hashable, ...]) -> bool:
+    """Return whether a validated, homogeneous gate selector is logical."""
+    return isinstance(selector[0], RegisterRef)
+
+
 def _normalize_selector(
     op_cls: type[Operation],
-    targets: tuple[int | RegisterRef, ...] | None,
-) -> _Selector:
-    """Validate and normalize an ``add_noise`` target selector."""
+    targets: tuple[Hashable, ...] | None,
+) -> _GateSelector:
+    """Validate and normalize an ``add_noise`` target selector.
+
+    A selector is ``None``, a tuple wholly of `RegisterRef` (logical), or a
+    tuple wholly of some other hashable (physical device resource labels).
+    Mixing the two forms, or including a `RegisterView`, is rejected; a
+    physical label is opaque and is not itself validated (any hashable value
+    is a legal device resource label until run-time validation against an
+    actual `ResourceLayout`).
+    """
     if targets is None:
         return None
     selector = tuple(targets)
     if len(selector) == 0:
         raise ValueError("targets must be None or a non-empty tuple")
-    if all(type(t) is int for t in selector):
-        if any(t < 0 for t in selector):
-            raise ValueError(f"flat subsystem indices must be >= 0, got {selector}")
-    elif all(isinstance(t, RegisterRef) for t in selector):
+    for t in selector:
+        if isinstance(t, RegisterView):
+            raise TypeError(
+                "noise targets must be scalar RegisterRef or device "
+                f"resource labels, not a RegisterView; got {t!r}"
+            )
+    is_ref = [isinstance(t, RegisterRef) for t in selector]
+    if all(is_ref):
         for ref in selector:
             if not isinstance(ref.register, QuantumRegister):
                 raise TypeError(
                     "noise target refs must point into a QuantumRegister, "
                     f"got a ref into {type(ref.register).__name__}"
                 )
-    else:
+    elif any(is_ref):
         raise TypeError(
-            "targets must be all flat indices (int) or all RegisterRef, "
-            f"got {selector!r}"
+            "targets must be all RegisterRef (logical) or all device "
+            f"resource labels (physical), not mixed; got {selector!r}"
         )
     expected = op_cls._num_subsystems
     if expected is not None and len(selector) != expected:

@@ -9,6 +9,7 @@ from fatqat import operations as ops
 from fatqat.backends import ApplyMatrixStep, FakeAtomGridBackend, SimulatorBackend
 from fatqat.backends.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
+from fatqat.noise import Depolarizing, NoiseModel
 from fatqat.program import Program
 from fatqat.registers import GridRegister, QuantumRegister
 from fatqat.resource_layout import ResourceLayout
@@ -105,6 +106,35 @@ def test_scalar_grid_ref_uses_grid_binder_device_label_not_identity():
     resource_layout = backend._resolve_resource_layout(p)
     assert engine_allocation.subsystem_index(ref) == 3
     assert resource_layout.device_label(ref) == 5
+
+
+# --- gate-channel noise selectors: physical labels, not engine indices --------
+
+
+def test_physical_noise_selector_uses_device_label_not_engine_index():
+    # 2x3 grid on the default 4x5 backend: atoms[3] is engine index 3, but
+    # its device label is 5 (row 1, col 0 -> 1*5+0). A physical gate-noise
+    # selector must be written in device-label space: (5,) selects atoms[3],
+    # while (3,) - its old, no-longer-meaningful engine index - selects
+    # nothing, since no program resource occupies device site 3.
+    atoms = GridRegister(2, 3, name="atoms")
+    program = Program([atoms])
+    backend = FakeAtomGridBackend()
+    resource_layout = backend._resolve_resource_layout(program)
+    ref = atoms[3]
+    assert resource_layout.device_label(ref) == 5
+
+    channel = Depolarizing(p=0.1)
+    noise = NoiseModel()
+    noise.add_noise(ops.RX, channel, targets=(5,))
+
+    assert noise.channels_for(ops.RX, (ref,), resource_layout) == [channel]
+
+    stale_engine_index_selector = NoiseModel()
+    stale_engine_index_selector.add_noise(ops.RX, channel, targets=(3,))
+    assert (
+        stale_engine_index_selector.channels_for(ops.RX, (ref,), resource_layout) == []
+    )
 
 
 # --- sole-register / fit / multiplicity rules ----------------------------------
