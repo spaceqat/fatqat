@@ -83,6 +83,7 @@ from .engine_contract import (
     _EngineConfig,
     _StateVectorResultRequest,
 )
+from .resource_binding import ResourceBinding, _scalar_identity_binder
 from .steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
@@ -300,6 +301,25 @@ class SimulatorBackend:
         """
         return FlatResourceLayout.from_program(program)
 
+    def _create_resource_binding(
+        self, program: Program, flat_layout: FlatResourceLayout
+    ) -> ResourceBinding:
+        """Build the resource binding used to resolve this run's targets.
+
+        Protected extension hook, called once per run (after
+        `resolve_layout`, before `_lower`) rather than stored as mutable
+        per-run backend state. The default installs only the scalar/identity
+        binder: a `RegisterRef` resolves to a `BoundResource` whose
+        `engine_index` and `device_label` are both `flat_layout.subsystem_index(ref)`.
+        A `RegisterView` is declined by this binder and, since the base
+        backend installs no other, raises
+        `~fatqat.errors.UnsupportedResourceOperandError` from `_lower`.
+
+        Override to install additional binders (tried before the scalar
+        binder) for richer frontend resource types.
+        """
+        return ResourceBinding([_scalar_identity_binder])
+
     def run(
         self,
         program: Program,
@@ -342,6 +362,10 @@ class SimulatorBackend:
             UnsupportedOperationError: If the program contains an operation
                 without a backend implementation, or one whose target key is
                 illegal for this backend.
+            UnsupportedResourceOperandError: If a unitary gate's target
+                cannot be resolved by any resource binder this backend
+                installs (e.g. a ``RegisterView`` on a backend that binds
+                only scalar ``RegisterRef`` targets).
         """
         known_keys = {field.name for field in fields(self._result_config_cls)}
         config = _normalize_dict_options(
@@ -353,7 +377,8 @@ class SimulatorBackend:
             backend_name=type(self).__name__,
         )
         layout = self.resolve_layout(program)
-        plan, facts = self._lower(program, layout)
+        binding = self._create_resource_binding(program, layout)
+        plan, facts = self._lower(program, layout, binding)
         self._validate(config, shots, facts)
         try:
             return Job.done(
@@ -508,7 +533,10 @@ class SimulatorBackend:
         return rule
 
     def _lower(
-        self, program: Program, layout: FlatResourceLayout
+        self,
+        program: Program,
+        layout: FlatResourceLayout,
+        binding: ResourceBinding | None = None,
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Lower a program into an execution plan and classify it, in one pass.
 
@@ -522,7 +550,28 @@ class SimulatorBackend:
         channel in registration order, each inheriting the gate's condition.
         The pass also computes `has_measurement`, `has_reset`, and
         `has_channel`.
+
+        `Measurement`, `Reset`, and `Barrier` targets are always scalar
+        `RegisterRef`s (views are frontend-rejected for them) and are
+        resolved directly via `layout.subsystem_index`, unchanged. Only the
+        unitary-gate branch consults `binding`: it resolves each of the
+        applied operation's targets to a `BoundResource`, then uses the
+        resulting device labels for the implementation-map lookup and the
+        resulting engine indices everywhere a flat index is needed (shape
+        checks, `ApplyMatrixStep`, noise selection). `binding` is optional so
+        a caller resolving a plan directly (bypassing `run()`) does not have
+        to construct one; when omitted, one is built via
+        `_create_resource_binding`.
+
+        Raises:
+            UnsupportedResourceOperandError: If a unitary gate's target
+                cannot be resolved by any binder in `binding` (e.g. a
+                `RegisterView` reaching a backend that installs no binder
+                able to claim it).
         """
+        if binding is None:
+            binding = self._create_resource_binding(program, layout)
+
         plan: list[ResolvedStep] = []
         has_measurement = False
         has_reset = False
@@ -548,10 +597,11 @@ class SimulatorBackend:
                 if isinstance(step.operation, BarrierGate):
                     continue
 
-                target_indices = tuple(layout.subsystem_index(t) for t in step.targets)
-
                 if isinstance(step.operation, ResetGate):
                     has_reset = True
+                    target_indices = tuple(
+                        layout.subsystem_index(t) for t in step.targets
+                    )
                     # Reset-attached channels ("apply after the ideal reset")
                     # are designed but not wired yet; raising keeps the gap
                     # loud instead of silently dropping registered noise.
@@ -565,7 +615,11 @@ class SimulatorBackend:
                     plan.append(ResetStep(reset_indices=target_indices, condition=cond))
                     continue
 
-                rule = self._implementation_for(step.operation, target_indices)
+                bound = tuple(binding.resolve(t, layout) for t in step.targets)
+                device_labels = tuple(b.device_label for b in bound)
+                engine_indices = tuple(b.engine_index for b in bound)
+
+                rule = self._implementation_for(step.operation, device_labels)
                 try:
                     matrix = rule(step.operation, targets=step.targets)
                 except Exception as exc:
@@ -574,7 +628,7 @@ class SimulatorBackend:
                     ) from exc
 
                 # Check matrix shape matches target dimensions
-                target_dims = tuple(layout.system_dims[i] for i in target_indices)
+                target_dims = tuple(layout.system_dims[i] for i in engine_indices)
                 expected = prod(target_dims)
                 if matrix.shape != (expected, expected):
                     raise BackendValidationError(
@@ -588,7 +642,7 @@ class SimulatorBackend:
                 plan.append(
                     ApplyMatrixStep(
                         matrix=matrix,
-                        target_indices=target_indices,
+                        target_indices=engine_indices,
                         condition=cond,
                         # Identity, not mechanics: the backend forwards which
                         # implementation was selected; the engine alone decides
@@ -602,9 +656,11 @@ class SimulatorBackend:
                 # Attached channels resolve inline, mirroring the gate
                 # path above: rule lookup, Kraus resolution, shape check,
                 # step append - one ApplyChannelStep per channel, inheriting
-                # the gate's condition.
+                # the gate's condition. Noise selection stays in engine-index
+                # space; device labels are exclusively for the
+                # implementation-map lookup above.
                 for channel in self._noise_model.channels_for(
-                    type(step.operation), target_indices, layout
+                    type(step.operation), engine_indices, layout
                 ):
                     has_channel = True
                     rule = self._channel_map.get(type(channel))
@@ -618,7 +674,7 @@ class SimulatorBackend:
                     plan.append(
                         ApplyChannelStep(
                             kraus_ops=kraus_ops,
-                            target_indices=target_indices,
+                            target_indices=engine_indices,
                             condition=cond,
                         )
                     )
