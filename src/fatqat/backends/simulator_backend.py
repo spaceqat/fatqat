@@ -49,6 +49,7 @@ from ..errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
+from ..flat_layout import FlatResourceLayout
 from ..implementation import (
     MatrixImplementation,
     DeviceOperands,
@@ -56,7 +57,6 @@ from ..implementation import (
     default_matrix_implementation_map,
 )
 from ..job import Job
-from ..layout import ResourceLayout
 from ..noise import (
     ChannelImplementationMap,
     NoiseModel,
@@ -289,7 +289,7 @@ class SimulatorBackend:
         self._simulator = self._simulator_cls(config=config)
         self._simulator_system: tuple[tuple[int, ...], int] | None = None
 
-    def resolve_layout(self, program: Program) -> ResourceLayout:
+    def resolve_layout(self, program: Program) -> FlatResourceLayout:
         """Build the flat resource layout used by this backend.
 
         Args:
@@ -298,7 +298,7 @@ class SimulatorBackend:
         Returns:
             Resource layout mapping register references to flat indices.
         """
-        return ResourceLayout.from_program(program)
+        return FlatResourceLayout.from_program(program)
 
     def run(
         self,
@@ -508,7 +508,7 @@ class SimulatorBackend:
         return rule
 
     def _lower(
-        self, program: Program, layout: ResourceLayout
+        self, program: Program, layout: FlatResourceLayout
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Lower a program into an execution plan and classify it, in one pass.
 
@@ -635,7 +635,7 @@ class SimulatorBackend:
     def _resolve_confusions(
         self,
         measured_indices: tuple[int, ...],
-        layout: ResourceLayout,
+        layout: FlatResourceLayout,
     ) -> tuple[Any, ...] | None:
         """Resolve per-subsystem readout confusion matrices for one measurement.
 
