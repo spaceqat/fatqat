@@ -60,7 +60,18 @@ class BoundResource:
 # layout, or explicitly declines it by returning `None` so the next binder in
 # the `ResourceBinding` sequence gets a turn. No exceptions-as-control-flow
 # between binders: a raised exception is a real failure, not a decline.
-Binder = Callable[[QuantumTarget, FlatResourceLayout], BoundResource | None]
+#
+# A scalar `RegisterRef` resolves to a single `BoundResource`. A `RegisterView`
+# resolves to a *tuple* of `BoundResource`, one per view member, in the view's
+# deterministic order (row-major for `All`/`Block`, increasing-column for
+# `Row`, increasing-row for `Column` - the order `RegisterView` documents). A
+# binder's responsibility ends at resolving one expression: it never knows
+# about the other targets of the same instruction, their arity, pairing, or
+# cardinality - the lowerer owns those (see `SimulatorBackend._expand_emissions`).
+Binder = Callable[
+    [QuantumTarget, FlatResourceLayout],
+    BoundResource | tuple[BoundResource, ...] | None,
+]
 
 
 def _scalar_identity_binder(
@@ -97,8 +108,13 @@ class ResourceBinding:
 
     def resolve(
         self, target: QuantumTarget, flat_layout: FlatResourceLayout
-    ) -> BoundResource:
-        """Resolve one frontend target expression to its `BoundResource`.
+    ) -> BoundResource | tuple[BoundResource, ...]:
+        """Resolve one frontend target expression to its bound resource(s).
+
+        A scalar `RegisterRef` resolves to a single `BoundResource`; a
+        `RegisterView` resolves to a tuple of `BoundResource`, one per member
+        in the view's deterministic order. The first binder to return a
+        non-`None` result wins.
 
         Raises:
             UnsupportedResourceOperandError: If no installed binder claims

@@ -102,6 +102,50 @@ def test_mis_shaped_rule_rejected_but_non_cptp_accepted():
     assert any(isinstance(step, ApplyChannelStep) for step in plan)
 
 
+def test_viewed_gate_resolves_a_channel_per_expanded_member():
+    # Channel resolution moved inside the per-emission loop: a viewed rotation
+    # over N members with an attached channel emits N (matrix, channel) pairs,
+    # each channel carrying the member's own engine index.
+    from fatqat.backends.resource_binding import BoundResource, ResourceBinding
+    from fatqat.backends.resource_binding import _scalar_identity_binder
+    from fatqat.registers import GridRegister, RegisterView
+
+    def view_binder(target, flat_layout):
+        if not isinstance(target, RegisterView):
+            return None
+        reg = target.register  # RowSelector on row 0 -> increasing column
+        row = target.selector.row
+        members = [reg[row * reg.cols + c] for c in range(reg.cols)]
+        return tuple(
+            BoundResource(
+                ref=m,
+                engine_index=flat_layout.subsystem_index(m),
+                device_label=flat_layout.subsystem_index(m),
+            )
+            for m in members
+        )
+
+    atoms = GridRegister(2, 3, name="atoms")
+    program = fq.Program([atoms])
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.RX, Depolarizing(p=0.1))
+    backend = SimulatorBackend(noise=noise)
+    binding = ResourceBinding([view_binder, _scalar_identity_binder])
+    program.add(fq.ops.RX(0.3), atoms.row(0))  # members at engine indices 0,1,2
+    plan, facts = backend._lower(program, backend.resolve_layout(program), binding)
+
+    matrix_steps = [s for s in plan if isinstance(s, ApplyMatrixStep)]
+    channel_steps = [s for s in plan if isinstance(s, ApplyChannelStep)]
+    assert [s.target_indices for s in matrix_steps] == [(0,), (1,), (2,)]
+    assert [s.target_indices for s in channel_steps] == [(0,), (1,), (2,)]
+    # Interleaved matrix-then-channel per member, not batched.
+    assert [type(s).__name__ for s in plan] == [
+        "ApplyMatrixStep",
+        "ApplyChannelStep",
+    ] * 3
+    assert facts.has_channel is True
+
+
 def test_reset_attached_channels_raise_until_wired():
     noise = NoiseModel()
     noise.add_noise(fq.ops.Reset, Depolarizing(p=0.1))

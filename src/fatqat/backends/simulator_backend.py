@@ -83,7 +83,7 @@ from .engine_contract import (
     _EngineConfig,
     _StateVectorResultRequest,
 )
-from .resource_binding import ResourceBinding, _scalar_identity_binder
+from .resource_binding import BoundResource, ResourceBinding, _scalar_identity_binder
 from .steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
@@ -532,6 +532,78 @@ class SimulatorBackend:
             )
         return rule
 
+    def _expand_emissions(
+        self,
+        operation: Operation,
+        resolved: tuple[BoundResource | tuple[BoundResource, ...], ...],
+    ) -> list[tuple[BoundResource, ...]]:
+        """Expand one instruction's per-target resolutions into scalar emissions.
+
+        `resolved` is the tuple of per-target resolutions for one
+        `AppliedOperation`, in operation order: each element is either a scalar
+        `BoundResource` (a scalar target) or a tuple of `BoundResource` (a
+        `RegisterView` resolved to its members). This method - the single
+        expansion helper, deciding cardinality and pairing that a binder never
+        sees - returns the ordered list of concrete scalar applications
+        ("emissions"), each an arity-length tuple of `BoundResource`.
+
+        - All-scalar (no view anywhere): exactly one emission, the resolutions
+          as-is. Covers scalar rotations, scalar CX/CZ, and any scalar-only op
+          of any arity - byte-identical to pre-expansion behavior.
+        - Arity 1 with a view: N one-target emissions, one per member, in the
+          view's order (uniform expansion).
+        - Arity 2 with views: both operands must be tuples of equal length;
+          they zip pairwise in order (emission i pairs first[i] with
+          second[i], first = controls, second = targets). A member paired with
+          itself (same `BoundResource.ref`) is rejected.
+
+        Raises:
+            BackendValidationError: On a scalar/view mixture, a cardinality
+                mismatch between two views, or a self-pair within a zipped
+                pair - the explicit backend validation errors, raised before
+                any step for this instruction is appended.
+        """
+        if not any(isinstance(r, tuple) for r in resolved):
+            # No view anywhere: a single emission with the scalar resolutions.
+            return [tuple(resolved)]
+
+        name = type(operation).__name__
+        if len(resolved) == 1:
+            (members,) = resolved  # a tuple: this branch only runs with a view
+            return [(member,) for member in members]
+
+        if len(resolved) == 2:
+            first, second = resolved
+            first_is_view = isinstance(first, tuple)
+            second_is_view = isinstance(second, tuple)
+            if first_is_view != second_is_view:
+                raise BackendValidationError(
+                    f"{name} mixes a scalar target with a view target; a "
+                    "two-target gate needs both operands scalar or both views"
+                )
+            if len(first) != len(second):
+                raise BackendValidationError(
+                    f"{name} pairs views of unequal size "
+                    f"({len(first)} vs {len(second)}); pairwise view "
+                    "application requires equal cardinality"
+                )
+            emissions: list[tuple[BoundResource, ...]] = []
+            for control, target in zip(first, second):
+                if control.ref == target.ref:
+                    raise BackendValidationError(
+                        f"{name} pairs member {control.ref!r} with itself; a "
+                        "member cannot be both control and target of one "
+                        "two-target application"
+                    )
+                emissions.append((control, target))
+            return emissions
+
+        # Only RX/RY/RZ (arity 1) and CX/CZ (arity 2) accept views, so a view
+        # reaching any other arity is a contract violation, not user input.
+        raise BackendValidationError(
+            f"{name} cannot expand a view target at arity {len(resolved)}"
+        )
+
     def _lower(
         self,
         program: Program,
@@ -615,69 +687,89 @@ class SimulatorBackend:
                     plan.append(ResetStep(reset_indices=target_indices, condition=cond))
                     continue
 
-                bound = tuple(binding.resolve(t, layout) for t in step.targets)
-                device_labels = tuple(b.device_label for b in bound)
-                engine_indices = tuple(b.engine_index for b in bound)
+                # Resolve every target expression (each a scalar ref or a
+                # view) to its bound resource(s), then expand into the ordered
+                # list of concrete scalar applications. `_expand_emissions`
+                # computes the whole list - and raises any cardinality /
+                # mixture / self-pair failure - before the loop below appends
+                # any step for this instruction.
+                resolved = tuple(binding.resolve(t, layout) for t in step.targets)
+                emissions = self._expand_emissions(step.operation, resolved)
 
-                rule = self._implementation_for(step.operation, device_labels)
-                try:
-                    matrix = rule(step.operation, targets=step.targets)
-                except Exception as exc:
-                    raise MatrixImplementationError(
-                        f"implementation for {type(step.operation).__name__} raised: {exc}"
-                    ) from exc
-
-                # Check matrix shape matches target dimensions
-                target_dims = tuple(layout.system_dims[i] for i in engine_indices)
-                expected = prod(target_dims)
-                if matrix.shape != (expected, expected):
-                    raise BackendValidationError(
-                        f"{type(step.operation).__name__} resolved to a "
-                        f"{matrix.shape} matrix, incompatible with target "
-                        f"dimensions {target_dims} (expected "
-                        f"{(expected, expected)})"
-                    )
-
+                # One instruction's condition does not vary per emission;
+                # resolve it once and share it across every emitted step.
                 cond = _resolve_condition(step.condition, layout)
-                plan.append(
-                    ApplyMatrixStep(
-                        matrix=matrix,
-                        target_indices=engine_indices,
-                        condition=cond,
-                        # Identity, not mechanics: the backend forwards which
-                        # implementation was selected; the engine alone decides
-                        # what (if anything) that means for kernel choice.
-                        kernel_key=rule._kernel_key(
-                            step.operation, targets=step.targets
-                        ),
-                    )
-                )
 
-                # Attached channels resolve inline, mirroring the gate
-                # path above: rule lookup, Kraus resolution, shape check,
-                # step append - one ApplyChannelStep per channel, inheriting
-                # the gate's condition. Noise selection stays in engine-index
-                # space; device labels are exclusively for the
-                # implementation-map lookup above.
-                for channel in self._noise_model.channels_for(
-                    type(step.operation), engine_indices, layout
-                ):
-                    has_channel = True
-                    rule = self._channel_map.get(type(channel))
-                    if rule is None:
-                        raise UnsupportedOperationError(
-                            f"{type(channel).__name__} has no channel "
-                            "implementation on this backend"
+                for emission in emissions:
+                    # This emission's concrete scalar refs, in operation order.
+                    # These - never `step.targets`, which may hold a view -
+                    # feed validate_targets() and the matrix/channel rules.
+                    emitted_refs = tuple(b.ref for b in emission)
+                    step.operation.validate_targets(emitted_refs)
+                    device_labels = tuple(b.device_label for b in emission)
+                    engine_indices = tuple(b.engine_index for b in emission)
+
+                    rule = self._implementation_for(step.operation, device_labels)
+                    try:
+                        matrix = rule(step.operation, targets=emitted_refs)
+                    except Exception as exc:
+                        raise MatrixImplementationError(
+                            f"implementation for {type(step.operation).__name__} raised: {exc}"
+                        ) from exc
+
+                    # Check matrix shape matches this emission's target dims.
+                    target_dims = tuple(layout.system_dims[i] for i in engine_indices)
+                    expected = prod(target_dims)
+                    if matrix.shape != (expected, expected):
+                        raise BackendValidationError(
+                            f"{type(step.operation).__name__} resolved to a "
+                            f"{matrix.shape} matrix, incompatible with target "
+                            f"dimensions {target_dims} (expected "
+                            f"{(expected, expected)})"
                         )
-                    kraus_ops = tuple(rule(channel, targets=step.targets))
-                    _validate_kraus_shapes(kraus_ops, expected, type(channel).__name__)
+
                     plan.append(
-                        ApplyChannelStep(
-                            kraus_ops=kraus_ops,
+                        ApplyMatrixStep(
+                            matrix=matrix,
                             target_indices=engine_indices,
                             condition=cond,
+                            # Identity, not mechanics: the backend forwards
+                            # which implementation was selected; the engine
+                            # alone decides what (if anything) that means for
+                            # kernel choice.
+                            kernel_key=rule._kernel_key(
+                                step.operation, targets=emitted_refs
+                            ),
                         )
                     )
+
+                    # Attached channels resolve inline per emission, mirroring
+                    # the gate path above: rule lookup, Kraus resolution, shape
+                    # check, step append - one ApplyChannelStep per channel,
+                    # inheriting the gate's condition. Noise selection stays in
+                    # engine-index space; device labels are exclusively for the
+                    # implementation-map lookup above.
+                    for channel in self._noise_model.channels_for(
+                        type(step.operation), engine_indices, layout
+                    ):
+                        has_channel = True
+                        rule = self._channel_map.get(type(channel))
+                        if rule is None:
+                            raise UnsupportedOperationError(
+                                f"{type(channel).__name__} has no channel "
+                                "implementation on this backend"
+                            )
+                        kraus_ops = tuple(rule(channel, targets=emitted_refs))
+                        _validate_kraus_shapes(
+                            kraus_ops, expected, type(channel).__name__
+                        )
+                        plan.append(
+                            ApplyChannelStep(
+                                kraus_ops=kraus_ops,
+                                target_indices=engine_indices,
+                                condition=cond,
+                            )
+                        )
 
         return (
             plan,
