@@ -81,6 +81,6 @@ def test_default_noise_model_is_a_fresh_extensible_model():
         for c in second.channels_for(
             fq.ops.SX,
             (0,),
-            FakeSuperconducting4x4Backend().resolve_layout(fq.Program(1)),
+            FakeSuperconducting4x4Backend()._allocate_engine(fq.Program(1)),
         )
     )

@@ -2,6 +2,9 @@
 
 import pytest
 
+from fatqat._engine_allocation import _EngineAllocation
+from fatqat.backends import SimulatorBackend
+from fatqat.program import Program
 from fatqat.registers import QuantumRegister
 from fatqat.resource_layout import ResourceLayout
 
@@ -55,3 +58,35 @@ def test_lookalike_register_is_not_part_of_the_layout():
     lookalike = QuantumRegister(qreg.size, name=qreg.name)
     with pytest.raises(KeyError):
         layout.device_label(lookalike[0])
+
+
+# --- SimulatorBackend's default resource-mapping hook -----------------------
+
+
+def test_simulator_backend_resolves_generic_identity_device_labels_in_declaration_order():
+    program = Program(3)
+    backend = SimulatorBackend()
+
+    resource_layout = backend._resolve_resource_layout(program)
+
+    refs = [program.qreg[0][i] for i in range(3)]
+    assert [resource_layout.device_label(ref) for ref in refs] == [0, 1, 2]
+    assert isinstance(resource_layout, ResourceLayout)
+
+
+def test_simulator_backend_allocate_engine_returns_a_separate_engine_allocation():
+    program = Program(3)
+    backend = SimulatorBackend()
+
+    resource_layout = backend._resolve_resource_layout(program)
+    engine_allocation = backend._allocate_engine(program)
+
+    refs = [program.qreg[0][i] for i in range(3)]
+    # Two independently-resolved values: not the same object...
+    assert resource_layout is not engine_allocation
+    assert isinstance(engine_allocation, _EngineAllocation)
+    # ...but the generic simulator's trivial policy makes their current
+    # numerical values coincide. That coincidence is not an API contract.
+    assert [engine_allocation.subsystem_index(ref) for ref in refs] == [
+        resource_layout.device_label(ref) for ref in refs
+    ]

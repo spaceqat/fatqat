@@ -9,7 +9,7 @@ from fatqat.operations import ResetGate
 
 
 def _layout_for(program):
-    return fq.backends.SimulatorBackend().resolve_layout(program)
+    return fq.backends.SimulatorBackend()._allocate_engine(program)
 
 
 def _two_qubit_program():

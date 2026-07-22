@@ -14,7 +14,7 @@ from fatqat.registers import GridRegister
 
 
 def _prepared(backend, program):
-    layout = backend.resolve_layout(program)
+    layout = backend._allocate_engine(program)
     resources = backend._build_qubit_resource_map(program, layout)
     operations = _break_grouped_operations(program.operations)
     return operations, layout, resources
@@ -34,7 +34,7 @@ def test_bound_resource_is_immutable():
 def test_identity_resource_map_contains_flat_index_and_device_label():
     program = Program(2)
     backend = SimulatorBackend()
-    layout = backend.resolve_layout(program)
+    layout = backend._allocate_engine(program)
     resources = backend._build_qubit_resource_map(program, layout)
     ref = program.qreg[0][1]
     assert resources[ref] == BoundResource(ref=ref, engine_index=1, device_label=1)
@@ -44,7 +44,7 @@ def test_fake_grid_resource_map_keeps_flat_and_hardware_indices_distinct():
     atoms = GridRegister(2, 3, name="atoms")
     program = Program([atoms])
     backend = FakeAtomGridBackend(rows=4, cols=5)
-    layout = backend.resolve_layout(program)
+    layout = backend._allocate_engine(program)
     resources = backend._build_qubit_resource_map(program, layout)
     assert tuple(resources[atoms[index]].engine_index for index in range(6)) == tuple(
         range(6)
@@ -152,7 +152,7 @@ def test_lower_uses_device_labels_for_lookup_and_flat_indices_for_steps():
     program = Program(2)
     program.add(ops.CZ, (0, 1))
     backend = SimulatorBackend()
-    layout = backend.resolve_layout(program)
+    layout = backend._allocate_engine(program)
     q0, q1 = program.qreg[0][0], program.qreg[0][1]
     resources = {
         q0: BoundResource(ref=q0, engine_index=0, device_label=99),

@@ -169,19 +169,26 @@ class FakeAtomGridBackend(SimulatorBackend):
         """
         return self._impl_map.copy()
 
-    def resolve_layout(self, program: Program) -> _EngineAllocation:
+    def _allocate_engine(self, program: Program) -> _EngineAllocation:
         """Build the flat layout, then reject any shape the fake device can't run.
 
         Applies equally to a scalar-only program with no `GridRegister`:
         total qubit count and per-subsystem dimension are checked regardless
         of register structure.
 
+        Note: this device-shape/grid-fit validation is a resource-layout-
+        level concern (see `SimulatorBackend._resolve_resource_layout`), not
+        an engine-allocation one. It stays here, mechanically renamed from
+        the former `resolve_layout` override, until this backend's top-left
+        mapping policy (`_device_label_for`) moves to
+        `_resolve_resource_layout` in a later task.
+
         Raises:
             BackendValidationError: If the program declares more subsystems
                 than `rows * cols`, or any non-qubit-dimension (`dim != 2`)
                 register.
         """
-        layout = super().resolve_layout(program)
+        layout = super()._allocate_engine(program)
         capacity = self._rows * self._cols
         if layout.n_subsystems > capacity:
             raise BackendValidationError(

@@ -20,13 +20,13 @@ def test_default_shape_is_4x5():
     p_fits = Program(20)
     p_fits.add(ops.RX(0.1), 0)
     # 4x5 = 20 qubits fits exactly.
-    layout = backend.resolve_layout(p_fits)
+    layout = backend._allocate_engine(p_fits)
     assert layout.n_subsystems == 20
 
     p_too_big = Program(21)
     p_too_big.add(ops.RX(0.1), 0)
     with pytest.raises(BackendValidationError):
-        backend.resolve_layout(p_too_big)
+        backend._allocate_engine(p_too_big)
 
 
 def test_rejects_non_int_rows():
@@ -68,7 +68,7 @@ def test_2x3_grid_binds_top_left_on_default_4x5_backend():
     p.add(ops.RX(0.1), atoms.all())
 
     backend = FakeAtomGridBackend()  # default 4x5
-    layout = backend.resolve_layout(p)
+    layout = backend._allocate_engine(p)
     resources = backend._build_qubit_resource_map(p, layout)
 
     assert tuple(resources[atoms[i]].device_label for i in range(6)) == (
@@ -89,7 +89,7 @@ def test_scalar_grid_ref_uses_grid_binder_device_label_not_identity():
     atoms = GridRegister(2, 3, name="atoms")
     p = Program([atoms])
     backend = FakeAtomGridBackend()  # default 4x5
-    layout = backend.resolve_layout(p)
+    layout = backend._allocate_engine(p)
     ref = atoms[3]
     bound = backend._build_qubit_resource_map(p, layout)[ref]
     assert bound.engine_index == 3
@@ -105,7 +105,7 @@ def test_rejects_grid_register_combined_with_other_quantum_register():
     p = Program([atoms, other])
     backend = FakeAtomGridBackend()
     with pytest.raises(BackendValidationError):
-        backend.resolve_layout(p)
+        backend._allocate_engine(p)
 
 
 def test_rejects_two_grid_registers():
@@ -114,7 +114,7 @@ def test_rejects_two_grid_registers():
     p = Program([atoms1, atoms2])
     backend = FakeAtomGridBackend()
     with pytest.raises(BackendValidationError):
-        backend.resolve_layout(p)
+        backend._allocate_engine(p)
 
 
 def test_rejects_grid_that_does_not_fit_backend_even_with_enough_total_capacity():
@@ -125,27 +125,27 @@ def test_rejects_grid_that_does_not_fit_backend_even_with_enough_total_capacity(
     p = Program([atoms])
     backend = FakeAtomGridBackend()
     with pytest.raises(BackendValidationError):
-        backend.resolve_layout(p)
+        backend._allocate_engine(p)
 
 
-def test_resolve_layout_rejects_capacity_for_scalar_only_program():
+def test_allocate_engine_rejects_capacity_for_scalar_only_program():
     p = Program(21)
     backend = FakeAtomGridBackend()  # capacity 20
     with pytest.raises(BackendValidationError):
-        backend.resolve_layout(p)
+        backend._allocate_engine(p)
 
 
-def test_resolve_layout_rejects_non_qubit_dimension_for_scalar_only_program():
+def test_allocate_engine_rejects_non_qubit_dimension_for_scalar_only_program():
     p = Program([QuantumRegister(4, dim=3)])
     backend = FakeAtomGridBackend()
     with pytest.raises(BackendValidationError, match="qubit dimensions"):
-        backend.resolve_layout(p)
+        backend._allocate_engine(p)
 
 
 def test_scalar_only_program_uses_identity_binding():
     p = Program(3)
     backend = FakeAtomGridBackend()
-    layout = backend.resolve_layout(p)
+    layout = backend._allocate_engine(p)
     ref = p.qreg[0][2]
     bound = backend._build_qubit_resource_map(p, layout)[ref]
     assert bound.engine_index == bound.device_label == 2
@@ -199,7 +199,7 @@ def test_resource_map_contains_all_scalar_refs_from_the_program_registers():
     atoms = GridRegister(2, 2, name="atoms")
     p = Program([atoms])
     backend = FakeAtomGridBackend()
-    layout = backend.resolve_layout(p)
+    layout = backend._allocate_engine(p)
     resources = backend._build_qubit_resource_map(p, layout)
     assert set(resources) == set(atoms[index] for index in range(4))
 

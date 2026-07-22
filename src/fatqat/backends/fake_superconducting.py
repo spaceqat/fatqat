@@ -37,7 +37,6 @@ import numpy as np
 
 from .. import operations as ops
 from ..errors import BackendValidationError
-from .._engine_allocation import _EngineAllocation
 from ..implementation import (
     ImplementationMap,
     MatrixImplementation,
@@ -46,6 +45,7 @@ from ..implementation import (
 from ..noise import Depolarizing, NoiseModel, relaxation_channels
 from ..operations import Operation
 from ..program import Program
+from ..resource_layout import ResourceLayout
 from .simulator_backend import SimulatorBackend
 
 GRID_ROWS = 4
@@ -221,27 +221,28 @@ class FakeSuperconducting4x4Backend(SimulatorBackend):
         """
         return self._impl_map.copy()
 
-    def resolve_layout(self, program: Program) -> _EngineAllocation:
-        """Build the flat layout, then reject any shape the fake device can't run.
+    def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
+        """Reject any shape the fake device can't run, then map identically.
 
-        A program may declare up to 16 qubits; fewer is fine, since flat
-        subsystem indices are assigned in declaration order (see
-        `_EngineAllocation.from_program`), so an N-qubit program always maps
-        onto physical qubits `0..N-1`, the same rule used for a full
-        16-qubit program.
+        A program may declare up to 16 qubits; fewer is fine, since device
+        labels are assigned in declaration order (see the base class's
+        generic identity mapping), so an N-qubit program always maps onto
+        physical qubits `0..N-1`, the same rule used for a full 16-qubit
+        program.
 
         Raises:
             BackendValidationError: If the program declares more than 16
                 qubits, or any non-qubit-dimension (`dim != 2`) register.
         """
-        layout = super().resolve_layout(program)
-        if layout.n_subsystems > N_QUBITS:
+        n_subsystems = sum(register.size for register in program.qreg)
+        if n_subsystems > N_QUBITS:
             raise BackendValidationError(
                 f"FakeSuperconducting4x4Backend supports at most 16 qubits, "
-                f"got {layout.n_subsystems}"
+                f"got {n_subsystems}"
             )
-        if any(dim != 2 for dim in layout.system_dims):
+        dims = (register.dim for register in program.qreg for _ in range(register.size))
+        if any(dim != 2 for dim in dims):
             raise BackendValidationError(
                 "FakeSuperconducting4x4Backend only supports qubit dimensions"
             )
-        return layout
+        return super()._resolve_resource_layout(program)

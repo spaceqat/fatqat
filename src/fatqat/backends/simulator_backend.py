@@ -75,6 +75,7 @@ from ..registers import (
     RegisterView,
     RowSelector,
 )
+from ..resource_layout import ResourceLayout
 from ..result import (
     Result,
     _DensityMatrixResultConfig,
@@ -397,14 +398,40 @@ class SimulatorBackend:
         self._simulator = self._simulator_cls(config=config)
         self._simulator_system: tuple[tuple[int, ...], int] | None = None
 
-    def resolve_layout(self, program: Program) -> _EngineAllocation:
-        """Build the flat resource layout used by this backend.
+    def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
+        """Resolve this run's effective public resource layout.
+
+        The base implementation is the generic simulator's trivial mapping
+        policy: concatenate quantum registers in declaration order and assign
+        device labels ``0, 1, ...``. A backend with predefined physical sites
+        (or any other non-trivial mapping policy) overrides this hook; it is
+        also where such a backend validates device-resource concerns like
+        capacity, dimension, or grid fit, since those are properties of the
+        logical-to-physical mapping, not of engine allocation.
+
+        Args:
+            program: Program whose quantum registers should be mapped.
+
+        Returns:
+            The effective resource layout for this run.
+        """
+        labels: dict[RegisterRef, Hashable] = {}
+        index = 0
+        for register in program.qreg:
+            for i in range(register.size):
+                labels[register[i]] = index
+                index += 1
+        return ResourceLayout(labels)
+
+    def _allocate_engine(self, program: Program) -> _EngineAllocation:
+        """Build this run's private engine-facing flat allocation.
 
         Args:
             program: Program whose registers should be flattened.
 
         Returns:
-            Resource layout mapping register references to flat indices.
+            Engine allocation mapping register references to flat subsystem
+            and classical indices.
         """
         return _EngineAllocation.from_program(program)
 
@@ -428,7 +455,7 @@ class SimulatorBackend:
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Prepare and lower one program using the backend's resource policy."""
         if layout is None:
-            layout = self.resolve_layout(program)
+            layout = self._allocate_engine(program)
         resources = self._build_qubit_resource_map(program, layout)
         operations = _break_grouped_operations(program.operations)
         return self._lower(operations, layout, resources)
@@ -443,9 +470,9 @@ class SimulatorBackend:
     ) -> Job:
         """Validate, execute, and package one program run.
 
-        Resolves the program to the backend's flat layout, chooses an
-        execution strategy, runs the circuit, and returns an eager ``Job``
-        whose ``result()`` yields a ``Result``.
+        Resolves the program's effective resource layout and private engine
+        allocation, chooses an execution strategy, runs the circuit, and
+        returns an eager ``Job`` whose ``result()`` yields a ``Result``.
 
         ``result_config`` accepts ``counts`` plus the method's native state
         field (``statevector`` or ``density_matrix``), each tri-state:
@@ -485,7 +512,15 @@ class SimulatorBackend:
             "result_config",
             backend_name=type(self).__name__,
         )
-        layout = self.resolve_layout(program)
+        # Both hooks are resolved once per run, on the direct-raise
+        # validation path, before the execution try block below: capacity,
+        # dimension, grid-fit, and mapping failures must raise directly from
+        # run(), never become a failed Job. The resource layout is the
+        # public-facing effective mapping (available to backend validation
+        # and, eventually, lowering); the engine allocation stays private to
+        # execution preparation.
+        _resource_layout = self._resolve_resource_layout(program)
+        layout = self._allocate_engine(program)
         plan, facts = self._lower_program(program, layout=layout)
         self._validate(config, shots, facts)
         try:
