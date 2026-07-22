@@ -5,11 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass
 
-from ..flat_layout import FlatResourceLayout
+from .._engine_allocation import _EngineAllocation
 from ..program import Program
 from ..registers import RegisterRef
 
-DeviceLabelPolicy = Callable[[RegisterRef, FlatResourceLayout], Hashable]
+DeviceLabelPolicy = Callable[[RegisterRef, _EngineAllocation], Hashable]
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,7 @@ class BoundResource:
 
 def _build_qubit_resource_map(
     program: Program,
-    flat_layout: FlatResourceLayout,
+    flat_layout: _EngineAllocation,
     device_label_for: DeviceLabelPolicy,
 ) -> dict[RegisterRef, BoundResource]:
     """Build the complete scalar qubit-resource map for one program run."""

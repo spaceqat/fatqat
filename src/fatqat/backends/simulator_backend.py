@@ -50,7 +50,7 @@ from ..errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from ..flat_layout import FlatResourceLayout
+from .._engine_allocation import _EngineAllocation
 from ..implementation import (
     MatrixImplementation,
     DeviceOperands,
@@ -114,7 +114,7 @@ _METHOD_ALIASES = {
 
 ProgramInstruction = AppliedOperation | Measurement
 ResourceMap = Mapping[RegisterRef, BoundResource]
-DeviceLabelPolicy = Callable[[RegisterRef, FlatResourceLayout], Hashable]
+DeviceLabelPolicy = Callable[[RegisterRef, _EngineAllocation], Hashable]
 
 
 def _view_members(view: RegisterView) -> tuple[RegisterRef, ...]:
@@ -397,7 +397,7 @@ class SimulatorBackend:
         self._simulator = self._simulator_cls(config=config)
         self._simulator_system: tuple[tuple[int, ...], int] | None = None
 
-    def resolve_layout(self, program: Program) -> FlatResourceLayout:
+    def resolve_layout(self, program: Program) -> _EngineAllocation:
         """Build the flat resource layout used by this backend.
 
         Args:
@@ -406,16 +406,16 @@ class SimulatorBackend:
         Returns:
             Resource layout mapping register references to flat indices.
         """
-        return FlatResourceLayout.from_program(program)
+        return _EngineAllocation.from_program(program)
 
     def _device_label_for(
-        self, ref: RegisterRef, flat_layout: FlatResourceLayout
+        self, ref: RegisterRef, flat_layout: _EngineAllocation
     ) -> Hashable:
         """Return the implementation-map label for one scalar reference."""
         return flat_layout.subsystem_index(ref)
 
     def _build_qubit_resource_map(
-        self, program: Program, flat_layout: FlatResourceLayout
+        self, program: Program, flat_layout: _EngineAllocation
     ) -> dict[RegisterRef, BoundResource]:
         """Build this run's complete scalar qubit-resource map."""
         return _build_qubit_resource_map(program, flat_layout, self._device_label_for)
@@ -424,7 +424,7 @@ class SimulatorBackend:
         self,
         program: Program,
         *,
-        layout: FlatResourceLayout | None = None,
+        layout: _EngineAllocation | None = None,
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Prepare and lower one program using the backend's resource policy."""
         if layout is None:
@@ -643,7 +643,7 @@ class SimulatorBackend:
     def _lower(
         self,
         operations: Sequence[ProgramInstruction],
-        layout: FlatResourceLayout,
+        layout: _EngineAllocation,
         resources: ResourceMap,
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Lower a program into an execution plan and classify it, in one pass.
@@ -789,7 +789,7 @@ class SimulatorBackend:
     def _resolve_confusions(
         self,
         measured_indices: tuple[int, ...],
-        layout: FlatResourceLayout,
+        layout: _EngineAllocation,
     ) -> tuple[Any, ...] | None:
         """Resolve per-subsystem readout confusion matrices for one measurement.
 

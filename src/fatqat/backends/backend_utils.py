@@ -6,7 +6,7 @@ import warnings
 from dataclasses import dataclass
 from typing import Any
 
-from ..flat_layout import FlatResourceLayout
+from .._engine_allocation import _EngineAllocation
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ def _normalize_dict_options(
 
 def _resolve_condition(
     condition: tuple[tuple[object, int], ...] | None,
-    layout: FlatResourceLayout,
+    layout: _EngineAllocation,
 ) -> tuple[tuple[int, int], ...] | None:
     """Lower a frontend condition to ``(clbit_index, value)`` AND-terms."""
     if condition is None:

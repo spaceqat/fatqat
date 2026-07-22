@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from .. import operations as ops
 from ..errors import BackendValidationError
-from ..flat_layout import FlatResourceLayout
+from .._engine_allocation import _EngineAllocation
 from ..implementation import (
     ImplementationMap,
     default_matrix_implementation_map,
@@ -169,7 +169,7 @@ class FakeAtomGridBackend(SimulatorBackend):
         """
         return self._impl_map.copy()
 
-    def resolve_layout(self, program: Program) -> FlatResourceLayout:
+    def resolve_layout(self, program: Program) -> _EngineAllocation:
         """Build the flat layout, then reject any shape the fake device can't run.
 
         Applies equally to a scalar-only program with no `GridRegister`:
@@ -213,7 +213,7 @@ class FakeAtomGridBackend(SimulatorBackend):
         return layout
 
     def _device_label_for(
-        self, ref: RegisterRef, flat_layout: FlatResourceLayout
+        self, ref: RegisterRef, flat_layout: _EngineAllocation
     ) -> int:
         """Map a scalar ref to its row-major fake-device site label."""
         if not isinstance(ref.register, GridRegister):

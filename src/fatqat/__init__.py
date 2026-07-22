@@ -16,6 +16,7 @@ from .registers import (
     RegisterRef,
     RegisterView,
 )
+from .resource_layout import ResourceLayout
 from .result import Result
 
 __version__ = "0.0.1"
@@ -35,6 +36,7 @@ __all__ = [
     "RegisterRef",
     "GridRegister",
     "RegisterView",
+    "ResourceLayout",
     "Job",
     "Result",
 ]

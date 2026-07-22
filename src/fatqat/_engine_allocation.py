@@ -1,4 +1,9 @@
-"""FlatResourceLayout: the single source of truth for flat subsystem/clbit indices.
+"""_EngineAllocation: the private engine-facing flattening of a program's
+quantum and classical resources into flat subsystem/clbit indices.
+
+This is a simulator-only execution concern, not the public logical-to-
+physical resource map: that is `fatqat.resource_layout.ResourceLayout`. See
+docs/superpowers/specs/2026-07-22-fatqat-resource-layout-and-noise-selector-design.md.
 
 TODO: `clbit_index` / `n_clbits` assume two levels, unlike the neutral
 `subsystem_index` / `n_subsystems` beside them - a `ClassicalRegister` carries
@@ -17,11 +22,15 @@ from .program import Program
 from .registers import Register, RegisterRef
 
 
-class FlatResourceLayout:
+class _EngineAllocation:
     """Flat index mapping for a program's quantum and classical resources.
 
     Quantum registers are concatenated in program order, and classical registers
     are concatenated independently in program order.
+
+    This is a private, engine-internal value: it is created from a program for
+    a run, never accepted as user configuration, and never exposed by
+    `NoiseModel` or a public resource-map API.
     """
 
     def __init__(
@@ -32,7 +41,7 @@ class FlatResourceLayout:
         c_offsets: Mapping[Register, int],
         n_clbits: int,
     ) -> None:
-        """Create a resource layout from precomputed flat offsets.
+        """Create an engine allocation from precomputed flat offsets.
 
         Registers key these maps by identity, not by field values: a register
         is an entity, so a lookalike built with the same size and name is a
@@ -53,41 +62,41 @@ class FlatResourceLayout:
 
     @property
     def n_subsystems(self) -> int:
-        """Total number of subsystems in the layout."""
+        """Total number of subsystems in the allocation."""
         return len(self.system_dims)
 
     @property
     def n_clbits(self) -> int:
-        """Total number of classical bits in the layout."""
+        """Total number of classical bits in the allocation."""
         return self._n_clbits
 
     def subsystem_index(self, ref: RegisterRef) -> int:
         """Return the flat subsystem index for a quantum register reference.
 
         Raises:
-            KeyError: If the reference's register is not part of this layout.
+            KeyError: If the reference's register is not part of this allocation.
         """
         try:
             base = self._q_offsets[ref.register]
         except KeyError:
-            raise KeyError("subsystem ref not part of this layout") from None
+            raise KeyError("subsystem ref not part of this allocation") from None
         return base + ref.index
 
     def clbit_index(self, ref: RegisterRef) -> int:
         """Return the flat classical-bit index for a classical register reference.
 
         Raises:
-            KeyError: If the reference's register is not part of this layout.
+            KeyError: If the reference's register is not part of this allocation.
         """
         try:
             base = self._c_offsets[ref.register]
         except KeyError:
-            raise KeyError("clbit ref not part of this layout") from None
+            raise KeyError("clbit ref not part of this allocation") from None
         return base + ref.index
 
     @classmethod
-    def from_program(cls, program: Program) -> "FlatResourceLayout":
-        """Build a layout by flattening a program's registers in order."""
+    def from_program(cls, program: Program) -> "_EngineAllocation":
+        """Build an allocation by flattening a program's registers in order."""
         q_offsets: dict[Register, int] = {}
         system_dims: list[int] = []
         offset = 0

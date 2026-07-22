@@ -15,9 +15,10 @@ Target selectors come in two address spaces, unified at lowering time:
 - ``tuple[int, ...]`` - flat subsystem indices, how a backend authors default
   noise for its device before any user program (or register) exists.
 
-Refs are translated to flat indices through the run's
-:py:class:`~fatqat.flat_layout.FlatResourceLayout` (the existing identity
-authority for registers), so the model itself never compares or hashes refs.
+Refs are translated to flat indices through the run's private
+:py:class:`~fatqat._engine_allocation._EngineAllocation` (the existing
+identity authority for registers), so the model itself never compares or
+hashes refs.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from typing import Any
 
 import numpy as np
 
-from ..flat_layout import FlatResourceLayout
+from .._engine_allocation import _EngineAllocation
 from ..implementation.base import _resolve_operation_class
 from ..operations import BarrierGate, Operation
 from ..registers import QuantumRegister, RegisterRef
@@ -136,7 +137,7 @@ class NoiseModel:
         self,
         operation: Operation | type[Operation],
         target_indices: tuple[int, ...],
-        layout: FlatResourceLayout,
+        layout: _EngineAllocation,
     ) -> list[Channel]:
         """Return the channels selected for one lowered operation occurrence.
 
@@ -230,7 +231,7 @@ class NoiseModel:
         self._readout_errors.append((target, matrix))
 
     def readout_error_for(
-        self, measured_index: int, layout: FlatResourceLayout
+        self, measured_index: int, layout: _EngineAllocation
     ) -> np.ndarray | None:
         """Return the confusion matrix selected for one measured subsystem.
 
@@ -301,7 +302,7 @@ def _normalize_selector(
 
 def _selector_indices(
     selector: tuple[int, ...] | tuple[RegisterRef, ...],
-    layout: FlatResourceLayout,
+    layout: _EngineAllocation,
 ) -> tuple[int, ...] | None:
     """Resolve a specific selector to flat indices, or ``None`` if unmatchable."""
     if type(selector[0]) is int:  # homogeneous, validated at add_noise
