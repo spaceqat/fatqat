@@ -46,6 +46,7 @@ class RX(Operation):
     theta: float
     name: ClassVar[str] = "RX"
     _num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class RY(Operation):
     theta: float
     name: ClassVar[str] = "RY"
     _num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,7 @@ class RZ(Operation):
     theta: float
     name: ClassVar[str] = "RZ"
     _num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@ import pytest
 from fatqat.program import Program
 from fatqat.operations import Measurement
 from fatqat import operations as ops
-from fatqat.registers import QuantumRegister, ClassicalRegister
+from fatqat.registers import GridRegister, QuantumRegister, ClassicalRegister
 
 
 def test_add_measurement_appends_measurement():
@@ -138,6 +138,14 @@ def test_add_measurement_matching_dims_ok():
     ct = ClassicalRegister(1, dim=3)
     program = Program([qt], [ct])
     program.add_measurement(qt[0], ct[0])  # no raise
+
+
+def test_add_measurement_rejects_register_view_target():
+    atoms = GridRegister(2, 2, name="atoms")
+    cr = ClassicalRegister(4)
+    p = Program([atoms], [cr])
+    with pytest.raises(TypeError):
+        p.add_measurement(atoms.row(0), 0)
 
 
 def test_measure_all_dim_mismatch_raises():

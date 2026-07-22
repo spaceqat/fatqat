@@ -6,11 +6,17 @@ from dataclasses import dataclass
 from typing import Any, Mapping, TypeVar
 
 from .operations import Measurement, Operation
-from .registers import QuantumRegister, RegisterRef, ClassicalRegister
+from .registers import QuantumRegister, RegisterRef, RegisterView, ClassicalRegister
 
 ConditionTerm = tuple[RegisterRef, int]
 Condition = tuple[ConditionTerm, ...] | None
 RegisterT = TypeVar("RegisterT", QuantumRegister, ClassicalRegister)
+
+# A frontend target expression: either a resolved scalar reference, or (for
+# the view-capable operations named on `Operation._accepts_views`) a
+# structured `RegisterView` selecting multiple members of one `GridRegister`.
+# See `AppliedOperation.targets` and `Program.add`.
+QuantumTarget = RegisterRef | RegisterView
 
 
 @dataclass(frozen=True)
@@ -33,12 +39,14 @@ class AppliedOperation:
 
     Attributes:
         operation: Operation instance to execute.
-        targets: Quantum register references consumed by the operation.
+        targets: Quantum target expressions consumed by the operation -- each
+            either a resolved scalar ``RegisterRef``, or (for view-capable
+            operations only) a structured ``RegisterView``.
         condition: Optional AND tuple of classical references and literal values.
     """
 
     operation: Operation
-    targets: tuple[RegisterRef, ...]
+    targets: tuple[QuantumTarget, ...]
     condition: Condition = None
 
     def __post_init__(self) -> None:
@@ -51,6 +59,19 @@ class AppliedOperation:
                 f"{self.operation.name} expects {expected} target(s), "
                 f"got {len(self.targets)}"
             )
+
+        has_view = any(isinstance(t, RegisterView) for t in self.targets)
+        if has_view:
+            if not self.operation.accepts_views:
+                raise ValueError(
+                    f"{self.operation.name} does not accept a RegisterView target; "
+                    "only view-capable operations may be applied to a view"
+                )
+            # Scalar validation (duplicate/member checks, validate_targets())
+            # is deferred to binding/expansion, which resolves each view to
+            # concrete scalar refs first. See spec section 5.2.
+            return
+
         seen: set[tuple[int, int]] = set()
         for t in self.targets:
             key = (id(t.register), t.index)
@@ -186,6 +207,24 @@ class Program:
             operand, self.qreg, QuantumRegister, "quantum register"
         )
 
+    def _resolve_quantum_target(
+        self, operand: int | RegisterRef | RegisterView
+    ) -> QuantumTarget:
+        """Resolve one ``Program.add()`` operand, accepting a ``RegisterView``
+        in addition to everything ``_resolve_quantum_ref`` accepts.
+
+        This is deliberately a separate path from ``_resolve_quantum_ref``:
+        that helper is also used by ``add_measurement``/``measure_all``,
+        which must keep rejecting views (see spec section 5.1).
+        """
+        if isinstance(operand, RegisterView):
+            if not any(operand.register is r for r in self.qreg):
+                raise ValueError(
+                    "view's register does not belong to this program's quantum registers"
+                )
+            return operand
+        return self._resolve_quantum_ref(operand)
+
     def _resolve_classical_ref(self, operand: int | RegisterRef) -> RegisterRef:
         return self._resolve_ref(
             operand, self.clreg, ClassicalRegister, "classical register"
@@ -194,7 +233,10 @@ class Program:
     def add(
         self,
         op: Operation,
-        targets: int | RegisterRef | tuple[int | RegisterRef, ...],
+        targets: int
+        | RegisterRef
+        | RegisterView
+        | tuple[int | RegisterRef | RegisterView, ...],
         *,
         condition=None,
     ) -> None:
@@ -206,8 +248,9 @@ class Program:
                 instantiated, such as ``ops.RX(0.2)``.
             targets: Target subsystem operand, or tuple of target operands for
                 multi-subsystem gates (e.g. ``(0, 1)`` for ``CZ``). Each operand
-                may be an integer when unambiguous or an explicit
-                ``RegisterRef``.
+                may be an integer when unambiguous, an explicit ``RegisterRef``,
+                or (only for view-capable operations -- currently RX, RY, RZ,
+                CX, CZ) a ``RegisterView`` such as ``atoms.row(0)``.
             condition: Optional single condition ``(clbit, value)`` or
                 sequence of conditions. Conditions are normalized to an AND
                 tuple.
@@ -216,7 +259,8 @@ class Program:
             TypeError: If ``op`` is not an ``Operation``, if operands have the
                 wrong register kind, or if integer operands are ambiguous.
             ValueError: If target arity is wrong, a target is repeated, a ref
-                is foreign to the program, or ``condition`` is empty.
+                or view is foreign to the program, ``op`` does not accept a
+                ``RegisterView`` target, or ``condition`` is empty.
             IndexError: If an integer operand is outside the relevant register.
 
         Examples:
@@ -234,7 +278,7 @@ class Program:
                 "(did you forget to call a parametric gate, e.g. ops.RX(0.2)?)"
             )
         operands = targets if isinstance(targets, tuple) else (targets,)
-        target_refs = tuple(self._resolve_quantum_ref(o) for o in operands)
+        target_refs = tuple(self._resolve_quantum_target(o) for o in operands)
         normalized = self._normalize_condition(condition)
         self._operations.append(
             AppliedOperation(operation=op, targets=target_refs, condition=normalized)

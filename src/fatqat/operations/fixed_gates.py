@@ -178,6 +178,7 @@ class CXGate(Operation):
 
     name: ClassVar[str] = "CX"
     _num_subsystems: ClassVar[int] = 2
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -196,6 +197,7 @@ class CZGate(Operation):
 
     name: ClassVar[str] = "CZ"
     _num_subsystems: ClassVar[int] = 2
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
