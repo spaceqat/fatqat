@@ -264,6 +264,62 @@ def test_paired_cx_view_matches_manual_scalar_sequence():
     assert np.allclose(grid_sv, manual_sv)
 
 
+def test_viewed_rotation_over_column_matches_manual_scalar_sequence():
+    # 2x3 grid: column(1) selects (row=0,col=1) and (row=1,col=1), in
+    # increasing-row order -> flat/engine indices 1 and 4 (row-major,
+    # index = row*cols+col). Exercises ColumnSelector through a real run(),
+    # which only .all()/.row() had coverage for before this test.
+    atoms = GridRegister(2, 3, name="atoms")
+    grid_p = Program([atoms])
+    grid_p.add(ops.RY(0.7), atoms.column(1))
+    grid_sv = (
+        FakeAtomGridBackend()
+        .run(grid_p, result_config={"counts": False, "statevector": True})
+        .result()
+        .get_statevector()
+    )
+
+    manual_p = Program(6)
+    for i in (1, 4):
+        manual_p.add(ops.RY(0.7), i)
+    manual_sv = (
+        SimulatorBackend()
+        .run(manual_p, result_config={"counts": False, "statevector": True})
+        .result()
+        .get_statevector()
+    )
+
+    assert np.allclose(grid_sv, manual_sv)
+
+
+def test_viewed_rotation_over_block_matches_manual_scalar_sequence():
+    # 2x3 grid: block(rows=(0,2), cols=(1,3)) selects (0,1),(0,2),(1,1),(1,2)
+    # in row-major order -> flat/engine indices 1, 2, 4, 5. Exercises
+    # BlockSelector through a real run(), closing the same coverage gap as
+    # the column test above.
+    atoms = GridRegister(2, 3, name="atoms")
+    grid_p = Program([atoms])
+    grid_p.add(ops.RY(0.7), atoms.block(rows=(0, 2), cols=(1, 3)))
+    grid_sv = (
+        FakeAtomGridBackend()
+        .run(grid_p, result_config={"counts": False, "statevector": True})
+        .result()
+        .get_statevector()
+    )
+
+    manual_p = Program(6)
+    for i in (1, 2, 4, 5):
+        manual_p.add(ops.RY(0.7), i)
+    manual_sv = (
+        SimulatorBackend()
+        .run(manual_p, result_config={"counts": False, "statevector": True})
+        .result()
+        .get_statevector()
+    )
+
+    assert np.allclose(grid_sv, manual_sv)
+
+
 def test_non_neighbor_pair_rejects():
     atoms = GridRegister(2, 3, name="atoms")  # device labels row0:0,1,2 row1:5,6,7
     p = Program([atoms])
