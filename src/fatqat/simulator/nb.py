@@ -3,30 +3,42 @@
 `NumbaSVSimulator` (statevector) and `NumbaDMSimulator` (density matrix) reuse
 every semantics-agnostic piece of their NumPy twins - strategy selection, the
 fast and per-shot paths, ``initialize`` / ``measure_subsystems`` dispatch - and
-replace only the numeric kernels with Numba-jitted loops.
+replace only the numeric kernels with Numba-jitted loops. Both are reachable
+through the public portal via ``SimulatorBackend(method=..., runtime="numba")``.
 
-- `NumbaSVSimulator` replaces gate application (`_apply_local`), probability
-  computation (`probabilities`), categorical sampling (`sample_indices`), and
-  projective collapse (`collapse`). Because `measure_subsystems` and
-  `reset_subsystems` delegate to ``collapse`` / ``_apply_local``, they are
-  fully Numba-routed without being overridden.
-- `NumbaDMSimulator` replaces the sandwich (`_apply_local_sandwich`, which
-  powers both ``apply`` and ``apply_channel``), `probabilities`,
-  `sample_indices`, and `collapse`. It reuses the *same* coset-walk gate kernels
-  as the statevector path by viewing ``rho`` (shape ``(size, size)``) as a flat
-  vector over a doubled ``2n``-subsystem system: the ``n`` bra subsystems
-  (little-endian, strides ``prod(dims[:q])``) followed by the ``n`` ket
-  subsystems (strides ``size * prod(dims[:q])``). The sandwich
-  ``M rho M^dagger`` is the single super-operator ``kron(M, conj(M))`` acting on
-  ``vec(rho)`` - one coset walk with a ``D^2 x D^2`` matrix over the combined
-  ket+bra super-target, so half the memory traffic of a separate ket/bra pass
-  and one parallel region per gate, with diagonal/permutation structure
-  preserved through the Kronecker product. A channel is likewise the one
+Kernel selection is key-driven on both: an `ApplyMatrixStep` carries the
+canonical identity of the implementation that produced its matrix
+(``kernel_key``), and each simulator resolves "which specialized kernel does
+this step get?" once per plan - by declared identity or one
+`_classify_matrix` content scan - never per application, never per shot.
+`_KERNEL_SPECS` is the statevector key-to-structure table; the density matrix
+derives its table from the same declarations because the Kronecker product
+preserves them (see below).
+
+- `NumbaSVSimulator` replaces gate application (`apply` / `_apply_local`),
+  probability computation (`probabilities`), categorical sampling
+  (`sample_indices`), and projective collapse (`collapse`). Because
+  `measure_subsystems` and `reset_subsystems` delegate to ``collapse`` /
+  ``_apply_local``, they are fully Numba-routed without being overridden.
+- `NumbaDMSimulator` replaces `apply` / `apply_channel`, `probabilities`,
+  `sample_indices`, and `collapse`. It reuses the *same* coset-walk kernels
+  as the statevector path by viewing ``rho`` (shape ``(size, size)``) as a
+  flat vector over a doubled ``2n``-subsystem system: the ``n`` bra
+  subsystems (little-endian, strides ``prod(dims[:q])``) followed by the
+  ``n`` ket subsystems (strides ``size * prod(dims[:q])``). The sandwich
+  ``M rho M^dagger`` is the single super-operator ``kron(M, conj(M))`` acting
+  on ``vec(rho)`` - one coset walk with a ``D^2 x D^2`` matrix over the
+  combined ket+bra super-target - and a channel is likewise the one
   super-operator ``sum_i kron(K_i, conj(K_i))``, applied in a single in-place
-  pass. Because ``4^n`` is memory-bound and each gate is one pass, DM
+  pass. The Kronecker product preserves structure (diagonal x diagonal is
+  diagonal, permutation x permutation is permutation), so a gate's declared
+  identity transfers to its super-operator: a declared-dense key skips the
+  scan, everything else takes one scan *of the super-operator*, cached per
+  step. Because ``4^n`` is memory-bound and each gate is one pass, DM
   parallelizes later than the statevector path (`_MIN_SIZE_TO_THREAD_DM`).
-  Reset stays the inherited NumPy partial-trace channel (a single ``O(size^2)``
-  pass, cheaper than a Kraus-sum reimplementation for grouped resets).
+  Reset stays the inherited NumPy partial-trace channel (a single
+  ``O(size^2)`` pass, cheaper than a Kraus-sum reimplementation for grouped
+  resets).
 
 The RNG draw itself stays in NumPy: a ``np.random.Generator`` cannot cross into
 Numba nopython code, so uniforms are drawn with the passed ``rng`` and the
@@ -36,11 +48,10 @@ stay reproducible (per simulator; tiny float-summation differences from NumPy
 mean counts are reproducible per simulator, not bit-identical across
 simulators - the documented contract, see `np.py`).
 
-This is a correctness-first baseline: kernels are straightforward
-``O(size)`` / ``O(size * D)`` loops, not tuned. Numba compiles them lazily on
-first call. Numba is an optional dependency (the ``numba`` group), so this
-module is never imported from ``fatqat.simulator``'s package ``__init__``;
-import it explicitly (``from fatqat.simulator.nb import NumbaSVSimulator``).
+Numba compiles kernels lazily on first call. Numba is an optional dependency
+(the ``numba`` group), so this module is never imported from
+``fatqat.simulator``'s package ``__init__``; import it explicitly
+(``from fatqat.simulator.nb import NumbaSVSimulator``).
 
 Conventions match `np.py`: little-endian flat indexing (subsystem ``q`` has
 place value ``prod(dims[:q])``, subsystem 0 least-significant) and a local gate
@@ -59,6 +70,7 @@ from ..backends.engine_contract import _EngineConfig as EngineConfig, RawResult
 from ..backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
+    BuiltinKernelKey,
     MeasurementStep,
     ResetStep,
 )
@@ -70,10 +82,10 @@ _MAX_THREADS = get_num_threads()
 # saves (the state is small and memory-bandwidth bound), so stay single-threaded.
 # A coarse machine-independent guard, not a tuned constant.
 _MIN_SIZE_TO_THREAD = 1 << 15
-# The density matrix's flat length is 4^n and each gate launches two parallel
-# regions (ket then bra pass), so per-region work must be larger to amortize the
-# dispatch: parallelize later than the statevector path (measured crossover near
-# 2^18 flat amplitudes, i.e. n=9). See `NumbaDMSimulator`.
+# The density matrix's flat length is 4^n and its single super-operator pass is
+# memory-bandwidth bound, so per-region work must be larger to amortize the
+# parallel dispatch: parallelize later than the statevector path (measured
+# crossover near 2^18 flat amplitudes, i.e. n=9). See `NumbaDMSimulator`.
 _MIN_SIZE_TO_THREAD_DM = 1 << 18
 
 
@@ -143,19 +155,46 @@ def _measured_layout(
     return strides, measured_dims
 
 
-def _run_apply(state: np.ndarray, matrix: np.ndarray, plan: tuple) -> None:
-    """Apply ``matrix`` to ``state`` in place via a precomputed apply plan.
+def _run_resolved(
+    state: np.ndarray,
+    matrix: np.ndarray,
+    plan: tuple,
+    code: int,
+    columns: np.ndarray,
+    values: np.ndarray,
+) -> np.ndarray:
+    """Launch an already-classified matrix through a precomputed apply plan.
 
     Routes to the serial or parallel coset kernel by the plan's chunk count.
-    Shared by the statevector and density-matrix Numba paths.
+    Shared by the statevector launch path and the density-matrix
+    super-operator pass; ``state`` must be contiguous ``complex128`` and is
+    updated in place (and returned).
     """
     offsets, comp_strides, comp_dims, num_cosets, n_chunks = plan
     if n_chunks <= 1:
-        _apply_local_serial(state, matrix, offsets, comp_strides, comp_dims, num_cosets)
-    else:
-        _apply_local_parallel(
-            state, matrix, offsets, comp_strides, comp_dims, num_cosets, n_chunks
+        return _apply_resolved_serial(
+            state,
+            code,
+            matrix,
+            columns,
+            values,
+            offsets,
+            comp_strides,
+            comp_dims,
+            num_cosets,
         )
+    return _apply_resolved_parallel(
+        state,
+        code,
+        matrix,
+        columns,
+        values,
+        offsets,
+        comp_strides,
+        comp_dims,
+        num_cosets,
+        n_chunks,
+    )
 
 
 # Gate-matrix structure codes. A diagonal or (phased) permutation matrix has at
@@ -196,6 +235,67 @@ def _classify_matrix(
         if column != r:
             is_diagonal = False
     return _DIAGONAL if is_diagonal else _PERMUTATION
+
+
+# Declared structure per canonical gate identity: the key-to-kernel table.
+# Which gates share a kernel is decided HERE, per engine - never in the key.
+#
+# How kernel selection flows (one classifier, one kernel family):
+#   standard path   apply(step) -> _resolve_structure(step): a key declared
+#                   _DENSE skips the scan entirely; everything else takes ONE
+#                   `_classify_matrix` scan at plan preparation, cached per
+#                   step - never per application, never per shot.
+#   fallback path   _apply_local(state, matrix, targets): matrix-only callers
+#                   (reset shifts, noise Kraus branches) - the same single
+#                   `_classify_matrix` scan, then the same resolved kernels.
+#   fused path      _compile_dynamic_plan bakes each gate's resolved code into
+#                   the plan arrays, so the shots kernel never classifies.
+#
+# An entry may claim _DIAGONAL or _PERMUTATION only if that structure holds
+# for EVERY parameter value of the gate (RZ is diagonal for all theta); a
+# parametric gate whose structure varies claims _DENSE, which is always safe
+# (RX at theta=pi happens to be a permutation, but _DENSE stays correct).
+# The spec-vs-content test in test_kernel_dispatch.py enforces agreement
+# with `_classify_matrix` over the whole default map.
+_K = BuiltinKernelKey
+_KERNEL_SPECS: dict[BuiltinKernelKey, int] = {
+    # diagonal for every parameter value
+    _K.I: _DIAGONAL,
+    _K.Z: _DIAGONAL,
+    _K.S: _DIAGONAL,
+    _K.SDG: _DIAGONAL,
+    _K.T: _DIAGONAL,
+    _K.TDG: _DIAGONAL,
+    _K.CZ: _DIAGONAL,
+    _K.CS: _DIAGONAL,
+    _K.RZ: _DIAGONAL,
+    _K.PHASE: _DIAGONAL,
+    _K.CPHASE: _DIAGONAL,
+    _K.CLOCK: _DIAGONAL,
+    _K.CCLOCK: _DIAGONAL,
+    _K.SUBSPACE_RZ: _DIAGONAL,
+    # exactly one nonzero per row, for every parameter value
+    _K.X: _PERMUTATION,
+    _K.Y: _PERMUTATION,
+    _K.CX: _PERMUTATION,
+    _K.CY: _PERMUTATION,
+    _K.SWAP: _PERMUTATION,
+    _K.ISWAP: _PERMUTATION,
+    _K.CCX: _PERMUTATION,
+    _K.CSWAP: _PERMUTATION,
+    _K.SHIFT: _PERMUTATION,
+    _K.SUM: _PERMUTATION,
+    _K.SWAP_LEVELS: _PERMUTATION,
+    # generically dense
+    _K.H: _DENSE,
+    _K.SX: _DENSE,
+    _K.RX: _DENSE,
+    _K.RY: _DENSE,
+    _K.FOURIER: _DENSE,
+    _K.FOURIERDG: _DENSE,
+    _K.SUBSPACE_RX: _DENSE,
+    _K.SUBSPACE_RY: _DENSE,
+}
 
 
 @njit(cache=True)
@@ -302,13 +402,10 @@ def _dispatch_range(
 
 
 @njit(cache=True)
-def _apply_local_serial(
-    state, matrix, offsets, comp_strides, comp_dims, num_cosets
+def _apply_resolved_serial(
+    state, code, matrix, columns, values, offsets, comp_strides, comp_dims, num_cosets
 ) -> np.ndarray:  # pragma: no cover - compiled by Numba
-    """Single-threaded gate application (no parallel-region overhead)."""
-    columns = np.empty(offsets.shape[0], dtype=np.int64)
-    values = np.empty(offsets.shape[0], dtype=np.complex128)
-    code = _classify_matrix(matrix, columns, values)
+    """Single-threaded application of an already-classified gate."""
     _dispatch_range(
         state,
         code,
@@ -325,17 +422,19 @@ def _apply_local_serial(
 
 
 @njit(cache=True, parallel=True)
-def _apply_local_parallel(
-    state, matrix, offsets, comp_strides, comp_dims, num_cosets, n_chunks
+def _apply_resolved_parallel(
+    state,
+    code,
+    matrix,
+    columns,
+    values,
+    offsets,
+    comp_strides,
+    comp_dims,
+    num_cosets,
+    n_chunks,
 ) -> np.ndarray:  # pragma: no cover - compiled by Numba
-    """Gate application split into ``n_chunks`` coset ranges run in parallel.
-
-    The matrix is classified once (serially); each thread then applies the chosen
-    kernel to its own disjoint coset range.
-    """
-    columns = np.empty(offsets.shape[0], dtype=np.int64)
-    values = np.empty(offsets.shape[0], dtype=np.complex128)
-    code = _classify_matrix(matrix, columns, values)
+    """Parallel application of an already-classified gate over coset chunks."""
     for chunk in prange(n_chunks):  # pylint: disable=not-an-iterable
         start = chunk * num_cosets // n_chunks
         end = (chunk + 1) * num_cosets // n_chunks
@@ -516,13 +615,21 @@ def _apply_step(
     ap_off_ptr,
     ap_comp_ptr,
     ap_comp_len,
+    ap_code,
     mat_flat,
     off_flat,
+    col_flat,
+    val_flat,
     comp_stride_flat,
     comp_dim_flat,
     size,
 ) -> None:  # pragma: no cover - compiled by Numba
-    """Apply compiled gate ``a`` to ``state`` in place (serial coset walk)."""
+    """Apply compiled gate ``a`` to ``state`` in place (serial coset walk).
+
+    Structure (``ap_code``/columns/values) was resolved when the plan was
+    compiled - by declared kernel key or one content scan - so no per-shot
+    classification happens here.
+    """
     d = ap_dim[a]
     mat_start = ap_mat_ptr[a]
     matrix = mat_flat[mat_start : mat_start + d * d].reshape(d, d)
@@ -530,9 +637,9 @@ def _apply_step(
     offsets = off_flat[off_start : off_start + d]
     comp_start = ap_comp_ptr[a]
     comp_end = comp_start + ap_comp_len[a]
-    columns = np.empty(d, dtype=np.int64)
-    values = np.empty(d, dtype=np.complex128)
-    code = _classify_matrix(matrix, columns, values)
+    columns = col_flat[off_start : off_start + d]
+    values = val_flat[off_start : off_start + d]
+    code = ap_code[a]
     _dispatch_range(
         state,
         code,
@@ -600,9 +707,12 @@ def _run_shots_kernel(
     ap_off_ptr,  # start of the d local->flat offsets in off_flat
     ap_comp_ptr,  # start of the complement strides/dims in comp_*_flat
     ap_comp_len,  # number of complement (non-target) subsystems
+    ap_code,  # structure code per gate, resolved at compile time
     # gate flat backing
     mat_flat,  # concatenated row-major gate matrices (complex128)
     off_flat,  # concatenated local-index -> flat-offset tables
+    col_flat,  # per-row nonzero columns (aligned with off_flat; 0-pad if dense)
+    val_flat,  # per-row nonzero values (aligned with off_flat; 0-pad if dense)
     comp_stride_flat,  # concatenated complement strides
     comp_dim_flat,  # concatenated complement dimensions
     # measurement table (one entry per MeasurementStep)
@@ -669,8 +779,11 @@ def _run_shots_kernel(
                     ap_off_ptr,
                     ap_comp_ptr,
                     ap_comp_len,
+                    ap_code,
                     mat_flat,
                     off_flat,
+                    col_flat,
+                    val_flat,
                     comp_stride_flat,
                     comp_dim_flat,
                     size,
@@ -715,31 +828,96 @@ class NumbaSVSimulator(NumpySVSimulator):
         # The layout depends only on targets and the fixed system dims, so it is
         # reused across gates and shots; `initialize` clears it when dims change.
         self._apply_plans: dict[tuple[int, ...], tuple] = {}
+        # Per-step resolved structure (code/columns/values), keyed by id(step)
+        # with the step pinned in the value so a recycled id can never alias.
+        # Structure is a property of the step's frozen matrix alone - not of
+        # system dims - so `initialize` deliberately does not clear it; the
+        # per-shot dynamic loop re-initializes per trajectory and must keep
+        # its once-per-plan resolutions.
+        self._structure_cache: dict[int, tuple] = {}
+        # Per-step resolved structure (code/columns/values), keyed by id(step)
+        # with the step pinned in the value so a recycled id can never alias.
+        # Structure is a property of the step's frozen matrix alone - not of
+        # system dims - so `initialize` deliberately does not clear it; the
+        # per-shot dynamic loop re-initializes per trajectory and must keep
+        # its once-per-plan resolutions.
+        self._structure_cache: dict[int, tuple] = {}
 
     def initialize(self, system_dims: Sequence[int], n_clbits: int = 0) -> None:
         super().initialize(system_dims, n_clbits)
         self._apply_plans = {}
 
+    def _resolve_structure(
+        self, step: ApplyMatrixStep
+    ) -> tuple[int, np.ndarray, np.ndarray]:
+        """Resolve a step's kernel structure once: the standard-path front end.
+
+        `_classify_matrix` is the single classification rule. A kernel_key
+        declared ``_DENSE`` skips the scan entirely (dense handles any matrix
+        and its columns/values are never read); every other step - declared
+        diagonal/permutation or un-keyed - takes one scan here, at plan
+        preparation, cached per step (id-keyed, identity-pinned) instead of
+        once per application. For declared codes the scan reproduces the
+        declaration (guaranteed for every parameter value by the
+        spec-vs-content test); content is always the executable truth.
+        """
+        cached = self._structure_cache.get(id(step))
+        if cached is not None and cached[0] is step:
+            return cached[1]
+        matrix = np.ascontiguousarray(step.matrix, dtype=np.complex128)
+        d = matrix.shape[0]
+        columns = np.empty(d, dtype=np.int64)
+        values = np.empty(d, dtype=np.complex128)
+        if _KERNEL_SPECS.get(step.kernel_key) == _DENSE:
+            code = _DENSE  # declared dense: nothing to extract, no scan
+        else:
+            code = int(_classify_matrix(matrix, columns, values))
+        resolved = (code, columns, values)
+        self._structure_cache[id(step)] = (step, resolved)
+        return resolved
+
+    def apply(self, step: ApplyMatrixStep) -> None:
+        """Apply one plan step - the standard path (key-aware, cached)."""
+        code, columns, values = self._resolve_structure(step)
+        self._state = self._launch_resolved(
+            self.state, step.matrix, step.target_indices, code, columns, values
+        )
+
     def _apply_local(
         self, state: np.ndarray, matrix: np.ndarray, targets: Sequence[int]
     ) -> np.ndarray:
-        """Apply a local matrix to flat ``targets`` via the Numba kernel."""
+        """Apply a bare local matrix - the matrix-only fallback path.
+
+        For callers with no step to carry identity or cache against: the
+        inherited reset path's shift matrices and noise-channel Kraus
+        branches. One `_classify_matrix` scan (the same single rule the
+        standard path uses), then the same resolved kernels.
+        """
+        matrix = np.ascontiguousarray(matrix, dtype=np.complex128)
+        d = matrix.shape[0]
+        columns = np.empty(d, dtype=np.int64)
+        values = np.empty(d, dtype=np.complex128)
+        code = int(_classify_matrix(matrix, columns, values))
+        return self._launch_resolved(state, matrix, targets, code, columns, values)
+
+    def _launch_resolved(
+        self,
+        state: np.ndarray,
+        matrix: np.ndarray,
+        targets: Sequence[int],
+        code: int,
+        columns: np.ndarray,
+        values: np.ndarray,
+    ) -> np.ndarray:
+        """Shared kernel launch for the standard and fallback paths."""
         targets = tuple(targets)
         plan = self._apply_plans.get(targets)
         if plan is None:
             plan = self._build_apply_plan(targets)
             self._apply_plans[targets] = plan
-        offsets, comp_strides, comp_dims, num_cosets, n_chunks = plan
-
         matrix = np.ascontiguousarray(matrix, dtype=np.complex128)
         state = np.ascontiguousarray(state, dtype=np.complex128)
-        if n_chunks <= 1:
-            return _apply_local_serial(
-                state, matrix, offsets, comp_strides, comp_dims, num_cosets
-            )
-        return _apply_local_parallel(
-            state, matrix, offsets, comp_strides, comp_dims, num_cosets, n_chunks
-        )
+        return _run_resolved(state, matrix, plan, code, columns, values)
 
     def _build_apply_plan(self, targets: tuple[int, ...]) -> tuple:
         """Strided-block kernel layout for ``targets`` over the physical dims."""
@@ -799,7 +977,10 @@ class NumbaSVSimulator(NumpySVSimulator):
         cond_clbit: list[int] = []
         cond_value: list[int] = []
         ap_mat_ptr, ap_dim, ap_off_ptr, ap_comp_ptr, ap_comp_len = [], [], [], [], []
+        ap_code = []
         mat_flat, off_flat, comp_stride_flat, comp_dim_flat = [], [], [], []
+        col_flat: list[int] = []
+        val_flat: list[complex] = []
         me_ptr, me_len, me_classical, me_stride, me_dim = [], [], [], [], []
         rs_ptr, rs_len, rs_stride, rs_dim = [], [], [], []
         num_measurements = 0
@@ -824,6 +1005,19 @@ class NumbaSVSimulator(NumpySVSimulator):
                 ap_mat_ptr.append(len(mat_flat))
                 matrix = np.ascontiguousarray(step.matrix, dtype=np.complex128)
                 mat_flat.extend(matrix.ravel().tolist())
+                # Structure resolved once at compile time (declared key or a
+                # single content scan) instead of per gate per shot in-kernel.
+                # col/val ride the same per-gate pointer as the offsets; a
+                # dense gate stores zero padding the kernel never reads.
+                code, columns, values = self._resolve_structure(step)
+                ap_code.append(code)
+                local_dim = offsets.shape[0]
+                if code == _DENSE:
+                    col_flat.extend([0] * local_dim)
+                    val_flat.extend([0j] * local_dim)
+                else:
+                    col_flat.extend(int(c) for c in columns)
+                    val_flat.extend(complex(v) for v in values)
                 ap_off_ptr.append(len(off_flat))
                 off_flat.extend(int(o) for o in offsets)
                 ap_comp_ptr.append(len(comp_stride_flat))
@@ -867,8 +1061,11 @@ class NumbaSVSimulator(NumpySVSimulator):
             i64(ap_off_ptr),
             i64(ap_comp_ptr),
             i64(ap_comp_len),
+            i64(ap_code),
             np.asarray(mat_flat, dtype=np.complex128),
             i64(off_flat),
+            i64(col_flat),
+            np.asarray(val_flat, dtype=np.complex128),
             i64(comp_stride_flat),
             i64(comp_dim_flat),
             i64(me_ptr),
@@ -982,41 +1179,47 @@ def _dm_project_kernel(
 
 
 class NumbaDMSimulator(NumpyDMSimulator):
-    """Density-matrix simulator with Numba-jitted numeric kernels.
+    """Density-matrix simulator with Numba-jitted, key-driven numeric kernels.
 
-    Overrides only the numeric kernels of `NumpyDMSimulator`; ``apply``,
-    ``apply_channel``, ``measure_subsystems``, ``run``, and the fast / per-shot
+    Overrides only the numeric kernels of `NumpyDMSimulator`; strategy
+    selection, ``measure_subsystems``, ``run``, and the fast / per-shot
     orchestration are inherited unchanged and route through the Numba kernels.
     ``reset_subsystems`` stays the inherited NumPy partial-trace channel (see
     the module docstring for why).
+
+    Both a gate and a channel apply as one super-operator pass over
+    ``vec(rho)`` (module docstring); `_resolve_superop` is the density-matrix
+    analog of the statevector `_resolve_structure` - built and classified once
+    per plan step, key-aware for gates, content-scanned for channels.
     """
 
     def __init__(self, name: str = "numba-dm", config: EngineConfig | None = None):
         super().__init__(name, config)
-        # Per-target sandwich layout (ket + bra apply plans over the doubled
-        # bra/ket system) keyed by target tuple. Depends only on targets and the
-        # fixed dims, so it is reused across gates; `initialize` clears it.
-        self._sandwich_plans_cache: dict[tuple[int, ...], tuple] = {}
+        # Per-target super-operator layout (offsets/strides/chunk count over the
+        # doubled bra+ket system), keyed by target tuple. Depends only on
+        # targets and the fixed dims; `initialize` clears it when dims change.
+        self._sandwich_plans: dict[tuple[int, ...], tuple] = {}
+        # Per-step resolved super-operator (matrix/code/columns/values), keyed
+        # by id(step) with the step pinned in the value so a recycled id can
+        # never alias. A property of the step's frozen payload alone - not of
+        # system dims - so `initialize` deliberately does not clear it; the
+        # per-shot dynamic loop re-initializes per trajectory and must keep
+        # its once-per-plan resolutions.
+        self._superop_cache: dict[int, tuple] = {}
 
     def initialize(self, system_dims: Sequence[int], n_clbits: int = 0) -> None:
         super().initialize(system_dims, n_clbits)
-        self._sandwich_plans_cache = {}
+        self._sandwich_plans = {}
 
     def _sandwich_plan(self, targets: tuple[int, ...]) -> tuple:
-        """Single super-operator apply plan for ``targets`` over the doubled dims.
+        """Super-operator apply plan for ``targets`` over the doubled dims.
 
-        The sandwich ``M rho M^dagger`` is the linear map ``(M (x) conj(M))`` on
-        ``vec(rho)`` (row-major, ket = most-significant), so one coset walk with
-        a ``D^2 x D^2`` super-operator replaces the separate ket and bra passes -
-        half the memory traffic and one parallel region per gate, with structure
-        (diagonal / permutation) preserved through the Kronecker product.
-
-        The super-target combines each gate target's ket subsystem (doubled index
-        ``n + t``, stride ``size * prod(dims[:t])``) and bra subsystem (doubled
-        index ``t``, stride ``prod(dims[:t])``), ket group first so the local
-        index is ``ket * D + bra`` - matching ``kron(M, conj(M))``.
+        The super-target combines each gate target's ket subsystem (doubled
+        index ``n + t``, stride ``size * prod(dims[:t])``) and bra subsystem
+        (doubled index ``t``, stride ``prod(dims[:t])``), ket group first so
+        the local index is ``ket * D + bra`` - matching ``kron(M, conj(M))``.
         """
-        plan = self._sandwich_plans_cache.get(targets)
+        plan = self._sandwich_plans.get(targets)
         if plan is None:
             n = len(self._dims)
             doubled_dims = self._dims + self._dims
@@ -1024,40 +1227,78 @@ class NumbaDMSimulator(NumpyDMSimulator):
             plan = _compute_apply_plan(
                 doubled_dims, super_targets, _MIN_SIZE_TO_THREAD_DM
             )
-            self._sandwich_plans_cache[targets] = plan
+            self._sandwich_plans[targets] = plan
         return plan
 
-    def _apply_local_sandwich(
-        self, rho: np.ndarray, matrix: np.ndarray, targets: Sequence[int]
-    ) -> np.ndarray:
-        """Return ``M_T rho M_T^dagger`` via one super-operator coset-walk pass.
+    def _resolve_superop(
+        self, step: ApplyMatrixStep | ApplyChannelStep
+    ) -> tuple[np.ndarray, int, np.ndarray, np.ndarray]:
+        """Build and classify a step's super-operator once per plan.
 
-        Applies ``kron(M, conj(M))`` to ``vec(rho)`` **in place** when ``rho`` is
-        a contiguous ``complex128`` buffer (the common case - ``self.state``):
-        the returned array aliases the input, and no per-gate copy of the ``4^n``
-        matrix is made.
+        For a gate the super-operator is ``kron(M, conj(M))``; its declared
+        identity transfers because the Kronecker product preserves structure,
+        so a kernel_key declared ``_DENSE`` skips the scan (dense handles any
+        matrix) and every other gate - declared diagonal/permutation or
+        un-keyed - takes one `_classify_matrix` scan of the super-operator.
+        A channel's ``sum_i kron(K_i, conj(K_i))`` carries no key and is
+        always scanned: the scan is what lets a diagonal channel (phase
+        damping) reach the diagonal kernel. Cached per step (id-keyed,
+        identity-pinned), so the per-shot loop resolves each step once per
+        plan, not once per trajectory.
         """
-        targets = tuple(targets)
-        m = np.ascontiguousarray(matrix, dtype=np.complex128)
-        superop = np.ascontiguousarray(np.kron(m, m.conj()))
+        cached = self._superop_cache.get(id(step))
+        if cached is not None and cached[0] is step:
+            return cached[1]
+        if isinstance(step, ApplyMatrixStep):
+            m = np.ascontiguousarray(step.matrix, dtype=np.complex128)
+            superop = np.kron(m, m.conj())
+            declared_dense = _KERNEL_SPECS.get(step.kernel_key) == _DENSE
+        else:
+            superop = sum(np.kron(k, np.conjugate(k)) for k in step.kraus_ops)
+            superop = np.ascontiguousarray(superop, dtype=np.complex128)
+            declared_dense = False
+        d = superop.shape[0]
+        columns = np.empty(d, dtype=np.int64)
+        values = np.empty(d, dtype=np.complex128)
+        if declared_dense:
+            code = _DENSE  # declared dense: nothing to extract, no scan
+        else:
+            code = int(_classify_matrix(superop, columns, values))
+        resolved = (superop, code, columns, values)
+        self._superop_cache[id(step)] = (step, resolved)
+        return resolved
+
+    def _apply_superop(self, step: ApplyMatrixStep | ApplyChannelStep) -> None:
+        """One resolved super-operator pass over ``vec(rho)``, in place.
+
+        ``self.state`` is contiguous ``complex128`` by construction, so the
+        flat view aliases it and no per-step copy of the ``4^n`` matrix is
+        made.
+        """
+        superop, code, columns, values = self._resolve_superop(step)
+        rho = self.state
         flat = np.ascontiguousarray(rho, dtype=np.complex128).reshape(-1)
-        _run_apply(flat, superop, self._sandwich_plan(targets))
-        return flat.reshape(rho.shape)
+        _run_resolved(
+            flat,
+            superop,
+            self._sandwich_plan(tuple(step.target_indices)),
+            code,
+            columns,
+            values,
+        )
+        self._state = flat.reshape(rho.shape)
+
+    def apply(self, step: ApplyMatrixStep) -> None:
+        """Apply one gate - key-aware super-operator pass (cached per step)."""
+        self._apply_superop(step)
 
     def apply_channel(self, step: ApplyChannelStep, rng: np.random.Generator) -> None:
-        """Apply the exact Kraus sum ``rho' = sum_i K_i rho K_i^dagger``.
+        """Apply the exact Kraus sum as one super-operator pass.
 
-        The whole channel is the single super-operator ``sum_i kron(K_i,
-        conj(K_i))`` on ``vec(rho)``, applied in one in-place pass - no per-term
-        copies. Deterministic; no randomness is consumed (``rng`` is accepted for
+        Deterministic; no randomness is consumed (``rng`` is accepted for
         interface parity, like reset).
         """
-        targets = tuple(step.target_indices)
-        superop = sum(np.kron(k, np.asarray(k).conj()) for k in step.kraus_ops)
-        superop = np.ascontiguousarray(superop, dtype=np.complex128)
-        flat = np.ascontiguousarray(self.state, dtype=np.complex128).reshape(-1)
-        _run_apply(flat, superop, self._sandwich_plan(targets))
-        self._state = flat.reshape(self.state.shape)
+        self._apply_superop(step)
 
     def probabilities(self) -> np.ndarray:
         return _dm_probabilities_kernel(np.ascontiguousarray(self.state))
