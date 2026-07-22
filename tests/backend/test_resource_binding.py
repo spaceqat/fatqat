@@ -9,7 +9,7 @@ from fatqat.backends.resource_binding import BoundResource
 from fatqat.backends.simulator_backend import _break_grouped_operations
 from fatqat.errors import BackendValidationError
 from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
-from fatqat.program import AppliedOperation, Program
+from fatqat.program import Program
 from fatqat.registers import GridRegister
 
 
