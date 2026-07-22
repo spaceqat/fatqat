@@ -13,6 +13,7 @@ from fatqat.backends.resource_binding import (
     _scalar_identity_binder,
 )
 from fatqat.errors import BackendValidationError, UnsupportedResourceOperandError
+from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
 from fatqat.program import Program
 from fatqat.registers import GridRegister
 
@@ -117,4 +118,36 @@ def test_lower_without_binding_argument_builds_its_own():
     backend = SimulatorBackend()
     layout = backend.resolve_layout(p)
     plan, _facts = backend._lower(p, layout)
+    assert plan[0].target_indices == (0, 1)
+
+
+def test_lower_uses_device_label_for_lookup_and_engine_index_for_step():
+    """Regression test for the device_labels/engine_indices swap risk flagged
+    in review: every existing test binds identity (device_label ==
+    engine_index numerically), so a swap at either `_lower` call site would
+    go undetected. Here the two deliberately differ: the implementation map
+    only has a rule keyed by the *device labels* (99, 100), not by the
+    *engine indices* (0, 1), so `_lower` only succeeds at all if
+    `_implementation_for` is called with device labels. The resulting
+    `ApplyMatrixStep.target_indices` must then be the engine indices, not the
+    device labels that were used for the lookup.
+    """
+    p = Program(2)
+    p.add(ops.CZ, (0, 1))
+    layout = SimulatorBackend().resolve_layout(p)
+
+    cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
+    impl_map = ImplementationMap()
+    impl_map.add(ops.CZ, cz_rule, device_operands=(99, 100))
+    backend = SimulatorBackend(implementation_map=impl_map)
+
+    q0, q1 = p.qreg[0][0], p.qreg[0][1]
+    mismatched = {
+        q0: BoundResource(ref=q0, engine_index=0, device_label=99),
+        q1: BoundResource(ref=q1, engine_index=1, device_label=100),
+    }
+    binding = ResourceBinding([lambda t, l: mismatched[t]])
+
+    plan, _facts = backend._lower(p, layout, binding)
+
     assert plan[0].target_indices == (0, 1)
