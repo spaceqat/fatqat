@@ -785,6 +785,12 @@ class SimulatorBackend:
                         matrix=matrix,
                         target_indices=engine_indices,
                         condition=cond,
+                        # Identity, not mechanics: the backend forwards which
+                        # implementation was selected; the engine alone decides
+                        # what (if anything) that means for kernel choice.
+                        kernel_key=rule._kernel_key(
+                            step.operation, targets=step.targets
+                        ),
                     )
                 )
 
@@ -811,13 +817,6 @@ class SimulatorBackend:
                             kraus_ops=kraus_ops,
                             target_indices=engine_indices,
                             condition=cond,
-                            # Identity, not mechanics: the backend forwards
-                            # which implementation was selected; the engine
-                            # alone decides what (if anything) that means for
-                            # kernel choice.
-                            kernel_key=rule._kernel_key(
-                                step.operation, targets=emitted_refs
-                            ),
                         )
                     )
 

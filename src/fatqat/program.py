@@ -233,10 +233,12 @@ class Program:
     def add(
         self,
         op: Operation,
-        targets: int
-        | RegisterRef
-        | RegisterView
-        | tuple[int | RegisterRef | RegisterView, ...],
+        targets: (
+            int
+            | RegisterRef
+            | RegisterView
+            | tuple[int | RegisterRef | RegisterView, ...]
+        ),
         *,
         condition=None,
     ) -> None:

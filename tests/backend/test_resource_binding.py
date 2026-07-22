@@ -25,7 +25,6 @@ from fatqat.registers import (
     RowSelector,
 )
 
-
 # --- test-only view binder ----------------------------------------------------
 #
 # Task 6 (FakeAtomGridBackend's grid binder) is what will resolve a real
@@ -54,9 +53,7 @@ def _view_member_refs(view):
         return [reg[r * reg.cols + sel.col] for r in range(reg.rows)]
     if isinstance(sel, BlockSelector):
         (r0, r1), (c0, c1) = sel.rows, sel.cols
-        return [
-            reg[r * reg.cols + c] for r in range(r0, r1) for c in range(c0, c1)
-        ]
+        return [reg[r * reg.cols + c] for r in range(r0, r1) for c in range(c0, c1)]
     raise AssertionError(f"unhandled selector {sel!r}")
 
 

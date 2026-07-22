@@ -98,7 +98,9 @@ def test_applied_operation_view_bearing_skips_duplicate_and_validate_hook():
 
         def validate_targets(self, targets):
             calls.append(targets)
-            raise AssertionError("validate_targets must not run for view-bearing targets")
+            raise AssertionError(
+                "validate_targets must not run for view-bearing targets"
+            )
 
     # Same view repeated: would trip today's duplicate-ref loop if it ran
     # against a scalar RegisterRef, but must not be evaluated at all here.

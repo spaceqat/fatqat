@@ -127,7 +127,7 @@ def _validate_range(value: Any, limit: int, label: str) -> tuple[int, int]:
             raise TypeError(
                 f"{label} {part_name} must be int, got {type(part_value)!r}"
             )
-    if not (0 <= start < stop <= limit):
+    if not 0 <= start < stop <= limit:
         raise ValueError(
             f"{label} range must satisfy 0 <= start < stop <= {limit}, "
             f"got ({start}, {stop})"
