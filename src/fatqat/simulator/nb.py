@@ -68,12 +68,6 @@ from numba import get_num_threads, njit, prange
 
 from ..backends.engine_contract import _EngineConfig as EngineConfig, RawResult
 from ..backends.steps import (
-    ApplyMatrixStep,
-    BuiltinKernelKey,
-    MeasurementStep,
-    ResetStep,
-)
-from ..backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
     BuiltinKernelKey,
@@ -179,12 +173,27 @@ def _run_resolved(
     offsets, comp_strides, comp_dims, num_cosets, n_chunks = plan
     if n_chunks <= 1:
         return _apply_resolved_serial(
-            state, code, matrix, columns, values, offsets, comp_strides, comp_dims,
+            state,
+            code,
+            matrix,
+            columns,
+            values,
+            offsets,
+            comp_strides,
+            comp_dims,
             num_cosets,
         )
     return _apply_resolved_parallel(
-        state, code, matrix, columns, values, offsets, comp_strides, comp_dims,
-        num_cosets, n_chunks,
+        state,
+        code,
+        matrix,
+        columns,
+        values,
+        offsets,
+        comp_strides,
+        comp_dims,
+        num_cosets,
+        n_chunks,
     )
 
 
@@ -226,67 +235,6 @@ def _classify_matrix(
         if column != r:
             is_diagonal = False
     return _DIAGONAL if is_diagonal else _PERMUTATION
-
-
-# Declared structure per canonical gate identity: the key-to-kernel table.
-# Which gates share a kernel is decided HERE, per engine - never in the key.
-#
-# How kernel selection flows (one classifier, one kernel family):
-#   standard path   apply(step) -> _resolve_structure(step): a key declared
-#                   _DENSE skips the scan entirely; everything else takes ONE
-#                   `_classify_matrix` scan at plan preparation, cached per
-#                   step - never per application, never per shot.
-#   fallback path   _apply_local(state, matrix, targets): matrix-only callers
-#                   (reset shifts, noise Kraus branches) - the same single
-#                   `_classify_matrix` scan, then the same resolved kernels.
-#   fused path      _compile_dynamic_plan bakes each gate's resolved code into
-#                   the plan arrays, so the shots kernel never classifies.
-#
-# An entry may claim _DIAGONAL or _PERMUTATION only if that structure holds
-# for EVERY parameter value of the gate (RZ is diagonal for all theta); a
-# parametric gate whose structure varies claims _DENSE, which is always safe
-# (RX at theta=pi happens to be a permutation, but _DENSE stays correct).
-# The spec-vs-content test in test_kernel_dispatch.py enforces agreement
-# with `_classify_matrix` over the whole default map.
-_K = BuiltinKernelKey
-_KERNEL_SPECS: dict[BuiltinKernelKey, int] = {
-    # diagonal for every parameter value
-    _K.I: _DIAGONAL,
-    _K.Z: _DIAGONAL,
-    _K.S: _DIAGONAL,
-    _K.SDG: _DIAGONAL,
-    _K.T: _DIAGONAL,
-    _K.TDG: _DIAGONAL,
-    _K.CZ: _DIAGONAL,
-    _K.CS: _DIAGONAL,
-    _K.RZ: _DIAGONAL,
-    _K.PHASE: _DIAGONAL,
-    _K.CPHASE: _DIAGONAL,
-    _K.CLOCK: _DIAGONAL,
-    _K.CCLOCK: _DIAGONAL,
-    _K.SUBSPACE_RZ: _DIAGONAL,
-    # exactly one nonzero per row, for every parameter value
-    _K.X: _PERMUTATION,
-    _K.Y: _PERMUTATION,
-    _K.CX: _PERMUTATION,
-    _K.CY: _PERMUTATION,
-    _K.SWAP: _PERMUTATION,
-    _K.ISWAP: _PERMUTATION,
-    _K.CCX: _PERMUTATION,
-    _K.CSWAP: _PERMUTATION,
-    _K.SHIFT: _PERMUTATION,
-    _K.SUM: _PERMUTATION,
-    _K.SWAP_LEVELS: _PERMUTATION,
-    # generically dense
-    _K.H: _DENSE,
-    _K.SX: _DENSE,
-    _K.RX: _DENSE,
-    _K.RY: _DENSE,
-    _K.FOURIER: _DENSE,
-    _K.FOURIERDG: _DENSE,
-    _K.SUBSPACE_RX: _DENSE,
-    _K.SUBSPACE_RY: _DENSE,
-}
 
 
 # Declared structure per canonical gate identity: the key-to-kernel table.
@@ -456,10 +404,7 @@ def _dispatch_range(
 @njit(cache=True)
 def _apply_resolved_serial(
     state, code, matrix, columns, values, offsets, comp_strides, comp_dims, num_cosets
-def _apply_resolved_serial(
-    state, code, matrix, columns, values, offsets, comp_strides, comp_dims, num_cosets
 ) -> np.ndarray:  # pragma: no cover - compiled by Numba
-    """Single-threaded application of an already-classified gate."""
     """Single-threaded application of an already-classified gate."""
     _dispatch_range(
         state,
@@ -488,19 +433,7 @@ def _apply_resolved_parallel(
     comp_dims,
     num_cosets,
     n_chunks,
-def _apply_resolved_parallel(
-    state,
-    code,
-    matrix,
-    columns,
-    values,
-    offsets,
-    comp_strides,
-    comp_dims,
-    num_cosets,
-    n_chunks,
 ) -> np.ndarray:  # pragma: no cover - compiled by Numba
-    """Parallel application of an already-classified gate over coset chunks."""
     """Parallel application of an already-classified gate over coset chunks."""
     for chunk in prange(n_chunks):  # pylint: disable=not-an-iterable
         start = chunk * num_cosets // n_chunks
@@ -683,23 +616,14 @@ def _apply_step(
     ap_comp_ptr,
     ap_comp_len,
     ap_code,
-    ap_code,
     mat_flat,
     off_flat,
-    col_flat,
-    val_flat,
     col_flat,
     val_flat,
     comp_stride_flat,
     comp_dim_flat,
     size,
 ) -> None:  # pragma: no cover - compiled by Numba
-    """Apply compiled gate ``a`` to ``state`` in place (serial coset walk).
-
-    Structure (``ap_code``/columns/values) was resolved when the plan was
-    compiled - by declared kernel key or one content scan - so no per-shot
-    classification happens here.
-    """
     """Apply compiled gate ``a`` to ``state`` in place (serial coset walk).
 
     Structure (``ap_code``/columns/values) was resolved when the plan was
@@ -713,9 +637,6 @@ def _apply_step(
     offsets = off_flat[off_start : off_start + d]
     comp_start = ap_comp_ptr[a]
     comp_end = comp_start + ap_comp_len[a]
-    columns = col_flat[off_start : off_start + d]
-    values = val_flat[off_start : off_start + d]
-    code = ap_code[a]
     columns = col_flat[off_start : off_start + d]
     values = val_flat[off_start : off_start + d]
     code = ap_code[a]
@@ -787,12 +708,9 @@ def _run_shots_kernel(
     ap_comp_ptr,  # start of the complement strides/dims in comp_*_flat
     ap_comp_len,  # number of complement (non-target) subsystems
     ap_code,  # structure code per gate, resolved at compile time
-    ap_code,  # structure code per gate, resolved at compile time
     # gate flat backing
     mat_flat,  # concatenated row-major gate matrices (complex128)
     off_flat,  # concatenated local-index -> flat-offset tables
-    col_flat,  # per-row nonzero columns (aligned with off_flat; 0-pad if dense)
-    val_flat,  # per-row nonzero values (aligned with off_flat; 0-pad if dense)
     col_flat,  # per-row nonzero columns (aligned with off_flat; 0-pad if dense)
     val_flat,  # per-row nonzero values (aligned with off_flat; 0-pad if dense)
     comp_stride_flat,  # concatenated complement strides
@@ -862,11 +780,8 @@ def _run_shots_kernel(
                     ap_comp_ptr,
                     ap_comp_len,
                     ap_code,
-                    ap_code,
                     mat_flat,
                     off_flat,
-                    col_flat,
-                    val_flat,
                     col_flat,
                     val_flat,
                     comp_stride_flat,
@@ -968,69 +883,9 @@ class NumbaSVSimulator(NumpySVSimulator):
             self.state, step.matrix, step.target_indices, code, columns, values
         )
 
-    def _resolve_structure(
-        self, step: ApplyMatrixStep
-    ) -> tuple[int, np.ndarray, np.ndarray]:
-        """Resolve a step's kernel structure once: the standard-path front end.
-
-        `_classify_matrix` is the single classification rule. A kernel_key
-        declared ``_DENSE`` skips the scan entirely (dense handles any matrix
-        and its columns/values are never read); every other step - declared
-        diagonal/permutation or un-keyed - takes one scan here, at plan
-        preparation, cached per step (id-keyed, identity-pinned) instead of
-        once per application. For declared codes the scan reproduces the
-        declaration (guaranteed for every parameter value by the
-        spec-vs-content test); content is always the executable truth.
-        """
-        cached = self._structure_cache.get(id(step))
-        if cached is not None and cached[0] is step:
-            return cached[1]
-        matrix = np.ascontiguousarray(step.matrix, dtype=np.complex128)
-        d = matrix.shape[0]
-        columns = np.empty(d, dtype=np.int64)
-        values = np.empty(d, dtype=np.complex128)
-        if _KERNEL_SPECS.get(step.kernel_key) == _DENSE:
-            code = _DENSE  # declared dense: nothing to extract, no scan
-        else:
-            code = int(_classify_matrix(matrix, columns, values))
-        resolved = (code, columns, values)
-        self._structure_cache[id(step)] = (step, resolved)
-        return resolved
-
-    def apply(self, step: ApplyMatrixStep) -> None:
-        """Apply one plan step - the standard path (key-aware, cached)."""
-        code, columns, values = self._resolve_structure(step)
-        self._state = self._launch_resolved(
-            self.state, step.matrix, step.target_indices, code, columns, values
-        )
-
     def _apply_local(
         self, state: np.ndarray, matrix: np.ndarray, targets: Sequence[int]
     ) -> np.ndarray:
-        """Apply a bare local matrix - the matrix-only fallback path.
-
-        For callers with no step to carry identity or cache against: the
-        inherited reset path's shift matrices and noise-channel Kraus
-        branches. One `_classify_matrix` scan (the same single rule the
-        standard path uses), then the same resolved kernels.
-        """
-        matrix = np.ascontiguousarray(matrix, dtype=np.complex128)
-        d = matrix.shape[0]
-        columns = np.empty(d, dtype=np.int64)
-        values = np.empty(d, dtype=np.complex128)
-        code = int(_classify_matrix(matrix, columns, values))
-        return self._launch_resolved(state, matrix, targets, code, columns, values)
-
-    def _launch_resolved(
-        self,
-        state: np.ndarray,
-        matrix: np.ndarray,
-        targets: Sequence[int],
-        code: int,
-        columns: np.ndarray,
-        values: np.ndarray,
-    ) -> np.ndarray:
-        """Shared kernel launch for the standard and fallback paths."""
         """Apply a bare local matrix - the matrix-only fallback path.
 
         For callers with no step to carry identity or cache against: the
@@ -1123,10 +978,7 @@ class NumbaSVSimulator(NumpySVSimulator):
         cond_value: list[int] = []
         ap_mat_ptr, ap_dim, ap_off_ptr, ap_comp_ptr, ap_comp_len = [], [], [], [], []
         ap_code = []
-        ap_code = []
         mat_flat, off_flat, comp_stride_flat, comp_dim_flat = [], [], [], []
-        col_flat: list[int] = []
-        val_flat: list[complex] = []
         col_flat: list[int] = []
         val_flat: list[complex] = []
         me_ptr, me_len, me_classical, me_stride, me_dim = [], [], [], [], []
@@ -1153,19 +1005,6 @@ class NumbaSVSimulator(NumpySVSimulator):
                 ap_mat_ptr.append(len(mat_flat))
                 matrix = np.ascontiguousarray(step.matrix, dtype=np.complex128)
                 mat_flat.extend(matrix.ravel().tolist())
-                # Structure resolved once at compile time (declared key or a
-                # single content scan) instead of per gate per shot in-kernel.
-                # col/val ride the same per-gate pointer as the offsets; a
-                # dense gate stores zero padding the kernel never reads.
-                code, columns, values = self._resolve_structure(step)
-                ap_code.append(code)
-                local_dim = offsets.shape[0]
-                if code == _DENSE:
-                    col_flat.extend([0] * local_dim)
-                    val_flat.extend([0j] * local_dim)
-                else:
-                    col_flat.extend(int(c) for c in columns)
-                    val_flat.extend(complex(v) for v in values)
                 # Structure resolved once at compile time (declared key or a
                 # single content scan) instead of per gate per shot in-kernel.
                 # col/val ride the same per-gate pointer as the offsets; a
@@ -1223,11 +1062,8 @@ class NumbaSVSimulator(NumpySVSimulator):
             i64(ap_comp_ptr),
             i64(ap_comp_len),
             i64(ap_code),
-            i64(ap_code),
             np.asarray(mat_flat, dtype=np.complex128),
             i64(off_flat),
-            i64(col_flat),
-            np.asarray(val_flat, dtype=np.complex128),
             i64(col_flat),
             np.asarray(val_flat, dtype=np.complex128),
             i64(comp_stride_flat),
@@ -1287,8 +1123,7 @@ def _dm_probabilities_kernel(
     total = 0.0
     for i in range(size):
         value = rho[i, i].real
-        if value < 0.0:
-            value = 0.0
+        value = max(value, 0.0)
         probabilities[i] = value
         total += value
     if total > 0.0:
@@ -1444,8 +1279,12 @@ class NumbaDMSimulator(NumpyDMSimulator):
         rho = self.state
         flat = np.ascontiguousarray(rho, dtype=np.complex128).reshape(-1)
         _run_resolved(
-            flat, superop, self._sandwich_plan(tuple(step.target_indices)),
-            code, columns, values,
+            flat,
+            superop,
+            self._sandwich_plan(tuple(step.target_indices)),
+            code,
+            columns,
+            values,
         )
         self._state = flat.reshape(rho.shape)
 
