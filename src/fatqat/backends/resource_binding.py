@@ -15,12 +15,15 @@ claims the target.
 This module holds the binder registry (`ResourceBinding`) plus the one binder
 every backend needs: `_scalar_identity_binder`, which resolves a plain
 `RegisterRef` to identical engine-index/device-label values and declines
-everything else (in particular, every `RegisterView` - no binder in this
-phase claims one). It is named with a leading underscore because the binder
-registry is internal/protected in this phase (no public registration API),
-but it is still meant to be imported and reused as-is by a later backend that
-needs to install it *after* a resource-specific binder of its own (e.g. a
-grid binder tried first, falling back to this one for plain scalar refs).
+everything else (in particular, every `RegisterView` - `_scalar_identity_binder`
+itself never claims one). A backend-specific binder installed ahead of it may
+still claim a `RegisterView` (e.g. `FakeAtomGridBackend`'s grid binder, which
+resolves a `RegisterView` over a bound `GridRegister` to its member sites). It
+is named with a leading underscore because the binder registry is
+internal/protected in this phase (no public registration API), but it is
+still meant to be imported and reused as-is by a later backend that needs to
+install it *after* a resource-specific binder of its own (e.g. a grid binder
+tried first, falling back to this one for plain scalar refs).
 """
 
 from __future__ import annotations
@@ -80,8 +83,8 @@ def _scalar_identity_binder(
     """Resolve a scalar `RegisterRef` to identity engine-index/device-label.
 
     Declines (returns `None`) for anything that is not a `RegisterRef` - in
-    particular, a `RegisterView`, which no binder claims in this task's
-    scope.
+    particular, every `RegisterView`. This binder never claims a view; a
+    backend-specific binder installed ahead of it (e.g. a grid binder) may.
     """
     if not isinstance(target, RegisterRef):
         return None
