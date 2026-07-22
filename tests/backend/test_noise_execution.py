@@ -316,6 +316,46 @@ def test_validate_noise_rejects_unknown_channel_and_qubit_noise_and_reset():
     assert len(report.warnings) == 3
 
 
+# --- validate_for: run() direct-raise strict selector-identity validation ---
+
+
+def test_run_rejects_foreign_logical_gate_selector_directly():
+    program = _x_program()
+    foreign = fq.QuantumRegister(1, name="q")
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(foreign[0],))
+    backend = SimulatorBackend(noise=noise)
+
+    with pytest.raises(BackendValidationError):
+        backend.run(program)
+
+
+def test_run_rejects_unmapped_physical_gate_label_directly():
+    # (99,) on a three-subsystem generic-simulator program: not a member of
+    # the effective layout's device labels for this run.
+    program = fq.Program(3)
+    program.add(fq.ops.H, 0)
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(99,))
+    backend = SimulatorBackend(noise=noise)
+
+    with pytest.raises(BackendValidationError):
+        backend.run(program)
+
+
+def test_run_succeeds_when_valid_gate_selector_matches_no_occurrence():
+    # A valid selector (real device label) that the program never triggers
+    # is a permitted no-effect entry, not a validation error.
+    program = fq.Program(3)
+    program.add(fq.ops.H, 0)
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.Y, Depolarizing(p=0.1), targets=(2,))  # no Y in program
+    backend = SimulatorBackend(noise=noise)
+
+    result = backend.run(program).result()
+    assert result is not None
+
+
 def test_numba_simulator_falls_back_correctly_on_channel_plans():
     # The fused numba dynamic kernel only understands matrix/measure/reset
     # steps; a channel-bearing plan must take the inherited NumPy per-shot

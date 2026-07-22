@@ -39,8 +39,10 @@ from typing import Any
 
 import numpy as np
 
+from ..errors import BackendValidationError
 from ..implementation.base import _resolve_operation_class
 from ..operations import BarrierGate, Operation
+from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView
 from ..resource_layout import ResourceLayout
 from .base import Channel
@@ -301,6 +303,76 @@ class NoiseModel:
                 if device_label == selector:
                     specific = matrix
         return specific if specific is not None else fallback
+
+    def validate_for(self, program: Program, resource_layout: ResourceLayout) -> None:
+        """Validate every stored selector's identity legality for one run.
+
+        This checks selector-identity legality only, not selector firing: a
+        valid selector that matches no gate occurrence (or, for readout,
+        names a subsystem that is never measured) is a permitted no-effect
+        entry, not a validation error. A logical selector is legal when every
+        ref it names belongs to ``program``'s quantum registers; a physical
+        selector is legal when every label it names is a member of
+        ``resource_layout.device_labels`` - the run's effective layout, which
+        already establishes that a label denotes a legal, occupied device
+        resource. Both stored shapes are checked: tuple gate-channel
+        selectors and scalar readout selectors are validated independently,
+        not through a shared representation.
+
+        Args:
+            program: The program this run will execute; defines the legal
+                logical `RegisterRef` space.
+            resource_layout: The run's effective resource layout; defines the
+                legal physical device-label space.
+
+        Raises:
+            BackendValidationError: If any stored selector names a
+                `RegisterRef` foreign to ``program`` or a device label absent
+                from ``resource_layout.device_labels``.
+        """
+        program_refs = frozenset(
+            ref
+            for register in program.qreg
+            for ref in (register[i] for i in range(register.size))
+        )
+        device_labels = resource_layout.device_labels
+
+        for entries in self._gate_channels.values():
+            for selector, _channels in entries:
+                if selector is None:
+                    continue
+                if _is_logical_selector(selector):
+                    for ref in selector:
+                        if ref not in program_refs:
+                            raise BackendValidationError(
+                                "noise selector names a RegisterRef that is "
+                                f"not part of this program: {ref!r}"
+                            )
+                else:
+                    for label in selector:
+                        if label not in device_labels:
+                            raise BackendValidationError(
+                                "noise selector names a device resource "
+                                f"label not in the effective resource "
+                                f"layout: {label!r}"
+                            )
+
+        for selector, _matrix in self._readout_errors:
+            if selector is None:
+                continue
+            if isinstance(selector, RegisterRef):
+                if selector not in program_refs:
+                    raise BackendValidationError(
+                        "readout-error selector names a RegisterRef that is "
+                        f"not part of this program: {selector!r}"
+                    )
+            else:
+                if selector not in device_labels:
+                    raise BackendValidationError(
+                        "readout-error selector names a device resource "
+                        f"label not in the effective resource layout: "
+                        f"{selector!r}"
+                    )
 
     def has_readout_error(self) -> bool:
         """Return whether any readout-error entry is registered."""

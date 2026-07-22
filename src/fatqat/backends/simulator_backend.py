@@ -514,6 +514,12 @@ class SimulatorBackend:
         # either value.
         resource_layout = self._resolve_resource_layout(program)
         engine = self._allocate_engine(program)
+        # Strict selector-identity validation runs immediately after the
+        # effective resource layout is known and before any lowering/plan
+        # step is built, on this same direct-raise path: a foreign ref or
+        # unmapped device label fails run() directly rather than being
+        # silently skipped in channels_for()/readout_error_for() matching.
+        self._noise_model.validate_for(program, resource_layout)
         context = _LoweringContext(resource_layout=resource_layout, engine=engine)
         plan, facts = self._lower_program(program, context=context)
         self._validate(config, shots, facts)

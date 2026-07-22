@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+from fatqat.errors import BackendValidationError
 from fatqat.noise import Depolarizing, NoiseModel, PhaseDamping
 from fatqat.operations import ResetGate
 from fatqat.registers import GridRegister
@@ -285,3 +286,88 @@ def test_readout_error_validation():
     # ints and strings are both legal device-resource labels.
     noise.add_readout_error(_C_MILD, target=-1)
     noise.add_readout_error(_C_MILD, target="q0")
+
+
+# --- validate_for: strict run-time selector-identity legality ---
+#
+# validate_for() checks identity legality (does the ref/label denote
+# something real for this program/layout), never occurrence matching (does
+# any gate/measurement actually use it). Both stored shapes - tuple gate
+# selectors and scalar readout selectors - must be checked.
+
+
+def _three_qubit_program_and_layout():
+    program = fq.Program(3)
+    layout = _resource_layout_for(program)
+    return program, layout
+
+
+def test_validate_for_accepts_valid_selectors_that_match_no_occurrence():
+    # A valid ref/label with no matching gate occurrence or measurement is a
+    # permitted no-effect entry, not a validation error.
+    program, layout = _three_qubit_program_and_layout()
+    q = program.qreg[0]
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(q[0],))  # no X in program
+    noise.add_noise(fq.ops.Y, Depolarizing(p=0.1), targets=(2,))  # no Y in program
+    noise.add_readout_error(_C_MILD, target=q[1])  # never measured
+    noise.add_readout_error(_C_MILD, target=2)  # never measured
+
+    noise.validate_for(program, layout)  # must not raise
+
+
+def test_validate_for_rejects_foreign_logical_gate_selector():
+    program, layout = _three_qubit_program_and_layout()
+    foreign = fq.QuantumRegister(3, name="q")
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(foreign[0],))
+
+    with pytest.raises(BackendValidationError):
+        noise.validate_for(program, layout)
+
+
+def test_validate_for_rejects_foreign_logical_readout_selector():
+    program, layout = _three_qubit_program_and_layout()
+    foreign = fq.QuantumRegister(3, name="q")
+    noise = NoiseModel()
+    noise.add_readout_error(_C_MILD, target=foreign[0])
+
+    with pytest.raises(BackendValidationError):
+        noise.validate_for(program, layout)
+
+
+def test_validate_for_rejects_unmapped_physical_gate_label():
+    # The (99,) case from the spec: not a member of the effective layout's
+    # device labels for this three-subsystem generic-simulator program.
+    program, layout = _three_qubit_program_and_layout()
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(99,))
+
+    with pytest.raises(BackendValidationError):
+        noise.validate_for(program, layout)
+
+
+def test_validate_for_rejects_unmapped_physical_readout_label():
+    program, layout = _three_qubit_program_and_layout()
+    noise = NoiseModel()
+    noise.add_readout_error(_C_MILD, target=99)
+
+    with pytest.raises(BackendValidationError):
+        noise.validate_for(program, layout)
+
+
+def test_validate_for_checks_both_stored_selector_shapes_in_one_model():
+    # A gate selector (tuple-shaped) and a readout selector (scalar-shaped)
+    # are stored differently; both must be validated, not just one.
+    program, layout = _three_qubit_program_and_layout()
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(99,))
+    noise.add_readout_error(_C_MILD, target=99)
+
+    with pytest.raises(BackendValidationError):
+        noise.validate_for(program, layout)
+
+
+def test_validate_for_accepts_noise_free_model():
+    program, layout = _three_qubit_program_and_layout()
+    NoiseModel().validate_for(program, layout)  # must not raise
