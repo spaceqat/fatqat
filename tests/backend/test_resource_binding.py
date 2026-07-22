@@ -14,7 +14,8 @@ from fatqat.backends.resource_binding import (
 )
 from fatqat.errors import BackendValidationError, UnsupportedResourceOperandError
 from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
-from fatqat.program import Program
+from fatqat.operations import Measurement
+from fatqat.program import AppliedOperation, Program
 from fatqat.registers import (
     AllSelector,
     BlockSelector,
@@ -340,3 +341,121 @@ def test_every_emitted_step_inherits_the_source_condition():
     expected_cond = ((layout.clbit_index(p.clreg[0][0]), 1),)
     assert all(s.condition == expected_cond for s in steps)
     assert all(s.condition is not None for s in steps)
+
+
+# --- _break_grouped_operations pre-lowering pass ------------------------------
+
+
+def test_break_grouped_operations_passes_scalar_only_instructions_unchanged():
+    # A scalar-only program: every instruction passes through identically
+    # (same objects, 1:1, order preserved), no expansion.
+    p = Program(2, 2)
+    p.add(ops.RX(0.3), 1)
+    p.add(ops.CZ, (0, 1))
+    p.add_measurement(0, 0)
+    backend = SimulatorBackend()
+    layout = backend.resolve_layout(p)
+    binding = backend._create_resource_binding(p, layout)
+    broken = backend._break_grouped_operations(p, layout, binding)
+    assert broken == list(p.operations)
+    assert all(a is b for a, b in zip(broken, p.operations))
+
+
+def test_break_grouped_operations_passes_measurement_through():
+    p = Program(1, 1)
+    p.add_measurement(0, 0)
+    backend = SimulatorBackend()
+    layout = backend.resolve_layout(p)
+    binding = backend._create_resource_binding(p, layout)
+    broken = backend._break_grouped_operations(p, layout, binding)
+    assert len(broken) == 1
+    assert isinstance(broken[0], Measurement)
+    assert broken[0] is p.operations[0]
+
+
+def test_break_grouped_operations_expands_viewed_rotation_in_order():
+    atoms = GridRegister(2, 3, name="atoms")
+    p = Program([atoms])
+    p.add(ops.RX(0.3), atoms.row(0))  # members: atoms[0], atoms[1], atoms[2]
+    backend = SimulatorBackend()
+    layout = backend.resolve_layout(p)
+    broken = backend._break_grouped_operations(p, layout, _view_binding())
+    assert len(broken) == 3
+    assert all(isinstance(op, AppliedOperation) for op in broken)
+    assert [op.targets for op in broken] == [
+        (atoms[0],),
+        (atoms[1],),
+        (atoms[2],),
+    ]
+    assert all(op.operation is p.operations[0].operation for op in broken)
+
+
+def test_break_grouped_operations_zips_paired_cx_view_in_order():
+    atoms = GridRegister(2, 2, name="atoms")
+    p = Program([atoms])
+    # control = row 0 (atoms[0], atoms[1]); target = row 1 (atoms[2], atoms[3])
+    p.add(ops.CX, (atoms.row(0), atoms.row(1)))
+    backend = SimulatorBackend()
+    layout = backend.resolve_layout(p)
+    broken = backend._break_grouped_operations(p, layout, _view_binding())
+    assert [op.targets for op in broken] == [
+        (atoms[0], atoms[2]),
+        (atoms[1], atoms[3]),
+    ]
+
+
+def test_break_grouped_operations_preserves_condition():
+    atoms = GridRegister(2, 2, name="atoms")
+    p = Program([atoms], 1)
+    p.add(ops.RX(0.4), atoms.all(), condition=(0, 1))
+    backend = SimulatorBackend()
+    layout = backend.resolve_layout(p)
+    broken = backend._break_grouped_operations(p, layout, _view_binding())
+    assert len(broken) == 4
+    source_cond = p.operations[0].condition
+    assert all(op.condition == source_cond for op in broken)
+    assert all(op.condition is not None for op in broken)
+
+
+def test_break_grouped_operations_rejects_unequal_cardinality():
+    atoms = GridRegister(2, 3, name="atoms")
+    p = Program([atoms])
+    p.add(ops.CX, (atoms.row(0), atoms.column(0)))
+    backend = SimulatorBackend()
+    layout = backend.resolve_layout(p)
+    with pytest.raises(BackendValidationError):
+        backend._break_grouped_operations(p, layout, _view_binding())
+
+
+def test_break_grouped_operations_rejects_scalar_view_mixture():
+    atoms = GridRegister(2, 2, name="atoms")
+    p = Program([atoms])
+    p.add(ops.CX, (atoms.row(1), atoms[0]))
+    backend = SimulatorBackend()
+    layout = backend.resolve_layout(p)
+    with pytest.raises(BackendValidationError):
+        backend._break_grouped_operations(p, layout, _view_binding())
+
+
+def test_break_grouped_operations_rejects_self_pair():
+    atoms = GridRegister(2, 2, name="atoms")
+    p = Program([atoms])
+    p.add(ops.CZ, (atoms.row(0), atoms.column(0)))
+    backend = SimulatorBackend()
+    layout = backend.resolve_layout(p)
+    with pytest.raises(BackendValidationError):
+        backend._break_grouped_operations(p, layout, _view_binding())
+
+
+def test_break_grouped_operations_does_not_mutate_program():
+    atoms = GridRegister(2, 2, name="atoms")
+    p = Program([atoms])
+    p.add(ops.RX(0.3), atoms.row(0))
+    before = p.operations
+    before_list = list(before)
+    backend = SimulatorBackend()
+    layout = backend.resolve_layout(p)
+    backend._break_grouped_operations(p, layout, _view_binding())
+    # The user-facing operations tuple is unchanged in identity and value.
+    assert p.operations is before
+    assert list(p.operations) == before_list

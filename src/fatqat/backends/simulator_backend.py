@@ -66,6 +66,7 @@ from ..noise import (
 from ..noise.base import _validate_kraus_shapes
 from ..operations import BarrierGate, Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
+from ..registers import RegisterView
 from ..result import (
     Result,
     _DensityMatrixResultConfig,
@@ -604,6 +605,64 @@ class SimulatorBackend:
             f"{name} cannot expand a view target at arity {len(resolved)}"
         )
 
+    def _break_grouped_operations(
+        self,
+        program: Program,
+        layout: FlatResourceLayout,
+        binding: ResourceBinding,
+    ) -> list[AppliedOperation | Measurement]:
+        """Break grouped (view-bearing) operations into a scalar-only stream.
+
+        One ordered pass over `program.operations` that returns a NEW list -
+        `program` and its `operations` are never mutated. `Measurement`
+        instructions and any `AppliedOperation` with no `RegisterView` target
+        (scalar rotations/CX/CZ, plus every `Reset`/`Barrier`, which are never
+        view-bearing) pass through unchanged, 1:1 (same objects).
+
+        A view-bearing `AppliedOperation` - only the view-capable operations
+        (RX/RY/RZ/CX/CZ) can be - is resolved through `binding` per target and
+        expanded via the existing `_expand_emissions` helper (which owns the
+        cardinality / scalar-view-mixture / self-pair validation and raises
+        `~fatqat.errors.BackendValidationError` on any of them). Each resulting
+        emission becomes a genuine new `AppliedOperation` over its concrete
+        scalar refs, preserving operation, parameters, condition, and order.
+        Constructing real `AppliedOperation`s re-runs the all-scalar
+        duplicate-ref / `validate_targets()` path in its `__post_init__`,
+        preserving the existing validation rules for free.
+
+        Because this pass runs to completion (or raises) before `_lower`
+        appends any plan step, no expansion failure can leave a partial plan.
+
+        Raises:
+            BackendValidationError: On an invalid view expansion (cardinality
+                mismatch, scalar/view mixture, or self-pair), surfaced from
+                `_expand_emissions`.
+        """
+        operations: list[AppliedOperation | Measurement] = []
+        for step in program.operations:
+            if not isinstance(step, AppliedOperation) or not any(
+                isinstance(t, RegisterView) for t in step.targets
+            ):
+                # Measurement, scalar-only gates, Reset, and Barrier all pass
+                # through unchanged (identity), 1:1, in order.
+                operations.append(step)
+                continue
+
+            # A view-bearing gate: resolve each target expression to its bound
+            # resource(s) and expand into the ordered scalar emissions. The
+            # whole list (and any cardinality/mixture/self-pair failure) is
+            # computed here, before `_lower` sees any of these instructions.
+            resolved = tuple(binding.resolve(t, layout) for t in step.targets)
+            for emission in self._expand_emissions(step.operation, resolved):
+                operations.append(
+                    AppliedOperation(
+                        operation=step.operation,
+                        targets=tuple(b.ref for b in emission),
+                        condition=step.condition,
+                    )
+                )
+        return operations
+
     def _lower(
         self,
         program: Program,
@@ -643,13 +702,17 @@ class SimulatorBackend:
         """
         if binding is None:
             binding = self._create_resource_binding(program, layout)
+        # Pre-lowering pass: break every view-bearing gate into scalar
+        # AppliedOperations first, so the loop below only ever sees scalar
+        # instructions (one target -> one BoundResource, one ApplyMatrixStep).
+        operations = self._break_grouped_operations(program, layout, binding)
 
         plan: list[ResolvedStep] = []
         has_measurement = False
         has_reset = False
         has_channel = False
 
-        for step in program.operations:
+        for step in operations:
             if isinstance(step, Measurement):
                 has_measurement = True
                 measured_indices = tuple(
@@ -687,50 +750,65 @@ class SimulatorBackend:
                     plan.append(ResetStep(reset_indices=target_indices, condition=cond))
                     continue
 
-                # Resolve every target expression (each a scalar ref or a
-                # view) to its bound resource(s), then expand into the ordered
-                # list of concrete scalar applications. `_expand_emissions`
-                # computes the whole list - and raises any cardinality /
-                # mixture / self-pair failure - before the loop below appends
-                # any step for this instruction.
-                resolved = tuple(binding.resolve(t, layout) for t in step.targets)
-                emissions = self._expand_emissions(step.operation, resolved)
-
-                # One instruction's condition does not vary per emission;
-                # resolve it once and share it across every emitted step.
+                # Every gate reaching here is scalar-only: view expansion
+                # already happened in `_break_grouped_operations`, so each
+                # target resolves to exactly one `BoundResource` and this
+                # instruction produces exactly one `ApplyMatrixStep`. Targets
+                # were validated when the (possibly new) `AppliedOperation` was
+                # constructed, so `validate_targets()` is not repeated here.
+                bound = tuple(binding.resolve(t, layout) for t in step.targets)
                 cond = _resolve_condition(step.condition, layout)
+                device_labels = tuple(b.device_label for b in bound)
+                engine_indices = tuple(b.engine_index for b in bound)
 
-                for emission in emissions:
-                    # This emission's concrete scalar refs, in operation order.
-                    # These - never `step.targets`, which may hold a view -
-                    # feed validate_targets() and the matrix/channel rules.
-                    emitted_refs = tuple(b.ref for b in emission)
-                    step.operation.validate_targets(emitted_refs)
-                    device_labels = tuple(b.device_label for b in emission)
-                    engine_indices = tuple(b.engine_index for b in emission)
+                rule = self._implementation_for(step.operation, device_labels)
+                try:
+                    matrix = rule(step.operation, targets=step.targets)
+                except Exception as exc:
+                    raise MatrixImplementationError(
+                        f"implementation for {type(step.operation).__name__} raised: {exc}"
+                    ) from exc
 
-                    rule = self._implementation_for(step.operation, device_labels)
-                    try:
-                        matrix = rule(step.operation, targets=emitted_refs)
-                    except Exception as exc:
-                        raise MatrixImplementationError(
-                            f"implementation for {type(step.operation).__name__} raised: {exc}"
-                        ) from exc
+                # Check matrix shape matches this instruction's target dims.
+                target_dims = tuple(layout.system_dims[i] for i in engine_indices)
+                expected = prod(target_dims)
+                if matrix.shape != (expected, expected):
+                    raise BackendValidationError(
+                        f"{type(step.operation).__name__} resolved to a "
+                        f"{matrix.shape} matrix, incompatible with target "
+                        f"dimensions {target_dims} (expected "
+                        f"{(expected, expected)})"
+                    )
 
-                    # Check matrix shape matches this emission's target dims.
-                    target_dims = tuple(layout.system_dims[i] for i in engine_indices)
-                    expected = prod(target_dims)
-                    if matrix.shape != (expected, expected):
-                        raise BackendValidationError(
-                            f"{type(step.operation).__name__} resolved to a "
-                            f"{matrix.shape} matrix, incompatible with target "
-                            f"dimensions {target_dims} (expected "
-                            f"{(expected, expected)})"
+                plan.append(
+                    ApplyMatrixStep(
+                        matrix=matrix,
+                        target_indices=engine_indices,
+                        condition=cond,
+                    )
+                )
+
+                # Attached channels resolve inline, mirroring the gate path
+                # above: rule lookup, Kraus resolution, shape check, step
+                # append - one ApplyChannelStep per channel, inheriting the
+                # gate's condition. Noise selection stays in engine-index
+                # space; device labels are exclusively for the
+                # implementation-map lookup above.
+                for channel in self._noise_model.channels_for(
+                    type(step.operation), engine_indices, layout
+                ):
+                    has_channel = True
+                    rule = self._channel_map.get(type(channel))
+                    if rule is None:
+                        raise UnsupportedOperationError(
+                            f"{type(channel).__name__} has no channel "
+                            "implementation on this backend"
                         )
-
+                    kraus_ops = tuple(rule(channel, targets=step.targets))
+                    _validate_kraus_shapes(kraus_ops, expected, type(channel).__name__)
                     plan.append(
-                        ApplyMatrixStep(
-                            matrix=matrix,
+                        ApplyChannelStep(
+                            kraus_ops=kraus_ops,
                             target_indices=engine_indices,
                             condition=cond,
                             # Identity, not mechanics: the backend forwards
@@ -742,34 +820,6 @@ class SimulatorBackend:
                             ),
                         )
                     )
-
-                    # Attached channels resolve inline per emission, mirroring
-                    # the gate path above: rule lookup, Kraus resolution, shape
-                    # check, step append - one ApplyChannelStep per channel,
-                    # inheriting the gate's condition. Noise selection stays in
-                    # engine-index space; device labels are exclusively for the
-                    # implementation-map lookup above.
-                    for channel in self._noise_model.channels_for(
-                        type(step.operation), engine_indices, layout
-                    ):
-                        has_channel = True
-                        rule = self._channel_map.get(type(channel))
-                        if rule is None:
-                            raise UnsupportedOperationError(
-                                f"{type(channel).__name__} has no channel "
-                                "implementation on this backend"
-                            )
-                        kraus_ops = tuple(rule(channel, targets=emitted_refs))
-                        _validate_kraus_shapes(
-                            kraus_ops, expected, type(channel).__name__
-                        )
-                        plan.append(
-                            ApplyChannelStep(
-                                kraus_ops=kraus_ops,
-                                target_indices=engine_indices,
-                                condition=cond,
-                            )
-                        )
 
         return (
             plan,
