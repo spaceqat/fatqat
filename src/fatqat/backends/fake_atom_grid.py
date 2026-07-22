@@ -70,16 +70,6 @@ def _nearest_neighbor_edges(rows: int, cols: int) -> tuple[tuple[int, int], ...]
     return tuple(edges)
 
 
-def _require_rule(
-    implementation_map: ImplementationMap,
-    op: Operation,
-) -> MatrixImplementation:
-    rule = implementation_map.implementation_for(op)
-    if rule is None:
-        raise RuntimeError(f"default matrix implementation missing for {op!r}")
-    return rule
-
-
 def fake_atom_grid_implementation_map(rows: int, cols: int) -> ImplementationMap:
     """Build the native gate map for a `rows x cols` fake atom-grid backend.
 
@@ -90,11 +80,11 @@ def fake_atom_grid_implementation_map(rows: int, cols: int) -> ImplementationMap
     no entry and is therefore unsupported.
     """
     defaults = default_matrix_implementation_map()
-    rx_rule = _require_rule(defaults, ops.RX)
-    ry_rule = _require_rule(defaults, ops.RY)
-    rz_rule = _require_rule(defaults, ops.RZ)
-    cx_rule = _require_rule(defaults, ops.CX)
-    cz_rule = _require_rule(defaults, ops.CZ)
+    rx_rule = defaults.implementation_for(ops.RX)
+    ry_rule = defaults.implementation_for(ops.RY)
+    rz_rule = defaults.implementation_for(ops.RZ)
+    cx_rule = defaults.implementation_for(ops.CX)
+    cz_rule = defaults.implementation_for(ops.CZ)
 
     m = ImplementationMap()
     m.add(ops.RX, rx_rule)
