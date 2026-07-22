@@ -10,9 +10,11 @@ from .operations import Measurement
 from .program import AppliedOperation, Program
 from .registers import (
     ClassicalRegister,
+    GridRegister,
     QuantumRegister,
     Register,
     RegisterRef,
+    RegisterView,
 )
 from .result import Result
 
@@ -31,6 +33,8 @@ __all__ = [
     "QuantumRegister",
     "ClassicalRegister",
     "RegisterRef",
+    "GridRegister",
+    "RegisterView",
     "Job",
     "Result",
 ]

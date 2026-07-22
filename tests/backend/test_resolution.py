@@ -12,7 +12,7 @@ from fatqat.program import Program
 
 def _resolve(program):
     backend = SimulatorBackend("SV")
-    plan, _facts = backend._lower(program, backend.resolve_layout(program))
+    plan, _facts = backend._lower_program(program)
     return plan
 
 
@@ -60,7 +60,7 @@ def test_target_aware_map_allows_registered_target_key():
     p = Program(2)
     p.add(ops.CZ, (0, 1))
 
-    plan, _facts = backend._lower(p, backend.resolve_layout(p))
+    plan, _facts = backend._lower_program(p)
 
     assert len(plan) == 1
     assert isinstance(plan[0], ApplyMatrixStep)
@@ -103,7 +103,7 @@ def test_legacy_default_map_still_resolves_any_target_key():
     p = Program(2)
     p.add(ops.CZ, (1, 0))
 
-    plan, _facts = backend._lower(p, backend.resolve_layout(p))
+    plan, _facts = backend._lower_program(p)
 
     assert isinstance(plan[0], ApplyMatrixStep)
     assert plan[0].target_indices == (1, 0)

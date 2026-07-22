@@ -1,4 +1,4 @@
-"""ResourceLayout: the single source of truth for flat subsystem/clbit indices.
+"""FlatResourceLayout: the single source of truth for flat subsystem/clbit indices.
 
 TODO: `clbit_index` / `n_clbits` assume two levels, unlike the neutral
 `subsystem_index` / `n_subsystems` beside them - a `ClassicalRegister` carries
@@ -17,7 +17,7 @@ from .program import Program
 from .registers import Register, RegisterRef
 
 
-class ResourceLayout:
+class FlatResourceLayout:
     """Flat index mapping for a program's quantum and classical resources.
 
     Quantum registers are concatenated in program order, and classical registers
@@ -86,7 +86,7 @@ class ResourceLayout:
         return base + ref.index
 
     @classmethod
-    def from_program(cls, program: Program) -> "ResourceLayout":
+    def from_program(cls, program: Program) -> "FlatResourceLayout":
         """Build a layout by flattening a program's registers in order."""
         q_offsets: dict[Register, int] = {}
         system_dims: list[int] = []

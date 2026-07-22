@@ -202,6 +202,17 @@ def test_qudit_dim_gt_2_rejected():
         program_to_qasm(p, version=3)
 
 
+def test_view_bearing_program_rejected_before_scalar_ref_formatting():
+    # RegisterView-bearing programs are not QASM-exportable yet; the guard
+    # must fire before to_qasm() ever tries to format a scalar ref, not
+    # crash later with a missing-attribute error.
+    atoms = fc.GridRegister(1, 2, name="atoms")
+    p = fc.Program([atoms])
+    p.add(fc.ops.RX(0.3), atoms.row(0))
+    with pytest.raises(QasmExportError, match="view"):
+        program_to_qasm(p, version=3)
+
+
 def test_export_same_named_qreg_and_creg_do_not_collide():
     # Regression test: a quantum register and a classical register that
     # happen to share a name (or sanitize to the same identifier) used to

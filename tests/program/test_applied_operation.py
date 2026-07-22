@@ -5,7 +5,7 @@ from typing import ClassVar
 
 import pytest
 
-from fatqat.registers import QuantumRegister, ClassicalRegister
+from fatqat.registers import GridRegister, QuantumRegister, ClassicalRegister
 from fatqat import operations as ops
 from fatqat.operations import Measurement
 from fatqat.program import AppliedOperation
@@ -59,3 +59,51 @@ def test_validate_targets_hook_is_called_with_resolved_targets():
     qr = QuantumRegister(1, dim=3)
     with pytest.raises(ValueError, match="probe saw dim 3"):
         AppliedOperation(operation=_Probe(), targets=(qr[0],))
+
+
+# ---------------------------------------------------------------------------
+# View-aware __post_init__ behavior
+# ---------------------------------------------------------------------------
+
+
+def test_applied_operation_accepts_view_for_view_capable_operation():
+    atoms = GridRegister(2, 2, name="atoms")
+    ao = AppliedOperation(operation=ops.RX(0.1), targets=(atoms.row(0),))
+    assert ao.targets == (atoms.row(0),)
+
+
+def test_applied_operation_rejects_view_for_scalar_only_operation():
+    atoms = GridRegister(2, 2, name="atoms")
+    with pytest.raises(ValueError):
+        AppliedOperation(operation=ops.H, targets=(atoms.row(0),))
+
+
+def test_applied_operation_view_arity_checked_before_scalar_validation():
+    # CX/CZ expect exactly 2 target *expressions*; a view counts as one
+    # expression regardless of how many members it selects.
+    atoms = GridRegister(2, 2, name="atoms")
+    with pytest.raises(ValueError):
+        AppliedOperation(operation=ops.CX, targets=(atoms.row(0),))
+
+
+def test_applied_operation_view_bearing_skips_duplicate_and_validate_hook():
+    atoms = GridRegister(2, 2, name="atoms")
+    calls = []
+
+    @dataclass(frozen=True)
+    class _Probe(ops.Operation):
+        name: ClassVar[str] = "ProbeCX"
+        _num_subsystems: ClassVar[int] = 2
+        _accepts_views: ClassVar[bool] = True
+
+        def validate_targets(self, targets):
+            calls.append(targets)
+            raise AssertionError(
+                "validate_targets must not run for view-bearing targets"
+            )
+
+    # Same view repeated: would trip today's duplicate-ref loop if it ran
+    # against a scalar RegisterRef, but must not be evaluated at all here.
+    ao = AppliedOperation(operation=_Probe(), targets=(atoms.row(0), atoms.row(0)))
+    assert ao.targets == (atoms.row(0), atoms.row(0))
+    assert calls == []

@@ -35,6 +35,14 @@ class Operation:
 
     name: ClassVar[str] = "OP"
     _num_subsystems: ClassVar[int | None] = 1
+    _accepts_views: ClassVar[bool] = False
+    """Whether this operation accepts a ``RegisterView`` target expression in
+    addition to scalar ``RegisterRef`` targets. Only RX, RY, RZ, CX, and CZ
+    opt in (set ``True``); every other operation stays scalar-only. This is
+    the single, centralized capability flag consulted by
+    ``AppliedOperation.__post_init__`` -- new code should read
+    ``accepts_views`` rather than checking operation identity or name.
+    """
 
     def __init_subclass__(cls, **kwargs) -> None:
         # Validate the arity class constant once, at class-definition time,
@@ -53,6 +61,11 @@ class Operation:
     def num_subsystems(self) -> int | None:
         """Number of quantum targets required, or None for variable arity."""
         return type(self)._num_subsystems
+
+    @property
+    def accepts_views(self) -> bool:
+        """Whether this operation accepts a ``RegisterView`` target expression."""
+        return type(self)._accepts_views
 
     def validate_targets(self, targets: tuple[RegisterRef, ...]) -> None:
         """Raise ValueError if this operation's parameters are invalid for the

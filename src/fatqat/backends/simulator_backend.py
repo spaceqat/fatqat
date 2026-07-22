@@ -39,6 +39,7 @@ refactor.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import fields
 from math import prod
 from typing import Any
@@ -49,6 +50,7 @@ from ..errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
+from ..flat_layout import FlatResourceLayout
 from ..implementation import (
     MatrixImplementation,
     DeviceOperands,
@@ -56,7 +58,6 @@ from ..implementation import (
     default_matrix_implementation_map,
 )
 from ..job import Job
-from ..layout import ResourceLayout
 from ..noise import (
     ChannelImplementationMap,
     NoiseModel,
@@ -66,6 +67,14 @@ from ..noise import (
 from ..noise.base import _validate_kraus_shapes
 from ..operations import BarrierGate, Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
+from ..registers import (
+    AllSelector,
+    BlockSelector,
+    ColumnSelector,
+    RegisterRef,
+    RegisterView,
+    RowSelector,
+)
 from ..result import (
     Result,
     _DensityMatrixResultConfig,
@@ -83,6 +92,10 @@ from .engine_contract import (
     _EngineConfig,
     _StateVectorResultRequest,
 )
+from .resource_binding import (
+    BoundResource,
+    _build_qubit_resource_map,
+)
 from .steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
@@ -98,6 +111,101 @@ _METHOD_ALIASES = {
     "density_matrix": "density_matrix",
     "dm": "density_matrix",
 }
+
+ProgramInstruction = AppliedOperation | Measurement
+ResourceMap = Mapping[RegisterRef, BoundResource]
+DeviceLabelPolicy = Callable[[RegisterRef, FlatResourceLayout], Hashable]
+
+
+def _view_members(view: RegisterView) -> tuple[RegisterRef, ...]:
+    """Enumerate a view in its documented deterministic member order."""
+    register = view.register
+    selector = view.selector
+    if isinstance(selector, AllSelector):
+        coordinates = [
+            (row, col) for row in range(register.rows) for col in range(register.cols)
+        ]
+    elif isinstance(selector, RowSelector):
+        coordinates = [(selector.row, col) for col in range(register.cols)]
+    elif isinstance(selector, ColumnSelector):
+        coordinates = [(row, selector.col) for row in range(register.rows)]
+    elif isinstance(selector, BlockSelector):
+        (row_start, row_stop), (col_start, col_stop) = selector.rows, selector.cols
+        coordinates = [
+            (row, col)
+            for row in range(row_start, row_stop)
+            for col in range(col_start, col_stop)
+        ]
+    else:  # pragma: no cover - exhaustive over the Selector union
+        raise AssertionError(f"unhandled selector {selector!r}")
+    return tuple(register[row * register.cols + col] for row, col in coordinates)
+
+
+def _expand_grouped_operation(
+    step: AppliedOperation,
+) -> tuple[AppliedOperation, ...]:
+    """Expand one view-bearing operation into scalar AppliedOperations."""
+    target_members = tuple(
+        _view_members(target) if isinstance(target, RegisterView) else (target,)
+        for target in step.targets
+    )
+    if not any(isinstance(target, RegisterView) for target in step.targets):
+        return (step,)
+
+    name = type(step.operation).__name__
+    if len(target_members) == 1:
+        emissions = [(member,) for member in target_members[0]]
+    elif len(target_members) == 2:
+        first, second = target_members
+        first_is_view = isinstance(step.targets[0], RegisterView)
+        second_is_view = isinstance(step.targets[1], RegisterView)
+        if first_is_view != second_is_view:
+            raise BackendValidationError(
+                f"{name} mixes a scalar target with a view target; a "
+                "two-target gate needs both operands scalar or both views"
+            )
+        if len(first) != len(second):
+            raise BackendValidationError(
+                f"{name} pairs views of unequal size "
+                f"({len(first)} vs {len(second)}); pairwise view "
+                "application requires equal cardinality"
+            )
+        emissions = []
+        for control, target in zip(first, second):
+            if control.register is target.register and control.index == target.index:
+                raise BackendValidationError(
+                    f"{name} pairs member {control!r} with itself; a member "
+                    "cannot be both control and target of one two-target application"
+                )
+            emissions.append((control, target))
+    else:
+        raise BackendValidationError(
+            f"{name} cannot expand a view target at arity {len(target_members)}"
+        )
+
+    return tuple(
+        AppliedOperation(
+            operation=step.operation,
+            targets=tuple(targets),
+            condition=step.condition,
+        )
+        for targets in emissions
+    )
+
+
+def _break_grouped_operations(
+    operations: Iterable[ProgramInstruction],
+) -> tuple[ProgramInstruction, ...]:
+    """Return a new scalar-only instruction stream without mutating the program."""
+    broken: list[ProgramInstruction] = []
+    for step in operations:
+        if isinstance(step, AppliedOperation) and any(
+            isinstance(target, RegisterView) for target in step.targets
+        ):
+            broken.extend(_expand_grouped_operation(step))
+        else:
+            broken.append(step)
+    return tuple(broken)
 
 
 class SimulatorBackend:
@@ -289,7 +397,7 @@ class SimulatorBackend:
         self._simulator = self._simulator_cls(config=config)
         self._simulator_system: tuple[tuple[int, ...], int] | None = None
 
-    def resolve_layout(self, program: Program) -> ResourceLayout:
+    def resolve_layout(self, program: Program) -> FlatResourceLayout:
         """Build the flat resource layout used by this backend.
 
         Args:
@@ -298,7 +406,32 @@ class SimulatorBackend:
         Returns:
             Resource layout mapping register references to flat indices.
         """
-        return ResourceLayout.from_program(program)
+        return FlatResourceLayout.from_program(program)
+
+    def _device_label_for(
+        self, ref: RegisterRef, flat_layout: FlatResourceLayout
+    ) -> Hashable:
+        """Return the implementation-map label for one scalar reference."""
+        return flat_layout.subsystem_index(ref)
+
+    def _build_qubit_resource_map(
+        self, program: Program, flat_layout: FlatResourceLayout
+    ) -> dict[RegisterRef, BoundResource]:
+        """Build this run's complete scalar qubit-resource map."""
+        return _build_qubit_resource_map(program, flat_layout, self._device_label_for)
+
+    def _lower_program(
+        self,
+        program: Program,
+        *,
+        layout: FlatResourceLayout | None = None,
+    ) -> tuple[list[ResolvedStep], _PlanFacts]:
+        """Prepare and lower one program using the backend's resource policy."""
+        if layout is None:
+            layout = self.resolve_layout(program)
+        resources = self._build_qubit_resource_map(program, layout)
+        operations = _break_grouped_operations(program.operations)
+        return self._lower(operations, layout, resources)
 
     def run(
         self,
@@ -353,7 +486,7 @@ class SimulatorBackend:
             backend_name=type(self).__name__,
         )
         layout = self.resolve_layout(program)
-        plan, facts = self._lower(program, layout)
+        plan, facts = self._lower_program(program, layout=layout)
         self._validate(config, shots, facts)
         try:
             return Job.done(
@@ -508,7 +641,10 @@ class SimulatorBackend:
         return rule
 
     def _lower(
-        self, program: Program, layout: ResourceLayout
+        self,
+        operations: Sequence[ProgramInstruction],
+        layout: FlatResourceLayout,
+        resources: ResourceMap,
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Lower a program into an execution plan and classify it, in one pass.
 
@@ -522,13 +658,19 @@ class SimulatorBackend:
         channel in registration order, each inheriting the gate's condition.
         The pass also computes `has_measurement`, `has_reset`, and
         `has_channel`.
+
+        The caller supplies a scalar-only instruction stream and a complete
+        per-run resource map. The map's device labels are used only for
+        implementation lookup; its engine indices are used for dimensions,
+        execution steps, and noise selection. Grouped frontend operations are
+        expanded before this method is called.
         """
         plan: list[ResolvedStep] = []
         has_measurement = False
         has_reset = False
         has_channel = False
 
-        for step in program.operations:
+        for step in operations:
             if isinstance(step, Measurement):
                 has_measurement = True
                 measured_indices = tuple(
@@ -548,10 +690,11 @@ class SimulatorBackend:
                 if isinstance(step.operation, BarrierGate):
                     continue
 
-                target_indices = tuple(layout.subsystem_index(t) for t in step.targets)
-
                 if isinstance(step.operation, ResetGate):
                     has_reset = True
+                    target_indices = tuple(
+                        layout.subsystem_index(t) for t in step.targets
+                    )
                     # Reset-attached channels ("apply after the ideal reset")
                     # are designed but not wired yet; raising keeps the gap
                     # loud instead of silently dropping registered noise.
@@ -565,7 +708,17 @@ class SimulatorBackend:
                     plan.append(ResetStep(reset_indices=target_indices, condition=cond))
                     continue
 
-                rule = self._implementation_for(step.operation, target_indices)
+                # Every gate reaching here is scalar-only: grouped expansion
+                # already happened before lowering, so each target has one
+                # precomputed resource and this instruction produces one
+                # ApplyMatrixStep. Targets were validated when any emitted
+                # AppliedOperation was constructed.
+                bound = tuple(resources[t] for t in step.targets)
+                cond = _resolve_condition(step.condition, layout)
+                device_labels = tuple(b.device_label for b in bound)
+                engine_indices = tuple(b.engine_index for b in bound)
+
+                rule = self._implementation_for(step.operation, device_labels)
                 try:
                     matrix = rule(step.operation, targets=step.targets)
                 except Exception as exc:
@@ -573,8 +726,8 @@ class SimulatorBackend:
                         f"implementation for {type(step.operation).__name__} raised: {exc}"
                     ) from exc
 
-                # Check matrix shape matches target dimensions
-                target_dims = tuple(layout.system_dims[i] for i in target_indices)
+                # Check matrix shape matches this instruction's target dims.
+                target_dims = tuple(layout.system_dims[i] for i in engine_indices)
                 expected = prod(target_dims)
                 if matrix.shape != (expected, expected):
                     raise BackendValidationError(
@@ -584,11 +737,10 @@ class SimulatorBackend:
                         f"{(expected, expected)})"
                     )
 
-                cond = _resolve_condition(step.condition, layout)
                 plan.append(
                     ApplyMatrixStep(
                         matrix=matrix,
-                        target_indices=target_indices,
+                        target_indices=engine_indices,
                         condition=cond,
                         # Identity, not mechanics: the backend forwards which
                         # implementation was selected; the engine alone decides
@@ -599,12 +751,14 @@ class SimulatorBackend:
                     )
                 )
 
-                # Attached channels resolve inline, mirroring the gate
-                # path above: rule lookup, Kraus resolution, shape check,
-                # step append - one ApplyChannelStep per channel, inheriting
-                # the gate's condition.
+                # Attached channels resolve inline, mirroring the gate path
+                # above: rule lookup, Kraus resolution, shape check, step
+                # append - one ApplyChannelStep per channel, inheriting the
+                # gate's condition. Noise selection stays in engine-index
+                # space; device labels are exclusively for the
+                # implementation-map lookup above.
                 for channel in self._noise_model.channels_for(
-                    type(step.operation), target_indices, layout
+                    type(step.operation), engine_indices, layout
                 ):
                     has_channel = True
                     rule = self._channel_map.get(type(channel))
@@ -618,7 +772,7 @@ class SimulatorBackend:
                     plan.append(
                         ApplyChannelStep(
                             kraus_ops=kraus_ops,
-                            target_indices=target_indices,
+                            target_indices=engine_indices,
                             condition=cond,
                         )
                     )
@@ -635,7 +789,7 @@ class SimulatorBackend:
     def _resolve_confusions(
         self,
         measured_indices: tuple[int, ...],
-        layout: ResourceLayout,
+        layout: FlatResourceLayout,
     ) -> tuple[Any, ...] | None:
         """Resolve per-subsystem readout confusion matrices for one measurement.
 

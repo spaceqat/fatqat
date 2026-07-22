@@ -37,12 +37,12 @@ import numpy as np
 
 from .. import operations as ops
 from ..errors import BackendValidationError
+from ..flat_layout import FlatResourceLayout
 from ..implementation import (
     ImplementationMap,
     MatrixImplementation,
     default_matrix_implementation_map,
 )
-from ..layout import ResourceLayout
 from ..noise import Depolarizing, NoiseModel, relaxation_channels
 from ..operations import Operation
 from ..program import Program
@@ -221,12 +221,12 @@ class FakeSuperconducting4x4Backend(SimulatorBackend):
         """
         return self._impl_map.copy()
 
-    def resolve_layout(self, program: Program) -> ResourceLayout:
+    def resolve_layout(self, program: Program) -> FlatResourceLayout:
         """Build the flat layout, then reject any shape the fake device can't run.
 
         A program may declare up to 16 qubits; fewer is fine, since flat
         subsystem indices are assigned in declaration order (see
-        `ResourceLayout.from_program`), so an N-qubit program always maps
+        `FlatResourceLayout.from_program`), so an N-qubit program always maps
         onto physical qubits `0..N-1`, the same rule used for a full
         16-qubit program.
 

@@ -32,7 +32,13 @@ from typing import Any
 
 from . import operations as ops
 from .program import AppliedOperation, Program
-from .registers import ClassicalRegister, QuantumRegister, Register, RegisterRef
+from .registers import (
+    ClassicalRegister,
+    QuantumRegister,
+    Register,
+    RegisterRef,
+    RegisterView,
+)
 
 
 class QASMTranspileError(ValueError):
@@ -1143,6 +1149,12 @@ def to_qasm(program: Program, version: int = 3) -> str:
 
         assert isinstance(step, AppliedOperation)
         op = step.operation
+
+        if any(isinstance(t, RegisterView) for t in step.targets):
+            raise QasmExportError(
+                f"{op.name}: cannot export a RegisterView target to QASM; "
+                "view-bearing programs are not QASM-exportable yet"
+            )
 
         if type(op).__name__ == "ResetGate":
             lines = [f"reset {layout.qref(t)};" for t in step.targets]

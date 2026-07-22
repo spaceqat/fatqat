@@ -3,7 +3,7 @@
 import pytest
 
 from fatqat.program import Program
-from fatqat.registers import QuantumRegister, ClassicalRegister
+from fatqat.registers import GridRegister, QuantumRegister, ClassicalRegister
 
 
 def test_int_construction_creates_default_registers():
@@ -68,6 +68,13 @@ def test_resolve_quantum_ref_rejects_foreign_ref():
     foreign = QuantumRegister(2, name="other")
     with pytest.raises(ValueError):
         p._resolve_quantum_ref(foreign[0])
+
+
+def test_resolve_quantum_ref_stays_scalar_only_and_rejects_register_view():
+    atoms = GridRegister(2, 2, name="atoms")
+    p = Program([atoms])
+    with pytest.raises(TypeError):
+        p._resolve_quantum_ref(atoms.row(0))
 
 
 def test_metadata_defaults_to_empty_dict():
