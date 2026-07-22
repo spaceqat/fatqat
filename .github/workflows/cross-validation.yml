@@ -1,0 +1,32 @@
+name: Cross-validation against Qiskit
+
+# Numerical cross-validation against Qiskit Aer: small circuits, ideal and
+# noisy, compared as exact state matrices (atol 1e-12). One Linux job is
+# enough - this checks numbers, not platforms. Intended as a required check:
+# it runs on every PR and on every push to main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-against-qiskit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.3.1
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      # `--group qiskit` on `uv run` too, or it would re-sync the environment
+      # without the group and drop qiskit-aer (as in tests.yml's numba job).
+      - name: Install dependencies (with qiskit-aer)
+        run: uv sync --group qiskit
+
+      - name: Run the cross-validation suite
+        run: uv run --group qiskit pytest tests/test_against_qiskit.py -v

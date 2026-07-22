@@ -19,6 +19,10 @@ docs = ["sphinx", "pydata-sphinx-theme", "myst-parser", "sphinx-design", "sphinx
 # and its tests. Not required by the base package. Note: numba currently pins
 # numpy < 2.5, so `uv sync --group numba` may downgrade numpy.
 numba = ["numba>=0.66"]
+# Optional: enables tests/test_against_qiskit.py, the numerical cross-check
+# against Qiskit Aer (see .github/workflows/qiskit-compat.yml). Never required
+# by the package itself; the module self-skips when qiskit-aer is absent.
+qiskit = ["qiskit-aer>=0.17"]
 # Formatting (black) and static analysis (pylint). Drives scripts/format.sh,
 # scripts/lint.sh, and the Lint CI workflow. See [tool.black] / [tool.pylint].
 lint = ["black>=24", "pylint>=3"]
