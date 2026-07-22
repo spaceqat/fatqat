@@ -94,6 +94,51 @@ program = fq.Program([fq.QuantumRegister(2, name="a"), fq.QuantumRegister(2, nam
 program.add(fq.ops.H, program.qreg[1][0])   # qubit 0 of register "b"
 ```
 
+## Targeting a GridRegister view
+
+Five operation families additionally accept a {py:class}`~fatqat.RegisterView`
+— the structured target expression returned by a
+{py:class}`~fatqat.GridRegister`'s {py:meth}`~fatqat.GridRegister.all`/
+{py:meth}`~fatqat.GridRegister.row`/{py:meth}`~fatqat.GridRegister.column`/
+{py:meth}`~fatqat.GridRegister.block` selectors (see
+[Concepts](concepts.md)) — in place of a scalar target:
+{py:class}`RX`, {py:class}`RY`, {py:class}`RZ`, {py:data}`CX`, and
+{py:data}`CZ`. No other gate accepts a view — every other family, including
+{py:data}`Reset` and measurement, is scalar-only and raises if given one.
+
+A view passed to a one-target rotation (`RX`, `RY`, `RZ`) expands into one
+independent application per selected member, in the view's order:
+
+```python
+atoms = fq.GridRegister(2, 3, name="atoms")
+program = fq.Program([atoms])
+program.add(fq.ops.RX(0.2), atoms.row(1))   # RX(0.2) on each qubit in row 1
+```
+
+A pair of views passed to `CX` or `CZ` zips the two views together, pairwise,
+in their deterministic orders — not a cross product:
+
+```python
+program.add(fq.ops.CX, (atoms.row(0), atoms.row(1)))
+# CX(row_0[0], row_1[0]), CX(row_0[1], row_1[1]), CX(row_0[2], row_1[2])
+```
+
+For `CX` the first view supplies controls and the second supplies targets;
+`CZ` uses the same pairwise rule. The two views must resolve to equal
+cardinality; mixing a scalar target with a view, or pairing a view with
+itself, is rejected. Either every member (or pair) validates or none do —
+there is no partial application of one source instruction.
+
+{py:class}`~fatqat.backends.FakeAtomGridBackend` (see
+[the API reference](../api/backends.rst)) is currently the only backend that
+can actually execute a view-bearing program; running one against a backend
+without grid-aware resource binding raises
+{py:exc}`~fatqat.errors.UnsupportedResourceOperandError`. Also note: a
+program containing any view-bearing operation cannot be exported to QASM —
+`to_qasm()` raises `QasmExportError` for it, since QASM has no
+representation for a structured grid target. This is a real, current
+limitation, not a bug.
+
 ## Qudit gates
 
 The dimension-generic gates work the same way on any `dim`, not just `dim=2`.

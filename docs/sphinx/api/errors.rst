@@ -13,6 +13,10 @@ Errors (``fq.errors``)
    :members:
    :show-inheritance:
 
+.. autoclass:: fatqat.errors.UnsupportedResourceOperandError
+   :members:
+   :show-inheritance:
+
 .. autoclass:: fatqat.errors.MatrixImplementationError
    :members:
    :show-inheritance:

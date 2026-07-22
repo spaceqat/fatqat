@@ -16,3 +16,11 @@ Registers
 .. autoclass:: fatqat.RegisterRef
    :members:
    :show-inheritance:
+
+.. autoclass:: fatqat.GridRegister
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.RegisterView
+   :members:
+   :show-inheritance:
