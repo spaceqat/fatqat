@@ -42,6 +42,8 @@ from ..registers import (
     GridRegister,
     RegisterRef,
 )
+from ..resource_layout import ResourceLayout
+from .resource_binding import BoundResource
 from .simulator_backend import SimulatorBackend
 
 if TYPE_CHECKING:
@@ -169,33 +171,33 @@ class FakeAtomGridBackend(SimulatorBackend):
         """
         return self._impl_map.copy()
 
-    def _allocate_engine(self, program: Program) -> _EngineAllocation:
-        """Build the flat layout, then reject any shape the fake device can't run.
+    def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
+        """Reject any shape the fake device can't run, then map top-left.
 
         Applies equally to a scalar-only program with no `GridRegister`:
         total qubit count and per-subsystem dimension are checked regardless
-        of register structure.
-
-        Note: this device-shape/grid-fit validation is a resource-layout-
-        level concern (see `SimulatorBackend._resolve_resource_layout`), not
-        an engine-allocation one. It stays here, mechanically renamed from
-        the former `resolve_layout` override, until this backend's top-left
-        mapping policy (`_device_label_for`) moves to
-        `_resolve_resource_layout` in a later task.
+        of register structure. A program's sole `GridRegister` (if any) then
+        binds top-left onto the device: frontend `(row, col)` maps to device
+        label `row * cols + col`, using the *backend*'s column count, not the
+        grid's own. A scalar-only program (no `GridRegister`) delegates to
+        the base class's generic declaration-order identity mapping.
 
         Raises:
             BackendValidationError: If the program declares more subsystems
-                than `rows * cols`, or any non-qubit-dimension (`dim != 2`)
-                register.
+                than `rows * cols`; any non-qubit-dimension (`dim != 2`)
+                register; more than one `GridRegister`; a `GridRegister`
+                combined with any other quantum register; or a `GridRegister`
+                whose shape does not fit the device's, axis by axis.
         """
-        layout = super()._allocate_engine(program)
+        n_subsystems = sum(register.size for register in program.qreg)
         capacity = self._rows * self._cols
-        if layout.n_subsystems > capacity:
+        if n_subsystems > capacity:
             raise BackendValidationError(
                 f"FakeAtomGridBackend({self._rows}x{self._cols}) supports at "
-                f"most {capacity} qubits, got {layout.n_subsystems}"
+                f"most {capacity} qubits, got {n_subsystems}"
             )
-        if any(dim != 2 for dim in layout.system_dims):
+        dims = (register.dim for register in program.qreg for _ in range(register.size))
+        if any(dim != 2 for dim in dims):
             raise BackendValidationError(
                 "FakeAtomGridBackend only supports qubit dimensions"
             )
@@ -205,25 +207,45 @@ class FakeAtomGridBackend(SimulatorBackend):
                 "FakeAtomGridBackend accepts at most one GridRegister per "
                 f"program, got {len(grid_registers)}"
             )
-        if grid_registers:
-            grid = grid_registers[0]
-            if len(program.qreg) != 1:
-                raise BackendValidationError(
-                    "FakeAtomGridBackend rejects a GridRegister combined with "
-                    "any other quantum register"
-                )
-            if grid.rows > self._rows or grid.cols > self._cols:
-                raise BackendValidationError(
-                    f"grid register ({grid.rows}x{grid.cols}) does not fit the "
-                    f"backend's ({self._rows}x{self._cols}) device shape"
-                )
-        return layout
+        if not grid_registers:
+            return super()._resolve_resource_layout(program)
 
-    def _device_label_for(
-        self, ref: RegisterRef, flat_layout: _EngineAllocation
-    ) -> int:
-        """Map a scalar ref to its row-major fake-device site label."""
-        if not isinstance(ref.register, GridRegister):
-            return flat_layout.subsystem_index(ref)
-        row, col = divmod(ref.index, ref.register.cols)
-        return row * self._cols + col
+        grid = grid_registers[0]
+        if len(program.qreg) != 1:
+            raise BackendValidationError(
+                "FakeAtomGridBackend rejects a GridRegister combined with "
+                "any other quantum register"
+            )
+        if grid.rows > self._rows or grid.cols > self._cols:
+            raise BackendValidationError(
+                f"grid register ({grid.rows}x{grid.cols}) does not fit the "
+                f"backend's ({self._rows}x{self._cols}) device shape"
+            )
+        labels: dict[RegisterRef, int] = {}
+        for index in range(grid.size):
+            row, col = divmod(index, grid.cols)
+            labels[grid[index]] = row * self._cols + col
+        return ResourceLayout(labels)
+
+    def _build_qubit_resource_map(
+        self, program: Program, flat_layout: _EngineAllocation
+    ) -> dict[RegisterRef, BoundResource]:
+        """Build this run's resource map from the resolved public resource layout.
+
+        The device label for every scalar ref comes from
+        `_resolve_resource_layout(program)` - the single source of the
+        top-left mapping formula - rather than from a separate per-ref
+        callback; the engine index still comes from `flat_layout`, exactly
+        as the base class does it.
+        """
+        resource_layout = self._resolve_resource_layout(program)
+        resources: dict[RegisterRef, BoundResource] = {}
+        for register in program.qreg:
+            for index in range(register.size):
+                ref = register[index]
+                resources[ref] = BoundResource(
+                    ref=ref,
+                    engine_index=flat_layout.subsystem_index(ref),
+                    device_label=resource_layout.device_label(ref),
+                )
+        return resources
