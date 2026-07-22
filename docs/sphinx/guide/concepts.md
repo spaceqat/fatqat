@@ -60,6 +60,19 @@ indices (or refs, which resolve to them); device labels are strictly an
 internal detail of native-gate lookup and are never the right thing to use
 when configuring noise.
 
+### What's not supported yet
+
+This is a first implementation, and it deliberately leaves several things
+out. There's no custom or user-specified placement: binding a
+{py:class}`~fatqat.GridRegister` onto a backend's device sites is entirely
+internal, top-left corner first, row-major — a program cannot request a
+different mapping. There's also no reshape support — no rotation,
+transpose, rearrangement, or atom-transport operation for a `GridRegister`
+once it's constructed, only the fixed layout it was built with. And a
+program may bind at most one `GridRegister`; {py:class}`FakeAtomGridBackend
+<fatqat.backends.FakeAtomGridBackend>` accepts exactly one `GridRegister` or
+none, not several. These are areas for future work, not bugs.
+
 ## Program
 
 A {py:class}`~fatqat.Program` owns a program's registers and its ordered list
