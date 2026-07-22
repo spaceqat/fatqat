@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .fake_atom_grid import FakeAtomGridBackend
 from .fake_superconducting import FakeSuperconducting4x4Backend
 from .simulator_backend import SimulatorBackend
 
@@ -9,4 +10,4 @@ from .simulator_backend import SimulatorBackend
 # API (a Program is lowered to these internally, users never construct them).
 from .steps import ApplyChannelStep, ApplyMatrixStep, MeasurementStep, ResetStep
 
-__all__ = ["FakeSuperconducting4x4Backend", "SimulatorBackend"]
+__all__ = ["FakeAtomGridBackend", "FakeSuperconducting4x4Backend", "SimulatorBackend"]
