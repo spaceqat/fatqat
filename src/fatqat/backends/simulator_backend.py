@@ -39,7 +39,7 @@ refactor.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
+from collections.abc import Hashable, Iterable, Sequence
 from dataclasses import fields
 from math import prod
 from typing import Any
@@ -84,6 +84,7 @@ from ..result import (
 )
 from ..simulator import NumpyDMSimulator, NumpySVSimulator, Simulator
 from .backend_utils import (
+    _LoweringContext,
     _PlanFacts,
     _normalize_dict_options,
     _resolve_condition,
@@ -92,10 +93,6 @@ from .engine_contract import (
     _DensityMatrixResultRequest,
     _EngineConfig,
     _StateVectorResultRequest,
-)
-from .resource_binding import (
-    BoundResource,
-    _build_qubit_resource_map,
 )
 from .steps import (
     ApplyChannelStep,
@@ -114,8 +111,6 @@ _METHOD_ALIASES = {
 }
 
 ProgramInstruction = AppliedOperation | Measurement
-ResourceMap = Mapping[RegisterRef, BoundResource]
-DeviceLabelPolicy = Callable[[RegisterRef, _EngineAllocation], Hashable]
 
 
 def _view_members(view: RegisterView) -> tuple[RegisterRef, ...]:
@@ -435,30 +430,26 @@ class SimulatorBackend:
         """
         return _EngineAllocation.from_program(program)
 
-    def _device_label_for(
-        self, ref: RegisterRef, flat_layout: _EngineAllocation
-    ) -> Hashable:
-        """Return the implementation-map label for one scalar reference."""
-        return flat_layout.subsystem_index(ref)
-
-    def _build_qubit_resource_map(
-        self, program: Program, flat_layout: _EngineAllocation
-    ) -> dict[RegisterRef, BoundResource]:
-        """Build this run's complete scalar qubit-resource map."""
-        return _build_qubit_resource_map(program, flat_layout, self._device_label_for)
-
     def _lower_program(
         self,
         program: Program,
         *,
-        layout: _EngineAllocation | None = None,
+        context: _LoweringContext | None = None,
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
-        """Prepare and lower one program using the backend's resource policy."""
-        if layout is None:
-            layout = self._allocate_engine(program)
-        resources = self._build_qubit_resource_map(program, layout)
+        """Prepare and lower one program using the backend's resource policy.
+
+        ``context`` lets a caller that already resolved this run's
+        `ResourceLayout` and `_EngineAllocation` (see ``run()``) thread both
+        through unchanged, so lowering never re-resolves either. When omitted
+        (standalone use, e.g. in tests), both are resolved once here.
+        """
+        if context is None:
+            context = _LoweringContext(
+                resource_layout=self._resolve_resource_layout(program),
+                engine=self._allocate_engine(program),
+            )
         operations = _break_grouped_operations(program.operations)
-        return self._lower(operations, layout, resources)
+        return self._lower(operations, context)
 
     def run(
         self,
@@ -512,16 +503,19 @@ class SimulatorBackend:
             "result_config",
             backend_name=type(self).__name__,
         )
-        # Both hooks are resolved once per run, on the direct-raise
+        # Both hooks are resolved exactly once per run, on the direct-raise
         # validation path, before the execution try block below: capacity,
         # dimension, grid-fit, and mapping failures must raise directly from
         # run(), never become a failed Job. The resource layout is the
-        # public-facing effective mapping (available to backend validation
-        # and, eventually, lowering); the engine allocation stays private to
-        # execution preparation.
-        _resource_layout = self._resolve_resource_layout(program)
-        layout = self._allocate_engine(program)
-        plan, facts = self._lower_program(program, layout=layout)
+        # public-facing effective mapping (available to backend validation);
+        # the engine allocation stays private to execution preparation. Both
+        # are paired into one private lowering context and threaded through
+        # `_lower_program`/`_lower` unchanged, so lowering never re-resolves
+        # either value.
+        resource_layout = self._resolve_resource_layout(program)
+        engine = self._allocate_engine(program)
+        context = _LoweringContext(resource_layout=resource_layout, engine=engine)
+        plan, facts = self._lower_program(program, context=context)
         self._validate(config, shots, facts)
         try:
             return Job.done(
@@ -530,9 +524,9 @@ class SimulatorBackend:
                     shots,
                     plan,
                     facts,
-                    layout.system_dims,
-                    layout.classical_dims,
-                    layout.n_clbits,
+                    engine.system_dims,
+                    engine.classical_dims,
+                    engine.n_clbits,
                     seed,
                 )
             )
@@ -678,8 +672,7 @@ class SimulatorBackend:
     def _lower(
         self,
         operations: Sequence[ProgramInstruction],
-        layout: _EngineAllocation,
-        resources: ResourceMap,
+        context: _LoweringContext,
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Lower a program into an execution plan and classify it, in one pass.
 
@@ -694,12 +687,16 @@ class SimulatorBackend:
         The pass also computes `has_measurement`, `has_reset`, and
         `has_channel`.
 
-        The caller supplies a scalar-only instruction stream and a complete
-        per-run resource map. The map's device labels are used only for
-        implementation lookup; its engine indices are used for dimensions,
-        execution steps, and noise selection. Grouped frontend operations are
-        expanded before this method is called.
+        The caller supplies a scalar-only instruction stream and the run's
+        private lowering context. `context.resource_layout` is used only for
+        `ImplementationMap` lookup (`device_operands`); `context.engine` is
+        used for every execution index/dimension - `ApplyMatrixStep`/
+        `MeasurementStep`/`ResetStep` targets, conditions, and noise
+        selection. Grouped frontend operations are expanded before this
+        method is called.
         """
+        resource_layout = context.resource_layout
+        engine = context.engine
         plan: list[ResolvedStep] = []
         has_measurement = False
         has_reset = False
@@ -709,14 +706,14 @@ class SimulatorBackend:
             if isinstance(step, Measurement):
                 has_measurement = True
                 measured_indices = tuple(
-                    layout.subsystem_index(q) for q in step.targets
+                    engine.subsystem_index(q) for q in step.targets
                 )
-                classical_indices = tuple(layout.clbit_index(c) for c in step.outputs)
+                classical_indices = tuple(engine.clbit_index(c) for c in step.outputs)
                 plan.append(
                     MeasurementStep(
                         measured_indices=measured_indices,
                         classical_indices=classical_indices,
-                        confusions=self._resolve_confusions(measured_indices, layout),
+                        confusions=self._resolve_confusions(measured_indices, engine),
                     )
                 )
                 continue
@@ -728,32 +725,34 @@ class SimulatorBackend:
                 if isinstance(step.operation, ResetGate):
                     has_reset = True
                     target_indices = tuple(
-                        layout.subsystem_index(t) for t in step.targets
+                        engine.subsystem_index(t) for t in step.targets
                     )
                     # Reset-attached channels ("apply after the ideal reset")
                     # are designed but not wired yet; raising keeps the gap
                     # loud instead of silently dropping registered noise.
                     if self._noise_model.channels_for(
-                        ResetGate, target_indices, layout
+                        ResetGate, target_indices, engine
                     ):
                         raise UnsupportedOperationError(
                             "channel noise attached to Reset is not supported yet"
                         )
-                    cond = _resolve_condition(step.condition, layout)
+                    cond = _resolve_condition(step.condition, engine)
                     plan.append(ResetStep(reset_indices=target_indices, condition=cond))
                     continue
 
                 # Every gate reaching here is scalar-only: grouped expansion
-                # already happened before lowering, so each target has one
-                # precomputed resource and this instruction produces one
-                # ApplyMatrixStep. Targets were validated when any emitted
-                # AppliedOperation was constructed.
-                bound = tuple(resources[t] for t in step.targets)
-                cond = _resolve_condition(step.condition, layout)
-                device_labels = tuple(b.device_label for b in bound)
-                engine_indices = tuple(b.engine_index for b in bound)
+                # already happened before lowering, so each target maps to
+                # one device operand and one engine index, and this
+                # instruction produces one ApplyMatrixStep. Targets were
+                # validated when any emitted AppliedOperation was
+                # constructed. Implementation-map lookup uses device
+                # operands from the resource layout; every execution index
+                # below comes from the engine allocation instead.
+                device_operands = resource_layout.device_operands(step.targets)
+                engine_indices = tuple(engine.subsystem_index(t) for t in step.targets)
+                cond = _resolve_condition(step.condition, engine)
 
-                rule = self._implementation_for(step.operation, device_labels)
+                rule = self._implementation_for(step.operation, device_operands)
                 try:
                     matrix = rule(step.operation, targets=step.targets)
                 except Exception as exc:
@@ -762,7 +761,7 @@ class SimulatorBackend:
                     ) from exc
 
                 # Check matrix shape matches this instruction's target dims.
-                target_dims = tuple(layout.system_dims[i] for i in engine_indices)
+                target_dims = tuple(engine.system_dims[i] for i in engine_indices)
                 expected = prod(target_dims)
                 if matrix.shape != (expected, expected):
                     raise BackendValidationError(
@@ -790,10 +789,10 @@ class SimulatorBackend:
                 # above: rule lookup, Kraus resolution, shape check, step
                 # append - one ApplyChannelStep per channel, inheriting the
                 # gate's condition. Noise selection stays in engine-index
-                # space; device labels are exclusively for the
+                # space; device operands are exclusively for the
                 # implementation-map lookup above.
                 for channel in self._noise_model.channels_for(
-                    type(step.operation), engine_indices, layout
+                    type(step.operation), engine_indices, engine
                 ):
                     has_channel = True
                     rule = self._channel_map.get(type(channel))

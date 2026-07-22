@@ -7,6 +7,26 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._engine_allocation import _EngineAllocation
+from ..resource_layout import ResourceLayout
+
+
+@dataclass(frozen=True)
+class _LoweringContext:
+    """Private per-run pairing of the resolved `ResourceLayout` and `_EngineAllocation`.
+
+    A lowering-time implementation convenience only: it is not public and it
+    does not combine one program ref's device label and engine index into a
+    single per-resource value (contrast the removed `BoundResource`, which
+    did exactly that). Matrix lowering reads `resource_layout` to build
+    `ImplementationMap` lookup keys (`device_operands`) and reads `engine` for
+    every execution-plan index/dimension (`ApplyMatrixStep` targets,
+    measurement, reset, and condition lowering). Both values are resolved
+    once per run and threaded through unchanged; neither is re-resolved
+    during lowering.
+    """
+
+    resource_layout: ResourceLayout
+    engine: _EngineAllocation
 
 
 @dataclass(frozen=True)

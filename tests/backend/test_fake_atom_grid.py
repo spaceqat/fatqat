@@ -6,12 +6,17 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
-from fatqat.backends import FakeAtomGridBackend, SimulatorBackend
+from fatqat.backends import ApplyMatrixStep, FakeAtomGridBackend, SimulatorBackend
 from fatqat.backends.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.program import Program
 from fatqat.registers import GridRegister, QuantumRegister
 from fatqat.resource_layout import ResourceLayout
+
+
+def _matrix_steps(plan):
+    return [step for step in plan if isinstance(step, ApplyMatrixStep)]
+
 
 # --- constructor validation / default shape -----------------------------------
 
@@ -228,13 +233,17 @@ def test_fake_atom_grid_implementation_map_cx_has_no_class_keyed_rule():
 # --- resource-map behavior -----------------------------------------------------
 
 
-def test_resource_map_contains_all_scalar_refs_from_the_program_registers():
+def test_resource_layout_covers_all_scalar_refs_from_the_program_registers():
     atoms = GridRegister(2, 2, name="atoms")
     p = Program([atoms])
     backend = FakeAtomGridBackend()
-    layout = backend._allocate_engine(p)
-    resources = backend._build_qubit_resource_map(p, layout)
-    assert set(resources) == set(atoms[index] for index in range(4))
+    resource_layout = backend._resolve_resource_layout(p)
+    assert {resource_layout.device_label(atoms[index]) for index in range(4)} == {
+        0,
+        1,
+        5,
+        6,
+    }
 
 
 # --- integration: numeric equivalence to manual scalar circuits ----------------
@@ -395,6 +404,50 @@ def test_native_connectivity_lookup_uses_device_labels_not_engine_indices():
     )
 
     assert np.allclose(grid_sv, manual_sv)
+
+
+def test_lowering_uses_resource_layout_device_operands_and_engine_allocation_indices():
+    # 2x3 grid on the default 4x5 device: atoms[0] is engine index 0, device
+    # label 0; atoms[3] is engine index 3, device label 5 (row 1, col 0 ->
+    # 1*5+0). The native CX map only legalizes the *device*-label edge
+    # (0, 5), not the engine-index pair (0, 3), so lowering only succeeds by
+    # looking up `ImplementationMap` with device operands sourced from
+    # `ResourceLayout`. The resulting `ApplyMatrixStep`, however, must carry
+    # the *engine* indices (0, 3) from `_EngineAllocation` - the private
+    # lowering context keeps the two identities separate end to end.
+    atoms = GridRegister(2, 3, name="atoms")
+    program = Program([atoms])
+    program.add(ops.CX, (atoms[0], atoms[3]))
+
+    backend = FakeAtomGridBackend()
+    assert (0, 5) in backend.implementation_map.device_operands_for(ops.CX)
+    assert (0, 3) not in backend.implementation_map.device_operands_for(ops.CX)
+
+    plan, _facts = backend._lower_program(program)
+    steps = _matrix_steps(plan)
+    assert len(steps) == 1
+    assert steps[0].target_indices == (0, 3)
+
+
+def test_run_resolves_resource_layout_exactly_once_even_with_grid_mapping():
+    # FakeAtomGridBackend's `_resolve_resource_layout` is non-trivial (grid
+    # validation + top-left mapping); lowering must reuse the single value
+    # `run()` already resolved rather than resolving it again for lookup.
+    atoms = GridRegister(2, 3, name="atoms")
+    program = Program([atoms])
+    program.add(ops.RX(0.1), atoms[0])
+
+    backend = FakeAtomGridBackend()
+    calls = {"resource_layout": 0}
+    original = backend._resolve_resource_layout
+
+    def counting(program):
+        calls["resource_layout"] += 1
+        return original(program)
+
+    backend._resolve_resource_layout = counting
+    backend.run(program, result_config={"counts": False, "statevector": True})
+    assert calls["resource_layout"] == 1
 
 
 def test_device_label_for_method_is_gone():

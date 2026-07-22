@@ -31,7 +31,6 @@ from typing import TYPE_CHECKING, Any
 
 from .. import operations as ops
 from ..errors import BackendValidationError
-from .._engine_allocation import _EngineAllocation
 from ..implementation import (
     ImplementationMap,
     default_matrix_implementation_map,
@@ -43,7 +42,6 @@ from ..registers import (
     RegisterRef,
 )
 from ..resource_layout import ResourceLayout
-from .resource_binding import BoundResource
 from .simulator_backend import SimulatorBackend
 
 if TYPE_CHECKING:
@@ -226,26 +224,3 @@ class FakeAtomGridBackend(SimulatorBackend):
             row, col = divmod(index, grid.cols)
             labels[grid[index]] = row * self._cols + col
         return ResourceLayout(labels)
-
-    def _build_qubit_resource_map(
-        self, program: Program, flat_layout: _EngineAllocation
-    ) -> dict[RegisterRef, BoundResource]:
-        """Build this run's resource map from the resolved public resource layout.
-
-        The device label for every scalar ref comes from
-        `_resolve_resource_layout(program)` - the single source of the
-        top-left mapping formula - rather than from a separate per-ref
-        callback; the engine index still comes from `flat_layout`, exactly
-        as the base class does it.
-        """
-        resource_layout = self._resolve_resource_layout(program)
-        resources: dict[RegisterRef, BoundResource] = {}
-        for register in program.qreg:
-            for index in range(register.size):
-                ref = register[index]
-                resources[ref] = BoundResource(
-                    ref=ref,
-                    engine_index=flat_layout.subsystem_index(ref),
-                    device_label=resource_layout.device_label(ref),
-                )
-        return resources
