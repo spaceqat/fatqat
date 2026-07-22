@@ -1,4 +1,4 @@
-name: Qiskit compatibility
+name: Cross-validation against Qiskit
 
 # Numerical cross-validation against Qiskit Aer: small circuits, ideal and
 # noisy, compared as exact state matrices (atol 1e-12). One Linux job is
