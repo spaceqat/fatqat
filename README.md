@@ -47,12 +47,13 @@ print(rho.diagonal().real)          # [0.5 0.  0.  0.5]
 ## Runtimes
 
 `runtime` selects the execution technology for the chosen representation —
-`"numpy"` (the default) or `"numba"` for JIT-compiled kernels (statevector
-only for now; requires the optional `numba` dependency). The runtime never
-changes results, only how fast they are computed:
+`"numpy"` (the default) or `"numba"` for JIT-compiled kernels (both methods;
+requires the optional `numba` dependency). The runtime never changes
+results, only how fast they are computed:
 
 ```python
 backend = fq.backends.SimulatorBackend(method="SV", runtime="numba")
+noisy = fq.backends.SimulatorBackend(method="DM", runtime="numba")
 ```
 
 ## Dynamic circuits
