@@ -7,10 +7,7 @@ import pytest
 
 from fatqat import operations as ops
 from fatqat.backends import FakeAtomGridBackend, SimulatorBackend
-from fatqat.backends.fake_atom_grid import (
-    GridBinding,
-    fake_atom_grid_implementation_map,
-)
+from fatqat.backends.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.program import Program
 from fatqat.registers import GridRegister, QuantumRegister
@@ -72,11 +69,17 @@ def test_2x3_grid_binds_top_left_on_default_4x5_backend():
 
     backend = FakeAtomGridBackend()  # default 4x5
     layout = backend.resolve_layout(p)
-    binding = backend._create_resource_binding(p, layout)
-    bound = binding.resolve(atoms.all(), layout)
+    resources = backend._build_qubit_resource_map(p, layout)
 
-    assert tuple(b.device_label for b in bound) == (0, 1, 2, 5, 6, 7)
-    assert tuple(b.engine_index for b in bound) == (0, 1, 2, 3, 4, 5)
+    assert tuple(resources[atoms[i]].device_label for i in range(6)) == (
+        0,
+        1,
+        2,
+        5,
+        6,
+        7,
+    )
+    assert tuple(resources[atoms[i]].engine_index for i in range(6)) == tuple(range(6))
 
 
 def test_scalar_grid_ref_uses_grid_binder_device_label_not_identity():
@@ -87,10 +90,8 @@ def test_scalar_grid_ref_uses_grid_binder_device_label_not_identity():
     p = Program([atoms])
     backend = FakeAtomGridBackend()  # default 4x5
     layout = backend.resolve_layout(p)
-    binding = backend._create_resource_binding(p, layout)
-
     ref = atoms[3]
-    bound = binding.resolve(ref, layout)
+    bound = backend._build_qubit_resource_map(p, layout)[ref]
     assert bound.engine_index == 3
     assert bound.device_label == 5
 
@@ -103,9 +104,8 @@ def test_rejects_grid_register_combined_with_other_quantum_register():
     other = QuantumRegister(2, name="q")
     p = Program([atoms, other])
     backend = FakeAtomGridBackend()
-    layout = backend.resolve_layout(p)
     with pytest.raises(BackendValidationError):
-        backend._create_resource_binding(p, layout)
+        backend.resolve_layout(p)
 
 
 def test_rejects_two_grid_registers():
@@ -113,9 +113,8 @@ def test_rejects_two_grid_registers():
     atoms2 = GridRegister(2, 2, name="a2")
     p = Program([atoms1, atoms2])
     backend = FakeAtomGridBackend()
-    layout = backend.resolve_layout(p)
     with pytest.raises(BackendValidationError):
-        backend._create_resource_binding(p, layout)
+        backend.resolve_layout(p)
 
 
 def test_rejects_grid_that_does_not_fit_backend_even_with_enough_total_capacity():
@@ -125,9 +124,8 @@ def test_rejects_grid_that_does_not_fit_backend_even_with_enough_total_capacity(
     atoms = GridRegister(5, 4, name="atoms")
     p = Program([atoms])
     backend = FakeAtomGridBackend()
-    layout = backend.resolve_layout(p)
     with pytest.raises(BackendValidationError):
-        backend._create_resource_binding(p, layout)
+        backend.resolve_layout(p)
 
 
 def test_resolve_layout_rejects_capacity_for_scalar_only_program():
@@ -148,9 +146,8 @@ def test_scalar_only_program_uses_identity_binding():
     p = Program(3)
     backend = FakeAtomGridBackend()
     layout = backend.resolve_layout(p)
-    binding = backend._create_resource_binding(p, layout)
     ref = p.qreg[0][2]
-    bound = binding.resolve(ref, layout)
+    bound = backend._build_qubit_resource_map(p, layout)[ref]
     assert bound.engine_index == bound.device_label == 2
 
 
@@ -195,16 +192,16 @@ def test_fake_atom_grid_implementation_map_cx_has_no_class_keyed_rule():
     assert m.implementation_for(ops.CZ) is None
 
 
-# --- GridBinding direct behavior ------------------------------------------------
+# --- resource-map behavior -----------------------------------------------------
 
 
-def test_grid_binding_declines_targets_from_a_different_register():
+def test_resource_map_contains_all_scalar_refs_from_the_program_registers():
     atoms = GridRegister(2, 2, name="atoms")
-    other = GridRegister(2, 2, name="other")
     p = Program([atoms])
-    layout = SimulatorBackend().resolve_layout(p)
-    binder = GridBinding(atoms, backend_cols=5)
-    assert binder(other[0], layout) is None
+    backend = FakeAtomGridBackend()
+    layout = backend.resolve_layout(p)
+    resources = backend._build_qubit_resource_map(p, layout)
+    assert set(resources) == set(atoms[index] for index in range(4))
 
 
 # --- integration: numeric equivalence to manual scalar circuits ----------------
@@ -376,9 +373,8 @@ def test_condition_on_viewed_instruction_propagates_end_to_end():
 
 
 def test_grid_register_export_is_backend_public():
-    # FakeAtomGridBackend is publicly exported; GridBinding is not (it stays
-    # importable only from the submodule, like _scalar_identity_binder).
+    # FakeAtomGridBackend is publicly exported; implementation details are not.
     import fatqat.backends as backends_pkg
 
     assert "FakeAtomGridBackend" in backends_pkg.__all__
-    assert not hasattr(backends_pkg, "GridBinding")
+    assert not hasattr(backends_pkg, "_build_qubit_resource_map")

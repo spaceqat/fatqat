@@ -85,9 +85,9 @@ def test_metadata_records_method_and_backend_name():
 def test_barrier_is_skipped_in_lowering():
     backend = SimulatorBackend()
     p = _bell(with_barriers=True)
-    plan, facts = backend._lower(p, backend.resolve_layout(p))
+    plan, facts = backend._lower_program(p)
     p_ref = _bell()
-    plan_ref, _ = backend._lower(p_ref, backend.resolve_layout(p_ref))
+    plan_ref, _ = backend._lower_program(p_ref)
     assert len(plan) == len(plan_ref)  # barriers emit no steps
     assert facts.has_measurement is True and facts.has_reset is False
 

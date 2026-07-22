@@ -9,7 +9,7 @@ from fatqat.implementation import ImplementationMap, default_matrix_implementati
 
 
 def _lowered_gate_steps(backend, program):
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
     return [s for s in plan if isinstance(s, ApplyMatrixStep)]
 
 

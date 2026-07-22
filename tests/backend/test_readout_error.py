@@ -31,7 +31,7 @@ def _measured_program():
 def test_confusions_resolved_onto_measurement_step():
     backend = SimulatorBackend(noise=_readout_model(_FLIP_30))
     program = _measured_program()
-    plan, facts = backend._lower(program, backend.resolve_layout(program))
+    plan, facts = backend._lower_program(program)
 
     (measurement,) = [s for s in plan if isinstance(s, MeasurementStep)]
     assert measurement.confusions is not None
@@ -45,7 +45,7 @@ def test_confusions_resolved_onto_measurement_step():
 def test_noise_free_measurement_lowers_without_confusions():
     backend = SimulatorBackend()
     program = _measured_program()
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
 
     (measurement,) = [s for s in plan if isinstance(s, MeasurementStep)]
     assert measurement.confusions is None
@@ -56,7 +56,7 @@ def test_untargeted_subsystems_lower_to_none_entries():
     backend = SimulatorBackend(noise=noise)
     program = fq.Program(2, 2)
     program.add_measurement((0, 1), (0, 1))
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
 
     (measurement,) = [s for s in plan if isinstance(s, MeasurementStep)]
     assert measurement.confusions[0] is None
@@ -67,13 +67,13 @@ def test_dimension_mismatch_rejected_at_lowering():
     backend = SimulatorBackend(noise=_readout_model(np.eye(3)))
     program = _measured_program()  # qubit measurement, 3x3 confusion
     with pytest.raises(BackendValidationError, match="dimension"):
-        backend._lower(program, backend.resolve_layout(program))
+        backend._lower_program(program)
 
 
 def test_readout_error_keeps_fast_path_on_both_methods():
     backend = SimulatorBackend(noise=_readout_model(_FLIP_30))
     program = _measured_program()
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
 
     assert NumpySVSimulator()._analyze_plan(plan)[0] is False
     assert NumpyDMSimulator()._analyze_plan(plan)[0] is False

@@ -35,9 +35,8 @@ expanding them. A view is only accepted where an operation opts in (see
 before.
 
 Resolving a view against real hardware sites is a backend concern, not a
-frontend one. `FakeAtomGridBackend`'s internal binder for this — a
-`GridBinding` — figures out, once per run, how the program's `GridRegister`
-maps onto that backend's device sites. `GridBinding` is not something a user
+frontend one. The backend's per-run resource-map utility figures out how the
+program's `GridRegister` maps onto that backend's device sites. This utility is not something a user
 constructs, configures, or passes in; it never appears in the public API
 surface, only inside the backend that resolves the program.
 

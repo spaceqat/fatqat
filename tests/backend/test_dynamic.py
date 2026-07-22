@@ -13,11 +13,6 @@ from fatqat.program import Program
 from fatqat.simulator.np import NumpySVSimulator
 
 
-def _lower(p):
-    b = SimulatorBackend("SV")
-    return b._lower(p, b.resolve_layout(p))
-
-
 def _is_dynamic(plan):
     """Statevector dynamic classification (reset samples a branch here)."""
     return NumpySVSimulator()._analyze_plan(plan)[0]
@@ -29,7 +24,7 @@ def test_lower_terminal_measurement_is_not_dynamic():
     p.add(ops.CZ, (0, 1))
     p.add_measurement(0, 0)
     p.add_measurement(1, 1)
-    plan, facts = _lower(p)
+    plan, facts = SimulatorBackend("SV")._lower_program(p)
     assert _is_dynamic(plan) is False
     assert facts.has_measurement is True
     assert facts.has_reset is False
@@ -41,7 +36,7 @@ def test_lower_measure_then_gate_on_disjoint_qubit_is_not_dynamic():
     p.add_measurement(0, 0)
     p.add(ops.X, 1)  # different qubit -> still fast path
     p.add_measurement(1, 1)
-    plan, _ = _lower(p)
+    plan, _ = SimulatorBackend("SV")._lower_program(p)
     assert _is_dynamic(plan) is False
 
 
@@ -50,14 +45,14 @@ def test_lower_gate_on_measured_qubit_is_dynamic():
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
     p.add(ops.X, 0)  # gate on already-measured qubit
-    plan, _ = _lower(p)
+    plan, _ = SimulatorBackend("SV")._lower_program(p)
     assert _is_dynamic(plan) is True
 
 
 def test_lower_condition_is_dynamic_and_resolves_indices():
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 1))
-    plan, _ = _lower(p)
+    plan, _ = SimulatorBackend("SV")._lower_program(p)
     assert _is_dynamic(plan) is True
     gate = plan[0]
     assert isinstance(gate, ApplyMatrixStep)
@@ -67,7 +62,7 @@ def test_lower_condition_is_dynamic_and_resolves_indices():
 def test_lower_reset_is_dynamic_and_emits_reset_step():
     p = Program(1)
     p.add(fq.ops.Reset, 0)
-    plan, facts = _lower(p)
+    plan, facts = SimulatorBackend("SV")._lower_program(p)
     assert _is_dynamic(plan) is True
     assert facts.has_reset is True
     assert plan == [ResetStep(reset_indices=(0,))]
@@ -81,7 +76,7 @@ def test_lower_unknown_gate_raises():
     p = Program(1)
     p.add(FooGate(), 0)
     with pytest.raises(fq.errors.UnsupportedOperationError):
-        _lower(p)
+        SimulatorBackend("SV")._lower_program(p)
 
 
 def test_reset_and_reuse_counts():
@@ -166,7 +161,7 @@ def test_lower_grouped_measurement_emits_one_grouped_step():
     p = Program(3, 3)
     p.add_measurement((0, 2), (1, 0))
 
-    plan, facts = _lower(p)
+    plan, facts = SimulatorBackend("SV")._lower_program(p)
 
     assert facts.has_measurement is True
     assert _is_dynamic(plan) is False
@@ -178,7 +173,7 @@ def test_lower_adjacent_single_measurements_stay_separate_steps():
     p.add_measurement(0, 0)
     p.add_measurement(1, 1)
 
-    plan, _ = _lower(p)
+    plan, _ = SimulatorBackend("SV")._lower_program(p)
 
     assert _is_dynamic(plan) is False
     assert plan == [
@@ -191,7 +186,7 @@ def test_lower_grouped_reset_uses_all_targets():
     p = Program(3)
     p.add(fq.ops.Reset, (0, 2))
 
-    plan, facts = _lower(p)
+    plan, facts = SimulatorBackend("SV")._lower_program(p)
 
     assert _is_dynamic(plan) is True
     assert facts.has_reset is True

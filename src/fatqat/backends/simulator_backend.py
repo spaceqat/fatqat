@@ -39,6 +39,7 @@ refactor.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import fields
 from math import prod
 from typing import Any
@@ -66,7 +67,14 @@ from ..noise import (
 from ..noise.base import _validate_kraus_shapes
 from ..operations import BarrierGate, Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
-from ..registers import RegisterView
+from ..registers import (
+    AllSelector,
+    BlockSelector,
+    ColumnSelector,
+    RegisterRef,
+    RegisterView,
+    RowSelector,
+)
 from ..result import (
     Result,
     _DensityMatrixResultConfig,
@@ -84,7 +92,10 @@ from .engine_contract import (
     _EngineConfig,
     _StateVectorResultRequest,
 )
-from .resource_binding import BoundResource, ResourceBinding, _scalar_identity_binder
+from .resource_binding import (
+    BoundResource,
+    _build_qubit_resource_map,
+)
 from .steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
@@ -100,6 +111,101 @@ _METHOD_ALIASES = {
     "density_matrix": "density_matrix",
     "dm": "density_matrix",
 }
+
+ProgramInstruction = AppliedOperation | Measurement
+ResourceMap = Mapping[RegisterRef, BoundResource]
+DeviceLabelPolicy = Callable[[RegisterRef, FlatResourceLayout], Hashable]
+
+
+def _view_members(view: RegisterView) -> tuple[RegisterRef, ...]:
+    """Enumerate a view in its documented deterministic member order."""
+    register = view.register
+    selector = view.selector
+    if isinstance(selector, AllSelector):
+        coordinates = [
+            (row, col) for row in range(register.rows) for col in range(register.cols)
+        ]
+    elif isinstance(selector, RowSelector):
+        coordinates = [(selector.row, col) for col in range(register.cols)]
+    elif isinstance(selector, ColumnSelector):
+        coordinates = [(row, selector.col) for row in range(register.rows)]
+    elif isinstance(selector, BlockSelector):
+        (row_start, row_stop), (col_start, col_stop) = selector.rows, selector.cols
+        coordinates = [
+            (row, col)
+            for row in range(row_start, row_stop)
+            for col in range(col_start, col_stop)
+        ]
+    else:  # pragma: no cover - exhaustive over the Selector union
+        raise AssertionError(f"unhandled selector {selector!r}")
+    return tuple(register[row * register.cols + col] for row, col in coordinates)
+
+
+def _expand_grouped_operation(
+    step: AppliedOperation,
+) -> tuple[AppliedOperation, ...]:
+    """Expand one view-bearing operation into scalar AppliedOperations."""
+    target_members = tuple(
+        _view_members(target) if isinstance(target, RegisterView) else (target,)
+        for target in step.targets
+    )
+    if not any(isinstance(target, RegisterView) for target in step.targets):
+        return (step,)
+
+    name = type(step.operation).__name__
+    if len(target_members) == 1:
+        emissions = [(member,) for member in target_members[0]]
+    elif len(target_members) == 2:
+        first, second = target_members
+        first_is_view = isinstance(step.targets[0], RegisterView)
+        second_is_view = isinstance(step.targets[1], RegisterView)
+        if first_is_view != second_is_view:
+            raise BackendValidationError(
+                f"{name} mixes a scalar target with a view target; a "
+                "two-target gate needs both operands scalar or both views"
+            )
+        if len(first) != len(second):
+            raise BackendValidationError(
+                f"{name} pairs views of unequal size "
+                f"({len(first)} vs {len(second)}); pairwise view "
+                "application requires equal cardinality"
+            )
+        emissions = []
+        for control, target in zip(first, second):
+            if control.register is target.register and control.index == target.index:
+                raise BackendValidationError(
+                    f"{name} pairs member {control!r} with itself; a member "
+                    "cannot be both control and target of one two-target application"
+                )
+            emissions.append((control, target))
+    else:
+        raise BackendValidationError(
+            f"{name} cannot expand a view target at arity {len(target_members)}"
+        )
+
+    return tuple(
+        AppliedOperation(
+            operation=step.operation,
+            targets=tuple(targets),
+            condition=step.condition,
+        )
+        for targets in emissions
+    )
+
+
+def _break_grouped_operations(
+    operations: Iterable[ProgramInstruction],
+) -> tuple[ProgramInstruction, ...]:
+    """Return a new scalar-only instruction stream without mutating the program."""
+    broken: list[ProgramInstruction] = []
+    for step in operations:
+        if isinstance(step, AppliedOperation) and any(
+            isinstance(target, RegisterView) for target in step.targets
+        ):
+            broken.extend(_expand_grouped_operation(step))
+        else:
+            broken.append(step)
+    return tuple(broken)
 
 
 class SimulatorBackend:
@@ -302,24 +408,30 @@ class SimulatorBackend:
         """
         return FlatResourceLayout.from_program(program)
 
-    def _create_resource_binding(
+    def _device_label_for(
+        self, ref: RegisterRef, flat_layout: FlatResourceLayout
+    ) -> Hashable:
+        """Return the implementation-map label for one scalar reference."""
+        return flat_layout.subsystem_index(ref)
+
+    def _build_qubit_resource_map(
         self, program: Program, flat_layout: FlatResourceLayout
-    ) -> ResourceBinding:
-        """Build the resource binding used to resolve this run's targets.
+    ) -> dict[RegisterRef, BoundResource]:
+        """Build this run's complete scalar qubit-resource map."""
+        return _build_qubit_resource_map(program, flat_layout, self._device_label_for)
 
-        Protected extension hook, called once per run (after
-        `resolve_layout`, before `_lower`) rather than stored as mutable
-        per-run backend state. The default installs only the scalar/identity
-        binder: a `RegisterRef` resolves to a `BoundResource` whose
-        `engine_index` and `device_label` are both `flat_layout.subsystem_index(ref)`.
-        A `RegisterView` is declined by this binder and, since the base
-        backend installs no other, raises
-        `~fatqat.errors.UnsupportedResourceOperandError` from `_lower`.
-
-        Override to install additional binders (tried before the scalar
-        binder) for richer frontend resource types.
-        """
-        return ResourceBinding([_scalar_identity_binder])
+    def _lower_program(
+        self,
+        program: Program,
+        *,
+        layout: FlatResourceLayout | None = None,
+    ) -> tuple[list[ResolvedStep], _PlanFacts]:
+        """Prepare and lower one program using the backend's resource policy."""
+        if layout is None:
+            layout = self.resolve_layout(program)
+        resources = self._build_qubit_resource_map(program, layout)
+        operations = _break_grouped_operations(program.operations)
+        return self._lower(operations, layout, resources)
 
     def run(
         self,
@@ -363,10 +475,6 @@ class SimulatorBackend:
             UnsupportedOperationError: If the program contains an operation
                 without a backend implementation, or one whose target key is
                 illegal for this backend.
-            UnsupportedResourceOperandError: If a unitary gate's target
-                cannot be resolved by any resource binder this backend
-                installs (e.g. a ``RegisterView`` on a backend that binds
-                only scalar ``RegisterRef`` targets).
         """
         known_keys = {field.name for field in fields(self._result_config_cls)}
         config = _normalize_dict_options(
@@ -378,8 +486,7 @@ class SimulatorBackend:
             backend_name=type(self).__name__,
         )
         layout = self.resolve_layout(program)
-        binding = self._create_resource_binding(program, layout)
-        plan, facts = self._lower(program, layout, binding)
+        plan, facts = self._lower_program(program, layout=layout)
         self._validate(config, shots, facts)
         try:
             return Job.done(
@@ -533,141 +640,11 @@ class SimulatorBackend:
             )
         return rule
 
-    def _expand_emissions(
-        self,
-        operation: Operation,
-        resolved: tuple[BoundResource | tuple[BoundResource, ...], ...],
-    ) -> list[tuple[BoundResource, ...]]:
-        """Expand one instruction's per-target resolutions into scalar emissions.
-
-        `resolved` is the tuple of per-target resolutions for one
-        `AppliedOperation`, in operation order: each element is either a scalar
-        `BoundResource` (a scalar target) or a tuple of `BoundResource` (a
-        `RegisterView` resolved to its members). This method - the single
-        expansion helper, deciding cardinality and pairing that a binder never
-        sees - returns the ordered list of concrete scalar applications
-        ("emissions"), each an arity-length tuple of `BoundResource`.
-
-        - All-scalar (no view anywhere): exactly one emission, the resolutions
-          as-is. Covers scalar rotations, scalar CX/CZ, and any scalar-only op
-          of any arity - byte-identical to pre-expansion behavior.
-        - Arity 1 with a view: N one-target emissions, one per member, in the
-          view's order (uniform expansion).
-        - Arity 2 with views: both operands must be tuples of equal length;
-          they zip pairwise in order (emission i pairs first[i] with
-          second[i], first = controls, second = targets). A member paired with
-          itself (same `BoundResource.ref`) is rejected.
-
-        Raises:
-            BackendValidationError: On a scalar/view mixture, a cardinality
-                mismatch between two views, or a self-pair within a zipped
-                pair - the explicit backend validation errors, raised before
-                any step for this instruction is appended.
-        """
-        if not any(isinstance(r, tuple) for r in resolved):
-            # No view anywhere: a single emission with the scalar resolutions.
-            return [tuple(resolved)]
-
-        name = type(operation).__name__
-        if len(resolved) == 1:
-            (members,) = resolved  # a tuple: this branch only runs with a view
-            return [(member,) for member in members]
-
-        if len(resolved) == 2:
-            first, second = resolved
-            first_is_view = isinstance(first, tuple)
-            second_is_view = isinstance(second, tuple)
-            if first_is_view != second_is_view:
-                raise BackendValidationError(
-                    f"{name} mixes a scalar target with a view target; a "
-                    "two-target gate needs both operands scalar or both views"
-                )
-            if len(first) != len(second):
-                raise BackendValidationError(
-                    f"{name} pairs views of unequal size "
-                    f"({len(first)} vs {len(second)}); pairwise view "
-                    "application requires equal cardinality"
-                )
-            emissions: list[tuple[BoundResource, ...]] = []
-            for control, target in zip(first, second):
-                if control.ref == target.ref:
-                    raise BackendValidationError(
-                        f"{name} pairs member {control.ref!r} with itself; a "
-                        "member cannot be both control and target of one "
-                        "two-target application"
-                    )
-                emissions.append((control, target))
-            return emissions
-
-        # Only RX/RY/RZ (arity 1) and CX/CZ (arity 2) accept views, so a view
-        # reaching any other arity is a contract violation, not user input.
-        raise BackendValidationError(
-            f"{name} cannot expand a view target at arity {len(resolved)}"
-        )
-
-    def _break_grouped_operations(
-        self,
-        program: Program,
-        layout: FlatResourceLayout,
-        binding: ResourceBinding,
-    ) -> list[AppliedOperation | Measurement]:
-        """Break grouped (view-bearing) operations into a scalar-only stream.
-
-        One ordered pass over `program.operations` that returns a NEW list -
-        `program` and its `operations` are never mutated. `Measurement`
-        instructions and any `AppliedOperation` with no `RegisterView` target
-        (scalar rotations/CX/CZ, plus every `Reset`/`Barrier`, which are never
-        view-bearing) pass through unchanged, 1:1 (same objects).
-
-        A view-bearing `AppliedOperation` - only the view-capable operations
-        (RX/RY/RZ/CX/CZ) can be - is resolved through `binding` per target and
-        expanded via the existing `_expand_emissions` helper (which owns the
-        cardinality / scalar-view-mixture / self-pair validation and raises
-        `~fatqat.errors.BackendValidationError` on any of them). Each resulting
-        emission becomes a genuine new `AppliedOperation` over its concrete
-        scalar refs, preserving operation, parameters, condition, and order.
-        Constructing real `AppliedOperation`s re-runs the all-scalar
-        duplicate-ref / `validate_targets()` path in its `__post_init__`,
-        preserving the existing validation rules for free.
-
-        Because this pass runs to completion (or raises) before `_lower`
-        appends any plan step, no expansion failure can leave a partial plan.
-
-        Raises:
-            BackendValidationError: On an invalid view expansion (cardinality
-                mismatch, scalar/view mixture, or self-pair), surfaced from
-                `_expand_emissions`.
-        """
-        operations: list[AppliedOperation | Measurement] = []
-        for step in program.operations:
-            if not isinstance(step, AppliedOperation) or not any(
-                isinstance(t, RegisterView) for t in step.targets
-            ):
-                # Measurement, scalar-only gates, Reset, and Barrier all pass
-                # through unchanged (identity), 1:1, in order.
-                operations.append(step)
-                continue
-
-            # A view-bearing gate: resolve each target expression to its bound
-            # resource(s) and expand into the ordered scalar emissions. The
-            # whole list (and any cardinality/mixture/self-pair failure) is
-            # computed here, before `_lower` sees any of these instructions.
-            resolved = tuple(binding.resolve(t, layout) for t in step.targets)
-            for emission in self._expand_emissions(step.operation, resolved):
-                operations.append(
-                    AppliedOperation(
-                        operation=step.operation,
-                        targets=tuple(b.ref for b in emission),
-                        condition=step.condition,
-                    )
-                )
-        return operations
-
     def _lower(
         self,
-        program: Program,
+        operations: Sequence[ProgramInstruction],
         layout: FlatResourceLayout,
-        binding: ResourceBinding | None = None,
+        resources: ResourceMap,
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Lower a program into an execution plan and classify it, in one pass.
 
@@ -682,31 +659,12 @@ class SimulatorBackend:
         The pass also computes `has_measurement`, `has_reset`, and
         `has_channel`.
 
-        `Measurement`, `Reset`, and `Barrier` targets are always scalar
-        `RegisterRef`s (views are frontend-rejected for them) and are
-        resolved directly via `layout.subsystem_index`, unchanged. Only the
-        unitary-gate branch consults `binding`: it resolves each of the
-        applied operation's targets to a `BoundResource`, then uses the
-        resulting device labels for the implementation-map lookup and the
-        resulting engine indices everywhere a flat index is needed (shape
-        checks, `ApplyMatrixStep`, noise selection). `binding` is optional so
-        a caller resolving a plan directly (bypassing `run()`) does not have
-        to construct one; when omitted, one is built via
-        `_create_resource_binding`.
-
-        Raises:
-            UnsupportedResourceOperandError: If a unitary gate's target
-                cannot be resolved by any binder in `binding` (e.g. a
-                `RegisterView` reaching a backend that installs no binder
-                able to claim it).
+        The caller supplies a scalar-only instruction stream and a complete
+        per-run resource map. The map's device labels are used only for
+        implementation lookup; its engine indices are used for dimensions,
+        execution steps, and noise selection. Grouped frontend operations are
+        expanded before this method is called.
         """
-        if binding is None:
-            binding = self._create_resource_binding(program, layout)
-        # Pre-lowering pass: break every view-bearing gate into scalar
-        # AppliedOperations first, so the loop below only ever sees scalar
-        # instructions (one target -> one BoundResource, one ApplyMatrixStep).
-        operations = self._break_grouped_operations(program, layout, binding)
-
         plan: list[ResolvedStep] = []
         has_measurement = False
         has_reset = False
@@ -750,13 +708,12 @@ class SimulatorBackend:
                     plan.append(ResetStep(reset_indices=target_indices, condition=cond))
                     continue
 
-                # Every gate reaching here is scalar-only: view expansion
-                # already happened in `_break_grouped_operations`, so each
-                # target resolves to exactly one `BoundResource` and this
-                # instruction produces exactly one `ApplyMatrixStep`. Targets
-                # were validated when the (possibly new) `AppliedOperation` was
-                # constructed, so `validate_targets()` is not repeated here.
-                bound = tuple(binding.resolve(t, layout) for t in step.targets)
+                # Every gate reaching here is scalar-only: grouped expansion
+                # already happened before lowering, so each target has one
+                # precomputed resource and this instruction produces one
+                # ApplyMatrixStep. Targets were validated when any emitted
+                # AppliedOperation was constructed.
+                bound = tuple(resources[t] for t in step.targets)
                 cond = _resolve_condition(step.condition, layout)
                 device_labels = tuple(b.device_label for b in bound)
                 engine_indices = tuple(b.engine_index for b in bound)

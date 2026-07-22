@@ -41,15 +41,9 @@ from ..noise import NoiseModel
 from ..operations import Operation
 from ..program import Program
 from ..registers import (
-    AllSelector,
-    BlockSelector,
-    ColumnSelector,
     GridRegister,
     RegisterRef,
-    RegisterView,
-    RowSelector,
 )
-from .resource_binding import BoundResource, ResourceBinding, _scalar_identity_binder
 from .simulator_backend import SimulatorBackend
 
 DEFAULT_ROWS = 4
@@ -112,84 +106,6 @@ def fake_atom_grid_implementation_map(rows: int, cols: int) -> ImplementationMap
     return m
 
 
-class GridBinding:
-    """Grid-specific binder: resolves targets from one bound `GridRegister`.
-
-    Closes over the bound `GridRegister` instance and the backend's column
-    count. Declines (returns `None`) any target that is not a `RegisterRef`
-    or `RegisterView` whose `.register` is (by identity) the bound
-    `GridRegister`. Top-left placement: frontend `(row, col)` maps to backend
-    device label `row * backend_cols + col`, using the *backend*'s column
-    count, not the frontend grid's. Engine index always comes from the run's
-    `FlatResourceLayout`, never hand-computed.
-    """
-
-    def __init__(self, grid_register: GridRegister, backend_cols: int) -> None:
-        """Store the bound grid register and the backend's column count.
-
-        Args:
-            grid_register: The `GridRegister` this binder resolves targets
-                for; any target from a different register is declined.
-            backend_cols: The *backend*'s column count, used to compute
-                device labels (`row * backend_cols + col`).
-        """
-        self._grid_register = grid_register
-        self._backend_cols = backend_cols
-
-    def __call__(
-        self, target: RegisterRef | RegisterView, flat_layout: FlatResourceLayout
-    ) -> BoundResource | tuple[BoundResource, ...] | None:
-        """Resolve one target expression from the bound grid register.
-
-        Declines any target whose `.register` is not (by identity) the bound
-        `GridRegister`. A scalar `RegisterRef` resolves to a single
-        `BoundResource`; a `RegisterView` resolves to a tuple of
-        `BoundResource`, one per member, in the view's deterministic order.
-        """
-        if isinstance(target, RegisterRef):
-            if target.register is not self._grid_register:
-                return None
-            return self._bind_scalar(target, flat_layout)
-        if isinstance(target, RegisterView):
-            if target.register is not self._grid_register:
-                return None
-            return tuple(
-                self._bind_scalar(ref, flat_layout) for ref in self._members(target)
-            )
-        return None
-
-    def _bind_scalar(
-        self, ref: RegisterRef, flat_layout: FlatResourceLayout
-    ) -> BoundResource:
-        frontend_row, frontend_col = divmod(ref.index, self._grid_register.cols)
-        device_label = frontend_row * self._backend_cols + frontend_col
-        engine_index = flat_layout.subsystem_index(ref)
-        return BoundResource(
-            ref=ref, engine_index=engine_index, device_label=device_label
-        )
-
-    def _members(self, view: RegisterView) -> list[RegisterRef]:
-        """Enumerate a view's member refs in `RegisterView`'s documented order.
-
-        Row-major for `AllSelector`/`BlockSelector`, increasing-column for
-        `RowSelector`, increasing-row for `ColumnSelector`.
-        """
-        reg = self._grid_register
-        sel = view.selector
-        if isinstance(sel, AllSelector):
-            coords = [(r, c) for r in range(reg.rows) for c in range(reg.cols)]
-        elif isinstance(sel, RowSelector):
-            coords = [(sel.row, c) for c in range(reg.cols)]
-        elif isinstance(sel, ColumnSelector):
-            coords = [(r, sel.col) for r in range(reg.rows)]
-        elif isinstance(sel, BlockSelector):
-            (r0, r1), (c0, c1) = sel.rows, sel.cols
-            coords = [(r, c) for r in range(r0, r1) for c in range(c0, c1)]
-        else:  # pragma: no cover - exhaustive over the Selector union
-            raise AssertionError(f"unhandled selector {sel!r}")
-        return [reg[r * reg.cols + c] for r, c in coords]
-
-
 class FakeAtomGridBackend(SimulatorBackend):
     """Statevector backend constrained to a fake configurable-shape atom-grid target.
 
@@ -197,7 +113,7 @@ class FakeAtomGridBackend(SimulatorBackend):
     specialization: same execution engine, same `~fatqat.Result`/`~fatqat.Job`
     semantics. The differences are a configurable `rows x cols` device shape
     (default 4x5), a fixed native gate set (`RX`, `RY`, `RZ`, nearest-neighbor
-    `CX`/`CZ`), and grid-aware resource binding: a program's sole
+    `CX`/`CZ`), and grid-aware resource mapping: a program's sole
     `~fatqat.GridRegister` (if any) binds top-left onto the device, with
     every other quantum-register shape (scalar-only, or a grid combined with
     any other register, or more than one grid register) either bound
@@ -284,45 +200,31 @@ class FakeAtomGridBackend(SimulatorBackend):
             raise BackendValidationError(
                 "FakeAtomGridBackend only supports qubit dimensions"
             )
-        return layout
-
-    def _create_resource_binding(
-        self, program: Program, flat_layout: FlatResourceLayout
-    ) -> ResourceBinding:
-        """Build this run's resource binding: grid-aware, or plain scalar/identity.
-
-        Finds every `GridRegister` in `program.qreg`. No grid register means
-        a plain scalar-only program, unchanged from the base backend's
-        identity binding (device label == flat engine index already, for a
-        program with no grid register). Exactly one grid register must be
-        the program's sole quantum register and must fit the device
-        (`grid.rows <= self._rows and grid.cols <= self._cols`, checked
-        per-axis); its `GridBinding` is tried first, with the scalar/identity
-        binder installed as a defensive fallback that never fires once the
-        sole-register rule holds.
-
-        Raises:
-            BackendValidationError: If more than one `GridRegister` is
-                present, a `GridRegister` is combined with any other quantum
-                register, or the grid register does not fit the device shape.
-        """
         grid_registers = [r for r in program.qreg if isinstance(r, GridRegister)]
-        if not grid_registers:
-            return super()._create_resource_binding(program, flat_layout)
         if len(grid_registers) > 1:
             raise BackendValidationError(
                 "FakeAtomGridBackend accepts at most one GridRegister per "
                 f"program, got {len(grid_registers)}"
             )
-        grid = grid_registers[0]
-        if len(program.qreg) != 1:
-            raise BackendValidationError(
-                "FakeAtomGridBackend rejects a GridRegister combined with "
-                "any other quantum register"
-            )
-        if grid.rows > self._rows or grid.cols > self._cols:
-            raise BackendValidationError(
-                f"grid register ({grid.rows}x{grid.cols}) does not fit the "
-                f"backend's ({self._rows}x{self._cols}) device shape"
-            )
-        return ResourceBinding([GridBinding(grid, self._cols), _scalar_identity_binder])
+        if grid_registers:
+            grid = grid_registers[0]
+            if len(program.qreg) != 1:
+                raise BackendValidationError(
+                    "FakeAtomGridBackend rejects a GridRegister combined with "
+                    "any other quantum register"
+                )
+            if grid.rows > self._rows or grid.cols > self._cols:
+                raise BackendValidationError(
+                    f"grid register ({grid.rows}x{grid.cols}) does not fit the "
+                    f"backend's ({self._rows}x{self._cols}) device shape"
+                )
+        return layout
+
+    def _device_label_for(
+        self, ref: RegisterRef, flat_layout: FlatResourceLayout
+    ) -> int:
+        """Map a scalar ref to its row-major fake-device site label."""
+        if not isinstance(ref.register, GridRegister):
+            return flat_layout.subsystem_index(ref)
+        row, col = divmod(ref.index, ref.register.cols)
+        return row * self._cols + col

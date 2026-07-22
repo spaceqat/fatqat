@@ -21,6 +21,7 @@ from fatqat.simulator.np import NumpySVSimulator
 
 # pylint: enable=wrong-import-position
 
+
 # One representative applied instance per default-map gate, with generic
 # parameter values (structure at special angles may be *more* special than
 # the declared code - RX(pi) is a permutation - which is exactly what the
@@ -105,7 +106,7 @@ def _counts(simulator_cls, plan, dims, n_clbits, shots, seed, request):
 
 def _plan_and_request(program):
     backend = SimulatorBackend()
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
     return plan, backend._request_cls(counts=True, statevector=False)
 
 
@@ -166,7 +167,7 @@ def test_dense_declaration_stays_correct_at_special_parameters():
     program = fq.Program(1)
     program.add(fq.ops.RX(np.pi), 0)
     backend = SimulatorBackend()
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
     (step,) = plan
     assert _KERNEL_SPECS[step.kernel_key] == _DENSE
 

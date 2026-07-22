@@ -129,11 +129,10 @@ cardinality; mixing a scalar target with a view, or pairing a view with
 itself, is rejected. Either every member (or pair) validates or none do —
 there is no partial application of one source instruction.
 
-{py:class}`~fatqat.backends.FakeAtomGridBackend` (see
-[the API reference](../api/backends.rst)) is currently the only backend that
-can actually execute a view-bearing program; running one against a backend
-without grid-aware resource binding raises
-{py:exc}`~fatqat.errors.UnsupportedResourceOperandError`. Also note: a
+`SimulatorBackend` scalarizes view-bearing operations with identity device
+labels. {py:class}`~fatqat.backends.FakeAtomGridBackend` (see [the API
+reference](../api/backends.rst)) instead supplies grid-aware hardware labels,
+so its native connectivity rules apply to the emitted scalar operations. Also note: a
 program containing any view-bearing operation cannot be exported to QASM —
 `to_qasm()` raises `QasmExportError` for it, since QASM has no
 representation for a structured grid target. This is a real, current

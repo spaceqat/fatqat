@@ -35,7 +35,7 @@ def _x_program(with_measurement=False):
 def test_channel_lowered_right_after_its_gate_with_same_targets():
     backend = SimulatorBackend(noise=_depolarized_x_model())
     program = _x_program()
-    plan, facts = backend._lower(program, backend.resolve_layout(program))
+    plan, facts = backend._lower_program(program)
 
     assert isinstance(plan[0], ApplyMatrixStep)
     assert isinstance(plan[1], ApplyChannelStep)
@@ -49,7 +49,7 @@ def test_channel_inherits_the_gate_condition():
     backend = SimulatorBackend(noise=_depolarized_x_model())
     program = fq.Program(1, 1)
     program.add(fq.ops.X, 0, condition=(0, 1))
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
 
     assert isinstance(plan[1], ApplyChannelStep)
     assert plan[1].condition == plan[0].condition
@@ -59,7 +59,7 @@ def test_channel_inherits_the_gate_condition():
 def test_noise_free_backend_lowers_no_channel_steps():
     backend = SimulatorBackend()
     program = _x_program()
-    plan, facts = backend._lower(program, backend.resolve_layout(program))
+    plan, facts = backend._lower_program(program)
 
     assert all(not isinstance(s, ApplyChannelStep) for s in plan)
     assert facts.has_channel is False
@@ -74,7 +74,7 @@ def test_unresolvable_channel_type_raises():
     backend = SimulatorBackend(noise=noise)
     program = _x_program()
     with pytest.raises(UnsupportedOperationError, match="Leakage"):
-        backend._lower(program, backend.resolve_layout(program))
+        backend._lower_program(program)
 
 
 def test_mis_shaped_rule_rejected_but_non_cptp_accepted():
@@ -92,13 +92,13 @@ def test_mis_shaped_rule_rejected_but_non_cptp_accepted():
     backend = SimulatorBackend(noise=noise, channel_implementation_map=channel_map)
     program = _x_program()
     with pytest.raises(BackendValidationError, match="shape"):
-        backend._lower(program, backend.resolve_layout(program))
+        backend._lower_program(program)
 
     channel_map.register(
         Custom, lambda channel, *, targets: (0.5 * np.eye(2, dtype=complex),)
     )
     backend = SimulatorBackend(noise=noise, channel_implementation_map=channel_map)
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
     assert any(isinstance(step, ApplyChannelStep) for step in plan)
 
 
@@ -106,33 +106,15 @@ def test_viewed_gate_resolves_a_channel_per_expanded_member():
     # Channel resolution moved inside the per-emission loop: a viewed rotation
     # over N members with an attached channel emits N (matrix, channel) pairs,
     # each channel carrying the member's own engine index.
-    from fatqat.backends.resource_binding import BoundResource, ResourceBinding
-    from fatqat.backends.resource_binding import _scalar_identity_binder
-    from fatqat.registers import GridRegister, RegisterView
-
-    def view_binder(target, flat_layout):
-        if not isinstance(target, RegisterView):
-            return None
-        reg = target.register  # RowSelector on row 0 -> increasing column
-        row = target.selector.row
-        members = [reg[row * reg.cols + c] for c in range(reg.cols)]
-        return tuple(
-            BoundResource(
-                ref=m,
-                engine_index=flat_layout.subsystem_index(m),
-                device_label=flat_layout.subsystem_index(m),
-            )
-            for m in members
-        )
+    from fatqat.registers import GridRegister
 
     atoms = GridRegister(2, 3, name="atoms")
     program = fq.Program([atoms])
     noise = NoiseModel()
     noise.add_noise(fq.ops.RX, Depolarizing(p=0.1))
     backend = SimulatorBackend(noise=noise)
-    binding = ResourceBinding([view_binder, _scalar_identity_binder])
     program.add(fq.ops.RX(0.3), atoms.row(0))  # members at engine indices 0,1,2
-    plan, facts = backend._lower(program, backend.resolve_layout(program), binding)
+    plan, facts = backend._lower_program(program)
 
     matrix_steps = [s for s in plan if isinstance(s, ApplyMatrixStep)]
     channel_steps = [s for s in plan if isinstance(s, ApplyChannelStep)]
@@ -153,7 +135,7 @@ def test_reset_attached_channels_raise_until_wired():
     program = fq.Program(1)
     program.add(fq.ops.Reset, 0)
     with pytest.raises(UnsupportedOperationError, match="Reset"):
-        backend._lower(program, backend.resolve_layout(program))
+        backend._lower_program(program)
 
 
 # --- path classification ---
@@ -162,7 +144,7 @@ def test_reset_attached_channels_raise_until_wired():
 def test_unconditional_channel_keeps_density_matrix_on_fast_path():
     backend = SimulatorBackend(method="DM", noise=_depolarized_x_model())
     program = _x_program(with_measurement=True)
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
 
     assert NumpyDMSimulator()._analyze_plan(plan)[0] is False
 
@@ -170,7 +152,7 @@ def test_unconditional_channel_keeps_density_matrix_on_fast_path():
 def test_channel_forces_statevector_onto_dynamic_path():
     backend = SimulatorBackend(method="SV", noise=_depolarized_x_model())
     program = _x_program(with_measurement=True)
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
 
     assert NumpySVSimulator()._analyze_plan(plan)[0] is True
 
@@ -347,7 +329,7 @@ def test_numba_simulator_falls_back_correctly_on_channel_plans():
     program = fq.Program(1, 1)
     program.add(fq.ops.X, 0)
     program.add_measurement(0, 0)
-    plan, _ = backend._lower(program, backend.resolve_layout(program))
+    plan, _ = backend._lower_program(program)
     assert _plan_compilable(plan) is False
 
     # Below the auto-parallel floor so both simulators run in-process serial.
