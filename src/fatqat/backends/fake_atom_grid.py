@@ -27,24 +27,26 @@ device label and flat engine index coincide.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .. import operations as ops
 from ..errors import BackendValidationError
 from ..flat_layout import FlatResourceLayout
 from ..implementation import (
     ImplementationMap,
-    MatrixImplementation,
     default_matrix_implementation_map,
 )
 from ..noise import NoiseModel
-from ..operations import Operation
 from ..program import Program
 from ..registers import (
     GridRegister,
     RegisterRef,
 )
 from .simulator_backend import SimulatorBackend
+
+if TYPE_CHECKING:
+    from ..implementation import MatrixImplementation
+    from ..operations import Operation
 
 DEFAULT_ROWS = 4
 DEFAULT_COLS = 5
