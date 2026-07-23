@@ -18,8 +18,8 @@ the backend never branches on method afterwards:
   keyword, the availability name, the metadata echo, and validation wording.
 - ``_simulator_cls``: the `Simulator` subclass the (method, runtime) pair
   drives (`NumpySVSimulator`, `NumpyDMSimulator`, or the optional
-  `NumbaSVSimulator`); one instance is bound to ``_simulator`` and reused
-  across runs.
+  `NumbaSVSimulator` / `NumbaDMSimulator`); one instance is bound to
+  ``_simulator`` and reused across runs.
 - ``_result_config_cls`` / ``_request_cls``: the method's frozen
   result-config and engine-request value objects. Supported
   ``result_config`` keys are derived from the config dataclass fields.
@@ -248,7 +248,7 @@ class SimulatorBackend:
 
     The ``runtime`` argument selects the execution technology for the chosen
     representation - ``"numpy"`` (default) or ``"numba"`` (optional
-    dependency, statevector only for now). The runtime never changes
+    dependency). The runtime never changes
     simulation semantics, only how fast the same numbers are computed;
     dynamic-shot worker processes use the selected runtime as well.
 
@@ -300,10 +300,9 @@ class SimulatorBackend:
                 ``"numba"``, case-insensitive. The runtime selects *how* the
                 chosen state representation is computed, never its semantics:
                 results are identical up to the documented per-simulator RNG
-                reproducibility contract. ``"numba"`` currently supports
-                ``method="statevector"`` only and requires the optional
-                ``numba`` dependency; both constraints raise here, at
-                construction, rather than at run time.
+                reproducibility contract. ``"numba"`` supports both methods
+                and requires the optional ``numba`` dependency, which raises
+                here, at construction, rather than at run time.
             noise: Optional :py:class:`~fatqat.NoiseModel` applied to every
                 run. ``None`` (the default) means noise-free execution. The
                 backend holds a reference (not a copy): a noise model is
@@ -316,9 +315,8 @@ class SimulatorBackend:
 
         Raises:
             BackendValidationError: If ``method`` or ``runtime`` is not one
-                of the supported names, ``runtime="numba"`` is combined with
-                ``method="density_matrix"`` (no numba density-matrix
-                simulator exists yet), or numba is not installed.
+                of the supported names, or ``runtime="numba"`` is requested
+                without the numba dependency installed.
         """
         normalized = _METHOD_ALIASES.get(str(method).lower())
         if normalized is None:
@@ -356,21 +354,18 @@ class SimulatorBackend:
         if normalized_runtime == "numba":
             # The runtime axis swaps the simulator class only; every other
             # method-bound fact above is representation semantics and stays.
-            if normalized == "density_matrix":
-                raise BackendValidationError(
-                    "runtime='numba' does not support method='density_matrix' "
-                    "yet; use runtime='numpy' for density-matrix simulation"
-                )
             try:
                 # Lazy: numba is an optional dependency, and fatqat.simulator's
                 # package __init__ deliberately never imports the nb module.
-                from ..simulator.nb import NumbaSVSimulator
+                from ..simulator.nb import NumbaDMSimulator, NumbaSVSimulator
             except ImportError as exc:
                 raise BackendValidationError(
                     "runtime='numba' requires the optional numba dependency "
                     "(install the 'numba' group)"
                 ) from exc
-            self._simulator_cls = NumbaSVSimulator
+            self._simulator_cls = (
+                NumbaSVSimulator if normalized == "statevector" else NumbaDMSimulator
+            )
         self._runtime = normalized_runtime
 
         config = _normalize_dict_options(

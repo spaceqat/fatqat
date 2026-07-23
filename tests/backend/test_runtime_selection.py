@@ -37,11 +37,12 @@ def test_unknown_runtime_rejected_at_construction():
         SimulatorBackend(runtime="jax")
 
 
-def test_density_matrix_numba_rejected_at_construction():
-    # No numba density-matrix simulator exists yet: explicit error, never a
-    # silent numpy fallback.
-    with pytest.raises(BackendValidationError, match="density_matrix"):
-        SimulatorBackend(method="DM", runtime="numba")
+def test_density_matrix_numba_selects_the_numba_dm_simulator():
+    pytest.importorskip("numba")
+    from fatqat.simulator.nb import NumbaDMSimulator
+
+    backend = SimulatorBackend(method="DM", runtime="numba")
+    assert type(backend._simulator) is NumbaDMSimulator
 
 
 def test_metadata_echoes_the_runtime():
