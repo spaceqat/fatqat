@@ -1,4 +1,16 @@
-"""Classical readout error: lowering, both execution paths, true-vs-reported."""
+"""Classical readout error: lowering, both execution paths, true-vs-reported.
+
+Every bare-int ``target=`` below is a physical device-resource label (see
+``NoiseModel.add_readout_error``/``readout_error_for``), never an engine
+index - it is only numerically equal to the measured subsystem's engine
+index because `SimulatorBackend`'s default `_resolve_resource_layout` policy
+happens to assign device labels in declaration order, coinciding with
+`_EngineAllocation`'s flat indices for this generic backend. That coincidence
+is backend-specific, not part of the selector's meaning; see
+`tests/backend/test_fake_atom_grid.py`'s
+`test_physical_readout_selector_uses_device_label_not_engine_index` for a
+non-trivial layout where a device label and its engine index diverge.
+"""
 
 import numpy as np
 import pytest

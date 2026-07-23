@@ -64,21 +64,37 @@ Channels are dimension-generic: attached to a gate on a qutrit register,
 ## Targeting specific qubits
 
 `add_noise(..., targets=...)` pins a channel to one target tuple. Two address
-forms exist, and both resolve to the same flat indices at run time:
+forms exist, in two different identity spaces — neither is the private engine
+index the simulator uses internally to build its state vector:
 
-- **Program refs** — how a user pins noise to their own program's subsystems:
+- **Program refs (logical)** — how a user pins noise to their own program's
+  subsystems, matched by ref equality against the lowered occurrence's
+  targets:
 
   ```python
   noise.add_noise(fq.ops.X, fq.noise.Depolarizing(p=0.1),
                   targets=(program.qreg[0][0],))
   ```
 
-- **Flat subsystem indices** — how a device backend authors noise before any
-  user program exists:
+- **Device resource labels (physical)** — how a device backend authors noise
+  before any user program exists, matched against the run's `ResourceLayout`
+  (`resource_layout.device_operands(targets)`). A bare integer is always a
+  physical device-resource label, never a program ordinal and never an engine
+  index:
 
   ```python
   noise.add_noise(fq.ops.X, fq.noise.Depolarizing(p=0.1), targets=(0,))
   ```
+
+  For the generic simulator's trivial layout, device label `0` happens to name
+  the same subsystem as declaration-order index `0` — but on a backend with
+  predefined physical sites (e.g. a smaller `GridRegister` bound onto a larger
+  device), a physical selector names a device site, not a declaration-order
+  position.
+
+A selector tuple must be wholly logical or wholly physical (mixing `RegisterRef`s
+and device labels in one tuple is rejected), and a `RegisterView` is never
+accepted as a selector — only scalar refs or scalar labels.
 
 The selection semantics, precisely:
 
@@ -88,9 +104,16 @@ The selection semantics, precisely:
   occurrences it matches, and only those. It can therefore *lower* the noise
   on its target by evicting a stronger default; restate the default at the
   specific level to keep it.
-- Entries resolving to the same subsystems accumulate in registration order
-  — an `int` selector and a ref selector landing on the same subsystem stack
-  rather than override.
+- A logical selector and a physical selector that both match the same
+  occurrence both apply and accumulate, in registration order — each
+  attached channel is an independent mechanism.
+- Before a run, `NoiseModel.validate_for()` checks every stored selector's
+  identity legality against the program and the run's effective
+  `ResourceLayout`: a `RegisterRef` foreign to the program, or a device label
+  the layout doesn't contain, fails validation directly rather than silently
+  matching nothing. A selector that is valid but simply matches no occurrence
+  in this particular program is fine — that's a permitted no-effect entry, not
+  an error.
 
 ## Relaxation from T1/T2
 
@@ -113,7 +136,12 @@ the caller supplies how long the noisy gate takes. `t2 <= 2*t1` is enforced
 
 {py:meth}`~fatqat.NoiseModel.add_readout_error` takes a column-stochastic
 confusion matrix `C[i, j] = P(report i | true j)` and an optional per-subsystem
-target (ref or flat index; the default applies to every measured subsystem):
+`target` — a logical `RegisterRef`, a physical device resource label (never an
+engine index), or `None` (the default) applying to every measured subsystem.
+Unlike gate-channel selectors, readout selectors do not accumulate: among
+several specific selectors matching the same measured subsystem, the most
+recently registered one wins, and any specific match replaces the `None`
+default.
 
 ```python
 import numpy as np

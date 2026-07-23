@@ -35,10 +35,13 @@ expanding them. A view is only accepted where an operation opts in (see
 before.
 
 Resolving a view against real hardware sites is a backend concern, not a
-frontend one. The backend's per-run resource-map utility figures out how the
-program's `GridRegister` maps onto that backend's device sites. This utility is not something a user
+frontend one. Each backend's protected `_resolve_resource_layout()` hook
+figures out how the program's `GridRegister` maps onto that backend's device
+sites, returning the run's `ResourceLayout`. This hook is not something a user
 constructs, configures, or passes in; it never appears in the public API
-surface, only inside the backend that resolves the program.
+surface, only inside the backend that resolves the program. (A separate,
+private per-run `_EngineAllocation` handles the numerical engine's own flat
+indices; it is never exposed alongside `ResourceLayout`.)
 
 This split matters because of an identity distinction that runs through the
 whole feature: **gate-channel noise selectors and implementation-map lookups
@@ -59,9 +62,14 @@ number from its position in declaration order. A gate-channel noise selector
 should be written either as the program's own `RegisterRef`s (logical) or as
 the backend's device resource labels (physical); a bare integer is always
 interpreted as a physical device label, never a flat engine index.
-{py:meth}`~fatqat.NoiseModel.readout_error_for` has not yet been migrated to
-this scheme and still operates in flat engine-index space — that
-distinction is temporary, tracked as follow-up work.
+{py:meth}`~fatqat.NoiseModel.readout_error_for` uses this same identity split:
+it takes the measured subsystem's logical `RegisterRef` plus the run's
+`ResourceLayout`, matching a logical selector by ref equality and a physical
+selector against `resource_layout.device_label(target)` — never a flat engine
+index. `NoiseModel.validate_for(program, resource_layout)` checks every stored
+gate-channel and readout selector's identity legality once per run, before
+lowering: a foreign `RegisterRef` or an unmapped device label fails run
+validation directly, rather than silently matching nothing.
 
 ### What's not supported yet
 
