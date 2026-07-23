@@ -3,7 +3,12 @@
 Every case builds the same small circuit twice - once as a fatqat `Program`,
 once as a Qiskit `QuantumCircuit` - runs both, and compares the resulting
 state matrices exactly (``atol=1e-12``, no relative slack): statevectors
-under ``method="SV"`` and density matrices under ``method="DM"``. Ideal
+under ``method="SV"`` and density matrices under ``method="DM"``. Every
+case runs on both fatqat runtimes (the ``runtime`` fixture): ``numpy``, and
+``numba`` when the optional dependency is installed (skipped otherwise; CI
+installs it, so both axes are mandatory there). The internal parity tests
+pin numba against numpy shot-for-shot; this axis pins both against a
+reference that cannot share a bug with either. Ideal
 circuits compare against ``qiskit.quantum_info`` exact evolution (Qiskit's
 canonical reference, no transpiler in the loop); noisy circuits compare
 against Aer's density-matrix simulator with native error constructors. Both
@@ -20,8 +25,7 @@ is applied and commented at the test site.
 Deliberately out of scope for now: probabilities/counts comparisons (needs
 a statistical-tolerance policy), readout error (counts-level, same phase),
 statevector execution under noise (stochastic trajectories), qudits (no Aer
-analogue), reset/feedforward dynamics (Aer's semantics differ), and the
-numba runtime axis (covered by the internal numpy/numba parity tests).
+analogue), and reset/feedforward dynamics (Aer's semantics differ).
 
 Requires the optional ``qiskit`` dependency group; the module self-skips
 without it, exactly like the numba-only tests.
@@ -51,6 +55,14 @@ from qiskit_aer.noise import (
 _ATOL = 1e-12
 
 
+@pytest.fixture(params=["numpy", "numba"], name="runtime")
+def _runtime(request):
+    """Both execution runtimes; the numba axis skips if numba is absent."""
+    if request.param == "numba":
+        pytest.importorskip("numba")
+    return request.param
+
+
 def _assert_close(ours: np.ndarray, theirs: np.ndarray) -> None:
     theirs = np.asarray(theirs)
     assert ours.shape == theirs.shape
@@ -60,17 +72,21 @@ def _assert_close(ours: np.ndarray, theirs: np.ndarray) -> None:
 # --- runners -----------------------------------------------------------------
 
 
-def _fatqat_state(program: fq.Program) -> np.ndarray:
+def _fatqat_state(program: fq.Program, runtime: str) -> np.ndarray:
     return (
-        fq.backends.SimulatorBackend(method="SV")
+        fq.backends.SimulatorBackend(method="SV", runtime=runtime)
         .run(program, result_config={"counts": False, "statevector": True})
         .result()
         .get_statevector()
     )
 
 
-def _fatqat_rho(program: fq.Program, noise: fq.NoiseModel | None = None) -> np.ndarray:
-    backend = fq.backends.SimulatorBackend(method="DM", noise=noise)
+def _fatqat_rho(
+    program: fq.Program,
+    runtime: str,
+    noise: fq.NoiseModel | None = None,
+) -> np.ndarray:
+    backend = fq.backends.SimulatorBackend(method="DM", runtime=runtime, noise=noise)
     return (
         backend.run(program, result_config={"counts": False, "density_matrix": True})
         .result()
@@ -242,15 +258,15 @@ _IDEAL_CASES = {
 
 
 @pytest.mark.parametrize("build", _IDEAL_CASES.values(), ids=_IDEAL_CASES.keys())
-def test_statevector_matches_qiskit(build):
+def test_statevector_matches_qiskit(build, runtime):
     program, circuit = build()
-    _assert_close(_fatqat_state(program), _qiskit_state(circuit))
+    _assert_close(_fatqat_state(program, runtime), _qiskit_state(circuit))
 
 
 @pytest.mark.parametrize("build", _IDEAL_CASES.values(), ids=_IDEAL_CASES.keys())
-def test_density_matrix_matches_qiskit(build):
+def test_density_matrix_matches_qiskit(build, runtime):
     program, circuit = build()
-    _assert_close(_fatqat_rho(program), _qiskit_rho(circuit))
+    _assert_close(_fatqat_rho(program, runtime), _qiskit_rho(circuit))
 
 
 # --- noisy circuits (density matrices; Aer native error constructors) --------
@@ -262,31 +278,31 @@ def _aer_model(error, gate_names):
     return model
 
 
-def test_depolarizing_on_two_qubit_gate_matches_aer():
+def test_depolarizing_on_two_qubit_gate_matches_aer(runtime):
     program, circuit = _bell()
     noise = fq.NoiseModel()
     noise.add_noise(fq.ops.CX, fq.noise.Depolarizing(p=0.1))
     aer_model = _aer_model(depolarizing_error(0.1, 2), ["cx"])
 
     _assert_close(
-        _fatqat_rho(program, noise),
+        _fatqat_rho(program, runtime, noise),
         _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
     )
 
 
-def test_amplitude_damping_matches_aer():
+def test_amplitude_damping_matches_aer(runtime):
     program, circuit = _bell()
     noise = fq.NoiseModel()
     noise.add_noise(fq.ops.H, fq.noise.AmplitudeDamping(gammas=(0.2,)))
     aer_model = _aer_model(amplitude_damping_error(0.2), ["h"])
 
     _assert_close(
-        _fatqat_rho(program, noise),
+        _fatqat_rho(program, runtime, noise),
         _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
     )
 
 
-def test_phase_damping_matches_aer():
+def test_phase_damping_matches_aer(runtime):
     # Parameter conventions differ by design: fatqat's PhaseDamping(p) leaves
     # qubit coherence at (1 - p), Aer's phase_damping_error(g) at sqrt(1 - g);
     # they describe the same channel family via g = 1 - (1 - p)**2.
@@ -297,12 +313,12 @@ def test_phase_damping_matches_aer():
     aer_model = _aer_model(phase_damping_error(1 - (1 - p) ** 2), ["h"])
 
     _assert_close(
-        _fatqat_rho(program, noise),
+        _fatqat_rho(program, runtime, noise),
         _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
     )
 
 
-def test_relaxation_channels_match_aer_thermal_relaxation():
+def test_relaxation_channels_match_aer_thermal_relaxation(runtime):
     t1, t2, duration = 60e-6, 90e-6, 5e-6
     program, circuit = _bell()
     damping, dephasing = fq.noise.relaxation_channels(t1, t2, duration)
@@ -312,12 +328,12 @@ def test_relaxation_channels_match_aer_thermal_relaxation():
     aer_model = _aer_model(thermal_relaxation_error(t1, t2, duration), ["h"])
 
     _assert_close(
-        _fatqat_rho(program, noise),
+        _fatqat_rho(program, runtime, noise),
         _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
     )
 
 
-def test_stacked_channels_compose_in_registration_order():
+def test_stacked_channels_compose_in_registration_order(runtime):
     # Depolarizing and amplitude damping do NOT commute (damping is not
     # unital), so this case pins the order convention for real: fatqat
     # applies stacked channels in registration order, matching Aer's
@@ -330,7 +346,7 @@ def test_stacked_channels_compose_in_registration_order():
     composed = depolarizing_error(p, 1).compose(amplitude_damping_error(gamma))
     aer_model = _aer_model(composed, ["h"])
 
-    ours = _fatqat_rho(program, noise)
+    ours = _fatqat_rho(program, runtime, noise)
     _assert_close(ours, _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]))
 
     # The reversed composition must differ - otherwise this test could not
