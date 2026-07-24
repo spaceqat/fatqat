@@ -105,7 +105,7 @@ class NoiseModel:
         operation: Operation | type[Operation],
         channel: Channel,
         *,
-        targets: tuple[DeviceOperand, ...] | None = None,
+        targets: _GateSelector = None,
     ) -> None:
         """Attach a channel to every occurrence of an operation, or one target.
 
@@ -203,7 +203,7 @@ class NoiseModel:
         self,
         confusion_matrix: np.ndarray,
         *,
-        target: RegisterRef | DeviceOperand | None = None,
+        target: _ReadoutSelector = None,
     ) -> None:
         """Attach a classical readout confusion matrix to measurements.
 
