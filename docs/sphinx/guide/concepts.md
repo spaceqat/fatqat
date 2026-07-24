@@ -40,7 +40,7 @@ figures out how the program's `GridRegister` maps onto that backend's device
 sites, returning the run's `ResourceLayout`. This hook is not something a user
 constructs, configures, or passes in; it never appears in the public API
 surface, only inside the backend that resolves the program. (A separate,
-private per-run `_EngineAllocation` handles the numerical engine's own flat
+private per-run `_EngineIndexAllocation` handles the numerical engine's own flat
 indices; it is never exposed alongside `ResourceLayout`.)
 
 This split matters because of an identity distinction that runs through the

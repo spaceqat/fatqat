@@ -4,7 +4,7 @@
 defined device resource labels (a physical site, coordinate, or any other
 hashable backend identity). It carries no dimensions, no classical-slot
 positions, and no engine subsystem indices - those belong to the private
-engine allocation in `fatqat._engine_allocation`. See
+engine index allocation in `fatqat._engine_index_allocation`. See
 docs/superpowers/specs/2026-07-22-fatqat-resource-layout-and-noise-selector-design.md.
 """
 

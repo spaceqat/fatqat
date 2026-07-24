@@ -39,7 +39,7 @@ refactor.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Hashable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import fields
 from math import prod
 from typing import Any
@@ -50,7 +50,7 @@ from ..errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from .._engine_allocation import _EngineAllocation
+from .._engine_index_allocation import _EngineIndexAllocation
 from ..implementation import (
     MatrixImplementation,
     DeviceOperands,
@@ -72,7 +72,7 @@ from ..registers import (
     RegisterView,
     _view_members,
 )
-from ..resource_layout import ResourceLayout
+from ..resource_layout import DeviceResourceLabel, ResourceLayout
 from ..result import (
     Result,
     _DensityMatrixResultConfig,
@@ -363,7 +363,7 @@ class SimulatorBackend:
         (or any other non-trivial mapping policy) overrides this hook; it is
         also where such a backend validates device-resource concerns like
         capacity, dimension, or grid fit, since those are properties of the
-        logical-to-physical mapping, not of engine allocation.
+        logical-to-physical mapping, not of engine index allocation.
 
         Args:
             program: Program whose quantum registers should be mapped.
@@ -371,7 +371,7 @@ class SimulatorBackend:
         Returns:
             The effective resource layout for this run.
         """
-        labels: dict[RegisterRef, Hashable] = {}
+        labels: dict[RegisterRef, DeviceResourceLabel] = {}
         index = 0
         for register in program.qreg:
             for i in range(register.size):
@@ -379,7 +379,7 @@ class SimulatorBackend:
                 index += 1
         return ResourceLayout(labels)
 
-    def _allocate_engine(self, program: Program) -> _EngineAllocation:
+    def _allocate_engine_indices(self, program: Program) -> _EngineIndexAllocation:
         """Build this run's private engine-facing flat allocation.
 
         Args:
@@ -389,7 +389,7 @@ class SimulatorBackend:
             Engine allocation mapping register references to flat subsystem
             and classical indices.
         """
-        return _EngineAllocation.from_program(program)
+        return _EngineIndexAllocation.from_program(program)
 
     def _lower_program(
         self,
@@ -400,14 +400,14 @@ class SimulatorBackend:
         """Prepare and lower one program using the backend's resource policy.
 
         ``context`` lets a caller that already resolved this run's
-        `ResourceLayout` and `_EngineAllocation` (see ``run()``) thread both
+        `ResourceLayout` and `_EngineIndexAllocation` (see ``run()``) thread both
         through unchanged, so lowering never re-resolves either. When omitted
         (standalone use, e.g. in tests), both are resolved once here.
         """
         if context is None:
             context = _LoweringContext(
                 resource_layout=self._resolve_resource_layout(program),
-                engine=self._allocate_engine(program),
+                engine_index_allocation=self._allocate_engine_indices(program),
             )
         operations = _break_grouped_operations(program.operations)
         return self._lower(operations, context)
@@ -423,7 +423,7 @@ class SimulatorBackend:
         """Validate, execute, and package one program run.
 
         Resolves the program's effective resource layout and private engine
-        allocation, chooses an execution strategy, runs the circuit, and
+        index allocation, chooses an execution strategy, runs the circuit, and
         returns an eager ``Job`` whose ``result()`` yields a ``Result``.
 
         ``result_config`` accepts ``counts`` plus the method's native state
@@ -469,19 +469,22 @@ class SimulatorBackend:
         # dimension, grid-fit, and mapping failures must raise directly from
         # run(), never become a failed Job. The resource layout is the
         # public-facing effective mapping (available to backend validation);
-        # the engine allocation stays private to execution preparation. Both
+        # the engine index allocation stays private to execution preparation. Both
         # are paired into one private lowering context and threaded through
         # `_lower_program`/`_lower` unchanged, so lowering never re-resolves
         # either value.
         resource_layout = self._resolve_resource_layout(program)
-        engine = self._allocate_engine(program)
+        engine_index_allocation = self._allocate_engine_indices(program)
         # Strict selector-identity validation runs immediately after the
         # effective resource layout is known and before any lowering/plan
         # step is built, on this same direct-raise path: a foreign ref or
         # unmapped device label fails run() directly rather than being
         # silently skipped in channels_for()/readout_error_for() matching.
         self._noise_model.validate_for(program, resource_layout)
-        context = _LoweringContext(resource_layout=resource_layout, engine=engine)
+        context = _LoweringContext(
+            resource_layout=resource_layout,
+            engine_index_allocation=engine_index_allocation,
+        )
         plan, facts = self._lower_program(program, context=context)
         self._validate(config, shots, facts)
         try:
@@ -491,9 +494,9 @@ class SimulatorBackend:
                     shots,
                     plan,
                     facts,
-                    engine.system_dims,
-                    engine.classical_dims,
-                    engine.n_clbits,
+                    engine_index_allocation.system_dims,
+                    engine_index_allocation.classical_dims,
+                    engine_index_allocation.n_clbits,
                     seed,
                 )
             )
@@ -658,13 +661,13 @@ class SimulatorBackend:
         private lowering context. `context.resource_layout` is used for
         `ImplementationMap` lookup (`device_operands`) and for
         `NoiseModel.channels_for()` physical-selector matching (against the
-        occurrence's logical target refs); `context.engine` is used for every
-        execution index/dimension - `ApplyMatrixStep`/`MeasurementStep`/
-        `ResetStep` targets and conditions. Grouped frontend operations are
-        expanded before this method is called.
+        occurrence's logical target refs); `context.engine_index_allocation` is
+        used for every execution index/dimension - `ApplyMatrixStep`/
+        `MeasurementStep`/`ResetStep` targets and conditions. Grouped
+        frontend operations are expanded before this method is called.
         """
         resource_layout = context.resource_layout
-        engine = context.engine
+        engine_index_allocation = context.engine_index_allocation
         plan: list[ResolvedStep] = []
         has_measurement = False
         has_reset = False
@@ -674,15 +677,20 @@ class SimulatorBackend:
             if isinstance(step, Measurement):
                 has_measurement = True
                 measured_indices = tuple(
-                    engine.subsystem_index(q) for q in step.targets
+                    engine_index_allocation.subsystem_index(q) for q in step.targets
                 )
-                classical_indices = tuple(engine.clbit_index(c) for c in step.outputs)
+                classical_indices = tuple(
+                    engine_index_allocation.clbit_index(c) for c in step.outputs
+                )
                 plan.append(
                     MeasurementStep(
                         measured_indices=measured_indices,
                         classical_indices=classical_indices,
                         confusions=self._resolve_confusions(
-                            step.targets, measured_indices, resource_layout, engine
+                            step.targets,
+                            measured_indices,
+                            resource_layout,
+                            engine_index_allocation,
                         ),
                     )
                 )
@@ -695,7 +703,7 @@ class SimulatorBackend:
                 if isinstance(step.operation, ResetGate):
                     has_reset = True
                     target_indices = tuple(
-                        engine.subsystem_index(t) for t in step.targets
+                        engine_index_allocation.subsystem_index(t) for t in step.targets
                     )
                     # Reset-attached channels ("apply after the ideal reset")
                     # are designed but not wired yet; raising keeps the gap
@@ -708,21 +716,23 @@ class SimulatorBackend:
                         raise UnsupportedOperationError(
                             "channel noise attached to Reset is not supported yet"
                         )
-                    cond = _resolve_condition(step.condition, engine)
+                    cond = _resolve_condition(step.condition, engine_index_allocation)
                     plan.append(ResetStep(reset_indices=target_indices, condition=cond))
                     continue
 
-                # Every gate reaching here is scalar-only: grouped expansion
+                # Every gate reaching here has only single target: grouped expansion
                 # already happened before lowering, so each target maps to
                 # one device operand and one engine index, and this
                 # instruction produces one ApplyMatrixStep. Targets were
                 # validated when any emitted AppliedOperation was
                 # constructed. Implementation-map lookup uses device
                 # operands from the resource layout; every execution index
-                # below comes from the engine allocation instead.
+                # below comes from the engine index allocation instead.
                 device_operands = resource_layout.device_operands(step.targets)
-                engine_indices = tuple(engine.subsystem_index(t) for t in step.targets)
-                cond = _resolve_condition(step.condition, engine)
+                engine_indices = tuple(
+                    engine_index_allocation.subsystem_index(t) for t in step.targets
+                )
+                cond = _resolve_condition(step.condition, engine_index_allocation)
 
                 rule = self._implementation_for(step.operation, device_operands)
                 try:
@@ -733,7 +743,9 @@ class SimulatorBackend:
                     ) from exc
 
                 # Check matrix shape matches this instruction's target dims.
-                target_dims = tuple(engine.system_dims[i] for i in engine_indices)
+                target_dims = tuple(
+                    engine_index_allocation.system_dims[i] for i in engine_indices
+                )
                 expected = prod(target_dims)
                 if matrix.shape != (expected, expected):
                     raise BackendValidationError(
@@ -798,7 +810,7 @@ class SimulatorBackend:
         measured_targets: tuple[RegisterRef, ...],
         measured_indices: tuple[int, ...],
         resource_layout: ResourceLayout,
-        engine: _EngineAllocation,
+        engine_index_allocation: _EngineIndexAllocation,
     ) -> tuple[Any, ...] | None:
         """Resolve per-subsystem readout confusion matrices for one measurement.
 
@@ -817,7 +829,7 @@ class SimulatorBackend:
         for target, measured in zip(measured_targets, measured_indices):
             confusion = self._noise_model.readout_error_for(target, resource_layout)
             if confusion is not None:
-                dim = engine.system_dims[measured]
+                dim = engine_index_allocation.system_dims[measured]
                 if confusion.shape != (dim, dim):
                     raise BackendValidationError(
                         f"readout confusion matrix of shape {confusion.shape} "

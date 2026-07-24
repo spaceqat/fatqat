@@ -2,7 +2,7 @@
 
 `_break_grouped_operations()` is the temporary scalar view-normalization
 stage: it must run before scalar lowering and must not carry any resource-
-mapping policy of its own (that lives in `ResourceLayout`/`_EngineAllocation`
+mapping policy of its own (that lives in `ResourceLayout`/`_EngineIndexAllocation`
 and the private `_LoweringContext` that pairs them for one run's lowering).
 
 Pairing legality (matching selector kind, equal cardinality, no same-register
@@ -93,22 +93,22 @@ def test_base_simulator_executes_grouped_views_with_identity_mapping():
     assert result.get_statevector() is not None
 
 
-# --- private lowering context: ResourceLayout for lookup, _EngineAllocation
+# --- private lowering context: ResourceLayout for lookup, _EngineIndexAllocation
 # for execution indices -----------------------------------------------------
 
 
-def test_lower_uses_resource_layout_device_operands_for_lookup_and_engine_allocation_indices_for_steps():
+def test_lower_uses_resource_layout_device_operands_for_lookup_and_engine_indices_for_steps():
     # A deliberately divergent mapping: device labels 99/100 have nothing to
     # do with the engine indices 0/1. The CZ rule is only registered for
     # device operands (99, 100), so lowering can only have succeeded by using
     # `ResourceLayout.device_operands()` for the implementation-map lookup;
     # the resulting step must still carry the *engine* indices (0, 1), from
-    # `_EngineAllocation`, not the device labels used for lookup.
+    # `_EngineIndexAllocation`, not the device labels used for lookup.
     program = Program(2)
     program.add(ops.CZ, (0, 1))
     q0, q1 = program.qreg[0][0], program.qreg[0][1]
 
-    engine = SimulatorBackend()._allocate_engine(program)
+    engine_index_allocation = SimulatorBackend()._allocate_engine_indices(program)
     resource_layout = ResourceLayout({q0: 99, q1: 100})
 
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
@@ -116,7 +116,10 @@ def test_lower_uses_resource_layout_device_operands_for_lookup_and_engine_alloca
     implementation_map.add(ops.CZ, cz_rule, device_operands=(99, 100))
     backend = SimulatorBackend(implementation_map=implementation_map)
 
-    context = _LoweringContext(resource_layout=resource_layout, engine=engine)
+    context = _LoweringContext(
+        resource_layout=resource_layout,
+        engine_index_allocation=engine_index_allocation,
+    )
     operations = _break_grouped_operations(program.operations)
     plan, _facts = backend._lower(operations, context)
     assert _matrix_steps(plan)[0].target_indices == (0, 1)

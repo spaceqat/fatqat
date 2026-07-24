@@ -138,22 +138,22 @@ def test_no_resolve_layout_method_remains():
     assert not hasattr(SimulatorBackend, "resolve_layout")
 
 
-def test_run_resolves_resource_layout_and_engine_allocation_exactly_once():
+def test_run_resolves_resource_layout_and_engine_index_allocation_exactly_once():
     backend = SimulatorBackend()
     calls = {"resource_layout": 0, "engine": 0}
     original_resource_layout = backend._resolve_resource_layout
-    original_engine_allocation = backend._allocate_engine
+    original_allocate_engine_indices = backend._allocate_engine_indices
 
     def counting_resource_layout(program):
         calls["resource_layout"] += 1
         return original_resource_layout(program)
 
-    def counting_engine_allocation(program):
+    def counting_allocate_engine_indices(program):
         calls["engine"] += 1
-        return original_engine_allocation(program)
+        return original_allocate_engine_indices(program)
 
     backend._resolve_resource_layout = counting_resource_layout
-    backend._allocate_engine = counting_engine_allocation
+    backend._allocate_engine_indices = counting_allocate_engine_indices
 
     p = Program(1)
     p.add(ops.H, 0)
@@ -176,13 +176,13 @@ def test_resource_layout_failure_raises_directly_not_as_a_failed_job():
         backend.run(p)
 
 
-def test_engine_allocation_failure_raises_directly_not_as_a_failed_job():
-    # Same guarantee for _allocate_engine.
-    class _ExplodingEngineAllocationBackend(SimulatorBackend):
-        def _allocate_engine(self, program):
+def test_engine_index_allocation_failure_raises_directly_not_as_a_failed_job():
+    # Same guarantee for _allocate_engine_indices.
+    class _ExplodingEngineIndexAllocationBackend(SimulatorBackend):
+        def _allocate_engine_indices(self, program):
             raise BackendValidationError("engine allocation boom")
 
-    backend = _ExplodingEngineAllocationBackend()
+    backend = _ExplodingEngineIndexAllocationBackend()
     p = Program(1)
     p.add(ops.H, 0)
     with pytest.raises(BackendValidationError, match="engine allocation boom"):

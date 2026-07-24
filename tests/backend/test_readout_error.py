@@ -5,7 +5,7 @@ Every bare-int ``target=`` below is a physical device-resource label (see
 index - it is only numerically equal to the measured subsystem's engine
 index because `SimulatorBackend`'s default `_resolve_resource_layout` policy
 happens to assign device labels in declaration order, coinciding with
-`_EngineAllocation`'s flat indices for this generic backend. That coincidence
+`_EngineIndexAllocation`'s flat indices for this generic backend. That coincidence
 is backend-specific, not part of the selector's meaning; see
 `tests/backend/test_fake_atom_grid.py`'s
 `test_physical_readout_selector_uses_device_label_not_engine_index` for a

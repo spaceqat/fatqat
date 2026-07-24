@@ -1,4 +1,4 @@
-"""_EngineAllocation: the private engine-facing flattening of a program's
+"""_EngineIndexAllocation: the private engine-facing flattening of a program's
 quantum and classical resources into flat subsystem/clbit indices.
 
 This is a simulator-only execution concern, not the public logical-to-
@@ -22,7 +22,7 @@ from .program import Program
 from .registers import Register, RegisterRef
 
 
-class _EngineAllocation:
+class _EngineIndexAllocation:
     """Flat index mapping for a program's quantum and classical resources.
 
     Quantum registers are concatenated in program order, and classical registers
@@ -95,7 +95,7 @@ class _EngineAllocation:
         return base + ref.index
 
     @classmethod
-    def from_program(cls, program: Program) -> "_EngineAllocation":
+    def from_program(cls, program: Program) -> "_EngineIndexAllocation":
         """Build an allocation by flattening a program's registers in order."""
         q_offsets: dict[Register, int] = {}
         system_dims: list[int] = []

@@ -2,7 +2,7 @@
 
 import pytest
 
-from fatqat._engine_allocation import _EngineAllocation
+from fatqat._engine_index_allocation import _EngineIndexAllocation
 from fatqat.backends import SimulatorBackend
 from fatqat.program import Program
 from fatqat.registers import QuantumRegister
@@ -74,19 +74,19 @@ def test_simulator_backend_resolves_generic_identity_device_labels_in_declaratio
     assert isinstance(resource_layout, ResourceLayout)
 
 
-def test_simulator_backend_allocate_engine_returns_a_separate_engine_allocation():
+def test_simulator_backend_allocate_engine_indices_returns_a_separate_engine_index_allocation():
     program = Program(3)
     backend = SimulatorBackend()
 
     resource_layout = backend._resolve_resource_layout(program)
-    engine_allocation = backend._allocate_engine(program)
+    engine_index_allocation = backend._allocate_engine_indices(program)
 
     refs = [program.qreg[0][i] for i in range(3)]
     # Two independently-resolved values: not the same object...
-    assert resource_layout is not engine_allocation
-    assert isinstance(engine_allocation, _EngineAllocation)
+    assert resource_layout is not engine_index_allocation
+    assert isinstance(engine_index_allocation, _EngineIndexAllocation)
     # ...but the generic simulator's trivial policy makes their current
     # numerical values coincide. That coincidence is not an API contract.
-    assert [engine_allocation.subsystem_index(ref) for ref in refs] == [
+    assert [engine_index_allocation.subsystem_index(ref) for ref in refs] == [
         resource_layout.device_label(ref) for ref in refs
     ]
