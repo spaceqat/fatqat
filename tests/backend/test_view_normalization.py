@@ -4,6 +4,12 @@
 stage: it must run before scalar lowering and must not carry any resource-
 mapping policy of its own (that lives in `ResourceLayout`/`_EngineAllocation`
 and the private `_LoweringContext` that pairs them for one run's lowering).
+
+Pairing legality (matching selector kind, equal cardinality, no same-register
+overlap) is validated at `Program.add()`/`AppliedOperation` construction time
+(see tests/program/test_add.py and tests/program/test_applied_operation.py),
+not here - by the time a step reaches expansion, its targets are already
+guaranteed legal.
 """
 
 import pytest
@@ -12,7 +18,6 @@ from fatqat import operations as ops
 from fatqat.backends import ApplyMatrixStep, SimulatorBackend
 from fatqat.backends.backend_utils import _LoweringContext
 from fatqat.backends.simulator_backend import _break_grouped_operations
-from fatqat.errors import BackendValidationError
 from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
 from fatqat.program import Program
 from fatqat.registers import GridRegister
@@ -61,30 +66,6 @@ def test_grouped_two_target_operation_zips_views_in_order():
         (atoms[0], atoms[2]),
         (atoms[1], atoms[3]),
     ]
-
-
-def test_grouped_operation_rejects_unequal_view_cardinality():
-    atoms = GridRegister(2, 3, name="atoms")
-    program = Program([atoms])
-    program.add(ops.CX, (atoms.row(0), atoms.column(0)))
-    with pytest.raises(BackendValidationError):
-        _break_grouped_operations(program.operations)
-
-
-def test_grouped_operation_rejects_scalar_view_mixture():
-    atoms = GridRegister(2, 2, name="atoms")
-    program = Program([atoms])
-    program.add(ops.CX, (atoms.row(1), atoms[0]))
-    with pytest.raises(BackendValidationError):
-        _break_grouped_operations(program.operations)
-
-
-def test_grouped_operation_rejects_self_pair():
-    atoms = GridRegister(2, 2, name="atoms")
-    program = Program([atoms])
-    program.add(ops.CZ, (atoms.row(0), atoms.column(0)))
-    with pytest.raises(BackendValidationError):
-        _break_grouped_operations(program.operations)
 
 
 def test_grouped_operation_does_not_mutate_program():

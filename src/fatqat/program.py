@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from typing import Any, Mapping, TypeVar
 
 from .operations import Measurement, Operation
-from .registers import QuantumRegister, RegisterRef, RegisterView, ClassicalRegister
+from .registers import (
+    QuantumRegister,
+    RegisterRef,
+    RegisterView,
+    ClassicalRegister,
+    _validate_view_pair,
+)
 
 ConditionTerm = tuple[RegisterRef, int]
 Condition = tuple[ConditionTerm, ...] | None
@@ -67,9 +73,24 @@ class AppliedOperation:
                     f"{self.operation.name} does not accept a RegisterView target; "
                     "only view-capable operations may be applied to a view"
                 )
-            # Scalar validation (duplicate/member checks, validate_targets())
-            # is deferred to binding/expansion, which resolves each view to
-            # concrete scalar refs first. See spec section 5.2.
+            # Per-member scalar validation (validate_targets()) still needs
+            # concrete refs and is deferred to binding/expansion. Pairing
+            # legality (arity 2 only) does not - it is a fact about the two
+            # views themselves, decidable from their selectors alone - so it
+            # is checked here, not left to whichever backend/strategy later
+            # chooses how to lower the group.
+            if len(self.targets) == 2:
+                first, second = self.targets
+                first_is_view = isinstance(first, RegisterView)
+                second_is_view = isinstance(second, RegisterView)
+                if first_is_view != second_is_view:
+                    raise ValueError(
+                        f"{self.operation.name} mixes a scalar target with a "
+                        "view target; a two-target gate needs both operands "
+                        "scalar or both views"
+                    )
+                if first_is_view and second_is_view:
+                    _validate_view_pair(first, second, op_name=self.operation.name)
             return
 
         seen: set[tuple[int, int]] = set()

@@ -68,12 +68,9 @@ from ..noise.base import _validate_kraus_shapes
 from ..operations import BarrierGate, Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
 from ..registers import (
-    AllSelector,
-    BlockSelector,
-    ColumnSelector,
     RegisterRef,
     RegisterView,
-    RowSelector,
+    _view_members,
 )
 from ..resource_layout import ResourceLayout
 from ..result import (
@@ -113,34 +110,18 @@ _METHOD_ALIASES = {
 ProgramInstruction = AppliedOperation | Measurement
 
 
-def _view_members(view: RegisterView) -> tuple[RegisterRef, ...]:
-    """Enumerate a view in its documented deterministic member order."""
-    register = view.register
-    selector = view.selector
-    if isinstance(selector, AllSelector):
-        coordinates = [
-            (row, col) for row in range(register.rows) for col in range(register.cols)
-        ]
-    elif isinstance(selector, RowSelector):
-        coordinates = [(selector.row, col) for col in range(register.cols)]
-    elif isinstance(selector, ColumnSelector):
-        coordinates = [(row, selector.col) for row in range(register.rows)]
-    elif isinstance(selector, BlockSelector):
-        (row_start, row_stop), (col_start, col_stop) = selector.rows, selector.cols
-        coordinates = [
-            (row, col)
-            for row in range(row_start, row_stop)
-            for col in range(col_start, col_stop)
-        ]
-    else:  # pragma: no cover - exhaustive over the Selector union
-        raise AssertionError(f"unhandled selector {selector!r}")
-    return tuple(register[row * register.cols + col] for row, col in coordinates)
-
-
 def _expand_grouped_operation(
     step: AppliedOperation,
 ) -> tuple[AppliedOperation, ...]:
-    """Expand one view-bearing operation into scalar AppliedOperations."""
+    """Expand one view-bearing operation into scalar AppliedOperations.
+
+    Pairing legality (arity 2: matching selector kind, equal cardinality, no
+    same-register overlap) is validated once, at construction, by
+    `AppliedOperation.__post_init__` (see `registers._validate_view_pair`) -
+    this only does the mechanical expansion of already-legal targets.
+    Whether to scalar-expand at all is this backend's lowering strategy; a
+    different backend could realize a group op some other way instead.
+    """
     target_members = tuple(
         _view_members(target) if isinstance(target, RegisterView) else (target,)
         for target in step.targets
@@ -153,27 +134,7 @@ def _expand_grouped_operation(
         emissions = [(member,) for member in target_members[0]]
     elif len(target_members) == 2:
         first, second = target_members
-        first_is_view = isinstance(step.targets[0], RegisterView)
-        second_is_view = isinstance(step.targets[1], RegisterView)
-        if first_is_view != second_is_view:
-            raise BackendValidationError(
-                f"{name} mixes a scalar target with a view target; a "
-                "two-target gate needs both operands scalar or both views"
-            )
-        if len(first) != len(second):
-            raise BackendValidationError(
-                f"{name} pairs views of unequal size "
-                f"({len(first)} vs {len(second)}); pairwise view "
-                "application requires equal cardinality"
-            )
-        emissions = []
-        for control, target in zip(first, second):
-            if control.register is target.register and control.index == target.index:
-                raise BackendValidationError(
-                    f"{name} pairs member {control!r} with itself; a member "
-                    "cannot be both control and target of one two-target application"
-                )
-            emissions.append((control, target))
+        emissions = list(zip(first, second))
     else:
         raise BackendValidationError(
             f"{name} cannot expand a view target at arity {len(target_members)}"
