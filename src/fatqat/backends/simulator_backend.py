@@ -72,7 +72,7 @@ from ..registers import (
     RegisterView,
     _view_members,
 )
-from ..resource_layout import DeviceResourceLabel, ResourceLayout
+from ..resource_layout import DeviceOperand, ResourceLayout
 from ..result import (
     Result,
     _DensityMatrixResultConfig,
@@ -562,7 +562,7 @@ class SimulatorBackend:
         Returns:
             The effective resource layout for this run.
         """
-        labels: dict[RegisterRef, DeviceResourceLabel] = {}
+        labels: dict[RegisterRef, DeviceOperand] = {}
         index = 0
         for register in program.qreg:
             for i in range(register.size):

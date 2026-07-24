@@ -14,7 +14,7 @@ from collections.abc import Hashable, Mapping
 
 from .registers import RegisterRef
 
-DeviceResourceLabel = Hashable
+DeviceOperand = Hashable
 
 
 class ResourceLayout:
@@ -25,16 +25,16 @@ class ResourceLayout:
     register and is deliberately not found here.
     """
 
-    def __init__(self, labels: Mapping[RegisterRef, DeviceResourceLabel]) -> None:
+    def __init__(self, labels: Mapping[RegisterRef, DeviceOperand]) -> None:
         """Create a resource layout from explicit ref-to-label pairs.
 
         Args:
             labels: Mapping from each covered `RegisterRef` to its device
                 resource label.
         """
-        self._labels: dict[RegisterRef, DeviceResourceLabel] = dict(labels)
+        self._labels: dict[RegisterRef, DeviceOperand] = dict(labels)
 
-    def device_label(self, ref: RegisterRef) -> DeviceResourceLabel:
+    def device_label(self, ref: RegisterRef) -> DeviceOperand:
         """Return the device resource label mapped to ``ref``.
 
         Raises:
@@ -46,13 +46,13 @@ class ResourceLayout:
             raise KeyError("ref not part of this resource layout") from None
 
     @property
-    def device_labels(self) -> frozenset[DeviceResourceLabel]:
+    def device_labels(self) -> frozenset[DeviceOperand]:
         """Return the set of every device resource label in this layout."""
         return frozenset(self._labels.values())
 
     def device_operands(
         self, refs: tuple[RegisterRef, ...]
-    ) -> tuple[DeviceResourceLabel, ...]:
+    ) -> tuple[DeviceOperand, ...]:
         """Return the device resource labels for ``refs``, in operand order.
 
         Raises:

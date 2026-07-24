@@ -14,7 +14,7 @@ directly - never through the private engine allocation:
 - ``tuple[RegisterRef, ...]`` - logical, frontend refs, how a user pins noise
   to their own program's subsystems. Matched by ref equality against the
   lowered occurrence's targets.
-- ``tuple[DeviceResourceLabel, ...]`` - physical, opaque device resource labels, how a
+- ``tuple[DeviceOperand, ...]`` - physical, opaque device resource labels, how a
   backend authors default noise for its device before any user program (or
   register) exists. Matched against
   :py:meth:`~fatqat.resource_layout.ResourceLayout.device_operands` for the
@@ -43,19 +43,19 @@ from ..implementation.base import _resolve_operation_class
 from ..operations import BarrierGate, Operation
 from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView
-from ..resource_layout import DeviceResourceLabel, ResourceLayout
+from ..resource_layout import DeviceOperand, ResourceLayout
 from .base import Channel
 
 # One entry per add_noise() call: an all-targets fallback (None), a
 # logical ref-tuple selector, or a physical device-label-tuple selector
 # (homogeneous, validated).
-_GateSelector = tuple[RegisterRef, ...] | tuple[DeviceResourceLabel, ...] | None
+_GateSelector = tuple[RegisterRef, ...] | tuple[DeviceOperand, ...] | None
 
 # One entry per add_readout_error() call: an all-subsystems fallback (None),
 # a logical RegisterRef selector, or a physical device-label selector
 # (scalar, unlike _GateSelector - a readout error names one measured
 # subsystem, not an occurrence's whole target tuple).
-_ReadoutSelector = RegisterRef | DeviceResourceLabel | None
+_ReadoutSelector = RegisterRef | DeviceOperand | None
 
 
 class NoiseModel:
@@ -105,7 +105,7 @@ class NoiseModel:
         operation: Operation | type[Operation],
         channel: Channel,
         *,
-        targets: tuple[DeviceResourceLabel, ...] | None = None,
+        targets: tuple[DeviceOperand, ...] | None = None,
     ) -> None:
         """Attach a channel to every occurrence of an operation, or one target.
 
@@ -185,7 +185,7 @@ class NoiseModel:
         targets = tuple(targets)
         matched: list[Channel] = []
         fallback: list[Channel] = []
-        device_operands: tuple[DeviceResourceLabel, ...] | None = None
+        device_operands: tuple[DeviceOperand, ...] | None = None
         for selector, channels in entries:
             if selector is None:
                 fallback.extend(channels)
@@ -203,7 +203,7 @@ class NoiseModel:
         self,
         confusion_matrix: np.ndarray,
         *,
-        target: RegisterRef | DeviceResourceLabel | None = None,
+        target: RegisterRef | DeviceOperand | None = None,
     ) -> None:
         """Attach a classical readout confusion matrix to measurements.
 
@@ -288,7 +288,7 @@ class NoiseModel:
         """
         specific = fallback = None
         device_label_known = False
-        device_label: DeviceResourceLabel = None
+        device_label: DeviceOperand = None
         for selector, matrix in self._readout_errors:
             if selector is None:
                 fallback = matrix
@@ -391,14 +391,14 @@ class NoiseModel:
         )
 
 
-def _is_logical_selector(selector: tuple[DeviceResourceLabel, ...]) -> bool:
+def _is_logical_selector(selector: tuple[DeviceOperand, ...]) -> bool:
     """Return whether a validated, homogeneous gate selector is logical."""
     return isinstance(selector[0], RegisterRef)
 
 
 def _normalize_selector(
     op_cls: type[Operation],
-    targets: tuple[DeviceResourceLabel, ...] | None,
+    targets: tuple[DeviceOperand, ...] | None,
 ) -> _GateSelector:
     """Validate and normalize an ``add_noise`` target selector.
 
