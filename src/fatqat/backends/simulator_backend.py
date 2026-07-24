@@ -844,7 +844,10 @@ class SimulatorBackend:
             if isinstance(step, Measurement):
                 plan.append(
                     _lower_measurement(
-                        step, resource_layout, engine_index_allocation, self._noise_model
+                        step,
+                        resource_layout,
+                        engine_index_allocation,
+                        self._noise_model,
                     )
                 )
             elif isinstance(step, AppliedOperation):
@@ -853,7 +856,10 @@ class SimulatorBackend:
                 if isinstance(step.operation, ResetGate):
                     plan.append(
                         _lower_reset(
-                            step, resource_layout, engine_index_allocation, self._noise_model
+                            step,
+                            resource_layout,
+                            engine_index_allocation,
+                            self._noise_model,
                         )
                     )
                 else:

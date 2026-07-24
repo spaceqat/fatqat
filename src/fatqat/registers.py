@@ -360,13 +360,19 @@ def _views_overlap(first: RegisterView, second: RegisterView) -> bool:
     if isinstance(selector, ColumnSelector):
         return selector.col == other.col
     if isinstance(selector, BlockSelector):
-        row_overlap = selector.rows[0] < other.rows[1] and other.rows[0] < selector.rows[1]
-        col_overlap = selector.cols[0] < other.cols[1] and other.cols[0] < selector.cols[1]
+        row_overlap = (
+            selector.rows[0] < other.rows[1] and other.rows[0] < selector.rows[1]
+        )
+        col_overlap = (
+            selector.cols[0] < other.cols[1] and other.cols[0] < selector.cols[1]
+        )
         return row_overlap and col_overlap
     raise AssertionError(f"unhandled selector {selector!r}")  # pragma: no cover
 
 
-def _validate_view_pair(first: RegisterView, second: RegisterView, *, op_name: str) -> None:
+def _validate_view_pair(
+    first: RegisterView, second: RegisterView, *, op_name: str
+) -> None:
     """Validate that two views may legally pair as one two-target operation's operands.
 
     Cross-selector-type pairing is disallowed outright - only row/row,
