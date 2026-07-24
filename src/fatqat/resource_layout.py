@@ -14,7 +14,7 @@ from collections.abc import Hashable, Mapping
 
 from .registers import RegisterRef
 
-DeviceOperand = Hashable
+type DeviceOperand = Hashable
 
 
 class ResourceLayout:

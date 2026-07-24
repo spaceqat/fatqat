@@ -41,7 +41,7 @@ from ..resource_layout import DeviceOperand
 if TYPE_CHECKING:
     from ..backends.steps import BuiltinKernelKey
 
-DeviceOperands = tuple[DeviceOperand, ...]
+type DeviceOperands = tuple[DeviceOperand, ...]
 
 
 class MatrixImplementation:
