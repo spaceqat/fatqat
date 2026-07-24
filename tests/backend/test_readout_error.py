@@ -1,4 +1,16 @@
-"""Classical readout error: lowering, both execution paths, true-vs-reported."""
+"""Classical readout error: lowering, both execution paths, true-vs-reported.
+
+Every bare-int ``target=`` below is a physical device-resource label (see
+``NoiseModel.add_readout_error``/``readout_error_for``), never an engine
+index - it is only numerically equal to the measured subsystem's engine
+index because `SimulatorBackend`'s default `_resolve_resource_layout` policy
+happens to assign device labels in declaration order, coinciding with
+`_EngineIndexAllocation`'s flat indices for this generic backend. That coincidence
+is backend-specific, not part of the selector's meaning; see
+`tests/backend/test_fake_atom_grid.py`'s
+`test_physical_readout_selector_uses_device_label_not_engine_index` for a
+non-trivial layout where a device label and its engine index diverge.
+"""
 
 import numpy as np
 import pytest
@@ -204,3 +216,34 @@ def test_validate_noise_reports_readout_error_as_accepted():
 
     assert report.supported is True
     assert "readout_error" in report.accepted_sources
+
+
+# --- validate_for: run() direct-raise strict selector-identity validation ---
+
+
+def test_run_rejects_foreign_logical_readout_selector_directly():
+    program = _measured_program()
+    foreign = fq.QuantumRegister(1, name="q")
+    backend = SimulatorBackend(noise=_readout_model(_FLIP_30, target=foreign[0]))
+
+    with pytest.raises(BackendValidationError):
+        backend.run(program)
+
+
+def test_run_rejects_unmapped_physical_readout_label_directly():
+    program = _measured_program()
+    backend = SimulatorBackend(noise=_readout_model(_FLIP_30, target=99))
+
+    with pytest.raises(BackendValidationError):
+        backend.run(program)
+
+
+def test_run_succeeds_when_valid_readout_selector_targets_unmeasured_subsystem():
+    # A valid selector (real device label) naming a subsystem that is never
+    # measured is a permitted no-effect entry, not a validation error.
+    program = fq.Program(2, 1)
+    program.add_measurement(0, 0)
+    backend = SimulatorBackend(noise=_readout_model(_FLIP_30, target=1))
+
+    result = backend.run(program).result()
+    assert result is not None

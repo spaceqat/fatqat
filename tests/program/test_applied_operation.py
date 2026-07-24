@@ -86,7 +86,7 @@ def test_applied_operation_view_arity_checked_before_scalar_validation():
         AppliedOperation(operation=ops.CX, targets=(atoms.row(0),))
 
 
-def test_applied_operation_view_bearing_skips_duplicate_and_validate_hook():
+def test_applied_operation_view_bearing_skips_validate_hook():
     atoms = GridRegister(2, 2, name="atoms")
     calls = []
 
@@ -102,8 +102,65 @@ def test_applied_operation_view_bearing_skips_duplicate_and_validate_hook():
                 "validate_targets must not run for view-bearing targets"
             )
 
-    # Same view repeated: would trip today's duplicate-ref loop if it ran
-    # against a scalar RegisterRef, but must not be evaluated at all here.
-    ao = AppliedOperation(operation=_Probe(), targets=(atoms.row(0), atoms.row(0)))
-    assert ao.targets == (atoms.row(0), atoms.row(0))
+    # Non-overlapping views (distinct rows): legal pairing, so only the
+    # per-operation validate_targets() hook is at stake here - it must not
+    # run for view-bearing targets, unlike the scalar path.
+    ao = AppliedOperation(operation=_Probe(), targets=(atoms.row(0), atoms.row(1)))
+    assert ao.targets == (atoms.row(0), atoms.row(1))
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# View-pair legality (arity 2: matching selector kind, equal cardinality, no
+# same-register overlap) - checked once here, at construction, not deferred
+# to backend expansion. See registers._validate_view_pair.
+# ---------------------------------------------------------------------------
+
+
+def test_applied_operation_rejects_same_view_repeated():
+    atoms = GridRegister(2, 2, name="atoms")
+    with pytest.raises(ValueError, match="overlapping"):
+        AppliedOperation(operation=ops.CX, targets=(atoms.row(0), atoms.row(0)))
+
+
+def test_applied_operation_rejects_cross_selector_type_pairing():
+    atoms = GridRegister(3, 3, name="atoms")
+    # Equal cardinality (3 vs 3), but a row and a column are different
+    # selector kinds - forbidden regardless of size match.
+    with pytest.raises(ValueError, match="selector kind"):
+        AppliedOperation(operation=ops.CX, targets=(atoms.row(0), atoms.column(0)))
+
+
+def test_applied_operation_rejects_unequal_cardinality_across_registers():
+    small = GridRegister(2, 3, name="small")
+    large = GridRegister(2, 5, name="large")
+    with pytest.raises(ValueError, match="cardinality"):
+        AppliedOperation(operation=ops.CX, targets=(small.row(0), large.row(0)))
+
+
+def test_applied_operation_accepts_disjoint_rows_same_register():
+    atoms = GridRegister(2, 2, name="atoms")
+    ao = AppliedOperation(operation=ops.CX, targets=(atoms.row(0), atoms.row(1)))
+    assert ao.targets == (atoms.row(0), atoms.row(1))
+
+
+def test_applied_operation_rejects_overlapping_blocks():
+    atoms = GridRegister(2, 3, name="atoms")
+    first = atoms.block(rows=(0, 2), cols=(0, 2))
+    second = atoms.block(rows=(0, 2), cols=(1, 3))  # shares column 1
+    with pytest.raises(ValueError, match="overlapping"):
+        AppliedOperation(operation=ops.CX, targets=(first, second))
+
+
+def test_applied_operation_accepts_non_overlapping_equal_size_blocks():
+    atoms = GridRegister(2, 4, name="atoms")
+    first = atoms.block(rows=(0, 2), cols=(0, 2))
+    second = atoms.block(rows=(0, 2), cols=(2, 4))
+    ao = AppliedOperation(operation=ops.CX, targets=(first, second))
+    assert ao.targets == (first, second)
+
+
+def test_applied_operation_rejects_all_paired_with_all():
+    atoms = GridRegister(2, 2, name="atoms")
+    with pytest.raises(ValueError, match="overlapping"):
+        AppliedOperation(operation=ops.CX, targets=(atoms.all(), atoms.all()))

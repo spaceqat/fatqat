@@ -2,7 +2,7 @@
 name = "fatqat"
 version = "0.0.1"
 description = "Quantum noisy simulator (MVP Phase 1)"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = ["numpy>=1.23.2", "loky>=3.0.0"]
 
 [build-system]
@@ -32,10 +32,10 @@ testpaths = ["tests"]
 
 [tool.black]
 line-length = 88
-target-version = ["py311", "py312", "py313"]
+target-version = ["py312", "py313"]
 
 [tool.pylint.main]
-py-version = "3.11"
+py-version = "3.12"
 jobs = 0  # 0 = one process per available CPU core
 
 [tool.pylint.format]

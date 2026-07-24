@@ -30,18 +30,18 @@ target dimension (every fixed qubit gate) simply ignores the argument.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Hashable
 from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
 from ..operations import Operation
 from ..registers import RegisterRef
+from ..resource_layout import DeviceOperand
 
 if TYPE_CHECKING:
     from ..backends.steps import BuiltinKernelKey
 
-DeviceOperands = tuple[Hashable, ...]
+type DeviceOperands = tuple[DeviceOperand, ...]
 
 
 class MatrixImplementation:

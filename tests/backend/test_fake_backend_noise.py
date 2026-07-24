@@ -76,11 +76,13 @@ def test_default_noise_model_is_a_fresh_extensible_model():
 
     assert Depolarizing in first.channel_types()
     # Each call builds an independent model; user edits never leak back.
+    program = fq.Program(1)
+    backend = FakeSuperconducting4x4Backend()
     assert not any(
         isinstance(c, Depolarizing) and c.p == 0.5
         for c in second.channels_for(
             fq.ops.SX,
-            (0,),
-            FakeSuperconducting4x4Backend().resolve_layout(fq.Program(1)),
+            (program.qreg[0][0],),
+            backend._resolve_resource_layout(program),
         )
     )

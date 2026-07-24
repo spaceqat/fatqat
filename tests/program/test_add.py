@@ -177,3 +177,10 @@ def test_add_view_target_is_not_treated_as_scalar_ref():
     p.add(ops.RX(0.1), atoms.row(0))
     ao = p.operations[0]
     assert isinstance(ao.targets[0], RegisterView)
+
+
+def test_add_rejects_scalar_view_mixture_for_two_target_op():
+    atoms = GridRegister(2, 2, name="atoms")
+    p = Program([atoms])
+    with pytest.raises(ValueError, match="mixes a scalar target with a view"):
+        p.add(ops.CX, (atoms.row(1), atoms[0]))

@@ -6,11 +6,18 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
-from fatqat.backends import FakeAtomGridBackend, SimulatorBackend
+from fatqat.backends import ApplyMatrixStep, FakeAtomGridBackend, SimulatorBackend
 from fatqat.backends.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
+from fatqat.noise import Depolarizing, NoiseModel
 from fatqat.program import Program
 from fatqat.registers import GridRegister, QuantumRegister
+from fatqat.resource_layout import ResourceLayout
+
+
+def _matrix_steps(plan):
+    return [step for step in plan if isinstance(step, ApplyMatrixStep)]
+
 
 # --- constructor validation / default shape -----------------------------------
 
@@ -20,13 +27,16 @@ def test_default_shape_is_4x5():
     p_fits = Program(20)
     p_fits.add(ops.RX(0.1), 0)
     # 4x5 = 20 qubits fits exactly.
-    layout = backend.resolve_layout(p_fits)
+    layout = backend._allocate_engine_indices(p_fits)
     assert layout.n_subsystems == 20
+
+    resource_layout = backend._resolve_resource_layout(p_fits)
+    assert isinstance(resource_layout, ResourceLayout)
 
     p_too_big = Program(21)
     p_too_big.add(ops.RX(0.1), 0)
     with pytest.raises(BackendValidationError):
-        backend.resolve_layout(p_too_big)
+        backend._resolve_resource_layout(p_too_big)
 
 
 def test_rejects_non_int_rows():
@@ -68,10 +78,10 @@ def test_2x3_grid_binds_top_left_on_default_4x5_backend():
     p.add(ops.RX(0.1), atoms.all())
 
     backend = FakeAtomGridBackend()  # default 4x5
-    layout = backend.resolve_layout(p)
-    resources = backend._build_qubit_resource_map(p, layout)
+    engine_index_allocation = backend._allocate_engine_indices(p)
+    resource_layout = backend._resolve_resource_layout(p)
 
-    assert tuple(resources[atoms[i]].device_label for i in range(6)) == (
+    assert tuple(resource_layout.device_label(atoms[i]) for i in range(6)) == (
         0,
         1,
         2,
@@ -79,7 +89,9 @@ def test_2x3_grid_binds_top_left_on_default_4x5_backend():
         6,
         7,
     )
-    assert tuple(resources[atoms[i]].engine_index for i in range(6)) == tuple(range(6))
+    assert tuple(
+        engine_index_allocation.subsystem_index(atoms[i]) for i in range(6)
+    ) == tuple(range(6))
 
 
 def test_scalar_grid_ref_uses_grid_binder_device_label_not_identity():
@@ -89,14 +101,72 @@ def test_scalar_grid_ref_uses_grid_binder_device_label_not_identity():
     atoms = GridRegister(2, 3, name="atoms")
     p = Program([atoms])
     backend = FakeAtomGridBackend()  # default 4x5
-    layout = backend.resolve_layout(p)
     ref = atoms[3]
-    bound = backend._build_qubit_resource_map(p, layout)[ref]
-    assert bound.engine_index == 3
-    assert bound.device_label == 5
+    engine_index_allocation = backend._allocate_engine_indices(p)
+    resource_layout = backend._resolve_resource_layout(p)
+    assert engine_index_allocation.subsystem_index(ref) == 3
+    assert resource_layout.device_label(ref) == 5
+
+
+# --- gate-channel noise selectors: physical labels, not engine indices --------
+
+
+def test_physical_noise_selector_uses_device_label_not_engine_index():
+    # 2x3 grid on the default 4x5 backend: atoms[3] is engine index 3, but
+    # its device label is 5 (row 1, col 0 -> 1*5+0). A physical gate-noise
+    # selector must be written in device-label space: (5,) selects atoms[3],
+    # while (3,) - its old, no-longer-meaningful engine index - selects
+    # nothing, since no program resource occupies device site 3.
+    atoms = GridRegister(2, 3, name="atoms")
+    program = Program([atoms])
+    backend = FakeAtomGridBackend()
+    resource_layout = backend._resolve_resource_layout(program)
+    ref = atoms[3]
+    assert resource_layout.device_label(ref) == 5
+
+    channel = Depolarizing(p=0.1)
+    noise = NoiseModel()
+    noise.add_noise(ops.RX, channel, targets=(5,))
+
+    assert noise.channels_for(ops.RX, (ref,), resource_layout) == [channel]
+
+    stale_engine_index_selector = NoiseModel()
+    stale_engine_index_selector.add_noise(ops.RX, channel, targets=(3,))
+    assert (
+        stale_engine_index_selector.channels_for(ops.RX, (ref,), resource_layout) == []
+    )
+
+
+# --- readout-error selectors: physical labels, not engine indices --------------
+
+
+def test_physical_readout_selector_uses_device_label_not_engine_index():
+    # Same divergence as the gate-channel case: atoms[3] is engine index 3
+    # but device label 5 on the default 4x5 backend. A physical readout
+    # selector must be written in device-label space.
+    atoms = GridRegister(2, 3, name="atoms")
+    program = Program([atoms])
+    backend = FakeAtomGridBackend()
+    resource_layout = backend._resolve_resource_layout(program)
+    ref = atoms[3]
+    assert resource_layout.device_label(ref) == 5
+
+    matrix = np.array([[0.9, 0.2], [0.1, 0.8]])
+    noise = NoiseModel()
+    noise.add_readout_error(matrix, target=5)
+
+    assert np.array_equal(noise.readout_error_for(ref, resource_layout), matrix)
+
+    stale_engine_index_selector = NoiseModel()
+    stale_engine_index_selector.add_readout_error(matrix, target=3)
+    assert stale_engine_index_selector.readout_error_for(ref, resource_layout) is None
 
 
 # --- sole-register / fit / multiplicity rules ----------------------------------
+#
+# All of these are resource-layout-level mapping/capacity concerns per the
+# design, so they must raise from `_resolve_resource_layout()`, not from the
+# generic engine-flattening `_allocate_engine_indices()`.
 
 
 def test_rejects_grid_register_combined_with_other_quantum_register():
@@ -105,7 +175,7 @@ def test_rejects_grid_register_combined_with_other_quantum_register():
     p = Program([atoms, other])
     backend = FakeAtomGridBackend()
     with pytest.raises(BackendValidationError):
-        backend.resolve_layout(p)
+        backend._resolve_resource_layout(p)
 
 
 def test_rejects_two_grid_registers():
@@ -114,7 +184,7 @@ def test_rejects_two_grid_registers():
     p = Program([atoms1, atoms2])
     backend = FakeAtomGridBackend()
     with pytest.raises(BackendValidationError):
-        backend.resolve_layout(p)
+        backend._resolve_resource_layout(p)
 
 
 def test_rejects_grid_that_does_not_fit_backend_even_with_enough_total_capacity():
@@ -125,30 +195,53 @@ def test_rejects_grid_that_does_not_fit_backend_even_with_enough_total_capacity(
     p = Program([atoms])
     backend = FakeAtomGridBackend()
     with pytest.raises(BackendValidationError):
-        backend.resolve_layout(p)
+        backend._resolve_resource_layout(p)
 
 
-def test_resolve_layout_rejects_capacity_for_scalar_only_program():
+def test_resolve_resource_layout_rejects_capacity_for_scalar_only_program():
     p = Program(21)
     backend = FakeAtomGridBackend()  # capacity 20
     with pytest.raises(BackendValidationError):
-        backend.resolve_layout(p)
+        backend._resolve_resource_layout(p)
 
 
-def test_resolve_layout_rejects_non_qubit_dimension_for_scalar_only_program():
+def test_resolve_resource_layout_rejects_non_qubit_dimension_for_scalar_only_program():
     p = Program([QuantumRegister(4, dim=3)])
     backend = FakeAtomGridBackend()
     with pytest.raises(BackendValidationError, match="qubit dimensions"):
-        backend.resolve_layout(p)
+        backend._resolve_resource_layout(p)
 
 
 def test_scalar_only_program_uses_identity_binding():
     p = Program(3)
     backend = FakeAtomGridBackend()
-    layout = backend.resolve_layout(p)
     ref = p.qreg[0][2]
-    bound = backend._build_qubit_resource_map(p, layout)[ref]
-    assert bound.engine_index == bound.device_label == 2
+    engine_index_allocation = backend._allocate_engine_indices(p)
+    resource_layout = backend._resolve_resource_layout(p)
+    assert engine_index_allocation.subsystem_index(ref) == 2
+    assert resource_layout.device_label(ref) == 2
+
+
+def test_allocate_engine_has_no_atom_grid_validation_left():
+    # `_allocate_engine_indices()` now just delegates to the generic engine-
+    # flattening behavior: an over-capacity, non-qubit-dim, or ill-shaped
+    # program flattens without complaint here (validation moved wholesale to
+    # `_resolve_resource_layout()`).
+    backend = FakeAtomGridBackend()  # capacity 20
+
+    p_too_big = Program(21)
+    engine_index_allocation = backend._allocate_engine_indices(p_too_big)
+    assert engine_index_allocation.n_subsystems == 21
+
+    p_bad_dim = Program([QuantumRegister(4, dim=3)])
+    engine_index_allocation = backend._allocate_engine_indices(p_bad_dim)
+    assert engine_index_allocation.n_subsystems == 4
+
+    atoms1 = GridRegister(2, 2, name="a1")
+    atoms2 = GridRegister(2, 2, name="a2")
+    p_two_grids = Program([atoms1, atoms2])
+    engine_index_allocation = backend._allocate_engine_indices(p_two_grids)
+    assert engine_index_allocation.n_subsystems == 8
 
 
 # --- implementation_map capability API -----------------------------------------
@@ -195,13 +288,17 @@ def test_fake_atom_grid_implementation_map_cx_has_no_class_keyed_rule():
 # --- resource-map behavior -----------------------------------------------------
 
 
-def test_resource_map_contains_all_scalar_refs_from_the_program_registers():
+def test_resource_layout_covers_all_scalar_refs_from_the_program_registers():
     atoms = GridRegister(2, 2, name="atoms")
     p = Program([atoms])
     backend = FakeAtomGridBackend()
-    layout = backend.resolve_layout(p)
-    resources = backend._build_qubit_resource_map(p, layout)
-    assert set(resources) == set(atoms[index] for index in range(4))
+    resource_layout = backend._resolve_resource_layout(p)
+    assert {resource_layout.device_label(atoms[index]) for index in range(4)} == {
+        0,
+        1,
+        5,
+        6,
+    }
 
 
 # --- integration: numeric equivalence to manual scalar circuits ----------------
@@ -327,6 +424,91 @@ def test_non_neighbor_pair_rejects():
             p, result_config={"counts": False, "statevector": True}
         )
     assert isinstance(excinfo.value, BackendValidationError)
+
+
+def test_native_connectivity_lookup_uses_device_labels_not_engine_indices():
+    # 2x3 grid on the default 4x5 backend: atoms[0] is engine index 0, device
+    # label 0; atoms[3] is engine index 3, device label 5 (row 1, col 0 ->
+    # 1*5+0). Labels (0, 5) are legal vertical neighbors on the 4x5 device,
+    # but engine indices (0, 3) are NOT a legal edge on the same map (only
+    # (0, 1)/(1, 2)-style row-adjacency or (i, i+5)-style column-adjacency
+    # are). A CX between atoms[0] and atoms[3] only succeeds if the
+    # implementation-map lookup used the device labels (0, 5), not the
+    # engine target indices (0, 3) it feeds into the execution step.
+    atoms = GridRegister(2, 3, name="atoms")
+    p = Program([atoms])
+    p.add(ops.CX, (atoms[0], atoms[3]))
+
+    backend = FakeAtomGridBackend()
+    assert (0, 5) in backend.implementation_map.device_operands_for(ops.CX)
+    assert (0, 3) not in backend.implementation_map.device_operands_for(ops.CX)
+
+    grid_sv = (
+        backend.run(p, result_config={"counts": False, "statevector": True})
+        .result()
+        .get_statevector()
+    )
+
+    manual_p = Program(6)
+    manual_p.add(ops.CX, (0, 3))
+    manual_sv = (
+        SimulatorBackend()
+        .run(manual_p, result_config={"counts": False, "statevector": True})
+        .result()
+        .get_statevector()
+    )
+
+    assert np.allclose(grid_sv, manual_sv)
+
+
+def test_lowering_uses_resource_layout_device_operands_and_engine_index_allocation():
+    # 2x3 grid on the default 4x5 device: atoms[0] is engine index 0, device
+    # label 0; atoms[3] is engine index 3, device label 5 (row 1, col 0 ->
+    # 1*5+0). The native CX map only legalizes the *device*-label edge
+    # (0, 5), not the engine-index pair (0, 3), so lowering only succeeds by
+    # looking up `ImplementationMap` with device operands sourced from
+    # `ResourceLayout`. The resulting `ApplyMatrixStep`, however, must carry
+    # the *engine* indices (0, 3) from `_EngineIndexAllocation` - the private
+    # lowering context keeps the two identities separate end to end.
+    atoms = GridRegister(2, 3, name="atoms")
+    program = Program([atoms])
+    program.add(ops.CX, (atoms[0], atoms[3]))
+
+    backend = FakeAtomGridBackend()
+    assert (0, 5) in backend.implementation_map.device_operands_for(ops.CX)
+    assert (0, 3) not in backend.implementation_map.device_operands_for(ops.CX)
+
+    plan, _facts = backend._lower_program(program)
+    steps = _matrix_steps(plan)
+    assert len(steps) == 1
+    assert steps[0].target_indices == (0, 3)
+
+
+def test_run_resolves_resource_layout_exactly_once_even_with_grid_mapping():
+    # FakeAtomGridBackend's `_resolve_resource_layout` is non-trivial (grid
+    # validation + top-left mapping); lowering must reuse the single value
+    # `run()` already resolved rather than resolving it again for lookup.
+    atoms = GridRegister(2, 3, name="atoms")
+    program = Program([atoms])
+    program.add(ops.RX(0.1), atoms[0])
+
+    backend = FakeAtomGridBackend()
+    calls = {"resource_layout": 0}
+    original = backend._resolve_resource_layout
+
+    def counting(program):
+        calls["resource_layout"] += 1
+        return original(program)
+
+    backend._resolve_resource_layout = counting
+    backend.run(program, result_config={"counts": False, "statevector": True})
+    assert calls["resource_layout"] == 1
+
+
+def test_device_label_for_method_is_gone():
+    # The top-left mapping formula lives solely in `_resolve_resource_layout`
+    # now; the old per-ref callback hook is removed from this backend.
+    assert "_device_label_for" not in FakeAtomGridBackend.__dict__
 
 
 def test_condition_on_viewed_instruction_propagates_end_to_end():

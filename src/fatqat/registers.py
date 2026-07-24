@@ -316,3 +316,89 @@ class RegisterView:
 
     register: GridRegister
     selector: Selector
+
+
+def _view_members(view: RegisterView) -> tuple[RegisterRef, ...]:
+    """Enumerate a view in its documented deterministic member order."""
+    register = view.register
+    selector = view.selector
+    if isinstance(selector, AllSelector):
+        coordinates = [
+            (row, col) for row in range(register.rows) for col in range(register.cols)
+        ]
+    elif isinstance(selector, RowSelector):
+        coordinates = [(selector.row, col) for col in range(register.cols)]
+    elif isinstance(selector, ColumnSelector):
+        coordinates = [(row, selector.col) for row in range(register.rows)]
+    elif isinstance(selector, BlockSelector):
+        (row_start, row_stop), (col_start, col_stop) = selector.rows, selector.cols
+        coordinates = [
+            (row, col)
+            for row in range(row_start, row_stop)
+            for col in range(col_start, col_stop)
+        ]
+    else:  # pragma: no cover - exhaustive over the Selector union
+        raise AssertionError(f"unhandled selector {selector!r}")
+    return tuple(register[row * register.cols + col] for row, col in coordinates)
+
+
+def _views_overlap(first: RegisterView, second: RegisterView) -> bool:
+    """Whether two same-register, same-selector-type views can share a member.
+
+    Callers must have already established both preconditions; this only
+    decides the overlap question. Rows and columns each partition the grid,
+    so two unequal row selectors (or column selectors) are always fully
+    disjoint - no partial-overlap case exists for them. Blocks have no such
+    guarantee: two distinct, unequal blocks can still share cells, so they
+    are checked by row/col range intersection instead of equality.
+    """
+    selector, other = first.selector, second.selector
+    if isinstance(selector, AllSelector):
+        return True  # only one possible AllSelector value: always identical
+    if isinstance(selector, RowSelector):
+        return selector.row == other.row
+    if isinstance(selector, ColumnSelector):
+        return selector.col == other.col
+    if isinstance(selector, BlockSelector):
+        row_overlap = (
+            selector.rows[0] < other.rows[1] and other.rows[0] < selector.rows[1]
+        )
+        col_overlap = (
+            selector.cols[0] < other.cols[1] and other.cols[0] < selector.cols[1]
+        )
+        return row_overlap and col_overlap
+    raise AssertionError(f"unhandled selector {selector!r}")  # pragma: no cover
+
+
+def _validate_view_pair(
+    first: RegisterView, second: RegisterView, *, op_name: str
+) -> None:
+    """Validate that two views may legally pair as one two-target operation's operands.
+
+    Cross-selector-type pairing is disallowed outright - only row/row,
+    column/column, block/block, and all/all pairs are legal - since a mixed
+    pair (e.g. a row and a column) can partially overlap in ways neither
+    selector alone expresses. Same-register pairs must additionally not
+    overlap (see `_views_overlap`); views on different registers can never
+    overlap (a `RegisterRef`'s identity includes its register) but must
+    still match cardinality, since pairwise application zips them together.
+    """
+    if type(first.selector) is not type(second.selector):
+        raise ValueError(
+            f"{op_name} pairs a {type(first.selector).__name__} view with a "
+            f"{type(second.selector).__name__} view; grouped two-target "
+            "application requires both views to use the same selector kind"
+        )
+    first_size, second_size = len(_view_members(first)), len(_view_members(second))
+    if first_size != second_size:
+        raise ValueError(
+            f"{op_name} pairs views of unequal size "
+            f"({first_size} vs {second_size}); pairwise view application "
+            "requires equal cardinality"
+        )
+    if first.register is second.register and _views_overlap(first, second):
+        raise ValueError(
+            f"{op_name} pairs overlapping views on the same register; a "
+            "member cannot be both control and target of one two-target "
+            "application"
+        )

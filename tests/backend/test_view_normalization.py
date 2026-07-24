@@ -1,62 +1,31 @@
-"""Tests for scalar qubit-resource mapping and grouped-operation expansion."""
+"""Tests for grouped-view/operation expansion and the private lowering context.
+
+`_break_grouped_operations()` is the temporary scalar view-normalization
+stage: it must run before scalar lowering and must not carry any resource-
+mapping policy of its own (that lives in `ResourceLayout`/`_EngineIndexAllocation`
+and the private `_LoweringContext` that pairs them for one run's lowering).
+
+Pairing legality (matching selector kind, equal cardinality, no same-register
+overlap) is validated at `Program.add()`/`AppliedOperation` construction time
+(see tests/program/test_add.py and tests/program/test_applied_operation.py),
+not here - by the time a step reaches expansion, its targets are already
+guaranteed legal.
+"""
 
 import pytest
 
 from fatqat import operations as ops
 from fatqat.backends import ApplyMatrixStep, SimulatorBackend
-from fatqat.backends.fake_atom_grid import FakeAtomGridBackend
-from fatqat.backends.resource_binding import BoundResource
+from fatqat.backends.backend_utils import _LoweringContext
 from fatqat.backends.simulator_backend import _break_grouped_operations
-from fatqat.errors import BackendValidationError
 from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
 from fatqat.program import Program
 from fatqat.registers import GridRegister
-
-
-def _prepared(backend, program):
-    layout = backend.resolve_layout(program)
-    resources = backend._build_qubit_resource_map(program, layout)
-    operations = _break_grouped_operations(program.operations)
-    return operations, layout, resources
+from fatqat.resource_layout import ResourceLayout
 
 
 def _matrix_steps(plan):
     return [step for step in plan if isinstance(step, ApplyMatrixStep)]
-
-
-def test_bound_resource_is_immutable():
-    program = Program(1)
-    bound = BoundResource(ref=program.qreg[0][0], engine_index=0, device_label=0)
-    with pytest.raises(AttributeError):
-        bound.engine_index = 1
-
-
-def test_identity_resource_map_contains_flat_index_and_device_label():
-    program = Program(2)
-    backend = SimulatorBackend()
-    layout = backend.resolve_layout(program)
-    resources = backend._build_qubit_resource_map(program, layout)
-    ref = program.qreg[0][1]
-    assert resources[ref] == BoundResource(ref=ref, engine_index=1, device_label=1)
-
-
-def test_fake_grid_resource_map_keeps_flat_and_hardware_indices_distinct():
-    atoms = GridRegister(2, 3, name="atoms")
-    program = Program([atoms])
-    backend = FakeAtomGridBackend(rows=4, cols=5)
-    layout = backend.resolve_layout(program)
-    resources = backend._build_qubit_resource_map(program, layout)
-    assert tuple(resources[atoms[index]].engine_index for index in range(6)) == tuple(
-        range(6)
-    )
-    assert tuple(resources[atoms[index]].device_label for index in range(6)) == (
-        0,
-        1,
-        2,
-        5,
-        6,
-        7,
-    )
 
 
 def test_scalar_only_and_measurement_instructions_pass_through_unchanged():
@@ -99,30 +68,6 @@ def test_grouped_two_target_operation_zips_views_in_order():
     ]
 
 
-def test_grouped_operation_rejects_unequal_view_cardinality():
-    atoms = GridRegister(2, 3, name="atoms")
-    program = Program([atoms])
-    program.add(ops.CX, (atoms.row(0), atoms.column(0)))
-    with pytest.raises(BackendValidationError):
-        _break_grouped_operations(program.operations)
-
-
-def test_grouped_operation_rejects_scalar_view_mixture():
-    atoms = GridRegister(2, 2, name="atoms")
-    program = Program([atoms])
-    program.add(ops.CX, (atoms.row(1), atoms[0]))
-    with pytest.raises(BackendValidationError):
-        _break_grouped_operations(program.operations)
-
-
-def test_grouped_operation_rejects_self_pair():
-    atoms = GridRegister(2, 2, name="atoms")
-    program = Program([atoms])
-    program.add(ops.CZ, (atoms.row(0), atoms.column(0)))
-    with pytest.raises(BackendValidationError):
-        _break_grouped_operations(program.operations)
-
-
 def test_grouped_operation_does_not_mutate_program():
     atoms = GridRegister(2, 2, name="atoms")
     program = Program([atoms])
@@ -148,22 +93,35 @@ def test_base_simulator_executes_grouped_views_with_identity_mapping():
     assert result.get_statevector() is not None
 
 
-def test_lower_uses_device_labels_for_lookup_and_flat_indices_for_steps():
+# --- private lowering context: ResourceLayout for lookup, _EngineIndexAllocation
+# for execution indices -----------------------------------------------------
+
+
+def test_lower_uses_resource_layout_device_operands_for_lookup_and_engine_indices_for_steps():
+    # A deliberately divergent mapping: device labels 99/100 have nothing to
+    # do with the engine indices 0/1. The CZ rule is only registered for
+    # device operands (99, 100), so lowering can only have succeeded by using
+    # `ResourceLayout.device_operands()` for the implementation-map lookup;
+    # the resulting step must still carry the *engine* indices (0, 1), from
+    # `_EngineIndexAllocation`, not the device labels used for lookup.
     program = Program(2)
     program.add(ops.CZ, (0, 1))
-    backend = SimulatorBackend()
-    layout = backend.resolve_layout(program)
     q0, q1 = program.qreg[0][0], program.qreg[0][1]
-    resources = {
-        q0: BoundResource(ref=q0, engine_index=0, device_label=99),
-        q1: BoundResource(ref=q1, engine_index=1, device_label=100),
-    }
+
+    engine_index_allocation = SimulatorBackend()._allocate_engine_indices(program)
+    resource_layout = ResourceLayout({q0: 99, q1: 100})
+
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
     implementation_map = ImplementationMap()
     implementation_map.add(ops.CZ, cz_rule, device_operands=(99, 100))
     backend = SimulatorBackend(implementation_map=implementation_map)
+
+    context = _LoweringContext(
+        resource_layout=resource_layout,
+        engine_index_allocation=engine_index_allocation,
+    )
     operations = _break_grouped_operations(program.operations)
-    plan, _facts = backend._lower(operations, layout, resources)
+    plan, _facts = backend._lower(operations, context)
     assert _matrix_steps(plan)[0].target_indices == (0, 1)
 
 

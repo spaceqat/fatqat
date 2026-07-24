@@ -127,3 +127,72 @@ def test_barrier_is_preserved_in_program_operations():
     ]
     assert len(barriers) == 2
     assert barriers[0].targets != barriers[1].targets
+
+
+# --- resource-layout / engine-allocation hook split --------------------------
+
+
+def test_no_resolve_layout_method_remains():
+    # resolve_layout used to carry both a physical and an engine-index
+    # meaning at once; it must be gone, replaced by the two distinct hooks.
+    assert not hasattr(SimulatorBackend, "resolve_layout")
+
+
+def test_run_resolves_resource_layout_and_engine_index_allocation_exactly_once(
+    monkeypatch,
+):
+    backend = SimulatorBackend()
+    calls = {"resource_layout": 0, "engine": 0}
+    original_resource_layout = backend._resolve_resource_layout
+    original_allocate_engine_indices = backend._allocate_engine_indices
+
+    def counting_resource_layout(program):
+        calls["resource_layout"] += 1
+        return original_resource_layout(program)
+
+    def counting_allocate_engine_indices(program):
+        calls["engine"] += 1
+        return original_allocate_engine_indices(program)
+
+    monkeypatch.setattr(backend, "_resolve_resource_layout", counting_resource_layout)
+    monkeypatch.setattr(
+        backend, "_allocate_engine_indices", counting_allocate_engine_indices
+    )
+
+    p = Program(1)
+    p.add(ops.H, 0)
+    backend.run(p, result_config={"counts": False, "statevector": True})
+
+    assert calls == {"resource_layout": 1, "engine": 1}
+
+
+def test_resource_layout_failure_raises_directly_not_as_a_failed_job():
+    # A validation failure in _resolve_resource_layout must propagate
+    # directly from run(), never be captured into Job.failed().
+    class _ExplodingResourceLayoutBackend(SimulatorBackend):
+        def _resolve_resource_layout(self, program):
+            raise BackendValidationError("resource layout boom")
+
+    backend = _ExplodingResourceLayoutBackend()
+    p = Program(1)
+    p.add(ops.H, 0)
+    with pytest.raises(BackendValidationError, match="resource layout boom"):
+        backend.run(p)
+
+
+def test_engine_index_allocation_failure_raises_directly_not_as_a_failed_job(
+    monkeypatch,
+):
+    # Same guarantee for _allocate_engine_indices. Injected via monkeypatch,
+    # not a subclass override: no real backend overrides this hook (unlike
+    # _resolve_resource_layout above), so a subclass would misrepresent it
+    # as a supported extension point.
+    def exploding(program):
+        raise BackendValidationError("engine allocation boom")
+
+    backend = SimulatorBackend()
+    monkeypatch.setattr(backend, "_allocate_engine_indices", exploding)
+    p = Program(1)
+    p.add(ops.H, 0)
+    with pytest.raises(BackendValidationError, match="engine allocation boom"):
+        backend.run(p)

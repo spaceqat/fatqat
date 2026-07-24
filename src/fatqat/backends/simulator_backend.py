@@ -39,7 +39,7 @@ refactor.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import fields
 from math import prod
 from typing import Any
@@ -50,7 +50,7 @@ from ..errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from ..flat_layout import FlatResourceLayout
+from .._engine_index_allocation import _EngineIndexAllocation
 from ..implementation import (
     MatrixImplementation,
     DeviceOperands,
@@ -68,13 +68,11 @@ from ..noise.base import _validate_kraus_shapes
 from ..operations import BarrierGate, Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
 from ..registers import (
-    AllSelector,
-    BlockSelector,
-    ColumnSelector,
     RegisterRef,
     RegisterView,
-    RowSelector,
+    _view_members,
 )
+from ..resource_layout import DeviceOperand, ResourceLayout
 from ..result import (
     Result,
     _DensityMatrixResultConfig,
@@ -83,6 +81,7 @@ from ..result import (
 )
 from ..simulator import NumpyDMSimulator, NumpySVSimulator, Simulator
 from .backend_utils import (
+    _LoweringContext,
     _PlanFacts,
     _normalize_dict_options,
     _resolve_condition,
@@ -91,10 +90,6 @@ from .engine_contract import (
     _DensityMatrixResultRequest,
     _EngineConfig,
     _StateVectorResultRequest,
-)
-from .resource_binding import (
-    BoundResource,
-    _build_qubit_resource_map,
 )
 from .steps import (
     ApplyChannelStep,
@@ -113,38 +108,20 @@ _METHOD_ALIASES = {
 }
 
 ProgramInstruction = AppliedOperation | Measurement
-ResourceMap = Mapping[RegisterRef, BoundResource]
-DeviceLabelPolicy = Callable[[RegisterRef, FlatResourceLayout], Hashable]
-
-
-def _view_members(view: RegisterView) -> tuple[RegisterRef, ...]:
-    """Enumerate a view in its documented deterministic member order."""
-    register = view.register
-    selector = view.selector
-    if isinstance(selector, AllSelector):
-        coordinates = [
-            (row, col) for row in range(register.rows) for col in range(register.cols)
-        ]
-    elif isinstance(selector, RowSelector):
-        coordinates = [(selector.row, col) for col in range(register.cols)]
-    elif isinstance(selector, ColumnSelector):
-        coordinates = [(row, selector.col) for row in range(register.rows)]
-    elif isinstance(selector, BlockSelector):
-        (row_start, row_stop), (col_start, col_stop) = selector.rows, selector.cols
-        coordinates = [
-            (row, col)
-            for row in range(row_start, row_stop)
-            for col in range(col_start, col_stop)
-        ]
-    else:  # pragma: no cover - exhaustive over the Selector union
-        raise AssertionError(f"unhandled selector {selector!r}")
-    return tuple(register[row * register.cols + col] for row, col in coordinates)
 
 
 def _expand_grouped_operation(
     step: AppliedOperation,
 ) -> tuple[AppliedOperation, ...]:
-    """Expand one view-bearing operation into scalar AppliedOperations."""
+    """Expand one view-bearing operation into scalar AppliedOperations.
+
+    Pairing legality (arity 2: matching selector kind, equal cardinality, no
+    same-register overlap) is validated once, at construction, by
+    `AppliedOperation.__post_init__` (see `registers._validate_view_pair`) -
+    this only does the mechanical expansion of already-legal targets.
+    Whether to scalar-expand at all is this backend's lowering strategy; a
+    different backend could realize a group op some other way instead.
+    """
     target_members = tuple(
         _view_members(target) if isinstance(target, RegisterView) else (target,)
         for target in step.targets
@@ -157,27 +134,7 @@ def _expand_grouped_operation(
         emissions = [(member,) for member in target_members[0]]
     elif len(target_members) == 2:
         first, second = target_members
-        first_is_view = isinstance(step.targets[0], RegisterView)
-        second_is_view = isinstance(step.targets[1], RegisterView)
-        if first_is_view != second_is_view:
-            raise BackendValidationError(
-                f"{name} mixes a scalar target with a view target; a "
-                "two-target gate needs both operands scalar or both views"
-            )
-        if len(first) != len(second):
-            raise BackendValidationError(
-                f"{name} pairs views of unequal size "
-                f"({len(first)} vs {len(second)}); pairwise view "
-                "application requires equal cardinality"
-            )
-        emissions = []
-        for control, target in zip(first, second):
-            if control.register is target.register and control.index == target.index:
-                raise BackendValidationError(
-                    f"{name} pairs member {control!r} with itself; a member "
-                    "cannot be both control and target of one two-target application"
-                )
-            emissions.append((control, target))
+        emissions = list(zip(first, second))
     else:
         raise BackendValidationError(
             f"{name} cannot expand a view target at arity {len(target_members)}"
@@ -206,6 +163,197 @@ def _break_grouped_operations(
         else:
             broken.append(step)
     return tuple(broken)
+
+
+def _gate_implementation_for(
+    operation: Operation, device_operands: DeviceOperands, impl_map: ImplementationMap
+) -> MatrixImplementation:
+    """Resolve the matrix rule for a gate operation on a device target key.
+
+    Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` if the operation has no rule at
+    all, or if it has rules but none for this target key — the message
+    distinguishes the two.
+    """
+    if not impl_map.supports(operation):
+        raise UnsupportedOperationError(
+            f"{type(operation).__name__} is not supported by this backend"
+        )
+    rule = impl_map.implementation_for(operation, device_operands=device_operands)
+    if rule is None:
+        raise UnsupportedOperationError(
+            f"{type(operation).__name__} is not supported on device operands {device_operands}"
+        )
+    return rule
+
+
+def _resolve_confusions(
+    measured_targets: tuple[RegisterRef, ...],
+    measured_indices: tuple[int, ...],
+    resource_layout: ResourceLayout,
+    engine_index_allocation: _EngineIndexAllocation,
+    noise_model: NoiseModel,
+) -> tuple[Any, ...] | None:
+    """Resolve per-subsystem readout confusion matrices for one measurement.
+
+    ``readout_error_for`` is the single source of truth per subsystem; this
+    function only collapses an all-``None`` resolution back to ``None`` so
+    the noise-free (and the common) case allocates nothing on the step.
+    Selection matches against each measured ref's logical identity and/or
+    resource-layout device label (never an engine index); the paired engine
+    index is used only for the dimension check and is never derived
+    backward from a device label.
+
+    Raises :py:exc:`~fatqat.errors.BackendValidationError` if a selected
+    matrix's dimension does not match the measured subsystem.
+    """
+    resolved = []
+    for target, measured in zip(measured_targets, measured_indices):
+        confusion = noise_model.readout_error_for(target, resource_layout)
+        if confusion is not None:
+            dim = engine_index_allocation.system_dims[measured]
+            if confusion.shape != (dim, dim):
+                raise BackendValidationError(
+                    f"readout confusion matrix of shape {confusion.shape} "
+                    f"selected for subsystem {measured} of dimension {dim}"
+                )
+        resolved.append(confusion)
+    if all(confusion is None for confusion in resolved):
+        return None
+    return tuple(resolved)
+
+
+def _lower_measurement(
+    step: Measurement,
+    resource_layout: ResourceLayout,
+    engine_index_allocation: _EngineIndexAllocation,
+    noise_model: NoiseModel,
+) -> MeasurementStep:
+    """Lower one `Measurement` instruction into a `MeasurementStep`."""
+    measured_indices = tuple(
+        engine_index_allocation.subsystem_index(q) for q in step.targets
+    )
+    classical_indices = tuple(
+        engine_index_allocation.clbit_index(c) for c in step.outputs
+    )
+    return MeasurementStep(
+        measured_indices=measured_indices,
+        classical_indices=classical_indices,
+        confusions=_resolve_confusions(
+            step.targets,
+            measured_indices,
+            resource_layout,
+            engine_index_allocation,
+            noise_model,
+        ),
+    )
+
+
+def _lower_reset(
+    step: AppliedOperation,
+    resource_layout: ResourceLayout,
+    engine_index_allocation: _EngineIndexAllocation,
+    noise_model: NoiseModel,
+) -> ResetStep:
+    """Lower one `Reset` `AppliedOperation` into a `ResetStep`.
+
+    Raises:
+        UnsupportedOperationError: If channel noise is attached to Reset.
+            Reset-attached channels ("apply after the ideal reset") are
+            designed but not wired yet; raising keeps the gap loud instead
+            of silently dropping registered noise. The selector lookup runs
+            against logical/physical identity (never engine indices) before
+            the guard raises.
+    """
+    target_indices = tuple(
+        engine_index_allocation.subsystem_index(t) for t in step.targets
+    )
+    if noise_model.channels_for(ResetGate, step.targets, resource_layout):
+        raise UnsupportedOperationError(
+            "channel noise attached to Reset is not supported yet"
+        )
+    cond = _resolve_condition(step.condition, engine_index_allocation)
+    return ResetStep(reset_indices=target_indices, condition=cond)
+
+
+def _lower_gate(
+    step: AppliedOperation,
+    resource_layout: ResourceLayout,
+    engine_index_allocation: _EngineIndexAllocation,
+    impl_map: ImplementationMap,
+    noise_model: NoiseModel,
+    channel_map: ChannelImplementationMap,
+) -> list[ResolvedStep]:
+    """Lower one ordinary-gate `AppliedOperation`.
+
+    Returns the gate's `ApplyMatrixStep` followed by one `ApplyChannelStep`
+    per noise channel attached to this occurrence, in registration order,
+    each inheriting the gate's condition. Every gate reaching here has only
+    scalar targets: grouped expansion already happened before lowering, so
+    each target maps to one device operand and one engine index. Targets
+    were validated when this `AppliedOperation` was constructed.
+    Implementation-map lookup uses device operands from the resource
+    layout; every execution index comes from the engine index allocation
+    instead.
+    """
+    device_operands = resource_layout.device_operands(step.targets)
+    engine_indices = tuple(
+        engine_index_allocation.subsystem_index(t) for t in step.targets
+    )
+    cond = _resolve_condition(step.condition, engine_index_allocation)
+
+    rule = _gate_implementation_for(step.operation, device_operands, impl_map)
+    try:
+        matrix = rule(step.operation, targets=step.targets)
+    except Exception as exc:
+        raise MatrixImplementationError(
+            f"implementation for {type(step.operation).__name__} raised: {exc}"
+        ) from exc
+
+    # Check matrix shape matches this instruction's target dims.
+    target_dims = tuple(engine_index_allocation.system_dims[i] for i in engine_indices)
+    expected = prod(target_dims)
+    if matrix.shape != (expected, expected):
+        raise BackendValidationError(
+            f"{type(step.operation).__name__} resolved to a "
+            f"{matrix.shape} matrix, incompatible with target "
+            f"dimensions {target_dims} (expected "
+            f"{(expected, expected)})"
+        )
+
+    steps: list[ResolvedStep] = [
+        ApplyMatrixStep(
+            matrix=matrix,
+            target_indices=engine_indices,
+            condition=cond,
+            # Identity, not mechanics: the backend forwards which
+            # implementation was selected; the engine alone decides
+            # what (if anything) that means for kernel choice.
+            kernel_key=rule._kernel_key(step.operation, targets=step.targets),
+        )
+    ]
+
+    # Noise selection matches against the occurrence's logical targets
+    # and/or resource-layout device operands (never engine indices);
+    # engine indices are used only for the emitted ApplyChannelStep.
+    for channel in noise_model.channels_for(
+        type(step.operation), step.targets, resource_layout
+    ):
+        channel_rule = channel_map.get(type(channel))
+        if channel_rule is None:
+            raise UnsupportedOperationError(
+                f"{type(channel).__name__} has no channel "
+                "implementation on this backend"
+            )
+        kraus_ops = tuple(channel_rule(channel, targets=step.targets))
+        _validate_kraus_shapes(kraus_ops, expected, type(channel).__name__)
+        steps.append(
+            ApplyChannelStep(
+                kraus_ops=kraus_ops,
+                target_indices=engine_indices,
+                condition=cond,
+            )
+        )
+    return steps
 
 
 class SimulatorBackend:
@@ -392,41 +540,63 @@ class SimulatorBackend:
         self._simulator = self._simulator_cls(config=config)
         self._simulator_system: tuple[tuple[int, ...], int] | None = None
 
-    def resolve_layout(self, program: Program) -> FlatResourceLayout:
-        """Build the flat resource layout used by this backend.
+    def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
+        """Resolve this run's effective public resource layout.
+
+        The base implementation is the generic simulator's trivial mapping
+        policy: concatenate quantum registers in declaration order and assign
+        device labels ``0, 1, ...``. A backend with predefined physical sites
+        (or any other non-trivial mapping policy) overrides this hook; it is
+        also where such a backend validates device-resource concerns like
+        capacity, dimension, or grid fit, since those are properties of the
+        logical-to-physical mapping, not of engine index allocation.
+
+        Args:
+            program: Program whose quantum registers should be mapped.
+
+        Returns:
+            The effective resource layout for this run.
+        """
+        labels: dict[RegisterRef, DeviceOperand] = {}
+        index = 0
+        for register in program.qreg:
+            for i in range(register.size):
+                labels[register[i]] = index
+                index += 1
+        return ResourceLayout(labels)
+
+    def _allocate_engine_indices(self, program: Program) -> _EngineIndexAllocation:
+        """Build this run's private engine-facing flat allocation.
 
         Args:
             program: Program whose registers should be flattened.
 
         Returns:
-            Resource layout mapping register references to flat indices.
+            Engine allocation mapping register references to flat subsystem
+            and classical indices.
         """
-        return FlatResourceLayout.from_program(program)
-
-    def _device_label_for(
-        self, ref: RegisterRef, flat_layout: FlatResourceLayout
-    ) -> Hashable:
-        """Return the implementation-map label for one scalar reference."""
-        return flat_layout.subsystem_index(ref)
-
-    def _build_qubit_resource_map(
-        self, program: Program, flat_layout: FlatResourceLayout
-    ) -> dict[RegisterRef, BoundResource]:
-        """Build this run's complete scalar qubit-resource map."""
-        return _build_qubit_resource_map(program, flat_layout, self._device_label_for)
+        return _EngineIndexAllocation.from_program(program)
 
     def _lower_program(
         self,
         program: Program,
         *,
-        layout: FlatResourceLayout | None = None,
+        context: _LoweringContext | None = None,
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
-        """Prepare and lower one program using the backend's resource policy."""
-        if layout is None:
-            layout = self.resolve_layout(program)
-        resources = self._build_qubit_resource_map(program, layout)
+        """Prepare and lower one program using the backend's resource policy.
+
+        ``context`` lets a caller that already resolved this run's
+        `ResourceLayout` and `_EngineIndexAllocation` (see ``run()``) thread both
+        through unchanged, so lowering never re-resolves either. When omitted
+        (standalone use, e.g. in tests), both are resolved once here.
+        """
+        if context is None:
+            context = _LoweringContext(
+                resource_layout=self._resolve_resource_layout(program),
+                engine_index_allocation=self._allocate_engine_indices(program),
+            )
         operations = _break_grouped_operations(program.operations)
-        return self._lower(operations, layout, resources)
+        return self._lower(operations, context)
 
     def run(
         self,
@@ -438,9 +608,9 @@ class SimulatorBackend:
     ) -> Job:
         """Validate, execute, and package one program run.
 
-        Resolves the program to the backend's flat layout, chooses an
-        execution strategy, runs the circuit, and returns an eager ``Job``
-        whose ``result()`` yields a ``Result``.
+        Resolves the program's effective resource layout and private engine
+        index allocation, chooses an execution strategy, runs the circuit, and
+        returns an eager ``Job`` whose ``result()`` yields a ``Result``.
 
         ``result_config`` accepts ``counts`` plus the method's native state
         field (``statevector`` or ``density_matrix``), each tri-state:
@@ -480,8 +650,28 @@ class SimulatorBackend:
             "result_config",
             backend_name=type(self).__name__,
         )
-        layout = self.resolve_layout(program)
-        plan, facts = self._lower_program(program, layout=layout)
+        # Both hooks are resolved exactly once per run, on the direct-raise
+        # validation path, before the execution try block below: capacity,
+        # dimension, grid-fit, and mapping failures must raise directly from
+        # run(), never become a failed Job. The resource layout is the
+        # public-facing effective mapping (available to backend validation);
+        # the engine index allocation stays private to execution preparation. Both
+        # are paired into one private lowering context and threaded through
+        # `_lower_program`/`_lower` unchanged, so lowering never re-resolves
+        # either value.
+        resource_layout = self._resolve_resource_layout(program)
+        engine_index_allocation = self._allocate_engine_indices(program)
+        # Strict selector-identity validation runs immediately after the
+        # effective resource layout is known and before any lowering/plan
+        # step is built, on this same direct-raise path: a foreign ref or
+        # unmapped device label fails run() directly rather than being
+        # silently skipped in channels_for()/readout_error_for() matching.
+        self._noise_model.validate_for(program, resource_layout)
+        context = _LoweringContext(
+            resource_layout=resource_layout,
+            engine_index_allocation=engine_index_allocation,
+        )
+        plan, facts = self._lower_program(program, context=context)
         self._validate(config, shots, facts)
         try:
             return Job.done(
@@ -490,9 +680,9 @@ class SimulatorBackend:
                     shots,
                     plan,
                     facts,
-                    layout.system_dims,
-                    layout.classical_dims,
-                    layout.n_clbits,
+                    engine_index_allocation.system_dims,
+                    engine_index_allocation.classical_dims,
+                    engine_index_allocation.n_clbits,
                     seed,
                 )
             )
@@ -613,202 +803,80 @@ class SimulatorBackend:
             **{self._state_field: state},
         )
 
-    def _implementation_for(
-        self, operation: Operation, device_operands: DeviceOperands
-    ) -> MatrixImplementation:
-        """Resolve the matrix rule for an operation on a device target key.
-
-        Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` if the operation has no rule at
-        all, or if it has rules but none for this target key — the message
-        distinguishes the two.
-        """
-        if not self._impl_map.supports(operation):
-            raise UnsupportedOperationError(
-                f"{type(operation).__name__} is not supported by this backend"
-            )
-        rule = self._impl_map.implementation_for(
-            operation, device_operands=device_operands
-        )
-        if rule is None:
-            raise UnsupportedOperationError(
-                f"{type(operation).__name__} is not supported on device operands {device_operands}"
-            )
-        return rule
-
     def _lower(
         self,
         operations: Sequence[ProgramInstruction],
-        layout: FlatResourceLayout,
-        resources: ResourceMap,
+        context: _LoweringContext,
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Lower a program into an execution plan and classify it, in one pass.
 
-        Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` for a gate with no matrix rule.
-        `Reset` is recognized by type and routed to a `ResetStep`; `Barrier`
-        is recognized by type and skipped entirely - it is a compiler-facing
-        marker with no simulation semantics, so it emits no step and cannot
-        affect execution strategy or result defaults. Channels the noise
-        model attaches to a gate occurrence are resolved here into
-        `ApplyChannelStep`s inserted right after the gate's own step, one per
-        channel in registration order, each inheriting the gate's condition.
-        The pass also computes `has_measurement`, `has_reset`, and
-        `has_channel`.
+        Dispatches each instruction to a per-type free function
+        (`_lower_measurement`/`_lower_reset`/`_lower_gate`), threading this
+        backend's noise model / implementation map / channel map through
+        explicitly - none of the three is overridden by any backend today,
+        so they take their dependencies as plain parameters instead of
+        reading `self`. `Barrier` is recognized by type and skipped
+        entirely here - it is a compiler-facing marker with no simulation
+        semantics, so it emits no step and cannot affect execution strategy
+        or result defaults. `_PlanFacts` is derived from the finished
+        `plan` rather than tracked by mutation, so it can never drift from
+        what the plan actually contains.
 
-        The caller supplies a scalar-only instruction stream and a complete
-        per-run resource map. The map's device labels are used only for
-        implementation lookup; its engine indices are used for dimensions,
-        execution steps, and noise selection. Grouped frontend operations are
-        expanded before this method is called.
+        The caller supplies a scalar-only instruction stream and the run's
+        private lowering context. `context.resource_layout` is used for
+        `ImplementationMap` lookup (`device_operands`) and for
+        `NoiseModel.channels_for()` physical-selector matching (against the
+        occurrence's logical target refs); `context.engine_index_allocation` is
+        used for every execution index/dimension - `ApplyMatrixStep`/
+        `MeasurementStep`/`ResetStep` targets and conditions. Grouped
+        frontend operations are expanded before this method is called.
         """
+        resource_layout = context.resource_layout
+        engine_index_allocation = context.engine_index_allocation
         plan: list[ResolvedStep] = []
-        has_measurement = False
-        has_reset = False
-        has_channel = False
 
         for step in operations:
             if isinstance(step, Measurement):
-                has_measurement = True
-                measured_indices = tuple(
-                    layout.subsystem_index(q) for q in step.targets
-                )
-                classical_indices = tuple(layout.clbit_index(c) for c in step.outputs)
                 plan.append(
-                    MeasurementStep(
-                        measured_indices=measured_indices,
-                        classical_indices=classical_indices,
-                        confusions=self._resolve_confusions(measured_indices, layout),
+                    _lower_measurement(
+                        step,
+                        resource_layout,
+                        engine_index_allocation,
+                        self._noise_model,
                     )
                 )
-                continue
-
-            if isinstance(step, AppliedOperation):
+            elif isinstance(step, AppliedOperation):
                 if isinstance(step.operation, BarrierGate):
                     continue
-
                 if isinstance(step.operation, ResetGate):
-                    has_reset = True
-                    target_indices = tuple(
-                        layout.subsystem_index(t) for t in step.targets
-                    )
-                    # Reset-attached channels ("apply after the ideal reset")
-                    # are designed but not wired yet; raising keeps the gap
-                    # loud instead of silently dropping registered noise.
-                    if self._noise_model.channels_for(
-                        ResetGate, target_indices, layout
-                    ):
-                        raise UnsupportedOperationError(
-                            "channel noise attached to Reset is not supported yet"
-                        )
-                    cond = _resolve_condition(step.condition, layout)
-                    plan.append(ResetStep(reset_indices=target_indices, condition=cond))
-                    continue
-
-                # Every gate reaching here is scalar-only: grouped expansion
-                # already happened before lowering, so each target has one
-                # precomputed resource and this instruction produces one
-                # ApplyMatrixStep. Targets were validated when any emitted
-                # AppliedOperation was constructed.
-                bound = tuple(resources[t] for t in step.targets)
-                cond = _resolve_condition(step.condition, layout)
-                device_labels = tuple(b.device_label for b in bound)
-                engine_indices = tuple(b.engine_index for b in bound)
-
-                rule = self._implementation_for(step.operation, device_labels)
-                try:
-                    matrix = rule(step.operation, targets=step.targets)
-                except Exception as exc:
-                    raise MatrixImplementationError(
-                        f"implementation for {type(step.operation).__name__} raised: {exc}"
-                    ) from exc
-
-                # Check matrix shape matches this instruction's target dims.
-                target_dims = tuple(layout.system_dims[i] for i in engine_indices)
-                expected = prod(target_dims)
-                if matrix.shape != (expected, expected):
-                    raise BackendValidationError(
-                        f"{type(step.operation).__name__} resolved to a "
-                        f"{matrix.shape} matrix, incompatible with target "
-                        f"dimensions {target_dims} (expected "
-                        f"{(expected, expected)})"
-                    )
-
-                plan.append(
-                    ApplyMatrixStep(
-                        matrix=matrix,
-                        target_indices=engine_indices,
-                        condition=cond,
-                        # Identity, not mechanics: the backend forwards which
-                        # implementation was selected; the engine alone decides
-                        # what (if anything) that means for kernel choice.
-                        kernel_key=rule._kernel_key(
-                            step.operation, targets=step.targets
-                        ),
-                    )
-                )
-
-                # Attached channels resolve inline, mirroring the gate path
-                # above: rule lookup, Kraus resolution, shape check, step
-                # append - one ApplyChannelStep per channel, inheriting the
-                # gate's condition. Noise selection stays in engine-index
-                # space; device labels are exclusively for the
-                # implementation-map lookup above.
-                for channel in self._noise_model.channels_for(
-                    type(step.operation), engine_indices, layout
-                ):
-                    has_channel = True
-                    rule = self._channel_map.get(type(channel))
-                    if rule is None:
-                        raise UnsupportedOperationError(
-                            f"{type(channel).__name__} has no channel "
-                            "implementation on this backend"
-                        )
-                    kraus_ops = tuple(rule(channel, targets=step.targets))
-                    _validate_kraus_shapes(kraus_ops, expected, type(channel).__name__)
                     plan.append(
-                        ApplyChannelStep(
-                            kraus_ops=kraus_ops,
-                            target_indices=engine_indices,
-                            condition=cond,
+                        _lower_reset(
+                            step,
+                            resource_layout,
+                            engine_index_allocation,
+                            self._noise_model,
+                        )
+                    )
+                else:
+                    plan.extend(
+                        _lower_gate(
+                            step,
+                            resource_layout,
+                            engine_index_allocation,
+                            self._impl_map,
+                            self._noise_model,
+                            self._channel_map,
                         )
                     )
 
         return (
             plan,
             _PlanFacts(
-                has_measurement=has_measurement,
-                has_reset=has_reset,
-                has_channel=has_channel,
+                has_measurement=any(isinstance(s, MeasurementStep) for s in plan),
+                has_reset=any(isinstance(s, ResetStep) for s in plan),
+                has_channel=any(isinstance(s, ApplyChannelStep) for s in plan),
             ),
         )
-
-    def _resolve_confusions(
-        self,
-        measured_indices: tuple[int, ...],
-        layout: FlatResourceLayout,
-    ) -> tuple[Any, ...] | None:
-        """Resolve per-subsystem readout confusion matrices for one measurement.
-
-        ``readout_error_for`` is the single source of truth per subsystem;
-        this method only collapses an all-``None`` resolution back to ``None``
-        so the noise-free (and the common) case allocates nothing on the step.
-
-        Raises :py:exc:`~fatqat.errors.BackendValidationError` if a selected
-        matrix's dimension does not match the measured subsystem.
-        """
-        resolved = []
-        for measured in measured_indices:
-            confusion = self._noise_model.readout_error_for(measured, layout)
-            if confusion is not None:
-                dim = layout.system_dims[measured]
-                if confusion.shape != (dim, dim):
-                    raise BackendValidationError(
-                        f"readout confusion matrix of shape {confusion.shape} "
-                        f"selected for subsystem {measured} of dimension {dim}"
-                    )
-            resolved.append(confusion)
-        if all(confusion is None for confusion in resolved):
-            return None
-        return tuple(resolved)
 
     def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
         """Report which parts of a noise model this backend can execute.
