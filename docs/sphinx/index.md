@@ -1,38 +1,62 @@
 # fatqat
 
-fatqat is a quantum simulator: build a {py:class}`~fatqat.Program` out of
-registers, gates, and measurements, run it on a backend, and read back
-counts or a statevector.
+fatqat is a Python quantum simulator. Build a `Program` from registers,
+gates, and measurements; run that program on a backend; then read the
+requested data from a `Result`.
+
+The normal workflow stays at that level. You build programs and use
+backends; the simulator engine and its execution machinery stay behind the
+backend boundary.
+
+## Your first program
 
 ```python
 import fatqat as fq
 
-program = fq.Program(2, 2)          # 2 qubits, 2 clbits
+program = fq.Program(2, 2)  # two qubits and two classical bits
 program.add(fq.ops.H, 0)
 program.add(fq.ops.CX, (0, 1))
 program.add_measurement((0, 1), (0, 1))
 
-result = fq.backends.SimulatorBackend("SV").run(program, shots=1000).result()
-print(result.get_counts())          # e.g. {"00": 512, "11": 488}
+backend = fq.backends.SimulatorBackend()
+job = backend.run(program, shots=1000)
+result = job.result()
+print(result.get_counts())
 ```
+
+This prepares an entangled Bell state. The exact counts vary from run to
+run, but only `"00"` and `"11"` should occur.
 
 ::::{grid} 1 1 2 2
 :gutter: 3
 
-:::{grid-item-card} {octicon}`book` User guide
-:link: guide/index
+:::{grid-item-card} {octicon}`play` Get started
+:link: guide/quickstart
 :link-type: doc
 
-Task-oriented pages: quickstart, the core concepts, the gate catalogue,
-measurement/conditions, and running programs to read back results.
+Install fatqat from a checkout and run the complete example above.
 :::
 
-:::{grid-item-card} {octicon}`code` API reference
+:::{grid-item-card} {octicon}`book` Learn the model
+:link: guide/concepts
+:link-type: doc
+
+Understand programs, registers, operations, backends, and results before
+moving to optional features.
+:::
+
+:::{grid-item-card} {octicon}`graph` Read results
+:link: guide/running-and-results
+:link-type: doc
+
+Choose counts, a statevector, or a density matrix and interpret bit order.
+:::
+
+:::{grid-item-card} {octicon}`list-unordered` Supported API
 :link: api/index
 :link-type: doc
 
-Autodoc-generated reference for every public class, function, and gate,
-grouped by namespace (``qs``, ``fq.ops``, ``fq.backends``, ``fq.errors``).
+Look up the application-facing objects used in the guide.
 :::
 
 ::::

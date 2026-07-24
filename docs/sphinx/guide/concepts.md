@@ -1,115 +1,93 @@
-# Concepts
+# Core concepts
 
-fatqat's model has five moving parts, and each one owns exactly one job.
+A fatqat program has six user-facing pieces. Each has one job:
 
-## Register and RegisterRef
-
-A {py:class}`~fatqat.Register` is a fixed-size block of quantum or classical
-storage — a {py:class}`~fatqat.QuantumRegister` or
-{py:class}`~fatqat.ClassicalRegister`. Every slot has a dimension (`dim`,
-default 2 for a qubit); higher dimensions describe a qudit.
-
-Indexing a register gives a {py:class}`~fatqat.RegisterRef`, a reference to
-one slot. {py:class}`~fatqat.Program` accepts bare integers as shorthand for
-a {py:class}`~fatqat.RegisterRef` when there's only one register of that
-kind to be unambiguous about — otherwise you pass an explicit ref such as
-`program.qreg[0][1]`.
-
-### GridRegister and RegisterView
-
-A {py:class}`~fatqat.GridRegister` is a {py:class}`~fatqat.QuantumRegister`
-subclass whose slots are arranged as a rectangular, row-major `rows x cols`
-grid. It carries only that addressing structure — no physical-site,
-placement, or calibration information. A `GridRegister` is a backend-neutral
-frontend concept: it's constructed the same way regardless of which backend
-eventually runs the program.
-
-Its selection helpers — {py:meth}`~fatqat.GridRegister.all`,
-{py:meth}`~fatqat.GridRegister.row`, {py:meth}`~fatqat.GridRegister.column`,
-and {py:meth}`~fatqat.GridRegister.block` — don't return a tuple of refs.
-They return a {py:class}`~fatqat.RegisterView`: an immutable, structured
-target expression that names *which* members are selected without eagerly
-expanding them. A view is only accepted where an operation opts in (see
-[Gates](gates.md)); most operations still take a single
-{py:class}`~fatqat.RegisterRef` or a fixed-arity tuple of them, exactly as
-before.
-
-Resolving a view against real hardware sites is a backend concern, not a
-frontend one. Each backend's protected `_resolve_resource_layout()` hook
-figures out how the program's `GridRegister` maps onto that backend's device
-sites, returning the run's `ResourceLayout`. This hook is not something a user
-constructs, configures, or passes in; it never appears in the public API
-surface, only inside the backend that resolves the program. (A separate,
-private per-run `_EngineIndexAllocation` handles the numerical engine's own flat
-indices; it is never exposed alongside `ResourceLayout`.)
-
-This split matters because of an identity distinction that runs through the
-whole feature: **gate-channel noise selectors and implementation-map lookups
-use two different identity spaces, and they are not always the same
-values.** {py:meth}`~fatqat.NoiseModel.channels_for` matches a gate
-occurrence's selector against either its *logical* {py:class}`~fatqat.RegisterRef`
-targets (ref equality) or its *physical* device resource labels
-(`resource_layout.device_operands(targets)` equality) — never against the
-private flat engine index used internally to build the simulator's state
-vector. An `ImplementationMap` device-capability lookup (what
-{py:attr}`~fatqat.backends.FakeAtomGridBackend.implementation_map` reports)
-also uses those same physical device-site labels: positions on the physical
-device grid. For a plain, register-only program running on the generic
-simulator, device labels and refs both coincide with declaration order. But
-once a smaller `GridRegister` runs on a larger backend — say a 2x3 grid bound
-onto a 4x5 device — a program qubit's device label is generally a different
-number from its position in declaration order. A gate-channel noise selector
-should be written either as the program's own `RegisterRef`s (logical) or as
-the backend's device resource labels (physical); a bare integer is always
-interpreted as a physical device label, never a flat engine index.
-{py:meth}`~fatqat.NoiseModel.readout_error_for` uses this same identity split:
-it takes the measured subsystem's logical `RegisterRef` plus the run's
-`ResourceLayout`, matching a logical selector by ref equality and a physical
-selector against `resource_layout.device_label(target)` — never a flat engine
-index. `NoiseModel.validate_for(program, resource_layout)` checks every stored
-gate-channel and readout selector's identity legality once per run, before
-lowering: a foreign `RegisterRef` or an unmapped device label fails run
-validation directly, rather than silently matching nothing.
-
-### What's not supported yet
-
-This is a first implementation, and it deliberately leaves several things
-out. There's no custom or user-specified placement: binding a
-{py:class}`~fatqat.GridRegister` onto a backend's device sites is entirely
-internal, top-left corner first, row-major — a program cannot request a
-different mapping. There's also no reshape support — no rotation,
-transpose, rearrangement, or atom-transport operation for a `GridRegister`
-once it's constructed, only the fixed layout it was built with. And a
-program may bind at most one `GridRegister`; {py:class}`FakeAtomGridBackend
-<fatqat.backends.FakeAtomGridBackend>` accepts exactly one `GridRegister` or
-none, not several. These are areas for future work, not bugs.
+| Concept | What you use it for |
+| --- | --- |
+| {py:class}`~fatqat.Program` | Record gates, measurements, and their order. |
+| registers and references | Name the quantum and classical slots that operations use. |
+| operations | Describe a gate or reset before it is added to a program. |
+| backend | Validate and execute a program. |
+| {py:class}`~fatqat.Job` | Represent one submitted run; call ``result()`` to obtain its output. |
+| {py:class}`~fatqat.Result` | Read the data requested from a run. |
 
 ## Program
 
-A {py:class}`~fatqat.Program` owns a program's registers and its ordered list
-of instructions. It doesn't execute anything itself —
-{py:meth}`~fatqat.Program.add` and {py:meth}`~fatqat.Program.add_measurement`
-just validate and append. Operations run in the order they were inserted.
+{py:class}`~fatqat.Program` is the frontend object you build. It owns the program’s logical
+registers and the ordered instructions you add. It does not execute those
+instructions itself.
 
-## Operation and Measurement
+```python
+import fatqat as fq
 
-An {py:class}`~fatqat.operations.Operation` (see [Gates](gates.md)) describes *what*
-to do — a gate, not tied to any qubit. Calling
-{py:meth}`~fatqat.Program.add` resolves the targets against the program's
-registers and records the operation bound to those targets.
-{py:class}`~fatqat.Measurement` is a separate instruction type recorded by
-{py:meth}`~fatqat.Program.add_measurement` — a readout from quantum refs into
-matching classical refs. Both live side by side in
-{py:attr}`~fatqat.Program.operations`, in insertion order.
+program = fq.Program(2, 2)
+program.add(fq.ops.H, 0)
+program.add(fq.ops.CX, (0, 1))
+program.add_measurement((0, 1), (0, 1))
+```
 
-## Backend, Job, Result
+Instructions run in the order above. A measurement is also an instruction,
+so it can appear before a later conditional operation.
 
-A backend (currently {py:class}`~fatqat.backends.SimulatorBackend`) is what
-actually executes a `Program`. Its
-{py:meth}`~fatqat.backends.SimulatorBackend.run` method returns a
-{py:class}`~fatqat.Job` — an eager, already-completed handle — whose
-{py:meth}`~fatqat.Job.result` yields a {py:class}`~fatqat.Result` or
-re-raises an execution error. `Result` exposes whichever fields the run
-actually produced (counts, a statevector, or both); see
-[Running and results](running-and-results.md) for how that's controlled and
-read back.
+## Registers and references
+
+For the common case, `Program(quantum_count, classical_count)` creates one
+quantum register and one classical register. A bare integer such as `0` is
+then a convenient reference to one quantum or classical slot.
+
+Use an explicit {py:class}`~fatqat.RegisterRef` when a program has more than one register.
+Indexing a register produces that reference:
+
+```python
+import fatqat as fq
+
+left = fq.QuantumRegister(2, name="left")
+right = fq.QuantumRegister(2, name="right")
+program = fq.Program([left, right])
+program.add(fq.ops.H, program.qreg[1][0])  # first slot in "right"
+```
+
+Slots default to dimension 2 (qubits). Registers with `dim > 2` hold
+qudits; see [Advanced user topics](advanced.md) when you need them.
+
+## Operations and measurements
+
+An operation says what should happen; {py:meth}`~fatqat.Program.add` binds it to target
+slots. Fixed gates are values such as `fq.ops.X`; parametric gates are
+created with their parameter, such as `fq.ops.RX(0.2)`.
+
+Use {py:meth}`~fatqat.Program.add_measurement` to write quantum outcomes into classical slots.
+Use [Measurement and conditions](measurement-and-conditions.md) for
+grouped measurement, reset, and feedforward.
+
+## Backends and results
+
+A {py:class}`~fatqat.backends.SimulatorBackend` is the object that executes a program:
+
+```python
+backend = fq.backends.SimulatorBackend()
+job = backend.run(program, shots=1000)
+result = job.result()
+counts = result.get_counts()
+```
+
+The backend handles validation and execution. ``run()`` returns a {py:class}`~fatqat.Job`, and
+``job.result()`` gives its {py:class}`~fatqat.Result`. The normal user-level Job contract is
+intentionally small: obtain the result, then read it. Applications do not
+configure the simulator engine or its private execution state.
+
+## Optional grid registers
+
+{py:class}`~fatqat.GridRegister` is useful when your program’s qubits have a rectangular
+layout. Its {py:meth}`~fatqat.GridRegister.row`, {py:meth}`~fatqat.GridRegister.column`, {py:meth}`~fatqat.GridRegister.block`, and {py:meth}`~fatqat.GridRegister.all` helpers return
+targets accepted by selected rotation and two-qubit gates:
+
+```python
+atoms = fq.GridRegister(2, 3, name="atoms")
+program = fq.Program([atoms])
+program.add(fq.ops.RX(0.2), atoms.row(1))
+```
+
+The grid is a logical description. A backend applies any device-specific
+mapping and connectivity checks when it runs the program; normal users do
+not configure physical labels or resource layouts themselves.

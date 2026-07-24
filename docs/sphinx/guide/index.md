@@ -1,10 +1,26 @@
 # User guide
 
-Start with [Quickstart](quickstart.md) for the shortest path to a running
-program, then [Concepts](concepts.md) for the mental model behind it. The
-remaining pages go deeper on gates, measurement, reading results, [noise
-simulation](noise.md), and [Advanced](advanced.md) topics (qudits, custom
-matrix implementations, parallel execution).
+Start with [Quickstart](quickstart.md), then read [Core concepts](concepts.md)
+for the small set of ideas used by every program. The remaining pages are
+organized around tasks rather than internal package layers.
+
+All complete examples use `import fatqat as fq`. Short follow-on snippets
+state when they assume an existing `program` or import.
+
+## Suggested path
+
+1. [Quickstart](quickstart.md) — install fatqat and produce your first
+   counts.
+2. [Core concepts](concepts.md) — understand the program, backend, and
+   result boundary.
+3. [Gates](gates.md), [measurement and conditions](measurement-and-conditions.md),
+   and [running and results](running-and-results.md) — write and interpret
+   programs.
+4. [Noise](noise.md) and [advanced user topics](advanced.md) — opt into
+   optional simulation features.
+
+If an example fails or its output surprises you, see
+[Troubleshooting](troubleshooting.md).
 
 ```{toctree}
 :maxdepth: 1
@@ -16,4 +32,5 @@ measurement-and-conditions
 running-and-results
 noise
 advanced
+troubleshooting
 ```

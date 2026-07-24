@@ -12,7 +12,6 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
     "sphinx.ext.intersphinx",
-    "sphinx.ext.viewcode",
     "myst_parser",
     "sphinx_design",
     "sphinx_copybutton",
@@ -32,7 +31,17 @@ default_role = "py:obj"
 myst_enable_extensions = ["colon_fence", "dollarmath", "amsmath"]
 
 templates_path: list[str] = []
-exclude_patterns: list[str] = ["_build", "Thumbs.db", ".DS_Store", "README.md"]
+exclude_patterns: list[str] = [
+    "_build",
+    "Thumbs.db",
+    ".DS_Store",
+    "README.md",
+    # Backend-author and implementation records are intentionally not part
+    # of the end-user documentation site yet.
+    "api/implementation.rst",
+    "api/job.rst",
+    "api/errors.rst",
+]
 
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False

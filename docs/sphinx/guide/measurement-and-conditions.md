@@ -1,81 +1,72 @@
 # Measurement and conditions
 
-## Adding measurements
+Measurements copy quantum outcomes into classical slots. They are ordered
+instructions, so a program can measure one qubit and use that classical
+value to control a later operation.
 
-{py:meth}`~fatqat.Program.add_measurement` reads one or more qubits into
-matching classical bits, in the order given:
+## Measure a qubit
 
 ```python
+import fatqat as fq
+
 program = fq.Program(1, 1)
 program.add(fq.ops.X, 0)
 program.add_measurement(0, 0)
+
+result = fq.backends.SimulatorBackend().run(program, shots=10).result()
+print(result.get_counts())  # {"1": 10}
 ```
 
-Grouped measurement reads several qubits into several clbits in one call —
-`qreg` and `clreg` must have the same length:
+{py:meth}`~fatqat.Program.add_measurement` (``quantum_target, classical_output``) accepts one target or
+matching tuples of targets. The tuple order determines which quantum outcome
+is written to which classical slot:
 
 ```python
+# Assumes a Program with two qubits and two classical bits.
 program.add_measurement((0, 1), (0, 1))
 ```
 
-{py:meth}`~fatqat.Program.measure_all` is shorthand for measuring every qubit
-into every clbit, in flat declaration order; it requires equal quantum and
-classical bit counts:
+Use {py:meth}`~fatqat.Program.measure_all` when the program has the same number of quantum
+and classical slots and you want every quantum slot measured in declaration
+order.
+
+## Classical conditions
+
+Pass `condition=(classical_bit, value)` to `add()` to apply an operation
+only when an earlier measurement wrote that value. A sequence of
+`(classical_bit, value)` pairs means all conditions must hold.
 
 ```python
-program = fq.Program(2, 2)
-program.add(fq.ops.H, 0)
-program.add(fq.ops.CX, (0, 1))
-program.measure_all()   # equivalent to add_measurement((0, 1), (0, 1))
-```
+import fatqat as fq
 
-## Feedforward conditions
-
-{py:meth}`~fatqat.Program.add`'s `condition=(clbit, value)` argument makes an
-operation conditional on a classical bit already written earlier in the
-program — the operation only applies if that bit equals `value` when
-execution reaches it. Pass a sequence of `(clbit, value)` pairs to AND
-several conditions together:
-
-```python
 program = fq.Program(2, 1)
 program.add(fq.ops.H, 0)
 program.add_measurement(0, 0)
-program.add(fq.ops.X, 1, condition=(0, 1))   # flip qubit 1 iff clbit 0 == 1
+program.add(fq.ops.X, 1, condition=(0, 1))
 ```
+
+In this example, qubit 1 is flipped only on shots where measuring qubit 0
+produced `1`.
 
 ## Reset
 
-{py:data}`~fatqat.operations.Reset` reprepares one or more target subsystems
-in `|0>`. Unlike every other operation in `fq.ops`, it isn't a unitary gate
-— it has no matrix — so it can only be run on backends that special-case it
-(the statevector backend does):
+{py:data}`~fatqat.operations.Reset` prepares its target in ``|0⟩``. It is useful after a
+measurement or whenever a program needs to reuse a qubit:
 
 ```python
 program.add(fq.ops.Reset, 0)
+program.add(fq.ops.Reset, (0, 1))  # reset two qubits
 ```
 
-`Reset` accepts more than one target at once, resetting every listed qubit:
+Reset can use the same `condition=` argument as another operation.
 
-```python
-program.add(fq.ops.Reset, (0, 1))   # reset qubits 0 and 1 together
-```
+## What this means for a run
 
-Like any operation, `Reset` can carry a `condition=` guard.
+Conditions, reset, and reuse of a measured qubit make later steps depend on
+an earlier outcome. The backend automatically performs the per-shot work
+needed to preserve that behavior. You do not choose an execution engine or
+strategy yourself, though these programs can take longer than a purely
+unitary terminal-measurement circuit.
 
-## What makes a program "dynamic"
-
-Most programs — no reset, no conditions, no gate reapplied to an
-already-measured qubit — are evaluated in one pass: the state is evolved
-once, and any requested counts are sampled from the resulting distribution
-afterward. A program becomes **dynamic** the moment it contains a
-`condition=`, a `Reset`, or an operation that targets a qubit measurement
-already wrote to. Dynamic programs are executed shot by shot, because a
-later step's behavior can depend on an earlier measurement's outcome within
-that same shot.
-
-You don't choose the execution strategy — the backend picks it
-automatically based on the program's shape — but it's worth knowing about,
-because it's what makes conditions and reset behave correctly (each shot
-gets its own classical-bit history) instead of just averaging over
-independent evolutions.
+See [Running and results](running-and-results.md) for count-string order and
+for the limits on requesting a final state after a stochastic program.
