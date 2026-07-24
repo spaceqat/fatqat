@@ -51,6 +51,12 @@ from .base import Channel
 # (homogeneous, validated).
 _GateSelector = tuple[RegisterRef, ...] | tuple[DeviceOperand, ...] | None
 
+# What add_noise() itself accepts as `targets`: everything _GateSelector
+# does, plus a bare RegisterRef/device label as shorthand for a one-element
+# tuple (only valid for a fixed arity-1 operation - _normalize_selector
+# wraps it and the existing length check rejects it otherwise).
+_GateTargetsArg = _GateSelector | RegisterRef | DeviceOperand
+
 # One entry per add_readout_error() call: an all-subsystems fallback (None),
 # a logical RegisterRef selector, or a physical device-label selector
 # (scalar, unlike _GateSelector - a readout error names one measured
@@ -105,7 +111,7 @@ class NoiseModel:
         operation: Operation | type[Operation],
         channel: Channel,
         *,
-        targets: _GateSelector = None,
+        targets: _GateTargetsArg = None,
     ) -> None:
         """Attach a channel to every occurrence of an operation, or one target.
 
@@ -122,7 +128,9 @@ class NoiseModel:
                 to one physical occurrence in the backend's device address
                 space. The two forms cannot be mixed in one selector, and a
                 :py:class:`~fatqat.registers.RegisterView` is never accepted
-                (scalar refs only).
+                (scalar refs only). For a fixed arity-1 operation, a bare
+                `RegisterRef` or device label is also accepted as shorthand
+                for a one-element tuple.
 
         Selection semantics, precisely:
 
@@ -189,7 +197,7 @@ class NoiseModel:
         for selector, channels in entries:
             if selector is None:
                 fallback.extend(channels)
-            elif _is_logical_selector(selector):
+            elif _is_ref_selector(selector):
                 if selector == targets:
                     matched.extend(channels)
             else:
@@ -340,7 +348,7 @@ class NoiseModel:
             for selector, _channels in entries:
                 if selector is None:
                     continue
-                if _is_logical_selector(selector):
+                if _is_ref_selector(selector):
                     for ref in selector:
                         if ref not in program_refs:
                             raise BackendValidationError(
@@ -391,27 +399,30 @@ class NoiseModel:
         )
 
 
-def _is_logical_selector(selector: tuple[DeviceOperand, ...]) -> bool:
-    """Return whether a validated, homogeneous gate selector is logical."""
+def _is_ref_selector(selector: tuple[DeviceOperand, ...]) -> bool:
+    """Return whether a validated, homogeneous gate selector is RegisterRef-based,
+    as opposed to a physical device-label selector."""
     return isinstance(selector[0], RegisterRef)
 
 
 def _normalize_selector(
     op_cls: type[Operation],
-    targets: tuple[DeviceOperand, ...] | None,
+    targets: _GateTargetsArg,
 ) -> _GateSelector:
     """Validate and normalize an ``add_noise`` target selector.
 
-    A selector is ``None``, a tuple wholly of `RegisterRef` (logical), or a
-    tuple wholly of some other hashable (physical device resource labels).
-    Mixing the two forms, or including a `RegisterView`, is rejected; a
-    physical label is opaque and is not itself validated (any hashable value
-    is a legal device resource label until run-time validation against an
-    actual `ResourceLayout`).
+    A selector is ``None``, a tuple wholly of `RegisterRef` (logical), a
+    tuple wholly of some other hashable (physical device resource labels),
+    or a single `RegisterRef`/hashable as shorthand for a one-element
+    tuple - the length check below then rejects it for any operation whose
+    fixed arity isn't 1. Mixing the two tuple forms, or including a
+    `RegisterView`, is rejected; a physical label is opaque and is not
+    itself validated (any hashable value is a legal device resource label
+    until run-time validation against an actual `ResourceLayout`).
     """
     if targets is None:
         return None
-    selector = tuple(targets)
+    selector = targets if isinstance(targets, tuple) else (targets,)
     if len(selector) == 0:
         raise ValueError("targets must be None or a non-empty tuple")
     for t in selector:

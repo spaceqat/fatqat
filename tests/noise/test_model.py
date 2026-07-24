@@ -168,6 +168,49 @@ def test_add_noise_selector_validation():
     noise.add_noise(fq.ops.Y, Depolarizing(p=0.1), targets=("zone-a",))
 
 
+def test_add_noise_accepts_bare_label_for_arity_one_operation():
+    noise = NoiseModel()
+    channel = Depolarizing(p=0.1)
+    noise.add_noise(fq.ops.X, channel, targets=0)  # bare device label
+    program = _two_qubit_program()
+    layout = _resource_layout_for(program)
+    q = program.qreg[0]
+
+    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [channel]
+    assert noise.channels_for(fq.ops.X, (q[1],), layout) == []
+
+
+def test_add_noise_accepts_bare_ref_for_arity_one_operation():
+    noise = NoiseModel()
+    channel = Depolarizing(p=0.1)
+    program = _two_qubit_program()
+    layout = _resource_layout_for(program)
+    q = program.qreg[0]
+    noise.add_noise(fq.ops.X, channel, targets=q[1])  # bare RegisterRef
+
+    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [channel]
+    assert noise.channels_for(fq.ops.X, (q[0],), layout) == []
+
+
+def test_add_noise_accepts_bare_label_for_variable_arity_operation():
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.Reset, Depolarizing(p=0.1), targets=0)
+    assert noise.has_noise_for(ResetGate)
+
+
+def test_add_noise_bare_target_rejected_for_multi_target_operation():
+    noise = NoiseModel()
+    with pytest.raises(ValueError, match="length"):
+        noise.add_noise(fq.ops.CX, Depolarizing(p=0.1), targets=0)
+
+
+def test_add_noise_bare_register_view_still_rejected():
+    atoms = GridRegister(2, 3, name="atoms")
+    noise = NoiseModel()
+    with pytest.raises(TypeError, match="RegisterView"):
+        noise.add_noise(fq.ops.RX, Depolarizing(p=0.1), targets=atoms.row(0))
+
+
 def test_channel_types_lists_every_attached_descriptor_type():
     noise = NoiseModel()
     noise.add_noise(fq.ops.X, Depolarizing(p=0.1))
