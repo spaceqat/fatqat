@@ -28,11 +28,13 @@ def test_statevector_backend_only_under_backends_namespace():
     assert not hasattr(fq, "SimulatorBackend")
 
 
-def test_fake_superconducting_backend_exported_under_backends_namespace():
-    from fatqat.backends import FakeSuperconducting4x4Backend
+def test_fake_superconducting_backends_exported_under_backends_namespace():
+    from fatqat.backends import SCQubitGoogleSimulator, SCQubitIBMSimulator
 
-    assert fq.backends.FakeSuperconducting4x4Backend is FakeSuperconducting4x4Backend
-    assert not hasattr(fq, "FakeSuperconducting4x4Backend")
+    assert fq.backends.SCQubitGoogleSimulator is SCQubitGoogleSimulator
+    assert fq.backends.SCQubitIBMSimulator is SCQubitIBMSimulator
+    assert not hasattr(fq, "SCQubitGoogleSimulator")
+    assert not hasattr(fq, "SCQubitIBMSimulator")
 
 
 def test_resultconfig_not_exported_from_top_level():

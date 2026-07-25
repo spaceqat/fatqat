@@ -24,6 +24,7 @@ from .fixed_gates import (
     Z,
     iSwap,
 )
+from .load_atom import LoadAtom
 from .measurement import Measurement
 from .parametric_gates import CPhase, Phase, RX, RY, RZ
 from .qudit_gates import (
@@ -67,6 +68,7 @@ __all__ = [
     "CPhase",
     "Reset",
     "Barrier",
+    "LoadAtom",
     "Measurement",
     "Shift",
     "Clock",

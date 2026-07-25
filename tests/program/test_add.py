@@ -1,5 +1,8 @@
 """Tests Program.add operation insertion, target resolution, and validation."""
 
+from dataclasses import dataclass
+from typing import ClassVar
+
 import pytest
 
 from fatqat.program import Program, AppliedOperation
@@ -184,3 +187,14 @@ def test_add_rejects_scalar_view_mixture_for_two_target_op():
     p = Program([atoms])
     with pytest.raises(ValueError, match="mixes a scalar target with a view"):
         p.add(ops.CX, (atoms.row(1), atoms[0]))
+
+
+def test_add_targets_optional_for_zero_arity_operation():
+    @dataclass(frozen=True)
+    class _ZeroArityProbe(ops.Operation):
+        name: ClassVar[str] = "ZeroArityProbe"
+        _num_subsystems: ClassVar[int] = 0
+
+    p = Program(1)
+    p.add(_ZeroArityProbe())
+    assert p.operations[0].targets == ()

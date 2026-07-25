@@ -164,3 +164,33 @@ def test_applied_operation_rejects_all_paired_with_all():
     atoms = GridRegister(2, 2, name="atoms")
     with pytest.raises(ValueError, match="overlapping"):
         AppliedOperation(operation=ops.CX, targets=(atoms.all(), atoms.all()))
+
+
+def test_zero_arity_operation_class_is_legal():
+    @dataclass(frozen=True)
+    class _ZeroArityProbe(ops.Operation):
+        name: ClassVar[str] = "ZeroArityProbe"
+        _num_subsystems: ClassVar[int] = 0
+
+    ao = AppliedOperation(operation=_ZeroArityProbe(), targets=())
+    assert ao.targets == ()
+
+
+def test_zero_arity_operation_rejects_any_target():
+    @dataclass(frozen=True)
+    class _ZeroArityProbe2(ops.Operation):
+        name: ClassVar[str] = "ZeroArityProbe2"
+        _num_subsystems: ClassVar[int] = 0
+
+    qr = QuantumRegister(1)
+    with pytest.raises(ValueError, match="expects 0 target"):
+        AppliedOperation(operation=_ZeroArityProbe2(), targets=(qr[0],))
+
+
+def test_negative_arity_operation_class_rejected():
+    with pytest.raises(ValueError, match="non-negative int or None"):
+
+        @dataclass(frozen=True)
+        class _NegativeArityProbe(ops.Operation):
+            name: ClassVar[str] = "NegativeArityProbe"
+            _num_subsystems: ClassVar[int] = -1

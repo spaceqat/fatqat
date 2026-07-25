@@ -52,9 +52,9 @@ class Operation:
         n = cls._num_subsystems
         if n is None:
             return
-        if not isinstance(n, int) or isinstance(n, bool) or n <= 0:
+        if not isinstance(n, int) or isinstance(n, bool) or n < 0:
             raise ValueError(
-                f"_num_subsystems must be a positive int or None, got {n!r}"
+                f"_num_subsystems must be a non-negative int or None, got {n!r}"
             )
 
     @property

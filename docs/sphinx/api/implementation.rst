@@ -4,7 +4,8 @@ Implementation (``fq.implementation``)
 Matrix-implementation rules and the implementation map that backends use to
 resolve an operation to its local matrix. Most users only need
 ``default_matrix_implementation_map``; the rest of this namespace is for
-building device-specific maps (see ``FakeSuperconducting4x4Backend``).
+building device-specific maps (see ``SCQubitIBMSimulator`` and
+``SCQubitGoogleSimulator``).
 
 .. autofunction:: fatqat.implementation.default_matrix_implementation_map
 

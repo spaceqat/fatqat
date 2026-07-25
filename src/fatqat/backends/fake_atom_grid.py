@@ -11,18 +11,31 @@ labels, e.g. for the default shape:
     15 16  17  18  19
 
 Native gate set is exactly `RX`, `RY`, `RZ` (single-qubit, any device label)
-and `CX`/`CZ` (nearest-neighbor edges only, both directions stored, using
+and `CZ` (nearest-neighbor edges only, both directions stored, using
 *backend* site labels - not flat engine indices - as the device-operand
 keys). This is a prototype execution target, not a realistic device model: no
-routing, no timing, no reshape/transport, and ideal by default. See
-``docs/superpowers/specs/2026-07-22-fatqat-grid-register-resource-binding-and-fake-atom-grid-backend-design.md``.
+routing, no timing, no reshape/transport, and ideal by default.
+
+Every device site starts empty. A program's first instruction must be
+`~fatqat.ops.LoadAtom(rows, cols)` (unconditional, sized to fit the device);
+it marks the top-left `rows x cols` block of sites as loaded and appears at
+most once per program. Any later gate or `~fatqat.ops.Reset` whose targets
+are not all loaded is silently dropped - an empty site cannot hold a gate.
+`~fatqat.ops.Measurement` is never filtered by load state: a site no
+surviving gate ever touched stays in its initial `|0>`, so it reads `0`
+deterministically under ideal execution, though a configured readout-error
+model can still flip the reported classical bit like any other qubit. See
+``docs/superpowers/specs/2026-07-22-fatqat-grid-register-resource-binding-and-fake-atom-grid-backend-design.md``
+and
+``docs/superpowers/specs/2026-07-24-fake-atom-grid-loading-and-fake-superconducting-grid-mapping-design.md``.
 
 A program built against a `~fatqat.GridRegister` binds top-left: frontend
 `(row, col)` maps to backend site `(row, col)`, i.e. device label
 `row * backend_cols + col`. A plain scalar-only program with no
-`GridRegister` binds identically to `FakeSuperconducting4x4Backend` (plain
-scalar/identity binding), since for a program with no grid register, backend
-device label and flat engine index coincide.
+`GridRegister` binds identically to `~fatqat.backends.SCQubitIBMSimulator`/
+`~fatqat.backends.SCQubitGoogleSimulator` (plain scalar/identity binding),
+since for a program with no grid register, backend device label and flat
+engine index coincide.
 """
 
 from __future__ import annotations
@@ -36,7 +49,7 @@ from ..implementation import (
     default_matrix_implementation_map,
 )
 from ..noise import NoiseModel
-from ..program import Program
+from ..program import AppliedOperation, Program
 from ..registers import (
     GridRegister,
     RegisterRef,
@@ -45,8 +58,13 @@ from ..resource_layout import ResourceLayout
 from .simulator_backend import SimulatorBackend
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from ..implementation import MatrixImplementation
     from ..operations import Operation
+    from .backend_utils import _LoweringContext, _PlanFacts
+    from .simulator_backend import ProgramInstruction
+    from .steps import ResolvedStep
 
 DEFAULT_ROWS = 4
 DEFAULT_COLS = 5
@@ -76,16 +94,15 @@ def fake_atom_grid_implementation_map(rows: int, cols: int) -> ImplementationMap
     """Build the native gate map for a `rows x cols` fake atom-grid backend.
 
     `RX`, `RY`, `RZ` are legal on any device label (registered uniformly via
-    `add`); `CX` and `CZ` are legal only on nearest-neighbor grid edges, both
+    `add`); `CZ` is legal only on nearest-neighbor grid edges, both
     directions, keyed by *backend* site labels (added with explicit
-    `device_operands`, one call per edge). Every other operation family has
-    no entry and is therefore unsupported.
+    `device_operands`, one call per edge). Every other operation family
+    (including `CX`) has no entry and is therefore unsupported.
     """
     defaults = default_matrix_implementation_map()
     rx_rule = defaults.implementation_for(ops.RX)
     ry_rule = defaults.implementation_for(ops.RY)
     rz_rule = defaults.implementation_for(ops.RZ)
-    cx_rule = defaults.implementation_for(ops.CX)
     cz_rule = defaults.implementation_for(ops.CZ)
 
     m = ImplementationMap()
@@ -93,7 +110,6 @@ def fake_atom_grid_implementation_map(rows: int, cols: int) -> ImplementationMap
     m.add(ops.RY, ry_rule)
     m.add(ops.RZ, rz_rule)
     for edge in _nearest_neighbor_edges(rows, cols):
-        m.add(ops.CX, cx_rule, device_operands=edge)
         m.add(ops.CZ, cz_rule, device_operands=edge)
     return m
 
@@ -105,11 +121,12 @@ class FakeAtomGridBackend(SimulatorBackend):
     specialization: same execution engine, same `~fatqat.Result`/`~fatqat.Job`
     semantics. The differences are a configurable `rows x cols` device shape
     (default 4x5), a fixed native gate set (`RX`, `RY`, `RZ`, nearest-neighbor
-    `CX`/`CZ`), and grid-aware resource mapping: a program's sole
+    `CZ`), grid-aware resource mapping: a program's sole
     `~fatqat.GridRegister` (if any) binds top-left onto the device, with
     every other quantum-register shape (scalar-only, or a grid combined with
     any other register, or more than one grid register) either bound
-    identically (scalar-only) or rejected.
+    identically (scalar-only) or rejected, and an explicit atom-loading
+    lifecycle driven by `~fatqat.ops.LoadAtom` - see `_lower`.
     """
 
     def __init__(
@@ -163,7 +180,7 @@ class FakeAtomGridBackend(SimulatorBackend):
             >>> backend = fq.backends.FakeAtomGridBackend()
             >>> impl_map = backend.implementation_map
             >>> sorted(op.name for op in impl_map.supported_operations())
-            ['CX', 'CZ', 'RX', 'RY', 'RZ']
+            ['CZ', 'RX', 'RY', 'RZ']
             >>> impl_map.supports(fq.ops.CCX)
             False
         """
@@ -224,3 +241,70 @@ class FakeAtomGridBackend(SimulatorBackend):
             row, col = divmod(index, grid.cols)
             labels[grid[index]] = row * self._cols + col
         return ResourceLayout(labels)
+
+    def _lower(
+        self,
+        operations: Sequence[ProgramInstruction],
+        context: _LoweringContext,
+    ) -> tuple[list[ResolvedStep], _PlanFacts]:
+        """Apply this program's atom-loading lifecycle, then lower normally.
+
+        Every device site starts empty. The program's first instruction must
+        be `~fatqat.ops.LoadAtom` (unconditional, sized to fit this device);
+        it marks the top-left `rows x cols` block of sites as loaded and is
+        itself dropped before lowering, since it has no matrix. Any later
+        `LoadAtom` is rejected - loading happens exactly once, up front.
+        Every other gate or `Reset` whose targets are not all loaded is
+        silently dropped (no-op): an empty site cannot hold a gate.
+        `Measurement` always lowers normally; a site no surviving gate ever
+        touched stays in its initial |0>, so measuring an unloaded site
+        reads 0 deterministically under ideal execution - though a
+        configured readout-error model can still flip the reported bit,
+        exactly as for any other qubit.
+
+        Raises:
+            BackendValidationError: If the program's first instruction is
+                not `LoadAtom`; if any later instruction is `LoadAtom`; if
+                `LoadAtom` carries a condition; or if `LoadAtom`'s shape
+                does not fit this backend's device.
+        """
+        resource_layout = context.resource_layout
+        loaded: set[int] = set()
+        realized: list[ProgramInstruction] = []
+        for i, step in enumerate(operations):
+            is_load = isinstance(step, AppliedOperation) and isinstance(
+                step.operation, ops.LoadAtom
+            )
+            if i == 0:
+                if not is_load:
+                    raise BackendValidationError(
+                        "FakeAtomGridBackend requires the program's first "
+                        "operation to be LoadAtom"
+                    )
+            elif is_load:
+                raise BackendValidationError(
+                    "FakeAtomGridBackend accepts LoadAtom only as the "
+                    "program's first operation"
+                )
+            if is_load:
+                if step.condition is not None:
+                    raise BackendValidationError("LoadAtom must be unconditional")
+                load_rows, load_cols = step.operation.rows, step.operation.cols
+                if load_rows > self._rows or load_cols > self._cols:
+                    raise BackendValidationError(
+                        f"LoadAtom({load_rows}x{load_cols}) does not fit "
+                        f"the backend's ({self._rows}x{self._cols}) device "
+                        "shape"
+                    )
+                loaded = {
+                    r * self._cols + c
+                    for r in range(load_rows)
+                    for c in range(load_cols)
+                }
+                continue
+            if isinstance(step, AppliedOperation) and any(
+                resource_layout.device_label(t) not in loaded for t in step.targets
+            ):
+                continue
+            realized.append(step)
+        return super()._lower(tuple(realized), context)

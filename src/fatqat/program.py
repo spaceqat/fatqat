@@ -259,7 +259,7 @@ class Program:
             | RegisterRef
             | RegisterView
             | tuple[int | RegisterRef | RegisterView, ...]
-        ),
+        ) = (),
         *,
         condition=None,
     ) -> None:
@@ -273,7 +273,8 @@ class Program:
                 multi-subsystem gates (e.g. ``(0, 1)`` for ``CZ``). Each operand
                 may be an integer when unambiguous, an explicit ``RegisterRef``,
                 or (only for view-capable operations -- currently RX, RY, RZ,
-                CX, CZ) a ``RegisterView`` such as ``atoms.row(0)``.
+                CX, CZ) a ``RegisterView`` such as ``atoms.row(0)``. Defaults to
+                ``()``, for zero-arity operations that take no quantum targets.
             condition: Optional single condition ``(clbit, value)`` or
                 sequence of conditions. Conditions are normalized to an AND
                 tuple.

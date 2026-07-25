@@ -38,7 +38,8 @@ documented in :doc:`../guide/advanced`.
 Constrained simulated targets
 -----------------------------
 
-:py:class:`~fatqat.backends.FakeSuperconducting4x4Backend` and
+:py:class:`~fatqat.backends.SCQubitIBMSimulator`,
+:py:class:`~fatqat.backends.SCQubitGoogleSimulator`, and
 :py:class:`~fatqat.backends.FakeAtomGridBackend` are optional
 simulated targets with fixed native-gate and connectivity constraints. Use
 them when those constraints are part of an experiment or test, not as the
@@ -51,7 +52,11 @@ Detailed reference
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqat.backends.FakeSuperconducting4x4Backend
+.. autoclass:: fatqat.backends.SCQubitIBMSimulator
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.backends.SCQubitGoogleSimulator
    :members:
    :show-inheritance:
 

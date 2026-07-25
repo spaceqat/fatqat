@@ -98,8 +98,8 @@ Under `method="DM"` channels apply exactly (one evolution); under
 `method="SV"` each shot samples one Kraus branch (quantum trajectories) —
 both converge to the same counts. A device backend can also author its own
 calibration-derived model:
-`FakeSuperconducting4x4Backend.default_noise_model()`. The full noise guide
-belongs to the Sphinx docs.
+`SCQubitIBMSimulator.default_noise_model()`. The full noise guide belongs
+to the Sphinx docs.
 
 ## Qudits
 
@@ -116,15 +116,16 @@ qutrits.measure_all()
 
 ## Device backends
 
-`FakeSuperconducting4x4Backend` is a fixed 16-qubit prototype target with a
-native gate set (`RZ`, `SX`, nearest-neighbor `CZ`). Its implementation map
-is introspectable, so a compiler can discover the device's constraints
-instead of hardcoding them:
+Two fixed 16-qubit prototype superconducting targets ship with distinct
+native gate sets: `SCQubitIBMSimulator` (`X`, `SX`, `RZ`, nearest-neighbor
+`CZ`) and `SCQubitGoogleSimulator` (`RX`, `RY`, `RZ`, nearest-neighbor
+`iSwap` and `CZ`). Each implementation map is introspectable, so a compiler
+can discover the device's constraints instead of hardcoding them:
 
 ```python
-fake = fq.backends.FakeSuperconducting4x4Backend()
+fake = fq.backends.SCQubitIBMSimulator()
 impl_map = fake.implementation_map
-sorted(op.name for op in impl_map.supported_operations())   # ['CZ', 'RZ', 'SX']
+sorted(op.name for op in impl_map.supported_operations())   # ['CZ', 'RZ', 'SX', 'X']
 impl_map.supports(fq.ops.CX)                                # False
 ```
 
