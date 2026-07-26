@@ -213,10 +213,11 @@ class SubsystemResourceRef:
 
 @dataclass(frozen=True)
 class ControlChannelRef:
-    """Opaque complex-drive control channel minted by one model."""
+    """Opaque physical control channel minted by one model."""
 
     model_key: ModelKey
     ordinal: int
+    kind: str
     _token: object = field(repr=False, compare=False)
 
 
@@ -250,7 +251,8 @@ class PhysicsModel:
     number: np.ndarray
     _token: object = field(repr=False, compare=False)
     _resources: tuple[SubsystemResourceRef, ...] = field(repr=False)
-    _controls: tuple[ControlChannelRef, ...] = field(repr=False)
+    _drive_controls: tuple[ControlChannelRef, ...] = field(repr=False)
+    _detuning_controls: tuple[ControlChannelRef, ...] = field(repr=False)
     _frames: tuple[FrameRef, ...] = field(repr=False)
     _coupling_refs: tuple[CouplingRef, ...] = field(repr=False)
 
@@ -271,7 +273,11 @@ class PhysicsModel:
         return self._resources[self._subsystem_ordinal(subsystem_id)]
 
     def drive_control(self, subsystem_id: str) -> ControlChannelRef:
-        return self._controls[self._subsystem_ordinal(subsystem_id)]
+        return self._drive_controls[self._subsystem_ordinal(subsystem_id)]
+
+    def detuning_control(self, subsystem_id: str) -> ControlChannelRef:
+        """Return the physical local-frequency-shift channel for one transmon."""
+        return self._detuning_controls[self._subsystem_ordinal(subsystem_id)]
 
     def frame(self, subsystem_id: str) -> FrameRef:
         return self._frames[self._subsystem_ordinal(subsystem_id)]
@@ -289,7 +295,12 @@ class PhysicsModel:
         return self._bind(reference, SubsystemResourceRef, self._resources, "resource")
 
     def bind_control(self, reference: ControlChannelRef) -> int:
-        return self._bind(reference, ControlChannelRef, self._controls, "control")
+        controls = (
+            self._drive_controls
+            if isinstance(reference, ControlChannelRef) and reference.kind == "drive"
+            else self._detuning_controls
+        )
+        return self._bind(reference, ControlChannelRef, controls, "control")
 
     def bind_frame(self, reference: FrameRef) -> int:
         return self._bind(reference, FrameRef, self._frames, "frame")
@@ -373,7 +384,11 @@ class SCTransmonExchangeBuilder:
             for ordinal in range(len(subsystems))
         )
         controls = tuple(
-            ControlChannelRef(spec.key, ordinal, token)
+            ControlChannelRef(spec.key, ordinal, "drive", token)
+            for ordinal in range(len(subsystems))
+        )
+        detuning_controls = tuple(
+            ControlChannelRef(spec.key, ordinal, "detuning", token)
             for ordinal in range(len(subsystems))
         )
         frames = tuple(
@@ -391,7 +406,8 @@ class SCTransmonExchangeBuilder:
             number=number,
             _token=token,
             _resources=resources,
-            _controls=controls,
+            _drive_controls=controls,
+            _detuning_controls=detuning_controls,
             _frames=frames,
             _coupling_refs=coupling_refs,
         )
@@ -686,3 +702,10 @@ class CalibrationSpec:
 def load_calibration_spec(document: Any, model: PhysicsModel) -> CalibrationSpec:
     """Parse and validate one calibration document against its physics model."""
     return CalibrationSpec.from_mapping(document, model)
+
+
+def realize_sc_operation(*args: Any, **kwargs: Any) -> Any:
+    """Compatibility seam for SC realization; see ``resolved.realize_native_operation``."""
+    from .resolved import realize_native_operation
+
+    return realize_native_operation(*args, **kwargs)
