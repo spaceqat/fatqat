@@ -157,6 +157,7 @@ class PulseBlock:
                         self.model.resource(subsystem_id)
                         for subsystem_id in coupling.subsystem_ids
                     }
+                    | {self.model.coupling(*coupling.subsystem_ids)}
                 )
             else:
                 required_claim_sets.append(

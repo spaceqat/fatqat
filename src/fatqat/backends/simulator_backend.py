@@ -135,12 +135,14 @@ def _lower_measurement(
     noise_model: NoiseModel,
 ) -> MeasurementStep:
     """Lower one `Measurement` instruction into a `MeasurementStep`."""
-    measured_indices = tuple(
+    # Only used to build reported_digit_maps below; _lower_measurement_boundary
+    # independently resolves the authoritative measured_indices from step.targets.
+    digit_map_indices = tuple(
         engine_index_allocation.subsystem_index(q) for q in step.targets
     )
     reported_digit_maps = tuple(
         tuple(range(engine_index_allocation.system_dims[measured]))
-        for measured in measured_indices
+        for measured in digit_map_indices
     )
     measured_indices, classical_indices, confusions = _lower_measurement_boundary(
         step,

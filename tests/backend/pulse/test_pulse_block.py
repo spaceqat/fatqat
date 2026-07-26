@@ -77,6 +77,21 @@ def test_exchange_child_uses_only_the_exchange_control_not_the_pair_resource():
     assert model.coupling("q0", "q1") not in {child.channel for child in block.children}
 
 
+def test_exchange_child_requires_the_pair_resource_claim_not_just_endpoints():
+    model = _model()
+    with pytest.raises(BackendValidationError, match="do not cover"):
+        PulseBlock(
+            model,
+            1.0,
+            (
+                SampledControl(
+                    model.exchange_control("q0", "q1"), [0.0, 1.0], [0.0, 0.0]
+                ),
+            ),
+            (model.resource("q0"), model.resource("q1")),
+        )
+
+
 def test_pulse_block_rejects_cross_model_handles_and_keeps_arrays_immutable():
     model = _model()
     other = _model()
