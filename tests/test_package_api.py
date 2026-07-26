@@ -8,8 +8,8 @@ def test_top_level_frontend_surface():
     program.add(fq.ops.H, 0)
     program.add(fq.ops.CZ, (0, 1))
     program.add(fq.ops.RX(0.1), 0)
-    program.add_measurement(0, 0)
-    program.add_measurement(1, 1)
+    program.measure(0, 0)
+    program.measure(1, 1)
 
     assert len(program.operations) == 5
     assert program.operations[0].operation.name == "H"

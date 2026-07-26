@@ -40,7 +40,7 @@ Constrained simulated targets
 
 :py:class:`~fatqat.backends.SCQubitIBMSimulator`,
 :py:class:`~fatqat.backends.SCQubitGoogleSimulator`, and
-:py:class:`~fatqat.backends.AtomGridBackend` are optional
+:py:class:`~fatqat.backends.AtomGridSimulator` are optional
 simulated targets with fixed native-gate and connectivity constraints. Use
 them when those constraints are part of an experiment or test, not as the
 default backend for a first program.
@@ -58,15 +58,16 @@ hard-code a target:
 .. code-block:: python
 
    import fatqat as fq
+   import fatqat.operations as op
 
    target = fq.backends.SCQubitIBMSimulator().implementation_map
    native_families = target.supported_operations()
-   cz_edges = target.device_operands_for(fq.ops.CZ)
+   cz_edges = target.device_operands_for(op.CZ)
 
-   assert target.supports(fq.ops.SX)
-   assert not target.device_operands_for(fq.ops.SX)  # uniform support
-   assert target.supports(fq.ops.CZ, device_operands=(0, 1))
-   assert not target.supports(fq.ops.CZ, device_operands=(0, 5))
+   assert target.supports(op.SX)
+   assert not target.device_operands_for(op.SX)  # uniform support
+   assert target.supports(op.CZ, device_operands=(0, 1))
+   assert not target.supports(op.CZ, device_operands=(0, 5))
 
 .. list-table:: Interpreting an implementation map
    :header-rows: 1
@@ -189,7 +190,7 @@ models.
 Neutral-atom grid target
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-:py:class:`~fatqat.backends.AtomGridBackend` accepts a ``grid_size=(rows,
+:py:class:`~fatqat.backends.AtomGridSimulator` accepts a ``grid_size=(rows,
 cols)`` layout (``(4, 5)`` by default). Its uniform native gates are
 :py:class:`~fatqat.operations.RX`, :py:class:`~fatqat.operations.RY`, and
 :py:class:`~fatqat.operations.RZ`; :py:data:`~fatqat.operations.CZ` is native
@@ -197,8 +198,8 @@ only on directed nearest-neighbour pairs. Query those pairs through
 ``implementation_map`` rather than deriving them from the shape.
 
 Every atom-grid program must begin with an unconditional
-:py:class:`~fatqat.operations.LoadAtom` that fits the device. It loads the
-top-left rectangle named by ``LoadAtom(rows, cols)``. A later ``LoadAtom``
+:py:class:`~fatqat.operations.LoadAtoms` that fits the device. It loads the
+top-left rectangle named by ``LoadAtoms(rows, cols)``. A later ``LoadAtoms``
 is rejected; a gate or reset touching an unloaded site is a no-op. Measurement
 remains valid on unloaded sites and reports the initial ``0`` in ideal
 execution, subject to any supplied readout noise.
@@ -209,11 +210,11 @@ execution, subject to any supplied readout noise.
 
    atoms = fq.GridRegister(2, 3, name="atoms")
    program = fq.Program([atoms])
-   program.add(fq.ops.LoadAtom(2, 3))
-   program.add(fq.ops.RX(0.2), atoms.row(0))
-   program.add(fq.ops.CZ, (atoms[0], atoms[3]))
+   program.add(op.LoadAtoms(2, 3))
+   program.add(op.RX(0.2), atoms.row(0))
+   program.add(op.CZ, (atoms[0], atoms[3]))
 
-   backend = fq.backends.AtomGridBackend()  # 4 by 5 device
+   backend = fq.backends.AtomGridSimulator()  # 4 by 5 device
 
 On that default device, the 2 by 3 frontend grid occupies labels ``0, 1, 2,
 5, 6, 7``: its second logical row starts at device label ``5``, not ``3``.
@@ -237,6 +238,6 @@ Detailed reference
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqat.backends.AtomGridBackend
+.. autoclass:: fatqat.backends.AtomGridSimulator
    :members:
    :show-inheritance:

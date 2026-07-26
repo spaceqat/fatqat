@@ -22,8 +22,8 @@ def test_lower_terminal_measurement_is_not_dynamic():
     p = Program(2, 2)
     p.add(ops.H, 0)
     p.add(ops.CZ, (0, 1))
-    p.add_measurement(0, 0)
-    p.add_measurement(1, 1)
+    p.measure(0, 0)
+    p.measure(1, 1)
     plan, facts = SimulatorBackend("SV")._lower_program(p)
     assert _is_dynamic(plan) is False
     assert facts.has_measurement is True
@@ -33,9 +33,9 @@ def test_lower_terminal_measurement_is_not_dynamic():
 def test_lower_measure_then_gate_on_disjoint_qubit_is_not_dynamic():
     p = Program(2, 2)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(ops.X, 1)  # different qubit -> still fast path
-    p.add_measurement(1, 1)
+    p.measure(1, 1)
     plan, _ = SimulatorBackend("SV")._lower_program(p)
     assert _is_dynamic(plan) is False
 
@@ -43,7 +43,7 @@ def test_lower_measure_then_gate_on_disjoint_qubit_is_not_dynamic():
 def test_lower_gate_on_measured_qubit_is_dynamic():
     p = Program(1, 1)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(ops.X, 0)  # gate on already-measured qubit
     plan, _ = SimulatorBackend("SV")._lower_program(p)
     assert _is_dynamic(plan) is True
@@ -83,9 +83,9 @@ def test_reset_and_reuse_counts():
     # Put q0 in |1>, measure -> c0=1, reset q0, measure again -> c1=0.
     p = Program(1, 2)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(fq.ops.Reset, 0)
-    p.add_measurement(0, 1)
+    p.measure(0, 1)
     counts = (
         SimulatorBackend("SV")
         .run(p, shots=32, simulation_config={"seed": 0})
@@ -100,7 +100,7 @@ def test_dynamic_counts_use_snapshots_not_final_index():
     # A from-final-index builder would wrongly read c0=0.
     p = Program(1, 1)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(fq.ops.Reset, 0)
     counts = (
         SimulatorBackend("SV")
@@ -132,9 +132,9 @@ def test_conditional_reset_fires_when_guard_true():
     # q0=|1>, measure -> c0=1; reset conditioned on c0==1 fires; second read is 0.
     p = Program(1, 2)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(fq.ops.Reset, 0, condition=(0, 1))
-    p.add_measurement(0, 1)
+    p.measure(0, 1)
     counts = (
         SimulatorBackend("SV")
         .run(p, shots=16, simulation_config={"seed": 0})
@@ -149,9 +149,9 @@ def test_conditional_reset_skipped_when_guard_false():
     # stays 1. This is the case a dropped reset-condition would silently break.
     p = Program(1, 2)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(fq.ops.Reset, 0, condition=(0, 0))
-    p.add_measurement(0, 1)
+    p.measure(0, 1)
     counts = (
         SimulatorBackend("SV")
         .run(p, shots=16, simulation_config={"seed": 0})
@@ -179,7 +179,7 @@ def test_condition_only_statevector_ignores_shots_value():
 
 def test_lower_grouped_measurement_emits_one_grouped_step():
     p = Program(3, 3)
-    p.add_measurement((0, 2), (1, 0))
+    p.measure((0, 2), (1, 0))
 
     plan, facts = SimulatorBackend("SV")._lower_program(p)
 
@@ -190,8 +190,8 @@ def test_lower_grouped_measurement_emits_one_grouped_step():
 
 def test_lower_adjacent_single_measurements_stay_separate_steps():
     p = Program(2, 2)
-    p.add_measurement(0, 0)
-    p.add_measurement(1, 1)
+    p.measure(0, 0)
+    p.measure(1, 1)
 
     plan, _ = SimulatorBackend("SV")._lower_program(p)
 
@@ -218,7 +218,7 @@ def test_grouped_reset_resets_all_targets_in_dynamic_path():
     p.add(ops.X, 0)
     p.add(ops.X, 1)
     p.add(fq.ops.Reset, (0, 1))
-    p.add_measurement((0, 1), (0, 1))
+    p.measure((0, 1), (0, 1))
 
     counts = (
         SimulatorBackend("SV")
@@ -234,7 +234,7 @@ def test_grouped_measurement_writes_all_classical_slots_in_dynamic_path():
     p = Program(2, 2)
     p.add(ops.X, 0)
     p.add(ops.X, 1)
-    p.add_measurement((0, 1), (1, 0))
+    p.measure((0, 1), (1, 0))
     p.add(ops.X, 0)  # makes the program dynamic because q0 was measured
 
     counts = (
@@ -250,7 +250,7 @@ def test_grouped_measurement_writes_all_classical_slots_in_dynamic_path():
 def _random_dynamic_program():
     p = Program(1, 1)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(fq.ops.Reset, 0)
     return p
 
@@ -276,7 +276,7 @@ def test_dynamic_seed_is_repeatable_with_per_shot_streams():
 def test_dynamic_statevector_single_shot_stays_serial_and_available():
     p = Program(1, 1)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(fq.ops.Reset, 0)
     result = (
         SimulatorBackend("SV")

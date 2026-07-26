@@ -86,7 +86,7 @@ _DEFAULT_RULES = (
     (ops.Sum, _DimMatrix(sum_matrix), K.SUM),
     (ops.SwapLevels, _swap_levels_rule, K.SWAP_LEVELS),
     (ops.Fourier, _DimMatrix(_fourier_rule), K.FOURIER),
-    (ops.Fourierdg, _DimMatrix(_fourierdg_rule), K.FOURIERDG),
+    (ops.InverseFourier, _DimMatrix(_fourierdg_rule), K.FOURIERDG),
     (ops.SubspaceRX, _subspace_rx_rule, K.SUBSPACE_RX),
     (ops.SubspaceRY, _subspace_ry_rule, K.SUBSPACE_RY),
     (ops.SubspaceRZ, _subspace_rz_rule, K.SUBSPACE_RZ),
@@ -99,7 +99,8 @@ def default_matrix_implementation_map() -> ImplementationMap:
 
     Registers against the public singleton instances (e.g. `ops.X`), not the
     underlying `*Gate` classes: `add()` resolves either to the same
-    class key, and the fixed-gate classes are not part of the `fq.ops` public
+    class key, and the fixed-gate classes are not part of the
+    `fatqat.operations` public
     surface (see `operations.fixed_gates`). Each rule is normalized (bare
     callables wrapped, exactly as `add()` would) and then keyed with its
     gate's canonical `BuiltinKernelKey`.

@@ -32,7 +32,7 @@ def test_scalar_only_and_measurement_instructions_pass_through_unchanged():
     program = Program(2, 1)
     program.add(ops.RX(0.3), 1)
     program.add(ops.CZ, (0, 1))
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     broken = _break_grouped_operations(program.operations)
     assert broken == program.operations
     assert all(left is right for left, right in zip(broken, program.operations))
@@ -106,7 +106,7 @@ def test_lower_uses_resource_layout_device_operands_for_lookup_and_engine_indice
     # `_EngineIndexAllocation`, not the device labels used for lookup.
     program = Program(2)
     program.add(ops.CZ, (0, 1))
-    q0, q1 = program.qreg[0][0], program.qreg[0][1]
+    q0, q1 = program.quantum_registers[0][0], program.quantum_registers[0][1]
 
     engine_index_allocation = SimulatorBackend()._allocate_engine_indices(program)
     resource_layout = ResourceLayout({q0: 99, q1: 100})

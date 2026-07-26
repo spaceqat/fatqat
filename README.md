@@ -12,11 +12,12 @@ changes.
 
 ```python
 import fatqat as fq
+import fatqat.operations as op
 
 program = fq.Program(2, 2)          # 2 qubits, 2 clbits
-program.add(fq.ops.H, 0)
-program.add(fq.ops.CX, (0, 1))
-program.add_measurement((0, 1), (0, 1))
+program.add(op.H, 0)
+program.add(op.CX, (0, 1))
+program.measure((0, 1), (0, 1))
 
 backend = fq.backends.SimulatorBackend(method="SV")
 result = backend.run(program, shots=1000, simulation_config={"seed": 7}).result()
@@ -32,8 +33,8 @@ instead of (or alongside) counts:
 
 ```python
 bell = fq.Program(2)
-bell.add(fq.ops.H, 0)
-bell.add(fq.ops.CX, (0, 1))
+bell.add(op.H, 0)
+bell.add(op.CX, (0, 1))
 
 rho = (
     fq.backends.SimulatorBackend(method="DM")
@@ -66,12 +67,12 @@ what the program needs:
 
 ```python
 dyn = fq.Program(2, 2)
-dyn.add(fq.ops.H, 0)
-dyn.add_measurement(0, 0)                # mid-circuit measurement
-dyn.add(fq.ops.X, 1, condition=(0, 1))   # applied only when clbit 0 read 1
-dyn.add(fq.ops.Reset, 0)                 # reprepare q0 in |0>
-dyn.add(fq.ops.Barrier, (0, 1))          # compiler marker, no-op here
-dyn.add_measurement(1, 1)
+dyn.add(op.H, 0)
+dyn.measure(0, 0)                # mid-circuit measurement
+dyn.add(op.X, 1, condition=(0, 1))   # applied only when clbit 0 read 1
+dyn.add(op.Reset, 0)                 # reprepare q0 in |0>
+dyn.add(op.Barrier, (0, 1))          # compiler marker, no-op here
+dyn.measure(1, 1)
 ```
 
 ## Noise
@@ -85,10 +86,10 @@ Quantum channels attach to gate occurrences; readout error is classical
 import numpy as np
 
 noise = fq.NoiseModel()
-noise.add_noise(fq.ops.CX, fq.noise.Depolarizing(p=0.05))
+noise.add_channel(op.CX, fq.noise.Depolarizing(p=0.05))
 damping, dephasing = fq.noise.relaxation_channels(t1=60e-6, t2=80e-6, duration=2e-6)
-noise.add_noise(fq.ops.H, damping)
-noise.add_noise(fq.ops.H, dephasing)
+noise.add_channel(op.H, damping)
+noise.add_channel(op.H, dephasing)
 noise.add_readout_error(np.array([[0.98, 0.05], [0.02, 0.95]]))
 
 backend = fq.backends.SimulatorBackend(method="DM", noise=noise)
@@ -108,8 +109,8 @@ Registers take a per-slot dimension; gates like `Shift`, `Clock`, `Sum`, and
 
 ```python
 qutrits = fq.Program([fq.QuantumRegister(2, dim=3)], [fq.ClassicalRegister(2, dim=3)])
-qutrits.add(fq.ops.Fourier, 0)
-qutrits.add(fq.ops.Sum, (0, 1))          # |i, j> -> |i, i+j mod 3>
+qutrits.add(op.Fourier, 0)
+qutrits.add(op.Sum, (0, 1))          # |i, j> -> |i, i+j mod 3>
 qutrits.measure_all()
 # counts over trits: {'00': 314, '11': 293, '22': 293}
 ```
@@ -126,7 +127,7 @@ can discover the device's constraints instead of hardcoding them:
 fake = fq.backends.SCQubitIBMSimulator()
 impl_map = fake.implementation_map
 sorted(op.name for op in impl_map.supported_operations())   # ['CZ', 'RZ', 'SX', 'X']
-impl_map.supports(fq.ops.CX)                                # False
+impl_map.supports(op.CX)                                     # False
 ```
 
 ## OpenQASM

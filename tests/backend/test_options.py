@@ -28,7 +28,7 @@ def test_run_rejects_unknown_simulation_config():
 def test_serial_simulation_config_runs_dynamic_program():
     p = fq.Program(1, 1)
     p.add(fq.ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(fq.ops.Reset, 0)
 
     counts = (
@@ -91,8 +91,8 @@ def test_backend_accepts_custom_implementation_map():
     p = fq.Program(2, 2)
     p.add(fq.ops.X, 0)  # overridden: identity, so qubit 0 stays |0>
     p.add(fq.ops.H, 1)  # still a default rule: H|0> is an equal superposition
-    p.add_measurement(0, 0)
-    p.add_measurement(1, 1)
+    p.measure(0, 0)
+    p.measure(1, 1)
     counts = (
         backend.run(p, shots=200, simulation_config={"seed": 0}).result().get_counts()
     )
@@ -106,7 +106,7 @@ def test_backend_none_implementation_map_uses_defaults():
 
     p = fq.Program(1, 1)
     p.add(fq.ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     counts = (
         backend.run(p, shots=10, simulation_config={"seed": 0}).result().get_counts()
     )
@@ -124,7 +124,7 @@ def test_backend_copies_implementation_map_defensively():
 
     p = fq.Program(1, 1)
     p.add(fq.ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     counts = (
         backend.run(p, shots=10, simulation_config={"seed": 0}).result().get_counts()
     )

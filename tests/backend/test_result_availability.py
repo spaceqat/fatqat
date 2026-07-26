@@ -23,7 +23,7 @@ def test_statevector_default_attached_when_no_measurement():
 def test_statevector_not_attached_by_default_with_measurement():
     p = Program(1, 1)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     result = (
         SimulatorBackend("SV").run(p, shots=10, simulation_config={"seed": 0}).result()
     )
@@ -34,7 +34,7 @@ def test_statevector_not_attached_by_default_with_measurement():
 def test_result_metadata_records_backend_shots_and_config():
     p = Program(1, 1)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     config = {"counts": True, "final_state": False}
 
     result = (
@@ -51,7 +51,7 @@ def test_result_metadata_records_backend_shots_and_config():
 def test_run_accepts_result_config_as_dict():
     p = Program(1, 1)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
 
     result = (
         SimulatorBackend("SV")
@@ -87,7 +87,7 @@ def test_run_rejects_non_dict_result_config():
 def test_projected_statevector_shots_one():
     p = Program(1, 1)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     sv = (
         SimulatorBackend("SV")
         .run(
@@ -107,7 +107,7 @@ def test_projected_statevector_shots_one():
 def test_statevector_with_measurement_and_many_shots_rejected():
     p = Program(1, 1)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     with pytest.raises(BackendValidationError):
         SimulatorBackend("SV").run(
             p, shots=10, result_config={"counts": True, "final_state": True}

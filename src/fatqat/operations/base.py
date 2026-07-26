@@ -12,7 +12,8 @@ from ..registers import RegisterRef
 class Operation:
     """Base class for immutable operation objects.
 
-    Fixed gates are exposed as pre-built singleton values in ``fatqat.ops``.
+    Fixed gates are exposed as pre-built singleton values in
+    ``fatqat.operations`` (normally imported as ``op``).
     Parametric gates are exposed as classes and should be instantiated, such as
     ``RX(theta)``.
 
@@ -22,14 +23,14 @@ class Operation:
             None for variable arity with at least one target.
 
     Examples:
-        >>> import fatqat as fq
-        >>> fq.ops.H.name
+        >>> import fatqat.operations as op
+        >>> op.H.name
         'H'
-        >>> fq.ops.H.num_subsystems
+        >>> op.H.num_targets
         1
-        >>> fq.ops.CX.num_subsystems
+        >>> op.CX.num_targets
         2
-        >>> fq.ops.RX(0.2).num_subsystems
+        >>> op.RX(0.2).num_targets
         1
     """
 
@@ -58,7 +59,7 @@ class Operation:
             )
 
     @property
-    def num_subsystems(self) -> int | None:
+    def num_targets(self) -> int | None:
         """Number of quantum targets required, or None for variable arity."""
         return type(self)._num_subsystems
 

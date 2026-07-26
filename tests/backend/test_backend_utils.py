@@ -1,6 +1,10 @@
 import pytest
 
-from fatqat.backends import AtomGridBackend, SCQubitGoogleSimulator, SCQubitIBMSimulator
+from fatqat.backends import (
+    AtomGridSimulator,
+    SCQubitGoogleSimulator,
+    SCQubitIBMSimulator,
+)
 from fatqat.backends.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.backends.fake_superconducting import (
     fake_superconducting_google_implementation_map,
@@ -17,7 +21,7 @@ from fatqat.result import _ResultConfig
 # Every fake-target backend constructor routes grid_size through the shared
 # `_validate_grid_size` (see fake_atom_grid.py / fake_superconducting.py), so
 # this pins that routing for all three rather than just the atom-grid backend.
-_GRID_BACKENDS = (AtomGridBackend, SCQubitIBMSimulator, SCQubitGoogleSimulator)
+_GRID_BACKENDS = (AtomGridSimulator, SCQubitIBMSimulator, SCQubitGoogleSimulator)
 
 
 @pytest.mark.parametrize("backend_cls", _GRID_BACKENDS)

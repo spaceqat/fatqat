@@ -4,8 +4,8 @@ Start with [Quickstart](quickstart.md), then read [Core concepts](concepts.md)
 for the small set of ideas used by every program. The remaining pages are
 organized around tasks rather than internal package layers.
 
-All complete examples use `import fatqat as fq`. Short follow-on snippets
-state when they assume an existing `program` or import.
+Complete examples import `fatqat` as `fq` and `fatqat.operations` as `op`.
+Short follow-on snippets state when they assume an existing `program` or import.
 
 ## Suggested path
 

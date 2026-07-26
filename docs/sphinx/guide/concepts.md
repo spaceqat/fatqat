@@ -19,11 +19,12 @@ instructions itself.
 
 ```python
 import fatqat as fq
+import fatqat.operations as op
 
 program = fq.Program(2, 2)
-program.add(fq.ops.H, 0)
-program.add(fq.ops.CX, (0, 1))
-program.add_measurement((0, 1), (0, 1))
+program.add(op.H, 0)
+program.add(op.CX, (0, 1))
+program.measure((0, 1), (0, 1))
 ```
 
 Instructions run in the order above. A measurement is also an instruction,
@@ -40,11 +41,12 @@ Indexing a register produces that reference:
 
 ```python
 import fatqat as fq
+import fatqat.operations as op
 
 left = fq.QuantumRegister(2, name="left")
 right = fq.QuantumRegister(2, name="right")
 program = fq.Program([left, right])
-program.add(fq.ops.H, program.qreg[1][0])  # first slot in "right"
+program.add(op.H, program.quantum_registers[1][0])  # first slot in "right"
 ```
 
 Slots default to dimension 2 (qubits). Registers with `dim > 2` hold
@@ -53,10 +55,10 @@ qudits; see [Advanced user topics](advanced.md) when you need them.
 ## Operations and measurements
 
 An operation says what should happen; {py:meth}`~fatqat.Program.add` binds it to target
-slots. Fixed gates are values such as `fq.ops.X`; parametric gates are
-created with their parameter, such as `fq.ops.RX(0.2)`.
+slots. Fixed gates are values such as `op.X`; parametric gates are
+created with their parameter, such as `op.RX(0.2)`.
 
-Use {py:meth}`~fatqat.Program.add_measurement` to write quantum outcomes into classical slots.
+Use {py:meth}`~fatqat.Program.measure` to write quantum outcomes into classical slots.
 Use [Measurement and conditions](measurement-and-conditions.md) for
 grouped measurement, reset, and feedforward.
 
@@ -85,7 +87,7 @@ targets accepted by selected rotation and two-qubit gates:
 ```python
 atoms = fq.GridRegister(2, 3, name="atoms")
 program = fq.Program([atoms])
-program.add(fq.ops.RX(0.2), atoms.row(1))
+program.add(op.RX(0.2), atoms.row(1))
 ```
 
 The grid is a logical description. A backend applies any device-specific

@@ -18,14 +18,14 @@ def test_add_single_operand_int():
     ao = p.operations[0]
     assert isinstance(ao, AppliedOperation)
     assert ao.operation is ops.H
-    assert ao.targets == (p.qreg[0][0],)
+    assert ao.targets == (p.quantum_registers[0][0],)
 
 
 def test_add_multi_operand_tuple():
     p = Program(2)
     p.add(ops.CZ, (0, 1))
     ao = p.operations[0]
-    assert ao.targets == (p.qreg[0][0], p.qreg[0][1])
+    assert ao.targets == (p.quantum_registers[0][0], p.quantum_registers[0][1])
 
 
 def test_add_parametric_gate():
@@ -153,7 +153,7 @@ def test_add_rejects_view_for_scalar_only_operations(op):
     atoms = GridRegister(2, 2, name="atoms")
     p = Program([atoms])
     views = (atoms.row(0), atoms.row(1), atoms.all(), atoms.column(0))
-    arity = op.num_subsystems
+    arity = op.num_targets
     targets = views[0] if arity == 1 else views[:arity]
     with pytest.raises(ValueError):
         p.add(op, targets)
@@ -169,7 +169,7 @@ def test_add_rejects_view_for_reset():
 def test_add_rejects_view_from_foreign_program():
     atoms = GridRegister(2, 2, name="atoms")
     p = Program([atoms])
-    foreign_atoms = GridRegister(2, 2, name="foreign")  # not in p.qreg
+    foreign_atoms = GridRegister(2, 2, name="foreign")  # not in p.quantum_registers
     with pytest.raises(ValueError):
         p.add(ops.RX(0.1), foreign_atoms.row(0))
 

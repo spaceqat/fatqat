@@ -8,9 +8,15 @@ from fatqat.registers import GridRegister, QuantumRegister, ClassicalRegister
 
 def test_int_construction_creates_default_registers():
     p = Program(2, 2)
-    assert len(p.qreg) == 1 and p.qreg[0].size == 2
-    assert len(p.clreg) == 1 and p.clreg[0].size == 2
+    assert len(p.quantum_registers) == 1 and p.quantum_registers[0].size == 2
+    assert len(p.classical_registers) == 1 and p.classical_registers[0].size == 2
     assert p.operations == ()
+
+
+def test_long_register_names_are_canonical():
+    p = Program(quantum_registers=2, classical_registers=1)
+    assert len(p.quantum_registers) == 1
+    assert len(p.classical_registers) == 1
 
 
 def test_operations_is_read_only_tuple_view():
@@ -35,26 +41,26 @@ def test_operations_tuple_view_is_cached_until_mutation():
 
 def test_zero_classical_means_no_classical_register():
     p = Program(2)
-    assert len(p.qreg) == 1
-    assert p.clreg == ()
+    assert len(p.quantum_registers) == 1
+    assert p.classical_registers == ()
 
 
 def test_list_construction_with_explicit_registers():
     qr = QuantumRegister(3, name="data")
     cr = ClassicalRegister(2, name="ro")
     p = Program([qr], [cr])
-    assert p.qreg == (qr,)
-    assert p.clreg == (cr,)
+    assert p.quantum_registers == (qr,)
+    assert p.classical_registers == (cr,)
 
 
 def test_register_collections_are_public_read_only_tuples():
     p = Program(1, 1)
-    assert isinstance(p.qreg, tuple)
-    assert isinstance(p.clreg, tuple)
+    assert isinstance(p.quantum_registers, tuple)
+    assert isinstance(p.classical_registers, tuple)
     with pytest.raises(AttributeError):
-        p.qreg.append(QuantumRegister(1))
+        p.quantum_registers.append(QuantumRegister(1))
     with pytest.raises(AttributeError):
-        p.clreg.clear()
+        p.classical_registers.clear()
 
 
 def test_flat_quantum_ref_resolution_out_of_range_raises():

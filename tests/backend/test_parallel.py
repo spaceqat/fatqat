@@ -9,7 +9,7 @@ def _random_dynamic_program():
     p = fq.Program(2, 2)
     p.add(ops.H, 0)
     p.add(ops.CX, (0, 1))
-    p.add_measurement((0, 1), (0, 1))
+    p.measure((0, 1), (0, 1))
     p.add(fq.ops.Reset, (0, 1))
     return p
 

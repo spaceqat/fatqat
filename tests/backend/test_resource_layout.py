@@ -69,7 +69,7 @@ def test_simulator_backend_resolves_generic_identity_device_labels_in_declaratio
 
     resource_layout = backend._resolve_resource_layout(program)
 
-    refs = [program.qreg[0][i] for i in range(3)]
+    refs = [program.quantum_registers[0][i] for i in range(3)]
     assert [resource_layout.device_label(ref) for ref in refs] == [0, 1, 2]
     assert isinstance(resource_layout, ResourceLayout)
 
@@ -81,7 +81,7 @@ def test_simulator_backend_allocate_engine_indices_returns_a_separate_engine_ind
     resource_layout = backend._resolve_resource_layout(program)
     engine_index_allocation = backend._allocate_engine_indices(program)
 
-    refs = [program.qreg[0][i] for i in range(3)]
+    refs = [program.quantum_registers[0][i] for i in range(3)]
     # Two independently-resolved values: not the same object...
     assert resource_layout is not engine_index_allocation
     assert isinstance(engine_index_allocation, _EngineIndexAllocation)

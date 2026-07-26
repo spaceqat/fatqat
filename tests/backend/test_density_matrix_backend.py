@@ -19,7 +19,7 @@ from fatqat.program import Program
 def test_counts_default_with_measurement():
     p = Program(1, 1)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     result = (
         SimulatorBackend("DM").run(p, shots=10, simulation_config={"seed": 0}).result()
     )
@@ -37,7 +37,7 @@ def test_density_matrix_default_attached_when_no_measurement():
 def test_density_matrix_not_attached_by_default_with_measurement():
     p = Program(1, 1)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     result = (
         SimulatorBackend("DM").run(p, shots=10, simulation_config={"seed": 0}).result()
     )
@@ -84,7 +84,7 @@ def test_reset_program_counts_are_deterministic_for_any_shots():
     p.add(ops.H, 0)
     p.add(ops.Reset, 0)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     result = (
         SimulatorBackend("DM").run(p, shots=50, simulation_config={"seed": 3}).result()
     )
@@ -94,7 +94,7 @@ def test_reset_program_counts_are_deterministic_for_any_shots():
 def test_counts_distribution_matches_born_rule():
     p = Program(1, 1)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     counts = (
         SimulatorBackend("DM")
         .run(p, shots=2000, simulation_config={"seed": 11})
@@ -108,7 +108,7 @@ def test_counts_distribution_matches_born_rule():
 def test_density_matrix_with_measurement_shots_one():
     p = Program(1, 1)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     result = (
         SimulatorBackend("DM")
         .run(
@@ -130,7 +130,7 @@ def test_density_matrix_with_measurement_shots_one():
 def test_density_matrix_with_measurement_and_many_shots_rejected():
     p = Program(1, 1)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     with pytest.raises(BackendValidationError):
         SimulatorBackend("DM").run(
             p, shots=10, result_config={"counts": True, "final_state": True}
@@ -139,7 +139,7 @@ def test_density_matrix_with_measurement_and_many_shots_rejected():
 
 def test_counts_require_positive_shots():
     p = Program(1, 1)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     with pytest.raises(BackendValidationError):
         SimulatorBackend("DM").run(p, shots=0)
 
@@ -147,9 +147,9 @@ def test_counts_require_positive_shots():
 def test_feedforward_condition_applies():
     p = Program(2, 2)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(ops.X, 1, condition=(0, 1))
-    p.add_measurement(1, 1)
+    p.measure(1, 1)
     counts = (
         SimulatorBackend("DM")
         .run(p, shots=20, simulation_config={"seed": 0})
@@ -162,9 +162,9 @@ def test_feedforward_condition_applies():
 def test_dynamic_counts_deterministic_for_fixed_seed():
     p = Program(2, 2)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(ops.X, 1, condition=(0, 1))
-    p.add_measurement(1, 1)
+    p.measure(1, 1)
     backend = SimulatorBackend("DM")
     first = (
         backend.run(p, shots=64, simulation_config={"seed": 42}).result().get_counts()
@@ -180,9 +180,9 @@ def test_dynamic_counts_deterministic_for_fixed_seed():
 def test_dynamic_counts_parallel_matches_serial():
     p = Program(2, 2)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(ops.X, 1, condition=(0, 1))
-    p.add_measurement(1, 1)
+    p.measure(1, 1)
     serial = (
         SimulatorBackend("DM")
         .run(p, shots=40, simulation_config={"seed": 9, "parallel_mode": "serial"})
@@ -224,7 +224,7 @@ def test_diagonal_matches_statevector_probabilities():
 def test_result_metadata_records_backend_shots_and_config():
     p = Program(1, 1)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     config = {"counts": True, "final_state": False}
     result = (
         SimulatorBackend("DM")
