@@ -3,6 +3,13 @@
 ## Running a program
 
 ```python
+import fatqat as fq
+
+program = fq.Program(2, 2)
+program.add(fq.ops.H, 0)
+program.add(fq.ops.CX, (0, 1))
+program.add_measurement((0, 1), (0, 1))
+
 backend = fq.backends.SimulatorBackend("SV")
 result = backend.run(program, shots=1000).result()
 ```
@@ -36,14 +43,25 @@ omitted for the backend default:
 - Requesting `final_state=True` for a stochastic program is only valid for
   `shots == 1`, since only one shot's post-measurement state is returned.
 
+The program above is stochastic, so asking it for a final state needs
+`shots=1`. Dropping its measurements makes it deterministic instead:
+
 ```python
-result = backend.run(
-    program,
-    result_config={"counts": False, "final_state": True},
-).result()
+bell = fq.Program(2)
+bell.add(fq.ops.H, 0)
+bell.add(fq.ops.CX, (0, 1))
+
+state = (
+    backend.run(bell, result_config={"counts": False, "final_state": True})
+    .result()
+    .get_statevector()
+)
 ```
 
 ## Reading a Result
+
+The accessors below are a reference listing, not a runnable script — each
+one is only valid when the run actually produced that field:
 
 ```python
 result.get_counts()             # {"00": 512, "11": 488}, little-endian keys
@@ -63,8 +81,8 @@ Calling an accessor for a field that wasn't produced raises
 
 If you request counts on a program where some declared clbit was never
 written by a measurement, the backend still returns zero-filled counts for
-that bit but raises a {py:exc}`~fatqat.errors.NoMeasurementWarning`—usually a
-sign a measurement was forgotten.
+that bit but emits a {py:exc}`~fatqat.errors.NoMeasurementWarning` — usually
+a sign a measurement was forgotten.
 
 For qudits, custom matrix implementations, and parallel shot execution, see
 [Advanced](advanced.md).

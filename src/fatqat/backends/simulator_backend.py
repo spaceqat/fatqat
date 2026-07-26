@@ -39,8 +39,8 @@ refactor.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
-from dataclasses import asdict, fields
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import asdict
 from math import prod
 from typing import Any
 
@@ -851,28 +851,6 @@ class SimulatorBackend:
         data. The common backend has no extra artifacts.
         """
         return {}
-
-    def _implementation_for(
-        self, operation: Operation, device_operands: DeviceOperands
-    ) -> MatrixImplementation:
-        """Resolve the matrix rule for an operation on a device target key.
-
-        Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` if the operation has no rule at
-        all, or if it has rules but none for this target key — the message
-        distinguishes the two.
-        """
-        if not self._impl_map.supports(operation):
-            raise UnsupportedOperationError(
-                f"{type(operation).__name__} is not supported by this backend"
-            )
-        rule = self._impl_map.implementation_for(
-            operation, device_operands=device_operands
-        )
-        if rule is None:
-            raise UnsupportedOperationError(
-                f"{type(operation).__name__} is not supported on device operands {device_operands}"
-            )
-        return rule
 
     def _lower(
         self,

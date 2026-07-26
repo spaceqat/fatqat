@@ -72,7 +72,7 @@ SQRT_X_MATRIX = 0.5 * np.array(
 )
 
 implementation_map = default_matrix_implementation_map()
-implementation_map.register(SqrtX, FixedMatrix(SQRT_X_MATRIX))
+implementation_map.add(SqrtX, FixedMatrix(SQRT_X_MATRIX))
 
 backend = fq.backends.SimulatorBackend("SV", implementation_map=implementation_map)
 
@@ -90,8 +90,8 @@ print(statevector)   # [0, 1]
 
 A few things worth noting about the shape of this API:
 
-- `register()` accepts a bare `np.ndarray` too — it auto-wraps into
-  `FixedMatrix`, so `implementation_map.register(SqrtX, SQRT_X_MATRIX)` works
+- `add()` accepts a bare `np.ndarray` too — it auto-wraps into
+  `FixedMatrix`, so `implementation_map.add(SqrtX, SQRT_X_MATRIX)` works
   just as well as wrapping it explicitly.
 - A custom `Operation` subclass only needs `name` and `_num_subsystems`
   (the fixed arity the matrix implementation map requires — variable-arity
@@ -105,7 +105,7 @@ A few things worth noting about the shape of this API:
   can be reused across multiple backend instances.
 
 If the matrix instead depends on the operation's parameters (e.g. a rotation
-angle) or on target dimension (e.g. a qudit gate), register a bare callable —
+angle) or on target dimension (e.g. a qudit gate), `add()` a bare callable —
 `f(op)` or `f(op, targets)` — instead of a `FixedMatrix`; the map detects
 which shape you passed by inspecting the callable's signature.
 

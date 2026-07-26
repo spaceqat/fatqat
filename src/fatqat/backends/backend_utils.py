@@ -6,8 +6,8 @@ from dataclasses import dataclass, fields
 from typing import Any
 
 from .._engine_index_allocation import _EngineIndexAllocation
-from ..resource_layout import ResourceLayout
 from ..errors import BackendValidationError
+from ..resource_layout import ResourceLayout
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class _PlanFacts:
 
 
 def _normalize_config(
-    options: dict[str, Any] | None,
+    config: dict[str, Any] | None,
     config_cls: type,
     param_name: str,
     backend_name: str = "SimulatorBackend",
@@ -55,12 +55,12 @@ def _normalize_config(
     compatibility is owned by the config dataclass's ``__post_init__``;
     subclasses are responsible for validating fields they add.
     """
-    if options is None:
+    if config is None:
         return config_cls()
-    if not isinstance(options, dict):
-        raise TypeError(f"{param_name} must be a dict or None, got {type(options)!r}")
+    if not isinstance(config, dict):
+        raise TypeError(f"{param_name} must be a dict or None, got {type(config)!r}")
     supported = {field.name for field in fields(config_cls)}
-    unknown = set(options) - supported
+    unknown = set(config) - supported
     if unknown:
         # Dict keys need not be mutually orderable (for example, ``"foo"``
         # and ``3``). Sort their representations so malformed input still
@@ -71,7 +71,7 @@ def _normalize_config(
             f"{backend_name} does not support {param_name} key(s) {names}; "
             f"expected {expected}"
         )
-    return config_cls(**options)
+    return config_cls(**config)
 
 
 def _resolve_condition(

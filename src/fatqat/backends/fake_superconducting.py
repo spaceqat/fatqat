@@ -410,14 +410,16 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
             >>> import numpy as np
             >>> import fatqat as fq
             >>> Sim = fq.backends.SCQubitGoogleSimulator
-            >>> backend = Sim(
-            ...     options={"parallel_mode": "serial"},
-            ...     noise=Sim.default_noise_model(),
-            ... )
+            >>> backend = Sim(method="statevector", runtime="numpy",
+            ...               noise=Sim.default_noise_model())
             >>> program = fq.Program(1, 1)
             >>> program.add(fq.ops.RX(np.pi), 0)  # RX(pi) = X, up to a phase
             >>> program.add_measurement(0, 0)
-            >>> counts = backend.run(program, shots=2000, seed=1).result().get_counts()
+            >>> counts = backend.run(
+            ...     program,
+            ...     shots=2000,
+            ...     simulation_config={"seed": 1, "parallel_mode": "serial"},
+            ... ).result().get_counts()
             >>> counts["1"] > 1800  # mostly 1, but noise leaks some 0s
             True
         """
