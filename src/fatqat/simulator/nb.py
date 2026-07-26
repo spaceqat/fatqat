@@ -815,7 +815,12 @@ def _plan_compilable(plan: list) -> bool:
     which executes every step type correctly at NumPy speed.
     """
     return all(
-        isinstance(step, (ApplyMatrixStep, MeasurementStep, ResetStep)) for step in plan
+        isinstance(step, (ApplyMatrixStep, MeasurementStep, ResetStep))
+        and not (
+            isinstance(step, MeasurementStep)
+            and (step.confusions is not None or step.reported_digit_maps is not None)
+        )
+        for step in plan
     )
 
 

@@ -190,6 +190,7 @@ def _gate_implementation_for(
 def _resolve_confusions(
     measured_targets: tuple[RegisterRef, ...],
     measured_indices: tuple[int, ...],
+    reported_digit_maps: tuple[tuple[int, ...], ...],
     resource_layout: ResourceLayout,
     engine_index_allocation: _EngineIndexAllocation,
     noise_model: NoiseModel,
@@ -205,17 +206,26 @@ def _resolve_confusions(
     backward from a device label.
 
     Raises :py:exc:`~fatqat.errors.BackendValidationError` if a selected
-    matrix's dimension does not match the measured subsystem.
+    matrix's dimension does not match the reported classical digit dimension.
     """
     resolved = []
-    for target, measured in zip(measured_targets, measured_indices):
+    for target, measured, reported_map in zip(
+        measured_targets, measured_indices, reported_digit_maps
+    ):
         confusion = noise_model.readout_error_for(target, resource_layout)
         if confusion is not None:
-            dim = engine_index_allocation.system_dims[measured]
-            if confusion.shape != (dim, dim):
+            physical_dim = engine_index_allocation.system_dims[measured]
+            if len(reported_map) != physical_dim:
+                raise BackendValidationError(
+                    f"reported digit map for subsystem {measured} has length "
+                    f"{len(reported_map)}, expected physical dimension {physical_dim}"
+                )
+            reported_dim = max(reported_map) + 1
+            if confusion.shape != (reported_dim, reported_dim):
                 raise BackendValidationError(
                     f"readout confusion matrix of shape {confusion.shape} "
-                    f"selected for subsystem {measured} of dimension {dim}"
+                    f"selected for subsystem {measured} has reported classical "
+                    f"dimension {reported_dim}"
                 )
         resolved.append(confusion)
     if all(confusion is None for confusion in resolved):
@@ -236,12 +246,18 @@ def _lower_measurement(
     classical_indices = tuple(
         engine_index_allocation.clbit_index(c) for c in step.outputs
     )
+    reported_digit_maps = tuple(
+        tuple(range(engine_index_allocation.system_dims[measured]))
+        for measured in measured_indices
+    )
     return MeasurementStep(
         measured_indices=measured_indices,
         classical_indices=classical_indices,
+        reported_digit_maps=reported_digit_maps,
         confusions=_resolve_confusions(
             step.targets,
             measured_indices,
+            reported_digit_maps,
             resource_layout,
             engine_index_allocation,
             noise_model,

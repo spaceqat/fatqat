@@ -151,27 +151,73 @@ class ApplyChannelStep:
 class MeasurementStep:
     """Resolved measurement: flat subsystem indices into matching flat clbit indices.
 
-    ``confusions`` carries classical readout error, resolved from the noise
+    A measurement has three deliberately separate stages: physical
+    measurement/collapse, physical-outcome-to-reported-digit mapping, then
+    optional classical readout confusion. ``reported_digit_maps`` contains
+    one map per measured subsystem, where a map's index is a physical outcome
+    and its value is the reported classical digit. ``None`` retains the
+    identity-map compatibility default; normal matrix lowering supplies the
+    identity maps explicitly.
+
+    ``confusions`` carries classical readout error resolved from the noise
     model at lowering: one optional column-stochastic confusion matrix per
     measured subsystem (aligned with ``measured_indices``), or ``None`` when
-    no readout error applies to this measurement at all. The physical
-    collapse always uses the true outcome; only the value written to the
-    classical register is resampled through the matrix, so state export and
-    qubit reuse are untouched and execution-strategy classification never
+    no readout error applies. Its dimensions are those of the reported
+    classical digit, not necessarily the engine's physical subsystem. The
+    physical collapse always uses the physical outcome; only the value written
+    to the classical register is mapped and resampled, so state export and
+    subsystem reuse are untouched and execution-strategy classification never
     changes.
     """
 
     measured_indices: tuple[int, ...]
     classical_indices: tuple[int, ...]
     confusions: tuple[np.ndarray | None, ...] | None = None
+    reported_digit_maps: tuple[tuple[int, ...], ...] | None = None
 
     def __post_init__(self) -> None:
+        if len(self.measured_indices) != len(self.classical_indices):
+            raise ValueError("measurement subsystem and classical-index counts differ")
+        if self.reported_digit_maps is not None:
+            if len(self.reported_digit_maps) != len(self.measured_indices):
+                raise ValueError(
+                    "measurement reported-digit-map count must match measured subsystems"
+                )
+            frozen_maps: list[tuple[int, ...]] = []
+            for reported_map in self.reported_digit_maps:
+                reported_map = tuple(reported_map)
+                if not reported_map:
+                    raise ValueError(
+                        "measurement reported-digit maps must not be empty"
+                    )
+                if any(
+                    not isinstance(digit, (int, np.integer)) or isinstance(digit, bool)
+                    for digit in reported_map
+                ) or any(digit < 0 for digit in reported_map):
+                    raise ValueError(
+                        "measurement reported-digit maps must contain non-negative integers"
+                    )
+                frozen_maps.append(tuple(int(digit) for digit in reported_map))
+            object.__setattr__(self, "reported_digit_maps", tuple(frozen_maps))
+
         # Same freezing policy as the array-carrying steps above.
         if self.confusions is None:
             return
+        if len(self.confusions) != len(self.measured_indices):
+            raise ValueError(
+                "measurement confusion count must match measured subsystems"
+            )
         frozen: list[np.ndarray | None] = []
-        for confusion in self.confusions:
+        maps = self.reported_digit_maps or (None,) * len(self.measured_indices)
+        for confusion, reported_map in zip(self.confusions, maps):
             if confusion is not None:
+                if reported_map is not None:
+                    reported_dim = max(reported_map) + 1
+                    if confusion.shape != (reported_dim, reported_dim):
+                        raise ValueError(
+                            "measurement confusion shape must match the reported "
+                            f"classical dimension {reported_dim}, got {confusion.shape}"
+                        )
                 if confusion.flags.writeable:
                     confusion = np.array(confusion, copy=True)
                 confusion.flags.writeable = False

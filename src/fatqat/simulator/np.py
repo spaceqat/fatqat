@@ -36,10 +36,11 @@ Semantics differences:
   unravelling, one rng draw), forcing the per-shot path; the density matrix
   applies the exact Kraus sum ``sum_i K_i rho K_i^dagger`` (no rng draw), so
   an unconditional channel stays on the fast path.
-- classical readout error (``MeasurementStep.confusions``) is identical on
-  both: the collapse keeps the true outcome and only the reported clbit value
-  is resampled, so it never affects path classification. On the per-shot path
-  feedforward conditions read the (possibly corrupted) reported value.
+- measurement reporting is identical on both: the collapse keeps the physical
+  outcome, maps it to a reported digit, then optionally resamples that digit
+  through ``MeasurementStep.confusions``. It never affects path
+  classification. On the per-shot path feedforward conditions read the
+  (possibly confused) reported value.
 """
 
 from __future__ import annotations
@@ -136,51 +137,67 @@ def _condition_matches(
     return condition is None or all(clbits[c] == v for c, v in condition)
 
 
-def _report_digit(true_digit: int, confusion, rng: np.random.Generator) -> int:
-    """Sample the reported digit for one measurement through readout error.
+def _map_physical_digit(physical_digit: int, reported_digit_map) -> int:
+    """Map one physical measurement outcome to its reported classical digit."""
+    if reported_digit_map is None:
+        return physical_digit
+    return reported_digit_map[physical_digit]
 
-    ``confusion`` is column-stochastic (``C[i, j] = P(report i | true j)``)
+
+def _report_digit(reported_digit: int, confusion, rng: np.random.Generator) -> int:
+    """Optionally resample one reported digit through readout error.
+
+    ``confusion`` is column-stochastic (``C[i, j] = P(report i | mapped j)``)
     or ``None`` for an error-free readout. Only the reported classical value
-    is affected; the caller's collapsed state keeps the true outcome.
+    is affected; the caller's collapsed state keeps the physical outcome.
     """
     if confusion is None:
-        return true_digit
-    return int(rng.choice(confusion.shape[0], p=confusion[:, true_digit]))
+        return reported_digit
+    return int(rng.choice(confusion.shape[0], p=confusion[:, reported_digit]))
 
 
-def _confusions_by_clbit(plan: list[ResolvedStep]) -> dict[int, np.ndarray]:
-    """Map each clbit to the confusion of its *last* writer, mirroring decode.
+def _reporting_by_clbit(
+    plan: list[ResolvedStep],
+) -> dict[int, tuple[tuple[int, ...] | None, np.ndarray | None]]:
+    """Map each clbit to the reporting contract of its last writer.
 
     Fast-path counts decode only each clbit's final value (later measurement
-    writes replace earlier ones, see ``decode_indices_to_clbit_rows``), so
-    readout error likewise applies the last writer's confusion - an earlier
-    writer's confusion must not survive an error-free overwrite, hence the
-    unconditional assignment.
+    writes replace earlier ones, see ``decode_indices_to_clbit_rows``), so the
+    physical-to-reported map and its readout confusion must likewise come from
+    the last writer. An earlier map or confusion must not survive an error-free
+    overwrite.
     """
-    by_clbit: dict[int, np.ndarray] = {}
+    by_clbit: dict[int, tuple[tuple[int, ...] | None, np.ndarray | None]] = {}
     for step in plan:
         if isinstance(step, MeasurementStep):
             confusions = step.confusions or (None,) * len(step.classical_indices)
-            for clbit, confusion in zip(step.classical_indices, confusions):
-                by_clbit[clbit] = confusion
-    return {clbit: c for clbit, c in by_clbit.items() if c is not None}
+            maps = step.reported_digit_maps or (None,) * len(step.classical_indices)
+            for clbit, reported_map, confusion in zip(
+                step.classical_indices, maps, confusions
+            ):
+                by_clbit[clbit] = (reported_map, confusion)
+    return by_clbit
 
 
-def _apply_readout_confusion(
+def _apply_measurement_reporting(
     rows: np.ndarray,
-    by_clbit: dict[int, np.ndarray],
+    by_clbit: dict[int, tuple[tuple[int, ...] | None, np.ndarray | None]],
     rng: np.random.Generator,
 ) -> None:
-    """Resample confusion-bearing clbit columns of decoded rows, in place."""
-    for clbit, confusion in by_clbit.items():
+    """Map physical decoded columns, then apply readout confusion in place."""
+    for clbit, (reported_map, confusion) in by_clbit.items():
+        if reported_map is not None:
+            rows[:, clbit] = np.asarray(reported_map, dtype=int)[rows[:, clbit]]
+        if confusion is None:
+            continue
         dim = confusion.shape[0]
-        true_column = rows[:, clbit].copy()
-        for true_digit in range(dim):
-            mask = true_column == true_digit
+        reported_column = rows[:, clbit].copy()
+        for reported_digit in range(dim):
+            mask = reported_column == reported_digit
             hits = int(mask.sum())
             if hits:
                 rows[mask, clbit] = rng.choice(
-                    dim, size=hits, p=confusion[:, true_digit]
+                    dim, size=hits, p=confusion[:, reported_digit]
                 )
 
 
@@ -327,7 +344,7 @@ class _NumpyMatrixSimulator(Simulator):
             rows = decode_indices_to_clbit_rows(
                 indices, measurements, self._dims, self._n_clbits
             )
-            _apply_readout_confusion(rows, _confusions_by_clbit(plan), rng)
+            _apply_measurement_reporting(rows, _reporting_by_clbit(plan), rng)
             outcome_keys, outcome_counts = reduce_to_counts(rows)
         if state_requested:
             state = self.export_state()
@@ -408,10 +425,15 @@ class _NumpyMatrixSimulator(Simulator):
             elif isinstance(step, MeasurementStep):
                 bits = self.measure_subsystems(step.measured_indices, rng)
                 confusions = step.confusions or (None,) * len(bits)
-                # The collapse keeps the true outcome; only the reported
-                # value is resampled, and later conditions read the report.
-                for c, bit, confusion in zip(step.classical_indices, bits, confusions):
-                    clbits[c] = _report_digit(bit, confusion, rng)
+                maps = step.reported_digit_maps or (None,) * len(bits)
+                # The collapse keeps the physical outcome; only its mapped,
+                # optionally confused report is written to the clbits.
+                for c, bit, reported_map, confusion in zip(
+                    step.classical_indices, bits, maps, confusions
+                ):
+                    clbits[c] = _report_digit(
+                        _map_physical_digit(bit, reported_map), confusion, rng
+                    )
             elif _condition_matches(step.condition, clbits):
                 self.reset_subsystems(step.reset_indices, rng)
         return tuple(clbits)
