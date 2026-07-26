@@ -33,6 +33,17 @@ Built-in channels
 :py:func:`~fatqat.noise.relaxation_channels` (``t1, t2, duration``) returns compatible
 damping and dephasing channels for a qubit gate with a known duration.
 
+Continuous pulse noise
+----------------------
+
+The superconducting pulse backend also accepts
+:py:class:`~fatqat.noise.ThermalRelaxation` through
+:py:meth:`add_continuous_noise <fatqat.NoiseModel.add_continuous_noise>`. Its
+``T1_ns`` and ``T2_ns`` values act throughout pulse and idle evolution in the
+physical qutrit model. It is distinct from the gate-keyed channels above;
+matrix-family backends reject continuous descriptors, while the pulse backend
+rejects gate-keyed channels. Coherent ZZ is not available in v0.1.
+
 The :doc:`../guide/noise` guide explains method choice, target selection,
 and a readout-error matrix example. Physical device selectors and custom
 channel implementation machinery are backend-author concerns and are not
@@ -54,6 +65,10 @@ Detailed reference
    :show-inheritance:
 
 .. autoclass:: fatqat.noise.PhaseDamping
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.noise.ThermalRelaxation
    :members:
    :show-inheritance:
 

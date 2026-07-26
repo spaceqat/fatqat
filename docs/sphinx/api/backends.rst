@@ -225,6 +225,37 @@ calibration-derived default noise model; a supplied
 Detailed reference
 ------------------
 
+Superconducting pulse backend
+-----------------------------
+
+:py:class:`~fatqat.backends.PulseBackend` is a separately configured,
+physical three-level-transmon simulator. It does not replace the matrix
+family's IBM- and Google-style superconducting targets above.
+
+Load a data-only model snapshot with
+:py:func:`~fatqat.backends.load_physics_model`, then load the matching,
+identity-bound calibration using
+:py:func:`~fatqat.backends.load_calibration_spec`. The only public factory
+for the built-in model family is
+:py:class:`~fatqat.backends.SCTransmonExchangeBuilder`; scheduler, pulse, and
+QuTiP objects are not public API.
+
+The native operation set is ``RX``, ``RY``, virtual ``RZ``, ``iSwap``, and
+oriented ``CZ`` on declared coupling edges. ``simulation_config`` accepts
+``seed`` and serial execution controls plus ``placement_mode="ASAP"`` or
+``"ALAP"``. These private placement modes preserve program dependencies and
+resource exclusivity; they do not expose a hardware schedule.
+
+Request counts with ``result_config={"counts": True}`` and the final physical
+density matrix with ``result_config={"final_state": True}``. That density
+matrix includes every transmon in the selected model, even if the program did
+not address it, and has shape ``(3**m, 3**m)`` for ``m`` model subsystems.
+
+Pulse execution supports continuous
+:py:class:`~fatqat.noise.ThermalRelaxation` (T1/T2) and readout confusion
+through :py:class:`~fatqat.NoiseModel`. Coherent ZZ and gate-keyed channel
+noise are not supported by this backend in v0.1.
+
 .. autoclass:: fatqat.backends.SimulatorBackend
    :members:
    :show-inheritance:
@@ -240,3 +271,13 @@ Detailed reference
 .. autoclass:: fatqat.backends.AtomGridBackend
    :members:
    :show-inheritance:
+
+.. autoclass:: fatqat.backends.PulseBackend
+   :members:
+
+.. autoclass:: fatqat.backends.SCTransmonExchangeBuilder
+   :members:
+
+.. autofunction:: fatqat.backends.load_physics_model
+
+.. autofunction:: fatqat.backends.load_calibration_spec

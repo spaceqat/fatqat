@@ -1,5 +1,6 @@
-"""Private pulse-backend implementation family.
+"""Private implementation modules for the public superconducting pulse backend.
 
-Nothing in this package is exported from :mod:`fatqat.backends` until the
-completed pulse backend passes its public release gate.
+Use :class:`fatqat.backends.PulseBackend` and the loader helpers exported from
+:mod:`fatqat.backends`. The scheduler, resolved pulse representation, and
+QuTiP adapter intentionally remain private implementation details.
 """
