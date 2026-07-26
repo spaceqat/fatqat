@@ -88,3 +88,25 @@ def test_calibration_rejects_incomplete_or_invalid_recipe_values(mutate):
     mutate(document)
     with pytest.raises(BackendValidationError):
         load_calibration_spec(document, load_physics_model(_model_document()))
+
+
+def test_calibration_permits_unreferenced_uncalibrated_model_edges():
+    model_document = _model_document()
+    model_document["parameters"]["subsystems"].append(
+        {"id": "q2", "frequency": 5.35, "anharmonicity": -0.23}
+    )
+    model_document["parameters"]["couplings"].append(
+        {"id": "e1", "subsystems": ["q1", "q2"]}
+    )
+    model = load_physics_model(model_document)
+
+    calibration = load_calibration_spec(_calibration_document(), model)
+    assert len(calibration.recipe("cz")["edges"]) == 1
+
+
+@pytest.mark.parametrize("drag_coefficient", [0.0, -0.5])
+def test_calibration_permits_dimensionless_drag_sign_or_disable(drag_coefficient):
+    document = _calibration_document()
+    document["recipes"]["rx_ry"]["drag_coefficient"] = drag_coefficient
+    calibration = load_calibration_spec(document, load_physics_model(_model_document()))
+    assert calibration.recipe("rx_ry")["drag_coefficient"] == drag_coefficient

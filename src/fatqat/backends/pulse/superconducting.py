@@ -581,6 +581,7 @@ class CalibrationSpec:
             recipes["rx_ry"],
             "calibration.recipes.rx_ry",
             {"duration_ns", "drag_coefficient"},
+            positive_fields={"duration_ns"},
         )
         CalibrationSpec._validate_single_qubit(
             recipes["rz"],
@@ -674,11 +675,6 @@ class CalibrationSpec:
                 )
             for subsystem_id, phase in corrections.items():
                 _number(phase, f"{path}.phase_corrections_rad.{subsystem_id}")
-        if found_edges != expected_edges:
-            _fail(
-                "calibration.recipes.cz.edges",
-                "must provide one recipe for every declared coupling edge",
-            )
 
     @staticmethod
     def _validate_single_qubit(
@@ -702,10 +698,3 @@ class CalibrationSpec:
 def load_calibration_spec(document: Any, model: PhysicsModel) -> CalibrationSpec:
     """Parse and validate one calibration document against its physics model."""
     return CalibrationSpec.from_mapping(document, model)
-
-
-def realize_sc_operation(*args: Any, **kwargs: Any) -> Any:
-    """Compatibility seam for SC realization; see ``resolved.realize_native_operation``."""
-    from .resolved import realize_native_operation
-
-    return realize_native_operation(*args, **kwargs)
