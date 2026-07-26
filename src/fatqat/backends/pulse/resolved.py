@@ -139,15 +139,31 @@ class PulseBlock:
                 "a positive-duration pulse block requires physical controls"
             )
         seen_channels: set[ControlChannelRef | CouplingRef] = set()
+        required_claim_sets: list[set[ResourceClaim]] = []
+        bound_couplings: set[CouplingRef] = set()
         for child in self.children:
             if not isinstance(child, SampledControl):
                 raise BackendValidationError(
                     "pulse-block children must be SampledControl values"
                 )
             if isinstance(child.channel, ControlChannelRef):
-                self.model.bind_control(child.channel)
+                control_ordinal = self.model.bind_control(child.channel)
+                required_claim_sets.append(
+                    {self.model.resource(self.model.subsystem_ids[control_ordinal])}
+                )
             elif isinstance(child.channel, CouplingRef):
-                self.model.bind_coupling(child.channel)
+                coupling_ordinal = self.model.bind_coupling(child.channel)
+                bound_couplings.add(child.channel)
+                coupling = self.model.couplings[coupling_ordinal]
+                required_claim_sets.append(
+                    {
+                        child.channel,
+                        *(
+                            self.model.resource(subsystem_id)
+                            for subsystem_id in coupling.subsystem_ids
+                        ),
+                    }
+                )
             else:
                 raise BackendValidationError(
                     "pulse control has an unknown channel reference"
@@ -166,7 +182,10 @@ class PulseBlock:
             if isinstance(resource, SubsystemResourceRef):
                 self.model.bind_resource(resource)
             elif isinstance(resource, CouplingRef):
-                self.model.bind_coupling(resource)
+                # Already bound above if this claim is also a driven child's
+                # channel (the common iSwap/CZ case) - avoid re-binding it.
+                if resource not in bound_couplings:
+                    self.model.bind_coupling(resource)
             else:
                 raise BackendValidationError(
                     "pulse block has an unknown resource claim"
@@ -176,6 +195,11 @@ class PulseBlock:
                     "pulse block has a duplicate resource claim"
                 )
             seen_resources.add(resource)
+        for required_claims in required_claim_sets:
+            if not required_claims <= seen_resources:
+                raise BackendValidationError(
+                    "pulse block resource claims do not cover a driven control"
+                )
         for action in self.post_actions:
             if isinstance(action, PhaseShift):
                 self.model.bind_frame(action.frame)

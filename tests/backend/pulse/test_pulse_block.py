@@ -40,6 +40,15 @@ def test_pulse_block_rejects_invalid_timing_and_same_channel_summation():
         )
     with pytest.raises(BackendValidationError, match="zero-duration"):
         PulseBlock(model, 0.0, (_control(model),), (model.resource("q0"),))
+    with pytest.raises(BackendValidationError, match="do not cover"):
+        PulseBlock(model, 1.0, (_control(model),), (model.resource("q1"),))
+    with pytest.raises(BackendValidationError, match="do not cover"):
+        PulseBlock(
+            model,
+            1.0,
+            (SampledControl(model.coupling("q0", "q1"), [0.0, 1.0], [0.0, 0.0]),),
+            (model.resource("q0"), model.resource("q1")),
+        )
 
 
 def test_pulse_block_rejects_cross_model_handles_and_keeps_arrays_immutable():
