@@ -13,7 +13,8 @@ class ResetGate(Operation):
     """Reset operation: repreparation of one or more target subsystems in ``|0>``.
 
     Has no matrix; the matrix-family backend resolves it to a boundary reset
-    step by operation type. The class itself is not part of the ``fq.ops``
+    step by operation type. The class itself is not part of the
+    ``fatqat.operations``
     public surface (not in ``__all__``) but stays attribute-accessible for
     ``isinstance`` checks against ``Reset`` steps; ``Reset`` (the singleton)
     is the one users construct programs with.

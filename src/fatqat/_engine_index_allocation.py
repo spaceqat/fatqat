@@ -100,7 +100,7 @@ class _EngineIndexAllocation:
         q_offsets: dict[Register, int] = {}
         system_dims: list[int] = []
         offset = 0
-        for reg in program.qreg:
+        for reg in program.quantum_registers:
             q_offsets[reg] = offset
             system_dims.extend(reg.dim for _ in range(reg.size))
             offset += reg.size
@@ -108,7 +108,7 @@ class _EngineIndexAllocation:
         c_offsets: dict[Register, int] = {}
         classical_dims: list[int] = []
         coffset = 0
-        for reg in program.clreg:
+        for reg in program.classical_registers:
             c_offsets[reg] = coffset
             classical_dims.extend(reg.dim for _ in range(reg.size))
             coffset += reg.size

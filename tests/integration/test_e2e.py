@@ -9,8 +9,8 @@ def test_minimal_workflow_from_spec():
     program = fq.Program(2, 2)
     program.add(fq.ops.H, 0)
     program.add(fq.ops.CZ, (0, 1))
-    program.add_measurement(0, 0)
-    program.add_measurement(1, 1)
+    program.measure(0, 0)
+    program.measure(1, 1)
 
     backend = fq.backends.SimulatorBackend("SV")
     job = backend.run(
@@ -32,7 +32,7 @@ def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
     program = fq.Program(2, 2)
     program.add(fq.ops.X, 0)
     program.add(fq.ops.X, 1)
-    program.add_measurement((0, 1), (0, 1))
+    program.measure((0, 1), (0, 1))
     program.add(fq.ops.Reset, (0, 1))
     program.measure_all()
 
@@ -62,8 +62,8 @@ def test_heterogeneous_qutrit_qubit_program():
     program = fq.Program([qt, qb], [ct, cb])
     program.add(fq.ops.Shift(1), qt[0])  # qutrit |0> -> |1>
     program.add(fq.ops.X, qb[0])  # qubit  |0> -> |1>
-    program.add_measurement(qt[0], ct[0])
-    program.add_measurement(qb[0], cb[0])
+    program.measure(qt[0], ct[0])
+    program.measure(qb[0], cb[0])
     result = fq.backends.SimulatorBackend("SV").run(program, shots=16).result()
     assert result.get_counts_as_tuples() == {(1, 1): 16}
 
@@ -87,12 +87,12 @@ def test_sum_entangles_two_qutrits():
     creg = fq.ClassicalRegister(2, dim=3)
     program = fq.Program([qreg], [creg])
     program.add(fq.ops.Shift(2), 0)  # control qutrit -> |2>
-    program.add_measurement(0, 0)  # clbit0 = 2 (mid-circuit; deterministic)
+    program.measure(0, 0)  # clbit0 = 2 (mid-circuit; deterministic)
     # Condition genuinely fires (clbit0 == 2, a value only reachable by a
     # qudit, not just 0/1), proving condition literals are compared for exact
     # equality rather than truthiness for dim > 2.
     program.add(fq.ops.Sum, (0, 1), condition=(creg[0], 2))  # target -> (2+0)%3 = 2
-    program.add_measurement(1, 1)
+    program.measure(1, 1)
     result = fq.backends.SimulatorBackend("SV").run(program, shots=32).result()
     assert result.get_counts_as_tuples() == {(2, 2): 32}
 
@@ -103,7 +103,7 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
         creg = fq.ClassicalRegister(1, dim=3)
         p = fq.Program([qreg], [creg])
         p.add(fq.ops.Shift(2), 0)  # deterministic |0> -> |2>
-        p.add_measurement(0, 0)
+        p.measure(0, 0)
         if force_dynamic:
             # Inert no-op: Shift(0) is the identity, and its condition can
             # never be satisfied (the measured clbit is always 2), so this
@@ -111,7 +111,7 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
             # (a condition) forces the statevector engine's dynamic classification,
             # letting the dynamic path be compared against the fast path for
             # the identical program shape and seed.
-            p.add(fq.ops.Shift(0), 0, condition=(p.clreg[0][0], 0))
+            p.add(fq.ops.Shift(0), 0, condition=(p.classical_registers[0][0], 0))
         return p
 
     fast_counts = (
@@ -162,10 +162,10 @@ def test_qutrit_circuit_with_new_gates_produces_expected_counts():
     qreg = fq.QuantumRegister(2, dim=3)
     creg = fq.ClassicalRegister(2, dim=3)
     program = fq.Program([qreg], [creg])
-    # q0: |0> -> Fourier -> Fourierdg -> |0> (round-trip identity; exercises
-    # Fourier/Fourierdg through the real backend without changing the state).
+    # q0: |0> -> Fourier -> InverseFourier -> |0> (round-trip identity; exercises
+    # Fourier/InverseFourier through the real backend without changing the state).
     program.add(fq.ops.Fourier, 0)
-    program.add(fq.ops.Fourierdg, 0)
+    program.add(fq.ops.InverseFourier, 0)
     # q0: |0> -> SwapLevels(0, 2) -> |2>
     program.add(fq.ops.SwapLevels(0, 2), 0)
     # q0: |2> -> SubspaceRX(pi, (0, 2)) -> -i|0>. The subspace's "k" role

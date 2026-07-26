@@ -167,17 +167,17 @@ class _SCQubitSimulator(SimulatorBackend):
                 not fit the device's, axis by axis.
         """
         name = type(self).__name__
-        n_subsystems = sum(register.size for register in program.qreg)
+        n_subsystems = sum(register.size for register in program.quantum_registers)
         capacity = self._rows * self._cols
         if n_subsystems > capacity:
             raise BackendValidationError(
                 f"{name} supports at most {capacity} qubits on its "
                 f"{self._rows}x{self._cols} device, got {n_subsystems}"
             )
-        dims = (register.dim for register in program.qreg for _ in range(register.size))
+        dims = (register.dim for register in program.quantum_registers for _ in range(register.size))
         if any(dim != 2 for dim in dims):
             raise BackendValidationError(f"{name} only supports qubit dimensions")
-        grid_registers = [r for r in program.qreg if isinstance(r, GridRegister)]
+        grid_registers = [r for r in program.quantum_registers if isinstance(r, GridRegister)]
         if len(grid_registers) > 1:
             raise BackendValidationError(
                 f"{name} accepts at most one GridRegister per program, "
@@ -187,7 +187,7 @@ class _SCQubitSimulator(SimulatorBackend):
             return super()._resolve_resource_layout(program)
 
         grid = grid_registers[0]
-        if len(program.qreg) != 1:
+        if len(program.quantum_registers) != 1:
             raise BackendValidationError(
                 f"{name} rejects a GridRegister combined with any other "
                 "quantum register"
@@ -247,7 +247,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
     that do not fit that device shape (too many qubits, or any non-qubit-dimension
     register), and grid-aware resource mapping (see
     `_resolve_resource_layout`). Qubits here are always "on" - there is no
-    atom-loading concept, unlike :py:class:`~fatqat.backends.AtomGridBackend`.
+    atom-loading concept, unlike :py:class:`~fatqat.backends.AtomGridSimulator`.
     """
 
     def __init__(
@@ -315,7 +315,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
             >>> program = fq.Program(1, 1)
             >>> program.add(op.SX, 0)
             >>> program.add(op.SX, 0)  # SX SX = X, up to a phase
-            >>> program.add_measurement(0, 0)
+            >>> program.measure(0, 0)
             >>> counts = backend.run(
             ...     program,
             ...     shots=2000,
@@ -327,13 +327,13 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         noise = NoiseModel()
         damping, dephasing = relaxation_channels(_T1, _T2, _SX_DURATION)
         for gate in (ops.X, ops.SX):
-            noise.add_noise(gate, damping)
-            noise.add_noise(gate, dephasing)
+            noise.add_channel(gate, damping)
+            noise.add_channel(gate, dephasing)
         cz_damping, cz_dephasing = relaxation_channels(_T1, _T2, _CZ_DURATION)
         for slot in (0, 1):
-            noise.add_noise(ops.CZ, cz_damping, slots=(slot,))
-            noise.add_noise(ops.CZ, cz_dephasing, slots=(slot,))
-        noise.add_noise(ops.CZ, Depolarizing(p=_CZ_DEPOLARIZING_P))
+            noise.add_channel(ops.CZ, cz_damping, slots=(slot,))
+            noise.add_channel(ops.CZ, cz_dephasing, slots=(slot,))
+        noise.add_channel(ops.CZ, Depolarizing(p=_CZ_DEPOLARIZING_P))
         noise.add_readout_error(
             np.array(
                 [
@@ -391,7 +391,7 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
     that device shape (too many qubits, or any non-qubit-dimension
     register), and grid-aware resource mapping (see
     `_resolve_resource_layout`). Qubits here are always "on" - there is no
-    atom-loading concept, unlike :py:class:`~fatqat.backends.AtomGridBackend`.
+    atom-loading concept, unlike :py:class:`~fatqat.backends.AtomGridSimulator`.
     """
 
     def __init__(
@@ -461,7 +461,7 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
             ...               noise=Sim.default_noise_model())
             >>> program = fq.Program(1, 1)
             >>> program.add(op.RX(np.pi), 0)  # RX(pi) = X, up to a phase
-            >>> program.add_measurement(0, 0)
+            >>> program.measure(0, 0)
             >>> counts = backend.run(
             ...     program,
             ...     shots=2000,
@@ -473,18 +473,18 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         noise = NoiseModel()
         damping, dephasing = relaxation_channels(_T1, _T2, _ROTATION_DURATION)
         for gate in (ops.RX, ops.RY, ops.RZ):
-            noise.add_noise(gate, damping)
-            noise.add_noise(gate, dephasing)
+            noise.add_channel(gate, damping)
+            noise.add_channel(gate, dephasing)
         iswap_damping, iswap_dephasing = relaxation_channels(_T1, _T2, _ISWAP_DURATION)
         for slot in (0, 1):
-            noise.add_noise(ops.iSwap, iswap_damping, slots=(slot,))
-            noise.add_noise(ops.iSwap, iswap_dephasing, slots=(slot,))
-        noise.add_noise(ops.iSwap, Depolarizing(p=_ISWAP_DEPOLARIZING_P))
+            noise.add_channel(ops.iSwap, iswap_damping, slots=(slot,))
+            noise.add_channel(ops.iSwap, iswap_dephasing, slots=(slot,))
+        noise.add_channel(ops.iSwap, Depolarizing(p=_ISWAP_DEPOLARIZING_P))
         cz_damping, cz_dephasing = relaxation_channels(_T1, _T2, _CZ_DURATION)
         for slot in (0, 1):
-            noise.add_noise(ops.CZ, cz_damping, slots=(slot,))
-            noise.add_noise(ops.CZ, cz_dephasing, slots=(slot,))
-        noise.add_noise(ops.CZ, Depolarizing(p=_CZ_DEPOLARIZING_P))
+            noise.add_channel(ops.CZ, cz_damping, slots=(slot,))
+            noise.add_channel(ops.CZ, cz_dephasing, slots=(slot,))
+        noise.add_channel(ops.CZ, Depolarizing(p=_CZ_DEPOLARIZING_P))
         noise.add_readout_error(
             np.array(
                 [

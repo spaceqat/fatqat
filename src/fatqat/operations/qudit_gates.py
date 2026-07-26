@@ -121,7 +121,7 @@ class SumGate(Operation):
     At its smallest dimension, :math:`d = 2`, this reduces to exactly
     :class:`CXGate`.
 
-    The class itself is not part of the ``fq.ops`` public surface (not in
+    The class itself is not part of the ``fatqat.operations`` public surface (not in
     ``__all__``) but stays attribute-accessible for ``isinstance`` checks;
     ``Sum`` (the singleton) is the one users add to a program.
     """
@@ -234,12 +234,10 @@ class FourierdgGate(Operation):
         1&1&1\\\\ 1&\\omega^2&\\omega\\\\ 1&\\omega&\\omega^2
         \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
 
-    Internal only: not imported into `operations/__init__.py`, so it is not
-    reachable as `op.FourierdgGate`. `Fourierdg` (the singleton) is the
-    only public surface.
+    The public singleton is :data:`~fatqat.operations.InverseFourier`.
     """
 
-    name: ClassVar[str] = "Fourierdg"
+    name: ClassVar[str] = "InverseFourier"
     _num_subsystems: ClassVar[int] = 1
 
 
@@ -247,7 +245,7 @@ class FourierdgGate(Operation):
 # fixed-gate instances" convention already used for Sum). Unlike SumGate,
 # the classes themselves are not imported into operations/__init__.py.
 Fourier = FourierGate()
-Fourierdg = FourierdgGate()
+InverseFourier = FourierdgGate()
 
 
 @dataclass(frozen=True)

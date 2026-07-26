@@ -308,7 +308,7 @@ class _QASMBuilder:
         c_refs = self._resolve_operand(c_operand, self._creg_by_name, "classical")
         if len(q_refs) != len(c_refs):
             raise QASMTranspileError("measurement operands must have the same size")
-        self.program.add_measurement(_as_operand(q_refs), _as_operand(c_refs))
+        self.program.measure(_as_operand(q_refs), _as_operand(c_refs))
 
     def _add_instruction(self, statement: str) -> None:
         condition = None
@@ -437,7 +437,7 @@ class _QASMBuilder:
         if name in fixed:
             _require_param_count(name, params, 0)
             op = fixed[name]
-            _require_operand_count(name, op.num_subsystems, n_operands)
+            _require_operand_count(name, op.num_targets, n_operands)
             return (op,)
 
         parametric = {
@@ -454,7 +454,7 @@ class _QASMBuilder:
             count, factory = parametric[name]
             _require_param_count(name, params, count)
             op = factory(*params)
-            _require_operand_count(name, op.num_subsystems, n_operands)
+            _require_operand_count(name, op.num_targets, n_operands)
             return (op,)
 
         if name in {"u", "u3"}:
@@ -490,7 +490,7 @@ class _QASMBuilder:
         *,
         condition: tuple[tuple[RegisterRef, int], ...] | None,
     ) -> None:
-        arity = op.num_subsystems
+        arity = op.num_targets
         if arity is None:
             if len(operand_groups) != 1:
                 raise QASMTranspileError(f"{op.name} expects one register operand")
@@ -816,12 +816,12 @@ class _Layout:
         # module's importer would then reject on round-trip).
         taken: set[str] = set()
 
-        for i, reg in enumerate(program.qreg):
+        for i, reg in enumerate(program.quantum_registers):
             self._check_dim(reg, "quantum")
             name = _sanitize_identifier(reg.name, f"q{i}", taken)
             self.q_info[reg] = _RegInfo(name, reg.size)
 
-        for i, reg in enumerate(program.clreg):
+        for i, reg in enumerate(program.classical_registers):
             self._check_dim(reg, "classical")
             name = _sanitize_identifier(reg.name, f"c{i}", taken)
             self.c_info[reg] = _RegInfo(name, reg.size)

@@ -637,8 +637,8 @@ def test_fourier_reduces_to_h_at_dim2():
 def test_default_map_has_fourier_and_fourierdg():
     m = default_matrix_implementation_map()
     got_f = m.implementation_for(ops.Fourier)(ops.Fourier, targets=_qutrit_targets(1))
-    got_fdg = m.implementation_for(ops.Fourierdg)(
-        ops.Fourierdg, targets=_qutrit_targets(1)
+    got_fdg = m.implementation_for(ops.InverseFourier)(
+        ops.InverseFourier, targets=_qutrit_targets(1)
     )
     assert got_f.shape == (3, 3)
     assert got_fdg.shape == (3, 3)

@@ -18,7 +18,7 @@ class BarrierGate(Operation):
     ``Program.operations``, so compiler passes can read barrier boundaries
     from the un-lowered program.
 
-    The class itself is not part of the ``fq.ops`` public surface (not in
+    The class itself is not part of the ``fatqat.operations`` public surface (not in
     ``__all__``) but stays attribute-accessible for ``isinstance`` checks;
     ``Barrier`` (the singleton) is the one users construct programs with. A
     barrier may span any number of subsystems.
@@ -31,7 +31,7 @@ class BarrierGate(Operation):
         >>> program = fq.Program(2, 2)
         >>> program.add(op.X, 0)
         >>> program.add(op.Barrier, (0, 1))
-        >>> program.add_measurement((0, 1), (0, 1))
+        >>> program.measure((0, 1), (0, 1))
         >>> result = fq.backends.SimulatorBackend().run(
         ...     program, shots=5, simulation_config={"seed": 0}
         ... ).result()

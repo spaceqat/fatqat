@@ -24,7 +24,7 @@ unambiguous in programs with several registers:
    left = fq.QuantumRegister(2, name="left")
    right = fq.QuantumRegister(2, name="right")
    program = fq.Program([left, right])
-   program.add(op.H, program.qreg[1][0])
+   program.add(op.H, program.quantum_registers[1][0])
 
 Grid registers
 --------------

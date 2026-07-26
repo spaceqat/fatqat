@@ -27,16 +27,16 @@ cbit = fq.ClassicalRegister(1, name="c_qubit")
 ctrit = fq.ClassicalRegister(1, dim=3, name="c_qutrit")
 
 program = fq.Program([qubit, qutrit], [cbit, ctrit])
-program.add(op.X, program.qreg[0][0])            # qubit: |0> -> |1>
-program.add(op.Shift(1), program.qreg[1][0])     # qutrit: |0> -> |1>
-program.add_measurement(program.qreg[0][0], program.clreg[0][0])
-program.add_measurement(program.qreg[1][0], program.clreg[1][0])
+program.add(op.X, program.quantum_registers[0][0])            # qubit: |0> -> |1>
+program.add(op.Shift(1), program.quantum_registers[1][0])     # qutrit: |0> -> |1>
+program.measure(program.quantum_registers[0][0], program.classical_registers[0][0])
+program.measure(program.quantum_registers[1][0], program.classical_registers[1][0])
 
 result = fq.backends.SimulatorBackend("SV").run(program, shots=100).result()
 print(result.get_counts())   # {"11": 100}
 ```
 
-Each register keeps its own dimension; `add()` and `add_measurement()`
+Each register keeps its own dimension; `add()` and `measure()`
 resolve targets against whichever register a `RegisterRef` names, so mixed
 dimensions require no special handling beyond addressing the right register
 explicitly (see [Gates](gates.md) for how targets are addressed).

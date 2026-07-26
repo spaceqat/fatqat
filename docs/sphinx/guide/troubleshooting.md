@@ -9,7 +9,7 @@ you to inspect backend or engine internals.
 | Counts are unavailable | Add a measurement and request `{"counts": True}` when the output must be explicit. |
 | A state accessor is unavailable | Request the corresponding result field and use the backend method that provides it: `statevector` for `get_statevector()` or `density_matrix` for `get_density_matrix()`. |
 | An operation is unsupported | Start with {py:class}`~fatqat.backends.SimulatorBackend`. A ``Fake...Backend`` intentionally accepts only its own native gate set and connectivity. |
-| An integer target is ambiguous | The program has multiple registers. Pass a reference such as `program.qreg[1][0]` instead of a bare integer. |
+| An integer target is ambiguous | The program has multiple registers. Pass a reference such as `program.quantum_registers[1][0]` instead of a bare integer. |
 | Counts vary between runs | Measurement is sampled. Use more `shots` for a steadier estimate and pass `seed=` for reproducible samples. |
 
 ## Result fields

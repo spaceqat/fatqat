@@ -51,12 +51,12 @@ from ..registers import QuantumRegister, RegisterRef, RegisterView
 from ..resource_layout import DeviceOperand, ResourceLayout
 from .base import Channel
 
-# One entry per add_noise() call: an all-targets fallback (None), a
+# One entry per add_channel() call: an all-targets fallback (None), a
 # logical ref-tuple selector, or a physical device-label-tuple selector
 # (homogeneous, validated).
 _GateSelector = tuple[RegisterRef, ...] | tuple[DeviceOperand, ...] | None
 
-# What add_noise() itself accepts as `targets`: everything _GateSelector
+# What add_channel() itself accepts as `targets`: everything _GateSelector
 # does, plus a bare RegisterRef/device label as shorthand for a one-element
 # tuple (only valid for a fixed arity-1 operation - _normalize_selector
 # wraps it and the existing length check rejects it otherwise).
@@ -87,7 +87,7 @@ class NoiseModel:
     `Channel` descriptors. Lookup prefers specific-target entries and falls
     back to the all-targets entry - a specific match replaces defaults of the
     same extent for that occurrence, while every other occurrence still gets
-    the default (Qiskit Aer's precedence). Repeated ``add_noise`` calls
+    the default (Qiskit Aer's precedence). Repeated ``add_channel`` calls
     accumulate: each attached channel is an independent physical mechanism,
     applied in registration order.
 
@@ -103,7 +103,7 @@ class NoiseModel:
         >>> import fatqat as fq
         >>> import fatqat.operations as op
         >>> noise = fq.NoiseModel()
-        >>> noise.add_noise(op.X, fq.noise.Depolarizing(p=0.2))
+        >>> noise.add_channel(op.X, fq.noise.Depolarizing(p=0.2))
         >>> program = fq.Program(1)
         >>> program.add(op.X, 0)
         >>> result = fq.backends.SimulatorBackend(method="DM", noise=noise).run(
@@ -121,7 +121,7 @@ class NoiseModel:
         self.qubit_noise: dict[Any, Any] = {}
         self.metadata: dict[str, Any] = {}
 
-    def add_noise(
+    def add_channel(
         self,
         operation: Operation | type[Operation],
         channel: Channel,
@@ -392,7 +392,7 @@ class NoiseModel:
         """
         program_refs = frozenset(
             ref
-            for register in program.qreg
+            for register in program.quantum_registers
             for ref in (register[i] for i in range(register.size))
         )
         device_labels = resource_layout.device_labels
@@ -462,7 +462,7 @@ def _normalize_selector(
     op_cls: type[Operation],
     targets: _GateTargetsArg,
 ) -> _GateSelector:
-    """Validate and normalize an ``add_noise`` target selector.
+    """Validate and normalize an ``add_channel`` target selector.
 
     A selector is ``None``, a tuple wholly of `RegisterRef` (logical), a
     tuple wholly of some other hashable (physical device resource labels),

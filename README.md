@@ -17,7 +17,7 @@ import fatqat.operations as op
 program = fq.Program(2, 2)          # 2 qubits, 2 clbits
 program.add(op.H, 0)
 program.add(op.CX, (0, 1))
-program.add_measurement((0, 1), (0, 1))
+program.measure((0, 1), (0, 1))
 
 backend = fq.backends.SimulatorBackend(method="SV")
 result = backend.run(program, shots=1000, simulation_config={"seed": 7}).result()
@@ -68,11 +68,11 @@ what the program needs:
 ```python
 dyn = fq.Program(2, 2)
 dyn.add(op.H, 0)
-dyn.add_measurement(0, 0)                # mid-circuit measurement
+dyn.measure(0, 0)                # mid-circuit measurement
 dyn.add(op.X, 1, condition=(0, 1))   # applied only when clbit 0 read 1
 dyn.add(op.Reset, 0)                 # reprepare q0 in |0>
 dyn.add(op.Barrier, (0, 1))          # compiler marker, no-op here
-dyn.add_measurement(1, 1)
+dyn.measure(1, 1)
 ```
 
 ## Noise
@@ -86,10 +86,10 @@ Quantum channels attach to gate occurrences; readout error is classical
 import numpy as np
 
 noise = fq.NoiseModel()
-noise.add_noise(op.CX, fq.noise.Depolarizing(p=0.05))
+noise.add_channel(op.CX, fq.noise.Depolarizing(p=0.05))
 damping, dephasing = fq.noise.relaxation_channels(t1=60e-6, t2=80e-6, duration=2e-6)
-noise.add_noise(op.H, damping)
-noise.add_noise(op.H, dephasing)
+noise.add_channel(op.H, damping)
+noise.add_channel(op.H, dephasing)
 noise.add_readout_error(np.array([[0.98, 0.05], [0.02, 0.95]]))
 
 backend = fq.backends.SimulatorBackend(method="DM", noise=noise)

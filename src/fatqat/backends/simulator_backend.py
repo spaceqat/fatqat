@@ -560,7 +560,7 @@ class SimulatorBackend:
         """
         labels: dict[RegisterRef, DeviceOperand] = {}
         index = 0
-        for register in program.qreg:
+        for register in program.quantum_registers:
             for i in range(register.size):
                 labels[register[i]] = index
                 index += 1

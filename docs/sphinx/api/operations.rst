@@ -12,7 +12,7 @@ The entries below retain their generated constructors and public members
 for exact interface details.
 
 .. autoclass:: fatqat.operations.Operation
-   :members:
+   :members: name, num_targets, accepts_views, validate_targets
    :show-inheritance:
 
 Fixed single-qubit gates
@@ -40,7 +40,7 @@ Fixed single-qubit gates
 Atom loading
 ------------
 
-.. autoclass:: fatqat.operations.LoadAtom
+.. autoclass:: fatqat.operations.LoadAtoms
    :members:
    :show-inheritance:
 
@@ -111,7 +111,7 @@ Qudit gates
 :py:obj:`~fatqat.operations.Sum`,
 :py:obj:`~fatqat.operations.SwapLevels` (``j, k``),
 :py:obj:`~fatqat.operations.Fourier`,
-:py:obj:`~fatqat.operations.Fourierdg`,
+:py:obj:`~fatqat.operations.InverseFourier`,
 :py:obj:`~fatqat.operations.SubspaceRX` (``theta, subspace``),
 :py:obj:`~fatqat.operations.SubspaceRY` (``theta, subspace``),
 :py:obj:`~fatqat.operations.SubspaceRZ` (``theta, subspace``), and
@@ -136,7 +136,7 @@ syntax, target order, and grid selections.
    :show-inheritance:
 
 .. autodata:: fatqat.operations.Fourier
-.. autodata:: fatqat.operations.Fourierdg
+.. autodata:: fatqat.operations.InverseFourier
 
 .. autoclass:: fatqat.operations.SubspaceRX
    :members:

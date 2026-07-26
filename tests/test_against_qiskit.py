@@ -281,7 +281,7 @@ def _aer_model(error, gate_names):
 def test_depolarizing_on_two_qubit_gate_matches_aer(runtime):
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add_noise(fq.ops.CX, fq.noise.Depolarizing(p=0.1))
+    noise.add_channel(fq.ops.CX, fq.noise.Depolarizing(p=0.1))
     aer_model = _aer_model(depolarizing_error(0.1, 2), ["cx"])
 
     _assert_close(
@@ -293,7 +293,7 @@ def test_depolarizing_on_two_qubit_gate_matches_aer(runtime):
 def test_amplitude_damping_matches_aer(runtime):
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add_noise(fq.ops.H, fq.noise.AmplitudeDamping(gammas=(0.2,)))
+    noise.add_channel(fq.ops.H, fq.noise.AmplitudeDamping(gammas=(0.2,)))
     aer_model = _aer_model(amplitude_damping_error(0.2), ["h"])
 
     _assert_close(
@@ -309,7 +309,7 @@ def test_phase_damping_matches_aer(runtime):
     p = 0.3
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add_noise(fq.ops.H, fq.noise.PhaseDamping(p=p))
+    noise.add_channel(fq.ops.H, fq.noise.PhaseDamping(p=p))
     aer_model = _aer_model(phase_damping_error(1 - (1 - p) ** 2), ["h"])
 
     _assert_close(
@@ -323,8 +323,8 @@ def test_relaxation_channels_match_aer_thermal_relaxation(runtime):
     program, circuit = _bell()
     damping, dephasing = fq.noise.relaxation_channels(t1, t2, duration)
     noise = fq.NoiseModel()
-    noise.add_noise(fq.ops.H, damping)
-    noise.add_noise(fq.ops.H, dephasing)
+    noise.add_channel(fq.ops.H, damping)
+    noise.add_channel(fq.ops.H, dephasing)
     aer_model = _aer_model(thermal_relaxation_error(t1, t2, duration), ["h"])
 
     _assert_close(
@@ -341,8 +341,8 @@ def test_stacked_channels_compose_in_registration_order(runtime):
     p, gamma = 0.2, 0.3
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add_noise(fq.ops.H, fq.noise.Depolarizing(p=p))
-    noise.add_noise(fq.ops.H, fq.noise.AmplitudeDamping(gammas=(gamma,)))
+    noise.add_channel(fq.ops.H, fq.noise.Depolarizing(p=p))
+    noise.add_channel(fq.ops.H, fq.noise.AmplitudeDamping(gammas=(gamma,)))
     composed = depolarizing_error(p, 1).compose(amplitude_damping_error(gamma))
     aer_model = _aer_model(composed, ["h"])
 

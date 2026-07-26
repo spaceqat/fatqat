@@ -132,21 +132,21 @@ def test_reset():
 
 def test_condition_v3_multi_term():
     p = fc.Program(2, 3)
-    p.add(fc.ops.X, 1, condition=((p.clreg[0][0], 1), (p.clreg[0][2], 0)))
+    p.add(fc.ops.X, 1, condition=((p.classical_registers[0][0], 1), (p.classical_registers[0][2], 0)))
     out = program_to_qasm(p, version=3)
     assert "if (c[0] == 1 && c[2] == 0) { x q[1]; }" in out
 
 
 def test_condition_v2_full_register_ok():
     p = fc.Program(2, 1)
-    p.add(fc.ops.X, 1, condition=(p.clreg[0][0], 1))
+    p.add(fc.ops.X, 1, condition=(p.classical_registers[0][0], 1))
     out = program_to_qasm(p, version=2)
     assert "if (c == 1) x q[1];" in out
 
 
 def test_condition_v2_partial_register_rejected():
     p = fc.Program(2, 3)
-    p.add(fc.ops.X, 1, condition=(p.clreg[0][0], 1))
+    p.add(fc.ops.X, 1, condition=(p.classical_registers[0][0], 1))
     with pytest.raises(QasmExportError):
         program_to_qasm(p, version=2)
 
@@ -177,7 +177,7 @@ def test_qudit_dim2_reductions():
     p.add(fc.ops.Sum, (0, 1))  # -> cx
     p.add(fc.ops.SwapLevels(0, 1), 0)  # -> x
     p.add(fc.ops.Fourier, 0)  # -> h
-    p.add(fc.ops.Fourierdg, 0)  # -> h
+    p.add(fc.ops.InverseFourier, 0)  # -> h
     p.add(fc.ops.SubspaceRX(0.4, (0, 1)), 0)  # -> rx(0.4)
     p.add(fc.ops.SubspaceRY(0.4, (1, 0)), 0)  # -> ry(-0.4)
     p.add(fc.ops.SubspaceRZ(0.4, (1, 0)), 0)  # -> rz(-0.4)
@@ -225,7 +225,7 @@ def test_export_same_named_qreg_and_creg_do_not_collide():
     creg = fc.ClassicalRegister(2, name="r")
     p = fc.Program([qreg], [creg])
     p.add(fc.ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
 
     out = program_to_qasm(p, version=3)
 
@@ -241,7 +241,7 @@ def test_export_same_named_qreg_and_creg_do_not_collide():
 
     # And the result must actually round-trip back through from_qasm.
     program = from_qasm(out)
-    assert len(program.qreg) == 1 and len(program.clreg) == 1
+    assert len(program.quantum_registers) == 1 and len(program.classical_registers) == 1
 
 
 # ===========================================================================
@@ -263,8 +263,8 @@ def test_from_qasm_builds_bell_program():
     assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
     measurement = program.operations[2]
     assert isinstance(measurement, Measurement)
-    assert measurement.targets == (program.qreg[0][0], program.qreg[0][1])
-    assert measurement.outputs == (program.clreg[0][0], program.clreg[0][1])
+    assert measurement.targets == (program.quantum_registers[0][0], program.quantum_registers[0][1])
+    assert measurement.outputs == (program.classical_registers[0][0], program.classical_registers[0][1])
 
 
 def test_from_qasm_preserves_multiple_register_names():
@@ -277,8 +277,8 @@ def test_from_qasm_preserves_multiple_register_names():
         measure qb[0] -> ca[0];
         """)
 
-    assert [reg.name for reg in program.qreg] == ["qa", "qb"]
-    assert program.operations[0].targets == (program.qreg[1][0],)
+    assert [reg.name for reg in program.quantum_registers] == ["qa", "qb"]
+    assert program.operations[0].targets == (program.quantum_registers[1][0],)
 
 
 def test_from_qasm_expands_whole_register_single_qubit_gate():
@@ -314,8 +314,8 @@ def test_from_qasm_supports_classical_conditions():
         """)
 
     assert program.operations[0].condition == (
-        (program.clreg[0][0], 0),
-        (program.clreg[0][1], 1),
+        (program.classical_registers[0][0], 0),
+        (program.classical_registers[0][1], 1),
     )
 
 
@@ -337,7 +337,7 @@ def test_from_qasm_expands_custom_gate_definition():
         """)
 
     assert [op.operation.name for op in program.operations] == ["X"]
-    assert program.operations[0].targets == (program.qreg[0][0],)
+    assert program.operations[0].targets == (program.quantum_registers[0][0],)
 
 
 def test_from_qasm_expands_iswap_custom_gate_matching_forward_tool_output():
@@ -371,8 +371,8 @@ def test_from_qasm_expands_iswap_custom_gate_matching_forward_tool_output():
     ]
     # cx a,b then cx b,a -- control/target must swap between the two CX calls.
     cx_ops = [op for op in program.operations if op.operation.name == "CX"]
-    assert cx_ops[0].targets == (program.qreg[0][0], program.qreg[0][1])
-    assert cx_ops[1].targets == (program.qreg[0][1], program.qreg[0][0])
+    assert cx_ops[0].targets == (program.quantum_registers[0][0], program.quantum_registers[0][1])
+    assert cx_ops[1].targets == (program.quantum_registers[0][1], program.quantum_registers[0][0])
 
 
 def test_from_qasm_custom_gate_with_parameter_expression():
@@ -414,8 +414,8 @@ def test_from_qasm3_bit_level_and_conditions():
 
     assert program.operations[0].operation.name == "X"
     assert program.operations[0].condition == (
-        (program.clreg[0][0], 1),
-        (program.clreg[0][2], 0),
+        (program.classical_registers[0][0], 1),
+        (program.classical_registers[0][2], 0),
     )
 
 
@@ -487,8 +487,8 @@ def test_from_qasm3_builds_bell_program():
     assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
     measurement = program.operations[2]
     assert isinstance(measurement, Measurement)
-    assert measurement.targets == (program.qreg[0][0], program.qreg[0][1])
-    assert measurement.outputs == (program.clreg[0][0], program.clreg[0][1])
+    assert measurement.targets == (program.quantum_registers[0][0], program.quantum_registers[0][1])
+    assert measurement.outputs == (program.classical_registers[0][0], program.classical_registers[0][1])
 
 
 def test_from_qasm3_single_qubit_and_bit_declarations():
@@ -500,8 +500,8 @@ def test_from_qasm3_single_qubit_and_bit_declarations():
         c = measure q;
         """)
 
-    assert program.qreg[0].size == 1
-    assert program.clreg[0].size == 1
+    assert program.quantum_registers[0].size == 1
+    assert program.classical_registers[0].size == 1
     assert [op.operation.name for op in program.operations[:1]] == ["X"]
 
 
@@ -515,6 +515,6 @@ def test_from_qasm3_if_block_and_gate_aliases():
 
     assert program.operations[0].operation.name == "CCX"
     assert program.operations[0].condition == (
-        (program.clreg[0][0], 1),
-        (program.clreg[0][1], 0),
+        (program.classical_registers[0][0], 1),
+        (program.classical_registers[0][1], 0),
     )

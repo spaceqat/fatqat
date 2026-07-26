@@ -12,7 +12,7 @@ def _bell_program():
     program = fq.Program(2, 2)
     program.add(fq.ops.H, 0)
     program.add(fq.ops.CX, (0, 1))
-    program.add_measurement((0, 1), (0, 1))
+    program.measure((0, 1), (0, 1))
     return program
 
 

@@ -12,10 +12,10 @@ import fatqat.operations as op
 program = fq.Program(2, 2)
 program.add(op.H, 0)
 program.add(op.CX, (0, 1))
-program.add_measurement((0, 1), (0, 1))
+program.measure((0, 1), (0, 1))
 
 noise = fq.NoiseModel()
-noise.add_noise(op.CX, fq.noise.Depolarizing(p=0.05))
+noise.add_channel(op.CX, fq.noise.Depolarizing(p=0.05))
 
 ideal = fq.backends.SimulatorBackend(method="DM")
 noisy = fq.backends.SimulatorBackend(method="DM", noise=noise)
@@ -25,7 +25,7 @@ print(noisy.run(program, shots=1000, simulation_config={"seed": 7}).result().get
 
 Two kinds of noise exist, with deliberately different mechanics:
 
-- **Quantum channels** ({py:meth}`~fatqat.NoiseModel.add_noise`) attach to
+- **Quantum channels** ({py:meth}`~fatqat.NoiseModel.add_channel`) attach to
   gate occurrences and act on the quantum state, as Kraus operators applied
   right after the gate.
 - **Readout error** ({py:meth}`~fatqat.NoiseModel.add_readout_error`) is
@@ -54,8 +54,8 @@ mechanisms, applied in registration order:
 
 ```python
 noise = fq.NoiseModel()
-noise.add_noise(op.H, fq.noise.AmplitudeDamping(gammas=(0.01,)))
-noise.add_noise(op.H, fq.noise.PhaseDamping(p=0.02))   # both apply, in order
+noise.add_channel(op.H, fq.noise.AmplitudeDamping(gammas=(0.01,)))
+noise.add_channel(op.H, fq.noise.PhaseDamping(p=0.02))   # both apply, in order
 ```
 
 Channels are dimension-generic: attached to a gate on a qutrit register,
@@ -64,21 +64,21 @@ Channels are dimension-generic: attached to a gate on a qutrit register,
 
 ## Targeting specific qubits
 
-`add_noise(..., targets=...)` pins a channel to one target tuple. Two address
+`add_channel(..., targets=...)` pins a channel to one target tuple. Two address
 forms exist, and both resolve to the same flat indices at run time:
 
 - **Program refs** — how a user pins noise to their own program's subsystems:
 
   ```python
-  noise.add_noise(op.X, fq.noise.Depolarizing(p=0.1),
-                  targets=(program.qreg[0][0],))
+  noise.add_channel(op.X, fq.noise.Depolarizing(p=0.1),
+                  targets=(program.quantum_registers[0][0],))
   ```
 
 - **Flat subsystem indices** — how a device backend authors noise before any
   user program exists:
 
   ```python
-  noise.add_noise(op.X, fq.noise.Depolarizing(p=0.1), targets=(0,))
+  noise.add_channel(op.X, fq.noise.Depolarizing(p=0.1), targets=(0,))
   ```
 
 The selection semantics, precisely:
@@ -102,8 +102,8 @@ decay by `1 - exp(-duration/t1)`, coherences by `exp(-duration/t2)` in total:
 ```python
 damping, dephasing = fq.noise.relaxation_channels(t1=60e-6, t2=80e-6, duration=2e-6)
 noise = fq.NoiseModel()
-noise.add_noise(op.H, damping)
-noise.add_noise(op.H, dephasing)
+noise.add_channel(op.H, damping)
+noise.add_channel(op.H, dephasing)
 ```
 
 The library never derives durations itself — operations carry no time — so
@@ -196,7 +196,7 @@ channel_map = fq.noise.default_channel_implementation_map()
 channel_map.register(BitFlip, bit_flip_rule)
 
 noise = fq.NoiseModel()
-noise.add_noise(op.X, BitFlip(p=0.05))
+noise.add_channel(op.X, BitFlip(p=0.05))
 backend = fq.backends.SimulatorBackend(
     method="DM", noise=noise, channel_implementation_map=channel_map
 )

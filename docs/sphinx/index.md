@@ -17,7 +17,7 @@ import fatqat.operations as op
 program = fq.Program(2, 2)  # two qubits and two classical bits
 program.add(op.H, 0)
 program.add(op.CX, (0, 1))
-program.add_measurement((0, 1), (0, 1))
+program.measure((0, 1), (0, 1))
 
 backend = fq.backends.SimulatorBackend()
 job = backend.run(program, shots=1000)

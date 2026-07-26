@@ -45,7 +45,7 @@ program.add(op.CCX, (0, 1, 2))
 For controlled gates, controls come first and the final target comes last.
 For example, `CX(0, 1)` uses qubit 0 as the control and qubit 1 as the
 target. When multiple registers make an integer ambiguous, use a register
-reference such as `program.qreg[1][0]`.
+reference such as `program.quantum_registers[1][0]`.
 
 ## Gate families
 
@@ -55,7 +55,7 @@ reference such as `program.qreg[1][0]`.
 | parametric | {py:class}`~fatqat.operations.RX`, {py:class}`~fatqat.operations.RY`, {py:class}`~fatqat.operations.RZ`, {py:class}`~fatqat.operations.Phase`, {py:class}`~fatqat.operations.CPhase` |
 | fixed multi-qubit | {py:data}`~fatqat.operations.CX`, {py:data}`~fatqat.operations.CZ`, {py:data}`~fatqat.operations.Swap`, {py:data}`~fatqat.operations.CY`, {py:data}`~fatqat.operations.CS`, {py:data}`~fatqat.operations.iSwap`, {py:data}`~fatqat.operations.CCX`, {py:data}`~fatqat.operations.CSwap` |
 | reset | {py:data}`~fatqat.operations.Reset`; see [Measurement and conditions](measurement-and-conditions.md) |
-| qudit | {py:class}`~fatqat.operations.Shift`, {py:class}`~fatqat.operations.Clock`, {py:data}`~fatqat.operations.Sum`, {py:class}`~fatqat.operations.SwapLevels`, {py:data}`~fatqat.operations.Fourier`, {py:data}`~fatqat.operations.Fourierdg`, {py:class}`~fatqat.operations.SubspaceRX`, {py:class}`~fatqat.operations.SubspaceRY`, {py:class}`~fatqat.operations.SubspaceRZ`, {py:class}`~fatqat.operations.CClock` |
+| qudit | {py:class}`~fatqat.operations.Shift`, {py:class}`~fatqat.operations.Clock`, {py:data}`~fatqat.operations.Sum`, {py:class}`~fatqat.operations.SwapLevels`, {py:data}`~fatqat.operations.Fourier`, {py:data}`~fatqat.operations.InverseFourier`, {py:class}`~fatqat.operations.SubspaceRX`, {py:class}`~fatqat.operations.SubspaceRY`, {py:class}`~fatqat.operations.SubspaceRZ`, {py:class}`~fatqat.operations.CClock` |
 
 ## Optional grid selections
 

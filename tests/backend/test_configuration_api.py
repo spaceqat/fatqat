@@ -55,7 +55,7 @@ class _ExtendedResultBackend(SimulatorBackend):
 def _measured_superposition() -> fq.Program:
     program = fq.Program(1, 1)
     program.add(fq.ops.SX, 0)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     return program
 
 

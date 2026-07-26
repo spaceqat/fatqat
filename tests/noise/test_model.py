@@ -23,10 +23,10 @@ def _two_qubit_program():
 def test_all_target_entry_matches_every_occurrence():
     noise = NoiseModel()
     channel = Depolarizing(p=0.1)
-    noise.add_noise(fq.ops.X, channel)
+    noise.add_channel(fq.ops.X, channel)
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
 
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == [(channel, (q[0],))]
     assert noise.channels_for(fq.ops.X, (q[1],), layout) == [(channel, (q[1],))]
@@ -39,9 +39,9 @@ def test_specific_ref_entry_replaces_default_only_on_its_target():
     specific = Depolarizing(p=0.5)
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
-    noise.add_noise(fq.ops.X, default)
-    noise.add_noise(fq.ops.X, specific, targets=(q[1],))
+    q = program.quantum_registers[0]
+    noise.add_channel(fq.ops.X, default)
+    noise.add_channel(fq.ops.X, specific, targets=(q[1],))
 
     assert noise.channels_for(fq.ops.X, (q[1],), layout) == [(specific, (q[1],))]
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == [(default, (q[0],))]
@@ -50,10 +50,10 @@ def test_specific_ref_entry_replaces_default_only_on_its_target():
 def test_physical_label_selector_matches_device_operands():
     noise = NoiseModel()
     channel = PhaseDamping(p=0.2)
-    noise.add_noise(fq.ops.X, channel, targets=(1,))  # device label 1
+    noise.add_channel(fq.ops.X, channel, targets=(1,))  # device label 1
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
 
     assert noise.channels_for(fq.ops.X, (q[1],), layout) == [(channel, (q[1],))]
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == []
@@ -63,12 +63,12 @@ def test_physical_selector_accepts_non_int_hashable_label():
     from fatqat.resource_layout import ResourceLayout
 
     program = _two_qubit_program()
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
     layout = ResourceLayout({q[0]: "trap-a", q[1]: "trap-b"})
 
     noise = NoiseModel()
     channel = Depolarizing(p=0.1)
-    noise.add_noise(fq.ops.X, channel, targets=("trap-b",))
+    noise.add_channel(fq.ops.X, channel, targets=("trap-b",))
 
     assert noise.channels_for(fq.ops.X, (q[1],), layout) == [(channel, (q[1],))]
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == []
@@ -80,9 +80,9 @@ def test_logical_and_physical_entries_resolving_to_same_target_accumulate():
     by_ref = PhaseDamping(p=0.2)
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
-    noise.add_noise(fq.ops.X, by_label, targets=(0,))
-    noise.add_noise(fq.ops.X, by_ref, targets=(q[0],))
+    q = program.quantum_registers[0]
+    noise.add_channel(fq.ops.X, by_label, targets=(0,))
+    noise.add_channel(fq.ops.X, by_ref, targets=(q[0],))
 
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == [
         (by_label, (q[0],)),
@@ -90,15 +90,15 @@ def test_logical_and_physical_entries_resolving_to_same_target_accumulate():
     ]
 
 
-def test_repeated_add_noise_accumulates_in_registration_order():
+def test_repeated_add_channel_accumulates_in_registration_order():
     noise = NoiseModel()
     first = Depolarizing(p=0.1)
     second = PhaseDamping(p=0.2)
-    noise.add_noise(fq.ops.X, first)
-    noise.add_noise(fq.ops.X, second)
+    noise.add_channel(fq.ops.X, first)
+    noise.add_channel(fq.ops.X, second)
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
 
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == [
         (first, (q[0],)),
@@ -109,10 +109,10 @@ def test_repeated_add_noise_accumulates_in_registration_order():
 def test_ref_selector_from_foreign_register_never_matches():
     noise = NoiseModel()
     foreign = fq.QuantumRegister(2, name="q")  # same shape as the program's
-    noise.add_noise(fq.ops.X, Depolarizing(p=0.9), targets=(foreign[0],))
+    noise.add_channel(fq.ops.X, Depolarizing(p=0.9), targets=(foreign[0],))
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
 
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == []
 
@@ -120,10 +120,10 @@ def test_ref_selector_from_foreign_register_never_matches():
 def test_two_subsystem_selector_matches_operand_order():
     noise = NoiseModel()
     channel = Depolarizing(p=0.05)
-    noise.add_noise(fq.ops.CX, channel, targets=(0, 1))
+    noise.add_channel(fq.ops.CX, channel, targets=(0, 1))
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
 
     assert noise.channels_for(fq.ops.CX, (q[0], q[1]), layout) == [
         (channel, (q[0], q[1]))
@@ -135,96 +135,96 @@ def test_mixed_logical_and_physical_tuple_selector_rejected():
     noise = NoiseModel()
     ref = fq.QuantumRegister(2)[0]
     with pytest.raises(TypeError, match="not mixed"):
-        noise.add_noise(fq.ops.CX, Depolarizing(p=0.1), targets=(ref, 0))
+        noise.add_channel(fq.ops.CX, Depolarizing(p=0.1), targets=(ref, 0))
 
 
 def test_register_view_selector_rejected():
     atoms = GridRegister(2, 3, name="atoms")
     noise = NoiseModel()
     with pytest.raises(TypeError, match="RegisterView"):
-        noise.add_noise(fq.ops.RX, Depolarizing(p=0.1), targets=(atoms.row(0),))
+        noise.add_channel(fq.ops.RX, Depolarizing(p=0.1), targets=(atoms.row(0),))
 
 
-def test_add_noise_rejects_barrier():
+def test_add_channel_rejects_barrier():
     with pytest.raises(ValueError, match="Barrier"):
-        NoiseModel().add_noise(fq.ops.Barrier, Depolarizing(p=0.1))
+        NoiseModel().add_channel(fq.ops.Barrier, Depolarizing(p=0.1))
 
 
-def test_add_noise_accepts_reset_for_forward_compatibility():
+def test_add_channel_accepts_reset_for_forward_compatibility():
     noise = NoiseModel()
-    noise.add_noise(fq.ops.Reset, Depolarizing(p=0.1))
+    noise.add_channel(fq.ops.Reset, Depolarizing(p=0.1))
     assert noise.has_noise_for(ResetGate)
 
 
-def test_add_noise_rejects_non_channel():
+def test_add_channel_rejects_non_channel():
     with pytest.raises(TypeError, match="Channel"):
-        NoiseModel().add_noise(fq.ops.X, "not a channel")
+        NoiseModel().add_channel(fq.ops.X, "not a channel")
 
 
-def test_add_noise_selector_validation():
+def test_add_channel_selector_validation():
     noise = NoiseModel()
     with pytest.raises(ValueError, match="non-empty"):
-        noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=())
+        noise.add_channel(fq.ops.X, Depolarizing(p=0.1), targets=())
     with pytest.raises(ValueError, match="length"):
-        noise.add_noise(fq.ops.CX, Depolarizing(p=0.1), targets=(0,))
+        noise.add_channel(fq.ops.CX, Depolarizing(p=0.1), targets=(0,))
     program = fq.Program(1, 1)
     with pytest.raises(TypeError, match="QuantumRegister"):
-        noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(program.clreg[0][0],))
+        noise.add_channel(fq.ops.X, Depolarizing(p=0.1), targets=(program.classical_registers[0][0],))
     # A physical selector is an opaque label: negative ints, strings, and
     # even bools are all legal device-resource labels now, not flat indices.
-    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(-1,))
-    noise.add_noise(fq.ops.Y, Depolarizing(p=0.1), targets=("zone-a",))
+    noise.add_channel(fq.ops.X, Depolarizing(p=0.1), targets=(-1,))
+    noise.add_channel(fq.ops.Y, Depolarizing(p=0.1), targets=("zone-a",))
 
 
-def test_add_noise_accepts_bare_label_for_arity_one_operation():
+def test_add_channel_accepts_bare_label_for_arity_one_operation():
     noise = NoiseModel()
     channel = Depolarizing(p=0.1)
-    noise.add_noise(fq.ops.X, channel, targets=0)  # bare device label
+    noise.add_channel(fq.ops.X, channel, targets=0)  # bare device label
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
 
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == [(channel, (q[0],))]
     assert noise.channels_for(fq.ops.X, (q[1],), layout) == []
 
 
-def test_add_noise_accepts_bare_ref_for_arity_one_operation():
+def test_add_channel_accepts_bare_ref_for_arity_one_operation():
     noise = NoiseModel()
     channel = Depolarizing(p=0.1)
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
-    noise.add_noise(fq.ops.X, channel, targets=q[1])  # bare RegisterRef
+    q = program.quantum_registers[0]
+    noise.add_channel(fq.ops.X, channel, targets=q[1])  # bare RegisterRef
 
     assert noise.channels_for(fq.ops.X, (q[1],), layout) == [(channel, (q[1],))]
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == []
 
 
-def test_add_noise_accepts_bare_label_for_variable_arity_operation():
+def test_add_channel_accepts_bare_label_for_variable_arity_operation():
     noise = NoiseModel()
-    noise.add_noise(fq.ops.Reset, Depolarizing(p=0.1), targets=0)
+    noise.add_channel(fq.ops.Reset, Depolarizing(p=0.1), targets=0)
     assert noise.has_noise_for(ResetGate)
 
 
-def test_add_noise_bare_target_rejected_for_multi_target_operation():
+def test_add_channel_bare_target_rejected_for_multi_target_operation():
     noise = NoiseModel()
     with pytest.raises(ValueError, match="length"):
-        noise.add_noise(fq.ops.CX, Depolarizing(p=0.1), targets=0)
+        noise.add_channel(fq.ops.CX, Depolarizing(p=0.1), targets=0)
 
 
-def test_add_noise_bare_register_view_still_rejected():
+def test_add_channel_bare_register_view_rejected():
     atoms = GridRegister(2, 3, name="atoms")
     noise = NoiseModel()
     with pytest.raises(TypeError, match="RegisterView"):
-        noise.add_noise(fq.ops.RX, Depolarizing(p=0.1), targets=atoms.row(0))
+        noise.add_channel(fq.ops.RX, Depolarizing(p=0.1), targets=atoms.row(0))
 
 
 def test_slots_resolve_a_single_subsystem_of_a_two_qubit_gate():
     noise = NoiseModel()
     damping = AmplitudeDamping(gammas=(0.1,))
-    noise.add_noise(fq.ops.CZ, damping, slots=1)
+    noise.add_channel(fq.ops.CZ, damping, slots=1)
     program = _two_qubit_program()
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
 
     assert noise.channels_for(
         fq.ops.CZ, (q[0], q[1]), _resource_layout_for(program)
@@ -237,11 +237,11 @@ def test_slot_precedence_is_grouped_by_extent():
     scoped = AmplitudeDamping(gammas=(0.1,))
     override = Depolarizing(p=0.2)
     program = _two_qubit_program()
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
     layout = _resource_layout_for(program)
-    noise.add_noise(fq.ops.CZ, joint)
-    noise.add_noise(fq.ops.CZ, scoped, slots=(0,))
-    noise.add_noise(fq.ops.CZ, override, targets=(q[0], q[1]))
+    noise.add_channel(fq.ops.CZ, joint)
+    noise.add_channel(fq.ops.CZ, scoped, slots=(0,))
+    noise.add_channel(fq.ops.CZ, override, targets=(q[0], q[1]))
 
     assert noise.channels_for(fq.ops.CZ, (q[0], q[1]), layout) == [
         (scoped, (q[0],)),
@@ -253,17 +253,17 @@ def test_slots_reject_bad_extent_and_whole_gate_single_channel():
     noise = NoiseModel()
     damping = AmplitudeDamping(gammas=(0.1,))
     with pytest.raises(ValueError, match="slots="):
-        noise.add_noise(fq.ops.CZ, damping)
+        noise.add_channel(fq.ops.CZ, damping)
     with pytest.raises(ValueError, match="out of range"):
-        noise.add_noise(fq.ops.CZ, damping, slots=(2,))
+        noise.add_channel(fq.ops.CZ, damping, slots=(2,))
     with pytest.raises(ValueError, match="strictly increasing"):
-        noise.add_noise(fq.ops.CZ, damping, slots=(1, 0))
+        noise.add_channel(fq.ops.CZ, damping, slots=(1, 0))
 
 
 def test_channel_types_lists_every_attached_descriptor_type():
     noise = NoiseModel()
-    noise.add_noise(fq.ops.X, Depolarizing(p=0.1))
-    noise.add_noise(fq.ops.H, PhaseDamping(p=0.2))
+    noise.add_channel(fq.ops.X, Depolarizing(p=0.1))
+    noise.add_channel(fq.ops.H, PhaseDamping(p=0.2))
 
     assert noise.channel_types() == frozenset({Depolarizing, PhaseDamping})
 
@@ -285,7 +285,7 @@ def test_readout_error_all_target_default_and_ref_override():
     noise = NoiseModel()
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
     noise.add_readout_error(_C_MILD)
     noise.add_readout_error(_C_STRONG, target=q[1])
 
@@ -298,7 +298,7 @@ def test_readout_error_physical_label_selector_matches_device_label():
     noise = NoiseModel()
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
     noise.add_readout_error(_C_STRONG, target=1)  # device label 1
 
     assert np.array_equal(noise.readout_error_for(q[1], layout), _C_STRONG)
@@ -309,7 +309,7 @@ def test_readout_error_ref_selector_from_foreign_register_never_matches():
     noise = NoiseModel()
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
     noise.add_readout_error(_C_MILD, target=fq.QuantumRegister(2)[1])
 
     assert noise.readout_error_for(q[1], layout) is None
@@ -319,7 +319,7 @@ def test_readout_error_last_specific_entry_wins_among_physical_selectors():
     noise = NoiseModel()
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
     noise.add_readout_error(_C_MILD, target=0)
     noise.add_readout_error(_C_STRONG, target=0)
 
@@ -329,7 +329,7 @@ def test_readout_error_last_specific_entry_wins_among_physical_selectors():
 def test_readout_error_last_specific_entry_wins_across_logical_and_physical():
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
 
     logical_then_physical = NoiseModel()
     logical_then_physical.add_readout_error(_C_MILD, target=q[0])
@@ -352,7 +352,7 @@ def test_readout_error_matrix_is_copied_and_frozen():
     noise.add_readout_error(source)
     program = _two_qubit_program()
     layout = _resource_layout_for(program)
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
     source[0, 0] = 0.0  # caller mutation must not reach the stored matrix
 
     stored = noise.readout_error_for(q[0], layout)
@@ -373,7 +373,7 @@ def test_readout_error_validation():
         noise.add_readout_error(_C_MILD, target=atoms.row(0))
     program = fq.Program(1, 1)
     with pytest.raises(TypeError, match="QuantumRegister"):
-        noise.add_readout_error(_C_MILD, target=program.clreg[0][0])
+        noise.add_readout_error(_C_MILD, target=program.classical_registers[0][0])
     # A physical selector is an opaque label now, not a flat index: negative
     # ints and strings are both legal device-resource labels.
     noise.add_readout_error(_C_MILD, target=-1)
@@ -398,10 +398,10 @@ def test_validate_for_accepts_valid_selectors_that_match_no_occurrence():
     # A valid ref/label with no matching gate occurrence or measurement is a
     # permitted no-effect entry, not a validation error.
     program, layout = _three_qubit_program_and_layout()
-    q = program.qreg[0]
+    q = program.quantum_registers[0]
     noise = NoiseModel()
-    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(q[0],))  # no X in program
-    noise.add_noise(fq.ops.Y, Depolarizing(p=0.1), targets=(2,))  # no Y in program
+    noise.add_channel(fq.ops.X, Depolarizing(p=0.1), targets=(q[0],))  # no X in program
+    noise.add_channel(fq.ops.Y, Depolarizing(p=0.1), targets=(2,))  # no Y in program
     noise.add_readout_error(_C_MILD, target=q[1])  # never measured
     noise.add_readout_error(_C_MILD, target=2)  # never measured
 
@@ -412,7 +412,7 @@ def test_validate_for_rejects_foreign_logical_gate_selector():
     program, layout = _three_qubit_program_and_layout()
     foreign = fq.QuantumRegister(3, name="q")
     noise = NoiseModel()
-    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(foreign[0],))
+    noise.add_channel(fq.ops.X, Depolarizing(p=0.1), targets=(foreign[0],))
 
     with pytest.raises(BackendValidationError):
         noise.validate_for(program, layout)
@@ -433,7 +433,7 @@ def test_validate_for_rejects_unmapped_physical_gate_label():
     # device labels for this three-subsystem generic-simulator program.
     program, layout = _three_qubit_program_and_layout()
     noise = NoiseModel()
-    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(99,))
+    noise.add_channel(fq.ops.X, Depolarizing(p=0.1), targets=(99,))
 
     with pytest.raises(BackendValidationError):
         noise.validate_for(program, layout)
@@ -453,7 +453,7 @@ def test_validate_for_checks_both_stored_selector_shapes_in_one_model():
     # are stored differently; both must be validated, not just one.
     program, layout = _three_qubit_program_and_layout()
     noise = NoiseModel()
-    noise.add_noise(fq.ops.X, Depolarizing(p=0.1), targets=(99,))
+    noise.add_channel(fq.ops.X, Depolarizing(p=0.1), targets=(99,))
     noise.add_readout_error(_C_MILD, target=99)
 
     with pytest.raises(BackendValidationError):

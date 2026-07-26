@@ -17,11 +17,11 @@ keys). This is a prototype execution target, not a realistic device model: no
 routing, no timing, no reshape/transport, and ideal by default.
 
 Every device site starts empty. A program's first instruction must be
-`~fatqat.ops.LoadAtom(rows, cols)` (unconditional, sized to fit the device);
+`~fatqat.operations.LoadAtoms(rows, cols)` (unconditional, sized to fit the device);
 it marks the top-left `rows x cols` block of sites as loaded and appears at
-most once per program. Any later gate or `~fatqat.ops.Reset` whose targets
+most once per program. Any later gate or `~fatqat.operations.Reset` whose targets
 are not all loaded is silently dropped - an empty site cannot hold a gate.
-`~fatqat.ops.Measurement` is never filtered by load state: a site no
+`~fatqat.operations.Measurement` is never filtered by load state: a site no
 surviving gate ever touched stays in its initial `|0>`, so it reads `0`
 deterministically under ideal execution, though a configured readout-error
 model can still flip the reported classical bit like any other qubit. See
@@ -116,7 +116,7 @@ def fake_atom_grid_implementation_map(rows: int, cols: int) -> ImplementationMap
     return m
 
 
-class AtomGridBackend(SimulatorBackend):
+class AtomGridSimulator(SimulatorBackend):
     """Statevector backend constrained to a fake configurable-shape atom-grid target.
 
     A thin statevector-method `~fatqat.backends.SimulatorBackend`
@@ -131,7 +131,7 @@ class AtomGridBackend(SimulatorBackend):
     every other quantum-register shape (scalar-only, or a grid combined with
     any other register, or more than one grid register) either bound
     identically (scalar-only) or rejected, and an explicit atom-loading
-    lifecycle driven by :py:class:`~fatqat.operations.LoadAtom` - see
+    lifecycle driven by :py:class:`~fatqat.operations.LoadAtoms` - see
     :py:meth:`_lower`.
 
     Example:
@@ -150,7 +150,7 @@ class AtomGridBackend(SimulatorBackend):
            >>> import fatqat.operations as op
            >>> atoms = fq.GridRegister(2, 3, name="atoms")
            >>> program = fq.Program([atoms], 6)
-           >>> program.add(op.LoadAtom(2, 3))
+           >>> program.add(op.LoadAtoms(2, 3))
            >>> def native_h(targets):
            ...     program.add(op.RZ(np.pi), targets)
            ...     program.add(op.RY(np.pi / 2), targets)
@@ -160,7 +160,7 @@ class AtomGridBackend(SimulatorBackend):
            >>> native_h(atoms.row(1))                 # completes pairwise CX
            >>> program.measure_all()
 
-           >>> backend = fq.backends.AtomGridBackend()  # default 4x5 device
+           >>> backend = fq.backends.AtomGridSimulator()  # default 4x5 device
            >>> counts = backend.run(
            ...     program, shots=1000, simulation_config={"seed": 1}
            ... ).result().get_counts()
@@ -212,7 +212,7 @@ class AtomGridBackend(SimulatorBackend):
         Examples:
             >>> import fatqat as fq
             >>> import fatqat.operations as op
-            >>> backend = fq.backends.AtomGridBackend()
+            >>> backend = fq.backends.AtomGridSimulator()
             >>> impl_map = backend.implementation_map
             >>> sorted(op.name for op in impl_map.supported_operations())
             ['CZ', 'RX', 'RY', 'RZ']
@@ -239,31 +239,37 @@ class AtomGridBackend(SimulatorBackend):
                 combined with any other quantum register; or a `GridRegister`
                 whose shape does not fit the device's, axis by axis.
         """
-        n_subsystems = sum(register.size for register in program.qreg)
+        n_subsystems = sum(register.size for register in program.quantum_registers)
         capacity = self._rows * self._cols
         if n_subsystems > capacity:
             raise BackendValidationError(
-                f"AtomGridBackend({self._rows}x{self._cols}) supports at "
+                f"AtomGridSimulator({self._rows}x{self._cols}) supports at "
                 f"most {capacity} qubits, got {n_subsystems}"
             )
-        dims = (register.dim for register in program.qreg for _ in range(register.size))
+        dims = (
+            register.dim
+            for register in program.quantum_registers
+            for _ in range(register.size)
+        )
         if any(dim != 2 for dim in dims):
             raise BackendValidationError(
-                "AtomGridBackend only supports qubit dimensions"
+                "AtomGridSimulator only supports qubit dimensions"
             )
-        grid_registers = [r for r in program.qreg if isinstance(r, GridRegister)]
+        grid_registers = [
+            r for r in program.quantum_registers if isinstance(r, GridRegister)
+        ]
         if len(grid_registers) > 1:
             raise BackendValidationError(
-                "AtomGridBackend accepts at most one GridRegister per "
+                "AtomGridSimulator accepts at most one GridRegister per "
                 f"program, got {len(grid_registers)}"
             )
         if not grid_registers:
             return super()._resolve_resource_layout(program)
 
         grid = grid_registers[0]
-        if len(program.qreg) != 1:
+        if len(program.quantum_registers) != 1:
             raise BackendValidationError(
-                "AtomGridBackend rejects a GridRegister combined with "
+                "AtomGridSimulator rejects a GridRegister combined with "
                 "any other quantum register"
             )
         if grid.rows > self._rows or grid.cols > self._cols:
@@ -285,10 +291,10 @@ class AtomGridBackend(SimulatorBackend):
         """Apply this program's atom-loading lifecycle, then lower normally.
 
         Every device site starts empty. The program's first instruction must
-        be `~fatqat.ops.LoadAtom` (unconditional, sized to fit this device);
+        be `~fatqat.operations.LoadAtoms` (unconditional, sized to fit this device);
         it marks the top-left `rows x cols` block of sites as loaded and is
         itself dropped before lowering, since it has no matrix. Any later
-        `LoadAtom` is rejected - loading happens exactly once, up front.
+        `LoadAtoms` is rejected - loading happens exactly once, up front.
         Every other gate or `Reset` whose targets are not all loaded is
         silently dropped (no-op): an empty site cannot hold a gate.
         `Measurement` always lowers normally; a site no surviving gate ever
@@ -299,8 +305,8 @@ class AtomGridBackend(SimulatorBackend):
 
         Raises:
             BackendValidationError: If the program's first instruction is
-                not `LoadAtom`; if any later instruction is `LoadAtom`; if
-                `LoadAtom` carries a condition; or if `LoadAtom`'s shape
+                not `LoadAtoms`; if any later instruction is `LoadAtoms`; if
+                `LoadAtoms` carries a condition; or if `LoadAtoms`'s shape
                 does not fit this backend's device.
         """
         resource_layout = context.resource_layout
@@ -308,26 +314,26 @@ class AtomGridBackend(SimulatorBackend):
         realized: list[ProgramInstruction] = []
         for i, step in enumerate(operations):
             is_load = isinstance(step, AppliedOperation) and isinstance(
-                step.operation, ops.LoadAtom
+                step.operation, ops.LoadAtoms
             )
             if i == 0:
                 if not is_load:
                     raise BackendValidationError(
-                        "AtomGridBackend requires the program's first "
-                        "operation to be LoadAtom"
+                        "AtomGridSimulator requires the program's first "
+                        "operation to be LoadAtoms"
                     )
             elif is_load:
                 raise BackendValidationError(
-                    "AtomGridBackend accepts LoadAtom only as the "
+                    "AtomGridSimulator accepts LoadAtoms only as the "
                     "program's first operation"
                 )
             if is_load:
                 if step.condition is not None:
-                    raise BackendValidationError("LoadAtom must be unconditional")
+                    raise BackendValidationError("LoadAtoms must be unconditional")
                 load_rows, load_cols = step.operation.rows, step.operation.cols
                 if load_rows > self._rows or load_cols > self._cols:
                     raise BackendValidationError(
-                        f"LoadAtom({load_rows}x{load_cols}) does not fit "
+                        f"LoadAtoms({load_rows}x{load_cols}) does not fit "
                         f"the backend's ({self._rows}x{self._cols}) device "
                         "shape"
                     )

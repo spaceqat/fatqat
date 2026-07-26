@@ -26,7 +26,7 @@ import fatqat.operations as op
 program = fq.Program(2, 2)
 program.add(op.H, 0)
 program.add(op.CX, (0, 1))
-program.add_measurement((0, 1), (0, 1))
+program.measure((0, 1), (0, 1))
 
 backend = fq.backends.SimulatorBackend()
 job = backend.run(program, shots=1000)
@@ -45,7 +45,7 @@ measurement is sampled 1,000 times.
 | --- | --- |
 | {py:class}`~fatqat.Program` (``Program(2, 2)``) | Create two quantum slots and two classical slots. |
 | `program.add(...)` | Append a gate in execution order. Fixed gates such as `H` and `CX` are values, so they do not have parentheses. |
-| `add_measurement(...)` | Copy each quantum outcome into the matching classical slot. |
+| `measure(...)` | Copy each quantum outcome into the matching classical slot. |
 | {py:class}`~fatqat.backends.SimulatorBackend` (``SimulatorBackend()``) | Use the general-purpose simulator. You do not construct or call an engine directly. |
 | `shots=1000` | Repeat the measured program 1,000 times to collect counts. |
 | `backend.run(...)` | Submit the program and receive a `Job`. |

@@ -20,8 +20,8 @@ def test_resolve_preserves_order_and_step_types():
     p = Program(2, 2)
     p.add(ops.H, 0)
     p.add(ops.CZ, (0, 1))
-    p.add_measurement(0, 0)
-    p.add_measurement(1, 1)
+    p.measure(0, 0)
+    p.measure(1, 1)
     plan = _resolve(p)
     assert [type(s) for s in plan] == [
         ApplyMatrixStep,
@@ -42,7 +42,7 @@ def test_resolve_matrix_step_has_flat_indices_and_matrix():
 
 def test_resolve_measurement_step_has_flat_indices():
     p = Program(1, 1)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     step = _resolve(p)[0]
     assert isinstance(step, MeasurementStep)
     assert (step.measured_indices, step.classical_indices) == ((0,), (0,))

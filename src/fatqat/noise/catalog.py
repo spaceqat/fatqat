@@ -205,7 +205,7 @@ def relaxation_channels(
     physical bound: pure dephasing cannot be negative).
 
     Attach both returned channels to the same extent: a single-qubit gate
-    occurrence, or one slot of a multi-qubit gate via ``add_noise(...,
+    occurrence, or one slot of a multi-qubit gate via ``add_channel(...,
     slots=)``. Order does not matter; the two commute.
 
     Args:

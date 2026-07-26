@@ -1,4 +1,7 @@
-"""Operation base class and the built-in gate set, exposed as the `fq.ops` namespace."""
+"""Operation base class and built-in gates.
+
+Applications should use ``import fatqat.operations as op``.
+"""
 
 from __future__ import annotations
 
@@ -24,14 +27,14 @@ from .fixed_gates import (
     Z,
     iSwap,
 )
-from .load_atom import LoadAtom
+from .load_atom import LoadAtoms
 from .measurement import Measurement
 from .parametric_gates import CPhase, Phase, RX, RY, RZ
 from .qudit_gates import (
     CClock,
     Clock,
     Fourier,
-    Fourierdg,
+    InverseFourier,
     Shift,
     Sum,
     SubspaceRX,
@@ -68,14 +71,14 @@ __all__ = [
     "CPhase",
     "Reset",
     "Barrier",
-    "LoadAtom",
+    "LoadAtoms",
     "Measurement",
     "Shift",
     "Clock",
     "Sum",
     "SwapLevels",
     "Fourier",
-    "Fourierdg",
+    "InverseFourier",
     "SubspaceRX",
     "SubspaceRY",
     "SubspaceRZ",

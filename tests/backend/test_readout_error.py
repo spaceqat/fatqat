@@ -33,7 +33,7 @@ def _readout_model(matrix, target=None):
 
 def _measured_program():
     program = fq.Program(1, 1)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     return program
 
 
@@ -67,7 +67,7 @@ def test_untargeted_subsystems_lower_to_none_entries():
     noise = _readout_model(_FLIP_30, target=1)
     backend = SimulatorBackend(noise=noise)
     program = fq.Program(2, 2)
-    program.add_measurement((0, 1), (0, 1))
+    program.measure((0, 1), (0, 1))
     plan, _ = backend._lower_program(program)
 
     (measurement,) = [s for s in plan if isinstance(s, MeasurementStep)]
@@ -116,7 +116,7 @@ def test_specific_target_confuses_only_its_subsystem():
     always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
     program = fq.Program(2, 2)
     program.add(fq.ops.X, 0)
-    program.add_measurement((0, 1), (0, 1))
+    program.measure((0, 1), (0, 1))
     counts = (
         SimulatorBackend(noise=_readout_model(always_flip, target=1))
         .run(program, shots=200, simulation_config={"seed": 4})
@@ -134,9 +134,9 @@ def test_feedforward_reads_the_reported_bit_not_the_true_one():
     # q0 is |0>: the true outcome is 0, but readout always reports 1, so the
     # condition c0 == 1 fires and flips q1.
     program = fq.Program(2, 2)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     program.add(fq.ops.X, 1, condition=(0, 1))
-    program.add_measurement(1, 1)
+    program.measure(1, 1)
     counts = (
         SimulatorBackend(method="SV", noise=_readout_model(_ALWAYS_ONE, target=0))
         .run(program, shots=100, simulation_config={"seed": 3})
@@ -176,9 +176,9 @@ def test_reused_qubit_evolves_from_the_true_state():
     noise = NoiseModel()
     noise.add_readout_error(always_flip, target=0)
     program = fq.Program(1, 2)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     program.add(fq.ops.X, 0)
-    program.add_measurement(0, 1)
+    program.measure(0, 1)
     counts = (
         SimulatorBackend(method="SV", noise=noise)
         .run(program, shots=50, simulation_config={"seed": 6})
@@ -192,9 +192,9 @@ def test_reused_qubit_evolves_from_the_true_state():
 def test_parallel_dynamic_shots_match_serial_with_readout_error():
     noise = _readout_model(_FLIP_30)
     program = fq.Program(1, 2)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     program.add(fq.ops.X, 0, condition=(0, 1))  # forces the dynamic path
-    program.add_measurement(0, 1)
+    program.measure(0, 1)
     serial = (
         SimulatorBackend(noise=noise)
         .run(
@@ -244,7 +244,7 @@ def test_run_succeeds_when_valid_readout_selector_targets_unmeasured_subsystem()
     # A valid selector (real device label) naming a subsystem that is never
     # measured is a permitted no-effect entry, not a validation error.
     program = fq.Program(2, 1)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     backend = SimulatorBackend(noise=_readout_model(_FLIP_30, target=1))
 
     result = backend.run(program).result()

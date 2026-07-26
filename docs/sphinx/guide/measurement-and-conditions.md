@@ -12,19 +12,19 @@ import fatqat.operations as op
 
 program = fq.Program(1, 1)
 program.add(op.X, 0)
-program.add_measurement(0, 0)
+program.measure(0, 0)
 
 result = fq.backends.SimulatorBackend().run(program, shots=10).result()
 print(result.get_counts())  # {"1": 10}
 ```
 
-{py:meth}`~fatqat.Program.add_measurement` (``quantum_target, classical_output``) accepts one target or
+{py:meth}`~fatqat.Program.measure` (``quantum_target, classical_output``) accepts one target or
 matching tuples of targets. The tuple order determines which quantum outcome
 is written to which classical slot:
 
 ```python
 # Assumes a Program with two qubits and two classical bits.
-program.add_measurement((0, 1), (0, 1))
+program.measure((0, 1), (0, 1))
 ```
 
 Use {py:meth}`~fatqat.Program.measure_all` when the program has the same number of quantum
@@ -43,7 +43,7 @@ import fatqat.operations as op
 
 program = fq.Program(2, 1)
 program.add(op.H, 0)
-program.add_measurement(0, 0)
+program.measure(0, 0)
 program.add(op.X, 1, condition=(0, 1))
 ```
 

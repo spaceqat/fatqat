@@ -14,10 +14,10 @@ Create and attach noise
 
 :py:class:`~fatqat.NoiseModel` is normally created as ``noise = fq.NoiseModel()``.
 
-:py:meth:`add_noise <fatqat.NoiseModel.add_noise>` (``operation, channel, *, targets=None, slots=None``) attaches a
+:py:meth:`add_channel <fatqat.NoiseModel.add_channel>` (``operation, channel, *, targets=None, slots=None``) attaches a
 quantum channel after matching gate occurrences. Omit ``targets`` to affect
 every occurrence; use a qubit reference such as
-``targets=(program.qreg[0][0],)`` to affect one qubit.
+``targets=(program.quantum_registers[0][0],)`` to affect one qubit.
 
 :py:meth:`add_readout_error <fatqat.NoiseModel.add_readout_error>` (``confusion_matrix, *, target=None``) attaches
 classical measurement error. The matrix uses
@@ -42,7 +42,9 @@ Detailed reference
 ------------------
 
 .. autoclass:: fatqat.NoiseModel
-   :members:
+   :members: add_channel, channels_for,
+      add_readout_error, readout_error_for, validate_for,
+      has_readout_error, has_noise_for, channel_types
    :show-inheritance:
 
 .. autoclass:: fatqat.noise.Depolarizing

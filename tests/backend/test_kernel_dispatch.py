@@ -57,7 +57,7 @@ _GATE_CASES = [
     (fq.ops.Sum, (_QUTRIT[0], _QUTRIT[1])),
     (fq.ops.SwapLevels(0, 2), (_QUTRIT[0],)),
     (fq.ops.Fourier, (_QUTRIT[0],)),
-    (fq.ops.Fourierdg, (_QUTRIT[0],)),
+    (fq.ops.InverseFourier, (_QUTRIT[0],)),
     (fq.ops.SubspaceRX(0.3, (0, 1)), (_QUTRIT[0],)),
     (fq.ops.SubspaceRY(0.3, (0, 1)), (_QUTRIT[0],)),
     (fq.ops.SubspaceRZ(0.3, (0, 1)), (_QUTRIT[0],)),
@@ -121,7 +121,7 @@ def test_keyed_dispatch_matches_numpy_across_structure_classes():
     program.add(fq.ops.CZ, (0, 2))
     program.add(fq.ops.RX(1.1), 2)
     program.add(fq.ops.X, 1)
-    program.add_measurement((0, 1, 2), (0, 1, 2))
+    program.measure((0, 1, 2), (0, 1, 2))
     plan, request = _plan_and_request(program)
 
     numpy_counts = _counts(NumpySVSimulator, plan, (2, 2, 2), 3, 300, 11, request)
@@ -132,10 +132,10 @@ def test_keyed_dispatch_matches_numpy_across_structure_classes():
 def test_keyed_dispatch_matches_numpy_on_the_dynamic_path():
     program = fq.Program(2, 2)
     program.add(fq.ops.H, 0)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     program.add(fq.ops.X, 1, condition=(0, 1))
     program.add(fq.ops.RZ(0.7), 1)
-    program.add_measurement(1, 1)
+    program.measure(1, 1)
     plan, request = _plan_and_request(program)
 
     numpy_counts = _counts(NumpySVSimulator, plan, (2, 2), 2, 20, 13, request)

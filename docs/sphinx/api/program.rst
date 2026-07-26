@@ -10,7 +10,7 @@ Operation examples use ``import fatqat.operations as op``.
 Create a program
 ----------------
 
-:py:class:`~fatqat.Program` (``qreg, clreg=0``)
+:py:class:`~fatqat.Program` (``quantum_registers, classical_registers=0``)
 
 - Pass integers for the common case: ``fq.Program(2, 2)`` creates two
   quantum slots and two classical slots.
@@ -34,15 +34,15 @@ constructed first: ``program.add(op.RX(0.2), 0)``.
 Add a measurement
 -----------------
 
-:py:meth:`~fatqat.Program.add_measurement` (``targets, outputs``)
+:py:meth:`~fatqat.Program.measure` (``targets, outputs``)
 
 Measure one quantum target into one classical output, or use matching
 tuples for grouped measurement:
 
 .. code-block:: python
 
-   program.add_measurement(0, 0)
-   program.add_measurement((0, 1), (0, 1))
+   program.measure(0, 0)
+   program.measure((0, 1), (0, 1))
 
 :py:meth:`~fatqat.Program.measure_all` measures every quantum slot into every classical
 slot in declaration order. It requires matching quantum and classical slot
@@ -57,7 +57,7 @@ Detailed reference
 ------------------
 
 .. autoclass:: fatqat.Program
-   :members:
+   :members: operations, add, measure, measure_all, copy
    :show-inheritance:
 
 .. autoclass:: fatqat.Measurement
