@@ -10,6 +10,24 @@ from ..errors import BackendValidationError
 from ..resource_layout import ResourceLayout
 
 
+def _validate_grid_size(grid_size: object) -> tuple[int, int]:
+    """Return a validated ``(rows, columns)`` grid shape."""
+    if not isinstance(grid_size, tuple):
+        raise TypeError(
+            "grid_size must be a tuple of two positive integers, got "
+            f"{type(grid_size)!r}"
+        )
+    if len(grid_size) != 2:
+        raise ValueError("grid_size must contain exactly two values: (rows, columns)")
+    rows, cols = grid_size
+    for name, value in (("grid_size[0]", rows), ("grid_size[1]", cols)):
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise TypeError(f"{name} must be an int, got {type(value)!r}")
+        if value <= 0:
+            raise ValueError(f"{name} must be positive, got {value}")
+    return rows, cols
+
+
 @dataclass(frozen=True)
 class _LoweringContext:
     """Private per-run pairing of the resolved `ResourceLayout` and `_EngineIndexAllocation`.

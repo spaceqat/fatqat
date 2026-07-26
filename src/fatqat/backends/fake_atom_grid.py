@@ -55,6 +55,7 @@ from ..registers import (
     RegisterRef,
 )
 from ..resource_layout import ResourceLayout
+from .backend_utils import _validate_grid_size
 from .simulator_backend import SimulatorBackend
 
 if TYPE_CHECKING:
@@ -99,6 +100,7 @@ def fake_atom_grid_implementation_map(rows: int, cols: int) -> ImplementationMap
     `device_operands`, one call per edge). Every other operation family
     (including `CX`) has no entry and is therefore unsupported.
     """
+    rows, cols = _validate_grid_size((rows, cols))
     defaults = default_matrix_implementation_map()
     rx_rule = defaults.implementation_for(ops.RX)
     ry_rule = defaults.implementation_for(ops.RY)
@@ -157,7 +159,7 @@ class AtomGridBackend(SimulatorBackend):
            >>> native_h(atoms.row(1))                 # completes pairwise CX
            >>> program.measure_all()
 
-           >>> backend = fq.backends.AtomGridBackend(rows=2, cols=3)
+           >>> backend = fq.backends.AtomGridBackend()  # default 4x5 device
            >>> counts = backend.run(
            ...     program, shots=1000, simulation_config={"seed": 1}
            ... ).result().get_counts()
@@ -167,9 +169,8 @@ class AtomGridBackend(SimulatorBackend):
 
     def __init__(
         self,
-        rows: int = DEFAULT_ROWS,
-        cols: int = DEFAULT_COLS,
         *,
+        grid_size: tuple[int, int] = (DEFAULT_ROWS, DEFAULT_COLS),
         method: str = "statevector",
         runtime: str = "numpy",
         noise: NoiseModel | None = None,
@@ -177,8 +178,8 @@ class AtomGridBackend(SimulatorBackend):
         """Create a fake atom-grid backend of the given shape.
 
         Args:
-            rows: Number of device rows. Must be a positive integer.
-            cols: Number of device columns. Must be a positive integer.
+            grid_size: Device shape as ``(rows, columns)``. Both values must
+                be positive integers.
             method: State representation, exactly as on
                 :py:class:`~fatqat.backends.SimulatorBackend`.
             runtime: Numeric execution runtime, exactly as on
@@ -188,23 +189,18 @@ class AtomGridBackend(SimulatorBackend):
                 keeps the backend ideal.
 
         Raises:
-            TypeError: If `rows` or `cols` is not an `int` (bools rejected).
-            ValueError: If `rows` or `cols` is not positive.
+            TypeError: If ``grid_size`` is not a two-item tuple of integers
+                (bools rejected).
+            ValueError: If ``grid_size`` does not contain exactly two values
+                or either value is not positive.
         """
-        if not isinstance(rows, int) or isinstance(rows, bool):
-            raise TypeError(f"rows must be int, got {type(rows)!r}")
-        if rows <= 0:
-            raise ValueError(f"rows must be positive, got {rows}")
-        if not isinstance(cols, int) or isinstance(cols, bool):
-            raise TypeError(f"cols must be int, got {type(cols)!r}")
-        if cols <= 0:
-            raise ValueError(f"cols must be positive, got {cols}")
-        self._rows = rows
-        self._cols = cols
+        self._rows, self._cols = _validate_grid_size(grid_size)
         super().__init__(
             method=method,
             runtime=runtime,
-            implementation_map=fake_atom_grid_implementation_map(rows, cols),
+            implementation_map=fake_atom_grid_implementation_map(
+                self._rows, self._cols
+            ),
             noise=noise,
         )
 

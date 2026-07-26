@@ -87,10 +87,11 @@ hard-code a target:
 Measurement and :py:data:`~fatqat.operations.Reset` are accepted on valid
 qubits independently of these native-unitary maps.
 
-4 by 4 superconducting targets
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Configurable superconducting grid targets
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The superconducting targets share this fixed row-major layout:
+The superconducting targets accept ``grid_size=(rows, cols)`` and default to
+the following 4 by 4 row-major layout:
 
 .. code-block:: text
 
@@ -100,11 +101,14 @@ The superconducting targets share this fixed row-major layout:
     12 13 14 15
 
 Two-qubit gates are legal only on horizontal or vertical neighbours. Both
-directions of each edge are registered, giving 48 directed tuples. Thus
+directions of each edge are registered, giving 48 directed tuples on the
+default shape. Thus
 ``(0, 1)`` and ``(1, 0)`` are legal but ``(0, 5)`` is not. A plain program
 maps qubits in declaration order to sites ``0`` onward. One
 :py:class:`~fatqat.GridRegister` may bind top-left in row-major order, but
-cannot be combined with another quantum register.
+cannot be combined with another quantum register. For example,
+``SCQubitIBMSimulator(grid_size=(2, 3))`` has six sites and the corresponding
+2 by 3 nearest-neighbour topology.
 
 .. list-table:: Native superconducting gate sets
    :header-rows: 1
@@ -160,6 +164,10 @@ asymmetric readout probabilities ``P(report 1 | true 0) = 0.02`` and
      - :py:data:`~fatqat.operations.CZ`
      - The same relaxation on **each** participating qubit; 50 ns
      - ``p = 0.001``
+   * - IBM-style
+     - :py:class:`~fatqat.operations.RZ`
+     - None; virtual gate
+     - None
    * - Google-style
      - :py:class:`~fatqat.operations.RX`,
        :py:class:`~fatqat.operations.RY`,
@@ -174,10 +182,6 @@ asymmetric readout probabilities ``P(report 1 | true 0) = 0.02`` and
      - :py:data:`~fatqat.operations.CZ`
      - The same relaxation on **each** participating qubit; 50 ns
      - ``p = 0.001``
-   * - IBM-style
-     - :py:class:`~fatqat.operations.RZ`
-     - None; virtual gate
-     - None
 
 See :doc:`noise` for channel execution, readout semantics, and custom noise
 models.
@@ -185,8 +189,8 @@ models.
 Neutral-atom grid target
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-:py:class:`~fatqat.backends.AtomGridBackend` has a configurable ``rows``
-by ``cols`` layout (4 by 5 by default). Its uniform native gates are
+:py:class:`~fatqat.backends.AtomGridBackend` accepts a ``grid_size=(rows,
+cols)`` layout (``(4, 5)`` by default). Its uniform native gates are
 :py:class:`~fatqat.operations.RX`, :py:class:`~fatqat.operations.RY`, and
 :py:class:`~fatqat.operations.RZ`; :py:data:`~fatqat.operations.CZ` is native
 only on directed nearest-neighbour pairs. Query those pairs through
@@ -194,7 +198,7 @@ only on directed nearest-neighbour pairs. Query those pairs through
 
 Every atom-grid program must begin with an unconditional
 :py:class:`~fatqat.operations.LoadAtom` that fits the device. It loads the
-top-left rectangle named by its ``rows`` and ``cols``. A later ``LoadAtom``
+top-left rectangle named by ``LoadAtom(rows, cols)``. A later ``LoadAtom``
 is rejected; a gate or reset touching an unloaded site is a no-op. Measurement
 remains valid on unloaded sites and reports the initial ``0`` in ideal
 execution, subject to any supplied readout noise.

@@ -1,6 +1,6 @@
-"""Fake 4x4 superconducting-grid backends for compiler prototyping.
+"""Fake configurable-shape superconducting-grid backends for compiler prototyping.
 
-Fixed 16-qubit device, row-major numbered:
+The default 4x4 device is row-major numbered:
 
 .. code-block:: text
 
@@ -9,14 +9,14 @@ Fixed 16-qubit device, row-major numbered:
     8   9  10  11
     12 13  14  15
 
-Two concrete backends share this fixed 4x4 grid, its GridRegister-aware
+Two concrete backends share a configurable grid, its GridRegister-aware
 resource mapping, and nearest-neighbor connectivity (via the private
 `_SCQubitSimulator`), differing only in native gate set and
 calibration:
 
-- `SCQubitIBMSimulator` - `X`, `SX`, `RZ` (single-qubit, any of the 16
+- `SCQubitIBMSimulator` - `X`, `SX`, `RZ` (single-qubit, any device
   labels), and `CZ` (nearest-neighbor edges only, both directions stored).
-- `SCQubitGoogleSimulator` - `RX`, `RY`, `RZ` (single-qubit, any of the 16
+- `SCQubitGoogleSimulator` - `RX`, `RY`, `RZ` (single-qubit, any device
   labels), and `iSwap`/`CZ` (nearest-neighbor edges only, both directions
   stored, both two-qubit gates native at once).
 
@@ -29,7 +29,7 @@ profile.
 The native-gate-set restriction applies to unitary operations only.
 Measurement and reset are resolved by `SimulatorBackend._lower` before any
 implementation-map lookup happens (see the `isinstance` dispatch there), so
-both backends accept them on any of the 16 qubits regardless of the
+both backends accept them on any valid device qubit regardless of the
 implementation map's contents.
 """
 
@@ -49,11 +49,12 @@ from ..operations import Operation
 from ..program import Program
 from ..registers import GridRegister, RegisterRef
 from ..resource_layout import ResourceLayout
+from .backend_utils import _validate_grid_size
 from .simulator_backend import SimulatorBackend
 
-GRID_ROWS = 4
-GRID_COLS = 4
-N_QUBITS = GRID_ROWS * GRID_COLS
+DEFAULT_ROWS = 4
+DEFAULT_COLS = 4
+DEFAULT_GRID_SIZE = (DEFAULT_ROWS, DEFAULT_COLS)
 
 # --- fake calibration profile (the facts a real device would measure) ---
 # Deliberately simple uniform numbers in realistic superconducting ranges;
@@ -62,8 +63,8 @@ N_QUBITS = GRID_ROWS * GRID_COLS
 # the usual superconducting readout skew.
 _T1 = 60e-6  # seconds
 _T2 = 48e-6
-_SX_DURATION = 20e-9  # RZ is virtual (zero duration -> no noise)
-_ROTATION_DURATION = 20e-9
+_SX_DURATION = 20e-9  # IBM-style RZ is virtual (zero duration -> no noise)
+_ROTATION_DURATION = 20e-9  # Google-style RX/RY/RZ: all physical rotations
 _CZ_DURATION = 50e-9
 _ISWAP_DURATION = 30e-9
 _CZ_DEPOLARIZING_P = 0.001
@@ -72,21 +73,21 @@ _READOUT_P01 = 0.02  # P(report 1 | true 0)
 _READOUT_P10 = 0.04  # P(report 0 | true 1)
 
 
-def _nearest_neighbor_edges() -> tuple[tuple[int, int], ...]:
-    """Return directed nearest-neighbor edges for a row-major 4x4 grid.
+def _nearest_neighbor_edges(rows: int, cols: int) -> tuple[tuple[int, int], ...]:
+    """Return directed nearest-neighbor edges for a row-major grid.
 
     Both directions of every edge are included (e.g. `(0, 1)` and `(1, 0)`),
     per the design's "keep lookup simple, never reorder targets" rule.
     """
     edges: list[tuple[int, int]] = []
-    for row in range(GRID_ROWS):
-        for col in range(GRID_COLS):
-            q = row * GRID_COLS + col
-            if col + 1 < GRID_COLS:
+    for row in range(rows):
+        for col in range(cols):
+            q = row * cols + col
+            if col + 1 < cols:
                 right = q + 1
                 edges.extend(((q, right), (right, q)))
-            if row + 1 < GRID_ROWS:
-                down = q + GRID_COLS
+            if row + 1 < rows:
+                down = q + cols
                 edges.extend(((q, down), (down, q)))
     return tuple(edges)
 
@@ -102,11 +103,11 @@ def _require_rule(
 
 
 class _SCQubitSimulator(SimulatorBackend):
-    """Shared shape and resource-mapping logic for the fake 4x4 superconducting backends.
+    """Shared shape and resource-mapping logic for fake superconducting backends.
 
     Not part of the public API. `SCQubitIBMSimulator` and
-    `SCQubitGoogleSimulator` both subclass this for the fixed 16-qubit
-    device shape, GridRegister-aware resource mapping, and the
+    `SCQubitGoogleSimulator` both subclass this for their configurable device
+    shape, GridRegister-aware resource mapping, and the
     `implementation_map` introspection property; each supplies its own
     native-gate implementation map and `default_noise_model`.
     """
@@ -115,10 +116,16 @@ class _SCQubitSimulator(SimulatorBackend):
         self,
         implementation_map: ImplementationMap,
         *,
+        rows: int,
+        cols: int,
         method: str = "statevector",
         runtime: str = "numpy",
         noise: NoiseModel | None = None,
     ) -> None:
+        # rows/cols arrive pre-validated: each subclass's __init__ validates
+        # the public grid_size tuple once, before building the implementation
+        # map from the same shape.
+        self._rows, self._cols = rows, cols
         super().__init__(
             method=method,
             runtime=runtime,
@@ -147,23 +154,25 @@ class _SCQubitSimulator(SimulatorBackend):
         total qubit count and per-subsystem dimension are checked regardless
         of register structure. A program's sole `GridRegister` (if any) then
         binds top-left onto the device: frontend `(row, col)` maps to device
-        label `row * GRID_COLS + col`. A scalar-only program (no
+        label `row * self._cols + col`. A scalar-only program (no
         `GridRegister`) delegates to the base class's generic
         declaration-order identity mapping, so an N-qubit program always
         maps onto physical qubits `0..N-1`.
 
         Raises:
-            BackendValidationError: If the program declares more than 16
-                qubits; any non-qubit-dimension (`dim != 2`) register; more
+            BackendValidationError: If the program declares more than this
+                backend's capacity; any non-qubit-dimension (`dim != 2`) register; more
                 than one `GridRegister`; a `GridRegister` combined with any
                 other quantum register; or a `GridRegister` whose shape does
                 not fit the device's, axis by axis.
         """
         name = type(self).__name__
         n_subsystems = sum(register.size for register in program.qreg)
-        if n_subsystems > N_QUBITS:
+        capacity = self._rows * self._cols
+        if n_subsystems > capacity:
             raise BackendValidationError(
-                f"{name} supports at most 16 qubits, got {n_subsystems}"
+                f"{name} supports at most {capacity} qubits on its "
+                f"{self._rows}x{self._cols} device, got {n_subsystems}"
             )
         dims = (register.dim for register in program.qreg for _ in range(register.size))
         if any(dim != 2 for dim in dims):
@@ -183,23 +192,25 @@ class _SCQubitSimulator(SimulatorBackend):
                 f"{name} rejects a GridRegister combined with any other "
                 "quantum register"
             )
-        if grid.rows > GRID_ROWS or grid.cols > GRID_COLS:
+        if grid.rows > self._rows or grid.cols > self._cols:
             raise BackendValidationError(
                 f"grid register ({grid.rows}x{grid.cols}) does not fit "
-                f"{name}'s ({GRID_ROWS}x{GRID_COLS}) device shape"
+                f"{name}'s ({self._rows}x{self._cols}) device shape"
             )
         labels: dict[RegisterRef, int] = {}
         for index in range(grid.size):
             row, col = divmod(index, grid.cols)
-            labels[grid[index]] = row * GRID_COLS + col
+            labels[grid[index]] = row * self._cols + col
         return ResourceLayout(labels)
 
 
 # --- IBM-style backend: X, SX, RZ, CZ --------------------------------------
 
 
-def fake_superconducting_ibm_implementation_map() -> ImplementationMap:
-    """Build the native gate map for the fake IBM-style 4x4 superconducting backend.
+def fake_superconducting_ibm_implementation_map(
+    rows: int = DEFAULT_ROWS, cols: int = DEFAULT_COLS
+) -> ImplementationMap:
+    """Build the native gate map for a `rows x cols` fake IBM-style superconducting backend.
 
     `X`, `SX`, and `RZ` are legal on any qubit label (registered uniformly
     via `add`); `CZ` is legal only on nearest-neighbor grid edges, both
@@ -207,6 +218,7 @@ def fake_superconducting_ibm_implementation_map() -> ImplementationMap:
     Every other operation family (including `CX`) has no entry and is
     therefore unsupported.
     """
+    rows, cols = _validate_grid_size((rows, cols))
     defaults = default_matrix_implementation_map()
     x_rule = _require_rule(defaults, ops.X)
     rz_rule = _require_rule(defaults, ops.RZ)
@@ -217,18 +229,18 @@ def fake_superconducting_ibm_implementation_map() -> ImplementationMap:
     m.add(ops.X, x_rule)
     m.add(ops.RZ, rz_rule)
     m.add(ops.SX, sx_rule)
-    for edge in _nearest_neighbor_edges():
+    for edge in _nearest_neighbor_edges(rows, cols):
         m.add(ops.CZ, cz_rule, device_operands=edge)
     return m
 
 
 class SCQubitIBMSimulator(_SCQubitSimulator):
-    """Statevector backend constrained to a fake IBM-style 4x4 superconducting target.
+    """Statevector backend constrained to a fake IBM-style superconducting target.
 
     A thin statevector-method :py:class:`~fatqat.backends.SimulatorBackend`
     specialization: same execution engine, same
     :py:class:`~fatqat.Result`/:py:class:`~fatqat.Job` semantics. The
-    differences are a fixed 16-qubit device, a fixed native gate set
+    differences are a configurable grid device, a fixed native gate set
     (:py:data:`~fatqat.operations.X`,
     :py:data:`~fatqat.operations.SX`, :py:class:`~fatqat.operations.RZ`, and
     nearest-neighbor :py:data:`~fatqat.operations.CZ`), rejecting programs
@@ -241,13 +253,16 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
     def __init__(
         self,
         *,
+        grid_size: tuple[int, int] = DEFAULT_GRID_SIZE,
         method: str = "statevector",
         runtime: str = "numpy",
         noise: NoiseModel | None = None,
     ) -> None:
-        """Create a fake IBM-style 4x4 superconducting backend.
+        """Create a fake IBM-style superconducting backend.
 
         Args:
+            grid_size: Device shape as ``(rows, columns)``. Both values must
+                be positive integers.
             method: State representation, exactly as on
                 :py:class:`~fatqat.backends.SimulatorBackend`.
             runtime: Numeric execution runtime, exactly as on
@@ -257,11 +272,20 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
                 default) keeps the backend ideal; pass
                 ``self.default_noise_model()`` for the device's
                 calibration-derived profile.
+
+        Raises:
+            TypeError: If ``grid_size`` is not a two-item tuple of integers
+                (bools rejected).
+            ValueError: If ``grid_size`` does not contain exactly two values
+                or either value is not positive.
         """
+        rows, cols = _validate_grid_size(grid_size)
         super().__init__(
             method=method,
             runtime=runtime,
-            implementation_map=fake_superconducting_ibm_implementation_map(),
+            implementation_map=fake_superconducting_ibm_implementation_map(rows, cols),
+            rows=rows,
+            cols=cols,
             noise=noise,
         )
 
@@ -323,8 +347,10 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
 # --- Google-style backend: RX, RY, RZ, iSwap, CZ ---------------------------
 
 
-def fake_superconducting_google_implementation_map() -> ImplementationMap:
-    """Build the native gate map for the fake Google-style 4x4 superconducting backend.
+def fake_superconducting_google_implementation_map(
+    rows: int = DEFAULT_ROWS, cols: int = DEFAULT_COLS
+) -> ImplementationMap:
+    """Build the native gate map for a `rows x cols` fake Google-style superconducting backend.
 
     `RX`, `RY`, and `RZ` are legal on any qubit label (registered uniformly
     via `add`); `iSwap` and `CZ` are legal only on nearest-neighbor grid
@@ -332,6 +358,7 @@ def fake_superconducting_google_implementation_map() -> ImplementationMap:
     per edge, per gate). Every other operation family (including `CX`) has
     no entry and is therefore unsupported.
     """
+    rows, cols = _validate_grid_size((rows, cols))
     defaults = default_matrix_implementation_map()
     rx_rule = _require_rule(defaults, ops.RX)
     ry_rule = _require_rule(defaults, ops.RY)
@@ -343,19 +370,19 @@ def fake_superconducting_google_implementation_map() -> ImplementationMap:
     m.add(ops.RX, rx_rule)
     m.add(ops.RY, ry_rule)
     m.add(ops.RZ, rz_rule)
-    for edge in _nearest_neighbor_edges():
+    for edge in _nearest_neighbor_edges(rows, cols):
         m.add(ops.iSwap, iswap_rule, device_operands=edge)
         m.add(ops.CZ, cz_rule, device_operands=edge)
     return m
 
 
 class SCQubitGoogleSimulator(_SCQubitSimulator):
-    """Statevector backend constrained to a fake Google-style 4x4 superconducting target.
+    """Statevector backend constrained to a fake Google-style superconducting target.
 
     A thin statevector-method :py:class:`~fatqat.backends.SimulatorBackend`
     specialization: same execution engine, same
     :py:class:`~fatqat.Result`/:py:class:`~fatqat.Job` semantics. The
-    differences are a fixed 16-qubit device, a fixed native gate set
+    differences are a configurable grid device, a fixed native gate set
     (:py:class:`~fatqat.operations.RX`,
     :py:class:`~fatqat.operations.RY`, :py:class:`~fatqat.operations.RZ`, and
     nearest-neighbor :py:data:`~fatqat.operations.iSwap` and
@@ -369,13 +396,16 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
     def __init__(
         self,
         *,
+        grid_size: tuple[int, int] = DEFAULT_GRID_SIZE,
         method: str = "statevector",
         runtime: str = "numpy",
         noise: NoiseModel | None = None,
     ) -> None:
-        """Create a fake Google-style 4x4 superconducting backend.
+        """Create a fake Google-style superconducting backend.
 
         Args:
+            grid_size: Device shape as ``(rows, columns)``. Both values must
+                be positive integers.
             method: State representation, exactly as on
                 :py:class:`~fatqat.backends.SimulatorBackend`.
             runtime: Numeric execution runtime, exactly as on
@@ -385,9 +415,20 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
                 default) keeps the backend ideal; pass
                 ``self.default_noise_model()`` for the device's
                 calibration-derived profile.
+
+        Raises:
+            TypeError: If ``grid_size`` is not a two-item tuple of integers
+                (bools rejected).
+            ValueError: If ``grid_size`` does not contain exactly two values
+                or either value is not positive.
         """
+        rows, cols = _validate_grid_size(grid_size)
         super().__init__(
-            implementation_map=fake_superconducting_google_implementation_map(),
+            implementation_map=fake_superconducting_google_implementation_map(
+                rows, cols
+            ),
+            rows=rows,
+            cols=cols,
             method=method,
             runtime=runtime,
             noise=noise,
