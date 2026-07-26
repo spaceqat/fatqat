@@ -606,7 +606,10 @@ class CalibrationSpec:
 
     @staticmethod
     def _validate_recipes(recipes: Mapping[str, Any], model: PhysicsModel) -> None:
-        _exact_keys(recipes, {"rx_ry", "rz", "iswap", "cz"}, "calibration.recipes")
+        # RZ has no recipe: it realizes as an exact virtual frame rotation
+        # (see resolved.realize_native_operation), not a calibrated physical
+        # gate, so it carries no calibration degree of freedom to validate.
+        _exact_keys(recipes, {"rx_ry", "iswap", "cz"}, "calibration.recipes")
         # No stored amplitude: for a requested angle theta and this duration T,
         # the Hann/DRAG peak is exactly theta/T (architecture doc Sec. 5.1), so
         # realization derives it rather than reading a calibrated constant.
@@ -615,12 +618,6 @@ class CalibrationSpec:
             "calibration.recipes.rx_ry",
             {"duration_ns", "drag_coefficient"},
             positive_fields={"duration_ns"},
-        )
-        CalibrationSpec._validate_single_qubit(
-            recipes["rz"],
-            "calibration.recipes.rz",
-            {"frame_scale"},
-            positive_fields=set(),
         )
         # iSWAP is a fixed-angle gate (area = pi/2), so its exchange peak is
         # likewise fully determined by duration_ns, not stored calibration data.

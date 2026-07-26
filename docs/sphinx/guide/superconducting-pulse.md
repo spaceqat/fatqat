@@ -28,9 +28,11 @@ evolution and final-state output.
 
 ## Native operations and results
 
-The backend accepts calibrated `RX`, `RY`, virtual `RZ`, `iSwap`, and oriented
-`CZ`. `iSwap` and `CZ` require a declared model coupling. For `CZ`, program
-target order must match the calibration's detuning orientation.
+The backend accepts the calibrated physical gates `RX`, `RY`, `iSwap`, and
+oriented `CZ`, plus `RZ`, which realizes as an exact virtual frame rotation
+with no physical control and no calibration degree of freedom. `iSwap` and
+`CZ` require a declared model coupling. For `CZ`, program target order must
+match the calibration's detuning orientation.
 
 ```python
 program = fq.Program(2, 1)

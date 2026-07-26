@@ -73,7 +73,6 @@ def test_calibration_is_separate_and_exactly_identity_bound():
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda document: document["recipes"].pop("rz"),
         lambda document: document["recipes"]["rx_ry"].update(duration_ns=0),
         lambda document: document["recipes"]["cz"]["edges"][0].update(
             detuning_subsystem="missing"
@@ -87,6 +86,13 @@ def test_calibration_rejects_incomplete_or_invalid_recipe_values(mutate):
     document = _calibration_document()
     mutate(document)
     with pytest.raises(BackendValidationError):
+        load_calibration_spec(document, load_physics_model(_model_document()))
+
+
+def test_calibration_rejects_an_rz_recipe_including_an_arbitrary_scale():
+    document = _calibration_document()
+    document["recipes"]["rz"] = {"frame_scale": 2.0}
+    with pytest.raises(BackendValidationError, match="unknown"):
         load_calibration_spec(document, load_physics_model(_model_document()))
 
 

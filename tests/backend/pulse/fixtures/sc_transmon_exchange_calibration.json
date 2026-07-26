@@ -8,7 +8,6 @@
       "duration_ns": 20.0,
       "drag_coefficient": 1.0
     },
-    "rz": {"frame_scale": 1.0},
     "iswap": {"duration_ns": 40.0},
     "cz": {
       "edges": [

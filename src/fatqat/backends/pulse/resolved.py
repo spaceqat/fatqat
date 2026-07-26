@@ -313,9 +313,7 @@ def realize_native_operation(
         )
     if isinstance(operation, RZ):
         (subsystem_id,) = _target_ids(model, targets, 1)
-        angle = _finite(operation.theta, "rotation angle") * float(
-            calibration.recipe("rz")["frame_scale"]
-        )
+        angle = _finite(operation.theta, "rotation angle")
         return PulseBlock(
             model=model,
             duration_ns=0.0,
