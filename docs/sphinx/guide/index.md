@@ -29,8 +29,7 @@ quickstart
 concepts
 gates
 measurement-and-conditions
-   running-and-results
-   superconducting-pulse
+running-and-results
 noise
 advanced
 troubleshooting

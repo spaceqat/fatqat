@@ -17,7 +17,7 @@
           "detuning_subsystem": "q0",
           "duration_ns": 60.0,
           "ramp_duration_ns": 3.0,
-          "detuning_ghz": 0.34,
+          "detuning_ghz": 0.22,
           "phase_corrections_rad": {"q0": 0.0, "q1": 0.0}
         }
       ]

@@ -7,10 +7,7 @@ pretending that a matrix-family simulator executed the pulse program.
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
-
-import numpy as np
 
 from ..._engine_index_allocation import _EngineIndexAllocation
 from ...backends.backend_utils import _normalize_config
@@ -18,7 +15,6 @@ from ...errors import BackendValidationError
 from ...job import Job
 from ...noise import NoiseModel, NoiseSupportReport
 from ...program import Program
-from ...result import Result, reduce_to_counts, counts_dict_from_arrays
 from ...resource_layout import ResourceLayout
 from .engine_contract import (
     PulseResultConfig,
@@ -26,8 +22,6 @@ from .engine_contract import (
     PulseSimulationConfig,
 )
 from .planning import PulsePlanFacts, PulsePlanStep, lower_program
-from ...backends.steps import MeasurementStep, ResetStep
-from .execution import execute_with_boundaries
 from .superconducting import CalibrationSpec, PhysicsModel
 
 
@@ -126,11 +120,10 @@ class PulseBackend:
         )
         self._validate(result, shots, facts)
         try:
-            return Job.done(
-                self._execute(plan, facts, simulation, result, shots, allocation)
-            )
+            self._execute_unavailable(plan, simulation, result, shots)
         except Exception as exc:  # execution failures belong on the eager Job
             return Job.failed(exc)
+        raise AssertionError("pulse execution unexpectedly returned without a Result")
 
     def _validate(
         self, config: PulseResultConfig, shots: int, facts: PulsePlanFacts
@@ -155,92 +148,17 @@ class PulseBackend:
             )
         return PulseResultRequest(counts=counts, density_matrix=density_matrix)
 
-    def _execute(
-        self,
+    @staticmethod
+    def _execute_unavailable(
         plan: list[PulsePlanStep],
-        facts: PulsePlanFacts,
         simulation: PulseSimulationConfig,
         result: PulseResultConfig,
         shots: int,
-        allocation: _EngineIndexAllocation,
-    ) -> Result:
-        """Replay continuous runs around physical boundaries in serial shot order."""
-        request = self._validate(result, shots, facts)
-        repetitions = shots if request.counts else 1
-        rng = np.random.default_rng(simulation.seed)
-        rows = []
-        density_matrix = None
-        for _ in range(repetitions):
-            classical, density_matrix = self._replay_shot(plan, allocation, rng)
-            if request.counts:
-                rows.append(classical)
-        counts = None
-        if request.counts:
-            keys, values = reduce_to_counts(rows)
-            counts = counts_dict_from_arrays(keys, values)
-        available = {"density_matrix"} if request.density_matrix else set()
-        if request.counts:
-            available.add("counts")
-        return Result(
-            counts=counts,
-            density_matrix=density_matrix if request.density_matrix else None,
-            available=frozenset(available),
-            classical_dims=allocation.classical_dims,
-            metadata={
-                "backend_name": type(self).__name__,
-                "shots": shots,
-                "simulation_config": asdict(simulation),
-                "result_config": asdict(result),
-            },
+    ) -> None:
+        del plan, simulation, result, shots
+        raise RuntimeError(
+            "pulse execution is unavailable until the private engine is implemented"
         )
-
-    def _replay_shot(
-        self,
-        plan: list[PulsePlanStep],
-        allocation: _EngineIndexAllocation,
-        rng: np.random.Generator,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Execute one serial dynamic branch and retain physical qutrit state."""
-        # Keep QuTiP behind the execution boundary: public backend imports do
-        # not initialize its solver dependency.
-        from .qutip_adapter import SCQutipAdapter
-
-        adapter = SCQutipAdapter(self.model)
-        classical = np.zeros(allocation.n_clbits, dtype=int)
-
-        def execute_run(run: object) -> None:
-            enabled = tuple(
-                block.condition is None
-                or all(classical[index] == value for index, value in block.condition)
-                for block in run.blocks
-            )
-            adapter.evolve(run, enabled)
-
-        def execute_boundary(
-            step: MeasurementStep | ResetStep, _time_ns: float
-        ) -> None:
-            if isinstance(step, MeasurementStep):
-                maps = step.reported_digit_maps or tuple(
-                    (0, 1) for _ in step.measured_indices
-                )
-                confusions = step.confusions or (None,) * len(step.measured_indices)
-                for physical_index, classical_index, digit_map, confusion in zip(
-                    step.measured_indices, step.classical_indices, maps, confusions
-                ):
-                    reported = digit_map[adapter.measure(physical_index, rng)]
-                    if confusion is not None:
-                        reported = int(
-                            rng.choice(len(confusion), p=confusion[:, reported])
-                        )
-                    classical[classical_index] = reported
-            elif step.condition is None or all(
-                classical[index] == value for index, value in step.condition
-            ):
-                for physical_index in step.reset_indices:
-                    adapter.reset(physical_index)
-
-        execute_with_boundaries(plan, execute_run, execute_boundary)
-        return classical, adapter.density_matrix()
 
     def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
         """Report v0.1 planning support before continuous-noise work arrives."""
