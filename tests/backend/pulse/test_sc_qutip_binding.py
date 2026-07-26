@@ -188,11 +188,12 @@ def test_realized_iswap_matches_the_public_positive_i_phase_convention():
         model=model,
         calibration=calibration,
     )
+    ket_00 = tensor(basis(3, 0), basis(3, 0))
     ket_01 = tensor(basis(3, 0), basis(3, 1))
     ket_10 = tensor(basis(3, 1), basis(3, 0))
-    initial = ket2dm((ket_01 + 0.3 * ket_10).unit())
+    initial = ket2dm((ket_00 + ket_01 + 0.3 * ket_10).unit())
     actual = _evolve(adapter, (block,), _context(adapter, initial)).state
-    expected = ket2dm((1j * ket_10 + 0.3j * ket_01).unit())
+    expected = ket2dm((ket_00 + 1j * ket_10 + 0.3j * ket_01).unit())
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
 
 
