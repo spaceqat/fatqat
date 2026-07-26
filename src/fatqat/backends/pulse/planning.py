@@ -25,8 +25,6 @@ class PulsePlanFacts:
     """Lowered-program facts needed for default pulse result requests."""
 
     has_measurement: bool
-    has_reset: bool
-    has_guarded_pulse: bool
 
 
 def lower_program(
@@ -80,10 +78,6 @@ def lower_program(
             )
     return plan, PulsePlanFacts(
         has_measurement=any(isinstance(step, MeasurementStep) for step in plan),
-        has_reset=any(isinstance(step, ResetStep) for step in plan),
-        has_guarded_pulse=any(
-            isinstance(step, PulseBlock) and step.condition is not None for step in plan
-        ),
     )
 
 

@@ -51,7 +51,7 @@ def test_lowering_produces_unplaced_blocks_and_preserves_boundaries_and_guards()
     assert plan[1].reported_digit_maps == ((0, 1, 1),)
     assert plan[2].condition == ((0, 0),)
     assert plan[3].condition == ((0, 0),)
-    assert facts.has_measurement and facts.has_reset and facts.has_guarded_pulse
+    assert facts.has_measurement
 
 
 def test_lowering_rejects_absent_edges_and_reversed_cz_orientation():

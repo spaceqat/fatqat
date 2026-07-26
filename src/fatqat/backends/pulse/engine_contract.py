@@ -36,11 +36,3 @@ class PulseSimulationConfig(_SimulationConfig):
 @dataclass(frozen=True)
 class PulseResultConfig(_ResultConfig):
     """Pulse backend result request; ``final_state`` maps to density_matrix."""
-
-
-@dataclass(frozen=True)
-class PulseResultRequest:
-    """Resolved pulse result fields passed to the future density-matrix engine."""
-
-    counts: bool
-    density_matrix: bool

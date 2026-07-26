@@ -9,6 +9,7 @@ import numpy as np
 
 from ..._engine_index_allocation import _EngineIndexAllocation
 from ...backends.backend_utils import _LoweringContext, _normalize_config
+from ...backends.engine_contract import _DensityMatrixResultRequest
 from ...errors import BackendExecutionError, BackendValidationError
 from ...job import Job
 from ...noise import NoiseModel, NoiseSupportReport, ThermalRelaxation
@@ -16,11 +17,7 @@ from ...program import Program
 from ...resource_layout import ResourceLayout
 from ...result import Result, counts_dict_from_arrays, reduce_to_counts
 from .engine import PulseEngine
-from .engine_contract import (
-    PulseResultConfig,
-    PulseResultRequest,
-    PulseSimulationConfig,
-)
+from .engine_contract import PulseResultConfig, PulseSimulationConfig
 from .planning import PulsePlanFacts, PulsePlanStep, lower_program
 from .superconducting import CalibrationSpec, PhysicsModel
 
@@ -147,7 +144,7 @@ class PulseBackend:
 
     def _validate(
         self, config: PulseResultConfig, shots: int, facts: PulsePlanFacts
-    ) -> PulseResultRequest:
+    ) -> _DensityMatrixResultRequest:
         counts = config.counts if config.counts is not None else facts.has_measurement
         density_matrix = (
             config.final_state
@@ -166,12 +163,12 @@ class PulseBackend:
             raise BackendValidationError(
                 "density_matrix with physical measurement sampling is only supported for shots == 1"
             )
-        return PulseResultRequest(counts=counts, density_matrix=density_matrix)
+        return _DensityMatrixResultRequest(counts=counts, density_matrix=density_matrix)
 
     def _execute(
         self,
         plan: list[PulsePlanStep],
-        request: PulseResultRequest,
+        request: _DensityMatrixResultRequest,
         simulation: PulseSimulationConfig,
         result_config: PulseResultConfig,
         shots: int,

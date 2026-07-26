@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from math import isfinite, sqrt
 from types import MappingProxyType
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 
@@ -152,8 +152,8 @@ class PhysicsModelSpec:
     builder: BuilderIdentity
     model: ModelIdentity
     parameters: Mapping[str, Any]
-    format: str = _MODEL_FORMAT
-    schema_version: int = _SCHEMA_VERSION
+    format: ClassVar[str] = _MODEL_FORMAT
+    schema_version: ClassVar[int] = _SCHEMA_VERSION
 
     @classmethod
     def from_mapping(cls, document: Any) -> PhysicsModelSpec:
@@ -565,8 +565,8 @@ class CalibrationSpec:
 
     key: ModelKey
     recipes: Mapping[str, Any]
-    format: str = _CALIBRATION_FORMAT
-    schema_version: int = _SCHEMA_VERSION
+    format: ClassVar[str] = _CALIBRATION_FORMAT
+    schema_version: ClassVar[int] = _SCHEMA_VERSION
 
     @classmethod
     def from_mapping(cls, document: Any, model: PhysicsModel) -> CalibrationSpec:
