@@ -53,6 +53,10 @@ result.available_data           # frozenset of field names actually present
 result.metadata                 # shots, backend name, effective configurations
 ```
 
+`final_state` is a request name, not an artifact name. When it is produced,
+`available_data` contains the method-native name: `"statevector"` for a
+statevector backend or `"density_matrix"` for a density-matrix backend.
+
 Calling an accessor for a field that wasn't produced raises
 {py:exc}`~fatqat.errors.ResultFieldUnavailableError` rather than returning
 `None`; check `available_data` first if a field is optional in your workflow.

@@ -929,6 +929,7 @@ class NumbaSVSimulator(NumpySVSimulator):
         shots: int,
         seed: int | None,
         request,
+        config: EngineConfig,
     ) -> RawResult:
         """Dynamic execution: fuse the per-shot trajectory, run shots in parallel.
 
@@ -936,10 +937,50 @@ class NumbaSVSimulator(NumpySVSimulator):
         Numba kernel (thread-parallel over shots), replacing the Python per-shot
         loop and per-gate dispatch. State-export runs (and the no-work case) fall
         back to the serial base path, which keeps ``self._state`` for the export.
+
+        ``config`` is forwarded to that fallback path but has no effect on the
+        fused kernel - see the ``numba-runtime`` TODO below.
         """
+        # TODO(numba-runtime): the fused kernel always runs its shot loop
+        # thread-parallel (`@njit(parallel=True)` + `prange` in
+        # `_run_shots_kernel` below). `EngineConfig`'s `max_workers`/
+        # `parallel_mode` don't reach it - those steer the NumPy path's
+        # OS-process distribution only - so today, under `runtime="numba"`,
+        # `prange` can never be turned off from `simulation_config`.
+        #
+        # That matters for a user who parallelizes at a higher level - e.g.
+        # running several independent numba circuits concurrently themselves -
+        # and doesn't want each one's internal `prange` also claiming threads,
+        # oversubscribing the machine.
+        #
+        # Agreed direction: a simple on/off switch (e.g. `numba_parallel:
+        # bool = True`), not a thread-count knob, and not a reinterpretation of
+        # `max_workers`/`parallel_mode` (those stay OS-process-scoped for the
+        # NumPy path only). Mechanically, `_run_shots_kernel` is compiled once
+        # with `parallel=True`, so there's no cheap way to hand it an
+        # arbitrary thread count without a second compiled variant - but
+        # `numba.set_num_threads(1)` before the call forces that same
+        # `prange` loop onto one thread, which is exactly "off".
+        #
+        # Two landmines for whoever implements it:
+        # 1. Wiring: `_simulation_config_cls` is currently a class attribute,
+        #    swapped only via subclassing (see the hardware-backend extension
+        #    hook in tests/backend/test_configuration_api.py). `runtime` is
+        #    chosen per-instance on the same `SimulatorBackend` class, so a
+        #    numba-only field can't be a static override; either keep it on
+        #    the base `_SimulationConfig` and reject it off-runtime in
+        #    `_validate_additional_config`, or bind `_simulation_config_cls`
+        #    per-instance in `__init__` next to `_simulator_cls` - and in that
+        #    case, compose with (don't clobber) a hardware subclass's own
+        #    `_simulation_config_cls` override.
+        # 2. `numba.set_num_threads()` mutates the interpreter-wide thread
+        #    pool, not just this call. Set it immediately before the kernel
+        #    invocation and restore the prior value after - the same
+        #    mutate-shared-state hazard already fixed for
+        #    `self._simulator.config` elsewhere in this PR.
         state_requested = getattr(request, self._state_field)
         if state_requested or not request.counts or not _plan_compilable(plan):
-            return super()._run_per_shot(plan, shots, seed, request)
+            return super()._run_per_shot(plan, shots, seed, request, config)
 
         from .parallel import _shot_seed_sequences
 
