@@ -22,9 +22,10 @@ class ResetGate(Operation):
         Flip a qubit to ``|1>`` then reset it back to ``|0>``:
 
         >>> import fatqat as fq
+        >>> import fatqat.operations as op
         >>> program = fq.Program(1)
-        >>> program.add(fq.ops.X, 0)
-        >>> program.add(fq.ops.Reset, 0)
+        >>> program.add(op.X, 0)
+        >>> program.add(op.Reset, 0)
         >>> result = fq.backends.SimulatorBackend("SV").run(
         ...     program,
         ...     shots=1,
@@ -39,5 +40,5 @@ class ResetGate(Operation):
 
 
 # `Reset` takes no parameters, so - like the fixed gates - it is exported only
-# as a singleton value: `fq.ops.Reset`, not `fq.ops.Reset()`.
+# as a singleton value: `op.Reset`, not `op.Reset()`.
 Reset = ResetGate()

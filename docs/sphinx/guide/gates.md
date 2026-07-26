@@ -1,6 +1,6 @@
 # Gates
 
-Use gates from the ``fq.ops`` namespace with {py:meth}`~fatqat.Program.add`.
+Import ``fatqat.operations`` as ``op`` and use it with {py:meth}`~fatqat.Program.add`.
 The
 {doc}`operations API reference <../api/operations>` contains exact
 signatures and matrices; this page focuses on the everyday calling pattern.
@@ -11,23 +11,24 @@ Fixed gates are ready-to-use values. Do not add parentheses:
 
 ```python
 import fatqat as fq
+import fatqat.operations as op
 
 program = fq.Program(2)
-program.add(fq.ops.H, 0)
-program.add(fq.ops.X, 1)
-program.add(fq.ops.CX, (0, 1))
+program.add(op.H, 0)
+program.add(op.X, 1)
+program.add(op.CX, (0, 1))
 ```
 
 Parametric gates are classes. Create one with its parameter before adding
 it. Rotation and phase angles are in radians:
 
 ```python
-program.add(fq.ops.RX(0.2), 0)
-program.add(fq.ops.RZ(1.5), 1)
-program.add(fq.ops.CPhase(0.4), (0, 1))
+program.add(op.RX(0.2), 0)
+program.add(op.RZ(1.5), 1)
+program.add(op.CPhase(0.4), (0, 1))
 ```
 
-Passing `fq.ops.RX` rather than `fq.ops.RX(0.2)` is a common mistake. The
+Passing `op.RX` rather than `op.RX(0.2)` is a common mistake. The
 former is the gate class; the latter is the operation you add.
 
 ## Targets and target order
@@ -36,9 +37,9 @@ A one-qubit gate takes one target. A multi-qubit gate takes one tuple of
 targets:
 
 ```python
-program.add(fq.ops.H, 0)
-program.add(fq.ops.CX, (0, 1))
-program.add(fq.ops.CCX, (0, 1, 2))
+program.add(op.H, 0)
+program.add(op.CX, (0, 1))
+program.add(op.CCX, (0, 1, 2))
 ```
 
 For controlled gates, controls come first and the final target comes last.
@@ -63,11 +64,12 @@ view-capable operations are `RX`, `RY`, `RZ`, `CX`, and `CZ`.
 
 ```python
 import fatqat as fq
+import fatqat.operations as op
 
 atoms = fq.GridRegister(2, 3, name="atoms")
 program = fq.Program([atoms])
-program.add(fq.ops.RX(0.2), atoms.row(1))
-program.add(fq.ops.CX, (atoms.row(0), atoms.row(1)))
+program.add(op.RX(0.2), atoms.row(1))
+program.add(op.CX, (atoms.row(0), atoms.row(1)))
 ```
 
 The two views in the `CX` example are paired in order: the first entry in

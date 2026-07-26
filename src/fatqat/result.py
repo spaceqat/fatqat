@@ -197,8 +197,9 @@ class Result:
 
         Examples:
             >>> import fatqat as fq
+            >>> import fatqat.operations as op
             >>> program = fq.Program(1, 1)
-            >>> program.add(fq.ops.X, 0)
+            >>> program.add(op.X, 0)
             >>> program.add_measurement(0, 0)
             >>> result = fq.backends.SimulatorBackend("SV").run(program, shots=10).result()
             >>> result.get_counts()
@@ -236,8 +237,9 @@ class Result:
 
         Examples:
             >>> import fatqat as fq
+            >>> import fatqat.operations as op
             >>> program = fq.Program(1)
-            >>> program.add(fq.ops.X, 0)
+            >>> program.add(op.X, 0)
             >>> result = fq.backends.SimulatorBackend("SV").run(
             ...     program,
             ...     result_config={"counts": False, "final_state": True},
@@ -262,8 +264,9 @@ class Result:
 
         Examples:
             >>> import fatqat as fq
+            >>> import fatqat.operations as op
             >>> program = fq.Program(1)
-            >>> program.add(fq.ops.H, 0)
+            >>> program.add(op.H, 0)
             >>> result = fq.backends.SimulatorBackend("DM").run(
             ...     program,
             ...     result_config={"counts": False, "final_state": True},

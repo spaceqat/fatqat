@@ -101,10 +101,11 @@ class NoiseModel:
         Depolarize every ``X`` gate and run under density-matrix semantics:
 
         >>> import fatqat as fq
+        >>> import fatqat.operations as op
         >>> noise = fq.NoiseModel()
-        >>> noise.add_noise(fq.ops.X, fq.noise.Depolarizing(p=0.2))
+        >>> noise.add_noise(op.X, fq.noise.Depolarizing(p=0.2))
         >>> program = fq.Program(1)
-        >>> program.add(fq.ops.X, 0)
+        >>> program.add(op.X, 0)
         >>> result = fq.backends.SimulatorBackend(method="DM", noise=noise).run(
         ...     program,
         ...     result_config={"counts": False, "final_state": True},
@@ -132,7 +133,7 @@ class NoiseModel:
 
         Args:
             operation: An :py:class:`~fatqat.operations.Operation` instance
-                (e.g. ``fq.ops.X``) or subclass, normalized to the class for
+                (e.g. ``op.X``) or subclass, normalized to the class for
                 keying. `Barrier` is rejected: it is a compiler marker with
                 no execution extent for noise to attach to.
             channel: The `Channel` descriptor to apply after each occurrence.

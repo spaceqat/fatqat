@@ -18,10 +18,13 @@ unambiguous in programs with several registers:
 
 .. code-block:: python
 
+   import fatqat as fq
+   import fatqat.operations as op
+
    left = fq.QuantumRegister(2, name="left")
    right = fq.QuantumRegister(2, name="right")
    program = fq.Program([left, right])
-   program.add(fq.ops.H, program.qreg[1][0])
+   program.add(op.H, program.qreg[1][0])
 
 Grid registers
 --------------

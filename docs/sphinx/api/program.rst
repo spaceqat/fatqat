@@ -5,6 +5,8 @@ Program
 program, add operations and measurements in order, then pass it to a
 backend.
 
+Operation examples use ``import fatqat.operations as op``.
+
 Create a program
 ----------------
 
@@ -20,14 +22,14 @@ Add an operation
 
 :py:meth:`~fatqat.Program.add` (``op, targets, *, condition=None``)
 
-- ``op`` is a value or constructed gate from ``fq.ops``.
+- ``op`` is a value or constructed gate from ``fatqat.operations``.
 - ``targets`` is one integer or register reference for a one-target gate,
   or a tuple such as ``(0, 1)`` for a multi-target gate.
 - ``condition=(clbit, value)`` applies an operation only when a previous
   measurement wrote the requested classical value.
 
-Fixed gates are values: ``program.add(fq.ops.H, 0)``. Parametric gates are
-constructed first: ``program.add(fq.ops.RX(0.2), 0)``.
+Fixed gates are values: ``program.add(op.H, 0)``. Parametric gates are
+constructed first: ``program.add(op.RX(0.2), 0)``.
 
 Add a measurement
 -----------------

@@ -22,14 +22,14 @@ class Operation:
             None for variable arity with at least one target.
 
     Examples:
-        >>> import fatqat as fq
-        >>> fq.ops.H.name
+        >>> import fatqat.operations as op
+        >>> op.H.name
         'H'
-        >>> fq.ops.H.num_subsystems
+        >>> op.H.num_subsystems
         1
-        >>> fq.ops.CX.num_subsystems
+        >>> op.CX.num_subsystems
         2
-        >>> fq.ops.RX(0.2).num_subsystems
+        >>> op.RX(0.2).num_subsystems
         1
     """
 

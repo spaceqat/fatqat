@@ -411,8 +411,9 @@ class SimulatorBackend:
         Density-matrix simulation, Qiskit style:
 
         >>> import fatqat as fq
+        >>> import fatqat.operations as op
         >>> program = fq.Program(1)
-        >>> program.add(fq.ops.H, 0)
+        >>> program.add(op.H, 0)
         >>> result = fq.backends.SimulatorBackend(method="DM").run(
         ...     program,
         ...     result_config={"counts": False, "final_state": True},

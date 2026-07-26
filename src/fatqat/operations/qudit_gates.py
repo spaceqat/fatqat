@@ -4,9 +4,10 @@ Examples:
     ``Shift`` on a qutrit (``dim=3``) cyclically shifts the basis level:
 
     >>> import fatqat as fq
+    >>> import fatqat.operations as op
     >>> qutrit = fq.QuantumRegister(1, dim=3)
     >>> program = fq.Program([qutrit])
-    >>> program.add(fq.ops.Shift(1), 0)
+    >>> program.add(op.Shift(1), 0)
     >>> result = fq.backends.SimulatorBackend("SV").run(
     ...     program,
     ...     shots=1,
@@ -205,9 +206,9 @@ class FourierGate(Operation):
         1&1&1\\\\ 1&\\omega&\\omega^2\\\\ 1&\\omega^2&\\omega
         \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
 
-    Internal only: unlike `SumGate` (attribute-accessible via `fq.ops.SumGate`
+    Internal only: unlike `SumGate` (attribute-accessible via `op.SumGate`
     though excluded from `__all__`), this class is not imported into
-    `operations/__init__.py` at all, so it is not reachable as `fq.ops.
+    `operations/__init__.py` at all, so it is not reachable as `op.
     FourierGate`. `Fourier` (the singleton) is the only public surface.
     """
 
@@ -234,7 +235,7 @@ class FourierdgGate(Operation):
         \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
 
     Internal only: not imported into `operations/__init__.py`, so it is not
-    reachable as `fq.ops.FourierdgGate`. `Fourierdg` (the singleton) is the
+    reachable as `op.FourierdgGate`. `Fourierdg` (the singleton) is the
     only public surface.
     """
 

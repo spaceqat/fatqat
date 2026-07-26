@@ -58,15 +58,16 @@ hard-code a target:
 .. code-block:: python
 
    import fatqat as fq
+   import fatqat.operations as op
 
    target = fq.backends.SCQubitIBMSimulator().implementation_map
    native_families = target.supported_operations()
-   cz_edges = target.device_operands_for(fq.ops.CZ)
+   cz_edges = target.device_operands_for(op.CZ)
 
-   assert target.supports(fq.ops.SX)
-   assert not target.device_operands_for(fq.ops.SX)  # uniform support
-   assert target.supports(fq.ops.CZ, device_operands=(0, 1))
-   assert not target.supports(fq.ops.CZ, device_operands=(0, 5))
+   assert target.supports(op.SX)
+   assert not target.device_operands_for(op.SX)  # uniform support
+   assert target.supports(op.CZ, device_operands=(0, 1))
+   assert not target.supports(op.CZ, device_operands=(0, 5))
 
 .. list-table:: Interpreting an implementation map
    :header-rows: 1
@@ -209,9 +210,9 @@ execution, subject to any supplied readout noise.
 
    atoms = fq.GridRegister(2, 3, name="atoms")
    program = fq.Program([atoms])
-   program.add(fq.ops.LoadAtom(2, 3))
-   program.add(fq.ops.RX(0.2), atoms.row(0))
-   program.add(fq.ops.CZ, (atoms[0], atoms[3]))
+   program.add(op.LoadAtom(2, 3))
+   program.add(op.RX(0.2), atoms.row(0))
+   program.add(op.CZ, (atoms[0], atoms[3]))
 
    backend = fq.backends.AtomGridBackend()  # 4 by 5 device
 

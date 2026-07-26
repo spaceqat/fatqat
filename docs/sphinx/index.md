@@ -12,10 +12,11 @@ backend boundary.
 
 ```python
 import fatqat as fq
+import fatqat.operations as op
 
 program = fq.Program(2, 2)  # two qubits and two classical bits
-program.add(fq.ops.H, 0)
-program.add(fq.ops.CX, (0, 1))
+program.add(op.H, 0)
+program.add(op.CX, (0, 1))
 program.add_measurement((0, 1), (0, 1))
 
 backend = fq.backends.SimulatorBackend()

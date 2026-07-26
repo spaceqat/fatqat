@@ -8,9 +8,10 @@ value to control a later operation.
 
 ```python
 import fatqat as fq
+import fatqat.operations as op
 
 program = fq.Program(1, 1)
-program.add(fq.ops.X, 0)
+program.add(op.X, 0)
 program.add_measurement(0, 0)
 
 result = fq.backends.SimulatorBackend().run(program, shots=10).result()
@@ -38,11 +39,12 @@ only when an earlier measurement wrote that value. A sequence of
 
 ```python
 import fatqat as fq
+import fatqat.operations as op
 
 program = fq.Program(2, 1)
-program.add(fq.ops.H, 0)
+program.add(op.H, 0)
 program.add_measurement(0, 0)
-program.add(fq.ops.X, 1, condition=(0, 1))
+program.add(op.X, 1, condition=(0, 1))
 ```
 
 In this example, qubit 1 is flipped only on shots where measuring qubit 0
@@ -54,8 +56,8 @@ produced `1`.
 measurement or whenever a program needs to reuse a qubit:
 
 ```python
-program.add(fq.ops.Reset, 0)
-program.add(fq.ops.Reset, (0, 1))  # reset two qubits
+program.add(op.Reset, 0)
+program.add(op.Reset, (0, 1))  # reset two qubits
 ```
 
 Reset can use the same `condition=` argument as another operation.

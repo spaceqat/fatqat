@@ -147,15 +147,16 @@ class AtomGridBackend(SimulatorBackend):
 
            >>> import numpy as np
            >>> import fatqat as fq
+           >>> import fatqat.operations as op
            >>> atoms = fq.GridRegister(2, 3, name="atoms")
            >>> program = fq.Program([atoms], 6)
-           >>> program.add(fq.ops.LoadAtom(2, 3))
+           >>> program.add(op.LoadAtom(2, 3))
            >>> def native_h(targets):
-           ...     program.add(fq.ops.RZ(np.pi), targets)
-           ...     program.add(fq.ops.RY(np.pi / 2), targets)
+           ...     program.add(op.RZ(np.pi), targets)
+           ...     program.add(op.RY(np.pi / 2), targets)
            >>> native_h(atoms.row(0))                 # H on every control
            >>> native_h(atoms.row(1))                 # H on every target
-           >>> program.add(fq.ops.CZ, (atoms.row(0), atoms.row(1)))
+           >>> program.add(op.CZ, (atoms.row(0), atoms.row(1)))
            >>> native_h(atoms.row(1))                 # completes pairwise CX
            >>> program.measure_all()
 
@@ -210,11 +211,12 @@ class AtomGridBackend(SimulatorBackend):
 
         Examples:
             >>> import fatqat as fq
+            >>> import fatqat.operations as op
             >>> backend = fq.backends.AtomGridBackend()
             >>> impl_map = backend.implementation_map
             >>> sorted(op.name for op in impl_map.supported_operations())
             ['CZ', 'RX', 'RY', 'RZ']
-            >>> impl_map.supports(fq.ops.CCX)
+            >>> impl_map.supports(op.CCX)
             False
         """
         return self._impl_map.copy()

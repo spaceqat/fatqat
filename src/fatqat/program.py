@@ -119,9 +119,10 @@ class Program:
         Build a two-qubit program, add gates, then measure both qubits:
 
         >>> import fatqat as fq
+        >>> import fatqat.operations as op
         >>> program = fq.Program(2, 2)
-        >>> program.add(fq.ops.H, 0)
-        >>> program.add(fq.ops.CZ, (0, 1))
+        >>> program.add(op.H, 0)
+        >>> program.add(op.CZ, (0, 1))
         >>> program.add_measurement(0, 0)
         >>> program.add_measurement(1, 1)
         >>> len(program.operations)
@@ -291,10 +292,11 @@ class Program:
             Add fixed and parametric gates:
 
             >>> import fatqat as fq
+            >>> import fatqat.operations as op
             >>> program = fq.Program(2)
-            >>> program.add(fq.ops.H, 0)
-            >>> program.add(fq.ops.CZ, (0, 1))
-            >>> program.add(fq.ops.RX(0.2), 0)
+            >>> program.add(op.H, 0)
+            >>> program.add(op.CZ, (0, 1))
+            >>> program.add(op.RX(0.2), 0)
         """
         if not isinstance(op, Operation):
             raise TypeError(
@@ -365,15 +367,16 @@ class Program:
             Add a terminal measurement:
 
             >>> import fatqat as fq
+            >>> import fatqat.operations as op
             >>> program = fq.Program(1, 1)
-            >>> program.add(fq.ops.X, 0)
+            >>> program.add(op.X, 0)
             >>> program.add_measurement(0, 0)
 
             Add a grouped measurement:
 
             >>> program2 = fq.Program(2, 2)
-            >>> program2.add(fq.ops.H, 0)
-            >>> program2.add(fq.ops.CZ, (0, 1))
+            >>> program2.add(op.H, 0)
+            >>> program2.add(op.CZ, (0, 1))
             >>> program2.add_measurement((0, 1), (0, 1))
         """
         q_operands = targets if isinstance(targets, tuple) else (targets,)

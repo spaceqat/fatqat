@@ -64,16 +64,17 @@ example supplies a matrix for ``H`` and then runs a one-operation program:
 
    import numpy as np
    import fatqat as fq
+   import fatqat.operations as op
 
    rules = fq.implementation.ImplementationMap()
    rules.add(
-       fq.ops.H,
+       op.H,
        np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2),
    )
 
    backend = fq.backends.SimulatorBackend(implementation_map=rules)
    program = fq.Program(1)
-   program.add(fq.ops.H, 0)
+   program.add(op.H, 0)
    result = backend.run(
        program,
        shots=1,

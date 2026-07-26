@@ -29,8 +29,9 @@ class LoadAtom(Operation):
 
     Examples:
         >>> import fatqat as fq
+        >>> import fatqat.operations as op
         >>> program = fq.Program(4)
-        >>> program.add(fq.ops.LoadAtom(2, 2))
+        >>> program.add(op.LoadAtom(2, 2))
         >>> program.operations[0].targets
         ()
     """

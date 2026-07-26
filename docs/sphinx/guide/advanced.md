@@ -19,6 +19,7 @@ register can each be driven independently with their own gates:
 
 ```python
 import fatqat as fq
+import fatqat.operations as op
 
 qubit = fq.QuantumRegister(1, name="qubit")            # dim=2
 qutrit = fq.QuantumRegister(1, dim=3, name="qutrit")
@@ -26,8 +27,8 @@ cbit = fq.ClassicalRegister(1, name="c_qubit")
 ctrit = fq.ClassicalRegister(1, dim=3, name="c_qutrit")
 
 program = fq.Program([qubit, qutrit], [cbit, ctrit])
-program.add(fq.ops.X, program.qreg[0][0])            # qubit: |0> -> |1>
-program.add(fq.ops.Shift(1), program.qreg[1][0])     # qutrit: |0> -> |1>
+program.add(op.X, program.qreg[0][0])            # qubit: |0> -> |1>
+program.add(op.Shift(1), program.qreg[1][0])     # qutrit: |0> -> |1>
 program.add_measurement(program.qreg[0][0], program.clreg[0][0])
 program.add_measurement(program.qreg[1][0], program.clreg[1][0])
 
@@ -58,10 +59,11 @@ working, then register your gate's matrix on top of it. This example adds a
 ```python
 import numpy as np
 import fatqat as fq
+import fatqat.operations as op
 from fatqat.implementation import FixedMatrix, default_matrix_implementation_map
 
 
-class SqrtX(fq.ops.Operation):
+class SqrtX(op.Operation):
     name = "SqrtX"
     _num_subsystems = 1
 

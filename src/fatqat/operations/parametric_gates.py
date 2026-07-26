@@ -5,8 +5,9 @@ Examples:
 
     >>> import math
     >>> import fatqat as fq
+    >>> import fatqat.operations as op
     >>> program = fq.Program(1)
-    >>> program.add(fq.ops.RX(math.pi), 0)
+    >>> program.add(op.RX(math.pi), 0)
     >>> result = fq.backends.SimulatorBackend("SV").run(
     ...     program,
     ...     shots=1,
