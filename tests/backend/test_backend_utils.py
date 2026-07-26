@@ -117,7 +117,9 @@ def _one_qubit_measurement_setup(confusion, *, reported_digit_map):
     program = fq.Program(1, 1)
     program.add_measurement(0, 0)
     (step,) = [
-        instr for instr in program.operations if isinstance(instr, fq.operations.Measurement)
+        instr
+        for instr in program.operations
+        if isinstance(instr, fq.operations.Measurement)
     ]
     q0 = program.qreg[0][0]
     resource_layout = ResourceLayout({q0: 0})
@@ -163,5 +165,7 @@ def test_boundary_rejects_mismatched_confusion_shape_for_any_callers_map():
         step, maps, layout, allocation, noise = _one_qubit_measurement_setup(
             mismatched, reported_digit_map=reported_digit_map
         )
-        with pytest.raises(BackendValidationError, match="reported classical dimension"):
+        with pytest.raises(
+            BackendValidationError, match="reported classical dimension"
+        ):
             _lower_measurement_boundary(step, maps, layout, allocation, noise)
