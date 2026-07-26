@@ -28,7 +28,6 @@ from .engine_contract import (
 from .planning import PulsePlanFacts, PulsePlanStep, lower_program
 from ...backends.steps import MeasurementStep, ResetStep
 from .execution import execute_with_boundaries
-from .qutip_adapter import SCQutipAdapter
 from .superconducting import CalibrationSpec, PhysicsModel
 
 
@@ -202,6 +201,10 @@ class PulseBackend:
         rng: np.random.Generator,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Execute one serial dynamic branch and retain physical qutrit state."""
+        # Keep QuTiP behind the execution boundary: public backend imports do
+        # not initialize its solver dependency.
+        from .qutip_adapter import SCQutipAdapter
+
         adapter = SCQutipAdapter(self.model)
         classical = np.zeros(allocation.n_clbits, dtype=int)
 
