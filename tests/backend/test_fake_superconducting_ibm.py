@@ -31,6 +31,18 @@ def test_fake_superconducting_ibm_map_exposes_native_device_operands_for():
     assert (0, 5) not in m.device_operands_for(ops.CZ)
 
 
+def test_fake_superconducting_ibm_grid_size_controls_capacity_and_connectivity():
+    backend = SCQubitIBMSimulator(grid_size=(2, 3))
+    m = backend.implementation_map
+    assert (2, 5) in m.device_operands_for(ops.CZ)
+    assert (0, 3) in m.device_operands_for(ops.CZ)
+    assert (0, 4) not in m.device_operands_for(ops.CZ)
+
+    p = Program(7)
+    with pytest.raises(BackendValidationError, match=r"at most 6.*2x3"):
+        backend.run(p)
+
+
 def test_fake_superconducting_ibm_map_x_sx_rz_are_uniform():
     # X/SX/RZ are legal on any of the 16 qubits, so they are registered via
     # plain one unconstrained add() rather than explicit device-operand

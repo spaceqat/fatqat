@@ -12,6 +12,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.doctest",
     "myst_parser",
     "sphinx_design",
     "sphinx_copybutton",

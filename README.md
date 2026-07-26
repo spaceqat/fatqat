@@ -116,7 +116,7 @@ qutrits.measure_all()
 
 ## Device backends
 
-Two fixed 16-qubit prototype superconducting targets ship with distinct
+Two configurable-grid prototype superconducting targets ship with distinct
 native gate sets: `SCQubitIBMSimulator` (`X`, `SX`, `RZ`, nearest-neighbor
 `CZ`) and `SCQubitGoogleSimulator` (`RX`, `RY`, `RZ`, nearest-neighbor
 `iSwap` and `CZ`). Each implementation map is introspectable, so a compiler

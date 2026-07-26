@@ -18,6 +18,7 @@ Fixed single-qubit gates
 
 :py:obj:`~fatqat.operations.I`, :py:obj:`~fatqat.operations.H`,
 :py:obj:`~fatqat.operations.S`, :py:obj:`~fatqat.operations.Sdg`,
+:py:obj:`~fatqat.operations.SX`,
 :py:obj:`~fatqat.operations.T`, :py:obj:`~fatqat.operations.Tdg`,
 :py:obj:`~fatqat.operations.X`, :py:obj:`~fatqat.operations.Y`, and
 :py:obj:`~fatqat.operations.Z` are ready-to-use values. For example:
@@ -27,11 +28,19 @@ Fixed single-qubit gates
 .. autodata:: fatqat.operations.H
 .. autodata:: fatqat.operations.S
 .. autodata:: fatqat.operations.Sdg
+.. autodata:: fatqat.operations.SX
 .. autodata:: fatqat.operations.T
 .. autodata:: fatqat.operations.Tdg
 .. autodata:: fatqat.operations.X
 .. autodata:: fatqat.operations.Y
 .. autodata:: fatqat.operations.Z
+
+Atom loading
+------------
+
+.. autoclass:: fatqat.operations.LoadAtom
+   :members:
+   :show-inheritance:
 
 Parametric gates
 -----------------

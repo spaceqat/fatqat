@@ -8,7 +8,7 @@ import pytest
 from fatqat import operations as ops
 from fatqat.backends import (
     ApplyMatrixStep,
-    FakeAtomGridBackend,
+    AtomGridBackend,
     ResetStep,
     SimulatorBackend,
 )
@@ -28,7 +28,7 @@ def _matrix_steps(plan):
 
 
 def test_default_shape_is_4x5():
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     p_fits = Program(20)
     p_fits.add(ops.RX(0.1), 0)
     # 4x5 = 20 qubits fits exactly.
@@ -44,34 +44,39 @@ def test_default_shape_is_4x5():
         backend._resolve_resource_layout(p_too_big)
 
 
-def test_rejects_non_int_rows():
+def test_rejects_non_tuple_grid_size():
     with pytest.raises(TypeError):
-        FakeAtomGridBackend(rows=2.0, cols=3)
+        AtomGridBackend(grid_size=[2, 3])
 
 
-def test_rejects_non_int_cols():
-    with pytest.raises(TypeError):
-        FakeAtomGridBackend(rows=2, cols="3")
-
-
-def test_rejects_bool_rows():
-    with pytest.raises(TypeError):
-        FakeAtomGridBackend(rows=True, cols=3)
-
-
-def test_rejects_bool_cols():
-    with pytest.raises(TypeError):
-        FakeAtomGridBackend(rows=2, cols=False)
-
-
-def test_rejects_zero_rows():
+def test_rejects_grid_size_with_wrong_length():
     with pytest.raises(ValueError):
-        FakeAtomGridBackend(rows=0, cols=3)
+        AtomGridBackend(grid_size=(2,))
 
 
-def test_rejects_negative_cols():
+def test_rejects_non_int_grid_entry():
+    with pytest.raises(TypeError):
+        AtomGridBackend(grid_size=(2, "3"))
+
+
+def test_rejects_bool_grid_row():
+    with pytest.raises(TypeError):
+        AtomGridBackend(grid_size=(True, 3))
+
+
+def test_rejects_bool_grid_column():
+    with pytest.raises(TypeError):
+        AtomGridBackend(grid_size=(2, False))
+
+
+def test_rejects_zero_grid_row():
     with pytest.raises(ValueError):
-        FakeAtomGridBackend(rows=2, cols=-1)
+        AtomGridBackend(grid_size=(0, 3))
+
+
+def test_rejects_negative_grid_column():
+    with pytest.raises(ValueError):
+        AtomGridBackend(grid_size=(2, -1))
 
 
 # --- 2x3-on-4x5 acceptance example ---------------------------------------------
@@ -82,7 +87,7 @@ def test_2x3_grid_binds_top_left_on_default_4x5_backend():
     p = Program([atoms])
     p.add(ops.RX(0.1), atoms.all())
 
-    backend = FakeAtomGridBackend()  # default 4x5
+    backend = AtomGridBackend()  # default 4x5
     engine_index_allocation = backend._allocate_engine_indices(p)
     resource_layout = backend._resolve_resource_layout(p)
 
@@ -105,7 +110,7 @@ def test_scalar_grid_ref_uses_grid_binder_device_label_not_identity():
     # count (5), i.e. 1*5+0 = 5, not the identity value 3.
     atoms = GridRegister(2, 3, name="atoms")
     p = Program([atoms])
-    backend = FakeAtomGridBackend()  # default 4x5
+    backend = AtomGridBackend()  # default 4x5
     ref = atoms[3]
     engine_index_allocation = backend._allocate_engine_indices(p)
     resource_layout = backend._resolve_resource_layout(p)
@@ -124,7 +129,7 @@ def test_physical_noise_selector_uses_device_label_not_engine_index():
     # nothing, since no program resource occupies device site 3.
     atoms = GridRegister(2, 3, name="atoms")
     program = Program([atoms])
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     resource_layout = backend._resolve_resource_layout(program)
     ref = atoms[3]
     assert resource_layout.device_label(ref) == 5
@@ -151,7 +156,7 @@ def test_physical_readout_selector_uses_device_label_not_engine_index():
     # selector must be written in device-label space.
     atoms = GridRegister(2, 3, name="atoms")
     program = Program([atoms])
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     resource_layout = backend._resolve_resource_layout(program)
     ref = atoms[3]
     assert resource_layout.device_label(ref) == 5
@@ -178,7 +183,7 @@ def test_rejects_grid_register_combined_with_other_quantum_register():
     atoms = GridRegister(2, 2, name="atoms")
     other = QuantumRegister(2, name="q")
     p = Program([atoms, other])
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     with pytest.raises(BackendValidationError):
         backend._resolve_resource_layout(p)
 
@@ -187,7 +192,7 @@ def test_rejects_two_grid_registers():
     atoms1 = GridRegister(2, 2, name="a1")
     atoms2 = GridRegister(2, 2, name="a2")
     p = Program([atoms1, atoms2])
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     with pytest.raises(BackendValidationError):
         backend._resolve_resource_layout(p)
 
@@ -198,28 +203,28 @@ def test_rejects_grid_that_does_not_fit_backend_even_with_enough_total_capacity(
     # basis, not just total member count.
     atoms = GridRegister(5, 4, name="atoms")
     p = Program([atoms])
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     with pytest.raises(BackendValidationError):
         backend._resolve_resource_layout(p)
 
 
 def test_resolve_resource_layout_rejects_capacity_for_scalar_only_program():
     p = Program(21)
-    backend = FakeAtomGridBackend()  # capacity 20
+    backend = AtomGridBackend()  # capacity 20
     with pytest.raises(BackendValidationError):
         backend._resolve_resource_layout(p)
 
 
 def test_resolve_resource_layout_rejects_non_qubit_dimension_for_scalar_only_program():
     p = Program([QuantumRegister(4, dim=3)])
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     with pytest.raises(BackendValidationError, match="qubit dimensions"):
         backend._resolve_resource_layout(p)
 
 
 def test_scalar_only_program_uses_identity_binding():
     p = Program(3)
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     ref = p.qreg[0][2]
     engine_index_allocation = backend._allocate_engine_indices(p)
     resource_layout = backend._resolve_resource_layout(p)
@@ -232,7 +237,7 @@ def test_allocate_engine_has_no_atom_grid_validation_left():
     # flattening behavior: an over-capacity, non-qubit-dim, or ill-shaped
     # program flattens without complaint here (validation moved wholesale to
     # `_resolve_resource_layout()`).
-    backend = FakeAtomGridBackend()  # capacity 20
+    backend = AtomGridBackend()  # capacity 20
 
     p_too_big = Program(21)
     engine_index_allocation = backend._allocate_engine_indices(p_too_big)
@@ -253,7 +258,7 @@ def test_allocate_engine_has_no_atom_grid_validation_left():
 
 
 def test_implementation_map_exposes_four_native_families():
-    m = FakeAtomGridBackend().implementation_map
+    m = AtomGridBackend().implementation_map
     assert m.supports(ops.RX) and not m.device_operands_for(ops.RX)
     assert m.supports(ops.RY) and not m.device_operands_for(ops.RY)
     assert m.supports(ops.RZ) and not m.device_operands_for(ops.RZ)
@@ -266,13 +271,13 @@ def test_implementation_map_exposes_four_native_families():
     p.add(ops.LoadAtom(1, 2))
     p.add(ops.CX, (0, 1))
     with pytest.raises(UnsupportedOperationError):
-        FakeAtomGridBackend(rows=1, cols=2).run(
+        AtomGridBackend(grid_size=(1, 2)).run(
             p, result_config={"counts": False, "final_state": True}
         )
 
 
 def test_implementation_map_cz_accepts_neighbor_pairs_both_directions():
-    m = FakeAtomGridBackend().implementation_map  # default 4x5, backend cols=5
+    m = AtomGridBackend().implementation_map  # default 4x5, backend cols=5
     assert (0, 1) in m.device_operands_for(ops.CZ)
     assert (1, 0) in m.device_operands_for(ops.CZ)
     assert (0, 5) in m.device_operands_for(ops.CZ)
@@ -280,7 +285,7 @@ def test_implementation_map_cz_accepts_neighbor_pairs_both_directions():
 
 
 def test_implementation_map_rejects_non_neighbor_pairs():
-    m = FakeAtomGridBackend().implementation_map
+    m = AtomGridBackend().implementation_map
     assert (0, 2) not in m.device_operands_for(ops.CZ)
     assert (0, 6) not in m.device_operands_for(ops.CZ)
 
@@ -296,7 +301,7 @@ def test_fake_atom_grid_implementation_map_cz_has_no_class_keyed_rule():
 def test_resource_layout_covers_all_scalar_refs_from_the_program_registers():
     atoms = GridRegister(2, 2, name="atoms")
     p = Program([atoms])
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     resource_layout = backend._resolve_resource_layout(p)
     assert {resource_layout.device_label(atoms[index]) for index in range(4)} == {
         0,
@@ -315,7 +320,7 @@ def test_viewed_rotation_matches_manual_scalar_sequence():
     grid_p.add(ops.LoadAtom(1, 3))
     grid_p.add(ops.RY(0.7), atoms.row(0))
     grid_sv = (
-        FakeAtomGridBackend()
+        AtomGridBackend()
         .run(grid_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
@@ -346,7 +351,7 @@ def test_paired_cz_view_matches_manual_scalar_sequence():
     grid_p.add(ops.LoadAtom(2, 2))
     grid_p.add(ops.CZ, (atoms.row(0), atoms.row(1)))
     grid_sv = (
-        FakeAtomGridBackend()
+        AtomGridBackend()
         .run(grid_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
@@ -375,7 +380,7 @@ def test_viewed_rotation_over_column_matches_manual_scalar_sequence():
     grid_p.add(ops.LoadAtom(2, 3))
     grid_p.add(ops.RY(0.7), atoms.column(1))
     grid_sv = (
-        FakeAtomGridBackend()
+        AtomGridBackend()
         .run(grid_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
@@ -404,7 +409,7 @@ def test_viewed_rotation_over_block_matches_manual_scalar_sequence():
     grid_p.add(ops.LoadAtom(2, 3))
     grid_p.add(ops.RY(0.7), atoms.block(rows=(0, 2), cols=(1, 3)))
     grid_sv = (
-        FakeAtomGridBackend()
+        AtomGridBackend()
         .run(grid_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
@@ -430,9 +435,7 @@ def test_non_neighbor_pair_rejects():
     p.add(ops.CZ, (atoms[0], atoms[5]))  # labels 0 and 7: not adjacent
 
     with pytest.raises(UnsupportedOperationError) as excinfo:
-        FakeAtomGridBackend().run(
-            p, result_config={"counts": False, "final_state": True}
-        )
+        AtomGridBackend().run(p, result_config={"counts": False, "final_state": True})
     assert isinstance(excinfo.value, BackendValidationError)
 
 
@@ -450,7 +453,7 @@ def test_native_connectivity_lookup_uses_device_labels_not_engine_indices():
     p.add(ops.LoadAtom(2, 3))
     p.add(ops.CZ, (atoms[0], atoms[3]))
 
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     assert (0, 5) in backend.implementation_map.device_operands_for(ops.CZ)
     assert (0, 3) not in backend.implementation_map.device_operands_for(ops.CZ)
 
@@ -486,7 +489,7 @@ def test_lowering_uses_resource_layout_device_operands_and_engine_index_allocati
     program.add(ops.LoadAtom(2, 3))
     program.add(ops.CZ, (atoms[0], atoms[3]))
 
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     assert (0, 5) in backend.implementation_map.device_operands_for(ops.CZ)
     assert (0, 3) not in backend.implementation_map.device_operands_for(ops.CZ)
 
@@ -497,7 +500,7 @@ def test_lowering_uses_resource_layout_device_operands_and_engine_index_allocati
 
 
 def test_run_resolves_resource_layout_exactly_once_even_with_grid_mapping():
-    # FakeAtomGridBackend's `_resolve_resource_layout` is non-trivial (grid
+    # AtomGridBackend's `_resolve_resource_layout` is non-trivial (grid
     # validation + top-left mapping); lowering must reuse the single value
     # `run()` already resolved rather than resolving it again for lookup.
     atoms = GridRegister(2, 3, name="atoms")
@@ -505,7 +508,7 @@ def test_run_resolves_resource_layout_exactly_once_even_with_grid_mapping():
     program.add(ops.LoadAtom(2, 3))
     program.add(ops.RX(0.1), atoms[0])
 
-    backend = FakeAtomGridBackend()
+    backend = AtomGridBackend()
     calls = {"resource_layout": 0}
     original = backend._resolve_resource_layout
 
@@ -521,7 +524,7 @@ def test_run_resolves_resource_layout_exactly_once_even_with_grid_mapping():
 def test_device_label_for_method_is_gone():
     # The top-left mapping formula lives solely in `_resolve_resource_layout`
     # now; the old per-ref callback hook is removed from this backend.
-    assert "_device_label_for" not in FakeAtomGridBackend.__dict__
+    assert "_device_label_for" not in AtomGridBackend.__dict__
 
 
 def test_condition_on_viewed_instruction_propagates_end_to_end():
@@ -533,7 +536,7 @@ def test_condition_on_viewed_instruction_propagates_end_to_end():
     grid_true.add(ops.LoadAtom(1, 2))
     grid_true.add(ops.RX(np.pi), atoms.all(), condition=(grid_true.clreg[0][0], 0))
     sv_true = (
-        FakeAtomGridBackend()
+        AtomGridBackend()
         .run(grid_true, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
@@ -556,7 +559,7 @@ def test_condition_on_viewed_instruction_propagates_end_to_end():
     grid_false.add(ops.LoadAtom(1, 2))
     grid_false.add(ops.RX(np.pi), atoms.all(), condition=(grid_false.clreg[0][0], 1))
     sv_false = (
-        FakeAtomGridBackend()
+        AtomGridBackend()
         .run(grid_false, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
@@ -570,10 +573,10 @@ def test_condition_on_viewed_instruction_propagates_end_to_end():
 
 
 def test_grid_register_export_is_backend_public():
-    # FakeAtomGridBackend is publicly exported; implementation details are not.
+    # AtomGridBackend is publicly exported; implementation details are not.
     import fatqat.backends as backends_pkg
 
-    assert "FakeAtomGridBackend" in backends_pkg.__all__
+    assert "AtomGridBackend" in backends_pkg.__all__
     assert not hasattr(backends_pkg, "_build_qubit_resource_map")
 
 
@@ -584,7 +587,7 @@ def test_first_instruction_must_be_load_atom():
     p = Program(2)
     p.add(ops.X, 0)
     with pytest.raises(BackendValidationError, match="first"):
-        FakeAtomGridBackend(rows=1, cols=2).run(
+        AtomGridBackend(grid_size=(1, 2)).run(
             p, result_config={"counts": False, "final_state": True}
         )
 
@@ -594,7 +597,7 @@ def test_empty_program_does_not_require_load_atom():
     # instruction must be LoadAtom" check never runs, no special-cased branch
     # needed for it.
     p = Program(0, 0)
-    plan, facts = FakeAtomGridBackend(rows=1, cols=1)._lower_program(p)
+    plan, facts = AtomGridBackend(grid_size=(1, 1))._lower_program(p)
     assert plan == []
     assert not facts.has_measurement
 
@@ -604,7 +607,7 @@ def test_second_load_atom_rejected():
     p.add(ops.LoadAtom(1, 2))
     p.add(ops.LoadAtom(1, 1))
     with pytest.raises(BackendValidationError, match="only as the"):
-        FakeAtomGridBackend(rows=1, cols=2).run(
+        AtomGridBackend(grid_size=(1, 2)).run(
             p, result_config={"counts": False, "final_state": True}
         )
 
@@ -613,7 +616,7 @@ def test_load_atom_larger_than_device_rejected():
     p = Program(2)
     p.add(ops.LoadAtom(2, 2))
     with pytest.raises(BackendValidationError, match="does not fit"):
-        FakeAtomGridBackend(rows=1, cols=2).run(
+        AtomGridBackend(grid_size=(1, 2)).run(
             p, result_config={"counts": False, "final_state": True}
         )
 
@@ -622,13 +625,13 @@ def test_conditional_load_atom_rejected():
     p = Program(2, 1)
     p.add(ops.LoadAtom(1, 2), condition=(p.clreg[0][0], 0))
     with pytest.raises(BackendValidationError, match="unconditional"):
-        FakeAtomGridBackend(rows=1, cols=2).run(
+        AtomGridBackend(grid_size=(1, 2)).run(
             p, result_config={"counts": False, "final_state": True}
         )
 
 
 def test_gate_on_unloaded_site_is_dropped():
-    # FakeAtomGridBackend's native gate set is RX/RY/RZ/CZ only - X is not
+    # AtomGridBackend's native gate set is RX/RY/RZ/CZ only - X is not
     # native here (unlike the generic SimulatorBackend), so this uses RX(pi),
     # which matches X up to a global phase (see fq.ops.RX's own docstring
     # example), to stay within the native set.
@@ -637,7 +640,7 @@ def test_gate_on_unloaded_site_is_dropped():
     p.add(ops.RX(np.pi), 0)
     p.add(ops.RX(np.pi), 1)  # site 1 unloaded: silently dropped
     sv = (
-        FakeAtomGridBackend(rows=1, cols=2)
+        AtomGridBackend(grid_size=(1, 2))
         .run(p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
@@ -655,7 +658,7 @@ def test_reset_on_unloaded_site_is_dropped_from_plan():
     p = Program(2)
     p.add(ops.LoadAtom(1, 1))  # only qubit 0's site is loaded
     p.add(ops.Reset, 1)  # site 1 unloaded: must be dropped, never lowered
-    plan, facts = FakeAtomGridBackend(rows=1, cols=2)._lower_program(p)
+    plan, facts = AtomGridBackend(grid_size=(1, 2))._lower_program(p)
     assert not facts.has_reset
     assert not any(isinstance(step, ResetStep) for step in plan)
 
@@ -666,7 +669,7 @@ def test_gate_on_loaded_site_executes_normally():
     p.add(ops.RX(0.3), 0)
     p.add(ops.RX(0.3), 1)
     grid_sv = (
-        FakeAtomGridBackend(rows=1, cols=2)
+        AtomGridBackend(grid_size=(1, 2))
         .run(p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
@@ -690,7 +693,7 @@ def test_measurement_of_unloaded_site_reads_zero_without_noise():
     p.add(ops.X, 1)  # dropped: unloaded, so the site never actually flips
     p.add_measurement(1, 0)
     counts = (
-        FakeAtomGridBackend(rows=1, cols=2)
+        AtomGridBackend(grid_size=(1, 2))
         .run(p, shots=4, result_config={"counts": True}, simulation_config={"seed": 0})
         .result()
         .get_counts()
@@ -711,7 +714,7 @@ def test_measurement_of_unloaded_site_still_exposed_to_readout_noise():
     p.add(ops.LoadAtom(1, 1))
     p.add_measurement(1, 0)
     counts = (
-        FakeAtomGridBackend(rows=1, cols=2, noise=noise)
+        AtomGridBackend(grid_size=(1, 2), noise=noise)
         .run(p, shots=4, result_config={"counts": True}, simulation_config={"seed": 0})
         .result()
         .get_counts()

@@ -33,6 +33,14 @@ def test_fake_superconducting_google_map_exposes_native_device_operands_for():
         assert (0, 5) not in m.device_operands_for(op)
 
 
+def test_fake_superconducting_google_grid_size_controls_grid_binding():
+    atoms = GridRegister(2, 2, name="atoms")
+    layout = SCQubitGoogleSimulator(grid_size=(2, 3))._resolve_resource_layout(
+        Program([atoms])
+    )
+    assert tuple(layout.device_label(atoms[i]) for i in range(4)) == (0, 1, 3, 4)
+
+
 def test_fake_superconducting_google_map_rx_ry_rz_are_uniform():
     m = fake_superconducting_google_implementation_map()
     assert m.supports(ops.RX) and not m.device_operands_for(ops.RX)
@@ -300,9 +308,8 @@ def test_noisy_backend_leaks_errors_but_stays_mostly_correct():
 
 
 def test_ry_carries_relaxation_like_rx():
-    # Both RX and RY are physical single-qubit rotations on this backend, so
-    # both should carry the same relaxation channels - unlike RZ, which is
-    # virtual.
+    # RX, RY, and RZ are all physical single-qubit rotations on this
+    # backend, so all three carry the same relaxation channels.
     backend = SCQubitGoogleSimulator(noise=SCQubitGoogleSimulator.default_noise_model())
     program = Program(1, 1)
     program.add(ops.RY(np.pi), 0)
@@ -316,17 +323,15 @@ def test_ry_carries_relaxation_like_rx():
     assert 0 < counts.get("0", 0) < 0.10 * 4000
 
 
-def test_rz_stays_noise_free():
+def test_rz_carries_relaxation_like_other_google_rotations():
     backend = SCQubitGoogleSimulator(noise=SCQubitGoogleSimulator.default_noise_model())
     program = Program(1)
-    program.add(ops.RZ(0.7), 0)  # virtual gate: no relaxation attached
-    state = (
-        backend.run(program, result_config={"counts": False, "final_state": True})
-        .result()
-        .get_statevector()
-    )
+    program.add(ops.RZ(0.7), 0)
+    plan, _ = backend._lower_program(program)
 
-    assert np.isclose(abs(state[0]), 1.0)
+    assert [
+        step.target_indices for step in plan if isinstance(step, ApplyChannelStep)
+    ] == [(0,), (0,)]
 
 
 def test_default_noise_model_is_a_fresh_extensible_model():
