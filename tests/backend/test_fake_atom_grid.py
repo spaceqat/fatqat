@@ -534,7 +534,9 @@ def test_condition_on_viewed_instruction_propagates_end_to_end():
     # matches an unconditioned manual RX(pi) on both scalar qubits.
     grid_true = Program([atoms], 2)
     grid_true.add(ops.LoadAtoms(1, 2))
-    grid_true.add(ops.RX(np.pi), atoms.all(), condition=(grid_true.classical_registers[0][0], 0))
+    grid_true.add(
+        ops.RX(np.pi), atoms.all(), condition=(grid_true.classical_registers[0][0], 0)
+    )
     sv_true = (
         AtomGridSimulator()
         .run(grid_true, result_config={"counts": False, "final_state": True})
@@ -557,7 +559,9 @@ def test_condition_on_viewed_instruction_propagates_end_to_end():
     # state stays |00>.
     grid_false = Program([atoms], 2)
     grid_false.add(ops.LoadAtoms(1, 2))
-    grid_false.add(ops.RX(np.pi), atoms.all(), condition=(grid_false.classical_registers[0][0], 1))
+    grid_false.add(
+        ops.RX(np.pi), atoms.all(), condition=(grid_false.classical_registers[0][0], 1)
+    )
     sv_false = (
         AtomGridSimulator()
         .run(grid_false, result_config={"counts": False, "final_state": True})

@@ -109,8 +109,16 @@ def test_measure_all_appends_one_grouped_instruction_in_flat_order():
     assert len(p.operations) == 1
     m = p.operations[0]
     assert isinstance(m, Measurement)
-    assert m.targets == (p.quantum_registers[0][0], p.quantum_registers[0][1], p.quantum_registers[1][0])
-    assert m.outputs == (p.classical_registers[0][0], p.classical_registers[1][0], p.classical_registers[1][1])
+    assert m.targets == (
+        p.quantum_registers[0][0],
+        p.quantum_registers[0][1],
+        p.quantum_registers[1][0],
+    )
+    assert m.outputs == (
+        p.classical_registers[0][0],
+        p.classical_registers[1][0],
+        p.classical_registers[1][1],
+    )
 
 
 def test_measure_all_rejects_mismatched_resource_counts():

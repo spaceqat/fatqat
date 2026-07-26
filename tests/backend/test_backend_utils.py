@@ -1,6 +1,10 @@
 import pytest
 
-from fatqat.backends import AtomGridSimulator, SCQubitGoogleSimulator, SCQubitIBMSimulator
+from fatqat.backends import (
+    AtomGridSimulator,
+    SCQubitGoogleSimulator,
+    SCQubitIBMSimulator,
+)
 from fatqat.backends.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.backends.fake_superconducting import (
     fake_superconducting_google_implementation_map,

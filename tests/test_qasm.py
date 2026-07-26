@@ -132,7 +132,11 @@ def test_reset():
 
 def test_condition_v3_multi_term():
     p = fc.Program(2, 3)
-    p.add(fc.ops.X, 1, condition=((p.classical_registers[0][0], 1), (p.classical_registers[0][2], 0)))
+    p.add(
+        fc.ops.X,
+        1,
+        condition=((p.classical_registers[0][0], 1), (p.classical_registers[0][2], 0)),
+    )
     out = program_to_qasm(p, version=3)
     assert "if (c[0] == 1 && c[2] == 0) { x q[1]; }" in out
 
@@ -263,8 +267,14 @@ def test_from_qasm_builds_bell_program():
     assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
     measurement = program.operations[2]
     assert isinstance(measurement, Measurement)
-    assert measurement.targets == (program.quantum_registers[0][0], program.quantum_registers[0][1])
-    assert measurement.outputs == (program.classical_registers[0][0], program.classical_registers[0][1])
+    assert measurement.targets == (
+        program.quantum_registers[0][0],
+        program.quantum_registers[0][1],
+    )
+    assert measurement.outputs == (
+        program.classical_registers[0][0],
+        program.classical_registers[0][1],
+    )
 
 
 def test_from_qasm_preserves_multiple_register_names():
@@ -371,8 +381,14 @@ def test_from_qasm_expands_iswap_custom_gate_matching_forward_tool_output():
     ]
     # cx a,b then cx b,a -- control/target must swap between the two CX calls.
     cx_ops = [op for op in program.operations if op.operation.name == "CX"]
-    assert cx_ops[0].targets == (program.quantum_registers[0][0], program.quantum_registers[0][1])
-    assert cx_ops[1].targets == (program.quantum_registers[0][1], program.quantum_registers[0][0])
+    assert cx_ops[0].targets == (
+        program.quantum_registers[0][0],
+        program.quantum_registers[0][1],
+    )
+    assert cx_ops[1].targets == (
+        program.quantum_registers[0][1],
+        program.quantum_registers[0][0],
+    )
 
 
 def test_from_qasm_custom_gate_with_parameter_expression():
@@ -487,8 +503,14 @@ def test_from_qasm3_builds_bell_program():
     assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
     measurement = program.operations[2]
     assert isinstance(measurement, Measurement)
-    assert measurement.targets == (program.quantum_registers[0][0], program.quantum_registers[0][1])
-    assert measurement.outputs == (program.classical_registers[0][0], program.classical_registers[0][1])
+    assert measurement.targets == (
+        program.quantum_registers[0][0],
+        program.quantum_registers[0][1],
+    )
+    assert measurement.outputs == (
+        program.classical_registers[0][0],
+        program.classical_registers[0][1],
+    )
 
 
 def test_from_qasm3_single_qubit_and_bit_declarations():

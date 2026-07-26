@@ -397,10 +397,14 @@ class Program:
                 kind.
         """
         targets = tuple(
-            ref for reg in self.quantum_registers for ref in (reg[i] for i in range(reg.size))
+            ref
+            for reg in self.quantum_registers
+            for ref in (reg[i] for i in range(reg.size))
         )
         outputs = tuple(
-            ref for reg in self.classical_registers for ref in (reg[i] for i in range(reg.size))
+            ref
+            for reg in self.classical_registers
+            for ref in (reg[i] for i in range(reg.size))
         )
         # Equal-count and non-empty invariants are enforced once in
         # Measurement.__post_init__, reached through measure.

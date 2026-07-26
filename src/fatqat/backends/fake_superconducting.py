@@ -174,10 +174,16 @@ class _SCQubitSimulator(SimulatorBackend):
                 f"{name} supports at most {capacity} qubits on its "
                 f"{self._rows}x{self._cols} device, got {n_subsystems}"
             )
-        dims = (register.dim for register in program.quantum_registers for _ in range(register.size))
+        dims = (
+            register.dim
+            for register in program.quantum_registers
+            for _ in range(register.size)
+        )
         if any(dim != 2 for dim in dims):
             raise BackendValidationError(f"{name} only supports qubit dimensions")
-        grid_registers = [r for r in program.quantum_registers if isinstance(r, GridRegister)]
+        grid_registers = [
+            r for r in program.quantum_registers if isinstance(r, GridRegister)
+        ]
         if len(grid_registers) > 1:
             raise BackendValidationError(
                 f"{name} accepts at most one GridRegister per program, "

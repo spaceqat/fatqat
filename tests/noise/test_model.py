@@ -169,7 +169,9 @@ def test_add_channel_selector_validation():
         noise.add_channel(fq.ops.CX, Depolarizing(p=0.1), targets=(0,))
     program = fq.Program(1, 1)
     with pytest.raises(TypeError, match="QuantumRegister"):
-        noise.add_channel(fq.ops.X, Depolarizing(p=0.1), targets=(program.classical_registers[0][0],))
+        noise.add_channel(
+            fq.ops.X, Depolarizing(p=0.1), targets=(program.classical_registers[0][0],)
+        )
     # A physical selector is an opaque label: negative ints, strings, and
     # even bools are all legal device-resource labels now, not flat indices.
     noise.add_channel(fq.ops.X, Depolarizing(p=0.1), targets=(-1,))
