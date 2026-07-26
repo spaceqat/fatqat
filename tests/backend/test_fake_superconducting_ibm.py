@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
-from fatqat.backends import SCQubitIBMSimulator
+from fatqat.backends import ApplyChannelStep, SCQubitIBMSimulator
 from fatqat.backends.fake_superconducting import (
     fake_superconducting_ibm_implementation_map,
 )
@@ -322,9 +322,20 @@ def test_default_noise_model_is_a_fresh_extensible_model():
     backend = SCQubitIBMSimulator()
     assert not any(
         isinstance(c, Depolarizing) and c.p == 0.5
-        for c in second.channels_for(
+        for c, _extent in second.channels_for(
             ops.SX,
             (program.qreg[0][0],),
             backend._resolve_resource_layout(program),
         )
     )
+
+
+def test_cz_has_scoped_relaxation_before_joint_depolarizing():
+    program = Program(2)
+    program.add(ops.CZ, (0, 1))
+    backend = SCQubitIBMSimulator(noise=SCQubitIBMSimulator.default_noise_model())
+    plan, _ = backend._lower_program(program)
+
+    assert [
+        step.target_indices for step in plan if isinstance(step, ApplyChannelStep)
+    ] == [(0,), (0,), (1,), (1,), (0, 1)]

@@ -335,7 +335,7 @@ def _lower_gate(
     # Noise selection matches against the occurrence's logical targets
     # and/or resource-layout device operands (never engine indices);
     # engine indices are used only for the emitted ApplyChannelStep.
-    for channel in noise_model.channels_for(
+    for channel, extent in noise_model.channels_for(
         type(step.operation), step.targets, resource_layout
     ):
         channel_rule = channel_map.get(type(channel))
@@ -344,12 +344,18 @@ def _lower_gate(
                 f"{type(channel).__name__} has no channel "
                 "implementation on this backend"
             )
-        kraus_ops = tuple(channel_rule(channel, targets=step.targets))
-        _validate_kraus_shapes(kraus_ops, expected, type(channel).__name__)
+        extent_indices = tuple(
+            engine_index_allocation.subsystem_index(target) for target in extent
+        )
+        kraus_ops = tuple(channel_rule(channel, targets=extent))
+        extent_dim = prod(
+            engine_index_allocation.system_dims[index] for index in extent_indices
+        )
+        _validate_kraus_shapes(kraus_ops, extent_dim, type(channel).__name__)
         steps.append(
             ApplyChannelStep(
                 kraus_ops=kraus_ops,
-                target_indices=engine_indices,
+                target_indices=extent_indices,
                 condition=cond,
             )
         )

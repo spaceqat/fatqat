@@ -5,7 +5,7 @@ import pytest
 
 import fatqat as fq
 from fatqat.errors import BackendValidationError
-from fatqat.noise import Depolarizing, NoiseModel, PhaseDamping
+from fatqat.noise import AmplitudeDamping, Depolarizing, NoiseModel, PhaseDamping
 from fatqat.operations import ResetGate
 from fatqat.registers import GridRegister
 
@@ -28,8 +28,8 @@ def test_all_target_entry_matches_every_occurrence():
     layout = _resource_layout_for(program)
     q = program.qreg[0]
 
-    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [channel]
-    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [channel]
+    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [(channel, (q[0],))]
+    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [(channel, (q[1],))]
     assert noise.channels_for(fq.ops.Y, (q[0],), layout) == []
 
 
@@ -43,8 +43,8 @@ def test_specific_ref_entry_replaces_default_only_on_its_target():
     noise.add_noise(fq.ops.X, default)
     noise.add_noise(fq.ops.X, specific, targets=(q[1],))
 
-    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [specific]
-    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [default]
+    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [(specific, (q[1],))]
+    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [(default, (q[0],))]
 
 
 def test_physical_label_selector_matches_device_operands():
@@ -55,7 +55,7 @@ def test_physical_label_selector_matches_device_operands():
     layout = _resource_layout_for(program)
     q = program.qreg[0]
 
-    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [channel]
+    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [(channel, (q[1],))]
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == []
 
 
@@ -70,7 +70,7 @@ def test_physical_selector_accepts_non_int_hashable_label():
     channel = Depolarizing(p=0.1)
     noise.add_noise(fq.ops.X, channel, targets=("trap-b",))
 
-    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [channel]
+    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [(channel, (q[1],))]
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == []
 
 
@@ -84,7 +84,10 @@ def test_logical_and_physical_entries_resolving_to_same_target_accumulate():
     noise.add_noise(fq.ops.X, by_label, targets=(0,))
     noise.add_noise(fq.ops.X, by_ref, targets=(q[0],))
 
-    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [by_label, by_ref]
+    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [
+        (by_label, (q[0],)),
+        (by_ref, (q[0],)),
+    ]
 
 
 def test_repeated_add_noise_accumulates_in_registration_order():
@@ -97,7 +100,10 @@ def test_repeated_add_noise_accumulates_in_registration_order():
     layout = _resource_layout_for(program)
     q = program.qreg[0]
 
-    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [first, second]
+    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [
+        (first, (q[0],)),
+        (second, (q[0],)),
+    ]
 
 
 def test_ref_selector_from_foreign_register_never_matches():
@@ -119,7 +125,9 @@ def test_two_subsystem_selector_matches_operand_order():
     layout = _resource_layout_for(program)
     q = program.qreg[0]
 
-    assert noise.channels_for(fq.ops.CX, (q[0], q[1]), layout) == [channel]
+    assert noise.channels_for(fq.ops.CX, (q[0], q[1]), layout) == [
+        (channel, (q[0], q[1]))
+    ]
     assert noise.channels_for(fq.ops.CX, (q[1], q[0]), layout) == []
 
 
@@ -176,7 +184,7 @@ def test_add_noise_accepts_bare_label_for_arity_one_operation():
     layout = _resource_layout_for(program)
     q = program.qreg[0]
 
-    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [channel]
+    assert noise.channels_for(fq.ops.X, (q[0],), layout) == [(channel, (q[0],))]
     assert noise.channels_for(fq.ops.X, (q[1],), layout) == []
 
 
@@ -188,7 +196,7 @@ def test_add_noise_accepts_bare_ref_for_arity_one_operation():
     q = program.qreg[0]
     noise.add_noise(fq.ops.X, channel, targets=q[1])  # bare RegisterRef
 
-    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [channel]
+    assert noise.channels_for(fq.ops.X, (q[1],), layout) == [(channel, (q[1],))]
     assert noise.channels_for(fq.ops.X, (q[0],), layout) == []
 
 
@@ -209,6 +217,47 @@ def test_add_noise_bare_register_view_still_rejected():
     noise = NoiseModel()
     with pytest.raises(TypeError, match="RegisterView"):
         noise.add_noise(fq.ops.RX, Depolarizing(p=0.1), targets=atoms.row(0))
+
+
+def test_slots_resolve_a_single_subsystem_of_a_two_qubit_gate():
+    noise = NoiseModel()
+    damping = AmplitudeDamping(gammas=(0.1,))
+    noise.add_noise(fq.ops.CZ, damping, slots=1)
+    program = _two_qubit_program()
+    q = program.qreg[0]
+
+    assert noise.channels_for(
+        fq.ops.CZ, (q[0], q[1]), _resource_layout_for(program)
+    ) == [(damping, (q[1],))]
+
+
+def test_slot_precedence_is_grouped_by_extent():
+    noise = NoiseModel()
+    joint = Depolarizing(p=0.1)
+    scoped = AmplitudeDamping(gammas=(0.1,))
+    override = Depolarizing(p=0.2)
+    program = _two_qubit_program()
+    q = program.qreg[0]
+    layout = _resource_layout_for(program)
+    noise.add_noise(fq.ops.CZ, joint)
+    noise.add_noise(fq.ops.CZ, scoped, slots=(0,))
+    noise.add_noise(fq.ops.CZ, override, targets=(q[0], q[1]))
+
+    assert noise.channels_for(fq.ops.CZ, (q[0], q[1]), layout) == [
+        (scoped, (q[0],)),
+        (override, (q[0], q[1])),
+    ]
+
+
+def test_slots_reject_bad_extent_and_whole_gate_single_channel():
+    noise = NoiseModel()
+    damping = AmplitudeDamping(gammas=(0.1,))
+    with pytest.raises(ValueError, match="slots="):
+        noise.add_noise(fq.ops.CZ, damping)
+    with pytest.raises(ValueError, match="out of range"):
+        noise.add_noise(fq.ops.CZ, damping, slots=(2,))
+    with pytest.raises(ValueError, match="strictly increasing"):
+        noise.add_noise(fq.ops.CZ, damping, slots=(1, 0))
 
 
 def test_channel_types_lists_every_attached_descriptor_type():

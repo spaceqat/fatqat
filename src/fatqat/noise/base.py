@@ -16,7 +16,7 @@ means different mathematical objects per backend family.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, ClassVar
 
 import numpy as np
 
@@ -30,8 +30,26 @@ class Channel:
     Concrete subclasses (see ``noise.catalog``) are frozen dataclasses holding
     physical parameters only - rates, probabilities - never Kraus arrays. The
     array computation belongs entirely to the `ChannelImplementation` rule
-    registered for the subclass.
+    registered for the subclass. A subclass may declare ``_num_subsystems``
+    when it has a fixed positive arity; ``None`` means it is width-agnostic.
     """
+
+    _num_subsystems: ClassVar[int | None] = None
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        arity = cls._num_subsystems
+        if arity is not None and (
+            not isinstance(arity, int) or isinstance(arity, bool) or arity < 1
+        ):
+            raise ValueError(
+                f"_num_subsystems must be a positive int or None, got {arity!r}"
+            )
+
+    @property
+    def num_subsystems(self) -> int | None:
+        """Number of subsystems this channel acts on, or ``None`` for any width."""
+        return type(self)._num_subsystems
 
 
 class ChannelImplementation:

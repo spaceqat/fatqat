@@ -66,6 +66,8 @@ _T1 = 60e-6  # seconds
 _T2 = 48e-6
 _SX_DURATION = 20e-9  # RZ is virtual (zero duration -> no noise)
 _ROTATION_DURATION = 20e-9
+_CZ_DURATION = 50e-9
+_ISWAP_DURATION = 30e-9
 _CZ_DEPOLARIZING_P = 0.001
 _ISWAP_DEPOLARIZING_P = 0.001
 _READOUT_P01 = 0.02  # P(report 1 | true 0)
@@ -268,7 +270,8 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         ``X`` and ``SX`` each carry thermal relaxation converted from the
         device ``T1``/``T2`` and the gate duration (both are physical
         single-qubit pulses here), readout gets an asymmetric confusion
-        matrix, and ``CZ`` carries a joint depolarizing channel. ``RZ`` is
+        matrix, and ``CZ`` carries a joint depolarizing channel plus gate-time
+        relaxation on each participating qubit. ``RZ`` is
         virtual (zero duration), so it stays noise-free.
 
         The returned model is a fresh, ordinary
@@ -295,6 +298,10 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         for gate in (ops.X, ops.SX):
             noise.add_noise(gate, damping)
             noise.add_noise(gate, dephasing)
+        cz_damping, cz_dephasing = relaxation_channels(_T1, _T2, _CZ_DURATION)
+        for slot in (0, 1):
+            noise.add_noise(ops.CZ, cz_damping, slots=(slot,))
+            noise.add_noise(ops.CZ, cz_dephasing, slots=(slot,))
         noise.add_noise(ops.CZ, Depolarizing(p=_CZ_DEPOLARIZING_P))
         noise.add_readout_error(
             np.array(
@@ -385,8 +392,9 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         device ``T1``/``T2`` and the gate duration (both are physical
         rotations here, unlike the IBM-style backend's virtual-``RZ``-only
         split), readout gets an asymmetric confusion matrix, and ``iSwap``
-        and ``CZ`` each carry their own joint depolarizing channel. ``RZ``
-        is virtual (zero duration), so it stays noise-free.
+        and ``CZ`` each carry their own joint depolarizing channel plus
+        gate-time relaxation on each participating qubit. ``RZ`` is virtual
+        (zero duration), so it stays noise-free.
 
         The returned model is a fresh, ordinary
         :py:class:`~fatqat.NoiseModel`: inspect it, extend it with your own
@@ -412,7 +420,15 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         for gate in (ops.RX, ops.RY):
             noise.add_noise(gate, damping)
             noise.add_noise(gate, dephasing)
+        iswap_damping, iswap_dephasing = relaxation_channels(_T1, _T2, _ISWAP_DURATION)
+        for slot in (0, 1):
+            noise.add_noise(ops.iSwap, iswap_damping, slots=(slot,))
+            noise.add_noise(ops.iSwap, iswap_dephasing, slots=(slot,))
         noise.add_noise(ops.iSwap, Depolarizing(p=_ISWAP_DEPOLARIZING_P))
+        cz_damping, cz_dephasing = relaxation_channels(_T1, _T2, _CZ_DURATION)
+        for slot in (0, 1):
+            noise.add_noise(ops.CZ, cz_damping, slots=(slot,))
+            noise.add_noise(ops.CZ, cz_dephasing, slots=(slot,))
         noise.add_noise(ops.CZ, Depolarizing(p=_CZ_DEPOLARIZING_P))
         noise.add_readout_error(
             np.array(

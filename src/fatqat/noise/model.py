@@ -13,7 +13,11 @@ directly - never through the private engine allocation:
 
 - ``tuple[RegisterRef, ...]`` - logical, frontend refs, how a user pins noise
   to their own program's subsystems. Matched by ref equality against the
-  lowered occurrence's targets.
+lowered occurrence's targets.
+
+``slots`` is a third, orthogonal concept: zero-based positional indices in a
+matched occurrence's target tuple. It is neither a logical ref, a device
+label, nor an engine index; it determines the channel's execution extent.
 - ``tuple[DeviceOperand, ...]`` - physical, opaque device resource labels, how a
   backend authors default noise for its device before any user program (or
   register) exists. Matched against
@@ -34,6 +38,7 @@ target. See `readout_error_for`.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -63,15 +68,26 @@ _GateTargetsArg = _GateSelector | RegisterRef | DeviceOperand
 # subsystem, not an occurrence's whole target tuple).
 _ReadoutSelector = RegisterRef | DeviceOperand | None
 
+_Slots = tuple[int, ...] | None
+
+
+@dataclass(frozen=True)
+class _GateNoiseEntry:
+    """One registration: occurrence selector, extent, and descriptor."""
+
+    selector: _GateSelector
+    slots: _Slots
+    channel: Channel
+
 
 class NoiseModel:
     """Selection container for channel-representable noise.
 
     Maps ``(operation class, target selector)`` occurrences to lists of
     `Channel` descriptors. Lookup prefers specific-target entries and falls
-    back to the all-targets entry - a specific match fully replaces the
-    default for that occurrence, while every other occurrence still gets the
-    default (Qiskit Aer's precedence). Repeated ``add_noise`` calls
+    back to the all-targets entry - a specific match replaces defaults of the
+    same extent for that occurrence, while every other occurrence still gets
+    the default (Qiskit Aer's precedence). Repeated ``add_noise`` calls
     accumulate: each attached channel is an independent physical mechanism,
     applied in registration order.
 
@@ -99,9 +115,7 @@ class NoiseModel:
     """
 
     def __init__(self) -> None:
-        self._gate_channels: dict[
-            type[Operation], list[tuple[_GateSelector, list[Channel]]]
-        ] = {}
+        self._gate_channels: dict[type[Operation], list[_GateNoiseEntry]] = {}
         self._readout_errors: list[tuple[_ReadoutSelector, np.ndarray]] = []
         self.qubit_noise: dict[Any, Any] = {}
         self.metadata: dict[str, Any] = {}
@@ -112,6 +126,7 @@ class NoiseModel:
         channel: Channel,
         *,
         targets: _GateTargetsArg = None,
+        slots: tuple[int, ...] | int | None = None,
     ) -> None:
         """Attach a channel to every occurrence of an operation, or one target.
 
@@ -131,14 +146,18 @@ class NoiseModel:
                 (scalar refs only). For a fixed arity-1 operation, a bare
                 `RegisterRef` or device label is also accepted as shorthand
                 for a one-element tuple.
+            slots: ``None`` (default) applies the channel jointly to the
+                whole occurrence. An int or strictly increasing tuple of
+                zero-based occurrence positions scopes the channel to those
+                subsystems instead.
 
         Selection semantics, precisely:
 
         - Entries matching the same occurrence accumulate, in registration
           order - each is an independent mechanism, so attaching a channel
           twice applies it twice.
-        - A specific-target entry replaces the all-targets default on the
-          occurrences it matches, and only those (Qiskit Aer's precedence).
+        - A specific-target entry replaces the all-targets default of the
+          same extent on the occurrences it matches, and only those.
           It can therefore *lower* the noise on its target by evicting a
           stronger default; restate the default at the specific level to
           keep it.
@@ -164,21 +183,25 @@ class NoiseModel:
         if not isinstance(channel, Channel):
             raise TypeError(f"expected a Channel descriptor, got {channel!r}")
         selector = _normalize_selector(op_cls, targets)
-        self._gate_channels.setdefault(op_cls, []).append((selector, [channel]))
+        normalized_slots = _normalize_slots(op_cls, channel, selector, slots)
+        self._gate_channels.setdefault(op_cls, []).append(
+            _GateNoiseEntry(selector, normalized_slots, channel)
+        )
 
     def channels_for(
         self,
         operation: Operation | type[Operation],
         targets: tuple[RegisterRef, ...],
         resource_layout: ResourceLayout,
-    ) -> list[Channel]:
+    ) -> list[tuple[Channel, tuple[RegisterRef, ...]]]:
         """Return the channels selected for one lowered operation occurrence.
 
         A logical selector matches when it equals ``targets``; a physical
         selector matches when it equals
         ``resource_layout.device_operands(targets)``. Both kinds of specific
-        match accumulate (in registration order); the all-targets (``None``)
-        entries apply only when no specific selector matched.
+        match accumulate (in registration order); all-targets (``None``)
+        entries apply only when no specific selector of their same extent
+        matched. Returns ``(channel, extent)`` pairs.
 
         Args:
             operation: The occurrence's operation (instance or class).
@@ -191,21 +214,50 @@ class NoiseModel:
         if not entries:
             return []
         targets = tuple(targets)
-        matched: list[Channel] = []
-        fallback: list[Channel] = []
+        classified: list[bool | None] = []
+        has_specific: dict[_Slots, bool] = {}
         device_operands: tuple[DeviceOperand, ...] | None = None
-        for selector, channels in entries:
+        for entry in entries:
+            selector = entry.selector
             if selector is None:
-                fallback.extend(channels)
+                classified.append(False)
             elif _is_ref_selector(selector):
                 if selector == targets:
-                    matched.extend(channels)
+                    classified.append(True)
+                    has_specific[entry.slots] = True
+                else:
+                    classified.append(None)
             else:
                 if device_operands is None:
                     device_operands = resource_layout.device_operands(targets)
                 if device_operands == selector:
-                    matched.extend(channels)
-        return matched if matched else fallback
+                    classified.append(True)
+                    has_specific[entry.slots] = True
+                else:
+                    classified.append(None)
+
+        resolved: list[tuple[Channel, tuple[RegisterRef, ...]]] = []
+        for entry, status in zip(entries, classified):
+            if status is None or (status is False and has_specific.get(entry.slots)):
+                continue
+            if entry.slots is not None and max(entry.slots) >= len(targets):
+                raise BackendValidationError(
+                    f"slot {max(entry.slots)} is out of range for {type(entry.channel).__name__} "
+                    f"on this {len(targets)}-subsystem occurrence"
+                )
+            extent = (
+                targets
+                if entry.slots is None
+                else tuple(targets[index] for index in entry.slots)
+            )
+            expected = entry.channel.num_subsystems
+            if expected is not None and len(extent) != expected:
+                raise BackendValidationError(
+                    f"{type(entry.channel).__name__} acts on {expected} subsystem(s), "
+                    f"got an extent of {len(extent)}"
+                )
+            resolved.append((entry.channel, extent))
+        return resolved
 
     def add_readout_error(
         self,
@@ -345,7 +397,8 @@ class NoiseModel:
         device_labels = resource_layout.device_labels
 
         for entries in self._gate_channels.values():
-            for selector, _channels in entries:
+            for entry in entries:
+                selector = entry.selector
                 if selector is None:
                     continue
                 if _is_ref_selector(selector):
@@ -392,10 +445,9 @@ class NoiseModel:
     def channel_types(self) -> frozenset[type[Channel]]:
         """Return every descriptor type attached anywhere in this model."""
         return frozenset(
-            type(channel)
+            type(entry.channel)
             for entries in self._gate_channels.values()
-            for _, channels in entries
-            for channel in channels
+            for entry in entries
         )
 
 
@@ -451,3 +503,59 @@ def _normalize_selector(
             f"got a selector of length {len(selector)}"
         )
     return selector
+
+
+def _normalize_slots(
+    op_cls: type[Operation],
+    channel: Channel,
+    selector: _GateSelector,
+    slots: tuple[int, ...] | int | None,
+) -> _Slots:
+    """Validate a positional channel extent and normalize full coverage."""
+    if slots is None:
+        normalized = None
+    else:
+        normalized = (slots,) if isinstance(slots, int) else slots
+        if not isinstance(normalized, tuple):
+            raise TypeError("slots must be an int, a tuple of ints, or None")
+        if not normalized:
+            raise ValueError("slots must be non-empty")
+        if any(not isinstance(i, int) or isinstance(i, bool) for i in normalized):
+            raise TypeError("each slot must be int")
+        if any(i < 0 for i in normalized):
+            raise ValueError("slots must be non-negative")
+        if any(left >= right for left, right in zip(normalized, normalized[1:])):
+            raise ValueError("slots must be strictly increasing")
+        if (
+            op_cls._num_subsystems is not None
+            and max(normalized) >= op_cls._num_subsystems
+        ):
+            raise ValueError(
+                f"slot {max(normalized)} is out of range for {op_cls.__name__}"
+            )
+        if selector is not None and max(normalized) >= len(selector):
+            raise ValueError("slot is out of range for the explicit targets selector")
+        if (
+            channel.num_subsystems is not None
+            and len(normalized) != channel.num_subsystems
+        ):
+            raise ValueError(
+                f"{type(channel).__name__} takes {channel.num_subsystems} subsystem(s), "
+                f"got {len(normalized)} slots"
+            )
+        if op_cls._num_subsystems is not None and normalized == tuple(
+            range(op_cls._num_subsystems)
+        ):
+            normalized = None
+
+    if (
+        normalized is None
+        and channel.num_subsystems is not None
+        and op_cls._num_subsystems is not None
+        and channel.num_subsystems != op_cls._num_subsystems
+    ):
+        raise ValueError(
+            f"{type(channel).__name__} cannot attach to all {op_cls._num_subsystems} "
+            "subsystems; use slots="
+        )
+    return normalized

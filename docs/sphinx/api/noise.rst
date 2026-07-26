@@ -14,7 +14,7 @@ Create and attach noise
 
 :py:class:`~fatqat.NoiseModel` is normally created as ``noise = fq.NoiseModel()``.
 
-:py:meth:`add_noise <fatqat.NoiseModel.add_noise>` (``operation, channel, *, targets=None``) attaches a
+:py:meth:`add_noise <fatqat.NoiseModel.add_noise>` (``operation, channel, *, targets=None, slots=None``) attaches a
 quantum channel after matching gate occurrences. Omit ``targets`` to affect
 every occurrence; use a qubit reference such as
 ``targets=(program.qreg[0][0],)`` to affect one qubit.

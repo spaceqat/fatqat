@@ -7,9 +7,11 @@ import fatqat as fq
 from fatqat.backends import ApplyChannelStep, ApplyMatrixStep, SimulatorBackend
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (
+    AmplitudeDamping,
     Channel,
     Depolarizing,
     NoiseModel,
+    PhaseDamping,
     default_channel_implementation_map,
 )
 from fatqat.simulator.np import NumpyDMSimulator, NumpySVSimulator
@@ -383,3 +385,55 @@ def test_numba_simulator_falls_back_correctly_on_channel_plans():
             zip(raw.outcome_keys.tolist(), raw.outcome_counts.tolist())
         )
     assert counts["NumpySVSimulator"] == counts["NumbaSVSimulator"]
+
+
+def test_scoped_damping_decays_only_the_selected_cz_slot():
+    """Scoped noise must affect its selected qubit, not merely lower correctly."""
+    for slot, expected_marginals in ((0, (0.5, 1.0)), (1, (1.0, 0.5))):
+        program = fq.Program(2)
+        program.add(fq.ops.X, 0)
+        program.add(fq.ops.X, 1)
+        # CZ changes only the |11> phase, leaving these populations intact.
+        program.add(fq.ops.CZ, (0, 1))
+        noise = NoiseModel()
+        noise.add_noise(fq.ops.CZ, AmplitudeDamping(gammas=(0.5,)), slots=(slot,))
+
+        density_matrix = (
+            SimulatorBackend(method="DM", noise=noise)
+            .run(
+                program,
+                result_config={"counts": False, "density_matrix": True},
+            )
+            .result()
+            .get_density_matrix()
+        )
+        # Fatqat's global basis order is little-endian: |q1 q0>.
+        p_q0 = np.real(density_matrix[1, 1] + density_matrix[3, 3])
+        p_q1 = np.real(density_matrix[2, 2] + density_matrix[3, 3])
+        assert np.allclose((p_q0, p_q1), expected_marginals)
+
+
+def test_scoped_channel_uses_only_the_qudit_extent_dimension():
+    program = fq.Program([fq.QuantumRegister(2, dim=3)])
+    program.add(fq.ops.Sum, (0, 1))
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.Sum, PhaseDamping(p=0.1), slots=(1,))
+
+    plan, _ = SimulatorBackend(noise=noise)._lower_program(program)
+    channel_steps = [step for step in plan if isinstance(step, ApplyChannelStep)]
+
+    assert channel_steps[0].target_indices == (1,)
+    assert all(kraus.shape == (3, 3) for kraus in channel_steps[0].kraus_ops)
+
+
+def test_multi_slot_extent_has_joint_kraus_dimension():
+    program = fq.Program(3)
+    program.add(fq.ops.CCX, (0, 1, 2))
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.CCX, Depolarizing(p=0.01), slots=(1, 2))
+
+    plan, _ = SimulatorBackend(noise=noise)._lower_program(program)
+    channel_steps = [step for step in plan if isinstance(step, ApplyChannelStep)]
+
+    assert channel_steps[0].target_indices == (1, 2)
+    assert all(kraus.shape == (4, 4) for kraus in channel_steps[0].kraus_ops)

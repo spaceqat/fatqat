@@ -83,6 +83,23 @@ This names the first quantum slot in the program, independent of how a
 backend executes it. Backend-specific physical addressing is intentionally
 outside the normal application workflow.
 
+## Scope a channel inside a multi-qubit gate
+
+`targets=` filters which gate occurrences match; `slots=` chooses which
+subsystems inside each matched occurrence the channel acts on. Slots are
+zero-based positions in the gate's target tuple, not device labels.
+
+```python
+noise.add_noise(fq.ops.CZ, damping, slots=(0,))
+noise.add_noise(fq.ops.CZ, damping, slots=(1,))
+noise.add_noise(fq.ops.CZ, fq.noise.Depolarizing(p=0.001))
+```
+
+This can express asymmetric roles too, for example different control and
+target noise on a `CX`. A `targets=`-specific entry overrides all-target
+defaults only for its same extent, so a scoped entry does not evict a joint
+channel (or vice versa).
+
 ## Readout error
 
 Readout error changes the reported classical value after measurement; it

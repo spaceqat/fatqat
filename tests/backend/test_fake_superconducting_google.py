@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
-from fatqat.backends import SCQubitGoogleSimulator
+from fatqat.backends import ApplyChannelStep, SCQubitGoogleSimulator
 from fatqat.backends.fake_superconducting import (
     fake_superconducting_google_implementation_map,
 )
@@ -332,9 +332,20 @@ def test_default_noise_model_is_a_fresh_extensible_model():
     backend = SCQubitGoogleSimulator()
     assert not any(
         isinstance(c, Depolarizing) and c.p == 0.5
-        for c in second.channels_for(
+        for c, _extent in second.channels_for(
             ops.RX,
             (program.qreg[0][0],),
             backend._resolve_resource_layout(program),
         )
     )
+
+
+def test_iswap_has_scoped_relaxation_before_joint_depolarizing():
+    program = Program(2)
+    program.add(ops.iSwap, (0, 1))
+    backend = SCQubitGoogleSimulator(noise=SCQubitGoogleSimulator.default_noise_model())
+    plan, _ = backend._lower_program(program)
+
+    assert [
+        step.target_indices for step in plan if isinstance(step, ApplyChannelStep)
+    ] == [(0,), (0,), (1,), (1,), (0, 1)]

@@ -133,7 +133,7 @@ def test_physical_noise_selector_uses_device_label_not_engine_index():
     noise = NoiseModel()
     noise.add_noise(ops.RX, channel, targets=(5,))
 
-    assert noise.channels_for(ops.RX, (ref,), resource_layout) == [channel]
+    assert noise.channels_for(ops.RX, (ref,), resource_layout) == [(channel, (ref,))]
 
     stale_engine_index_selector = NoiseModel()
     stale_engine_index_selector.add_noise(ops.RX, channel, targets=(3,))

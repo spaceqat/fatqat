@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import exp, prod
+from typing import ClassVar
 
 import numpy as np
 
@@ -91,6 +92,7 @@ class AmplitudeDamping(Channel):
             dimension is known).
     """
 
+    _num_subsystems: ClassVar[int | None] = 1
     gammas: tuple[float, ...]
 
     def __post_init__(self) -> None:
@@ -115,7 +117,7 @@ def amplitude_damping_rule(
             subsystem, or the number of rates does not match the target
             dimension.
     """
-    _require_single_target(targets, "AmplitudeDamping")
+    _require_channel_arity(channel, targets, "AmplitudeDamping")
     dim = targets[0].register.dim
     gammas = channel.gammas
     if len(gammas) != dim - 1:
@@ -141,6 +143,7 @@ class PhaseDamping(Channel):
         p: Probability of full dephasing, in ``[0, 1]``.
     """
 
+    _num_subsystems: ClassVar[int | None] = 1
     p: float
 
     def __post_init__(self) -> None:
@@ -161,7 +164,7 @@ def phase_damping_rule(
         BackendValidationError: If the channel is applied to more than one
             subsystem.
     """
-    _require_single_target(targets, "PhaseDamping")
+    _require_channel_arity(channel, targets, "PhaseDamping")
     p = channel.p
     dim = targets[0].register.dim
     ops = [np.sqrt(1 - p + p / dim) * np.eye(dim, dtype=complex)]
@@ -170,13 +173,22 @@ def phase_damping_rule(
     return tuple(ops)
 
 
-def _require_single_target(targets: tuple[RegisterRef, ...], label: str) -> None:
-    """Raise for a single-subsystem channel resolved on a multi-target gate."""
-    if len(targets) != 1:
+def _require_channel_arity(
+    channel: Channel, targets: tuple[RegisterRef, ...], label: str
+) -> None:
+    """Defensively enforce a fixed descriptor arity for direct rule callers."""
+    expected = channel.num_subsystems
+    if expected is None or len(targets) == expected:
+        return
+    if expected == 1:
         raise BackendValidationError(
             f"{label} is a single-subsystem channel; it cannot be attached to "
             f"an operation targeting {len(targets)} subsystems"
         )
+    raise BackendValidationError(
+        f"{label} is a {expected}-subsystem channel; it cannot be attached to "
+        f"an extent of {len(targets)} subsystems"
+    )
 
 
 def relaxation_channels(
@@ -192,8 +204,9 @@ def relaxation_channels(
     carries only the residual, which is why ``t2 <= 2*t1`` is required (the
     physical bound: pure dephasing cannot be negative).
 
-    Attach both returned channels to the same single-qubit gate occurrence
-    (order does not matter; the two commute).
+    Attach both returned channels to the same extent: a single-qubit gate
+    occurrence, or one slot of a multi-qubit gate via ``add_noise(...,
+    slots=)``. Order does not matter; the two commute.
 
     Args:
         t1: Energy-relaxation timescale, in the same time unit as
