@@ -235,13 +235,15 @@ class _NumpyMatrixSimulator(Simulator):
         shots: int,
         seed: int | None,
         request: ResultRequest,
+        *,
+        config: EngineConfig | None = None,
     ) -> RawResult:
         assert (
             self._state is not None
         ), "simulator not initialized; call initialize() first"
         is_dynamic, measurements = self._analyze_plan(plan)
         if is_dynamic:
-            return self._run_per_shot(plan, shots, seed, request)
+            return self._run_per_shot(plan, shots, seed, request, config or self.config)
         return self._run_fast(
             plan, measurements, shots, np.random.default_rng(seed), request
         )
@@ -339,6 +341,7 @@ class _NumpyMatrixSimulator(Simulator):
         shots: int,
         seed: int | None,
         request: ResultRequest,
+        config: EngineConfig,
     ) -> RawResult:
         """Run dynamic execution one trajectory at a time or via worker batches."""
         from .parallel import (
@@ -353,11 +356,11 @@ class _NumpyMatrixSimulator(Simulator):
 
         # A state export must come from this process, so it never parallelizes.
         max_workers = (
-            None if state_requested else _planned_workers(self.config, request, n_iters)
+            None if state_requested else _planned_workers(config, request, n_iters)
         )
         if max_workers is not None:
             snapshots = _run_dynamic_shots_parallel(
-                self.config,
+                config,
                 plan,
                 self._dims,
                 self._n_clbits,

@@ -40,7 +40,7 @@ engine index coincide.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .. import operations as ops
 from ..errors import BackendValidationError
@@ -133,7 +133,9 @@ class FakeAtomGridBackend(SimulatorBackend):
         self,
         rows: int = DEFAULT_ROWS,
         cols: int = DEFAULT_COLS,
-        options: dict[str, Any] | None = None,
+        *,
+        method: str = "statevector",
+        runtime: str = "numpy",
         noise: NoiseModel | None = None,
     ) -> None:
         """Create a fake atom-grid backend of the given shape.
@@ -141,11 +143,10 @@ class FakeAtomGridBackend(SimulatorBackend):
         Args:
             rows: Number of device rows. Must be a positive integer.
             cols: Number of device columns. Must be a positive integer.
-            options: Same execution-strategy options as
-                `~fatqat.backends.SimulatorBackend` (`max_workers`,
-                `parallel_mode`). The implementation map is fixed to
-                `fake_atom_grid_implementation_map(rows, cols)` and cannot be
-                overridden.
+            method: State representation, exactly as on
+                :py:class:`~fatqat.backends.SimulatorBackend`.
+            runtime: Numeric execution runtime, exactly as on
+                :py:class:`~fatqat.backends.SimulatorBackend`.
             noise: Optional `~fatqat.NoiseModel`, exactly as on
                 `~fatqat.backends.SimulatorBackend`. `None` (the default)
                 keeps the backend ideal.
@@ -165,8 +166,8 @@ class FakeAtomGridBackend(SimulatorBackend):
         self._rows = rows
         self._cols = cols
         super().__init__(
-            method="statevector",
-            options=options,
+            method=method,
+            runtime=runtime,
             implementation_map=fake_atom_grid_implementation_map(rows, cols),
             noise=noise,
         )

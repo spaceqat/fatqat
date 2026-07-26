@@ -35,8 +35,6 @@ implementation map's contents.
 
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 
 from .. import operations as ops
@@ -238,17 +236,18 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
 
     def __init__(
         self,
-        options: dict[str, Any] | None = None,
+        *,
+        method: str = "statevector",
+        runtime: str = "numpy",
         noise: NoiseModel | None = None,
     ) -> None:
         """Create a fake IBM-style 4x4 superconducting backend.
 
         Args:
-            options: Same execution-strategy options as
-                :py:class:`~fatqat.backends.SimulatorBackend` (``max_workers``,
-                ``parallel_mode``). The implementation map is fixed to
-                `fake_superconducting_ibm_implementation_map()` and cannot be
-                overridden.
+            method: State representation, exactly as on
+                :py:class:`~fatqat.backends.SimulatorBackend`.
+            runtime: Numeric execution runtime, exactly as on
+                :py:class:`~fatqat.backends.SimulatorBackend`.
             noise: Optional :py:class:`~fatqat.NoiseModel`, exactly as on
                 :py:class:`~fatqat.backends.SimulatorBackend`. ``None`` (the
                 default) keeps the backend ideal; pass
@@ -256,8 +255,9 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
                 calibration-derived profile.
         """
         super().__init__(
+            method=method,
+            runtime=runtime,
             implementation_map=fake_superconducting_ibm_implementation_map(),
-            options=options,
             noise=noise,
         )
 
@@ -281,15 +281,17 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         Examples:
             >>> import fatqat as fq
             >>> Sim = fq.backends.SCQubitIBMSimulator
-            >>> backend = Sim(
-            ...     options={"parallel_mode": "serial"},
-            ...     noise=Sim.default_noise_model(),
-            ... )
+            >>> backend = Sim(method="statevector", runtime="numpy",
+            ...               noise=Sim.default_noise_model())
             >>> program = fq.Program(1, 1)
             >>> program.add(fq.ops.SX, 0)
             >>> program.add(fq.ops.SX, 0)  # SX SX = X, up to a phase
             >>> program.add_measurement(0, 0)
-            >>> counts = backend.run(program, shots=2000, seed=1).result().get_counts()
+            >>> counts = backend.run(
+            ...     program,
+            ...     shots=2000,
+            ...     simulation_config={"seed": 1, "parallel_mode": "serial"},
+            ... ).result().get_counts()
             >>> counts["1"] > 1800  # mostly 1, but noise leaks some 0s
             True
         """

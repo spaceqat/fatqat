@@ -7,7 +7,7 @@ case-insensitive) select the state representation, exactly like Qiskit Aer's
 ``AerSimulator(method=...)``. It is the only simulator backend:
 per-representation backend classes do not exist.
 
-Everything method-independent lives here once: options/result-config
+Everything method-independent lives here once: per-run simulation/result-config
 normalization, lowering (including the compiler-facing `Barrier` skip),
 validation, execution orchestration, and public `Result` assembly. The
 method-dependent facts are bound as instance attributes in ``__init__`` -
@@ -20,9 +20,9 @@ the backend never branches on method afterwards:
   drives (`NumpySVSimulator`, `NumpyDMSimulator`, or the optional
   `NumbaSVSimulator` / `NumbaDMSimulator`); one instance is bound to
   ``_simulator`` and reused across runs.
-- ``_result_config_cls`` / ``_request_cls``: the method's frozen
-  result-config and engine-request value objects. Supported
-  ``result_config`` keys are derived from the config dataclass fields.
+- ``_request_cls``: the method's engine-request value object. The public
+  ``final_state`` result request is translated to that representation's
+  native state field immediately before execution.
 - ``_nonunitary_is_stochastic``: whether non-unitary maps (reset, channel
   noise) make execution stochastic for the state representation (`True`
   for statevector, which must sample one branch of any non-unitary map;
@@ -31,7 +31,7 @@ the backend never branches on method afterwards:
 
 The backend/simulator seam: this class constructs the method's `Simulator`
 subclass once, then calls ``simulator.initialize(system_dims, n_clbits)``
-and ``simulator.run(plan, shots, seed, request) -> RawResult`` per run,
+and ``simulator.run(plan, shots, seed, request, config=...) -> RawResult`` per run,
 exactly as the per-method backends did against the engine before this
 refactor.
 """
@@ -39,8 +39,8 @@ refactor.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterable, Sequence
-from dataclasses import fields
+from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
+from dataclasses import asdict, fields
 from math import prod
 from typing import Any
 
@@ -75,20 +75,21 @@ from ..registers import (
 from ..resource_layout import DeviceOperand, ResourceLayout
 from ..result import (
     Result,
-    _DensityMatrixResultConfig,
-    _StateVectorResultConfig,
+    _ResultConfig,
     counts_dict_from_arrays,
 )
 from ..simulator import NumpyDMSimulator, NumpySVSimulator, Simulator
 from .backend_utils import (
     _LoweringContext,
     _PlanFacts,
-    _normalize_dict_options,
+    _normalize_config,
     _resolve_condition,
 )
 from .engine_contract import (
+    RawResult,
     _DensityMatrixResultRequest,
     _EngineConfig,
+    _SimulationConfig,
     _StateVectorResultRequest,
 )
 from .steps import (
@@ -391,14 +392,10 @@ class SimulatorBackend:
     under statevector semantics each occurrence samples one trajectory
     branch, which makes execution stochastic and forces per-shot replay.
 
-    Backend constructor options affect only dynamic counts execution:
-
-    - ``max_workers``: maximum worker processes for dynamic counts
-      parallelism. ``None`` means automatic selection.
-    - ``parallel_mode``: one of ``"auto"``, ``"serial"``, ``"multiprocessing"``,
-      or ``"loky"``. ``"auto"`` prefers ``loky`` when available and otherwise
-      uses ``multiprocessing``. ``"serial"`` disables process-based parallel
-      execution.
+    Per-run ``simulation_config`` controls local execution only: ``seed``,
+    ``max_workers``, and ``parallel_mode``. ``result_config`` controls the
+    execution record: ``counts`` and ``final_state``. ``shots`` is an
+    explicit ``run()`` argument, matching a hardware job's repetition count.
 
     The ``runtime`` argument selects the execution technology for the chosen
     representation - ``"numpy"`` (default) or ``"numba"`` (optional
@@ -418,19 +415,30 @@ class SimulatorBackend:
         >>> program.add(fq.ops.H, 0)
         >>> result = fq.backends.SimulatorBackend(method="DM").run(
         ...     program,
-        ...     result_config={"counts": False, "density_matrix": True},
+        ...     result_config={"counts": False, "final_state": True},
         ... ).result()
         >>> result.get_density_matrix()
         array([[0.5+0.j, 0.5+0.j],
                [0.5+0.j, 0.5+0.j]])
     """
 
+    # Subclasses may replace this with a dataclass derived from
+    # ``_ResultConfig`` to expose hardware-specific result artifacts. The
+    # normalizer derives accepted keys from this schema, so unsupported fields
+    # fail before execution.
+    _result_config_cls: type[_ResultConfig] = _ResultConfig
+
+    # Subclasses may replace this with a dataclass derived from
+    # ``_SimulationConfig`` for hardware-specific simulator controls. The
+    # base backend only consumes the inherited seed and engine-config portion.
+    _simulation_config_cls: type[_SimulationConfig] = _SimulationConfig
+
     def __init__(
         self,
         method: str = "statevector",
-        options: dict[str, Any] | None = None,
-        implementation_map: ImplementationMap | None = None,
+        *,
         runtime: str = "numpy",
+        implementation_map: ImplementationMap | None = None,
         noise: NoiseModel | None = None,
         channel_implementation_map: ChannelImplementationMap | None = None,
     ) -> None:
@@ -440,10 +448,6 @@ class SimulatorBackend:
             method: Simulation method: ``"statevector"`` or
                 ``"density_matrix"``, or the case-insensitive short aliases
                 ``"SV"`` / ``"DM"``.
-            options: Optional execution-strategy options. Supported keys are
-                ``max_workers`` and ``parallel_mode``; unknown keys are
-                ignored with a warning. These options only affect the dynamic
-                counts path and do not change numerical semantics.
             implementation_map: Optional matrix implementation map controlling
                 which operations this backend supports and how their matrices
                 are built. ``None`` (the default) uses
@@ -489,7 +493,6 @@ class SimulatorBackend:
         self._state_field = normalized
         self._simulator_cls: type[Simulator]
         if normalized == "statevector":
-            self._result_config_cls = _StateVectorResultConfig
             self._request_cls = _StateVectorResultRequest
             self._simulator_cls = NumpySVSimulator
             # A pure state cannot represent the mixed output of a non-unitary
@@ -497,7 +500,6 @@ class SimulatorBackend:
             # random event, like measurement.
             self._nonunitary_is_stochastic = True
         else:
-            self._result_config_cls = _DensityMatrixResultConfig
             self._request_cls = _DensityMatrixResultRequest
             self._simulator_cls = NumpyDMSimulator
             # A density matrix holds the full ensemble, so reset is the
@@ -522,14 +524,6 @@ class SimulatorBackend:
             )
         self._runtime = normalized_runtime
 
-        config = _normalize_dict_options(
-            options,
-            {"max_workers", "parallel_mode"},
-            _EngineConfig,
-            "options",
-            "backend",
-            backend_name=type(self).__name__,
-        )
         if implementation_map is None:
             implementation_map = default_matrix_implementation_map()
         self._impl_map = implementation_map.copy()
@@ -543,7 +537,7 @@ class SimulatorBackend:
         # buffers can be reused. Because it holds per-run state, a single
         # backend instance is NOT safe for concurrent run() calls
         # (single-threaded use only).
-        self._simulator = self._simulator_cls(config=config)
+        self._simulator = self._simulator_cls(config=_EngineConfig())
         self._simulator_system: tuple[tuple[int, ...], int] | None = None
 
     def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
@@ -609,8 +603,8 @@ class SimulatorBackend:
         program: Program,
         *,
         shots: int = 1024,
+        simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
-        seed: int | None = None,
     ) -> Job:
         """Validate, execute, and package one program run.
 
@@ -618,22 +612,21 @@ class SimulatorBackend:
         index allocation, chooses an execution strategy, runs the circuit, and
         returns an eager ``Job`` whose ``result()`` yields a ``Result``.
 
-        ``result_config`` accepts ``counts`` plus the method's native state
-        field (``statevector`` or ``density_matrix``), each tri-state:
-        ``None`` (backend default), ``True`` (request), ``False`` (suppress).
-        Counts default to measurement presence; the state field defaults to
-        non-stochastic execution. Requesting the state field for a stochastic
-        program requires ``shots == 1``. ``Result.metadata`` always includes
-        ``shots``, ``backend_name``, ``method``, and the effective
-        ``result_config``.
+        ``simulation_config`` controls local execution only: ``seed``,
+        ``max_workers``, and ``parallel_mode``. ``result_config`` describes
+        the requested result artifacts: ``counts`` and ``final_state``. The
+        latter asks a simulator to return its terminal state in the
+        representation selected by this backend's ``method``.
 
         Args:
             program: Program to execute.
-            shots: Number of logical shots to run when counts are requested.
-            result_config: Optional plain dictionary describing which result
-                fields to produce; unknown keys are ignored with a warning.
-            seed: Optional root seed for the run. For dynamic counts, one
-                reproducible child RNG stream is derived per logical shot.
+            shots: Number of circuit repetitions. Counts and a stochastic
+                final-state request require a positive integer; a
+                non-stochastic final-state-only request ignores it.
+            simulation_config: Optional simulator-only dictionary. Unknown or
+                incompatible entries raise an error.
+            result_config: Optional result-request dictionary. Unknown or
+                incompatible entries raise an error.
 
         Returns:
             A completed ``Job``. Validation failures raise directly from
@@ -647,12 +640,15 @@ class SimulatorBackend:
                 without a backend implementation, or one whose target key is
                 illegal for this backend.
         """
-        known_keys = {field.name for field in fields(self._result_config_cls)}
-        config = _normalize_dict_options(
+        simulation = _normalize_config(
+            simulation_config,
+            self._simulation_config_cls,
+            "simulation_config",
+            backend_name=type(self).__name__,
+        )
+        config = _normalize_config(
             result_config,
-            known_keys,
             self._result_config_cls,
-            "result_config",
             "result_config",
             backend_name=type(self).__name__,
         )
@@ -679,10 +675,17 @@ class SimulatorBackend:
         )
         plan, facts = self._lower_program(program, context=context)
         self._validate(config, shots, facts)
+        self._validate_additional_config(
+            config=config,
+            simulation=simulation,
+            shots=shots,
+            facts=facts,
+        )
         try:
             return Job.done(
                 self._execute(
                     config,
+                    simulation,
                     shots,
                     plan,
                     facts,
@@ -696,7 +699,7 @@ class SimulatorBackend:
             return Job.failed(exc)
 
     # --- validation (raises directly from run) ---
-    def _validate(self, config: Any, shots: int, facts: _PlanFacts) -> None:
+    def _validate(self, config: _ResultConfig, shots: int, facts: _PlanFacts) -> None:
         """Validate result-config / shots constraints against the lowered program.
 
         Operation support and dynamic classification were already resolved in
@@ -714,7 +717,7 @@ class SimulatorBackend:
         stochastic = facts.has_measurement or (
             self._nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
         )
-        requested_state = getattr(config, self._state_field) is True
+        requested_state = config.final_state is True
 
         # shots is only checked when the result actually depends on it: counts
         # always sample per shot, and a stochastic state export needs shots==1
@@ -739,17 +742,33 @@ class SimulatorBackend:
                 "for shots == 1"
             )
 
+    def _validate_additional_config(
+        self,
+        *,
+        config: _ResultConfig,
+        simulation: _SimulationConfig,
+        shots: int,
+        facts: _PlanFacts,
+    ) -> None:
+        """Validate backend-specific configuration against this program run.
+
+        Subclasses use this pre-execution hook for constraints that depend on
+        the result request, simulation controls, shot count, or lowered
+        program facts. Raise ``BackendValidationError`` with a user-facing
+        explanation when a declared configuration is incompatible.
+        """
+
     # --- execution ---
     def _execute(
         self,
-        config: Any,
+        config: _ResultConfig,
+        simulation: _SimulationConfig,
         shots: int,
         plan: list[ResolvedStep],
         facts: _PlanFacts,
         system_dims: tuple[int, ...],
         classical_dims: tuple[int, ...],
         n_clbits: int,
-        seed: int | None,
     ) -> Result:
         """Execute a lowered program and assemble the requested result fields."""
         request = _resolve_result_request(
@@ -765,7 +784,13 @@ class SimulatorBackend:
             self._simulator.initialize(system_dims, n_clbits)
             self._simulator_system = system_key
 
-        raw = self._simulator.run(plan, shots, seed, request)
+        raw = self._simulator.run(
+            plan,
+            shots,
+            simulation.seed,
+            request,
+            config=simulation.engine_config(),
+        )
         counts = None
         state = raw.state
         state_requested = getattr(request, self._state_field)
@@ -792,22 +817,63 @@ class SimulatorBackend:
                     stacklevel=3,
                 )
 
+        extra_data = self._additional_result_data(
+            config=config,
+            simulation=simulation,
+            raw=raw,
+        )
         return Result(
             counts=counts,
             available=frozenset(available),
             classical_dims=classical_dims,
+            data=extra_data,
             metadata={
                 "shots": shots,
                 "backend_name": type(self).__name__,
                 "method": self._state_field,
                 "runtime": self._runtime,
-                "result_config": {
-                    "counts": config.counts,
-                    self._state_field: getattr(config, self._state_field),
-                },
+                "simulation_config": asdict(simulation),
+                "result_config": asdict(config),
             },
             **{self._state_field: state},
         )
+
+    def _additional_result_data(
+        self,
+        *,
+        config: _ResultConfig,
+        simulation: _SimulationConfig,
+        raw: RawResult,
+    ) -> Mapping[str, Any]:
+        """Return backend-specific result artifacts for this completed run.
+
+        A hardware subclass extends the corresponding config dataclass and
+        overrides this hook to turn its requested fields into public result
+        data. The common backend has no extra artifacts.
+        """
+        return {}
+
+    def _implementation_for(
+        self, operation: Operation, device_operands: DeviceOperands
+    ) -> MatrixImplementation:
+        """Resolve the matrix rule for an operation on a device target key.
+
+        Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` if the operation has no rule at
+        all, or if it has rules but none for this target key — the message
+        distinguishes the two.
+        """
+        if not self._impl_map.supports(operation):
+            raise UnsupportedOperationError(
+                f"{type(operation).__name__} is not supported by this backend"
+            )
+        rule = self._impl_map.implementation_for(
+            operation, device_operands=device_operands
+        )
+        if rule is None:
+            raise UnsupportedOperationError(
+                f"{type(operation).__name__} is not supported on device operands {device_operands}"
+            )
+        return rule
 
     def _lower(
         self,
@@ -934,7 +1000,7 @@ class SimulatorBackend:
 
 
 def _resolve_result_request(
-    config: Any,
+    config: _ResultConfig,
     facts: _PlanFacts,
     request_cls: type,
     state_field: str,
@@ -952,7 +1018,7 @@ def _resolve_result_request(
         nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
     )
     counts = config.counts if config.counts is not None else facts.has_measurement
-    state = getattr(config, state_field)
+    state = config.final_state
     if state is None:
         state = not stochastic
     return request_cls(counts=counts, **{state_field: state})
