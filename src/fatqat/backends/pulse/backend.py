@@ -11,10 +11,10 @@ from ..._engine_index_allocation import _EngineIndexAllocation
 from ...backends.backend_utils import _normalize_config
 from ...errors import BackendValidationError
 from ...job import Job
-from ...noise import NoiseModel, NoiseSupportReport
+from ...noise import NoiseModel, NoiseSupportReport, ThermalRelaxation
 from ...program import Program
 from ...resource_layout import ResourceLayout
-from ...result import Result
+from ...result import Result, counts_dict_from_arrays, reduce_to_counts
 from .engine import PulseEngine
 from .engine_contract import (
     PulseResultConfig,
@@ -119,6 +119,8 @@ class PulseBackend:
             engine_index_allocation=allocation,
         )
         request = self._validate(result, shots, facts)
+        engine_to_model = self._engine_to_model(program, resource_layout, allocation)
+        continuous_noise = self._continuous_noise(program, resource_layout)
         try:
             return Job.done(
                 self._execute(
@@ -128,6 +130,8 @@ class PulseBackend:
                     result,
                     shots,
                     allocation,
+                    engine_to_model,
+                    continuous_noise,
                 )
             )
         except Exception as exc:  # execution failures belong on the eager Job
@@ -164,10 +168,16 @@ class PulseBackend:
         result_config: PulseResultConfig,
         shots: int,
         allocation: _EngineIndexAllocation,
+        engine_to_model: tuple[int, ...],
+        continuous_noise: tuple[tuple[Any, ...], ...],
     ) -> Result:
         from .qutip_adapter import SCQutipAdapter
 
-        runner = SCQutipAdapter(self.model)
+        runner = SCQutipAdapter(
+            self.model,
+            engine_to_model=engine_to_model,
+            continuous_noise=continuous_noise,
+        )
         outcomes = PulseEngine(
             runner, placement_mode=simulation.placement_mode
         ).execute(
@@ -176,11 +186,21 @@ class PulseBackend:
             n_clbits=allocation.n_clbits,
             rng=np.random.default_rng(simulation.seed),
         )
-        density_matrix = outcomes[-1] if outcomes else None
-        available = frozenset({"density_matrix"} if request.density_matrix else ())
+        density_matrix = outcomes[-1].density_matrix if outcomes else None
+        counts = None
+        available = set()
+        if request.counts:
+            keys, values = reduce_to_counts(
+                [outcome.classical_digits for outcome in outcomes]
+            )
+            counts = counts_dict_from_arrays(keys, values)
+            available.add("counts")
+        if request.density_matrix:
+            available.add("density_matrix")
         return Result(
+            counts=counts,
             density_matrix=density_matrix if request.density_matrix else None,
-            available=available,
+            available=frozenset(available),
             classical_dims=allocation.classical_dims,
             metadata={
                 "backend_name": type(self).__name__,
@@ -191,9 +211,40 @@ class PulseBackend:
             },
         )
 
+    def _engine_to_model(
+        self,
+        program: Program,
+        resource_layout: ResourceLayout,
+        allocation: _EngineIndexAllocation,
+    ) -> tuple[int, ...]:
+        ordinals = [0] * allocation.n_subsystems
+        for register in program.qreg:
+            for index in range(register.size):
+                ref = register[index]
+                label = resource_layout.device_label(ref)
+                ordinals[allocation.subsystem_index(ref)] = self.model.bind_resource(
+                    self.model.resource(label)
+                )
+        return tuple(ordinals)
+
+    def _continuous_noise(
+        self, program: Program, resource_layout: ResourceLayout
+    ) -> tuple[tuple[Any, ...], ...]:
+        refs_by_label = {
+            resource_layout.device_label(register[index]): register[index]
+            for register in program.qreg
+            for index in range(register.size)
+        }
+        return tuple(
+            self.noise.continuous_noise_for(
+                refs_by_label.get(subsystem_id), subsystem_id
+            )
+            for subsystem_id in self.model.subsystem_ids
+        )
+
     def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        """Report v0.1 planning support before continuous-noise work arrives."""
-        accepted = ("readout_error",) if noise_model.has_readout_error() else ()
+        """Report accepted T1/T2/readout and rejected pulse-noise sources."""
+        accepted = ["readout_error"] if noise_model.has_readout_error() else []
         rejected = []
         warnings = []
         if noise_model.channel_types():
@@ -201,12 +252,24 @@ class PulseBackend:
             warnings.append(
                 "gate-keyed channel noise is not supported by the pulse backend"
             )
+        for source_type in sorted(
+            noise_model.continuous_noise_types(), key=lambda source: source.__name__
+        ):
+            if source_type is ThermalRelaxation:
+                accepted.append(source_type.__name__)
+            else:
+                rejected.append(source_type.__name__)
+                warnings.append(
+                    f"{source_type.__name__} is not supported by the pulse backend"
+                )
         if noise_model.qubit_noise:
             rejected.append("qubit_noise")
-            warnings.append("continuous pulse noise is introduced in Task 7")
+            warnings.append(
+                "qubit_noise is a legacy placeholder; use add_continuous_noise()"
+            )
         return NoiseSupportReport(
             supported=not rejected,
-            accepted_sources=accepted,
+            accepted_sources=tuple(accepted),
             rejected_sources=tuple(rejected),
             warnings=tuple(warnings),
         )

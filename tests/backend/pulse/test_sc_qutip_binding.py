@@ -123,9 +123,7 @@ def test_constant_drive_matches_an_independent_full_model_hamiltonian():
 
     annihilation = Qobj(model.annihilation)
     drift = adapter._drift.get_ideal_qobjevo([3, 3])(0.0)
-    hamiltonian = drift + amplitude * tensor(
-        annihilation + annihilation.dag(), qeye(3)
-    )
+    hamiltonian = drift + amplitude * tensor(annihilation + annihilation.dag(), qeye(3))
     initial = adapter.initial_state()
     unitary = (-1j * hamiltonian * duration).expm()
     expected = unitary * initial * unitary.dag()
@@ -301,7 +299,7 @@ def test_full_model_state_keeps_unused_nonprefix_transmons_in_ground_state():
         n_clbits=0,
         rng=np.random.default_rng(3),
     )
-    density = outcomes[0]
+    density = outcomes[0].density_matrix
     assert density.shape == (9, 9)
     physical = Qobj(density, dims=[[3, 3], [3, 3]])
     assert np.allclose(physical.ptrace(0).full(), ket2dm(basis(3, 0)).full())

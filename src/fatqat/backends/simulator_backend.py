@@ -980,6 +980,14 @@ class SimulatorBackend:
                 accepted.append(channel_type.__name__)
         if noise_model.has_readout_error():
             accepted.append("readout_error")
+        for source_type in sorted(
+            noise_model.continuous_noise_types(), key=lambda source: source.__name__
+        ):
+            rejected.append(source_type.__name__)
+            warnings_.append(
+                f"{source_type.__name__} is continuously active pulse-family "
+                "noise and is not supported by this matrix backend"
+            )
         if noise_model.qubit_noise:
             rejected.append("qubit_noise")
             warnings_.append(

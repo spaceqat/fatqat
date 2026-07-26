@@ -67,10 +67,10 @@ def test_final_state_measurement_constraint_and_reset_only_determinism_validate_
 
     reset_only = fq.Program(1)
     reset_only.add(fq.ops.Reset, 0)
-    assert (
-        backend.run(reset_only, shots=0, result_config={"final_state": True}).status
-        == "ERROR"
-    )
+    result = backend.run(
+        reset_only, shots=0, result_config={"final_state": True}
+    ).result()
+    assert result.get_density_matrix().shape == (9, 9)
 
 
 def test_layout_binds_model_ids_while_engine_indices_stay_private():

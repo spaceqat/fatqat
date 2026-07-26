@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from math import pi
+from dataclasses import dataclass
+from math import pi, sqrt
 from typing import Any
 
 import numpy as np
@@ -11,7 +12,8 @@ from qutip_qip.pulse import Drift, Pulse
 
 from ...backends.steps import MeasurementStep, ResetStep
 from ...errors import BackendValidationError
-from .engine import _ShotContext
+from ...noise import ContinuousNoise, ThermalRelaxation
+from .engine import _ShotContext, _condition_matches
 from .execution import _PlacedPulseRun
 from .resolved import PhaseShift, PhaseSwap, SampledControl
 from .superconducting import ControlChannelRef, CouplingRef, PhysicsModel
@@ -26,12 +28,38 @@ _SOLVER_OPTIONS = {
 FRAME_CONVENTION = "per-subsystem near-resonant rotating frames (Delta_i = 0)"
 
 
+@dataclass(frozen=True)
+class _PulseShotResult:
+    """Private NumPy/classical payload returned for one completed shot."""
+
+    density_matrix: np.ndarray
+    classical_digits: tuple[int, ...]
+
+
 class SCQutipAdapter:
     """Engine-private model runner using qutip-qip pulse/drift assembly."""
 
-    def __init__(self, model: PhysicsModel) -> None:
+    def __init__(
+        self,
+        model: PhysicsModel,
+        *,
+        engine_to_model: tuple[int, ...] | None = None,
+        continuous_noise: tuple[tuple[ContinuousNoise, ...], ...] | None = None,
+    ) -> None:
         self._model = model
         self._dims = [model.physical_dimension] * len(model.subsystems)
+        self._engine_to_model = (
+            tuple(range(len(model.subsystems)))
+            if engine_to_model is None
+            else tuple(engine_to_model)
+        )
+        if len(set(self._engine_to_model)) != len(self._engine_to_model) or any(
+            type(ordinal) is not int or not 0 <= ordinal < len(model.subsystems)
+            for ordinal in self._engine_to_model
+        ):
+            raise BackendValidationError(
+                "engine-to-model subsystem mapping must contain unique model ordinals"
+            )
         self._local_annihilation = Qobj(model.annihilation)
         self._local_number = Qobj(model.number)
         self._annihilation = tuple(
@@ -43,6 +71,32 @@ class SCQutipAdapter:
             for ordinal in range(len(model.subsystems))
         )
         self._drift = self._build_drift()
+        noise_by_subsystem = continuous_noise or tuple(() for _ in model.subsystems)
+        if len(noise_by_subsystem) != len(model.subsystems):
+            raise BackendValidationError(
+                "continuous noise must align with every physical model subsystem"
+            )
+        self._collapse_operators = self._build_continuous_noise(noise_by_subsystem)
+        self._projectors = tuple(
+            tuple(
+                self._expand_local(
+                    ordinal, ket2dm(basis(model.physical_dimension, level))
+                )
+                for level in range(model.physical_dimension)
+            )
+            for ordinal in range(len(model.subsystems))
+        )
+        self._reset_operators = tuple(
+            tuple(
+                self._expand_local(
+                    ordinal,
+                    basis(model.physical_dimension, 0)
+                    * basis(model.physical_dimension, level).dag(),
+                )
+                for level in range(model.physical_dimension)
+            )
+            for ordinal in range(len(model.subsystems))
+        )
 
     @staticmethod
     def solver_metadata() -> dict[str, Any]:
@@ -110,7 +164,7 @@ class SCQutipAdapter:
                 hamiltonian,
                 state,
                 [context.time_ns, run.end_ns],
-                c_ops=(),
+                c_ops=self._collapse_operators,
                 options=_SOLVER_OPTIONS,
             )
             state = result.states[-1]
@@ -126,15 +180,37 @@ class SCQutipAdapter:
     def execute_boundary(
         self, step: MeasurementStep | ResetStep, context: _ShotContext
     ) -> None:
-        """Task 7 supplies physical qutrit measurement and reset."""
-        del step, context
-        raise RuntimeError(
-            "physical pulse measurement and reset are not implemented yet"
-        )
+        """Execute physical qutrit measurement or guarded reset."""
+        if isinstance(step, MeasurementStep):
+            maps = step.reported_digit_maps or tuple(
+                tuple(range(self._model.physical_dimension))
+                for _ in step.measured_indices
+            )
+            confusions = step.confusions or (None,) * len(step.measured_indices)
+            for engine_index, classical_index, digit_map, confusion in zip(
+                step.measured_indices,
+                step.classical_indices,
+                maps,
+                confusions,
+            ):
+                outcome = self._measure(self._model_ordinal(engine_index), context)
+                reported = digit_map[outcome]
+                if confusion is not None:
+                    reported = int(
+                        context.rng.choice(len(confusion), p=confusion[:, reported])
+                    )
+                context.classical_memory[classical_index] = reported
+            return
+        if _condition_matches(step.condition, context.classical_memory):
+            for engine_index in step.reset_indices:
+                self._reset(self._model_ordinal(engine_index), context)
 
-    def finish_shot(self, context: _ShotContext) -> np.ndarray:
+    def finish_shot(self, context: _ShotContext) -> _PulseShotResult:
         """Return a NumPy copy; no solver value crosses the engine boundary."""
-        return np.array(context.state.full(), dtype=complex, copy=True)
+        return _PulseShotResult(
+            density_matrix=np.array(context.state.full(), dtype=complex, copy=True),
+            classical_digits=tuple(context.classical_memory),
+        )
 
     def _expand_local(self, ordinal: int, operator: Any) -> Any:
         factors = [qeye(dimension) for dimension in self._dims]
@@ -166,6 +242,64 @@ class SCQutipAdapter:
             ]
             drift.add_drift(2 * pi * coupling.residual_exchange_ghz * exchange, targets)
         return drift
+
+    def _build_continuous_noise(
+        self, noise_by_subsystem: tuple[tuple[ContinuousNoise, ...], ...]
+    ) -> tuple[Any, ...]:
+        noise_pulse = Pulse(None, None)
+        for ordinal, sources in enumerate(noise_by_subsystem):
+            for source in sources:
+                if not isinstance(source, ThermalRelaxation):
+                    raise BackendValidationError(
+                        f"{type(source).__name__} is not supported by the pulse backend"
+                    )
+                noise_pulse.add_lindblad_noise(
+                    sqrt(1 / source.T1_ns) * self._local_annihilation,
+                    ordinal,
+                    coeff=True,
+                )
+                if source.T2_ns < 2 * source.T1_ns:
+                    pure_dephasing = 2 * (1 / source.T2_ns - 1 / (2 * source.T1_ns))
+                    noise_pulse.add_lindblad_noise(
+                        sqrt(pure_dephasing) * self._local_number,
+                        ordinal,
+                        coeff=True,
+                    )
+        if not noise_pulse.lindblad_noise:
+            return ()
+        _zero, collapse = noise_pulse.get_noisy_qobjevo(self._dims)
+        return tuple(collapse)
+
+    def _model_ordinal(self, engine_index: int) -> int:
+        try:
+            return self._engine_to_model[engine_index]
+        except (IndexError, TypeError):
+            raise BackendValidationError(
+                f"unknown pulse-engine subsystem index {engine_index!r}"
+            ) from None
+
+    def _measure(self, ordinal: int, context: _ShotContext) -> int:
+        probabilities = np.array(
+            [
+                max(0.0, float(np.real((projector * context.state).tr())))
+                for projector in self._projectors[ordinal]
+            ]
+        )
+        total = probabilities.sum()
+        if not np.isfinite(total) or total <= 0:
+            raise RuntimeError("physical measurement produced invalid probabilities")
+        probabilities /= total
+        outcome = int(context.rng.choice(len(probabilities), p=probabilities))
+        projector = self._projectors[ordinal][outcome]
+        probability = probabilities[outcome]
+        context.state = projector * context.state * projector / probability
+        return outcome
+
+    def _reset(self, ordinal: int, context: _ShotContext) -> None:
+        context.state = sum(
+            operator * context.state * operator.dag()
+            for operator in self._reset_operators[ordinal]
+        )
 
     def _bind_child(
         self,

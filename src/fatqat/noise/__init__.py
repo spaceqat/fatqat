@@ -20,6 +20,7 @@ from .catalog import (
     PhaseDamping,
     relaxation_channels,
 )
+from .continuous import ContinuousNoise, ThermalRelaxation
 from .model import NoiseModel
 from .registry import default_channel_implementation_map
 
@@ -27,6 +28,8 @@ __all__ = [
     "Channel",
     "ChannelImplementation",
     "ChannelImplementationMap",
+    "ContinuousNoise",
+    "ThermalRelaxation",
     "NoiseSupportReport",
     "Depolarizing",
     "AmplitudeDamping",

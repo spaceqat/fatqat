@@ -50,6 +50,7 @@ from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView
 from ..resource_layout import DeviceOperand, ResourceLayout
 from .base import Channel
+from .continuous import ContinuousNoise
 
 # One entry per add_noise() call: an all-targets fallback (None), a
 # logical ref-tuple selector, or a physical device-label-tuple selector
@@ -67,6 +68,7 @@ _GateTargetsArg = _GateSelector | RegisterRef | DeviceOperand
 # (scalar, unlike _GateSelector - a readout error names one measured
 # subsystem, not an occurrence's whole target tuple).
 _ReadoutSelector = RegisterRef | DeviceOperand | None
+_ContinuousSelector = RegisterRef | DeviceOperand | None
 
 _Slots = tuple[int, ...] | None
 
@@ -78,6 +80,14 @@ class _GateNoiseEntry:
     selector: _GateSelector
     slots: _Slots
     channel: Channel
+
+
+@dataclass(frozen=True)
+class _ContinuousNoiseEntry:
+    """One continuously active descriptor and its scalar selector."""
+
+    selector: _ContinuousSelector
+    source: ContinuousNoise
 
 
 class NoiseModel:
@@ -117,6 +127,7 @@ class NoiseModel:
     def __init__(self) -> None:
         self._gate_channels: dict[type[Operation], list[_GateNoiseEntry]] = {}
         self._readout_errors: list[tuple[_ReadoutSelector, np.ndarray]] = []
+        self._continuous_noise: list[_ContinuousNoiseEntry] = []
         self.qubit_noise: dict[Any, Any] = {}
         self.metadata: dict[str, Any] = {}
 
@@ -328,6 +339,48 @@ class NoiseModel:
         matrix.flags.writeable = False
         self._readout_errors.append((target, matrix))
 
+    def add_continuous_noise(
+        self,
+        source: ContinuousNoise,
+        *,
+        target: _ContinuousSelector = None,
+    ) -> None:
+        """Attach typed continuous noise globally or to one subsystem.
+
+        ``target=None`` applies to every physical subsystem selected by a pulse
+        model, including model subsystems unused by the program. A logical
+        `RegisterRef` or physical device label selects one occupied subsystem.
+        Matching logical and physical specifics accumulate in registration
+        order and replace defaults for that subsystem.
+        """
+        if not isinstance(source, ContinuousNoise):
+            raise TypeError(f"expected a ContinuousNoise descriptor, got {source!r}")
+        _validate_scalar_selector(target, "continuous-noise")
+        self._continuous_noise.append(_ContinuousNoiseEntry(target, source))
+
+    def continuous_noise_for(
+        self,
+        target: RegisterRef | None,
+        device_label: DeviceOperand,
+    ) -> tuple[ContinuousNoise, ...]:
+        """Resolve continuous descriptors for one physical model subsystem."""
+        defaults: list[ContinuousNoise] = []
+        specifics: list[ContinuousNoise] = []
+        for entry in self._continuous_noise:
+            selector = entry.selector
+            if selector is None:
+                defaults.append(entry.source)
+            elif isinstance(selector, RegisterRef):
+                if target is not None and selector == target:
+                    specifics.append(entry.source)
+            elif selector == device_label:
+                specifics.append(entry.source)
+        return tuple(specifics if specifics else defaults)
+
+    def continuous_noise_types(self) -> frozenset[type[ContinuousNoise]]:
+        """Return every typed continuous descriptor class in this model."""
+        return frozenset(type(entry.source) for entry in self._continuous_noise)
+
     def readout_error_for(
         self, target: RegisterRef, resource_layout: ResourceLayout
     ) -> np.ndarray | None:
@@ -396,6 +449,12 @@ class NoiseModel:
         )
         device_labels = resource_layout.device_labels
 
+        if self.qubit_noise:
+            raise BackendValidationError(
+                "NoiseModel.qubit_noise is a legacy continuous-noise "
+                "placeholder; migrate entries with add_continuous_noise()"
+            )
+
         for entries in self._gate_channels.values():
             for entry in entries:
                 selector = entry.selector
@@ -434,6 +493,22 @@ class NoiseModel:
                         f"{selector!r}"
                     )
 
+        for entry in self._continuous_noise:
+            selector = entry.selector
+            if selector is None:
+                continue
+            if isinstance(selector, RegisterRef):
+                if selector not in program_refs:
+                    raise BackendValidationError(
+                        "continuous-noise selector names a RegisterRef that is "
+                        f"not part of this program: {selector!r}"
+                    )
+            elif selector not in device_labels:
+                raise BackendValidationError(
+                    "continuous-noise selector names a device resource label "
+                    f"not in the effective resource layout: {selector!r}"
+                )
+
     def has_readout_error(self) -> bool:
         """Return whether any readout-error entry is registered."""
         return bool(self._readout_errors)
@@ -455,6 +530,25 @@ def _is_ref_selector(selector: tuple[DeviceOperand, ...]) -> bool:
     """Return whether a validated, homogeneous gate selector is RegisterRef-based,
     as opposed to a physical device-label selector."""
     return isinstance(selector[0], RegisterRef)
+
+
+def _validate_scalar_selector(selector: Any, label: str) -> None:
+    """Validate a logical ref or opaque hashable physical label."""
+    if selector is None:
+        return
+    if isinstance(selector, RegisterView):
+        raise TypeError(
+            f"{label} target must be a scalar RegisterRef or a device "
+            f"resource label, not a RegisterView; got {selector!r}"
+        )
+    if isinstance(selector, RegisterRef):
+        if not isinstance(selector.register, QuantumRegister):
+            raise TypeError(f"{label} target refs must point into a QuantumRegister")
+        return
+    try:
+        hash(selector)
+    except TypeError as exc:
+        raise TypeError(f"{label} physical target must be hashable") from exc
 
 
 def _normalize_selector(
