@@ -72,7 +72,7 @@ def test_fake_backend_runs_native_neighbor_operations():
 
     result = (
         SCQubitGoogleSimulator()
-        .run(p, result_config={"counts": False, "statevector": True})
+        .run(p, result_config={"counts": False, "final_state": True})
         .result()
     )
 
@@ -87,7 +87,7 @@ def test_fake_backend_rejects_non_neighbor_cz():
 
     with pytest.raises(UnsupportedOperationError, match="device operands") as excinfo:
         SCQubitGoogleSimulator().run(
-            p, result_config={"counts": False, "statevector": True}
+            p, result_config={"counts": False, "final_state": True}
         )
 
     assert isinstance(excinfo.value, BackendValidationError)
@@ -99,7 +99,7 @@ def test_fake_backend_rejects_non_neighbor_iswap():
 
     with pytest.raises(UnsupportedOperationError, match="device operands") as excinfo:
         SCQubitGoogleSimulator().run(
-            p, result_config={"counts": False, "statevector": True}
+            p, result_config={"counts": False, "final_state": True}
         )
 
     assert isinstance(excinfo.value, BackendValidationError)
@@ -114,7 +114,7 @@ def test_fake_backend_rejects_non_native_operation_families():
 
         with pytest.raises(UnsupportedOperationError):
             SCQubitGoogleSimulator().run(
-                p, result_config={"counts": False, "statevector": True}
+                p, result_config={"counts": False, "final_state": True}
             )
 
 
@@ -125,7 +125,7 @@ def test_fake_backend_accepts_fewer_than_sixteen_qubits():
 
     result = (
         SCQubitGoogleSimulator()
-        .run(p, result_config={"counts": False, "statevector": True})
+        .run(p, result_config={"counts": False, "final_state": True})
         .result()
     )
 
@@ -142,7 +142,7 @@ def test_fake_backend_rejects_more_than_sixteen_qubits():
         BackendValidationError, match="SCQubitGoogleSimulator supports at most 16"
     ):
         SCQubitGoogleSimulator().run(
-            p, result_config={"counts": False, "statevector": True}
+            p, result_config={"counts": False, "final_state": True}
         )
 
 
@@ -155,7 +155,7 @@ def test_fake_backend_rejects_non_qubit_dimension_registers():
         match="SCQubitGoogleSimulator only supports qubit dimensions",
     ):
         SCQubitGoogleSimulator().run(
-            p, result_config={"counts": False, "statevector": True}
+            p, result_config={"counts": False, "final_state": True}
         )
 
 
@@ -241,7 +241,7 @@ def test_grid_register_program_runs_end_to_end():
     p.add(ops.iSwap, (atoms[0], atoms[1]))
     result = (
         SCQubitGoogleSimulator()
-        .run(p, result_config={"counts": False, "statevector": True})
+        .run(p, result_config={"counts": False, "final_state": True})
         .result()
     )
     state = result.get_statevector()
@@ -262,7 +262,7 @@ def _rx_pi_program():
 def test_backend_is_ideal_by_default():
     counts = (
         SCQubitGoogleSimulator()
-        .run(_rx_pi_program(), shots=100, seed=1)
+        .run(_rx_pi_program(), shots=100, simulation_config={"seed": 1})
         .result()
         .get_counts()
     )
@@ -289,7 +289,11 @@ def test_default_noise_model_is_fully_supported():
 def test_noisy_backend_leaks_errors_but_stays_mostly_correct():
     backend = SCQubitGoogleSimulator(noise=SCQubitGoogleSimulator.default_noise_model())
     shots = 4000
-    counts = backend.run(_rx_pi_program(), shots=shots, seed=1).result().get_counts()
+    counts = (
+        backend.run(_rx_pi_program(), shots=shots, simulation_config={"seed": 1})
+        .result()
+        .get_counts()
+    )
 
     # Readout p10 = 0.04 dominates the tiny relaxation rates.
     assert 0 < counts.get("0", 0) < 0.10 * shots
@@ -303,7 +307,11 @@ def test_ry_carries_relaxation_like_rx():
     program = Program(1, 1)
     program.add(ops.RY(np.pi), 0)
     program.add_measurement(0, 0)
-    counts = backend.run(program, shots=4000, seed=1).result().get_counts()
+    counts = (
+        backend.run(program, shots=4000, simulation_config={"seed": 1})
+        .result()
+        .get_counts()
+    )
 
     assert 0 < counts.get("0", 0) < 0.10 * 4000
 
@@ -313,7 +321,7 @@ def test_rz_stays_noise_free():
     program = Program(1)
     program.add(ops.RZ(0.7), 0)  # virtual gate: no relaxation attached
     state = (
-        backend.run(program, result_config={"counts": False, "statevector": True})
+        backend.run(program, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )

@@ -267,7 +267,7 @@ def test_implementation_map_exposes_four_native_families():
     p.add(ops.CX, (0, 1))
     with pytest.raises(UnsupportedOperationError):
         FakeAtomGridBackend(rows=1, cols=2).run(
-            p, result_config={"counts": False, "statevector": True}
+            p, result_config={"counts": False, "final_state": True}
         )
 
 
@@ -455,7 +455,7 @@ def test_native_connectivity_lookup_uses_device_labels_not_engine_indices():
     assert (0, 3) not in backend.implementation_map.device_operands_for(ops.CZ)
 
     grid_sv = (
-        backend.run(p, result_config={"counts": False, "statevector": True})
+        backend.run(p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -464,7 +464,7 @@ def test_native_connectivity_lookup_uses_device_labels_not_engine_indices():
     manual_p.add(ops.CZ, (0, 3))
     manual_sv = (
         SimulatorBackend()
-        .run(manual_p, result_config={"counts": False, "statevector": True})
+        .run(manual_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -514,7 +514,7 @@ def test_run_resolves_resource_layout_exactly_once_even_with_grid_mapping():
         return original(program)
 
     backend._resolve_resource_layout = counting
-    backend.run(program, result_config={"counts": False, "statevector": True})
+    backend.run(program, result_config={"counts": False, "final_state": True})
     assert calls["resource_layout"] == 1
 
 
@@ -585,7 +585,7 @@ def test_first_instruction_must_be_load_atom():
     p.add(ops.X, 0)
     with pytest.raises(BackendValidationError, match="first"):
         FakeAtomGridBackend(rows=1, cols=2).run(
-            p, result_config={"counts": False, "statevector": True}
+            p, result_config={"counts": False, "final_state": True}
         )
 
 
@@ -605,7 +605,7 @@ def test_second_load_atom_rejected():
     p.add(ops.LoadAtom(1, 1))
     with pytest.raises(BackendValidationError, match="only as the"):
         FakeAtomGridBackend(rows=1, cols=2).run(
-            p, result_config={"counts": False, "statevector": True}
+            p, result_config={"counts": False, "final_state": True}
         )
 
 
@@ -614,7 +614,7 @@ def test_load_atom_larger_than_device_rejected():
     p.add(ops.LoadAtom(2, 2))
     with pytest.raises(BackendValidationError, match="does not fit"):
         FakeAtomGridBackend(rows=1, cols=2).run(
-            p, result_config={"counts": False, "statevector": True}
+            p, result_config={"counts": False, "final_state": True}
         )
 
 
@@ -623,7 +623,7 @@ def test_conditional_load_atom_rejected():
     p.add(ops.LoadAtom(1, 2), condition=(p.clreg[0][0], 0))
     with pytest.raises(BackendValidationError, match="unconditional"):
         FakeAtomGridBackend(rows=1, cols=2).run(
-            p, result_config={"counts": False, "statevector": True}
+            p, result_config={"counts": False, "final_state": True}
         )
 
 
@@ -638,7 +638,7 @@ def test_gate_on_unloaded_site_is_dropped():
     p.add(ops.RX(np.pi), 1)  # site 1 unloaded: silently dropped
     sv = (
         FakeAtomGridBackend(rows=1, cols=2)
-        .run(p, result_config={"counts": False, "statevector": True})
+        .run(p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -667,7 +667,7 @@ def test_gate_on_loaded_site_executes_normally():
     p.add(ops.RX(0.3), 1)
     grid_sv = (
         FakeAtomGridBackend(rows=1, cols=2)
-        .run(p, result_config={"counts": False, "statevector": True})
+        .run(p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -677,7 +677,7 @@ def test_gate_on_loaded_site_executes_normally():
     manual.add(ops.RX(0.3), 1)
     manual_sv = (
         SimulatorBackend()
-        .run(manual, result_config={"counts": False, "statevector": True})
+        .run(manual, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -691,7 +691,7 @@ def test_measurement_of_unloaded_site_reads_zero_without_noise():
     p.add_measurement(1, 0)
     counts = (
         FakeAtomGridBackend(rows=1, cols=2)
-        .run(p, shots=4, result_config={"counts": True}, seed=0)
+        .run(p, shots=4, result_config={"counts": True}, simulation_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -712,7 +712,7 @@ def test_measurement_of_unloaded_site_still_exposed_to_readout_noise():
     p.add_measurement(1, 0)
     counts = (
         FakeAtomGridBackend(rows=1, cols=2, noise=noise)
-        .run(p, shots=4, result_config={"counts": True}, seed=0)
+        .run(p, shots=4, result_config={"counts": True}, simulation_config={"seed": 0})
         .result()
         .get_counts()
     )

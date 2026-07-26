@@ -185,7 +185,7 @@ def test_run_resolves_resource_layout_and_engine_index_allocation_exactly_once(
 
     p = Program(1)
     p.add(ops.H, 0)
-    backend.run(p, result_config={"counts": False, "statevector": True})
+    backend.run(p, result_config={"counts": False, "final_state": True})
 
     assert calls == {"resource_layout": 1, "engine": 1}
 
