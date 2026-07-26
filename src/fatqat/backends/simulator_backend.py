@@ -250,18 +250,23 @@ def _lower_measurement(
         tuple(range(engine_index_allocation.system_dims[measured]))
         for measured in measured_indices
     )
+    confusions = _resolve_confusions(
+        step.targets,
+        measured_indices,
+        reported_digit_maps,
+        resource_layout,
+        engine_index_allocation,
+        noise_model,
+    )
     return MeasurementStep(
         measured_indices=measured_indices,
         classical_indices=classical_indices,
-        reported_digit_maps=reported_digit_maps,
-        confusions=_resolve_confusions(
-            step.targets,
-            measured_indices,
-            reported_digit_maps,
-            resource_layout,
-            engine_index_allocation,
-            noise_model,
-        ),
+        confusions=confusions,
+        # The identity map is the compatibility default (see steps.py); only
+        # carry it explicitly when a confusion matrix needs it for the
+        # reported-dimension check, so an identity, noise-free measurement
+        # keeps the None default the numba fast path recognizes.
+        reported_digit_maps=reported_digit_maps if confusions is not None else None,
     )
 
 
