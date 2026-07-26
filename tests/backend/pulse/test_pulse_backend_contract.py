@@ -38,7 +38,7 @@ def test_auto_configuration_normalizes_to_serial_and_worker_restrictions_raise()
         PulseSimulationConfig(max_workers=2)
 
 
-def test_run_directly_validates_config_and_captures_unavailable_execution():
+def test_run_directly_validates_config_and_executes_continuous_programs():
     backend = _backend()
     program = fq.Program(1)
     program.add(fq.ops.RZ(0.2), 0)
@@ -48,9 +48,8 @@ def test_run_directly_validates_config_and_captures_unavailable_execution():
         backend.run(program, simulation_config={"parallel_mode": "loky"})
 
     job = backend.run(program, result_config={"counts": False, "final_state": True})
-    assert job.status == "ERROR"
-    with pytest.raises(RuntimeError, match="pulse execution is unavailable"):
-        job.result()
+    assert job.status == "DONE"
+    assert job.result().available_data == frozenset({"density_matrix"})
 
 
 def test_final_state_measurement_constraint_and_reset_only_determinism_validate_before_execution():
@@ -64,7 +63,7 @@ def test_final_state_measurement_constraint_and_reset_only_determinism_validate_
     reset_only.add(fq.ops.Reset, 0)
     assert (
         backend.run(reset_only, shots=0, result_config={"final_state": True}).status
-        == "ERROR"
+        == "DONE"
     )
 
 

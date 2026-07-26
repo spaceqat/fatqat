@@ -172,46 +172,7 @@ class PulseBackend:
         rows = []
         density_matrix = None
         for _ in range(repetitions):
-            adapter = SCQutipAdapter(self.model)
-            classical = np.zeros(allocation.n_clbits, dtype=int)
-
-            def execute_run(run: object) -> None:
-                blocks = run.blocks
-                enabled = tuple(
-                    block.condition is None
-                    or all(
-                        classical[index] == value for index, value in block.condition
-                    )
-                    for block in blocks
-                )
-                adapter.evolve(run, enabled)
-
-            def execute_boundary(
-                step: MeasurementStep | ResetStep, _time_ns: float
-            ) -> None:
-                if isinstance(step, MeasurementStep):
-                    maps = step.reported_digit_maps or tuple(
-                        (0, 1) for _ in step.measured_indices
-                    )
-                    confusions = step.confusions or (None,) * len(step.measured_indices)
-                    for physical_index, classical_index, digit_map, confusion in zip(
-                        step.measured_indices, step.classical_indices, maps, confusions
-                    ):
-                        reported = digit_map[adapter.measure(physical_index, rng)]
-                        if confusion is not None:
-                            reported = int(
-                                rng.choice(len(confusion), p=confusion[:, reported])
-                            )
-                        classical[classical_index] = reported
-                else:
-                    if step.condition is None or all(
-                        classical[index] == value for index, value in step.condition
-                    ):
-                        for physical_index in step.reset_indices:
-                            adapter.reset(physical_index)
-
-            execute_with_boundaries(plan, execute_run, execute_boundary)
-            density_matrix = adapter.density_matrix()
+            classical, density_matrix = self._replay_shot(plan, allocation, rng)
             if request.counts:
                 rows.append(classical)
         counts = None
@@ -233,6 +194,50 @@ class PulseBackend:
                 "result_config": asdict(result),
             },
         )
+
+    def _replay_shot(
+        self,
+        plan: list[PulsePlanStep],
+        allocation: _EngineIndexAllocation,
+        rng: np.random.Generator,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Execute one serial dynamic branch and retain physical qutrit state."""
+        adapter = SCQutipAdapter(self.model)
+        classical = np.zeros(allocation.n_clbits, dtype=int)
+
+        def execute_run(run: object) -> None:
+            enabled = tuple(
+                block.condition is None
+                or all(classical[index] == value for index, value in block.condition)
+                for block in run.blocks
+            )
+            adapter.evolve(run, enabled)
+
+        def execute_boundary(
+            step: MeasurementStep | ResetStep, _time_ns: float
+        ) -> None:
+            if isinstance(step, MeasurementStep):
+                maps = step.reported_digit_maps or tuple(
+                    (0, 1) for _ in step.measured_indices
+                )
+                confusions = step.confusions or (None,) * len(step.measured_indices)
+                for physical_index, classical_index, digit_map, confusion in zip(
+                    step.measured_indices, step.classical_indices, maps, confusions
+                ):
+                    reported = digit_map[adapter.measure(physical_index, rng)]
+                    if confusion is not None:
+                        reported = int(
+                            rng.choice(len(confusion), p=confusion[:, reported])
+                        )
+                    classical[classical_index] = reported
+            elif step.condition is None or all(
+                classical[index] == value for index, value in step.condition
+            ):
+                for physical_index in step.reset_indices:
+                    adapter.reset(physical_index)
+
+        execute_with_boundaries(plan, execute_run, execute_boundary)
+        return classical, adapter.density_matrix()
 
     def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
         """Report v0.1 planning support before continuous-noise work arrives."""

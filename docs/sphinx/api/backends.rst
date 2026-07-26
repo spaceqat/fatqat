@@ -240,3 +240,6 @@ Detailed reference
 .. autoclass:: fatqat.backends.AtomGridBackend
    :members:
    :show-inheritance:
+
+.. autoclass:: fatqat.backends.PulseBackend
+   :members:
