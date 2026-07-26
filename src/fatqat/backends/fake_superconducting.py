@@ -114,12 +114,14 @@ class _SCQubitSimulator(SimulatorBackend):
     def __init__(
         self,
         implementation_map: ImplementationMap,
-        options: dict[str, Any] | None = None,
+        *,
+        method: str = "statevector",
+        runtime: str = "numpy",
         noise: NoiseModel | None = None,
     ) -> None:
         super().__init__(
-            method="statevector",
-            options=options,
+            method=method,
+            runtime=runtime,
             implementation_map=implementation_map,
             noise=noise,
         )
@@ -361,17 +363,18 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
 
     def __init__(
         self,
-        options: dict[str, Any] | None = None,
+        *,
+        method: str = "statevector",
+        runtime: str = "numpy",
         noise: NoiseModel | None = None,
     ) -> None:
         """Create a fake Google-style 4x4 superconducting backend.
 
         Args:
-            options: Same execution-strategy options as
-                :py:class:`~fatqat.backends.SimulatorBackend` (``max_workers``,
-                ``parallel_mode``). The implementation map is fixed to
-                `fake_superconducting_google_implementation_map()` and cannot
-                be overridden.
+            method: State representation, exactly as on
+                :py:class:`~fatqat.backends.SimulatorBackend`.
+            runtime: Numeric execution runtime, exactly as on
+                :py:class:`~fatqat.backends.SimulatorBackend`.
             noise: Optional :py:class:`~fatqat.NoiseModel`, exactly as on
                 :py:class:`~fatqat.backends.SimulatorBackend`. ``None`` (the
                 default) keeps the backend ideal; pass
@@ -380,7 +383,8 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         """
         super().__init__(
             implementation_map=fake_superconducting_google_implementation_map(),
-            options=options,
+            method=method,
+            runtime=runtime,
             noise=noise,
         )
 

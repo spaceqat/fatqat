@@ -692,7 +692,6 @@ class SimulatorBackend:
                     engine_index_allocation.system_dims,
                     engine_index_allocation.classical_dims,
                     engine_index_allocation.n_clbits,
-                    seed,
                 )
             )
         except Exception as exc:  # execution-stage failure

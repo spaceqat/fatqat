@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat.backends import FakeSuperconducting4x4Backend, SimulatorBackend
+from fatqat.backends import SCQubitIBMSimulator, SimulatorBackend
 from fatqat.backends.engine_contract import _SimulationConfig
 from fatqat.errors import BackendValidationError
 from fatqat.result import Result, _ResultConfig
@@ -81,7 +81,7 @@ def test_simulation_and_result_configuration_are_separate():
 
 def test_final_state_uses_the_selected_method_and_hardware_backends_expose_it():
     result = (
-        FakeSuperconducting4x4Backend(method="density_matrix")
+        SCQubitIBMSimulator(method="density_matrix")
         .run(
             _measured_superposition(),
             shots=1,

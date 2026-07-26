@@ -157,11 +157,11 @@ A device backend can build its noise model from its own calibration facts —
 the from-backend workflow. The fake superconducting target ships one:
 
 ```python
-Fake = fq.backends.FakeSuperconducting4x4Backend
+Fake = fq.backends.SCQubitIBMSimulator
 noisy_fake = Fake(noise=Fake.default_noise_model())
 ```
 
-{py:meth}`~fatqat.backends.FakeSuperconducting4x4Backend.default_noise_model`
+{py:meth}`~fatqat.backends.SCQubitIBMSimulator.default_noise_model`
 returns a fresh, ordinary `NoiseModel` (T1/T2 relaxation on `SX`, a `CZ`
 depolarizing channel, asymmetric readout confusion; the virtual `RZ` stays
 noise-free) — inspect it, extend it with your own channels, and pass it
