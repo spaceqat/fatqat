@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .fake_atom_grid import FakeAtomGridBackend
+from .fake_atom_grid import AtomGridBackend
 from .fake_superconducting import SCQubitGoogleSimulator, SCQubitIBMSimulator
 from .simulator_backend import SimulatorBackend
 
@@ -11,7 +11,7 @@ from .simulator_backend import SimulatorBackend
 from .steps import ApplyChannelStep, ApplyMatrixStep, MeasurementStep, ResetStep
 
 __all__ = [
-    "FakeAtomGridBackend",
+    "AtomGridBackend",
     "SCQubitGoogleSimulator",
     "SCQubitIBMSimulator",
     "SimulatorBackend",

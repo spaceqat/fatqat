@@ -228,12 +228,14 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
     A thin statevector-method :py:class:`~fatqat.backends.SimulatorBackend`
     specialization: same execution engine, same
     :py:class:`~fatqat.Result`/:py:class:`~fatqat.Job` semantics. The
-    differences are a fixed 16-qubit device, a fixed native gate set (`X`,
-    `SX`, `RZ`, nearest-neighbor `CZ`), rejecting programs that do not fit
-    that device shape (too many qubits, or any non-qubit-dimension
+    differences are a fixed 16-qubit device, a fixed native gate set
+    (:py:data:`~fatqat.operations.X`,
+    :py:data:`~fatqat.operations.SX`, :py:class:`~fatqat.operations.RZ`, and
+    nearest-neighbor :py:data:`~fatqat.operations.CZ`), rejecting programs
+    that do not fit that device shape (too many qubits, or any non-qubit-dimension
     register), and grid-aware resource mapping (see
     `_resolve_resource_layout`). Qubits here are always "on" - there is no
-    atom-loading concept, unlike `~fatqat.backends.FakeAtomGridBackend`.
+    atom-loading concept, unlike :py:class:`~fatqat.backends.AtomGridBackend`.
     """
 
     def __init__(
@@ -353,12 +355,15 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
     A thin statevector-method :py:class:`~fatqat.backends.SimulatorBackend`
     specialization: same execution engine, same
     :py:class:`~fatqat.Result`/:py:class:`~fatqat.Job` semantics. The
-    differences are a fixed 16-qubit device, a fixed native gate set (`RX`,
-    `RY`, `RZ`, nearest-neighbor `iSwap` and `CZ`), rejecting programs that
-    do not fit that device shape (too many qubits, or any non-qubit-dimension
+    differences are a fixed 16-qubit device, a fixed native gate set
+    (:py:class:`~fatqat.operations.RX`,
+    :py:class:`~fatqat.operations.RY`, :py:class:`~fatqat.operations.RZ`, and
+    nearest-neighbor :py:data:`~fatqat.operations.iSwap` and
+    :py:data:`~fatqat.operations.CZ`), rejecting programs that do not fit
+    that device shape (too many qubits, or any non-qubit-dimension
     register), and grid-aware resource mapping (see
     `_resolve_resource_layout`). Qubits here are always "on" - there is no
-    atom-loading concept, unlike `~fatqat.backends.FakeAtomGridBackend`.
+    atom-loading concept, unlike :py:class:`~fatqat.backends.AtomGridBackend`.
     """
 
     def __init__(
@@ -394,13 +399,12 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
 
         The from-backend workflow: the *backend* authors the model from its
         own device facts, before any user program (or register) exists.
-        ``RX`` and ``RY`` each carry thermal relaxation converted from the
-        device ``T1``/``T2`` and the gate duration (both are physical
-        rotations here, unlike the IBM-style backend's virtual-``RZ``-only
-        split), readout gets an asymmetric confusion matrix, and ``iSwap``
-        and ``CZ`` each carry their own joint depolarizing channel plus
-        gate-time relaxation on each participating qubit. ``RZ`` is virtual
-        (zero duration), so it stays noise-free.
+        ``RX``, ``RY``, and ``RZ`` each carry thermal relaxation converted
+        from the device ``T1``/``T2`` and the gate duration. Readout gets an
+        asymmetric confusion matrix, and ``iSwap`` and ``CZ`` each carry
+        their own joint depolarizing channel plus gate-time relaxation on
+        each participating qubit. Unlike the IBM-style backend, ``RZ`` is a
+        physical 20 ns rotation here rather than a virtual noiseless gate.
 
         The returned model is a fresh, ordinary
         :py:class:`~fatqat.NoiseModel`: inspect it, extend it with your own
@@ -425,7 +429,7 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         """
         noise = NoiseModel()
         damping, dephasing = relaxation_channels(_T1, _T2, _ROTATION_DURATION)
-        for gate in (ops.RX, ops.RY):
+        for gate in (ops.RX, ops.RY, ops.RZ):
             noise.add_noise(gate, damping)
             noise.add_noise(gate, dephasing)
         iswap_damping, iswap_dephasing = relaxation_channels(_T1, _T2, _ISWAP_DURATION)

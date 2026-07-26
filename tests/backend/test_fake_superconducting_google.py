@@ -300,9 +300,8 @@ def test_noisy_backend_leaks_errors_but_stays_mostly_correct():
 
 
 def test_ry_carries_relaxation_like_rx():
-    # Both RX and RY are physical single-qubit rotations on this backend, so
-    # both should carry the same relaxation channels - unlike RZ, which is
-    # virtual.
+    # RX and RY are physical single-qubit rotations on this backend, so both
+    # carry the same relaxation channels.
     backend = SCQubitGoogleSimulator(noise=SCQubitGoogleSimulator.default_noise_model())
     program = Program(1, 1)
     program.add(ops.RY(np.pi), 0)
@@ -316,17 +315,15 @@ def test_ry_carries_relaxation_like_rx():
     assert 0 < counts.get("0", 0) < 0.10 * 4000
 
 
-def test_rz_stays_noise_free():
+def test_rz_carries_relaxation_like_other_google_rotations():
     backend = SCQubitGoogleSimulator(noise=SCQubitGoogleSimulator.default_noise_model())
     program = Program(1)
-    program.add(ops.RZ(0.7), 0)  # virtual gate: no relaxation attached
-    state = (
-        backend.run(program, result_config={"counts": False, "final_state": True})
-        .result()
-        .get_statevector()
-    )
+    program.add(ops.RZ(0.7), 0)
+    plan, _ = backend._lower_program(program)
 
-    assert np.isclose(abs(state[0]), 1.0)
+    assert [
+        step.target_indices for step in plan if isinstance(step, ApplyChannelStep)
+    ] == [(0,), (0,)]
 
 
 def test_default_noise_model_is_a_fresh_extensible_model():

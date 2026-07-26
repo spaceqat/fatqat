@@ -8,7 +8,7 @@ import pytest
 from fatqat import operations as ops
 from fatqat.backends import (
     ApplyMatrixStep,
-    FakeAtomGridBackend,
+    AtomGridBackend as FakeAtomGridBackend,
     ResetStep,
     SimulatorBackend,
 )
@@ -573,7 +573,7 @@ def test_grid_register_export_is_backend_public():
     # FakeAtomGridBackend is publicly exported; implementation details are not.
     import fatqat.backends as backends_pkg
 
-    assert "FakeAtomGridBackend" in backends_pkg.__all__
+    assert "AtomGridBackend" in backends_pkg.__all__
     assert not hasattr(backends_pkg, "_build_qubit_resource_map")
 
 

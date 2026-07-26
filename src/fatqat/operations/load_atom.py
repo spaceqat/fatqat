@@ -19,7 +19,7 @@ class LoadAtom(Operation):
     like `~fatqat.ops.Barrier`/`~fatqat.ops.Reset`; a backend with no special
     handling for it rejects it as an unsupported operation.
 
-    `~fatqat.backends.FakeAtomGridBackend` is currently the only backend that
+    :py:class:`~fatqat.backends.AtomGridBackend` is currently the only backend that
     interprets it: it requires `LoadAtom` to be a program's first
     instruction, unconditional, and to appear at most once.
 

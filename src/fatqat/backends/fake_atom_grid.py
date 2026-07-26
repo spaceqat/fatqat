@@ -114,19 +114,55 @@ def fake_atom_grid_implementation_map(rows: int, cols: int) -> ImplementationMap
     return m
 
 
-class FakeAtomGridBackend(SimulatorBackend):
+class AtomGridBackend(SimulatorBackend):
     """Statevector backend constrained to a fake configurable-shape atom-grid target.
 
     A thin statevector-method `~fatqat.backends.SimulatorBackend`
     specialization: same execution engine, same `~fatqat.Result`/`~fatqat.Job`
     semantics. The differences are a configurable `rows x cols` device shape
-    (default 4x5), a fixed native gate set (`RX`, `RY`, `RZ`, nearest-neighbor
-    `CZ`), grid-aware resource mapping: a program's sole
-    `~fatqat.GridRegister` (if any) binds top-left onto the device, with
+    (default 4x5), a fixed native gate set
+    (:py:class:`~fatqat.operations.RX`,
+    :py:class:`~fatqat.operations.RY`, :py:class:`~fatqat.operations.RZ`, and
+    nearest-neighbor :py:data:`~fatqat.operations.CZ`), grid-aware resource
+    mapping: a program's sole :py:class:`~fatqat.GridRegister` (if any) binds
+    top-left onto the device, with
     every other quantum-register shape (scalar-only, or a grid combined with
     any other register, or more than one grid register) either bound
     identically (scalar-only) or rejected, and an explicit atom-loading
-    lifecycle driven by `~fatqat.ops.LoadAtom` - see `_lower`.
+    lifecycle driven by :py:class:`~fatqat.operations.LoadAtom` - see
+    :py:meth:`_lower`.
+
+    Example:
+        This two-row, three-column circuit prepares a Hadamard on every site
+        in the first row, then creates pairwise row-1-to-row-2 CNOTs. Neither
+        ``H`` nor ``CX`` is native: the circuit emits ``H`` as ``RZ(pi)`` then
+        ``RY(pi / 2)`` (up to global phase), and each CNOT as ``H(target)``,
+        ``CZ(control, target)``, ``H(target)``.
+
+        **Circuit construction and result check**
+
+        .. doctest:: atom_grid_cx
+
+           >>> import numpy as np
+           >>> import fatqat as fq
+           >>> atoms = fq.GridRegister(2, 3, name="atoms")
+           >>> program = fq.Program([atoms], 6)
+           >>> program.add(fq.ops.LoadAtom(2, 3))
+           >>> def native_h(targets):
+           ...     program.add(fq.ops.RZ(np.pi), targets)
+           ...     program.add(fq.ops.RY(np.pi / 2), targets)
+           >>> native_h(atoms.row(0))                 # H on every control
+           >>> native_h(atoms.row(1))                 # H on every target
+           >>> program.add(fq.ops.CZ, (atoms.row(0), atoms.row(1)))
+           >>> native_h(atoms.row(1))                 # completes pairwise CX
+           >>> program.measure_all()
+
+           >>> backend = fq.backends.AtomGridBackend(rows=2, cols=3)
+           >>> counts = backend.run(
+           ...     program, shots=1000, simulation_config={"seed": 1}
+           ... ).result().get_counts()
+           >>> all(bits[:3] == bits[3:] for bits in counts)
+           True
     """
 
     def __init__(
@@ -178,7 +214,7 @@ class FakeAtomGridBackend(SimulatorBackend):
 
         Examples:
             >>> import fatqat as fq
-            >>> backend = fq.backends.FakeAtomGridBackend()
+            >>> backend = fq.backends.AtomGridBackend()
             >>> impl_map = backend.implementation_map
             >>> sorted(op.name for op in impl_map.supported_operations())
             ['CZ', 'RX', 'RY', 'RZ']
@@ -209,18 +245,18 @@ class FakeAtomGridBackend(SimulatorBackend):
         capacity = self._rows * self._cols
         if n_subsystems > capacity:
             raise BackendValidationError(
-                f"FakeAtomGridBackend({self._rows}x{self._cols}) supports at "
+                f"AtomGridBackend({self._rows}x{self._cols}) supports at "
                 f"most {capacity} qubits, got {n_subsystems}"
             )
         dims = (register.dim for register in program.qreg for _ in range(register.size))
         if any(dim != 2 for dim in dims):
             raise BackendValidationError(
-                "FakeAtomGridBackend only supports qubit dimensions"
+                "AtomGridBackend only supports qubit dimensions"
             )
         grid_registers = [r for r in program.qreg if isinstance(r, GridRegister)]
         if len(grid_registers) > 1:
             raise BackendValidationError(
-                "FakeAtomGridBackend accepts at most one GridRegister per "
+                "AtomGridBackend accepts at most one GridRegister per "
                 f"program, got {len(grid_registers)}"
             )
         if not grid_registers:
@@ -229,7 +265,7 @@ class FakeAtomGridBackend(SimulatorBackend):
         grid = grid_registers[0]
         if len(program.qreg) != 1:
             raise BackendValidationError(
-                "FakeAtomGridBackend rejects a GridRegister combined with "
+                "AtomGridBackend rejects a GridRegister combined with "
                 "any other quantum register"
             )
         if grid.rows > self._rows or grid.cols > self._cols:
@@ -279,12 +315,12 @@ class FakeAtomGridBackend(SimulatorBackend):
             if i == 0:
                 if not is_load:
                     raise BackendValidationError(
-                        "FakeAtomGridBackend requires the program's first "
+                        "AtomGridBackend requires the program's first "
                         "operation to be LoadAtom"
                     )
             elif is_load:
                 raise BackendValidationError(
-                    "FakeAtomGridBackend accepts LoadAtom only as the "
+                    "AtomGridBackend accepts LoadAtom only as the "
                     "program's first operation"
                 )
             if is_load:
