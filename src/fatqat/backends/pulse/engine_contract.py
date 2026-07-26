@@ -13,6 +13,8 @@ from ...result import _ResultConfig
 class PulseSimulationConfig(_SimulationConfig):
     """v0.1 pulse execution controls, normalized to the serial engine policy."""
 
+    placement_mode: str = "ASAP"
+
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.parallel_mode == "auto":
@@ -24,6 +26,10 @@ class PulseSimulationConfig(_SimulationConfig):
         if self.max_workers not in (None, 1):
             raise BackendValidationError(
                 "PulseBackend v0.1 supports only max_workers=None or 1"
+            )
+        if self.placement_mode not in ("ASAP", "ALAP"):
+            raise BackendValidationError(
+                "PulseBackend placement_mode must be 'ASAP' or 'ALAP'"
             )
 
 

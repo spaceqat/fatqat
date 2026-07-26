@@ -11,7 +11,8 @@ from ...backends.steps import MeasurementStep, ResetStep
 from ...errors import BackendValidationError
 from .execution import PlacementMode, _PlacedPulseRun, place_pulse_run
 from .planning import PulsePlanStep
-from .resolved import FrameRef, PulseBlock
+from .resolved import PulseBlock
+from .superconducting import FrameRef
 
 
 @dataclass

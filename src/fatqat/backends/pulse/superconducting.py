@@ -647,23 +647,11 @@ class CalibrationSpec:
             # must fit twice within the block with room left for the park.
             if 2 * ramp >= duration:
                 _fail(path, "has inconsistent duration and ramp_duration_ns")
-            # `detuning_ghz` is the calibrated park point bringing |11> into
-            # resonance with |20>/|02>: delta_park = -(Delta_i - Delta_j +
-            # alpha_i) (architecture doc Sec. 5.3), where alpha_i is
-            # detuning_subsystem's anharmonicity. Delta_i/Delta_j are each
-            # subsystem's coefficient in the model's rotating-frame H_drift,
-            # and Sec. 4 states these are frame-convention dependent - not
-            # simply each subsystem's raw `frequency_ghz`. Whether the
-            # binding uses one shared reference frame (Delta_i - Delta_j
-            # reduces to the raw frequency split) or gives each subsystem
-            # its own near-resonant frame (Delta_i - Delta_j ~ 0, so
-            # delta_park ~ -alpha_i) is not yet pinned down anywhere in the
-            # design docs; see spec Sec. 10 "detuning_ghz frame convention".
-            # Values stored here are calibration data, not derived by this
-            # module, so this ambiguity does not block validation - it only
-            # means a value here should not be trusted as physically exact
-            # until the frame convention is fixed and this field is
-            # recomputed against it.
+            # The first binding uses a near-resonant frame per subsystem, so
+            # Delta_i = Delta_j = 0 and the nominal park is -alpha_i. Stored
+            # values remain calibrated data and may tune away from that
+            # nominal crossing; validation therefore checks the value rather
+            # than requiring exact equality to the formula.
             _number(edge["detuning_ghz"], f"{path}.detuning_ghz")
             corrections = _mapping(
                 edge["phase_corrections_rad"], f"{path}.phase_corrections_rad"

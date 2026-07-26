@@ -1,13 +1,11 @@
-"""Planning-only superconducting pulse backend shell.
-
-The future engine stages consume this backend's unplaced plan.  Until then,
-successful validation/lowering returns an eager failed job rather than
-pretending that a matrix-family simulator executed the pulse program.
-"""
+"""Superconducting pulse backend with private full-qutrit execution."""
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
+
+import numpy as np
 
 from ..._engine_index_allocation import _EngineIndexAllocation
 from ...backends.backend_utils import _normalize_config
@@ -16,6 +14,8 @@ from ...job import Job
 from ...noise import NoiseModel, NoiseSupportReport
 from ...program import Program
 from ...resource_layout import ResourceLayout
+from ...result import Result
+from .engine import PulseEngine
 from .engine_contract import (
     PulseResultConfig,
     PulseResultRequest,
@@ -26,7 +26,7 @@ from .superconducting import CalibrationSpec, PhysicsModel
 
 
 class PulseBackend:
-    """SC pulse lowering shell; execution becomes available in later tasks."""
+    """SC pulse backend over an immutable model and separate calibration."""
 
     def __init__(
         self,
@@ -118,12 +118,20 @@ class PulseBackend:
             resource_layout=resource_layout,
             engine_index_allocation=allocation,
         )
-        self._validate(result, shots, facts)
+        request = self._validate(result, shots, facts)
         try:
-            self._execute_unavailable(plan, simulation, result, shots)
+            return Job.done(
+                self._execute(
+                    plan,
+                    request,
+                    simulation,
+                    result,
+                    shots,
+                    allocation,
+                )
+            )
         except Exception as exc:  # execution failures belong on the eager Job
             return Job.failed(exc)
-        raise AssertionError("pulse execution unexpectedly returned without a Result")
 
     def _validate(
         self, config: PulseResultConfig, shots: int, facts: PulsePlanFacts
@@ -148,16 +156,39 @@ class PulseBackend:
             )
         return PulseResultRequest(counts=counts, density_matrix=density_matrix)
 
-    @staticmethod
-    def _execute_unavailable(
+    def _execute(
+        self,
         plan: list[PulsePlanStep],
+        request: PulseResultRequest,
         simulation: PulseSimulationConfig,
-        result: PulseResultConfig,
+        result_config: PulseResultConfig,
         shots: int,
-    ) -> None:
-        del plan, simulation, result, shots
-        raise RuntimeError(
-            "pulse execution is unavailable until the private engine is implemented"
+        allocation: _EngineIndexAllocation,
+    ) -> Result:
+        from .qutip_adapter import SCQutipAdapter
+
+        runner = SCQutipAdapter(self.model)
+        outcomes = PulseEngine(
+            runner, placement_mode=simulation.placement_mode
+        ).execute(
+            plan,
+            shots=shots if request.counts else 1,
+            n_clbits=allocation.n_clbits,
+            rng=np.random.default_rng(simulation.seed),
+        )
+        density_matrix = outcomes[-1] if outcomes else None
+        available = frozenset({"density_matrix"} if request.density_matrix else ())
+        return Result(
+            density_matrix=density_matrix if request.density_matrix else None,
+            available=available,
+            classical_dims=allocation.classical_dims,
+            metadata={
+                "backend_name": type(self).__name__,
+                "shots": shots,
+                "simulation_config": asdict(simulation),
+                "result_config": asdict(result_config),
+                "solver": runner.solver_metadata(),
+            },
         )
 
     def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:

@@ -38,7 +38,7 @@ def test_auto_configuration_normalizes_to_serial_and_worker_restrictions_raise()
         PulseSimulationConfig(max_workers=2)
 
 
-def test_run_directly_validates_config_and_captures_unavailable_execution():
+def test_run_directly_validates_config_and_executes_ideal_program():
     backend = _backend()
     program = fq.Program(1)
     program.add(fq.ops.RZ(0.2), 0)
@@ -47,10 +47,15 @@ def test_run_directly_validates_config_and_captures_unavailable_execution():
     with pytest.raises(BackendValidationError, match="only parallel_mode"):
         backend.run(program, simulation_config={"parallel_mode": "loky"})
 
-    job = backend.run(program, result_config={"counts": False, "final_state": True})
-    assert job.status == "ERROR"
-    with pytest.raises(RuntimeError, match="pulse execution is unavailable"):
-        job.result()
+    with pytest.raises(BackendValidationError, match="placement_mode"):
+        backend.run(program, simulation_config={"placement_mode": "SIDEWAYS"})
+
+    result = backend.run(
+        program, result_config={"counts": False, "final_state": True}
+    ).result()
+    assert result.get_density_matrix().shape == (9, 9)
+    assert result.metadata["solver"]["frame_convention"].endswith("(Delta_i = 0)")
+    assert result.metadata["simulation_config"]["placement_mode"] == "ASAP"
 
 
 def test_final_state_measurement_constraint_and_reset_only_determinism_validate_before_execution():
