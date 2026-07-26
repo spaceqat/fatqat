@@ -7,6 +7,7 @@ pretending that a matrix-family simulator executed the pulse program.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from ..._engine_index_allocation import _EngineIndexAllocation
@@ -15,6 +16,7 @@ from ...errors import BackendValidationError
 from ...job import Job
 from ...noise import NoiseModel, NoiseSupportReport
 from ...program import Program
+from ...result import Result
 from ...resource_layout import ResourceLayout
 from .engine_contract import (
     PulseResultConfig,
@@ -22,6 +24,8 @@ from .engine_contract import (
     PulseSimulationConfig,
 )
 from .planning import PulsePlanFacts, PulsePlanStep, lower_program
+from .execution import execute_with_boundaries
+from .qutip_adapter import SCQutipAdapter
 from .superconducting import CalibrationSpec, PhysicsModel
 
 
@@ -120,10 +124,9 @@ class PulseBackend:
         )
         self._validate(result, shots, facts)
         try:
-            self._execute_unavailable(plan, simulation, result, shots)
+            return Job.done(self._execute_continuous(plan, simulation, result, shots))
         except Exception as exc:  # execution failures belong on the eager Job
             return Job.failed(exc)
-        raise AssertionError("pulse execution unexpectedly returned without a Result")
 
     def _validate(
         self, config: PulseResultConfig, shots: int, facts: PulsePlanFacts
@@ -148,16 +151,34 @@ class PulseBackend:
             )
         return PulseResultRequest(counts=counts, density_matrix=density_matrix)
 
-    @staticmethod
-    def _execute_unavailable(
+    def _execute_continuous(
+        self,
         plan: list[PulsePlanStep],
         simulation: PulseSimulationConfig,
         result: PulseResultConfig,
         shots: int,
-    ) -> None:
-        del plan, simulation, result, shots
-        raise RuntimeError(
-            "pulse execution is unavailable until the private engine is implemented"
+    ) -> Result:
+        """Run an ideal boundary-free continuous region in private qutrit space."""
+        request = self._validate(result, shots, PulsePlanFacts(False, False, False))
+        adapter = SCQutipAdapter(self.model)
+
+        def unsupported_boundary(_step: object, _time_ns: float) -> None:
+            raise RuntimeError(
+                "physical measurement and reset execution is unavailable until dynamic replay is implemented"
+            )
+
+        execute_with_boundaries(plan, adapter.evolve, unsupported_boundary)
+        density_matrix = adapter.density_matrix()
+        available = {"density_matrix"} if request.density_matrix else set()
+        return Result(
+            density_matrix=density_matrix if request.density_matrix else None,
+            available=frozenset(available),
+            metadata={
+                "backend_name": type(self).__name__,
+                "shots": shots,
+                "simulation_config": asdict(simulation),
+                "result_config": asdict(result),
+            },
         )
 
     def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
