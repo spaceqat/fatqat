@@ -33,8 +33,12 @@ def test_run_with_seed_is_repeatable_and_reinitializes():
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
     backend = SimulatorBackend("SV")
-    first = backend.run(p, shots=10, seed=5).result().get_counts()
-    second = backend.run(p, shots=10, seed=5).result().get_counts()
+    first = (
+        backend.run(p, shots=10, simulation_config={"seed": 5}).result().get_counts()
+    )
+    second = (
+        backend.run(p, shots=10, simulation_config={"seed": 5}).result().get_counts()
+    )
     assert first == second == {"1": 10}
 
 
@@ -74,7 +78,12 @@ def test_condition_now_runs():
     p.add(ops.X, 1, condition=(0, 0))
     p.add_measurement(1, 1)
     with pytest.warns(NoMeasurementWarning):
-        counts = SimulatorBackend("SV").run(p, shots=16, seed=0).result().get_counts()
+        counts = (
+            SimulatorBackend("SV")
+            .run(p, shots=16, simulation_config={"seed": 0})
+            .result()
+            .get_counts()
+        )
     assert counts == {"10": 16}  # c1=1, c0=0 -> "10"
 
 
@@ -84,7 +93,12 @@ def test_mid_circuit_measurement_now_runs():
     p.add_measurement(0, 0)
     p.add(ops.X, 1)
     p.add_measurement(1, 1)
-    counts = SimulatorBackend("SV").run(p, shots=64, seed=0).result().get_counts()
+    counts = (
+        SimulatorBackend("SV")
+        .run(p, shots=64, simulation_config={"seed": 0})
+        .result()
+        .get_counts()
+    )
     assert set(counts) <= {"10", "11"}  # c1 always 1; c0 either
 
 
@@ -105,20 +119,20 @@ def test_measured_statevector_requires_exactly_one_shot(shots):
         SimulatorBackend("SV").run(
             _h_cz_program(),
             shots=shots,
-            result_config={"counts": False, "statevector": True},
+            result_config={"counts": False, "final_state": True},
         )
 
 
 def test_deterministic_with_seed():
     a = (
         SimulatorBackend("SV")
-        .run(_h_cz_program(), shots=300, seed=7)
+        .run(_h_cz_program(), shots=300, simulation_config={"seed": 7})
         .result()
         .get_counts()
     )
     b = (
         SimulatorBackend("SV")
-        .run(_h_cz_program(), shots=300, seed=7)
+        .run(_h_cz_program(), shots=300, simulation_config={"seed": 7})
         .result()
         .get_counts()
     )
@@ -133,7 +147,12 @@ def test_no_measurement_warning_understands_grouped_measurements():
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        counts = SimulatorBackend("SV").run(p, shots=4, seed=0).result().get_counts()
+        counts = (
+            SimulatorBackend("SV")
+            .run(p, shots=4, simulation_config={"seed": 0})
+            .result()
+            .get_counts()
+        )
 
     assert counts == {"11": 4}
     assert not any(issubclass(w.category, NoMeasurementWarning) for w in caught)
@@ -174,7 +193,7 @@ def test_custom_operation_runs_end_to_end_via_bare_callable():
     p.add(MyX(), 0)
 
     statevector = (
-        backend.run(p, result_config={"counts": False, "statevector": True})
+        backend.run(p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )

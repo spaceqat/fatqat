@@ -26,16 +26,22 @@ def test_parallel_counts_match_serial_for_same_seed(parallel_mode, seed):
     p = _random_dynamic_program()
 
     serial = (
-        SimulatorBackend("SV", options={"max_workers": 1})
-        .run(p, shots=40, seed=seed)
+        SimulatorBackend("SV")
+        .run(p, shots=40, simulation_config={"seed": seed, "max_workers": 1})
         .result()
         .get_counts()
     )
     parallel = (
-        SimulatorBackend(
-            "SV", options={"max_workers": 2, "parallel_mode": parallel_mode}
+        SimulatorBackend("SV")
+        .run(
+            p,
+            shots=40,
+            simulation_config={
+                "seed": seed,
+                "max_workers": 2,
+                "parallel_mode": parallel_mode,
+            },
         )
-        .run(p, shots=40, seed=seed)
         .result()
         .get_counts()
     )
@@ -47,8 +53,12 @@ def test_parallel_mode_serial_wins_over_max_workers():
     p = _random_dynamic_program()
 
     counts = (
-        SimulatorBackend("SV", options={"max_workers": 2, "parallel_mode": "serial"})
-        .run(p, shots=12, seed=11)
+        SimulatorBackend("SV")
+        .run(
+            p,
+            shots=12,
+            simulation_config={"seed": 11, "max_workers": 2, "parallel_mode": "serial"},
+        )
         .result()
         .get_counts()
     )
@@ -56,13 +66,13 @@ def test_parallel_mode_serial_wins_over_max_workers():
     assert sum(counts.values()) == 12
 
 
-def test_unknown_parallel_mode_rejected_at_construction():
-    # Option values are validated when the backend is constructed, so an
-    # unknown parallel_mode fails fast here rather than being deferred to a
-    # run and swallowed into a failed Job.
+def test_unknown_parallel_mode_rejected_at_run():
+    # Per-run simulation configuration is validated before execution, rather
+    # than being swallowed into a failed Job.
     with pytest.raises(
         fq.errors.BackendValidationError, match="unsupported parallel_mode"
     ):
-        SimulatorBackend(
-            "SV", options={"max_workers": 2, "parallel_mode": "not-a-mode"}
+        SimulatorBackend("SV").run(
+            _random_dynamic_program(),
+            simulation_config={"max_workers": 2, "parallel_mode": "not-a-mode"},
         )

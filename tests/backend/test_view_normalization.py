@@ -86,7 +86,7 @@ def test_base_simulator_executes_grouped_views_with_identity_mapping():
         SimulatorBackend()
         .run(
             program,
-            result_config={"counts": False, "statevector": True},
+            result_config={"counts": False, "final_state": True},
         )
         .result()
     )

@@ -46,7 +46,11 @@ def test_density_matrix_numba_selects_the_numba_dm_simulator():
 
 
 def test_metadata_echoes_the_runtime():
-    result = SimulatorBackend().run(_bell_program(), shots=4, seed=1).result()
+    result = (
+        SimulatorBackend()
+        .run(_bell_program(), shots=4, simulation_config={"seed": 1})
+        .result()
+    )
     assert result.metadata["runtime"] == "numpy"
 
 
@@ -54,7 +58,7 @@ def test_numba_runtime_produces_valid_bell_counts_through_the_portal():
     pytest.importorskip("numba")
     counts = (
         SimulatorBackend(runtime="numba")
-        .run(_bell_program(), shots=200, seed=5)
+        .run(_bell_program(), shots=200, simulation_config={"seed": 5})
         .result()
         .get_counts()
     )

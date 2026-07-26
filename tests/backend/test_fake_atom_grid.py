@@ -316,7 +316,7 @@ def test_viewed_rotation_matches_manual_scalar_sequence():
     grid_p.add(ops.RY(0.7), atoms.row(0))
     grid_sv = (
         FakeAtomGridBackend()
-        .run(grid_p, result_config={"counts": False, "statevector": True})
+        .run(grid_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -326,7 +326,7 @@ def test_viewed_rotation_matches_manual_scalar_sequence():
         manual_p.add(ops.RY(0.7), i)
     manual_sv = (
         SimulatorBackend()
-        .run(manual_p, result_config={"counts": False, "statevector": True})
+        .run(manual_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -347,7 +347,7 @@ def test_paired_cz_view_matches_manual_scalar_sequence():
     grid_p.add(ops.CZ, (atoms.row(0), atoms.row(1)))
     grid_sv = (
         FakeAtomGridBackend()
-        .run(grid_p, result_config={"counts": False, "statevector": True})
+        .run(grid_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -357,7 +357,7 @@ def test_paired_cz_view_matches_manual_scalar_sequence():
     manual_p.add(ops.CZ, (1, 3))
     manual_sv = (
         SimulatorBackend()
-        .run(manual_p, result_config={"counts": False, "statevector": True})
+        .run(manual_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -376,7 +376,7 @@ def test_viewed_rotation_over_column_matches_manual_scalar_sequence():
     grid_p.add(ops.RY(0.7), atoms.column(1))
     grid_sv = (
         FakeAtomGridBackend()
-        .run(grid_p, result_config={"counts": False, "statevector": True})
+        .run(grid_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -386,7 +386,7 @@ def test_viewed_rotation_over_column_matches_manual_scalar_sequence():
         manual_p.add(ops.RY(0.7), i)
     manual_sv = (
         SimulatorBackend()
-        .run(manual_p, result_config={"counts": False, "statevector": True})
+        .run(manual_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -405,7 +405,7 @@ def test_viewed_rotation_over_block_matches_manual_scalar_sequence():
     grid_p.add(ops.RY(0.7), atoms.block(rows=(0, 2), cols=(1, 3)))
     grid_sv = (
         FakeAtomGridBackend()
-        .run(grid_p, result_config={"counts": False, "statevector": True})
+        .run(grid_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -415,7 +415,7 @@ def test_viewed_rotation_over_block_matches_manual_scalar_sequence():
         manual_p.add(ops.RY(0.7), i)
     manual_sv = (
         SimulatorBackend()
-        .run(manual_p, result_config={"counts": False, "statevector": True})
+        .run(manual_p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -431,7 +431,7 @@ def test_non_neighbor_pair_rejects():
 
     with pytest.raises(UnsupportedOperationError) as excinfo:
         FakeAtomGridBackend().run(
-            p, result_config={"counts": False, "statevector": True}
+            p, result_config={"counts": False, "final_state": True}
         )
     assert isinstance(excinfo.value, BackendValidationError)
 
@@ -534,7 +534,7 @@ def test_condition_on_viewed_instruction_propagates_end_to_end():
     grid_true.add(ops.RX(np.pi), atoms.all(), condition=(grid_true.clreg[0][0], 0))
     sv_true = (
         FakeAtomGridBackend()
-        .run(grid_true, result_config={"counts": False, "statevector": True})
+        .run(grid_true, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -544,7 +544,7 @@ def test_condition_on_viewed_instruction_propagates_end_to_end():
     manual_true.add(ops.RX(np.pi), 1)
     sv_manual_true = (
         SimulatorBackend()
-        .run(manual_true, result_config={"counts": False, "statevector": True})
+        .run(manual_true, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -557,7 +557,7 @@ def test_condition_on_viewed_instruction_propagates_end_to_end():
     grid_false.add(ops.RX(np.pi), atoms.all(), condition=(grid_false.clreg[0][0], 1))
     sv_false = (
         FakeAtomGridBackend()
-        .run(grid_false, result_config={"counts": False, "statevector": True})
+        .run(grid_false, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )

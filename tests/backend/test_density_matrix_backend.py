@@ -20,7 +20,9 @@ def test_counts_default_with_measurement():
     p = Program(1, 1)
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
-    result = SimulatorBackend("DM").run(p, shots=10, seed=0).result()
+    result = (
+        SimulatorBackend("DM").run(p, shots=10, simulation_config={"seed": 0}).result()
+    )
     assert result.get_counts() == {"1": 10}
 
 
@@ -36,7 +38,9 @@ def test_density_matrix_not_attached_by_default_with_measurement():
     p = Program(1, 1)
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
-    result = SimulatorBackend("DM").run(p, shots=10, seed=0).result()
+    result = (
+        SimulatorBackend("DM").run(p, shots=10, simulation_config={"seed": 0}).result()
+    )
     with pytest.raises(ResultFieldUnavailableError):
         result.get_density_matrix()
 
@@ -81,7 +85,9 @@ def test_reset_program_counts_are_deterministic_for_any_shots():
     p.add(ops.Reset, 0)
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
-    result = SimulatorBackend("DM").run(p, shots=50, seed=3).result()
+    result = (
+        SimulatorBackend("DM").run(p, shots=50, simulation_config={"seed": 3}).result()
+    )
     assert result.get_counts() == {"1": 50}
 
 
@@ -89,7 +95,12 @@ def test_counts_distribution_matches_born_rule():
     p = Program(1, 1)
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
-    counts = SimulatorBackend("DM").run(p, shots=2000, seed=11).result().get_counts()
+    counts = (
+        SimulatorBackend("DM")
+        .run(p, shots=2000, simulation_config={"seed": 11})
+        .result()
+        .get_counts()
+    )
     assert set(counts) == {"0", "1"}
     assert abs(counts["0"] - 1000) < 150
 
@@ -100,7 +111,12 @@ def test_density_matrix_with_measurement_shots_one():
     p.add_measurement(0, 0)
     result = (
         SimulatorBackend("DM")
-        .run(p, shots=1, seed=0, result_config={"counts": True, "density_matrix": True})
+        .run(
+            p,
+            shots=1,
+            simulation_config={"seed": 0},
+            result_config={"counts": True, "final_state": True},
+        )
         .result()
     )
     rho = result.get_density_matrix()
@@ -117,7 +133,7 @@ def test_density_matrix_with_measurement_and_many_shots_rejected():
     p.add_measurement(0, 0)
     with pytest.raises(BackendValidationError):
         SimulatorBackend("DM").run(
-            p, shots=10, result_config={"counts": True, "density_matrix": True}
+            p, shots=10, result_config={"counts": True, "final_state": True}
         )
 
 
@@ -134,7 +150,12 @@ def test_feedforward_condition_applies():
     p.add_measurement(0, 0)
     p.add(ops.X, 1, condition=(0, 1))
     p.add_measurement(1, 1)
-    counts = SimulatorBackend("DM").run(p, shots=20, seed=0).result().get_counts()
+    counts = (
+        SimulatorBackend("DM")
+        .run(p, shots=20, simulation_config={"seed": 0})
+        .result()
+        .get_counts()
+    )
     assert counts == {"11": 20}
 
 
@@ -145,8 +166,12 @@ def test_dynamic_counts_deterministic_for_fixed_seed():
     p.add(ops.X, 1, condition=(0, 1))
     p.add_measurement(1, 1)
     backend = SimulatorBackend("DM")
-    first = backend.run(p, shots=64, seed=42).result().get_counts()
-    second = backend.run(p, shots=64, seed=42).result().get_counts()
+    first = (
+        backend.run(p, shots=64, simulation_config={"seed": 42}).result().get_counts()
+    )
+    second = (
+        backend.run(p, shots=64, simulation_config={"seed": 42}).result().get_counts()
+    )
     assert first == second
     # feedforward correlates the two clbits: only 00 and 11 can appear
     assert set(first) <= {"00", "11"}
@@ -159,14 +184,14 @@ def test_dynamic_counts_parallel_matches_serial():
     p.add(ops.X, 1, condition=(0, 1))
     p.add_measurement(1, 1)
     serial = (
-        SimulatorBackend("DM", {"parallel_mode": "serial"})
-        .run(p, shots=40, seed=9)
+        SimulatorBackend("DM")
+        .run(p, shots=40, simulation_config={"seed": 9, "parallel_mode": "serial"})
         .result()
         .get_counts()
     )
     parallel = (
-        SimulatorBackend("DM", {"max_workers": 2})
-        .run(p, shots=40, seed=9)
+        SimulatorBackend("DM")
+        .run(p, shots=40, simulation_config={"seed": 9, "max_workers": 2})
         .result()
         .get_counts()
     )
@@ -188,7 +213,7 @@ def test_diagonal_matches_statevector_probabilities():
     )
     sv = (
         fq.backends.SimulatorBackend("SV")
-        .run(p, result_config={"counts": False, "statevector": True})
+        .run(p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -200,37 +225,31 @@ def test_result_metadata_records_backend_shots_and_config():
     p = Program(1, 1)
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
-    config = {"counts": True, "density_matrix": False}
+    config = {"counts": True, "final_state": False}
     result = (
-        SimulatorBackend("DM").run(p, shots=7, seed=0, result_config=config).result()
+        SimulatorBackend("DM")
+        .run(p, shots=7, simulation_config={"seed": 0}, result_config=config)
+        .result()
     )
     assert result.metadata["shots"] == 7
     assert result.metadata["backend_name"] == "SimulatorBackend"
     assert result.metadata["result_config"] == config
 
 
-def test_run_warns_and_ignores_unknown_result_config_keys():
+def test_run_rejects_unknown_result_config_keys():
     p = Program(1)
     p.add(ops.H, 0)
-    with pytest.warns(
-        UserWarning, match="SimulatorBackend ignored unsupported result_config options"
-    ):
-        result = (
-            SimulatorBackend("DM")
-            .run(p, result_config={"counts": False, "statevector": True})
-            .result()
+    with pytest.raises(BackendValidationError, match="does not support result_config"):
+        SimulatorBackend("DM").run(
+            p, result_config={"counts": False, "statevector": True}
         )
-    assert result.metadata["result_config"] == {
-        "counts": False,
-        "density_matrix": None,
-    }
 
 
-def test_backend_warns_and_ignores_unknown_options():
-    with pytest.warns(
-        UserWarning, match="SimulatorBackend ignored unsupported backend options"
+def test_run_rejects_unknown_simulation_config_keys():
+    with pytest.raises(
+        BackendValidationError, match="does not support simulation_config"
     ):
-        SimulatorBackend("DM", {"gpu": True})
+        SimulatorBackend("DM").run(Program(1), simulation_config={"gpu": True})
 
 
 def test_run_rejects_non_dict_result_config():
@@ -248,8 +267,8 @@ def test_no_measurement_warning_when_counts_only_and_no_state():
         SimulatorBackend("DM").run(
             p,
             shots=10,
-            seed=0,
-            result_config={"counts": True, "density_matrix": False},
+            simulation_config={"seed": 0},
+            result_config={"counts": True, "final_state": False},
         ).result()
     assert any(issubclass(w.category, NoMeasurementWarning) for w in caught)
 
@@ -275,7 +294,7 @@ def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():
     program.add(fq.ops.H, qt[0])  # frontend must NOT raise here
     with pytest.raises(BackendValidationError) as exc:
         fq.backends.SimulatorBackend("DM").run(
-            program, result_config={"counts": False, "density_matrix": True}
+            program, result_config={"counts": False, "final_state": True}
         ).result()
     msg = str(exc.value)
     assert "H" in msg and "3" in msg  # names the op and the target dimension
@@ -306,7 +325,7 @@ def test_target_aware_map_allows_registered_target_key():
     p.add(ops.CZ, (0, 1))
 
     result = backend.run(
-        p, result_config={"counts": False, "density_matrix": True}
+        p, result_config={"counts": False, "final_state": True}
     ).result()
     assert result.get_density_matrix().shape == (4, 4)
 
@@ -328,7 +347,7 @@ def test_target_aware_map_rejects_illegal_target_key():
     with pytest.raises(
         fq.errors.UnsupportedOperationError, match="device operands"
     ) as excinfo:
-        backend.run(p, result_config={"counts": False, "density_matrix": True})
+        backend.run(p, result_config={"counts": False, "final_state": True})
 
     assert isinstance(excinfo.value, BackendValidationError)
 
@@ -345,4 +364,4 @@ def test_target_aware_map_unsupported_family_still_raises_unsupported_operation(
     p.add(ops.X, 0)
 
     with pytest.raises(fq.errors.UnsupportedOperationError):
-        backend.run(p, result_config={"counts": False, "density_matrix": True})
+        backend.run(p, result_config={"counts": False, "final_state": True})

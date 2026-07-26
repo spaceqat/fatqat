@@ -80,7 +80,7 @@ def test_target_aware_map_rejects_illegal_target_key():
     # (see test below); only the message distinguishes "illegal target"
     # from "no rule at all."
     with pytest.raises(UnsupportedOperationError, match="device operands") as excinfo:
-        backend.run(p, result_config={"counts": False, "statevector": True})
+        backend.run(p, result_config={"counts": False, "final_state": True})
 
     assert isinstance(excinfo.value, BackendValidationError)
 
@@ -95,7 +95,7 @@ def test_target_aware_map_unsupported_family_still_raises_unsupported_operation(
     p.add(ops.X, 0)
 
     with pytest.raises(UnsupportedOperationError):
-        backend.run(p, result_config={"counts": False, "statevector": True})
+        backend.run(p, result_config={"counts": False, "final_state": True})
 
 
 def test_legacy_default_map_still_resolves_any_target_key():

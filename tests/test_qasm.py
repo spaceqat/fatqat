@@ -431,7 +431,7 @@ def test_from_qasm_u3_gate_matches_exact_matrix_up_to_global_phase():
         u3({theta}, {phi}, {lam}) q[0];
         """)
     job = SimulatorBackend("SV").run(
-        program, result_config={"counts": False, "statevector": True}, shots=1
+        program, result_config={"counts": False, "final_state": True}, shots=1
     )
     sv = job.result().get_statevector()
 

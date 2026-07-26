@@ -46,11 +46,27 @@ def test_unknown_method_rejected():
 
 def test_alias_selects_identical_behavior():
     p = _bell()
-    a = SimulatorBackend(method="SV").run(p, shots=64, seed=7).result()
-    b = SimulatorBackend(method="statevector").run(p, shots=64, seed=7).result()
+    a = (
+        SimulatorBackend(method="SV")
+        .run(p, shots=64, simulation_config={"seed": 7})
+        .result()
+    )
+    b = (
+        SimulatorBackend(method="statevector")
+        .run(p, shots=64, simulation_config={"seed": 7})
+        .result()
+    )
     assert a.get_counts() == b.get_counts()
-    c = SimulatorBackend(method="DM").run(p, shots=64, seed=7).result()
-    d = SimulatorBackend(method="density_matrix").run(p, shots=64, seed=7).result()
+    c = (
+        SimulatorBackend(method="DM")
+        .run(p, shots=64, simulation_config={"seed": 7})
+        .result()
+    )
+    d = (
+        SimulatorBackend(method="density_matrix")
+        .run(p, shots=64, simulation_config={"seed": 7})
+        .result()
+    )
     assert c.get_counts() == d.get_counts()
 
 
@@ -59,13 +75,13 @@ def test_method_selects_native_state_field():
     p.add(ops.H, 0)
     sv = (
         SimulatorBackend(method="SV")
-        .run(p, result_config={"counts": False, "statevector": True})
+        .run(p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
     rho = (
         SimulatorBackend(method="DM")
-        .run(p, result_config={"counts": False, "density_matrix": True})
+        .run(p, result_config={"counts": False, "final_state": True})
         .result()
         .get_density_matrix()
     )
@@ -74,7 +90,11 @@ def test_method_selects_native_state_field():
 
 def test_metadata_records_method_and_backend_name():
     p = _bell()
-    result = SimulatorBackend(method="DM").run(p, shots=5, seed=0).result()
+    result = (
+        SimulatorBackend(method="DM")
+        .run(p, shots=5, simulation_config={"seed": 0})
+        .result()
+    )
     assert result.metadata["backend_name"] == "SimulatorBackend"
     assert result.metadata["method"] == "density_matrix"
 
@@ -96,10 +116,14 @@ def test_barrier_is_skipped_in_lowering():
 def test_barrier_does_not_change_counts(method):
     with_b = (
         SimulatorBackend(method=method)
-        .run(_bell(with_barriers=True), shots=128, seed=11)
+        .run(_bell(with_barriers=True), shots=128, simulation_config={"seed": 11})
         .result()
     )
-    without = SimulatorBackend(method=method).run(_bell(), shots=128, seed=11).result()
+    without = (
+        SimulatorBackend(method=method)
+        .run(_bell(), shots=128, simulation_config={"seed": 11})
+        .result()
+    )
     assert with_b.get_counts() == without.get_counts()
 
 
@@ -110,7 +134,7 @@ def test_barrier_does_not_change_state():
     p.add(ops.CX, (0, 1))
     sv = (
         SimulatorBackend()
-        .run(p, result_config={"counts": False, "statevector": True})
+        .run(p, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
