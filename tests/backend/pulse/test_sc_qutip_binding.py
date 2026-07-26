@@ -6,9 +6,12 @@ from math import pi
 from pathlib import Path
 
 import numpy as np
-from qutip import Qobj, basis, ket2dm, qeye, tensor
+from qutip import Qobj, basis, ket2dm, mesolve, qeye, tensor
+from scipy.interpolate import CubicSpline
 
+import fatqat as fq
 from fatqat.backends import MeasurementStep
+from fatqat.backends.pulse.backend import PulseBackend
 from fatqat.backends.pulse.engine import PulseEngine, _ShotContext
 from fatqat.backends.pulse.execution import place_pulse_run
 from fatqat.backends.pulse.qutip_adapter import FRAME_CONVENTION, SCQutipAdapter
@@ -22,7 +25,8 @@ from fatqat.backends.pulse.superconducting import (
     load_calibration_spec,
     load_physics_model,
 )
-from fatqat.operations import CZ, RZ
+from fatqat.operations import CZ, RZ, iSwap
+from fatqat.resource_layout import ResourceLayout
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -90,8 +94,8 @@ def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints():
     adapter = SCQutipAdapter(model)
     child = SampledControl(
         model.drive_control("q0"),
-        [0.0, 0.3, 1.0],
-        [1.0 + 2.0j, 3.0 + 4.0j, 5.0 + 6.0j],
+        [0.0, 0.3, 0.7, 1.0],
+        [1.0 + 2.0j, 3.0 + 4.0j, -2.0 + 1.0j, 5.0 + 6.0j],
         start_offset_ns=0.5,
     )
     phase = 0.2
@@ -100,7 +104,7 @@ def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints():
 
     assert type(pulse).__module__ == "qutip_qip.pulse"
     assert pulse.spline_kind == "cubic"
-    assert np.array_equal(pulse.tlist, np.array([4.5, 4.8, 5.5]))
+    assert np.array_equal(pulse.tlist, np.array([4.5, 4.8, 5.2, 5.5]))
     assert np.allclose(pulse.coeff, expected.real)
     assert len(pulse.coherent_noise) == 1
     assert np.allclose(pulse.coherent_noise[0].coeff, expected.imag)
@@ -109,6 +113,14 @@ def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints():
     assert collapse == []
     assert np.allclose(evolution(4.0).full(), evolution(4.5).full())
     assert np.allclose(evolution(6.0).full(), evolution(5.5).full())
+    time = 4.95
+    spline = CubicSpline(pulse.tlist, expected)
+    x_operator = Qobj(model.annihilation) + Qobj(model.annihilation).dag()
+    y_operator = -1j * (Qobj(model.annihilation) - Qobj(model.annihilation).dag())
+    expected_hamiltonian = spline(time).real * tensor(x_operator, qeye(3)) + spline(
+        time
+    ).imag * tensor(y_operator, qeye(3))
+    assert np.allclose(evolution(time).full(), expected_hamiltonian.full())
 
 
 def test_constant_drive_matches_an_independent_full_model_hamiltonian():
@@ -167,6 +179,96 @@ def test_exchange_keeps_both_qutrit_leakage_paths_and_matches_reference():
     assert np.allclose(density, expected.full(), atol=2e-7)
 
 
+def test_realized_iswap_matches_the_public_positive_i_phase_convention():
+    model, calibration = _model_and_calibration()
+    adapter = SCQutipAdapter(model)
+    block = realize_native_operation(
+        iSwap,
+        (model.resource("q0"), model.resource("q1")),
+        model=model,
+        calibration=calibration,
+    )
+    ket_01 = tensor(basis(3, 0), basis(3, 1))
+    ket_10 = tensor(basis(3, 1), basis(3, 0))
+    initial = ket2dm((ket_01 + 0.3 * ket_10).unit())
+    actual = _evolve(adapter, (block,), _context(adapter, initial)).state
+    expected = ket2dm((1j * ket_10 + 0.3j * ket_01).unit())
+    assert np.allclose(actual.full(), expected.full(), atol=2e-7)
+
+
+def test_drift_and_detuning_match_independent_qutrit_phase_and_exchange_facts():
+    model, _ = _model_and_calibration()
+    adapter = SCQutipAdapter(model)
+
+    duration = 0.17
+    ket_00 = tensor(basis(3, 0), basis(3, 0))
+    ket_20 = tensor(basis(3, 2), basis(3, 0))
+    initial = ket2dm((ket_00 + ket_20).unit())
+    idle = _drive_block(model, "q0", duration=duration, coefficients=(0.0, 0.0))
+    actual = _evolve(adapter, (idle,), _context(adapter, initial)).state
+    phase = np.exp(-1j * 2 * pi * model.subsystems[0].anharmonicity_ghz * duration)
+    expected = ket2dm((ket_00 + phase * ket_20).unit())
+    assert np.allclose(actual.full(), expected.full(), atol=2e-7)
+
+    residual_document, _ = _documents()
+    residual_document["parameters"]["couplings"][0]["residual_exchange"] = 0.04
+    residual_model = load_physics_model(residual_document)
+    residual_adapter = SCQutipAdapter(residual_model)
+    exchange_duration = 1 / (8 * 0.04)
+    exchange = _drive_block(
+        residual_model,
+        "q0",
+        duration=exchange_duration,
+        coefficients=(0.0, 0.0),
+    )
+    exchanged = _evolve(
+        residual_adapter,
+        (exchange,),
+        _context(residual_adapter, ket2dm(tensor(basis(3, 1), basis(3, 0)))),
+    ).state
+    assert np.isclose(exchanged[1, 1].real, 0.5, atol=2e-7)
+
+    detuning = 0.09
+    detuned = PulseBlock(
+        model,
+        duration,
+        (
+            SampledControl(
+                model.detuning_control("q0"),
+                [0.0, duration],
+                [detuning, detuning],
+            ),
+        ),
+        (model.resource("q0"),),
+    )
+    actual = _evolve(adapter, (detuned,), _context(adapter, initial)).state
+    phase = np.exp(
+        -1j * (2 * pi * model.subsystems[0].anharmonicity_ghz + 2 * detuning) * duration
+    )
+    expected = ket2dm((ket_00 + phase * ket_20).unit())
+    assert np.allclose(actual.full(), expected.full(), atol=2e-7)
+
+
+def test_backend_keeps_model_order_when_program_binds_a_nonprefix_transmon():
+    model, calibration = _model_and_calibration()
+
+    class _NonprefixBackend(PulseBackend):
+        def _resolve_resource_layout(self, program):
+            return ResourceLayout({program.qreg[0][0]: "q1"})
+
+    program = fq.Program(1)
+    program.add(fq.ops.RX(pi / 2), 0)
+    density = (
+        _NonprefixBackend(model, calibration)
+        .run(program, result_config={"counts": False, "final_state": True})
+        .result()
+        .get_density_matrix()
+    )
+    state = Qobj(density, dims=[[3, 3], [3, 3]])
+    assert np.allclose(state.ptrace(0).full(), ket2dm(basis(3, 0)).full())
+    assert state.ptrace(1).diag()[0].real < 0.9
+
+
 def test_drift_covers_leading_internal_and_trailing_idle_intervals():
     model, _ = _model_and_calibration()
     adapter = SCQutipAdapter(model)
@@ -221,6 +323,61 @@ def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data():
         calibration=calibration,
     )
     assert cz.children[1].start_offset_ns == recipe["ramp_duration_ns"]
+
+
+def test_realized_cz_matches_an_independent_synchronized_hamiltonian():
+    model, calibration = _model_and_calibration()
+    adapter = SCQutipAdapter(model)
+    block = realize_native_operation(
+        CZ,
+        (model.resource("q0"), model.resource("q1")),
+        model=model,
+        calibration=calibration,
+    )
+    detuning, exchange = block.children
+    detuning_spline = CubicSpline(detuning.tlist, detuning.coefficients.real)
+    exchange_spline = CubicSpline(
+        exchange.start_offset_ns + exchange.tlist, exchange.coefficients.real
+    )
+
+    def parked_exchange(time, _args=None):
+        if time < exchange.start_offset_ns or time > (
+            exchange.start_offset_ns + exchange.duration_ns
+        ):
+            return 0.0
+        return float(exchange_spline(time))
+
+    assert parked_exchange(exchange.start_offset_ns / 2) == 0.0
+    assert parked_exchange(block.duration_ns - exchange.start_offset_ns / 2) == 0.0
+    number = Qobj(model.number)
+    annihilation = Qobj(model.annihilation)
+    identity = qeye(3)
+    drift = sum(
+        2
+        * pi
+        * subsystem.anharmonicity_ghz
+        * tensor(
+            number * (number - identity) / 2 if ordinal == 0 else identity,
+            number * (number - identity) / 2 if ordinal == 1 else identity,
+        )
+        for ordinal, subsystem in enumerate(model.subsystems)
+    )
+    exchange_operator = tensor(annihilation.dag(), annihilation) + tensor(
+        annihilation, annihilation.dag()
+    )
+    initial = ket2dm(tensor(basis(3, 1), basis(3, 1)))
+    expected = mesolve(
+        [
+            drift,
+            [tensor(number, identity), detuning_spline],
+            [exchange_operator, parked_exchange],
+        ],
+        initial,
+        [0.0, block.duration_ns],
+        options={"atol": 1e-11, "rtol": 1e-9, "nsteps": 10000},
+    ).states[-1]
+    actual = _evolve(adapter, (block,), _context(adapter, initial)).state
+    assert np.allclose(actual.full(), expected.full(), atol=2e-7)
 
 
 def test_residual_exchange_is_bound_only_when_declared():

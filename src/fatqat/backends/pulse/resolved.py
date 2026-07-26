@@ -337,7 +337,9 @@ def realize_native_operation(
         first, second = _target_ids(model, targets, 2)
         duration = float(calibration.recipe("iswap")["duration_ns"])
         tlist = _sample_grid(duration)
-        exchange = _hann(tlist, duration, pi / duration)
+        # With the adapter's ``J(a†b + ab†)`` Hamiltonian, a negative signed
+        # area produces fatqat's public ``+i`` iSWAP convention.
+        exchange = _hann(tlist, duration, -pi / duration)
         return PulseBlock(
             model=model,
             duration_ns=duration,

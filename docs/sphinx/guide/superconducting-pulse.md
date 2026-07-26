@@ -53,6 +53,10 @@ the selected model. For `m = len(model.subsystems)`, its shape is
 `(3**m, 3**m)`, not `(2**n, 2**n)` for the program's qubits. A run containing
 measurement may export this sampled posterior only with `shots=1`.
 
+The accepted result request keys are `counts` and `final_state`. By default,
+counts are requested when the program contains measurement, while a final
+state is requested only for a program without measurement.
+
 ## Dynamic execution and timing
 
 Measurement collapses the physical qutrit. Its reported classical bit maps

@@ -80,7 +80,7 @@ def test_iswap_area_and_frame_swap_use_one_full_edge_control():
 
     (exchange,) = block.children
     assert exchange.channel == model.coupling("q0", "q1")
-    assert np.isclose(np.trapezoid(exchange.coefficients.real, exchange.tlist), pi / 2)
+    assert np.isclose(np.trapezoid(exchange.coefficients.real, exchange.tlist), -pi / 2)
     assert block.post_actions == (PhaseSwap(model.frame("q0"), model.frame("q1")),)
 
 

@@ -102,9 +102,8 @@ class NoiseModel:
     applied in registration order.
 
     Attributes:
-        qubit_noise: Placeholder for continuously-active per-subsystem noise
-            consumed by pulse-family backends; matrix-family backends report
-            a non-empty value as unsupported rather than ignoring it.
+        qubit_noise: Empty-only legacy placeholder. A non-empty value is
+            rejected; use :meth:`add_continuous_noise` instead.
         metadata: Free-form user annotations, never interpreted here.
 
     Examples:

@@ -99,6 +99,14 @@ def test_matrix_backend_keeps_gate_channels_and_rejects_typed_continuous_noise()
     assert "ThermalRelaxation" in report.rejected_sources
 
 
+def test_pulse_backend_names_each_rejected_gate_channel_source():
+    model, calibration = _model_and_calibration()
+    noise = NoiseModel()
+    noise.add_noise(fq.ops.X, Depolarizing(p=0.1))
+    report = PulseBackend(model, calibration).validate_noise(noise)
+    assert report.rejected_sources == ("Depolarizing",)
+
+
 def test_qutrit_collapse_coefficients_and_t2_limit_are_exact():
     model, _ = _model_and_calibration()
     source = ThermalRelaxation(100, 120)

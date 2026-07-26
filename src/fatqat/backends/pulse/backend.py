@@ -9,7 +9,7 @@ import numpy as np
 
 from ..._engine_index_allocation import _EngineIndexAllocation
 from ...backends.backend_utils import _normalize_config
-from ...errors import BackendValidationError
+from ...errors import BackendExecutionError, BackendValidationError
 from ...job import Job
 from ...noise import NoiseModel, NoiseSupportReport, ThermalRelaxation
 from ...program import Program
@@ -134,8 +134,8 @@ class PulseBackend:
                     continuous_noise,
                 )
             )
-        except Exception as exc:  # execution failures belong on the eager Job
-            return Job.failed(exc)
+        except Exception:  # execution failures belong on the eager Job
+            return Job.failed(BackendExecutionError("Pulse backend execution failed"))
 
     def _validate(
         self, config: PulseResultConfig, shots: int, facts: PulsePlanFacts
@@ -247,10 +247,13 @@ class PulseBackend:
         accepted = ["readout_error"] if noise_model.has_readout_error() else []
         rejected = []
         warnings = []
-        if noise_model.channel_types():
-            rejected.append("gate_channel_noise")
+        for channel_type in sorted(
+            noise_model.channel_types(), key=lambda source: source.__name__
+        ):
+            rejected.append(channel_type.__name__)
             warnings.append(
-                "gate-keyed channel noise is not supported by the pulse backend"
+                f"{channel_type.__name__} gate-keyed channel noise is not supported "
+                "by the pulse backend"
             )
         for source_type in sorted(
             noise_model.continuous_noise_types(), key=lambda source: source.__name__

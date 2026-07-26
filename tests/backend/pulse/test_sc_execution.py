@@ -181,6 +181,41 @@ def test_real_boundary_preserves_frame_ledger_for_later_drive():
     assert np.allclose(boundary_state, continuous_state, atol=2e-7)
 
 
+def test_reset_and_both_guarded_boundary_outcomes_preserve_later_frame_use():
+    backend = _backend()
+
+    def q0_state(program, *, shots=0):
+        density = (
+            backend.run(
+                program,
+                shots=shots,
+                result_config={"counts": False, "final_state": True},
+            )
+            .result()
+            .get_density_matrix()
+        )
+        return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(0).full()
+
+    continuous = fq.Program(2)
+    continuous.add(fq.ops.RZ(0.3), 0)
+    continuous.add(fq.ops.RX(0.7), 0)
+    expected = q0_state(continuous)
+
+    reset = fq.Program(2)
+    reset.add(fq.ops.RZ(0.3), 0)
+    reset.add(fq.ops.Reset, 1)
+    reset.add(fq.ops.RX(0.7), 0)
+    assert np.allclose(q0_state(reset), expected, atol=2e-7)
+
+    for required_digit in (0, 1):
+        guarded = fq.Program(2, 1)
+        guarded.add(fq.ops.RZ(0.3), 0)
+        guarded.add_measurement(1, 0)
+        guarded.add(fq.ops.Reset, 1, condition=(0, required_digit))
+        guarded.add(fq.ops.RX(0.7), 0)
+        assert np.allclose(q0_state(guarded, shots=1), expected, atol=2e-7)
+
+
 class _ExcitedAdapter(SCQutipAdapter):
     def initial_state(self):
         return ket2dm(tensor(basis(3, 2), basis(3, 0)))

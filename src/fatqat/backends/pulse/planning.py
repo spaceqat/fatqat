@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from ..._engine_index_allocation import _EngineIndexAllocation
 from ...backends.backend_utils import _resolve_condition
-from ...backends.simulator_backend import _break_grouped_operations
 from ...backends.steps import MeasurementStep, ResetStep
 from ...errors import BackendValidationError
 from ...noise import NoiseModel
@@ -17,6 +16,7 @@ from ...program import AppliedOperation, Program
 from ...resource_layout import ResourceLayout
 from .resolved import PulseBlock, realize_native_operation
 from .superconducting import CalibrationSpec, PhysicsModel
+from ..view_normalization import _break_grouped_operations
 
 PulsePlanStep = PulseBlock | MeasurementStep | ResetStep
 

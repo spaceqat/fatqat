@@ -39,7 +39,7 @@ refactor.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from math import prod
 from typing import Any
@@ -67,11 +67,7 @@ from ..noise import (
 from ..noise.base import _validate_kraus_shapes
 from ..operations import BarrierGate, Measurement, Operation, ResetGate
 from ..program import AppliedOperation, Program
-from ..registers import (
-    RegisterRef,
-    RegisterView,
-    _view_members,
-)
+from ..registers import RegisterRef
 from ..resource_layout import DeviceOperand, ResourceLayout
 from ..result import (
     Result,
@@ -92,6 +88,7 @@ from .engine_contract import (
     _SimulationConfig,
     _StateVectorResultRequest,
 )
+from .view_normalization import ProgramInstruction, _break_grouped_operations
 from .steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
@@ -107,63 +104,6 @@ _METHOD_ALIASES = {
     "density_matrix": "density_matrix",
     "dm": "density_matrix",
 }
-
-ProgramInstruction = AppliedOperation | Measurement
-
-
-def _expand_grouped_operation(
-    step: AppliedOperation,
-) -> tuple[AppliedOperation, ...]:
-    """Expand one view-bearing operation into scalar AppliedOperations.
-
-    Pairing legality (arity 2: matching selector kind, equal cardinality, no
-    same-register overlap) is validated once, at construction, by
-    `AppliedOperation.__post_init__` (see `registers._validate_view_pair`) -
-    this only does the mechanical expansion of already-legal targets.
-    Whether to scalar-expand at all is this backend's lowering strategy; a
-    different backend could realize a group op some other way instead.
-    """
-    target_members = tuple(
-        _view_members(target) if isinstance(target, RegisterView) else (target,)
-        for target in step.targets
-    )
-    if not any(isinstance(target, RegisterView) for target in step.targets):
-        return (step,)
-
-    name = type(step.operation).__name__
-    if len(target_members) == 1:
-        emissions = [(member,) for member in target_members[0]]
-    elif len(target_members) == 2:
-        first, second = target_members
-        emissions = list(zip(first, second))
-    else:
-        raise BackendValidationError(
-            f"{name} cannot expand a view target at arity {len(target_members)}"
-        )
-
-    return tuple(
-        AppliedOperation(
-            operation=step.operation,
-            targets=tuple(targets),
-            condition=step.condition,
-        )
-        for targets in emissions
-    )
-
-
-def _break_grouped_operations(
-    operations: Iterable[ProgramInstruction],
-) -> tuple[ProgramInstruction, ...]:
-    """Return a new scalar-only instruction stream without mutating the program."""
-    broken: list[ProgramInstruction] = []
-    for step in operations:
-        if isinstance(step, AppliedOperation) and any(
-            isinstance(target, RegisterView) for target in step.targets
-        ):
-            broken.extend(_expand_grouped_operation(step))
-        else:
-            broken.append(step)
-    return tuple(broken)
 
 
 def _gate_implementation_for(

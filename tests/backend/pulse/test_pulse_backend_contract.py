@@ -12,7 +12,7 @@ from fatqat.backends.pulse.superconducting import (
     load_calibration_spec,
     load_physics_model,
 )
-from fatqat.errors import BackendValidationError
+from fatqat.errors import BackendExecutionError, BackendValidationError
 from fatqat.registers import QuantumRegister
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -101,3 +101,17 @@ def test_capacity_and_non_qubit_programs_fail_before_execution():
     non_qubit = fq.Program([qutrit])
     with pytest.raises(BackendValidationError, match="dimension-two"):
         backend.run(non_qubit)
+
+
+def test_private_execution_failures_are_sanitized_on_the_returned_job(monkeypatch):
+    backend = _backend()
+    program = fq.Program(1)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("private qutip solver detail")
+
+    monkeypatch.setattr(backend, "_execute", fail)
+    job = backend.run(program)
+    assert job.status == "ERROR"
+    with pytest.raises(BackendExecutionError, match="Pulse backend execution failed"):
+        job.result()

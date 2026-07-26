@@ -11,6 +11,10 @@ class BackendValidationError(FatqcatError):
     """Raised at backend entry when a program/request is not acceptable."""
 
 
+class BackendExecutionError(FatqcatError):
+    """Raised by ``Job.result()`` when a backend's private execution fails."""
+
+
 class UnsupportedOperationError(BackendValidationError):
     """Raised when the backend does not support an operation or feature."""
 
