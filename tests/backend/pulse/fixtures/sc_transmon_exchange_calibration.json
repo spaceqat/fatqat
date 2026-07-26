@@ -1,0 +1,26 @@
+{
+  "format": "fatqat.calibration",
+  "schema_version": 1,
+  "builder": {"id": "sc.transmon_exchange", "version": 1},
+  "model": {"id": "test-sc-2q", "revision": "2026-07-26"},
+  "recipes": {
+    "rx_ry": {
+      "duration_ns": 20.0,
+      "drag_coefficient": 1.0
+    },
+    "rz": {"frame_scale": 1.0},
+    "iswap": {"duration_ns": 40.0},
+    "cz": {
+      "edges": [
+        {
+          "subsystems": ["q0", "q1"],
+          "detuning_subsystem": "q0",
+          "duration_ns": 60.0,
+          "ramp_duration_ns": 3.0,
+          "detuning_ghz": 0.22,
+          "phase_corrections_rad": {"q0": 0.0, "q1": 0.0}
+        }
+      ]
+    }
+  }
+}
