@@ -79,7 +79,13 @@ def test_iswap_area_and_frame_swap_use_one_full_edge_control():
     )
 
     (exchange,) = block.children
-    assert exchange.channel == model.coupling("q0", "q1")
+    assert exchange.channel == model.exchange_control("q0", "q1")
+    assert exchange.channel.kind == "exchange"
+    assert block.resource_claims == (
+        model.resource("q0"),
+        model.resource("q1"),
+        model.coupling("q0", "q1"),
+    )
     assert np.isclose(np.trapezoid(exchange.coefficients.real, exchange.tlist), -pi / 2)
     assert block.post_actions == (PhaseSwap(model.frame("q0"), model.frame("q1")),)
 
@@ -95,7 +101,12 @@ def test_cz_is_atomic_oriented_detuning_plus_parked_exchange():
 
     detuning, exchange = block.children
     assert detuning.channel == model.detuning_control("q0")
-    assert exchange.channel == model.coupling("q0", "q1")
+    assert exchange.channel == model.exchange_control("q0", "q1")
+    assert block.resource_claims == (
+        model.resource("q0"),
+        model.resource("q1"),
+        model.coupling("q0", "q1"),
+    )
     assert exchange.start_offset_ns == 3.0
     assert exchange.duration_ns == 54.0
     assert np.isclose(detuning.coefficients[0], 0.0)

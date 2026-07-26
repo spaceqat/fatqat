@@ -58,7 +58,7 @@ def test_pair_claims_conservatively_conflict_with_endpoint_work():
     pair = PulseBlock(
         model,
         2.0,
-        (SampledControl(model.coupling("q0", "q1"), [0.0, 2.0], [0.0, 0.0]),),
+        (SampledControl(model.exchange_control("q0", "q1"), [0.0, 2.0], [0.0, 0.0]),),
         (
             model.resource("q0"),
             model.resource("q1"),

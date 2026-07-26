@@ -16,7 +16,7 @@ from ...noise import ContinuousNoise, ThermalRelaxation
 from .engine import _ShotContext, _condition_matches
 from .execution import _PlacedPulseRun
 from .resolved import PhaseShift, PhaseSwap, SampledControl
-from .superconducting import ControlChannelRef, CouplingRef, PhysicsModel
+from .superconducting import ControlChannelRef, PhysicsModel
 
 _EPSILON = 1e-12
 _SOLVER_OPTIONS = {
@@ -312,44 +312,23 @@ class SCQutipAdapter:
         )
         coefficients = np.asarray(child.coefficients)
         channel = child.channel
-        if isinstance(channel, ControlChannelRef):
-            ordinal = self._model.bind_control(channel)
-            if channel.kind == "detuning":
-                real = self._require_real(coefficients, "detuning")
-                return Pulse(
-                    self._local_number,
-                    ordinal,
-                    tlist=absolute_tlist,
-                    coeff=real,
-                    spline_kind="cubic",
-                    label="detuning",
-                )
-            phase = np.exp(
-                1j
-                * frames.get(self._model.frame(self._model.subsystem_ids[ordinal]), 0.0)
+        if not isinstance(channel, ControlChannelRef):
+            raise BackendValidationError(
+                "pulse control has an unknown channel reference"
             )
-            envelope = phase * coefficients
-            x_operator = self._local_annihilation + self._local_annihilation.dag()
-            y_operator = -1j * (
-                self._local_annihilation - self._local_annihilation.dag()
-            )
-            pulse = Pulse(
-                x_operator,
+        ordinal = self._model.bind_control(channel)
+        if channel.kind == "detuning":
+            real = self._require_real(coefficients, "detuning")
+            return Pulse(
+                self._local_number,
                 ordinal,
                 tlist=absolute_tlist,
-                coeff=envelope.real,
+                coeff=real,
                 spline_kind="cubic",
-                label="drive",
+                label="detuning",
             )
-            pulse.add_coherent_noise(
-                y_operator,
-                ordinal,
-                tlist=absolute_tlist,
-                coeff=envelope.imag,
-            )
-            return pulse
-        if isinstance(channel, CouplingRef):
-            coupling = self._model.couplings[self._model.bind_coupling(channel)]
+        if channel.kind == "exchange":
+            coupling = self._model.couplings[ordinal]
             targets = [
                 self._model.subsystem_ids.index(identifier)
                 for identifier in coupling.subsystem_ids
@@ -365,7 +344,29 @@ class SCQutipAdapter:
                 spline_kind="cubic",
                 label="exchange",
             )
-        raise BackendValidationError("pulse control has an unknown channel reference")
+        # `bind_control` above already rejected any kind other than
+        # drive/detuning/exchange, so only "drive" remains here.
+        phase = np.exp(
+            1j * frames.get(self._model.frame(self._model.subsystem_ids[ordinal]), 0.0)
+        )
+        envelope = phase * coefficients
+        x_operator = self._local_annihilation + self._local_annihilation.dag()
+        y_operator = -1j * (self._local_annihilation - self._local_annihilation.dag())
+        pulse = Pulse(
+            x_operator,
+            ordinal,
+            tlist=absolute_tlist,
+            coeff=envelope.real,
+            spline_kind="cubic",
+            label="drive",
+        )
+        pulse.add_coherent_noise(
+            y_operator,
+            ordinal,
+            tlist=absolute_tlist,
+            coeff=envelope.imag,
+        )
+        return pulse
 
     @staticmethod
     def _require_real(coefficients: np.ndarray, name: str) -> np.ndarray:

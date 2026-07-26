@@ -46,9 +46,35 @@ def test_pulse_block_rejects_invalid_timing_and_same_channel_summation():
         PulseBlock(
             model,
             1.0,
-            (SampledControl(model.coupling("q0", "q1"), [0.0, 1.0], [0.0, 0.0]),),
-            (model.resource("q0"), model.resource("q1")),
+            (
+                SampledControl(
+                    model.exchange_control("q0", "q1"), [0.0, 1.0], [0.0, 0.0]
+                ),
+            ),
+            (model.resource("q0"),),
         )
+    with pytest.raises(BackendValidationError, match="unknown channel reference"):
+        PulseBlock(
+            model,
+            1.0,
+            (SampledControl(model.coupling("q0", "q1"), [0.0, 1.0], [0.0, 0.0]),),
+            (model.resource("q0"), model.resource("q1"), model.coupling("q0", "q1")),
+        )
+
+
+def test_exchange_child_uses_only_the_exchange_control_not_the_pair_resource():
+    model = _model()
+    block = PulseBlock(
+        model,
+        1.0,
+        (SampledControl(model.exchange_control("q0", "q1"), [0.0, 1.0], [0.0, 0.0]),),
+        (model.resource("q0"), model.resource("q1"), model.coupling("q0", "q1")),
+    )
+    (exchange,) = block.children
+    assert exchange.channel == model.exchange_control("q0", "q1")
+    assert exchange.channel.kind == "exchange"
+    assert model.coupling("q0", "q1") in block.resource_claims
+    assert model.coupling("q0", "q1") not in {child.channel for child in block.children}
 
 
 def test_pulse_block_rejects_cross_model_handles_and_keeps_arrays_immutable():

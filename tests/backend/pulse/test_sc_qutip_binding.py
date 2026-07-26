@@ -152,7 +152,7 @@ def test_exchange_keeps_both_qutrit_leakage_paths_and_matches_reference():
         duration,
         (
             SampledControl(
-                model.coupling("q0", "q1"),
+                model.exchange_control("q0", "q1"),
                 [0.0, duration],
                 [amplitude, amplitude],
             ),

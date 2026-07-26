@@ -208,7 +208,12 @@ class SubsystemResourceRef:
 
     model_key: ModelKey
     ordinal: int
-    _token: object = field(repr=False, compare=False)
+    # Included in equality/hash on purpose: two refs with the same public
+    # model_key/ordinal but minted by different PhysicsModel instances (e.g.
+    # two builds from the same persisted key) must stay distinguishable, so a
+    # foreign handle is unequal to a same-key native one rather than merely
+    # rejected at bind time.
+    _token: object = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -218,7 +223,7 @@ class ControlChannelRef:
     model_key: ModelKey
     ordinal: int
     kind: str
-    _token: object = field(repr=False, compare=False)
+    _token: object = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -227,16 +232,22 @@ class FrameRef:
 
     model_key: ModelKey
     ordinal: int
-    _token: object = field(repr=False, compare=False)
+    _token: object = field(repr=False)
 
 
 @dataclass(frozen=True)
 class CouplingRef:
-    """Opaque exchange-resource handle minted by one model."""
+    """Opaque pair-resource handle minted by one model.
+
+    Used solely for scheduling-conflict resource claims on a declared
+    coupling edge; it is never a sampled child's channel. See
+    :class:`ControlChannelRef` (``kind="exchange"``) for the physical
+    exchange-drive channel.
+    """
 
     model_key: ModelKey
     ordinal: int
-    _token: object = field(repr=False, compare=False)
+    _token: object = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -253,6 +264,7 @@ class PhysicsModel:
     _resources: tuple[SubsystemResourceRef, ...] = field(repr=False)
     _drive_controls: tuple[ControlChannelRef, ...] = field(repr=False)
     _detuning_controls: tuple[ControlChannelRef, ...] = field(repr=False)
+    _exchange_controls: tuple[ControlChannelRef, ...] = field(repr=False)
     _frames: tuple[FrameRef, ...] = field(repr=False)
     _coupling_refs: tuple[CouplingRef, ...] = field(repr=False)
 
@@ -283,10 +295,23 @@ class PhysicsModel:
         return self._frames[self._subsystem_ordinal(subsystem_id)]
 
     def coupling(self, first: str, second: str) -> CouplingRef:
+        """Return the pair-resource handle for one declared coupling edge.
+
+        This is a scheduling-conflict resource claim only; it is never a
+        sampled child's channel. Use :meth:`exchange_control` for the
+        physical exchange-drive channel on the same edge.
+        """
+        return self._coupling_refs[self._coupling_ordinal(first, second)]
+
+    def exchange_control(self, first: str, second: str) -> ControlChannelRef:
+        """Return the physical exchange-drive channel for one coupling edge."""
+        return self._exchange_controls[self._coupling_ordinal(first, second)]
+
+    def _coupling_ordinal(self, first: str, second: str) -> int:
         edge = frozenset((first, second))
         for ordinal, coupling in enumerate(self.couplings):
             if frozenset(coupling.subsystem_ids) == edge:
-                return self._coupling_refs[ordinal]
+                return ordinal
         raise BackendValidationError(
             f"model has no declared coupling edge {first!r}-{second!r}"
         )
@@ -295,11 +320,12 @@ class PhysicsModel:
         return self._bind(reference, SubsystemResourceRef, self._resources, "resource")
 
     def bind_control(self, reference: ControlChannelRef) -> int:
-        controls = (
-            self._drive_controls
-            if isinstance(reference, ControlChannelRef) and reference.kind == "drive"
-            else self._detuning_controls
-        )
+        kind = reference.kind if isinstance(reference, ControlChannelRef) else None
+        controls = {
+            "drive": self._drive_controls,
+            "detuning": self._detuning_controls,
+            "exchange": self._exchange_controls,
+        }.get(kind, ())
         return self._bind(reference, ControlChannelRef, controls, "control")
 
     def bind_frame(self, reference: FrameRef) -> int:
@@ -391,6 +417,12 @@ class SCTransmonExchangeBuilder:
             ControlChannelRef(spec.key, ordinal, "detuning", token)
             for ordinal in range(len(subsystems))
         )
+        # Coupling-sized, not subsystem-sized: one exchange-drive channel per
+        # declared edge, ordinal-aligned with `couplings`/`_coupling_refs`.
+        exchange_controls = tuple(
+            ControlChannelRef(spec.key, ordinal, "exchange", token)
+            for ordinal in range(len(couplings))
+        )
         frames = tuple(
             FrameRef(spec.key, ordinal, token) for ordinal in range(len(subsystems))
         )
@@ -408,6 +440,7 @@ class SCTransmonExchangeBuilder:
             _resources=resources,
             _drive_controls=controls,
             _detuning_controls=detuning_controls,
+            _exchange_controls=exchange_controls,
             _frames=frames,
             _coupling_refs=coupling_refs,
         )

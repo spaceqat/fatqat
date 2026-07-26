@@ -43,7 +43,7 @@ def _freeze(values: Any, *, dtype: type = complex) -> np.ndarray:
 class SampledControl:
     """One sampled physical control with a local, independently timed grid."""
 
-    channel: ControlChannelRef | CouplingRef
+    channel: ControlChannelRef
     tlist: np.ndarray
     coefficients: np.ndarray
     start_offset_ns: float = 0.0
@@ -138,35 +138,29 @@ class PulseBlock:
             raise BackendValidationError(
                 "a positive-duration pulse block requires physical controls"
             )
-        seen_channels: set[ControlChannelRef | CouplingRef] = set()
+        seen_channels: set[ControlChannelRef] = set()
         required_claim_sets: list[set[ResourceClaim]] = []
-        bound_couplings: set[CouplingRef] = set()
         for child in self.children:
             if not isinstance(child, SampledControl):
                 raise BackendValidationError(
                     "pulse-block children must be SampledControl values"
                 )
-            if isinstance(child.channel, ControlChannelRef):
-                control_ordinal = self.model.bind_control(child.channel)
-                required_claim_sets.append(
-                    {self.model.resource(self.model.subsystem_ids[control_ordinal])}
+            if not isinstance(child.channel, ControlChannelRef):
+                raise BackendValidationError(
+                    "pulse control has an unknown channel reference"
                 )
-            elif isinstance(child.channel, CouplingRef):
-                coupling_ordinal = self.model.bind_coupling(child.channel)
-                bound_couplings.add(child.channel)
-                coupling = self.model.couplings[coupling_ordinal]
+            control_ordinal = self.model.bind_control(child.channel)
+            if child.channel.kind == "exchange":
+                coupling = self.model.couplings[control_ordinal]
                 required_claim_sets.append(
                     {
-                        child.channel,
-                        *(
-                            self.model.resource(subsystem_id)
-                            for subsystem_id in coupling.subsystem_ids
-                        ),
+                        self.model.resource(subsystem_id)
+                        for subsystem_id in coupling.subsystem_ids
                     }
                 )
             else:
-                raise BackendValidationError(
-                    "pulse control has an unknown channel reference"
+                required_claim_sets.append(
+                    {self.model.resource(self.model.subsystem_ids[control_ordinal])}
                 )
             if child.channel in seen_channels:
                 raise BackendValidationError(
@@ -182,10 +176,7 @@ class PulseBlock:
             if isinstance(resource, SubsystemResourceRef):
                 self.model.bind_resource(resource)
             elif isinstance(resource, CouplingRef):
-                # Already bound above if this claim is also a driven child's
-                # channel (the common iSwap/CZ case) - avoid re-binding it.
-                if resource not in bound_couplings:
-                    self.model.bind_coupling(resource)
+                self.model.bind_coupling(resource)
             else:
                 raise BackendValidationError(
                     "pulse block has an unknown resource claim"
@@ -343,7 +334,9 @@ def realize_native_operation(
         return PulseBlock(
             model=model,
             duration_ns=duration,
-            children=(SampledControl(model.coupling(first, second), tlist, exchange),),
+            children=(
+                SampledControl(model.exchange_control(first, second), tlist, exchange),
+            ),
             resource_claims=_pair_resource_claims(model, first, second),
             post_actions=(PhaseSwap(model.frame(first), model.frame(second)),),
             condition=condition,
@@ -376,7 +369,7 @@ def realize_native_operation(
             children=(
                 SampledControl(model.detuning_control(first), detuning_grid, detuning),
                 SampledControl(
-                    model.coupling(first, second), exchange_grid, exchange, ramp
+                    model.exchange_control(first, second), exchange_grid, exchange, ramp
                 ),
             ),
             resource_claims=_pair_resource_claims(model, first, second),
