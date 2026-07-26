@@ -78,6 +78,7 @@ from ..simulator import NumpyDMSimulator, NumpySVSimulator, Simulator
 from .backend_utils import (
     _LoweringContext,
     _PlanFacts,
+    _lower_measurement_boundary,
     _normalize_config,
     _resolve_condition,
 )
@@ -127,52 +128,6 @@ def _gate_implementation_for(
     return rule
 
 
-def _resolve_confusions(
-    measured_targets: tuple[RegisterRef, ...],
-    measured_indices: tuple[int, ...],
-    reported_digit_maps: tuple[tuple[int, ...], ...],
-    resource_layout: ResourceLayout,
-    engine_index_allocation: _EngineIndexAllocation,
-    noise_model: NoiseModel,
-) -> tuple[Any, ...] | None:
-    """Resolve per-subsystem readout confusion matrices for one measurement.
-
-    ``readout_error_for`` is the single source of truth per subsystem; this
-    function only collapses an all-``None`` resolution back to ``None`` so
-    the noise-free (and the common) case allocates nothing on the step.
-    Selection matches against each measured ref's logical identity and/or
-    resource-layout device label (never an engine index); the paired engine
-    index is used only for the dimension check and is never derived
-    backward from a device label.
-
-    Raises :py:exc:`~fatqat.errors.BackendValidationError` if a selected
-    matrix's dimension does not match the reported classical digit dimension.
-    """
-    resolved = []
-    for target, measured, reported_map in zip(
-        measured_targets, measured_indices, reported_digit_maps
-    ):
-        confusion = noise_model.readout_error_for(target, resource_layout)
-        if confusion is not None:
-            physical_dim = engine_index_allocation.system_dims[measured]
-            if len(reported_map) != physical_dim:
-                raise BackendValidationError(
-                    f"reported digit map for subsystem {measured} has length "
-                    f"{len(reported_map)}, expected physical dimension {physical_dim}"
-                )
-            reported_dim = max(reported_map) + 1
-            if confusion.shape != (reported_dim, reported_dim):
-                raise BackendValidationError(
-                    f"readout confusion matrix of shape {confusion.shape} "
-                    f"selected for subsystem {measured} has reported classical "
-                    f"dimension {reported_dim}"
-                )
-        resolved.append(confusion)
-    if all(confusion is None for confusion in resolved):
-        return None
-    return tuple(resolved)
-
-
 def _lower_measurement(
     step: Measurement,
     resource_layout: ResourceLayout,
@@ -183,16 +138,12 @@ def _lower_measurement(
     measured_indices = tuple(
         engine_index_allocation.subsystem_index(q) for q in step.targets
     )
-    classical_indices = tuple(
-        engine_index_allocation.clbit_index(c) for c in step.outputs
-    )
     reported_digit_maps = tuple(
         tuple(range(engine_index_allocation.system_dims[measured]))
         for measured in measured_indices
     )
-    confusions = _resolve_confusions(
-        step.targets,
-        measured_indices,
+    measured_indices, classical_indices, confusions = _lower_measurement_boundary(
+        step,
         reported_digit_maps,
         resource_layout,
         engine_index_allocation,

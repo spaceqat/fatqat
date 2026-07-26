@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import fatqat as fq
+from fatqat.backends.backend_utils import _LoweringContext
 from fatqat.backends.pulse.backend import PulseBackend
 from fatqat.backends.pulse.engine_contract import PulseSimulationConfig
 from fatqat.backends.pulse.superconducting import (
@@ -79,9 +80,10 @@ def test_layout_binds_model_ids_while_engine_indices_stay_private():
     program.add(fq.ops.iSwap, (0, 1))
     layout = backend._resolve_resource_layout(program)
     allocation = backend._allocate_engine_indices(program)
-    plan, _ = backend._lower_program(
-        program, resource_layout=layout, engine_index_allocation=allocation
+    context = _LoweringContext(
+        resource_layout=layout, engine_index_allocation=allocation
     )
+    plan, _ = backend._lower_program(program, context=context)
 
     assert layout.device_operands((program.qreg[0][0], program.qreg[0][1])) == (
         "q0",

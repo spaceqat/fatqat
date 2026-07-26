@@ -5,9 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..._engine_index_allocation import _EngineIndexAllocation
-from ...backends.backend_utils import _resolve_condition
+from ...backends.backend_utils import _lower_measurement_boundary, _resolve_condition
 from ...backends.steps import MeasurementStep, ResetStep
-from ...errors import BackendValidationError
 from ...noise import NoiseModel
 from ...operations.barrier import BarrierGate
 from ...operations.measurement import Measurement
@@ -94,29 +93,28 @@ def _lower_measurement(
     engine_index_allocation: _EngineIndexAllocation,
     noise_model: NoiseModel,
 ) -> MeasurementStep:
-    """Preserve the shared measurement boundary in the unplaced pulse plan."""
-    measured_indices = tuple(
-        engine_index_allocation.subsystem_index(target) for target in step.targets
+    """Preserve the shared measurement boundary in the unplaced pulse plan.
+
+    The future qutrit engine collapses physical 0/1/2 outcomes, while this
+    shared boundary writes one reported bit before confusion, so the
+    reported-digit map is always the literal ``(0, 1, 1)`` qutrit-to-bit map
+    - never the matrix family's ``None`` identity default. A confusion
+    matrix selected for a measured subsystem must therefore be shaped
+    ``(2, 2)``; that requirement is enforced by the shared boundary helper's
+    general "shape must match the reported dimension" check, since
+    ``max((0, 1, 1)) + 1 == 2`` is exactly pulse's v0.1 restriction.
+    """
+    reported_digit_maps = tuple((0, 1, 1) for _ in step.targets)
+    measured_indices, classical_indices, confusions = _lower_measurement_boundary(
+        step,
+        reported_digit_maps,
+        resource_layout,
+        engine_index_allocation,
+        noise_model,
     )
-    confusions = []
-    for target in step.targets:
-        confusion = noise_model.readout_error_for(target, resource_layout)
-        if confusion is not None and confusion.shape != (2, 2):
-            raise BackendValidationError(
-                "pulse v0.1 readout confusion matrices must use reported bit dimension 2"
-            )
-        confusions.append(confusion)
     return MeasurementStep(
         measured_indices=measured_indices,
-        classical_indices=tuple(
-            engine_index_allocation.clbit_index(output) for output in step.outputs
-        ),
-        # The future qutrit engine collapses physical 0/1/2 outcomes, while
-        # this shared boundary writes one reported bit before confusion.
-        reported_digit_maps=tuple((0, 1, 1) for _ in measured_indices),
-        confusions=(
-            None
-            if all(confusion is None for confusion in confusions)
-            else tuple(confusions)
-        ),
+        classical_indices=classical_indices,
+        reported_digit_maps=reported_digit_maps,
+        confusions=confusions,
     )

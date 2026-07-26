@@ -7,6 +7,9 @@ from typing import Any
 
 from .._engine_index_allocation import _EngineIndexAllocation
 from ..errors import BackendValidationError
+from ..noise import NoiseModel
+from ..operations.measurement import Measurement
+from ..registers import RegisterRef
 from ..resource_layout import ResourceLayout
 
 
@@ -102,3 +105,84 @@ def _resolve_condition(
     return tuple(
         (engine_index_allocation.clbit_index(ref), val) for ref, val in condition
     )
+
+
+def _resolve_confusions(
+    measured_targets: tuple[RegisterRef, ...],
+    measured_indices: tuple[int, ...],
+    reported_digit_maps: tuple[tuple[int, ...], ...],
+    resource_layout: ResourceLayout,
+    noise_model: NoiseModel,
+) -> tuple[Any, ...] | None:
+    """Resolve per-subsystem readout confusion matrices for one measurement.
+
+    ``readout_error_for`` is the single source of truth per subsystem; this
+    function only collapses an all-``None`` resolution back to ``None`` so
+    the noise-free (and the common) case allocates nothing on the step.
+    Selection matches against each measured ref's logical identity and/or
+    resource-layout device label (never an engine index); the paired engine
+    index is used only in the error message, never derived backward from a
+    device label.
+
+    Shared by the matrix and pulse families: each caller supplies its own
+    ``reported_digit_maps`` (matrix's per-subsystem identity range, pulse's
+    literal qutrit-to-bit map), and this validates a selected confusion
+    matrix's shape against the reported dimension implied by that map
+    (``max(reported_map) + 1``) - it does not also require the map's length
+    to equal any subsystem's physical Hilbert dimension, since pulse's
+    program-declared (qubit) dimension and its simulated (qutrit) dimension
+    deliberately differ.
+
+    Raises :py:exc:`~fatqat.errors.BackendValidationError` if a selected
+    matrix's dimension does not match the reported classical digit dimension.
+    """
+    resolved = []
+    for target, measured, reported_map in zip(
+        measured_targets, measured_indices, reported_digit_maps
+    ):
+        confusion = noise_model.readout_error_for(target, resource_layout)
+        if confusion is not None:
+            reported_dim = max(reported_map) + 1
+            if confusion.shape != (reported_dim, reported_dim):
+                raise BackendValidationError(
+                    f"readout confusion matrix of shape {confusion.shape} "
+                    f"selected for subsystem {measured} has reported classical "
+                    f"dimension {reported_dim}"
+                )
+        resolved.append(confusion)
+    if all(confusion is None for confusion in resolved):
+        return None
+    return tuple(resolved)
+
+
+def _lower_measurement_boundary(
+    step: Measurement,
+    reported_digit_maps: tuple[tuple[int, ...], ...],
+    resource_layout: ResourceLayout,
+    engine_index_allocation: _EngineIndexAllocation,
+    noise_model: NoiseModel,
+) -> tuple[tuple[int, ...], tuple[int, ...], tuple[Any, ...] | None]:
+    """Resolve the measurement-lowering boundary shared by both backend families.
+
+    Returns ``(measured_indices, classical_indices, confusions)``. The caller
+    decides what to store as `MeasurementStep.reported_digit_maps`: matrix's
+    noise-free identity case must keep passing ``None`` (the compatibility
+    default a numba-compiled fast path recognizes), while pulse always
+    passes its literal qutrit-to-bit map. This function only resolves engine
+    indices and validates/collapses readout confusion against the caller's
+    supplied map; it never decides the step's stored map itself.
+    """
+    measured_indices = tuple(
+        engine_index_allocation.subsystem_index(target) for target in step.targets
+    )
+    classical_indices = tuple(
+        engine_index_allocation.clbit_index(output) for output in step.outputs
+    )
+    confusions = _resolve_confusions(
+        step.targets,
+        measured_indices,
+        reported_digit_maps,
+        resource_layout,
+        noise_model,
+    )
+    return measured_indices, classical_indices, confusions

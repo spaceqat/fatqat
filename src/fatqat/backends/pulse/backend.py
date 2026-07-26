@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from ..._engine_index_allocation import _EngineIndexAllocation
-from ...backends.backend_utils import _normalize_config
+from ...backends.backend_utils import _LoweringContext, _normalize_config
 from ...errors import BackendExecutionError, BackendValidationError
 from ...job import Job
 from ...noise import NoiseModel, NoiseSupportReport, ThermalRelaxation
@@ -70,20 +70,28 @@ class PulseBackend:
         self,
         program: Program,
         *,
-        resource_layout: ResourceLayout | None = None,
-        engine_index_allocation: _EngineIndexAllocation | None = None,
+        context: _LoweringContext | None = None,
     ) -> tuple[list[PulsePlanStep], PulsePlanFacts]:
-        if resource_layout is None:
-            resource_layout = self._resolve_resource_layout(program)
-        if engine_index_allocation is None:
-            engine_index_allocation = self._allocate_engine_indices(program)
+        """Prepare and lower one program using the backend's resource policy.
+
+        ``context`` lets a caller that already resolved this run's
+        `ResourceLayout` and `_EngineIndexAllocation` (see ``run()``) thread
+        both through unchanged, so lowering never re-resolves either. When
+        omitted (standalone use, e.g. in tests), both are resolved once here
+        - always together, never as two independently-defaulted halves.
+        """
+        if context is None:
+            context = _LoweringContext(
+                resource_layout=self._resolve_resource_layout(program),
+                engine_index_allocation=self._allocate_engine_indices(program),
+            )
         return lower_program(
             program,
             model=self.model,
             calibration=self.calibration,
             noise_model=self.noise,
-            resource_layout=resource_layout,
-            engine_index_allocation=engine_index_allocation,
+            resource_layout=context.resource_layout,
+            engine_index_allocation=context.engine_index_allocation,
         )
 
     def run(
@@ -113,11 +121,11 @@ class PulseBackend:
         report = self.validate_noise(self.noise)
         if not report.supported:
             raise BackendValidationError("; ".join(report.warnings))
-        plan, facts = self._lower_program(
-            program,
+        context = _LoweringContext(
             resource_layout=resource_layout,
             engine_index_allocation=allocation,
         )
+        plan, facts = self._lower_program(program, context=context)
         request = self._validate(result, shots, facts)
         engine_to_model = self._engine_to_model(program, resource_layout, allocation)
         continuous_noise = self._continuous_noise(program, resource_layout)
