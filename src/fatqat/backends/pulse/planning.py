@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from ..._engine_index_allocation import _EngineIndexAllocation
 from ...backends.backend_utils import _resolve_condition
@@ -112,6 +111,9 @@ def _lower_measurement(
         classical_indices=tuple(
             engine_index_allocation.clbit_index(output) for output in step.outputs
         ),
+        # The future qutrit engine collapses physical 0/1/2 outcomes, while
+        # this shared boundary writes one reported bit before confusion.
+        reported_digit_maps=tuple((0, 1, 1) for _ in measured_indices),
         confusions=(
             None
             if all(confusion is None for confusion in confusions)
