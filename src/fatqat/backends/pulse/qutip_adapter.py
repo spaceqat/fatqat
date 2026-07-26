@@ -47,32 +47,76 @@ class SCQutipAdapter:
         """Return the current physical qutrit density matrix as a NumPy copy."""
         return np.array(self._state.full(), dtype=complex, copy=True)
 
-    def evolve(self, run: _PlacedPulseRun) -> None:
+    def evolve(
+        self, run: _PlacedPulseRun, enabled_blocks: tuple[bool, ...] | None = None
+    ) -> None:
         """Bind and evolve one placed continuous run, retaining private state."""
         if run.start_ns < self._time_ns - _EPSILON:
             raise BackendValidationError("placed pulse runs must be time ordered")
         self._solve((), self._time_ns, run.start_ns)
         terms = []
         action_events: list[tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]] = []
+        if enabled_blocks is None:
+            enabled_blocks = (True,) * len(run.blocks)
+        if len(enabled_blocks) != len(run.blocks):
+            raise BackendValidationError(
+                "pulse-run enabled-block count does not match blocks"
+            )
         ordered = sorted(
             enumerate(run.blocks), key=lambda item: (item[1].start_ns, item[0])
         )
         for source_index, block in ordered:
             assert block.start_ns is not None
             self._apply_actions_before(action_events, block.start_ns)
-            for child in block.children:
-                terms.extend(self._bind_child(child, block.start_ns))
-            action_events.append(
-                (
-                    block.start_ns + block.duration_ns,
-                    source_index,
-                    block.post_actions,
+            if enabled_blocks[source_index]:
+                for child in block.children:
+                    terms.extend(self._bind_child(child, block.start_ns))
+                action_events.append(
+                    (
+                        block.start_ns + block.duration_ns,
+                        source_index,
+                        block.post_actions,
+                    )
                 )
-            )
         self._solve(tuple(terms), run.start_ns, run.end_ns)
         for _end, _source, actions in sorted(action_events, key=lambda item: item[:2]):
             self._apply_actions(actions)
         self._time_ns = run.end_ns
+
+    def measure(self, ordinal: int, rng: np.random.Generator) -> int:
+        """Sample and collapse one physical qutrit, returning its 0/1/2 outcome."""
+        number = self._model.bind_resource(
+            self._model.resource(self._model.subsystem_ids[ordinal])
+        )
+        probabilities = []
+        projectors = []
+        for level in range(self._model.physical_dimension):
+            local = np.zeros((self._model.physical_dimension,) * 2, dtype=complex)
+            local[level, level] = 1.0
+            projector = self._local(number, local)
+            projectors.append(projector)
+            probabilities.append(float((projector * self._state).tr().real))
+        outcome = int(
+            rng.choice(
+                self._model.physical_dimension,
+                p=np.maximum(probabilities, 0) / sum(probabilities),
+            )
+        )
+        projector = projectors[outcome]
+        self._state = projector * self._state * projector
+        self._state = self._state / self._state.tr()
+        return outcome
+
+    def reset(self, ordinal: int) -> None:
+        """Reset one physical qutrit to its model ground state."""
+        dimension = self._model.physical_dimension
+        replacement = 0 * self._state
+        for level in range(dimension):
+            local = np.zeros((dimension, dimension), dtype=complex)
+            local[0, level] = 1.0
+            kraus = self._local(ordinal, local)
+            replacement += kraus * self._state * kraus.dag()
+        self._state = replacement
 
     def _apply_actions_before(
         self,

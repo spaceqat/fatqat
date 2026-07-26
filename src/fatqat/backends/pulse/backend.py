@@ -10,13 +10,15 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
+import numpy as np
+
 from ..._engine_index_allocation import _EngineIndexAllocation
 from ...backends.backend_utils import _normalize_config
 from ...errors import BackendValidationError
 from ...job import Job
 from ...noise import NoiseModel, NoiseSupportReport
 from ...program import Program
-from ...result import Result
+from ...result import Result, reduce_to_counts, counts_dict_from_arrays
 from ...resource_layout import ResourceLayout
 from .engine_contract import (
     PulseResultConfig,
@@ -24,6 +26,7 @@ from .engine_contract import (
     PulseSimulationConfig,
 )
 from .planning import PulsePlanFacts, PulsePlanStep, lower_program
+from ...backends.steps import MeasurementStep, ResetStep
 from .execution import execute_with_boundaries
 from .qutip_adapter import SCQutipAdapter
 from .superconducting import CalibrationSpec, PhysicsModel
@@ -124,7 +127,9 @@ class PulseBackend:
         )
         self._validate(result, shots, facts)
         try:
-            return Job.done(self._execute_continuous(plan, simulation, result, shots))
+            return Job.done(
+                self._execute(plan, facts, simulation, result, shots, allocation)
+            )
         except Exception as exc:  # execution failures belong on the eager Job
             return Job.failed(exc)
 
@@ -151,28 +156,76 @@ class PulseBackend:
             )
         return PulseResultRequest(counts=counts, density_matrix=density_matrix)
 
-    def _execute_continuous(
+    def _execute(
         self,
         plan: list[PulsePlanStep],
+        facts: PulsePlanFacts,
         simulation: PulseSimulationConfig,
         result: PulseResultConfig,
         shots: int,
+        allocation: _EngineIndexAllocation,
     ) -> Result:
-        """Run an ideal boundary-free continuous region in private qutrit space."""
-        request = self._validate(result, shots, PulsePlanFacts(False, False, False))
-        adapter = SCQutipAdapter(self.model)
+        """Replay continuous runs around physical boundaries in serial shot order."""
+        request = self._validate(result, shots, facts)
+        repetitions = shots if request.counts else 1
+        rng = np.random.default_rng(simulation.seed)
+        rows = []
+        density_matrix = None
+        for _ in range(repetitions):
+            adapter = SCQutipAdapter(self.model)
+            classical = np.zeros(allocation.n_clbits, dtype=int)
 
-        def unsupported_boundary(_step: object, _time_ns: float) -> None:
-            raise RuntimeError(
-                "physical measurement and reset execution is unavailable until dynamic replay is implemented"
-            )
+            def execute_run(run: object) -> None:
+                blocks = run.blocks
+                enabled = tuple(
+                    block.condition is None
+                    or all(
+                        classical[index] == value for index, value in block.condition
+                    )
+                    for block in blocks
+                )
+                adapter.evolve(run, enabled)
 
-        execute_with_boundaries(plan, adapter.evolve, unsupported_boundary)
-        density_matrix = adapter.density_matrix()
+            def execute_boundary(
+                step: MeasurementStep | ResetStep, _time_ns: float
+            ) -> None:
+                if isinstance(step, MeasurementStep):
+                    maps = step.reported_digit_maps or tuple(
+                        (0, 1) for _ in step.measured_indices
+                    )
+                    confusions = step.confusions or (None,) * len(step.measured_indices)
+                    for physical_index, classical_index, digit_map, confusion in zip(
+                        step.measured_indices, step.classical_indices, maps, confusions
+                    ):
+                        reported = digit_map[adapter.measure(physical_index, rng)]
+                        if confusion is not None:
+                            reported = int(
+                                rng.choice(len(confusion), p=confusion[:, reported])
+                            )
+                        classical[classical_index] = reported
+                else:
+                    if step.condition is None or all(
+                        classical[index] == value for index, value in step.condition
+                    ):
+                        for physical_index in step.reset_indices:
+                            adapter.reset(physical_index)
+
+            execute_with_boundaries(plan, execute_run, execute_boundary)
+            density_matrix = adapter.density_matrix()
+            if request.counts:
+                rows.append(classical)
+        counts = None
+        if request.counts:
+            keys, values = reduce_to_counts(rows)
+            counts = counts_dict_from_arrays(keys, values)
         available = {"density_matrix"} if request.density_matrix else set()
+        if request.counts:
+            available.add("counts")
         return Result(
+            counts=counts,
             density_matrix=density_matrix if request.density_matrix else None,
             available=frozenset(available),
+            classical_dims=allocation.classical_dims,
             metadata={
                 "backend_name": type(self).__name__,
                 "shots": shots,
