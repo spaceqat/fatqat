@@ -1,112 +1,66 @@
 # Running and results
 
-The normal execution path is:
-
-{py:class}`~fatqat.Program` → ``backend.run(...)`` → {py:class}`~fatqat.Job`
-→ ``job.result()`` → {py:class}`~fatqat.Result` → ``get_*()``
-
-A backend validates a program and returns a {py:class}`~fatqat.Job`. For ordinary use, call
-``job.result()`` to obtain the {py:class}`~fatqat.Result` whose accessors return the fields you
-requested. Job status and failure lifecycle controls are documented as an
-experimental API rather than part of the normal workflow.
+## Running a program
 
 ```python
-backend = fq.backends.SimulatorBackend()
-job = backend.run(program, shots=1000)
-result = job.result()
+backend = fq.backends.SimulatorBackend("SV")
+result = backend.run(program, shots=1000).result()
 ```
 
-``shots`` is the number of repetitions used to produce counts. Set ``seed``
-when you want a sampled run to be reproducible.
+{py:meth}`~fatqat.backends.SimulatorBackend.run` returns a
+{py:class}`~fatqat.Job` immediately. Phase 1 jobs are already terminal, so
+{py:meth}`~fatqat.Job.result` either returns a {py:class}`~fatqat.Result` or
+re-raises the exception from a failed run. `run()` itself still raises
+directly for validation failures, such as an unsupported operation or a
+configuration incompatible with the requested result fields.
 
-## Choose output fields
+Key arguments:
 
-Use ``result_config`` to make the output explicit. The useful fields depend
-on the backend method:
+- `shots`: how many logical shots to run when counts are requested. Ignored
+  for a purely deterministic final-state request.
+- `simulation_config`: a plain dict for simulator-only controls: `seed`,
+  `max_workers`, and `parallel_mode`. A fixed seed makes sampling
+  reproducible regardless of serial or worker-process execution.
+- `result_config`: a plain dict selecting which result artifacts to produce.
 
-| You need | Backend and request | Read it with |
-| --- | --- | --- |
-| sampled measurement counts | any simulator backend; `{"counts": True}` | `get_counts()` |
-| a pure statevector | {py:class}`~fatqat.backends.SimulatorBackend`; ``{"counts": False, "statevector": True}`` | ``get_statevector()`` |
-| an exact density matrix | {py:class}`~fatqat.backends.SimulatorBackend` (``method="density_matrix"``); ``{"counts": False, "density_matrix": True}`` | ``get_density_matrix()`` |
+## Choosing result fields
 
-When `result_config` is omitted, counts are normally produced for a program
-with measurements. An unmeasured, non-stochastic statevector program
-normally produces its statevector. Make requests explicit in reusable
-programs so the expected result is clear.
+`result_config` accepts `counts` and `final_state`, each `True`, `False`, or
+omitted for the backend default:
 
-### Counts
-
-```python
-import fatqat as fq
-
-program = fq.Program(1, 1)
-program.add(fq.ops.X, 0)
-program.add_measurement(0, 0)
-
-result = fq.backends.SimulatorBackend().run(
-    program,
-    shots=100,
-    result_config={"counts": True},
-    seed=7,
-).result()
-print(result.get_counts())  # {"1": 100}
-```
-
-### Statevector
+- `counts` defaults to `True` when the program has at least one measurement,
+  `False` otherwise.
+- `final_state` defaults to `True` only when the program is non-stochastic.
+  Its concrete representation follows the backend's `method`: a statevector
+  or density matrix.
+- Requesting `final_state=True` for a stochastic program is only valid for
+  `shots == 1`, since only one shot's post-measurement state is returned.
 
 ```python
-import fatqat as fq
-
-program = fq.Program(1)
-program.add(fq.ops.H, 0)
-
-result = fq.backends.SimulatorBackend().run(
-    program,
-    result_config={"counts": False, "statevector": True},
-).result()
-print(result.get_statevector())
-```
-
-A measurement, reset, or statevector noise can make the final state
-stochastic. If you ask for a statevector in that situation, use `shots=1`
-so that the result represents one shot.
-
-### Density matrix
-
-```python
-import fatqat as fq
-
-program = fq.Program(1)
-program.add(fq.ops.H, 0)
-
-backend = fq.backends.SimulatorBackend(method="density_matrix")
 result = backend.run(
     program,
-    result_config={"counts": False, "density_matrix": True},
+    result_config={"counts": False, "final_state": True},
 ).result()
-print(result.get_density_matrix())
 ```
 
-Use the density-matrix method when you need an exact mixed-state result,
-such as a noisy distribution. It uses more memory than a statevector.
+## Reading a Result
 
-## Read count strings
+```python
+result.get_counts()             # {"00": 512, "11": 488}, little-endian keys
+result.get_statevector()        # numpy array, if produced
+result.get_data("samples")      # backend-specific artifact, if produced
+result.available_data           # frozenset of field names actually present
+result.metadata                 # shots, backend name, effective configurations
+```
 
-{py:meth}`~fatqat.Result.get_counts` displays classical bits in little-endian order: classical
-bit 0 is the character on the right. With two classical bits, a count key
-of `"01"` means clbit 1 is `0` and clbit 0 is `1`.
+Calling an accessor for a field that wasn't produced raises
+{py:exc}`~fatqat.errors.ResultFieldUnavailableError` rather than returning
+`None`; check `available_data` first if a field is optional in your workflow.
 
-Use {py:meth}`~fatqat.Result.get_counts_as_tuples` when a tuple in increasing classical-bit order
-is clearer. The same `"01"` outcome is `(1, 0)`: first clbit 0, then
-clbit 1.
+If you request counts on a program where some declared clbit was never
+written by a measurement, the backend still returns zero-filled counts for
+that bit but raises a {py:exc}`~fatqat.errors.NoMeasurementWarning`—usually a
+sign a measurement was forgotten.
 
-## Check what is available
-
-{py:attr}`~fatqat.Result.available_data` lists the fields the backend actually produced, and
-{py:attr}`~fatqat.Result.metadata` records the effective request and run context. An accessor
-such as {py:meth}`~fatqat.Result.get_statevector` raises {py:class}`~fatqat.errors.ResultFieldUnavailableError` rather
-than returning an empty value when that field was not produced.
-
-See [Troubleshooting](troubleshooting.md) if a requested result field is
-unavailable.
+For qudits, custom matrix implementations, and parallel shot execution, see
+[Advanced](advanced.md).
