@@ -75,7 +75,7 @@ def _assert_close(ours: np.ndarray, theirs: np.ndarray) -> None:
 def _fatqat_state(program: fq.Program, runtime: str) -> np.ndarray:
     return (
         fq.backends.SimulatorBackend(method="SV", runtime=runtime)
-        .run(program, result_config={"counts": False, "statevector": True})
+        .run(program, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
     )
@@ -88,7 +88,7 @@ def _fatqat_rho(
 ) -> np.ndarray:
     backend = fq.backends.SimulatorBackend(method="DM", runtime=runtime, noise=noise)
     return (
-        backend.run(program, result_config={"counts": False, "density_matrix": True})
+        backend.run(program, result_config={"counts": False, "final_state": True})
         .result()
         .get_density_matrix()
     )

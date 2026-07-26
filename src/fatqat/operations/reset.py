@@ -28,7 +28,7 @@ class ResetGate(Operation):
         >>> result = fq.backends.SimulatorBackend("SV").run(
         ...     program,
         ...     shots=1,
-        ...     result_config={"counts": False, "statevector": True},
+        ...     result_config={"counts": False, "final_state": True},
         ... ).result()
         >>> result.get_statevector()
         array([1.+0.j, 0.+0.j])

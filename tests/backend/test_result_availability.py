@@ -24,7 +24,9 @@ def test_statevector_not_attached_by_default_with_measurement():
     p = Program(1, 1)
     p.add(ops.H, 0)
     p.add_measurement(0, 0)
-    result = SimulatorBackend("SV").run(p, shots=10, seed=0).result()
+    result = (
+        SimulatorBackend("SV").run(p, shots=10, simulation_config={"seed": 0}).result()
+    )
     with pytest.raises(fq.errors.ResultFieldUnavailableError):
         result.get_statevector()
 
@@ -33,10 +35,12 @@ def test_result_metadata_records_backend_shots_and_config():
     p = Program(1, 1)
     p.add(ops.X, 0)
     p.add_measurement(0, 0)
-    config = {"counts": True, "statevector": False}
+    config = {"counts": True, "final_state": False}
 
     result = (
-        SimulatorBackend("SV").run(p, shots=7, seed=0, result_config=config).result()
+        SimulatorBackend("SV")
+        .run(p, shots=7, simulation_config={"seed": 0}, result_config=config)
+        .result()
     )
 
     assert result.metadata["shots"] == 7
@@ -54,34 +58,22 @@ def test_run_accepts_result_config_as_dict():
         .run(
             p,
             shots=7,
-            seed=0,
-            result_config={"counts": True, "statevector": False},
+            simulation_config={"seed": 0},
+            result_config={"counts": True, "final_state": False},
         )
         .result()
     )
 
     assert result.get_counts() == {"1": 7}
-    assert result.metadata["result_config"] == {"counts": True, "statevector": False}
+    assert result.metadata["result_config"] == {"counts": True, "final_state": False}
 
 
-def test_run_warns_and_ignores_unknown_result_config_keys():
+def test_run_rejects_unknown_result_config_keys():
     p = Program(1)
     p.add(ops.H, 0)
 
-    with pytest.warns(UserWarning, match="ignored unsupported result_config options"):
-        result = (
-            SimulatorBackend("SV")
-            .run(
-                p,
-                result_config={"counts": False, "gpu": True},
-            )
-            .result()
-        )
-
-    assert result.metadata["result_config"] == {
-        "counts": False,
-        "statevector": None,
-    }
+    with pytest.raises(BackendValidationError, match="does not support result_config"):
+        SimulatorBackend("SV").run(p, result_config={"counts": False, "gpu": True})
 
 
 def test_run_rejects_non_dict_result_config():
@@ -101,8 +93,8 @@ def test_projected_statevector_shots_one():
         .run(
             p,
             shots=1,
-            seed=0,
-            result_config={"counts": True, "statevector": True},
+            simulation_config={"seed": 0},
+            result_config={"counts": True, "final_state": True},
         )
         .result()
         .get_statevector()
@@ -118,7 +110,7 @@ def test_statevector_with_measurement_and_many_shots_rejected():
     p.add_measurement(0, 0)
     with pytest.raises(BackendValidationError):
         SimulatorBackend("SV").run(
-            p, shots=10, result_config={"counts": True, "statevector": True}
+            p, shots=10, result_config={"counts": True, "final_state": True}
         )
 
 
@@ -130,8 +122,8 @@ def test_no_measurement_warning_when_counts_only_and_no_state():
         SimulatorBackend("SV").run(
             p,
             shots=10,
-            seed=0,
-            result_config={"counts": True, "statevector": False},
+            simulation_config={"seed": 0},
+            result_config={"counts": True, "final_state": False},
         ).result()
     assert any(issubclass(w.category, NoMeasurementWarning) for w in caught)
 
@@ -142,7 +134,7 @@ def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():
     program.add(fq.ops.H, qt[0])  # frontend must NOT raise here
     with pytest.raises(BackendValidationError) as exc:
         fq.backends.SimulatorBackend("SV").run(
-            program, result_config={"counts": False, "statevector": True}
+            program, result_config={"counts": False, "final_state": True}
         ).result()
     msg = str(exc.value)
     assert "H" in msg and "3" in msg  # names the op and the target dimension

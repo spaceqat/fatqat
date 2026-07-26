@@ -99,7 +99,7 @@ def test_fast_path_counts_reproduce_the_confusion_rate(method):
     shots = 10_000
     counts = (
         SimulatorBackend(method=method, noise=_readout_model(_FLIP_30))
-        .run(_measured_program(), shots=shots, seed=2)
+        .run(_measured_program(), shots=shots, simulation_config={"seed": 2})
         .result()
         .get_counts()
     )
@@ -119,7 +119,7 @@ def test_specific_target_confuses_only_its_subsystem():
     program.add_measurement((0, 1), (0, 1))
     counts = (
         SimulatorBackend(noise=_readout_model(always_flip, target=1))
-        .run(program, shots=200, seed=4)
+        .run(program, shots=200, simulation_config={"seed": 4})
         .result()
         .get_counts()
     )
@@ -139,7 +139,7 @@ def test_feedforward_reads_the_reported_bit_not_the_true_one():
     program.add_measurement(1, 1)
     counts = (
         SimulatorBackend(method="SV", noise=_readout_model(_ALWAYS_ONE, target=0))
-        .run(program, shots=100, seed=3)
+        .run(program, shots=100, simulation_config={"seed": 3})
         .result()
         .get_counts()
     )
@@ -156,8 +156,8 @@ def test_collapse_and_state_export_keep_the_true_outcome():
         .run(
             program,
             shots=1,
-            seed=5,
-            result_config={"counts": True, "statevector": True},
+            simulation_config={"seed": 5},
+            result_config={"counts": True, "final_state": True},
         )
         .result()
     )
@@ -181,7 +181,7 @@ def test_reused_qubit_evolves_from_the_true_state():
     program.add_measurement(0, 1)
     counts = (
         SimulatorBackend(method="SV", noise=noise)
-        .run(program, shots=50, seed=6)
+        .run(program, shots=50, simulation_config={"seed": 6})
         .result()
         .get_counts()
     )
@@ -196,14 +196,16 @@ def test_parallel_dynamic_shots_match_serial_with_readout_error():
     program.add(fq.ops.X, 0, condition=(0, 1))  # forces the dynamic path
     program.add_measurement(0, 1)
     serial = (
-        SimulatorBackend(options={"parallel_mode": "serial"}, noise=noise)
-        .run(program, shots=8, seed=13)
+        SimulatorBackend(noise=noise)
+        .run(
+            program, shots=8, simulation_config={"seed": 13, "parallel_mode": "serial"}
+        )
         .result()
         .get_counts()
     )
     parallel = (
-        SimulatorBackend(options={"max_workers": 2}, noise=noise)
-        .run(program, shots=8, seed=13)
+        SimulatorBackend(noise=noise)
+        .run(program, shots=8, simulation_config={"seed": 13, "max_workers": 2})
         .result()
         .get_counts()
     )

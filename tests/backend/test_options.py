@@ -7,32 +7,41 @@ from fatqat.backends.engine_contract import _EngineConfig, _StateVectorResultReq
 from fatqat.simulator.parallel import _planned_workers
 
 
-def test_backend_accepts_known_options():
-    backend = SimulatorBackend(
-        "SV", options={"max_workers": 1, "parallel_mode": "serial"}
+def test_run_accepts_known_simulation_config_without_mutating_backend():
+    backend = SimulatorBackend("SV")
+    backend.run(
+        fq.Program(1),
+        simulation_config={"max_workers": 1, "parallel_mode": "serial"},
     )
-
-    assert backend._simulator.config.max_workers == 1
-    assert backend._simulator.config.parallel_mode == "serial"
-
-
-def test_backend_warns_and_ignores_unknown_options():
-    with pytest.warns(UserWarning, match="ignored unsupported backend options"):
-        backend = SimulatorBackend("SV", options={"gpu": True, "foo": 3})
 
     assert backend._simulator.config.max_workers is None
     assert backend._simulator.config.parallel_mode == "auto"
 
 
-def test_serial_backend_option_runs_dynamic_program():
+def test_run_rejects_unknown_simulation_config():
+    with pytest.raises(
+        fq.errors.BackendValidationError, match="does not support simulation_config"
+    ):
+        SimulatorBackend("SV").run(fq.Program(1), simulation_config={"gpu": True})
+
+
+def test_serial_simulation_config_runs_dynamic_program():
     p = fq.Program(1, 1)
     p.add(fq.ops.H, 0)
     p.add_measurement(0, 0)
     p.add(fq.ops.Reset, 0)
 
     counts = (
-        SimulatorBackend("SV", options={"max_workers": 4, "parallel_mode": "serial"})
-        .run(p, shots=16, seed=123)
+        SimulatorBackend("SV")
+        .run(
+            p,
+            shots=16,
+            simulation_config={
+                "seed": 123,
+                "max_workers": 4,
+                "parallel_mode": "serial",
+            },
+        )
         .result()
         .get_counts()
     )
@@ -60,9 +69,14 @@ def test_planned_workers_clamps_explicit_workers_to_iterations():
     assert workers == 3
 
 
-def test_backend_rejects_non_dict_options():
+def test_run_rejects_non_dict_simulation_config():
     with pytest.raises(TypeError, match="dict or None"):
-        SimulatorBackend("SV", options=object())
+        SimulatorBackend("SV").run(fq.Program(1), simulation_config=object())
+
+
+def test_runtime_is_keyword_only():
+    with pytest.raises(TypeError, match="positional arguments"):
+        SimulatorBackend("SV", "numba")
 
 
 def test_backend_accepts_custom_implementation_map():
@@ -79,7 +93,9 @@ def test_backend_accepts_custom_implementation_map():
     p.add(fq.ops.H, 1)  # still a default rule: H|0> is an equal superposition
     p.add_measurement(0, 0)
     p.add_measurement(1, 1)
-    counts = backend.run(p, shots=200, seed=0).result().get_counts()
+    counts = (
+        backend.run(p, shots=200, simulation_config={"seed": 0}).result().get_counts()
+    )
 
     assert set(counts) <= {"00", "10"}  # c1 (H) varies; c0 (overridden X) is always 0
     assert counts.get("00", 0) + counts.get("10", 0) == 200
@@ -91,7 +107,9 @@ def test_backend_none_implementation_map_uses_defaults():
     p = fq.Program(1, 1)
     p.add(fq.ops.X, 0)
     p.add_measurement(0, 0)
-    counts = backend.run(p, shots=10, seed=0).result().get_counts()
+    counts = (
+        backend.run(p, shots=10, simulation_config={"seed": 0}).result().get_counts()
+    )
 
     assert counts == {"1": 10}
 
@@ -107,6 +125,8 @@ def test_backend_copies_implementation_map_defensively():
     p = fq.Program(1, 1)
     p.add(fq.ops.X, 0)
     p.add_measurement(0, 0)
-    counts = backend.run(p, shots=10, seed=0).result().get_counts()
+    counts = (
+        backend.run(p, shots=10, simulation_config={"seed": 0}).result().get_counts()
+    )
 
     assert counts == {"1": 10}

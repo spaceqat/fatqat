@@ -166,13 +166,13 @@ def test_statevector_export_with_noise_requires_single_shot():
         backend.run(
             program,
             shots=4,
-            result_config={"counts": False, "statevector": True},
+            result_config={"counts": False, "final_state": True},
         )
     result = backend.run(
         program,
         shots=1,
-        seed=3,
-        result_config={"counts": False, "statevector": True},
+        simulation_config={"seed": 3},
+        result_config={"counts": False, "final_state": True},
     ).result()
     assert np.isclose(np.linalg.norm(result.get_statevector()), 1.0)
 
@@ -185,7 +185,7 @@ def test_density_matrix_channel_is_exact():
     backend = SimulatorBackend(method="DM", noise=_depolarized_x_model(p))
     result = backend.run(
         _x_program(),
-        result_config={"counts": False, "density_matrix": True},
+        result_config={"counts": False, "final_state": True},
     ).result()
 
     expected = (1 - p) * np.diag([0.0, 1.0]) + p * np.eye(2) / 2
@@ -198,7 +198,7 @@ def test_statevector_trajectories_match_density_matrix_statistics():
     program = _x_program(with_measurement=True)
     counts = (
         SimulatorBackend(method="SV", noise=_depolarized_x_model(p))
-        .run(program, shots=shots, seed=7)
+        .run(program, shots=shots, simulation_config={"seed": 7})
         .result()
         .get_counts()
     )
@@ -213,7 +213,7 @@ def test_density_matrix_counts_sample_the_noisy_distribution():
     program = _x_program(with_measurement=True)
     counts = (
         SimulatorBackend(method="DM", noise=_depolarized_x_model(p))
-        .run(program, shots=shots, seed=7)
+        .run(program, shots=shots, simulation_config={"seed": 7})
         .result()
         .get_counts()
     )
@@ -230,7 +230,12 @@ def test_skipped_conditioned_gate_skips_its_channel():
     program.add(fq.ops.X, 1, condition=(0, 1))
     result = (
         SimulatorBackend(method="DM", noise=noise)
-        .run(program, shots=1, seed=5, result_config={"density_matrix": True})
+        .run(
+            program,
+            shots=1,
+            simulation_config={"seed": 5},
+            result_config={"final_state": True},
+        )
         .result()
     )
 
@@ -251,7 +256,12 @@ def test_taken_conditioned_gate_applies_its_channel():
     program.add(fq.ops.X, 1, condition=(0, 1))
     result = (
         SimulatorBackend(method="DM", noise=noise)
-        .run(program, shots=1, seed=5, result_config={"density_matrix": True})
+        .run(
+            program,
+            shots=1,
+            simulation_config={"seed": 5},
+            result_config={"final_state": True},
+        )
         .result()
     )
 
@@ -266,8 +276,16 @@ def test_taken_conditioned_gate_applies_its_channel():
 def test_seeded_noisy_runs_are_reproducible():
     backend = SimulatorBackend(method="SV", noise=_depolarized_x_model())
     program = _x_program(with_measurement=True)
-    first = backend.run(program, shots=64, seed=11).result().get_counts()
-    second = backend.run(program, shots=64, seed=11).result().get_counts()
+    first = (
+        backend.run(program, shots=64, simulation_config={"seed": 11})
+        .result()
+        .get_counts()
+    )
+    second = (
+        backend.run(program, shots=64, simulation_config={"seed": 11})
+        .result()
+        .get_counts()
+    )
 
     assert first == second
 
@@ -276,14 +294,16 @@ def test_parallel_dynamic_shots_match_serial_with_channels():
     noise = _depolarized_x_model()
     program = _x_program(with_measurement=True)
     serial = (
-        SimulatorBackend(method="SV", options={"parallel_mode": "serial"}, noise=noise)
-        .run(program, shots=8, seed=13)
+        SimulatorBackend(method="SV", noise=noise)
+        .run(
+            program, shots=8, simulation_config={"seed": 13, "parallel_mode": "serial"}
+        )
         .result()
         .get_counts()
     )
     parallel = (
-        SimulatorBackend(method="SV", options={"max_workers": 2}, noise=noise)
-        .run(program, shots=8, seed=13)
+        SimulatorBackend(method="SV", noise=noise)
+        .run(program, shots=8, simulation_config={"seed": 13, "max_workers": 2})
         .result()
         .get_counts()
     )
@@ -402,7 +422,7 @@ def test_scoped_damping_decays_only_the_selected_cz_slot():
             SimulatorBackend(method="DM", noise=noise)
             .run(
                 program,
-                result_config={"counts": False, "density_matrix": True},
+                result_config={"counts": False, "final_state": True},
             )
             .result()
             .get_density_matrix()

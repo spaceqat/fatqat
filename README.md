@@ -19,7 +19,7 @@ program.add(fq.ops.CX, (0, 1))
 program.add_measurement((0, 1), (0, 1))
 
 backend = fq.backends.SimulatorBackend(method="SV")
-result = backend.run(program, shots=1000, seed=7).result()
+result = backend.run(program, shots=1000, simulation_config={"seed": 7}).result()
 print(result.get_counts())          # {'00': 502, '11': 498}
 ```
 
@@ -37,7 +37,7 @@ bell.add(fq.ops.CX, (0, 1))
 
 rho = (
     fq.backends.SimulatorBackend(method="DM")
-    .run(bell, result_config={"counts": False, "density_matrix": True})
+    .run(bell, result_config={"counts": False, "final_state": True})
     .result()
     .get_density_matrix()
 )

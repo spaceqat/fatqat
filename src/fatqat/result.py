@@ -8,65 +8,29 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from .errors import ResultFieldUnavailableError
+from .errors import BackendValidationError, ResultFieldUnavailableError
 
 
 @dataclass(frozen=True)
-class _StateVectorResultConfig:
-    """Internal normalized result-field selection for one backend execution.
+class _ResultConfig:
+    """Internal normalized request for data returned by one execution.
 
-    Each field is tri-state:
-
-    - `None`: let the backend choose the default for the given program
-    - `True`: explicitly request the field
-    - `False`: explicitly suppress the field
-
-    For :py:class:`~fatqat.backends.SimulatorBackend` with
-    ``method="statevector"``, the defaults are:
-
-    - `counts=None`: produce counts when the program contains at least one
-      measurement
-    - `statevector=None`: produce a statevector only when execution is
-      non-stochastic, meaning the program contains no measurement and no reset
-
-    Explicit requests can further constrain `shots`. In particular, requesting
-    `statevector=True` for a stochastic program (one with measurement or reset)
-    is only supported for `shots == 1`.
-
-    This helper is backend-internal. User-facing APIs accept plain dictionaries
-    such as `{"counts": True, "statevector": False}` and normalize them into
-    this shape before execution.
+    ``counts`` is a hardware-readable result artifact. ``final_state`` is a
+    simulator-only result field: its concrete representation is selected by
+    the backend's ``method``. Hardware backends can derive a more specific
+    config dataclass to expose additional result artifacts; a subclass that
+    adds fields must validate those fields in its ``__post_init__``.
     """
 
     counts: bool | None = None
-    statevector: bool | None = None
+    final_state: bool | None = None
 
-
-@dataclass(frozen=True)
-class _DensityMatrixResultConfig:
-    """Internal normalized result-field selection for one density-matrix execution.
-
-    Each field is tri-state with the same meaning as `_StateVectorResultConfig`:
-    `None` lets the backend choose, `True` requests, `False` suppresses.
-
-    For :py:class:`~fatqat.backends.SimulatorBackend` with
-    ``method="density_matrix"``, the defaults are:
-
-    - `counts=None`: produce counts when the program contains at least one
-      measurement
-    - `density_matrix=None`: produce a density matrix only when the program
-      contains no measurement. Reset does not suppress the default: on a
-      density matrix, reset is a deterministic channel (partial trace plus
-      repreparation), so a reset-bearing program still has a well-defined
-      ensemble state.
-
-    Requesting `density_matrix=True` for a program with measurement is only
-    supported for `shots == 1`; the exported state is that single trajectory's
-    post-measurement density matrix.
-    """
-
-    counts: bool | None = None
-    density_matrix: bool | None = None
+    def __post_init__(self) -> None:
+        for name, value in (("counts", self.counts), ("final_state", self.final_state)):
+            if value is not None and type(value) is not bool:
+                raise BackendValidationError(
+                    f"{name} must be bool or None, got {value!r}"
+                )
 
 
 def decode_indices_to_clbit_rows(
@@ -176,6 +140,7 @@ class Result:
         metadata: Mapping[str, Any] | None = None,
         classical_dims: Sequence[int] = (),
         density_matrix: np.ndarray | None = None,
+        data: Mapping[str, Any] | None = None,
     ) -> None:
         """Create a result from backend-produced fields.
 
@@ -189,13 +154,35 @@ class Result:
             classical_dims: Per-clbit classical dimensions, used to render
                 `get_counts()` display strings.
             density_matrix: Optional density-matrix array.
+            data: Additional backend-specific result artifacts. Their names
+                are included in :attr:`available_data` and retrieved with
+                :meth:`get_data`.
         """
+        self._data = dict(data) if data is not None else {}
+        reserved = {"counts", "final_state", "statevector", "density_matrix"}
+        collisions = reserved & self._data.keys()
+        if collisions:
+            names = ", ".join(sorted(collisions))
+            raise BackendValidationError(
+                f"backend-specific data cannot replace reserved field(s) {names}"
+            )
         self._counts = counts
         self._statevector = statevector
         self._density_matrix = density_matrix
-        self.available_data = frozenset(available)
+        self.available_data = frozenset(available) | frozenset(self._data)
         self.metadata = dict(metadata) if metadata is not None else {}
         self._classical_dims = tuple(classical_dims)
+
+    def get_data(self, name: str) -> Any:
+        """Return a backend-specific result artifact by name.
+
+        Raises:
+            ResultFieldUnavailableError: If ``name`` was not produced by this
+                backend run.
+        """
+        if name not in self._data:
+            raise ResultFieldUnavailableError(f"{name} not available in this result")
+        return self._data[name]
 
     def get_counts(self) -> dict[str, int]:
         """Return measurement counts as little-endian display strings.
@@ -253,7 +240,7 @@ class Result:
             >>> program.add(fq.ops.X, 0)
             >>> result = fq.backends.SimulatorBackend("SV").run(
             ...     program,
-            ...     result_config={"counts": False, "statevector": True},
+            ...     result_config={"counts": False, "final_state": True},
             ... ).result()
             >>> result.get_statevector()
             array([0.+0.j, 1.+0.j])
@@ -279,7 +266,7 @@ class Result:
             >>> program.add(fq.ops.H, 0)
             >>> result = fq.backends.SimulatorBackend("DM").run(
             ...     program,
-            ...     result_config={"counts": False, "density_matrix": True},
+            ...     result_config={"counts": False, "final_state": True},
             ... ).result()
             >>> result.get_density_matrix()
             array([[0.5+0.j, 0.5+0.j],

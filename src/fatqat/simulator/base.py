@@ -66,6 +66,8 @@ class Simulator(ABC):
         shots: int,
         seed: int | None,
         request: ResultRequest,
+        *,
+        config: EngineConfig | None = None,
     ) -> RawResult: ...
 
     @abstractmethod

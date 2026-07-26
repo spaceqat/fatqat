@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any
 
 from .._engine_index_allocation import _EngineIndexAllocation
+from ..errors import BackendValidationError
 from ..resource_layout import ResourceLayout
 
 
@@ -42,28 +42,36 @@ class _PlanFacts:
     has_channel: bool = False
 
 
-def _normalize_dict_options(
-    options: dict[str, Any] | None,
-    known_keys: set[str],
+def _normalize_config(
+    config: dict[str, Any] | None,
     config_cls: type,
     param_name: str,
-    warning_noun: str,
     backend_name: str = "SimulatorBackend",
 ) -> Any:
-    """Normalize a plain dict of options into a frozen config dataclass."""
-    if options is None:
+    """Strictly normalize a plain dictionary into a frozen config dataclass.
+
+    Supported keys are derived from ``config_cls``'s dataclass fields, so a
+    newly added configuration entry needs no registry update. Field-level
+    compatibility is owned by the config dataclass's ``__post_init__``;
+    subclasses are responsible for validating fields they add.
+    """
+    if config is None:
         return config_cls()
-    if not isinstance(options, dict):
-        raise TypeError(f"{param_name} must be a dict or None, got {type(options)!r}")
-    known = {key: value for key, value in options.items() if key in known_keys}
-    ignored = {key: value for key, value in options.items() if key not in known_keys}
-    if ignored:
-        warnings.warn(
-            f"{backend_name} ignored unsupported {warning_noun} options: {ignored!r}",
-            UserWarning,
-            stacklevel=3,
+    if not isinstance(config, dict):
+        raise TypeError(f"{param_name} must be a dict or None, got {type(config)!r}")
+    supported = {field.name for field in fields(config_cls)}
+    unknown = set(config) - supported
+    if unknown:
+        # Dict keys need not be mutually orderable (for example, ``"foo"``
+        # and ``3``). Sort their representations so malformed input still
+        # receives our validation error rather than a Python ``TypeError``.
+        names = ", ".join(sorted(map(repr, unknown)))
+        expected = ", ".join(repr(name) for name in sorted(supported)) or "no keys"
+        raise BackendValidationError(
+            f"{backend_name} does not support {param_name} key(s) {names}; "
+            f"expected {expected}"
         )
-    return config_cls(**known)
+    return config_cls(**config)
 
 
 def _resolve_condition(

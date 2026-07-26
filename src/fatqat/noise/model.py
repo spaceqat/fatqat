@@ -107,7 +107,7 @@ class NoiseModel:
         >>> program.add(fq.ops.X, 0)
         >>> result = fq.backends.SimulatorBackend(method="DM", noise=noise).run(
         ...     program,
-        ...     result_config={"counts": False, "density_matrix": True},
+        ...     result_config={"counts": False, "final_state": True},
         ... ).result()
         >>> result.get_density_matrix()
         array([[0.1+0.j, 0. +0.j],
