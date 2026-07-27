@@ -2,7 +2,11 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat.backends import AtomGridBackend, SCQubitGoogleSimulator, SCQubitIBMSimulator
+from fatqat.backends import (
+    AtomGridSimulator,
+    SCQubitGoogleSimulator,
+    SCQubitIBMSimulator,
+)
 from fatqat.backends.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.backends.fake_superconducting import (
     fake_superconducting_google_implementation_map,
@@ -26,7 +30,7 @@ from fatqat.result import _ResultConfig
 # Every fake-target backend constructor routes grid_size through the shared
 # `_validate_grid_size` (see fake_atom_grid.py / fake_superconducting.py), so
 # this pins that routing for all three rather than just the atom-grid backend.
-_GRID_BACKENDS = (AtomGridBackend, SCQubitIBMSimulator, SCQubitGoogleSimulator)
+_GRID_BACKENDS = (AtomGridSimulator, SCQubitIBMSimulator, SCQubitGoogleSimulator)
 
 
 @pytest.mark.parametrize("backend_cls", _GRID_BACKENDS)
@@ -115,13 +119,13 @@ def test_resolve_result_request_reset_keeps_density_matrix_default():
 
 def _one_qubit_measurement_setup(confusion, *, reported_digit_map):
     program = fq.Program(1, 1)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     (step,) = [
         instr
         for instr in program.operations
         if isinstance(instr, fq.operations.Measurement)
     ]
-    q0 = program.qreg[0][0]
+    q0 = program.quantum_registers[0][0]
     resource_layout = ResourceLayout({q0: 0})
     allocation = _EngineIndexAllocation.from_program(program)
     noise = NoiseModel()

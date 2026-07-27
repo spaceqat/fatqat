@@ -43,7 +43,7 @@ class PulseBackend:
         labels: dict[Any, str] = {}
         refs = [
             register[index]
-            for register in program.qreg
+            for register in program.quantum_registers
             for index in range(register.size)
         ]
         if len(refs) > len(self.model.subsystems):
@@ -223,7 +223,7 @@ class PulseBackend:
         allocation: _EngineIndexAllocation,
     ) -> tuple[int, ...]:
         ordinals = [0] * allocation.n_subsystems
-        for register in program.qreg:
+        for register in program.quantum_registers:
             for index in range(register.size):
                 ref = register[index]
                 label = resource_layout.device_label(ref)
@@ -237,7 +237,7 @@ class PulseBackend:
     ) -> tuple[tuple[Any, ...], ...]:
         refs_by_label = {
             resource_layout.device_label(register[index]): register[index]
-            for register in program.qreg
+            for register in program.quantum_registers
             for index in range(register.size)
         }
         return tuple(

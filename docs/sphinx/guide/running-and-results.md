@@ -4,11 +4,12 @@
 
 ```python
 import fatqat as fq
+import fatqat.operations as op
 
 program = fq.Program(2, 2)
-program.add(fq.ops.H, 0)
-program.add(fq.ops.CX, (0, 1))
-program.add_measurement((0, 1), (0, 1))
+program.add(op.H, 0)
+program.add(op.CX, (0, 1))
+program.measure((0, 1), (0, 1))
 
 backend = fq.backends.SimulatorBackend("SV")
 result = backend.run(program, shots=1000).result()
@@ -48,8 +49,8 @@ The program above is stochastic, so asking it for a final state needs
 
 ```python
 bell = fq.Program(2)
-bell.add(fq.ops.H, 0)
-bell.add(fq.ops.CX, (0, 1))
+bell.add(op.H, 0)
+bell.add(op.CX, (0, 1))
 
 state = (
     backend.run(bell, result_config={"counts": False, "final_state": True})

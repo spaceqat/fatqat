@@ -165,7 +165,7 @@ def test_fake_backend_rejects_non_qubit_dimension_registers():
 def test_fake_backend_allows_measurement_and_reset_on_any_qubit():
     p = Program(16, 1)
     p.add(ops.Reset, 3)
-    p.add_measurement(3, 0)
+    p.measure(3, 0)
 
     result = (
         SCQubitIBMSimulator().run(p, shots=4, result_config={"counts": True}).result()
@@ -230,7 +230,7 @@ def test_rejects_grid_that_does_not_fit_device_even_with_enough_total_capacity()
 def test_naive_scalar_program_still_uses_declaration_order_identity_binding():
     p = Program(3)
     backend = SCQubitIBMSimulator()
-    ref = p.qreg[0][2]
+    ref = p.quantum_registers[0][2]
     resource_layout = backend._resolve_resource_layout(p)
     assert resource_layout.device_label(ref) == 2
 
@@ -257,7 +257,7 @@ def _sx_sx_program():
     program = Program(1, 1)
     program.add(ops.SX, 0)
     program.add(ops.SX, 0)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     return program
 
 
@@ -308,7 +308,7 @@ def test_x_carries_relaxation_like_sx():
     backend = SCQubitIBMSimulator(noise=SCQubitIBMSimulator.default_noise_model())
     program = Program(1, 1)
     program.add(ops.X, 0)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     counts = (
         backend.run(program, shots=4000, simulation_config={"seed": 1})
         .result()
@@ -334,7 +334,7 @@ def test_rz_stays_noise_free():
 def test_default_noise_model_is_a_fresh_extensible_model():
     first = SCQubitIBMSimulator.default_noise_model()
     second = SCQubitIBMSimulator.default_noise_model()
-    first.add_noise(ops.SX, Depolarizing(p=0.5))
+    first.add_channel(ops.SX, Depolarizing(p=0.5))
 
     assert Depolarizing in first.channel_types()
     # Each call builds an independent model; user edits never leak back.
@@ -344,7 +344,7 @@ def test_default_noise_model_is_a_fresh_extensible_model():
         isinstance(c, Depolarizing) and c.p == 0.5
         for c, _extent in second.channels_for(
             ops.SX,
-            (program.qreg[0][0],),
+            (program.quantum_registers[0][0],),
             backend._resolve_resource_layout(program),
         )
     )

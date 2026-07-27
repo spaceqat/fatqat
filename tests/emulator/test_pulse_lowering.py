@@ -36,7 +36,7 @@ def test_lowering_produces_unplaced_blocks_and_preserves_boundaries_and_guards()
     backend = _backend()
     program = fq.Program(2, 1)
     program.add(fq.ops.RX(0.4), 0)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     program.add(fq.ops.RZ(0.2), 1, condition=(0, 0))
     program.add(fq.ops.Reset, 1, condition=(0, 0))
     plan, facts = backend._lower_program(program)
@@ -118,7 +118,7 @@ def test_pulse_measurement_confusion_must_match_the_reported_bit_dimension():
     noise.add_readout_error(np.eye(3), target="q0")
     backend = _backend(noise)
     program = fq.Program(1, 1)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
 
     # Routed through the shared boundary helper (backend_utils._resolve_confusions):
     # pulse's literal (0, 1, 1) reported-digit map implies reported dimension
@@ -135,7 +135,7 @@ def test_pulse_measurement_accepts_a_correctly_shaped_confusion_matrix():
     noise.add_readout_error(always_flip, target="q0")
     backend = _backend(noise)
     program = fq.Program(1, 1)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
 
     plan, _facts = backend._lower_program(program)
     (measurement,) = [s for s in plan if isinstance(s, MeasurementStep)]

@@ -1,4 +1,4 @@
-Operations (``fq.ops``)
+Operations (``op``)
 =======================
 
 Add all normal operations through :py:meth:`~fatqat.Program.add`. The
@@ -6,11 +6,13 @@ exported operation values and classes documented below are the supported gate
 surface. Internal implementation classes whose names end in ``Gate`` are not
 the construction surface for application code.
 
+Examples use ``import fatqat.operations as op``.
+
 The entries below retain their generated constructors and public members
 for exact interface details.
 
 .. autoclass:: fatqat.operations.Operation
-   :members:
+   :members: name, num_targets, accepts_views, validate_targets
    :show-inheritance:
 
 Fixed single-qubit gates
@@ -22,7 +24,7 @@ Fixed single-qubit gates
 :py:obj:`~fatqat.operations.T`, :py:obj:`~fatqat.operations.Tdg`,
 :py:obj:`~fatqat.operations.X`, :py:obj:`~fatqat.operations.Y`, and
 :py:obj:`~fatqat.operations.Z` are ready-to-use values. For example:
-``program.add(fq.ops.H, 0)``.
+``program.add(op.H, 0)``.
 
 .. autodata:: fatqat.operations.I
 .. autodata:: fatqat.operations.H
@@ -38,7 +40,7 @@ Fixed single-qubit gates
 Atom loading
 ------------
 
-.. autoclass:: fatqat.operations.LoadAtom
+.. autoclass:: fatqat.operations.LoadAtoms
    :members:
    :show-inheritance:
 
@@ -81,7 +83,7 @@ Fixed multi-qubit gates
 :py:obj:`~fatqat.operations.CS`, :py:obj:`~fatqat.operations.iSwap`,
 :py:obj:`~fatqat.operations.CCX`, and :py:obj:`~fatqat.operations.CSwap`
 are ready-to-use values. For controlled operations, controls come before
-targets: ``program.add(fq.ops.CX, (control, target))``.
+targets: ``program.add(op.CX, (control, target))``.
 
 .. autodata:: fatqat.operations.CX
 .. autodata:: fatqat.operations.CZ
@@ -96,7 +98,7 @@ Reset
 -----
 
 :py:data:`~fatqat.operations.Reset` prepares one or more targets in ``|0⟩``:
-``program.add(fq.ops.Reset, 0)``. See
+``program.add(op.Reset, 0)``. See
 :doc:`../guide/measurement-and-conditions` for reset and conditions.
 
 .. autodata:: fatqat.operations.Reset
@@ -109,7 +111,7 @@ Qudit gates
 :py:obj:`~fatqat.operations.Sum`,
 :py:obj:`~fatqat.operations.SwapLevels` (``j, k``),
 :py:obj:`~fatqat.operations.Fourier`,
-:py:obj:`~fatqat.operations.Fourierdg`,
+:py:obj:`~fatqat.operations.InverseFourier`,
 :py:obj:`~fatqat.operations.SubspaceRX` (``theta, subspace``),
 :py:obj:`~fatqat.operations.SubspaceRY` (``theta, subspace``),
 :py:obj:`~fatqat.operations.SubspaceRZ` (``theta, subspace``), and
@@ -134,7 +136,7 @@ syntax, target order, and grid selections.
    :show-inheritance:
 
 .. autodata:: fatqat.operations.Fourier
-.. autodata:: fatqat.operations.Fourierdg
+.. autodata:: fatqat.operations.InverseFourier
 
 .. autoclass:: fatqat.operations.SubspaceRX
    :members:

@@ -46,7 +46,7 @@ def test_thermal_relaxation_validates_finite_t1_t2_bounds():
 
 def test_continuous_selection_specifics_replace_defaults_and_accumulate():
     program = fq.Program(1)
-    ref = program.qreg[0][0]
+    ref = program.quantum_registers[0][0]
     layout = ResourceLayout({ref: "q0"})
     default = ThermalRelaxation(100, 150)
     physical = ThermalRelaxation(200, 300)
@@ -68,7 +68,7 @@ def test_continuous_selection_specifics_replace_defaults_and_accumulate():
 
 def test_empty_legacy_shim_is_harmless_but_nonempty_requires_migration():
     program = fq.Program(1)
-    ref = program.qreg[0][0]
+    ref = program.quantum_registers[0][0]
     layout = ResourceLayout({ref: "q0"})
     noise = NoiseModel()
     noise.validate_for(program, layout)
@@ -92,7 +92,7 @@ def test_support_reports_reject_unknown_continuous_sources_without_spoofing_zz()
 
 def test_matrix_backend_keeps_gate_channels_and_rejects_typed_continuous_noise():
     noise = NoiseModel()
-    noise.add_noise(fq.ops.X, Depolarizing(p=0.1))
+    noise.add_channel(fq.ops.X, Depolarizing(p=0.1))
     noise.add_continuous_noise(ThermalRelaxation(100, 150))
     report = SimulatorBackend().validate_noise(noise)
     assert "Depolarizing" in report.accepted_sources
@@ -102,7 +102,7 @@ def test_matrix_backend_keeps_gate_channels_and_rejects_typed_continuous_noise()
 def test_pulse_backend_names_each_rejected_gate_channel_source():
     model, calibration = _model_and_calibration()
     noise = NoiseModel()
-    noise.add_noise(fq.ops.X, Depolarizing(p=0.1))
+    noise.add_channel(fq.ops.X, Depolarizing(p=0.1))
     report = PulseBackend(model, calibration).validate_noise(noise)
     assert report.rejected_sources == ("Depolarizing",)
 
@@ -150,7 +150,7 @@ def test_default_noise_covers_unused_model_subsystems_but_specific_replaces_it()
     default = ThermalRelaxation(100, 200)
     specific = ThermalRelaxation(50, 100)
     backend.noise.add_continuous_noise(default)
-    backend.noise.add_continuous_noise(specific, target=program.qreg[0][0])
+    backend.noise.add_continuous_noise(specific, target=program.quantum_registers[0][0])
 
     selected = backend._continuous_noise(program, layout)
     assert selected == ((specific,), (default,))

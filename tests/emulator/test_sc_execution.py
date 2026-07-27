@@ -122,7 +122,7 @@ def test_confused_reported_value_drives_later_guarded_pulse():
     noise.add_readout_error(np.array([[0.0, 1.0], [1.0, 0.0]]), target="q0")
     backend = _backend(noise)
     program = fq.Program(2, 1)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     program.add(fq.ops.RX(pi), 1, condition=(0, 1))
     result = backend.run(
         program,
@@ -140,7 +140,7 @@ def test_seeded_dynamic_replay_is_reproducible():
     backend = _backend()
     program = fq.Program(1, 1)
     program.add(fq.ops.RX(pi / 2), 0)
-    program.add_measurement(0, 0)
+    program.measure(0, 0)
     config = {"counts": True, "final_state": False}
     first = backend.run(
         program, shots=40, simulation_config={"seed": 19}, result_config=config
@@ -155,7 +155,7 @@ def test_real_boundary_preserves_frame_ledger_for_later_drive():
     backend = _backend()
     with_boundary = fq.Program(2, 1)
     with_boundary.add(fq.ops.RZ(0.3), 0)
-    with_boundary.add_measurement(1, 0)
+    with_boundary.measure(1, 0)
     with_boundary.add(fq.ops.RX(0.7), 0)
     boundary_state = (
         backend.run(
@@ -210,7 +210,7 @@ def test_reset_and_both_guarded_boundary_outcomes_preserve_later_frame_use():
     for required_digit in (0, 1):
         guarded = fq.Program(2, 1)
         guarded.add(fq.ops.RZ(0.3), 0)
-        guarded.add_measurement(1, 0)
+        guarded.measure(1, 0)
         guarded.add(fq.ops.Reset, 1, condition=(0, required_digit))
         guarded.add(fq.ops.RX(0.7), 0)
         assert np.allclose(q0_state(guarded, shots=1), expected, atol=2e-7)
@@ -239,7 +239,7 @@ def test_both_guarded_pulse_outcomes_flush_before_later_frame_aware_drive():
     for required_digit in (0, 1):
         guarded = fq.Program(2, 1)
         guarded.add(fq.ops.RZ(0.3), 0)
-        guarded.add_measurement(1, 0)
+        guarded.measure(1, 0)
         guarded.add(fq.ops.RX(0.2), 1, condition=(0, required_digit))
         guarded.add(fq.ops.RX(0.7), 0)
         assert np.allclose(q0_state(guarded, shots=1), expected, atol=2e-7)

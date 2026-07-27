@@ -172,7 +172,7 @@ class _DimMatrix(MatrixImplementation):
 def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]:
     """Normalize an :py:class:`~fatqat.operations.Operation` instance or subclass to its registry key.
 
-    Accepts either an :py:class:`~fatqat.operations.Operation` instance (e.g. `fq.ops.X`) or an :py:class:`~fatqat.operations.Operation`
+    Accepts either an :py:class:`~fatqat.operations.Operation` instance (e.g. `op.X`) or an :py:class:`~fatqat.operations.Operation`
     subclass (e.g. a custom gate class) and returns the class to key the
     registry by. Applying `type(...)` unconditionally would be wrong for the
     class case: `type(MyGate)` is the metaclass `type`, not `MyGate`.
@@ -321,7 +321,7 @@ class ImplementationMap:
         """Add an unconstrained or device-specific implementation.
 
         Args:
-            op: An :py:class:`~fatqat.operations.Operation` instance (e.g. `fq.ops.X`) or subclass (e.g. a
+            op: An :py:class:`~fatqat.operations.Operation` instance (e.g. `op.X`) or subclass (e.g. a
                 custom gate class). Normalized to the operation's class for
                 the registry key.
             implementation: A `MatrixImplementation` instance (e.g. `FixedMatrix` or

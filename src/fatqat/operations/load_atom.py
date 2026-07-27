@@ -1,4 +1,4 @@
-"""LoadAtom: atom-grid-specific site-loading instruction."""
+"""LoadAtoms: atom-grid-specific site-loading instruction."""
 
 from __future__ import annotations
 
@@ -9,18 +9,18 @@ from .base import Operation
 
 
 @dataclass(frozen=True)
-class LoadAtom(Operation):
+class LoadAtoms(Operation):
     """Declares that a top-left `rows x cols` block of device sites now holds atoms.
 
-    Zero-arity: `LoadAtom` carries no quantum targets, since neutral-atom
+    Zero-arity: `LoadAtoms` carries no quantum targets, since neutral-atom
     loading is a per-device-site fact, not a per-qubit gate
-    (``program.add(ops.LoadAtom(2, 3))`` needs no target operand). It has no
+    (``program.add(ops.LoadAtoms(2, 3))`` needs no target operand). It has no
     matrix implementation and is recognized by type during lowering, exactly
-    like `~fatqat.ops.Barrier`/`~fatqat.ops.Reset`; a backend with no special
+    like `~fatqat.operations.Barrier`/`~fatqat.operations.Reset`; a backend with no special
     handling for it rejects it as an unsupported operation.
 
-    :py:class:`~fatqat.backends.AtomGridBackend` is currently the only backend that
-    interprets it: it requires `LoadAtom` to be a program's first
+    :py:class:`~fatqat.backends.AtomGridSimulator` is currently the only backend that
+    interprets it: it requires `LoadAtoms` to be a program's first
     instruction, unconditional, and to appear at most once.
 
     Attributes:
@@ -29,15 +29,16 @@ class LoadAtom(Operation):
 
     Examples:
         >>> import fatqat as fq
+        >>> import fatqat.operations as op
         >>> program = fq.Program(4)
-        >>> program.add(fq.ops.LoadAtom(2, 2))
+        >>> program.add(op.LoadAtoms(2, 2))
         >>> program.operations[0].targets
         ()
     """
 
     rows: int
     cols: int
-    name: ClassVar[str] = "LoadAtom"
+    name: ClassVar[str] = "LoadAtoms"
     _num_subsystems: ClassVar[int] = 0
 
     def __post_init__(self) -> None:

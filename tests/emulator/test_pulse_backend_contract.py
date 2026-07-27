@@ -62,7 +62,7 @@ def test_run_directly_validates_config_and_executes_ideal_program():
 def test_final_state_measurement_constraint_and_reset_only_determinism_validate_before_execution():
     backend = _backend()
     measured = fq.Program(1, 1)
-    measured.add_measurement(0, 0)
+    measured.measure(0, 0)
     with pytest.raises(BackendValidationError, match="shots == 1"):
         backend.run(measured, shots=2, result_config={"final_state": True})
 
@@ -85,11 +85,11 @@ def test_layout_binds_model_ids_while_engine_indices_stay_private():
     )
     plan, _ = backend._lower_program(program, context=context)
 
-    assert layout.device_operands((program.qreg[0][0], program.qreg[0][1])) == (
+    assert layout.device_operands((program.quantum_registers[0][0], program.quantum_registers[0][1])) == (
         "q0",
         "q1",
     )
-    assert allocation.subsystem_index(program.qreg[0][1]) == 1
+    assert allocation.subsystem_index(program.quantum_registers[0][1]) == 1
     assert plan[0].resource_claims[0] == backend.model.resource("q0")
 
 

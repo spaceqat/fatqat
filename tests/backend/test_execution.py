@@ -21,8 +21,8 @@ def _h_cz_program():
     p = Program(2, 2)
     p.add(ops.H, 0)
     p.add(ops.CZ, (0, 1))
-    p.add_measurement(0, 0)
-    p.add_measurement(1, 1)
+    p.measure(0, 0)
+    p.measure(1, 1)
     return p
 
 
@@ -31,7 +31,7 @@ def test_run_with_seed_is_repeatable_and_reinitializes():
     # and each run re-initializes (X|0> = |1>, not continuing from leftover |1>).
     p = Program(1, 1)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     backend = SimulatorBackend("SV")
     first = (
         backend.run(p, shots=10, simulation_config={"seed": 5}).result().get_counts()
@@ -67,7 +67,7 @@ def test_unsupported_operation_raises():
 
     p = Program(1, 1)
     p.add(FooGate(), 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     with pytest.raises(UnsupportedOperationError):
         SimulatorBackend("SV").run(p, shots=10)
 
@@ -76,7 +76,7 @@ def test_condition_now_runs():
     # condition reads unwritten slot (0); X applies -> qubit 1 becomes |1>.
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 0))
-    p.add_measurement(1, 1)
+    p.measure(1, 1)
     with pytest.warns(NoMeasurementWarning):
         counts = (
             SimulatorBackend("SV")
@@ -90,9 +90,9 @@ def test_condition_now_runs():
 def test_mid_circuit_measurement_now_runs():
     p = Program(2, 2)
     p.add(ops.H, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
     p.add(ops.X, 1)
-    p.add_measurement(1, 1)
+    p.measure(1, 1)
     counts = (
         SimulatorBackend("SV")
         .run(p, shots=64, simulation_config={"seed": 0})
@@ -143,7 +143,7 @@ def test_no_measurement_warning_understands_grouped_measurements():
     p = Program(2, 2)
     p.add(ops.X, 0)
     p.add(ops.X, 1)
-    p.add_measurement((0, 1), (0, 1))
+    p.measure((0, 1), (0, 1))
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -168,7 +168,7 @@ def test_rule_failure_is_wrapped_with_operation_context():
 
     p = Program(1, 1)
     p.add(ops.X, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
 
     with pytest.raises(MatrixImplementationError, match="XGate") as excinfo:
         backend.run(p, shots=10)
@@ -208,7 +208,7 @@ def test_unregistered_gate_raises_after_remove():
 
     p = Program(1, 1)
     p.add(ops.T, 0)
-    p.add_measurement(0, 0)
+    p.measure(0, 0)
 
     with pytest.raises(UnsupportedOperationError):
         backend.run(p, shots=10)

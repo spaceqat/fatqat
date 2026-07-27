@@ -13,9 +13,9 @@ def test_single_register_layout():
     assert layout.system_dims == (2, 2, 2)
     assert layout.n_subsystems == 3
     assert layout.n_clbits == 2
-    assert layout.subsystem_index(p.qreg[0][0]) == 0
-    assert layout.subsystem_index(p.qreg[0][2]) == 2
-    assert layout.clbit_index(p.clreg[0][1]) == 1
+    assert layout.subsystem_index(p.quantum_registers[0][0]) == 0
+    assert layout.subsystem_index(p.quantum_registers[0][2]) == 2
+    assert layout.clbit_index(p.classical_registers[0][1]) == 1
 
 
 def test_multi_register_flat_concatenation():
@@ -41,7 +41,7 @@ def test_unknown_ref_raises():
 def test_lookalike_registers_are_not_part_of_the_layout():
     p = Program(1, 1)
     layout = _EngineIndexAllocation.from_program(p)
-    qreg, clreg = p.qreg[0], p.clreg[0]
+    qreg, clreg = p.quantum_registers[0], p.classical_registers[0]
     with pytest.raises(KeyError):
         layout.subsystem_index(QuantumRegister(qreg.size, name=qreg.name)[0])
     with pytest.raises(KeyError):

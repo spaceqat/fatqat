@@ -16,7 +16,7 @@ class Measurement:
 
     Like ``AppliedOperation``, ``__post_init__`` intentionally does not
     re-validate ``targets``/``outputs`` element types or tuple-ness:
-    ``add_measurement`` already guarantees well-formed ``RegisterRef`` tuples
+    ``Program.measure`` already guarantees well-formed ``RegisterRef`` tuples
     of the right register kind via
     ``_resolve_quantum_ref``/``_resolve_classical_ref``.
     Constructing this class directly skips that guarantee - see
@@ -24,7 +24,7 @@ class Measurement:
     however, own the structural invariants that hold for any well-typed refs -
     equal length, non-empty, and per-pair quantum/classical dimension match -
     so those are checked once here and not duplicated in
-    ``add_measurement``/``measure_all``.
+    ``measure``/``measure_all``.
 
     Attributes:
         targets: Quantum refs to measure, stored as a tuple. Named to match
@@ -36,9 +36,10 @@ class Measurement:
 
     Examples:
         >>> import fatqat as fq
+        >>> import fatqat.operations as op
         >>> program = fq.Program(1, 1)
-        >>> m = fq.ops.Measurement(
-        ...     targets=(program.qreg[0][0],), outputs=(program.clreg[0][0],)
+        >>> m = op.Measurement(
+        ...     targets=(program.quantum_registers[0][0],), outputs=(program.classical_registers[0][0],)
         ... )
         >>> m.targets
         (RegisterRef(register=QuantumRegister(size=1, name='q', metadata={}, dim=2), index=0),)

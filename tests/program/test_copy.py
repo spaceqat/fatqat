@@ -23,7 +23,7 @@ def test_copy_isolates_metadata():
 def test_copy_preserves_register_tuples():
     p = Program(1)
     q = p.copy()
-    assert q.qreg == p.qreg
-    assert isinstance(q.qreg, tuple)
-    assert q.clreg == p.clreg
-    assert isinstance(q.clreg, tuple)
+    assert q.quantum_registers == p.quantum_registers
+    assert isinstance(q.quantum_registers, tuple)
+    assert q.classical_registers == p.classical_registers
+    assert isinstance(q.classical_registers, tuple)

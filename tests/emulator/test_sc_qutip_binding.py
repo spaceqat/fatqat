@@ -255,7 +255,7 @@ def test_backend_keeps_model_order_when_program_binds_a_nonprefix_transmon():
 
     class _NonprefixBackend(PulseBackend):
         def _resolve_resource_layout(self, program):
-            return ResourceLayout({program.qreg[0][0]: "q1"})
+            return ResourceLayout({program.quantum_registers[0][0]: "q1"})
 
     program = fq.Program(1)
     program.add(fq.ops.RX(pi / 2), 0)

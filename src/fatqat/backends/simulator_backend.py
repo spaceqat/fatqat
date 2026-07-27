@@ -325,8 +325,9 @@ class SimulatorBackend:
         Density-matrix simulation, Qiskit style:
 
         >>> import fatqat as fq
+        >>> import fatqat.operations as op
         >>> program = fq.Program(1)
-        >>> program.add(fq.ops.H, 0)
+        >>> program.add(op.H, 0)
         >>> result = fq.backends.SimulatorBackend(method="DM").run(
         ...     program,
         ...     result_config={"counts": False, "final_state": True},
@@ -473,7 +474,7 @@ class SimulatorBackend:
         """
         labels: dict[RegisterRef, DeviceOperand] = {}
         index = 0
-        for register in program.qreg:
+        for register in program.quantum_registers:
             for i in range(register.size):
                 labels[register[i]] = index
                 index += 1

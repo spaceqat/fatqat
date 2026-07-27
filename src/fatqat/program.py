@@ -56,7 +56,7 @@ class AppliedOperation:
     condition: Condition = None
 
     def __post_init__(self) -> None:
-        expected = self.operation.num_subsystems
+        expected = self.operation.num_targets
         if expected is None:
             if len(self.targets) < 1:
                 raise ValueError(f"{self.operation.name} expects at least one target")
@@ -109,38 +109,39 @@ class Program:
 
     A program owns read-only public quantum/classical register tuples plus an
     ordered read-only view of applied operations and measurements. Public
-    mutation goes through ``add()`` and ``add_measurement()``, which keep the
+    mutation goes through ``add()`` and ``measure()``, which keep the
     internal instruction list well formed. Operations are executed in
     insertion order. Integer operands are accepted only when there is exactly
     one register of the relevant kind; otherwise users must pass explicit
-    ``RegisterRef`` objects such as ``program.qreg[0][1]``.
+    ``RegisterRef`` objects such as ``program.quantum_registers[0][1]``.
 
     Examples:
         Build a two-qubit program, add gates, then measure both qubits:
 
         >>> import fatqat as fq
+        >>> import fatqat.operations as op
         >>> program = fq.Program(2, 2)
-        >>> program.add(fq.ops.H, 0)
-        >>> program.add(fq.ops.CZ, (0, 1))
-        >>> program.add_measurement(0, 0)
-        >>> program.add_measurement(1, 1)
+        >>> program.add(op.H, 0)
+        >>> program.add(op.CZ, (0, 1))
+        >>> program.measure(0, 0)
+        >>> program.measure(1, 1)
         >>> len(program.operations)
         4
     """
 
     def __init__(
         self,
-        qreg: int | list[QuantumRegister],
-        clreg: int | list[ClassicalRegister] = 0,
+        quantum_registers: int | list[QuantumRegister],
+        classical_registers: int | list[ClassicalRegister] = 0,
         *,
         metadata: Mapping[str, Any] | None = None,
     ) -> None:
         """Create a program from register counts or explicit register lists.
 
         Args:
-            qreg: Number of default quantum bits, or explicit quantum registers.
+            quantum_registers: Number of default quantum bits, or explicit quantum registers.
                 Stored publicly as a read-only tuple.
-            clreg: Number of default classical bits, or explicit classical
+            classical_registers: Number of default classical bits, or explicit classical
                 registers. A value of `0` creates no classical register. Stored
                 publicly as a read-only tuple.
             metadata: Optional user metadata copied into the program.
@@ -150,11 +151,11 @@ class Program:
                 the expected register type.
             ValueError: If an integer register count is negative.
         """
-        self.qreg: tuple[QuantumRegister, ...] = tuple(
-            self._coerce_registers(qreg, QuantumRegister, "q")
+        self.quantum_registers: tuple[QuantumRegister, ...] = tuple(
+            self._coerce_registers(quantum_registers, QuantumRegister, "q")
         )
-        self.clreg: tuple[ClassicalRegister, ...] = tuple(
-            self._coerce_registers(clreg, ClassicalRegister, "c")
+        self.classical_registers: tuple[ClassicalRegister, ...] = tuple(
+            self._coerce_registers(classical_registers, ClassicalRegister, "c")
         )
         self._operations: list[AppliedOperation | Measurement] = []
         self._operations_view: tuple[AppliedOperation | Measurement, ...] | None = ()
@@ -217,7 +218,7 @@ class Program:
             raise TypeError(
                 "integer operands are only allowed when there is exactly one "
                 "register of the relevant kind; pass an explicit RegisterRef "
-                "(e.g. qreg[0] or clreg[0]) instead"
+                "(e.g. quantum_registers[0] or classical_registers[0]) instead"
             )
         # Bounds and negative-index checks are delegated to Register.__getitem__,
         # which raises IndexError.
@@ -225,7 +226,7 @@ class Program:
 
     def _resolve_quantum_ref(self, operand: int | RegisterRef) -> RegisterRef:
         return self._resolve_ref(
-            operand, self.qreg, QuantumRegister, "quantum register"
+            operand, self.quantum_registers, QuantumRegister, "quantum register"
         )
 
     def _resolve_quantum_target(
@@ -235,11 +236,11 @@ class Program:
         in addition to everything ``_resolve_quantum_ref`` accepts.
 
         This is deliberately a separate path from ``_resolve_quantum_ref``:
-        that helper is also used by ``add_measurement``/``measure_all``,
+        that helper is also used by ``measure``/``measure_all``,
         which must keep rejecting views (see spec section 5.1).
         """
         if isinstance(operand, RegisterView):
-            if not any(operand.register is r for r in self.qreg):
+            if not any(operand.register is r for r in self.quantum_registers):
                 raise ValueError(
                     "view's register does not belong to this program's quantum registers"
                 )
@@ -248,7 +249,7 @@ class Program:
 
     def _resolve_classical_ref(self, operand: int | RegisterRef) -> RegisterRef:
         return self._resolve_ref(
-            operand, self.clreg, ClassicalRegister, "classical register"
+            operand, self.classical_registers, ClassicalRegister, "classical register"
         )
 
     def add(
@@ -291,10 +292,11 @@ class Program:
             Add fixed and parametric gates:
 
             >>> import fatqat as fq
+            >>> import fatqat.operations as op
             >>> program = fq.Program(2)
-            >>> program.add(fq.ops.H, 0)
-            >>> program.add(fq.ops.CZ, (0, 1))
-            >>> program.add(fq.ops.RX(0.2), 0)
+            >>> program.add(op.H, 0)
+            >>> program.add(op.CZ, (0, 1))
+            >>> program.add(op.RX(0.2), 0)
         """
         if not isinstance(op, Operation):
             raise TypeError(
@@ -339,7 +341,7 @@ class Program:
             normalized.append((ref, value))
         return tuple(normalized)
 
-    def add_measurement(
+    def measure(
         self,
         targets: int | RegisterRef | tuple[int | RegisterRef, ...],
         outputs: int | RegisterRef | tuple[int | RegisterRef, ...],
@@ -365,16 +367,17 @@ class Program:
             Add a terminal measurement:
 
             >>> import fatqat as fq
+            >>> import fatqat.operations as op
             >>> program = fq.Program(1, 1)
-            >>> program.add(fq.ops.X, 0)
-            >>> program.add_measurement(0, 0)
+            >>> program.add(op.X, 0)
+            >>> program.measure(0, 0)
 
             Add a grouped measurement:
 
             >>> program2 = fq.Program(2, 2)
-            >>> program2.add(fq.ops.H, 0)
-            >>> program2.add(fq.ops.CZ, (0, 1))
-            >>> program2.add_measurement((0, 1), (0, 1))
+            >>> program2.add(op.H, 0)
+            >>> program2.add(op.CZ, (0, 1))
+            >>> program2.measure((0, 1), (0, 1))
         """
         q_operands = targets if isinstance(targets, tuple) else (targets,)
         c_operands = outputs if isinstance(outputs, tuple) else (outputs,)
@@ -394,20 +397,24 @@ class Program:
                 kind.
         """
         targets = tuple(
-            ref for reg in self.qreg for ref in (reg[i] for i in range(reg.size))
+            ref
+            for reg in self.quantum_registers
+            for ref in (reg[i] for i in range(reg.size))
         )
         outputs = tuple(
-            ref for reg in self.clreg for ref in (reg[i] for i in range(reg.size))
+            ref
+            for reg in self.classical_registers
+            for ref in (reg[i] for i in range(reg.size))
         )
         # Equal-count and non-empty invariants are enforced once in
-        # Measurement.__post_init__, reached through add_measurement.
-        self.add_measurement(targets, outputs)
+        # Measurement.__post_init__, reached through measure.
+        self.measure(targets, outputs)
 
     def copy(self) -> "Program":
         """Return an independent copy with private operation storage and copied metadata."""
         new = Program.__new__(Program)
-        new.qreg = tuple(self.qreg)
-        new.clreg = tuple(self.clreg)
+        new.quantum_registers = tuple(self.quantum_registers)
+        new.classical_registers = tuple(self.classical_registers)
         new._operations = list(self._operations)
         new._operations_view = tuple(new._operations)
         new.metadata = dict(self.metadata)

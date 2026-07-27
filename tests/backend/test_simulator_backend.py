@@ -17,7 +17,7 @@ def _bell(with_barriers: bool = False) -> Program:
     p.add(ops.CX, (0, 1))
     if with_barriers:
         p.add(ops.Barrier, 0)
-    p.add_measurement((0, 1), (0, 1))
+    p.measure((0, 1), (0, 1))
     return p
 
 

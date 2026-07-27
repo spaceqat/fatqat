@@ -48,7 +48,7 @@ max-line-length = 88
 
 [tool.pylint.basic]
 # This library exposes gate singletons as module-level names spelled after the
-# gates themselves (Sdg, iSwap, Fourierdg, Reset, Barrier, ...) plus the conftest
+# gates themselves (Sdg, iSwap, InverseFourier, Reset, Barrier, ...) plus the conftest
 # hook `pytest_plugins`; none fit UPPER_CASE, so accept any constant name.
 const-naming-style = "any"
 # `iSwapGate` intentionally leads with a lowercase 'i' (the canonical gate name).

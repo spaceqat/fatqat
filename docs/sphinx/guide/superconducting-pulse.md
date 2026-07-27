@@ -38,7 +38,7 @@ match the calibration's detuning orientation.
 program = fq.Program(2, 1)
 program.add(fq.ops.RX(0.4), 0)
 program.add(fq.ops.iSwap, (0, 1))
-program.add_measurement(0, 0)
+program.measure(0, 0)
 
 result = backend.run(
     program,
