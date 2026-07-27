@@ -8,9 +8,9 @@ import pytest
 
 import fatqat as fq
 from fatqat.backends import SimulatorBackend
-from fatqat.backends.pulse.backend import PulseBackend
-from fatqat.backends.pulse.qutip_adapter import SCQutipAdapter
-from fatqat.backends.pulse.superconducting import (
+from fatqat.emulator.backend import PulseBackend
+from fatqat.emulator.qutip_adapter import SCQutipAdapter
+from fatqat.emulator.superconducting import (
     load_calibration_spec,
     load_physics_model,
 )

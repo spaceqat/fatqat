@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from .fake_atom_grid import AtomGridBackend
-from .fake_superconducting import SCQubitGoogleSimulator, SCQubitIBMSimulator
-from .pulse.backend import PulseBackend
-from .pulse.superconducting import (
+from ..emulator.backend import PulseBackend
+from ..emulator.superconducting import (
     SCTransmonExchangeBuilder,
     load_calibration_spec,
     load_physics_model,
 )
+from .fake_atom_grid import AtomGridBackend
+from .fake_superconducting import SCQubitGoogleSimulator, SCQubitIBMSimulator
 from .simulator_backend import SimulatorBackend
 
 # Re-exported for white-box tests to import directly; not part of the public

@@ -8,12 +8,12 @@ import numpy as np
 import pytest
 
 from fatqat import ops
-from fatqat.backends.pulse.resolved import (
+from fatqat.emulator.resolved import (
     PhaseShift,
     PhaseSwap,
     realize_native_operation,
 )
-from fatqat.backends.pulse.superconducting import (
+from fatqat.emulator.superconducting import (
     ControlChannelRef,
     load_calibration_spec,
     load_physics_model,

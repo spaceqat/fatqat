@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from fatqat.backends.pulse.superconducting import (
+from fatqat.emulator.superconducting import (
     PhysicsModelSpec,
     load_calibration_spec,
     load_physics_model,

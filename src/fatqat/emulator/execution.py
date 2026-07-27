@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Iterable, Literal
 
-from ...errors import BackendValidationError
+from ..errors import BackendValidationError
 from .resolved import PulseBlock, ResourceClaim
 
 PlacementMode = Literal["ASAP", "ALAP"]

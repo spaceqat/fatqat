@@ -16,7 +16,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 
-from ...errors import BackendValidationError
+from ..errors import BackendValidationError
 
 _MODEL_FORMAT = "fatqat.physics-model"
 _CALIBRATION_FORMAT = "fatqat.calibration"

@@ -9,9 +9,9 @@ import pytest
 import fatqat as fq
 from fatqat.backends import MeasurementStep, ResetStep
 from fatqat.backends.backend_utils import _LoweringContext
-from fatqat.backends.pulse.backend import PulseBackend
-from fatqat.backends.pulse.resolved import PulseBlock
-from fatqat.backends.pulse.superconducting import (
+from fatqat.emulator.backend import PulseBackend
+from fatqat.emulator.resolved import PulseBlock
+from fatqat.emulator.superconducting import (
     load_calibration_spec,
     load_physics_model,
 )

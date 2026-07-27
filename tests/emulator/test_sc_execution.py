@@ -9,11 +9,11 @@ from qutip import Qobj, basis, ket2dm, tensor
 
 import fatqat as fq
 from fatqat.backends import MeasurementStep, ResetStep
-from fatqat.backends.pulse.backend import PulseBackend
-from fatqat.backends.pulse.engine import PulseEngine, _ShotContext
-from fatqat.backends.pulse.qutip_adapter import SCQutipAdapter
-from fatqat.backends.pulse.resolved import PhaseShift, PulseBlock, SampledControl
-from fatqat.backends.pulse.superconducting import (
+from fatqat.emulator.backend import PulseBackend
+from fatqat.emulator.engine import PulseEngine, _ShotContext
+from fatqat.emulator.qutip_adapter import SCQutipAdapter
+from fatqat.emulator.resolved import PhaseShift, PulseBlock, SampledControl
+from fatqat.emulator.superconducting import (
     load_calibration_spec,
     load_physics_model,
 )

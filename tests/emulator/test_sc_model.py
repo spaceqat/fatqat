@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from fatqat.backends.pulse.superconducting import load_physics_model
+from fatqat.emulator.superconducting import load_physics_model
 from fatqat.errors import BackendValidationError
 
 _FIXTURES = Path(__file__).parent / "fixtures"

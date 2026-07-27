@@ -8,10 +8,10 @@ from typing import Any
 
 import numpy as np
 
-from ...errors import BackendValidationError, UnsupportedOperationError
-from ...operations.base import Operation
-from ...operations.fixed_gates import CZGate, iSwapGate
-from ...operations.parametric_gates import RX, RY, RZ
+from ..errors import BackendValidationError, UnsupportedOperationError
+from ..operations.base import Operation
+from ..operations.fixed_gates import CZGate, iSwapGate
+from ..operations.parametric_gates import RX, RY, RZ
 from .superconducting import (
     CalibrationSpec,
     ControlChannelRef,

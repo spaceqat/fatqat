@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ...backends.engine_contract import _SimulationConfig
-from ...errors import BackendValidationError
-from ...result import _ResultConfig
+from ..backends.engine_contract import _SimulationConfig
+from ..errors import BackendValidationError
+from ..result import _ResultConfig
 
 
 @dataclass(frozen=True)

@@ -10,9 +10,9 @@ import numpy as np
 from qutip import Qobj, basis, ket2dm, mesolve, qeye, tensor
 from qutip_qip.pulse import Drift, Pulse
 
-from ...backends.steps import MeasurementStep, ResetStep
-from ...errors import BackendValidationError
-from ...noise import ContinuousNoise, ThermalRelaxation
+from ..backends.steps import MeasurementStep, ResetStep
+from ..errors import BackendValidationError
+from ..noise import ContinuousNoise, ThermalRelaxation
 from .engine import _ShotContext, _condition_matches
 from .execution import _PlacedPulseRun
 from .resolved import PhaseShift, PhaseSwap, SampledControl

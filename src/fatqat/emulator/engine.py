@@ -7,8 +7,8 @@ from typing import Any, Iterable, Protocol
 
 import numpy as np
 
-from ...backends.steps import MeasurementStep, ResetStep
-from ...errors import BackendValidationError
+from ..backends.steps import MeasurementStep, ResetStep
+from ..errors import BackendValidationError
 from .execution import PlacementMode, _PlacedPulseRun, place_pulse_run
 from .planning import PulsePlanStep
 from .resolved import PulseBlock

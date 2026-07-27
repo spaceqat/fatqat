@@ -6,13 +6,13 @@ from pathlib import Path
 import numpy as np
 
 from fatqat.backends import MeasurementStep, ResetStep
-from fatqat.backends.pulse.engine import PulseEngine
-from fatqat.backends.pulse.resolved import (
+from fatqat.emulator.engine import PulseEngine
+from fatqat.emulator.resolved import (
     PhaseShift,
     PulseBlock,
     SampledControl,
 )
-from fatqat.backends.pulse.superconducting import load_physics_model
+from fatqat.emulator.superconducting import load_physics_model
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 

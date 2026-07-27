@@ -11,17 +11,17 @@ from scipy.interpolate import CubicSpline
 
 import fatqat as fq
 from fatqat.backends import MeasurementStep
-from fatqat.backends.pulse.backend import PulseBackend
-from fatqat.backends.pulse.engine import PulseEngine, _ShotContext
-from fatqat.backends.pulse.execution import place_pulse_run
-from fatqat.backends.pulse.qutip_adapter import FRAME_CONVENTION, SCQutipAdapter
-from fatqat.backends.pulse.resolved import (
+from fatqat.emulator.backend import PulseBackend
+from fatqat.emulator.engine import PulseEngine, _ShotContext
+from fatqat.emulator.execution import place_pulse_run
+from fatqat.emulator.qutip_adapter import FRAME_CONVENTION, SCQutipAdapter
+from fatqat.emulator.resolved import (
     PhaseShift,
     PulseBlock,
     SampledControl,
     realize_native_operation,
 )
-from fatqat.backends.pulse.superconducting import (
+from fatqat.emulator.superconducting import (
     load_calibration_spec,
     load_physics_model,
 )

@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from fatqat.backends.pulse.execution import place_pulse_run
-from fatqat.backends.pulse.resolved import PulseBlock, SampledControl
-from fatqat.backends.pulse.superconducting import load_physics_model
+from fatqat.emulator.execution import place_pulse_run
+from fatqat.emulator.resolved import PulseBlock, SampledControl
+from fatqat.emulator.superconducting import load_physics_model
 from fatqat.errors import BackendValidationError
 
 _FIXTURES = Path(__file__).parent / "fixtures"
