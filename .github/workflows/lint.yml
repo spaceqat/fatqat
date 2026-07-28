@@ -18,15 +18,16 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      # numba and qiskit (optional groups) are installed so pylint can resolve
-      # `fatqat.simulator.nb`'s numba imports; without it pylint reports an
-      # import-error. `--group numba` is passed to `uv run` too, or it would
-      # re-sync without the group and drop numba (as in tests.yml).
-      - name: Install dependencies (with lint tools and numba)
-        run: uv sync --group lint --group numba --group qiskit
+      # The optional groups (numba, qiskit, draw) are installed so pylint can
+      # resolve their imports (e.g. `fatqat.simulator.nb`'s numba,
+      # `fatqat.draw`'s qutip-qip); without them pylint reports import-errors.
+      # The groups are passed to `uv run` too, or it would re-sync without them
+      # and drop the packages (as in tests.yml).
+      - name: Install dependencies (with lint tools and optional groups)
+        run: uv sync --group lint --group numba --group qiskit --group draw
 
       - name: Check formatting (black)
-        run: uv run --group lint --group numba --group qiskit black --check --diff src tests conftest.py
+        run: uv run --group lint --group numba --group qiskit --group draw black --check --diff src tests conftest.py
 
       - name: Static analysis (pylint)
-        run: uv run --group lint --group numba --group qiskit pylint src/fatqat tests conftest.py
+        run: uv run --group lint --group numba --group qiskit --group draw pylint src/fatqat tests conftest.py
