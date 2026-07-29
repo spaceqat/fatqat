@@ -403,6 +403,9 @@ class SimulatorBackend:
         # unmapped device label fails run() directly rather than being
         # silently skipped in channels_for()/readout_error_for() matching.
         self._noise_model.validate_for(program, resource_layout)
+        report = self.validate_noise(self._noise_model)
+        if not report.supported:
+            raise BackendValidationError("; ".join(report.warnings))
         context = _LoweringContext(
             resource_layout=resource_layout,
             engine_index_allocation=engine_index_allocation,

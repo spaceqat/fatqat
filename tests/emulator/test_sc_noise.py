@@ -149,8 +149,10 @@ def test_default_noise_covers_unused_model_subsystems_but_specific_replaces_it()
     layout = backend._resolve_resource_layout(program)
     default = ThermalRelaxation(100, 200)
     specific = ThermalRelaxation(50, 100)
-    backend.noise.add_continuous_noise(default)
-    backend.noise.add_continuous_noise(specific, target=program.quantum_registers[0][0])
+    backend._noise_model.add_continuous_noise(default)
+    backend._noise_model.add_continuous_noise(
+        specific, target=program.quantum_registers[0][0]
+    )
 
     selected = backend._continuous_noise(program, layout)
     assert selected == ((specific,), (default,))

@@ -41,7 +41,7 @@ class PulseBackend:
             raise BackendValidationError("calibration does not match the pulse model")
         self.model = model
         self.calibration = calibration
-        self.noise = noise or NoiseModel()
+        self._noise_model = noise or NoiseModel()
 
     def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
         """Bind program declaration order to the snapshot's ordered subsystem ids."""
@@ -106,7 +106,7 @@ class PulseBackend:
                         step,
                         resource_layout,
                         engine_index_allocation,
-                        self.noise,
+                        self._noise_model,
                     )
                 )
             elif isinstance(step, AppliedOperation):
@@ -151,8 +151,8 @@ class PulseBackend:
         )
         resource_layout = self._resolve_resource_layout(program)
         allocation = self._allocate_engine_indices(program)
-        self.noise.validate_for(program, resource_layout)
-        report = self.validate_noise(self.noise)
+        self._noise_model.validate_for(program, resource_layout)
+        report = self.validate_noise(self._noise_model)
         if not report.supported:
             raise BackendValidationError("; ".join(report.warnings))
         context = _LoweringContext(
@@ -278,7 +278,7 @@ class PulseBackend:
             for index in range(register.size)
         }
         return tuple(
-            self.noise.continuous_noise_for(
+            self._noise_model.continuous_noise_for(
                 refs_by_label.get(subsystem_id), subsystem_id
             )
             for subsystem_id in self.model.subsystem_ids
