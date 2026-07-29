@@ -16,14 +16,17 @@ from fatqat._engine_index_allocation import _EngineIndexAllocation
 from fatqat.backends.backend_utils import (
     _PlanFacts,
     _lower_measurement_boundary,
+    _lower_reset_boundary,
 )
 from fatqat.backends.engine_contract import (
     _DensityMatrixResultRequest,
     _StateVectorResultRequest,
 )
+from fatqat.backends.steps import ResetStep
 from fatqat.backends.simulator_backend import _resolve_result_request
 from fatqat.errors import BackendValidationError
 from fatqat.noise import NoiseModel
+from fatqat.program import AppliedOperation
 from fatqat.resource_layout import ResourceLayout
 from fatqat.result import _ResultConfig
 
@@ -112,6 +115,25 @@ def test_resolve_result_request_reset_keeps_density_matrix_default():
 
     assert request.counts is False
     assert request.density_matrix is True
+
+
+# --- _lower_reset_boundary: shared by the matrix and pulse families ---
+
+
+def test_reset_boundary_resolves_all_targets_and_condition():
+    program = fq.Program(3, 1)
+    program.add(fq.ops.Reset, (0, 2), condition=(0, 1))
+    step = next(
+        instruction
+        for instruction in program.operations
+        if isinstance(instruction, AppliedOperation)
+    )
+    allocation = _EngineIndexAllocation.from_program(program)
+
+    assert _lower_reset_boundary(step, allocation) == ResetStep(
+        reset_indices=(0, 2),
+        condition=((0, 1),),
+    )
 
 
 # --- _lower_measurement_boundary: shared by the matrix and pulse families --

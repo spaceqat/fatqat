@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Any
 
@@ -10,15 +11,19 @@ import numpy as np
 from .._engine_index_allocation import _EngineIndexAllocation
 from ..backends.backend_utils import _LoweringContext, _normalize_config
 from ..backends.engine_contract import _DensityMatrixResultRequest
+from ..backends.steps import MeasurementStep
+from ..backends.view_normalization import ProgramInstruction, _break_grouped_operations
 from ..errors import BackendExecutionError, BackendValidationError
 from ..job import Job
 from ..noise import NoiseModel, NoiseSupportReport, ThermalRelaxation
-from ..program import Program
+from ..operations import BarrierGate, Measurement, ResetGate
+from ..program import AppliedOperation, Program
 from ..resource_layout import ResourceLayout
 from ..result import Result, counts_dict_from_arrays, reduce_to_counts
+from . import planning
 from .engine import PulseEngine
 from .engine_contract import PulseResultConfig, PulseSimulationConfig
-from .planning import PulsePlanFacts, PulsePlanStep, lower_program
+from .planning import PulsePlanFacts, PulsePlanStep
 from .superconducting import CalibrationSpec, PhysicsModel
 
 
@@ -82,13 +87,45 @@ class PulseBackend:
                 resource_layout=self._resolve_resource_layout(program),
                 engine_index_allocation=self._allocate_engine_indices(program),
             )
-        return lower_program(
-            program,
-            model=self.model,
-            calibration=self.calibration,
-            noise_model=self.noise,
-            resource_layout=context.resource_layout,
-            engine_index_allocation=context.engine_index_allocation,
+        operations = _break_grouped_operations(program.operations)
+        return self._lower(operations, context)
+
+    def _lower(
+        self,
+        operations: Sequence[ProgramInstruction],
+        context: _LoweringContext,
+    ) -> tuple[list[PulsePlanStep], PulsePlanFacts]:
+        """Lower scalar instructions into an ordered, unplaced pulse plan."""
+        resource_layout = context.resource_layout
+        engine_index_allocation = context.engine_index_allocation
+        plan: list[PulsePlanStep] = []
+        for step in operations:
+            if isinstance(step, Measurement):
+                plan.append(
+                    planning._lower_measurement(
+                        step,
+                        resource_layout,
+                        engine_index_allocation,
+                        self.noise,
+                    )
+                )
+            elif isinstance(step, AppliedOperation):
+                if isinstance(step.operation, BarrierGate):
+                    continue
+                if isinstance(step.operation, ResetGate):
+                    plan.append(planning._lower_reset(step, engine_index_allocation))
+                else:
+                    plan.append(
+                        planning._lower_gate(
+                            step,
+                            resource_layout,
+                            engine_index_allocation,
+                            self.model,
+                            self.calibration,
+                        )
+                    )
+        return plan, PulsePlanFacts(
+            has_measurement=any(isinstance(step, MeasurementStep) for step in plan)
         )
 
     def run(

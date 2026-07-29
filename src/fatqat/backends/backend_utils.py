@@ -9,8 +9,10 @@ from .._engine_index_allocation import _EngineIndexAllocation
 from ..errors import BackendValidationError
 from ..noise import NoiseModel
 from ..operations.measurement import Measurement
+from ..program import AppliedOperation
 from ..registers import RegisterRef
 from ..resource_layout import ResourceLayout
+from .steps import ResetStep
 
 
 def _validate_grid_size(grid_size: object) -> tuple[int, int]:
@@ -104,6 +106,23 @@ def _resolve_condition(
         return None
     return tuple(
         (engine_index_allocation.clbit_index(ref), val) for ref, val in condition
+    )
+
+
+def _lower_reset_boundary(
+    step: AppliedOperation, engine_index_allocation: _EngineIndexAllocation
+) -> ResetStep:
+    """Resolve the reset indices and condition shared by backend families.
+
+    Backend-specific policy belongs in each caller before this boundary. For
+    example, the matrix backend rejects channel noise attached to Reset,
+    whereas the pulse backend rejects gate-keyed channel noise globally.
+    """
+    return ResetStep(
+        reset_indices=tuple(
+            engine_index_allocation.subsystem_index(target) for target in step.targets
+        ),
+        condition=_resolve_condition(step.condition, engine_index_allocation),
     )
 
 

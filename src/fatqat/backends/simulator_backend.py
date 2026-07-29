@@ -41,22 +41,14 @@ from __future__ import annotations
 import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
-from math import prod
 from typing import Any
 
 from ..errors import (
     BackendValidationError,
-    MatrixImplementationError,
     NoMeasurementWarning,
-    UnsupportedOperationError,
 )
 from .._engine_index_allocation import _EngineIndexAllocation
-from ..implementation import (
-    MatrixImplementation,
-    DeviceOperands,
-    ImplementationMap,
-    default_matrix_implementation_map,
-)
+from ..implementation import ImplementationMap, default_matrix_implementation_map
 from ..job import Job
 from ..noise import (
     ChannelImplementationMap,
@@ -64,8 +56,7 @@ from ..noise import (
     NoiseSupportReport,
     default_channel_implementation_map,
 )
-from ..noise.base import _validate_kraus_shapes
-from ..operations import BarrierGate, Measurement, Operation, ResetGate
+from ..operations import BarrierGate, Measurement, ResetGate
 from ..program import AppliedOperation, Program
 from ..registers import RegisterRef
 from ..resource_layout import DeviceOperand, ResourceLayout
@@ -78,10 +69,9 @@ from ..simulator import NumpyDMSimulator, NumpySVSimulator, Simulator
 from .backend_utils import (
     _LoweringContext,
     _PlanFacts,
-    _lower_measurement_boundary,
     _normalize_config,
-    _resolve_condition,
 )
+from . import planning
 from .engine_contract import (
     RawResult,
     _DensityMatrixResultRequest,
@@ -92,7 +82,6 @@ from .engine_contract import (
 from .view_normalization import ProgramInstruction, _break_grouped_operations
 from .steps import (
     ApplyChannelStep,
-    ApplyMatrixStep,
     MeasurementStep,
     ResetStep,
     ResolvedStep,
@@ -105,176 +94,6 @@ _METHOD_ALIASES = {
     "density_matrix": "density_matrix",
     "dm": "density_matrix",
 }
-
-
-def _gate_implementation_for(
-    operation: Operation, device_operands: DeviceOperands, impl_map: ImplementationMap
-) -> MatrixImplementation:
-    """Resolve the matrix rule for a gate operation on a device target key.
-
-    Raises :py:exc:`~fatqat.errors.UnsupportedOperationError` if the operation has no rule at
-    all, or if it has rules but none for this target key — the message
-    distinguishes the two.
-    """
-    if not impl_map.supports(operation):
-        raise UnsupportedOperationError(
-            f"{type(operation).__name__} is not supported by this backend"
-        )
-    rule = impl_map.implementation_for(operation, device_operands=device_operands)
-    if rule is None:
-        raise UnsupportedOperationError(
-            f"{type(operation).__name__} is not supported on device operands {device_operands}"
-        )
-    return rule
-
-
-def _lower_measurement(
-    step: Measurement,
-    resource_layout: ResourceLayout,
-    engine_index_allocation: _EngineIndexAllocation,
-    noise_model: NoiseModel,
-) -> MeasurementStep:
-    """Lower one `Measurement` instruction into a `MeasurementStep`."""
-    # Only used to build reported_digit_maps below; _lower_measurement_boundary
-    # independently resolves the authoritative measured_indices from step.targets.
-    digit_map_indices = tuple(
-        engine_index_allocation.subsystem_index(q) for q in step.targets
-    )
-    reported_digit_maps = tuple(
-        tuple(range(engine_index_allocation.system_dims[measured]))
-        for measured in digit_map_indices
-    )
-    measured_indices, classical_indices, confusions = _lower_measurement_boundary(
-        step,
-        reported_digit_maps,
-        resource_layout,
-        engine_index_allocation,
-        noise_model,
-    )
-    return MeasurementStep(
-        measured_indices=measured_indices,
-        classical_indices=classical_indices,
-        confusions=confusions,
-        # The identity map is the compatibility default (see steps.py); only
-        # carry it explicitly when a confusion matrix needs it for the
-        # reported-dimension check, so an identity, noise-free measurement
-        # keeps the None default the numba fast path recognizes.
-        reported_digit_maps=reported_digit_maps if confusions is not None else None,
-    )
-
-
-def _lower_reset(
-    step: AppliedOperation,
-    resource_layout: ResourceLayout,
-    engine_index_allocation: _EngineIndexAllocation,
-    noise_model: NoiseModel,
-) -> ResetStep:
-    """Lower one `Reset` `AppliedOperation` into a `ResetStep`.
-
-    Raises:
-        UnsupportedOperationError: If channel noise is attached to Reset.
-            Reset-attached channels ("apply after the ideal reset") are
-            designed but not wired yet; raising keeps the gap loud instead
-            of silently dropping registered noise. The selector lookup runs
-            against logical/physical identity (never engine indices) before
-            the guard raises.
-    """
-    target_indices = tuple(
-        engine_index_allocation.subsystem_index(t) for t in step.targets
-    )
-    if noise_model.channels_for(ResetGate, step.targets, resource_layout):
-        raise UnsupportedOperationError(
-            "channel noise attached to Reset is not supported yet"
-        )
-    cond = _resolve_condition(step.condition, engine_index_allocation)
-    return ResetStep(reset_indices=target_indices, condition=cond)
-
-
-def _lower_gate(
-    step: AppliedOperation,
-    resource_layout: ResourceLayout,
-    engine_index_allocation: _EngineIndexAllocation,
-    impl_map: ImplementationMap,
-    noise_model: NoiseModel,
-    channel_map: ChannelImplementationMap,
-) -> list[ResolvedStep]:
-    """Lower one ordinary-gate `AppliedOperation`.
-
-    Returns the gate's `ApplyMatrixStep` followed by one `ApplyChannelStep`
-    per noise channel attached to this occurrence, in registration order,
-    each inheriting the gate's condition. Every gate reaching here has only
-    scalar targets: grouped expansion already happened before lowering, so
-    each target maps to one device operand and one engine index. Targets
-    were validated when this `AppliedOperation` was constructed.
-    Implementation-map lookup uses device operands from the resource
-    layout; every execution index comes from the engine index allocation
-    instead.
-    """
-    device_operands = resource_layout.device_operands(step.targets)
-    engine_indices = tuple(
-        engine_index_allocation.subsystem_index(t) for t in step.targets
-    )
-    cond = _resolve_condition(step.condition, engine_index_allocation)
-
-    rule = _gate_implementation_for(step.operation, device_operands, impl_map)
-    try:
-        matrix = rule(step.operation, targets=step.targets)
-    except Exception as exc:
-        raise MatrixImplementationError(
-            f"implementation for {type(step.operation).__name__} raised: {exc}"
-        ) from exc
-
-    # Check matrix shape matches this instruction's target dims.
-    target_dims = tuple(engine_index_allocation.system_dims[i] for i in engine_indices)
-    expected = prod(target_dims)
-    if matrix.shape != (expected, expected):
-        raise BackendValidationError(
-            f"{type(step.operation).__name__} resolved to a "
-            f"{matrix.shape} matrix, incompatible with target "
-            f"dimensions {target_dims} (expected "
-            f"{(expected, expected)})"
-        )
-
-    steps: list[ResolvedStep] = [
-        ApplyMatrixStep(
-            matrix=matrix,
-            target_indices=engine_indices,
-            condition=cond,
-            # Identity, not mechanics: the backend forwards which
-            # implementation was selected; the engine alone decides
-            # what (if anything) that means for kernel choice.
-            kernel_key=rule._kernel_key(step.operation, targets=step.targets),
-        )
-    ]
-
-    # Noise selection matches against the occurrence's logical targets
-    # and/or resource-layout device operands (never engine indices);
-    # engine indices are used only for the emitted ApplyChannelStep.
-    for channel, extent in noise_model.channels_for(
-        type(step.operation), step.targets, resource_layout
-    ):
-        channel_rule = channel_map.get(type(channel))
-        if channel_rule is None:
-            raise UnsupportedOperationError(
-                f"{type(channel).__name__} has no channel "
-                "implementation on this backend"
-            )
-        extent_indices = tuple(
-            engine_index_allocation.subsystem_index(target) for target in extent
-        )
-        kraus_ops = tuple(channel_rule(channel, targets=extent))
-        extent_dim = prod(
-            engine_index_allocation.system_dims[index] for index in extent_indices
-        )
-        _validate_kraus_shapes(kraus_ops, extent_dim, type(channel).__name__)
-        steps.append(
-            ApplyChannelStep(
-                kraus_ops=kraus_ops,
-                target_indices=extent_indices,
-                condition=cond,
-            )
-        )
-    return steps
 
 
 class SimulatorBackend:
@@ -774,8 +593,7 @@ class SimulatorBackend:
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Lower a program into an execution plan and classify it, in one pass.
 
-        Dispatches each instruction to a per-type free function
-        (`_lower_measurement`/`_lower_reset`/`_lower_gate`), threading this
+        Dispatches each instruction to matrix-planning helpers, threading this
         backend's noise model / implementation map / channel map through
         explicitly - none of the three is overridden by any backend today,
         so they take their dependencies as plain parameters instead of
@@ -802,7 +620,7 @@ class SimulatorBackend:
         for step in operations:
             if isinstance(step, Measurement):
                 plan.append(
-                    _lower_measurement(
+                    planning._lower_measurement(
                         step,
                         resource_layout,
                         engine_index_allocation,
@@ -814,7 +632,7 @@ class SimulatorBackend:
                     continue
                 if isinstance(step.operation, ResetGate):
                     plan.append(
-                        _lower_reset(
+                        planning._lower_reset(
                             step,
                             resource_layout,
                             engine_index_allocation,
@@ -823,7 +641,7 @@ class SimulatorBackend:
                     )
                 else:
                     plan.extend(
-                        _lower_gate(
+                        planning._lower_gate(
                             step,
                             resource_layout,
                             engine_index_allocation,

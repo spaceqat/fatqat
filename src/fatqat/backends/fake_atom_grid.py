@@ -284,9 +284,7 @@ class AtomGridSimulator(SimulatorBackend):
         return ResourceLayout(labels)
 
     def _lower(
-        self,
-        operations: Sequence[ProgramInstruction],
-        context: _LoweringContext,
+        self, operations: Sequence[ProgramInstruction], context: _LoweringContext
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
         """Apply this program's atom-loading lifecycle, then lower normally.
 
