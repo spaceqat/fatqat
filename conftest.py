@@ -9,3 +9,4 @@ pytest_plugins = "scipy_doctest"
 collect_ignore = []
 if importlib.util.find_spec("numba") is None:
     collect_ignore.append("src/fatqat/simulator/nb.py")
+    collect_ignore.append("src/fatqat/noise/nb.py")

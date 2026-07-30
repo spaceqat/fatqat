@@ -5,7 +5,7 @@ import pytest
 
 import fatqat as fq
 from fatqat.backends import SimulatorBackend
-from fatqat.backends.steps import ApplyMatrixStep, BuiltinKernelKey
+from fatqat.backends.steps import ApplyChannelStep, ApplyMatrixStep, BuiltinKernelKey
 from fatqat.implementation import default_matrix_implementation_map
 
 numba = pytest.importorskip("numba")
@@ -14,10 +14,15 @@ numba = pytest.importorskip("numba")
 from fatqat.simulator.nb import (
     _classify_matrix,
     _DENSE,
+    _fuse_gate_channels,
     _KERNEL_SPECS,
+    _superop_csr,
     NumbaSVSimulator,
 )
 from fatqat.simulator.np import NumpySVSimulator
+from fatqat.noise import Depolarizing
+from fatqat.noise.catalog import depolarizing_rule
+from fatqat.noise.nb import _kraus_stack, _kraus_superop_kernel
 
 # pylint: enable=wrong-import-position
 
@@ -207,3 +212,113 @@ def test_structure_cache_pins_steps_and_reuses_resolutions():
     first = simulator._resolve_structure(step)
     assert simulator._resolve_structure(step) is first  # cached, not re-resolved
     assert simulator._structure_cache[id(step)][0] is step  # pinned identity
+
+
+def _reconstruct(csr, d):
+    """Dense matrix from a ``(indptr, indices, data)`` CSR triple."""
+    indptr, indices, data = csr
+    matrix = np.zeros((d, d), dtype=complex)
+    for r in range(d):
+        for k in range(indptr[r], indptr[r + 1]):
+            matrix[r, indices[k]] = data[k]
+    return matrix
+
+
+def test_superop_csr_skips_dense_and_round_trips_a_sparse_channel():
+    # A fully dense matrix is left to the dense kernel (no CSR).
+    assert _superop_csr(np.ones((4, 4), dtype=complex)) is None
+
+    # A two-qubit depolarizing super-operator is far from full (~28 of 256
+    # nonzero, plus a little ~1e-17 residue). Its CSR lists every nonzero in
+    # column order, so the round-trip reproduces it bit for bit.
+    qreg = fq.QuantumRegister(2)
+    ops = depolarizing_rule(Depolarizing(p=0.2), targets=(qreg[0], qreg[1]))
+    superop = _kraus_superop_kernel(_kraus_stack(ops))
+    csr = _superop_csr(superop)
+    assert csr is not None
+    assert csr[1].size < superop.size // 2  # comfortably below the sparse floor
+    assert np.array_equal(_reconstruct(csr, superop.shape[0]), superop)
+
+
+def test_fuse_gate_channels_merges_an_adjacent_same_target_pair():
+    # gate M then channel {K_i} on the same targets is the channel {K_i M}:
+    # one super-operator pass instead of two, kraus_ops multiplied through.
+    m = np.array([[0, 1], [1, 0]], dtype=complex)  # X
+    k0 = np.sqrt(0.9) * np.eye(2, dtype=complex)
+    k1 = np.sqrt(0.1) * np.array([[0, 1], [1, 0]], dtype=complex)
+    gate = ApplyMatrixStep(matrix=m, target_indices=(0,))
+    channel = ApplyChannelStep(kraus_ops=(k0, k1), target_indices=(0,))
+
+    fused = _fuse_gate_channels([gate, channel])
+
+    assert len(fused) == 1
+    assert isinstance(fused[0], ApplyChannelStep)
+    assert fused[0].target_indices == (0,)
+    assert np.allclose(fused[0].kraus_ops[0], k0 @ m)
+    assert np.allclose(fused[0].kraus_ops[1], k1 @ m)
+
+
+def test_plan_chunks_floor_scales_with_thread_count():
+    # The parallel floor is per-thread (`_MAX_THREADS * _GRAIN_TO_THREAD`), so a
+    # state stays serial just below it and splits across threads at it - the
+    # absolute crossover tracks the core count, not a fixed size.
+    from fatqat.simulator.nb import (
+        _GRAIN_TO_THREAD,
+        _MAX_THREADS,
+        _MIN_SIZE_TO_THREAD,
+        _plan_chunks,
+    )
+
+    assert _MIN_SIZE_TO_THREAD == _MAX_THREADS * _GRAIN_TO_THREAD
+    cosets = _MIN_SIZE_TO_THREAD  # >> _MAX_THREADS, so the chunk count is thread-bound
+    assert _plan_chunks(cosets, _MIN_SIZE_TO_THREAD - 1) == 1
+    assert _plan_chunks(cosets, _MIN_SIZE_TO_THREAD) == min(_MAX_THREADS, cosets)
+
+
+def test_coset_chunking_is_bit_identical_across_chunk_counts():
+    # The floor only ever changes the chunk COUNT; disjoint cosets make the
+    # result independent of it, which is why moving the floor never changes an
+    # amplitude. A dense gate applied as one chunk equals it applied as many.
+    from fatqat.simulator.nb import (
+        _apply_resolved_parallel,
+        _apply_resolved_serial,
+        _compute_apply_plan,
+    )
+
+    rng = np.random.default_rng(0)
+    size = 1 << 6
+    state = (rng.standard_normal(size) + 1j * rng.standard_normal(size)).astype(
+        np.complex128
+    )
+    matrix = (rng.standard_normal((2, 2)) + 1j * rng.standard_normal((2, 2))).astype(
+        np.complex128
+    )
+    columns = np.empty(2, dtype=np.int64)
+    values = np.empty(2, dtype=np.complex128)
+    code = int(_classify_matrix(matrix, columns, values))
+    offsets, comp_strides, comp_dims, num_cosets, _ = _compute_apply_plan(
+        (2,) * 6, (0,)
+    )
+
+    args = (code, matrix, columns, values, offsets, comp_strides, comp_dims, num_cosets)
+    serial = _apply_resolved_serial(state.copy(), *args)
+    parallel = _apply_resolved_parallel(state.copy(), *args, 4)
+    assert np.array_equal(serial, parallel)
+
+
+def test_fuse_gate_channels_leaves_unfusable_pairs_untouched():
+    # Only exact-adjacent, identically-targeted, unconditional pairs merge; a
+    # differently-targeted or conditioned neighbor passes through by identity.
+    m = np.eye(2, dtype=complex)
+    kraus = (np.eye(2, dtype=complex),)
+    gate = ApplyMatrixStep(matrix=m, target_indices=(0,))
+    other_target = ApplyChannelStep(kraus_ops=kraus, target_indices=(1,))
+    conditioned = ApplyChannelStep(
+        kraus_ops=kraus, target_indices=(0,), condition=((0, 1),)
+    )
+    plan = [gate, other_target, gate, conditioned]
+
+    fused = _fuse_gate_channels(plan)
+
+    assert len(fused) == len(plan)
+    assert all(f is p for f, p in zip(fused, plan))
