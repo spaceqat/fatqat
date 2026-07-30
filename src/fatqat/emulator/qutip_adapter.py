@@ -44,22 +44,24 @@ class SCQutipAdapter:
         self,
         model: PhysicsModel,
         *,
-        engine_to_model: tuple[int, ...] | None = None,
+        engine_index_to_model_ordinal: tuple[int, ...] | None = None,
         always_on_noise: tuple[ResolvedPulseNoise, ...] = (),
     ) -> None:
         self._model = model
         self._dims = [model.physical_dimension] * len(model.subsystems)
-        self._engine_to_model = (
+        self._engine_index_to_model_ordinal = (
             tuple(range(len(model.subsystems)))
-            if engine_to_model is None
-            else tuple(engine_to_model)
+            if engine_index_to_model_ordinal is None
+            else tuple(engine_index_to_model_ordinal)
         )
-        if len(set(self._engine_to_model)) != len(self._engine_to_model) or any(
+        if len(set(self._engine_index_to_model_ordinal)) != len(
+            self._engine_index_to_model_ordinal
+        ) or any(
             type(ordinal) is not int or not 0 <= ordinal < len(model.subsystems)
-            for ordinal in self._engine_to_model
+            for ordinal in self._engine_index_to_model_ordinal
         ):
             raise BackendValidationError(
-                "engine-to-model subsystem mapping must contain unique model ordinals"
+                "engine-index-to-model-ordinal mapping must contain unique model ordinals"
             )
         self._local_annihilation = Qobj(model.annihilation)
         self._local_number = Qobj(model.number)
@@ -376,7 +378,7 @@ class SCQutipAdapter:
 
     def _model_ordinal(self, engine_index: int) -> int:
         try:
-            return self._engine_to_model[engine_index]
+            return self._engine_index_to_model_ordinal[engine_index]
         except (IndexError, TypeError):
             raise BackendValidationError(
                 f"unknown pulse-engine subsystem index {engine_index!r}"

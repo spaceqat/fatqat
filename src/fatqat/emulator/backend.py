@@ -167,7 +167,9 @@ class PulseBackend:
         )
         plan, facts = self._lower_program(program, context=context)
         request = self._validate(result, shots, facts)
-        engine_to_model = self._engine_to_model(program, resource_layout, allocation)
+        engine_index_to_model_ordinal = self._engine_index_to_model_ordinal(
+            program, resource_layout, allocation
+        )
         always_on_noise = self._always_on_noise(program, resource_layout)
         try:
             return Job.done(
@@ -178,7 +180,7 @@ class PulseBackend:
                     result,
                     shots,
                     allocation,
-                    engine_to_model,
+                    engine_index_to_model_ordinal,
                     always_on_noise,
                 )
             )
@@ -216,14 +218,14 @@ class PulseBackend:
         result_config: PulseResultConfig,
         shots: int,
         allocation: _EngineIndexAllocation,
-        engine_to_model: tuple[int, ...],
+        engine_index_to_model_ordinal: tuple[int, ...],
         always_on_noise: tuple[ResolvedPulseNoise, ...],
     ) -> Result:
         from .qutip_adapter import SCQutipAdapter
 
         runner = SCQutipAdapter(
             self.model,
-            engine_to_model=engine_to_model,
+            engine_index_to_model_ordinal=engine_index_to_model_ordinal,
             always_on_noise=always_on_noise,
         )
         outcomes = PulseEngine(
@@ -259,7 +261,7 @@ class PulseBackend:
             },
         )
 
-    def _engine_to_model(
+    def _engine_index_to_model_ordinal(
         self,
         program: Program,
         resource_layout: ResourceLayout,
