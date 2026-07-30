@@ -1,4 +1,4 @@
-"""Typed continuous-noise selection and qutrit lowering tests."""
+"""Always-on channel selection and qutrit lowering tests."""
 
 import json
 from pathlib import Path
@@ -16,7 +16,7 @@ from fatqat.emulator.superconducting import (
 )
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
-    ContinuousNoise,
+    Channel,
     Depolarizing,
     NoiseModel,
     ThermalRelaxation,
@@ -38,101 +38,101 @@ def _model_and_calibration():
 
 
 def test_thermal_relaxation_validates_finite_t1_t2_bounds():
-    assert ThermalRelaxation(10, 20) == ThermalRelaxation(10.0, 20.0)
+    assert ThermalRelaxation(t1=10, t2=20) == ThermalRelaxation(t1=10.0, t2=20.0)
     for values in ((0, 1), (1, 0), (1, 2.1), (np.inf, 1), (True, 1)):
         with pytest.raises(ValueError):
-            ThermalRelaxation(*values)
+            ThermalRelaxation(t1=values[0], t2=values[1])
 
 
-def test_continuous_selection_specifics_replace_defaults_and_accumulate():
+def test_always_on_selection_specifics_replace_defaults_and_accumulate():
     program = fq.Program(1)
     ref = program.quantum_registers[0][0]
     layout = ResourceLayout({ref: "q0"})
-    default = ThermalRelaxation(100, 150)
-    physical = ThermalRelaxation(200, 300)
-    logical = ThermalRelaxation(400, 600)
+    default = ThermalRelaxation(t1=100, t2=150)
+    physical = ThermalRelaxation(t1=200, t2=300)
+    logical = ThermalRelaxation(t1=400, t2=600)
     noise = NoiseModel()
-    noise.add_continuous_noise(default)
-    noise.add_continuous_noise(physical, target="q0")
-    noise.add_continuous_noise(logical, target=ref)
+    noise.add_channel(default)
+    noise.add_channel(physical, targets="q0")
+    noise.add_channel(logical, targets=ref)
 
     noise.validate_for(program, layout)
-    assert noise.continuous_noise_for(ref, "q0") == (physical, logical)
-    assert noise.continuous_noise_for(None, "q1") == (default,)
+    assert noise.always_on_channels_for(ref, "q0") == (physical, logical)
+    assert noise.always_on_channels_for(None, "q1") == (default,)
 
     illegal = NoiseModel()
-    illegal.add_continuous_noise(default, target="q1")
+    illegal.add_channel(default, targets="q1")
     with pytest.raises(BackendValidationError, match="effective resource layout"):
         illegal.validate_for(program, layout)
 
 
-def test_empty_legacy_shim_is_harmless_but_nonempty_requires_migration():
-    program = fq.Program(1)
-    ref = program.quantum_registers[0][0]
-    layout = ResourceLayout({ref: "q0"})
-    noise = NoiseModel()
-    noise.validate_for(program, layout)
-    noise.qubit_noise["q0"] = object()
-    with pytest.raises(BackendValidationError, match="add_continuous_noise"):
-        noise.validate_for(program, layout)
+class _UnsupportedAlwaysOn(Channel):
+    _num_subsystems = 1
 
 
-class _UnsupportedContinuous(ContinuousNoise):
-    pass
-
-
-def test_support_reports_reject_unknown_continuous_sources_without_spoofing_zz():
+def test_support_reports_reject_unknown_always_on_sources():
     model, calibration = _model_and_calibration()
     noise = NoiseModel()
-    noise.add_continuous_noise(_UnsupportedContinuous())
+    noise.add_channel(_UnsupportedAlwaysOn())
     report = PulseBackend(model, calibration).validate_noise(noise)
-    assert report.rejected_sources == ("_UnsupportedContinuous",)
+    assert report.rejected_sources == ("_UnsupportedAlwaysOn(always-on)",)
     assert not report.supported
 
 
-def test_matrix_backend_keeps_gate_channels_and_rejects_typed_continuous_noise():
+def test_matrix_backend_keeps_gate_channels_and_rejects_always_on_noise():
     noise = NoiseModel()
-    noise.add_channel(fq.ops.X, Depolarizing(p=0.1))
-    noise.add_continuous_noise(ThermalRelaxation(100, 150))
+    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X)
+    noise.add_channel(ThermalRelaxation(t1=100, t2=150))
     report = SimulatorBackend().validate_noise(noise)
     assert "Depolarizing" in report.accepted_sources
-    assert "ThermalRelaxation" in report.rejected_sources
+    assert "ThermalRelaxation(always-on)" in report.rejected_sources
 
 
 def test_pulse_backend_names_each_rejected_gate_channel_source():
     model, calibration = _model_and_calibration()
     noise = NoiseModel()
-    noise.add_channel(fq.ops.X, Depolarizing(p=0.1))
+    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X)
     report = PulseBackend(model, calibration).validate_noise(noise)
     assert report.rejected_sources == ("Depolarizing",)
 
 
 def test_qutrit_collapse_coefficients_and_t2_limit_are_exact():
-    model, _ = _model_and_calibration()
-    source = ThermalRelaxation(100, 120)
-    adapter = SCQutipAdapter(model, continuous_noise=((source,), ()))
+    model, calibration = _model_and_calibration()
+    noise = NoiseModel()
+    source = ThermalRelaxation(t1=100, t2=120)
+    noise.add_channel(source, targets="q0")
+    backend = PulseBackend(model, calibration, noise=noise)
+    adapter = SCQutipAdapter(
+        model,
+        always_on_noise=backend._always_on_noise(fq.Program(0), ResourceLayout({})),
+    )
     collapse = adapter._collapse_operators
     assert len(collapse) == 2
-    expected_t1 = np.sqrt(1 / source.T1_ns) * adapter._annihilation[0]
-    expected_phi = (
-        np.sqrt(2 * (1 / source.T2_ns - 1 / (2 * source.T1_ns))) * adapter._number[0]
-    )
+    expected_t1 = np.sqrt(source.amplitude_rate) * adapter._annihilation[0]
+    expected_phi = np.sqrt(2 * source.pure_dephasing_rate) * adapter._number[0]
     assert np.allclose(collapse[0](0).full(), expected_t1.full())
     assert np.allclose(collapse[1](0).full(), expected_phi.full())
 
-    limited = ThermalRelaxation(100, 200)
-    adapter = SCQutipAdapter(model, continuous_noise=((limited,), ()))
+    limited_noise = NoiseModel()
+    limited_noise.add_channel(ThermalRelaxation(t1=100, t2=200), targets="q0")
+    limited_backend = PulseBackend(model, calibration, noise=limited_noise)
+    adapter = SCQutipAdapter(
+        model,
+        always_on_noise=limited_backend._always_on_noise(
+            fq.Program(0), ResourceLayout({})
+        ),
+    )
     assert len(adapter._collapse_operators) == 1
 
 
 def test_pulse_backend_accepts_and_executes_thermal_relaxation():
     model, calibration = _model_and_calibration()
     noise = NoiseModel()
-    noise.add_continuous_noise(ThermalRelaxation(100, 150))
+    noise.add_channel(ThermalRelaxation(t1=100, t2=150))
     backend = PulseBackend(model, calibration, noise=noise)
     report = backend.validate_noise(noise)
     assert report.supported
-    assert report.accepted_sources == ("ThermalRelaxation",)
+    assert report.accepted_sources == ("ThermalRelaxation(always-on)",)
 
     program = fq.Program(1)
     program.add(fq.ops.RX(0.3), 0)
@@ -147,12 +147,17 @@ def test_default_noise_covers_unused_model_subsystems_but_specific_replaces_it()
     program = fq.Program(1)
     backend = PulseBackend(model, calibration)
     layout = backend._resolve_resource_layout(program)
-    default = ThermalRelaxation(100, 200)
-    specific = ThermalRelaxation(50, 100)
-    backend._noise_model.add_continuous_noise(default)
-    backend._noise_model.add_continuous_noise(
-        specific, target=program.quantum_registers[0][0]
-    )
+    default = ThermalRelaxation(t1=100, t2=200)
+    specific = ThermalRelaxation(t1=50, t2=100)
+    backend._noise_model.add_channel(default)
+    backend._noise_model.add_channel(specific, targets=program.quantum_registers[0][0])
 
-    selected = backend._continuous_noise(program, layout)
-    assert selected == ((specific,), (default,))
+    selected = backend._always_on_noise(program, layout)
+    amplitude = [
+        binding
+        for binding in selected
+        if binding.channel_type.__name__ == "AmplitudeDamping"
+    ]
+    assert [binding.target_indices for binding in amplitude] == [(0,), (1,)]
+    assert amplitude[0].rate == pytest.approx((0.02, 0.04))
+    assert amplitude[1].rate == pytest.approx((0.01, 0.02))

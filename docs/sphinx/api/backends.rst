@@ -252,10 +252,13 @@ density matrix with ``result_config={"final_state": True}``. That density
 matrix includes every transmon in the selected model, even if the program did
 not address it, and has shape ``(3**m, 3**m)`` for ``m`` model subsystems.
 
-Pulse execution supports continuous
-:py:class:`~fatqat.noise.ThermalRelaxation` (T1/T2) and readout confusion
-through :py:class:`~fatqat.NoiseModel`. Coherent ZZ and gate-keyed channel
-noise are not supported by this backend in v0.1.
+Pulse execution supports :py:class:`~fatqat.noise.ThermalRelaxation` (T1/T2)
+and rate-mode :py:class:`~fatqat.noise.AmplitudeDamping`/
+:py:class:`~fatqat.noise.PhaseDamping` as always-on noise, plus the same
+damping descriptors in operation-scoped probability or rate mode. Both
+activation scopes use :py:meth:`fatqat.NoiseModel.add_channel`; omitting
+``operation`` means always-on. Readout confusion is also supported. Coherent
+ZZ and every other channel type are not supported by this backend in v0.1.
 
 .. autoclass:: fatqat.backends.SimulatorBackend
    :members:

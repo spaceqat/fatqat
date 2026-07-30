@@ -11,6 +11,7 @@ import fatqat as fq
 from fatqat.backends import MeasurementStep, ResetStep
 from fatqat.emulator.backend import PulseBackend
 from fatqat.emulator.engine import PulseEngine, _ShotContext
+from fatqat.emulator.pulse_noise import resolve_pulse_noise
 from fatqat.emulator.qutip_adapter import SCQutipAdapter
 from fatqat.emulator.resolved import PhaseShift, PulseBlock, SampledControl
 from fatqat.emulator.superconducting import (
@@ -256,8 +257,16 @@ class _ExcitedAdapter(SCQutipAdapter):
 
 def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames():
     model, _ = _model_and_calibration()
-    thermal = ThermalRelaxation(5, 10)
-    adapter = _ExcitedAdapter(model, continuous_noise=((thermal,), ()))
+    thermal = ThermalRelaxation(t1=5, t2=10)
+    adapter = _ExcitedAdapter(
+        model,
+        always_on_noise=resolve_pulse_noise(
+            thermal,
+            target_indices=(0,),
+            physical_dimension=model.physical_dimension,
+            duration=None,
+        ),
+    )
     frame = model.frame("q0")
     block = PulseBlock(
         model,

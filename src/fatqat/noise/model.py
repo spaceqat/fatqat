@@ -1,7 +1,9 @@
-"""NoiseModel: the routing container mapping gate occurrences to channels.
+"""NoiseModel: the routing container mapping scopes and targets to channels.
 
-A `NoiseModel` holds *which* channel descriptors apply to *which* gate
-occurrences - selection facts only, no Kraus arrays and no execution logic.
+A `NoiseModel` holds *which* channel descriptors apply, *where*, and *when* -
+selection facts only, no Kraus arrays and no execution logic. An optional
+operation selector defines the activation scope: ``operation=None`` is
+always-on, while an operation class selects matching occurrences.
 It is standalone and reusable: independent of any `Program`, usable across
 backends, and passed to a backend by reference via its ``noise=`` constructor
 parameter. Resolution into concrete Kraus payloads happens at backend
@@ -50,7 +52,6 @@ from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView
 from ..resource_layout import DeviceOperand, ResourceLayout
 from .base import Channel
-from .continuous import ContinuousNoise
 
 # One entry per add_channel() call: an all-targets fallback (None), a
 # logical ref-tuple selector, or a physical device-label-tuple selector
@@ -68,42 +69,28 @@ _GateTargetsArg = _GateSelector | RegisterRef | DeviceOperand
 # (scalar, unlike _GateSelector - a readout error names one measured
 # subsystem, not an occurrence's whole target tuple).
 _ReadoutSelector = RegisterRef | DeviceOperand | None
-_ContinuousSelector = RegisterRef | DeviceOperand | None
-
 _Slots = tuple[int, ...] | None
 
 
 @dataclass(frozen=True)
-class _GateNoiseEntry:
-    """One registration: occurrence selector, extent, and descriptor."""
+class _ChannelEntry:
+    """One channel registration with activation and target scope."""
 
+    operation: type[Operation] | None
     selector: _GateSelector
     slots: _Slots
     channel: Channel
 
 
-@dataclass(frozen=True)
-class _ContinuousNoiseEntry:
-    """One continuously active descriptor and its scalar selector."""
-
-    selector: _ContinuousSelector
-    source: ContinuousNoise
-
-
 class NoiseModel:
     """Selection container for channel-representable noise.
 
-    Maps ``(operation class, target selector)`` occurrences to lists of
-    `Channel` descriptors. Lookup prefers specific-target entries and falls
-    back to the all-targets entry - a specific match replaces defaults of the
-    same extent for that occurrence, while every other occurrence still gets
-    the default (Qiskit Aer's precedence). Repeated ``add_channel`` calls
-    accumulate: each attached channel is an independent physical mechanism,
-    applied in registration order.
+    Each entry combines a descriptor, an optional operation activation scope,
+    and a target selector. Specific targets replace defaults within the same
+    activation scope; repeated registrations accumulate as independent
+    physical mechanisms in registration order.
 
     Attributes:
-        qubit_noise: Empty-only legacy placeholder. A non-empty value is
-            rejected; use :meth:`add_continuous_noise` instead.
         metadata: Free-form user annotations, never interpreted here.
 
     Examples:
@@ -112,7 +99,7 @@ class NoiseModel:
         >>> import fatqat as fq
         >>> import fatqat.operations as op
         >>> noise = fq.NoiseModel()
-        >>> noise.add_channel(op.X, fq.noise.Depolarizing(p=0.2))
+        >>> noise.add_channel(fq.noise.Depolarizing(p=0.2), operation=op.X)
         >>> program = fq.Program(1)
         >>> program.add(op.X, 0)
         >>> result = fq.backends.SimulatorBackend(method="DM", noise=noise).run(
@@ -125,29 +112,41 @@ class NoiseModel:
     """
 
     def __init__(self) -> None:
-        self._gate_channels: dict[type[Operation], list[_GateNoiseEntry]] = {}
+        self._channels: list[_ChannelEntry] = []
         self._readout_errors: list[tuple[_ReadoutSelector, np.ndarray]] = []
-        self._continuous_noise: list[_ContinuousNoiseEntry] = []
-        self.qubit_noise: dict[Any, Any] = {}
         self.metadata: dict[str, Any] = {}
 
     def add_channel(
         self,
-        operation: Operation | type[Operation],
         channel: Channel,
         *,
+        operation: Operation | type[Operation] | None = None,
         targets: _GateTargetsArg = None,
         slots: tuple[int, ...] | int | None = None,
     ) -> None:
-        """Attach a channel to every occurrence of an operation, or one target.
+        """Register an always-on or operation-scoped channel.
+
+        The descriptor is first and activation scope is explicit through the
+        keyword-only ``operation`` argument::
+
+            noise.add_channel(AmplitudeDamping(rate=0.01), targets=(q[0],))
+            noise.add_channel(
+                AmplitudeDamping(rate=0.01),
+                operation=op.X,
+                targets=(q[0],),
+            )
+
+        Omitting ``operation`` means always-on. Supplying it activates the
+        channel only for matching operation occurrences.
 
         Args:
-            operation: An :py:class:`~fatqat.operations.Operation` instance
+            channel: The channel descriptor.
+            operation: Optional :py:class:`~fatqat.operations.Operation`
+                instance
                 (e.g. ``op.X``) or subclass, normalized to the class for
-                keying. `Barrier` is rejected: it is a compiler marker with
-                no execution extent for noise to attach to.
-            channel: The `Channel` descriptor to apply after each occurrence.
-            targets: ``None`` (default) applies to every occurrence. A tuple
+                matching. ``None`` means always-on. `Barrier` is rejected.
+            targets: For operation-scoped noise, ``None`` applies to every
+                occurrence. A tuple
                 of quantum :py:class:`~fatqat.registers.RegisterRef` pins the
                 channel to one logical program-target tuple; a tuple of
                 opaque device resource labels (e.g. ``int``, ``str``) pins it
@@ -156,11 +155,13 @@ class NoiseModel:
                 :py:class:`~fatqat.registers.RegisterView` is never accepted
                 (scalar refs only). For a fixed arity-1 operation, a bare
                 `RegisterRef` or device label is also accepted as shorthand
-                for a one-element tuple.
-            slots: ``None`` (default) applies the channel jointly to the
+                for a one-element tuple. For always-on noise, ``None`` applies
+                independently to every physical subsystem and one scalar or
+                one-element tuple selects a specific subsystem.
+            slots: For operation-scoped noise, ``None`` applies the channel jointly to the
                 whole occurrence. An int or strictly increasing tuple of
                 zero-based occurrence positions scopes the channel to those
-                subsystems instead.
+                subsystems instead. Always-on noise does not accept slots.
 
         Selection semantics, precisely:
 
@@ -185,18 +186,31 @@ class NoiseModel:
             ValueError: If ``operation`` is `Barrier`, ``targets`` is empty,
                 or its length does not match a fixed-arity operation.
         """
-        op_cls = _resolve_operation_class(operation)
-        if op_cls is BarrierGate:
-            raise ValueError(
-                "Barrier is a compiler marker with no execution semantics; "
-                "channel noise cannot attach to it"
-            )
         if not isinstance(channel, Channel):
             raise TypeError(f"expected a Channel descriptor, got {channel!r}")
-        selector = _normalize_selector(op_cls, targets)
-        normalized_slots = _normalize_slots(op_cls, channel, selector, slots)
-        self._gate_channels.setdefault(op_cls, []).append(
-            _GateNoiseEntry(selector, normalized_slots, channel)
+
+        if operation is None:
+            if slots is not None:
+                raise ValueError("always-on channel noise does not accept slots")
+            if channel.num_subsystems != 1:
+                raise ValueError(
+                    "always-on channel noise currently requires a "
+                    "single-subsystem descriptor"
+                )
+            selector = _normalize_always_on_selector(targets)
+            op_cls = None
+            normalized_slots = None
+        else:
+            op_cls = _resolve_operation_class(operation)
+            if op_cls is BarrierGate:
+                raise ValueError(
+                    "Barrier is a compiler marker with no execution semantics; "
+                    "channel noise cannot attach to it"
+                )
+            selector = _normalize_selector(op_cls, targets)
+            normalized_slots = _normalize_slots(op_cls, channel, selector, slots)
+        self._channels.append(
+            _ChannelEntry(op_cls, selector, normalized_slots, channel)
         )
 
     def channels_for(
@@ -221,7 +235,8 @@ class NoiseModel:
             resource_layout: The run's public resource layout, used to
                 resolve physical selectors.
         """
-        entries = self._gate_channels.get(_resolve_operation_class(operation))
+        op_cls = _resolve_operation_class(operation)
+        entries = [entry for entry in self._channels if entry.operation is op_cls]
         if not entries:
             return []
         targets = tuple(targets)
@@ -339,47 +354,26 @@ class NoiseModel:
         matrix.flags.writeable = False
         self._readout_errors.append((target, matrix))
 
-    def add_continuous_noise(
-        self,
-        source: ContinuousNoise,
-        *,
-        target: _ContinuousSelector = None,
-    ) -> None:
-        """Attach typed continuous noise globally or to one subsystem.
-
-        ``target=None`` applies to every physical subsystem selected by a pulse
-        model, including model subsystems unused by the program. A logical
-        `RegisterRef` or physical device label selects one occupied subsystem.
-        Matching logical and physical specifics accumulate in registration
-        order and replace defaults for that subsystem.
-        """
-        if not isinstance(source, ContinuousNoise):
-            raise TypeError(f"expected a ContinuousNoise descriptor, got {source!r}")
-        _validate_scalar_selector(target, "continuous-noise")
-        self._continuous_noise.append(_ContinuousNoiseEntry(target, source))
-
-    def continuous_noise_for(
+    def always_on_channels_for(
         self,
         target: RegisterRef | None,
         device_label: DeviceOperand,
-    ) -> tuple[ContinuousNoise, ...]:
-        """Resolve continuous descriptors for one physical model subsystem."""
-        defaults: list[ContinuousNoise] = []
-        specifics: list[ContinuousNoise] = []
-        for entry in self._continuous_noise:
+    ) -> tuple[Channel, ...]:
+        """Resolve always-on channels for one physical model subsystem."""
+        defaults: list[Channel] = []
+        specifics: list[Channel] = []
+        for entry in self._channels:
+            if entry.operation is not None:
+                continue
             selector = entry.selector
             if selector is None:
-                defaults.append(entry.source)
-            elif isinstance(selector, RegisterRef):
-                if target is not None and selector == target:
-                    specifics.append(entry.source)
-            elif selector == device_label:
-                specifics.append(entry.source)
+                defaults.append(entry.channel)
+            elif _is_ref_selector(selector):
+                if target is not None and selector == (target,):
+                    specifics.append(entry.channel)
+            elif selector == (device_label,):
+                specifics.append(entry.channel)
         return tuple(specifics if specifics else defaults)
-
-    def continuous_noise_types(self) -> frozenset[type[ContinuousNoise]]:
-        """Return every typed continuous descriptor class in this model."""
-        return frozenset(type(entry.source) for entry in self._continuous_noise)
 
     def readout_error_for(
         self, target: RegisterRef, resource_layout: ResourceLayout
@@ -449,32 +443,25 @@ class NoiseModel:
         )
         device_labels = resource_layout.device_labels
 
-        if self.qubit_noise:
-            raise BackendValidationError(
-                "NoiseModel.qubit_noise is a legacy continuous-noise "
-                "placeholder; migrate entries with add_continuous_noise()"
-            )
-
-        for entries in self._gate_channels.values():
-            for entry in entries:
-                selector = entry.selector
-                if selector is None:
-                    continue
-                if _is_ref_selector(selector):
-                    for ref in selector:
-                        if ref not in program_refs:
-                            raise BackendValidationError(
-                                "noise selector names a RegisterRef that is "
-                                f"not part of this program: {ref!r}"
-                            )
-                else:
-                    for label in selector:
-                        if label not in device_labels:
-                            raise BackendValidationError(
-                                "noise selector names a device resource "
-                                f"label not in the effective resource "
-                                f"layout: {label!r}"
-                            )
+        for entry in self._channels:
+            selector = entry.selector
+            if selector is None:
+                continue
+            if _is_ref_selector(selector):
+                for ref in selector:
+                    if ref not in program_refs:
+                        raise BackendValidationError(
+                            "noise selector names a RegisterRef that is "
+                            f"not part of this program: {ref!r}"
+                        )
+            else:
+                for label in selector:
+                    if label not in device_labels:
+                        raise BackendValidationError(
+                            "noise selector names a device resource "
+                            f"label not in the effective resource "
+                            f"layout: {label!r}"
+                        )
 
         for selector, _matrix in self._readout_errors:
             if selector is None:
@@ -493,37 +480,41 @@ class NoiseModel:
                         f"{selector!r}"
                     )
 
-        for entry in self._continuous_noise:
-            selector = entry.selector
-            if selector is None:
-                continue
-            if isinstance(selector, RegisterRef):
-                if selector not in program_refs:
-                    raise BackendValidationError(
-                        "continuous-noise selector names a RegisterRef that is "
-                        f"not part of this program: {selector!r}"
-                    )
-            elif selector not in device_labels:
-                raise BackendValidationError(
-                    "continuous-noise selector names a device resource label "
-                    f"not in the effective resource layout: {selector!r}"
-                )
-
     def has_readout_error(self) -> bool:
         """Return whether any readout-error entry is registered."""
         return bool(self._readout_errors)
 
     def has_noise_for(self, operation: Operation | type[Operation]) -> bool:
         """Return whether any entry is keyed on this operation family."""
-        return _resolve_operation_class(operation) in self._gate_channels
+        op_cls = _resolve_operation_class(operation)
+        return any(entry.operation is op_cls for entry in self._channels)
 
     def channel_types(self) -> frozenset[type[Channel]]:
         """Return every descriptor type attached anywhere in this model."""
-        return frozenset(
-            type(entry.channel)
-            for entries in self._gate_channels.values()
-            for entry in entries
-        )
+        return frozenset(type(entry.channel) for entry in self._channels)
+
+    def channels(self) -> tuple[Channel, ...]:
+        """Return every attached channel descriptor instance, in registration order.
+
+        A read-only capability-validation seam: unlike `channel_types()`,
+        this exposes actual instances so a backend can inspect
+        per-instance parameterization (e.g. `AmplitudeDamping`'s
+        probability-vs-rate mode) rather than only class coverage. Never
+        exposes occurrence selectors - callers get descriptors, not where
+        they attach.
+        """
+        return tuple(entry.channel for entry in self._channels)
+
+    def channel_registrations(
+        self,
+    ) -> tuple[tuple[Channel, type[Operation] | None], ...]:
+        """Return descriptors with their activation scopes for capability checks.
+
+        ``operation is None`` denotes always-on scope. Selectors and slots stay
+        private because backend capability reporting needs to know *when* a
+        descriptor acts, not which user or device target selected it.
+        """
+        return tuple((entry.channel, entry.operation) for entry in self._channels)
 
 
 def _is_ref_selector(selector: tuple[DeviceOperand, ...]) -> bool:
@@ -549,6 +540,17 @@ def _validate_scalar_selector(selector: Any, label: str) -> None:
         hash(selector)
     except TypeError as exc:
         raise TypeError(f"{label} physical target must be hashable") from exc
+
+
+def _normalize_always_on_selector(targets: _GateTargetsArg) -> _GateSelector:
+    """Normalize one optional always-on subsystem selector."""
+    if targets is None:
+        return None
+    selector = targets if isinstance(targets, tuple) else (targets,)
+    if len(selector) != 1:
+        raise ValueError("always-on channel targets must select exactly one subsystem")
+    _validate_scalar_selector(selector[0], "always-on channel")
+    return selector
 
 
 def _normalize_selector(

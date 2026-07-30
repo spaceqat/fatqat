@@ -12,6 +12,7 @@ from ..errors import BackendValidationError, UnsupportedOperationError
 from ..operations.base import Operation
 from ..operations.fixed_gates import CZGate, iSwapGate
 from ..operations.parametric_gates import RX, RY, RZ
+from .pulse_noise import ResolvedPulseNoise
 from .superconducting import (
     CalibrationSpec,
     ControlChannelRef,
@@ -121,6 +122,7 @@ class PulseBlock:
     post_actions: tuple[FrameAction, ...] = ()
     condition: tuple[tuple[int, int], ...] | None = None
     start_ns: float | None = None
+    noise: tuple[ResolvedPulseNoise, ...] = ()
 
     def __post_init__(self) -> None:
         duration = _finite(
@@ -223,6 +225,7 @@ class PulseBlock:
         object.__setattr__(self, "children", tuple(self.children))
         object.__setattr__(self, "resource_claims", tuple(self.resource_claims))
         object.__setattr__(self, "post_actions", tuple(self.post_actions))
+        object.__setattr__(self, "noise", tuple(self.noise))
 
 
 def _sample_grid(duration_ns: float) -> np.ndarray:

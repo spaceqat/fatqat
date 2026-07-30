@@ -60,19 +60,20 @@ def test_depolarizing_acts_jointly_on_multi_subsystem_targets():
 
 def test_amplitude_damping_qubit_decay():
     gamma = 0.4
-    kraus_ops = amplitude_damping_rule(
-        AmplitudeDamping(gammas=(gamma,)), targets=_refs(2)
-    )
+    kraus_ops = amplitude_damping_rule(AmplitudeDamping(p=(gamma,)), targets=_refs(2))
 
     _assert_cptp(kraus_ops, 2)
     excited = np.diag([0.0, 1.0]).astype(complex)
     assert np.allclose(_apply(kraus_ops, excited), np.diag([gamma, 1 - gamma]))
 
 
+def test_amplitude_damping_scalar_p_matches_one_element_tuple():
+    assert AmplitudeDamping(p=0.4) == AmplitudeDamping(p=(0.4,))
+    assert AmplitudeDamping(rate=0.1) == AmplitudeDamping(rate=(0.1,))
+
+
 def test_amplitude_damping_qutrit_ladder_decays_one_level():
-    kraus_ops = amplitude_damping_rule(
-        AmplitudeDamping(gammas=(0.2, 0.5)), targets=_refs(3)
-    )
+    kraus_ops = amplitude_damping_rule(AmplitudeDamping(p=(0.2, 0.5)), targets=_refs(3))
 
     _assert_cptp(kraus_ops, 3)
     # Level 2 population moves only to level 1 (ladder), never straight to 0.
@@ -81,9 +82,87 @@ def test_amplitude_damping_qutrit_ladder_decays_one_level():
     assert np.allclose(np.diag(out), [0.0, 0.5, 0.5])
 
 
-def test_amplitude_damping_rate_count_must_match_dimension():
-    with pytest.raises(BackendValidationError, match="decay rate"):
-        amplitude_damping_rule(AmplitudeDamping(gammas=(0.1,)), targets=_refs(3))
+def test_amplitude_damping_value_count_must_match_dimension():
+    with pytest.raises(BackendValidationError, match="p value"):
+        amplitude_damping_rule(AmplitudeDamping(p=(0.1,)), targets=_refs(3))
+
+
+def test_amplitude_damping_rejects_positional_construction():
+    with pytest.raises(TypeError):
+        AmplitudeDamping(0.1)  # noqa: pyright-ignore - deliberately positional
+
+
+def test_phase_damping_rejects_positional_construction():
+    with pytest.raises(TypeError):
+        PhaseDamping(0.1)  # noqa: pyright-ignore - deliberately positional
+
+
+def test_amplitude_damping_requires_exactly_one_of_p_or_rate():
+    with pytest.raises(ValueError, match="exactly one"):
+        AmplitudeDamping()
+    with pytest.raises(ValueError, match="exactly one"):
+        AmplitudeDamping(p=0.1, rate=0.1)
+
+
+def test_phase_damping_requires_exactly_one_of_p_or_rate():
+    with pytest.raises(ValueError, match="exactly one"):
+        PhaseDamping()
+    with pytest.raises(ValueError, match="exactly one"):
+        PhaseDamping(p=0.1, rate=0.1)
+
+
+@pytest.mark.parametrize("bad_rate", [-0.1, True, "0.1", float("inf"), float("nan")])
+def test_amplitude_damping_rate_validation(bad_rate):
+    with pytest.raises(ValueError):
+        AmplitudeDamping(rate=bad_rate)
+
+
+@pytest.mark.parametrize("bad_rate", [-0.1, True, "0.1", float("inf"), float("nan")])
+def test_phase_damping_rate_validation(bad_rate):
+    with pytest.raises(ValueError):
+        PhaseDamping(rate=bad_rate)
+
+
+def test_amplitude_damping_as_probability_and_as_rate_round_trip():
+    duration = 2.0
+    rate = 0.05
+    channel = AmplitudeDamping(rate=(rate,))
+    (p,) = channel.as_probability(duration)
+    assert p == pytest.approx(1 - np.exp(-rate * duration))
+    (back,) = AmplitudeDamping(p=(p,)).as_rate(duration)
+    assert back == pytest.approx(rate)
+
+
+def test_phase_damping_as_probability_and_as_rate_round_trip():
+    duration = 2.0
+    rate = 0.05
+    channel = PhaseDamping(rate=rate)
+    p = channel.as_probability(duration)
+    assert p == pytest.approx(1 - np.exp(-rate * duration))
+    back = PhaseDamping(p=p).as_rate(duration)
+    assert back == pytest.approx(rate)
+
+
+def test_zero_duration_and_zero_value_identity_conversions():
+    assert PhaseDamping(rate=0.0).as_probability(0.0) == 0.0
+    assert PhaseDamping(p=0.0).as_rate(0.0) == 0.0
+    # Any finite rate converts to probability 0 over zero duration.
+    assert PhaseDamping(rate=123.0).as_probability(0.0) == 0.0
+
+
+def test_zero_rate_and_zero_probability_convert_identically():
+    assert PhaseDamping(rate=0.0).as_probability(5.0) == 0.0
+    assert PhaseDamping(p=0.0).as_rate(5.0) == 0.0
+
+
+def test_probability_one_has_no_finite_rate():
+    with pytest.raises(ValueError, match="no finite rate"):
+        PhaseDamping(p=1.0).as_rate(1.0)
+
+
+def test_nonzero_probability_at_zero_duration_has_no_finite_rate():
+    with pytest.raises(ValueError, match="no finite rate"):
+        PhaseDamping(p=0.5).as_rate(0.0)
 
 
 @pytest.mark.parametrize("dim", [2, 3])
@@ -100,7 +179,7 @@ def test_phase_damping_preserves_populations_and_decays_coherence(dim):
 
 def test_amplitude_damping_rejects_multi_target_gates():
     with pytest.raises(BackendValidationError, match="single-subsystem"):
-        amplitude_damping_rule(AmplitudeDamping(gammas=(0.1,)), targets=_refs(2, 2))
+        amplitude_damping_rule(AmplitudeDamping(p=(0.1,)), targets=_refs(2, 2))
 
 
 def test_phase_damping_rejects_multi_target_gates():
@@ -118,9 +197,9 @@ def test_descriptor_probability_validation(bad_p):
 
 def test_amplitude_damping_descriptor_validation():
     with pytest.raises(ValueError):
-        AmplitudeDamping(gammas=())
+        AmplitudeDamping(p=())
     with pytest.raises(ValueError):
-        AmplitudeDamping(gammas=(0.2, 1.4))
+        AmplitudeDamping(p=(0.2, 1.4))
 
 
 def test_descriptors_hold_parameters_not_arrays():

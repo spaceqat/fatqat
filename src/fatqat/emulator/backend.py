@@ -15,7 +15,7 @@ from ..backends.steps import MeasurementStep
 from ..backends.view_normalization import ProgramInstruction, _break_grouped_operations
 from ..errors import BackendExecutionError, BackendValidationError
 from ..job import Job
-from ..noise import NoiseModel, NoiseSupportReport, ThermalRelaxation
+from ..noise import NoiseModel, NoiseSupportReport
 from ..operations import BarrierGate, Measurement, ResetGate
 from ..program import AppliedOperation, Program
 from ..resource_layout import ResourceLayout
@@ -24,6 +24,11 @@ from . import planning
 from .engine import PulseEngine
 from .engine_contract import PulseResultConfig, PulseSimulationConfig
 from .planning import PulsePlanFacts, PulsePlanStep
+from .pulse_noise import (
+    ResolvedPulseNoise,
+    resolve_pulse_noise,
+    supported_pulse_noise_types,
+)
 from .superconducting import CalibrationSpec, PhysicsModel
 
 
@@ -122,6 +127,7 @@ class PulseBackend:
                             engine_index_allocation,
                             self.model,
                             self.calibration,
+                            self._noise_model,
                         )
                     )
         return plan, PulsePlanFacts(
@@ -162,7 +168,7 @@ class PulseBackend:
         plan, facts = self._lower_program(program, context=context)
         request = self._validate(result, shots, facts)
         engine_to_model = self._engine_to_model(program, resource_layout, allocation)
-        continuous_noise = self._continuous_noise(program, resource_layout)
+        always_on_noise = self._always_on_noise(program, resource_layout)
         try:
             return Job.done(
                 self._execute(
@@ -173,7 +179,7 @@ class PulseBackend:
                     shots,
                     allocation,
                     engine_to_model,
-                    continuous_noise,
+                    always_on_noise,
                 )
             )
         except Exception:  # execution failures belong on the eager Job
@@ -211,14 +217,14 @@ class PulseBackend:
         shots: int,
         allocation: _EngineIndexAllocation,
         engine_to_model: tuple[int, ...],
-        continuous_noise: tuple[tuple[Any, ...], ...],
+        always_on_noise: tuple[ResolvedPulseNoise, ...],
     ) -> Result:
         from .qutip_adapter import SCQutipAdapter
 
         runner = SCQutipAdapter(
             self.model,
             engine_to_model=engine_to_model,
-            continuous_noise=continuous_noise,
+            always_on_noise=always_on_noise,
         )
         outcomes = PulseEngine(
             runner, placement_mode=simulation.placement_mode
@@ -269,49 +275,66 @@ class PulseBackend:
                 )
         return tuple(ordinals)
 
-    def _continuous_noise(
+    def _always_on_noise(
         self, program: Program, resource_layout: ResourceLayout
-    ) -> tuple[tuple[Any, ...], ...]:
+    ) -> tuple[ResolvedPulseNoise, ...]:
+        """Resolve all always-on descriptors into primitive pulse bindings."""
         refs_by_label = {
             resource_layout.device_label(register[index]): register[index]
             for register in program.quantum_registers
             for index in range(register.size)
         }
-        return tuple(
-            self._noise_model.continuous_noise_for(
+        bindings: list[ResolvedPulseNoise] = []
+        for ordinal, subsystem_id in enumerate(self.model.subsystem_ids):
+            for channel in self._noise_model.always_on_channels_for(
                 refs_by_label.get(subsystem_id), subsystem_id
-            )
-            for subsystem_id in self.model.subsystem_ids
-        )
+            ):
+                bindings.extend(
+                    resolve_pulse_noise(
+                        channel,
+                        target_indices=(ordinal,),
+                        physical_dimension=self.model.physical_dimension,
+                        duration=None,
+                    )
+                )
+        return tuple(bindings)
 
     def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        """Report accepted T1/T2/readout and rejected pulse-noise sources."""
+        """Report support by descriptor parameterization and activation scope."""
         accepted = ["readout_error"] if noise_model.has_readout_error() else []
         rejected = []
         warnings = []
-        for channel_type in sorted(
-            noise_model.channel_types(), key=lambda source: source.__name__
-        ):
-            rejected.append(channel_type.__name__)
-            warnings.append(
-                f"{channel_type.__name__} gate-keyed channel noise is not supported "
-                "by the pulse backend"
-            )
-        for source_type in sorted(
-            noise_model.continuous_noise_types(), key=lambda source: source.__name__
-        ):
-            if source_type is ThermalRelaxation:
-                accepted.append(source_type.__name__)
+        seen: set[str] = set()
+        for channel, operation in noise_model.channel_registrations():
+            channel_type = type(channel)
+            always_on = operation is None
+            qualifiers: list[str] = []
+            if hasattr(channel, "rate"):
+                qualifiers.append("rate" if channel.rate is not None else "p")
+            if always_on:
+                qualifiers.append("always-on")
+            label = channel_type.__name__
+            if qualifiers:
+                label += f"({', '.join(qualifiers)})"
+            if label in seen:
+                continue
+            seen.add(label)
+            supported = channel_type in supported_pulse_noise_types()
+            if always_on and hasattr(channel, "rate") and channel.rate is None:
+                supported = False
+            if supported:
+                accepted.append(label)
             else:
-                rejected.append(source_type.__name__)
-                warnings.append(
-                    f"{source_type.__name__} is not supported by the pulse backend"
-                )
-        if noise_model.qubit_noise:
-            rejected.append("qubit_noise")
-            warnings.append(
-                "qubit_noise is a legacy placeholder; use add_continuous_noise()"
-            )
+                rejected.append(label)
+                if always_on and hasattr(channel, "rate") and channel.rate is None:
+                    warnings.append(
+                        f"{label} is not supported: always-on damping requires "
+                        "rate mode"
+                    )
+                else:
+                    warnings.append(
+                        f"{label} has no pulse channel implementation on this backend"
+                    )
         return NoiseSupportReport(
             supported=not rejected,
             accepted_sources=tuple(accepted),

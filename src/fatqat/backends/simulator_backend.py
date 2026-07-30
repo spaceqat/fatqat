@@ -668,10 +668,21 @@ class SimulatorBackend:
 
         A channel descriptor type is supported exactly when the backend's
         channel implementation map has a rule for it - the map's coverage is
-        the capability declaration. Non-empty ``qubit_noise`` is rejected as
-        a structural mismatch (continuously-active per-subsystem noise is
-        pulse-family territory), and Reset-keyed entries are rejected until
-        reset-attached channels are wired.
+        the capability declaration. A descriptor that distinguishes
+        probability and rate parameterization (any instance exposing a
+        ``rate`` attribute, e.g. `AmplitudeDamping`, `PhaseDamping`) is
+        reported under a mode-qualified label such as ``"AmplitudeDamping(p)"``
+        rather than its bare class name: this matrix family never resolves a
+        rate without a duration, so a rate-mode instance is unsupported even
+        when the class itself has a registered rule. That lets a model
+        mixing both modes of the same class appear in both
+        `accepted_sources` and `rejected_sources` without ambiguity. Labels
+        are display identities only, never registry keys, and are
+        deduplicated while preserving first registration order.
+
+        Always-on registrations are rejected because this backend has no
+        continuous-time evolution model, and Reset-keyed entries are rejected
+        until reset-attached channels are wired.
 
         Args:
             noise_model: The noise model to check; it is not executed.
@@ -682,33 +693,52 @@ class SimulatorBackend:
         accepted: list[str] = []
         rejected: list[str] = []
         warnings_: list[str] = []
-        for channel_type in sorted(
-            noise_model.channel_types(), key=lambda c: c.__name__
-        ):
-            if self._channel_map.get(channel_type) is None:
-                rejected.append(channel_type.__name__)
-                warnings_.append(
-                    f"{channel_type.__name__} has no channel implementation "
-                    "on this backend"
+        seen: set[str] = set()
+
+        def _record(label: str, supported: bool, warning: str) -> None:
+            if label in seen:
+                return
+            seen.add(label)
+            (accepted if supported else rejected).append(label)
+            if not supported:
+                warnings_.append(warning)
+
+        for channel, operation in noise_model.channel_registrations():
+            channel_type = type(channel)
+            always_on = operation is None
+            rate_mode = hasattr(channel, "rate") and channel.rate is not None
+            qualifiers: list[str] = []
+            if hasattr(channel, "rate"):
+                qualifiers.append("rate" if rate_mode else "p")
+            if always_on:
+                qualifiers.append("always-on")
+            label = channel_type.__name__
+            if qualifiers:
+                label += f"({', '.join(qualifiers)})"
+            if always_on:
+                _record(
+                    label,
+                    False,
+                    f"{label} is not supported: this matrix backend has no "
+                    "continuous-time evolution model",
+                )
+            elif self._channel_map.get(channel_type) is None:
+                _record(
+                    label,
+                    False,
+                    f"{label} has no channel implementation on this backend",
+                )
+            elif rate_mode:
+                _record(
+                    label,
+                    False,
+                    f"{label} is not supported: rate mode has no matrix-backend "
+                    "Kraus implementation on this backend",
                 )
             else:
-                accepted.append(channel_type.__name__)
+                _record(label, True, "")
         if noise_model.has_readout_error():
             accepted.append("readout_error")
-        for source_type in sorted(
-            noise_model.continuous_noise_types(), key=lambda source: source.__name__
-        ):
-            rejected.append(source_type.__name__)
-            warnings_.append(
-                f"{source_type.__name__} is continuously active pulse-family "
-                "noise and is not supported by this matrix backend"
-            )
-        if noise_model.qubit_noise:
-            rejected.append("qubit_noise")
-            warnings_.append(
-                "qubit_noise holds continuously-active noise for pulse-family "
-                "backends; the matrix family cannot consume it"
-            )
         if noise_model.has_noise_for(ResetGate):
             rejected.append("Reset")
             warnings_.append("channel noise attached to Reset is not supported yet")

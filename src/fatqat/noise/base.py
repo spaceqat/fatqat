@@ -8,9 +8,10 @@ descriptor plus its resolution-time ``targets`` into a bare tuple of Kraus
 arrays, mirroring how a matrix-implementation rule produces a bare matrix.
 `ChannelImplementationMap` is the matrix family's registry from descriptor
 type to rule; it exists (instead of reusing the gate implementation map)
-because a channel resolves to a *tuple* of Kraus operators here but would
-resolve to collapse operators in a future pulse family - the same descriptor
-means different mathematical objects per backend family.
+because a channel resolves to a *tuple* of Kraus operators here but resolves
+to collapse-operator rates in the pulse family (see
+`fatqat.emulator.pulse_noise`) - the same descriptor means different
+mathematical objects per backend family.
 """
 
 from __future__ import annotations

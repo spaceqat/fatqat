@@ -15,7 +15,7 @@ program.add(op.CX, (0, 1))
 program.measure((0, 1), (0, 1))
 
 noise = fq.NoiseModel()
-noise.add_channel(op.CX, fq.noise.Depolarizing(p=0.05))
+noise.add_channel(fq.noise.Depolarizing(p=0.05), operation=op.CX)
 
 ideal = fq.backends.SimulatorBackend(method="DM")
 noisy = fq.backends.SimulatorBackend(method="DM", noise=noise)
@@ -25,9 +25,9 @@ print(noisy.run(program, shots=1000, simulation_config={"seed": 7}).result().get
 
 Two kinds of noise exist, with deliberately different mechanics:
 
-- **Quantum channels** ({py:meth}`~fatqat.NoiseModel.add_channel`) attach to
-  gate occurrences and act on the quantum state, as Kraus operators applied
-  right after the gate.
+- **Quantum channels** ({py:meth}`~fatqat.NoiseModel.add_channel`) act on the
+  quantum state. Their optional `operation` selector determines whether they
+  are always active or scoped to matching operation occurrences.
 - **Readout error** ({py:meth}`~fatqat.NoiseModel.add_readout_error`) is
   classical: the physical collapse always keeps the true outcome, and only
   the *reported* measurement value is resampled.
@@ -42,11 +42,11 @@ catalog:
   Acts jointly on all subsystems of the gate it is attached to, so the same
   descriptor depolarizes a single qubit, a qutrit, or the joint space of a
   two-qubit gate.
-- {py:class}`~fatqat.noise.AmplitudeDamping` `(gammas)` — energy relaxation
-  toward the ground state, one decay rate per adjacent-level transition
-  (a qubit takes `gammas=(gamma,)`). Single-subsystem.
-- {py:class}`~fatqat.noise.PhaseDamping` `(p)` — pure dephasing: populations
-  are untouched, coherences decay (at factor `1-p` for a qubit).
+- {py:class}`~fatqat.noise.AmplitudeDamping` `(p or rate)` — energy relaxation
+  toward the ground state, one value per adjacent-level transition (a qubit
+  takes `p=(p,)` or `rate=(rate,)`). Single-subsystem.
+- {py:class}`~fatqat.noise.PhaseDamping` `(p or rate)` — pure dephasing:
+  populations are untouched, coherences decay (at factor `1-p` for a qubit).
   Single-subsystem.
 
 Attaching several channels to the same gate stacks them as independent
@@ -54,13 +54,48 @@ mechanisms, applied in registration order:
 
 ```python
 noise = fq.NoiseModel()
-noise.add_channel(op.H, fq.noise.AmplitudeDamping(gammas=(0.01,)))
-noise.add_channel(op.H, fq.noise.PhaseDamping(p=0.02))   # both apply, in order
+noise.add_channel(fq.noise.AmplitudeDamping(p=(0.01,)), operation=op.H)
+noise.add_channel(fq.noise.PhaseDamping(p=0.02), operation=op.H)
 ```
 
 Channels are dimension-generic: attached to a gate on a qutrit register,
 `Depolarizing` and `PhaseDamping` resolve at `d=3` automatically, and
-`AmplitudeDamping` takes `d-1` ladder rates (`gammas=(g10, g21)`).
+`AmplitudeDamping` takes `d-1` ladder values (`p=(p10, p21)`).
+
+### Probability versus rate
+
+`AmplitudeDamping` and `PhaseDamping` accept exactly one of `p` (a keyword-only,
+mutually exclusive pair with `rate`):
+
+- `p` describes one finite channel application: the probability the transition
+  happens once, given the gate actually ran.
+- `rate` describes a continuous generator, in the inverse of whatever time
+  unit the target backend declares. Converting between the two always
+  requires a duration - `p(t) = 1 - exp(-rate * t)` - and neither the
+  descriptor nor `NoiseModel` ever infers or stores a time unit; that
+  responsibility belongs to the backend.
+
+Both backend families accept the same descriptor, through different
+implementation maps:
+
+- `SimulatorBackend` (the matrix family) resolves `p` directly into Kraus
+  operators, and rejects `rate` mode - no gate carries a duration in matrix
+  lowering today, so there is nothing to convert it with.
+- The superconducting pulse backend (see {doc}`superconducting-pulse`)
+  resolves either mode into a collapse-operator rate, using the realized
+  operation's own duration. Without an `operation` selector, rate mode is
+  always active, including idle intervals.
+
+A probability of exactly `1` is a valid finite channel but has no finite
+rate, so converting it to `rate` mode raises rather than silently
+approximating. A nonzero probability on a zero-duration operation is
+likewise not convertible (there is no time over which the rate could act);
+zero probability at zero duration is a well-defined no-op.
+
+Registration scope is represented by `operation`: omitting it means
+always-on, while `operation=op.X` selects matching `X` blocks. Rate mode does
+not by itself mean globally active. Probability mode requires an operation
+scope because a finite probability has no meaning without an interval.
 
 ## Targeting specific qubits
 
@@ -70,15 +105,20 @@ forms exist, and both resolve to the same flat indices at run time:
 - **Program refs** — how a user pins noise to their own program's subsystems:
 
   ```python
-  noise.add_channel(op.X, fq.noise.Depolarizing(p=0.1),
-                  targets=(program.quantum_registers[0][0],))
+  noise.add_channel(
+      fq.noise.Depolarizing(p=0.1),
+      operation=op.X,
+      targets=(program.quantum_registers[0][0],),
+  )
   ```
 
 - **Flat subsystem indices** — how a device backend authors noise before any
   user program exists:
 
   ```python
-  noise.add_channel(op.X, fq.noise.Depolarizing(p=0.1), targets=(0,))
+  noise.add_channel(
+      fq.noise.Depolarizing(p=0.1), operation=op.X, targets=(0,)
+  )
   ```
 
 The selection semantics, precisely:
@@ -95,20 +135,28 @@ The selection semantics, precisely:
 
 ## Relaxation from T1/T2
 
-{py:func}`~fatqat.noise.relaxation_channels` converts device timescales plus
+{py:class}`~fatqat.noise.ThermalRelaxation` owns device T1/T2 timescales and
+converts
 an explicit gate duration into the equivalent channel pair — populations
 decay by `1 - exp(-duration/t1)`, coherences by `exp(-duration/t2)` in total:
 
 ```python
-damping, dephasing = fq.noise.relaxation_channels(t1=60e-6, t2=80e-6, duration=2e-6)
+relaxation = fq.noise.ThermalRelaxation(t1=60e-6, t2=80e-6)
+damping, dephasing = relaxation.as_channels(duration=2e-6)
 noise = fq.NoiseModel()
-noise.add_channel(op.H, damping)
-noise.add_channel(op.H, dephasing)
+noise.add_channel(damping, operation=op.H)
+noise.add_channel(dephasing, operation=op.H)
 ```
 
 The library never derives durations itself — operations carry no time — so
 the caller supplies how long the noisy gate takes. `t2 <= 2*t1` is enforced
-(the physical bound: pure dephasing cannot be negative).
+(the physical bound: pure dephasing cannot be negative). On a pulse backend,
+register the same descriptor without an operation to act throughout pulse
+and idle evolution:
+
+```python
+noise.add_channel(relaxation, targets=(program.quantum_registers[0][0],))
+```
 
 ## Readout error
 
@@ -196,7 +244,7 @@ channel_map = fq.noise.default_channel_implementation_map()
 channel_map.register(BitFlip, bit_flip_rule)
 
 noise = fq.NoiseModel()
-noise.add_channel(op.X, BitFlip(p=0.05))
+noise.add_channel(BitFlip(p=0.05), operation=op.X)
 backend = fq.backends.SimulatorBackend(
     method="DM", noise=noise, channel_implementation_map=channel_map
 )
@@ -210,5 +258,4 @@ unitarity-checked.
 
 {py:meth}`~fatqat.backends.SimulatorBackend.validate_noise` reports, without
 running anything, which parts of a model a backend can execute — unknown
-descriptor types and pulse-family `qubit_noise` come back as rejected
-sources.
+descriptor types come back as rejected sources.

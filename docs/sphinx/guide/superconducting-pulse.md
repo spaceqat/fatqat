@@ -79,8 +79,29 @@ serial). Seeded runs are reproducible under that policy.
 
 ## Noise support
 
-Use `NoiseModel.add_continuous_noise` with
-`fq.noise.ThermalRelaxation(T1_ns, T2_ns)` to apply qutrit T1/T2 evolution
-continuously, including idle time. Classical readout confusion is also
-supported. Gate-keyed Kraus channels are not supported by this backend, and
-coherent ZZ is explicitly deferred in v0.1.
+Use `NoiseModel.add_channel` without `operation=` to apply always-on qutrit
+noise, including idle time:
+
+```python
+noise.add_channel(fq.noise.ThermalRelaxation(t1=..., t2=...))
+noise.add_channel(
+    fq.noise.AmplitudeDamping(rate=(..., ...)), targets=("q0",)
+)
+```
+
+Classical readout confusion is also supported.
+
+Provide `operation=...` to scope the same channel descriptors to matching
+pulse blocks. The two primitive damping
+descriptors, {py:class}`~fatqat.noise.AmplitudeDamping` and
+{py:class}`~fatqat.noise.PhaseDamping` (see {doc}`noise`), in either `p` or
+`rate` mode - a `p`-mode instance is converted to a rate using the realized
+gate's own duration, in nanoseconds (this model's declared time unit); a
+`rate`-mode instance is used as-is. The resulting collapse operators are
+active only over that gate's own placed time interval: idle time and other
+concurrent, disjoint gates are unaffected, and a conditionally disabled gate
+contributes neither its controls nor its attached noise. This composes with
+always-on noise rather than replacing it - both scopes share the same
+registration and collapse-operator implementation. Every other
+channel type (e.g. `Depolarizing`) is still rejected, and coherent ZZ is
+explicitly deferred in v0.1.

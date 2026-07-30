@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 
 from .._engine_index_allocation import _EngineIndexAllocation
@@ -15,6 +16,7 @@ from ..noise import NoiseModel
 from ..operations.measurement import Measurement
 from ..program import AppliedOperation
 from ..resource_layout import ResourceLayout
+from .pulse_noise import ResolvedPulseNoise, resolve_pulse_noise
 from .resolved import PulseBlock, realize_native_operation
 from .superconducting import CalibrationSpec, PhysicsModel
 
@@ -74,14 +76,63 @@ def _lower_gate(
     engine_index_allocation: _EngineIndexAllocation,
     model: PhysicsModel,
     calibration: CalibrationSpec,
+    noise_model: NoiseModel,
 ) -> PulseBlock:
     targets = tuple(
         model.resource(resource_layout.device_label(target)) for target in step.targets
     )
-    return realize_native_operation(
+    block = realize_native_operation(
         step.operation,
         targets,
         model=model,
         calibration=calibration,
         condition=_resolve_condition(step.condition, engine_index_allocation),
     )
+    noise_bindings = _lower_gate_noise(
+        step,
+        resource_layout,
+        model,
+        noise_model,
+        block.duration_ns,
+        block.condition,
+    )
+    if noise_bindings:
+        block = dataclasses.replace(block, noise=noise_bindings)
+    return block
+
+
+def _lower_gate_noise(
+    step: AppliedOperation,
+    resource_layout: ResourceLayout,
+    model: PhysicsModel,
+    noise_model: NoiseModel,
+    duration_ns: float,
+    condition: tuple[tuple[int, int], ...] | None,
+) -> tuple[ResolvedPulseNoise, ...]:
+    """Resolve one gate occurrence's attached channels into engine-facing bindings.
+
+    Noise selection matches against the occurrence's logical targets and/or
+    resource-layout device operands (never engine indices), exactly like the
+    matrix family's lowering; engine indices are used only for the emitted
+    binding. Each channel's rate is resolved here, at the lowering boundary,
+    using the realized block's own duration - the pulse channel construction
+    itself (in the qutip adapter) never sees a duration or a probability.
+    """
+    bindings: list[ResolvedPulseNoise] = []
+    for channel, extent in noise_model.channels_for(
+        type(step.operation), step.targets, resource_layout
+    ):
+        model_indices = tuple(
+            model.bind_resource(model.resource(resource_layout.device_label(target)))
+            for target in extent
+        )
+        bindings.extend(
+            resolve_pulse_noise(
+                channel,
+                target_indices=model_indices,
+                physical_dimension=model.physical_dimension,
+                duration=duration_ns,
+                condition=condition,
+            )
+        )
+    return tuple(bindings)

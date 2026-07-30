@@ -12,10 +12,11 @@ from qutip_qip.pulse import Drift, Pulse
 
 from ..backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
-from ..noise import ContinuousNoise, ThermalRelaxation
+from ..noise import AmplitudeDamping, Channel, PhaseDamping
 from .engine import _ShotContext, _condition_matches
 from .execution import _PlacedPulseRun
-from .resolved import PhaseShift, PhaseSwap, SampledControl
+from .resolved import PhaseShift, PhaseSwap, PulseBlock, SampledControl
+from .pulse_noise import ResolvedPulseNoise
 from .superconducting import ControlChannelRef, PhysicsModel
 
 _EPSILON = 1e-12
@@ -44,7 +45,7 @@ class SCQutipAdapter:
         model: PhysicsModel,
         *,
         engine_to_model: tuple[int, ...] | None = None,
-        continuous_noise: tuple[tuple[ContinuousNoise, ...], ...] | None = None,
+        always_on_noise: tuple[ResolvedPulseNoise, ...] = (),
     ) -> None:
         self._model = model
         self._dims = [model.physical_dimension] * len(model.subsystems)
@@ -71,12 +72,18 @@ class SCQutipAdapter:
             for ordinal in range(len(model.subsystems))
         )
         self._drift = self._build_drift()
-        noise_by_subsystem = continuous_noise or tuple(() for _ in model.subsystems)
-        if len(noise_by_subsystem) != len(model.subsystems):
-            raise BackendValidationError(
-                "continuous noise must align with every physical model subsystem"
-            )
-        self._collapse_operators = self._build_continuous_noise(noise_by_subsystem)
+        # The pulse family's primitive collapse-implementation map: source
+        # descriptors are resolved before this boundary, so both always-on
+        # and operation-scoped bindings dispatch through these same rules.
+        # registry `PulseBackend.validate_noise()` and lowering's
+        # unsupported-type rejection both derive their coverage from (see
+        # `pulse_noise.supported_pulse_noise_types`), keyed identically here
+        # so none of the three maintains its own hard-coded type list.
+        self._pulse_channel_rules: dict[type[Channel], Any] = {
+            AmplitudeDamping: self._amplitude_damping_collapse_ops,
+            PhaseDamping: self._phase_damping_collapse_ops,
+        }
+        self._collapse_operators = self._build_always_on_noise(always_on_noise)
         self._projectors = tuple(
             tuple(
                 self._expand_local(
@@ -127,6 +134,7 @@ class SCQutipAdapter:
 
         frames = dict(context.frame_angles)
         pulses: list[Pulse] = []
+        noise_pulses: list[Pulse] = []
         pending_actions: list[tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]] = (
             []
         )
@@ -142,6 +150,13 @@ class SCQutipAdapter:
                 continue
             for child in block.children:
                 pulses.append(self._bind_child(child, start_ns, frames))
+            # A zero-duration block cannot contribute noise: even a
+            # rate-mode descriptor's effect over zero time is a no-op, and a
+            # nonzero-probability one was already rejected at lowering.
+            if block.noise and block.duration_ns > 0.0:
+                noise_pulses.append(
+                    self._bind_block_noise(block, start_ns, context.time_ns, run.end_ns)
+                )
             pending_actions.append(
                 (
                     start_ns + block.duration_ns,
@@ -160,11 +175,15 @@ class SCQutipAdapter:
                         "ideal pulse binding unexpectedly produced collapse terms"
                     )
                 hamiltonian += contribution
+            local_collapse: list[Any] = []
+            for noise_pulse in noise_pulses:
+                _zero, collapse = noise_pulse.get_noisy_qobjevo(self._dims)
+                local_collapse.extend(collapse)
             result = mesolve(
                 hamiltonian,
                 state,
                 [context.time_ns, run.end_ns],
-                c_ops=self._collapse_operators,
+                c_ops=list(self._collapse_operators) + local_collapse,
                 options=_SOLVER_OPTIONS,
             )
             state = result.states[-1]
@@ -243,32 +262,117 @@ class SCQutipAdapter:
             drift.add_drift(2 * pi * coupling.residual_exchange_ghz * exchange, targets)
         return drift
 
-    def _build_continuous_noise(
-        self, noise_by_subsystem: tuple[tuple[ContinuousNoise, ...], ...]
+    def _build_always_on_noise(
+        self, bindings: tuple[ResolvedPulseNoise, ...]
     ) -> tuple[Any, ...]:
+        """Build constant collapse terms from resolved always-on bindings."""
         noise_pulse = Pulse(None, None)
-        for ordinal, sources in enumerate(noise_by_subsystem):
-            for source in sources:
-                if not isinstance(source, ThermalRelaxation):
-                    raise BackendValidationError(
-                        f"{type(source).__name__} is not supported by the pulse backend"
-                    )
+        for binding in bindings:
+            for local_qobj, ordinal in self._pulse_collapse_ops(binding):
                 noise_pulse.add_lindblad_noise(
-                    sqrt(1 / source.T1_ns) * self._local_annihilation,
+                    local_qobj,
                     ordinal,
                     coeff=True,
                 )
-                if source.T2_ns < 2 * source.T1_ns:
-                    pure_dephasing = 2 * (1 / source.T2_ns - 1 / (2 * source.T1_ns))
-                    noise_pulse.add_lindblad_noise(
-                        sqrt(pure_dephasing) * self._local_number,
-                        ordinal,
-                        coeff=True,
-                    )
         if not noise_pulse.lindblad_noise:
             return ()
         _zero, collapse = noise_pulse.get_noisy_qobjevo(self._dims)
         return tuple(collapse)
+
+    def _bind_block_noise(
+        self,
+        block: PulseBlock,
+        start_ns: float,
+        run_start_ns: float,
+        run_end_ns: float,
+    ) -> Pulse:
+        """Build one block-owned `Pulse` carrying its gate-keyed collapse terms.
+
+        Interval scoping reuses the control path's own time-windowed-pulse
+        mechanism rather than splitting the run into multiple `mesolve`
+        calls: a step-function coefficient spans the whole solved run
+        (``[run_start_ns, run_end_ns]``) but is 1 only during this block's
+        own placed ``[start_ns, start_ns + duration)`` window, so the
+        collapse operator this pulse contributes is on only there.
+        """
+        end_ns = start_ns + block.duration_ns
+        tlist = np.asarray(
+            sorted({run_start_ns, start_ns, end_ns, run_end_ns}), dtype=float
+        )
+        window = np.array(
+            [1.0 if start_ns <= point < end_ns else 0.0 for point in tlist],
+            dtype=float,
+        )
+        noise_pulse = Pulse(None, None)
+        for binding in block.noise:
+            for local_qobj, ordinal in self._pulse_collapse_ops(binding):
+                noise_pulse.add_lindblad_noise(
+                    local_qobj, ordinal, tlist=tlist, coeff=window
+                )
+        return noise_pulse
+
+    def _pulse_collapse_ops(self, binding: ResolvedPulseNoise) -> list[tuple[Any, int]]:
+        """Dispatch one resolved binding to its ``(local qobj, ordinal)`` pairs."""
+        rule = self._pulse_channel_rules.get(binding.channel_type)
+        if rule is None:
+            raise BackendValidationError(
+                f"{binding.channel_type.__name__} has no pulse collapse "
+                "implementation"
+            )
+        return rule(binding)
+
+    def _amplitude_damping_collapse_ops(
+        self, binding: ResolvedPulseNoise
+    ) -> list[tuple[Any, int]]:
+        """Return one combined ladder jump per target subsystem.
+
+        The combined jump has the same transition structure as the catalog
+        channel's ``K1``.  For thermal qutrit relaxation, rates
+        ``(1/t1, 2/t1)`` therefore reproduce ``sqrt(1/t1) * a`` exactly.
+        """
+        rates = binding.rate
+        jump = self._amplitude_damping_local_operator(rates)
+        pairs: list[tuple[Any, int]] = []
+        for ordinal in binding.target_indices:
+            self._validate_noise_ordinal(ordinal)
+            pairs.append((jump, ordinal))
+        return pairs
+
+    def _amplitude_damping_local_operator(self, rates: tuple[float, ...]) -> Any:
+        """Build one local ladder jump from per-transition rates."""
+        dim = self._model.physical_dimension
+        if len(rates) != dim - 1:
+            raise BackendValidationError(
+                f"AmplitudeDamping needs {dim - 1} rate value(s) for dimension "
+                f"{dim}, got {len(rates)}"
+            )
+        jump = np.zeros((dim, dim), dtype=complex)
+        for level in range(1, dim):
+            jump[level - 1, level] = sqrt(rates[level - 1])
+        return Qobj(jump)
+
+    def _phase_damping_collapse_ops(
+        self, binding: ResolvedPulseNoise
+    ) -> list[tuple[Any, int]]:
+        """Number-operator dephasing generator, scaled by 2 so the induced
+        coherence decay matches ``p(t) = 1 - exp(-rate * t)`` exactly - the
+        same ``sqrt(2 * rate) * number`` convention already used for
+        `ThermalRelaxation`'s residual dephasing term.
+        """
+        return [
+            (
+                sqrt(2 * binding.rate) * self._local_number,
+                self._validate_noise_ordinal(ordinal),
+            )
+            for ordinal in binding.target_indices
+        ]
+
+    def _validate_noise_ordinal(self, ordinal: int) -> int:
+        if type(ordinal) is not int or not 0 <= ordinal < len(self._model.subsystems):
+            raise BackendValidationError(
+                f"unknown physical-model subsystem ordinal {ordinal!r}"
+            )
+        return ordinal
 
     def _model_ordinal(self, engine_index: int) -> int:
         try:
