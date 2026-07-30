@@ -120,6 +120,11 @@ class SCQutipAdapter:
         ket = tensor(*(basis(dimension, 0) for dimension in self._dims))
         return ket2dm(ket)
 
+    @staticmethod
+    def copy_state(state: Any) -> Any:
+        """Copy a state for an independent terminal-measurement trajectory."""
+        return state.copy()
+
     def evolve(
         self,
         run: _PlacedPulseRun,

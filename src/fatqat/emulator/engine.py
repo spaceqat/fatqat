@@ -31,6 +31,8 @@ class _PulseModelRunner(Protocol):
 
     def initial_state(self) -> Any: ...
 
+    def copy_state(self, state: Any) -> Any: ...
+
     def evolve(
         self,
         run: _PlacedPulseRun,
@@ -54,7 +56,7 @@ def _condition_matches(
 
 
 class PulseEngine:
-    """Place and replay a complete lowered plan in deterministic shot order."""
+    """Place and execute a complete lowered plan in deterministic shot order."""
 
     def __init__(
         self, runner: _PulseModelRunner, *, placement_mode: PlacementMode = "ASAP"
@@ -66,7 +68,7 @@ class PulseEngine:
         self._runner = runner
         self._placement_mode = placement_mode
 
-    def execute(
+    def run(
         self,
         plan: Iterable[PulsePlanStep],
         *,
@@ -82,6 +84,28 @@ class PulseEngine:
                 "pulse engine classical width must be a non-negative int"
             )
         frozen_plan = tuple(plan)
+        is_dynamic, terminal_measurements = self._analyze_plan(frozen_plan)
+        if is_dynamic:
+            return self._run_per_shot(
+                frozen_plan, shots=shots, n_clbits=n_clbits, rng=rng
+            )
+        return self._run_fast(
+            frozen_plan,
+            terminal_measurements,
+            shots=shots,
+            n_clbits=n_clbits,
+            rng=rng,
+        )
+
+    def _run_per_shot(
+        self,
+        plan: tuple[PulsePlanStep, ...],
+        *,
+        shots: int,
+        n_clbits: int,
+        rng: np.random.Generator,
+    ) -> tuple[Any, ...]:
+        """Replay one complete dynamic trajectory for every requested shot."""
         outcomes = []
         for _ in range(shots):
             context = _ShotContext(
@@ -89,12 +113,88 @@ class PulseEngine:
                 classical_memory=[0] * n_clbits,
                 rng=rng,
             )
-            self._execute_shot(frozen_plan, context)
+            self._run_one_shot(plan, context)
             outcomes.append(self._runner.finish_shot(context))
         return tuple(outcomes)
 
-    def _execute_shot(
-        self, plan: tuple[PulsePlanStep, ...], context: _ShotContext
+    @staticmethod
+    def _analyze_plan(
+        plan: tuple[PulsePlanStep, ...],
+    ) -> tuple[bool, tuple[MeasurementStep, ...]]:
+        """Classify a plan for single-evolution terminal-measurement sampling.
+
+        Pulse master-equation evolution and unconditional resets are
+        deterministic density-matrix maps.  Therefore a plan can evolve once
+        when all its measurements are terminal and it contains no classical
+        condition.  A physical operation following a measurement is treated
+        conservatively as dynamic: the engine does not yet carry the detailed
+        subsystem-touch metadata needed to prove that the operation is
+        disjoint from every measured subsystem.
+        """
+        terminal_measurements: list[MeasurementStep] = []
+        saw_measurement = False
+        for step in plan:
+            if isinstance(step, MeasurementStep):
+                saw_measurement = True
+                terminal_measurements.append(step)
+            elif isinstance(step, PulseBlock):
+                if step.condition is not None or saw_measurement:
+                    return True, ()
+            elif isinstance(step, ResetStep):
+                if step.condition is not None or saw_measurement:
+                    return True, ()
+            else:
+                raise BackendValidationError(
+                    "pulse plan contains an unknown execution step"
+                )
+        return False, tuple(terminal_measurements)
+
+    def _run_fast(
+        self,
+        plan: tuple[PulsePlanStep, ...],
+        terminal_measurements: tuple[MeasurementStep, ...],
+        *,
+        shots: int,
+        n_clbits: int,
+        rng: np.random.Generator,
+    ) -> tuple[Any, ...]:
+        """Evolve a static plan once, then sample its terminal measurements."""
+        context = _ShotContext(
+            state=self._runner.initial_state(),
+            classical_memory=[0] * n_clbits,
+            rng=rng,
+        )
+        self._run_one_shot(plan, context, defer_measurements=True)
+
+        source_state = (
+            self._runner.copy_state(context.state)
+            if terminal_measurements and shots > 1
+            else context.state
+        )
+        outcomes = []
+        for shot in range(shots):
+            sample_context = (
+                context
+                if shot == 0
+                else _ShotContext(
+                    state=self._runner.copy_state(source_state),
+                    classical_memory=[0] * n_clbits,
+                    rng=rng,
+                    frame_angles=dict(context.frame_angles),
+                    time_ns=context.time_ns,
+                )
+            )
+            for step in terminal_measurements:
+                self._runner.execute_boundary(step, sample_context)
+            outcomes.append(self._runner.finish_shot(sample_context))
+        return tuple(outcomes)
+
+    def _run_one_shot(
+        self,
+        plan: tuple[PulsePlanStep, ...],
+        context: _ShotContext,
+        *,
+        defer_measurements: bool = False,
     ) -> None:
         pending: list[PulseBlock] = []
 
@@ -124,7 +224,8 @@ class PulseEngine:
                     pending.append(step)
             elif isinstance(step, (MeasurementStep, ResetStep)):
                 flush()
-                self._runner.execute_boundary(step, context)
+                if not (defer_measurements and isinstance(step, MeasurementStep)):
+                    self._runner.execute_boundary(step, context)
             else:
                 raise BackendValidationError(
                     "pulse plan contains an unknown execution step"

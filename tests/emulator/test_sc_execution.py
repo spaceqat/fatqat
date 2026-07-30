@@ -282,7 +282,7 @@ def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames():
         post_actions=(PhaseShift(frame, 0.7),),
         condition=((0, 1),),
     )
-    (outcome,) = PulseEngine(adapter).execute(
+    (outcome,) = PulseEngine(adapter).run(
         (block,), shots=1, n_clbits=1, rng=np.random.default_rng(5)
     )
     shot, frames = outcome

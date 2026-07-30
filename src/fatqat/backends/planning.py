@@ -104,7 +104,7 @@ def _lower_gate(
     channel_map: ChannelImplementationMap,
 ) -> list[ResolvedStep]:
     """Lower one ordinary-gate operation and its attached channel noise."""
-    device_operands = resource_layout.device_operands(step.targets)
+    device_operands = resource_layout.device_labels_for(step.targets)
     engine_indices = tuple(
         engine_index_allocation.subsystem_index(t) for t in step.targets
     )

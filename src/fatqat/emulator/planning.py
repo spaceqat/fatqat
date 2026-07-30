@@ -79,7 +79,8 @@ def _lower_gate(
     noise_model: NoiseModel,
 ) -> PulseBlock:
     targets = tuple(
-        model.resource(resource_layout.device_label(target)) for target in step.targets
+        model.resource(device_operand)
+        for device_operand in resource_layout.device_labels_for(step.targets)
     )
     block = realize_native_operation(
         step.operation,
@@ -123,8 +124,8 @@ def _lower_gate_noise(
         type(step.operation), step.targets, resource_layout
     ):
         model_indices = tuple(
-            model.bind_resource(model.resource(resource_layout.device_label(target)))
-            for target in extent
+            model.bind_resource(model.resource(device_operand))
+            for device_operand in resource_layout.device_labels_for(extent)
         )
         bindings.extend(
             resolve_pulse_noise(

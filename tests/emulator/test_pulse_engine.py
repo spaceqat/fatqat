@@ -49,6 +49,10 @@ class _FakeRunner:
     def initial_state(self):
         return {"runs": 0}
 
+    @staticmethod
+    def copy_state(state):
+        return dict(state)
+
     def evolve(self, run, context, enabled):
         self.context_ids.append(id(context))
         self.runs.append((run.starts_ns, run.end_ns, enabled))
@@ -95,7 +99,7 @@ def test_engine_owns_boundaries_guard_reservation_and_persistent_shot_context():
         last,
     )
     runner = _FakeRunner()
-    outcomes = PulseEngine(runner).execute(
+    outcomes = PulseEngine(runner).run(
         plan, shots=1, n_clbits=1, rng=np.random.default_rng(4)
     )
 
@@ -112,7 +116,7 @@ def test_engine_owns_boundaries_guard_reservation_and_persistent_shot_context():
 def test_engine_replays_each_shot_with_distinct_state_and_shared_rng_stream():
     model = _model()
     runner = _FakeRunner()
-    outcomes = PulseEngine(runner).execute(
+    outcomes = PulseEngine(runner).run(
         (_physical_block(model, 1.0),),
         shots=2,
         n_clbits=0,
@@ -120,3 +124,37 @@ def test_engine_replays_each_shot_with_distinct_state_and_shared_rng_stream():
     )
     assert outcomes[0] == outcomes[1]
     assert len(set(runner.context_ids)) == 2
+
+
+def test_engine_evolves_static_terminal_measurement_plan_once_then_samples():
+    model = _model()
+    runner = _FakeRunner()
+    measurement = MeasurementStep((0,), (0,))
+    outcomes = PulseEngine(runner).run(
+        (_physical_block(model, 1.0), measurement),
+        shots=3,
+        n_clbits=1,
+        rng=np.random.default_rng(7),
+    )
+
+    assert runner.runs == [((0.0,), 1.0, (True,))]
+    assert runner.boundaries == [(MeasurementStep, 1.0)] * 3
+    assert [outcome[-2] for outcome in outcomes] == [(0,), (0,), (0,)]
+
+
+def test_engine_keeps_measurement_followed_by_pulse_dynamic():
+    model = _model()
+    runner = _FakeRunner()
+    measurement = MeasurementStep((0,), (0,))
+    PulseEngine(runner).run(
+        (measurement, _physical_block(model, 1.0)),
+        shots=2,
+        n_clbits=1,
+        rng=np.random.default_rng(7),
+    )
+
+    assert runner.runs == [
+        ((0.0,), 1.0, (True,)),
+        ((0.0,), 1.0, (True,)),
+    ]
+    assert runner.boundaries == [(MeasurementStep, 0.0)] * 2

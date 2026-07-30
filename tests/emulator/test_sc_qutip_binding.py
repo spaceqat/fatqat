@@ -440,7 +440,7 @@ def test_frame_ledger_survives_boundary_and_respects_post_action_time():
         q0_second,
         q0_after,
     )
-    PulseEngine(adapter).execute(
+    PulseEngine(adapter).run(
         plan, shots=1, n_clbits=1, rng=np.random.default_rng(2)
     )
 
@@ -451,7 +451,7 @@ def test_frame_ledger_survives_boundary_and_respects_post_action_time():
 def test_full_model_state_keeps_unused_nonprefix_transmons_in_ground_state():
     model, _ = _model_and_calibration()
     adapter = SCQutipAdapter(model)
-    outcomes = PulseEngine(adapter).execute(
+    outcomes = PulseEngine(adapter).run(
         (_drive_block(model, "q1"),),
         shots=1,
         n_clbits=0,

@@ -23,7 +23,7 @@ label, nor an engine index; it determines the channel's execution extent.
 - ``tuple[DeviceOperand, ...]`` - physical, opaque device resource labels, how a
   backend authors default noise for its device before any user program (or
   register) exists. Matched against
-  :py:meth:`~fatqat.resource_layout.ResourceLayout.device_operands` for the
+  :py:meth:`~fatqat.resource_layout.ResourceLayout.device_labels_for` for the
   lowered occurrence's targets.
 
 A bare integer selector is a physical device-resource label, never a flat
@@ -176,7 +176,7 @@ class NoiseModel:
         - A logical selector is compared to the lowered occurrence's target
           refs by equality; a physical selector is compared to the lowered
           occurrence's device resource labels
-          (:py:meth:`~fatqat.resource_layout.ResourceLayout.device_operands`)
+          (:py:meth:`~fatqat.resource_layout.ResourceLayout.device_labels_for`)
           by equality. See :py:meth:`channels_for`.
 
         Raises:
@@ -223,7 +223,7 @@ class NoiseModel:
 
         A logical selector matches when it equals ``targets``; a physical
         selector matches when it equals
-        ``resource_layout.device_operands(targets)``. Both kinds of specific
+        ``resource_layout.device_labels_for(targets)``. Both kinds of specific
         match accumulate (in registration order); all-targets (``None``)
         entries apply only when no specific selector of their same extent
         matched. Returns ``(channel, extent)`` pairs.
@@ -255,7 +255,7 @@ class NoiseModel:
                     classified.append(None)
             else:
                 if device_operands is None:
-                    device_operands = resource_layout.device_operands(targets)
+                    device_operands = resource_layout.device_labels_for(targets)
                 if device_operands == selector:
                     classified.append(True)
                     has_specific[entry.slots] = True
@@ -359,7 +359,7 @@ class NoiseModel:
         target: RegisterRef | None,
         device_label: DeviceOperand,
     ) -> tuple[Channel, ...]:
-        """Resolve always-on channels for one physical model subsystem."""
+        """Resolve always-on channels for one physical device label."""
         defaults: list[Channel] = []
         specifics: list[Channel] = []
         for entry in self._channels:

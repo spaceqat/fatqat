@@ -230,7 +230,7 @@ class PulseBackend:
         )
         outcomes = PulseEngine(
             runner, placement_mode=simulation.placement_mode
-        ).execute(
+        ).run(
             plan,
             shots=shots if request.counts else 1,
             n_clbits=allocation.n_clbits,

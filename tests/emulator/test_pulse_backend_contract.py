@@ -85,7 +85,7 @@ def test_layout_binds_model_ids_while_engine_indices_stay_private():
     )
     plan, _ = backend._lower_program(program, context=context)
 
-    assert layout.device_operands(
+    assert layout.device_labels_for(
         (program.quantum_registers[0][0], program.quantum_registers[0][1])
     ) == (
         "q0",

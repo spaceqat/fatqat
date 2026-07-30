@@ -97,11 +97,11 @@ def test_base_simulator_executes_grouped_views_with_identity_mapping():
 # for execution indices -----------------------------------------------------
 
 
-def test_lower_uses_resource_layout_device_operands_for_lookup_and_engine_indices_for_steps():
+def test_lower_uses_resource_layout_device_labels_for_lookup_and_engine_indices_for_steps():
     # A deliberately divergent mapping: device labels 99/100 have nothing to
     # do with the engine indices 0/1. The CZ rule is only registered for
     # device operands (99, 100), so lowering can only have succeeded by using
-    # `ResourceLayout.device_operands()` for the implementation-map lookup;
+    # `ResourceLayout.device_labels_for()` for the implementation-map lookup;
     # the resulting step must still carry the *engine* indices (0, 1), from
     # `_EngineIndexAllocation`, not the device labels used for lookup.
     program = Program(2)

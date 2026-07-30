@@ -23,11 +23,11 @@ def test_device_label_opaque_hashable_values():
     assert layout.device_label(qreg[1]) == (3, 7)
 
 
-def test_device_operands_preserves_operand_order():
+def test_device_labels_for_preserves_operand_order():
     qreg = QuantumRegister(3, name="q")
     layout = ResourceLayout({qreg[0]: "a", qreg[1]: "b", qreg[2]: "c"})
-    assert layout.device_operands((qreg[2], qreg[0])) == ("c", "a")
-    assert layout.device_operands(()) == ()
+    assert layout.device_labels_for((qreg[2], qreg[0])) == ("c", "a")
+    assert layout.device_labels_for(()) == ()
 
 
 def test_device_labels_membership():
@@ -44,12 +44,12 @@ def test_foreign_ref_raises_on_device_label():
         layout.device_label(foreign[0])
 
 
-def test_foreign_ref_raises_on_device_operands():
+def test_foreign_ref_raises_on_device_labels_for():
     qreg = QuantumRegister(1, name="q")
     foreign = QuantumRegister(1, name="x")
     layout = ResourceLayout({qreg[0]: 0})
     with pytest.raises(KeyError):
-        layout.device_operands((qreg[0], foreign[0]))
+        layout.device_labels_for((qreg[0], foreign[0]))
 
 
 def test_lookalike_register_is_not_part_of_the_layout():

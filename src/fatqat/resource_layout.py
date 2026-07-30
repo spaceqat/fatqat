@@ -50,7 +50,7 @@ class ResourceLayout:
         """Return the set of every device resource label in this layout."""
         return frozenset(self._labels.values())
 
-    def device_operands(
+    def device_labels_for(
         self, refs: tuple[RegisterRef, ...]
     ) -> tuple[DeviceOperand, ...]:
         """Return the device resource labels for ``refs``, in operand order.
