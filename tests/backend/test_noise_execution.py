@@ -17,6 +17,13 @@ from fatqat.noise import (
 from fatqat.simulator.np import NumpyDMSimulator, NumpySVSimulator
 
 
+def _total_variation(counts_a, counts_b, shots):
+    """Total-variation distance between two count dicts, as a fraction of shots."""
+    keys = set(counts_a) | set(counts_b)
+    diff = sum(abs(counts_a.get(k, 0) - counts_b.get(k, 0)) for k in keys)
+    return 0.5 * diff / shots
+
+
 def _depolarized_x_model(p=0.2):
     noise = NoiseModel()
     noise.add_channel(fq.ops.X, Depolarizing(p=p))
@@ -378,10 +385,10 @@ def test_run_succeeds_when_valid_gate_selector_matches_no_occurrence():
     assert result is not None
 
 
-def test_numba_simulator_falls_back_correctly_on_channel_plans():
-    # The fused numba dynamic kernel only understands matrix/measure/reset
-    # steps; a channel-bearing plan must take the inherited NumPy per-shot
-    # path and produce identical counts, never reach the compiler.
+def test_numba_fused_kernel_compiles_channel_plans_matching_numpy():
+    # A channel-bearing plan compiles into the fused numba kernel, which weighs
+    # quantum-jump branches from the reduced density matrix while NumPy norms
+    # each branch - same distribution, counts agree statistically not bit-wise.
     pytest.importorskip("numba")
     from fatqat.simulator.nb import NumbaSVSimulator, _plan_compilable
 
@@ -392,19 +399,72 @@ def test_numba_simulator_falls_back_correctly_on_channel_plans():
     program.add(fq.ops.X, 0)
     program.measure(0, 0)
     plan, _ = backend._lower_program(program)
-    assert _plan_compilable(plan) is False
+    assert _plan_compilable(plan) is True
 
     # Below the auto-parallel floor so both simulators run in-process serial.
+    shots = 400
     request = backend._request_cls(counts=True, statevector=False)
     counts = {}
     for cls in (NumpySVSimulator, NumbaSVSimulator):
         simulator = cls()
         simulator.initialize((2,), 1)
-        raw = simulator.run(plan, 20, 7, request)
-        counts[cls.__name__] = list(
-            zip(raw.outcome_keys.tolist(), raw.outcome_counts.tolist())
+        raw = simulator.run(plan, shots, 7, request)
+        counts[cls.__name__] = dict(
+            zip(
+                (tuple(key) for key in raw.outcome_keys.tolist()),
+                raw.outcome_counts.tolist(),
+            )
         )
-    assert counts["NumpySVSimulator"] == counts["NumbaSVSimulator"]
+    tv = _total_variation(counts["NumpySVSimulator"], counts["NumbaSVSimulator"], shots)
+    assert tv < 0.05
+
+
+def test_numba_fused_channel_kernel_matches_numpy_on_a_qudit_dynamic_plan():
+    # Every fused step kind at once on a qutrit register: two channels on one
+    # occurrence, a feedforward gate, a reset, two measurements. Draw order must
+    # stay aligned with NumPy; counts agree statistically, not bit-for-bit.
+    pytest.importorskip("numba")
+
+    def counts_for(runtime):
+        noise = NoiseModel()
+        noise.add_channel(fq.ops.Shift, AmplitudeDamping(gammas=(0.2, 0.3)))
+        noise.add_channel(fq.ops.Shift, PhaseDamping(p=0.15))
+        qreg = fq.QuantumRegister(2, dim=3)
+        creg = fq.ClassicalRegister(2, dim=3)
+        program = fq.Program([qreg], [creg])
+        program.add(fq.ops.Shift(1), qreg[0])
+        program.measure(qreg[0], creg[0])
+        program.add(fq.ops.Shift(1), qreg[1], condition=(creg[0], 1))
+        program.add(fq.ops.Reset, qreg[0])
+        program.measure(qreg[1], creg[1])
+        backend = SimulatorBackend(method="SV", runtime=runtime, noise=noise)
+        job = backend.run(program, shots=400, simulation_config={"seed": 11})
+        return job.result().get_counts()
+
+    assert _total_variation(counts_for("numba"), counts_for("numpy"), 400) < 0.05
+
+
+def test_numba_dm_channel_matches_numpy_on_a_qudit_channel_plan():
+    # The DM channel path applies the numba-built super-operator in one pass
+    # while NumPy sums per-Kraus sandwiches, so the two agree numerically not
+    # bit-for-bit (kernel exactness vs the Kronecker sum: tests/noise/test_nb.py).
+    pytest.importorskip("numba")
+
+    noise = NoiseModel()
+    noise.add_channel(fq.ops.Shift, AmplitudeDamping(gammas=(0.2, 0.3)))
+    noise.add_channel(fq.ops.Shift, PhaseDamping(p=0.4))
+    qreg = fq.QuantumRegister(1, dim=3)
+
+    states = []
+    for runtime in ("numpy", "numba"):
+        program = fq.Program([qreg])
+        program.add(fq.ops.Fourier, qreg[0])
+        program.add(fq.ops.Shift(1), qreg[0])
+        backend = SimulatorBackend(method="DM", runtime=runtime, noise=noise)
+        job = backend.run(program, result_config={"counts": False, "final_state": True})
+        states.append(job.result().get_density_matrix())
+
+    assert np.allclose(states[0], states[1])
 
 
 def test_scoped_damping_decays_only_the_selected_cz_slot():

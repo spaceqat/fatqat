@@ -213,6 +213,96 @@ def test_parallel_dynamic_shots_match_serial_with_readout_error():
     assert parallel == serial
 
 
+def test_numba_fused_kernel_applies_readout_error():
+    # Regression: the fused per-shot kernel used to write the true measured
+    # digit straight into the classical register, so a dynamic plan's readout
+    # error was silently dropped under runtime="numba" - X then always-flip
+    # readout reported "1" instead of "0".
+    pytest.importorskip("numba")
+    from fatqat.simulator.nb import _plan_compilable
+
+    always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
+    noise = _readout_model(always_flip)
+    program = fq.Program(1, 1)
+    program.add(fq.ops.X, 0)
+    program.measure(0, 0)
+    program.add(fq.ops.Reset, 0)  # a reset forces the dynamic path
+
+    plan, _ = SimulatorBackend(noise=noise)._lower_program(program)
+    assert _plan_compilable(plan) is True
+
+    counts = {}
+    for runtime in ("numpy", "numba"):
+        counts[runtime] = (
+            SimulatorBackend(method="SV", runtime=runtime, noise=noise)
+            .run(program, shots=64, simulation_config={"seed": 5})
+            .result()
+            .get_counts()
+        )
+
+    assert counts["numba"] == counts["numpy"] == {"0": 64}
+
+
+def test_numba_fused_kernel_matches_numpy_on_a_qudit_confusion_plan():
+    # A non-deterministic 3x3 confusion on a qutrit, mixed with a channel, a
+    # feedforward gate and a reset: the reported digits are resampled in the
+    # kernel, and the extra per-confusion uniform must keep the whole per-shot
+    # RNG stream aligned with the NumPy path for the counts to agree exactly.
+    pytest.importorskip("numba")
+    from fatqat.noise import PhaseDamping
+
+    confusion = np.array([[0.8, 0.1, 0.1], [0.1, 0.8, 0.2], [0.1, 0.1, 0.7]])
+
+    def counts_for(runtime):
+        noise = NoiseModel()
+        noise.add_readout_error(confusion)
+        noise.add_channel(fq.ops.Shift, PhaseDamping(p=0.2))
+        qreg = fq.QuantumRegister(2, dim=3)
+        creg = fq.ClassicalRegister(2, dim=3)
+        program = fq.Program([qreg], [creg])
+        program.add(fq.ops.Shift(1), qreg[0])
+        program.measure(qreg[0], creg[0])
+        program.add(fq.ops.Shift(2), qreg[1], condition=(creg[0], 1))
+        program.add(fq.ops.Reset, qreg[0])
+        program.measure(qreg[1], creg[1])
+        return (
+            SimulatorBackend(method="SV", runtime=runtime, noise=noise)
+            .run(program, shots=300, simulation_config={"seed": 21})
+            .result()
+            .get_counts()
+        )
+
+    numpy_counts = counts_for("numpy")
+    # Every digit is reachable through the confusion, so the corrupted reports
+    # really are being sampled rather than passed through.
+    assert len(numpy_counts) > 1
+    assert counts_for("numba") == numpy_counts
+
+
+def test_numba_partially_confused_measurement_only_draws_where_attached():
+    # One confused subsystem out of two in a single measurement step: the
+    # error-free subsystem must consume no uniform, or every later draw in the
+    # shot shifts and the counts diverge from the NumPy path.
+    pytest.importorskip("numba")
+
+    noise = NoiseModel()
+    noise.add_readout_error(_FLIP_30, target=1)  # q0 reports without error
+    program = fq.Program(2, 2)
+    program.add(fq.ops.H, 0)
+    program.measure((0, 1), (0, 1))
+    program.add(fq.ops.Reset, 0)  # forces the dynamic path
+
+    counts = {
+        runtime: SimulatorBackend(method="SV", runtime=runtime, noise=noise)
+        .run(program, shots=200, simulation_config={"seed": 8})
+        .result()
+        .get_counts()
+        for runtime in ("numpy", "numba")
+    }
+
+    assert counts["numba"] == counts["numpy"]
+
+
 def test_validate_noise_reports_readout_error_as_accepted():
     report = SimulatorBackend().validate_noise(_readout_model(_FLIP_30))
 

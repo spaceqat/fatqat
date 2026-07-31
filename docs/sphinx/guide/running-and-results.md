@@ -27,8 +27,8 @@ Key arguments:
 - `shots`: how many logical shots to run when counts are requested. Ignored
   for a purely deterministic final-state request.
 - `simulation_config`: a plain dict for simulator-only controls: `seed`,
-  `max_workers`, and `parallel_mode`. A fixed seed makes sampling
-  reproducible regardless of serial or worker-process execution.
+  `max_workers`, `parallel_mode`, and `numba_parallel`. A fixed seed makes
+  sampling reproducible regardless of serial or worker-process execution.
 - `result_config`: a plain dict selecting which result artifacts to produce.
 
 ## Choosing result fields
