@@ -15,7 +15,13 @@ from ..backends.steps import MeasurementStep
 from ..backends.view_normalization import ProgramInstruction, _break_grouped_operations
 from ..errors import BackendExecutionError, BackendValidationError
 from ..job import Job
-from ..noise import NoiseModel, NoiseSupportReport
+from ..noise import (
+    LindbladImplementationMap,
+    NoiseModel,
+    NoiseSupportReport,
+    default_lindblad_implementation_map,
+)
+from ..noise.lindblad import resolve_lindblad_operators
 from ..operations import BarrierGate, Measurement, ResetGate
 from ..program import AppliedOperation, Program
 from ..resource_layout import ResourceLayout
@@ -24,11 +30,7 @@ from . import planning
 from .engine import PulseEngine
 from .engine_contract import PulseResultConfig, PulseSimulationConfig
 from .planning import PulsePlanFacts, PulsePlanStep
-from .pulse_noise import (
-    ResolvedPulseNoise,
-    resolve_pulse_noise,
-    supported_pulse_noise_types,
-)
+from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
 from .superconducting import CalibrationSpec, PhysicsModel
 
 
@@ -41,12 +43,18 @@ class PulseBackend:
         calibration: CalibrationSpec,
         *,
         noise: NoiseModel | None = None,
+        lindblad_implementation_map: LindbladImplementationMap | None = None,
     ) -> None:
         if calibration.key != model.key:
             raise BackendValidationError("calibration does not match the pulse model")
         self.model = model
         self.calibration = calibration
         self._noise_model = noise or NoiseModel()
+        self._lindblad_implementation_map = (
+            default_lindblad_implementation_map()
+            if lindblad_implementation_map is None
+            else lindblad_implementation_map.copy()
+        )
 
     def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
         """Bind program declaration order to the snapshot's ordered subsystem ids."""
@@ -128,6 +136,7 @@ class PulseBackend:
                             self.model,
                             self.calibration,
                             self._noise_model,
+                            self._lindblad_implementation_map,
                         )
                     )
         return plan, PulsePlanFacts(
@@ -219,7 +228,7 @@ class PulseBackend:
         shots: int,
         allocation: _EngineIndexAllocation,
         engine_index_to_model_ordinal: tuple[int, ...],
-        always_on_noise: tuple[ResolvedPulseNoise, ...],
+        always_on_noise: tuple[ResolvedLindbladTerm, ...],
     ) -> Result:
         from .qutip_adapter import SCQutipAdapter
 
@@ -228,9 +237,7 @@ class PulseBackend:
             engine_index_to_model_ordinal=engine_index_to_model_ordinal,
             always_on_noise=always_on_noise,
         )
-        outcomes = PulseEngine(
-            runner, placement_mode=simulation.placement_mode
-        ).run(
+        outcomes = PulseEngine(runner, placement_mode=simulation.placement_mode).run(
             plan,
             shots=shots if request.counts else 1,
             n_clbits=allocation.n_clbits,
@@ -279,24 +286,27 @@ class PulseBackend:
 
     def _always_on_noise(
         self, program: Program, resource_layout: ResourceLayout
-    ) -> tuple[ResolvedPulseNoise, ...]:
-        """Resolve all always-on descriptors into primitive pulse bindings."""
+    ) -> tuple[ResolvedLindbladTerm, ...]:
+        """Resolve all always-on descriptors into pulse Lindblad terms."""
         refs_by_label = {
             resource_layout.device_label(register[index]): register[index]
             for register in program.quantum_registers
             for index in range(register.size)
         }
-        bindings: list[ResolvedPulseNoise] = []
+        bindings: list[ResolvedLindbladTerm] = []
         for ordinal, subsystem_id in enumerate(self.model.subsystem_ids):
             for channel in self._noise_model.always_on_channels_for(
                 refs_by_label.get(subsystem_id), subsystem_id
             ):
                 bindings.extend(
-                    resolve_pulse_noise(
-                        channel,
-                        target_indices=(ordinal,),
-                        physical_dimension=self.model.physical_dimension,
-                        duration=None,
+                    bind_lindblad_operators(
+                        resolve_lindblad_operators(
+                            channel,
+                            implementation_map=self._lindblad_implementation_map,
+                            physical_dimension=self.model.physical_dimension,
+                            duration=None,
+                        ),
+                        model_ordinals=(ordinal,),
                     )
                 )
         return tuple(bindings)
@@ -321,7 +331,9 @@ class PulseBackend:
             if label in seen:
                 continue
             seen.add(label)
-            supported = channel_type in supported_pulse_noise_types()
+            supported = (
+                channel_type in self._lindblad_implementation_map.supported_channels()
+            )
             if always_on and hasattr(channel, "rate") and channel.rate is None:
                 supported = False
             if supported:

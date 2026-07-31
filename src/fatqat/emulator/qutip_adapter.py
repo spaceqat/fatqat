@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import pi, sqrt
+from math import pi
 from typing import Any
 
 import numpy as np
@@ -12,11 +12,10 @@ from qutip_qip.pulse import Drift, Pulse
 
 from ..backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
-from ..noise import AmplitudeDamping, Channel, PhaseDamping
 from .engine import _ShotContext, _condition_matches
 from .execution import _PlacedPulseRun
 from .resolved import PhaseShift, PhaseSwap, PulseBlock, SampledControl
-from .pulse_noise import ResolvedPulseNoise
+from .lindblad import ResolvedLindbladTerm
 from .superconducting import ControlChannelRef, PhysicsModel
 
 _EPSILON = 1e-12
@@ -45,7 +44,7 @@ class SCQutipAdapter:
         model: PhysicsModel,
         *,
         engine_index_to_model_ordinal: tuple[int, ...] | None = None,
-        always_on_noise: tuple[ResolvedPulseNoise, ...] = (),
+        always_on_noise: tuple[ResolvedLindbladTerm, ...] = (),
     ) -> None:
         self._model = model
         self._dims = [model.physical_dimension] * len(model.subsystems)
@@ -74,17 +73,6 @@ class SCQutipAdapter:
             for ordinal in range(len(model.subsystems))
         )
         self._drift = self._build_drift()
-        # The pulse family's primitive collapse-implementation map: source
-        # descriptors are resolved before this boundary, so both always-on
-        # and operation-scoped bindings dispatch through these same rules.
-        # registry `PulseBackend.validate_noise()` and lowering's
-        # unsupported-type rejection both derive their coverage from (see
-        # `pulse_noise.supported_pulse_noise_types`), keyed identically here
-        # so none of the three maintains its own hard-coded type list.
-        self._pulse_channel_rules: dict[type[Channel], Any] = {
-            AmplitudeDamping: self._amplitude_damping_collapse_ops,
-            PhaseDamping: self._phase_damping_collapse_ops,
-        }
         self._collapse_operators = self._build_always_on_noise(always_on_noise)
         self._projectors = tuple(
             tuple(
@@ -270,12 +258,12 @@ class SCQutipAdapter:
         return drift
 
     def _build_always_on_noise(
-        self, bindings: tuple[ResolvedPulseNoise, ...]
+        self, bindings: tuple[ResolvedLindbladTerm, ...]
     ) -> tuple[Any, ...]:
         """Build constant collapse terms from resolved always-on bindings."""
         noise_pulse = Pulse(None, None)
         for binding in bindings:
-            for local_qobj, ordinal in self._pulse_collapse_ops(binding):
+            for local_qobj, ordinal in self._lindblad_ops(binding):
                 noise_pulse.add_lindblad_noise(
                     local_qobj,
                     ordinal,
@@ -312,66 +300,21 @@ class SCQutipAdapter:
         )
         noise_pulse = Pulse(None, None)
         for binding in block.noise:
-            for local_qobj, ordinal in self._pulse_collapse_ops(binding):
+            for local_qobj, ordinal in self._lindblad_ops(binding):
                 noise_pulse.add_lindblad_noise(
                     local_qobj, ordinal, tlist=tlist, coeff=window
                 )
         return noise_pulse
 
-    def _pulse_collapse_ops(self, binding: ResolvedPulseNoise) -> list[tuple[Any, int]]:
-        """Dispatch one resolved binding to its ``(local qobj, ordinal)`` pairs."""
-        rule = self._pulse_channel_rules.get(binding.channel_type)
-        if rule is None:
-            raise BackendValidationError(
-                f"{binding.channel_type.__name__} has no pulse collapse "
-                "implementation"
-            )
-        return rule(binding)
-
-    def _amplitude_damping_collapse_ops(
-        self, binding: ResolvedPulseNoise
-    ) -> list[tuple[Any, int]]:
-        """Return one combined ladder jump per target subsystem.
-
-        The combined jump has the same transition structure as the catalog
-        channel's ``K1``.  For thermal qutrit relaxation, rates
-        ``(1/t1, 2/t1)`` therefore reproduce ``sqrt(1/t1) * a`` exactly.
-        """
-        rates = binding.rate
-        jump = self._amplitude_damping_local_operator(rates)
-        pairs: list[tuple[Any, int]] = []
-        for ordinal in binding.target_indices:
-            self._validate_noise_ordinal(ordinal)
-            pairs.append((jump, ordinal))
-        return pairs
-
-    def _amplitude_damping_local_operator(self, rates: tuple[float, ...]) -> Any:
-        """Build one local ladder jump from per-transition rates."""
-        dim = self._model.physical_dimension
-        if len(rates) != dim - 1:
-            raise BackendValidationError(
-                f"AmplitudeDamping needs {dim - 1} rate value(s) for dimension "
-                f"{dim}, got {len(rates)}"
-            )
-        jump = np.zeros((dim, dim), dtype=complex)
-        for level in range(1, dim):
-            jump[level - 1, level] = sqrt(rates[level - 1])
-        return Qobj(jump)
-
-    def _phase_damping_collapse_ops(
-        self, binding: ResolvedPulseNoise
-    ) -> list[tuple[Any, int]]:
-        """Number-operator dephasing generator, scaled by 2 so the induced
-        coherence decay matches ``p(t) = 1 - exp(-rate * t)`` exactly - the
-        same ``sqrt(2 * rate) * number`` convention already used for
-        `ThermalRelaxation`'s residual dephasing term.
-        """
+    def _lindblad_ops(self, term: ResolvedLindbladTerm) -> list[tuple[Any, int]]:
+        """Adapt one backend-neutral Lindblad term to local QuTiP operators."""
+        local_qobj = Qobj(term.local_operator)
         return [
             (
-                sqrt(2 * binding.rate) * self._local_number,
+                local_qobj,
                 self._validate_noise_ordinal(ordinal),
             )
-            for ordinal in binding.target_indices
+            for ordinal in term.model_ordinals
         ]
 
     def _validate_noise_ordinal(self, ordinal: int) -> int:

@@ -153,11 +153,12 @@ def test_default_noise_covers_unused_model_subsystems_but_specific_replaces_it()
     backend._noise_model.add_channel(specific, targets=program.quantum_registers[0][0])
 
     selected = backend._always_on_noise(program, layout)
-    amplitude = [
-        binding
-        for binding in selected
-        if binding.channel_type.__name__ == "AmplitudeDamping"
-    ]
-    assert [binding.target_indices for binding in amplitude] == [(0,), (1,)]
-    assert amplitude[0].rate == pytest.approx((0.02, 0.04))
-    assert amplitude[1].rate == pytest.approx((0.01, 0.02))
+    assert [term.model_ordinals for term in selected] == [(0,), (1,)]
+    assert np.allclose(
+        selected[0].local_operator,
+        [[0.0, np.sqrt(0.02), 0.0], [0.0, 0.0, np.sqrt(0.04)], [0.0, 0.0, 0.0]],
+    )
+    assert np.allclose(
+        selected[1].local_operator,
+        [[0.0, np.sqrt(0.01), 0.0], [0.0, 0.0, np.sqrt(0.02)], [0.0, 0.0, 0.0]],
+    )

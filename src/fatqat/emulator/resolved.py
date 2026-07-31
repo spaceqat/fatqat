@@ -12,7 +12,7 @@ from ..errors import BackendValidationError, UnsupportedOperationError
 from ..operations.base import Operation
 from ..operations.fixed_gates import CZGate, iSwapGate
 from ..operations.parametric_gates import RX, RY, RZ
-from .pulse_noise import ResolvedPulseNoise
+from .lindblad import ResolvedLindbladTerm
 from .superconducting import (
     CalibrationSpec,
     ControlChannelRef,
@@ -122,7 +122,7 @@ class PulseBlock:
     post_actions: tuple[FrameAction, ...] = ()
     condition: tuple[tuple[int, int], ...] | None = None
     start_ns: float | None = None
-    noise: tuple[ResolvedPulseNoise, ...] = ()
+    noise: tuple[ResolvedLindbladTerm, ...] = ()
     target_indices: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:

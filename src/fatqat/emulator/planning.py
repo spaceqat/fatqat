@@ -13,10 +13,12 @@ from ..backends.backend_utils import (
 )
 from ..backends.steps import MeasurementStep, ResetStep
 from ..noise import NoiseModel
+from ..noise import LindbladImplementationMap
+from ..noise.lindblad import resolve_lindblad_operators
 from ..operations.measurement import Measurement
 from ..program import AppliedOperation
 from ..resource_layout import ResourceLayout
-from .pulse_noise import ResolvedPulseNoise, resolve_pulse_noise
+from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
 from .resolved import PulseBlock, realize_native_operation
 from .superconducting import CalibrationSpec, PhysicsModel
 
@@ -77,6 +79,7 @@ def _lower_gate(
     model: PhysicsModel,
     calibration: CalibrationSpec,
     noise_model: NoiseModel,
+    lindblad_implementation_map: LindbladImplementationMap,
 ) -> PulseBlock:
     targets = tuple(
         model.resource(device_operand)
@@ -95,8 +98,8 @@ def _lower_gate(
         engine_index_allocation,
         model,
         noise_model,
+        lindblad_implementation_map,
         block.duration_ns,
-        block.condition,
     )
     target_indices = tuple(
         dict.fromkeys(
@@ -117,19 +120,19 @@ def _lower_gate_noise(
     engine_index_allocation: _EngineIndexAllocation,
     model: PhysicsModel,
     noise_model: NoiseModel,
+    lindblad_implementation_map: LindbladImplementationMap,
     duration_ns: float,
-    condition: tuple[tuple[int, int], ...] | None,
-) -> tuple[tuple[ResolvedPulseNoise, ...], tuple[int, ...]]:
+) -> tuple[tuple[ResolvedLindbladTerm, ...], tuple[int, ...]]:
     """Resolve one gate occurrence's attached channels into engine-facing bindings.
 
     Noise selection matches against the occurrence's logical targets and/or
     resource-layout device operands (never engine indices), exactly like the
     matrix family's lowering; engine indices are used only for the emitted
-    binding. Each channel's rate is resolved here, at the lowering boundary,
-    using the realized block's own duration - the pulse channel construction
-    itself (in the qutip adapter) never sees a duration or a probability.
+    binding. Each channel resolves to backend-neutral Lindblad terms at the
+    lowering boundary, using the realized block's own duration; concrete
+    adapters receive no source descriptor, duration, or probability.
     """
-    bindings: list[ResolvedPulseNoise] = []
+    bindings: list[ResolvedLindbladTerm] = []
     target_indices: list[int] = []
     for channel, extent in noise_model.channels_for(
         type(step.operation), step.targets, resource_layout
@@ -142,12 +145,14 @@ def _lower_gate_noise(
             for device_operand in resource_layout.device_labels_for(extent)
         )
         bindings.extend(
-            resolve_pulse_noise(
-                channel,
-                target_indices=model_indices,
-                physical_dimension=model.physical_dimension,
-                duration=duration_ns,
-                condition=condition,
+            bind_lindblad_operators(
+                resolve_lindblad_operators(
+                    channel,
+                    implementation_map=lindblad_implementation_map,
+                    physical_dimension=model.physical_dimension,
+                    duration=duration_ns,
+                ),
+                model_ordinals=model_indices,
             )
         )
     return tuple(bindings), tuple(dict.fromkeys(target_indices))
