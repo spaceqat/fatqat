@@ -93,6 +93,7 @@ def test_layout_binds_model_ids_while_engine_indices_stay_private():
     )
     assert allocation.subsystem_index(program.quantum_registers[0][1]) == 1
     assert plan[0].resource_claims[0] == backend.model.resource("q0")
+    assert plan[0].target_indices == (0, 1)
 
 
 def test_capacity_and_non_qubit_programs_fail_before_execution():

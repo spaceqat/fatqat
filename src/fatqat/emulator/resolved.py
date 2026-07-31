@@ -123,6 +123,7 @@ class PulseBlock:
     condition: tuple[tuple[int, int], ...] | None = None
     start_ns: float | None = None
     noise: tuple[ResolvedPulseNoise, ...] = ()
+    target_indices: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
         duration = _finite(
@@ -226,6 +227,17 @@ class PulseBlock:
         object.__setattr__(self, "resource_claims", tuple(self.resource_claims))
         object.__setattr__(self, "post_actions", tuple(self.post_actions))
         object.__setattr__(self, "noise", tuple(self.noise))
+        if self.target_indices is not None:
+            target_indices = tuple(self.target_indices)
+            if (
+                not target_indices
+                or len(set(target_indices)) != len(target_indices)
+                or any(type(index) is not int or index < 0 for index in target_indices)
+            ):
+                raise BackendValidationError(
+                    "pulse-block target indices must be distinct non-negative ints"
+                )
+            object.__setattr__(self, "target_indices", target_indices)
 
 
 def _sample_grid(duration_ns: float) -> np.ndarray:

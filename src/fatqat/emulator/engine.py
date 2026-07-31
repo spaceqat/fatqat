@@ -7,6 +7,10 @@ from typing import Any, Iterable, Protocol
 
 import numpy as np
 
+from ..backends._execution_analysis import (
+    _OperationExecutionFacts,
+    _analyze_terminal_measurements,
+)
 from ..backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
 from .execution import PlacementMode, _PlacedPulseRun, place_pulse_run
@@ -121,33 +125,26 @@ class PulseEngine:
     def _analyze_plan(
         plan: tuple[PulsePlanStep, ...],
     ) -> tuple[bool, tuple[MeasurementStep, ...]]:
-        """Classify a plan for single-evolution terminal-measurement sampling.
+        """Return the shared terminal-measurement fast-path decision."""
+        is_dynamic, measurements = _analyze_terminal_measurements(
+            plan, PulseEngine._operation_execution_facts
+        )
+        return is_dynamic, measurements
 
-        Pulse master-equation evolution and unconditional resets are
-        deterministic density-matrix maps.  Therefore a plan can evolve once
-        when all its measurements are terminal and it contains no classical
-        condition.  A physical operation following a measurement is treated
-        conservatively as dynamic: the engine does not yet carry the detailed
-        subsystem-touch metadata needed to prove that the operation is
-        disjoint from every measured subsystem.
-        """
-        terminal_measurements: list[MeasurementStep] = []
-        saw_measurement = False
-        for step in plan:
-            if isinstance(step, MeasurementStep):
-                saw_measurement = True
-                terminal_measurements.append(step)
-            elif isinstance(step, PulseBlock):
-                if step.condition is not None or saw_measurement:
-                    return True, ()
-            elif isinstance(step, ResetStep):
-                if step.condition is not None or saw_measurement:
-                    return True, ()
-            else:
-                raise BackendValidationError(
-                    "pulse plan contains an unknown execution step"
-                )
-        return False, tuple(terminal_measurements)
+    @staticmethod
+    def _operation_execution_facts(step: PulsePlanStep) -> _OperationExecutionFacts:
+        """Describe one pulse operation for shared dynamic-plan analysis."""
+        if isinstance(step, PulseBlock):
+            return _OperationExecutionFacts(
+                target_indices=step.target_indices,
+                is_conditioned=step.condition is not None,
+            )
+        if isinstance(step, ResetStep):
+            return _OperationExecutionFacts(
+                target_indices=step.reset_indices,
+                is_conditioned=step.condition is not None,
+            )
+        raise BackendValidationError("pulse plan contains an unknown execution step")
 
     def _run_fast(
         self,

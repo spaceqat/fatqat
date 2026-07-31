@@ -51,6 +51,10 @@ from math import prod
 
 import numpy as np
 
+from ..backends._execution_analysis import (
+    _OperationExecutionFacts,
+    _analyze_terminal_measurements,
+)
 from ..backends.engine_contract import _EngineConfig as EngineConfig, RawResult
 from ..backends.steps import (
     ApplyChannelStep,
@@ -268,41 +272,38 @@ class _NumpyMatrixSimulator(Simulator):
     def _analyze_plan(
         self, plan: list[ResolvedStep]
     ) -> tuple[bool, list[tuple[int, int]]]:
-        """Return the dynamic-path decision and the fast-path measurement pairs.
+        """Return the shared fast-path decision and matrix measurement pairs."""
+        is_dynamic, measurements = _analyze_terminal_measurements(
+            plan, self._operation_execution_facts
+        )
+        return is_dynamic, [
+            pair
+            for step in measurements
+            for pair in zip(step.measured_indices, step.classical_indices)
+        ]
 
-        A ``ResetStep`` or ``ApplyChannelStep`` forces the dynamic path when
-        ``_reset_forces_dynamic`` - both are non-unitary maps, and a pure
-        state must sample one branch of each (a density matrix applies them
-        deterministically) - and otherwise only when conditioned or when it
-        touches an already-measured subsystem (terminal sampling for that
-        subsystem would otherwise read the post-map state). An
-        ``ApplyMatrixStep`` forces it when conditioned or when it reuses an
-        already-measured subsystem.
-        """
-        measured: set[int] = set()
-        measurements: list[tuple[int, int]] = []
-        is_dynamic = False
-        for step in plan:
-            if isinstance(step, MeasurementStep):
-                measured.update(step.measured_indices)
-                measurements.extend(zip(step.measured_indices, step.classical_indices))
-            elif isinstance(step, (ResetStep, ApplyChannelStep)):
-                indices = (
-                    step.reset_indices
-                    if isinstance(step, ResetStep)
-                    else step.target_indices
-                )
-                if (
-                    self._reset_forces_dynamic
-                    or step.condition is not None
-                    or any(t in measured for t in indices)
-                ):
-                    is_dynamic = True
-            elif step.condition is not None or any(
-                t in measured for t in step.target_indices
-            ):
-                is_dynamic = True
-        return is_dynamic, measurements
+    def _operation_execution_facts(
+        self, step: ResolvedStep
+    ) -> _OperationExecutionFacts:
+        """Describe one matrix operation for shared dynamic-plan analysis."""
+        if isinstance(step, ResetStep):
+            return _OperationExecutionFacts(
+                target_indices=step.reset_indices,
+                is_conditioned=step.condition is not None,
+                forces_per_shot=self._reset_forces_dynamic,
+            )
+        if isinstance(step, ApplyChannelStep):
+            return _OperationExecutionFacts(
+                target_indices=step.target_indices,
+                is_conditioned=step.condition is not None,
+                forces_per_shot=self._reset_forces_dynamic,
+            )
+        if isinstance(step, ApplyMatrixStep):
+            return _OperationExecutionFacts(
+                target_indices=step.target_indices,
+                is_conditioned=step.condition is not None,
+            )
+        raise TypeError(f"unknown resolved execution step {type(step).__name__}")
 
     def _run_fast(
         self,

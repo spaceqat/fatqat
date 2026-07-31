@@ -89,27 +89,37 @@ def _lower_gate(
         calibration=calibration,
         condition=_resolve_condition(step.condition, engine_index_allocation),
     )
-    noise_bindings = _lower_gate_noise(
+    noise_bindings, noise_target_indices = _lower_gate_noise(
         step,
         resource_layout,
+        engine_index_allocation,
         model,
         noise_model,
         block.duration_ns,
         block.condition,
     )
-    if noise_bindings:
-        block = dataclasses.replace(block, noise=noise_bindings)
-    return block
+    target_indices = tuple(
+        dict.fromkeys(
+            (
+                *(engine_index_allocation.subsystem_index(ref) for ref in step.targets),
+                *noise_target_indices,
+            )
+        )
+    )
+    return dataclasses.replace(
+        block, noise=noise_bindings, target_indices=target_indices
+    )
 
 
 def _lower_gate_noise(
     step: AppliedOperation,
     resource_layout: ResourceLayout,
+    engine_index_allocation: _EngineIndexAllocation,
     model: PhysicsModel,
     noise_model: NoiseModel,
     duration_ns: float,
     condition: tuple[tuple[int, int], ...] | None,
-) -> tuple[ResolvedPulseNoise, ...]:
+) -> tuple[tuple[ResolvedPulseNoise, ...], tuple[int, ...]]:
     """Resolve one gate occurrence's attached channels into engine-facing bindings.
 
     Noise selection matches against the occurrence's logical targets and/or
@@ -120,9 +130,13 @@ def _lower_gate_noise(
     itself (in the qutip adapter) never sees a duration or a probability.
     """
     bindings: list[ResolvedPulseNoise] = []
+    target_indices: list[int] = []
     for channel, extent in noise_model.channels_for(
         type(step.operation), step.targets, resource_layout
     ):
+        target_indices.extend(
+            engine_index_allocation.subsystem_index(ref) for ref in extent
+        )
         model_indices = tuple(
             model.bind_resource(model.resource(device_operand))
             for device_operand in resource_layout.device_labels_for(extent)
@@ -136,4 +150,4 @@ def _lower_gate_noise(
                 condition=condition,
             )
         )
-    return tuple(bindings)
+    return tuple(bindings), tuple(dict.fromkeys(target_indices))

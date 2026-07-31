@@ -23,7 +23,9 @@ def _model():
     )
 
 
-def _physical_block(model, duration, *, condition=None, post_actions=()):
+def _physical_block(
+    model, duration, *, condition=None, post_actions=(), target_indices=None
+):
     return PulseBlock(
         model,
         duration,
@@ -37,6 +39,7 @@ def _physical_block(model, duration, *, condition=None, post_actions=()):
         (model.resource("q0"),),
         post_actions=post_actions,
         condition=condition,
+        target_indices=target_indices,
     )
 
 
@@ -158,3 +161,21 @@ def test_engine_keeps_measurement_followed_by_pulse_dynamic():
         ((0.0,), 1.0, (True,)),
     ]
     assert runner.boundaries == [(MeasurementStep, 0.0)] * 2
+
+
+def test_engine_keeps_disjoint_post_measurement_pulse_on_fast_path():
+    model = _model()
+    runner = _FakeRunner()
+    measurement = MeasurementStep((0,), (0,))
+    PulseEngine(runner).run(
+        (
+            measurement,
+            _physical_block(model, 1.0, target_indices=(1,)),
+        ),
+        shots=2,
+        n_clbits=1,
+        rng=np.random.default_rng(7),
+    )
+
+    assert runner.runs == [((0.0,), 1.0, (True,))]
+    assert runner.boundaries == [(MeasurementStep, 1.0)] * 2
