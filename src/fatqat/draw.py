@@ -20,13 +20,21 @@ simulate is still fine to *draw*. Any gate without a native QuTiP equivalent -
 including user-defined custom operations - is drawn as a labeled box carrying
 the operation's own ``name``.
 
-QuTiP-QIP draws qubit circuits only, so a program that declares any qudit
-(``dim != 2``) register is rejected with a clear error rather than mis-drawn.
+A circuit diagram is dimension-agnostic: a wire is a wire, and a qudit gate
+draws as a labeled box like any other. Qudit (``dim != 2``) registers are
+therefore drawn too, one wire per subsystem; the dimension itself is simply
+not depicted (a ``dim=3`` wire looks like a qubit wire).
+
+Two QuTiP-QIP gate APIs are supported, detected at runtime (see `_gate_api`):
+the released string-based one and the class-based one on QuTiP-QIP's master
+branch, where passing gate names as strings is deprecated and *unknown* names
+are rejected outright.
 """
 
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
 from typing import Any
 
@@ -83,6 +91,162 @@ def _require_qutip():
     return QubitCircuit
 
 
+# --- QuTiP-QIP API compatibility ---------------------------------------------
+#
+# QuTiP-QIP is mid-refactor: the released package and its master branch want
+# gates described in two different ways, and the difference is not cosmetic.
+#
+#   released (<= 0.4.x)  add_gate("SNOT", targets=[0], arg_value=0.3)
+#                        - any string is accepted, including names QuTiP has
+#                          never heard of, which is how custom gates, barriers
+#                          and resets are drawn as labeled boxes.
+#
+#   master (0.5.0.dev)   add_gate(H, targets=[0]) / add_gate(RZ(0.3), ...)
+#                        - gate *classes* for non-parametric gates, *instances*
+#                          for parametric ones. Strings still work for names
+#                          QuTiP knows (with a DeprecationWarning), but an
+#                          unknown string now raises ValueError - so the
+#                          string-based custom-gate boxes break outright.
+#                        - `arg_value=` and a string measurement name are
+#                          likewise deprecated.
+#
+# The two are reconciled below by resolving one small "emit" vocabulary per
+# installed version. Detection is by capability (does the class registry
+# import?), never by version number, so a release that ships the new API is
+# picked up automatically.
+_API_STRING = "string"  # released QuTiP-QIP: gates named by string
+_API_CLASS = "class"  # master QuTiP-QIP: gates given as classes/instances
+
+
+@functools.lru_cache(maxsize=1)
+def _gate_api() -> str:
+    """Return which QuTiP-QIP gate API is installed, resolved once.
+
+    Both versions ship ``qutip_qip.operations.gates``; only the class-based
+    one populates it with the old-name -> new-class registry, so the attribute
+    (not the module, and not a version number) is the capability probe.
+    """
+    from qutip_qip.operations import gates
+
+    return _API_CLASS if hasattr(gates, "GATE_CLASS_MAP") else _API_STRING
+
+
+@functools.lru_cache(maxsize=None)
+def _native_gate(qutip_name: str):
+    """Resolve one native gate name to the class-based API's gate class.
+
+    ``GATE_CLASS_MAP`` maps exactly the legacy spellings this module already
+    uses (``"SNOT"`` -> ``H``, ``"CNOT"`` -> ``CX``, ``"SQRTNOT"`` -> ``SQRTX``
+    ...), so `_NATIVE_GATES` needs no second table - only this lookup. The one
+    gap is ``"PHASEGATE"``, whose map entry is ``None``; it is resolved to the
+    ``PHASE`` class directly.
+    """
+    from qutip_qip.operations import gates
+
+    gate_class = gates.GATE_CLASS_MAP.get(qutip_name)
+    if gate_class is None:
+        gate_class = getattr(
+            gates, "PHASE" if qutip_name == "PHASEGATE" else qutip_name
+        )
+    return gate_class
+
+
+@functools.lru_cache(maxsize=None)
+def _box_gate(label: str, num_wires: int):
+    """Build a drawing-only gate class for a labeled box (class-based API).
+
+    The class-based API has no way to name a box that is not a registered gate:
+    ``add_gate`` rejects unknown strings, and the official escape hatch
+    (``get_unitary_gate``) demands - and validates the unitarity of - an actual
+    matrix, which a drawing tool does not have and should not need.
+
+    So a minimal concrete ``Gate`` subclass is synthesized instead. ``Gate`` is
+    an abstract base whose ``get_qobj`` must be overridden for the class to be
+    instantiable at all, but *no QuTiP renderer ever calls it* - a matrix is
+    needed to simulate a gate, never to draw one. The override therefore raises
+    if anything ever does try to simulate this box, which is the honest
+    behavior: it is a picture of a gate, not the gate.
+
+    Cached so repeated occurrences of one gate reuse a single class.
+    """
+    from qutip_qip.operations import Gate
+
+    class _DrawingBox(Gate):
+        __slots__ = ()
+        name = label
+        num_qubits = num_wires
+
+        # Signature matches the class-based API's abstract `get_qobj(dtype)`.
+        # pylint checks against whichever version is installed, and the
+        # released base class declares a different one - hence the disable.
+        @staticmethod
+        def get_qobj(dtype: str = "dense"):  # pylint: disable=arguments-differ
+            raise NotImplementedError(
+                f"{label!r} is a drawing-only placeholder and has no matrix"
+            )
+
+    return _DrawingBox
+
+
+def _optional(**kwargs) -> dict:
+    """Drop empty ``controls``/``classical_controls`` entries.
+
+    The two APIs disagree on how "no controls" is spelled (the released one
+    takes ``None``, the class-based one requires an int or sequence and
+    rejects ``None``), so an empty value is omitted entirely and each version
+    applies its own default.
+    """
+    return {key: value for key, value in kwargs.items() if value}
+
+
+def _add_box(circuit, label: str, wires: list[int], classical_controls) -> None:
+    """Add a labeled box spanning ``wires``, on either API."""
+    gate = label if _gate_api() == _API_STRING else _box_gate(label, len(wires))
+    circuit.add_gate(
+        gate, targets=wires, **_optional(classical_controls=classical_controls)
+    )
+
+
+def _add_native(
+    circuit, qutip_name: str, controls, targets, arg_value, classical_controls
+) -> None:
+    """Add a gate QuTiP implements natively, on either API."""
+    optional = _optional(controls=controls, classical_controls=classical_controls)
+    if _gate_api() == _API_STRING:
+        circuit.add_gate(qutip_name, targets=targets, arg_value=arg_value, **optional)
+        return
+    # Class-based API: parametric gates are passed as instances carrying their
+    # angle (`arg_value=` is deprecated), non-parametric ones as the class.
+    gate_class = _native_gate(qutip_name)
+    gate = gate_class(arg_value) if arg_value is not None else gate_class
+    circuit.add_gate(gate, targets=targets, **optional)
+
+
+def _add_measurement(circuit, target: int, classical_store: int) -> None:
+    """Add a Z-basis measurement, on either API."""
+    if _gate_api() == _API_STRING:
+        measurement = "M"
+    else:
+        # A string name is deprecated here too; `Mz` is the Z-basis class the
+        # string used to be silently interpreted as. Resolved by attribute
+        # because it does not exist in the released package.
+        from qutip_qip.operations import measurement as qutip_measurement
+
+        measurement = qutip_measurement.Mz
+    circuit.add_measurement(
+        measurement, targets=target, classical_store=classical_store
+    )
+
+
+def _mat_renderer_cls():
+    """Import ``MatRenderer`` from whichever module path this version uses."""
+    try:
+        from qutip_qip.circuit.draw.mat_renderer import MatRenderer  # master
+    except ImportError:
+        from qutip_qip.circuit.mat_renderer import MatRenderer  # released
+    return MatRenderer
+
+
 def _wire_maps(program: Program) -> tuple[dict, dict]:
     """Assign consecutive global wire indices to every qubit and clbit ref.
 
@@ -135,27 +299,17 @@ def to_qubit_circuit(program: Program):
     """Translate a program into a QuTiP-QIP ``QubitCircuit`` for drawing.
 
     Args:
-        program: The program to translate. Must use only qubit (``dim == 2``)
-            registers.
+        program: The program to translate. Qudit registers are accepted and
+            drawn as ordinary wires; a diagram does not depict dimension.
 
     Returns:
         A ``qutip_qip.circuit.QubitCircuit`` mirroring the program's gates,
         measurements, resets, barriers, and feedforward conditions.
 
     Raises:
-        ValueError: If any quantum register has ``dim != 2``.
         ImportError: If ``qutip-qip`` is not installed.
     """
     qubit_circuit_cls = _require_qutip()
-
-    # QuTiP-QIP has no qudit support; reject rather than silently mis-draw.
-    for register in program.quantum_registers:
-        if register.dim != 2:
-            raise ValueError(
-                "fatqat.draw renders qubit circuits only; register "
-                f"{register.name!r} has dim={register.dim}"
-            )
-
     qubit_index, clbit_index = _wire_maps(program)
     circuit = qubit_circuit_cls(len(qubit_index), num_cbits=len(clbit_index))
 
@@ -164,10 +318,10 @@ def to_qubit_circuit(program: Program):
         # emit one QuTiP measurement per (qubit -> clbit) pair.
         if isinstance(step, Measurement):
             for target, output in zip(step.targets, step.outputs):
-                circuit.add_measurement(
-                    "M",
-                    targets=_wire(target, qubit_index),
-                    classical_store=_wire(output, clbit_index),
+                _add_measurement(
+                    circuit,
+                    _wire(target, qubit_index),
+                    _wire(output, clbit_index),
                 )
             continue
         # Applied gate/reset/barrier - expand any grouped target first so each
@@ -198,37 +352,33 @@ def _add_operation(circuit, step, operands, qubit_index, clbit_index):
     # QuTiP's private layout and has no text-renderer equivalent, so a box is
     # used for a uniform result across both renderers.)
     if isinstance(operation, BarrierGate):
-        circuit.add_gate("barrier", targets=wires)
+        _add_box(circuit, "barrier", wires, None)
         return
 
     # Reset: also no native primitive; draw a small ``|0>`` box per target.
     if isinstance(operation, ResetGate):
         for wire in wires:
-            circuit.add_gate("|0>", targets=wire)
+            _add_box(circuit, "|0>", [wire], classical_controls)
         return
 
     native = _NATIVE_GATES.get(operation.name)
     if native is not None:
         qutip_name, n_controls, param_attr = native
-        arg_value = getattr(operation, param_attr) if param_attr else None
-        circuit.add_gate(
+        _add_native(
+            circuit,
             qutip_name,
             controls=wires[:n_controls] or None,  # [] -> None for uncontrolled
             targets=wires[n_controls:],
-            arg_value=arg_value,
+            arg_value=getattr(operation, param_attr) if param_attr else None,
             classical_controls=classical_controls,
         )
         return
 
     # Any other operation - a user-defined custom gate, a gate QuTiP lacks
-    # (e.g. Sdg, Tdg, CY, CS), or a qudit gate that slipped through - is drawn
-    # as a labeled box carrying its own name. This is what keeps drawing total:
-    # an unknown gate produces a named box instead of an error.
-    circuit.add_gate(
-        operation.name,
-        targets=wires,
-        classical_controls=classical_controls,
-    )
+    # (e.g. Sdg, Tdg, CY, CS), or a qudit gate (Shift, Clock, Sum, ...) - is
+    # drawn as a labeled box carrying its own name. This is what keeps drawing
+    # total: an unknown gate produces a named box instead of an error.
+    _add_box(circuit, operation.name, wires, classical_controls)
 
 
 def draw(program: Program, renderer: str = "matplotlib", **kwargs: Any):
@@ -262,13 +412,13 @@ def draw(program: Program, renderer: str = "matplotlib", **kwargs: Any):
         # None, which is no good for "return a Figure the caller saves". Use
         # the underlying ``MatRenderer`` (which exposes ``.fig``) and suppress
         # its ``plt.show()`` so nothing pops up and the Figure is returned.
-        from qutip_qip.circuit.mat_renderer import MatRenderer
         import matplotlib.pyplot as plt
 
+        mat_renderer_cls = _mat_renderer_cls()
         original_show = plt.show
         plt.show = lambda *args, **kw: None
         try:
-            mat_renderer = MatRenderer(circuit, **kwargs)
+            mat_renderer = mat_renderer_cls(circuit, **kwargs)
             mat_renderer.canvas_plot()
         finally:
             plt.show = original_show
