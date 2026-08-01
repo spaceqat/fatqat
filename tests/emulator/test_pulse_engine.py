@@ -24,19 +24,25 @@ def _model():
 
 
 def _physical_block(
-    model, duration, *, condition=None, post_actions=(), target_indices=None
+    model,
+    duration,
+    *,
+    subsystem_id="q0",
+    condition=None,
+    post_actions=(),
+    target_indices=None,
 ):
     return PulseBlock(
         model,
         duration,
         (
             SampledControl(
-                model.drive_control("q0"),
+                model.drive_control(subsystem_id),
                 [0.0, duration],
                 [0.0, 0.0],
             ),
         ),
-        (model.resource("q0"),),
+        (model.resource(subsystem_id),),
         post_actions=post_actions,
         condition=condition,
         target_indices=target_indices,
@@ -161,6 +167,27 @@ def test_engine_keeps_measurement_followed_by_pulse_dynamic():
         ((0.0,), 1.0, (True,)),
     ]
     assert runner.boundaries == [(MeasurementStep, 0.0)] * 2
+
+
+def test_engine_places_conditioned_and_independent_blocks_together():
+    model = _model()
+    runner = _FakeRunner()
+    measurement = MeasurementStep((0,), (0,))
+    PulseEngine(runner).run(
+        (
+            measurement,
+            _physical_block(model, 1.0, condition=((0, 1),)),
+            _physical_block(model, 1.0, subsystem_id="q1"),
+        ),
+        shots=1,
+        n_clbits=1,
+        rng=np.random.default_rng(7),
+    )
+
+    # The measurement is the only boundary.  The false guarded q0 block still
+    # reserves its q0 slot, while the independent q1 block shares the run.
+    assert runner.runs == [((0.0, 0.0), 1.0, (False, True))]
+    assert runner.boundaries == [(MeasurementStep, 0.0)]
 
 
 def test_engine_keeps_disjoint_post_measurement_pulse_on_fast_path():

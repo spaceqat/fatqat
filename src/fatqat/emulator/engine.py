@@ -213,12 +213,11 @@ class PulseEngine:
 
         for step in plan:
             if isinstance(step, PulseBlock):
-                if step.condition is not None:
-                    flush()
-                    pending.append(step)
-                    flush()
-                else:
-                    pending.append(step)
+                # A condition reads the classical memory established by the
+                # preceding boundary.  It cannot change within a continuous
+                # pulse region, so guarded and unguarded blocks can be placed
+                # together.  `evolve()` receives one enable flag per block.
+                pending.append(step)
             elif isinstance(step, (MeasurementStep, ResetStep)):
                 flush()
                 if not (defer_measurements and isinstance(step, MeasurementStep)):
