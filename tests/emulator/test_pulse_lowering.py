@@ -1,14 +1,10 @@
 """Unplaced pulse lowering and shared-boundary preservation."""
 
-import json
-from pathlib import Path
-
 import numpy as np
 import pytest
 
 import fatqat as fq
 from fatqat.backends import MeasurementStep, ResetStep
-from fatqat.backends.backend_utils import _LoweringContext
 from fatqat.emulator.backend import PulseBackend
 from fatqat.emulator.pulse import (
     PulseBlock,
@@ -26,32 +22,23 @@ from fatqat.emulator.superconducting_realization import (
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import NoiseModel
 
-_FIXTURES = Path(__file__).parent / "fixtures"
+
+@pytest.fixture(name="make_backend")
+def make_backend_fixture(model, calibration):
+    def build(noise=None, pulse_implementation_map=None):
+        return PulseBackend(
+            model,
+            calibration,
+            noise=noise,
+            pulse_implementation_map=pulse_implementation_map,
+        )
+
+    return build
 
 
-def _model_and_calibration():
-    model = load_physics_model(
-        json.loads((_FIXTURES / "sc_transmon_exchange.json").read_text())
-    )
-    calibration = load_calibration_spec(
-        json.loads((_FIXTURES / "sc_transmon_exchange_calibration.json").read_text()),
-        model,
-    )
-    return model, calibration
-
-
-def _backend(noise=None, pulse_implementation_map=None):
-    model, calibration = _model_and_calibration()
-    return PulseBackend(
-        model,
-        calibration,
-        noise=noise,
-        pulse_implementation_map=pulse_implementation_map,
-    )
-
-
-def test_lowering_produces_unplaced_blocks_and_preserves_boundaries_and_guards():
-    backend = _backend()
+def test_lowering_produces_unplaced_blocks_and_preserves_boundaries_and_guards(
+    backend,
+):
     program = fq.Program(2, 1)
     program.add(fq.ops.RX(0.4), 0)
     program.measure(0, 0)
@@ -72,16 +59,12 @@ def test_lowering_produces_unplaced_blocks_and_preserves_boundaries_and_guards()
     assert facts.has_measurement
 
 
-def test_lowering_rejects_absent_edges_and_reversed_cz_orientation():
-    backend = _backend()
-    disconnected_document = json.loads(
-        (_FIXTURES / "sc_transmon_exchange.json").read_text()
-    )
+def test_lowering_rejects_absent_edges_and_reversed_cz_orientation(
+    backend, model_document, calibration_document
+):
+    disconnected_document = model_document
     disconnected_document["parameters"]["couplings"] = []
     disconnected = load_physics_model(disconnected_document)
-    calibration_document = json.loads(
-        (_FIXTURES / "sc_transmon_exchange_calibration.json").read_text()
-    )
     calibration_document["recipes"]["cz"]["edges"] = []
     disconnected_backend = PulseBackend(
         disconnected, load_calibration_spec(calibration_document, disconnected)
@@ -97,44 +80,15 @@ def test_lowering_rejects_absent_edges_and_reversed_cz_orientation():
         backend.run(reversed_cz)
 
 
-# --- private lowering context: resource layout and engine allocation must
-# travel together, exactly as the matrix family already requires -----------
-
-
-def test_lower_program_no_longer_accepts_a_half_specified_context():
-    backend = _backend()
-    program = fq.Program(1)
-    program.add(fq.ops.RZ(0.2), 0)
-    layout = backend._resolve_resource_layout(program)
-    allocation = backend._allocate_engine_indices(program)
-
-    # The old two-independent-optionals signature accepted either half
-    # alone; the seam now only accepts a single paired `_LoweringContext`,
-    # so passing either half by its old keyword is a TypeError, not a
-    # silently-accepted partial context.
-    with pytest.raises(TypeError):
-        backend._lower_program(program, resource_layout=layout)
-    with pytest.raises(TypeError):
-        backend._lower_program(program, engine_index_allocation=allocation)
-
-    # The paired form still works and is equivalent to the omitted-context
-    # (resolve-both-here) default.
-    context = _LoweringContext(
-        resource_layout=layout, engine_index_allocation=allocation
-    )
-    plan, facts = backend._lower_program(program, context=context)
-    default_plan, default_facts = backend._lower_program(program)
-    assert [type(step) for step in plan] == [type(step) for step in default_plan]
-    assert facts == default_facts
-
-
 # --- shared measurement-lowering boundary: confusion validation parity -----
 
 
-def test_pulse_measurement_confusion_must_match_the_reported_bit_dimension():
+def test_pulse_measurement_confusion_must_match_the_reported_bit_dimension(
+    make_backend,
+):
     noise = NoiseModel()
     noise.add_readout_error(np.eye(3), target="q0")
-    backend = _backend(noise)
+    backend = make_backend(noise)
     program = fq.Program(1, 1)
     program.measure(0, 0)
 
@@ -147,11 +101,13 @@ def test_pulse_measurement_confusion_must_match_the_reported_bit_dimension():
         backend._lower_program(program)
 
 
-def test_pulse_measurement_accepts_a_correctly_shaped_confusion_matrix():
+def test_pulse_measurement_accepts_a_correctly_shaped_confusion_matrix(
+    make_backend,
+):
     always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
     noise = NoiseModel()
     noise.add_readout_error(always_flip, target="q0")
-    backend = _backend(noise)
+    backend = make_backend(noise)
     program = fq.Program(1, 1)
     program.measure(0, 0)
 
@@ -174,8 +130,9 @@ def _constant_definition(model, subsystem_id):
     )
 
 
-def test_a_copied_default_map_produces_the_same_plan_as_the_implicit_default():
-    model, calibration = _model_and_calibration()
+def test_a_copied_default_map_produces_the_same_plan_as_the_implicit_default(
+    model, calibration
+):
     explicit = PulseBackend(
         model,
         calibration,
@@ -196,9 +153,9 @@ def test_a_copied_default_map_produces_the_same_plan_as_the_implicit_default():
         assert np.allclose(a.coefficients, b.coefficients)
 
 
-def test_custom_cz_rule_changes_emitted_controls_without_touching_program_or_adapter():
-    model, calibration = _model_and_calibration()
-
+def test_custom_cz_rule_changes_emitted_controls_without_touching_program_or_adapter(
+    model, calibration
+):
     def custom_cz(operation, *, targets, model, calibration):
         first_id, _second_id = (
             model.subsystem_ids[model.bind_resource(t)] for t in targets
@@ -224,8 +181,9 @@ def test_custom_cz_rule_changes_emitted_controls_without_touching_program_or_ada
     assert block.target_indices == (0, 1)
 
 
-def test_guarded_custom_rule_attaches_condition_only_to_the_block_not_the_definition():
-    model, calibration = _model_and_calibration()
+def test_guarded_custom_rule_attaches_condition_only_to_the_block_not_the_definition(
+    model, calibration
+):
     shared_definition = _constant_definition(model, "q0")
 
     def reusable_rule(operation, *, targets, model, calibration):
@@ -251,9 +209,11 @@ def test_guarded_custom_rule_attaches_condition_only_to_the_block_not_the_defini
     assert not hasattr(shared_definition, "condition")
 
 
-def test_mutating_the_callers_map_after_construction_does_not_affect_the_backend():
+def test_mutating_the_callers_map_after_construction_does_not_affect_the_backend(
+    make_backend,
+):
     implementations = default_superconducting_pulse_implementation_map()
-    backend = _backend(pulse_implementation_map=implementations)
+    backend = make_backend(pulse_implementation_map=implementations)
 
     implementations.remove(fq.ops.CZ)
     program = fq.Program(2)
@@ -262,8 +222,10 @@ def test_mutating_the_callers_map_after_construction_does_not_affect_the_backend
     assert len(plan) == 1  # still resolves; the backend's copy is unaffected
 
 
-def test_unsupported_operation_from_map_selection_raises_out_of_run_not_as_a_failed_job():
-    backend = _backend(pulse_implementation_map=PulseImplementationMap())
+def test_unsupported_operation_from_map_selection_raises_out_of_run_not_as_a_failed_job(
+    make_backend,
+):
+    backend = make_backend(pulse_implementation_map=PulseImplementationMap())
     program = fq.Program(1)
     program.add(fq.ops.RX(0.3), 0)
 
@@ -273,10 +235,12 @@ def test_unsupported_operation_from_map_selection_raises_out_of_run_not_as_a_fai
         backend.run(program)
 
 
-def test_unsupported_device_operands_from_map_selection_raises_out_of_run():
+def test_unsupported_device_operands_from_map_selection_raises_out_of_run(
+    make_backend,
+):
     implementations = PulseImplementationMap()
     implementations.add(fq.ops.CZ, lambda *a, **k: None, device_operands=("q5", "q6"))
-    backend = _backend(pulse_implementation_map=implementations)
+    backend = make_backend(pulse_implementation_map=implementations)
     program = fq.Program(2)
     program.add(fq.ops.CZ, (0, 1))
 

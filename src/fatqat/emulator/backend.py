@@ -33,7 +33,7 @@ from .planning import PulsePlanFacts, PulsePlanStep
 from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
 from .pulse import PulseImplementationMap
 from .scheduling import _validate_schedule_mode
-from .superconducting import CalibrationSpec, PhysicsModel
+from .superconducting import CalibrationSpec, SCTransmonModel
 from .superconducting_realization import (
     default_superconducting_pulse_implementation_map,
 )
@@ -78,7 +78,7 @@ class PulseBackend:
 
     def __init__(
         self,
-        model: PhysicsModel,
+        model: SCTransmonModel,
         calibration: CalibrationSpec,
         *,
         noise: NoiseModel | None = None,
@@ -311,8 +311,14 @@ class PulseBackend:
                     always_on_noise,
                 )
             )
-        except Exception:  # execution failures belong on the eager Job
-            return Job.failed(BackendExecutionError("Pulse backend execution failed"))
+        except Exception as exc:  # execution failures belong on the eager Job
+            # The public message stays stable and free of solver internals,
+            # but the original exception is chained so a developer (and a
+            # traceback) can still see what actually failed. Assigning
+            # `__cause__` rather than raising keeps this an eager failed Job.
+            failure = BackendExecutionError("Pulse backend execution failed")
+            failure.__cause__ = exc
+            return Job.failed(failure)
 
     def propagator(
         self,

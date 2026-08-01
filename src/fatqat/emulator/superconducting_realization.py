@@ -20,6 +20,7 @@ from .. import operations as ops
 from ..errors import BackendValidationError
 from ..operations.base import Operation
 from ..operations.parametric_gates import RY
+from ._validation import _finite
 from .pulse import (
     PhaseShift,
     PhaseSwap,
@@ -28,19 +29,14 @@ from .pulse import (
     ResourceClaim,
     SampledControl,
 )
-from .superconducting import CalibrationSpec, PhysicsModel, SubsystemResourceRef
+from .superconducting import (
+    CalibrationSpec,
+    SCTransmonModel,
+    SubsystemResourceRef,
+    angular_rate_from_ghz,
+)
 
 _WAVEFORM_SAMPLES = 129
-
-
-def _finite(value: Any, name: str, *, nonnegative: bool = False) -> float:
-    """Normalize a finite realization scalar with optional non-negativity."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise BackendValidationError(f"{name} must be a finite number")
-    value = float(value)
-    if not np.isfinite(value) or (nonnegative and value < 0):
-        raise BackendValidationError(f"{name} must be finite and non-negative")
-    return value
 
 
 def _sample_grid(duration: float) -> np.ndarray:
@@ -61,14 +57,14 @@ def _cumulative_trapezoid(values: np.ndarray, tlist: np.ndarray) -> np.ndarray:
 
 
 def _single_resource_claims(
-    model: PhysicsModel, subsystem_id: str
+    model: SCTransmonModel, subsystem_id: str
 ) -> tuple[ResourceClaim, ...]:
     """Claim one local subsystem for scheduling and source-order exclusion."""
     return (model.resource(subsystem_id),)
 
 
 def _pair_resource_claims(
-    model: PhysicsModel, first: str, second: str
+    model: SCTransmonModel, first: str, second: str
 ) -> tuple[ResourceClaim, ...]:
     """Claim both endpoints and their coupling edge for a two-body pulse."""
     return (
@@ -79,7 +75,7 @@ def _pair_resource_claims(
 
 
 def _target_ids(
-    model: PhysicsModel, targets: tuple[SubsystemResourceRef, ...], expected: int
+    model: SCTransmonModel, targets: tuple[SubsystemResourceRef, ...], expected: int
 ) -> tuple[str, ...]:
     """Resolve model resource targets to their subsystem ids.
 
@@ -104,7 +100,7 @@ def _rx_ry_definition(
     operation: Operation,
     *,
     targets: tuple[SubsystemResourceRef, ...],
-    model: PhysicsModel,
+    model: SCTransmonModel,
     calibration: CalibrationSpec,
 ) -> PulseDefinition:
     """Shared RX/RY realization: a DRAG-corrected Hann drive, phase-shifted for RY.
@@ -118,9 +114,12 @@ def _rx_ry_definition(
     duration = float(recipe["duration_ns"])
     drag_coefficient = float(recipe["drag_coefficient"])
     tlist = _sample_grid(duration)
-    # The durable anharmonicity is in GHz. Controls use angular inverse ns,
-    # so convert it at this realization boundary before applying DRAG.
-    alpha = 2 * pi * model.subsystems[model.bind_resource(targets[0])].anharmonicity_ghz
+    # The durable anharmonicity is in GHz; controls are angular rates in
+    # rad/ns (model.control_unit), so convert at this realization boundary
+    # before applying DRAG.
+    alpha = angular_rate_from_ghz(
+        model.subsystems[model.bind_resource(targets[0])].anharmonicity_ghz
+    )
     theta = _finite(operation.theta, "rotation angle")
     p = _hann(tlist, duration, theta / duration)
     dp = theta * pi * np.sin(2 * pi * tlist / duration) / duration**2
@@ -143,7 +142,7 @@ def _rz_definition(
     operation: Operation,
     *,
     targets: tuple[SubsystemResourceRef, ...],
-    model: PhysicsModel,
+    model: SCTransmonModel,
     calibration: CalibrationSpec,
 ) -> PulseDefinition:
     """Realize RZ as a zero-duration virtual-frame update."""
@@ -161,7 +160,7 @@ def _iswap_definition(
     operation: Operation,
     *,
     targets: tuple[SubsystemResourceRef, ...],
-    model: PhysicsModel,
+    model: SCTransmonModel,
     calibration: CalibrationSpec,
 ) -> PulseDefinition:
     """Realize the public +i iSWAP convention with a Hann exchange pulse."""
@@ -184,7 +183,7 @@ def _cz_definition(
     operation: Operation,
     *,
     targets: tuple[SubsystemResourceRef, ...],
-    model: PhysicsModel,
+    model: SCTransmonModel,
     calibration: CalibrationSpec,
 ) -> PulseDefinition:
     """Realize oriented CZ by detuning one endpoint through an exchange park.
@@ -209,7 +208,7 @@ def _cz_definition(
     ramp_shape[falling] = (
         1 - np.cos(pi * (duration - detuning_grid[falling]) / ramp)
     ) / 2
-    detuning = 2 * pi * float(edge_recipe["detuning_ghz"]) * ramp_shape
+    detuning = angular_rate_from_ghz(float(edge_recipe["detuning_ghz"])) * ramp_shape
     exchange_grid = _sample_grid(parked_duration)
     exchange = _hann(exchange_grid, parked_duration, sqrt(2) * pi / parked_duration)
     # Detuning contributes the same local dynamical phase to |10> and |11>.

@@ -19,11 +19,12 @@ from ..noise.lindblad import resolve_lindblad_operators
 from ..operations.measurement import Measurement
 from ..program import AppliedOperation
 from ..resource_layout import ResourceLayout
+from .engine import PulsePlanStep
 from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
 from .pulse import PulseBlock, PulseImplementationMap, _invoke_pulse_rule
-from .superconducting import CalibrationSpec, PhysicsModel
+from .superconducting import CalibrationSpec, SCTransmonModel
 
-PulsePlanStep = PulseBlock | MeasurementStep | ResetStep
+__all__ = ["PulsePlanFacts", "PulsePlanStep"]
 
 
 @dataclass(frozen=True)
@@ -78,7 +79,7 @@ def _lower_gate(
     step: AppliedOperation,
     resource_layout: ResourceLayout,
     engine_index_allocation: _EngineIndexAllocation,
-    model: PhysicsModel,
+    model: SCTransmonModel,
     calibration: CalibrationSpec,
     pulse_implementation_map: PulseImplementationMap,
     noise_model: NoiseModel,
@@ -135,7 +136,7 @@ def _lower_gate_noise(
     step: AppliedOperation,
     resource_layout: ResourceLayout,
     engine_index_allocation: _EngineIndexAllocation,
-    model: PhysicsModel,
+    model: SCTransmonModel,
     noise_model: NoiseModel,
     lindblad_implementation_map: LindbladImplementationMap,
     duration: float,

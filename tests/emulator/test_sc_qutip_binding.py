@@ -1,9 +1,7 @@
 """Private qutip-qip binding and ideal full-qutrit evolution tests."""
 
-import json
 from dataclasses import replace
 from math import pi
-from pathlib import Path
 
 import numpy as np
 from qutip import Qobj, basis, ket2dm, mesolve, qeye, tensor
@@ -23,28 +21,8 @@ from fatqat.emulator.pulse import (
 from fatqat.emulator.superconducting_realization import (
     default_superconducting_pulse_implementation_map,
 )
-from fatqat.emulator.superconducting import (
-    load_calibration_spec,
-    load_physics_model,
-)
 from fatqat.operations import CZ, RZ, iSwap
 from fatqat.resource_layout import ResourceLayout
-
-_FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def _documents():
-    model_document = json.loads((_FIXTURES / "sc_transmon_exchange.json").read_text())
-    calibration_document = json.loads(
-        (_FIXTURES / "sc_transmon_exchange_calibration.json").read_text()
-    )
-    return model_document, calibration_document
-
-
-def _model_and_calibration():
-    model_document, calibration_document = _documents()
-    model = load_physics_model(model_document)
-    return model, load_calibration_spec(calibration_document, model)
 
 
 def _realize(operation, targets, *, model, calibration):
@@ -107,8 +85,7 @@ def _evolve(adapter, blocks, context=None, *, boundary=0.0):
     return context
 
 
-def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints():
-    model, _ = _model_and_calibration()
+def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints(model):
     adapter = SCQutipAdapter(model)
     child = SampledControl(
         model.drive_control("q0"),
@@ -141,8 +118,7 @@ def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints():
     assert np.allclose(evolution(time).full(), expected_hamiltonian.full())
 
 
-def test_constant_drive_matches_an_independent_full_model_hamiltonian():
-    model, _ = _model_and_calibration()
+def test_constant_drive_matches_an_independent_full_model_hamiltonian(model):
     adapter = SCQutipAdapter(model)
     duration = 0.8
     amplitude = 0.07
@@ -160,8 +136,7 @@ def test_constant_drive_matches_an_independent_full_model_hamiltonian():
     assert np.allclose(context.state.full(), expected.full(), atol=2e-7)
 
 
-def test_exchange_keeps_both_qutrit_leakage_paths_and_matches_reference():
-    model, _ = _model_and_calibration()
+def test_exchange_keeps_both_qutrit_leakage_paths_and_matches_reference(model):
     adapter = SCQutipAdapter(model)
     amplitude = 0.12
     duration = 0.4
@@ -197,8 +172,9 @@ def test_exchange_keeps_both_qutrit_leakage_paths_and_matches_reference():
     assert np.allclose(density, expected.full(), atol=2e-7)
 
 
-def test_realized_iswap_matches_the_public_positive_i_phase_convention():
-    model, calibration = _model_and_calibration()
+def test_realized_iswap_matches_the_public_positive_i_phase_convention(
+    model, calibration
+):
     adapter = SCQutipAdapter(model)
     block = _realize(
         iSwap,
@@ -215,8 +191,7 @@ def test_realized_iswap_matches_the_public_positive_i_phase_convention():
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
 
 
-def test_drift_and_detuning_match_independent_qutrit_phase_facts():
-    model, _ = _model_and_calibration()
+def test_drift_and_detuning_match_independent_qutrit_phase_facts(model):
     adapter = SCQutipAdapter(model)
 
     duration = 0.17
@@ -250,9 +225,9 @@ def test_drift_and_detuning_match_independent_qutrit_phase_facts():
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
 
 
-def test_backend_keeps_model_order_when_program_binds_a_nonprefix_transmon():
-    model, calibration = _model_and_calibration()
-
+def test_backend_keeps_model_order_when_program_binds_a_nonprefix_transmon(
+    model, calibration
+):
     class _NonprefixBackend(PulseBackend):
         def _resolve_resource_layout(self, program):
             return ResourceLayout({program.quantum_registers[0][0]: "q1"})
@@ -270,8 +245,7 @@ def test_backend_keeps_model_order_when_program_binds_a_nonprefix_transmon():
     assert state.ptrace(1).diag()[0].real < 0.9
 
 
-def test_drift_covers_leading_internal_and_trailing_idle_intervals():
-    model, _ = _model_and_calibration()
+def test_drift_covers_leading_internal_and_trailing_idle_intervals(model):
     adapter = SCQutipAdapter(model)
     first = _drive_block(
         model,
@@ -302,8 +276,9 @@ def test_drift_covers_leading_internal_and_trailing_idle_intervals():
     )
 
 
-def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data():
-    model, calibration = _model_and_calibration()
+def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data(
+    model, calibration
+):
     adapter = SCQutipAdapter(model)
     recipe = calibration.recipe("cz")["edges"][0]
     assert FRAME_CONVENTION.endswith("(Delta_i = 0)")
@@ -326,8 +301,9 @@ def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data():
     assert cz.controls[1].start_offset == recipe["ramp_duration_ns"]
 
 
-def test_realized_cz_matches_an_independent_synchronized_hamiltonian():
-    model, calibration = _model_and_calibration()
+def test_realized_cz_matches_an_independent_synchronized_hamiltonian(
+    model, calibration
+):
     adapter = SCQutipAdapter(model)
     block = _realize(
         CZ,
@@ -399,8 +375,9 @@ class _RecordingAdapter(_NoOpBoundaryAdapter):
         return super()._bind_child(child, block_start_time, frames)
 
 
-def test_frame_ledger_survives_boundary_and_respects_post_action_time():
-    model, calibration = _model_and_calibration()
+def test_frame_ledger_survives_boundary_and_respects_post_action_time(
+    model, calibration
+):
     adapter = _RecordingAdapter(model)
     frame = model.frame("q0")
     rz = _realize(
@@ -433,8 +410,7 @@ def test_frame_ledger_survives_boundary_and_respects_post_action_time():
     assert np.allclose(q0_phases, [0.2, 0.2, 0.5])
 
 
-def test_full_model_state_keeps_unused_nonprefix_transmons_in_ground_state():
-    model, _ = _model_and_calibration()
+def test_full_model_state_keeps_unused_nonprefix_transmons_in_ground_state(model):
     adapter = SCQutipAdapter(model)
     outcomes = PulseEngine(adapter).run(
         (_drive_block(model, "q1"),),

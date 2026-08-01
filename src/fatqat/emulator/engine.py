@@ -1,4 +1,10 @@
-"""Private whole-plan orchestration for superconducting pulse execution."""
+"""Private whole-plan orchestration for pulse execution.
+
+Model-neutral: the engine owns plan traversal, shot strategy, scheduling,
+classical conditions, and boundary placement, and carries frame angles under
+opaque ``model_contract.Frame`` keys it never interprets. Every model-specific
+fact lives behind the ``_PulseModelRunner`` it delegates to.
+"""
 
 from __future__ import annotations
 
@@ -19,9 +25,8 @@ from .scheduling import (
     _validate_schedule_mode,
     schedule_pulse_run,
 )
-from .planning import PulsePlanStep
+from .model_contract import Frame
 from .pulse import PulseBlock
-from .superconducting import FrameRef
 
 
 @dataclass
@@ -31,7 +36,7 @@ class _ShotContext:
     state: Any
     classical_memory: list[int]
     rng: np.random.Generator
-    frame_angles: dict[FrameRef, float] = field(default_factory=dict)
+    frame_angles: dict[Frame, float] = field(default_factory=dict)
     time: float = 0.0
 
 
@@ -65,6 +70,15 @@ class _PulseModelRunner(Protocol):
     ) -> None: ...
 
     def finish_shot(self, context: _ShotContext) -> Any: ...
+
+
+PulsePlanStep = PulseBlock | MeasurementStep | ResetStep
+"""One step of a lowered pulse plan.
+
+Defined here rather than in `planning` because the engine is the consumer of
+plans and every member is model-neutral; importing it from the lowering module
+would drag the superconducting model into this file transitively.
+"""
 
 
 def _condition_matches(

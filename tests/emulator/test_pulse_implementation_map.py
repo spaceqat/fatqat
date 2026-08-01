@@ -1,7 +1,15 @@
-"""Registration mechanics and locked error policy for PulseImplementationMap."""
+"""Pulse-specific behaviour of PulseImplementationMap and its error policy.
 
-import json
-from pathlib import Path
+The instance/class key normalization, fixed-arity checking, device-operand
+arity, mutually exclusive registration modes, removal, and copy independence
+all live in the shared `implementation._operation_registry` mechanics and are
+covered exhaustively against the matrix family in `tests/test_implementation.py`.
+Re-testing them here would only re-exercise the same code through a second
+wrapper, so this module keeps a small delegation set proving `PulseImplementationMap`
+composes that registry correctly (wrapping, device-specific lookup, copying)
+and then focuses on what is genuinely pulse-only: the locked
+`_invoke_pulse_rule` error policy.
+"""
 
 import pytest
 
@@ -13,25 +21,11 @@ from fatqat.emulator.pulse import (
     SampledControl,
     _invoke_pulse_rule,
 )
-from fatqat.emulator.superconducting import load_calibration_spec, load_physics_model
 from fatqat.errors import (
     BackendValidationError,
     PulseImplementationError,
     UnsupportedOperationError,
 )
-
-_FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def _model_and_calibration():
-    model = load_physics_model(
-        json.loads((_FIXTURES / "sc_transmon_exchange.json").read_text())
-    )
-    calibration = load_calibration_spec(
-        json.loads((_FIXTURES / "sc_transmon_exchange_calibration.json").read_text()),
-        model,
-    )
-    return model, calibration
 
 
 def _definition(model):
@@ -46,31 +40,38 @@ def _dummy_rule(operation, *, targets, model, calibration):
     return _definition(model)
 
 
-# --- registration mechanics: mirrors MatrixImplementationMap's own coverage -------
+# --- delegation to the shared registry mechanics ----------------------------
 
 
-def test_add_accepts_operation_instance_and_class_key():
+def test_registration_wrapping_lookup_and_copy_delegate_to_the_shared_registry():
+    """One pass over the seams PulseImplementationMap actually owns.
+
+    Not a re-test of registry mechanics: it checks that the pulse map hands
+    the registry a rule factory (so a bad rule is rejected), keys by operation
+    family, resolves ordered device operands, and copies independently.
+    """
     m = PulseImplementationMap()
-    m.add(ops.CZ, _dummy_rule)
+    with pytest.raises(TypeError, match="callable"):
+        m.add(ops.CZ, "not a rule")
+
+    m.add(ops.CZ, _dummy_rule, device_operands=("q0", "q1"))
     assert m.supports(ops.CZ)
-    assert m.supports(type(ops.CZ))
+    assert m.supported_operations() == frozenset({type(ops.CZ)})
+    assert m.implementation_for(ops.CZ, device_operands=("q0", "q1")) is not None
+    assert m.implementation_for(ops.CZ, device_operands=("q1", "q0")) is None
+    assert m.implementation_for(ops.CZ) is None
+    assert m.device_operands_for(ops.CZ) == frozenset({("q0", "q1")})
 
-    m2 = PulseImplementationMap()
-    m2.add(type(ops.CZ), _dummy_rule)
-    assert m2.supports(ops.CZ)
+    clone = m.copy()
+    clone.add(ops.CZ, _dummy_rule, device_operands=("q1", "q0"))
+    assert m.device_operands_for(ops.CZ) == frozenset({("q0", "q1")})
+    assert clone.device_operands_for(ops.CZ) == frozenset({("q0", "q1"), ("q1", "q0")})
 
-
-def test_add_rejects_variable_arity_operation():
-    class VariableGate(ops.Operation):
-        name = "VariableGate"
-        _num_subsystems = None
-
-    m = PulseImplementationMap()
-    with pytest.raises(TypeError, match="variable arity"):
-        m.add(VariableGate, _dummy_rule)
+    m.remove(ops.CZ)
+    assert not m.supports(ops.CZ)
 
 
-def test_add_checks_variable_arity_before_wrapping_and_uses_neutral_wording():
+def test_add_uses_family_neutral_wording_for_a_shared_registry_rejection():
     class VariableGate(ops.Operation):
         name = "VariableGate"
         _num_subsystems = None
@@ -81,102 +82,10 @@ def test_add_checks_variable_arity_before_wrapping_and_uses_neutral_wording():
     assert "matrix implementation map" not in str(excinfo.value)
 
 
-def test_add_rejects_non_callable_rule():
-    m = PulseImplementationMap()
-    with pytest.raises(TypeError, match="callable"):
-        m.add(ops.CZ, "not a rule")
-
-
-def test_add_resolves_by_device_operands():
-    m = PulseImplementationMap()
-    m.add(ops.CZ, _dummy_rule, device_operands=(0, 1))
-
-    assert m.supports(ops.CZ)
-    assert m.implementation_for(ops.CZ, device_operands=(0, 1)) is not None
-    assert m.implementation_for(ops.CZ, device_operands=(1, 0)) is None
-    assert m.device_operands_for(ops.CZ) == frozenset({(0, 1)})
-    assert m.implementation_for(ops.CZ) is None
-
-
-def test_add_rejects_wrong_device_operand_arity():
-    m = PulseImplementationMap()
-    with pytest.raises(ValueError, match="expects 2 device operand"):
-        m.add(ops.CZ, _dummy_rule, device_operands=(0,))
-
-
-def test_add_rejects_unconstrained_after_device_specific_additions():
-    m = PulseImplementationMap()
-    m.add(ops.CZ, _dummy_rule, device_operands=(0, 1))
-    with pytest.raises(ValueError, match="device-specific implementations"):
-        m.add(ops.CZ, _dummy_rule)
-
-
-def test_add_checks_registration_mode_before_wrapping_an_invalid_rule():
-    m = PulseImplementationMap()
-    m.add(ops.CZ, _dummy_rule, device_operands=(0, 1))
-
-    with pytest.raises(ValueError, match="device-specific implementations"):
-        m.add(ops.CZ, "not a rule")
-
-
-def test_add_rejects_device_specific_after_unconstrained_addition():
-    m = PulseImplementationMap()
-    m.add(ops.CZ, _dummy_rule)
-    with pytest.raises(ValueError, match="unconstrained rule"):
-        m.add(ops.CZ, _dummy_rule, device_operands=(0, 1))
-
-
-def test_add_replaces_previous_unconstrained_rule_for_same_operation():
-    m = PulseImplementationMap()
-    m.add(ops.CZ, _dummy_rule)
-    first = m.implementation_for(ops.CZ)
-
-    def other_rule(operation, *, targets, model, calibration):
-        return _definition(model)
-
-    m.add(ops.CZ, other_rule)
-    second = m.implementation_for(ops.CZ)
-    assert first is not second
-
-
-def test_device_operand_order_is_significant():
-    m = PulseImplementationMap()
-    m.add(ops.CZ, _dummy_rule, device_operands=(0, 1))
-    assert m.implementation_for(ops.CZ, device_operands=(0, 1)) is not None
-    assert m.implementation_for(ops.CZ, device_operands=(1, 0)) is None
-
-
-def test_remove_removes_by_instance_or_class():
-    m = PulseImplementationMap()
-    m.add(ops.CZ, _dummy_rule)
-    m.remove(ops.CZ)
-    assert m.implementation_for(ops.CZ) is None
-    assert not m.supports(ops.CZ)
-
-
-def test_supported_operations_enumerates_registered_families():
-    m = PulseImplementationMap()
-    m.add(ops.CZ, _dummy_rule)
-    m.add(ops.RX, _dummy_rule)
-    assert m.supported_operations() == frozenset({type(ops.CZ), ops.RX})
-
-
-def test_copy_is_independent_of_original():
-    m = PulseImplementationMap()
-    m.add(ops.CZ, _dummy_rule, device_operands=(0, 1))
-
-    clone = m.copy()
-    clone.add(ops.CZ, _dummy_rule, device_operands=(1, 0))
-
-    assert m.device_operands_for(ops.CZ) == frozenset({(0, 1)})
-    assert clone.device_operands_for(ops.CZ) == frozenset({(0, 1), (1, 0)})
-
-
 # --- locked error policy: _invoke_pulse_rule --------------------------------
 
 
-def test_invoke_pulse_rule_returns_the_definition_on_success():
-    model, calibration = _model_and_calibration()
+def test_invoke_pulse_rule_returns_the_definition_on_success(model, calibration):
     m = PulseImplementationMap()
     m.add(ops.CZ, _dummy_rule)
     rule = m.implementation_for(ops.CZ)
@@ -187,9 +96,7 @@ def test_invoke_pulse_rule_returns_the_definition_on_success():
     assert isinstance(result, PulseDefinition)
 
 
-def test_invoke_pulse_rule_wraps_unexpected_exceptions():
-    model, calibration = _model_and_calibration()
-
+def test_invoke_pulse_rule_wraps_unexpected_exceptions(model, calibration):
     def failing_rule(operation, *, targets, model, calibration):
         raise ValueError("bad recipe")
 
@@ -204,9 +111,9 @@ def test_invoke_pulse_rule_wraps_unexpected_exceptions():
     assert isinstance(excinfo.value.__cause__, ValueError)
 
 
-def test_invoke_pulse_rule_propagates_backend_validation_error_unwrapped():
-    model, calibration = _model_and_calibration()
-
+def test_invoke_pulse_rule_propagates_backend_validation_error_unwrapped(
+    model, calibration
+):
     def rejecting_rule(operation, *, targets, model, calibration):
         raise BackendValidationError("target order contradicts orientation")
 
@@ -220,9 +127,9 @@ def test_invoke_pulse_rule_propagates_backend_validation_error_unwrapped():
         )
 
 
-def test_invoke_pulse_rule_propagates_unsupported_operation_error_unwrapped():
-    model, calibration = _model_and_calibration()
-
+def test_invoke_pulse_rule_propagates_unsupported_operation_error_unwrapped(
+    model, calibration
+):
     def unsupported_rule(operation, *, targets, model, calibration):
         raise UnsupportedOperationError("no recipe for this edge")
 
@@ -241,9 +148,9 @@ def test_invoke_pulse_rule_propagates_unsupported_operation_error_unwrapped():
     [None, (1, 2, 3), "not a definition"],
     ids=["none", "tuple", "string"],
 )
-def test_invoke_pulse_rule_rejects_non_pulse_definition_return(bad_result):
-    model, calibration = _model_and_calibration()
-
+def test_invoke_pulse_rule_rejects_non_pulse_definition_return(
+    bad_result, model, calibration
+):
     def wrong_type_rule(operation, *, targets, model, calibration):
         return bad_result
 
@@ -257,10 +164,9 @@ def test_invoke_pulse_rule_rejects_non_pulse_definition_return(bad_result):
         )
 
 
-def test_invoke_pulse_rule_rejects_a_pulse_block_return():
+def test_invoke_pulse_rule_rejects_a_pulse_block_return(model, calibration):
     # A PulseBlock is the occurrence-bound execution value, not the reusable
     # definition a rule must return; returning one is a rule-authoring bug.
-    model, calibration = _model_and_calibration()
 
     def block_returning_rule(operation, *, targets, model, calibration):
         return PulseBlock(

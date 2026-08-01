@@ -1,22 +1,13 @@
 """Computational-subspace fidelity checks for superconducting pulse recipes."""
 
-import json
 from math import pi
-from pathlib import Path
 
 import numpy as np
 import pytest
 
 import fatqat as fq
 from fatqat.backends import SimulatorBackend
-from fatqat.emulator.backend import PulseBackend
-from fatqat.emulator.superconducting import (
-    load_calibration_spec,
-    load_physics_model,
-)
 from fatqat.implementation import default_matrix_implementation_map
-
-_FIXTURES = Path(__file__).parent / "fixtures"
 
 _PARALLEL_ROTATIONS = (
     (fq.ops.RX(0.4), (0,)),
@@ -55,18 +46,6 @@ _MULTIPLE_FRAMES = (
     (fq.ops.RY(0.5), (0,)),
     (fq.ops.RX(-0.25), (1,)),
 )
-
-
-@pytest.fixture(name="backend")
-def backend_fixture():
-    model = load_physics_model(
-        json.loads((_FIXTURES / "sc_transmon_exchange.json").read_text())
-    )
-    calibration = load_calibration_spec(
-        json.loads((_FIXTURES / "sc_transmon_exchange_calibration.json").read_text()),
-        model,
-    )
-    return PulseBackend(model, calibration)
 
 
 def program_from_operations(operations):
@@ -254,17 +233,24 @@ def test_composed_process_fidelity_in_both_schedule_modes(
 @pytest.mark.parametrize(
     ("operations", "minimum_fidelity"),
     (
-        (_PARALLEL_ROTATIONS, 0.999),
-        (_H0_CZ, 0.999),
         (_HH_CZ, 0.985),
         (_MIXED_CZ_ISWAP, 0.995),
-        (_MULTIPLE_FRAMES, 0.999),
     ),
-    ids=("parallel-rotations", "h-cz", "hh-cz", "mixed-cz-iswap", "frames"),
+    ids=("hh-cz", "mixed-cz-iswap"),
 )
 def test_composed_ground_state_matches_matrix_simulator(
     backend, operations, minimum_fidelity
 ):
+    """Cross-check the pulse stack against the matrix simulator end to end.
+
+    `test_composed_process_fidelity_in_both_schedule_modes` already bounds
+    every composed program's full propagator, which mathematically implies
+    this state fidelity. The value kept here is the *other execution path*:
+    that comparison goes through `propagator()`, while this one goes through
+    the matrix simulator and the ordering conversion between the two backends.
+    Two representative programs cover that path; repeating all five only
+    re-ran the solver.
+    """
     program = program_from_operations(operations)
     pulse_state = pulse_ground_state_in_simulator_order(backend, program)
     simulator_state = np.asarray(

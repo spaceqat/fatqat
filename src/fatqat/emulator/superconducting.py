@@ -10,13 +10,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from math import isfinite, sqrt
+from math import isfinite, pi, sqrt
 from types import MappingProxyType
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import numpy as np
 
 from ..errors import BackendValidationError
+from ._validation import _freeze
+from .model_contract import ControlChannel, Frame, ResourceClaim
 
 _MODEL_FORMAT = "fatqat.physics-model"
 _CALIBRATION_FORMAT = "fatqat.calibration"
@@ -93,11 +95,20 @@ def _number(value: Any, path: str, *, positive: bool = False) -> float:
     return result
 
 
-def _freeze_array(value: np.ndarray) -> np.ndarray:
-    """Copy one local operator into a read-only complex array."""
-    array = np.array(value, dtype=complex, copy=True)
-    array.flags.writeable = False
-    return array
+def angular_rate_from_ghz(value: float) -> float:
+    """Convert a stored GHz model/calibration parameter to an angular rate.
+
+    Persisted model and calibration numbers are ordinary frequencies in GHz,
+    while every Hamiltonian coefficient the solver consumes is an *angular*
+    rate in ``rad/ns`` (see :attr:`SCTransmonModel.control_unit`). Since
+    ``1 GHz == 1/ns``, the bridge is exactly a factor of ``2*pi``.
+
+    This is the one definition of that convention. Realization rules and the
+    solver adapter both call it rather than writing ``2 * pi * x_ghz`` inline,
+    so the factor cannot drift between the controls a rule emits and the drift
+    term the adapter builds.
+    """
+    return 2 * pi * value
 
 
 def _freeze_data(value: Any) -> Any:
@@ -247,13 +258,13 @@ class Coupling:
 
 
 @dataclass(frozen=True)
-class SubsystemResourceRef:
-    """Opaque physical subsystem resource minted by one :class:`PhysicsModel`."""
+class SubsystemResourceRef(ResourceClaim):
+    """Opaque physical subsystem resource minted by one :class:`SCTransmonModel`."""
 
     model_key: ModelKey
     ordinal: int
     # Included in equality/hash on purpose: two refs with the same public
-    # model_key/ordinal but minted by different PhysicsModel instances (e.g.
+    # model_key/ordinal but minted by different SCTransmonModel instances (e.g.
     # two builds from the same persisted key) must stay distinguishable, so a
     # foreign handle is unequal to a same-key native one rather than merely
     # rejected at bind time.
@@ -261,7 +272,7 @@ class SubsystemResourceRef:
 
 
 @dataclass(frozen=True)
-class ControlChannelRef:
+class ControlChannelRef(ControlChannel):
     """Opaque physical control channel minted by one model.
 
     ``kind`` is ``"drive"``, ``"detuning"``, or ``"exchange"``. Construct
@@ -276,10 +287,10 @@ class ControlChannelRef:
 
 
 @dataclass(frozen=True)
-class FrameRef:
+class FrameRef(Frame):
     """Opaque virtual-frame handle minted by one model.
 
-    Obtain it from :meth:`PhysicsModel.frame`; direct construction produces a
+    Obtain it from :meth:`SCTransmonModel.frame`; direct construction produces a
     foreign handle that the model rejects.
     """
 
@@ -289,7 +300,7 @@ class FrameRef:
 
 
 @dataclass(frozen=True)
-class CouplingRef:
+class CouplingRef(ResourceClaim):
     """Opaque pair-resource handle minted by one model.
 
     Used solely for scheduling-conflict resource claims on a declared
@@ -304,7 +315,7 @@ class CouplingRef:
 
 
 @dataclass(frozen=True)
-class PhysicsModel:
+class SCTransmonModel:
     """Immutable, engine-neutral superconducting transmon model.
 
     Instances are returned by :func:`load_physics_model`; applications should
@@ -318,12 +329,18 @@ class PhysicsModel:
     loaded model with the same persisted identity cannot bind another
     instance's handles.
 
+    This model satisfies the private
+    :class:`~fatqat.emulator.model_contract.PhysicsModel` protocol structurally;
+    it does not inherit from it. Its handle types do inherit the abstract
+    marker kinds so the model-neutral pulse layers can discriminate a control
+    channel from a resource claim without importing this module.
+
     Attributes:
         key: Complete builder and snapshot identity.
         subsystems: Ordered :class:`Transmon` records.
         couplings: Declared undirected :class:`Coupling` edges.
-        annihilation: Read-only local qutrit lowering matrix.
-        creation: Read-only local qutrit raising matrix.
+        annihilation: Read-only local qutrit lowering matrix. The raising
+            operator is its conjugate transpose and is not stored separately.
         number: Read-only local qutrit number matrix.
     """
 
@@ -331,7 +348,6 @@ class PhysicsModel:
     subsystems: tuple[Transmon, ...]
     couplings: tuple[Coupling, ...]
     annihilation: np.ndarray
-    creation: np.ndarray
     number: np.ndarray
     _token: object = field(repr=False, compare=False)
     _resources: tuple[SubsystemResourceRef, ...] = field(repr=False)
@@ -343,8 +359,27 @@ class PhysicsModel:
 
     @property
     def time_unit(self) -> str:
-        """Return the model's pulse-time coordinate (``"ns"``)."""
+        """Return the model's pulse-time coordinate (``"ns"``).
+
+        Applies to ``duration``, every control's ``tlist``, and
+        ``start_offset``.
+        """
         return "ns"
+
+    @property
+    def control_unit(self) -> str:
+        """Return the unit of every sampled control coefficient (``"rad/ns"``).
+
+        An *angular* rate, not an ordinary frequency: a rule that emits GHz
+        is wrong by a factor of ``2*pi``, and nothing can detect that from the
+        samples alone. Stored GHz parameters must be converted with
+        :func:`angular_rate_from_ghz` before they become coefficients.
+
+        The unit is the same for all three channel kinds. A drive channel's
+        complex samples carry the two quadratures; both components are in this
+        unit.
+        """
+        return "rad/ns"
 
     @property
     def subsystem_ids(self) -> tuple[str, ...]:
@@ -399,11 +434,11 @@ class PhysicsModel:
             f"model has no declared coupling edge {first!r}-{second!r}"
         )
 
-    def bind_resource(self, reference: SubsystemResourceRef) -> int:
+    def bind_resource(self, reference: ResourceClaim) -> int:
         """Validate a resource handle and return its model ordinal."""
         return self._bind(reference, SubsystemResourceRef, self._resources, "resource")
 
-    def bind_control(self, reference: ControlChannelRef) -> int:
+    def bind_control(self, reference: ControlChannel) -> int:
         """Validate a control handle and return its kind-local model ordinal.
 
         Drive and detuning ordinals index ``subsystems``; exchange ordinals
@@ -417,13 +452,77 @@ class PhysicsModel:
         }.get(kind, ())
         return self._bind(reference, ControlChannelRef, controls, "control")
 
-    def bind_frame(self, reference: FrameRef) -> int:
+    def bind_frame(self, reference: Frame) -> int:
         """Validate a frame handle and return its subsystem ordinal."""
         return self._bind(reference, FrameRef, self._frames, "frame")
 
-    def bind_coupling(self, reference: CouplingRef) -> int:
+    def bind_coupling(self, reference: ResourceClaim) -> int:
         """Validate a coupling-resource handle and return its edge ordinal."""
         return self._bind(reference, CouplingRef, self._coupling_refs, "coupling")
+
+    def bind_claim(self, reference: ResourceClaim) -> int:
+        """Validate any resource-claim handle and return its model ordinal.
+
+        Dispatches between this model's two claim kinds so a `PulseBlock` can
+        verify declared claims without knowing that a transmon model has both
+        per-subsystem and per-edge resources.
+        """
+        if isinstance(reference, CouplingRef):
+            return self.bind_coupling(reference)
+        return self.bind_resource(reference)
+
+    def _bound_control(self, channel: ControlChannel) -> tuple[ControlChannelRef, int]:
+        """Bind ``channel`` and return it narrowed, with its model ordinal.
+
+        The protocol hands these methods an abstract `ControlChannel`, but the
+        transmon-specific logic below reads ``kind``. `bind_control` has
+        already rejected anything that is not one of this model's own
+        `ControlChannelRef`s, so the cast restates a checked fact rather than
+        assuming one.
+        """
+        ordinal = self.bind_control(channel)
+        return cast(ControlChannelRef, channel), ordinal
+
+    def required_claims_for_control(
+        self, channel: ControlChannel
+    ) -> frozenset[ResourceClaim]:
+        """Return every resource a pulse driving ``channel`` must claim.
+
+        Driving one transmon's drive or detuning channel implicates only that
+        subsystem. Driving an edge's exchange channel implicates both
+        endpoints *and* the pair resource, because a concurrent block on
+        either endpoint would corrupt the interaction. Keeping this topology
+        here is what lets :class:`~fatqat.emulator.pulse.PulseBlock` check
+        claim coverage without knowing what an exchange channel is.
+        """
+        control, ordinal = self._bound_control(channel)
+        if control.kind == "exchange":
+            coupling = self.couplings[ordinal]
+            return frozenset(
+                {self.resource(subsystem_id) for subsystem_id in coupling.subsystem_ids}
+                | {self.coupling(*coupling.subsystem_ids)}
+            )
+        return frozenset({self.resource(self.subsystem_ids[ordinal])})
+
+    def validate_control_coefficients(
+        self, channel: ControlChannel, coefficients: np.ndarray
+    ) -> None:
+        """Reject an envelope this transmon channel cannot physically realize.
+
+        A drive channel's complex samples encode its two quadratures, so any
+        complex envelope is legal. Detuning and exchange channels multiply a
+        Hermitian generator directly and therefore require real samples;
+        rejecting that here, when a block binds to the model, means ``run()``
+        and ``propagator()`` report the identical error at lowering instead of
+        one of them failing later inside solver binding.
+        """
+        control, _ordinal = self._bound_control(channel)
+        if control.kind == "drive":
+            return
+        if not np.allclose(np.asarray(coefficients).imag, 0.0, atol=1e-12, rtol=0.0):
+            raise BackendValidationError(
+                f"{control.kind} pulse coefficients must be real"
+            )
 
     def _subsystem_ordinal(self, subsystem_id: str) -> int:
         """Resolve a declared subsystem ID to its ordered model ordinal."""
@@ -478,7 +577,7 @@ class PhysicsModelBuilderRegistry:
                 f"unsupported physics-model builder {identity.id!r} version {identity.version}"
             ) from None
 
-    def build(self, spec: PhysicsModelSpec) -> PhysicsModel:
+    def build(self, spec: PhysicsModelSpec) -> SCTransmonModel:
         """Resolve ``spec.builder`` and build the immutable model."""
         return self.resolve(spec.builder).build(spec)
 
@@ -497,14 +596,14 @@ class SCTransmonExchangeBuilder:
 
     identity = BuilderIdentity(_SC_BUILDER_ID, _SC_BUILDER_VERSION)
 
-    def build(self, spec: PhysicsModelSpec) -> PhysicsModel:
+    def build(self, spec: PhysicsModelSpec) -> SCTransmonModel:
         """Build an immutable local-qutrit model from a validated spec.
 
         Args:
             spec: Parsed spec selecting this builder identity.
 
         Returns:
-            A fresh :class:`PhysicsModel` with read-only local operators and
+            A fresh :class:`SCTransmonModel` with read-only local operators and
             newly minted opaque handles.
 
         Raises:
@@ -522,11 +621,10 @@ class SCTransmonExchangeBuilder:
         self._validate_units(parameters["units"])
         subsystems = self._build_subsystems(parameters["subsystems"])
         couplings = self._build_couplings(parameters["couplings"], subsystems)
-        annihilation = _freeze_array(
+        annihilation = _freeze(
             np.array([[0.0, 1.0, 0.0], [0.0, 0.0, sqrt(2)], [0.0, 0.0, 0.0]])
         )
-        creation = _freeze_array(annihilation.conj().T)
-        number = _freeze_array(np.diag([0.0, 1.0, 2.0]))
+        number = _freeze(np.diag([0.0, 1.0, 2.0]))
         token = object()
         resources = tuple(
             SubsystemResourceRef(spec.key, ordinal, token)
@@ -552,12 +650,11 @@ class SCTransmonExchangeBuilder:
         coupling_refs = tuple(
             CouplingRef(spec.key, ordinal, token) for ordinal in range(len(couplings))
         )
-        return PhysicsModel(
+        return SCTransmonModel(
             key=spec.key,
             subsystems=subsystems,
             couplings=couplings,
             annihilation=annihilation,
-            creation=creation,
             number=number,
             _token=token,
             _resources=resources,
@@ -655,7 +752,7 @@ PHYSICS_MODEL_BUILDERS = PhysicsModelBuilderRegistry()
 PHYSICS_MODEL_BUILDERS.register(SCTransmonExchangeBuilder())
 
 
-def load_physics_model(document: Any) -> PhysicsModel:
+def load_physics_model(document: Any) -> SCTransmonModel:
     """Parse and build one trusted superconducting physics-model document.
 
     ``document`` must contain JSON-compatible data using the versioned
@@ -668,7 +765,7 @@ def load_physics_model(document: Any) -> PhysicsModel:
         document: Mapping decoded from a model JSON document.
 
     Returns:
-        A new immutable :class:`PhysicsModel`.
+        A new immutable :class:`SCTransmonModel`.
 
     Raises:
         BackendValidationError: If the envelope, builder, units, subsystem
@@ -697,7 +794,7 @@ class CalibrationSpec:
     schema_version: ClassVar[int] = _SCHEMA_VERSION
 
     @classmethod
-    def from_mapping(cls, document: Any, model: PhysicsModel) -> CalibrationSpec:
+    def from_mapping(cls, document: Any, model: SCTransmonModel) -> CalibrationSpec:
         """Validate and bind a calibration document to ``model``."""
         _data_only(document, "calibration")
         data = _mapping(document, "calibration")
@@ -739,8 +836,39 @@ class CalibrationSpec:
             ) from None
 
     @staticmethod
-    def _validate_recipes(recipes: Mapping[str, Any], model: PhysicsModel) -> None:
+    def _validate_recipes(recipes: Mapping[str, Any], model: SCTransmonModel) -> None:
         """Validate all built-in recipe families and exact CZ edge coverage."""
+        # TODO(calibration-schema-ownership): this method hard-codes the recipe
+        # schema of one specific realization - the built-in rules in
+        # `superconducting_realization.py` - while `PulseImplementationMap` is
+        # the documented way to replace a realization. The `_exact_keys` call
+        # below therefore rejects any recipe a *custom* rule would need, so a
+        # user-authored CZ cannot carry calibrated parameters in the
+        # calibration document at all. Loosening the check is not the answer:
+        # strict, exact-schema validation is deliberate (see
+        # `test_calibration_rejects_an_rz_recipe_including_an_arbitrary_scale`
+        # and `..._cz_phase_corrections_as_an_unknown_field`).
+        #
+        # The blocker is lifecycle, not validation. A calibration is loaded by
+        # `load_calibration_spec(document, model)` *before* any
+        # `PulseImplementationMap` is chosen - the map is not selected until
+        # `PulseBackend.__init__` - so at load time there is nothing to ask
+        # which recipes are legal. Two coherent resolutions, differing in when
+        # an invalid recipe is reported:
+        #
+        #   1. Keep envelope/identity validation here and move realization
+        #      schema validation to `PulseBackend.__init__`, where the map is
+        #      known. An invalid recipe then surfaces at backend construction,
+        #      not at load.
+        #   2. Give `load_calibration_spec` an explicit schema/validator
+        #      argument supplied by the realization (or its map/factory).
+        #      Load-time reporting is preserved, at the cost of a wider public
+        #      loader signature and a caller that must pass the two together.
+        #
+        # That user-visible difference should be settled as a design decision
+        # (an ADR alongside 0021, which assigned calibration ownership) before
+        # either is implemented. Do not resolve it by relaxing `_exact_keys`.
+        #
         # RZ has no recipe: it realizes as an exact virtual frame rotation
         # (see superconducting_realization._rz_definition), not a calibrated
         # physical gate, so it carries no calibration degree of freedom to
@@ -839,7 +967,7 @@ class CalibrationSpec:
             )
 
 
-def load_calibration_spec(document: Any, model: PhysicsModel) -> CalibrationSpec:
+def load_calibration_spec(document: Any, model: SCTransmonModel) -> CalibrationSpec:
     """Parse and validate a calibration document against its physics model.
 
     The document must use the versioned ``fatqat.calibration`` envelope and

@@ -5,36 +5,19 @@ matching the documented custom-CZ workflow: replacing a gate realization
 never requires subclassing `PulseBackend` or importing `fatqat.emulator`.
 """
 
-import json
-from pathlib import Path
-
 import numpy as np
 import pytest
 
 import fatqat as fq
 from fatqat.backends import (
+    PhaseShift,
     PulseBackend,
     PulseDefinition,
     PulseImplementationMap,
     SampledControl,
     default_superconducting_pulse_implementation_map,
-    load_calibration_spec,
-    load_physics_model,
 )
 from fatqat.errors import BackendValidationError, PulseImplementationError
-
-_FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def _model_and_calibration():
-    model = load_physics_model(
-        json.loads((_FIXTURES / "sc_transmon_exchange.json").read_text())
-    )
-    calibration = load_calibration_spec(
-        json.loads((_FIXTURES / "sc_transmon_exchange_calibration.json").read_text()),
-        model,
-    )
-    return model, calibration
 
 
 def _drive_definition(model, subsystem_id, amplitude):
@@ -52,9 +35,9 @@ def _drive_definition(model, subsystem_id, amplitude):
 # --- device-specific CZ table: complete explicit ordered-edge coverage ------
 
 
-def test_device_specific_cz_table_dispatches_by_ordered_device_operands():
-    model, calibration = _model_and_calibration()
-
+def test_device_specific_cz_table_dispatches_by_ordered_device_operands(
+    model, calibration
+):
     def forward_rule(operation, *, targets, model, calibration):
         return _drive_definition(model, "q0", 0.11)
 
@@ -82,8 +65,7 @@ def test_device_specific_cz_table_dispatches_by_ordered_device_operands():
 # --- locked error policy through the full public workflow -------------------
 
 
-def test_public_workflow_rejects_a_non_pulse_definition_return():
-    model, calibration = _model_and_calibration()
+def test_public_workflow_rejects_a_non_pulse_definition_return(model, calibration):
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(
         fq.ops.CZ, lambda operation, *, targets, model, calibration: None
@@ -96,9 +78,10 @@ def test_public_workflow_rejects_a_non_pulse_definition_return():
         backend.run(program)
 
 
-def test_public_workflow_rejects_a_foreign_model_handle():
-    model, calibration = _model_and_calibration()
-    other, _ = _model_and_calibration()  # a second, distinct model instance
+def test_public_workflow_rejects_a_foreign_model_handle(
+    model, calibration, build_model_and_calibration
+):
+    other, _ = build_model_and_calibration()  # a second, distinct model instance
 
     def foreign_rule(operation, *, targets, model, calibration):
         return PulseDefinition(
@@ -117,9 +100,9 @@ def test_public_workflow_rejects_a_foreign_model_handle():
         backend.run(program)
 
 
-def test_public_workflow_rejects_a_control_extending_past_the_definition_duration():
-    model, calibration = _model_and_calibration()
-
+def test_public_workflow_rejects_a_control_extending_past_the_definition_duration(
+    model, calibration
+):
     def overrunning_rule(operation, *, targets, model, calibration):
         (subsystem_id,) = (model.subsystem_ids[model.bind_resource(t)] for t in targets)
         return PulseDefinition(
@@ -142,9 +125,7 @@ def test_public_workflow_rejects_a_control_extending_past_the_definition_duratio
         backend.run(program)
 
 
-def test_public_workflow_rejects_missing_resource_claims():
-    model, calibration = _model_and_calibration()
-
+def test_public_workflow_rejects_missing_resource_claims(model, calibration):
     def claimless_rule(operation, *, targets, model, calibration):
         return PulseDefinition(0.0, (), ())
 
@@ -158,9 +139,9 @@ def test_public_workflow_rejects_missing_resource_claims():
         backend.run(program)
 
 
-def test_public_workflow_wraps_an_arbitrary_exception_raised_by_the_rule():
-    model, calibration = _model_and_calibration()
-
+def test_public_workflow_wraps_an_arbitrary_exception_raised_by_the_rule(
+    model, calibration
+):
     def failing_rule(operation, *, targets, model, calibration):
         raise ValueError("miscalibrated recipe")
 
@@ -173,3 +154,52 @@ def test_public_workflow_wraps_an_arbitrary_exception_raised_by_the_rule():
     with pytest.raises(PulseImplementationError) as excinfo:
         backend.run(program)
     assert isinstance(excinfo.value.__cause__, ValueError)
+
+
+# --- the documented workflow, reachable entirely from `fq.backends` ---------
+
+
+def test_replacing_cz_through_the_public_surface_never_imports_fatqat_emulator(
+    model, calibration
+):
+    """The custom-CZ workflow exactly as documented::
+    implementations = default_superconducting_pulse_implementation_map()
+    implementations.add(fq.ops.CZ, custom_cz)
+    backend = fq.backends.PulseBackend(
+        model, calibration, pulse_implementation_map=implementations
+    )
+
+    Every name used below comes from `fatqat` / `fatqat.backends`: replacing a
+    gate realization must never require subclassing `PulseBackend` or
+    importing `fatqat.emulator`.
+    """
+
+    def custom_cz(operation, *, targets, model, calibration):
+        first, second = (model.subsystem_ids[model.bind_resource(t)] for t in targets)
+        duration = 10.0
+        tlist = (0.0, duration)
+        return PulseDefinition(
+            duration,
+            (SampledControl(model.exchange_control(first, second), tlist, (0.0, 0.0)),),
+            (
+                model.resource(first),
+                model.resource(second),
+                model.coupling(first, second),
+            ),
+            (PhaseShift(model.frame(first), 0.05),),
+        )
+
+    implementations = default_superconducting_pulse_implementation_map()
+    implementations.add(fq.ops.CZ, custom_cz)
+    backend = fq.backends.PulseBackend(
+        model, calibration, pulse_implementation_map=implementations
+    )
+
+    program = fq.Program(2)
+    program.add(fq.ops.CZ, (0, 1))
+    plan, _facts = backend._lower_program(program)
+
+    (block,) = plan
+    assert block.duration == 10.0
+    (control,) = block.controls
+    assert control.channel == model.exchange_control("q0", "q1")

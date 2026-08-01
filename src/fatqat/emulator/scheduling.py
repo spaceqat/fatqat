@@ -13,10 +13,11 @@ from math import isfinite
 from typing import Iterable, Literal, cast
 
 from ..errors import BackendValidationError
-from .pulse import PulseBlock, ResourceClaim
+from ._validation import TIME_EPSILON
+from .model_contract import ResourceClaim
+from .pulse import PulseBlock
 
 SchedulingMode = Literal["ASAP", "ALAP"]
-_EPSILON = 1e-12
 
 
 def _validate_schedule_mode(mode: str) -> SchedulingMode:
@@ -50,7 +51,11 @@ class _ScheduledPulseRun:
 def _resource_claims_conflict(
     first: Iterable[ResourceClaim], second: Iterable[ResourceClaim]
 ) -> bool:
-    """Return whether two blocks reserve at least one identical model handle."""
+    """Return whether two blocks reserve at least one identical model handle.
+
+    Claims are opaque to the scheduler: it only ever intersects two blocks'
+    claim sets, so a model may partition its hardware however it likes.
+    """
     return not set(first).isdisjoint(second)
 
 
@@ -134,7 +139,9 @@ def schedule_pulse_run(
     starts = tuple(
         float(block.start_time) for block in blocks if block.start_time is not None
     )
-    if any(not isfinite(start) or start < boundary_time - _EPSILON for start in starts):
+    if any(
+        not isfinite(start) or start < boundary_time - TIME_EPSILON for start in starts
+    ):
         raise BackendValidationError(
             "an explicit pulse start cannot precede the current execution boundary"
         )
@@ -143,7 +150,9 @@ def schedule_pulse_run(
             earlier_block = blocks[earlier]
             if _resource_claims_conflict(
                 earlier_block.resource_claims, later_block.resource_claims
-            ) and starts[later] < (starts[earlier] + earlier_block.duration - _EPSILON):
+            ) and starts[later] < (
+                starts[earlier] + earlier_block.duration - TIME_EPSILON
+            ):
                 raise BackendValidationError(
                     "explicit scheduling reverses source order on a claimed resource"
                 )

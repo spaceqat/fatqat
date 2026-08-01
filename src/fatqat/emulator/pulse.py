@@ -10,7 +10,8 @@ checks (duration, control shape, resource-claim shape, frame-action shape)
 through the module-level ``_validate_*`` helpers below, so the two never
 diverge on what counts as a well-formed pulse. Only ``PulseBlock`` also
 performs the model-bound checks (channel/resource/coupling/frame binding,
-driven-control claim coverage), because only it carries a ``PhysicsModel``.
+driven-control claim coverage, envelope realizability), because only it
+carries a model.
 
 ``PulseImplementationMap`` composes the same private
 ``implementation._operation_registry`` mechanics ``MatrixImplementationMap`` does,
@@ -18,12 +19,18 @@ so the two families share registration semantics while keeping distinct rule
 and result types. ``_invoke_pulse_rule`` is the locked implementation-error
 policy: a rule's own ``BackendValidationError`` propagates unchanged, while
 any other failure becomes ``PulseImplementationError``.
+
+Nothing here imports a concrete physics model. Both values are written against
+the abstract handle kinds and the ``PhysicsModel`` protocol in
+``emulator.model_contract``, so the two model questions this layer used to
+answer with a channel-``kind`` switch - which resources a driven control
+implicates, and whether a channel accepts a complex envelope - are asked of
+the owning model instead.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite
 from typing import Any, Callable
 
 import numpy as np
@@ -34,32 +41,9 @@ from ..implementation._operation_registry import (
     _OperationRuleRegistry,
 )
 from ..operations import Operation
+from ._validation import TIME_EPSILON, _finite, _freeze
 from .lindblad import ResolvedLindbladTerm
-from .superconducting import (
-    CalibrationSpec,
-    ControlChannelRef,
-    CouplingRef,
-    FrameRef,
-    PhysicsModel,
-    SubsystemResourceRef,
-)
-
-
-def _finite(value: Any, name: str, *, nonnegative: bool = False) -> float:
-    """Normalize one finite scalar, optionally requiring non-negativity."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise BackendValidationError(f"{name} must be a finite number")
-    value = float(value)
-    if not isfinite(value) or (nonnegative and value < 0):
-        raise BackendValidationError(f"{name} must be finite and non-negative")
-    return value
-
-
-def _freeze(values: Any, *, dtype: type = complex) -> np.ndarray:
-    """Copy values to a read-only NumPy array of the requested dtype."""
-    array = np.array(values, dtype=dtype, copy=True)
-    array.flags.writeable = False
-    return array
+from .model_contract import ControlChannel, Frame, PhysicsModel, ResourceClaim
 
 
 @dataclass(frozen=True)
@@ -69,13 +53,22 @@ class SampledControl:
     A control owns a local sample grid. Its samples are shifted by
     ``start_offset`` inside the enclosing :class:`PulseDefinition`; the
     implementation rule does not need to convert them to absolute program
-    time. The owning model defines the time unit. For the built-in transmon
-    model it is ``model.time_unit == "ns"``.
+    time.
 
-    ``coefficients`` may be complex for a drive channel, where real and
-    imaginary components encode the two quadratures. Detuning and exchange
-    controls must be real and are checked when the private solver adapter
-    binds the definition. Arrays are copied and made read-only.
+    **Units.** The owning model defines both. ``tlist`` and ``start_offset``
+    are in ``model.time_unit``; ``coefficients`` are in
+    ``model.control_unit``. For the built-in transmon model those are ``"ns"``
+    and ``"rad/ns"`` - the latter an *angular* rate, so a rule that emits an
+    ordinary GHz frequency is wrong by a factor of ``2*pi``. Nothing can
+    detect that from the samples, so convert stored GHz parameters with
+    ``superconducting.angular_rate_from_ghz`` rather than by hand.
+
+    ``coefficients`` may be complex where the owning model's channel
+    accepts a complex envelope; on the built-in transmon model that means a
+    drive channel, whose real and imaginary parts encode the two quadratures
+    (both in ``model.control_unit``). Which channels accept one is the model's
+    own rule, enforced when a `PulseBlock` binds to it. Arrays are copied and
+    made read-only.
 
     Attributes:
         channel: Opaque control-channel handle returned by ``model``.
@@ -90,7 +83,7 @@ class SampledControl:
             not start at zero and increase strictly.
     """
 
-    channel: ControlChannelRef
+    channel: ControlChannel
     tlist: np.ndarray
     coefficients: np.ndarray
     start_offset: float = 0.0
@@ -136,7 +129,7 @@ class PhaseShift:
         angle_rad: Finite phase increment in radians.
     """
 
-    frame: FrameRef
+    frame: Frame
     angle_rad: float
 
     def __post_init__(self) -> None:
@@ -160,8 +153,8 @@ class PhaseSwap:
         BackendValidationError: If both handles identify the same frame.
     """
 
-    first: FrameRef
-    second: FrameRef
+    first: Frame
+    second: Frame
 
     def __post_init__(self) -> None:
         if self.first == self.second:
@@ -171,7 +164,6 @@ class PhaseSwap:
 
 
 FrameAction = PhaseShift | PhaseSwap
-ResourceClaim = SubsystemResourceRef | CouplingRef
 
 
 def _validate_duration_controls_consistency(
@@ -198,13 +190,13 @@ def _validate_controls_shape(
     Does not touch the model: whether a channel actually resolves on a given
     model is a `PulseBlock`-only, model-bound check.
     """
-    seen_channels: set[ControlChannelRef] = set()
+    seen_channels: set[ControlChannel] = set()
     for child in controls:
         if not isinstance(child, SampledControl):
             raise BackendValidationError(
                 f"{owner} controls must be SampledControl values"
             )
-        if not isinstance(child.channel, ControlChannelRef):
+        if not isinstance(child.channel, ControlChannel):
             raise BackendValidationError(
                 "pulse control has an unknown channel reference"
             )
@@ -213,7 +205,7 @@ def _validate_controls_shape(
                 f"{owner} cannot implicitly sum controls on one channel"
             )
         seen_channels.add(child.channel)
-        if child.start_offset + child.duration > duration + 1e-12:
+        if child.start_offset + child.duration > duration + TIME_EPSILON:
             raise BackendValidationError(
                 f"control extends beyond its enclosing {owner}"
             )
@@ -227,7 +219,7 @@ def _validate_resource_claims_shape(
         raise BackendValidationError(f"{owner} must claim at least one model resource")
     seen: set[ResourceClaim] = set()
     for resource in resource_claims:
-        if not isinstance(resource, (SubsystemResourceRef, CouplingRef)):
+        if not isinstance(resource, ResourceClaim):
             raise BackendValidationError(f"{owner} has an unknown resource claim")
         if resource in seen:
             raise BackendValidationError(f"{owner} has a duplicate resource claim")
@@ -322,29 +314,20 @@ class PulseBlock:
         _validate_controls_shape(self.controls, duration, owner="pulse block")
         _validate_post_actions_shape(self.post_actions, owner="pulse block")
 
-        required_claim_sets: list[set[ResourceClaim]] = []
+        # Both questions below are the model's, not this value's: which
+        # resources a driven control implicates, and whether the channel can
+        # realize this envelope at all. Asking rather than switching on a
+        # channel kind is what keeps this module model-neutral.
+        required_claim_sets: list[frozenset[ResourceClaim]] = []
         for child in self.controls:
-            control_ordinal = self.model.bind_control(child.channel)
-            if child.channel.kind == "exchange":
-                coupling = self.model.couplings[control_ordinal]
-                required_claim_sets.append(
-                    {
-                        self.model.resource(subsystem_id)
-                        for subsystem_id in coupling.subsystem_ids
-                    }
-                    | {self.model.coupling(*coupling.subsystem_ids)}
-                )
-            else:
-                required_claim_sets.append(
-                    {self.model.resource(self.model.subsystem_ids[control_ordinal])}
-                )
+            self.model.validate_control_coefficients(child.channel, child.coefficients)
+            required_claim_sets.append(
+                self.model.required_claims_for_control(child.channel)
+            )
 
         seen_resources: set[ResourceClaim] = set()
         for resource in self.resource_claims:
-            if isinstance(resource, SubsystemResourceRef):
-                self.model.bind_resource(resource)
-            else:
-                self.model.bind_coupling(resource)
+            self.model.bind_claim(resource)
             seen_resources.add(resource)
         for required_claims in required_claim_sets:
             if not required_claims <= seen_resources:
@@ -401,11 +384,18 @@ class _PulseImplementation:
 
     A rule receives the applied :py:class:`~fatqat.operations.Operation`
     instance, the ordered physical-model resource handles corresponding to
-    its program targets, the immutable owning `PhysicsModel`, and the
-    `CalibrationSpec`, and returns one reusable `PulseDefinition`. Most
-    callers never need to subclass this directly: `PulseImplementationMap.add`
+    its program targets, the immutable owning model, and that model family's
+    calibration, and returns one reusable `PulseDefinition`. Most callers
+    never need to subclass this directly: `PulseImplementationMap.add`
     auto-wraps a bare callable with this exact signature. Subclass and
     override `__call__` for a stateful or configured implementation.
+
+    A rule is necessarily written against one concrete model family - it
+    builds waveforms from that model's channels and reads that family's
+    calibration recipes - so `calibration` is typed `Any` here rather than
+    dragging a concrete calibration type into this model-neutral module.
+    Built-in transmon rules receive a
+    :class:`~fatqat.emulator.superconducting.CalibrationSpec`.
     """
 
     def __call__(
@@ -414,7 +404,7 @@ class _PulseImplementation:
         *,
         targets: tuple[Any, ...],
         model: PhysicsModel,
-        calibration: CalibrationSpec,
+        calibration: Any,
     ) -> PulseDefinition:
         raise NotImplementedError
 
@@ -431,7 +421,7 @@ class _CallablePulseImplementation(_PulseImplementation):
         *,
         targets: tuple[Any, ...],
         model: PhysicsModel,
-        calibration: CalibrationSpec,
+        calibration: Any,
     ) -> PulseDefinition:
         return self._func(
             operation, targets=targets, model=model, calibration=calibration
@@ -477,7 +467,7 @@ def _invoke_pulse_rule(
     *,
     targets: tuple[Any, ...],
     model: PhysicsModel,
-    calibration: CalibrationSpec,
+    calibration: Any,
 ) -> PulseDefinition:
     """Call a selected pulse rule and enforce the locked implementation-error policy.
 

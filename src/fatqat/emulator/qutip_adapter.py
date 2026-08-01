@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import pi
 from typing import Any
 
 import numpy as np
@@ -20,13 +19,17 @@ from qutip_qip.pulse import Drift, Pulse
 
 from ..backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
+from ._validation import TIME_EPSILON
 from .engine import _ShotContext, _condition_matches
 from .scheduling import _ScheduledPulseRun
 from .pulse import PhaseShift, PhaseSwap, PulseBlock, SampledControl
 from .lindblad import ResolvedLindbladTerm
-from .superconducting import ControlChannelRef, PhysicsModel
+from .superconducting import (
+    ControlChannelRef,
+    SCTransmonModel,
+    angular_rate_from_ghz,
+)
 
-_EPSILON = 1e-12
 _SOLVER_OPTIONS = {
     "method": "adams",
     "atol": 1e-11,
@@ -76,7 +79,7 @@ class SCQutipAdapter:
 
     def __init__(
         self,
-        model: PhysicsModel,
+        model: SCTransmonModel,
         *,
         engine_index_to_model_ordinal: tuple[int, ...] | None = None,
         always_on_noise: tuple[ResolvedLindbladTerm, ...] = (),
@@ -197,7 +200,7 @@ class SCQutipAdapter:
         ``apply_final_frame`` controls only whether the output frame ledger is
         composed onto the returned Hamiltonian-generated propagator.
         """
-        if abs(run.start_time) > _EPSILON:
+        if abs(run.start_time) > TIME_EPSILON:
             raise BackendValidationError("a propagator run must start at time zero")
         bound = self._bind_run(
             run,
@@ -234,7 +237,7 @@ class SCQutipAdapter:
             raise BackendValidationError(
                 "pulse enable flags must align with the placed run"
             )
-        if run.start_time < input_time - _EPSILON:
+        if run.start_time < input_time - TIME_EPSILON:
             raise BackendValidationError("placed pulse runs must be time ordered")
 
         frames = dict(input_frames)
@@ -274,7 +277,7 @@ class SCQutipAdapter:
             pending_actions, key=lambda event: event[:2]
         ):
             self._apply_actions(actions, frames)
-        if run.end_time <= input_time + _EPSILON:
+        if run.end_time <= input_time + TIME_EPSILON:
             return _BoundFrames(output_frames=frames)
 
         hamiltonian = self._drift.get_ideal_qobjevo(self._dims)
@@ -362,9 +365,7 @@ class SCQutipAdapter:
         identity = qeye(self._model.physical_dimension)
         for ordinal, subsystem in enumerate(self._model.subsystems):
             local = (
-                2
-                * pi
-                * subsystem.anharmonicity_ghz
+                angular_rate_from_ghz(subsystem.anharmonicity_ghz)
                 * self._local_number
                 * (self._local_number - identity)
                 / 2
@@ -495,13 +496,16 @@ class SCQutipAdapter:
                 "pulse control has an unknown channel reference"
             )
         ordinal = self._model.bind_control(channel)
+        # Detuning and exchange envelopes are real: `PulseBlock` construction
+        # already rejected a complex one through
+        # `SCTransmonModel.validate_control_coefficients`, so taking `.real`
+        # here discards nothing and needs no second check.
         if channel.kind == "detuning":
-            real = self._require_real(coefficients, "detuning")
             return Pulse(
                 self._local_number,
                 ordinal,
                 tlist=absolute_tlist,
-                coeff=real,
+                coeff=coefficients.real,
                 spline_kind="cubic",
                 label="detuning",
             )
@@ -518,7 +522,7 @@ class SCQutipAdapter:
                 exchange,
                 targets,
                 tlist=absolute_tlist,
-                coeff=self._require_real(coefficients, "exchange"),
+                coeff=coefficients.real,
                 spline_kind="cubic",
                 label="exchange",
             )
@@ -546,13 +550,6 @@ class SCQutipAdapter:
         )
         return pulse
 
-    @staticmethod
-    def _require_real(coefficients: np.ndarray, name: str) -> np.ndarray:
-        """Return real coefficients or reject an imaginary component."""
-        if not np.allclose(coefficients.imag, 0.0, atol=1e-12, rtol=0.0):
-            raise BackendValidationError(f"{name} pulse coefficients must be real")
-        return np.asarray(coefficients.real)
-
     @classmethod
     def _apply_ready_actions(
         cls,
@@ -561,7 +558,7 @@ class SCQutipAdapter:
         frames: dict[Any, float],
     ) -> None:
         """Apply completed frame events before binding a later-time control."""
-        ready = [event for event in events if event[0] <= start_time + _EPSILON]
+        ready = [event for event in events if event[0] <= start_time + TIME_EPSILON]
         for _end, _source, actions in sorted(ready, key=lambda event: event[:2]):
             cls._apply_actions(actions, frames)
         events[:] = [event for event in events if event not in ready]

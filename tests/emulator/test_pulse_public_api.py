@@ -1,7 +1,9 @@
-"""Public release-surface tests for the superconducting pulse backend."""
+"""Public release-surface tests: export identity and private-type exclusion.
 
-import json
-from pathlib import Path
+Strictly about what `fatqat.backends` re-exports. The documented custom-CZ
+workflow that exercises those exports end to end lives in
+`test_pulse_custom_implementation_workflow.py`.
+"""
 
 import fatqat as fq
 from fatqat.backends import (
@@ -21,8 +23,6 @@ from fatqat.emulator.pulse import PhaseSwap as _PhaseSwap
 from fatqat.emulator.pulse import PulseDefinition as _PulseDefinition
 from fatqat.emulator.pulse import PulseImplementationMap as _PulseImplementationMap
 from fatqat.emulator.pulse import SampledControl as _SampledControl
-
-_FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_sc_pulse_factories_are_public_without_exposing_execution_types():
@@ -49,53 +49,3 @@ def test_pulse_authoring_values_are_public_and_identical_to_private_definitions(
         fq.backends.default_superconducting_pulse_implementation_map
         is default_superconducting_pulse_implementation_map
     )
-
-
-def test_replacing_cz_through_the_public_surface_never_imports_fatqat_emulator():
-    """The documented custom-CZ workflow, reachable entirely from `fq.backends`.
-
-    Mirrors the plan's locked construction:
-
-        implementations = default_superconducting_pulse_implementation_map()
-        implementations.add(fq.ops.CZ, custom_cz)
-        backend = fq.backends.PulseBackend(
-            model, calibration, pulse_implementation_map=implementations
-        )
-    """
-    model = load_physics_model(
-        json.loads((_FIXTURES / "sc_transmon_exchange.json").read_text())
-    )
-    calibration = load_calibration_spec(
-        json.loads((_FIXTURES / "sc_transmon_exchange_calibration.json").read_text()),
-        model,
-    )
-
-    def custom_cz(operation, *, targets, model, calibration):
-        first, second = (model.subsystem_ids[model.bind_resource(t)] for t in targets)
-        duration = 10.0
-        tlist = (0.0, duration)
-        return PulseDefinition(
-            duration,
-            (SampledControl(model.exchange_control(first, second), tlist, (0.0, 0.0)),),
-            (
-                model.resource(first),
-                model.resource(second),
-                model.coupling(first, second),
-            ),
-            (PhaseShift(model.frame(first), 0.05),),
-        )
-
-    implementations = default_superconducting_pulse_implementation_map()
-    implementations.add(fq.ops.CZ, custom_cz)
-    backend = fq.backends.PulseBackend(
-        model, calibration, pulse_implementation_map=implementations
-    )
-
-    program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
-    plan, _facts = backend._lower_program(program)
-
-    (block,) = plan
-    assert block.duration == 10.0
-    (control,) = block.controls
-    assert control.channel == model.exchange_control("q0", "q1")

@@ -1,9 +1,7 @@
 """Native SC operation realization checks without a solver dependency."""
 
 import dataclasses
-import json
 from math import pi, sqrt
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -16,25 +14,8 @@ from fatqat.emulator.pulse import (
 from fatqat.emulator.superconducting_realization import (
     default_superconducting_pulse_implementation_map,
 )
-from fatqat.emulator.superconducting import (
-    ControlChannelRef,
-    load_calibration_spec,
-    load_physics_model,
-)
+from fatqat.emulator.superconducting import ControlChannelRef
 from fatqat.errors import BackendValidationError
-
-_FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def _model_and_calibration():
-    model = load_physics_model(
-        json.loads((_FIXTURES / "sc_transmon_exchange.json").read_text())
-    )
-    calibration = load_calibration_spec(
-        json.loads((_FIXTURES / "sc_transmon_exchange_calibration.json").read_text()),
-        model,
-    )
-    return model, calibration
 
 
 def _resolve(operation, targets, *, model, calibration):
@@ -45,8 +26,9 @@ def _resolve(operation, targets, *, model, calibration):
     return rule(operation, targets=targets, model=model, calibration=calibration)
 
 
-def test_rx_ry_are_hann_drag_complex_drives_without_physical_z_control():
-    model, calibration = _model_and_calibration()
+def test_rx_ry_are_hann_drag_complex_drives_without_physical_z_control(
+    model, calibration
+):
     theta = pi / 2
     rx = _resolve(
         ops.RX(theta), (model.resource("q0"),), model=model, calibration=calibration
@@ -67,8 +49,9 @@ def test_rx_ry_are_hann_drag_complex_drives_without_physical_z_control():
     assert isinstance(rx.post_actions[0], PhaseShift)
 
 
-def test_rz_is_zero_duration_frame_only_and_preserves_angle_ordering():
-    model, calibration = _model_and_calibration()
+def test_rz_is_zero_duration_frame_only_and_preserves_angle_ordering(
+    model, calibration
+):
     definition = _resolve(
         ops.RZ(0.7), (model.resource("q1"),), model=model, calibration=calibration
     )
@@ -79,8 +62,7 @@ def test_rz_is_zero_duration_frame_only_and_preserves_angle_ordering():
     assert definition.post_actions == (PhaseShift(model.frame("q1"), 0.7),)
 
 
-def test_iswap_area_and_frame_swap_use_one_full_edge_control():
-    model, calibration = _model_and_calibration()
+def test_iswap_area_and_frame_swap_use_one_full_edge_control(model, calibration):
     definition = _resolve(
         ops.iSwap,
         (model.resource("q0"), model.resource("q1")),
@@ -100,8 +82,7 @@ def test_iswap_area_and_frame_swap_use_one_full_edge_control():
     assert definition.post_actions == (PhaseSwap(model.frame("q0"), model.frame("q1")),)
 
 
-def test_cz_is_atomic_oriented_detuning_plus_parked_exchange():
-    model, calibration = _model_and_calibration()
+def test_cz_is_atomic_oriented_detuning_plus_parked_exchange(model, calibration):
     definition = _resolve(
         ops.CZ,
         (model.resource("q0"), model.resource("q1")),
@@ -135,8 +116,7 @@ def test_cz_is_atomic_oriented_detuning_plus_parked_exchange():
         )
 
 
-def test_cz_missing_edge_recipe_names_the_declared_edge():
-    model, calibration = _model_and_calibration()
+def test_cz_missing_edge_recipe_names_the_declared_edge(model, calibration):
     edgeless_calibration = dataclasses.replace(
         calibration,
         recipes={**calibration.recipes, "cz": {"edges": []}},

@@ -179,45 +179,71 @@ its concrete class. Its supported read interface is:
 ``model.couplings``
    Immutable undirected edge records with ``id`` and two ``subsystem_ids``.
 
-``model.annihilation``, ``model.creation``, ``model.number``
+``model.annihilation``, ``model.number``
    Read-only local qutrit matrices. They are local operators, not full-model
-   tensor expansions.
+   tensor expansions. The raising operator is not stored separately; derive it
+   as ``model.annihilation.conj().T``.
 
-.. autoattribute:: fatqat.emulator.superconducting.PhysicsModel.time_unit
+Units
+~~~~~
 
-.. autoattribute:: fatqat.emulator.superconducting.PhysicsModel.subsystem_ids
+Two units govern every pulse a rule emits, and both come from the model:
 
-.. autoattribute:: fatqat.emulator.superconducting.PhysicsModel.physical_dimension
+``model.time_unit`` (``"ns"``)
+   The coordinate for ``PulseDefinition.duration`` and for each
+   ``SampledControl``'s ``tlist`` and ``start_offset``.
+
+``model.control_unit`` (``"rad/ns"``)
+   The unit of every ``SampledControl.coefficients`` value, for all three
+   channel kinds. This is an **angular** rate, not an ordinary frequency.
+
+Model and calibration documents store ordinary frequencies in GHz
+(``frequency``, ``anharmonicity``, ``detuning_ghz``). A custom rule must
+convert those to angular rates before using them as coefficients; emitting
+GHz directly is wrong by a factor of ``2*pi`` and cannot be detected from
+the samples, so it produces a silently incorrect simulation rather than an
+error. Use
+:py:func:`fatqat.emulator.superconducting.angular_rate_from_ghz`, which is
+the single definition of that conversion and is what the built-in
+realizations and the solver adapter both call.
+
+.. autoattribute:: fatqat.emulator.superconducting.SCTransmonModel.time_unit
+
+.. autoattribute:: fatqat.emulator.superconducting.SCTransmonModel.control_unit
+
+.. autoattribute:: fatqat.emulator.superconducting.SCTransmonModel.subsystem_ids
+
+.. autoattribute:: fatqat.emulator.superconducting.SCTransmonModel.physical_dimension
 
 The following accessors mint opaque handles for custom pulse definitions.
 Never instantiate handle classes directly. ``resource`` claims a subsystem;
 ``coupling`` claims an edge for scheduling; the three control accessors choose
 the Hamiltonian mechanism; ``frame`` selects a virtual-drive phase ledger.
 
-.. automethod:: fatqat.emulator.superconducting.PhysicsModel.resource
+.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.resource
 
-.. automethod:: fatqat.emulator.superconducting.PhysicsModel.drive_control
+.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.drive_control
 
-.. automethod:: fatqat.emulator.superconducting.PhysicsModel.detuning_control
+.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.detuning_control
 
-.. automethod:: fatqat.emulator.superconducting.PhysicsModel.exchange_control
+.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.exchange_control
 
-.. automethod:: fatqat.emulator.superconducting.PhysicsModel.frame
+.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.frame
 
-.. automethod:: fatqat.emulator.superconducting.PhysicsModel.coupling
+.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.coupling
 
 ``bind_resource``, ``bind_control``, ``bind_frame``, and ``bind_coupling``
 validate that a handle was minted by this exact model instance and return its
 ordinal. They are useful inside a custom realization when translating the
 ordered ``targets`` supplied by the implementation map.
 
-.. automethod:: fatqat.emulator.superconducting.PhysicsModel.bind_resource
+.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.bind_resource
 
-.. automethod:: fatqat.emulator.superconducting.PhysicsModel.bind_control
+.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.bind_control
 
-.. automethod:: fatqat.emulator.superconducting.PhysicsModel.bind_frame
+.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.bind_frame
 
-.. automethod:: fatqat.emulator.superconducting.PhysicsModel.bind_coupling
+.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.bind_coupling
 
 Returned calibration interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

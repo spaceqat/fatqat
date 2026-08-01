@@ -1,10 +1,9 @@
 """Physical qutrit boundaries, guards, and dynamic replay tests."""
 
-import json
 from math import pi
-from pathlib import Path
 
 import numpy as np
+import pytest
 from qutip import Qobj, basis, ket2dm, tensor
 
 import fatqat as fq
@@ -21,32 +20,20 @@ from fatqat.emulator.pulse import (
     PulseDefinition,
     SampledControl,
 )
-from fatqat.emulator.superconducting import (
-    load_calibration_spec,
-    load_physics_model,
-)
 from fatqat.emulator.superconducting_realization import (
     default_superconducting_pulse_implementation_map,
 )
 from fatqat.noise import NoiseModel, ThermalRelaxation
 
-_FIXTURES = Path(__file__).parent / "fixtures"
 
+@pytest.fixture(name="make_backend")
+def make_backend_fixture(model, calibration):
+    """Build a backend on the shared model with an optional noise model."""
 
-def _model_and_calibration():
-    model = load_physics_model(
-        json.loads((_FIXTURES / "sc_transmon_exchange.json").read_text())
-    )
-    calibration = load_calibration_spec(
-        json.loads((_FIXTURES / "sc_transmon_exchange_calibration.json").read_text()),
-        model,
-    )
-    return model, calibration
+    def build(noise=None):
+        return PulseBackend(model, calibration, noise=noise)
 
-
-def _backend(noise=None):
-    model, calibration = _model_and_calibration()
-    return PulseBackend(model, calibration, noise=noise)
+    return build
 
 
 def _context(adapter, state, *, classical=(0,), seed=1):
@@ -57,8 +44,7 @@ def _context(adapter, state, *, classical=(0,), seed=1):
     )
 
 
-def test_partial_entangled_measurement_collapses_the_physical_posterior():
-    model, _ = _model_and_calibration()
+def test_partial_entangled_measurement_collapses_the_physical_posterior(model):
     adapter = SCQutipAdapter(model)
     ket = (tensor(basis(3, 0), basis(3, 0)) + tensor(basis(3, 1), basis(3, 2))).unit()
     context = _context(adapter, ket2dm(ket), seed=4)
@@ -74,8 +60,7 @@ def test_partial_entangled_measurement_collapses_the_physical_posterior():
     assert np.allclose(posterior.full(), expected.full())
 
 
-def test_grouped_measurement_preserves_declared_outcome_order():
-    model, _ = _model_and_calibration()
+def test_grouped_measurement_preserves_declared_outcome_order(model):
     adapter = SCQutipAdapter(model)
     context = _context(
         adapter,
@@ -93,8 +78,7 @@ def test_grouped_measurement_preserves_declared_outcome_order():
     assert context.classical_memory == [2, 1]
 
 
-def test_leakage_reports_one_then_confusion_changes_only_classical_value():
-    model, _ = _model_and_calibration()
+def test_leakage_reports_one_then_confusion_changes_only_classical_value(model):
     adapter = SCQutipAdapter(model)
     leaked = ket2dm(tensor(basis(3, 2), basis(3, 0)))
     context = _context(adapter, leaked)
@@ -111,8 +95,7 @@ def test_leakage_reports_one_then_confusion_changes_only_classical_value():
     assert np.allclose(context.state.full(), leaked.full())
 
 
-def test_reset_reprepares_only_target_and_guard_can_skip_it():
-    model, _ = _model_and_calibration()
+def test_reset_reprepares_only_target_and_guard_can_skip_it(model):
     adapter = SCQutipAdapter(model)
     entangled = (
         tensor(basis(3, 1), basis(3, 0)) + tensor(basis(3, 2), basis(3, 2))
@@ -128,10 +111,10 @@ def test_reset_reprepares_only_target_and_guard_can_skip_it():
     assert np.allclose(context.state.full(), expected.full())
 
 
-def test_confused_reported_value_drives_later_guarded_pulse():
+def test_confused_reported_value_drives_later_guarded_pulse(make_backend):
     noise = NoiseModel()
     noise.add_readout_error(np.array([[0.0, 1.0], [1.0, 0.0]]), target="q0")
-    backend = _backend(noise)
+    backend = make_backend(noise)
     program = fq.Program(2, 1)
     program.measure(0, 0)
     program.add(fq.ops.RX(pi), 1, condition=(0, 1))
@@ -147,8 +130,8 @@ def test_confused_reported_value_drives_later_guarded_pulse():
     assert np.allclose(density.ptrace(0).full(), ket2dm(basis(3, 0)).full())
 
 
-def test_seeded_dynamic_replay_is_reproducible():
-    backend = _backend()
+def test_seeded_dynamic_replay_is_reproducible(make_backend):
+    backend = make_backend()
     program = fq.Program(1, 1)
     program.add(fq.ops.RX(pi / 2), 0)
     program.measure(0, 0)
@@ -162,8 +145,8 @@ def test_seeded_dynamic_replay_is_reproducible():
     assert first.get_counts_as_tuples() == second.get_counts_as_tuples()
 
 
-def test_real_boundary_preserves_frame_ledger_for_later_drive():
-    backend = _backend()
+def test_real_boundary_preserves_frame_ledger_for_later_drive(make_backend):
+    backend = make_backend()
     with_boundary = fq.Program(2, 1)
     with_boundary.add(fq.ops.RZ(0.3), 0)
     with_boundary.measure(1, 0)
@@ -192,8 +175,10 @@ def test_real_boundary_preserves_frame_ledger_for_later_drive():
     assert np.allclose(boundary_state, continuous_state, atol=2e-7)
 
 
-def test_reset_and_both_guarded_boundary_outcomes_preserve_later_frame_use():
-    backend = _backend()
+def test_reset_and_both_guarded_boundary_outcomes_preserve_later_frame_use(
+    make_backend,
+):
+    backend = make_backend()
 
     def q0_state(program, *, shots=0):
         density = (
@@ -227,8 +212,8 @@ def test_reset_and_both_guarded_boundary_outcomes_preserve_later_frame_use():
         assert np.allclose(q0_state(guarded, shots=1), expected, atol=2e-7)
 
 
-def test_both_guarded_pulse_outcomes_flush_before_later_frame_aware_drive():
-    backend = _backend()
+def test_both_guarded_pulse_outcomes_flush_before_later_frame_aware_drive(make_backend):
+    backend = make_backend()
 
     def q0_state(program, *, shots):
         density = (
@@ -265,8 +250,7 @@ class _ExcitedAdapter(SCQutipAdapter):
         return result, dict(context.frame_angles)
 
 
-def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames():
-    model, _ = _model_and_calibration()
+def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames(model):
     thermal = ThermalRelaxation(t1=5, t2=10)
     adapter = _ExcitedAdapter(
         model,
@@ -304,12 +288,13 @@ def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames():
     assert frames == {}
 
 
-def test_custom_cz_rule_executes_end_to_end_and_yields_a_valid_physical_state():
+def test_custom_cz_rule_executes_end_to_end_and_yields_a_valid_physical_state(
+    model, calibration
+):
     # A minimal custom CZ, registered through PulseImplementationMap instead
     # of the default calibrated recipe: model-owned detuning/exchange
     # controls, explicit resource claims, and optional frame actions -
     # exactly the shape a user-authored rule is documented to have.
-    model, calibration = _model_and_calibration()
 
     def custom_cz(operation, *, targets, model, calibration):
         first, second = (model.subsystem_ids[model.bind_resource(t)] for t in targets)

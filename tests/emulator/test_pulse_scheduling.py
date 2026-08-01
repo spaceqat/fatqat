@@ -1,24 +1,13 @@
 """Conservative private placement tests."""
 
-import json
 from dataclasses import replace
-from pathlib import Path
 
 import numpy as np
 import pytest
 
 from fatqat.emulator.scheduling import schedule_pulse_run
 from fatqat.emulator.pulse import PulseBlock, SampledControl
-from fatqat.emulator.superconducting import load_physics_model
 from fatqat.errors import BackendValidationError
-
-_FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def _model():
-    return load_physics_model(
-        json.loads((_FIXTURES / "sc_transmon_exchange.json").read_text())
-    )
 
 
 def _block(model, subsystem_id, duration):
@@ -36,8 +25,7 @@ def _block(model, subsystem_id, duration):
     )
 
 
-def test_asap_and_alap_share_makespan_but_place_independent_work_differently():
-    model = _model()
+def test_asap_and_alap_share_makespan_but_place_independent_work_differently(model):
     blocks = (
         _block(model, "q0", 2.0),
         _block(model, "q1", 1.0),
@@ -53,8 +41,7 @@ def test_asap_and_alap_share_makespan_but_place_independent_work_differently():
     assert all(actual is source for actual, source in zip(asap.blocks, blocks))
 
 
-def test_pair_claims_conservatively_conflict_with_endpoint_work():
-    model = _model()
+def test_pair_claims_conservatively_conflict_with_endpoint_work(model):
     pair = PulseBlock(
         model,
         2.0,
@@ -70,8 +57,7 @@ def test_pair_claims_conservatively_conflict_with_endpoint_work():
     assert run.starts == (0.0, 2.0)
 
 
-def test_explicit_placement_rejects_mixed_reverse_and_preboundary_starts():
-    model = _model()
+def test_explicit_placement_rejects_mixed_reverse_and_preboundary_starts(model):
     q0 = _block(model, "q0", 1.0)
     with pytest.raises(BackendValidationError, match="either all explicit"):
         schedule_pulse_run((replace(q0, start_time=0.0), q0), boundary_time=0.0)

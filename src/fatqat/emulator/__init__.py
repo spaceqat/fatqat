@@ -8,4 +8,12 @@ details. The pulse-authoring definition and its implementation map -
 :class:`fatqat.backends.PulseImplementationMap` - are public, also re-exported
 from :mod:`fatqat.backends`, even though the modules that define them stay
 private.
+
+Internally the package splits into a model-neutral half and a
+superconducting half. :mod:`~fatqat.emulator.model_contract` declares the
+abstract handle kinds and the ``PhysicsModel`` protocol; ``pulse``,
+``scheduling``, and ``engine`` are written against those and import no
+concrete model. ``superconducting``, ``superconducting_realization``,
+``qutip_adapter``, and ``backend`` supply the transmon model, its
+realization rules, its solver binding, and the public backend.
 """
