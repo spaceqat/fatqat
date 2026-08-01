@@ -13,7 +13,7 @@ import fatqat as fq
 from fatqat.backends import MeasurementStep
 from fatqat.emulator.backend import PulseBackend
 from fatqat.emulator.engine import PulseEngine, _ShotContext
-from fatqat.emulator.execution import place_pulse_run
+from fatqat.emulator.scheduling import schedule_pulse_run
 from fatqat.emulator.qutip_adapter import FRAME_CONVENTION, SCQutipAdapter
 from fatqat.emulator.resolved import (
     PhaseShift,
@@ -83,9 +83,9 @@ def _context(adapter, state=None):
 
 def _evolve(adapter, blocks, context=None, *, boundary=0.0):
     context = _context(adapter) if context is None else context
-    run = place_pulse_run(blocks, boundary_ns=boundary)
+    run = schedule_pulse_run(blocks, boundary_time=boundary)
     adapter.evolve(run, context, (True,) * len(run.blocks))
-    context.time_ns = run.end_ns
+    context.time = run.end_time
     return context
 
 
@@ -96,7 +96,7 @@ def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints():
         model.drive_control("q0"),
         [0.0, 0.3, 0.7, 1.0],
         [1.0 + 2.0j, 3.0 + 4.0j, -2.0 + 1.0j, 5.0 + 6.0j],
-        start_offset_ns=0.5,
+        start_offset=0.5,
     )
     phase = 0.2
     pulse = adapter._bind_child(child, 4.0, {model.frame("q0"): phase})
@@ -285,12 +285,12 @@ def test_drift_covers_leading_internal_and_trailing_idle_intervals():
         duration=1.0,
         coefficients=(0.0, 0.0),
     )
-    first = replace(first, start_ns=1.0)
-    second = replace(second, start_ns=3.0)
+    first = replace(first, start_time=1.0)
+    second = replace(second, start_time=3.0)
     ket = tensor((basis(3, 0) + basis(3, 2)).unit(), basis(3, 0))
     initial = ket2dm(ket)
     context = _context(adapter, initial)
-    run = place_pulse_run((first, second), boundary_ns=0.0)
+    run = schedule_pulse_run((first, second), boundary_time=0.0)
     adapter.evolve(run, context, (True, True))
 
     drift = adapter._drift.get_ideal_qobjevo([3, 3])(0.0)
@@ -323,7 +323,7 @@ def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data():
         model=model,
         calibration=calibration,
     )
-    assert cz.children[1].start_offset_ns == recipe["ramp_duration_ns"]
+    assert cz.children[1].start_offset == recipe["ramp_duration_ns"]
 
 
 def test_realized_cz_matches_an_independent_synchronized_hamiltonian():
@@ -338,18 +338,18 @@ def test_realized_cz_matches_an_independent_synchronized_hamiltonian():
     detuning, exchange = block.children
     detuning_spline = CubicSpline(detuning.tlist, detuning.coefficients.real)
     exchange_spline = CubicSpline(
-        exchange.start_offset_ns + exchange.tlist, exchange.coefficients.real
+        exchange.start_offset + exchange.tlist, exchange.coefficients.real
     )
 
     def parked_exchange(time, _args=None):
-        if time < exchange.start_offset_ns or time > (
-            exchange.start_offset_ns + exchange.duration_ns
+        if time < exchange.start_offset or time > (
+            exchange.start_offset + exchange.duration
         ):
             return 0.0
         return float(exchange_spline(time))
 
-    assert parked_exchange(exchange.start_offset_ns / 2) == 0.0
-    assert parked_exchange(block.duration_ns - exchange.start_offset_ns / 2) == 0.0
+    assert parked_exchange(exchange.start_offset / 2) == 0.0
+    assert parked_exchange(block.duration - exchange.start_offset / 2) == 0.0
     number = Qobj(model.number)
     annihilation = Qobj(model.annihilation)
     identity = qeye(3)
@@ -374,7 +374,7 @@ def test_realized_cz_matches_an_independent_synchronized_hamiltonian():
             [exchange_operator, parked_exchange],
         ],
         initial,
-        [0.0, block.duration_ns],
+        [0.0, block.duration],
         options={"atol": 1e-11, "rtol": 1e-9, "nsteps": 10000},
     ).states[-1]
     actual = _evolve(adapter, (block,), _context(adapter, initial)).state
@@ -404,12 +404,12 @@ class _RecordingAdapter(_NoOpBoundaryAdapter):
         super().__init__(model)
         self.bound_phases = []
 
-    def _bind_child(self, child, block_start_ns, frames):
+    def _bind_child(self, child, block_start_time, frames):
         if getattr(child.channel, "kind", None) == "drive":
             ordinal = self._model.bind_control(child.channel)
             frame = self._model.frame(self._model.subsystem_ids[ordinal])
             self.bound_phases.append((ordinal, frames.get(frame, 0.0)))
-        return super()._bind_child(child, block_start_ns, frames)
+        return super()._bind_child(child, block_start_time, frames)
 
 
 def test_frame_ledger_survives_boundary_and_respects_post_action_time():
@@ -440,9 +440,7 @@ def test_frame_ledger_survives_boundary_and_respects_post_action_time():
         q0_second,
         q0_after,
     )
-    PulseEngine(adapter).run(
-        plan, shots=1, n_clbits=1, rng=np.random.default_rng(2)
-    )
+    PulseEngine(adapter).run(plan, shots=1, n_clbits=1, rng=np.random.default_rng(2))
 
     q0_phases = [phase for ordinal, phase in adapter.bound_phases if ordinal == 0]
     assert np.allclose(q0_phases, [0.2, 0.2, 0.5])

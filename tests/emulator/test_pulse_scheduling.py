@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from fatqat.emulator.execution import place_pulse_run
+from fatqat.emulator.scheduling import schedule_pulse_run
 from fatqat.emulator.resolved import PulseBlock, SampledControl
 from fatqat.emulator.superconducting import load_physics_model
 from fatqat.errors import BackendValidationError
@@ -44,12 +44,12 @@ def test_asap_and_alap_share_makespan_but_place_independent_work_differently():
         _block(model, "q0", 1.0),
     )
 
-    asap = place_pulse_run(blocks, boundary_ns=5.0, mode="ASAP")
-    alap = place_pulse_run(blocks, boundary_ns=5.0, mode="ALAP")
+    asap = schedule_pulse_run(blocks, boundary_time=5.0, mode="ASAP")
+    alap = schedule_pulse_run(blocks, boundary_time=5.0, mode="ALAP")
 
-    assert asap.starts_ns == (5.0, 5.0, 7.0)
-    assert alap.starts_ns == (5.0, 7.0, 7.0)
-    assert asap.end_ns == alap.end_ns == 8.0
+    assert asap.starts == (5.0, 5.0, 7.0)
+    assert alap.starts == (5.0, 7.0, 7.0)
+    assert asap.end_time == alap.end_time == 8.0
     assert all(actual is source for actual, source in zip(asap.blocks, blocks))
 
 
@@ -66,25 +66,25 @@ def test_pair_claims_conservatively_conflict_with_endpoint_work():
         ),
     )
     q0 = _block(model, "q0", 1.0)
-    run = place_pulse_run((pair, q0), boundary_ns=0.0)
-    assert run.starts_ns == (0.0, 2.0)
+    run = schedule_pulse_run((pair, q0), boundary_time=0.0)
+    assert run.starts == (0.0, 2.0)
 
 
 def test_explicit_placement_rejects_mixed_reverse_and_preboundary_starts():
     model = _model()
     q0 = _block(model, "q0", 1.0)
     with pytest.raises(BackendValidationError, match="either all explicit"):
-        place_pulse_run((replace(q0, start_ns=0.0), q0), boundary_ns=0.0)
+        schedule_pulse_run((replace(q0, start_time=0.0), q0), boundary_time=0.0)
     with pytest.raises(BackendValidationError, match="reverses source order"):
-        place_pulse_run(
-            (replace(q0, start_ns=10.0), replace(q0, start_ns=0.0)),
-            boundary_ns=0.0,
+        schedule_pulse_run(
+            (replace(q0, start_time=10.0), replace(q0, start_time=0.0)),
+            boundary_time=0.0,
         )
     with pytest.raises(BackendValidationError, match="current execution boundary"):
-        place_pulse_run((replace(q0, start_ns=1.0),), boundary_ns=2.0)
+        schedule_pulse_run((replace(q0, start_time=1.0),), boundary_time=2.0)
 
-    adjacent = place_pulse_run(
-        (replace(q0, start_ns=1.0), replace(q0, start_ns=2.0)),
-        boundary_ns=1.0,
+    adjacent = schedule_pulse_run(
+        (replace(q0, start_time=1.0), replace(q0, start_time=2.0)),
+        boundary_time=1.0,
     )
-    assert adjacent.starts_ns == (1.0, 2.0)
+    assert adjacent.starts == (1.0, 2.0)

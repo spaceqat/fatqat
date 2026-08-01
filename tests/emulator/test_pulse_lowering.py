@@ -47,7 +47,7 @@ def test_lowering_produces_unplaced_blocks_and_preserves_boundaries_and_guards()
         PulseBlock,
         ResetStep,
     ]
-    assert plan[0].start_ns is None
+    assert plan[0].start_time is None
     assert plan[1].reported_digit_maps == ((0, 1, 1),)
     assert plan[2].condition == ((0, 0),)
     assert plan[3].condition == ((0, 0),)

@@ -44,13 +44,13 @@ def test_rx_ry_are_hann_drag_complex_drives_without_physical_z_control():
         ops.RY(theta), (model.resource("q0"),), model=model, calibration=calibration
     )
 
-    assert rx.start_ns is None
-    assert rx.duration_ns == 20.0
+    assert rx.start_time is None
+    assert rx.duration == 20.0
     assert len(rx.children) == 1
     assert isinstance(rx.children[0].channel, ControlChannelRef)
     assert rx.children[0].channel.kind == "drive"
     assert np.isclose(rx.children[0].tlist[0], 0.0)
-    assert np.isclose(rx.children[0].tlist[-1], rx.duration_ns)
+    assert np.isclose(rx.children[0].tlist[-1], rx.duration)
     assert np.isclose(rx.children[0].coefficients[0], 0.0)
     assert np.isclose(rx.children[0].coefficients[-1], 0.0)
     assert np.allclose(ry.children[0].coefficients, 1j * rx.children[0].coefficients)
@@ -63,7 +63,7 @@ def test_rz_is_zero_duration_frame_only_and_preserves_angle_ordering():
         ops.RZ(0.7), (model.resource("q1"),), model=model, calibration=calibration
     )
 
-    assert block.duration_ns == 0.0
+    assert block.duration == 0.0
     assert block.children == ()
     assert block.resource_claims == (model.resource("q1"),)
     assert block.post_actions == (PhaseShift(model.frame("q1"), 0.7),)
@@ -107,8 +107,8 @@ def test_cz_is_atomic_oriented_detuning_plus_parked_exchange():
         model.resource("q1"),
         model.coupling("q0", "q1"),
     )
-    assert exchange.start_offset_ns == 3.0
-    assert exchange.duration_ns == 54.0
+    assert exchange.start_offset == 3.0
+    assert exchange.duration == 54.0
     assert np.isclose(detuning.coefficients[0], 0.0)
     assert np.isclose(detuning.coefficients[-1], 0.0)
     assert np.isclose(

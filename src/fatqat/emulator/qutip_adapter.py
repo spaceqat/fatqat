@@ -13,7 +13,7 @@ from qutip_qip.pulse import Drift, Pulse
 from ..backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
 from .engine import _ShotContext, _condition_matches
-from .execution import _PlacedPulseRun
+from .scheduling import _ScheduledPulseRun
 from .resolved import PhaseShift, PhaseSwap, PulseBlock, SampledControl
 from .lindblad import ResolvedLindbladTerm
 from .superconducting import ControlChannelRef, PhysicsModel
@@ -115,7 +115,7 @@ class SCQutipAdapter:
 
     def evolve(
         self,
-        run: _PlacedPulseRun,
+        run: _ScheduledPulseRun,
         context: _ShotContext,
         enabled: tuple[bool, ...],
     ) -> None:
@@ -124,7 +124,7 @@ class SCQutipAdapter:
             raise BackendValidationError(
                 "pulse enable flags must align with the placed run"
             )
-        if run.start_ns < context.time_ns - _EPSILON:
+        if run.start_time < context.time - _EPSILON:
             raise BackendValidationError("placed pulse runs must be time ordered")
 
         frames = dict(context.frame_angles)
@@ -135,33 +135,35 @@ class SCQutipAdapter:
         )
         ordered = sorted(
             range(len(run.blocks)),
-            key=lambda index: (run.starts_ns[index], index),
+            key=lambda index: (run.starts[index], index),
         )
         for source_index in ordered:
             block = run.blocks[source_index]
-            start_ns = run.starts_ns[source_index]
-            self._apply_ready_actions(pending_actions, start_ns, frames)
+            start_time = run.starts[source_index]
+            self._apply_ready_actions(pending_actions, start_time, frames)
             if not enabled[source_index]:
                 continue
             for child in block.children:
-                pulses.append(self._bind_child(child, start_ns, frames))
+                pulses.append(self._bind_child(child, start_time, frames))
             # A zero-duration block cannot contribute noise: even a
             # rate-mode descriptor's effect over zero time is a no-op, and a
             # nonzero-probability one was already rejected at lowering.
-            if block.noise and block.duration_ns > 0.0:
+            if block.noise and block.duration > 0.0:
                 noise_pulses.append(
-                    self._bind_block_noise(block, start_ns, context.time_ns, run.end_ns)
+                    self._bind_block_noise(
+                        block, start_time, context.time, run.end_time
+                    )
                 )
             pending_actions.append(
                 (
-                    start_ns + block.duration_ns,
+                    start_time + block.duration,
                     source_index,
                     block.post_actions,
                 )
             )
 
         state = context.state
-        if run.end_ns > context.time_ns + _EPSILON:
+        if run.end_time > context.time + _EPSILON:
             hamiltonian = self._drift.get_ideal_qobjevo(self._dims)
             for pulse in pulses:
                 contribution, collapse = pulse.get_noisy_qobjevo(self._dims)
@@ -177,7 +179,7 @@ class SCQutipAdapter:
             result = mesolve(
                 hamiltonian,
                 state,
-                [context.time_ns, run.end_ns],
+                [context.time, run.end_time],
                 c_ops=list(self._collapse_operators) + local_collapse,
                 options=_SOLVER_OPTIONS,
             )
@@ -277,25 +279,25 @@ class SCQutipAdapter:
     def _bind_block_noise(
         self,
         block: PulseBlock,
-        start_ns: float,
-        run_start_ns: float,
-        run_end_ns: float,
+        start_time: float,
+        run_start_time: float,
+        run_end_time: float,
     ) -> Pulse:
         """Build one block-owned `Pulse` carrying its gate-keyed collapse terms.
 
         Interval scoping reuses the control path's own time-windowed-pulse
         mechanism rather than splitting the run into multiple `mesolve`
         calls: a step-function coefficient spans the whole solved run
-        (``[run_start_ns, run_end_ns]``) but is 1 only during this block's
-        own placed ``[start_ns, start_ns + duration)`` window, so the
+        (``[run_start_time, run_end_time]``) but is 1 only during this block's
+        own placed ``[start_time, start_time + duration)`` window, so the
         collapse operator this pulse contributes is on only there.
         """
-        end_ns = start_ns + block.duration_ns
+        end_time = start_time + block.duration
         tlist = np.asarray(
-            sorted({run_start_ns, start_ns, end_ns, run_end_ns}), dtype=float
+            sorted({run_start_time, start_time, end_time, run_end_time}), dtype=float
         )
         window = np.array(
-            [1.0 if start_ns <= point < end_ns else 0.0 for point in tlist],
+            [1.0 if start_time <= point < end_time else 0.0 for point in tlist],
             dtype=float,
         )
         noise_pulse = Pulse(None, None)
@@ -358,12 +360,10 @@ class SCQutipAdapter:
     def _bind_child(
         self,
         child: SampledControl,
-        block_start_ns: float,
+        block_start_time: float,
         frames: dict[Any, float],
     ) -> Pulse:
-        absolute_tlist = (
-            block_start_ns + child.start_offset_ns + np.asarray(child.tlist)
-        )
+        absolute_tlist = block_start_time + child.start_offset + np.asarray(child.tlist)
         coefficients = np.asarray(child.coefficients)
         channel = child.channel
         if not isinstance(channel, ControlChannelRef):
@@ -432,10 +432,10 @@ class SCQutipAdapter:
     def _apply_ready_actions(
         cls,
         events: list[tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]],
-        start_ns: float,
+        start_time: float,
         frames: dict[Any, float],
     ) -> None:
-        ready = [event for event in events if event[0] <= start_ns + _EPSILON]
+        ready = [event for event in events if event[0] <= start_time + _EPSILON]
         for _end, _source, actions in sorted(ready, key=lambda event: event[:2]):
             cls._apply_actions(actions, frames)
         events[:] = [event for event in events if event not in ready]

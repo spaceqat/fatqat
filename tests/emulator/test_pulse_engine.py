@@ -64,7 +64,7 @@ class _FakeRunner:
 
     def evolve(self, run, context, enabled):
         self.context_ids.append(id(context))
-        self.runs.append((run.starts_ns, run.end_ns, enabled))
+        self.runs.append((run.starts, run.end_time, enabled))
         context.state["runs"] += 1
         for block, active in zip(run.blocks, enabled):
             if not active:
@@ -77,12 +77,12 @@ class _FakeRunner:
 
     def execute_boundary(self, step, context):
         self.context_ids.append(id(context))
-        self.boundaries.append((type(step), context.time_ns))
+        self.boundaries.append((type(step), context.time))
 
     def finish_shot(self, context):
         self.context_ids.append(id(context))
         return (
-            context.time_ns,
+            context.time,
             dict(context.frame_angles),
             tuple(context.classical_memory),
             context.state["runs"],

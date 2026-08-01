@@ -13,7 +13,7 @@ from ..backends._execution_analysis import (
 )
 from ..backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
-from .execution import PlacementMode, _PlacedPulseRun, place_pulse_run
+from .scheduling import SchedulingMode, _ScheduledPulseRun, schedule_pulse_run
 from .planning import PulsePlanStep
 from .resolved import PulseBlock
 from .superconducting import FrameRef
@@ -27,7 +27,7 @@ class _ShotContext:
     classical_memory: list[int]
     rng: np.random.Generator
     frame_angles: dict[FrameRef, float] = field(default_factory=dict)
-    time_ns: float = 0.0
+    time: float = 0.0
 
 
 class _PulseModelRunner(Protocol):
@@ -39,7 +39,7 @@ class _PulseModelRunner(Protocol):
 
     def evolve(
         self,
-        run: _PlacedPulseRun,
+        run: _ScheduledPulseRun,
         context: _ShotContext,
         enabled: tuple[bool, ...],
     ) -> None: ...
@@ -63,7 +63,7 @@ class PulseEngine:
     """Place and execute a complete lowered plan in deterministic shot order."""
 
     def __init__(
-        self, runner: _PulseModelRunner, *, placement_mode: PlacementMode = "ASAP"
+        self, runner: _PulseModelRunner, *, placement_mode: SchedulingMode = "ASAP"
     ) -> None:
         if placement_mode not in ("ASAP", "ALAP"):
             raise BackendValidationError(
@@ -178,7 +178,7 @@ class PulseEngine:
                     classical_memory=[0] * n_clbits,
                     rng=rng,
                     frame_angles=dict(context.frame_angles),
-                    time_ns=context.time_ns,
+                    time=context.time,
                 )
             )
             for step in terminal_measurements:
@@ -198,9 +198,9 @@ class PulseEngine:
         def flush() -> None:
             if not pending:
                 return
-            run = place_pulse_run(
+            run = schedule_pulse_run(
                 pending,
-                boundary_ns=context.time_ns,
+                boundary_time=context.time,
                 mode=self._placement_mode,
             )
             enabled = tuple(
@@ -208,7 +208,7 @@ class PulseEngine:
                 for block in run.blocks
             )
             self._runner.evolve(run, context, enabled)
-            context.time_ns = run.end_ns
+            context.time = run.end_time
             pending.clear()
 
         for step in plan:

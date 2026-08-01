@@ -11,7 +11,7 @@ from qutip import basis, ket2dm, tensor
 import fatqat as fq
 from fatqat.emulator.backend import PulseBackend
 from fatqat.emulator.engine import _ShotContext
-from fatqat.emulator.execution import place_pulse_run
+from fatqat.emulator.scheduling import schedule_pulse_run
 from fatqat.emulator.lindblad import ResolvedLindbladTerm
 from fatqat.emulator.qutip_adapter import SCQutipAdapter
 from fatqat.emulator.resolved import PulseBlock, SampledControl
@@ -80,9 +80,9 @@ def _phase_term(rate, *, ordinal=0):
 
 
 def _evolve(adapter, blocks, context, *, boundary=0.0):
-    run = place_pulse_run(blocks, boundary_ns=boundary)
+    run = schedule_pulse_run(blocks, boundary_time=boundary)
     adapter.evolve(run, context, (True,) * len(run.blocks))
-    context.time_ns = run.end_ns
+    context.time = run.end_time
     return context
 
 
@@ -181,7 +181,7 @@ def test_probability_mode_damping_lowers_to_the_converted_rate():
     (block,) = [step for step in plan if isinstance(step, PulseBlock)]
 
     (binding,) = block.noise
-    expected = AmplitudeDamping(p=(0.01, 0.02)).as_rate(block.duration_ns)
+    expected = AmplitudeDamping(p=(0.01, 0.02)).as_rate(block.duration)
     assert binding.model_ordinals == (0,)
     assert np.allclose(binding.local_operator, _amplitude_term(expected).local_operator)
 
@@ -289,7 +289,7 @@ def test_collapse_terms_are_active_only_during_their_own_placed_block():
     binding = _amplitude_term((0.0, rate))
     noisy = _idle_block(model, "q0", duration=2.0, noise=(binding,))
     # Both blocks claim "q0", so ASAP scheduling serializes `quiet` right
-    # after `noisy` without needing an explicit start_ns.
+    # after `noisy` without needing an explicit start time.
     quiet = _idle_block(model, "q0", duration=3.0)
     initial = ket2dm(tensor(basis(3, 2), basis(3, 0)))
     context = _evolve(adapter, (noisy, quiet), _context(adapter, initial))
@@ -309,7 +309,7 @@ def test_disabled_conditional_block_contributes_neither_control_nor_noise():
     )
     initial = ket2dm(tensor(basis(3, 2), basis(3, 0)))
     context = _context(adapter, initial)
-    run = place_pulse_run((block,), boundary_ns=0.0)
+    run = schedule_pulse_run((block,), boundary_time=0.0)
 
     adapter.evolve(run, context, (False,))  # condition not met: disabled
 

@@ -47,11 +47,11 @@ class SampledControl:
     channel: ControlChannelRef
     tlist: np.ndarray
     coefficients: np.ndarray
-    start_offset_ns: float = 0.0
+    start_offset: float = 0.0
 
     def __post_init__(self) -> None:
         start_offset = _finite(
-            self.start_offset_ns, "control start_offset_ns", nonnegative=True
+            self.start_offset, "control start_offset", nonnegative=True
         )
         tlist = np.asarray(self.tlist, dtype=float)
         coefficients = np.asarray(self.coefficients, dtype=complex)
@@ -71,12 +71,12 @@ class SampledControl:
             raise BackendValidationError(
                 "control tlist must start at zero and be strictly increasing"
             )
-        object.__setattr__(self, "start_offset_ns", start_offset)
+        object.__setattr__(self, "start_offset", start_offset)
         object.__setattr__(self, "tlist", _freeze(tlist, dtype=float))
         object.__setattr__(self, "coefficients", _freeze(coefficients))
 
     @property
-    def duration_ns(self) -> float:
+    def duration(self) -> float:
         return float(self.tlist[-1])
 
 
@@ -113,22 +113,20 @@ ResourceClaim = SubsystemResourceRef | CouplingRef
 
 @dataclass(frozen=True)
 class PulseBlock:
-    """One atomic, unplaced or explicitly placed model-owned pulse block."""
+    """One atomic model-owned pulse block on its model's native time axis."""
 
     model: PhysicsModel
-    duration_ns: float
+    duration: float
     children: tuple[SampledControl, ...]
     resource_claims: tuple[ResourceClaim, ...]
     post_actions: tuple[FrameAction, ...] = ()
     condition: tuple[tuple[int, int], ...] | None = None
-    start_ns: float | None = None
+    start_time: float | None = None
     noise: tuple[ResolvedLindbladTerm, ...] = ()
     target_indices: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
-        duration = _finite(
-            self.duration_ns, "pulse-block duration_ns", nonnegative=True
-        )
+        duration = _finite(self.duration, "pulse-block duration", nonnegative=True)
         if not self.resource_claims:
             raise BackendValidationError(
                 "pulse block must claim at least one model resource"
@@ -171,7 +169,7 @@ class PulseBlock:
                     "pulse block cannot implicitly sum controls on one channel"
                 )
             seen_channels.add(child.channel)
-            if child.start_offset_ns + child.duration_ns > duration + 1e-12:
+            if child.start_offset + child.duration > duration + 1e-12:
                 raise BackendValidationError(
                     "control extends beyond its enclosing pulse block"
                 )
@@ -216,13 +214,13 @@ class PulseBlock:
                     "pulse-block condition must contain non-negative integer terms"
                 )
             object.__setattr__(self, "condition", normalized)
-        if self.start_ns is not None:
+        if self.start_time is not None:
             object.__setattr__(
                 self,
-                "start_ns",
-                _finite(self.start_ns, "pulse-block start_ns", nonnegative=True),
+                "start_time",
+                _finite(self.start_time, "pulse-block start_time", nonnegative=True),
             )
-        object.__setattr__(self, "duration_ns", duration)
+        object.__setattr__(self, "duration", duration)
         object.__setattr__(self, "children", tuple(self.children))
         object.__setattr__(self, "resource_claims", tuple(self.resource_claims))
         object.__setattr__(self, "post_actions", tuple(self.post_actions))
@@ -240,12 +238,12 @@ class PulseBlock:
             object.__setattr__(self, "target_indices", target_indices)
 
 
-def _sample_grid(duration_ns: float) -> np.ndarray:
-    return np.linspace(0.0, duration_ns, _WAVEFORM_SAMPLES)
+def _sample_grid(duration: float) -> np.ndarray:
+    return np.linspace(0.0, duration, _WAVEFORM_SAMPLES)
 
 
-def _hann(tlist: np.ndarray, duration_ns: float, peak: float) -> np.ndarray:
-    return peak * np.sin(pi * tlist / duration_ns) ** 2
+def _hann(tlist: np.ndarray, duration: float, peak: float) -> np.ndarray:
+    return peak * np.sin(pi * tlist / duration) ** 2
 
 
 def _cumulative_trapezoid(values: np.ndarray, tlist: np.ndarray) -> np.ndarray:
@@ -319,7 +317,7 @@ def realize_native_operation(
             envelope *= 1j
         return PulseBlock(
             model=model,
-            duration_ns=duration,
+            duration=duration,
             children=(
                 SampledControl(model.drive_control(subsystem_id), tlist, envelope),
             ),
@@ -332,7 +330,7 @@ def realize_native_operation(
         angle = _finite(operation.theta, "rotation angle")
         return PulseBlock(
             model=model,
-            duration_ns=0.0,
+            duration=0.0,
             children=(),
             resource_claims=_single_resource_claims(model, subsystem_id),
             post_actions=(PhaseShift(model.frame(subsystem_id), angle),),
@@ -347,7 +345,7 @@ def realize_native_operation(
         exchange = _hann(tlist, duration, -pi / duration)
         return PulseBlock(
             model=model,
-            duration_ns=duration,
+            duration=duration,
             children=(
                 SampledControl(model.exchange_control(first, second), tlist, exchange),
             ),
@@ -379,7 +377,7 @@ def realize_native_operation(
         corrections = edge_recipe["phase_corrections_rad"]
         return PulseBlock(
             model=model,
-            duration_ns=duration,
+            duration=duration,
             children=(
                 SampledControl(model.detuning_control(first), detuning_grid, detuning),
                 SampledControl(

@@ -99,7 +99,7 @@ def _lower_gate(
         model,
         noise_model,
         lindblad_implementation_map,
-        block.duration_ns,
+        block.duration,
     )
     target_indices = tuple(
         dict.fromkeys(
@@ -121,7 +121,7 @@ def _lower_gate_noise(
     model: PhysicsModel,
     noise_model: NoiseModel,
     lindblad_implementation_map: LindbladImplementationMap,
-    duration_ns: float,
+    duration: float,
 ) -> tuple[tuple[ResolvedLindbladTerm, ...], tuple[int, ...]]:
     """Resolve one gate occurrence's attached channels into engine-facing bindings.
 
@@ -150,7 +150,7 @@ def _lower_gate_noise(
                     channel,
                     implementation_map=lindblad_implementation_map,
                     physical_dimension=model.physical_dimension,
-                    duration=duration_ns,
+                    duration=duration,
                 ),
                 model_ordinals=model_indices,
             )
