@@ -14,10 +14,17 @@ _PARALLEL_MODE_NAMES = frozenset({"auto", "serial", "multiprocessing", "loky"})
 
 @dataclass(frozen=True)
 class _EngineConfig:
-    """Normalized statevector engine execution-strategy options."""
+    """Normalized statevector engine execution-strategy options.
+
+    ``max_workers`` / ``parallel_mode`` steer OS-process distribution of
+    dynamic shots. ``numba_parallel`` is a different axis: it turns the Numba
+    runtime's in-process thread parallelism on or off for one run (it has no
+    meaning for the NumPy runtime, which never spawns threads).
+    """
 
     max_workers: Any = None
     parallel_mode: Any = "auto"
+    numba_parallel: Any = True
 
     def __post_init__(self) -> None:
         mw = self.max_workers
@@ -29,6 +36,10 @@ class _EngineConfig:
             raise BackendValidationError(
                 f"unsupported parallel_mode={self.parallel_mode!r}"
             )
+        if type(self.numba_parallel) is not bool:
+            raise BackendValidationError(
+                f"numba_parallel must be a bool, got {self.numba_parallel!r}"
+            )
 
 
 @dataclass(frozen=True)
@@ -38,6 +49,7 @@ class _SimulationConfig:
     seed: int | None = None
     parallel_mode: Any = "auto"
     max_workers: Any = None
+    numba_parallel: Any = True
 
     def __post_init__(self) -> None:
         if self.seed is not None and (type(self.seed) is not int):
@@ -52,6 +64,7 @@ class _SimulationConfig:
         return _EngineConfig(
             max_workers=self.max_workers,
             parallel_mode=self.parallel_mode,
+            numba_parallel=self.numba_parallel,
         )
 
 

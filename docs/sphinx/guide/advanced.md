@@ -131,3 +131,11 @@ For programs on the dynamic path, `run()`'s `simulation_config={...}` accepts
 across worker processes; it also accepts `seed` for reproducible sampling.
 This only affects execution strategy and random streams, never deterministic
 numerical semantics.
+
+`runtime="numba"` has a second, independent parallelism axis: its kernels use
+Numba worker threads inside this process, which `max_workers` and
+`parallel_mode` do not govern. Pass `numba_parallel=False` to confine a run to
+a single thread — the setting to use when you are parallelizing at a higher
+level yourself (say, several circuits at once) and per-run thread pools would
+oversubscribe the machine. It changes no results, and it is rejected on
+`runtime="numpy"`, which has no threads to switch off.

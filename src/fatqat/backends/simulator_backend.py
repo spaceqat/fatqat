@@ -126,15 +126,21 @@ class SimulatorBackend:
     branch, which makes execution stochastic and forces per-shot replay.
 
     Per-run ``simulation_config`` controls local execution only: ``seed``,
-    ``max_workers``, and ``parallel_mode``. ``result_config`` controls the
-    execution record: ``counts`` and ``final_state``. ``shots`` is an
-    explicit ``run()`` argument, matching a hardware job's repetition count.
+    ``max_workers``, ``parallel_mode``, and ``numba_parallel``.
+    ``result_config`` controls the execution record: ``counts`` and
+    ``final_state``. ``shots`` is an explicit ``run()`` argument, matching a
+    hardware job's repetition count.
 
     The ``runtime`` argument selects the execution technology for the chosen
     representation - ``"numpy"`` (default) or ``"numba"`` (optional
     dependency). The runtime never changes
     simulation semantics, only how fast the same numbers are computed;
-    dynamic-shot worker processes use the selected runtime as well.
+    dynamic-shot worker processes use the selected runtime as well. The two
+    parallelism axes are separate: ``max_workers`` / ``parallel_mode``
+    distribute dynamic shots across OS processes on either runtime, while
+    ``numba_parallel=False`` confines a ``runtime="numba"`` run to a single
+    Numba worker thread (for callers who parallelize at a higher level and must
+    not oversubscribe the machine).
 
     A backend instance reuses one simulator across runs, so it is efficient
     for repeated single-threaded use but is not safe for concurrent ``run()``
@@ -347,8 +353,9 @@ class SimulatorBackend:
         returns an eager ``Job`` whose ``result()`` yields a ``Result``.
 
         ``simulation_config`` controls local execution only: ``seed``,
-        ``max_workers``, and ``parallel_mode``. ``result_config`` describes
-        the requested result artifacts: ``counts`` and ``final_state``. The
+        ``max_workers``, ``parallel_mode``, and ``numba_parallel`` (the last
+        requires ``runtime="numba"``). ``result_config`` describes the
+        requested result artifacts: ``counts`` and ``final_state``. The
         latter asks a simulator to return its terminal state in the
         representation selected by this backend's ``method``.
 
@@ -386,6 +393,7 @@ class SimulatorBackend:
             "result_config",
             backend_name=type(self).__name__,
         )
+        self._validate_runtime_config(simulation)
         # Both hooks are resolved exactly once per run, on the direct-raise
         # validation path, before the execution try block below: capacity,
         # dimension, grid-fit, and mapping failures must raise directly from
@@ -476,6 +484,30 @@ class SimulatorBackend:
             raise BackendValidationError(
                 f"{self._state_field} with {stochastic_sources} is only supported "
                 "for shots == 1"
+            )
+
+    def _validate_runtime_config(self, simulation: _SimulationConfig) -> None:
+        """Reject simulation controls the selected ``runtime`` cannot honor.
+
+        ``numba_parallel`` turns off the Numba runtime's in-process thread
+        parallelism. The NumPy runtime has none to turn off - its parallelism is
+        the OS-process shot distribution ``max_workers`` / ``parallel_mode``
+        control - so a non-default value fails here rather than being silently
+        ignored.
+
+        Deliberately not the `_validate_additional_config` hook: that one is for
+        subclasses, which override it without calling ``super()``, so a check
+        placed there would vanish for a hardware backend.
+
+        Raises:
+            BackendValidationError: If a runtime-specific control is set for a
+                runtime that does not implement it.
+        """
+        if self._runtime != "numba" and simulation.numba_parallel is not True:
+            raise BackendValidationError(
+                "numba_parallel is only supported with runtime='numba'; this "
+                f"backend uses runtime={self._runtime!r} (use max_workers / "
+                "parallel_mode to control NumPy-path parallelism)"
             )
 
     def _validate_additional_config(

@@ -64,3 +64,106 @@ def test_numba_runtime_produces_valid_bell_counts_through_the_portal():
     )
     assert set(counts) <= {"00", "11"}
     assert sum(counts.values()) == 200
+
+
+# --- numba_parallel: in-process thread parallelism, on or off ---
+
+
+def _dynamic_program():
+    # A reset forces the dynamic path, where the fused kernel's `prange` shot
+    # loop is what `numba_parallel` switches off.
+    program = fq.Program(1, 1)
+    program.add(fq.ops.H, 0)
+    program.measure(0, 0)
+    program.add(fq.ops.Reset, 0)
+    return program
+
+
+def test_numba_parallel_off_produces_identical_counts():
+    pytest.importorskip("numba")
+
+    def counts_for(numba_parallel):
+        return (
+            SimulatorBackend(runtime="numba")
+            .run(
+                _dynamic_program(),
+                shots=64,
+                simulation_config={"seed": 7, "numba_parallel": numba_parallel},
+            )
+            .result()
+            .get_counts()
+        )
+
+    assert counts_for(False) == counts_for(True)
+
+
+def test_numba_parallel_off_restores_the_thread_count():
+    # `set_num_threads` is process-wide, so the run must put it back.
+    numba = pytest.importorskip("numba")
+    before = numba.get_num_threads()
+
+    SimulatorBackend(runtime="numba").run(
+        _dynamic_program(),
+        shots=64,
+        simulation_config={"seed": 7, "numba_parallel": False},
+    ).result()
+
+    assert numba.get_num_threads() == before
+
+
+@pytest.mark.parametrize("method", ["SV", "DM"])
+@pytest.mark.parametrize("numba_parallel", [True, False])
+def test_numba_parallel_confines_the_pool_for_the_whole_run(
+    method, numba_parallel, monkeypatch
+):
+    # Probed from inside the simulator's own run, where every kernel the run
+    # touches sees the pool - the fused shot loop and the gate-level coset
+    # chunks alike, on either representation.
+    numba = pytest.importorskip("numba")
+    from fatqat.simulator.np import _NumpyMatrixSimulator
+
+    observed = []
+    original = _NumpyMatrixSimulator._analyze_plan
+
+    def probe(self, plan):
+        observed.append(numba.get_num_threads())
+        return original(self, plan)
+
+    monkeypatch.setattr(_NumpyMatrixSimulator, "_analyze_plan", probe)
+    SimulatorBackend(method=method, runtime="numba").run(
+        _dynamic_program(),
+        shots=8,
+        simulation_config={"seed": 7, "numba_parallel": numba_parallel},
+    ).result()
+
+    expected = numba.get_num_threads() if numba_parallel else 1
+    assert observed == [expected]
+
+
+def test_numpy_runtime_rejects_numba_parallel():
+    with pytest.raises(BackendValidationError, match="numba_parallel"):
+        SimulatorBackend(runtime="numpy").run(
+            _bell_program(),
+            shots=4,
+            simulation_config={"numba_parallel": False},
+        )
+    # The default value is not a request, so it stays accepted everywhere.
+    SimulatorBackend(runtime="numpy").run(
+        _bell_program(), shots=4, simulation_config={"numba_parallel": True}
+    ).result()
+
+
+def test_numba_parallel_must_be_a_bool():
+    with pytest.raises(BackendValidationError, match="numba_parallel"):
+        SimulatorBackend(runtime="numpy").run(
+            _bell_program(), shots=4, simulation_config={"numba_parallel": 0}
+        )
+
+
+def test_metadata_echoes_numba_parallel():
+    result = (
+        SimulatorBackend()
+        .run(_bell_program(), shots=4, simulation_config={"seed": 1})
+        .result()
+    )
+    assert result.metadata["simulation_config"]["numba_parallel"] is True
