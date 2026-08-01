@@ -39,7 +39,13 @@ from .superconducting_realization import (
 
 
 class PulseBackend:
-    """SC pulse backend over an immutable model and separate calibration."""
+    """SC pulse backend over an immutable model and separate calibration.
+
+    The built-in CZ realization derives its nominal virtual frame correction
+    from the detuning waveform itself. This first-version model correction is
+    intentionally not a hardware phase calibration; device-specific phase
+    calibration can further improve the realized gate quality in the future.
+    """
 
     def __init__(
         self,

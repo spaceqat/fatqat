@@ -642,7 +642,6 @@ class CalibrationSpec:
             "duration_ns",
             "ramp_duration_ns",
             "detuning_ghz",
-            "phase_corrections_rad",
         }
         for ordinal, raw in enumerate(edges):
             path = f"calibration.recipes.cz.edges[{ordinal}]"
@@ -684,16 +683,6 @@ class CalibrationSpec:
             # nominal crossing; validation therefore checks the value rather
             # than requiring exact equality to the formula.
             _number(edge["detuning_ghz"], f"{path}.detuning_ghz")
-            corrections = _mapping(
-                edge["phase_corrections_rad"], f"{path}.phase_corrections_rad"
-            )
-            if set(corrections) != {first, second}:
-                _fail(
-                    f"{path}.phase_corrections_rad",
-                    "must contain exactly both edge endpoints",
-                )
-            for subsystem_id, phase in corrections.items():
-                _number(phase, f"{path}.phase_corrections_rad.{subsystem_id}")
 
     @staticmethod
     def _validate_single_qubit(

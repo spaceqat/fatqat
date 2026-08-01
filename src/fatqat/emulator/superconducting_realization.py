@@ -199,7 +199,12 @@ def _cz_definition(
     detuning = 2 * pi * float(edge_recipe["detuning_ghz"]) * ramp_shape
     exchange_grid = _sample_grid(parked_duration)
     exchange = _hann(exchange_grid, parked_duration, sqrt(2) * pi / parked_duration)
-    corrections = edge_recipe["phase_corrections_rad"]
+    # Detuning contributes the same local dynamical phase to |10> and |11>.
+    # Derive its nominal virtual-Z correction from the waveform actually sent
+    # to the adapter, rather than storing a duration-specific duplicate in
+    # calibration.  Integrating the sampled control also keeps the correction
+    # valid if the duration, ramp, sample count, or envelope shape changes.
+    detuning_phase = float(np.trapezoid(detuning, detuning_grid))
     return PulseDefinition(
         duration=duration,
         controls=(
@@ -209,10 +214,7 @@ def _cz_definition(
             ),
         ),
         resource_claims=_pair_resource_claims(model, first, second),
-        post_actions=tuple(
-            PhaseShift(model.frame(subsystem_id), float(corrections[subsystem_id]))
-            for subsystem_id in (first, second)
-        ),
+        post_actions=(PhaseShift(model.frame(first), detuning_phase),),
     )
 
 

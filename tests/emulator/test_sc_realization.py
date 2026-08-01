@@ -124,7 +124,8 @@ def test_cz_is_atomic_oriented_detuning_plus_parked_exchange():
     assert np.isclose(
         np.trapezoid(exchange.coefficients.real, exchange.tlist), pi / sqrt(2)
     )
-    assert all(isinstance(action, PhaseShift) for action in definition.post_actions)
+    detuning_phase = float(np.trapezoid(detuning.coefficients.real, detuning.tlist))
+    assert definition.post_actions == (PhaseShift(model.frame("q0"), detuning_phase),)
     with pytest.raises(BackendValidationError, match="orientation"):
         _resolve(
             ops.CZ,

@@ -12,7 +12,7 @@ Keep the hardware model and its calibration as separate JSON-compatible
 documents. The model declares ordered transmon IDs, frequencies,
 anharmonicities, and coupling edges. The calibration names the exact model
 identity and supplies gate durations, DRAG settings, and per-edge CZ detuning
-and phase corrections.
+values.
 
 ```python
 import fatqat as fq
@@ -33,6 +33,13 @@ oriented `CZ`, plus `RZ`, which realizes as an exact virtual frame rotation
 with no physical control and no calibration degree of freedom. `iSwap` and
 `CZ` require a declared model coupling. For `CZ`, program target order must
 match the calibration's detuning orientation.
+
+The built-in `CZ` realization calculates its nominal virtual frame correction
+by integrating the generated detuning waveform. This keeps the correction
+consistent with arbitrary gate and ramp durations without storing a duplicate
+phase in calibration. It is a first-version model correction rather than a
+hardware-calibrated phase: device-specific phase calibration can further
+improve gate quality in a future calibration layer.
 
 ```python
 program = fq.Program(2, 1)

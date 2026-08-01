@@ -169,8 +169,8 @@ Calibration versus implementation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 These are two different kinds of change. Editing the calibration document
-(gate durations, DRAG coefficients, per-edge ``CZ`` detuning and phase
-corrections) changes the *numbers* fed into the existing built-in physical
+(gate durations, DRAG coefficients, and per-edge ``CZ`` detuning) changes the
+*numbers* fed into the existing built-in physical
 mechanism - still a Hann/DRAG drive for ``RX``/``RY``, still an atomic
 detuning-plus-parked-exchange pulse for ``CZ``. Registering a pulse
 implementation rule changes the *mechanism* itself: the waveform shape,
@@ -178,6 +178,11 @@ which physical control channels are driven, which resources are claimed, or
 what frame corrections are applied. A calibration document is never a place
 to select or smuggle in executable behavior - it stays plain, immutable
 data, validated against exactly one model identity.
+
+The built-in ``CZ`` rule derives its nominal virtual frame correction by
+integrating its generated detuning waveform. This is a model-derived
+first-version correction; later device-specific phase calibration can further
+improve the realized gate quality.
 
 Rule signature and reusable definitions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
