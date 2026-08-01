@@ -13,7 +13,12 @@ from ..backends._execution_analysis import (
 )
 from ..backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
-from .scheduling import SchedulingMode, _ScheduledPulseRun, schedule_pulse_run
+from .scheduling import (
+    SchedulingMode,
+    _ScheduledPulseRun,
+    _validate_schedule_mode,
+    schedule_pulse_run,
+)
 from .planning import PulsePlanStep
 from .pulse import PulseBlock
 from .superconducting import FrameRef
@@ -44,6 +49,10 @@ class _PulseModelRunner(Protocol):
         enabled: tuple[bool, ...],
     ) -> None: ...
 
+    def propagator(
+        self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True
+    ) -> Any: ...
+
     def execute_boundary(
         self, step: MeasurementStep | ResetStep, context: _ShotContext
     ) -> None: ...
@@ -63,14 +72,10 @@ class PulseEngine:
     """Place and execute a complete lowered plan in deterministic shot order."""
 
     def __init__(
-        self, runner: _PulseModelRunner, *, placement_mode: SchedulingMode = "ASAP"
+        self, runner: _PulseModelRunner, *, schedule_mode: SchedulingMode = "ASAP"
     ) -> None:
-        if placement_mode not in ("ASAP", "ALAP"):
-            raise BackendValidationError(
-                "pulse placement mode must be 'ASAP' or 'ALAP'"
-            )
         self._runner = runner
-        self._placement_mode = placement_mode
+        self._schedule_mode = _validate_schedule_mode(schedule_mode)
 
     def run(
         self,
@@ -100,6 +105,37 @@ class PulseEngine:
             n_clbits=n_clbits,
             rng=rng,
         )
+
+    def propagator(
+        self,
+        plan: Iterable[PulsePlanStep],
+        *,
+        apply_final_frame: bool = True,
+    ) -> Any:
+        """Schedule and propagate one coherent boundary-free pulse plan."""
+        blocks = []
+        for step in plan:
+            if isinstance(step, MeasurementStep):
+                raise BackendValidationError("propagator does not support measurement")
+            if isinstance(step, ResetStep):
+                raise BackendValidationError("propagator does not support reset")
+            if not isinstance(step, PulseBlock):
+                raise BackendValidationError(
+                    "pulse plan contains an unknown execution step"
+                )
+            if step.condition is not None:
+                raise BackendValidationError(
+                    "propagator does not support classically conditioned operations"
+                )
+            blocks.append(step)
+        if not blocks:
+            raise BackendValidationError("cannot propagate an empty pulse plan")
+        run = schedule_pulse_run(
+            blocks,
+            boundary_time=0.0,
+            mode=self._schedule_mode,
+        )
+        return self._runner.propagator(run, apply_final_frame=apply_final_frame)
 
     def _run_per_shot(
         self,
@@ -201,7 +237,7 @@ class PulseEngine:
             run = schedule_pulse_run(
                 pending,
                 boundary_time=context.time,
-                mode=self._placement_mode,
+                mode=self._schedule_mode,
             )
             enabled = tuple(
                 _condition_matches(block.condition, context.classical_memory)

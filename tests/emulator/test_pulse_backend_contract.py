@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import fatqat as fq
@@ -14,12 +15,13 @@ from fatqat.emulator.superconducting import (
     load_physics_model,
 )
 from fatqat.errors import BackendExecutionError, BackendValidationError
+from fatqat.noise import NoiseModel, PhaseDamping
 from fatqat.registers import QuantumRegister
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def _backend():
+def _backend(noise=None):
     model = load_physics_model(
         json.loads((_FIXTURES / "sc_transmon_exchange.json").read_text())
     )
@@ -27,7 +29,7 @@ def _backend():
         json.loads((_FIXTURES / "sc_transmon_exchange_calibration.json").read_text()),
         model,
     )
-    return PulseBackend(model, calibration)
+    return PulseBackend(model, calibration, noise=noise)
 
 
 def test_auto_configuration_normalizes_to_serial_and_worker_restrictions_raise():
@@ -48,15 +50,99 @@ def test_run_directly_validates_config_and_executes_ideal_program():
     with pytest.raises(BackendValidationError, match="only parallel_mode"):
         backend.run(program, simulation_config={"parallel_mode": "loky"})
 
-    with pytest.raises(BackendValidationError, match="placement_mode"):
-        backend.run(program, simulation_config={"placement_mode": "SIDEWAYS"})
+    with pytest.raises(BackendValidationError, match="schedule_mode"):
+        backend.run(program, simulation_config={"schedule_mode": "SIDEWAYS"})
 
     result = backend.run(
         program, result_config={"counts": False, "final_state": True}
     ).result()
     assert result.get_density_matrix().shape == (9, 9)
     assert result.metadata["solver"]["frame_convention"].endswith("(Delta_i = 0)")
-    assert result.metadata["simulation_config"]["placement_mode"] == "ASAP"
+    assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
+
+
+def test_propagator_applies_the_terminal_frame_by_default():
+    backend = _backend()
+    angle = 0.2
+    program = fq.Program(1)
+    program.add(fq.ops.RZ(angle), 0)
+
+    dynamical = backend.propagator(program, apply_final_frame=False)
+    complete = backend.propagator(program)
+    expected_frame = np.diag(np.exp(1j * angle * np.arange(3)))
+
+    assert np.allclose(dynamical, np.eye(9))
+    assert np.allclose(complete, np.kron(expected_frame, np.eye(3)))
+
+
+def test_propagator_rejects_noncoherent_program_features_and_noise():
+    backend = _backend()
+
+    measured = fq.Program(1, 1)
+    measured.measure(0, 0)
+    with pytest.raises(BackendValidationError, match="measurement"):
+        backend.propagator(measured)
+
+    reset = fq.Program(1)
+    reset.add(fq.ops.Reset, 0)
+    with pytest.raises(BackendValidationError, match="reset"):
+        backend.propagator(reset)
+
+    conditioned = fq.Program(1, 1)
+    conditioned.add(fq.ops.RX(0.2), 0, condition=(0, 1))
+    with pytest.raises(BackendValidationError, match="conditioned"):
+        backend.propagator(conditioned)
+
+    noise = NoiseModel()
+    noise.add_channel(PhaseDamping(rate=0.001), targets="q0")
+    noisy_backend = _backend(noise)
+    driven = fq.Program(1)
+    driven.add(fq.ops.RX(0.2), 0)
+    with pytest.raises(BackendValidationError, match="dissipative"):
+        noisy_backend.propagator(driven)
+
+
+def test_propagator_allows_noise_when_frame_only_plan_has_zero_duration():
+    noise = NoiseModel()
+    noise.add_channel(PhaseDamping(rate=0.001), targets="q0")
+    backend = _backend(noise)
+    program = fq.Program(1)
+    program.add(fq.ops.RZ(0.2), 0)
+
+    expected = np.kron(np.diag(np.exp(0.2j * np.arange(3))), np.eye(3))
+    assert np.allclose(backend.propagator(program), expected)
+
+
+def test_propagator_validates_its_options_and_empty_program_is_identity(monkeypatch):
+    backend = _backend()
+    empty = fq.Program(0)
+
+    from fatqat.emulator import qutip_adapter
+
+    def fail_if_runner_is_built(*_args, **_kwargs):
+        pytest.fail("an empty propagator constructed a QuTiP runner")
+
+    monkeypatch.setattr(qutip_adapter, "SCQutipAdapter", fail_if_runner_is_built)
+    assert np.allclose(backend.propagator(empty), np.eye(9))
+    with pytest.raises(BackendValidationError, match="apply_final_frame"):
+        backend.propagator(empty, apply_final_frame=1)
+    with pytest.raises(BackendValidationError, match="schedule_mode"):
+        backend.propagator(empty, schedule_mode="SIDEWAYS")
+
+
+@pytest.mark.parametrize(
+    "options",
+    ({"apply_final_frame": 1}, {"schedule_mode": "SIDEWAYS"}),
+)
+def test_propagator_validates_options_before_lowering(monkeypatch, options):
+    backend = _backend()
+
+    def fail_if_lowered(_program):
+        pytest.fail("invalid propagator options reached lowering")
+
+    monkeypatch.setattr(backend, "_prepare_program", fail_if_lowered)
+    with pytest.raises(BackendValidationError):
+        backend.propagator(fq.Program(0), **options)
 
 
 def test_final_state_measurement_constraint_and_reset_only_determinism_validate_before_execution():

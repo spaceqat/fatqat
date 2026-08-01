@@ -5,15 +5,14 @@
   "model": {"id": "test-sc-2q", "revision": "2026-07-26"},
   "parameters": {
     "units": {
-      "subsystems": {"frequency": "GHz", "anharmonicity": "GHz"},
-      "couplings": {"residual_exchange": "GHz"}
+      "subsystems": {"frequency": "GHz", "anharmonicity": "GHz"}
     },
     "subsystems": [
       {"id": "q0", "frequency": 5.1, "anharmonicity": -0.22},
       {"id": "q1", "frequency": 5.22, "anharmonicity": -0.24}
     ],
     "couplings": [
-      {"id": "e0", "subsystems": ["q0", "q1"], "residual_exchange": 0.0}
+      {"id": "e0", "subsystems": ["q0", "q1"]}
     ]
   }
 }

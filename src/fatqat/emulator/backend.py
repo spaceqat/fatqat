@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -32,6 +32,7 @@ from .engine_contract import PulseResultConfig, PulseSimulationConfig
 from .planning import PulsePlanFacts, PulsePlanStep
 from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
 from .pulse import PulseImplementationMap
+from .scheduling import _validate_schedule_mode
 from .superconducting import CalibrationSpec, PhysicsModel
 from .superconducting_realization import (
     default_superconducting_pulse_implementation_map,
@@ -96,6 +97,26 @@ class PulseBackend:
     @staticmethod
     def _allocate_engine_indices(program: Program) -> _EngineIndexAllocation:
         return _EngineIndexAllocation.from_program(program)
+
+    def _prepare_program(self, program: Program) -> tuple[
+        list[PulsePlanStep],
+        PulsePlanFacts,
+        ResourceLayout,
+        _EngineIndexAllocation,
+    ]:
+        """Validate and lower one program for execution or propagation."""
+        resource_layout = self._resolve_resource_layout(program)
+        allocation = self._allocate_engine_indices(program)
+        self._noise_model.validate_for(program, resource_layout)
+        report = self.validate_noise(self._noise_model)
+        if not report.supported:
+            raise BackendValidationError("; ".join(report.warnings))
+        context = _LoweringContext(
+            resource_layout=resource_layout,
+            engine_index_allocation=allocation,
+        )
+        plan, facts = self._lower_program(program, context=context)
+        return plan, facts, resource_layout, allocation
 
     def _lower_program(
         self,
@@ -181,17 +202,7 @@ class PulseBackend:
             "result_config",
             backend_name=type(self).__name__,
         )
-        resource_layout = self._resolve_resource_layout(program)
-        allocation = self._allocate_engine_indices(program)
-        self._noise_model.validate_for(program, resource_layout)
-        report = self.validate_noise(self._noise_model)
-        if not report.supported:
-            raise BackendValidationError("; ".join(report.warnings))
-        context = _LoweringContext(
-            resource_layout=resource_layout,
-            engine_index_allocation=allocation,
-        )
-        plan, facts = self._lower_program(program, context=context)
+        plan, facts, resource_layout, allocation = self._prepare_program(program)
         request = self._validate(result, shots, facts)
         engine_index_to_model_ordinal = self._engine_index_to_model_ordinal(
             program, resource_layout, allocation
@@ -212,6 +223,68 @@ class PulseBackend:
             )
         except Exception:  # execution failures belong on the eager Job
             return Job.failed(BackendExecutionError("Pulse backend execution failed"))
+
+    def propagator(
+        self,
+        program: Program,
+        *,
+        apply_final_frame: bool = True,
+        schedule_mode: Literal["ASAP", "ALAP"] = "ASAP",
+    ) -> np.ndarray:
+        """Return the coherent full-model propagator for ``program``.
+
+        Intermediate virtual-frame updates always rotate later phase-sensitive
+        controls. By default the remaining terminal frame transformation is
+        also composed onto the returned propagator; set
+        ``apply_final_frame=False`` to inspect Hamiltonian-generated evolution
+        before that final basis transformation.
+
+        The result is a complex NumPy array of shape ``(3**m, 3**m)`` for the
+        model's ``m`` transmons, expressed in the model's near-resonant
+        rotating frame. Its virtual-Z representation can differ from a
+        conventional qubit RZ matrix by a global phase. Measurement, reset,
+        and classical conditions are rejected. Bound collapse terms are
+        rejected when the plan contains nonzero elapsed evolution; rate-based
+        noise has no effect on a frame-only plan because no time elapses.
+
+        Args:
+            program: Coherent program to lower, schedule, and propagate.
+            apply_final_frame: Whether to compose the terminal virtual-frame
+                transformation. Intermediate frame updates are always honored.
+            schedule_mode: Lightweight pulse placement policy, ``"ASAP"`` or
+                ``"ALAP"``.
+
+        Returns:
+            Full-model coherent propagator as a NumPy array.
+        """
+        if type(apply_final_frame) is not bool:
+            raise BackendValidationError("apply_final_frame must be a bool")
+        schedule_mode = _validate_schedule_mode(schedule_mode)
+        plan, _facts, resource_layout, allocation = self._prepare_program(program)
+
+        if not plan:
+            dimension = self.model.physical_dimension ** len(self.model.subsystems)
+            return np.eye(dimension, dtype=complex)
+
+        from .qutip_adapter import SCQutipAdapter
+
+        runner = SCQutipAdapter(
+            self.model,
+            engine_index_to_model_ordinal=self._engine_index_to_model_ordinal(
+                program, resource_layout, allocation
+            ),
+            always_on_noise=self._always_on_noise(program, resource_layout),
+        )
+        engine = PulseEngine(runner, schedule_mode=schedule_mode)
+        try:
+            return np.asarray(
+                engine.propagator(plan, apply_final_frame=apply_final_frame).full(),
+                dtype=complex,
+            )
+        except BackendValidationError:
+            raise
+        except Exception as exc:
+            raise BackendExecutionError("Pulse propagator construction failed") from exc
 
     def _validate(
         self, config: PulseResultConfig, shots: int, facts: PulsePlanFacts
@@ -254,7 +327,7 @@ class PulseBackend:
             engine_index_to_model_ordinal=engine_index_to_model_ordinal,
             always_on_noise=always_on_noise,
         )
-        outcomes = PulseEngine(runner, placement_mode=simulation.placement_mode).run(
+        outcomes = PulseEngine(runner, schedule_mode=simulation.schedule_mode).run(
             plan,
             shots=shots if request.counts else 1,
             n_clbits=allocation.n_clbits,

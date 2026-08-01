@@ -14,6 +14,12 @@ anharmonicities, and coupling edges. The calibration names the exact model
 identity and supplies gate durations, DRAG settings, and per-edge CZ detuning
 values.
 
+Each declared frequency is the nominal 0-to-1 transition frequency and
+defines that transmon's implicit resonant rotating-frame carrier. The current
+solver uses `Delta_i = 0`, so changing a frequency alone does not numerically
+change the simulated dynamics. A future frame-explicit model can consume it
+under a new model version.
+
 ```python
 import fatqat as fq
 
@@ -50,7 +56,7 @@ program.measure(0, 0)
 result = backend.run(
     program,
     shots=100,
-    simulation_config={"seed": 7, "placement_mode": "ASAP"},
+    simulation_config={"seed": 7, "schedule_mode": "ASAP"},
     result_config={"counts": True},
 ).result()
 print(result.get_counts())
@@ -65,6 +71,38 @@ measurement may export this sampled posterior only with `shots=1`.
 The accepted result request keys are `counts` and `final_state`. By default,
 counts are requested when the program contains measurement, while a final
 state is requested only for a program without measurement.
+
+## Coherent propagators
+
+Use `backend.propagator(program)` to obtain the complete coherent program
+propagator as a complex NumPy array in the full model Hilbert space. The
+method includes virtual frame updates by default, so a terminal virtual `RZ`
+and the nominal `CZ` frame correction appear in the returned operation even
+though neither adds a physical control pulse. Intermediate frame updates
+always rotate later phase-sensitive controls.
+
+```python
+unitary = backend.propagator(program)
+raw_dynamics = backend.propagator(program, apply_final_frame=False)
+```
+
+`apply_final_frame=False` omits only the terminal frame transformation; it
+does not disable frame updates that affect later controls. As with final
+states, a model containing `m` transmons returns a `(3**m, 3**m)` array.
+The array uses the same per-subsystem near-resonant rotating-frame convention
+reported by executed results in
+`result.metadata["solver"]["frame_convention"]`, rather than a
+laboratory-frame Hamiltonian. Virtual-Z frame updates also use
+`diag(1, exp(i*angle), ...)`;
+on the computational subspace this differs from the conventional `RZ` gate
+matrix by a global phase. Compare propagators phase-invariantly when checking
+them against ideal circuit matrices.
+
+Measurement, reset, and classical conditions are rejected because they do not
+have a single unitary propagator. Bound collapse terms are rejected when the
+program has nonzero elapsed pulse evolution. Rate-based noise has no effect
+on a frame-only, zero-duration program because no time elapses.
+`schedule_mode` may be `"ASAP"` or `"ALAP"`.
 
 ## Custom gate realizations
 
@@ -109,7 +147,7 @@ physical `|0>` state. Execution is serial per shot, so a later classical
 guard sees that persisted reported (and possibly confused) value, while later
 pulses retain the accumulated virtual-frame state.
 
-`placement_mode="ASAP"` is the default. The private scheduler places pulse
+`schedule_mode="ASAP"` is the default. The private scheduler places pulse
 blocks as early as their program dependencies and claimed resources permit.
 `"ALAP"` instead places them as late as possible within the same ASAP
 makespan. Both modes preserve dependency order and resource exclusivity; they

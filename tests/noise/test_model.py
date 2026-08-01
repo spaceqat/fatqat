@@ -97,8 +97,6 @@ def test_physical_label_selector_matches_device_operands():
 
 
 def test_physical_selector_accepts_non_int_hashable_label():
-    from fatqat.resource_layout import ResourceLayout
-
     program = _two_qubit_program()
     q = program.quantum_registers[0]
     layout = ResourceLayout({q[0]: "trap-a", q[1]: "trap-b"})

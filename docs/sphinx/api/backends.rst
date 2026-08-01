@@ -241,10 +241,16 @@ for the built-in model family is
 :py:class:`~fatqat.backends.SCTransmonExchangeBuilder`; scheduler, pulse, and
 QuTiP objects are not public API.
 
+Snapshot frequencies are nominal 0-to-1 transition frequencies defining the
+implicit per-subsystem resonant frames. Since this model currently uses
+``Delta_i = 0``, changing a frequency alone does not numerically change its
+simulated dynamics. A frame-explicit interpretation requires a new model
+version.
+
 The native operation set is ``RX``, ``RY``, virtual ``RZ``, ``iSwap``, and
 oriented ``CZ`` on declared coupling edges. ``simulation_config`` accepts
-``seed`` and serial execution controls plus ``placement_mode="ASAP"`` or
-``"ALAP"``. These private placement modes preserve program dependencies and
+``seed`` and serial execution controls plus ``schedule_mode="ASAP"`` or
+``"ALAP"``. These private scheduling modes preserve program dependencies and
 resource exclusivity; they do not expose a hardware schedule.
 
 Each native operation resolves to its physical realization through a
@@ -260,6 +266,19 @@ Request counts with ``result_config={"counts": True}`` and the final physical
 density matrix with ``result_config={"final_state": True}``. That density
 matrix includes every transmon in the selected model, even if the program did
 not address it, and has shape ``(3**m, 3**m)`` for ``m`` model subsystems.
+
+:py:meth:`~fatqat.backends.PulseBackend.propagator` returns the coherent
+full-model program propagator as a complex NumPy array. It includes terminal
+virtual-frame updates by default; ``apply_final_frame=False`` exposes the
+Hamiltonian-generated evolution before only that terminal transformation.
+The returned array follows the model's near-resonant rotating-frame
+convention. Its virtual-Z representation can differ from a conventional
+qubit ``RZ`` matrix by a global phase, so comparisons with ideal circuit
+unitaries should be phase-invariant.
+Programs with measurement, reset, or classical conditions are rejected.
+Bound collapse terms are rejected when the program has nonzero elapsed pulse
+evolution. Rate-based noise has no effect on a frame-only, zero-duration
+program because no time elapses.
 
 Pulse execution supports :py:class:`~fatqat.noise.ThermalRelaxation` (T1/T2)
 and rate-mode :py:class:`~fatqat.noise.AmplitudeDamping`/

@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from ..backends.engine_contract import _SimulationConfig
 from ..errors import BackendValidationError
 from ..result import _ResultConfig
+from .scheduling import SchedulingMode, _validate_schedule_mode
 
 
 @dataclass(frozen=True)
 class PulseSimulationConfig(_SimulationConfig):
     """v0.1 pulse execution controls, normalized to the serial engine policy."""
 
-    placement_mode: str = "ASAP"
+    schedule_mode: SchedulingMode = "ASAP"
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -27,10 +28,9 @@ class PulseSimulationConfig(_SimulationConfig):
             raise BackendValidationError(
                 "PulseBackend v0.1 supports only max_workers=None or 1"
             )
-        if self.placement_mode not in ("ASAP", "ALAP"):
-            raise BackendValidationError(
-                "PulseBackend placement_mode must be 'ASAP' or 'ALAP'"
-            )
+        object.__setattr__(
+            self, "schedule_mode", _validate_schedule_mode(self.schedule_mode)
+        )
 
 
 @dataclass(frozen=True)

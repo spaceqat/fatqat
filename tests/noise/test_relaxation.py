@@ -23,6 +23,7 @@ def test_population_decay_matches_t1():
 
 def test_thermal_relaxation_is_keyword_only_and_exposes_shared_rates():
     with pytest.raises(TypeError):
+        # pylint: disable-next=missing-kwoa
         ThermalRelaxation(60e-6, 80e-6)  # noqa: pyright-ignore
 
     source = ThermalRelaxation(t1=60e-6, t2=80e-6)

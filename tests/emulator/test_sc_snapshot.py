@@ -40,6 +40,9 @@ def _calibration_document():
         lambda document: document["parameters"]["couplings"][0].update(
             subsystems=["q0", "missing"]
         ),
+        lambda document: document["parameters"]["couplings"][0].update(
+            residual_exchange=0.002
+        ),
     ],
 )
 def test_snapshot_loader_rejects_invalid_or_non_data_documents(mutate):

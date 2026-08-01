@@ -75,6 +75,9 @@ class _FakeRunner:
                         context.frame_angles.get(action.frame, 0.0) + action.angle_rad
                     )
 
+    def propagator(self, run, *, apply_final_frame=True):
+        raise AssertionError("the execution fake does not construct propagators")
+
     def execute_boundary(self, step, context):
         self.context_ids.append(id(context))
         self.boundaries.append((type(step), context.time))

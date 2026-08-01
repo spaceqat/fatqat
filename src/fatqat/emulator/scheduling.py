@@ -10,13 +10,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
-from typing import Iterable, Literal
+from typing import Iterable, Literal, cast
 
 from ..errors import BackendValidationError
 from .pulse import PulseBlock, ResourceClaim
 
 SchedulingMode = Literal["ASAP", "ALAP"]
 _EPSILON = 1e-12
+
+
+def _validate_schedule_mode(mode: str) -> SchedulingMode:
+    """Validate and narrow one public or engine scheduling-mode value."""
+    if mode not in ("ASAP", "ALAP"):
+        raise BackendValidationError("pulse schedule_mode must be 'ASAP' or 'ALAP'")
+    return cast(SchedulingMode, mode)
 
 
 @dataclass(frozen=True)
@@ -82,8 +89,7 @@ def schedule_pulse_run(
     blocks = tuple(blocks)
     if not blocks:
         raise BackendValidationError("cannot schedule an empty pulse run")
-    if mode not in ("ASAP", "ALAP"):
-        raise BackendValidationError("pulse scheduling mode must be 'ASAP' or 'ALAP'")
+    mode = _validate_schedule_mode(mode)
     if not isfinite(boundary_time) or boundary_time < 0:
         raise BackendValidationError(
             "pulse scheduling boundary must be finite and non-negative"

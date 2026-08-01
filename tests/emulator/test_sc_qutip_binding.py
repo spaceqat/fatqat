@@ -118,7 +118,7 @@ def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints():
     )
     phase = 0.2
     pulse = adapter._bind_child(child, 4.0, {model.frame("q0"): phase})
-    expected = np.exp(1j * phase) * child.coefficients
+    expected = np.exp(-1j * phase) * child.coefficients
 
     assert type(pulse).__module__ == "qutip_qip.pulse"
     assert pulse.spline_kind == "cubic"
@@ -215,7 +215,7 @@ def test_realized_iswap_matches_the_public_positive_i_phase_convention():
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
 
 
-def test_drift_and_detuning_match_independent_qutrit_phase_and_exchange_facts():
+def test_drift_and_detuning_match_independent_qutrit_phase_facts():
     model, _ = _model_and_calibration()
     adapter = SCQutipAdapter(model)
 
@@ -228,24 +228,6 @@ def test_drift_and_detuning_match_independent_qutrit_phase_and_exchange_facts():
     phase = np.exp(-1j * 2 * pi * model.subsystems[0].anharmonicity_ghz * duration)
     expected = ket2dm((ket_00 + phase * ket_20).unit())
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
-
-    residual_document, _ = _documents()
-    residual_document["parameters"]["couplings"][0]["residual_exchange"] = 0.04
-    residual_model = load_physics_model(residual_document)
-    residual_adapter = SCQutipAdapter(residual_model)
-    exchange_duration = 1 / (8 * 0.04)
-    exchange = _drive_block(
-        residual_model,
-        "q0",
-        duration=exchange_duration,
-        coefficients=(0.0, 0.0),
-    )
-    exchanged = _evolve(
-        residual_adapter,
-        (exchange,),
-        _context(residual_adapter, ket2dm(tensor(basis(3, 1), basis(3, 0)))),
-    ).state
-    assert np.isclose(exchanged[1, 1].real, 0.5, atol=2e-7)
 
     detuning = 0.09
     detuned = PulseBlock(
@@ -397,19 +379,6 @@ def test_realized_cz_matches_an_independent_synchronized_hamiltonian():
     ).states[-1]
     actual = _evolve(adapter, (block,), _context(adapter, initial)).state
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
-
-
-def test_residual_exchange_is_bound_only_when_declared():
-    model_document, calibration_document = _documents()
-    ideal_model = load_physics_model(model_document)
-    ideal = SCQutipAdapter(ideal_model)
-    assert len(ideal._drift.drift_hamiltonians) == len(ideal_model.subsystems)
-
-    model_document["parameters"]["couplings"][0]["residual_exchange"] = 0.01
-    residual_model = load_physics_model(model_document)
-    load_calibration_spec(calibration_document, residual_model)
-    residual = SCQutipAdapter(residual_model)
-    assert len(residual._drift.drift_hamiltonians) == len(residual_model.subsystems) + 1
 
 
 class _NoOpBoundaryAdapter(SCQutipAdapter):

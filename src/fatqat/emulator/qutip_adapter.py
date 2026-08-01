@@ -7,7 +7,15 @@ from math import pi
 from typing import Any
 
 import numpy as np
-from qutip import Qobj, basis, ket2dm, mesolve, qeye, tensor
+from qutip import (
+    Qobj,
+    basis,
+    ket2dm,
+    mesolve,
+    propagator as qutip_propagator,
+    qeye,
+    tensor,
+)
 from qutip_qip.pulse import Drift, Pulse
 
 from ..backends.steps import MeasurementStep, ResetStep
@@ -34,6 +42,22 @@ class _PulseShotResult:
 
     density_matrix: np.ndarray
     classical_digits: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class _BoundFrames:
+    """A zero-duration run that changes only the virtual-frame ledger."""
+
+    output_frames: dict[Any, float]
+
+
+@dataclass(frozen=True)
+class _BoundDynamics:
+    """A nonzero run bound to QuTiP dynamics and its output frame state."""
+
+    hamiltonian: Any
+    collapse_operators: tuple[Any, ...]
+    output_frames: dict[Any, float]
 
 
 class SCQutipAdapter:
@@ -120,14 +144,77 @@ class SCQutipAdapter:
         enabled: tuple[bool, ...],
     ) -> None:
         """Evolve one placed region and commit its enabled post-frame actions."""
+        bound = self._bind_run(
+            run,
+            enabled=enabled,
+            input_time=context.time,
+            input_frames=context.frame_angles,
+        )
+        state = context.state
+        if isinstance(bound, _BoundDynamics):
+            result = mesolve(
+                bound.hamiltonian,
+                state,
+                [context.time, run.end_time],
+                c_ops=bound.collapse_operators,
+                options=_SOLVER_OPTIONS,
+            )
+            state = result.states[-1]
+
+        context.state = state
+        context.frame_angles.clear()
+        context.frame_angles.update(bound.output_frames)
+
+    def propagator(
+        self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True
+    ) -> Any:
+        """Return the coherent full-model propagator for one scheduled run.
+
+        Intermediate frame updates always affect later pulse binding.
+        ``apply_final_frame`` controls only whether the output frame ledger is
+        composed onto the returned Hamiltonian-generated propagator.
+        """
+        if abs(run.start_time) > _EPSILON:
+            raise BackendValidationError("a propagator run must start at time zero")
+        bound = self._bind_run(
+            run,
+            enabled=(True,) * len(run.blocks),
+            input_time=0.0,
+            input_frames={},
+        )
+        if isinstance(bound, _BoundFrames):
+            unitary = tensor(*(qeye(dimension) for dimension in self._dims))
+        elif bound.collapse_operators:
+            raise BackendValidationError(
+                "propagator is unavailable for dissipative pulse evolution"
+            )
+        else:
+            unitary = qutip_propagator(
+                bound.hamiltonian,
+                run.end_time,
+                options=_SOLVER_OPTIONS,
+            )
+        if not apply_final_frame:
+            return unitary
+        return self._frame_unitary(bound.output_frames) * unitary
+
+    def _bind_run(
+        self,
+        run: _ScheduledPulseRun,
+        *,
+        enabled: tuple[bool, ...],
+        input_time: float,
+        input_frames: dict[Any, float],
+    ) -> _BoundFrames | _BoundDynamics:
+        """Bind a run as either frame-only or nonzero QuTiP dynamics."""
         if len(enabled) != len(run.blocks):
             raise BackendValidationError(
                 "pulse enable flags must align with the placed run"
             )
-        if run.start_time < context.time - _EPSILON:
+        if run.start_time < input_time - _EPSILON:
             raise BackendValidationError("placed pulse runs must be time ordered")
 
-        frames = dict(context.frame_angles)
+        frames = dict(input_frames)
         pulses: list[Pulse] = []
         noise_pulses: list[Pulse] = []
         pending_actions: list[tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]] = (
@@ -150,9 +237,7 @@ class SCQutipAdapter:
             # nonzero-probability one was already rejected at lowering.
             if block.noise and block.duration > 0.0:
                 noise_pulses.append(
-                    self._bind_block_noise(
-                        block, start_time, context.time, run.end_time
-                    )
+                    self._bind_block_noise(block, start_time, input_time, run.end_time)
                 )
             pending_actions.append(
                 (
@@ -162,36 +247,40 @@ class SCQutipAdapter:
                 )
             )
 
-        state = context.state
-        if run.end_time > context.time + _EPSILON:
-            hamiltonian = self._drift.get_ideal_qobjevo(self._dims)
-            for pulse in pulses:
-                contribution, collapse = pulse.get_noisy_qobjevo(self._dims)
-                if collapse:
-                    raise BackendValidationError(
-                        "ideal pulse binding unexpectedly produced collapse terms"
-                    )
-                hamiltonian += contribution
-            local_collapse: list[Any] = []
-            for noise_pulse in noise_pulses:
-                _zero, collapse = noise_pulse.get_noisy_qobjevo(self._dims)
-                local_collapse.extend(collapse)
-            result = mesolve(
-                hamiltonian,
-                state,
-                [context.time, run.end_time],
-                c_ops=list(self._collapse_operators) + local_collapse,
-                options=_SOLVER_OPTIONS,
-            )
-            state = result.states[-1]
-
         for _end, _source, actions in sorted(
             pending_actions, key=lambda event: event[:2]
         ):
             self._apply_actions(actions, frames)
-        context.state = state
-        context.frame_angles.clear()
-        context.frame_angles.update(frames)
+        if run.end_time <= input_time + _EPSILON:
+            return _BoundFrames(output_frames=frames)
+
+        hamiltonian = self._drift.get_ideal_qobjevo(self._dims)
+        for pulse in pulses:
+            contribution, collapse = pulse.get_noisy_qobjevo(self._dims)
+            if collapse:
+                raise BackendValidationError(
+                    "ideal pulse binding unexpectedly produced collapse terms"
+                )
+            hamiltonian += contribution
+        local_collapse: list[Any] = []
+        for noise_pulse in noise_pulses:
+            _zero, collapse = noise_pulse.get_noisy_qobjevo(self._dims)
+            local_collapse.extend(collapse)
+
+        return _BoundDynamics(
+            hamiltonian=hamiltonian,
+            collapse_operators=tuple(self._collapse_operators) + tuple(local_collapse),
+            output_frames=frames,
+        )
+
+    def _frame_unitary(self, frames: dict[Any, float]) -> Any:
+        """Build the full-model basis transform for terminal frame angles."""
+        factors = []
+        levels = np.arange(self._model.physical_dimension)
+        for subsystem_id in self._model.subsystem_ids:
+            angle = frames.get(self._model.frame(subsystem_id), 0.0)
+            factors.append(Qobj(np.diag(np.exp(1j * angle * levels))))
+        return tensor(*factors)
 
     def execute_boundary(
         self, step: MeasurementStep | ResetStep, context: _ShotContext
@@ -246,17 +335,6 @@ class SCQutipAdapter:
                 / 2
             )
             drift.add_drift(local, ordinal)
-        for coupling in self._model.couplings:
-            if coupling.residual_exchange_ghz == 0.0:
-                continue
-            exchange = tensor(
-                self._local_annihilation.dag(), self._local_annihilation
-            ) + tensor(self._local_annihilation, self._local_annihilation.dag())
-            targets = [
-                self._model.subsystem_ids.index(identifier)
-                for identifier in coupling.subsystem_ids
-            ]
-            drift.add_drift(2 * pi * coupling.residual_exchange_ghz * exchange, targets)
         return drift
 
     def _build_always_on_noise(
@@ -401,7 +479,7 @@ class SCQutipAdapter:
         # `bind_control` above already rejected any kind other than
         # drive/detuning/exchange, so only "drive" remains here.
         phase = np.exp(
-            1j * frames.get(self._model.frame(self._model.subsystem_ids[ordinal]), 0.0)
+            -1j * frames.get(self._model.frame(self._model.subsystem_ids[ordinal]), 0.0)
         )
         envelope = phase * coefficients
         x_operator = self._local_annihilation + self._local_annihilation.dag()

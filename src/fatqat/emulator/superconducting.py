@@ -186,7 +186,14 @@ class PhysicsModelSpec:
 
 @dataclass(frozen=True)
 class Transmon:
-    """One model-local fixed-qutrit transmon's durable numerical facts."""
+    """One model-local fixed-qutrit transmon's durable numerical facts.
+
+    ``frequency_ghz`` is the nominal 0-to-1 transition frequency and defines
+    this subsystem's implicit resonant rotating-frame carrier. The current
+    solver uses ``Delta_i = 0``, so changing this value alone does not
+    numerically change simulated dynamics. A future frame-explicit model may
+    consume it as a Hamiltonian or control parameter under a new model version.
+    """
 
     id: str
     frequency_ghz: float
@@ -195,11 +202,10 @@ class Transmon:
 
 @dataclass(frozen=True)
 class Coupling:
-    """One undirected, effective-frame exchange edge."""
+    """One undirected edge supporting controlled exchange operations."""
 
     id: str
     subsystem_ids: tuple[str, str]
-    residual_exchange_ghz: float
 
 
 @dataclass(frozen=True)
@@ -448,9 +454,7 @@ class SCTransmonExchangeBuilder:
     @staticmethod
     def _validate_units(value: Any) -> None:
         units = _mapping(value, "physics model.parameters.units")
-        _exact_keys(
-            units, {"subsystems", "couplings"}, "physics model.parameters.units"
-        )
+        _exact_keys(units, {"subsystems"}, "physics model.parameters.units")
         subsystem_units = _mapping(
             units["subsystems"], "physics model.parameters.units.subsystems"
         )
@@ -459,14 +463,6 @@ class SCTransmonExchangeBuilder:
             {"frequency", "anharmonicity"},
             "physics model.parameters.units.subsystems",
         )
-        coupling_units = _mapping(
-            units["couplings"], "physics model.parameters.units.couplings"
-        )
-        _exact_keys(
-            coupling_units,
-            {"residual_exchange"},
-            "physics model.parameters.units.couplings",
-        )
         if (
             subsystem_units["frequency"] != "GHz"
             or subsystem_units["anharmonicity"] != "GHz"
@@ -474,11 +470,6 @@ class SCTransmonExchangeBuilder:
             _fail(
                 "physics model.parameters.units.subsystems",
                 "frequency and anharmonicity must use GHz",
-            )
-        if coupling_units["residual_exchange"] != "GHz":
-            _fail(
-                "physics model.parameters.units.couplings.residual_exchange",
-                "must use GHz",
             )
 
     @staticmethod
@@ -515,14 +506,7 @@ class SCTransmonExchangeBuilder:
         for ordinal, raw in enumerate(value):
             path = f"physics model.parameters.couplings[{ordinal}]"
             item = _mapping(raw, path)
-            if set(item) - {"id", "subsystems", "residual_exchange"} or {
-                "id",
-                "subsystems",
-            } - set(item):
-                _fail(
-                    path,
-                    "must contain id and subsystems, with optional residual_exchange",
-                )
+            _exact_keys(item, {"id", "subsystems"}, path)
             identifier = _string(item["id"], f"{path}.id")
             if identifier in ids:
                 _fail(f"{path}.id", f"duplicate coupling id {identifier!r}")
@@ -543,10 +527,7 @@ class SCTransmonExchangeBuilder:
             if edge in edges:
                 _fail(f"{path}.subsystems", "duplicates an undirected coupling edge")
             edges.add(edge)
-            residual = _number(
-                item.get("residual_exchange", 0.0), f"{path}.residual_exchange"
-            )
-            couplings.append(Coupling(identifier, (first, second), residual))
+            couplings.append(Coupling(identifier, (first, second)))
         return tuple(couplings)
 
 
