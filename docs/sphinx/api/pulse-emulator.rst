@@ -79,13 +79,11 @@ configuration and state semantics:
      - ``"ASAP"``
      - ``"ASAP"`` or ``"ALAP"`` lightweight placement within each continuous
        region. Both preserve dependencies and claimed-resource exclusion.
-   * - ``parallel_mode``
-     - ``"auto"``
-     - ``"auto"`` normalizes to ``"serial"``. No other mode is supported in
-       v0.1.
-   * - ``max_workers``
-     - ``None``
-     - May be ``None`` or ``1`` in v0.1.
+
+These are the only two keys. The matrix backend's ``parallel_mode``,
+``max_workers``, and ``numba_parallel`` are rejected here rather than
+accepted and ignored: pulse execution is a single serial solver call, with no
+engine those settings could steer.
 
 .. list-table:: ``result_config`` keys
    :header-rows: 1

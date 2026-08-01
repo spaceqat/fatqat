@@ -157,8 +157,10 @@ blocks as early as their program dependencies and claimed resources permit.
 makespan. Both modes preserve dependency order and resource exclusivity; they
 are simulation controls, not a public hardware schedule artifact.
 
-Pulse execution is serial in v0.1 (`parallel_mode="auto"` normalizes to
-serial). Seeded runs are reproducible under that policy.
+Pulse execution is serial in v0.1, so the emulator takes no parallelism
+settings at all — the matrix backend's `parallel_mode`, `max_workers`, and
+`numba_parallel` are rejected rather than silently ignored. Seeded runs are
+reproducible.
 
 ## Noise support
 

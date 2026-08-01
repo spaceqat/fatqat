@@ -25,10 +25,15 @@ from ..noise.lindblad import resolve_lindblad_operators
 from ..operations import BarrierGate, Measurement, ResetGate
 from ..program import AppliedOperation, Program
 from ..resource_layout import ResourceLayout
-from ..result import Result, counts_dict_from_arrays, reduce_to_counts
+from ..result import (
+    Result,
+    _ResultConfig,
+    counts_dict_from_arrays,
+    reduce_to_counts,
+)
 from . import planning
 from .engine import PulseEngine
-from .engine_contract import PulseResultConfig, PulseSimulationConfig
+from .engine_contract import _EmulatorConfig
 from .planning import PulsePlanFacts, PulsePlanStep
 from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
 from .pulse import PulseImplementationMap
@@ -242,13 +247,14 @@ class Emulator:
     ) -> Job:
         """Validate, execute, and package one pulse-program run.
 
-        ``simulation_config`` accepts ``seed``, ``parallel_mode``,
-        ``max_workers``, and ``schedule_mode``. Pulse execution is serial in
-        v0.1, so ``parallel_mode`` may be ``"auto"`` or ``"serial"`` and
-        ``max_workers`` may be ``None`` or ``1``. ``schedule_mode`` is
-        ``"ASAP"`` by default and may be ``"ALAP"``; both are lightweight
-        placement policies over dependencies and claimed physical resources,
-        not compiler-produced hardware schedules.
+        ``simulation_config`` accepts ``seed`` and ``schedule_mode``, the only
+        two controls pulse execution honors. ``schedule_mode`` is ``"ASAP"``
+        by default and may be ``"ALAP"``; both are lightweight placement
+        policies over dependencies and claimed physical resources, not
+        compiler-produced hardware schedules. The matrix backend's
+        ``parallel_mode`` / ``max_workers`` / ``numba_parallel`` are rejected
+        here: pulse execution is one serial solver call with no engine those
+        settings could steer.
 
         ``result_config`` accepts ``counts`` and ``final_state``. When omitted,
         counts default on for programs containing measurement and the final
@@ -282,13 +288,13 @@ class Emulator:
         """
         simulation = _normalize_config(
             simulation_config,
-            PulseSimulationConfig,
+            _EmulatorConfig,
             "simulation_config",
             backend_name=type(self).__name__,
         )
         result = _normalize_config(
             result_config,
-            PulseResultConfig,
+            _ResultConfig,
             "result_config",
             backend_name=type(self).__name__,
         )
@@ -383,7 +389,7 @@ class Emulator:
             raise BackendExecutionError("Pulse propagator construction failed") from exc
 
     def _validate(
-        self, config: PulseResultConfig, shots: int, facts: PulsePlanFacts
+        self, config: _ResultConfig, shots: int, facts: PulsePlanFacts
     ) -> _DensityMatrixResultRequest:
         """Resolve default output requests and validate their shot constraints."""
         counts = config.counts if config.counts is not None else facts.has_measurement
@@ -410,8 +416,8 @@ class Emulator:
         self,
         plan: list[PulsePlanStep],
         request: _DensityMatrixResultRequest,
-        simulation: PulseSimulationConfig,
-        result_config: PulseResultConfig,
+        simulation: _EmulatorConfig,
+        result_config: _ResultConfig,
         shots: int,
         allocation: _EngineIndexAllocation,
         engine_index_to_model_ordinal: tuple[int, ...],
