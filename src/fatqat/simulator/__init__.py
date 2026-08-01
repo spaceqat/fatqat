@@ -5,7 +5,7 @@ or ``Simulator(method="density_matrix")`` selects the state representation. The
 `AtomGridSimulator` and `SCQubit*Simulator` classes specialize it with a fixed
 device topology and native gate set.
 
-The numerical execution layer lives in :mod:`fatqat.simulator.engine`
+The numerical execution layer lives in :mod:`fatqat.simulator._engine`
 (`MatrixEngine` and its NumPy/Numba implementations); a `Simulator` owns one
 engine instance and drives it. Pulse-level emulation is the sibling package
 :mod:`fatqat.emulator`.

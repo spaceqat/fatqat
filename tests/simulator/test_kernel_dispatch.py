@@ -11,7 +11,7 @@ from fatqat.implementation import default_matrix_implementation_map
 numba = pytest.importorskip("numba")
 
 # pylint: disable=wrong-import-position  # these need the importorskip above
-from fatqat.simulator.engine.nb import (
+from fatqat.simulator._engine.nb import (
     _classify_matrix,
     _DENSE,
     _fuse_gate_channels,
@@ -19,7 +19,7 @@ from fatqat.simulator.engine.nb import (
     _superop_csr,
     NumbaSVEngine,
 )
-from fatqat.simulator.engine.np import NumpySVEngine
+from fatqat.simulator._engine.np import NumpySVEngine
 from fatqat.noise import Depolarizing
 from fatqat.noise.catalog import depolarizing_rule
 from fatqat.noise.nb import _kraus_stack, _kraus_superop_kernel
@@ -262,7 +262,7 @@ def test_plan_chunks_floor_scales_with_thread_count():
     # The parallel floor is per-thread (`_MAX_THREADS * _GRAIN_TO_THREAD`), so a
     # state stays serial just below it and splits across threads at it - the
     # absolute crossover tracks the core count, not a fixed size.
-    from fatqat.simulator.engine.nb import (
+    from fatqat.simulator._engine.nb import (
         _GRAIN_TO_THREAD,
         _MAX_THREADS,
         _MIN_SIZE_TO_THREAD,
@@ -279,7 +279,7 @@ def test_coset_chunking_is_bit_identical_across_chunk_counts():
     # The floor only ever changes the chunk COUNT; disjoint cosets make the
     # result independent of it, which is why moving the floor never changes an
     # amplitude. A dense gate applied as one chunk equals it applied as many.
-    from fatqat.simulator.engine.nb import (
+    from fatqat.simulator._engine.nb import (
         _apply_resolved_parallel,
         _apply_resolved_serial,
         _compute_apply_plan,

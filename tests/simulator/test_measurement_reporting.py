@@ -5,7 +5,7 @@ import numpy as np
 from fatqat._backends.engine_contract import _StateVectorResultRequest
 from fatqat._backends.steps import ApplyMatrixStep, MeasurementStep
 from fatqat.implementation.matrices import shift_matrix
-from fatqat.simulator.engine.np import NumpySVEngine
+from fatqat.simulator._engine.np import NumpySVEngine
 
 
 def test_reported_digit_mapping_precedes_confusion_and_feedforward():

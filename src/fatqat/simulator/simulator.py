@@ -66,7 +66,8 @@ from ..result import (
     _ResultConfig,
     counts_dict_from_arrays,
 )
-from .engine import NumpyDMEngine, NumpySVEngine, MatrixEngine
+from ._engine.base import MatrixEngine
+from ._engine.np import NumpyDMEngine, NumpySVEngine
 from .._backends.backend_utils import (
     _LoweringContext,
     _PlanFacts,
@@ -254,7 +255,7 @@ class Simulator:
             try:
                 # Lazy: numba is an optional dependency, and fatqat.simulator's
                 # package __init__ deliberately never imports the nb module.
-                from .engine.nb import NumbaDMEngine, NumbaSVEngine
+                from ._engine.nb import NumbaDMEngine, NumbaSVEngine
             except ImportError as exc:
                 raise BackendValidationError(
                     "runtime='numba' requires the optional numba dependency "

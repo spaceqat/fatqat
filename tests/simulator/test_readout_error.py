@@ -20,7 +20,7 @@ from fatqat._backends.steps import MeasurementStep
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError
 from fatqat.noise import NoiseModel
-from fatqat.simulator.engine.np import NumpyDMEngine, NumpySVEngine
+from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
 
 _ALWAYS_ONE = np.array([[0.0, 0.0], [1.0, 1.0]])  # report 1 whatever is true
 _FLIP_30 = np.array([[0.7, 0.0], [0.3, 1.0]])  # P(report 1 | true 0) = 0.3
@@ -226,7 +226,7 @@ def test_numba_fused_kernel_applies_readout_error():
     # error was silently dropped under runtime="numba" - X then always-flip
     # readout reported "1" instead of "0".
     pytest.importorskip("numba")
-    from fatqat.simulator.engine.nb import _plan_compilable
+    from fatqat.simulator._engine.nb import _plan_compilable
 
     always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
     noise = _readout_model(always_flip)

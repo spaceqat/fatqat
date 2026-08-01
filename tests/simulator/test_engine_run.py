@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from fatqat._backends.engine_contract import _EngineConfig, _StateVectorResultRequest
-from fatqat.simulator.engine.np import NumpySVEngine
+from fatqat.simulator._engine.np import NumpySVEngine
 from fatqat._backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep
 
 

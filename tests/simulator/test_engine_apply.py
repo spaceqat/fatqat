@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from fatqat.simulator.engine.np import NumpySVEngine
+from fatqat.simulator._engine.np import NumpySVEngine
 from fatqat._backends.steps import ApplyMatrixStep
 from fatqat.implementation.matrices import shift_matrix
 

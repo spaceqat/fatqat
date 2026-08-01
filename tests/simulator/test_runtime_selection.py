@@ -5,7 +5,7 @@ import pytest
 import fatqat as fq
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError
-from fatqat.simulator.engine.np import NumpyDMEngine, NumpySVEngine
+from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
 
 
 def _bell_program():
@@ -23,7 +23,7 @@ def test_default_runtime_is_numpy():
 
 def test_numba_runtime_selects_the_numba_engine():
     pytest.importorskip("numba")
-    from fatqat.simulator.engine.nb import NumbaSVEngine
+    from fatqat.simulator._engine.nb import NumbaSVEngine
 
     backend = Simulator(method="SV", runtime="numba")
     assert type(backend._engine) is NumbaSVEngine
@@ -39,7 +39,7 @@ def test_unknown_runtime_rejected_at_construction():
 
 def test_density_matrix_numba_selects_the_numba_dm_engine():
     pytest.importorskip("numba")
-    from fatqat.simulator.engine.nb import NumbaDMEngine
+    from fatqat.simulator._engine.nb import NumbaDMEngine
 
     backend = Simulator(method="DM", runtime="numba")
     assert type(backend._engine) is NumbaDMEngine
@@ -120,7 +120,7 @@ def test_numba_parallel_confines_the_pool_for_the_whole_run(
     # touches sees the pool - the fused shot loop and the gate-level coset
     # chunks alike, on either representation.
     numba = pytest.importorskip("numba")
-    from fatqat.simulator.engine.np import _NumpyMatrixEngine
+    from fatqat.simulator._engine.np import _NumpyMatrixEngine
 
     observed = []
     original = _NumpyMatrixEngine._analyze_plan

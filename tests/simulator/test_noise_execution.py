@@ -15,7 +15,7 @@ from fatqat.noise import (
     PhaseDamping,
     default_channel_implementation_map,
 )
-from fatqat.simulator.engine.np import NumpyDMEngine, NumpySVEngine
+from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
 
 
 def _total_variation(counts_a, counts_b, shots):
@@ -422,7 +422,7 @@ def test_numba_fused_kernel_compiles_channel_plans_matching_numpy():
     # quantum-jump branches from the reduced density matrix while NumPy norms
     # each branch - same distribution, counts agree statistically not bit-wise.
     pytest.importorskip("numba")
-    from fatqat.simulator.engine.nb import NumbaSVEngine, _plan_compilable
+    from fatqat.simulator._engine.nb import NumbaSVEngine, _plan_compilable
 
     noise = NoiseModel()
     noise.add_channel(Depolarizing(p=0.3), operation=fq.ops.X)

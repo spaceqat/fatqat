@@ -10,7 +10,7 @@ from fatqat._backends.steps import (
 )
 from fatqat.simulator import Simulator
 from fatqat.program import Program
-from fatqat.simulator.engine.np import NumpySVEngine
+from fatqat.simulator._engine.np import NumpySVEngine
 
 
 def _is_dynamic(plan):

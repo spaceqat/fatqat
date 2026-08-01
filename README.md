@@ -172,7 +172,7 @@ this yet — it's for local/internal use.
 
 - `src/fatqat/` — package source: `Program`, `operations` (gates,
   measurement, reset, barrier), `simulator` (the gate-level `Simulator`, the
-  fake devices, and `simulator.engine` — the NumPy and Numba `MatrixEngine`
+  fake devices, and `simulator._engine` — the NumPy and Numba `MatrixEngine`
   implementations that own the state), `emulator` (the pulse-level `Emulator`
   and its `PulseEngine`), `_backends` (private infrastructure both families
   share: resolved execution steps, the backend/engine contract, lowering

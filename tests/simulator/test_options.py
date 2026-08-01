@@ -4,7 +4,7 @@ import pytest
 import fatqat as fq
 from fatqat.simulator import Simulator
 from fatqat._backends.engine_contract import _EngineConfig, _StateVectorResultRequest
-from fatqat.simulator.engine.parallel import _planned_workers
+from fatqat.simulator._engine.parallel import _planned_workers
 
 
 def test_run_accepts_known_simulation_config_without_mutating_backend():

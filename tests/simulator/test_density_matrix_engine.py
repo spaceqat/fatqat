@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from fatqat.simulator.engine.np import NumpyDMEngine, NumpySVEngine
+from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
 from fatqat._backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
