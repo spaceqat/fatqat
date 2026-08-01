@@ -480,7 +480,7 @@ def test_lowering_uses_resource_layout_device_operands_and_engine_index_allocati
     # label 0; atoms[3] is engine index 3, device label 5 (row 1, col 0 ->
     # 1*5+0). The native CZ map only legalizes the *device*-label edge
     # (0, 5), not the engine-index pair (0, 3), so lowering only succeeds by
-    # looking up `ImplementationMap` with device operands sourced from
+    # looking up `MatrixImplementationMap` with device operands sourced from
     # `ResourceLayout`. The resulting `ApplyMatrixStep`, however, must carry
     # the *engine* indices (0, 3) from `_EngineIndexAllocation` - the private
     # lowering context keeps the two identities separate end to end.

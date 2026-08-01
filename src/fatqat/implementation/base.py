@@ -51,7 +51,7 @@ class MatrixImplementation:
     A rule receives the bare :py:class:`~fatqat.operations.Operation` instance that was applied (e.g. an
     `RX(0.3)` value) plus the `targets` :py:class:`~fatqat.registers.RegisterRef` tuple by keyword, and
     returns its local matrix. Most callers never need to subclass this
-    directly: `ImplementationMap.add` auto-wraps a plain
+    directly: `MatrixImplementationMap.add` auto-wraps a plain
     `np.ndarray` (as `FixedMatrix`), a `_DimMatrix`, or a bare
     callable. Subclass and override `__call__` for a stateful or configured
     implementation.
@@ -241,7 +241,7 @@ def _wrap_rule(
     return _CallableMatrixImplementation(rule, _callable_wants_targets(rule))
 
 
-class ImplementationMap:
+class MatrixImplementationMap:
     """Resolve operation families and device operands to implementations."""
 
     def __init__(self) -> None:
@@ -378,7 +378,7 @@ class ImplementationMap:
         """
         self._registry.remove(op)
 
-    def copy(self) -> "ImplementationMap":
+    def copy(self) -> "MatrixImplementationMap":
         """Return a new map with an independent copy of this map's registrations.
 
         Rule objects themselves are shared (not deep-copied) between the
@@ -390,6 +390,6 @@ class ImplementationMap:
         one map's device-specific implementations for an operation cannot leak
         into the other map's table for that same operation.
         """
-        clone = ImplementationMap()
+        clone = MatrixImplementationMap()
         clone._registry = self._registry.copy()
         return clone

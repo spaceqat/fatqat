@@ -40,7 +40,7 @@ import numpy as np
 from .. import operations as ops
 from ..errors import BackendValidationError
 from ..implementation import (
-    ImplementationMap,
+    MatrixImplementationMap,
     MatrixImplementation,
     default_matrix_implementation_map,
 )
@@ -94,7 +94,7 @@ def _nearest_neighbor_edges(rows: int, cols: int) -> tuple[tuple[int, int], ...]
 
 
 def _require_rule(
-    implementation_map: ImplementationMap,
+    implementation_map: MatrixImplementationMap,
     op: Operation,
 ) -> MatrixImplementation:
     rule = implementation_map.implementation_for(op)
@@ -115,7 +115,7 @@ class _SCQubitSimulator(SimulatorBackend):
 
     def __init__(
         self,
-        implementation_map: ImplementationMap,
+        implementation_map: MatrixImplementationMap,
         *,
         rows: int,
         cols: int,
@@ -135,7 +135,7 @@ class _SCQubitSimulator(SimulatorBackend):
         )
 
     @property
-    def implementation_map(self) -> ImplementationMap:
+    def implementation_map(self) -> MatrixImplementationMap:
         """Return a copy of the compiler-facing device-aware implementation map.
 
         A compiler targeting this device introspects the map rather than
@@ -216,7 +216,7 @@ class _SCQubitSimulator(SimulatorBackend):
 
 def fake_superconducting_ibm_implementation_map(
     rows: int = DEFAULT_ROWS, cols: int = DEFAULT_COLS
-) -> ImplementationMap:
+) -> MatrixImplementationMap:
     """Build the native gate map for a `rows x cols` fake IBM-style superconducting backend.
 
     `X`, `SX`, and `RZ` are legal on any qubit label (registered uniformly
@@ -232,7 +232,7 @@ def fake_superconducting_ibm_implementation_map(
     sx_rule = _require_rule(defaults, ops.SX)
     cz_rule = _require_rule(defaults, ops.CZ)
 
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, x_rule)
     m.add(ops.RZ, rz_rule)
     m.add(ops.SX, sx_rule)
@@ -357,7 +357,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
 
 def fake_superconducting_google_implementation_map(
     rows: int = DEFAULT_ROWS, cols: int = DEFAULT_COLS
-) -> ImplementationMap:
+) -> MatrixImplementationMap:
     """Build the native gate map for a `rows x cols` fake Google-style superconducting backend.
 
     `RX`, `RY`, and `RZ` are legal on any qubit label (registered uniformly
@@ -374,7 +374,7 @@ def fake_superconducting_google_implementation_map(
     iswap_rule = _require_rule(defaults, ops.iSwap)
     cz_rule = _require_rule(defaults, ops.CZ)
 
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.RX, rx_rule)
     m.add(ops.RY, ry_rule)
     m.add(ops.RZ, rz_rule)

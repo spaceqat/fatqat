@@ -66,7 +66,7 @@ example supplies a matrix for ``H`` and then runs a one-operation program:
    import fatqat as fq
    import fatqat.operations as op
 
-   rules = fq.implementation.ImplementationMap()
+   rules = fq.implementation.MatrixImplementationMap()
    rules.add(
        op.H,
        np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2),
@@ -85,17 +85,17 @@ To retain the normal catalog and change just one rule, start from
 :py:func:`~fatqat.implementation.default_matrix_implementation_map`. Use
 ``remove(op)`` before registering a replacement for an existing rule.
 
-:py:meth:`~fatqat.implementation.ImplementationMap.add` (``op, implementation, *, device_operands=None``)
+:py:meth:`~fatqat.implementation.MatrixImplementationMap.add` (``op, implementation, *, device_operands=None``)
 accepts an operation instance or class. ``implementation`` may be a
 :py:class:`~fatqat.implementation.MatrixImplementation`, a NumPy array (wrapped as :py:class:`~fatqat.implementation.FixedMatrix`), or a
 callable that returns a matrix for the applied operation. A callable may
 accept ``op`` alone or ``op, targets``; use :py:class:`~fatqat.implementation.MatrixImplementation` and
 override ``__call__`` when the rule is stateful or configured.
 
-Use :py:meth:`~fatqat.implementation.ImplementationMap.supports` to check whether any rule exists and
-:py:meth:`~fatqat.implementation.ImplementationMap.implementation_for` (``op, device_operands=...``) to inspect the selected
-rule. :py:meth:`~fatqat.implementation.ImplementationMap.device_operands_for` lists a finite set of explicit
-device-target keys, and :py:meth:`~fatqat.implementation.ImplementationMap.copy` creates an independent registry of
+Use :py:meth:`~fatqat.implementation.MatrixImplementationMap.supports` to check whether any rule exists and
+:py:meth:`~fatqat.implementation.MatrixImplementationMap.implementation_for` (``op, device_operands=...``) to inspect the selected
+rule. :py:meth:`~fatqat.implementation.MatrixImplementationMap.device_operands_for` lists a finite set of explicit
+device-target keys, and :py:meth:`~fatqat.implementation.MatrixImplementationMap.copy` creates an independent registry of
 registrations.
 
 A rule with no ``device_operands`` applies uniformly to that operation
@@ -111,7 +111,7 @@ Detailed implementation-map reference
 
 .. autofunction:: fatqat.implementation.default_matrix_implementation_map
 
-.. autoclass:: fatqat.implementation.ImplementationMap
+.. autoclass:: fatqat.implementation.MatrixImplementationMap
    :members:
    :show-inheritance:
 
@@ -134,7 +134,7 @@ counterpart to the matrix implementation map above:
 
 .. code-block:: text
 
-   SimulatorBackend: Operation -> ImplementationMap      -> matrix          -> ApplyMatrixStep
+   SimulatorBackend: Operation -> MatrixImplementationMap      -> matrix          -> ApplyMatrixStep
    PulseBackend:     Operation -> PulseImplementationMap -> PulseDefinition -> (lowered) pulse block
 
 Replacing or adding a gate realization - for example a custom ``CZ`` -
@@ -211,7 +211,7 @@ Registration modes
 
 :py:meth:`~fatqat.backends.PulseImplementationMap.add` (``op, implementation,
 *, device_operands=None``) follows the same two-mode policy as
-:py:meth:`~fatqat.implementation.ImplementationMap.add`: an operation
+:py:meth:`~fatqat.implementation.MatrixImplementationMap.add`: an operation
 family has either one unconstrained rule, applying to every legal target of
 the correct arity, or a finite set of rules keyed by ordered
 ``device_operands`` - never both for the same family. Replacing the default

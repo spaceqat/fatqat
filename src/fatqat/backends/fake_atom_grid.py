@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING
 from .. import operations as ops
 from ..errors import BackendValidationError
 from ..implementation import (
-    ImplementationMap,
+    MatrixImplementationMap,
     default_matrix_implementation_map,
 )
 from ..noise import NoiseModel
@@ -91,7 +91,7 @@ def _nearest_neighbor_edges(rows: int, cols: int) -> tuple[tuple[int, int], ...]
     return tuple(edges)
 
 
-def fake_atom_grid_implementation_map(rows: int, cols: int) -> ImplementationMap:
+def fake_atom_grid_implementation_map(rows: int, cols: int) -> MatrixImplementationMap:
     """Build the native gate map for a `rows x cols` fake atom-grid backend.
 
     `RX`, `RY`, `RZ` are legal on any device label (registered uniformly via
@@ -107,7 +107,7 @@ def fake_atom_grid_implementation_map(rows: int, cols: int) -> ImplementationMap
     rz_rule = defaults.implementation_for(ops.RZ)
     cz_rule = defaults.implementation_for(ops.CZ)
 
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.RX, rx_rule)
     m.add(ops.RY, ry_rule)
     m.add(ops.RZ, rz_rule)
@@ -206,7 +206,7 @@ class AtomGridSimulator(SimulatorBackend):
         )
 
     @property
-    def implementation_map(self) -> ImplementationMap:
+    def implementation_map(self) -> MatrixImplementationMap:
         """Return a copy of the compiler-facing device-aware implementation map.
 
         Examples:

@@ -1,7 +1,7 @@
 """Private operation-key/device-operand registry mechanics shared by every
 implementation-map family (matrix, pulse, ...).
 
-Kept private and generic over each family's own rule type: `ImplementationMap`
+Kept private and generic over each family's own rule type: `MatrixImplementationMap`
 (`base.py`) composes `_OperationRuleRegistry` for `MatrixImplementation`
 rules; the pulse implementation map composes it for pulse rules. Neither
 family's rule wrapping, public documentation, or error wording lives here -
@@ -87,7 +87,7 @@ class _OperationRuleRegistry(Generic[T]):
 
     An operation family uses at most one mode: `add_unconstrained` and
     `add_device_operands` are mutually exclusive per operation family, the
-    same two-mode policy `ImplementationMap` has always documented.
+    same two-mode policy `MatrixImplementationMap` has always documented.
 
     Additions receive a rule factory rather than an already-wrapped rule so
     operation arity, registration mode, and device-operand arity are all

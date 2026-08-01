@@ -5,7 +5,10 @@ import numpy as np
 import fatqat as fq
 from fatqat.backends import ApplyMatrixStep, SimulatorBackend
 from fatqat.backends.steps import BuiltinKernelKey
-from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
+from fatqat.implementation import (
+    MatrixImplementationMap,
+    default_matrix_implementation_map,
+)
 
 
 def _lowered_gate_steps(backend, program):
@@ -57,7 +60,7 @@ def test_custom_rule_lowers_with_no_key():
 
 
 def test_device_specific_rule_lowers_with_no_key():
-    device_map = ImplementationMap()
+    device_map = MatrixImplementationMap()
     device_map.add(
         fq.ops.CZ,
         np.diag([1, 1, 1, -1]).astype(complex),

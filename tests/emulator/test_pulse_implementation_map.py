@@ -46,7 +46,7 @@ def _dummy_rule(operation, *, targets, model, calibration):
     return _definition(model)
 
 
-# --- registration mechanics: mirrors ImplementationMap's own coverage -------
+# --- registration mechanics: mirrors MatrixImplementationMap's own coverage -------
 
 
 def test_add_accepts_operation_instance_and_class_key():

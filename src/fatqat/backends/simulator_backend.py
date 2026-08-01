@@ -48,7 +48,7 @@ from ..errors import (
     NoMeasurementWarning,
 )
 from .._engine_index_allocation import _EngineIndexAllocation
-from ..implementation import ImplementationMap, default_matrix_implementation_map
+from ..implementation import MatrixImplementationMap, default_matrix_implementation_map
 from ..job import Job
 from ..noise import (
     ChannelImplementationMap,
@@ -172,7 +172,7 @@ class SimulatorBackend:
         method: str = "statevector",
         *,
         runtime: str = "numpy",
-        implementation_map: ImplementationMap | None = None,
+        implementation_map: MatrixImplementationMap | None = None,
         noise: NoiseModel | None = None,
         channel_implementation_map: ChannelImplementationMap | None = None,
     ) -> None:
@@ -609,7 +609,7 @@ class SimulatorBackend:
 
         The caller supplies a scalar-only instruction stream and the run's
         private lowering context. `context.resource_layout` is used for
-        `ImplementationMap` lookup (`device_operands`) and for
+        `MatrixImplementationMap` lookup (`device_operands`) and for
         `NoiseModel.channels_for()` physical-selector matching (against the
         occurrence's logical target refs); `context.engine_index_allocation` is
         used for every execution index/dimension - `ApplyMatrixStep`/

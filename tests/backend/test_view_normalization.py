@@ -18,7 +18,10 @@ from fatqat import operations as ops
 from fatqat.backends import ApplyMatrixStep, SimulatorBackend
 from fatqat.backends.backend_utils import _LoweringContext
 from fatqat.backends.simulator_backend import _break_grouped_operations
-from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
+from fatqat.implementation import (
+    MatrixImplementationMap,
+    default_matrix_implementation_map,
+)
 from fatqat.program import Program
 from fatqat.registers import GridRegister
 from fatqat.resource_layout import ResourceLayout
@@ -112,7 +115,7 @@ def test_lower_uses_resource_layout_device_labels_for_lookup_and_engine_indices_
     resource_layout = ResourceLayout({q0: 99, q1: 100})
 
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
-    implementation_map = ImplementationMap()
+    implementation_map = MatrixImplementationMap()
     implementation_map.add(ops.CZ, cz_rule, device_operands=(99, 100))
     backend = SimulatorBackend(implementation_map=implementation_map)
 

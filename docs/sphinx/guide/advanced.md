@@ -44,14 +44,14 @@ explicitly (see [Gates](gates.md) for how targets are addressed).
 ## Custom implementations
 
 {py:class}`~fatqat.backends.SimulatorBackend`'s `implementation_map=`
-argument accepts a custom `ImplementationMap` to control how
+argument accepts a custom `MatrixImplementationMap` to control how
 operations are lowered to matrices, or to add support for operations the
 default map doesn't cover.
 
 ### Example: adding a new fixed-matrix gate
 
 Start from the default map — `default_matrix_implementation_map()` — rather
-than an empty `ImplementationMap()`, so the built-in gates keep
+than an empty `MatrixImplementationMap()`, so the built-in gates keep
 working, then register your gate's matrix on top of it. This example adds a
 `SqrtX` gate (the square root of `X`, i.e. applying it twice is equivalent to
 `X`) that has no built-in equivalent:
@@ -115,7 +115,7 @@ which shape you passed by inspecting the callable's signature.
 
 `fq.backends.PulseBackend` has the same customization shape for its own
 native operations, through a `PulseImplementationMap` instead of an
-`ImplementationMap`: copy `default_superconducting_pulse_implementation_map()`,
+`MatrixImplementationMap`: copy `default_superconducting_pulse_implementation_map()`,
 register a replacement rule, and construct the backend with
 `pulse_implementation_map=`. See
 [Superconducting pulse simulation](superconducting-pulse.md) for the

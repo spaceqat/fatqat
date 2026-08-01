@@ -10,7 +10,7 @@ from ..errors import (
     MatrixImplementationError,
     UnsupportedOperationError,
 )
-from ..implementation import ImplementationMap
+from ..implementation import MatrixImplementationMap
 from ..implementation._operation_registry import _select_implementation
 from ..noise import ChannelImplementationMap, NoiseModel
 from ..noise.base import _validate_kraus_shapes
@@ -84,7 +84,7 @@ def _lower_gate(
     step: AppliedOperation,
     resource_layout: ResourceLayout,
     engine_index_allocation: _EngineIndexAllocation,
-    impl_map: ImplementationMap,
+    impl_map: MatrixImplementationMap,
     noise_model: NoiseModel,
     channel_map: ChannelImplementationMap,
 ) -> list[ResolvedStep]:

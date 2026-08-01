@@ -13,7 +13,7 @@ performs the model-bound checks (channel/resource/coupling/frame binding,
 driven-control claim coverage), because only it carries a ``PhysicsModel``.
 
 ``PulseImplementationMap`` composes the same private
-``implementation._operation_registry`` mechanics ``ImplementationMap`` does,
+``implementation._operation_registry`` mechanics ``MatrixImplementationMap`` does,
 so the two families share registration semantics while keeping distinct rule
 and result types. ``_invoke_pulse_rule`` is the locked implementation-error
 policy: a rule's own ``BackendValidationError`` propagates unchanged, while
@@ -384,7 +384,7 @@ def _wrap_pulse_rule(
     `f(operation, *, targets, model, calibration)` callable (wrapped). Every
     stored rule is a `_PulseImplementation` instance, so `implementation_for()`
     always returns a uniform type regardless of how the rule was registered -
-    the pulse-map analog of `ImplementationMap`'s uniform `MatrixImplementation`
+    the pulse-map analog of `MatrixImplementationMap`'s uniform `MatrixImplementation`
     return.
 
     Unlike the matrix map, a pulse rule has exactly one accepted callable
@@ -445,7 +445,7 @@ def _invoke_pulse_rule(
 class PulseImplementationMap:
     """Resolve operation families and device operands to pulse implementations.
 
-    Structurally identical to `ImplementationMap` - same instance/class
+    Structurally identical to `MatrixImplementationMap` - same instance/class
     normalization, same mutually exclusive unconstrained-versus-device-
     specific registration policy, same copy semantics - composing the same
     shared `_OperationRuleRegistry` mechanics. It differs only in what a rule
@@ -486,7 +486,7 @@ class PulseImplementationMap:
                 arity, or if `implementation` is not callable.
             ValueError: If `device_operands`' length does not match the
                 operation's arity, or if `op` already has a registration in
-                the other mode; see `ImplementationMap.add` for why the two
+                the other mode; see `MatrixImplementationMap.add` for why the two
                 modes are mutually exclusive.
         """
         if device_operands is not None:
@@ -508,7 +508,7 @@ class PulseImplementationMap:
     ) -> bool:
         """Return whether this map has any rule for the operation family.
 
-        Same semantics as `ImplementationMap.supports`.
+        Same semantics as `MatrixImplementationMap.supports`.
         """
         if device_operands is not None:
             return (
@@ -524,7 +524,7 @@ class PulseImplementationMap:
     ) -> _PulseImplementation | None:
         """Return the pulse implementation selected for an operation.
 
-        Same lookup semantics as `ImplementationMap.implementation_for`: with
+        Same lookup semantics as `MatrixImplementationMap.implementation_for`: with
         `device_operands` omitted, only the unconstrained rule is consulted;
         with `device_operands` given, a family with device-specific rules
         consults only those, while a family with only an unconstrained rule
@@ -541,7 +541,7 @@ class PulseImplementationMap:
     ) -> frozenset[DeviceOperands]:
         """Return the finite set of device operands selected for an operation.
 
-        Same semantics as `ImplementationMap.device_operands_for`.
+        Same semantics as `MatrixImplementationMap.device_operands_for`.
         """
         return self._registry.device_operands_for(op)
 
@@ -556,7 +556,7 @@ class PulseImplementationMap:
         """Return a new map with an independent copy of this map's registrations.
 
         Rule objects are shared (not deep-copied) between the original and
-        the copy, matching `ImplementationMap.copy`. Later mutations of
+        the copy, matching `MatrixImplementationMap.copy`. Later mutations of
         either map's registrations never affect the other.
         """
         clone = PulseImplementationMap()

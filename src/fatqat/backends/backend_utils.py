@@ -41,7 +41,7 @@ class _LoweringContext:
     does not combine one program ref's device label and engine index into a
     single per-resource value (contrast the removed `BoundResource`, which
     did exactly that). Matrix lowering reads `resource_layout` to build
-    `ImplementationMap` lookup keys (`device_operands`) and reads
+    `MatrixImplementationMap` lookup keys (`device_operands`) and reads
     `engine_index_allocation` for every execution-plan index/dimension
     (`ApplyMatrixStep` targets, measurement, reset, and condition lowering).
     Both values are resolved once per run and threaded through unchanged;

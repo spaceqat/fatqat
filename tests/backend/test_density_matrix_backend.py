@@ -317,7 +317,7 @@ def test_target_aware_map_allows_registered_target_key():
     cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(
         ops.CZ
     )
-    m = fq.implementation.ImplementationMap()
+    m = fq.implementation.MatrixImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = SimulatorBackend("DM", implementation_map=m)
 
@@ -334,7 +334,7 @@ def test_target_aware_map_rejects_illegal_target_key():
     cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(
         ops.CZ
     )
-    m = fq.implementation.ImplementationMap()
+    m = fq.implementation.MatrixImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = SimulatorBackend("DM", implementation_map=m)
 
@@ -356,7 +356,7 @@ def test_target_aware_map_unsupported_family_still_raises_unsupported_operation(
     cz_rule = fq.implementation.default_matrix_implementation_map().implementation_for(
         ops.CZ
     )
-    m = fq.implementation.ImplementationMap()
+    m = fq.implementation.MatrixImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = SimulatorBackend("DM", implementation_map=m)
 
