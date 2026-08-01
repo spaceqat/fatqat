@@ -43,19 +43,19 @@ def test_resultconfig_not_exported_from_top_level():
 
 def test_error_classes_only_under_errors_namespace():
     from fatqat.errors import (
-        FatqcatError,
+        FatqatError,
         BackendValidationError,
         MatrixImplementationError,
         UnsupportedOperationError,
         NoMeasurementWarning,
     )
 
-    assert fq.errors.FatqcatError is FatqcatError
+    assert fq.errors.FatqatError is FatqatError
     assert fq.errors.BackendValidationError is BackendValidationError
     assert fq.errors.MatrixImplementationError is MatrixImplementationError
     assert fq.errors.UnsupportedOperationError is UnsupportedOperationError
     assert fq.errors.NoMeasurementWarning is NoMeasurementWarning
-    assert not hasattr(fq, "FatqcatError")
+    assert not hasattr(fq, "FatqatError")
 
 
 def test_program_measure_all_is_public_instance_method():
