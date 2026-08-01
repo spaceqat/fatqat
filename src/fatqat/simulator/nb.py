@@ -1173,6 +1173,11 @@ def _plan_compilable(plan: list) -> bool:
     to the inherited NumPy per-shot path instead, which executes every step type
     correctly at NumPy speed.
     """
+    # pylint: disable-next=fixme
+    # TODO: Compile non-identity ``reported_digit_maps`` into the measurement
+    # table and apply them after physical collapse but before readout confusion.
+    # Until then, keep routing such plans through the semantics-complete NumPy
+    # per-shot executor rather than silently reporting the physical digit.
     return all(
         isinstance(
             step, (ApplyMatrixStep, ApplyChannelStep, MeasurementStep, ResetStep)
