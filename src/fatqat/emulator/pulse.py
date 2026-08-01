@@ -32,7 +32,6 @@ from ..errors import BackendValidationError, PulseImplementationError
 from ..implementation._operation_registry import (
     DeviceOperands,
     _OperationRuleRegistry,
-    _resolve_operation_class,
 )
 from ..operations import Operation
 from .lindblad import ResolvedLindbladTerm
@@ -490,12 +489,16 @@ class PulseImplementationMap:
                 the other mode; see `ImplementationMap.add` for why the two
                 modes are mutually exclusive.
         """
-        op_cls = _resolve_operation_class(op)
-        rule = _wrap_pulse_rule(op_cls, implementation)
         if device_operands is not None:
-            self._registry.add_device_operands(op, device_operands, rule)
+            self._registry.add_device_operands(
+                op,
+                device_operands,
+                lambda op_cls: _wrap_pulse_rule(op_cls, implementation),
+            )
             return
-        self._registry.add_unconstrained(op, rule)
+        self._registry.add_unconstrained(
+            op, lambda op_cls: _wrap_pulse_rule(op_cls, implementation)
+        )
 
     def supports(
         self,

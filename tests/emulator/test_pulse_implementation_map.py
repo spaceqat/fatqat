@@ -70,6 +70,17 @@ def test_add_rejects_variable_arity_operation():
         m.add(VariableGate, _dummy_rule)
 
 
+def test_add_checks_variable_arity_before_wrapping_and_uses_neutral_wording():
+    class VariableGate(ops.Operation):
+        name = "VariableGate"
+        _num_subsystems = None
+
+    m = PulseImplementationMap()
+    with pytest.raises(TypeError, match="implementation maps only support") as excinfo:
+        m.add(VariableGate, "not a rule")
+    assert "matrix implementation map" not in str(excinfo.value)
+
+
 def test_add_rejects_non_callable_rule():
     m = PulseImplementationMap()
     with pytest.raises(TypeError, match="callable"):
@@ -98,6 +109,14 @@ def test_add_rejects_unconstrained_after_device_specific_additions():
     m.add(ops.CZ, _dummy_rule, device_operands=(0, 1))
     with pytest.raises(ValueError, match="device-specific implementations"):
         m.add(ops.CZ, _dummy_rule)
+
+
+def test_add_checks_registration_mode_before_wrapping_an_invalid_rule():
+    m = PulseImplementationMap()
+    m.add(ops.CZ, _dummy_rule, device_operands=(0, 1))
+
+    with pytest.raises(ValueError, match="device-specific implementations"):
+        m.add(ops.CZ, "not a rule")
 
 
 def test_add_rejects_device_specific_after_unconstrained_addition():

@@ -17,9 +17,9 @@ from .base import (
     ImplementationMap,
     _DimMatrix,
     _KeyedImplementation,
-    _resolve_operation_class,
     _wrap_rule,
 )
+from ._operation_registry import _resolve_operation_class
 from .matrices import (
     _CCX,
     _CS,

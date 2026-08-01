@@ -237,6 +237,16 @@ def test_add_rejects_variable_arity_operation(rule):
         m.add(VariableGate, rule)
 
 
+def test_add_checks_variable_arity_before_wrapping_an_invalid_rule():
+    class VariableGate(ops.Operation):
+        name = "VariableGate"
+        _num_subsystems = None
+
+    m = ImplementationMap()
+    with pytest.raises(TypeError, match="implementation maps only support"):
+        m.add(VariableGate, "not an implementation")
+
+
 # --- remove -------------------------------------------------------------
 
 
@@ -310,6 +320,14 @@ def test_add_rejects_unconstrained_implementation_after_device_specific_addition
 
     with pytest.raises(ValueError, match="device-specific implementations"):
         m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)))
+
+
+def test_add_checks_registration_mode_before_wrapping_an_invalid_rule():
+    m = ImplementationMap()
+    m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)), device_operands=(0,))
+
+    with pytest.raises(ValueError, match="device-specific implementations"):
+        m.add(ops.X, np.ones(3))
 
 
 def test_add_rejects_device_specific_implementation_after_unconstrained_addition():

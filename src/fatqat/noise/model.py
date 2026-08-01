@@ -46,7 +46,7 @@ from typing import Any
 import numpy as np
 
 from ..errors import BackendValidationError
-from ..implementation.base import _resolve_operation_class
+from ..implementation._operation_registry import _resolve_operation_class
 from ..operations import BarrierGate, Operation
 from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView

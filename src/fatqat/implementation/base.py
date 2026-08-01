@@ -39,7 +39,6 @@ from ..registers import RegisterRef
 from ._operation_registry import (
     DeviceOperands,
     _OperationRuleRegistry,
-    _resolve_operation_class,
 )
 
 if TYPE_CHECKING:
@@ -287,12 +286,16 @@ class ImplementationMap:
                 registrations, mutually exclusive with `add(..., device_operands=...)`; see
                 its docstring for why.
         """
-        op_cls = _resolve_operation_class(op)
-        rule = _wrap_rule(op_cls, implementation)
         if device_operands is not None:
-            self._registry.add_device_operands(op, device_operands, rule)
+            self._registry.add_device_operands(
+                op,
+                device_operands,
+                lambda op_cls: _wrap_rule(op_cls, implementation),
+            )
             return
-        self._registry.add_unconstrained(op, rule)
+        self._registry.add_unconstrained(
+            op, lambda op_cls: _wrap_rule(op_cls, implementation)
+        )
 
     def supports(
         self,

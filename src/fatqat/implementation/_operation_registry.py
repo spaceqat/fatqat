@@ -14,7 +14,7 @@ copying.
 
 from __future__ import annotations
 
-from typing import Generic, Protocol, TypeVar
+from typing import Callable, Generic, Protocol, TypeVar
 
 from ..errors import UnsupportedOperationError
 from ..operations import Operation
@@ -53,7 +53,7 @@ def _require_fixed_arity(op_cls: type[Operation]) -> None:
     if op_cls._num_subsystems is None:
         raise TypeError(
             f"{op_cls.__name__} has variable arity (_num_subsystems is None); "
-            "the matrix implementation map only supports fixed-arity operations"
+            "implementation maps only support fixed-arity operations"
         )
 
 
@@ -88,13 +88,22 @@ class _OperationRuleRegistry(Generic[T]):
     An operation family uses at most one mode: `add_unconstrained` and
     `add_device_operands` are mutually exclusive per operation family, the
     same two-mode policy `ImplementationMap` has always documented.
+
+    Additions receive a rule factory rather than an already-wrapped rule so
+    operation arity, registration mode, and device-operand arity are all
+    validated before family-specific rule wrapping begins. The factory is
+    invoked only after those registration checks pass.
     """
 
     def __init__(self) -> None:
         self._unconstrained: dict[type[Operation], T] = {}
         self._device_operand: dict[type[Operation], dict[DeviceOperands, T]] = {}
 
-    def add_unconstrained(self, op: Operation | type[Operation], rule: T) -> None:
+    def add_unconstrained(
+        self,
+        op: Operation | type[Operation],
+        rule_factory: Callable[[type[Operation]], T],
+    ) -> None:
         op_cls = _resolve_operation_class(op)
         _require_fixed_arity(op_cls)
         if op_cls in self._device_operand:
@@ -104,13 +113,13 @@ class _OperationRuleRegistry(Generic[T]):
                 "the same operation. Call remove(op) first if you want "
                 "to replace its registrations."
             )
-        self._unconstrained[op_cls] = rule
+        self._unconstrained[op_cls] = rule_factory(op_cls)
 
     def add_device_operands(
         self,
         op: Operation | type[Operation],
         device_operands: DeviceOperands,
-        rule: T,
+        rule_factory: Callable[[type[Operation]], T],
     ) -> None:
         op_cls = _resolve_operation_class(op)
         _require_fixed_arity(op_cls)
@@ -123,6 +132,7 @@ class _OperationRuleRegistry(Generic[T]):
             )
         operands = _normalize_device_operands(device_operands)
         _require_device_operands_arity(op_cls, operands)
+        rule = rule_factory(op_cls)
         self._device_operand.setdefault(op_cls, {})[operands] = rule
 
     def get(
