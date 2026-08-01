@@ -21,14 +21,14 @@ def test_register_types_exposed():
     assert isinstance(qr[0], fq.RegisterRef)
 
 
-def test_statevector_backend_only_under_backends_namespace():
+def test_simulator_only_under_simulator_namespace():
     from fatqat.simulator import Simulator
 
     assert fq.simulator.Simulator is Simulator
     assert not hasattr(fq, "Simulator")
 
 
-def test_fake_superconducting_backends_exported_under_backends_namespace():
+def test_constrained_targets_exported_under_simulator_namespace():
     from fatqat.simulator import SCQubitGoogleSimulator, SCQubitIBMSimulator
 
     assert fq.simulator.SCQubitGoogleSimulator is SCQubitGoogleSimulator
