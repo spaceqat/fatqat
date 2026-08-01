@@ -7,7 +7,7 @@ import numpy as np
 
 from fatqat.backends import MeasurementStep, ResetStep
 from fatqat.emulator.engine import PulseEngine
-from fatqat.emulator.resolved import (
+from fatqat.emulator.pulse import (
     PhaseShift,
     PulseBlock,
     SampledControl,

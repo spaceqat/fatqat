@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from fatqat.emulator.scheduling import schedule_pulse_run
-from fatqat.emulator.resolved import PulseBlock, SampledControl
+from fatqat.emulator.pulse import PulseBlock, SampledControl
 from fatqat.emulator.superconducting import load_physics_model
 from fatqat.errors import BackendValidationError
 

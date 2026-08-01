@@ -8,11 +8,11 @@ import numpy as np
 import pytest
 
 from fatqat import ops
-from fatqat.emulator.resolved import (
+from fatqat.emulator.pulse import (
     PhaseShift,
     PhaseSwap,
-    realize_native_operation,
 )
+from fatqat.emulator.superconducting_realization import realize_calibrated_operation
 from fatqat.emulator.superconducting import (
     ControlChannelRef,
     load_calibration_spec,
@@ -37,48 +37,48 @@ def _model_and_calibration():
 def test_rx_ry_are_hann_drag_complex_drives_without_physical_z_control():
     model, calibration = _model_and_calibration()
     theta = pi / 2
-    rx = realize_native_operation(
+    rx = realize_calibrated_operation(
         ops.RX(theta), (model.resource("q0"),), model=model, calibration=calibration
     )
-    ry = realize_native_operation(
+    ry = realize_calibrated_operation(
         ops.RY(theta), (model.resource("q0"),), model=model, calibration=calibration
     )
 
     assert rx.start_time is None
     assert rx.duration == 20.0
-    assert len(rx.children) == 1
-    assert isinstance(rx.children[0].channel, ControlChannelRef)
-    assert rx.children[0].channel.kind == "drive"
-    assert np.isclose(rx.children[0].tlist[0], 0.0)
-    assert np.isclose(rx.children[0].tlist[-1], rx.duration)
-    assert np.isclose(rx.children[0].coefficients[0], 0.0)
-    assert np.isclose(rx.children[0].coefficients[-1], 0.0)
-    assert np.allclose(ry.children[0].coefficients, 1j * rx.children[0].coefficients)
+    assert len(rx.controls) == 1
+    assert isinstance(rx.controls[0].channel, ControlChannelRef)
+    assert rx.controls[0].channel.kind == "drive"
+    assert np.isclose(rx.controls[0].tlist[0], 0.0)
+    assert np.isclose(rx.controls[0].tlist[-1], rx.duration)
+    assert np.isclose(rx.controls[0].coefficients[0], 0.0)
+    assert np.isclose(rx.controls[0].coefficients[-1], 0.0)
+    assert np.allclose(ry.controls[0].coefficients, 1j * rx.controls[0].coefficients)
     assert isinstance(rx.post_actions[0], PhaseShift)
 
 
 def test_rz_is_zero_duration_frame_only_and_preserves_angle_ordering():
     model, calibration = _model_and_calibration()
-    block = realize_native_operation(
+    block = realize_calibrated_operation(
         ops.RZ(0.7), (model.resource("q1"),), model=model, calibration=calibration
     )
 
     assert block.duration == 0.0
-    assert block.children == ()
+    assert block.controls == ()
     assert block.resource_claims == (model.resource("q1"),)
     assert block.post_actions == (PhaseShift(model.frame("q1"), 0.7),)
 
 
 def test_iswap_area_and_frame_swap_use_one_full_edge_control():
     model, calibration = _model_and_calibration()
-    block = realize_native_operation(
+    block = realize_calibrated_operation(
         ops.iSwap,
         (model.resource("q0"), model.resource("q1")),
         model=model,
         calibration=calibration,
     )
 
-    (exchange,) = block.children
+    (exchange,) = block.controls
     assert exchange.channel == model.exchange_control("q0", "q1")
     assert exchange.channel.kind == "exchange"
     assert block.resource_claims == (
@@ -92,14 +92,14 @@ def test_iswap_area_and_frame_swap_use_one_full_edge_control():
 
 def test_cz_is_atomic_oriented_detuning_plus_parked_exchange():
     model, calibration = _model_and_calibration()
-    block = realize_native_operation(
+    block = realize_calibrated_operation(
         ops.CZ,
         (model.resource("q0"), model.resource("q1")),
         model=model,
         calibration=calibration,
     )
 
-    detuning, exchange = block.children
+    detuning, exchange = block.controls
     assert detuning.channel == model.detuning_control("q0")
     assert exchange.channel == model.exchange_control("q0", "q1")
     assert block.resource_claims == (
@@ -116,7 +116,7 @@ def test_cz_is_atomic_oriented_detuning_plus_parked_exchange():
     )
     assert all(isinstance(action, PhaseShift) for action in block.post_actions)
     with pytest.raises(BackendValidationError, match="orientation"):
-        realize_native_operation(
+        realize_calibrated_operation(
             ops.CZ,
             (model.resource("q1"), model.resource("q0")),
             model=model,

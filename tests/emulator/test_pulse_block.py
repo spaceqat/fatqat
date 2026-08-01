@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from fatqat.emulator.resolved import PhaseShift, PulseBlock, SampledControl
+from fatqat.emulator.pulse import PhaseShift, PulseBlock, SampledControl
 from fatqat.emulator.superconducting import load_physics_model
 from fatqat.errors import BackendValidationError
 
@@ -70,11 +70,11 @@ def test_exchange_child_uses_only_the_exchange_control_not_the_pair_resource():
         (SampledControl(model.exchange_control("q0", "q1"), [0.0, 1.0], [0.0, 0.0]),),
         (model.resource("q0"), model.resource("q1"), model.coupling("q0", "q1")),
     )
-    (exchange,) = block.children
+    (exchange,) = block.controls
     assert exchange.channel == model.exchange_control("q0", "q1")
     assert exchange.channel.kind == "exchange"
     assert model.coupling("q0", "q1") in block.resource_claims
-    assert model.coupling("q0", "q1") not in {child.channel for child in block.children}
+    assert model.coupling("q0", "q1") not in {child.channel for child in block.controls}
 
 
 def test_exchange_child_requires_the_pair_resource_claim_not_just_endpoints():
@@ -110,5 +110,5 @@ def test_pulse_block_rejects_cross_model_handles_and_keeps_arrays_immutable():
         (model.resource("q0"),),
         (PhaseShift(model.frame("q0"), 0.2),),
     )
-    assert not block.children[0].tlist.flags.writeable
-    assert not block.children[0].coefficients.flags.writeable
+    assert not block.controls[0].tlist.flags.writeable
+    assert not block.controls[0].coefficients.flags.writeable

@@ -13,7 +13,7 @@ from math import isfinite
 from typing import Iterable, Literal
 
 from ..errors import BackendValidationError
-from .resolved import PulseBlock, ResourceClaim
+from .pulse import PulseBlock, ResourceClaim
 
 SchedulingMode = Literal["ASAP", "ALAP"]
 _EPSILON = 1e-12

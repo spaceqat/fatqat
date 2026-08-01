@@ -15,12 +15,12 @@ from fatqat.emulator.backend import PulseBackend
 from fatqat.emulator.engine import PulseEngine, _ShotContext
 from fatqat.emulator.scheduling import schedule_pulse_run
 from fatqat.emulator.qutip_adapter import FRAME_CONVENTION, SCQutipAdapter
-from fatqat.emulator.resolved import (
+from fatqat.emulator.pulse import (
     PhaseShift,
     PulseBlock,
     SampledControl,
-    realize_native_operation,
 )
+from fatqat.emulator.superconducting_realization import realize_calibrated_operation
 from fatqat.emulator.superconducting import (
     load_calibration_spec,
     load_physics_model,
@@ -182,7 +182,7 @@ def test_exchange_keeps_both_qutrit_leakage_paths_and_matches_reference():
 def test_realized_iswap_matches_the_public_positive_i_phase_convention():
     model, calibration = _model_and_calibration()
     adapter = SCQutipAdapter(model)
-    block = realize_native_operation(
+    block = realize_calibrated_operation(
         iSwap,
         (model.resource("q0"), model.resource("q1")),
         model=model,
@@ -317,25 +317,25 @@ def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data():
     energy_11 = complex(state_11.dag() * parked * state_11).real
     assert np.isclose(energy_20, energy_11)
 
-    cz = realize_native_operation(
+    cz = realize_calibrated_operation(
         CZ,
         (model.resource("q0"), model.resource("q1")),
         model=model,
         calibration=calibration,
     )
-    assert cz.children[1].start_offset == recipe["ramp_duration_ns"]
+    assert cz.controls[1].start_offset == recipe["ramp_duration_ns"]
 
 
 def test_realized_cz_matches_an_independent_synchronized_hamiltonian():
     model, calibration = _model_and_calibration()
     adapter = SCQutipAdapter(model)
-    block = realize_native_operation(
+    block = realize_calibrated_operation(
         CZ,
         (model.resource("q0"), model.resource("q1")),
         model=model,
         calibration=calibration,
     )
-    detuning, exchange = block.children
+    detuning, exchange = block.controls
     detuning_spline = CubicSpline(detuning.tlist, detuning.coefficients.real)
     exchange_spline = CubicSpline(
         exchange.start_offset + exchange.tlist, exchange.coefficients.real
@@ -416,7 +416,7 @@ def test_frame_ledger_survives_boundary_and_respects_post_action_time():
     model, calibration = _model_and_calibration()
     adapter = _RecordingAdapter(model)
     frame = model.frame("q0")
-    rz = realize_native_operation(
+    rz = realize_calibrated_operation(
         RZ(0.2),
         (model.resource("q0"),),
         model=model,

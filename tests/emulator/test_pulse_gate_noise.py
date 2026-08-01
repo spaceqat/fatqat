@@ -14,7 +14,7 @@ from fatqat.emulator.engine import _ShotContext
 from fatqat.emulator.scheduling import schedule_pulse_run
 from fatqat.emulator.lindblad import ResolvedLindbladTerm
 from fatqat.emulator.qutip_adapter import SCQutipAdapter
-from fatqat.emulator.resolved import PulseBlock, SampledControl
+from fatqat.emulator.pulse import PulseBlock, SampledControl
 from fatqat.emulator.superconducting import load_calibration_spec, load_physics_model
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (

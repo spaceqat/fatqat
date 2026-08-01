@@ -15,7 +15,7 @@ from fatqat.emulator.lindblad import bind_lindblad_operators
 from fatqat.noise import default_lindblad_implementation_map
 from fatqat.noise.lindblad import resolve_lindblad_operators
 from fatqat.emulator.qutip_adapter import SCQutipAdapter
-from fatqat.emulator.resolved import PhaseShift, PulseBlock, SampledControl
+from fatqat.emulator.pulse import PhaseShift, PulseBlock, SampledControl
 from fatqat.emulator.superconducting import (
     load_calibration_spec,
     load_physics_model,

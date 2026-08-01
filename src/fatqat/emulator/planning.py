@@ -19,7 +19,8 @@ from ..operations.measurement import Measurement
 from ..program import AppliedOperation
 from ..resource_layout import ResourceLayout
 from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
-from .resolved import PulseBlock, realize_native_operation
+from .pulse import PulseBlock
+from .superconducting_realization import realize_calibrated_operation
 from .superconducting import CalibrationSpec, PhysicsModel
 
 PulsePlanStep = PulseBlock | MeasurementStep | ResetStep
@@ -85,7 +86,7 @@ def _lower_gate(
         model.resource(device_operand)
         for device_operand in resource_layout.device_labels_for(step.targets)
     )
-    block = realize_native_operation(
+    block = realize_calibrated_operation(
         step.operation,
         targets,
         model=model,

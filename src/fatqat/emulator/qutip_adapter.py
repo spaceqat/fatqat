@@ -14,7 +14,7 @@ from ..backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
 from .engine import _ShotContext, _condition_matches
 from .scheduling import _ScheduledPulseRun
-from .resolved import PhaseShift, PhaseSwap, PulseBlock, SampledControl
+from .pulse import PhaseShift, PhaseSwap, PulseBlock, SampledControl
 from .lindblad import ResolvedLindbladTerm
 from .superconducting import ControlChannelRef, PhysicsModel
 
@@ -143,7 +143,7 @@ class SCQutipAdapter:
             self._apply_ready_actions(pending_actions, start_time, frames)
             if not enabled[source_index]:
                 continue
-            for child in block.children:
+            for child in block.controls:
                 pulses.append(self._bind_child(child, start_time, frames))
             # A zero-duration block cannot contribute noise: even a
             # rate-mode descriptor's effect over zero time is a no-op, and a

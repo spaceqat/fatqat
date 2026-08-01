@@ -15,7 +15,7 @@ from ..backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
 from .scheduling import SchedulingMode, _ScheduledPulseRun, schedule_pulse_run
 from .planning import PulsePlanStep
-from .resolved import PulseBlock
+from .pulse import PulseBlock
 from .superconducting import FrameRef
 
 
