@@ -247,6 +247,15 @@ oriented ``CZ`` on declared coupling edges. ``simulation_config`` accepts
 ``"ALAP"``. These private placement modes preserve program dependencies and
 resource exclusivity; they do not expose a hardware schedule.
 
+Each native operation resolves to its physical realization through a
+:py:class:`~fatqat.backends.PulseImplementationMap`, passed as
+``pulse_implementation_map=``. Omit it to use
+:py:func:`~fatqat.backends.default_superconducting_pulse_implementation_map`;
+supply a copy of that default map with one gate replaced to change how a
+gate is physically realized without touching calibration data or
+subclassing :py:class:`~fatqat.backends.PulseBackend`. See
+:doc:`experimental` for the full customization workflow.
+
 Request counts with ``result_config={"counts": True}`` and the final physical
 density matrix with ``result_config={"final_state": True}``. That density
 matrix includes every transmon in the selected model, even if the program did

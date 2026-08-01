@@ -20,7 +20,9 @@ from fatqat.emulator.pulse import (
     PulseBlock,
     SampledControl,
 )
-from fatqat.emulator.superconducting_realization import realize_calibrated_operation
+from fatqat.emulator.superconducting_realization import (
+    default_superconducting_pulse_implementation_map,
+)
 from fatqat.emulator.superconducting import (
     load_calibration_spec,
     load_physics_model,
@@ -43,6 +45,22 @@ def _model_and_calibration():
     model_document, calibration_document = _documents()
     model = load_physics_model(model_document)
     return model, load_calibration_spec(calibration_document, model)
+
+
+def _realize(operation, targets, *, model, calibration):
+    """Resolve through the default map and lower into a PulseBlock, exactly
+    as ``emulator.planning._lower_gate`` does for one program occurrence."""
+    rule = default_superconducting_pulse_implementation_map().implementation_for(
+        operation
+    )
+    definition = rule(operation, targets=targets, model=model, calibration=calibration)
+    return PulseBlock(
+        model=model,
+        duration=definition.duration,
+        controls=definition.controls,
+        resource_claims=definition.resource_claims,
+        post_actions=definition.post_actions,
+    )
 
 
 def _drive_block(
@@ -182,7 +200,7 @@ def test_exchange_keeps_both_qutrit_leakage_paths_and_matches_reference():
 def test_realized_iswap_matches_the_public_positive_i_phase_convention():
     model, calibration = _model_and_calibration()
     adapter = SCQutipAdapter(model)
-    block = realize_calibrated_operation(
+    block = _realize(
         iSwap,
         (model.resource("q0"), model.resource("q1")),
         model=model,
@@ -317,7 +335,7 @@ def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data():
     energy_11 = complex(state_11.dag() * parked * state_11).real
     assert np.isclose(energy_20, energy_11)
 
-    cz = realize_calibrated_operation(
+    cz = _realize(
         CZ,
         (model.resource("q0"), model.resource("q1")),
         model=model,
@@ -329,7 +347,7 @@ def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data():
 def test_realized_cz_matches_an_independent_synchronized_hamiltonian():
     model, calibration = _model_and_calibration()
     adapter = SCQutipAdapter(model)
-    block = realize_calibrated_operation(
+    block = _realize(
         CZ,
         (model.resource("q0"), model.resource("q1")),
         model=model,
@@ -416,7 +434,7 @@ def test_frame_ledger_survives_boundary_and_respects_post_action_time():
     model, calibration = _model_and_calibration()
     adapter = _RecordingAdapter(model)
     frame = model.frame("q0")
-    rz = realize_calibrated_operation(
+    rz = _realize(
         RZ(0.2),
         (model.resource("q0"),),
         model=model,

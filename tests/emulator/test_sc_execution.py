@@ -15,10 +15,18 @@ from fatqat.emulator.lindblad import bind_lindblad_operators
 from fatqat.noise import default_lindblad_implementation_map
 from fatqat.noise.lindblad import resolve_lindblad_operators
 from fatqat.emulator.qutip_adapter import SCQutipAdapter
-from fatqat.emulator.pulse import PhaseShift, PulseBlock, SampledControl
+from fatqat.emulator.pulse import (
+    PhaseShift,
+    PulseBlock,
+    PulseDefinition,
+    SampledControl,
+)
 from fatqat.emulator.superconducting import (
     load_calibration_spec,
     load_physics_model,
+)
+from fatqat.emulator.superconducting_realization import (
+    default_superconducting_pulse_implementation_map,
 )
 from fatqat.noise import NoiseModel, ThermalRelaxation
 
@@ -294,3 +302,59 @@ def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames():
     density = Qobj(shot.density_matrix, dims=[[3, 3], [3, 3]])
     assert density.ptrace(0).diag()[2].real < 0.1
     assert frames == {}
+
+
+def test_custom_cz_rule_executes_end_to_end_and_yields_a_valid_physical_state():
+    # A minimal custom CZ, registered through PulseImplementationMap instead
+    # of the default calibrated recipe: model-owned detuning/exchange
+    # controls, explicit resource claims, and optional frame actions -
+    # exactly the shape a user-authored rule is documented to have.
+    model, calibration = _model_and_calibration()
+
+    def custom_cz(operation, *, targets, model, calibration):
+        first, second = (model.subsystem_ids[model.bind_resource(t)] for t in targets)
+        duration = 40.0
+        detuning_grid = np.linspace(0.0, duration, 65)
+        detuning = np.full_like(detuning_grid, 2 * pi * 0.05)
+        exchange_grid = np.linspace(0.0, duration, 65)
+        exchange = 0.02 * np.sin(pi * exchange_grid / duration) ** 2
+        return PulseDefinition(
+            duration,
+            (
+                SampledControl(model.detuning_control(first), detuning_grid, detuning),
+                SampledControl(
+                    model.exchange_control(first, second), exchange_grid, exchange
+                ),
+            ),
+            (
+                model.resource(first),
+                model.resource(second),
+                model.coupling(first, second),
+            ),
+            (
+                PhaseShift(model.frame(first), 0.1),
+                PhaseShift(model.frame(second), 0.05),
+            ),
+        )
+
+    implementations = default_superconducting_pulse_implementation_map()
+    implementations.add(fq.ops.CZ, custom_cz)
+    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+
+    program = fq.Program(2)
+    program.add(fq.ops.CZ, (0, 1))
+    plan, _facts = backend._lower_program(program)
+    (block,) = plan
+    assert block.duration == 40.0
+    assert len(block.controls) == 2
+    assert {c.channel.kind for c in block.controls} == {"detuning", "exchange"}
+
+    # Stable physical signal without overspecifying solver tolerances: the
+    # custom realization must still evolve to a valid (trace-one, Hermitian)
+    # physical state, exactly like any built-in gate's realization.
+    result = backend.run(
+        program, result_config={"counts": False, "final_state": True}
+    ).result()
+    density = result.get_density_matrix()
+    assert np.isclose(np.trace(density).real, 1.0, atol=1e-6)
+    assert np.allclose(density, density.conj().T, atol=1e-9)

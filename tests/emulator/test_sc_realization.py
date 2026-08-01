@@ -1,5 +1,6 @@
 """Native SC operation realization checks without a solver dependency."""
 
+import dataclasses
 import json
 from math import pi, sqrt
 from pathlib import Path
@@ -12,7 +13,9 @@ from fatqat.emulator.pulse import (
     PhaseShift,
     PhaseSwap,
 )
-from fatqat.emulator.superconducting_realization import realize_calibrated_operation
+from fatqat.emulator.superconducting_realization import (
+    default_superconducting_pulse_implementation_map,
+)
 from fatqat.emulator.superconducting import (
     ControlChannelRef,
     load_calibration_spec,
@@ -34,17 +37,24 @@ def _model_and_calibration():
     return model, calibration
 
 
+def _resolve(operation, targets, *, model, calibration):
+    """Resolve one operation through the default map, exactly as lowering does."""
+    rule = default_superconducting_pulse_implementation_map().implementation_for(
+        operation
+    )
+    return rule(operation, targets=targets, model=model, calibration=calibration)
+
+
 def test_rx_ry_are_hann_drag_complex_drives_without_physical_z_control():
     model, calibration = _model_and_calibration()
     theta = pi / 2
-    rx = realize_calibrated_operation(
+    rx = _resolve(
         ops.RX(theta), (model.resource("q0"),), model=model, calibration=calibration
     )
-    ry = realize_calibrated_operation(
+    ry = _resolve(
         ops.RY(theta), (model.resource("q0"),), model=model, calibration=calibration
     )
 
-    assert rx.start_time is None
     assert rx.duration == 20.0
     assert len(rx.controls) == 1
     assert isinstance(rx.controls[0].channel, ControlChannelRef)
@@ -59,50 +69,50 @@ def test_rx_ry_are_hann_drag_complex_drives_without_physical_z_control():
 
 def test_rz_is_zero_duration_frame_only_and_preserves_angle_ordering():
     model, calibration = _model_and_calibration()
-    block = realize_calibrated_operation(
+    definition = _resolve(
         ops.RZ(0.7), (model.resource("q1"),), model=model, calibration=calibration
     )
 
-    assert block.duration == 0.0
-    assert block.controls == ()
-    assert block.resource_claims == (model.resource("q1"),)
-    assert block.post_actions == (PhaseShift(model.frame("q1"), 0.7),)
+    assert definition.duration == 0.0
+    assert definition.controls == ()
+    assert definition.resource_claims == (model.resource("q1"),)
+    assert definition.post_actions == (PhaseShift(model.frame("q1"), 0.7),)
 
 
 def test_iswap_area_and_frame_swap_use_one_full_edge_control():
     model, calibration = _model_and_calibration()
-    block = realize_calibrated_operation(
+    definition = _resolve(
         ops.iSwap,
         (model.resource("q0"), model.resource("q1")),
         model=model,
         calibration=calibration,
     )
 
-    (exchange,) = block.controls
+    (exchange,) = definition.controls
     assert exchange.channel == model.exchange_control("q0", "q1")
     assert exchange.channel.kind == "exchange"
-    assert block.resource_claims == (
+    assert definition.resource_claims == (
         model.resource("q0"),
         model.resource("q1"),
         model.coupling("q0", "q1"),
     )
     assert np.isclose(np.trapezoid(exchange.coefficients.real, exchange.tlist), -pi / 2)
-    assert block.post_actions == (PhaseSwap(model.frame("q0"), model.frame("q1")),)
+    assert definition.post_actions == (PhaseSwap(model.frame("q0"), model.frame("q1")),)
 
 
 def test_cz_is_atomic_oriented_detuning_plus_parked_exchange():
     model, calibration = _model_and_calibration()
-    block = realize_calibrated_operation(
+    definition = _resolve(
         ops.CZ,
         (model.resource("q0"), model.resource("q1")),
         model=model,
         calibration=calibration,
     )
 
-    detuning, exchange = block.controls
+    detuning, exchange = definition.controls
     assert detuning.channel == model.detuning_control("q0")
     assert exchange.channel == model.exchange_control("q0", "q1")
-    assert block.resource_claims == (
+    assert definition.resource_claims == (
         model.resource("q0"),
         model.resource("q1"),
         model.coupling("q0", "q1"),
@@ -114,11 +124,27 @@ def test_cz_is_atomic_oriented_detuning_plus_parked_exchange():
     assert np.isclose(
         np.trapezoid(exchange.coefficients.real, exchange.tlist), pi / sqrt(2)
     )
-    assert all(isinstance(action, PhaseShift) for action in block.post_actions)
+    assert all(isinstance(action, PhaseShift) for action in definition.post_actions)
     with pytest.raises(BackendValidationError, match="orientation"):
-        realize_calibrated_operation(
+        _resolve(
             ops.CZ,
             (model.resource("q1"), model.resource("q0")),
             model=model,
             calibration=calibration,
+        )
+
+
+def test_cz_missing_edge_recipe_names_the_declared_edge():
+    model, calibration = _model_and_calibration()
+    edgeless_calibration = dataclasses.replace(
+        calibration,
+        recipes={**calibration.recipes, "cz": {"edges": []}},
+    )
+
+    with pytest.raises(BackendValidationError, match=r"no CZ recipe.*'q0'-'q1'"):
+        _resolve(
+            ops.CZ,
+            (model.resource("q0"), model.resource("q1")),
+            model=model,
+            calibration=edgeless_calibration,
         )

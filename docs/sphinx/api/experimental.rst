@@ -122,3 +122,139 @@ Detailed implementation-map reference
 .. autoclass:: fatqat.implementation.FixedMatrix
    :members:
    :show-inheritance:
+
+Pulse implementation-map customization
+---------------------------------------
+
+:py:class:`~fatqat.backends.PulseBackend` resolves each native operation
+family (``RX``, ``RY``, ``RZ``, ``iSwap``, oriented ``CZ``) to a physical
+pulse realization through a
+:py:class:`~fatqat.backends.PulseImplementationMap` - the pulse family's
+counterpart to the matrix implementation map above:
+
+.. code-block:: text
+
+   SimulatorBackend: Operation -> ImplementationMap      -> matrix          -> ApplyMatrixStep
+   PulseBackend:     Operation -> PulseImplementationMap -> PulseDefinition -> (lowered) pulse block
+
+Replacing or adding a gate realization - for example a custom ``CZ`` -
+never requires subclassing :py:class:`~fatqat.backends.PulseBackend` or
+touching private emulator modules:
+
+.. code-block:: python
+
+   import fatqat as fq
+
+   def custom_cz(operation, *, targets, model, calibration):
+       first, second = (
+           model.subsystem_ids[model.bind_resource(t)] for t in targets
+       )
+       # Build the physical realization from model-owned resources; a rule
+       # may also read calibration.recipe(name) for calibrated numbers.
+       return fq.backends.PulseDefinition(
+           duration=...,
+           controls=(...,),          # SampledControl values
+           resource_claims=(...,),   # model.resource(...) / model.coupling(...)
+           post_actions=(...,),      # optional PhaseShift / PhaseSwap
+       )
+
+   implementations = fq.backends.default_superconducting_pulse_implementation_map()
+   implementations.add(fq.ops.CZ, custom_cz)
+
+   backend = fq.backends.PulseBackend(
+       model, calibration, pulse_implementation_map=implementations
+   )
+
+Calibration versus implementation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+These are two different kinds of change. Editing the calibration document
+(gate durations, DRAG coefficients, per-edge ``CZ`` detuning and phase
+corrections) changes the *numbers* fed into the existing built-in physical
+mechanism - still a Hann/DRAG drive for ``RX``/``RY``, still an atomic
+detuning-plus-parked-exchange pulse for ``CZ``. Registering a pulse
+implementation rule changes the *mechanism* itself: the waveform shape,
+which physical control channels are driven, which resources are claimed, or
+what frame corrections are applied. A calibration document is never a place
+to select or smuggle in executable behavior - it stays plain, immutable
+data, validated against exactly one model identity.
+
+Rule signature and reusable definitions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A pulse implementation rule is a callable ``f(operation, *, targets, model,
+calibration) -> PulseDefinition``. ``targets`` are the ordered
+physical-model resource handles corresponding to the operation's ordered
+program targets - never a program ``RegisterRef`` and never an engine
+index. A rule may read immutable facts from ``model`` (subsystem
+frequencies, anharmonicities, declared couplings) and from ``calibration``
+(via ``calibration.recipe(name)``), and returns only the physical
+realization: duration, sampled controls, the model resources/couplings it
+claims, and any post-block frame actions.
+
+A :py:class:`~fatqat.backends.PulseDefinition` is immutable and carries no
+classical condition, resolved noise, engine index, or schedule position -
+those are one lowered program occurrence's facts, attached by the backend
+only after a rule is selected and invoked. This is also why one definition
+is safely reusable: the same ``PulseDefinition`` instance may be returned
+for a guarded and an unguarded occurrence of the same gate, and each
+becomes an independently conditioned physical block; a rule's own
+:py:class:`~fatqat.errors.BackendValidationError` (including
+:py:class:`~fatqat.errors.UnsupportedOperationError`) propagates unchanged,
+while any other failure, or a non-``PulseDefinition`` return, is reported as
+``PulseImplementationError`` (an implementation/extension error, kept out of
+the stable :doc:`exceptions` reference alongside its matrix-family
+counterpart, ``MatrixImplementationError``).
+
+Registration modes
+~~~~~~~~~~~~~~~~~~~
+
+:py:meth:`~fatqat.backends.PulseImplementationMap.add` (``op, implementation,
+*, device_operands=None``) follows the same two-mode policy as
+:py:meth:`~fatqat.implementation.ImplementationMap.add`: an operation
+family has either one unconstrained rule, applying to every legal target of
+the correct arity, or a finite set of rules keyed by ordered
+``device_operands`` - never both for the same family. Replacing the default
+unconstrained ``CZ`` rule is a normal ``add(op.CZ, replacement)``. Building
+a device-specific ``CZ`` table instead means calling ``remove(op.CZ)`` on
+the existing unconstrained rule first, then registering every supported
+ordered edge explicitly; there is no simultaneous
+device-specific-override-plus-unconstrained-fallback mode.
+
+Time coordinate
+~~~~~~~~~~~~~~~~
+
+``duration``, and every :py:class:`~fatqat.backends.SampledControl`'s
+``tlist``/``start_offset``, use the owning model's native time coordinate
+(``model.time_unit`` - nanoseconds, for the built-in superconducting
+transmon model). The pulse-authoring types themselves are time-unit-neutral
+and never assume ``ns``.
+
+Backend copy semantics
+~~~~~~~~~~~~~~~~~~~~~~~
+
+:py:class:`~fatqat.backends.PulseBackend` copies a supplied
+``pulse_implementation_map=`` immediately at construction, exactly like
+``implementation_map=`` above: later mutations of the caller's map never
+affect an already-constructed backend.
+
+Detailed pulse implementation-map reference
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: fatqat.backends.default_superconducting_pulse_implementation_map
+
+.. autoclass:: fatqat.backends.PulseImplementationMap
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.backends.PulseDefinition
+   :members:
+
+.. autoclass:: fatqat.backends.SampledControl
+   :members:
+
+.. autoclass:: fatqat.backends.PhaseShift
+   :members:
+
+.. autoclass:: fatqat.backends.PhaseSwap
+   :members:

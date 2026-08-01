@@ -1,16 +1,43 @@
-"""Validated pulse-plan values on their owning model's time axis."""
+"""Pulse-plan values: the public authoring surface a pulse implementation
+rule returns (``PulseDefinition`` and its building blocks) and registers
+under (``PulseImplementationMap``), plus the internal, model-owned
+``PulseBlock`` that lowering builds from a definition by attaching one
+program occurrence's condition, resolved noise, engine indices, and schedule
+position.
+
+``PulseDefinition`` and ``PulseBlock`` share the model-independent structural
+checks (duration, control shape, resource-claim shape, frame-action shape)
+through the module-level ``_validate_*`` helpers below, so the two never
+diverge on what counts as a well-formed pulse. Only ``PulseBlock`` also
+performs the model-bound checks (channel/resource/coupling/frame binding,
+driven-control claim coverage), because only it carries a ``PhysicsModel``.
+
+``PulseImplementationMap`` composes the same private
+``implementation._operation_registry`` mechanics ``ImplementationMap`` does,
+so the two families share registration semantics while keeping distinct rule
+and result types. ``_invoke_pulse_rule`` is the locked implementation-error
+policy: a rule's own ``BackendValidationError`` propagates unchanged, while
+any other failure becomes ``PulseImplementationError``.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
-from ..errors import BackendValidationError
+from ..errors import BackendValidationError, PulseImplementationError
+from ..implementation._operation_registry import (
+    DeviceOperands,
+    _OperationRuleRegistry,
+    _resolve_operation_class,
+)
+from ..operations import Operation
 from .lindblad import ResolvedLindbladTerm
 from .superconducting import (
+    CalibrationSpec,
     ControlChannelRef,
     CouplingRef,
     FrameRef,
@@ -105,6 +132,111 @@ FrameAction = PhaseShift | PhaseSwap
 ResourceClaim = SubsystemResourceRef | CouplingRef
 
 
+def _validate_duration_controls_consistency(
+    duration: float, controls: tuple[SampledControl, ...], *, owner: str
+) -> None:
+    """Zero duration forbids controls; positive duration requires them."""
+    if duration == 0.0 and controls:
+        raise BackendValidationError(
+            f"a zero-duration {owner} cannot contain physical controls"
+        )
+    if duration > 0.0 and not controls:
+        raise BackendValidationError(
+            f"a positive-duration {owner} requires physical controls"
+        )
+
+
+def _validate_controls_shape(
+    controls: tuple[SampledControl, ...], duration: float, *, owner: str
+) -> None:
+    """Model-independent control validation shared by both pulse values.
+
+    Checks control type, channel-reference type, no implicit same-channel
+    summation, and no control sample extending past the enclosing duration.
+    Does not touch the model: whether a channel actually resolves on a given
+    model is a `PulseBlock`-only, model-bound check.
+    """
+    seen_channels: set[ControlChannelRef] = set()
+    for child in controls:
+        if not isinstance(child, SampledControl):
+            raise BackendValidationError(
+                f"{owner} controls must be SampledControl values"
+            )
+        if not isinstance(child.channel, ControlChannelRef):
+            raise BackendValidationError(
+                "pulse control has an unknown channel reference"
+            )
+        if child.channel in seen_channels:
+            raise BackendValidationError(
+                f"{owner} cannot implicitly sum controls on one channel"
+            )
+        seen_channels.add(child.channel)
+        if child.start_offset + child.duration > duration + 1e-12:
+            raise BackendValidationError(
+                f"control extends beyond its enclosing {owner}"
+            )
+
+
+def _validate_resource_claims_shape(
+    resource_claims: tuple[ResourceClaim, ...], *, owner: str
+) -> None:
+    """Model-independent resource-claim validation: non-empty, type, no duplicates."""
+    if not resource_claims:
+        raise BackendValidationError(f"{owner} must claim at least one model resource")
+    seen: set[ResourceClaim] = set()
+    for resource in resource_claims:
+        if not isinstance(resource, (SubsystemResourceRef, CouplingRef)):
+            raise BackendValidationError(f"{owner} has an unknown resource claim")
+        if resource in seen:
+            raise BackendValidationError(f"{owner} has a duplicate resource claim")
+        seen.add(resource)
+
+
+def _validate_post_actions_shape(
+    post_actions: tuple[FrameAction, ...], *, owner: str
+) -> None:
+    """Model-independent frame-action validation: type only."""
+    for action in post_actions:
+        if not isinstance(action, (PhaseShift, PhaseSwap)):
+            raise BackendValidationError(f"{owner} has an unknown frame action")
+
+
+@dataclass(frozen=True)
+class PulseDefinition:
+    """One reusable physical pulse recipe, independent of any occurrence.
+
+    Returned by a pulse implementation rule (see the pulse implementation
+    map). Contains only the physical realization: duration, sampled
+    controls, the model resources/couplings it claims, and any post-block
+    frame actions. It carries no classical condition, resolved noise, engine
+    index, or schedule position - those are one lowered program occurrence's
+    facts, attached by ``emulator.planning._lower_gate`` when it converts a
+    definition into a model-owned `PulseBlock`.
+
+    `duration`, and every `SampledControl`'s `tlist`/`start_offset`, use the
+    owning model's native time coordinate; this type does not claim
+    nanoseconds or any other unit.
+    """
+
+    duration: float
+    controls: tuple[SampledControl, ...]
+    resource_claims: tuple[ResourceClaim, ...]
+    post_actions: tuple[FrameAction, ...] = ()
+
+    def __post_init__(self) -> None:
+        duration = _finite(self.duration, "pulse-definition duration", nonnegative=True)
+        _validate_resource_claims_shape(self.resource_claims, owner="pulse definition")
+        _validate_duration_controls_consistency(
+            duration, self.controls, owner="pulse definition"
+        )
+        _validate_controls_shape(self.controls, duration, owner="pulse definition")
+        _validate_post_actions_shape(self.post_actions, owner="pulse definition")
+        object.__setattr__(self, "duration", duration)
+        object.__setattr__(self, "controls", tuple(self.controls))
+        object.__setattr__(self, "resource_claims", tuple(self.resource_claims))
+        object.__setattr__(self, "post_actions", tuple(self.post_actions))
+
+
 @dataclass(frozen=True)
 class PulseBlock:
     """One atomic model-owned pulse block on its model's native time axis."""
@@ -121,29 +253,15 @@ class PulseBlock:
 
     def __post_init__(self) -> None:
         duration = _finite(self.duration, "pulse-block duration", nonnegative=True)
-        if not self.resource_claims:
-            raise BackendValidationError(
-                "pulse block must claim at least one model resource"
-            )
-        if duration == 0.0 and self.controls:
-            raise BackendValidationError(
-                "a zero-duration pulse block cannot contain physical controls"
-            )
-        if duration > 0.0 and not self.controls:
-            raise BackendValidationError(
-                "a positive-duration pulse block requires physical controls"
-            )
-        seen_channels: set[ControlChannelRef] = set()
+        _validate_resource_claims_shape(self.resource_claims, owner="pulse block")
+        _validate_duration_controls_consistency(
+            duration, self.controls, owner="pulse block"
+        )
+        _validate_controls_shape(self.controls, duration, owner="pulse block")
+        _validate_post_actions_shape(self.post_actions, owner="pulse block")
+
         required_claim_sets: list[set[ResourceClaim]] = []
         for child in self.controls:
-            if not isinstance(child, SampledControl):
-                raise BackendValidationError(
-                    "pulse-block controls must be SampledControl values"
-                )
-            if not isinstance(child.channel, ControlChannelRef):
-                raise BackendValidationError(
-                    "pulse control has an unknown channel reference"
-                )
             control_ordinal = self.model.bind_control(child.channel)
             if child.channel.kind == "exchange":
                 coupling = self.model.couplings[control_ordinal]
@@ -158,43 +276,27 @@ class PulseBlock:
                 required_claim_sets.append(
                     {self.model.resource(self.model.subsystem_ids[control_ordinal])}
                 )
-            if child.channel in seen_channels:
-                raise BackendValidationError(
-                    "pulse block cannot implicitly sum controls on one channel"
-                )
-            seen_channels.add(child.channel)
-            if child.start_offset + child.duration > duration + 1e-12:
-                raise BackendValidationError(
-                    "control extends beyond its enclosing pulse block"
-                )
+
         seen_resources: set[ResourceClaim] = set()
         for resource in self.resource_claims:
             if isinstance(resource, SubsystemResourceRef):
                 self.model.bind_resource(resource)
-            elif isinstance(resource, CouplingRef):
-                self.model.bind_coupling(resource)
             else:
-                raise BackendValidationError(
-                    "pulse block has an unknown resource claim"
-                )
-            if resource in seen_resources:
-                raise BackendValidationError(
-                    "pulse block has a duplicate resource claim"
-                )
+                self.model.bind_coupling(resource)
             seen_resources.add(resource)
         for required_claims in required_claim_sets:
             if not required_claims <= seen_resources:
                 raise BackendValidationError(
                     "pulse block resource claims do not cover a driven control"
                 )
+
         for action in self.post_actions:
             if isinstance(action, PhaseShift):
                 self.model.bind_frame(action.frame)
-            elif isinstance(action, PhaseSwap):
+            else:
                 self.model.bind_frame(action.first)
                 self.model.bind_frame(action.second)
-            else:
-                raise BackendValidationError("pulse block has an unknown frame action")
+
         if self.condition is not None:
             normalized = tuple(self.condition)
             if not normalized or any(
@@ -230,3 +332,230 @@ class PulseBlock:
                     "pulse-block target indices must be distinct non-negative ints"
                 )
             object.__setattr__(self, "target_indices", target_indices)
+
+
+class _PulseImplementation:
+    """Base class for a pulse-family implementation rule.
+
+    A rule receives the applied :py:class:`~fatqat.operations.Operation`
+    instance, the ordered physical-model resource handles corresponding to
+    its program targets, the immutable owning `PhysicsModel`, and the
+    `CalibrationSpec`, and returns one reusable `PulseDefinition`. Most
+    callers never need to subclass this directly: `PulseImplementationMap.add`
+    auto-wraps a bare callable with this exact signature. Subclass and
+    override `__call__` for a stateful or configured implementation.
+    """
+
+    def __call__(
+        self,
+        operation: Operation,
+        *,
+        targets: tuple[Any, ...],
+        model: PhysicsModel,
+        calibration: CalibrationSpec,
+    ) -> PulseDefinition:
+        raise NotImplementedError
+
+
+class _CallablePulseImplementation(_PulseImplementation):
+    """Adapts a bare `f(operation, *, targets, model, calibration)` callable."""
+
+    def __init__(self, func: Callable) -> None:
+        self._func = func
+
+    def __call__(
+        self,
+        operation: Operation,
+        *,
+        targets: tuple[Any, ...],
+        model: PhysicsModel,
+        calibration: CalibrationSpec,
+    ) -> PulseDefinition:
+        return self._func(
+            operation, targets=targets, model=model, calibration=calibration
+        )
+
+
+def _wrap_pulse_rule(
+    op_cls: type[Operation], rule: "_PulseImplementation | Callable"
+) -> _PulseImplementation:
+    """Normalize an `add()` implementation argument into a `_PulseImplementation`.
+
+    Accepts an already-built `_PulseImplementation` (returned as-is) or a bare
+    `f(operation, *, targets, model, calibration)` callable (wrapped). Every
+    stored rule is a `_PulseImplementation` instance, so `implementation_for()`
+    always returns a uniform type regardless of how the rule was registered -
+    the pulse-map analog of `ImplementationMap`'s uniform `MatrixImplementation`
+    return.
+
+    Unlike the matrix map, a pulse rule has exactly one accepted callable
+    shape, so there is no signature-detection step: a callable of the wrong
+    shape is not rejected here; it fails on first use (see
+    `_invoke_pulse_rule`), the same deferred-failure contract the matrix map
+    uses for a bare callable.
+
+    Raises:
+        TypeError: If `rule` is neither a `_PulseImplementation` nor a
+            callable, checked explicitly here so the error names the
+            operation and the bad value.
+    """
+    if isinstance(rule, _PulseImplementation):
+        return rule
+    if not callable(rule):
+        raise TypeError(
+            f"rule for {op_cls.__name__} must be a pulse implementation object "
+            f"or callable, got {rule!r}"
+        )
+    return _CallablePulseImplementation(rule)
+
+
+def _invoke_pulse_rule(
+    rule: _PulseImplementation,
+    operation: Operation,
+    *,
+    targets: tuple[Any, ...],
+    model: PhysicsModel,
+    calibration: CalibrationSpec,
+) -> PulseDefinition:
+    """Call a selected pulse rule and enforce the locked implementation-error policy.
+
+    A rule's own `BackendValidationError` (including `UnsupportedOperationError`)
+    propagates unchanged: that is the rule's deliberate validation, not an
+    implementation defect (e.g. the default CZ rule's target-orientation or
+    missing-edge-recipe failures). Any other exception the rule raises, or a
+    non-`PulseDefinition` return value, becomes `PulseImplementationError`
+    naming the operation, with the original exception preserved as
+    `__cause__` when one exists.
+    """
+    try:
+        result = rule(operation, targets=targets, model=model, calibration=calibration)
+    except BackendValidationError:
+        raise
+    except Exception as exc:
+        raise PulseImplementationError(
+            f"implementation for {type(operation).__name__} raised: {exc}"
+        ) from exc
+    if not isinstance(result, PulseDefinition):
+        raise PulseImplementationError(
+            f"implementation for {type(operation).__name__} returned "
+            f"{result!r}, expected a PulseDefinition"
+        )
+    return result
+
+
+class PulseImplementationMap:
+    """Resolve operation families and device operands to pulse implementations.
+
+    Structurally identical to `ImplementationMap` - same instance/class
+    normalization, same mutually exclusive unconstrained-versus-device-
+    specific registration policy, same copy semantics - composing the same
+    shared `_OperationRuleRegistry` mechanics. It differs only in what a rule
+    returns (`PulseDefinition` instead of a matrix) and in how a selected
+    rule's failures are reported (see `_invoke_pulse_rule` and
+    `PulseImplementationError`).
+    """
+
+    def __init__(self) -> None:
+        self._registry: _OperationRuleRegistry[_PulseImplementation] = (
+            _OperationRuleRegistry()
+        )
+
+    def add(
+        self,
+        op: Operation | type[Operation],
+        implementation: "_PulseImplementation | Callable",
+        *,
+        device_operands: DeviceOperands | None = None,
+    ) -> None:
+        """Add an unconstrained or device-specific pulse implementation.
+
+        Args:
+            op: An :py:class:`~fatqat.operations.Operation` instance (e.g.
+                `ops.CZ`) or subclass. Normalized to the operation's class for
+                the registry key.
+            implementation: A callable `f(operation, *, targets, model,
+                calibration) -> PulseDefinition`, or an already-built
+                `_PulseImplementation`.
+            device_operands: An ordered hashable tuple identifying the
+                device-level target this rule is restricted to. Omit for an
+                unconstrained rule that applies to every legal target of the
+                operation's arity.
+
+        Raises:
+            TypeError: If `op` is neither an :py:class:`~fatqat.operations.Operation`
+                instance nor subclass, if its operation class has variable
+                arity, or if `implementation` is not callable.
+            ValueError: If `device_operands`' length does not match the
+                operation's arity, or if `op` already has a registration in
+                the other mode; see `ImplementationMap.add` for why the two
+                modes are mutually exclusive.
+        """
+        op_cls = _resolve_operation_class(op)
+        rule = _wrap_pulse_rule(op_cls, implementation)
+        if device_operands is not None:
+            self._registry.add_device_operands(op, device_operands, rule)
+            return
+        self._registry.add_unconstrained(op, rule)
+
+    def supports(
+        self,
+        op: Operation | type[Operation],
+        *,
+        device_operands: DeviceOperands | None = None,
+    ) -> bool:
+        """Return whether this map has any rule for the operation family.
+
+        Same semantics as `ImplementationMap.supports`.
+        """
+        if device_operands is not None:
+            return (
+                self.implementation_for(op, device_operands=device_operands) is not None
+            )
+        return self._registry.supports(op)
+
+    def implementation_for(
+        self,
+        op: Operation | type[Operation],
+        *,
+        device_operands: DeviceOperands | None = None,
+    ) -> _PulseImplementation | None:
+        """Return the pulse implementation selected for an operation.
+
+        Same lookup semantics as `ImplementationMap.implementation_for`: with
+        `device_operands` omitted, only the unconstrained rule is consulted;
+        with `device_operands` given, a family with device-specific rules
+        consults only those, while a family with only an unconstrained rule
+        returns it for every device operands.
+        """
+        return self._registry.get(op, device_operands=device_operands)
+
+    def supported_operations(self) -> frozenset[type[Operation]]:
+        """Return every operation family with at least one implementation."""
+        return self._registry.supported_operations()
+
+    def device_operands_for(
+        self, op: Operation | type[Operation]
+    ) -> frozenset[DeviceOperands]:
+        """Return the finite set of device operands selected for an operation.
+
+        Same semantics as `ImplementationMap.device_operands_for`.
+        """
+        return self._registry.device_operands_for(op)
+
+    def remove(self, op: Operation | type[Operation]) -> None:
+        """Remove a registered pulse implementation, if present.
+
+        Removing an operation that was never registered is a no-op.
+        """
+        self._registry.remove(op)
+
+    def copy(self) -> "PulseImplementationMap":
+        """Return a new map with an independent copy of this map's registrations.
+
+        Rule objects are shared (not deep-copied) between the original and
+        the copy, matching `ImplementationMap.copy`. Later mutations of
+        either map's registrations never affect the other.
+        """
+        clone = PulseImplementationMap()
+        clone._registry = self._registry.copy()
+        return clone

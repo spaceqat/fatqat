@@ -12,6 +12,7 @@ from ..backends.backend_utils import (
     _resolve_condition,
 )
 from ..backends.steps import MeasurementStep, ResetStep
+from ..implementation._operation_registry import _select_implementation
 from ..noise import NoiseModel
 from ..noise import LindbladImplementationMap
 from ..noise.lindblad import resolve_lindblad_operators
@@ -19,8 +20,7 @@ from ..operations.measurement import Measurement
 from ..program import AppliedOperation
 from ..resource_layout import ResourceLayout
 from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
-from .pulse import PulseBlock
-from .superconducting_realization import realize_calibrated_operation
+from .pulse import PulseBlock, PulseImplementationMap, _invoke_pulse_rule
 from .superconducting import CalibrationSpec, PhysicsModel
 
 PulsePlanStep = PulseBlock | MeasurementStep | ResetStep
@@ -79,18 +79,26 @@ def _lower_gate(
     engine_index_allocation: _EngineIndexAllocation,
     model: PhysicsModel,
     calibration: CalibrationSpec,
+    pulse_implementation_map: PulseImplementationMap,
     noise_model: NoiseModel,
     lindblad_implementation_map: LindbladImplementationMap,
 ) -> PulseBlock:
-    targets = tuple(
-        model.resource(device_operand)
-        for device_operand in resource_layout.device_labels_for(step.targets)
+    device_operands = resource_layout.device_labels_for(step.targets)
+    rule = _select_implementation(
+        step.operation, device_operands, pulse_implementation_map
     )
-    block = realize_calibrated_operation(
-        step.operation,
-        targets,
+    targets = tuple(
+        model.resource(device_operand) for device_operand in device_operands
+    )
+    definition = _invoke_pulse_rule(
+        rule, step.operation, targets=targets, model=model, calibration=calibration
+    )
+    block = PulseBlock(
         model=model,
-        calibration=calibration,
+        duration=definition.duration,
+        controls=definition.controls,
+        resource_claims=definition.resource_claims,
+        post_actions=definition.post_actions,
         condition=_resolve_condition(step.condition, engine_index_allocation),
     )
     noise_bindings, noise_target_indices = _lower_gate_noise(

@@ -14,7 +14,12 @@ from fatqat.emulator.engine import _ShotContext
 from fatqat.emulator.scheduling import schedule_pulse_run
 from fatqat.emulator.lindblad import ResolvedLindbladTerm
 from fatqat.emulator.qutip_adapter import SCQutipAdapter
-from fatqat.emulator.pulse import PulseBlock, SampledControl
+from fatqat.emulator.pulse import (
+    PulseBlock,
+    PulseDefinition,
+    PulseImplementationMap,
+    SampledControl,
+)
 from fatqat.emulator.superconducting import load_calibration_spec, load_physics_model
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (
@@ -196,6 +201,47 @@ def test_rate_mode_damping_lowers_unchanged():
 
     (binding,) = block.noise
     assert np.allclose(binding.local_operator, _phase_term(0.0025).local_operator)
+
+
+def test_gate_scoped_noise_resolves_using_the_custom_rules_realized_duration():
+    # Gate-scoped noise must key off whatever duration the *selected* rule
+    # actually realizes, not a duration baked into the default recipe - the
+    # rule is chosen through PulseImplementationMap, so a custom rule with a
+    # different duration must change the resolved rate exactly as the
+    # default rule's own duration does.
+    model, calibration = _model_and_calibration()
+    custom_duration = 7.0
+
+    def custom_rx(operation, *, targets, model, calibration):
+        (subsystem_id,) = (model.subsystem_ids[model.bind_resource(t)] for t in targets)
+        return PulseDefinition(
+            custom_duration,
+            (
+                SampledControl(
+                    model.drive_control(subsystem_id),
+                    (0.0, custom_duration),
+                    (0.0, 0.0),
+                ),
+            ),
+            (model.resource(subsystem_id),),
+        )
+
+    implementations = PulseImplementationMap()
+    implementations.add(fq.ops.RX, custom_rx)
+    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend._noise_model.add_channel(
+        AmplitudeDamping(p=(0.01, 0.02)), operation=fq.ops.RX
+    )
+
+    program = fq.Program(1)
+    program.add(fq.ops.RX(0.3), 0)
+    plan, _facts = backend._lower_program(program)
+    (block,) = plan
+
+    assert block.duration == custom_duration
+    (binding,) = block.noise
+    expected = AmplitudeDamping(p=(0.01, 0.02)).as_rate(custom_duration)
+    assert np.allclose(binding.local_operator, _amplitude_term(expected).local_operator)
 
 
 def test_nonzero_probability_on_zero_duration_gate_is_rejected_at_lowering():

@@ -24,6 +24,14 @@ class MatrixImplementationError(FatqcatError):
     plan's matrix step."""
 
 
+class PulseImplementationError(FatqcatError):
+    """Raised when a registered pulse implementation rule fails, or returns
+    something other than a ``PulseDefinition``, while lowering a pulse
+    program occurrence. A rule's own ``BackendValidationError`` (including
+    ``UnsupportedOperationError``) propagates unchanged instead - that is
+    the rule's deliberate validation, not an implementation defect."""
+
+
 class ResultFieldUnavailableError(FatqcatError):
     """Raised when a Result field was not produced by this run."""
 

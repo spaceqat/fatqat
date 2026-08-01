@@ -10,10 +10,11 @@ from ..errors import (
     MatrixImplementationError,
     UnsupportedOperationError,
 )
-from ..implementation import DeviceOperands, ImplementationMap, MatrixImplementation
+from ..implementation import ImplementationMap
+from ..implementation._operation_registry import _select_implementation
 from ..noise import ChannelImplementationMap, NoiseModel
 from ..noise.base import _validate_kraus_shapes
-from ..operations import Measurement, Operation, ResetGate
+from ..operations import Measurement, ResetGate
 from ..program import AppliedOperation
 from ..resource_layout import ResourceLayout
 from .backend_utils import (
@@ -28,22 +29,6 @@ from .steps import (
     ResetStep,
     ResolvedStep,
 )
-
-
-def _gate_implementation_for(
-    operation: Operation, device_operands: DeviceOperands, impl_map: ImplementationMap
-) -> MatrixImplementation:
-    """Resolve the matrix rule for a gate operation on a device target key."""
-    if not impl_map.supports(operation):
-        raise UnsupportedOperationError(
-            f"{type(operation).__name__} is not supported by this backend"
-        )
-    rule = impl_map.implementation_for(operation, device_operands=device_operands)
-    if rule is None:
-        raise UnsupportedOperationError(
-            f"{type(operation).__name__} is not supported on device operands {device_operands}"
-        )
-    return rule
 
 
 def _lower_measurement(
@@ -110,7 +95,7 @@ def _lower_gate(
     )
     condition = _resolve_condition(step.condition, engine_index_allocation)
 
-    rule = _gate_implementation_for(step.operation, device_operands, impl_map)
+    rule = _select_implementation(step.operation, device_operands, impl_map)
     try:
         matrix = rule(step.operation, targets=step.targets)
     except Exception as exc:

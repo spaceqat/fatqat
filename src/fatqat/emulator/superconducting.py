@@ -607,8 +607,9 @@ class CalibrationSpec:
     @staticmethod
     def _validate_recipes(recipes: Mapping[str, Any], model: PhysicsModel) -> None:
         # RZ has no recipe: it realizes as an exact virtual frame rotation
-        # (see superconducting_realization.realize_calibrated_operation), not a calibrated physical
-        # gate, so it carries no calibration degree of freedom to validate.
+        # (see superconducting_realization._rz_definition), not a calibrated
+        # physical gate, so it carries no calibration degree of freedom to
+        # validate.
         _exact_keys(recipes, {"rx_ry", "iswap", "cz"}, "calibration.recipes")
         # No stored amplitude: for a requested angle theta and this duration T,
         # the Hann/DRAG peak is exactly theta/T (architecture doc Sec. 5.1), so

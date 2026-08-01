@@ -31,7 +31,11 @@ from .engine import PulseEngine
 from .engine_contract import PulseResultConfig, PulseSimulationConfig
 from .planning import PulsePlanFacts, PulsePlanStep
 from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
+from .pulse import PulseImplementationMap
 from .superconducting import CalibrationSpec, PhysicsModel
+from .superconducting_realization import (
+    default_superconducting_pulse_implementation_map,
+)
 
 
 class PulseBackend:
@@ -44,6 +48,7 @@ class PulseBackend:
         *,
         noise: NoiseModel | None = None,
         lindblad_implementation_map: LindbladImplementationMap | None = None,
+        pulse_implementation_map: PulseImplementationMap | None = None,
     ) -> None:
         if calibration.key != model.key:
             raise BackendValidationError("calibration does not match the pulse model")
@@ -54,6 +59,11 @@ class PulseBackend:
             default_lindblad_implementation_map()
             if lindblad_implementation_map is None
             else lindblad_implementation_map.copy()
+        )
+        self._pulse_implementation_map = (
+            default_superconducting_pulse_implementation_map()
+            if pulse_implementation_map is None
+            else pulse_implementation_map.copy()
         )
 
     def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
@@ -135,6 +145,7 @@ class PulseBackend:
                             engine_index_allocation,
                             self.model,
                             self.calibration,
+                            self._pulse_implementation_map,
                             self._noise_model,
                             self._lindblad_implementation_map,
                         )

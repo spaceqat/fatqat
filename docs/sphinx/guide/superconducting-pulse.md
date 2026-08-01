@@ -59,6 +59,40 @@ The accepted result request keys are `counts` and `final_state`. By default,
 counts are requested when the program contains measurement, while a final
 state is requested only for a program without measurement.
 
+## Custom gate realizations
+
+Each native operation resolves to its physical pulse recipe through a
+`pulse_implementation_map=`, defaulting to
+`fq.backends.default_superconducting_pulse_implementation_map()`. Copy that
+default map and replace one gate's realization to change *how* a gate is
+physically executed - the waveform shape, which control channels are
+driven, which model resources are claimed - without editing calibration
+data or subclassing `PulseBackend`:
+
+```python
+def custom_cz(operation, *, targets, model, calibration):
+    ...
+    return fq.backends.PulseDefinition(
+        duration=...,
+        controls=(...,),
+        resource_claims=(...,),
+    )
+
+implementations = fq.backends.default_superconducting_pulse_implementation_map()
+implementations.add(fq.ops.CZ, custom_cz)
+backend = fq.backends.PulseBackend(
+    model, calibration, pulse_implementation_map=implementations
+)
+```
+
+Changing a calibrated *number* (a gate duration, a DRAG coefficient, a
+per-edge detuning) is a calibration-document change. Changing the physical
+*mechanism* a gate uses is an implementation-map change; the calibration
+document itself is never a place to select executable behavior. See
+[Advanced user topics](advanced.md) for the matrix-family version of this
+same pattern, and {doc}`../api/experimental` for the full rule contract,
+registration modes, and error semantics.
+
 ## Dynamic execution and timing
 
 Measurement collapses the physical qutrit. Its reported classical bit maps
