@@ -49,7 +49,7 @@ def _branch_stack(weights):
 
 
 def test_kraus_stack_copies_and_normalizes_the_payload():
-    kraus_ops = _kraus_for(AmplitudeDamping(gammas=(0.3,)), amplitude_damping_rule, 2)
+    kraus_ops = _kraus_for(AmplitudeDamping(p=(0.3,)), amplitude_damping_rule, 2)
     stack = _kraus_stack(kraus_ops)
 
     assert stack.shape == (2, 2, 2)
@@ -67,7 +67,7 @@ def test_kraus_stack_copies_and_normalizes_the_payload():
     [
         (Depolarizing(p=0.3), depolarizing_rule, 2),
         (Depolarizing(p=0.15), depolarizing_rule, 3),
-        (AmplitudeDamping(gammas=(0.2, 0.4)), amplitude_damping_rule, 3),
+        (AmplitudeDamping(p=(0.2, 0.4)), amplitude_damping_rule, 3),
         (PhaseDamping(p=0.25), phase_damping_rule, 3),
     ],
 )
@@ -87,9 +87,7 @@ def test_kraus_superop_kernel_equals_the_numpy_kronecker_sum(channel, rule, dim)
 def test_kraus_superop_kernel_reproduces_the_sandwich_on_vectorized_rho():
     # The super-operator's defining property: applied to vec(rho) with the ket
     # group most-significant it equals sum_i K_i rho K_i^dagger.
-    kraus_ops = _kraus_for(
-        AmplitudeDamping(gammas=(0.3, 0.1)), amplitude_damping_rule, 3
-    )
+    kraus_ops = _kraus_for(AmplitudeDamping(p=(0.3, 0.1)), amplitude_damping_rule, 3)
     rng = np.random.default_rng(0)
     ket = rng.normal(size=3) + 1j * rng.normal(size=3)
     rho = np.outer(ket, ket.conj())

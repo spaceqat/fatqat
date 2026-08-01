@@ -6,7 +6,10 @@ import pytest
 from fatqat import operations as ops
 from fatqat.backends import ApplyMatrixStep, MeasurementStep, SimulatorBackend
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
-from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
+from fatqat.implementation import (
+    MatrixImplementationMap,
+    default_matrix_implementation_map,
+)
 from fatqat.program import Program
 
 
@@ -53,7 +56,7 @@ def test_resolve_measurement_step_has_flat_indices():
 
 def test_target_aware_map_allows_registered_target_key():
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = SimulatorBackend("SV", implementation_map=m)
 
@@ -69,7 +72,7 @@ def test_target_aware_map_allows_registered_target_key():
 
 def test_target_aware_map_rejects_illegal_target_key():
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = SimulatorBackend("SV", implementation_map=m)
 
@@ -87,7 +90,7 @@ def test_target_aware_map_rejects_illegal_target_key():
 
 def test_target_aware_map_unsupported_family_still_raises_unsupported_operation():
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.CZ, cz_rule, device_operands=(0, 1))
     backend = SimulatorBackend("SV", implementation_map=m)
 

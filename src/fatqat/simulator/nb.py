@@ -1167,15 +1167,28 @@ def _plan_compilable(plan: list) -> bool:
     """Whether the fused dynamic kernel understands every step in the plan.
 
     The kernel compiles every step type the matrix family lowers today - matrix,
-    channel, measurement (including readout error), and reset - so this returns
-    ``False`` only for a step type added later. Such a step must not reach
-    ``_compile_dynamic_plan``, whose dispatch would misread it; the caller falls
-    back to the inherited NumPy per-shot path instead, which executes every step
-    type correctly at NumPy speed.
+    channel, measurement (including readout error), and reset. It does not yet
+    encode non-identity physical-to-reported measurement maps. An unsupported
+    step or map must not reach ``_compile_dynamic_plan``; the caller falls back
+    to the inherited NumPy per-shot path instead, which executes every step type
+    correctly at NumPy speed.
     """
+    # pylint: disable-next=fixme
+    # TODO: Compile non-identity ``reported_digit_maps`` into the measurement
+    # table and apply them after physical collapse but before readout confusion.
+    # Until then, keep routing such plans through the semantics-complete NumPy
+    # per-shot executor rather than silently reporting the physical digit.
     return all(
         isinstance(
             step, (ApplyMatrixStep, ApplyChannelStep, MeasurementStep, ResetStep)
+        )
+        and not (
+            isinstance(step, MeasurementStep)
+            and step.reported_digit_maps is not None
+            and any(
+                reported_map != tuple(range(len(reported_map)))
+                for reported_map in step.reported_digit_maps
+            )
         )
         for step in plan
     )

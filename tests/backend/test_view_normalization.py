@@ -18,7 +18,10 @@ from fatqat import operations as ops
 from fatqat.backends import ApplyMatrixStep, SimulatorBackend
 from fatqat.backends.backend_utils import _LoweringContext
 from fatqat.backends.simulator_backend import _break_grouped_operations
-from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
+from fatqat.implementation import (
+    MatrixImplementationMap,
+    default_matrix_implementation_map,
+)
 from fatqat.program import Program
 from fatqat.registers import GridRegister
 from fatqat.resource_layout import ResourceLayout
@@ -97,11 +100,11 @@ def test_base_simulator_executes_grouped_views_with_identity_mapping():
 # for execution indices -----------------------------------------------------
 
 
-def test_lower_uses_resource_layout_device_operands_for_lookup_and_engine_indices_for_steps():
+def test_lower_uses_resource_layout_device_labels_for_lookup_and_engine_indices_for_steps():
     # A deliberately divergent mapping: device labels 99/100 have nothing to
     # do with the engine indices 0/1. The CZ rule is only registered for
     # device operands (99, 100), so lowering can only have succeeded by using
-    # `ResourceLayout.device_operands()` for the implementation-map lookup;
+    # `ResourceLayout.device_labels_for()` for the implementation-map lookup;
     # the resulting step must still carry the *engine* indices (0, 1), from
     # `_EngineIndexAllocation`, not the device labels used for lookup.
     program = Program(2)
@@ -112,7 +115,7 @@ def test_lower_uses_resource_layout_device_operands_for_lookup_and_engine_indice
     resource_layout = ResourceLayout({q0: 99, q1: 100})
 
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
-    implementation_map = ImplementationMap()
+    implementation_map = MatrixImplementationMap()
     implementation_map.add(ops.CZ, cz_rule, device_operands=(99, 100))
     backend = SimulatorBackend(implementation_map=implementation_map)
 

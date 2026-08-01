@@ -284,9 +284,9 @@ def test_default_noise_model_is_fully_supported():
 
     assert report.supported is True
     assert set(report.accepted_sources) == {
-        "AmplitudeDamping",
+        "AmplitudeDamping(p)",
         "Depolarizing",
-        "PhaseDamping",
+        "PhaseDamping(p)",
         "readout_error",
     }
     assert model.channel_types() == frozenset(
@@ -337,7 +337,7 @@ def test_rz_carries_relaxation_like_other_google_rotations():
 def test_default_noise_model_is_a_fresh_extensible_model():
     first = SCQubitGoogleSimulator.default_noise_model()
     second = SCQubitGoogleSimulator.default_noise_model()
-    first.add_channel(ops.RX, Depolarizing(p=0.5))
+    first.add_channel(Depolarizing(p=0.5), operation=ops.RX)
 
     assert Depolarizing in first.channel_types()
     # Each call builds an independent model; user edits never leak back.

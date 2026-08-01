@@ -19,6 +19,7 @@ generated signatures, attributes, and methods for that supported surface.
    registers
    operations
    backends
+   pulse-emulator
    noise
    result
    exceptions

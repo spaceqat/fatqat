@@ -7,6 +7,8 @@ are intentionally omitted from this reference.
 
 .. autoexception:: fatqat.errors.BackendValidationError
 
+.. autoexception:: fatqat.errors.BackendExecutionError
+
 .. autoexception:: fatqat.errors.UnsupportedOperationError
 
 .. autoexception:: fatqat.errors.ResultFieldUnavailableError

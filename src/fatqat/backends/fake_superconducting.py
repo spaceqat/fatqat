@@ -40,11 +40,11 @@ import numpy as np
 from .. import operations as ops
 from ..errors import BackendValidationError
 from ..implementation import (
-    ImplementationMap,
+    MatrixImplementationMap,
     MatrixImplementation,
     default_matrix_implementation_map,
 )
-from ..noise import Depolarizing, NoiseModel, relaxation_channels
+from ..noise import Depolarizing, NoiseModel, ThermalRelaxation
 from ..operations import Operation
 from ..program import Program
 from ..registers import GridRegister, RegisterRef
@@ -63,6 +63,7 @@ DEFAULT_GRID_SIZE = (DEFAULT_ROWS, DEFAULT_COLS)
 # the usual superconducting readout skew.
 _T1 = 60e-6  # seconds
 _T2 = 48e-6
+_THERMAL_RELAXATION = ThermalRelaxation(t1=_T1, t2=_T2)
 _SX_DURATION = 20e-9  # IBM-style RZ is virtual (zero duration -> no noise)
 _ROTATION_DURATION = 20e-9  # Google-style RX/RY/RZ: all physical rotations
 _CZ_DURATION = 50e-9
@@ -93,7 +94,7 @@ def _nearest_neighbor_edges(rows: int, cols: int) -> tuple[tuple[int, int], ...]
 
 
 def _require_rule(
-    implementation_map: ImplementationMap,
+    implementation_map: MatrixImplementationMap,
     op: Operation,
 ) -> MatrixImplementation:
     rule = implementation_map.implementation_for(op)
@@ -114,7 +115,7 @@ class _SCQubitSimulator(SimulatorBackend):
 
     def __init__(
         self,
-        implementation_map: ImplementationMap,
+        implementation_map: MatrixImplementationMap,
         *,
         rows: int,
         cols: int,
@@ -134,7 +135,7 @@ class _SCQubitSimulator(SimulatorBackend):
         )
 
     @property
-    def implementation_map(self) -> ImplementationMap:
+    def implementation_map(self) -> MatrixImplementationMap:
         """Return a copy of the compiler-facing device-aware implementation map.
 
         A compiler targeting this device introspects the map rather than
@@ -215,7 +216,7 @@ class _SCQubitSimulator(SimulatorBackend):
 
 def fake_superconducting_ibm_implementation_map(
     rows: int = DEFAULT_ROWS, cols: int = DEFAULT_COLS
-) -> ImplementationMap:
+) -> MatrixImplementationMap:
     """Build the native gate map for a `rows x cols` fake IBM-style superconducting backend.
 
     `X`, `SX`, and `RZ` are legal on any qubit label (registered uniformly
@@ -231,7 +232,7 @@ def fake_superconducting_ibm_implementation_map(
     sx_rule = _require_rule(defaults, ops.SX)
     cz_rule = _require_rule(defaults, ops.CZ)
 
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, x_rule)
     m.add(ops.RZ, rz_rule)
     m.add(ops.SX, sx_rule)
@@ -331,15 +332,15 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
             True
         """
         noise = NoiseModel()
-        damping, dephasing = relaxation_channels(_T1, _T2, _SX_DURATION)
+        damping, dephasing = _THERMAL_RELAXATION.as_channels(_SX_DURATION)
         for gate in (ops.X, ops.SX):
-            noise.add_channel(gate, damping)
-            noise.add_channel(gate, dephasing)
-        cz_damping, cz_dephasing = relaxation_channels(_T1, _T2, _CZ_DURATION)
+            noise.add_channel(damping, operation=gate)
+            noise.add_channel(dephasing, operation=gate)
+        cz_damping, cz_dephasing = _THERMAL_RELAXATION.as_channels(_CZ_DURATION)
         for slot in (0, 1):
-            noise.add_channel(ops.CZ, cz_damping, slots=(slot,))
-            noise.add_channel(ops.CZ, cz_dephasing, slots=(slot,))
-        noise.add_channel(ops.CZ, Depolarizing(p=_CZ_DEPOLARIZING_P))
+            noise.add_channel(cz_damping, operation=ops.CZ, slots=(slot,))
+            noise.add_channel(cz_dephasing, operation=ops.CZ, slots=(slot,))
+        noise.add_channel(Depolarizing(p=_CZ_DEPOLARIZING_P), operation=ops.CZ)
         noise.add_readout_error(
             np.array(
                 [
@@ -356,7 +357,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
 
 def fake_superconducting_google_implementation_map(
     rows: int = DEFAULT_ROWS, cols: int = DEFAULT_COLS
-) -> ImplementationMap:
+) -> MatrixImplementationMap:
     """Build the native gate map for a `rows x cols` fake Google-style superconducting backend.
 
     `RX`, `RY`, and `RZ` are legal on any qubit label (registered uniformly
@@ -373,7 +374,7 @@ def fake_superconducting_google_implementation_map(
     iswap_rule = _require_rule(defaults, ops.iSwap)
     cz_rule = _require_rule(defaults, ops.CZ)
 
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.RX, rx_rule)
     m.add(ops.RY, ry_rule)
     m.add(ops.RZ, rz_rule)
@@ -477,20 +478,22 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
             True
         """
         noise = NoiseModel()
-        damping, dephasing = relaxation_channels(_T1, _T2, _ROTATION_DURATION)
+        damping, dephasing = _THERMAL_RELAXATION.as_channels(_ROTATION_DURATION)
         for gate in (ops.RX, ops.RY, ops.RZ):
-            noise.add_channel(gate, damping)
-            noise.add_channel(gate, dephasing)
-        iswap_damping, iswap_dephasing = relaxation_channels(_T1, _T2, _ISWAP_DURATION)
+            noise.add_channel(damping, operation=gate)
+            noise.add_channel(dephasing, operation=gate)
+        iswap_damping, iswap_dephasing = _THERMAL_RELAXATION.as_channels(
+            _ISWAP_DURATION
+        )
         for slot in (0, 1):
-            noise.add_channel(ops.iSwap, iswap_damping, slots=(slot,))
-            noise.add_channel(ops.iSwap, iswap_dephasing, slots=(slot,))
-        noise.add_channel(ops.iSwap, Depolarizing(p=_ISWAP_DEPOLARIZING_P))
-        cz_damping, cz_dephasing = relaxation_channels(_T1, _T2, _CZ_DURATION)
+            noise.add_channel(iswap_damping, operation=ops.iSwap, slots=(slot,))
+            noise.add_channel(iswap_dephasing, operation=ops.iSwap, slots=(slot,))
+        noise.add_channel(Depolarizing(p=_ISWAP_DEPOLARIZING_P), operation=ops.iSwap)
+        cz_damping, cz_dephasing = _THERMAL_RELAXATION.as_channels(_CZ_DURATION)
         for slot in (0, 1):
-            noise.add_channel(ops.CZ, cz_damping, slots=(slot,))
-            noise.add_channel(ops.CZ, cz_dephasing, slots=(slot,))
-        noise.add_channel(ops.CZ, Depolarizing(p=_CZ_DEPOLARIZING_P))
+            noise.add_channel(cz_damping, operation=ops.CZ, slots=(slot,))
+            noise.add_channel(cz_dephasing, operation=ops.CZ, slots=(slot,))
+        noise.add_channel(Depolarizing(p=_CZ_DEPOLARIZING_P), operation=ops.CZ)
         noise.add_readout_error(
             np.array(
                 [

@@ -14,12 +14,12 @@ from .. import operations as ops
 from ..backends.steps import BuiltinKernelKey as K
 from .base import (
     FixedMatrix,
-    ImplementationMap,
+    MatrixImplementationMap,
     _DimMatrix,
     _KeyedImplementation,
-    _resolve_operation_class,
     _wrap_rule,
 )
+from ._operation_registry import _resolve_operation_class
 from .matrices import (
     _CCX,
     _CS,
@@ -94,7 +94,7 @@ _DEFAULT_RULES = (
 )
 
 
-def default_matrix_implementation_map() -> ImplementationMap:
+def default_matrix_implementation_map() -> MatrixImplementationMap:
     """Build the default matrix implementation map.
 
     Registers against the public singleton instances (e.g. `ops.X`), not the
@@ -105,7 +105,7 @@ def default_matrix_implementation_map() -> ImplementationMap:
     callables wrapped, exactly as `add()` would) and then keyed with its
     gate's canonical `BuiltinKernelKey`.
     """
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     for op, rule, key in _DEFAULT_RULES:
         op_cls = _resolve_operation_class(op)
         m.add(op, _KeyedImplementation(_wrap_rule(op_cls, rule), key))

@@ -61,6 +61,12 @@ def test_noise_free_measurement_lowers_without_confusions():
 
     (measurement,) = [s for s in plan if isinstance(s, MeasurementStep)]
     assert measurement.confusions is None
+    # The shared measurement-lowering boundary (backend_utils) never decides
+    # what a caller stores as `reported_digit_maps`; matrix's identity,
+    # noise-free case must still pass `None` explicitly, since that is the
+    # compatibility default a numba-compiled fast path recognizes (contrast
+    # the pulse family, which always stores its literal qutrit-to-bit map).
+    assert measurement.reported_digit_maps is None
 
 
 def test_untargeted_subsystems_lower_to_none_entries():
@@ -256,7 +262,7 @@ def test_numba_fused_kernel_matches_numpy_on_a_qudit_confusion_plan():
     def counts_for(runtime):
         noise = NoiseModel()
         noise.add_readout_error(confusion)
-        noise.add_channel(fq.ops.Shift, PhaseDamping(p=0.2))
+        noise.add_channel(PhaseDamping(p=0.2), operation=fq.ops.Shift)
         qreg = fq.QuantumRegister(2, dim=3)
         creg = fq.ClassicalRegister(2, dim=3)
         program = fq.Program([qreg], [creg])

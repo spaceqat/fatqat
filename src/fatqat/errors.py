@@ -11,6 +11,10 @@ class BackendValidationError(FatqcatError):
     """Raised at backend entry when a program/request is not acceptable."""
 
 
+class BackendExecutionError(FatqcatError):
+    """Raised by ``Job.result()`` when a backend's private execution fails."""
+
+
 class UnsupportedOperationError(BackendValidationError):
     """Raised when the backend does not support an operation or feature."""
 
@@ -18,6 +22,14 @@ class UnsupportedOperationError(BackendValidationError):
 class MatrixImplementationError(FatqcatError):
     """Raised when a registered implementation rule fails while building a
     plan's matrix step."""
+
+
+class PulseImplementationError(FatqcatError):
+    """Raised when a registered pulse implementation rule fails, or returns
+    something other than a ``PulseDefinition``, while lowering a pulse
+    program occurrence. A rule's own ``BackendValidationError`` (including
+    ``UnsupportedOperationError``) propagates unchanged instead - that is
+    the rule's deliberate validation, not an implementation defect."""
 
 
 class ResultFieldUnavailableError(FatqcatError):

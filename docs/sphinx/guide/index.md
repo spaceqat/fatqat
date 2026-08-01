@@ -19,6 +19,9 @@ Short follow-on snippets state when they assume an existing `program` or import.
 4. [Noise](noise.md) and [advanced user topics](advanced.md) — opt into
    optional simulation features.
 
+5. [Superconducting pulse simulation](superconducting-pulse.md) introduces
+   calibrated native pulses in a physical transmon model.
+
 If an example fails or its output surprises you, see
 [Troubleshooting](troubleshooting.md).
 
@@ -32,5 +35,6 @@ measurement-and-conditions
 running-and-results
 noise
 advanced
+superconducting-pulse
 troubleshooting
 ```

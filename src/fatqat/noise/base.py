@@ -8,9 +8,9 @@ descriptor plus its resolution-time ``targets`` into a bare tuple of Kraus
 arrays, mirroring how a matrix-implementation rule produces a bare matrix.
 `ChannelImplementationMap` is the matrix family's registry from descriptor
 type to rule; it exists (instead of reusing the gate implementation map)
-because a channel resolves to a *tuple* of Kraus operators here but would
-resolve to collapse operators in a future pulse family - the same descriptor
-means different mathematical objects per backend family.
+because a channel resolves to a *tuple* of Kraus operators here but to local
+Lindblad operators in continuous simulators (see ``noise.lindblad``) - the
+same descriptor means different mathematical objects per backend family.
 """
 
 from __future__ import annotations
@@ -70,15 +70,8 @@ class ChannelImplementation:
         raise NotImplementedError
 
 
-class ChannelImplementationMap:
-    """Resolve channel descriptor types to their Kraus-producing rules.
-
-    A dumb class-keyed registry: it never invokes rules itself and holds no
-    layout or payload knowledge. The map is static per backend instance -
-    which `NoiseModel` a run uses has no bearing on what the map can resolve.
-    Its coverage is the backend's channel capability declaration: a descriptor
-    type without a registered rule is unsupported.
-    """
+class _ChannelImplementationRegistry:
+    """Shared class-keyed registration mechanics for channel implementations."""
 
     def __init__(self) -> None:
         self._rules: dict[type[Channel], ChannelImplementation | Callable] = {}
@@ -88,14 +81,12 @@ class ChannelImplementationMap:
         channel_type: type[Channel],
         rule: ChannelImplementation | Callable,
     ) -> None:
-        """Register the rule used to resolve one channel descriptor type.
+        """Register one channel descriptor implementation rule.
 
         Args:
             channel_type: `Channel` subclass to key the registry by.
-            rule: Callable with the `ChannelImplementation` call shape
-                (``rule(channel, *, targets) -> tuple[np.ndarray, ...]``).
-                Stored as-is; registering again for the same type replaces
-                the previous rule.
+            rule: Backend-specific callable stored as-is; registering again
+                for the same type replaces the previous rule.
 
         Raises:
             TypeError: If ``channel_type`` is not a `Channel` subclass or
@@ -119,15 +110,26 @@ class ChannelImplementationMap:
         """Return every descriptor type with a registered rule."""
         return frozenset(self._rules)
 
-    def copy(self) -> "ChannelImplementationMap":
+    def copy(self) -> "_ChannelImplementationRegistry":
         """Return a new map with an independent copy of the registrations.
 
         Rule objects themselves are shared (rules are expected to be pure);
         mutating one map's registrations never affects the other.
         """
-        clone = ChannelImplementationMap()
+        clone = type(self)()
         clone._rules = dict(self._rules)
         return clone
+
+
+class ChannelImplementationMap(_ChannelImplementationRegistry):
+    """Resolve channel descriptor types to their Kraus-producing rules.
+
+    A dumb class-keyed registry: it never invokes rules itself and holds no
+    layout or payload knowledge. The map is static per backend instance -
+    which `NoiseModel` a run uses has no bearing on what the map can resolve.
+    Its coverage is the backend's channel capability declaration: a descriptor
+    type without a registered rule is unsupported.
+    """
 
 
 @dataclass(frozen=True)

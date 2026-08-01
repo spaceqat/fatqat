@@ -136,12 +136,12 @@ def test_physical_noise_selector_uses_device_label_not_engine_index():
 
     channel = Depolarizing(p=0.1)
     noise = NoiseModel()
-    noise.add_channel(ops.RX, channel, targets=(5,))
+    noise.add_channel(channel, operation=ops.RX, targets=(5,))
 
     assert noise.channels_for(ops.RX, (ref,), resource_layout) == [(channel, (ref,))]
 
     stale_engine_index_selector = NoiseModel()
-    stale_engine_index_selector.add_channel(ops.RX, channel, targets=(3,))
+    stale_engine_index_selector.add_channel(channel, operation=ops.RX, targets=(3,))
     assert (
         stale_engine_index_selector.channels_for(ops.RX, (ref,), resource_layout) == []
     )
@@ -480,7 +480,7 @@ def test_lowering_uses_resource_layout_device_operands_and_engine_index_allocati
     # label 0; atoms[3] is engine index 3, device label 5 (row 1, col 0 ->
     # 1*5+0). The native CZ map only legalizes the *device*-label edge
     # (0, 5), not the engine-index pair (0, 3), so lowering only succeeds by
-    # looking up `ImplementationMap` with device operands sourced from
+    # looking up `MatrixImplementationMap` with device operands sourced from
     # `ResourceLayout`. The resulting `ApplyMatrixStep`, however, must carry
     # the *engine* indices (0, 3) from `_EngineIndexAllocation` - the private
     # lowering context keeps the two identities separate end to end.

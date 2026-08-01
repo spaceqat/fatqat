@@ -111,6 +111,18 @@ angle) or on target dimension (e.g. a qudit gate), `add()` a bare callable —
 `f(op)` or `f(op, targets)` — instead of a `FixedMatrix`; the map detects
 which shape you passed by inspecting the callable's signature.
 
+### Custom pulse implementations
+
+`fq.backends.PulseBackend` has the same customization shape for its own
+native operations, through a `PulseImplementationMap` instead of an
+`MatrixImplementationMap`: copy `default_superconducting_pulse_implementation_map()`,
+register a replacement rule, and construct the backend with
+`pulse_implementation_map=`. See
+[Superconducting pulse simulation](superconducting-pulse.md) for the
+pulse-specific rule contract - a pulse rule returns a `PulseDefinition`
+(duration, sampled controls, resource claims, frame actions) rather than a
+matrix, and never touches calibration data.
+
 ## Parallel execution
 
 For programs on the dynamic path, `run()`'s `simulation_config={...}` accepts

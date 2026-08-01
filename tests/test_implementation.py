@@ -7,7 +7,7 @@ from fatqat import operations as ops
 from fatqat.backends import ApplyMatrixStep
 from fatqat.implementation import (
     FixedMatrix,
-    ImplementationMap,
+    MatrixImplementationMap,
     MatrixImplementation,
     default_matrix_implementation_map,
 )
@@ -100,12 +100,12 @@ def test_parametric_cphase_reads_theta():
 
 
 def test_unregistered_class_returns_none():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     assert m.implementation_for(type(ops.X)) is None
 
 
 def test_implementation_map_enumerates_compiler_capabilities():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)), device_operands=(0,))
     m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)), device_operands=(1,))
 
@@ -119,12 +119,12 @@ def test_implementation_map_enumerates_compiler_capabilities():
 def test_implementation_map_has_no_legacy_api_aliases():
     import fatqat.implementation as implementation
 
-    assert not hasattr(ImplementationMap, "register")
-    assert not hasattr(ImplementationMap, "register_for")
-    assert not hasattr(ImplementationMap, "get")
-    assert not hasattr(ImplementationMap, "target_keys")
-    assert not hasattr(ImplementationMap, "unregister")
-    assert not hasattr(implementation, "MatrixImplementationMap")
+    assert not hasattr(MatrixImplementationMap, "register")
+    assert not hasattr(MatrixImplementationMap, "register_for")
+    assert not hasattr(MatrixImplementationMap, "get")
+    assert not hasattr(MatrixImplementationMap, "target_keys")
+    assert not hasattr(MatrixImplementationMap, "unregister")
+    assert not hasattr(implementation, "ImplementationMap")
     assert not hasattr(implementation, "TargetKey")
 
 
@@ -188,7 +188,7 @@ def test_fixed_matrix_copies_input_array():
 
 
 def test_add_accepts_operation_instance_key():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     rule = FixedMatrix(np.eye(2, dtype=complex))
     m.add(ops.X, rule)
     assert m.implementation_for(ops.X) is rule
@@ -200,7 +200,7 @@ def test_add_accepts_operation_class_key():
         name = "MyGate"
         _num_subsystems = 1
 
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     rule = FixedMatrix(np.eye(2, dtype=complex))
     m.add(MyGate, rule)
     assert m.implementation_for(MyGate) is rule
@@ -208,7 +208,7 @@ def test_add_accepts_operation_class_key():
 
 
 def test_add_rejects_non_operation_key():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     rule = FixedMatrix(np.eye(2, dtype=complex))
     with pytest.raises(TypeError):
         m.add("not an operation", rule)
@@ -232,9 +232,19 @@ def test_add_rejects_variable_arity_operation(rule):
         name = "VariableGate"
         _num_subsystems = None
 
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     with pytest.raises(TypeError, match="variable arity"):
         m.add(VariableGate, rule)
+
+
+def test_add_checks_variable_arity_before_wrapping_an_invalid_rule():
+    class VariableGate(ops.Operation):
+        name = "VariableGate"
+        _num_subsystems = None
+
+    m = MatrixImplementationMap()
+    with pytest.raises(TypeError, match="implementation maps only support"):
+        m.add(VariableGate, "not an implementation")
 
 
 # --- remove -------------------------------------------------------------
@@ -252,7 +262,7 @@ def test_remove_removes_by_instance_or_class():
 
 
 def test_remove_missing_operation_is_a_noop():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.remove(ops.X)
 
 
@@ -260,7 +270,7 @@ def test_remove_missing_operation_is_a_noop():
 
 
 def test_add_resolves_by_device_operands():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     rule_0 = FixedMatrix(np.eye(2, dtype=complex))
     rule_1 = FixedMatrix(np.array([[0, 1], [1, 0]], dtype=complex))
 
@@ -276,7 +286,7 @@ def test_add_resolves_by_device_operands():
 
 
 def test_add_accepts_non_integer_hashable_device_operands():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     rule = FixedMatrix(np.eye(2, dtype=complex))
 
     m.add(ops.X, rule, device_operands=("zone-a",))
@@ -286,7 +296,7 @@ def test_add_accepts_non_integer_hashable_device_operands():
 
 
 def test_add_rejects_wrong_device_operand_arity():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     rule = FixedMatrix(np.eye(2, dtype=complex))
 
     with pytest.raises(ValueError, match="expects 1 device operand"):
@@ -294,7 +304,7 @@ def test_add_rejects_wrong_device_operand_arity():
 
 
 def test_get_legacy_rule_falls_back_to_class_keyed_rule():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     rule = FixedMatrix(np.eye(2, dtype=complex))
 
     m.add(ops.X, rule)
@@ -305,15 +315,23 @@ def test_get_legacy_rule_falls_back_to_class_keyed_rule():
 
 
 def test_add_rejects_unconstrained_implementation_after_device_specific_additions():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)), device_operands=(0,))
 
     with pytest.raises(ValueError, match="device-specific implementations"):
         m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)))
 
 
+def test_add_checks_registration_mode_before_wrapping_an_invalid_rule():
+    m = MatrixImplementationMap()
+    m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)), device_operands=(0,))
+
+    with pytest.raises(ValueError, match="device-specific implementations"):
+        m.add(ops.X, np.ones(3))
+
+
 def test_add_rejects_device_specific_implementation_after_unconstrained_addition():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)))
 
     with pytest.raises(ValueError, match="unconstrained rule"):
@@ -321,7 +339,7 @@ def test_add_rejects_device_specific_implementation_after_unconstrained_addition
 
 
 def test_remove_allows_switching_registration_mode():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)), device_operands=(0,))
     m.remove(ops.X)
 
@@ -332,13 +350,13 @@ def test_remove_allows_switching_registration_mode():
 
 
 def test_supports_is_false_for_unregistered_operation():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     assert not m.supports(ops.X)
     assert m.implementation_for(ops.X, device_operands=(0,)) is None
 
 
 def test_remove_removes_target_aware_rules():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)), device_operands=(0,))
 
     m.remove(ops.X)
@@ -348,7 +366,7 @@ def test_remove_removes_target_aware_rules():
 
 
 def test_copy_preserves_device_specific_implementations_independently():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     rule = FixedMatrix(np.eye(2, dtype=complex))
     m.add(ops.X, rule, device_operands=(0,))
 
@@ -363,7 +381,7 @@ def test_copy_device_operand_tables_are_independently_mutable():
     # Regression: copy() must deep-copy the per-operation target-key dict,
     # not just the outer op_cls -> dict mapping, or mutating one map's
     # target-aware registrations for an operation leaks into the other.
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, FixedMatrix(np.eye(2, dtype=complex)), device_operands=(0,))
 
     clone = m.copy()
@@ -377,7 +395,7 @@ def test_copy_device_operand_tables_are_independently_mutable():
 
 
 def test_add_wraps_bare_ndarray_in_fixed_matrix():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     matrix = np.array([[0, 1], [1, 0]], dtype=complex)
     m.add(ops.X, matrix)
     rule = m.implementation_for(ops.X)
@@ -391,7 +409,7 @@ def test_add_accepts_ndarray_of_any_square_shape_for_operation():
     # way to know the operation's intended dimension in general (a custom
     # qutrit gate registered against a 1-subsystem op class is legitimate),
     # so only squareness (>= 2x2) is validated, in `FixedMatrix`.
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, np.eye(4, dtype=complex))
     assert m.implementation_for(ops.X)(ops.X, targets=()).shape == (4, 4)
 
@@ -421,7 +439,7 @@ def _accepts_optional_second(op, extra=None):
     ids=["plain", "varargs", "optional_second"],
 )
 def test_add_accepts_valid_callable_signatures(rule):
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.RX, rule)
     wrapped = m.implementation_for(ops.RX)
     assert not isinstance(wrapped, FixedMatrix)  # wrapped, not stored as a matrix
@@ -437,14 +455,14 @@ def test_wrong_shape_callable_fails_at_use_not_registration():
     # cleanly and instead fails the first time it is invoked (where the backend
     # wraps it in a MatrixImplementationError). Here we invoke the wrapped rule
     # directly and expect the raw call-time TypeError.
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.RX, _wrong_shape_zero_args)  # accepted at registration
     with pytest.raises(TypeError):
         m.implementation_for(ops.RX)(ops.RX(0.3), targets=())
 
 
 def test_add_rejects_non_callable_non_ndarray_rule():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     with pytest.raises(
         TypeError, match="MatrixImplementation, np.ndarray, or callable"
     ):
@@ -460,7 +478,7 @@ def test_add_accepts_callable_when_signature_is_uninspectable(monkeypatch, exc):
 
     monkeypatch.setattr(implementation.inspect, "signature", raise_exc)
 
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
 
     def some_rule(op):
         return np.eye(2, dtype=complex)
@@ -503,7 +521,7 @@ def test_fixed_matrix_ignores_targets():
 
 
 def test_bare_callable_op_only_still_works():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.RX, lambda op: np.eye(2, dtype=complex))
     rule = m.implementation_for(ops.RX(0.1))
     assert np.allclose(rule(ops.RX(0.1), targets=_targets(2)), np.eye(2))
@@ -516,7 +534,7 @@ def test_targets_aware_callable_receives_refs():
         seen["dim"] = targets[0].register.dim
         return np.eye(targets[0].register.dim, dtype=complex)
 
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, rule)
     out = m.implementation_for(ops.X)(ops.X, targets=_targets(3))
     assert seen["dim"] == 3
@@ -530,13 +548,13 @@ def test_dimensioned_matrix_derives_dims():
 
 
 def test_bare_ndarray_non_power_of_two_registers():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, np.eye(3, dtype=complex))  # 3x3 for a custom qutrit rule
     assert m.implementation_for(ops.X)(ops.X, targets=_targets(3)).shape == (3, 3)
 
 
 def test_non_square_ndarray_still_rejected():
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     with pytest.raises(ValueError):
         m.add(ops.X, np.ones((2, 3), dtype=complex))
 

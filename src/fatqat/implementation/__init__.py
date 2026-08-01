@@ -7,7 +7,7 @@ import inspect
 from .base import (
     DeviceOperands,
     FixedMatrix,
-    ImplementationMap,
+    MatrixImplementationMap,
     MatrixImplementation,
 )
 from .registry import default_matrix_implementation_map
@@ -15,7 +15,7 @@ from .registry import default_matrix_implementation_map
 __all__ = [
     "MatrixImplementation",
     "FixedMatrix",
-    "ImplementationMap",
+    "MatrixImplementationMap",
     "DeviceOperands",
     "default_matrix_implementation_map",
 ]

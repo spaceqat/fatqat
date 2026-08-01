@@ -12,7 +12,10 @@ from fatqat.errors import (
     NoMeasurementWarning,
     UnsupportedOperationError,
 )
-from fatqat.implementation import ImplementationMap, default_matrix_implementation_map
+from fatqat.implementation import (
+    MatrixImplementationMap,
+    default_matrix_implementation_map,
+)
 from fatqat import operations as ops
 from fatqat.program import Program
 
@@ -162,7 +165,7 @@ def test_rule_failure_is_wrapped_with_operation_context():
     def broken_rule(op):
         raise RuntimeError("boom")
 
-    m = ImplementationMap()
+    m = MatrixImplementationMap()
     m.add(ops.X, broken_rule)
     backend = SimulatorBackend("SV", implementation_map=m)
 

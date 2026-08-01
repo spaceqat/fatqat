@@ -9,7 +9,7 @@ building device-specific maps (see ``SCQubitIBMSimulator`` and
 
 .. autofunction:: fatqat.implementation.default_matrix_implementation_map
 
-.. autoclass:: fatqat.implementation.ImplementationMap
+.. autoclass:: fatqat.implementation.MatrixImplementationMap
    :members:
    :show-inheritance:
 

@@ -36,12 +36,13 @@ import numpy as np
 
 from ..operations import Operation
 from ..registers import RegisterRef
-from ..resource_layout import DeviceOperand
+from ._operation_registry import (
+    DeviceOperands,
+    _OperationRuleRegistry,
+)
 
 if TYPE_CHECKING:
     from ..backends.steps import BuiltinKernelKey
-
-type DeviceOperands = tuple[DeviceOperand, ...]
 
 
 class MatrixImplementation:
@@ -50,7 +51,7 @@ class MatrixImplementation:
     A rule receives the bare :py:class:`~fatqat.operations.Operation` instance that was applied (e.g. an
     `RX(0.3)` value) plus the `targets` :py:class:`~fatqat.registers.RegisterRef` tuple by keyword, and
     returns its local matrix. Most callers never need to subclass this
-    directly: `ImplementationMap.add` auto-wraps a plain
+    directly: `MatrixImplementationMap.add` auto-wraps a plain
     `np.ndarray` (as `FixedMatrix`), a `_DimMatrix`, or a bare
     callable. Subclass and override `__call__` for a stateful or configured
     implementation.
@@ -169,62 +170,6 @@ class _DimMatrix(MatrixImplementation):
         return self._fn(dims)
 
 
-def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]:
-    """Normalize an :py:class:`~fatqat.operations.Operation` instance or subclass to its registry key.
-
-    Accepts either an :py:class:`~fatqat.operations.Operation` instance (e.g. `op.X`) or an :py:class:`~fatqat.operations.Operation`
-    subclass (e.g. a custom gate class) and returns the class to key the
-    registry by. Applying `type(...)` unconditionally would be wrong for the
-    class case: `type(MyGate)` is the metaclass `type`, not `MyGate`.
-    """
-    if isinstance(op, Operation):
-        return type(op)
-    if isinstance(op, type) and issubclass(op, Operation):
-        return op
-    raise TypeError(f"expected an Operation instance or subclass, got {op!r}")
-
-
-def _require_fixed_arity(op_cls: type[Operation]) -> None:
-    """Raise `TypeError` if `op_cls` has variable arity (`_num_subsystems is None`).
-
-    This is a deliberate scope policy, not a technical limit: rules do receive
-    `targets` and could in principle size a matrix from `len(targets)`. But a
-    variable-arity operation has no single canonical matrix shape to validate
-    a rule's output against, so it stays out of scope for this registry unless
-    a concrete variadic-matrix gate need appears.
-    """
-    if op_cls._num_subsystems is None:
-        raise TypeError(
-            f"{op_cls.__name__} has variable arity (_num_subsystems is None); "
-            "the matrix implementation map only supports fixed-arity operations"
-        )
-
-
-def _normalize_device_operands(device_operands: DeviceOperands) -> DeviceOperands:
-    """Normalize device operands and verify they can be used as a dict key."""
-    key = tuple(device_operands)
-    hash(key)
-    return key
-
-
-def _require_device_operands_arity(
-    op_cls: type[Operation], device_operands: DeviceOperands
-) -> None:
-    """Raise `ValueError` if device operands do not match `op_cls` arity.
-
-    Only arity is checked here: the general map does not know what a target
-    key element means (an integer device label, a zone name, ...), so it
-    cannot range-check or type-check individual elements. That is left to
-    the backend that constructs a device-specific map.
-    """
-    expected = op_cls._num_subsystems
-    if len(device_operands) != expected:
-        raise ValueError(
-            f"{op_cls.__name__} expects {expected} device operand(s), "
-            f"got {len(device_operands)}"
-        )
-
-
 def _callable_wants_targets(rule: Callable) -> bool:
     """True if a bare callable declares a `targets` parameter (or **kwargs).
 
@@ -296,20 +241,20 @@ def _wrap_rule(
     return _CallableMatrixImplementation(rule, _callable_wants_targets(rule))
 
 
-class ImplementationMap:
+class MatrixImplementationMap:
     """Resolve operation families and device operands to implementations."""
 
     def __init__(self) -> None:
         """Create an empty implementation map.
 
-        `_unconstrained_rules` holds unconstrained per-operation implementations.
-        `_device_operand_rules` holds implementations for explicit device
-        operands. An operation family uses at most one mode.
+        Composes `_OperationRuleRegistry` for its unconstrained-versus-device-
+        specific storage mechanics, shared with every other implementation-map
+        family; this class owns only matrix-specific rule wrapping, public
+        documentation, and error wording.
         """
-        self._unconstrained_rules: dict[type[Operation], MatrixImplementation] = {}
-        self._device_operand_rules: dict[
-            type[Operation], dict[DeviceOperands, MatrixImplementation]
-        ] = {}
+        self._registry: _OperationRuleRegistry[MatrixImplementation] = (
+            _OperationRuleRegistry()
+        )
 
     def add(
         self,
@@ -342,64 +287,14 @@ class ImplementationMap:
                 its docstring for why.
         """
         if device_operands is not None:
-            self._add_for_device_operands(op, device_operands, implementation)
+            self._registry.add_device_operands(
+                op,
+                device_operands,
+                lambda op_cls: _wrap_rule(op_cls, implementation),
+            )
             return
-
-        op_cls = _resolve_operation_class(op)
-        _require_fixed_arity(op_cls)
-        if op_cls in self._device_operand_rules:
-            raise ValueError(
-                f"{op_cls.__name__} already has device-specific implementations, "
-                "cannot also add an unconstrained implementation for "
-                "the same operation. Call remove(op) first if you want "
-                "to replace its registrations."
-            )
-        self._unconstrained_rules[op_cls] = _wrap_rule(op_cls, implementation)
-
-    def _add_for_device_operands(
-        self,
-        op: Operation | type[Operation],
-        device_operands: DeviceOperands,
-        implementation: "MatrixImplementation | Callable | np.ndarray",
-    ) -> None:
-        """Add an implementation for one operation and device-operand tuple.
-
-        `add` supports two mutually exclusive modes per operation family:
-        one unconstrained implementation, or explicit implementations for
-        device-operand tuples. An absent tuple in the latter mode is illegal;
-        call `remove(op)` before switching modes.
-
-        Args:
-            op: An :py:class:`~fatqat.operations.Operation` instance or subclass. Normalized to the
-                operation's class for the registry key, same as `add`.
-            device_operands: An ordered hashable tuple identifying the device-level
-                target (e.g. a flat integer subsystem tuple like `(0, 1)`).
-                Its length must match the operation's arity; its element
-                types and values are not otherwise validated here; that is
-                a device-specific concern owned by the caller.
-            implementation: Same accepted shapes as `add`.
-
-        Raises:
-            TypeError: If `op` is neither an :py:class:`~fatqat.operations.Operation` instance nor
-                subclass, or if its operation class has variable arity.
-            ValueError: If `device_operands`' length does not match the
-                operation's arity, if a bare `np.ndarray` rule is not square
-                with side length >= 2, or if `op` already has an unconstrained
-                rule (see above).
-        """
-        op_cls = _resolve_operation_class(op)
-        _require_fixed_arity(op_cls)
-        if op_cls in self._unconstrained_rules:
-            raise ValueError(
-                f"{op_cls.__name__} already has an unconstrained rule "
-                "(add); cannot also add a device-specific implementation for "
-                "the same operation. Call remove(op) first if you want "
-                "to replace its registrations."
-            )
-        operands = _normalize_device_operands(device_operands)
-        _require_device_operands_arity(op_cls, operands)
-        self._device_operand_rules.setdefault(op_cls, {})[operands] = _wrap_rule(
-            op_cls, implementation
+        self._registry.add_unconstrained(
+            op, lambda op_cls: _wrap_rule(op_cls, implementation)
         )
 
     def supports(
@@ -421,10 +316,7 @@ class ImplementationMap:
             return (
                 self.implementation_for(op, device_operands=device_operands) is not None
             )
-        op_cls = _resolve_operation_class(op)
-        return (
-            op_cls in self._unconstrained_rules or op_cls in self._device_operand_rules
-        )
+        return self._registry.supports(op)
 
     def implementation_for(
         self,
@@ -453,17 +345,11 @@ class ImplementationMap:
             device_operands: An ordered hashable tuple identifying the device-level
                 target. Omit to look up only the unconstrained rule.
         """
-        op_cls = _resolve_operation_class(op)
-        if device_operands is None:
-            return self._unconstrained_rules.get(op_cls)
-        table = self._device_operand_rules.get(op_cls)
-        if table is not None:
-            return table.get(_normalize_device_operands(device_operands))
-        return self._unconstrained_rules.get(op_cls)
+        return self._registry.get(op, device_operands=device_operands)
 
     def supported_operations(self) -> frozenset[type[Operation]]:
         """Return every operation family with at least one implementation."""
-        return frozenset(self._unconstrained_rules | self._device_operand_rules)
+        return self._registry.supported_operations()
 
     def device_operands_for(
         self, op: Operation | type[Operation]
@@ -478,8 +364,7 @@ class ImplementationMap:
         means legal only on those keys; `not supports(op)` means not
         supported at all.
         """
-        op_cls = _resolve_operation_class(op)
-        return frozenset(self._device_operand_rules.get(op_cls, ()))
+        return self._registry.device_operands_for(op)
 
     def remove(self, op: Operation | type[Operation]) -> None:
         """Remove a registered matrix implementation, if present.
@@ -491,11 +376,9 @@ class ImplementationMap:
             op: An :py:class:`~fatqat.operations.Operation` instance or subclass to remove. Removing an
                 operation that was never registered is a no-op.
         """
-        op_cls = _resolve_operation_class(op)
-        self._unconstrained_rules.pop(op_cls, None)
-        self._device_operand_rules.pop(op_cls, None)
+        self._registry.remove(op)
 
-    def copy(self) -> "ImplementationMap":
+    def copy(self) -> "MatrixImplementationMap":
         """Return a new map with an independent copy of this map's registrations.
 
         Rule objects themselves are shared (not deep-copied) between the
@@ -507,10 +390,6 @@ class ImplementationMap:
         one map's device-specific implementations for an operation cannot leak
         into the other map's table for that same operation.
         """
-        clone = ImplementationMap()
-        clone._unconstrained_rules = dict(self._unconstrained_rules)
-        clone._device_operand_rules = {
-            op_cls: dict(operand_rules)
-            for op_cls, operand_rules in self._device_operand_rules.items()
-        }
+        clone = MatrixImplementationMap()
+        clone._registry = self._registry.copy()
         return clone

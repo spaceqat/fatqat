@@ -226,6 +226,70 @@ calibration-derived default noise model; a supplied
 Detailed reference
 ------------------
 
+Superconducting pulse backend
+-----------------------------
+
+:py:class:`~fatqat.backends.PulseBackend` is a separately configured,
+physical three-level-transmon simulator. It does not replace the matrix
+family's IBM- and Google-style superconducting targets above.
+
+Load a data-only model snapshot with
+:py:func:`~fatqat.backends.load_physics_model`, then load the matching,
+identity-bound calibration using
+:py:func:`~fatqat.backends.load_calibration_spec`. The only public factory
+for the built-in model family is
+:py:class:`~fatqat.backends.SCTransmonExchangeBuilder`; scheduler, pulse, and
+QuTiP objects are not public API.
+
+Snapshot frequencies are nominal 0-to-1 transition frequencies defining the
+implicit per-subsystem resonant frames. Since this model currently uses
+``Delta_i = 0``, changing a frequency alone does not numerically change its
+simulated dynamics. A frame-explicit interpretation requires a new model
+version.
+
+The native operation set is ``RX``, ``RY``, virtual ``RZ``, ``iSwap``, and
+oriented ``CZ`` on declared coupling edges. ``simulation_config`` accepts
+``seed`` and serial execution controls plus ``schedule_mode="ASAP"`` or
+``"ALAP"``. These lightweight scheduling modes preserve program dependencies
+and resource exclusivity; they do not expose a hardware schedule.
+
+Each native operation resolves to its physical realization through a
+:py:class:`~fatqat.backends.PulseImplementationMap`, passed as
+``pulse_implementation_map=``. Omit it to use
+:py:func:`~fatqat.backends.default_superconducting_pulse_implementation_map`;
+supply a copy of that default map with one gate replaced to change how a
+gate is physically realized without touching calibration data or
+subclassing :py:class:`~fatqat.backends.PulseBackend`. See
+:doc:`pulse-emulator` for the complete backend, model/calibration,
+propagator, and pulse-authoring API. The customization workflow is also
+introduced in :doc:`experimental`.
+
+Request counts with ``result_config={"counts": True}`` and the final physical
+density matrix with ``result_config={"final_state": True}``. That density
+matrix includes every transmon in the selected model, even if the program did
+not address it, and has shape ``(3**m, 3**m)`` for ``m`` model subsystems.
+
+:py:meth:`~fatqat.backends.PulseBackend.propagator` returns the coherent
+full-model program propagator as a complex NumPy array. It includes terminal
+virtual-frame updates by default; ``apply_final_frame=False`` exposes the
+Hamiltonian-generated evolution before only that terminal transformation.
+The returned array follows the model's near-resonant rotating-frame
+convention. Its virtual-Z representation can differ from a conventional
+qubit ``RZ`` matrix by a global phase, so comparisons with ideal circuit
+unitaries should be phase-invariant.
+Programs with measurement, reset, or classical conditions are rejected.
+Bound collapse terms are rejected when the program has nonzero elapsed pulse
+evolution. Rate-based noise has no effect on a frame-only, zero-duration
+program because no time elapses.
+
+Pulse execution supports :py:class:`~fatqat.noise.ThermalRelaxation` (T1/T2)
+and rate-mode :py:class:`~fatqat.noise.AmplitudeDamping`/
+:py:class:`~fatqat.noise.PhaseDamping` as always-on noise, plus the same
+damping descriptors in operation-scoped probability or rate mode. Both
+activation scopes use :py:meth:`fatqat.NoiseModel.add_channel`; omitting
+``operation`` means always-on. Readout confusion is also supported. Coherent
+ZZ and every other channel type are not supported by this backend in v0.1.
+
 .. autoclass:: fatqat.backends.SimulatorBackend
    :members:
    :show-inheritance:
