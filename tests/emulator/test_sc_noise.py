@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat.backends import SimulatorBackend
-from fatqat.emulator.backend import PulseBackend
+from fatqat.simulator import Simulator
+from fatqat.emulator.backend import Emulator
 from fatqat.emulator.qutip_adapter import SCQutipAdapter
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
@@ -53,7 +53,7 @@ class _UnsupportedAlwaysOn(Channel):
 def test_support_reports_reject_unknown_always_on_sources(model, calibration):
     noise = NoiseModel()
     noise.add_channel(_UnsupportedAlwaysOn())
-    report = PulseBackend(model, calibration).validate_noise(noise)
+    report = Emulator(model, calibration).validate_noise(noise)
     assert report.rejected_sources == ("_UnsupportedAlwaysOn(always-on)",)
     assert not report.supported
 
@@ -62,7 +62,7 @@ def test_matrix_backend_keeps_gate_channels_and_rejects_always_on_noise():
     noise = NoiseModel()
     noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X)
     noise.add_channel(ThermalRelaxation(t1=100, t2=150))
-    report = SimulatorBackend().validate_noise(noise)
+    report = Simulator().validate_noise(noise)
     assert "Depolarizing" in report.accepted_sources
     assert "ThermalRelaxation(always-on)" in report.rejected_sources
 
@@ -70,7 +70,7 @@ def test_matrix_backend_keeps_gate_channels_and_rejects_always_on_noise():
 def test_pulse_backend_names_each_rejected_gate_channel_source(model, calibration):
     noise = NoiseModel()
     noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X)
-    report = PulseBackend(model, calibration).validate_noise(noise)
+    report = Emulator(model, calibration).validate_noise(noise)
     assert report.rejected_sources == ("Depolarizing",)
 
 
@@ -78,7 +78,7 @@ def test_qutrit_collapse_coefficients_and_t2_limit_are_exact(model, calibration)
     noise = NoiseModel()
     source = ThermalRelaxation(t1=100, t2=120)
     noise.add_channel(source, targets="q0")
-    backend = PulseBackend(model, calibration, noise=noise)
+    backend = Emulator(model, calibration, noise=noise)
     adapter = SCQutipAdapter(
         model,
         always_on_noise=backend._always_on_noise(fq.Program(0), ResourceLayout({})),
@@ -92,7 +92,7 @@ def test_qutrit_collapse_coefficients_and_t2_limit_are_exact(model, calibration)
 
     limited_noise = NoiseModel()
     limited_noise.add_channel(ThermalRelaxation(t1=100, t2=200), targets="q0")
-    limited_backend = PulseBackend(model, calibration, noise=limited_noise)
+    limited_backend = Emulator(model, calibration, noise=limited_noise)
     adapter = SCQutipAdapter(
         model,
         always_on_noise=limited_backend._always_on_noise(
@@ -105,7 +105,7 @@ def test_qutrit_collapse_coefficients_and_t2_limit_are_exact(model, calibration)
 def test_pulse_backend_accepts_and_executes_thermal_relaxation(model, calibration):
     noise = NoiseModel()
     noise.add_channel(ThermalRelaxation(t1=100, t2=150))
-    backend = PulseBackend(model, calibration, noise=noise)
+    backend = Emulator(model, calibration, noise=noise)
     report = backend.validate_noise(noise)
     assert report.supported
     assert report.accepted_sources == ("ThermalRelaxation(always-on)",)
@@ -122,7 +122,7 @@ def test_default_noise_covers_unused_model_subsystems_but_specific_replaces_it(
     model, calibration
 ):
     program = fq.Program(1)
-    backend = PulseBackend(model, calibration)
+    backend = Emulator(model, calibration)
     layout = backend._resolve_resource_layout(program)
     default = ThermalRelaxation(t1=100, t2=200)
     specific = ThermalRelaxation(t1=50, t2=100)

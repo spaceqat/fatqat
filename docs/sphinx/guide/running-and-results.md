@@ -11,11 +11,11 @@ program.add(op.H, 0)
 program.add(op.CX, (0, 1))
 program.measure((0, 1), (0, 1))
 
-backend = fq.backends.SimulatorBackend("SV")
+backend = fq.simulator.Simulator("SV")
 result = backend.run(program, shots=1000).result()
 ```
 
-{py:meth}`~fatqat.backends.SimulatorBackend.run` returns a
+{py:meth}`~fatqat.simulator.Simulator.run` returns a
 {py:class}`~fatqat.Job` immediately. Phase 1 jobs are already terminal, so
 {py:meth}`~fatqat.Job.result` either returns a {py:class}`~fatqat.Result` or
 re-raises the exception from a failed run. `run()` itself still raises

@@ -19,7 +19,7 @@ program.add(op.H, 0)
 program.add(op.CX, (0, 1))
 program.measure((0, 1), (0, 1))
 
-backend = fq.backends.SimulatorBackend(method="SV")
+backend = fq.simulator.Simulator(method="SV")
 result = backend.run(program, shots=1000, simulation_config={"seed": 7}).result()
 print(result.get_counts())          # {'00': 502, '11': 498}
 ```
@@ -37,7 +37,7 @@ bell.add(op.H, 0)
 bell.add(op.CX, (0, 1))
 
 rho = (
-    fq.backends.SimulatorBackend(method="DM")
+    fq.simulator.Simulator(method="DM")
     .run(bell, result_config={"counts": False, "final_state": True})
     .result()
     .get_density_matrix()
@@ -53,8 +53,8 @@ requires the optional `numba` dependency). The runtime never changes
 results, only how fast they are computed:
 
 ```python
-backend = fq.backends.SimulatorBackend(method="SV", runtime="numba")
-noisy = fq.backends.SimulatorBackend(method="DM", runtime="numba")
+backend = fq.simulator.Simulator(method="SV", runtime="numba")
+noisy = fq.simulator.Simulator(method="DM", runtime="numba")
 ```
 
 ## Dynamic circuits
@@ -92,7 +92,7 @@ noise.add_channel(op.H, damping)
 noise.add_channel(op.H, dephasing)
 noise.add_readout_error(np.array([[0.98, 0.05], [0.02, 0.95]]))
 
-backend = fq.backends.SimulatorBackend(method="DM", noise=noise)
+backend = fq.simulator.Simulator(method="DM", noise=noise)
 ```
 
 Under `method="DM"` channels apply exactly (one evolution); under
@@ -124,7 +124,7 @@ native gate sets: `SCQubitIBMSimulator` (`X`, `SX`, `RZ`, nearest-neighbor
 can discover the device's constraints instead of hardcoding them:
 
 ```python
-fake = fq.backends.SCQubitIBMSimulator()
+fake = fq.simulator.SCQubitIBMSimulator()
 impl_map = fake.implementation_map
 sorted(op.name for op in impl_map.supported_operations())   # ['CZ', 'RZ', 'SX', 'X']
 impl_map.supports(op.CX)                                     # False
@@ -171,9 +171,12 @@ this yet — it's for local/internal use.
 ## Project layout
 
 - `src/fatqat/` — package source: `Program`, `operations` (gates,
-  measurement, reset, barrier), `backends` (the simulator backend, resolved
-  execution steps, the fake device), `simulator` (NumPy and Numba
-  simulators), `implementation` (gate-matrix rules and registry), `noise`
+  measurement, reset, barrier), `simulator` (the gate-level `Simulator`, the
+  fake devices, and `simulator.engine` — the NumPy and Numba `MatrixEngine`
+  implementations that own the state), `emulator` (the pulse-level `Emulator`
+  and its `PulseEngine`), `_backends` (private infrastructure both families
+  share: resolved execution steps, the backend/engine contract, lowering
+  helpers), `implementation` (gate-matrix rules and registry), `noise`
   (channels, `NoiseModel`, readout error), registers, layout, jobs, results,
   QASM translation, errors.
 - `tests/` — pytest suite.

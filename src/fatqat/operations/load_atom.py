@@ -19,7 +19,7 @@ class LoadAtoms(Operation):
     like `~fatqat.operations.Barrier`/`~fatqat.operations.Reset`; a backend with no special
     handling for it rejects it as an unsupported operation.
 
-    :py:class:`~fatqat.backends.AtomGridSimulator` is currently the only backend that
+    :py:class:`~fatqat.simulator.AtomGridSimulator` is currently the only backend that
     interprets it: it requires `LoadAtoms` to be a program's first
     instruction, unconditional, and to appear at most once.
 

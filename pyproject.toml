@@ -20,7 +20,7 @@ packages = ["src/fatqat"]
 [dependency-groups]
 dev = ["pytest>=8", "scipy-doctest>=1.0"]
 docs = ["sphinx", "pydata-sphinx-theme", "myst-parser", "sphinx-design", "sphinx-copybutton"]
-# Optional: enables the Numba statevector engine (fatqat.backends.statevector_numba)
+# Optional: enables the Numba statevector engine (fatqat.simulator.engine.nb)
 # and its tests. Not required by the base package. Note: numba currently pins
 # numpy < 2.5, so `uv sync --group numba` may downgrade numpy.
 numba = ["numba>=0.66"]

@@ -1,9 +1,10 @@
 """Public package surface for fatqat."""
 
-from . import backends
+from . import emulator
 from . import errors
 from . import noise
 from . import operations as ops
+from . import simulator
 from .job import Job
 from .noise import NoiseModel
 from .operations import Measurement
@@ -23,7 +24,8 @@ __version__ = "0.0.1"
 
 __all__ = [
     "ops",
-    "backends",
+    "simulator",
+    "emulator",
     "errors",
     "noise",
     "NoiseModel",

@@ -7,8 +7,8 @@ import pytest
 from qutip import Qobj, basis, ket2dm, tensor
 
 import fatqat as fq
-from fatqat.backends import MeasurementStep, ResetStep
-from fatqat.emulator.backend import PulseBackend
+from fatqat._backends.steps import MeasurementStep, ResetStep
+from fatqat.emulator.backend import Emulator
 from fatqat.emulator.engine import PulseEngine, _ShotContext
 from fatqat.emulator.lindblad import bind_lindblad_operators
 from fatqat.noise import default_lindblad_implementation_map
@@ -31,7 +31,7 @@ def make_backend_fixture(model, calibration):
     """Build a backend on the shared model with an optional noise model."""
 
     def build(noise=None):
-        return PulseBackend(model, calibration, noise=noise)
+        return Emulator(model, calibration, noise=noise)
 
     return build
 
@@ -324,7 +324,7 @@ def test_custom_cz_rule_executes_end_to_end_and_yields_a_valid_physical_state(
 
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(fq.ops.CZ, custom_cz)
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
 
     program = fq.Program(2)
     program.add(fq.ops.CZ, (0, 1))

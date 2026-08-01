@@ -17,7 +17,7 @@ from qutip import (
 )
 from qutip_qip.pulse import Drift, Pulse
 
-from ..backends.steps import MeasurementStep, ResetStep
+from .._backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
 from ._validation import TIME_EPSILON
 from .engine import _ShotContext, _condition_matches
@@ -74,7 +74,7 @@ class SCQutipAdapter:
 
     Inputs and completed-shot outputs use fatqat/NumPy values, so no QuTiP
     object crosses the backend's public boundary. This class is intentionally
-    not exported from :mod:`fatqat.backends`.
+    not exported from :mod:`fatqat.emulator`.
     """
 
     def __init__(

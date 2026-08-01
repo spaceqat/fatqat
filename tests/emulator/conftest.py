@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from fatqat.emulator.backend import PulseBackend
+from fatqat.emulator.backend import Emulator
 from fatqat.emulator.superconducting import (
     load_calibration_spec,
     load_physics_model,
@@ -72,10 +72,10 @@ def build_model_and_calibration_fixture():
 
 
 @pytest.fixture(name="backend")
-def backend_fixture(model, calibration) -> PulseBackend:
+def backend_fixture(model, calibration) -> Emulator:
     """A noise-free backend on the shared model/calibration pair.
 
-    Function-scoped: `PulseBackend` owns a mutable noise model and private
+    Function-scoped: `Emulator` owns a mutable noise model and private
     copies of the implementation maps, and several tests register noise on it.
     """
-    return PulseBackend(model, calibration)
+    return Emulator(model, calibration)

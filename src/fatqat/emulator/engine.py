@@ -13,11 +13,11 @@ from typing import Any, Iterable, Protocol
 
 import numpy as np
 
-from ..backends._execution_analysis import (
+from .._backends._execution_analysis import (
     _OperationExecutionFacts,
     _analyze_terminal_measurements,
 )
-from ..backends.steps import MeasurementStep, ResetStep
+from .._backends.steps import MeasurementStep, ResetStep
 from ..errors import BackendValidationError
 from .scheduling import (
     SchedulingMode,
@@ -100,8 +100,8 @@ class PulseEngine:
     to a model runner. It does not construct Hamiltonians or know QuTiP.
 
     This class is private implementation machinery. Applications call
-    :meth:`fatqat.backends.PulseBackend.run` or
-    :meth:`fatqat.backends.PulseBackend.propagator` instead.
+    :meth:`fatqat.emulator.Emulator.run` or
+    :meth:`fatqat.emulator.Emulator.propagator` instead.
     """
 
     def __init__(

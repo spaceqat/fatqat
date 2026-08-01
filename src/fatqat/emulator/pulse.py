@@ -514,9 +514,9 @@ class PulseImplementationMap:
     immutable model and calibration but should return only reusable physical
     realization data.
 
-    Use :func:`~fatqat.backends.default_superconducting_pulse_implementation_map`
+    Use :func:`~fatqat.emulator.default_superconducting_pulse_implementation_map`
     as the starting point when replacing one built-in realization. A
-    :class:`~fatqat.backends.PulseBackend` copies the map passed to its
+    :class:`~fatqat.emulator.Emulator` copies the map passed to its
     constructor, so later registration changes do not alter that backend.
 
     Examples:

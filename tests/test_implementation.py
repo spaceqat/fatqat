@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
-from fatqat.backends import ApplyMatrixStep
+from fatqat._backends.steps import ApplyMatrixStep
 from fatqat.implementation import (
     FixedMatrix,
     MatrixImplementationMap,

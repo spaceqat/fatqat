@@ -102,7 +102,7 @@ class NoiseModel:
         >>> noise.add_channel(fq.noise.Depolarizing(p=0.2), operation=op.X)
         >>> program = fq.Program(1)
         >>> program.add(op.X, 0)
-        >>> result = fq.backends.SimulatorBackend(method="DM", noise=noise).run(
+        >>> result = fq.simulator.Simulator(method="DM", noise=noise).run(
         ...     program,
         ...     result_config={"counts": False, "final_state": True},
         ... ).result()

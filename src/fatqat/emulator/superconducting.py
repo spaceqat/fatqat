@@ -852,12 +852,12 @@ class CalibrationSpec:
         # The blocker is lifecycle, not validation. A calibration is loaded by
         # `load_calibration_spec(document, model)` *before* any
         # `PulseImplementationMap` is chosen - the map is not selected until
-        # `PulseBackend.__init__` - so at load time there is nothing to ask
+        # `Emulator.__init__` - so at load time there is nothing to ask
         # which recipes are legal. Two coherent resolutions, differing in when
         # an invalid recipe is reported:
         #
         #   1. Keep envelope/identity validation here and move realization
-        #      schema validation to `PulseBackend.__init__`, where the map is
+        #      schema validation to `Emulator.__init__`, where the map is
         #      known. An invalid recipe then surfaces at backend construction,
         #      not at load.
         #   2. Give `load_calibration_spec` an explicit schema/validator

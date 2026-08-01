@@ -2,14 +2,14 @@ Superconducting pulse emulator
 ==============================
 
 The superconducting pulse emulator is the physical-control counterpart to
-:py:class:`~fatqat.backends.SimulatorBackend`. Both accept an ordinary
+:py:class:`~fatqat.simulator.Simulator`. Both accept an ordinary
 :py:class:`~fatqat.Program`, validate and lower it through an implementation
 map, and return an eager :py:class:`~fatqat.Job`. They differ after lowering:
 the matrix backend applies finite matrices or Kraus maps to program-level
-subsystems, while :py:class:`~fatqat.backends.PulseBackend` schedules sampled
+subsystems, while :py:class:`~fatqat.emulator.Emulator` schedules sampled
 controls and integrates the full three-level transmon model.
 
-All supported imports on this page come from ``fatqat.backends``. The classes
+All supported imports on this page come from ``fatqat.emulator``. The classes
 that schedule lowered blocks, manage shots, or adapt them to QuTiP live under
 ``fatqat.emulator`` but remain private implementation details. In particular,
 applications do not construct ``PulseEngine``, ``PulseBlock``, or
@@ -26,11 +26,11 @@ Construct a backend from a physics-model document and its matching calibration:
    import fatqat as fq
 
    with open("model.json", encoding="utf-8") as stream:
-       model = fq.backends.load_physics_model(json.load(stream))
+       model = fq.emulator.load_physics_model(json.load(stream))
    with open("calibration.json", encoding="utf-8") as stream:
-       calibration = fq.backends.load_calibration_spec(json.load(stream), model)
+       calibration = fq.emulator.load_calibration_spec(json.load(stream), model)
 
-   backend = fq.backends.PulseBackend(model, calibration)
+   backend = fq.emulator.Emulator(model, calibration)
 
 The calibration must repeat the model's builder ID/version and model
 ID/revision exactly. Program qubits bind to ``model.subsystem_ids`` in
@@ -38,7 +38,7 @@ declaration order. Unaddressed model transmons still participate in the full
 physical state and therefore still contribute factors of three to result and
 propagator dimensions.
 
-``PulseBackend(...)`` accepts these optional extension inputs:
+``Emulator(...)`` accepts these optional extension inputs:
 
 .. list-table:: Constructor options
    :header-rows: 1
@@ -54,15 +54,15 @@ propagator dimensions.
        descriptors to local collapse operators. The backend copies it;
        ``None`` uses :py:func:`~fatqat.noise.default_lindblad_implementation_map`.
    * - ``pulse_implementation_map``
-     - A :py:class:`~fatqat.backends.PulseImplementationMap` mapping operation
+     - A :py:class:`~fatqat.emulator.PulseImplementationMap` mapping operation
        families/ordered device operands to reusable pulse definitions. The
        backend copies it; ``None`` uses the built-in map.
 
 Run configuration and results
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:py:meth:`~fatqat.backends.PulseBackend.run` has the same eager job boundary as
-:py:meth:`~fatqat.backends.SimulatorBackend.run`, but pulse-specific
+:py:meth:`~fatqat.emulator.Emulator.run` has the same eager job boundary as
+:py:meth:`~fatqat.simulator.Simulator.run`, but pulse-specific
 configuration and state semantics:
 
 .. list-table:: ``simulation_config`` keys
@@ -117,7 +117,7 @@ failed returned job; ``job.result()`` raises
 Coherent propagators
 ~~~~~~~~~~~~~~~~~~~~
 
-:py:meth:`~fatqat.backends.PulseBackend.propagator` returns a complex NumPy
+:py:meth:`~fatqat.emulator.Emulator.propagator` returns a complex NumPy
 array for the complete physical model. Measurement, reset, and classical
 conditions are rejected because they do not define one coherent operator.
 Nonzero evolution with bound collapse operators is also rejected. A
@@ -133,7 +133,7 @@ phase-invariantly.
 Backend reference
 ~~~~~~~~~~~~~~~~~
 
-.. autoclass:: fatqat.backends.PulseBackend
+.. autoclass:: fatqat.emulator.Emulator
    :members: run, propagator, validate_noise
 
 Physics model and calibration
@@ -155,18 +155,18 @@ so changing a frequency alone does not alter current numerical evolution.
 Loader and builder reference
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: fatqat.backends.load_physics_model
+.. autofunction:: fatqat.emulator.load_physics_model
 
-.. autofunction:: fatqat.backends.load_calibration_spec
+.. autofunction:: fatqat.emulator.load_calibration_spec
 
-.. autoclass:: fatqat.backends.SCTransmonExchangeBuilder
+.. autoclass:: fatqat.emulator.SCTransmonExchangeBuilder
    :members: build
 
 Returned physics-model interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Application code normally obtains the model from
-:py:func:`~fatqat.backends.load_physics_model` and does not import or construct
+:py:func:`~fatqat.emulator.load_physics_model` and does not import or construct
 its concrete class. Its supported read interface is:
 
 ``model.key``
@@ -265,12 +265,12 @@ A pulse implementation map is the direct analog of the matrix family's
 
 .. code-block:: text
 
-   SimulatorBackend: operation -> matrix rule -> matrix -> matrix plan step
-   PulseBackend:     operation -> pulse rule  -> PulseDefinition -> PulseBlock
+   Simulator: operation -> matrix rule -> matrix -> matrix plan step
+   Emulator:     operation -> pulse rule  -> PulseDefinition -> PulseBlock
 
 The last ``PulseBlock`` is private. Lowering attaches occurrence-specific
 conditions, resolved noise, engine indices, and optional schedule position;
-a reusable :py:class:`~fatqat.backends.PulseDefinition` contains none of
+a reusable :py:class:`~fatqat.emulator.PulseDefinition` contains none of
 those facts.
 
 A rule has exactly this callable shape:
@@ -278,7 +278,7 @@ A rule has exactly this callable shape:
 .. code-block:: python
 
    def rule(operation, *, targets, model, calibration):
-       return fq.backends.PulseDefinition(...)
+       return fq.emulator.PulseDefinition(...)
 
 ``targets`` are ordered model-minted subsystem-resource handles corresponding
 to the operation's ordered device operands. They are not program
@@ -294,9 +294,9 @@ Call ``remove(op)`` before changing modes. A custom rule's deliberate
 other exceptions and non-``PulseDefinition`` returns become
 :py:class:`~fatqat.errors.PulseImplementationError`.
 
-.. autofunction:: fatqat.backends.default_superconducting_pulse_implementation_map
+.. autofunction:: fatqat.emulator.default_superconducting_pulse_implementation_map
 
-.. autoclass:: fatqat.backends.PulseImplementationMap
+.. autoclass:: fatqat.emulator.PulseImplementationMap
    :members:
 
 Pulse-authoring values
@@ -311,16 +311,16 @@ enclosing duration. A definition always claims at least one model resource,
 including for virtual operations. Controls sharing one channel must be summed
 explicitly before construction rather than relying on implicit addition.
 
-.. autoclass:: fatqat.backends.PulseDefinition
+.. autoclass:: fatqat.emulator.PulseDefinition
    :members:
 
-.. autoclass:: fatqat.backends.SampledControl
+.. autoclass:: fatqat.emulator.SampledControl
    :members:
 
-.. autoclass:: fatqat.backends.PhaseShift
+.. autoclass:: fatqat.emulator.PhaseShift
    :members:
 
-.. autoclass:: fatqat.backends.PhaseSwap
+.. autoclass:: fatqat.emulator.PhaseSwap
    :members:
 
 Custom realization example
@@ -342,10 +342,10 @@ do not affect it:
        duration = 20.0
        samples = np.linspace(0.0, duration, 129)
        envelope = np.zeros_like(samples)
-       return fq.backends.PulseDefinition(
+       return fq.emulator.PulseDefinition(
            duration=duration,
            controls=(
-               fq.backends.SampledControl(
+               fq.emulator.SampledControl(
                    model.exchange_control(first, second), samples, envelope
                ),
            ),
@@ -357,10 +357,10 @@ do not affect it:
        )
 
    implementations = (
-       fq.backends.default_superconducting_pulse_implementation_map()
+       fq.emulator.default_superconducting_pulse_implementation_map()
    )
    implementations.add(fq.ops.CZ, custom_cz)
-   backend = fq.backends.PulseBackend(
+   backend = fq.emulator.Emulator(
        model,
        calibration,
        pulse_implementation_map=implementations,
@@ -387,7 +387,7 @@ interval; lowering and the concrete adapter own those steps.
 
 .. autofunction:: fatqat.noise.default_lindblad_implementation_map
 
-Use :py:meth:`~fatqat.backends.PulseBackend.validate_noise` for an advisory,
+Use :py:meth:`~fatqat.emulator.Emulator.validate_noise` for an advisory,
 instance-sensitive capability report. Execution additionally validates each
 noise selector against the current program/resource layout.
 

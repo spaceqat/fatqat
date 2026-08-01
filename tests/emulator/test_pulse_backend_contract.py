@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat.backends import PulseDefinition, SampledControl
-from fatqat.backends.backend_utils import _LoweringContext
-from fatqat.emulator.backend import PulseBackend
+from fatqat.emulator import PulseDefinition, SampledControl
+from fatqat._backends.backend_utils import _LoweringContext
+from fatqat.emulator.backend import Emulator
 from fatqat.emulator.engine_contract import PulseSimulationConfig
 from fatqat.emulator.superconducting_realization import (
     default_superconducting_pulse_implementation_map,
@@ -21,7 +21,7 @@ def make_backend_fixture(model, calibration):
     """Build a backend on the shared model with an optional noise model."""
 
     def build(noise=None):
-        return PulseBackend(model, calibration, noise=noise)
+        return Emulator(model, calibration, noise=noise)
 
     return build
 
@@ -240,7 +240,7 @@ def test_unrealizable_envelope_is_rejected_identically_by_run_and_propagator(
 
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(fq.ops.RX, complex_detuning_rx)
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
     program = fq.Program(1)
     program.add(fq.ops.RX(0.3), 0)
 

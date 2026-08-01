@@ -2,7 +2,7 @@
 
 Every default registration is wrapped in `_KeyedImplementation`, attaching the
 gate's `BuiltinKernelKey` so engines can dispatch specialized kernels by
-declared identity instead of inspecting matrices (see ``backends.steps``).
+declared identity instead of inspecting matrices (see ``_backends.steps``).
 This is the *only* place keys are attached: custom rules, arrays, and
 device-specific overrides registered by users or device backends stay
 ``None``-keyed by construction.
@@ -11,7 +11,7 @@ device-specific overrides registered by users or device backends stay
 from __future__ import annotations
 
 from .. import operations as ops
-from ..backends.steps import BuiltinKernelKey as K
+from .._backends.steps import BuiltinKernelKey as K
 from .base import (
     FixedMatrix,
     MatrixImplementationMap,

@@ -252,7 +252,7 @@ def default_superconducting_pulse_implementation_map() -> PulseImplementationMap
     replace or remove registrations without changing another backend.
 
     Returns:
-        A new :class:`~fatqat.backends.PulseImplementationMap` containing the
+        A new :class:`~fatqat.emulator.PulseImplementationMap` containing the
         built-in superconducting realizations.
     """
     m = PulseImplementationMap()

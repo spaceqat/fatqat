@@ -438,7 +438,7 @@ def test_from_qasm3_bit_level_and_conditions():
 def test_from_qasm_u3_gate_matches_exact_matrix_up_to_global_phase():
     import numpy as np
 
-    from fatqat.backends import SimulatorBackend
+    from fatqat.simulator import Simulator
 
     theta, phi, lam = 0.9, 0.4, -0.6
     program = from_qasm(f"""
@@ -446,7 +446,7 @@ def test_from_qasm_u3_gate_matches_exact_matrix_up_to_global_phase():
         qreg q[1];
         u3({theta}, {phi}, {lam}) q[0];
         """)
-    job = SimulatorBackend("SV").run(
+    job = Simulator("SV").run(
         program, result_config={"counts": False, "final_state": True}, shots=1
     )
     sv = job.result().get_statevector()

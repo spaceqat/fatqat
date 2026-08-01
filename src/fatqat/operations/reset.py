@@ -27,7 +27,7 @@ class ResetGate(Operation):
         >>> program = fq.Program(1)
         >>> program.add(op.X, 0)
         >>> program.add(op.Reset, 0)
-        >>> result = fq.backends.SimulatorBackend("SV").run(
+        >>> result = fq.simulator.Simulator("SV").run(
         ...     program,
         ...     shots=1,
         ...     result_config={"counts": False, "final_state": True},

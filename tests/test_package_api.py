@@ -22,17 +22,17 @@ def test_register_types_exposed():
 
 
 def test_statevector_backend_only_under_backends_namespace():
-    from fatqat.backends import SimulatorBackend
+    from fatqat.simulator import Simulator
 
-    assert fq.backends.SimulatorBackend is SimulatorBackend
-    assert not hasattr(fq, "SimulatorBackend")
+    assert fq.simulator.Simulator is Simulator
+    assert not hasattr(fq, "Simulator")
 
 
 def test_fake_superconducting_backends_exported_under_backends_namespace():
-    from fatqat.backends import SCQubitGoogleSimulator, SCQubitIBMSimulator
+    from fatqat.simulator import SCQubitGoogleSimulator, SCQubitIBMSimulator
 
-    assert fq.backends.SCQubitGoogleSimulator is SCQubitGoogleSimulator
-    assert fq.backends.SCQubitIBMSimulator is SCQubitIBMSimulator
+    assert fq.simulator.SCQubitGoogleSimulator is SCQubitGoogleSimulator
+    assert fq.simulator.SCQubitIBMSimulator is SCQubitIBMSimulator
     assert not hasattr(fq, "SCQubitGoogleSimulator")
     assert not hasattr(fq, "SCQubitIBMSimulator")
 

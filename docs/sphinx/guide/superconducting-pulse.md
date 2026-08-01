@@ -1,6 +1,6 @@
 # Superconducting pulse simulation
 
-`fq.backends.PulseBackend` realizes a small native superconducting gate set
+`fq.emulator.Emulator` realizes a small native superconducting gate set
 as calibrated controls on fixed three-level transmons. It is a physical
 simulator, separate from the two-level IBM- and Google-style fake backends.
 The public API accepts ordinary data and NumPy results: QuTiP and qutip-qip
@@ -27,9 +27,9 @@ under a new model version.
 ```python
 import fatqat as fq
 
-model = fq.backends.load_physics_model(model_document)
-calibration = fq.backends.load_calibration_spec(calibration_document, model)
-backend = fq.backends.PulseBackend(model, calibration)
+model = fq.emulator.load_physics_model(model_document)
+calibration = fq.emulator.load_calibration_spec(calibration_document, model)
+backend = fq.emulator.Emulator(model, calibration)
 ```
 
 The program's qubits bind to model subsystems in declaration order. A model
@@ -112,24 +112,24 @@ on a frame-only, zero-duration program because no time elapses.
 
 Each native operation resolves to its physical pulse recipe through a
 `pulse_implementation_map=`, defaulting to
-`fq.backends.default_superconducting_pulse_implementation_map()`. Copy that
+`fq.emulator.default_superconducting_pulse_implementation_map()`. Copy that
 default map and replace one gate's realization to change *how* a gate is
 physically executed - the waveform shape, which control channels are
 driven, which model resources are claimed - without editing calibration
-data or subclassing `PulseBackend`:
+data or subclassing `Emulator`:
 
 ```python
 def custom_cz(operation, *, targets, model, calibration):
     ...
-    return fq.backends.PulseDefinition(
+    return fq.emulator.PulseDefinition(
         duration=...,
         controls=(...,),
         resource_claims=(...,),
     )
 
-implementations = fq.backends.default_superconducting_pulse_implementation_map()
+implementations = fq.emulator.default_superconducting_pulse_implementation_map()
 implementations.add(fq.ops.CZ, custom_cz)
-backend = fq.backends.PulseBackend(
+backend = fq.emulator.Emulator(
     model, calibration, pulse_implementation_map=implementations
 )
 ```

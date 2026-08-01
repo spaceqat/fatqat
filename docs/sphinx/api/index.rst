@@ -18,7 +18,7 @@ generated signatures, attributes, and methods for that supported surface.
    program
    registers
    operations
-   backends
+   simulator
    pulse-emulator
    noise
    result

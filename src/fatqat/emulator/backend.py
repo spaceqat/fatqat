@@ -9,10 +9,10 @@ from typing import Any, Literal
 import numpy as np
 
 from .._engine_index_allocation import _EngineIndexAllocation
-from ..backends.backend_utils import _LoweringContext, _normalize_config
-from ..backends.engine_contract import _DensityMatrixResultRequest
-from ..backends.steps import MeasurementStep
-from ..backends.view_normalization import ProgramInstruction, _break_grouped_operations
+from .._backends.backend_utils import _LoweringContext, _normalize_config
+from .._backends.engine_contract import _DensityMatrixResultRequest
+from .._backends.steps import MeasurementStep
+from .._backends.view_normalization import ProgramInstruction, _break_grouped_operations
 from ..errors import BackendExecutionError, BackendValidationError
 from ..job import Job
 from ..noise import (
@@ -39,10 +39,10 @@ from .superconducting_realization import (
 )
 
 
-class PulseBackend:
+class Emulator:
     """Simulate calibrated controls on a fixed three-level transmon model.
 
-    ``PulseBackend`` is the public entry point for the superconducting pulse
+    ``Emulator`` is the public entry point for the superconducting pulse
     emulator. A backend is constructed from an immutable physics model and a
     separately loaded calibration that is identity-bound to that exact model.
     Program qubits bind to model subsystems in declaration order; every model
@@ -65,7 +65,7 @@ class PulseBackend:
     operation-scoped damping in probability or rate mode, and readout
     confusion. The optional Lindblad and pulse implementation maps are copied
     at construction, while the supplied noise model is retained by reference,
-    matching :class:`~fatqat.backends.SimulatorBackend`'s noise ownership.
+    matching :class:`~fatqat.simulator.Simulator`'s noise ownership.
 
     The built-in CZ realization derives its nominal virtual frame correction
     from the detuning waveform itself. This first-version model correction is
@@ -89,9 +89,9 @@ class PulseBackend:
 
         Args:
             model: Physics model returned by
-                :func:`~fatqat.backends.load_physics_model`.
+                :func:`~fatqat.emulator.load_physics_model`.
             calibration: Calibration returned by
-                :func:`~fatqat.backends.load_calibration_spec` for ``model``.
+                :func:`~fatqat.emulator.load_calibration_spec` for ``model``.
             noise: Optional noise model. ``None`` creates an empty model. A
                 supplied model is retained by reference so later registrations
                 affect subsequent runs.
@@ -100,7 +100,7 @@ class PulseBackend:
                 the default map. A supplied map is copied immediately.
             pulse_implementation_map: Optional operation-to-pulse realization
                 map. ``None`` uses
-                :func:`~fatqat.backends.default_superconducting_pulse_implementation_map`.
+                :func:`~fatqat.emulator.default_superconducting_pulse_implementation_map`.
                 A supplied map is copied immediately.
 
         Raises:
@@ -138,7 +138,7 @@ class PulseBackend:
         for ref in refs:
             if ref.register.dim != 2:
                 raise BackendValidationError(
-                    "PulseBackend embeds only dimension-two program subsystems into qutrits"
+                    "Emulator embeds only dimension-two program subsystems into qutrits"
                 )
         for ordinal, ref in enumerate(refs):
             labels[ref] = self.model.subsystem_ids[ordinal]
