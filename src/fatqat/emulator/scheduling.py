@@ -28,7 +28,12 @@ def _validate_schedule_mode(mode: str) -> SchedulingMode:
 
 @dataclass(frozen=True)
 class _ScheduledPulseRun:
-    """One engine-private run with starts aligned to the original blocks."""
+    """One engine-private continuous region after pulse placement.
+
+    ``blocks`` retain source order while ``starts`` stores the aligned absolute
+    start of each block. ``start_time`` is the preceding execution boundary;
+    ``end_time`` is the region makespan.
+    """
 
     blocks: tuple[PulseBlock, ...]
     starts: tuple[float, ...]
@@ -45,6 +50,7 @@ class _ScheduledPulseRun:
 def _resource_claims_conflict(
     first: Iterable[ResourceClaim], second: Iterable[ResourceClaim]
 ) -> bool:
+    """Return whether two blocks reserve at least one identical model handle."""
     return not set(first).isdisjoint(second)
 
 
@@ -85,7 +91,28 @@ def schedule_pulse_run(
     boundary_time: float,
     mode: SchedulingMode = "ASAP",
 ) -> _ScheduledPulseRun:
-    """Schedule an unplaced run or validate a fully explicit one."""
+    """Schedule an unplaced continuous region or validate explicit starts.
+
+    With no explicit ``PulseBlock.start_time`` values, a conservative list
+    scheduler places conflicting resource claims in source order and permits
+    disjoint blocks to overlap. ASAP and ALAP share the ASAP makespan. If any
+    block carries an explicit start, every block must do so; those starts take
+    precedence over ``mode`` and are checked against the current boundary and
+    resource-order constraints.
+
+    Args:
+        blocks: Non-empty boundary-free pulse-block sequence.
+        boundary_time: Absolute time after the preceding measurement/reset.
+        mode: Automatic ``"ASAP"`` or ``"ALAP"`` placement policy.
+
+    Returns:
+        Internal scheduled region with starts aligned to source blocks.
+
+    Raises:
+        BackendValidationError: If inputs are empty, non-finite, partially
+            explicit, before the boundary, or reverse a claimed-resource
+            dependency.
+    """
     blocks = tuple(blocks)
     if not blocks:
         raise BackendValidationError("cannot schedule an empty pulse run")

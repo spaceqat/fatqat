@@ -246,20 +246,5 @@ affect an already-constructed backend.
 Detailed pulse implementation-map reference
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: fatqat.backends.default_superconducting_pulse_implementation_map
-
-.. autoclass:: fatqat.backends.PulseImplementationMap
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.backends.PulseDefinition
-   :members:
-
-.. autoclass:: fatqat.backends.SampledControl
-   :members:
-
-.. autoclass:: fatqat.backends.PhaseShift
-   :members:
-
-.. autoclass:: fatqat.backends.PhaseSwap
-   :members:
+The complete generated reference for the map, rule contract, returned model
+accessors, and pulse-authoring values is in :doc:`pulse-emulator`.

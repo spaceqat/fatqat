@@ -12,7 +12,13 @@ from .scheduling import SchedulingMode, _validate_schedule_mode
 
 @dataclass(frozen=True)
 class PulseSimulationConfig(_SimulationConfig):
-    """v0.1 pulse execution controls, normalized to the serial engine policy."""
+    """Internal normalized schema for pulse simulation settings.
+
+    The public input remains ``PulseBackend.run(simulation_config={...})``.
+    ``parallel_mode="auto"`` normalizes to ``"serial"``; v0.1 rejects worker
+    counts above one. ``schedule_mode`` selects lightweight ASAP or ALAP pulse
+    placement.
+    """
 
     schedule_mode: SchedulingMode = "ASAP"
 
@@ -35,4 +41,8 @@ class PulseSimulationConfig(_SimulationConfig):
 
 @dataclass(frozen=True)
 class PulseResultConfig(_ResultConfig):
-    """Pulse backend result request; ``final_state`` maps to density_matrix."""
+    """Internal normalized pulse-result request schema.
+
+    The public ``final_state`` flag requests a physical density matrix; the
+    backend deliberately does not expose a separate density-matrix key.
+    """

@@ -46,6 +46,7 @@ from .superconducting import (
 
 
 def _finite(value: Any, name: str, *, nonnegative: bool = False) -> float:
+    """Normalize one finite scalar, optionally requiring non-negativity."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise BackendValidationError(f"{name} must be a finite number")
     value = float(value)
@@ -55,6 +56,7 @@ def _finite(value: Any, name: str, *, nonnegative: bool = False) -> float:
 
 
 def _freeze(values: Any, *, dtype: type = complex) -> np.ndarray:
+    """Copy values to a read-only NumPy array of the requested dtype."""
     array = np.array(values, dtype=dtype, copy=True)
     array.flags.writeable = False
     return array
@@ -62,7 +64,31 @@ def _freeze(values: Any, *, dtype: type = complex) -> np.ndarray:
 
 @dataclass(frozen=True)
 class SampledControl:
-    """One sampled physical control with a local, independently timed grid."""
+    """One sampled physical control on a model-minted channel.
+
+    A control owns a local sample grid. Its samples are shifted by
+    ``start_offset`` inside the enclosing :class:`PulseDefinition`; the
+    implementation rule does not need to convert them to absolute program
+    time. The owning model defines the time unit. For the built-in transmon
+    model it is ``model.time_unit == "ns"``.
+
+    ``coefficients`` may be complex for a drive channel, where real and
+    imaginary components encode the two quadratures. Detuning and exchange
+    controls must be real and are checked when the private solver adapter
+    binds the definition. Arrays are copied and made read-only.
+
+    Attributes:
+        channel: Opaque control-channel handle returned by ``model``.
+        tlist: One-dimensional, strictly increasing local sample times. The
+            first value must be zero and at least two samples are required.
+        coefficients: Complex sample values aligned one-to-one with ``tlist``.
+        start_offset: Non-negative offset from the enclosing pulse's start.
+
+    Raises:
+        BackendValidationError: If the offset or samples are non-finite, the
+            arrays are not aligned one-dimensional arrays, or ``tlist`` does
+            not start at zero and increase strictly.
+    """
 
     channel: ControlChannelRef
     tlist: np.ndarray
@@ -97,12 +123,18 @@ class SampledControl:
 
     @property
     def duration(self) -> float:
+        """Return the local control duration in the model's time unit."""
         return float(self.tlist[-1])
 
 
 @dataclass(frozen=True)
 class PhaseShift:
-    """A post-block virtual-frame angle update with no physical duration."""
+    """Add an angle to one virtual-frame ledger after a pulse block.
+
+    Attributes:
+        frame: Opaque frame handle returned by ``model.frame(...)``.
+        angle_rad: Finite phase increment in radians.
+    """
 
     frame: FrameRef
     angle_rad: float
@@ -115,7 +147,18 @@ class PhaseShift:
 
 @dataclass(frozen=True)
 class PhaseSwap:
-    """A post-block exchange of two virtual-drive frame ledgers."""
+    """Exchange two virtual-drive frame ledgers after a pulse block.
+
+    This is used by the built-in iSWAP realization so later drive phases stay
+    associated with the exchanged logical excitations.
+
+    Attributes:
+        first: First model-minted frame handle.
+        second: Distinct second model-minted frame handle.
+
+    Raises:
+        BackendValidationError: If both handles identify the same frame.
+    """
 
     first: FrameRef
     second: FrameRef
@@ -212,9 +255,29 @@ class PulseDefinition:
     facts, attached by ``emulator.planning._lower_gate`` when it converts a
     definition into a model-owned `PulseBlock`.
 
-    `duration`, and every `SampledControl`'s `tlist`/`start_offset`, use the
+    ``duration``, and every :class:`SampledControl`'s ``tlist`` and
+    ``start_offset``, use the
     owning model's native time coordinate; this type does not claim
     nanoseconds or any other unit.
+
+    A zero-duration definition represents a virtual operation and must not
+    contain controls. A positive-duration definition must contain at least one
+    control. Every driven channel must fit inside ``duration``. Resource
+    claims are mandatory even for virtual operations because they define
+    ordering and exclusion during lightweight scheduling.
+
+    Attributes:
+        duration: Non-negative block duration in ``model.time_unit``.
+        controls: Sampled physical controls. Duplicate channels are rejected;
+            explicitly sum contributions before constructing the definition.
+        resource_claims: Model subsystem and/or coupling handles reserved for
+            the complete block.
+        post_actions: Virtual :class:`PhaseShift` or :class:`PhaseSwap`
+            actions applied after the physical interval.
+
+    Raises:
+        BackendValidationError: If the duration, control shapes, resource
+            claims, or frame actions are structurally inconsistent.
     """
 
     duration: float
@@ -445,13 +508,33 @@ def _invoke_pulse_rule(
 class PulseImplementationMap:
     """Resolve operation families and device operands to pulse implementations.
 
-    Structurally identical to `MatrixImplementationMap` - same instance/class
+    Structurally identical to :class:`~fatqat.implementation.MatrixImplementationMap`
+    - same instance/class
     normalization, same mutually exclusive unconstrained-versus-device-
     specific registration policy, same copy semantics - composing the same
     shared `_OperationRuleRegistry` mechanics. It differs only in what a rule
-    returns (`PulseDefinition` instead of a matrix) and in how a selected
+    returns (:class:`PulseDefinition` instead of a matrix) and in how a selected
     rule's failures are reported (see `_invoke_pulse_rule` and
     `PulseImplementationError`).
+
+    A rule has the signature
+    ``rule(operation, *, targets, model, calibration) -> PulseDefinition``.
+    ``targets`` are ordered model-minted subsystem resource handles, not
+    program register references or engine indices. A rule may inspect the
+    immutable model and calibration but should return only reusable physical
+    realization data.
+
+    Use :func:`~fatqat.backends.default_superconducting_pulse_implementation_map`
+    as the starting point when replacing one built-in realization. A
+    :class:`~fatqat.backends.PulseBackend` copies the map passed to its
+    constructor, so later registration changes do not alter that backend.
+
+    Examples:
+        Replace one unconstrained implementation while retaining the other
+        defaults::
+
+            implementations = default_superconducting_pulse_implementation_map()
+            implementations.add(ops.CZ, custom_cz)
     """
 
     def __init__(self) -> None:

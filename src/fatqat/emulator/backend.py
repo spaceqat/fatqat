@@ -40,12 +40,40 @@ from .superconducting_realization import (
 
 
 class PulseBackend:
-    """SC pulse backend over an immutable model and separate calibration.
+    """Simulate calibrated controls on a fixed three-level transmon model.
+
+    ``PulseBackend`` is the public entry point for the superconducting pulse
+    emulator. A backend is constructed from an immutable physics model and a
+    separately loaded calibration that is identity-bound to that exact model.
+    Program qubits bind to model subsystems in declaration order; every model
+    subsystem remains in the simulated Hilbert space, including subsystems a
+    program does not address.
+
+    The built-in implementation map accepts ``RX``, ``RY``, virtual ``RZ``,
+    ``iSwap``, and oriented ``CZ`` operations on declared coupling edges.
+    Measurement collapses the physical qutrit and reports levels ``0, 1, 2``
+    as classical digits ``0, 1, 1``. Reset prepares the selected qutrit in
+    its physical ground state.
+
+    ``run()`` performs open-system evolution and returns counts and/or the
+    full physical density matrix. ``propagator()`` is the coherent-analysis
+    path and returns the full-model operator when the program contains no
+    boundary operations, classical conditions, or elapsed dissipative
+    evolution. Neither method exposes QuTiP objects.
+
+    A :class:`~fatqat.NoiseModel` may contain always-on rate-based damping,
+    operation-scoped damping in probability or rate mode, and readout
+    confusion. The optional Lindblad and pulse implementation maps are copied
+    at construction, while the supplied noise model is retained by reference,
+    matching :class:`~fatqat.backends.SimulatorBackend`'s noise ownership.
 
     The built-in CZ realization derives its nominal virtual frame correction
     from the detuning waveform itself. This first-version model correction is
     intentionally not a hardware phase calibration; device-specific phase
     calibration can further improve the realized gate quality in the future.
+
+    A backend instance has no mutable solver state between calls. Individual
+    calls execute eagerly and serially in v0.1.
     """
 
     def __init__(
@@ -57,6 +85,28 @@ class PulseBackend:
         lindblad_implementation_map: LindbladImplementationMap | None = None,
         pulse_implementation_map: PulseImplementationMap | None = None,
     ) -> None:
+        """Create a pulse backend for one model/calibration pair.
+
+        Args:
+            model: Physics model returned by
+                :func:`~fatqat.backends.load_physics_model`.
+            calibration: Calibration returned by
+                :func:`~fatqat.backends.load_calibration_spec` for ``model``.
+            noise: Optional noise model. ``None`` creates an empty model. A
+                supplied model is retained by reference so later registrations
+                affect subsequent runs.
+            lindblad_implementation_map: Optional mapping from supported
+                channel descriptors to local collapse operators. ``None`` uses
+                the default map. A supplied map is copied immediately.
+            pulse_implementation_map: Optional operation-to-pulse realization
+                map. ``None`` uses
+                :func:`~fatqat.backends.default_superconducting_pulse_implementation_map`.
+                A supplied map is copied immediately.
+
+        Raises:
+            BackendValidationError: If ``calibration`` belongs to a different
+                model snapshot.
+        """
         if calibration.key != model.key:
             raise BackendValidationError("calibration does not match the pulse model")
         self.model = model
@@ -96,6 +146,7 @@ class PulseBackend:
 
     @staticmethod
     def _allocate_engine_indices(program: Program) -> _EngineIndexAllocation:
+        """Build the private flat subsystem/classical allocation for one run."""
         return _EngineIndexAllocation.from_program(program)
 
     def _prepare_program(self, program: Program) -> tuple[
@@ -189,7 +240,46 @@ class PulseBackend:
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
     ) -> Job:
-        """Validate/lower one pulse program and return an eager terminal job."""
+        """Validate, execute, and package one pulse-program run.
+
+        ``simulation_config`` accepts ``seed``, ``parallel_mode``,
+        ``max_workers``, and ``schedule_mode``. Pulse execution is serial in
+        v0.1, so ``parallel_mode`` may be ``"auto"`` or ``"serial"`` and
+        ``max_workers`` may be ``None`` or ``1``. ``schedule_mode`` is
+        ``"ASAP"`` by default and may be ``"ALAP"``; both are lightweight
+        placement policies over dependencies and claimed physical resources,
+        not compiler-produced hardware schedules.
+
+        ``result_config`` accepts ``counts`` and ``final_state``. When omitted,
+        counts default on for programs containing measurement and the final
+        state defaults on for programs without measurement. ``final_state``
+        is a full physical density matrix with shape ``(3**m, 3**m)`` for the
+        model's ``m`` transmons. A measured final state is one sampled
+        posterior and therefore requires ``shots == 1``.
+
+        Args:
+            program: Program to bind, lower, and execute.
+            shots: Number of repetitions used when counts are requested.
+            simulation_config: Optional pulse-execution settings. Unknown or
+                incompatible keys are rejected before execution.
+            result_config: Optional result request. Unknown or incompatible
+                keys are rejected before execution.
+
+        Returns:
+            An eager terminal :class:`~fatqat.Job`. Validation and lowering
+            failures raise directly. Solver-stage failures produce a failed
+            job whose :meth:`~fatqat.Job.result` raises
+            :class:`~fatqat.errors.BackendExecutionError`.
+
+        Raises:
+            BackendValidationError: If the model cannot bind the program,
+                noise/configuration is unsupported, or requested results are
+                incompatible with ``shots`` and measurement.
+            UnsupportedOperationError: If no pulse implementation exists for
+                an operation family or its ordered device operands.
+            PulseImplementationError: If a selected custom pulse rule fails
+                unexpectedly or returns the wrong value type.
+        """
         simulation = _normalize_config(
             simulation_config,
             PulseSimulationConfig,
@@ -289,6 +379,7 @@ class PulseBackend:
     def _validate(
         self, config: PulseResultConfig, shots: int, facts: PulsePlanFacts
     ) -> _DensityMatrixResultRequest:
+        """Resolve default output requests and validate their shot constraints."""
         counts = config.counts if config.counts is not None else facts.has_measurement
         density_matrix = (
             config.final_state
@@ -320,6 +411,7 @@ class PulseBackend:
         engine_index_to_model_ordinal: tuple[int, ...],
         always_on_noise: tuple[ResolvedLindbladTerm, ...],
     ) -> Result:
+        """Execute a validated plan and convert private shot payloads to Result."""
         from .qutip_adapter import SCQutipAdapter
 
         runner = SCQutipAdapter(
@@ -364,6 +456,7 @@ class PulseBackend:
         resource_layout: ResourceLayout,
         allocation: _EngineIndexAllocation,
     ) -> tuple[int, ...]:
+        """Build the engine-index to physical-model ordinal translation."""
         ordinals = [0] * allocation.n_subsystems
         for register in program.quantum_registers:
             for index in range(register.size):
@@ -402,7 +495,26 @@ class PulseBackend:
         return tuple(bindings)
 
     def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        """Report support by descriptor parameterization and activation scope."""
+        """Report whether this backend can realize a noise model.
+
+        Support is instance-sensitive. Damping descriptors are reported by
+        parameterization (``p`` or ``rate``) and activation scope because an
+        always-on descriptor requires a rate, while operation-scoped damping
+        may use either form. Readout confusion is reported separately.
+
+        This capability check does not validate selectors against a particular
+        program; :meth:`run` and :meth:`propagator` perform that separate
+        :meth:`fatqat.NoiseModel.validate_for` step after resolving the
+        program's resource layout.
+
+        Args:
+            noise_model: Noise registrations to classify without executing a
+                program.
+
+        Returns:
+            A :class:`~fatqat.noise.NoiseSupportReport` listing accepted and
+            rejected source descriptions plus explanatory warnings.
+        """
         accepted = ["readout_error"] if noise_model.has_readout_error() else []
         rejected = []
         warnings = []

@@ -250,8 +250,8 @@ version.
 The native operation set is ``RX``, ``RY``, virtual ``RZ``, ``iSwap``, and
 oriented ``CZ`` on declared coupling edges. ``simulation_config`` accepts
 ``seed`` and serial execution controls plus ``schedule_mode="ASAP"`` or
-``"ALAP"``. These private scheduling modes preserve program dependencies and
-resource exclusivity; they do not expose a hardware schedule.
+``"ALAP"``. These lightweight scheduling modes preserve program dependencies
+and resource exclusivity; they do not expose a hardware schedule.
 
 Each native operation resolves to its physical realization through a
 :py:class:`~fatqat.backends.PulseImplementationMap`, passed as
@@ -260,7 +260,9 @@ Each native operation resolves to its physical realization through a
 supply a copy of that default map with one gate replaced to change how a
 gate is physically realized without touching calibration data or
 subclassing :py:class:`~fatqat.backends.PulseBackend`. See
-:doc:`experimental` for the full customization workflow.
+:doc:`pulse-emulator` for the complete backend, model/calibration,
+propagator, and pulse-authoring API. The customization workflow is also
+introduced in :doc:`experimental`.
 
 Request counts with ``result_config={"counts": True}`` and the final physical
 density matrix with ``result_config={"final_state": True}``. That density
@@ -303,13 +305,3 @@ ZZ and every other channel type are not supported by this backend in v0.1.
 .. autoclass:: fatqat.backends.AtomGridSimulator
    :members:
    :show-inheritance:
-
-.. autoclass:: fatqat.backends.PulseBackend
-   :members:
-
-.. autoclass:: fatqat.backends.SCTransmonExchangeBuilder
-   :members:
-
-.. autofunction:: fatqat.backends.load_physics_model
-
-.. autofunction:: fatqat.backends.load_calibration_spec

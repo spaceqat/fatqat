@@ -70,6 +70,7 @@ def _lower_reset(
     step: AppliedOperation,
     engine_index_allocation: _EngineIndexAllocation,
 ) -> ResetStep:
+    """Lower reset to the engine-index boundary shared with matrix backends."""
     return _lower_reset_boundary(step, engine_index_allocation)
 
 
@@ -83,6 +84,13 @@ def _lower_gate(
     noise_model: NoiseModel,
     lindblad_implementation_map: LindbladImplementationMap,
 ) -> PulseBlock:
+    """Lower one applied operation to a model-owned pulse occurrence.
+
+    Device operands select a pulse implementation rule. The reusable
+    definition returned by that rule is then enriched with this occurrence's
+    lowered condition, resolved Lindblad noise, and engine target indices.
+    Scheduling remains a later engine concern.
+    """
     device_operands = resource_layout.device_labels_for(step.targets)
     rule = _select_implementation(
         step.operation, device_operands, pulse_implementation_map

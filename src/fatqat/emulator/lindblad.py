@@ -45,7 +45,12 @@ class ResolvedLindbladTerm:
 def bind_lindblad_operators(
     local_operators: tuple[np.ndarray, ...], *, model_ordinals: tuple[int, ...]
 ) -> tuple[ResolvedLindbladTerm, ...]:
-    """Bind reusable local operators to one pulse model's subsystems."""
+    """Bind reusable local collapse operators to model subsystem ordinals.
+
+    One resolved local operator becomes one :class:`ResolvedLindbladTerm` and
+    may apply to every ordinal in ``model_ordinals``. Tensor expansion remains
+    the concrete adapter's responsibility.
+    """
     return tuple(
         ResolvedLindbladTerm(operator, model_ordinals) for operator in local_operators
     )

@@ -26,16 +26,19 @@ _SCHEMA_VERSION = 1
 
 
 def _fail(path: str, message: str) -> None:
+    """Raise one path-qualified model/calibration validation failure."""
     raise BackendValidationError(f"{path}: {message}")
 
 
 def _mapping(value: Any, path: str) -> Mapping[str, Any]:
+    """Require a mapping with string keys and return it unchanged."""
     if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
         _fail(path, "must be an object with string keys")
     return value
 
 
 def _exact_keys(value: Mapping[str, Any], expected: set[str], path: str) -> None:
+    """Require an exact object schema, reporting missing and unknown keys."""
     missing = expected - value.keys()
     extra = value.keys() - expected
     if missing or extra:
@@ -65,18 +68,21 @@ def _data_only(value: Any, path: str) -> None:
 
 
 def _string(value: Any, path: str) -> str:
+    """Require a non-empty string persistence value."""
     if not isinstance(value, str) or not value:
         _fail(path, "must be a non-empty string")
     return value
 
 
 def _version(value: Any, path: str) -> int:
+    """Require a positive integer schema/builder version."""
     if type(value) is not int or value < 1:
         _fail(path, "must be a positive integer")
     return value
 
 
 def _number(value: Any, path: str, *, positive: bool = False) -> float:
+    """Normalize one finite numeric value, optionally requiring positivity."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         _fail(path, "must be a finite number")
     result = float(value)
@@ -88,12 +94,14 @@ def _number(value: Any, path: str, *, positive: bool = False) -> float:
 
 
 def _freeze_array(value: np.ndarray) -> np.ndarray:
+    """Copy one local operator into a read-only complex array."""
     array = np.array(value, dtype=complex, copy=True)
     array.flags.writeable = False
     return array
 
 
 def _freeze_data(value: Any) -> Any:
+    """Recursively freeze JSON mappings/lists while preserving scalar values."""
     if isinstance(value, Mapping):
         return MappingProxyType(
             {key: _freeze_data(child) for key, child in value.items()}
@@ -105,13 +113,18 @@ def _freeze_data(value: Any) -> Any:
 
 @dataclass(frozen=True)
 class BuilderIdentity:
-    """Trusted builder key persisted in model and calibration documents."""
+    """Trusted builder key persisted in model and calibration documents.
+
+    The pair ``(id, version)`` selects package-owned executable builder code;
+    persisted documents contain data only and cannot provide a callback.
+    """
 
     id: str
     version: int
 
     @classmethod
     def from_mapping(cls, value: Any, path: str = "builder") -> BuilderIdentity:
+        """Validate and parse one exact ``{"id", "version"}`` object."""
         data = _mapping(value, path)
         _exact_keys(data, {"id", "version"}, path)
         return cls(
@@ -122,13 +135,18 @@ class BuilderIdentity:
 
 @dataclass(frozen=True)
 class ModelIdentity:
-    """Stable identity for one immutable persisted model snapshot."""
+    """Stable identity for one immutable persisted model snapshot.
+
+    ``id`` names the modeled device and ``revision`` distinguishes immutable
+    snapshots of that device. Calibration documents must repeat both values.
+    """
 
     id: str
     revision: str
 
     @classmethod
     def from_mapping(cls, value: Any, path: str = "model") -> ModelIdentity:
+        """Validate and parse one exact ``{"id", "revision"}`` object."""
         data = _mapping(value, path)
         _exact_keys(data, {"id", "revision"}, path)
         return cls(
@@ -139,7 +157,11 @@ class ModelIdentity:
 
 @dataclass(frozen=True)
 class ModelKey:
-    """Complete model identity used to bind opaque handles and calibration."""
+    """Complete builder-and-snapshot identity.
+
+    The key binds calibration data and every opaque resource/control/frame
+    handle to the model from which it was created.
+    """
 
     builder: BuilderIdentity
     model: ModelIdentity
@@ -147,7 +169,12 @@ class ModelKey:
 
 @dataclass(frozen=True)
 class PhysicsModelSpec:
-    """Canonical data-only, versioned physics-model persistence envelope."""
+    """Validated, data-only physics-model persistence envelope.
+
+    This is an internal intermediate used by :func:`load_physics_model` to
+    dispatch a versioned document to package-trusted builder code. Application
+    code normally passes the original mapping directly to that loader.
+    """
 
     builder: BuilderIdentity
     model: ModelIdentity
@@ -157,6 +184,11 @@ class PhysicsModelSpec:
 
     @classmethod
     def from_mapping(cls, document: Any) -> PhysicsModelSpec:
+        """Parse a JSON-compatible model document with an exact schema.
+
+        Unknown/missing keys, unsupported format or schema versions, and
+        non-data values are rejected before any builder is invoked.
+        """
         _data_only(document, "physics model")
         data = _mapping(document, "physics model")
         _exact_keys(
@@ -181,6 +213,7 @@ class PhysicsModelSpec:
 
     @property
     def key(self) -> ModelKey:
+        """Return the combined builder and model identity."""
         return ModelKey(self.builder, self.model)
 
 
@@ -202,7 +235,12 @@ class Transmon:
 
 @dataclass(frozen=True)
 class Coupling:
-    """One undirected edge supporting controlled exchange operations."""
+    """One undirected model edge supporting controlled exchange operations.
+
+    ``subsystem_ids`` records topology, not a continuously active Hamiltonian
+    term. Exchange is present only when a realization drives the edge's
+    exchange control channel.
+    """
 
     id: str
     subsystem_ids: tuple[str, str]
@@ -224,7 +262,12 @@ class SubsystemResourceRef:
 
 @dataclass(frozen=True)
 class ControlChannelRef:
-    """Opaque physical control channel minted by one model."""
+    """Opaque physical control channel minted by one model.
+
+    ``kind`` is ``"drive"``, ``"detuning"``, or ``"exchange"``. Construct
+    controls from a model accessor instead of instantiating this class: the
+    model also verifies object identity when a pulse is bound.
+    """
 
     model_key: ModelKey
     ordinal: int
@@ -234,7 +277,11 @@ class ControlChannelRef:
 
 @dataclass(frozen=True)
 class FrameRef:
-    """Opaque virtual-frame handle minted by one model."""
+    """Opaque virtual-frame handle minted by one model.
+
+    Obtain it from :meth:`PhysicsModel.frame`; direct construction produces a
+    foreign handle that the model rejects.
+    """
 
     model_key: ModelKey
     ordinal: int
@@ -258,7 +305,27 @@ class CouplingRef:
 
 @dataclass(frozen=True)
 class PhysicsModel:
-    """Immutable engine-neutral SC model; it contains local facts only."""
+    """Immutable, engine-neutral superconducting transmon model.
+
+    Instances are returned by :func:`load_physics_model`; applications should
+    not construct them directly. The model contains ordered local qutrit facts,
+    declared exchange topology, read-only local operators, and opaque handles
+    used by custom pulse implementation rules. It contains no QuTiP objects,
+    tensor-expanded operators, calibration values, or solver state.
+
+    Program qubits bind to ``subsystem_ids`` in declaration order. Opaque
+    handles are deliberately model-instance-specific: even a separately
+    loaded model with the same persisted identity cannot bind another
+    instance's handles.
+
+    Attributes:
+        key: Complete builder and snapshot identity.
+        subsystems: Ordered :class:`Transmon` records.
+        couplings: Declared undirected :class:`Coupling` edges.
+        annihilation: Read-only local qutrit lowering matrix.
+        creation: Read-only local qutrit raising matrix.
+        number: Read-only local qutrit number matrix.
+    """
 
     key: ModelKey
     subsystems: tuple[Transmon, ...]
@@ -276,28 +343,37 @@ class PhysicsModel:
 
     @property
     def time_unit(self) -> str:
-        """Canonical runtime coordinate for this model family."""
+        """Return the model's pulse-time coordinate (``"ns"``)."""
         return "ns"
 
     @property
     def subsystem_ids(self) -> tuple[str, ...]:
+        """Return subsystem identifiers in model/binding order."""
         return tuple(subsystem.id for subsystem in self.subsystems)
 
     @property
     def physical_dimension(self) -> int:
+        """Return the local physical dimension, fixed at three."""
         return 3
 
     def resource(self, subsystem_id: str) -> SubsystemResourceRef:
+        """Return the scheduling/resource handle for one subsystem.
+
+        Raises:
+            BackendValidationError: If ``subsystem_id`` is not declared.
+        """
         return self._resources[self._subsystem_ordinal(subsystem_id)]
 
     def drive_control(self, subsystem_id: str) -> ControlChannelRef:
+        """Return the complex local drive channel for one transmon."""
         return self._drive_controls[self._subsystem_ordinal(subsystem_id)]
 
     def detuning_control(self, subsystem_id: str) -> ControlChannelRef:
-        """Return the physical local-frequency-shift channel for one transmon."""
+        """Return the real local-frequency-shift channel for one transmon."""
         return self._detuning_controls[self._subsystem_ordinal(subsystem_id)]
 
     def frame(self, subsystem_id: str) -> FrameRef:
+        """Return the virtual-drive frame handle for one transmon."""
         return self._frames[self._subsystem_ordinal(subsystem_id)]
 
     def coupling(self, first: str, second: str) -> CouplingRef:
@@ -314,6 +390,7 @@ class PhysicsModel:
         return self._exchange_controls[self._coupling_ordinal(first, second)]
 
     def _coupling_ordinal(self, first: str, second: str) -> int:
+        """Resolve an undirected subsystem pair to its coupling ordinal."""
         edge = frozenset((first, second))
         for ordinal, coupling in enumerate(self.couplings):
             if frozenset(coupling.subsystem_ids) == edge:
@@ -323,9 +400,15 @@ class PhysicsModel:
         )
 
     def bind_resource(self, reference: SubsystemResourceRef) -> int:
+        """Validate a resource handle and return its model ordinal."""
         return self._bind(reference, SubsystemResourceRef, self._resources, "resource")
 
     def bind_control(self, reference: ControlChannelRef) -> int:
+        """Validate a control handle and return its kind-local model ordinal.
+
+        Drive and detuning ordinals index ``subsystems``; exchange ordinals
+        index ``couplings``.
+        """
         kind = reference.kind if isinstance(reference, ControlChannelRef) else None
         controls = {
             "drive": self._drive_controls,
@@ -335,12 +418,15 @@ class PhysicsModel:
         return self._bind(reference, ControlChannelRef, controls, "control")
 
     def bind_frame(self, reference: FrameRef) -> int:
+        """Validate a frame handle and return its subsystem ordinal."""
         return self._bind(reference, FrameRef, self._frames, "frame")
 
     def bind_coupling(self, reference: CouplingRef) -> int:
+        """Validate a coupling-resource handle and return its edge ordinal."""
         return self._bind(reference, CouplingRef, self._coupling_refs, "coupling")
 
     def _subsystem_ordinal(self, subsystem_id: str) -> int:
+        """Resolve a declared subsystem ID to its ordered model ordinal."""
         try:
             return self.subsystem_ids.index(subsystem_id)
         except ValueError:
@@ -351,6 +437,7 @@ class PhysicsModel:
     def _bind(
         self, reference: Any, kind: type, refs: tuple[Any, ...], name: str
     ) -> int:
+        """Validate exact handle provenance, kind, ordinal, and object identity."""
         if (
             not isinstance(reference, kind)
             or reference.model_key != self.key
@@ -363,12 +450,18 @@ class PhysicsModel:
 
 
 class PhysicsModelBuilderRegistry:
-    """Registry containing only package-trusted physics-model builders."""
+    """Internal registry containing only package-trusted model builders.
+
+    Persistence documents select a builder by identity but never register or
+    deserialize executable code. The package-level registry is populated at
+    import time and consumed by :func:`load_physics_model`.
+    """
 
     def __init__(self) -> None:
         self._builders: dict[BuilderIdentity, SCTransmonExchangeBuilder] = {}
 
     def register(self, builder: SCTransmonExchangeBuilder) -> None:
+        """Register one trusted builder under its unique identity."""
         identity = builder.identity
         if identity in self._builders:
             raise ValueError(
@@ -377,6 +470,7 @@ class PhysicsModelBuilderRegistry:
         self._builders[identity] = builder
 
     def resolve(self, identity: BuilderIdentity) -> SCTransmonExchangeBuilder:
+        """Return the trusted builder selected by a persisted identity."""
         try:
             return self._builders[identity]
         except KeyError:
@@ -385,15 +479,38 @@ class PhysicsModelBuilderRegistry:
             ) from None
 
     def build(self, spec: PhysicsModelSpec) -> PhysicsModel:
+        """Resolve ``spec.builder`` and build the immutable model."""
         return self.resolve(spec.builder).build(spec)
 
 
 class SCTransmonExchangeBuilder:
-    """Trusted builder for fixed-qutrit, arbitrary-graph SC exchange models."""
+    """Trusted builder for fixed-qutrit, arbitrary-graph transmon models.
+
+    Normal applications call :func:`load_physics_model`, which selects this
+    builder from the document's identity. The builder validates GHz subsystem
+    units, negative anharmonicities, unique IDs, and unique undirected coupling
+    edges, then mints model-instance-specific resource handles.
+
+    Coupling records declare topology for controlled exchange pulses; they do
+    not add residual always-on exchange to the model Hamiltonian.
+    """
 
     identity = BuilderIdentity(_SC_BUILDER_ID, _SC_BUILDER_VERSION)
 
     def build(self, spec: PhysicsModelSpec) -> PhysicsModel:
+        """Build an immutable local-qutrit model from a validated spec.
+
+        Args:
+            spec: Parsed spec selecting this builder identity.
+
+        Returns:
+            A fresh :class:`PhysicsModel` with read-only local operators and
+            newly minted opaque handles.
+
+        Raises:
+            BackendValidationError: If the builder identity, units, subsystem
+                data, or coupling topology are invalid.
+        """
         if spec.builder != self.identity:
             raise BackendValidationError(
                 "SC builder received a foreign model specification"
@@ -453,6 +570,7 @@ class SCTransmonExchangeBuilder:
 
     @staticmethod
     def _validate_units(value: Any) -> None:
+        """Require the v1 transmon frequency/anharmonicity GHz unit schema."""
         units = _mapping(value, "physics model.parameters.units")
         _exact_keys(units, {"subsystems"}, "physics model.parameters.units")
         subsystem_units = _mapping(
@@ -474,6 +592,7 @@ class SCTransmonExchangeBuilder:
 
     @staticmethod
     def _build_subsystems(value: Any) -> tuple[Transmon, ...]:
+        """Validate and build ordered, uniquely named transmon records."""
         if not isinstance(value, list) or not value:
             _fail("physics model.parameters.subsystems", "must be a non-empty array")
         subsystems = []
@@ -497,6 +616,7 @@ class SCTransmonExchangeBuilder:
     def _build_couplings(
         value: Any, subsystems: tuple[Transmon, ...]
     ) -> tuple[Coupling, ...]:
+        """Validate and build unique undirected edges over known subsystems."""
         if not isinstance(value, list):
             _fail("physics model.parameters.couplings", "must be an array")
         known = {subsystem.id for subsystem in subsystems}
@@ -536,13 +656,40 @@ PHYSICS_MODEL_BUILDERS.register(SCTransmonExchangeBuilder())
 
 
 def load_physics_model(document: Any) -> PhysicsModel:
-    """Parse and build one trusted physics-model document."""
+    """Parse and build one trusted superconducting physics-model document.
+
+    ``document`` must contain JSON-compatible data using the versioned
+    ``fatqat.physics-model`` envelope. Its builder identity selects only
+    package-registered code; callbacks and arbitrary Python objects are
+    rejected. The returned model is immutable and may be shared across
+    backend instances.
+
+    Args:
+        document: Mapping decoded from a model JSON document.
+
+    Returns:
+        A new immutable :class:`PhysicsModel`.
+
+    Raises:
+        BackendValidationError: If the envelope, builder, units, subsystem
+            parameters, or coupling topology are invalid.
+    """
     return PHYSICS_MODEL_BUILDERS.build(PhysicsModelSpec.from_mapping(document))
 
 
 @dataclass(frozen=True)
 class CalibrationSpec:
-    """Immutable calibration recipe data bound to exactly one model snapshot."""
+    """Immutable calibration recipe data bound to one model snapshot.
+
+    Instances are returned by :func:`load_calibration_spec`; applications
+    should not construct them directly. Recipe mappings are recursively frozen
+    and contain data only. The built-in realization reads ``rx_ry``, ``iswap``,
+    and per-edge ``cz`` recipes; virtual ``RZ`` has no calibration recipe.
+
+    Attributes:
+        key: Exact model identity copied from the calibration document.
+        recipes: Recursively immutable recipe mapping.
+    """
 
     key: ModelKey
     recipes: Mapping[str, Any]
@@ -551,6 +698,7 @@ class CalibrationSpec:
 
     @classmethod
     def from_mapping(cls, document: Any, model: PhysicsModel) -> CalibrationSpec:
+        """Validate and bind a calibration document to ``model``."""
         _data_only(document, "calibration")
         data = _mapping(document, "calibration")
         _exact_keys(
@@ -578,6 +726,11 @@ class CalibrationSpec:
         return cls(key=key, recipes=_freeze_data(dict(recipes)))
 
     def recipe(self, name: str) -> Mapping[str, Any]:
+        """Return one immutable named recipe.
+
+        Raises:
+            BackendValidationError: If ``name`` is not present.
+        """
         try:
             return self.recipes[name]
         except KeyError:
@@ -587,6 +740,7 @@ class CalibrationSpec:
 
     @staticmethod
     def _validate_recipes(recipes: Mapping[str, Any], model: PhysicsModel) -> None:
+        """Validate all built-in recipe families and exact CZ edge coverage."""
         # RZ has no recipe: it realizes as an exact virtual frame rotation
         # (see superconducting_realization._rz_definition), not a calibrated
         # physical gate, so it carries no calibration degree of freedom to
@@ -673,6 +827,7 @@ class CalibrationSpec:
         *,
         positive_fields: set[str] | None = None,
     ) -> None:
+        """Validate one exact scalar-only single-qubit recipe object."""
         data = _mapping(value, path)
         _exact_keys(data, expected, path)
         positive_fields = expected if positive_fields is None else positive_fields
@@ -685,5 +840,22 @@ class CalibrationSpec:
 
 
 def load_calibration_spec(document: Any, model: PhysicsModel) -> CalibrationSpec:
-    """Parse and validate one calibration document against its physics model."""
+    """Parse and validate a calibration document against its physics model.
+
+    The document must use the versioned ``fatqat.calibration`` envelope and
+    repeat the exact builder, model ID, and model revision of ``model``. Recipe
+    fields and coupling coverage are checked before an immutable calibration
+    is returned.
+
+    Args:
+        document: Mapping decoded from a calibration JSON document.
+        model: Model returned by :func:`load_physics_model`.
+
+    Returns:
+        An immutable, identity-bound :class:`CalibrationSpec`.
+
+    Raises:
+        BackendValidationError: If identity, schema, recipe values, or CZ edge
+            coverage do not match ``model``.
+    """
     return CalibrationSpec.from_mapping(document, model)

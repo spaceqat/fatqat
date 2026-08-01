@@ -36,7 +36,14 @@ class _ShotContext:
 
 
 class _PulseModelRunner(Protocol):
-    """Solver/boundary hooks invoked only by the whole-plan engine."""
+    """Internal solver/boundary contract consumed by :class:`PulseEngine`.
+
+    The engine owns plan traversal, shot strategy, scheduling, conditions, and
+    boundary placement. A runner owns model-specific state evolution,
+    measurement/reset physics, and conversion of one completed shot into a
+    backend-facing payload. The protocol deliberately uses ``Any`` so QuTiP
+    values remain confined to the concrete adapter.
+    """
 
     def initial_state(self) -> Any: ...
 
@@ -63,13 +70,25 @@ class _PulseModelRunner(Protocol):
 def _condition_matches(
     condition: tuple[tuple[int, int], ...] | None, classical_memory: list[int]
 ) -> bool:
+    """Return whether every lowered classical equality term is satisfied."""
     return condition is None or all(
         classical_memory[index] == value for index, value in condition
     )
 
 
 class PulseEngine:
-    """Place and execute a complete lowered plan in deterministic shot order."""
+    """Internal whole-plan orchestrator for pulse execution.
+
+    ``PulseEngine`` is the pulse counterpart of the NumPy simulator engine's
+    orchestration layer. It selects the shared fast versus per-shot strategy,
+    divides a plan at measurement/reset boundaries, schedules each continuous
+    pulse region, evaluates classical conditions, and delegates physical work
+    to a model runner. It does not construct Hamiltonians or know QuTiP.
+
+    This class is private implementation machinery. Applications call
+    :meth:`fatqat.backends.PulseBackend.run` or
+    :meth:`fatqat.backends.PulseBackend.propagator` instead.
+    """
 
     def __init__(
         self, runner: _PulseModelRunner, *, schedule_mode: SchedulingMode = "ASAP"
@@ -85,7 +104,13 @@ class PulseEngine:
         n_clbits: int,
         rng: np.random.Generator,
     ) -> tuple[Any, ...]:
-        """Execute all shots and return one private runner payload per shot."""
+        """Execute a lowered plan and return one runner payload per shot.
+
+        Static plans evolve once and replay only terminal measurement. Dynamic
+        plans (conditions, resets, or subsystem reuse after measurement) replay
+        the complete trajectory for each shot. The supplied generator is
+        shared in deterministic shot order.
+        """
         if type(shots) is not int or shots <= 0:
             raise BackendValidationError("pulse engine shots must be a positive int")
         if type(n_clbits) is not int or n_clbits < 0:
@@ -112,7 +137,11 @@ class PulseEngine:
         *,
         apply_final_frame: bool = True,
     ) -> Any:
-        """Schedule and propagate one coherent boundary-free pulse plan."""
+        """Schedule and propagate one coherent boundary-free pulse plan.
+
+        Measurement, reset, classical conditions, unknown step types, and an
+        empty plan are rejected before delegation to the model runner.
+        """
         blocks = []
         for step in plan:
             if isinstance(step, MeasurementStep):
@@ -229,6 +258,13 @@ class PulseEngine:
         *,
         defer_measurements: bool = False,
     ) -> None:
+        """Traverse one trajectory, flushing pulses at physical boundaries.
+
+        Consecutive pulse blocks share one scheduled continuous region, so
+        disjoint controls may evolve concurrently. Measurement and reset flush
+        that region before the boundary is applied. With deferred measurement,
+        terminal measurements are left for fast-path resampling.
+        """
         pending: list[PulseBlock] = []
 
         def flush() -> None:

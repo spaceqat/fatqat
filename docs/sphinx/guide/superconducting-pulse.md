@@ -6,6 +6,10 @@ simulator, separate from the two-level IBM- and Google-style fake backends.
 The public API accepts ordinary data and NumPy results: QuTiP and qutip-qip
 objects remain implementation details.
 
+This guide explains the workflow. See {doc}`../api/pulse-emulator` for exact
+constructor and method signatures, model/calibration accessors, pulse-rule
+contracts, and generated reference documentation.
+
 ## Create a backend
 
 Keep the hardware model and its calibration as separate JSON-compatible

@@ -34,6 +34,7 @@ _WAVEFORM_SAMPLES = 129
 
 
 def _finite(value: Any, name: str, *, nonnegative: bool = False) -> float:
+    """Normalize a finite realization scalar with optional non-negativity."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise BackendValidationError(f"{name} must be a finite number")
     value = float(value)
@@ -43,14 +44,17 @@ def _finite(value: Any, name: str, *, nonnegative: bool = False) -> float:
 
 
 def _sample_grid(duration: float) -> np.ndarray:
+    """Return the fixed-size local waveform grid for one duration."""
     return np.linspace(0.0, duration, _WAVEFORM_SAMPLES)
 
 
 def _hann(tlist: np.ndarray, duration: float, peak: float) -> np.ndarray:
+    """Evaluate a zero-endpoint Hann envelope with the requested peak."""
     return peak * np.sin(pi * tlist / duration) ** 2
 
 
 def _cumulative_trapezoid(values: np.ndarray, tlist: np.ndarray) -> np.ndarray:
+    """Return the sampled cumulative integral with trapezoidal segments."""
     phase = np.zeros_like(values, dtype=float)
     phase[1:] = np.cumsum((values[1:] + values[:-1]) * np.diff(tlist) / 2.0)
     return phase
@@ -59,12 +63,14 @@ def _cumulative_trapezoid(values: np.ndarray, tlist: np.ndarray) -> np.ndarray:
 def _single_resource_claims(
     model: PhysicsModel, subsystem_id: str
 ) -> tuple[ResourceClaim, ...]:
+    """Claim one local subsystem for scheduling and source-order exclusion."""
     return (model.resource(subsystem_id),)
 
 
 def _pair_resource_claims(
     model: PhysicsModel, first: str, second: str
 ) -> tuple[ResourceClaim, ...]:
+    """Claim both endpoints and their coupling edge for a two-body pulse."""
     return (
         model.resource(first),
         model.resource(second),
@@ -140,6 +146,7 @@ def _rz_definition(
     model: PhysicsModel,
     calibration: CalibrationSpec,
 ) -> PulseDefinition:
+    """Realize RZ as a zero-duration virtual-frame update."""
     (subsystem_id,) = _target_ids(model, targets, 1)
     angle = _finite(operation.theta, "rotation angle")
     return PulseDefinition(
@@ -157,6 +164,7 @@ def _iswap_definition(
     model: PhysicsModel,
     calibration: CalibrationSpec,
 ) -> PulseDefinition:
+    """Realize the public +i iSWAP convention with a Hann exchange pulse."""
     first, second = _target_ids(model, targets, 2)
     duration = float(calibration.recipe("iswap")["duration_ns"])
     tlist = _sample_grid(duration)
@@ -179,6 +187,11 @@ def _cz_definition(
     model: PhysicsModel,
     calibration: CalibrationSpec,
 ) -> PulseDefinition:
+    """Realize oriented CZ by detuning one endpoint through an exchange park.
+
+    The nominal post-frame correction is the integral of the generated
+    detuning waveform, keeping it consistent with recipe timing changes.
+    """
     first, second = _target_ids(model, targets, 2)
     edge_recipe = _cz_recipe(calibration, first, second)
     if edge_recipe["detuning_subsystem"] != first:
@@ -219,6 +232,7 @@ def _cz_definition(
 
 
 def _cz_recipe(calibration: CalibrationSpec, first: str, second: str) -> Any:
+    """Return the calibration entry for one undirected declared edge."""
     for edge in calibration.recipe("cz")["edges"]:
         if frozenset(edge["subsystems"]) == frozenset((first, second)):
             return edge
@@ -230,13 +244,17 @@ def _cz_recipe(calibration: CalibrationSpec, first: str, second: str) -> Any:
 def default_superconducting_pulse_implementation_map() -> PulseImplementationMap:
     """Build the default superconducting pulse implementation map.
 
-    Registers against the public operation instances/classes (`ops.RX`,
-    `ops.RY`, `ops.RZ`, `ops.iSwap`, `ops.CZ`), the same convention
-    `default_matrix_implementation_map()` uses for the matrix family. Every
-    numerical formula, sampled grid, calibration field meaning, resource
-    claim, oriented-CZ validation, frame correction, and the signed iSwap
-    convention are unchanged from the SC pulse backend's original hardcoded
-    dispatcher; only the dispatch mechanism moved to this map.
+    Registers against the public operation instances/classes (``ops.RX``,
+    ``ops.RY``, ``ops.RZ``, ``ops.iSwap``, ``ops.CZ``), the same convention
+    ``default_matrix_implementation_map()`` uses for the matrix family. The
+    returned map contains unconstrained rules for ``RX``, ``RY``, ``RZ``,
+    ``iSwap``, and ``CZ``. The rules themselves validate model topology and CZ
+    orientation. Each call returns an independent registry, so callers may
+    replace or remove registrations without changing another backend.
+
+    Returns:
+        A new :class:`~fatqat.backends.PulseImplementationMap` containing the
+        built-in superconducting realizations.
     """
     m = PulseImplementationMap()
     m.add(ops.RX, _rx_ry_definition)
