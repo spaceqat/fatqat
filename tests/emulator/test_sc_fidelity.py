@@ -44,6 +44,10 @@ _MIXED_CZ_ISWAP = (
     (fq.ops.RZ(-0.3), (1,)),
     (fq.ops.RX(0.2), (1,)),
 )
+# This is the composed-sequence guard for the virtual-frame sign convention:
+# its non-pi RZ updates precede phase-sensitive drives on the same subsystem.
+# The H-based sequences above use RZ(pi), where exp(+i*pi) == exp(-i*pi), and
+# therefore cannot distinguish the two frame-binding signs.
 _MULTIPLE_FRAMES = (
     (fq.ops.RZ(0.2), (0,)),
     (fq.ops.RX(0.3), (0,)),
@@ -227,10 +231,10 @@ def test_native_gate_process_fidelity_and_leakage(
     ("operations", "minimum_fidelity"),
     (
         (_PARALLEL_ROTATIONS, 0.9999),
-        (_H0_CZ, 0.99),
-        (_HH_CZ, 0.985),
-        (_MIXED_CZ_ISWAP, 0.985),
-        (_MULTIPLE_FRAMES, 0.999),
+        (_H0_CZ, 0.998),
+        (_HH_CZ, 0.989),
+        (_MIXED_CZ_ISWAP, 0.991),
+        (_MULTIPLE_FRAMES, 0.9998),
     ),
     ids=("parallel-rotations", "h-cz", "hh-cz", "mixed-cz-iswap", "frames"),
 )
