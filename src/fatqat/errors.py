@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 
-class FatqcatError(Exception):
+class FatqatError(Exception):
     """Base class for all fatqat errors."""
 
 
-class BackendValidationError(FatqcatError):
+class BackendValidationError(FatqatError):
     """Raised at backend entry when a program/request is not acceptable."""
 
 
-class BackendExecutionError(FatqcatError):
+class BackendExecutionError(FatqatError):
     """Raised by ``Job.result()`` when a backend's private execution fails."""
 
 
@@ -19,12 +19,12 @@ class UnsupportedOperationError(BackendValidationError):
     """Raised when the backend does not support an operation or feature."""
 
 
-class MatrixImplementationError(FatqcatError):
+class MatrixImplementationError(FatqatError):
     """Raised when a registered implementation rule fails while building a
     plan's matrix step."""
 
 
-class PulseImplementationError(FatqcatError):
+class PulseImplementationError(FatqatError):
     """Raised when a registered pulse implementation rule fails, or returns
     something other than a ``PulseDefinition``, while lowering a pulse
     program occurrence. A rule's own ``BackendValidationError`` (including
@@ -32,7 +32,7 @@ class PulseImplementationError(FatqcatError):
     the rule's deliberate validation, not an implementation defect."""
 
 
-class ResultFieldUnavailableError(FatqcatError):
+class ResultFieldUnavailableError(FatqatError):
     """Raised when a Result field was not produced by this run."""
 
 

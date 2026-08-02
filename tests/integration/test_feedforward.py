@@ -1,6 +1,6 @@
 import fatqat as fq
 from fatqat import operations as ops
-from fatqat.backends import SimulatorBackend
+from fatqat.simulator import Simulator
 
 
 def _teleport_program(prep):
@@ -23,7 +23,7 @@ def test_teleportation_moves_one_state_to_target():
     p = _teleport_program(prep=[ops.X])
     p.measure(2, 0)
     counts = (
-        SimulatorBackend("SV")
+        Simulator("SV")
         .run(p, shots=64, simulation_config={"seed": 1})
         .result()
         .get_counts()
@@ -36,7 +36,7 @@ def test_teleportation_moves_plus_state_to_target():
     p.add(ops.H, 2)
     p.measure(2, 0)
     counts = (
-        SimulatorBackend("SV")
+        Simulator("SV")
         .run(p, shots=64, simulation_config={"seed": 3})
         .result()
         .get_counts()
@@ -58,7 +58,7 @@ def test_bit_flip_code_corrects_single_x_error():
     p.measure(1, 3)
     p.measure(2, 4)
     counts = (
-        SimulatorBackend("SV")
+        Simulator("SV")
         .run(p, shots=32, simulation_config={"seed": 2})
         .result()
         .get_counts()
@@ -77,7 +77,7 @@ def test_reset_seed_independence_matches_born_rule():
 
     ones = 0
     n = 1000
-    backend = SimulatorBackend("SV")
+    backend = Simulator("SV")
     for s in range(n):
         counts = (
             backend.run(program(), shots=1, simulation_config={"seed": s})

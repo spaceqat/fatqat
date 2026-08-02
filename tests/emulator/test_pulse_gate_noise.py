@@ -7,7 +7,7 @@ import pytest
 from qutip import basis, ket2dm, tensor
 
 import fatqat as fq
-from fatqat.emulator.backend import PulseBackend
+from fatqat.emulator.backend import Emulator
 from fatqat.emulator.engine import _ShotContext
 from fatqat.emulator.scheduling import schedule_pulse_run
 from fatqat.emulator.lindblad import ResolvedLindbladTerm
@@ -36,7 +36,7 @@ def make_backend_fixture(model, calibration):
     """Build a backend on the shared model with an optional noise model."""
 
     def build(noise=None):
-        return PulseBackend(model, calibration, noise=noise)
+        return Emulator(model, calibration, noise=noise)
 
     return build
 
@@ -142,7 +142,7 @@ def test_lindblad_implementation_map_declares_pulse_noise_capability(
     implementations.register(PhaseDamping, phase_damping_lindblad_rule)
     noise = NoiseModel()
     noise.add_channel(AmplitudeDamping(rate=(0.01, 0.02)), operation=fq.ops.RX)
-    backend = PulseBackend(
+    backend = Emulator(
         model,
         calibration,
         noise=noise,
@@ -225,7 +225,7 @@ def test_gate_scoped_noise_resolves_using_the_custom_rules_realized_duration(
 
     implementations = PulseImplementationMap()
     implementations.add(fq.ops.RX, custom_rx)
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
     backend._noise_model.add_channel(
         AmplitudeDamping(p=(0.01, 0.02)), operation=fq.ops.RX
     )

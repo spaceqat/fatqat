@@ -64,10 +64,10 @@ grouped measurement, reset, and feedforward.
 
 ## Backends and results
 
-A {py:class}`~fatqat.backends.SimulatorBackend` is the object that executes a program:
+A {py:class}`~fatqat.simulator.Simulator` is the object that executes a program:
 
 ```python
-backend = fq.backends.SimulatorBackend()
+backend = fq.simulator.Simulator()
 job = backend.run(program, shots=1000)
 result = job.result()
 counts = result.get_counts()

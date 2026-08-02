@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat.backends import SimulatorBackend
+from fatqat.simulator import Simulator
 from fatqat.implementation import default_matrix_implementation_map
 
 _PARALLEL_ROTATIONS = (
@@ -254,7 +254,7 @@ def test_composed_ground_state_matches_matrix_simulator(
     program = program_from_operations(operations)
     pulse_state = pulse_ground_state_in_simulator_order(backend, program)
     simulator_state = np.asarray(
-        SimulatorBackend("SV")
+        Simulator("SV")
         .run(program, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()

@@ -74,7 +74,7 @@ def _assert_close(ours: np.ndarray, theirs: np.ndarray) -> None:
 
 def _fatqat_state(program: fq.Program, runtime: str) -> np.ndarray:
     return (
-        fq.backends.SimulatorBackend(method="SV", runtime=runtime)
+        fq.simulator.Simulator(method="SV", runtime=runtime)
         .run(program, result_config={"counts": False, "final_state": True})
         .result()
         .get_statevector()
@@ -86,7 +86,7 @@ def _fatqat_rho(
     runtime: str,
     noise: fq.NoiseModel | None = None,
 ) -> np.ndarray:
-    backend = fq.backends.SimulatorBackend(method="DM", runtime=runtime, noise=noise)
+    backend = fq.simulator.Simulator(method="DM", runtime=runtime, noise=noise)
     return (
         backend.run(program, result_config={"counts": False, "final_state": True})
         .result()

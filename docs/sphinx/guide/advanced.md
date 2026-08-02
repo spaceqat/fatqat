@@ -32,7 +32,7 @@ program.add(op.Shift(1), program.quantum_registers[1][0])     # qutrit: |0> -> |
 program.measure(program.quantum_registers[0][0], program.classical_registers[0][0])
 program.measure(program.quantum_registers[1][0], program.classical_registers[1][0])
 
-result = fq.backends.SimulatorBackend("SV").run(program, shots=100).result()
+result = fq.simulator.Simulator("SV").run(program, shots=100).result()
 print(result.get_counts())   # {"11": 100}
 ```
 
@@ -43,7 +43,7 @@ explicitly (see [Gates](gates.md) for how targets are addressed).
 
 ## Custom implementations
 
-{py:class}`~fatqat.backends.SimulatorBackend`'s `implementation_map=`
+{py:class}`~fatqat.simulator.Simulator`'s `implementation_map=`
 argument accepts a custom `MatrixImplementationMap` to control how
 operations are lowered to matrices, or to add support for operations the
 default map doesn't cover.
@@ -76,7 +76,7 @@ SQRT_X_MATRIX = 0.5 * np.array(
 implementation_map = default_matrix_implementation_map()
 implementation_map.add(SqrtX, FixedMatrix(SQRT_X_MATRIX))
 
-backend = fq.backends.SimulatorBackend("SV", implementation_map=implementation_map)
+backend = fq.simulator.Simulator("SV", implementation_map=implementation_map)
 
 program = fq.Program(1)
 program.add(SqrtX(), 0)
@@ -103,7 +103,7 @@ A few things worth noting about the shape of this API:
   register raises a clear error rather than an opaque shape mismatch deeper
   in the engine.
 - `implementation_map` is copied internally by the backend
-  (`SimulatorBackend` never mutates the map you pass in), so the same map
+  (`Simulator` never mutates the map you pass in), so the same map
   can be reused across multiple backend instances.
 
 If the matrix instead depends on the operation's parameters (e.g. a rotation
@@ -113,7 +113,7 @@ which shape you passed by inspecting the callable's signature.
 
 ### Custom pulse implementations
 
-`fq.backends.PulseBackend` has the same customization shape for its own
+`fq.emulator.Emulator` has the same customization shape for its own
 native operations, through a `PulseImplementationMap` instead of an
 `MatrixImplementationMap`: copy `default_superconducting_pulse_implementation_map()`,
 register a replacement rule, and construct the backend with

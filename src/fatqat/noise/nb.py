@@ -17,14 +17,14 @@ digit is resampled through a column-stochastic confusion matrix
 
 Plus `_compile_channel_table` and `_compile_readout_table`, which flatten a
 plan's channel occurrences and per-measurement confusion matrices into the
-typed arrays the fused per-shot kernel in ``simulator.nb`` walks.
+typed arrays the fused per-shot kernel in ``simulator._engine.nb`` walks.
 
-Division of labour with ``simulator.nb``, and why it runs this way: *applying*
+Division of labour with ``simulator._engine.nb``, and why it runs this way: *applying*
 a local matrix is representation machinery and stays there (one coset-walk
 kernel family, shared by gates, reset shifts, and Kraus operators alike), so
 `_jump_branch_kernel` takes the branch stack *already produced* by that
 primitive and only does the channel-specific part. This keeps the dependency
-one-directional - ``simulator.nb`` imports this module, never the reverse.
+one-directional - ``simulator._engine.nb`` imports this module, never the reverse.
 That direction is forced, not stylistic: a Numba function resolves the njit
 callees in its body as module globals at compile time, so the fused shots
 kernel cannot reach a channel kernel it does not import at module scope, and
@@ -33,9 +33,9 @@ importing back would cycle.
 Numba compiles kernels lazily on first call. Numba is an optional dependency
 (the ``numba`` group), so this module is never imported from ``fatqat.noise``'s
 package ``__init__``; import it explicitly (``from fatqat.noise.nb import
-...``), exactly as ``fatqat.simulator.nb`` is treated.
+...``), exactly as ``fatqat.simulator._engine.nb`` is treated.
 
-Conventions match ``simulator.np`` / ``simulator.nb``: little-endian flat
+Conventions match ``simulator._engine.np`` / ``simulator._engine.nb``: little-endian flat
 indexing, and a local Kraus matrix whose most-significant index digit is
 ``target_indices[0]``.
 """
@@ -77,9 +77,9 @@ def _inverse_cdf_pick(
     search cannot run off the end; the clamp holds that invariant explicitly
     because callers use the result to index memory.
 
-    ``simulator.nb`` has the same two steps for basis-index sampling. It is
+    ``simulator._engine.nb`` has the same two steps for basis-index sampling. It is
     duplicated rather than imported: this module must not import from
-    ``simulator.nb`` (see the module docstring on the forced direction).
+    ``simulator._engine.nb`` (see the module docstring on the forced direction).
     """
     n = probabilities.shape[0]
     cdf = np.empty(n, dtype=np.float64)
@@ -169,7 +169,7 @@ def _kraus_superop_kernel(
 
     The one super-operator that reproduces the exact channel
     ``rho' = sum_i K_i rho K_i^dagger`` when applied to ``vec(rho)`` with the
-    ket group most-significant (see `NumbaDMSimulator`). Entries accumulate in
+    ket group most-significant (see `NumbaDMEngine`). Entries accumulate in
     Kraus order, so this is ``sum(np.kron(k, k.conj()) for k in kraus_ops)``
     term for term - up to last-bit round-off, since Numba may contract each
     multiply-accumulate into an FMA where NumPy rounds the product first.

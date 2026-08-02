@@ -32,7 +32,7 @@ class BarrierGate(Operation):
         >>> program.add(op.X, 0)
         >>> program.add(op.Barrier, (0, 1))
         >>> program.measure((0, 1), (0, 1))
-        >>> result = fq.backends.SimulatorBackend().run(
+        >>> result = fq.simulator.Simulator().run(
         ...     program, shots=5, simulation_config={"seed": 0}
         ... ).result()
         >>> result.get_counts()

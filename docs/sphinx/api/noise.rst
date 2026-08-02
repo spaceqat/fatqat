@@ -6,7 +6,7 @@ separately from a :py:class:`~fatqat.Program`. A :py:class:`~fatqat.NoiseModel` 
 alters a run; it is not an instruction you add to a program.
 
 Build the program and the noise model independently, then pass the model as
-``noise=...`` when constructing :py:class:`~fatqat.backends.SimulatorBackend`. The backend combines
+``noise=...`` when constructing :py:class:`~fatqat.simulator.Simulator`. The backend combines
 them only while executing the program.
 
 Create and attach noise

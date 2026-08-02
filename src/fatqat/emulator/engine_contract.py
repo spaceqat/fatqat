@@ -1,48 +1,45 @@
-"""Pulse-family run configuration and planning-only result contracts."""
+"""Pulse-family run configuration.
+
+The emulator's result request is the shared `fatqat.result._ResultConfig`
+rather than a pulse-specific subclass: ``counts`` and ``final_state`` describe
+what the caller wants back, which is family-neutral. Only the run controls
+below differ between the two families.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..backends.engine_contract import _SimulationConfig
 from ..errors import BackendValidationError
-from ..result import _ResultConfig
 from .scheduling import SchedulingMode, _validate_schedule_mode
 
 
 @dataclass(frozen=True)
-class PulseSimulationConfig(_SimulationConfig):
-    """Internal normalized schema for pulse simulation settings.
+class _EmulatorConfig:
+    """Internal normalized schema for one `Emulator` run.
 
-    The public input remains ``PulseBackend.run(simulation_config={...})``.
-    ``parallel_mode="auto"`` normalizes to ``"serial"``; v0.1 rejects worker
-    counts above one. ``schedule_mode`` selects lightweight ASAP or ALAP pulse
-    placement.
+    The public input remains ``Emulator.run(simulation_config={...})``.
+
+    Deliberately standalone rather than derived from the matrix family's
+    ``_SimulationConfig``: that base carries ``parallel_mode``,
+    ``max_workers``, and ``numba_parallel``, which steer the matrix engine's
+    process- and thread-level parallelism. Pulse execution integrates a
+    physics model through one serial solver call and has no such engine to
+    steer, so inheriting those fields would advertise tuning that silently
+    does nothing. `_normalize_config` derives accepted keys from this
+    schema, so they are now rejected by name instead.
+
+    ``schedule_mode`` selects lightweight ASAP or ALAP pulse placement.
     """
 
+    seed: int | None = None
     schedule_mode: SchedulingMode = "ASAP"
 
     def __post_init__(self) -> None:
-        super().__post_init__()
-        if self.parallel_mode == "auto":
-            object.__setattr__(self, "parallel_mode", "serial")
-        elif self.parallel_mode != "serial":
+        if self.seed is not None and type(self.seed) is not int:
             raise BackendValidationError(
-                "PulseBackend v0.1 supports only parallel_mode='auto' or 'serial'"
-            )
-        if self.max_workers not in (None, 1):
-            raise BackendValidationError(
-                "PulseBackend v0.1 supports only max_workers=None or 1"
+                f"seed must be an int or None, got {self.seed!r}"
             )
         object.__setattr__(
             self, "schedule_mode", _validate_schedule_mode(self.schedule_mode)
         )
-
-
-@dataclass(frozen=True)
-class PulseResultConfig(_ResultConfig):
-    """Internal normalized pulse-result request schema.
-
-    The public ``final_state`` flag requests a physical density matrix; the
-    backend deliberately does not expose a separate density-matrix key.
-    """

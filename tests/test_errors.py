@@ -1,7 +1,7 @@
 """Tests fatqat exception and warning hierarchy."""
 
 from fatqat.errors import (
-    FatqcatError,
+    FatqatError,
     BackendValidationError,
     MatrixImplementationError,
     UnsupportedOperationError,
@@ -11,8 +11,8 @@ from fatqat.errors import (
 
 
 def test_hierarchy():
-    assert issubclass(BackendValidationError, FatqcatError)
+    assert issubclass(BackendValidationError, FatqatError)
     assert issubclass(UnsupportedOperationError, BackendValidationError)
-    assert issubclass(ResultFieldUnavailableError, FatqcatError)
+    assert issubclass(ResultFieldUnavailableError, FatqatError)
     assert issubclass(NoMeasurementWarning, UserWarning)
-    assert issubclass(MatrixImplementationError, FatqcatError)
+    assert issubclass(MatrixImplementationError, FatqatError)

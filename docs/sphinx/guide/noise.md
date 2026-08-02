@@ -17,8 +17,8 @@ program.measure((0, 1), (0, 1))
 noise = fq.NoiseModel()
 noise.add_channel(fq.noise.Depolarizing(p=0.05), operation=op.CX)
 
-ideal = fq.backends.SimulatorBackend(method="DM")
-noisy = fq.backends.SimulatorBackend(method="DM", noise=noise)
+ideal = fq.simulator.Simulator(method="DM")
+noisy = fq.simulator.Simulator(method="DM", noise=noise)
 print(ideal.run(program, shots=1000, simulation_config={"seed": 7}).result().get_counts())
 print(noisy.run(program, shots=1000, simulation_config={"seed": 7}).result().get_counts())
 ```
@@ -78,7 +78,7 @@ mutually exclusive pair with `rate`):
 Both backend families accept the same descriptor, through different
 implementation maps:
 
-- `SimulatorBackend` (the matrix family) resolves `p` directly into Kraus
+- `Simulator` (the matrix family) resolves `p` directly into Kraus
   operators, and rejects `rate` mode - no gate carries a duration in matrix
   lowering today, so there is nothing to convert it with.
 - The superconducting pulse backend (see {doc}`superconducting-pulse`)
@@ -206,11 +206,11 @@ A device backend can build its noise model from its own calibration facts —
 the from-backend workflow. The fake superconducting target ships one:
 
 ```python
-Fake = fq.backends.SCQubitIBMSimulator
+Fake = fq.simulator.SCQubitIBMSimulator
 noisy_fake = Fake(noise=Fake.default_noise_model())
 ```
 
-{py:meth}`~fatqat.backends.SCQubitIBMSimulator.default_noise_model`
+{py:meth}`~fatqat.simulator.SCQubitIBMSimulator.default_noise_model`
 returns a fresh, ordinary `NoiseModel` (T1/T2 relaxation on `SX`, a `CZ`
 depolarizing channel, asymmetric readout confusion; the virtual `RZ` stays
 noise-free) — inspect it, extend it with your own channels, and pass it
@@ -245,7 +245,7 @@ channel_map.register(BitFlip, bit_flip_rule)
 
 noise = fq.NoiseModel()
 noise.add_channel(BitFlip(p=0.05), operation=op.X)
-backend = fq.backends.SimulatorBackend(
+backend = fq.simulator.Simulator(
     method="DM", noise=noise, channel_implementation_map=channel_map
 )
 ```
@@ -256,6 +256,6 @@ Kraus arrays. Shapes are validated at lowering; trace preservation is not
 enforced at run time — the same posture as gate matrices, which are never
 unitarity-checked.
 
-{py:meth}`~fatqat.backends.SimulatorBackend.validate_noise` reports, without
+{py:meth}`~fatqat.simulator.Simulator.validate_noise` reports, without
 running anything, which parts of a model a backend can execute — unknown
 descriptor types come back as rejected sources.

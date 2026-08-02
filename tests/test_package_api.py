@@ -21,18 +21,18 @@ def test_register_types_exposed():
     assert isinstance(qr[0], fq.RegisterRef)
 
 
-def test_statevector_backend_only_under_backends_namespace():
-    from fatqat.backends import SimulatorBackend
+def test_simulator_only_under_simulator_namespace():
+    from fatqat.simulator import Simulator
 
-    assert fq.backends.SimulatorBackend is SimulatorBackend
-    assert not hasattr(fq, "SimulatorBackend")
+    assert fq.simulator.Simulator is Simulator
+    assert not hasattr(fq, "Simulator")
 
 
-def test_fake_superconducting_backends_exported_under_backends_namespace():
-    from fatqat.backends import SCQubitGoogleSimulator, SCQubitIBMSimulator
+def test_constrained_targets_exported_under_simulator_namespace():
+    from fatqat.simulator import SCQubitGoogleSimulator, SCQubitIBMSimulator
 
-    assert fq.backends.SCQubitGoogleSimulator is SCQubitGoogleSimulator
-    assert fq.backends.SCQubitIBMSimulator is SCQubitIBMSimulator
+    assert fq.simulator.SCQubitGoogleSimulator is SCQubitGoogleSimulator
+    assert fq.simulator.SCQubitIBMSimulator is SCQubitIBMSimulator
     assert not hasattr(fq, "SCQubitGoogleSimulator")
     assert not hasattr(fq, "SCQubitIBMSimulator")
 
@@ -43,19 +43,19 @@ def test_resultconfig_not_exported_from_top_level():
 
 def test_error_classes_only_under_errors_namespace():
     from fatqat.errors import (
-        FatqcatError,
+        FatqatError,
         BackendValidationError,
         MatrixImplementationError,
         UnsupportedOperationError,
         NoMeasurementWarning,
     )
 
-    assert fq.errors.FatqcatError is FatqcatError
+    assert fq.errors.FatqatError is FatqatError
     assert fq.errors.BackendValidationError is BackendValidationError
     assert fq.errors.MatrixImplementationError is MatrixImplementationError
     assert fq.errors.UnsupportedOperationError is UnsupportedOperationError
     assert fq.errors.NoMeasurementWarning is NoMeasurementWarning
-    assert not hasattr(fq, "FatqcatError")
+    assert not hasattr(fq, "FatqatError")
 
 
 def test_program_measure_all_is_public_instance_method():

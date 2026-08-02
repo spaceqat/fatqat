@@ -1,17 +1,18 @@
-"""Custom pulse implementation workflows through the public PulseBackend surface.
+"""Custom pulse implementation workflows through the public Emulator surface.
 
-Every import below comes from `fatqat` / `fatqat.backends` / `fatqat.errors`,
+Every import below comes from `fatqat` / `fatqat.emulator` / `fatqat.errors`,
 matching the documented custom-CZ workflow: replacing a gate realization
-never requires subclassing `PulseBackend` or importing `fatqat.emulator`.
+never requires subclassing `Emulator` or reaching into `fatqat.emulator`'s
+private modules (`pulse`, `superconducting`, `qutip_adapter`, ...).
 """
 
 import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat.backends import (
+from fatqat.emulator import (
+    Emulator,
     PhaseShift,
-    PulseBackend,
     PulseDefinition,
     PulseImplementationMap,
     SampledControl,
@@ -49,7 +50,7 @@ def test_device_specific_cz_table_dispatches_by_ordered_device_operands(
     implementations = PulseImplementationMap()
     implementations.add(fq.ops.CZ, forward_rule, device_operands=("q0", "q1"))
     implementations.add(fq.ops.CZ, reversed_rule, device_operands=("q1", "q0"))
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
 
     forward = fq.Program(2)
     forward.add(fq.ops.CZ, (0, 1))
@@ -70,7 +71,7 @@ def test_public_workflow_rejects_a_non_pulse_definition_return(model, calibratio
     implementations.add(
         fq.ops.CZ, lambda operation, *, targets, model, calibration: None
     )
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
 
     program = fq.Program(2)
     program.add(fq.ops.CZ, (0, 1))
@@ -92,7 +93,7 @@ def test_public_workflow_rejects_a_foreign_model_handle(
 
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(fq.ops.CZ, foreign_rule)
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
 
     program = fq.Program(2)
     program.add(fq.ops.CZ, (0, 1))
@@ -117,7 +118,7 @@ def test_public_workflow_rejects_a_control_extending_past_the_definition_duratio
 
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(fq.ops.RX, overrunning_rule)
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
 
     program = fq.Program(1)
     program.add(fq.ops.RX(0.3), 0)
@@ -131,7 +132,7 @@ def test_public_workflow_rejects_missing_resource_claims(model, calibration):
 
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(fq.ops.RZ, claimless_rule)
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
 
     program = fq.Program(1)
     program.add(fq.ops.RZ(0.3), 0)
@@ -147,7 +148,7 @@ def test_public_workflow_wraps_an_arbitrary_exception_raised_by_the_rule(
 
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(fq.ops.CZ, failing_rule)
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
 
     program = fq.Program(2)
     program.add(fq.ops.CZ, (0, 1))
@@ -156,22 +157,22 @@ def test_public_workflow_wraps_an_arbitrary_exception_raised_by_the_rule(
     assert isinstance(excinfo.value.__cause__, ValueError)
 
 
-# --- the documented workflow, reachable entirely from `fq.backends` ---------
+# --- the documented workflow, reachable entirely from `fq.emulator` ---------
 
 
-def test_replacing_cz_through_the_public_surface_never_imports_fatqat_emulator(
+def test_replacing_cz_through_the_public_surface_never_imports_private_modules(
     model, calibration
 ):
     """The custom-CZ workflow exactly as documented::
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(fq.ops.CZ, custom_cz)
-    backend = fq.backends.PulseBackend(
+    backend = fq.emulator.Emulator(
         model, calibration, pulse_implementation_map=implementations
     )
 
-    Every name used below comes from `fatqat` / `fatqat.backends`: replacing a
-    gate realization must never require subclassing `PulseBackend` or
-    importing `fatqat.emulator`.
+    Every name used below comes from `fatqat` / `fatqat.emulator`: replacing a
+    gate realization must never require subclassing `Emulator` or reaching
+    into that package's private modules.
     """
 
     def custom_cz(operation, *, targets, model, calibration):
@@ -191,7 +192,7 @@ def test_replacing_cz_through_the_public_surface_never_imports_fatqat_emulator(
 
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(fq.ops.CZ, custom_cz)
-    backend = fq.backends.PulseBackend(
+    backend = fq.emulator.Emulator(
         model, calibration, pulse_implementation_map=implementations
     )
 

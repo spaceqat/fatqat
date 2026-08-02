@@ -12,7 +12,7 @@ from fatqat.resource_layout import ResourceLayout
 
 
 def _resource_layout_for(program):
-    return fq.backends.SimulatorBackend()._resolve_resource_layout(program)
+    return fq.simulator.Simulator()._resolve_resource_layout(program)
 
 
 def _two_qubit_program():

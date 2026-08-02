@@ -14,7 +14,7 @@ program = fq.Program(1, 1)
 program.add(op.X, 0)
 program.measure(0, 0)
 
-result = fq.backends.SimulatorBackend().run(program, shots=10).result()
+result = fq.simulator.Simulator().run(program, shots=10).result()
 print(result.get_counts())  # {"1": 10}
 ```
 

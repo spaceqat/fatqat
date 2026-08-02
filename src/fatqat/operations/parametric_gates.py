@@ -8,7 +8,7 @@ Examples:
     >>> import fatqat.operations as op
     >>> program = fq.Program(1)
     >>> program.add(op.RX(math.pi), 0)
-    >>> result = fq.backends.SimulatorBackend("SV").run(
+    >>> result = fq.simulator.Simulator("SV").run(
     ...     program,
     ...     shots=1,
     ...     result_config={"counts": False, "final_state": True},

@@ -1,7 +1,7 @@
 Errors (``fq.errors``)
 ========================
 
-.. autoclass:: fatqat.errors.FatqcatError
+.. autoclass:: fatqat.errors.FatqatError
    :members:
    :show-inheritance:
 

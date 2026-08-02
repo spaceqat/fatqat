@@ -9,7 +9,7 @@ use of them without confusing them with the normal result workflow.
 Job lifecycle
 -------------
 
-:py:meth:`~fatqat.backends.Backend.run` returns a :py:class:`~fatqat.Job`. The ordinary path remains
+:py:meth:`~fatqat.simulator.Simulator.run` returns a :py:class:`~fatqat.Job`. The ordinary path remains
 ``job.result()``. The current constructor and helpers are:
 
 - :py:class:`~fatqat.Job` (``status, result=None, error=None``)
@@ -72,7 +72,7 @@ example supplies a matrix for ``H`` and then runs a one-operation program:
        np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2),
    )
 
-   backend = fq.backends.SimulatorBackend(implementation_map=rules)
+   backend = fq.simulator.Simulator(implementation_map=rules)
    program = fq.Program(1)
    program.add(op.H, 0)
    result = backend.run(
@@ -126,19 +126,19 @@ Detailed implementation-map reference
 Pulse implementation-map customization
 ---------------------------------------
 
-:py:class:`~fatqat.backends.PulseBackend` resolves each native operation
+:py:class:`~fatqat.emulator.Emulator` resolves each native operation
 family (``RX``, ``RY``, ``RZ``, ``iSwap``, oriented ``CZ``) to a physical
 pulse realization through a
-:py:class:`~fatqat.backends.PulseImplementationMap` - the pulse family's
+:py:class:`~fatqat.emulator.PulseImplementationMap` - the pulse family's
 counterpart to the matrix implementation map above:
 
 .. code-block:: text
 
-   SimulatorBackend: Operation -> MatrixImplementationMap      -> matrix          -> ApplyMatrixStep
-   PulseBackend:     Operation -> PulseImplementationMap -> PulseDefinition -> (lowered) pulse block
+   Simulator: Operation -> MatrixImplementationMap      -> matrix          -> ApplyMatrixStep
+   Emulator:     Operation -> PulseImplementationMap -> PulseDefinition -> (lowered) pulse block
 
 Replacing or adding a gate realization - for example a custom ``CZ`` -
-never requires subclassing :py:class:`~fatqat.backends.PulseBackend` or
+never requires subclassing :py:class:`~fatqat.emulator.Emulator` or
 touching private emulator modules:
 
 .. code-block:: python
@@ -151,17 +151,17 @@ touching private emulator modules:
        )
        # Build the physical realization from model-owned resources; a rule
        # may also read calibration.recipe(name) for calibrated numbers.
-       return fq.backends.PulseDefinition(
+       return fq.emulator.PulseDefinition(
            duration=...,
            controls=(...,),          # SampledControl values
            resource_claims=(...,),   # model.resource(...) / model.coupling(...)
            post_actions=(...,),      # optional PhaseShift / PhaseSwap
        )
 
-   implementations = fq.backends.default_superconducting_pulse_implementation_map()
+   implementations = fq.emulator.default_superconducting_pulse_implementation_map()
    implementations.add(fq.ops.CZ, custom_cz)
 
-   backend = fq.backends.PulseBackend(
+   backend = fq.emulator.Emulator(
        model, calibration, pulse_implementation_map=implementations
    )
 
@@ -197,7 +197,7 @@ frequencies, anharmonicities, declared couplings) and from ``calibration``
 realization: duration, sampled controls, the model resources/couplings it
 claims, and any post-block frame actions.
 
-A :py:class:`~fatqat.backends.PulseDefinition` is immutable and carries no
+A :py:class:`~fatqat.emulator.PulseDefinition` is immutable and carries no
 classical condition, resolved noise, engine index, or schedule position -
 those are one lowered program occurrence's facts, attached by the backend
 only after a rule is selected and invoked. This is also why one definition
@@ -214,7 +214,7 @@ counterpart, ``MatrixImplementationError``).
 Registration modes
 ~~~~~~~~~~~~~~~~~~~
 
-:py:meth:`~fatqat.backends.PulseImplementationMap.add` (``op, implementation,
+:py:meth:`~fatqat.emulator.PulseImplementationMap.add` (``op, implementation,
 *, device_operands=None``) follows the same two-mode policy as
 :py:meth:`~fatqat.implementation.MatrixImplementationMap.add`: an operation
 family has either one unconstrained rule, applying to every legal target of
@@ -229,7 +229,7 @@ device-specific-override-plus-unconstrained-fallback mode.
 Time coordinate
 ~~~~~~~~~~~~~~~~
 
-``duration``, and every :py:class:`~fatqat.backends.SampledControl`'s
+``duration``, and every :py:class:`~fatqat.emulator.SampledControl`'s
 ``tlist``/``start_offset``, use the owning model's native time coordinate
 (``model.time_unit`` - nanoseconds, for the built-in superconducting
 transmon model). The pulse-authoring types themselves are time-unit-neutral
@@ -238,7 +238,7 @@ and never assume ``ns``.
 Backend copy semantics
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-:py:class:`~fatqat.backends.PulseBackend` copies a supplied
+:py:class:`~fatqat.emulator.Emulator` copies a supplied
 ``pulse_implementation_map=`` immediately at construction, exactly like
 ``implementation_map=`` above: later mutations of the caller's map never
 affect an already-constructed backend.

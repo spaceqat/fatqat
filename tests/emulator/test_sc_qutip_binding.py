@@ -8,8 +8,8 @@ from qutip import Qobj, basis, ket2dm, mesolve, qeye, tensor
 from scipy.interpolate import CubicSpline
 
 import fatqat as fq
-from fatqat.backends import MeasurementStep
-from fatqat.emulator.backend import PulseBackend
+from fatqat._backends.steps import MeasurementStep
+from fatqat.emulator.backend import Emulator
 from fatqat.emulator.engine import PulseEngine, _ShotContext
 from fatqat.emulator.scheduling import schedule_pulse_run
 from fatqat.emulator.qutip_adapter import FRAME_CONVENTION, SCQutipAdapter
@@ -228,7 +228,7 @@ def test_drift_and_detuning_match_independent_qutrit_phase_facts(model):
 def test_backend_keeps_model_order_when_program_binds_a_nonprefix_transmon(
     model, calibration
 ):
-    class _NonprefixBackend(PulseBackend):
+    class _NonprefixBackend(Emulator):
         def _resolve_resource_layout(self, program):
             return ResourceLayout({program.quantum_registers[0][0]: "q1"})
 

@@ -9,10 +9,10 @@ from typing import Any, Literal
 import numpy as np
 
 from .._engine_index_allocation import _EngineIndexAllocation
-from ..backends.backend_utils import _LoweringContext, _normalize_config
-from ..backends.engine_contract import _DensityMatrixResultRequest
-from ..backends.steps import MeasurementStep
-from ..backends.view_normalization import ProgramInstruction, _break_grouped_operations
+from .._backends.backend_utils import _LoweringContext, _normalize_config
+from .._backends.engine_contract import _DensityMatrixResultRequest
+from .._backends.steps import MeasurementStep
+from .._backends.view_normalization import ProgramInstruction, _break_grouped_operations
 from ..errors import BackendExecutionError, BackendValidationError
 from ..job import Job
 from ..noise import (
@@ -25,10 +25,15 @@ from ..noise.lindblad import resolve_lindblad_operators
 from ..operations import BarrierGate, Measurement, ResetGate
 from ..program import AppliedOperation, Program
 from ..resource_layout import ResourceLayout
-from ..result import Result, counts_dict_from_arrays, reduce_to_counts
+from ..result import (
+    Result,
+    _ResultConfig,
+    counts_dict_from_arrays,
+    reduce_to_counts,
+)
 from . import planning
 from .engine import PulseEngine
-from .engine_contract import PulseResultConfig, PulseSimulationConfig
+from .engine_contract import _EmulatorConfig
 from .planning import PulsePlanFacts, PulsePlanStep
 from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
 from .pulse import PulseImplementationMap
@@ -39,10 +44,10 @@ from .superconducting_realization import (
 )
 
 
-class PulseBackend:
+class Emulator:
     """Simulate calibrated controls on a fixed three-level transmon model.
 
-    ``PulseBackend`` is the public entry point for the superconducting pulse
+    ``Emulator`` is the public entry point for the superconducting pulse
     emulator. A backend is constructed from an immutable physics model and a
     separately loaded calibration that is identity-bound to that exact model.
     Program qubits bind to model subsystems in declaration order; every model
@@ -65,7 +70,7 @@ class PulseBackend:
     operation-scoped damping in probability or rate mode, and readout
     confusion. The optional Lindblad and pulse implementation maps are copied
     at construction, while the supplied noise model is retained by reference,
-    matching :class:`~fatqat.backends.SimulatorBackend`'s noise ownership.
+    matching :class:`~fatqat.simulator.Simulator`'s noise ownership.
 
     The built-in CZ realization derives its nominal virtual frame correction
     from the detuning waveform itself. This first-version model correction is
@@ -89,9 +94,9 @@ class PulseBackend:
 
         Args:
             model: Physics model returned by
-                :func:`~fatqat.backends.load_physics_model`.
+                :func:`~fatqat.emulator.load_physics_model`.
             calibration: Calibration returned by
-                :func:`~fatqat.backends.load_calibration_spec` for ``model``.
+                :func:`~fatqat.emulator.load_calibration_spec` for ``model``.
             noise: Optional noise model. ``None`` creates an empty model. A
                 supplied model is retained by reference so later registrations
                 affect subsequent runs.
@@ -100,7 +105,7 @@ class PulseBackend:
                 the default map. A supplied map is copied immediately.
             pulse_implementation_map: Optional operation-to-pulse realization
                 map. ``None`` uses
-                :func:`~fatqat.backends.default_superconducting_pulse_implementation_map`.
+                :func:`~fatqat.emulator.default_superconducting_pulse_implementation_map`.
                 A supplied map is copied immediately.
 
         Raises:
@@ -138,7 +143,7 @@ class PulseBackend:
         for ref in refs:
             if ref.register.dim != 2:
                 raise BackendValidationError(
-                    "PulseBackend embeds only dimension-two program subsystems into qutrits"
+                    "Emulator embeds only dimension-two program subsystems into qutrits"
                 )
         for ordinal, ref in enumerate(refs):
             labels[ref] = self.model.subsystem_ids[ordinal]
@@ -242,13 +247,14 @@ class PulseBackend:
     ) -> Job:
         """Validate, execute, and package one pulse-program run.
 
-        ``simulation_config`` accepts ``seed``, ``parallel_mode``,
-        ``max_workers``, and ``schedule_mode``. Pulse execution is serial in
-        v0.1, so ``parallel_mode`` may be ``"auto"`` or ``"serial"`` and
-        ``max_workers`` may be ``None`` or ``1``. ``schedule_mode`` is
-        ``"ASAP"`` by default and may be ``"ALAP"``; both are lightweight
-        placement policies over dependencies and claimed physical resources,
-        not compiler-produced hardware schedules.
+        ``simulation_config`` accepts ``seed`` and ``schedule_mode``, the only
+        two controls pulse execution honors. ``schedule_mode`` is ``"ASAP"``
+        by default and may be ``"ALAP"``; both are lightweight placement
+        policies over dependencies and claimed physical resources, not
+        compiler-produced hardware schedules. The matrix backend's
+        ``parallel_mode`` / ``max_workers`` / ``numba_parallel`` are rejected
+        here: pulse execution is one serial solver call with no engine those
+        settings could steer.
 
         ``result_config`` accepts ``counts`` and ``final_state``. When omitted,
         counts default on for programs containing measurement and the final
@@ -282,13 +288,13 @@ class PulseBackend:
         """
         simulation = _normalize_config(
             simulation_config,
-            PulseSimulationConfig,
+            _EmulatorConfig,
             "simulation_config",
             backend_name=type(self).__name__,
         )
         result = _normalize_config(
             result_config,
-            PulseResultConfig,
+            _ResultConfig,
             "result_config",
             backend_name=type(self).__name__,
         )
@@ -383,7 +389,7 @@ class PulseBackend:
             raise BackendExecutionError("Pulse propagator construction failed") from exc
 
     def _validate(
-        self, config: PulseResultConfig, shots: int, facts: PulsePlanFacts
+        self, config: _ResultConfig, shots: int, facts: PulsePlanFacts
     ) -> _DensityMatrixResultRequest:
         """Resolve default output requests and validate their shot constraints."""
         counts = config.counts if config.counts is not None else facts.has_measurement
@@ -410,8 +416,8 @@ class PulseBackend:
         self,
         plan: list[PulsePlanStep],
         request: _DensityMatrixResultRequest,
-        simulation: PulseSimulationConfig,
-        result_config: PulseResultConfig,
+        simulation: _EmulatorConfig,
+        result_config: _ResultConfig,
         shots: int,
         allocation: _EngineIndexAllocation,
         engine_index_to_model_ordinal: tuple[int, ...],

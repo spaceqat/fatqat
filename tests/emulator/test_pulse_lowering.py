@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat.backends import MeasurementStep, ResetStep
-from fatqat.emulator.backend import PulseBackend
+from fatqat._backends.steps import MeasurementStep, ResetStep
+from fatqat.emulator.backend import Emulator
 from fatqat.emulator.pulse import (
     PulseBlock,
     PulseDefinition,
@@ -26,7 +26,7 @@ from fatqat.noise import NoiseModel
 @pytest.fixture(name="make_backend")
 def make_backend_fixture(model, calibration):
     def build(noise=None, pulse_implementation_map=None):
-        return PulseBackend(
+        return Emulator(
             model,
             calibration,
             noise=noise,
@@ -66,7 +66,7 @@ def test_lowering_rejects_absent_edges_and_reversed_cz_orientation(
     disconnected_document["parameters"]["couplings"] = []
     disconnected = load_physics_model(disconnected_document)
     calibration_document["recipes"]["cz"]["edges"] = []
-    disconnected_backend = PulseBackend(
+    disconnected_backend = Emulator(
         disconnected, load_calibration_spec(calibration_document, disconnected)
     )
     iswap = fq.Program(2)
@@ -133,12 +133,12 @@ def _constant_definition(model, subsystem_id):
 def test_a_copied_default_map_produces_the_same_plan_as_the_implicit_default(
     model, calibration
 ):
-    explicit = PulseBackend(
+    explicit = Emulator(
         model,
         calibration,
         pulse_implementation_map=default_superconducting_pulse_implementation_map(),
     )
-    implicit = PulseBackend(model, calibration)
+    implicit = Emulator(model, calibration)
     program = fq.Program(2)
     program.add(fq.ops.CZ, (0, 1))
 
@@ -164,7 +164,7 @@ def test_custom_cz_rule_changes_emitted_controls_without_touching_program_or_ada
 
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(fq.ops.CZ, custom_cz)
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
 
     program = fq.Program(2)
     program.add(fq.ops.CZ, (0, 1))
@@ -191,7 +191,7 @@ def test_guarded_custom_rule_attaches_condition_only_to_the_block_not_the_defini
 
     implementations = PulseImplementationMap()
     implementations.add(fq.ops.RX, reusable_rule)
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
 
     program = fq.Program(1, 1)
     program.add(fq.ops.RX(0.1), 0)

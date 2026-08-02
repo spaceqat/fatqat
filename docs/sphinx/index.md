@@ -19,7 +19,7 @@ program.add(op.H, 0)
 program.add(op.CX, (0, 1))
 program.measure((0, 1), (0, 1))
 
-backend = fq.backends.SimulatorBackend()
+backend = fq.simulator.Simulator()
 job = backend.run(program, shots=1000)
 result = job.result()
 print(result.get_counts())

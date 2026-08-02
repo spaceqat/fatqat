@@ -3,7 +3,7 @@ implementation map (unconstrained and device-specific).
 
 A matrix implementation maps an operation to its local matrix (physics only).
 The backend pairs that matrix with layout-resolved target indices to build an
-``ApplyMatrixStep`` (see ``backends.steps``), the plain data container the
+``ApplyMatrixStep`` (see ``_backends.steps``), the plain data container the
 statevector engine reads directly.
 
 Local matrix convention (binding for every entry in this package):
@@ -42,7 +42,7 @@ from ._operation_registry import (
 )
 
 if TYPE_CHECKING:
-    from ..backends.steps import BuiltinKernelKey
+    from .._backends.steps import BuiltinKernelKey
 
 
 class MatrixImplementation:

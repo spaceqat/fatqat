@@ -8,7 +8,7 @@ Examples:
     >>> program = fq.Program(2)
     >>> program.add(op.H, 0)
     >>> program.add(op.CX, (0, 1))
-    >>> result = fq.backends.SimulatorBackend("SV").run(
+    >>> result = fq.simulator.Simulator("SV").run(
     ...     program,
     ...     result_config={"counts": False, "final_state": True},
     ... ).result()

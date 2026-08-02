@@ -1,13 +1,15 @@
 """Pulse backend shell contracts before physical execution is wired."""
 
+from dataclasses import fields
+
 import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat.backends import PulseDefinition, SampledControl
-from fatqat.backends.backend_utils import _LoweringContext
-from fatqat.emulator.backend import PulseBackend
-from fatqat.emulator.engine_contract import PulseSimulationConfig
+from fatqat.emulator import PulseDefinition, SampledControl
+from fatqat._backends.backend_utils import _LoweringContext
+from fatqat.emulator.backend import Emulator
+from fatqat.emulator.engine_contract import _EmulatorConfig
 from fatqat.emulator.superconducting_realization import (
     default_superconducting_pulse_implementation_map,
 )
@@ -21,18 +23,32 @@ def make_backend_fixture(model, calibration):
     """Build a backend on the shared model with an optional noise model."""
 
     def build(noise=None):
-        return PulseBackend(model, calibration, noise=noise)
+        return Emulator(model, calibration, noise=noise)
 
     return build
 
 
-def test_auto_configuration_normalizes_to_serial_and_worker_restrictions_raise():
-    assert PulseSimulationConfig().parallel_mode == "serial"
-    assert PulseSimulationConfig(max_workers=1).parallel_mode == "serial"
-    with pytest.raises(BackendValidationError, match="only parallel_mode"):
-        PulseSimulationConfig(parallel_mode="multiprocessing")
-    with pytest.raises(BackendValidationError, match="max_workers"):
-        PulseSimulationConfig(max_workers=2)
+def test_emulator_config_carries_only_the_controls_pulse_execution_honors():
+    # The emulator reads exactly two settings. Anything else would be a knob
+    # the pulse path silently ignores.
+    assert {field.name for field in fields(_EmulatorConfig)} == {
+        "seed",
+        "schedule_mode",
+    }
+    assert _EmulatorConfig().schedule_mode == "ASAP"
+    assert _EmulatorConfig().seed is None
+
+
+@pytest.mark.parametrize("knob", ["parallel_mode", "max_workers", "numba_parallel"])
+def test_matrix_execution_knobs_are_rejected_rather_than_silently_ignored(
+    backend, knob
+):
+    # These belong to the matrix engine. The emulator has no engine to steer
+    # with them, so accepting one would promise tuning that never happens.
+    program = fq.Program(1)
+    program.add(fq.ops.RZ(0.2), 0)
+    with pytest.raises(BackendValidationError, match=knob):
+        backend.run(program, simulation_config={knob: 1})
 
 
 def test_run_directly_validates_config_and_executes_ideal_program(backend):
@@ -40,8 +56,6 @@ def test_run_directly_validates_config_and_executes_ideal_program(backend):
     program.add(fq.ops.RZ(0.2), 0)
     with pytest.raises(BackendValidationError, match="result_config key"):
         backend.run(program, result_config={"density_matrix": True})
-    with pytest.raises(BackendValidationError, match="only parallel_mode"):
-        backend.run(program, simulation_config={"parallel_mode": "loky"})
 
     with pytest.raises(BackendValidationError, match="schedule_mode"):
         backend.run(program, simulation_config={"schedule_mode": "SIDEWAYS"})
@@ -240,7 +254,7 @@ def test_unrealizable_envelope_is_rejected_identically_by_run_and_propagator(
 
     implementations = default_superconducting_pulse_implementation_map()
     implementations.add(fq.ops.RX, complex_detuning_rx)
-    backend = PulseBackend(model, calibration, pulse_implementation_map=implementations)
+    backend = Emulator(model, calibration, pulse_implementation_map=implementations)
     program = fq.Program(1)
     program.add(fq.ops.RX(0.3), 0)
 

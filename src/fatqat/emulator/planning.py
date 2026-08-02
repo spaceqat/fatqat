@@ -6,12 +6,12 @@ import dataclasses
 from dataclasses import dataclass
 
 from .._engine_index_allocation import _EngineIndexAllocation
-from ..backends.backend_utils import (
+from .._backends.backend_utils import (
     _lower_measurement_boundary,
     _lower_reset_boundary,
     _resolve_condition,
 )
-from ..backends.steps import MeasurementStep, ResetStep
+from .._backends.steps import MeasurementStep, ResetStep
 from ..implementation._operation_registry import _select_implementation
 from ..noise import NoiseModel
 from ..noise import LindbladImplementationMap
