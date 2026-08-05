@@ -28,6 +28,11 @@ numba = ["numba>=0.66"]
 # against Qiskit Aer (see .github/workflows/qiskit-compat.yml). Never required
 # by the package itself; the module self-skips when qiskit-aer is absent.
 qiskit = ["qiskit-aer>=0.17"]
+# Optional: enables fatqat.draw (circuit diagrams via QuTiP-QIP) and its tests.
+# matplotlib is listed explicitly because qutip-qip does not depend on it, yet
+# the PNG renderer needs it. Never required by the package itself; fatqat.draw
+# imports both lazily and tests/test_draw.py self-skips when they are absent.
+draw = ["qutip-qip>=0.3", "matplotlib>=3.5"]
 # Formatting (black) and static analysis (pylint). Drives scripts/format.sh,
 # scripts/lint.sh, and the Lint CI workflow. See [tool.black] / [tool.pylint].
 lint = ["black>=24", "pylint>=3"]
