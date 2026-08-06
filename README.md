@@ -86,10 +86,10 @@ Quantum channels attach to gate occurrences; readout error is classical
 import numpy as np
 
 noise = fq.NoiseModel()
-noise.add_channel(op.CX, fq.noise.Depolarizing(p=0.05))
-damping, dephasing = fq.noise.relaxation_channels(t1=60e-6, t2=80e-6, duration=2e-6)
-noise.add_channel(op.H, damping)
-noise.add_channel(op.H, dephasing)
+noise.add_channel(fq.noise.Depolarizing(p=0.05), operation=op.CX)
+damping, dephasing = fq.noise.ThermalRelaxation(t1=60e-6, t2=80e-6).as_channels(2e-6)
+noise.add_channel(damping, operation=op.H)
+noise.add_channel(dephasing, operation=op.H)
 noise.add_readout_error(np.array([[0.98, 0.05], [0.02, 0.95]]))
 
 backend = fq.simulator.Simulator(method="DM", noise=noise)
