@@ -7,6 +7,7 @@ from . import operations as ops
 from . import simulator
 from .job import Job
 from .noise import NoiseModel
+from .observable import Observable
 from .operations import Measurement
 from .program import AppliedOperation, Program
 from .registers import (
@@ -29,6 +30,7 @@ __all__ = [
     "errors",
     "noise",
     "NoiseModel",
+    "Observable",
     "Program",
     "AppliedOperation",
     "Measurement",
