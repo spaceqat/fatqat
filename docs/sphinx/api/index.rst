@@ -21,6 +21,7 @@ generated signatures, attributes, and methods for that supported surface.
    simulator
    pulse-emulator
    noise
+   estimator
    result
    exceptions
    experimental

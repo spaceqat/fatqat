@@ -1,0 +1,326 @@
+"""Estimator: expectation values of observables on a simulator backend.
+
+An `Estimator` wraps an already-constructed backend and reports
+``<psi|O|psi>`` (or ``Tr(rho O)``) for one or more
+:py:class:`~fatqat.Observable` values. The backend owns the method, runtime and
+noise model; the estimator adds only the observable step, so the same backend
+can serve counts through ``backend.run`` and expectation values here.
+
+The program is evolved **once** per call and every observable is evaluated
+against that same state. This is the structural advantage a simulator has over
+hardware: hardware must fan a multi-basis observable out into several circuits
+(one per commuting group, each with its own basis-rotation gates), while a
+simulator holds the final state and can read any observable off it directly.
+Costs scale as one evolution plus a cheap pass per term, rather than as one
+circuit execution per measurement basis.
+
+Because the expectation value is read from the final state, the program must
+not measure: a measurement collapses the state, and "the expectation value of
+the final state" then has no single meaning. Qiskit's estimators reject
+measured circuits for the same reason.
+
+The estimator reaches the backend only through its public surface -
+``backend.run`` and the ``Result`` it returns. In particular it never asks the
+backend which state representation it will produce, nor whether the run will be
+deterministic: the returned ``Result`` declares its own representation through
+``available_data``, and the backend already refuses to export a final state
+from a stochastic run. Re-deriving either would duplicate the backend's own
+answer from its internals, and get it wrong at the edges.
+
+With ``shots > 0`` the estimator reproduces the statistical error of a
+finite-shot experiment by drawing real samples from each term's eigenvalue
+distribution - not by adding analytic Gaussian noise to the exact value. See
+:py:func:`_outcome_probabilities` for why that distribution is fully determined
+by two numbers per term.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Any, Callable
+
+import numpy as np
+
+from .errors import BackendValidationError
+from .job import Job
+from .observable import Observable
+from .operations import Measurement
+from .program import Program
+from .result import Result
+from .simulator._engine.expectation import (
+    expectation_density_matrix,
+    expectation_statevector,
+    squared_factors,
+)
+
+
+class Estimator:
+    """Expectation values of observables, evaluated on a backend.
+
+    Args:
+        backend: A constructed backend, e.g.
+            ``fq.simulator.Simulator(method="DM", noise=noise)``. Its method,
+            runtime and noise model are used as-is; the estimator never
+            overrides them.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> import fatqat.operations as op
+        >>> program = fq.Program(2)
+        >>> program.add(op.H, 0)
+        >>> program.add(op.CX, (0, 1))
+        >>> estimator = fq.Estimator(fq.simulator.Simulator(method="SV"))
+        >>> result = estimator.run(program, fq.Observable([("ZZ", 1.0)])).result()
+        >>> float(result.get_expectation())
+        1.0
+    """
+
+    def __init__(self, backend: Any) -> None:
+        self._backend = backend
+
+    def run(
+        self,
+        program: Program,
+        observables: Observable | list[Observable] | tuple[Observable, ...],
+        *,
+        shots: int = 0,
+        simulation_config: dict[str, Any] | None = None,
+    ) -> Job:
+        """Evaluate one or more observables on a program.
+
+        Args:
+            program: Program to evolve. Must not contain a measurement.
+            observables: A single :py:class:`~fatqat.Observable` or a sequence
+                of them. All are evaluated against one evolution.
+            shots: ``0`` (the default) computes the expectation value exactly
+                from the final state. A positive value samples, reproducing the
+                statistical error of a finite-shot experiment. Note the default
+                differs from ``Simulator.run``, whose ``shots`` defaults to
+                1024 - an estimator's usual request is the exact value.
+            simulation_config: Optional per-run backend options, forwarded
+                unchanged (e.g. ``{"seed": 7}``). A ``seed`` also seeds the
+                estimator's own sampling, so a seeded ``shots > 0`` run
+                reproduces.
+
+        Returns:
+            A completed ``Job``. ``result().get_expectation()`` returns a float
+            for a single observable and an array for a sequence, mirroring the
+            input shape. ``result().get_std()`` returns the matching standard
+            error, which is ``0`` for an exact run.
+
+        Raises:
+            BackendValidationError: If the program measures, if the backend's
+                execution is not deterministic, if an observable's width does
+                not match the program, if the program uses non-qubit registers,
+                or if ``shots`` is negative.
+        """
+        observable_list, is_sequence = _normalize_observables(observables)
+        _validate_shots(shots)
+        _validate_program(program, observable_list)
+
+        try:
+            values, deviations = self._evaluate(
+                program, observable_list, shots, simulation_config
+            )
+        except BackendValidationError:
+            # A validation failure is the caller's to fix, so it raises rather
+            # than being packaged - whether it came from the checks above or
+            # from the backend's own validation during the run.
+            raise
+        except Exception as exc:  # execution-stage failure
+            return Job.failed(exc)
+
+        def shape(entries: list[float]) -> Any:
+            return np.asarray(entries) if is_sequence else entries[0]
+
+        return Job.done(
+            Result(
+                data={"expectation": shape(values), "std": shape(deviations)},
+                metadata={
+                    "shots": shots,
+                    "backend_name": type(self._backend).__name__,
+                    "estimator_name": type(self).__name__,
+                    "num_observables": len(observable_list),
+                },
+            )
+        )
+
+    def _evaluate(
+        self,
+        program: Program,
+        observables: list[Observable],
+        shots: int,
+        simulation_config: dict[str, Any] | None,
+    ) -> tuple[list[float], list[float]]:
+        """Evolve once, then read every observable off the same final state."""
+        try:
+            result = self._backend.run(
+                program,
+                shots=0,
+                simulation_config=simulation_config,
+                result_config={"counts": False, "final_state": True},
+            ).result()
+        except BackendValidationError as exc:
+            # The backend already refuses to export a single final state when
+            # the run is stochastic - reset or channel noise under statevector
+            # semantics sample one branch per shot. Deciding that here would
+            # mean re-deriving the backend's own answer from its private
+            # attributes, and doing it worse: the backend knows whether a
+            # registered channel actually landed on any operation in *this*
+            # program, which a look at the noise model alone cannot tell.
+            raise BackendValidationError(
+                f"no single final state is available to evaluate: {exc}. An "
+                "expectation value needs a well-defined final state, so a "
+                "stochastic run has none to read - or to sample from. Use "
+                "method='density_matrix', where reset and channel noise are "
+                "exact maps"
+            ) from exc
+
+        # The result declares its own representation, so the kernel is chosen
+        # from what came back rather than predicted from the backend.
+        if "statevector" in result.available_data:
+            state, kernel = result.get_statevector(), expectation_statevector
+        else:
+            state, kernel = result.get_density_matrix(), expectation_density_matrix
+
+        if shots == 0:
+            return [kernel(state, o.terms) for o in observables], [0.0] * len(
+                observables
+            )
+
+        seed = (simulation_config or {}).get("seed")
+        generator = np.random.default_rng(seed)
+        sampled = [
+            _sample(state, kernel, o.terms, shots, generator) for o in observables
+        ]
+        return [value for value, _ in sampled], [error for _, error in sampled]
+
+
+Kernel = Callable[[np.ndarray, tuple], float]
+
+
+def _outcome_probabilities(mean: float, second_moment: float) -> np.ndarray:
+    """Probabilities of the outcomes ``(+1, -1, 0)`` for one term.
+
+    A term is a product of commuting single-qubit factors, so its eigenvalues
+    are products of local ones: ``+-1`` from each Pauli, ``0``/``1`` from each
+    projector. Every eigenvalue therefore lies in ``{0, +1, -1}``, and one
+    measurement of the term yields one of exactly three values. Two moments pin
+    that whole distribution::
+
+        P(0)  = 1 - <T**2>            the projectors rejected the state
+        P(+1) = (<T**2> + <T>) / 2    since <T> = P(+1) - P(-1)
+        P(-1) = (<T**2> - <T>) / 2    and P(+1) + P(-1) = <T**2>
+
+    For a pure Pauli term ``<T**2> = 1``, so ``P(0) = 0`` and this reduces to
+    the familiar ``P(+1) = (1 + <T>) / 2``.
+
+    Rounding can push a probability a few ulp below zero (when ``|<T>|`` sits at
+    ``<T**2>``, for instance), so the result is clipped and renormalized.
+    """
+    probabilities = np.array(
+        [
+            (second_moment + mean) / 2.0,
+            (second_moment - mean) / 2.0,
+            1.0 - second_moment,
+        ]
+    )
+    np.clip(probabilities, 0.0, None, out=probabilities)
+    return probabilities / probabilities.sum()
+
+
+def _sample(
+    state: np.ndarray,
+    kernel: Kernel,
+    terms: tuple[tuple[float, tuple[tuple[int, str], ...]], ...],
+    shots: int,
+    generator: np.random.Generator,
+) -> tuple[float, float]:
+    """Draw ``shots`` samples of an observable; return ``(mean, std)``.
+
+    Each term is sampled independently and the results are combined by the
+    observable's coefficients. Drawing the outcome *counts* from a multinomial
+    is equivalent to drawing ``shots`` individual outcomes and averaging them,
+    but costs the same whether ``shots`` is 100 or 10**9.
+
+    The reported standard error is analytic - ``sqrt(sum_k c_k**2 Var(T_k) /
+    shots)`` - rather than the spread of these particular draws, so it reports
+    the precision of the request instead of adding a second layer of noise.
+    """
+    total = 0.0
+    variance = 0.0
+    for coefficient, factors in terms:
+        if coefficient == 0.0:
+            continue
+        mean = kernel(state, ((1.0, factors),))
+        projectors = squared_factors(factors)
+        # No projector means T**2 = I exactly; skip the second pass.
+        second_moment = kernel(state, ((1.0, projectors),)) if projectors else 1.0
+
+        plus, minus, _ = generator.multinomial(
+            shots, _outcome_probabilities(mean, second_moment)
+        )
+        total += coefficient * (plus - minus) / shots
+        # max(..., 0) guards a variance driven slightly negative by rounding.
+        variance += coefficient**2 * max(second_moment - mean**2, 0.0) / shots
+    return total, math.sqrt(variance)
+
+
+def _normalize_observables(
+    observables: Observable | list[Observable] | tuple[Observable, ...],
+) -> tuple[list[Observable], bool]:
+    """Return ``(list, was_a_sequence)`` so the output can mirror the input."""
+    if isinstance(observables, Observable):
+        return [observables], False
+    observable_list = list(observables)
+    if not observable_list:
+        raise BackendValidationError("no observables given")
+    for entry in observable_list:
+        if not isinstance(entry, Observable):
+            raise TypeError(f"expected an Observable, got {entry!r}")
+    return observable_list, True
+
+
+def _program_width(program: Program) -> int:
+    """Total number of quantum subsystems in the program."""
+    return sum(register.size for register in program.quantum_registers)
+
+
+def _validate_shots(shots: int) -> None:
+    if not isinstance(shots, int) or isinstance(shots, bool):
+        raise BackendValidationError(f"shots must be an int, got {shots!r}")
+    if shots < 0:
+        raise BackendValidationError(f"shots must be >= 0, got {shots}")
+
+
+def _validate_program(
+    program: Program,
+    observables: list[Observable],
+) -> None:
+    """Reject what the estimator can decide from the public program alone.
+
+    Deliberately does not judge whether the run is deterministic. That is the
+    backend's own question, it already answers it when a final state is
+    requested, and its answer is the better one - see ``_evaluate``.
+    """
+    for register in program.quantum_registers:
+        if register.dim != 2:
+            raise BackendValidationError(
+                "observables are defined on qubits only; register "
+                f"{register.name!r} has dim={register.dim}"
+            )
+
+    if any(isinstance(step, Measurement) for step in program.operations):
+        raise BackendValidationError(
+            "a program with a measurement has no well-defined expectation "
+            "value: the measurement collapses the state. Remove the "
+            "measurement, or use backend.run for counts"
+        )
+
+    width = _program_width(program)
+    for observable in observables:
+        if observable.num_qubits != width:
+            raise BackendValidationError(
+                f"observable is defined on {observable.num_qubits} qubit(s) but "
+                f"the program has {width}"
+            )

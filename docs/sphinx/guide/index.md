@@ -19,7 +19,10 @@ Short follow-on snippets state when they assume an existing `program` or import.
 4. [Noise](noise.md) and [advanced user topics](advanced.md) — opt into
    optional simulation features.
 
-5. [Superconducting pulse simulation](superconducting-pulse.md) introduces
+5. [Expectation values](estimator.md) — read observables off a state instead
+   of going through counts.
+
+6. [Superconducting pulse simulation](superconducting-pulse.md) introduces
    calibrated native pulses in a physical transmon model.
 
 If an example fails or its output surprises you, see
@@ -35,6 +38,7 @@ measurement-and-conditions
 running-and-results
 noise
 advanced
+estimator
 superconducting-pulse
 troubleshooting
 ```

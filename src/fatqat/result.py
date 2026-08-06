@@ -184,6 +184,41 @@ class Result:
             raise ResultFieldUnavailableError(f"{name} not available in this result")
         return self._data[name]
 
+    def get_expectation(self) -> Any:
+        """Return the expectation value(s) produced by an estimator.
+
+        A ``float`` when a single observable was requested, an array when a
+        sequence was - the shape mirrors what was passed in.
+
+        Raises:
+            ResultFieldUnavailableError: If this result did not come from an
+                estimator run.
+        """
+        if "expectation" not in self._data:
+            raise ResultFieldUnavailableError(
+                "expectation not available in this result; it is produced by "
+                "Estimator.run, not by a backend run"
+            )
+        return self._data["expectation"]
+
+    def get_std(self) -> Any:
+        """Return the standard error of the expectation value(s).
+
+        The shape mirrors ``get_expectation``. An exact run (``shots=0``)
+        reports ``0``: it carries no statistical error, since nothing was
+        sampled.
+
+        Raises:
+            ResultFieldUnavailableError: If this result did not come from an
+                estimator run.
+        """
+        if "std" not in self._data:
+            raise ResultFieldUnavailableError(
+                "std not available in this result; it is produced by "
+                "Estimator.run, not by a backend run"
+            )
+        return self._data["std"]
+
     def get_counts(self) -> dict[str, int]:
         """Return measurement counts as little-endian display strings.
 
