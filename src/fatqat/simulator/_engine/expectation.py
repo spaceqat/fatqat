@@ -7,7 +7,7 @@ the ``2**n x 2**n`` operator.
 The kernels exploit one structural fact: **every supported term is a phased
 permutation with a diagonal weight.** Writing a term as its local factors,
 
-    X, Y  move amplitude between basis states (they flip that wire's bit)
+    X, Y  move amplitude between basis states (they flip that qubit's bit)
     Z     leaves the basis state, contributing a sign
     ZERO
     ONE   leave the basis state, contributing a 0/1 weight
@@ -26,8 +26,8 @@ A term whose factors are all diagonal has ``x_mask == 0``, which makes the
 permutation the identity; the same code path then reads as a weighted sum of
 basis-state probabilities, so diagonal observables need no special case.
 
-Every wire carries at most one factor per term, so the projector wires and the
-X/Y wires are disjoint. That is why the masks may be evaluated on the permuted
+Every qubit carries at most one factor per term, so the projector qubits and the
+X/Y qubits are disjoint. That is why the masks may be evaluated on the permuted
 index without distinguishing the two groups.
 """
 
@@ -56,18 +56,18 @@ def squared_factors(
     ``<T**2> = 1``, but a term carrying a projector has eigenvalues ``{0, +-1}``
     and its second moment is a property of the state.
     """
-    return tuple((wire, letter) for wire, letter in factors if letter in _PROJECTORS)
+    return tuple((qubit, letter) for qubit, letter in factors if letter in _PROJECTORS)
 
 
 def _term_masks(factors: tuple[tuple[int, str], ...]) -> tuple[int, int, int, int, int]:
     """Pack one term's factors into bit masks.
 
-    Returns ``(x_mask, z_mask, zero_mask, one_mask, n_y)``. Only the wires the
+    Returns ``(x_mask, z_mask, zero_mask, one_mask, n_y)``. Only the qubits the
     term actually names are visited, so this is O(factors), not O(num_qubits).
     """
     x_mask = z_mask = zero_mask = one_mask = n_y = 0
-    for wire, letter in factors:
-        bit = 1 << wire
+    for qubit, letter in factors:
+        bit = 1 << qubit
         if letter in _FLIPS:
             x_mask |= bit
         if letter in _SIGNS:

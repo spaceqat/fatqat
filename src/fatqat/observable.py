@@ -11,7 +11,7 @@ of a term are stored, so memory grows with the number of factors actually
 written, not with the qubit count - a two-body term on 100 qubits costs the
 same as one on 4.
 
-Labels are little-endian: the rightmost character is wire 0, matching both
+Labels are little-endian: the rightmost character is qubit 0, matching both
 Qiskit's convention and fatqat's own counts strings (see
 ``result.format_count_key``), so users never switch conventions mid-analysis.
 
@@ -29,7 +29,7 @@ letter       operator                    role
 ===========  ==========================  ==================================
 
 ``ZERO``/``ONE`` make site occupation directly expressible: ``<ONE_i>`` is the
-occupation number of wire ``i``, which is the quantity atom-array experiments
+occupation number of qubit ``i``, which is the quantity atom-array experiments
 report. The non-diagonal projectors (``PLUS``/``MINUS``/``RIGHT``/``LEFT``)
 are not part of this version; the storage shape already accommodates them.
 
@@ -71,7 +71,7 @@ class Observable:
         >>> a == b == c
         True
 
-        Site occupation on wire 5 of a 100-qubit register, without writing a
+        Site occupation on qubit 5 of a 100-qubit register, without writing a
         100-character label:
 
         >>> occupation = fq.Observable.from_sparse(
@@ -127,8 +127,8 @@ class Observable:
         terms = []
         for label, coeff in pairs:
             factors = []
-            # Little-endian: position 0 from the right is wire 0.
-            for wire, letter in enumerate(reversed(label)):
+            # Little-endian: position 0 from the right is qubit 0.
+            for qubit, letter in enumerate(reversed(label)):
                 if letter not in _DENSE_LETTERS:
                     raise ValueError(
                         f"unknown letter {letter!r} in label {label!r}; dense "
@@ -136,7 +136,7 @@ class Observable:
                         "projectors are available through from_sparse)"
                     )
                 if letter != "I":
-                    factors.append((wire, letter))
+                    factors.append((qubit, letter))
             terms.append((_require_real(coeff, label), tuple(factors)))
 
         self._terms = tuple(terms)
@@ -156,18 +156,18 @@ class Observable:
         single-character dense label).
 
         Args:
-            data: ``[(letters, wires, coefficient), ...]``. ``letters`` is
+            data: ``[(letters, qubits, coefficient), ...]``. ``letters`` is
                 either a string of single-character letters (``"XY"``) or a
                 sequence of letter names (``["ONE", "Z"]``), paired positionally
-                with ``wires``.
+                with ``qubits``.
             num_qubits: Total qubit count of the operator.
 
         Returns:
             The assembled observable.
 
         Raises:
-            ValueError: If the term list is empty, ``letters`` and ``wires``
-                disagree in length, a wire is out of range or repeats within a
+            ValueError: If the term list is empty, ``letters`` and ``qubits``
+                disagree in length, a qubit is out of range or repeats within a
                 term, a letter is unknown, or a coefficient is not real.
         """
         if not isinstance(num_qubits, int) or isinstance(num_qubits, bool):
@@ -177,36 +177,36 @@ class Observable:
 
         terms = []
         for entry in data:
-            letters, wires, coeff = entry
+            letters, qubits, coeff = entry
             names = _split_letters(letters)
-            wires = list(wires)
-            if len(names) != len(wires):
+            qubits = list(qubits)
+            if len(names) != len(qubits):
                 raise ValueError(
-                    f"letters {letters!r} and wires {tuple(wires)} must have "
+                    f"letters {letters!r} and qubits {tuple(qubits)} must have "
                     "the same length"
                 )
             factors = []
             seen: set[int] = set()
-            for wire, letter in zip(wires, names):
+            for qubit, letter in zip(qubits, names):
                 if letter not in _ALL_LETTERS:
                     raise ValueError(
                         f"unknown letter {letter!r}; expected one of "
                         f"{sorted(_ALL_LETTERS)}"
                     )
-                if not isinstance(wire, int) or isinstance(wire, bool):
-                    raise TypeError(f"wire must be an int, got {wire!r}")
-                if not 0 <= wire < num_qubits:
+                if not isinstance(qubit, int) or isinstance(qubit, bool):
+                    raise TypeError(f"qubit must be an int, got {qubit!r}")
+                if not 0 <= qubit < num_qubits:
                     raise ValueError(
-                        f"wire {wire} is out of range for num_qubits={num_qubits}"
+                        f"qubit {qubit} is out of range for num_qubits={num_qubits}"
                     )
-                if wire in seen:
+                if qubit in seen:
                     raise ValueError(
-                        f"wire {wire} appears more than once in one term; each "
-                        "term holds a single factor per wire"
+                        f"qubit {qubit} appears more than once in one term; each "
+                        "term holds a single factor per qubit"
                     )
-                seen.add(wire)
+                seen.add(qubit)
                 if letter != "I":
-                    factors.append((wire, letter))
+                    factors.append((qubit, letter))
             # Sorted so two spellings of the same term compare equal.
             terms.append((_require_real(coeff, str(letters)), tuple(sorted(factors))))
 
@@ -226,10 +226,10 @@ class Observable:
 
     @property
     def terms(self) -> tuple[tuple[float, tuple[tuple[int, str], ...]], ...]:
-        """The terms as ``(coefficient, ((wire, letter), ...))`` tuples.
+        """The terms as ``(coefficient, ((qubit, letter), ...))`` tuples.
 
         Identity factors are absent, so an identity-only term carries an empty
-        factor tuple. Factors are sorted by wire.
+        factor tuple. Factors are sorted by qubit.
         """
         return self._terms
 
@@ -267,7 +267,7 @@ class Observable:
 
 
 def _split_letters(letters: str | Sequence[str]) -> list[str]:
-    """Split a sparse term's letter specification into one name per wire.
+    """Split a sparse term's letter specification into one name per qubit.
 
     A plain string is the common shorthand for single-character letters
     (``"XY"`` means X then Y), but ``ZERO``/``ONE`` are multi-character names

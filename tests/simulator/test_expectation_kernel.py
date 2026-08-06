@@ -33,21 +33,21 @@ def _dense(observable: Observable) -> np.ndarray:
     total = np.zeros((2**_N, 2**_N), dtype=complex)
     for coefficient, factors in observable.terms:
         letters = dict(factors)
-        locals_ = [_LOCAL[letters.get(wire, "I")] for wire in range(_N)]
-        # Little-endian: wire 0 is the least significant factor.
+        locals_ = [_LOCAL[letters.get(qubit, "I")] for qubit in range(_N)]
+        # Little-endian: qubit 0 is the least significant factor.
         operator = locals_[_N - 1]
-        for wire in range(_N - 2, -1, -1):
-            operator = np.kron(operator, locals_[wire])
+        for qubit in range(_N - 2, -1, -1):
+            operator = np.kron(operator, locals_[qubit])
         total += coefficient * operator
     return total
 
 
 def _program():
     program = fq.Program(_N)
-    for wire in range(_N):
-        program.add(op.RY(0.3 + 0.2 * wire), wire)
-    for wire in range(_N - 1):
-        program.add(op.CX, (wire, wire + 1))
+    for qubit in range(_N):
+        program.add(op.RY(0.3 + 0.2 * qubit), qubit)
+    for qubit in range(_N - 1):
+        program.add(op.CX, (qubit, qubit + 1))
     return program
 
 
@@ -112,15 +112,15 @@ def test_density_matrix_kernel_matches_dense_operator(observable, states):
 
 
 def test_occupation_equals_probability_of_bit_set(states):
-    # <ONE_i> is the occupation number of wire i - the quantity atom-array
+    # <ONE_i> is the occupation number of qubit i - the quantity atom-array
     # experiments report - so it must equal P(bit i == 1).
     statevector, _ = states
     probabilities = np.abs(statevector) ** 2
     index = np.arange(statevector.size)
 
-    for wire in range(_N):
-        observable = Observable.from_sparse([("ONE", (wire,), 1.0)], num_qubits=_N)
-        expected = probabilities[(index >> wire) & 1 == 1].sum()
+    for qubit in range(_N):
+        observable = Observable.from_sparse([("ONE", (qubit,), 1.0)], num_qubits=_N)
+        expected = probabilities[(index >> qubit) & 1 == 1].sum()
 
         assert expectation_statevector(statevector, observable.terms) == pytest.approx(
             expected, abs=1e-12

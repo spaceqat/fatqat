@@ -32,14 +32,14 @@ def test_sparse_only_stores_non_identity_factors():
 
 
 def test_dense_label_is_little_endian():
-    # Rightmost character is wire 0 - same convention as fatqat counts strings.
+    # Rightmost character is qubit 0 - same convention as fatqat counts strings.
     ((_, factors),) = Observable([("ZIX", 1.0)]).terms
 
     assert factors == ((0, "X"), (2, "Z"))
 
 
 def test_factor_order_does_not_change_identity():
-    # The same term written with wires in either order compares equal.
+    # The same term written with qubits in either order compares equal.
     a = Observable.from_sparse([("XY", (3, 7), 1.0)], num_qubits=8)
     b = Observable.from_sparse([("YX", (7, 3), 1.0)], num_qubits=8)
 

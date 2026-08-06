@@ -234,10 +234,10 @@ def test_expectation_absent_from_a_plain_backend_run():
 
 def _sampling_program(num_qubits=3):
     program = fq.Program(num_qubits)
-    for wire in range(num_qubits):
-        program.add(op.RY(0.4 + 0.3 * wire), wire)
-    for wire in range(num_qubits - 1):
-        program.add(op.CX, (wire, wire + 1))
+    for qubit in range(num_qubits):
+        program.add(op.RY(0.4 + 0.3 * qubit), qubit)
+    for qubit in range(num_qubits - 1):
+        program.add(op.CX, (qubit, qubit + 1))
     return program
 
 

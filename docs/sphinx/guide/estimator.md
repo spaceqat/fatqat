@@ -31,7 +31,7 @@ exclusive by construction — see **Restrictions** at the end of this page.
 
 An observable is a weighted sum of terms, each a product of single-qubit
 letters. Labels are little-endian, matching fatqat's counts strings: the
-rightmost character is wire 0.
+rightmost character is qubit 0.
 
 ```python
 fq.Observable([("ZZ", 1.0)])                     # 1.0 * Z_1 Z_0
@@ -76,7 +76,7 @@ mixed = fq.Observable.from_sparse([(["ONE", "Z"], (5, 3), 1.0)], num_qubits=8)
 ```
 
 The projectors make site occupation directly expressible: `<ONE_i>` is the
-occupation number of wire `i`, the quantity atom-array experiments report.
+occupation number of qubit `i`, the quantity atom-array experiments report.
 Writing it as `(I - Z_i)/2` also works, but costs two terms and an offset.
 
 ## Several observables at once
