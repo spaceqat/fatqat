@@ -3,8 +3,11 @@
 `NumbaSVEngine` (statevector) and `NumbaDMEngine` (density matrix) reuse
 every semantics-agnostic piece of their NumPy twins - strategy selection, the
 fast and per-shot paths, ``initialize`` / ``measure_subsystems`` dispatch - and
-replace only the numeric kernels with Numba-jitted loops. Both are reachable
-via ``Simulator(method=..., runtime="numba")``.
+replace only the numeric kernels with Numba-jitted loops. `NumbaUnitaryEngine`
+and `NumbaSuperopEngine` then reuse *those* kernels for the operator
+representations, overriding only the apply plan (see the operator-engine
+section at the bottom). All four are reachable via
+``Simulator(method=..., runtime="numba")``.
 
 Kernel selection is key-driven: an `ApplyMatrixStep` carries the canonical
 identity of the implementation that produced its matrix (``kernel_key``), and
@@ -48,10 +51,20 @@ every ``K_i|psi>`` and norming it, it forms the targets' reduced density matrix
 it stays seed-reproducible and agrees with NumPy in distribution, not per-seed
 bit-for-bit.
 
+The operator engines do not apply gates one at a time. An operator buffer is
+``(rows, columns)`` and every step acts on the row index alone, so columns are
+independent and a whole plan runs inside one parallel region split over column
+blocks (`_NumbaOperatorRunMixin.run`). Those kernels keep the per-step
+accumulation order, so they are bit-identical to the per-gate coset kernels.
+A large plan is gate-fused first (`_fuse_operator_payloads`), merging adjacent
+steps into wider ones; that one is equal to the unfused plan only to
+floating-point tolerance.
+
 Parallelism has two independent axes: ``EngineConfig``'s ``max_workers`` /
 ``parallel_mode`` distribute dynamic shots across OS processes (reaching only
 the inherited NumPy per-shot path), while ``numba_parallel`` switches this
-module's in-process thread parallelism for a whole run (`_thread_scope`).
+module's in-process thread parallelism for a whole run (`_thread_scope`, and
+for a fused operator run `_operator_chunks`, which skips the region outright).
 
 The RNG draw stays in NumPy - a ``np.random.Generator`` cannot cross into
 nopython code - so uniforms are drawn with ``rng`` and the inverse-CDF search
@@ -73,6 +86,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from math import prod, sqrt
 
 import numpy as np
@@ -96,7 +110,13 @@ from ...noise.nb import (
     _report_digit_kernel,
 )
 from ...result import reduce_to_counts
-from .np import NumpyDMEngine, NumpySVEngine
+from .np import (
+    _NumpyOperatorEngine,
+    NumpyDMEngine,
+    NumpySuperopEngine,
+    NumpySVEngine,
+    NumpyUnitaryEngine,
+)
 
 _MAX_THREADS = get_num_threads()
 # A coset walk goes parallel only once each worker thread would get at least
@@ -182,12 +202,10 @@ def _compute_apply_plan(
     for j in range(len(targets) - 2, -1, -1):
         local_places[j] = local_places[j + 1] * local_dims[j + 1]
 
-    offsets = np.empty(local_dim, dtype=np.int64)
-    for c in range(local_dim):
-        offset = 0
-        for j, stride in enumerate(target_strides):
-            offset += ((c // local_places[j]) % local_dims[j]) * stride
-        offsets[c] = offset
+    local_index = np.arange(local_dim, dtype=np.int64)
+    offsets = np.zeros(local_dim, dtype=np.int64)
+    for j, stride in enumerate(target_strides):
+        offsets += ((local_index // local_places[j]) % local_dims[j]) * stride
 
     target_set = set(targets)
     complement = [q for q in range(n) if q not in target_set]
@@ -325,6 +343,9 @@ def _superop_csr(matrix: np.ndarray) -> tuple | None:
 _DENSE = 0
 _DIAGONAL = 1
 _PERMUTATION = 2
+# Set by `_pack_operator_plan` for a step whose super-operator resolved to a
+# CSR (`_superop_csr`); `_classify_matrix` never returns it.
+_SPARSE = 3
 
 
 @njit(cache=True)
@@ -638,6 +659,349 @@ def _apply_sparse_parallel(
                 end,
             )
     return state
+
+
+# --- fused operator kernels (one parallel region for a whole plan) ---
+#
+# An operator buffer is ``(rows, columns)`` row-major and every step acts on the
+# row index alone, so a block of columns is closed under the whole plan and the
+# parallel region sits outside the step loop. Offsets and complement strides are
+# row-space values pre-multiplied by ``columns``, so ``base + offsets[c] + lo``
+# addresses the flat buffer directly.
+
+
+@njit(cache=True)
+def _dense_columns(
+    state, matrix, offsets, comp_strides, comp_dims, num_cosets, scratch, lo, hi
+) -> None:  # pragma: no cover - compiled by Numba
+    """Dense local matrix applied to columns ``[lo, hi)`` of every coset."""
+    local_dim = offsets.shape[0]
+    width = hi - lo
+    counter = np.empty(comp_strides.shape[0], dtype=np.int64)
+    base = _spread_base(0, comp_strides, comp_dims, counter)
+    for _ in range(num_cosets):
+        for r in range(local_dim):
+            out = r * width
+            for j in range(width):
+                scratch[out + j] = 0.0 + 0.0j
+            for c in range(local_dim):
+                factor = matrix[r, c]
+                src = base + offsets[c] + lo
+                for j in range(width):
+                    scratch[out + j] += factor * state[src + j]
+        for r in range(local_dim):
+            dst = base + offsets[r] + lo
+            out = r * width
+            for j in range(width):
+                state[dst + j] = scratch[out + j]
+        base = _advance_base(base, comp_strides, comp_dims, counter)
+
+
+@njit(cache=True)
+def _diagonal_columns(
+    state, diagonal, offsets, comp_strides, comp_dims, num_cosets, scratch, lo, hi
+) -> None:  # pragma: no cover - compiled by Numba
+    """Diagonal application: scale in place, no gather and no scratch."""
+    local_dim = offsets.shape[0]
+    counter = np.empty(comp_strides.shape[0], dtype=np.int64)
+    base = _spread_base(0, comp_strides, comp_dims, counter)
+    for _ in range(num_cosets):
+        for r in range(local_dim):
+            factor = diagonal[r]
+            dst = base + offsets[r] + lo
+            for j in range(hi - lo):
+                state[dst + j] *= factor
+        base = _advance_base(base, comp_strides, comp_dims, counter)
+
+
+@njit(cache=True)
+def _permutation_columns(
+    state,
+    columns,
+    values,
+    offsets,
+    comp_strides,
+    comp_dims,
+    num_cosets,
+    scratch,
+    lo,
+    hi,
+) -> None:  # pragma: no cover - compiled by Numba
+    """Permutation application: one gather then one scaled scatter per coset."""
+    local_dim = offsets.shape[0]
+    width = hi - lo
+    counter = np.empty(comp_strides.shape[0], dtype=np.int64)
+    base = _spread_base(0, comp_strides, comp_dims, counter)
+    for _ in range(num_cosets):
+        for c in range(local_dim):
+            src = base + offsets[c] + lo
+            out = c * width
+            for j in range(width):
+                scratch[out + j] = state[src + j]
+        for r in range(local_dim):
+            factor = values[r]
+            dst = base + offsets[r] + lo
+            out = columns[r] * width
+            for j in range(width):
+                state[dst + j] = factor * scratch[out + j]
+        base = _advance_base(base, comp_strides, comp_dims, counter)
+
+
+@njit(cache=True)
+def _sparse_columns(
+    state,
+    indptr,
+    indices,
+    data,
+    offsets,
+    comp_strides,
+    comp_dims,
+    num_cosets,
+    scratch,
+    lo,
+    hi,
+) -> None:  # pragma: no cover - compiled by Numba
+    """CSR super-operator applied to columns ``[lo, hi)`` of every coset."""
+    local_dim = offsets.shape[0]
+    width = hi - lo
+    counter = np.empty(comp_strides.shape[0], dtype=np.int64)
+    base = _spread_base(0, comp_strides, comp_dims, counter)
+    updated = local_dim * width
+    for _ in range(num_cosets):
+        for c in range(local_dim):
+            src = base + offsets[c] + lo
+            out = c * width
+            for j in range(width):
+                scratch[out + j] = state[src + j]
+        for r in range(local_dim):
+            out = updated + r * width
+            for j in range(width):
+                scratch[out + j] = 0.0 + 0.0j
+            for k in range(indptr[r], indptr[r + 1]):
+                factor = data[k]
+                src = indices[k] * width
+                for j in range(width):
+                    scratch[out + j] += factor * scratch[src + j]
+        for r in range(local_dim):
+            dst = base + offsets[r] + lo
+            out = updated + r * width
+            for j in range(width):
+                state[dst + j] = scratch[out + j]
+        base = _advance_base(base, comp_strides, comp_dims, counter)
+
+
+@njit(cache=True)
+def _run_operator_steps(
+    state, plan, lo, hi, scratch
+) -> None:  # pragma: no cover - compiled by Numba
+    """Apply every step of a packed operator plan to columns ``[lo, hi)``."""
+    (
+        code,
+        mat_flat,
+        mat_ptr,
+        local_dims,
+        sv_flat_columns,
+        sv_flat_values,
+        sv_ptr,
+        off_flat,
+        off_ptr,
+        comp_stride_flat,
+        comp_dim_flat,
+        comp_ptr,
+        num_cosets,
+        sp_indptr_flat,
+        sp_indices_flat,
+        sp_data_flat,
+        sp_indptr_ptr,
+        sp_data_ptr,
+    ) = plan
+    for s in range(code.shape[0]):
+        local_dim = local_dims[s]
+        offsets = off_flat[off_ptr[s] : off_ptr[s + 1]]
+        strides = comp_stride_flat[comp_ptr[s] : comp_ptr[s + 1]]
+        comp_dims = comp_dim_flat[comp_ptr[s] : comp_ptr[s + 1]]
+        cosets = num_cosets[s]
+        step_code = code[s]
+        if step_code == _DIAGONAL:
+            values = sv_flat_values[sv_ptr[s] : sv_ptr[s + 1]]
+            _diagonal_columns(
+                state, values, offsets, strides, comp_dims, cosets, scratch, lo, hi
+            )
+        elif step_code == _PERMUTATION:
+            cols = sv_flat_columns[sv_ptr[s] : sv_ptr[s + 1]]
+            values = sv_flat_values[sv_ptr[s] : sv_ptr[s + 1]]
+            _permutation_columns(
+                state,
+                cols,
+                values,
+                offsets,
+                strides,
+                comp_dims,
+                cosets,
+                scratch,
+                lo,
+                hi,
+            )
+        elif step_code == _SPARSE:
+            indptr = sp_indptr_flat[sp_indptr_ptr[s] : sp_indptr_ptr[s + 1]]
+            indices = sp_indices_flat[sp_data_ptr[s] : sp_data_ptr[s + 1]]
+            data = sp_data_flat[sp_data_ptr[s] : sp_data_ptr[s + 1]]
+            _sparse_columns(
+                state,
+                indptr,
+                indices,
+                data,
+                offsets,
+                strides,
+                comp_dims,
+                cosets,
+                scratch,
+                lo,
+                hi,
+            )
+        else:
+            matrix = mat_flat[mat_ptr[s] : mat_ptr[s + 1]].reshape(local_dim, local_dim)
+            _dense_columns(
+                state, matrix, offsets, strides, comp_dims, cosets, scratch, lo, hi
+            )
+
+
+@njit(cache=True)
+def _run_operator_plan_serial(
+    state, n_columns, plan, scratch_rows
+) -> np.ndarray:  # pragma: no cover - compiled by Numba
+    """Whole-plan application on one thread (no parallel region entered)."""
+    scratch = np.empty(scratch_rows * n_columns, dtype=np.complex128)
+    _run_operator_steps(state, plan, 0, n_columns, scratch)
+    return state
+
+
+@njit(cache=True, parallel=True)
+def _run_operator_plan_parallel(
+    state, n_columns, plan, scratch_rows, n_chunks
+) -> np.ndarray:  # pragma: no cover - compiled by Numba
+    """Whole-plan application, split over column blocks in ONE parallel region."""
+    for chunk in prange(n_chunks):  # pylint: disable=not-an-iterable
+        lo = chunk * n_columns // n_chunks
+        hi = (chunk + 1) * n_columns // n_chunks
+        if lo < hi:
+            scratch = np.empty(scratch_rows * (hi - lo), dtype=np.complex128)
+            _run_operator_steps(state, plan, lo, hi, scratch)
+    return state
+
+
+# Minimum per-thread work (steps x amplitudes) before a fused run goes parallel.
+_GRAIN_TO_THREAD_OPERATOR = 1 << 14
+
+
+def _operator_chunks(
+    n_steps: int, size: int, n_columns: int, config: EngineConfig
+) -> int:
+    """Column-block count for a fused operator run; 1 means run serially."""
+    if not config.numba_parallel:
+        return 1
+    if n_steps * size < _MAX_THREADS * _GRAIN_TO_THREAD_OPERATOR:
+        return 1
+    return max(1, min(_MAX_THREADS, n_columns))
+
+
+def _pack_operator_plan(
+    payloads: list[tuple], row_dims: tuple[int, ...], n_columns: int
+) -> tuple[tuple, int]:
+    """Flatten operator payloads into `_run_operator_steps`'s arrays.
+
+    Each payload is ``(matrix, code, columns, values, sparse, row_targets)``.
+    Ragged per-step data is concatenated with ``*_ptr`` index arrays; row-space
+    offsets and strides are pre-multiplied by ``n_columns``.
+
+    Returns the packed tuple and the scratch row count the widest step needs.
+    """
+    n_steps = len(payloads)
+    code = np.empty(n_steps, dtype=np.int64)
+    local_dims = np.empty(n_steps, dtype=np.int64)
+    num_cosets = np.empty(n_steps, dtype=np.int64)
+    mat_ptr = np.zeros(n_steps + 1, dtype=np.int64)
+    sv_ptr = np.zeros(n_steps + 1, dtype=np.int64)
+    off_ptr = np.zeros(n_steps + 1, dtype=np.int64)
+    comp_ptr = np.zeros(n_steps + 1, dtype=np.int64)
+    sp_indptr_ptr = np.zeros(n_steps + 1, dtype=np.int64)
+    sp_data_ptr = np.zeros(n_steps + 1, dtype=np.int64)
+
+    mat_parts: list[np.ndarray] = []
+    sv_column_parts: list[np.ndarray] = []
+    sv_value_parts: list[np.ndarray] = []
+    off_parts: list[np.ndarray] = []
+    comp_stride_parts: list[np.ndarray] = []
+    comp_dim_parts: list[np.ndarray] = []
+    sp_indptr_parts: list[np.ndarray] = []
+    sp_index_parts: list[np.ndarray] = []
+    sp_data_parts: list[np.ndarray] = []
+    scratch_rows = 1
+
+    for s, (matrix, step_code, columns, values, sparse, targets) in enumerate(payloads):
+        offsets, strides, dims, cosets, _ = _compute_apply_plan(row_dims, targets)
+        local_dim = int(offsets.shape[0])
+        off_parts.append(offsets * n_columns)
+        comp_stride_parts.append(strides * n_columns)
+        comp_dim_parts.append(dims)
+        local_dims[s] = local_dim
+        num_cosets[s] = cosets
+
+        if sparse is not None:
+            step_code = _SPARSE
+        code[s] = step_code
+        if step_code == _SPARSE:
+            indptr, indices, data = sparse
+            sp_indptr_parts.append(np.asarray(indptr, dtype=np.int64))
+            sp_index_parts.append(np.asarray(indices, dtype=np.int64))
+            sp_data_parts.append(np.asarray(data, dtype=np.complex128))
+            # Gather block plus accumulator block.
+            scratch_rows = max(scratch_rows, 2 * local_dim)
+        else:
+            scratch_rows = max(scratch_rows, local_dim)
+            if step_code == _DENSE:
+                mat_parts.append(np.asarray(matrix, dtype=np.complex128).reshape(-1))
+            else:
+                sv_column_parts.append(np.asarray(columns, dtype=np.int64))
+                sv_value_parts.append(np.asarray(values, dtype=np.complex128))
+
+        dense_step = step_code == _DENSE
+        sparse_step = step_code == _SPARSE
+        mat_ptr[s + 1] = mat_ptr[s] + (local_dim * local_dim if dense_step else 0)
+        sv_ptr[s + 1] = sv_ptr[s] + (0 if dense_step or sparse_step else local_dim)
+        off_ptr[s + 1] = off_ptr[s] + local_dim
+        comp_ptr[s + 1] = comp_ptr[s] + len(dims)
+        sp_indptr_ptr[s + 1] = sp_indptr_ptr[s] + (
+            len(sp_indptr_parts[-1]) if sparse_step else 0
+        )
+        sp_data_ptr[s + 1] = sp_data_ptr[s] + (
+            len(sp_data_parts[-1]) if sparse_step else 0
+        )
+
+    def _join(parts: list[np.ndarray], dtype) -> np.ndarray:
+        return np.concatenate(parts) if parts else np.empty(0, dtype=dtype)
+
+    packed = (
+        code,
+        _join(mat_parts, np.complex128),
+        mat_ptr,
+        local_dims,
+        _join(sv_column_parts, np.int64),
+        _join(sv_value_parts, np.complex128),
+        sv_ptr,
+        _join(off_parts, np.int64),
+        off_ptr,
+        _join(comp_stride_parts, np.int64),
+        _join(comp_dim_parts, np.int64),
+        comp_ptr,
+        num_cosets,
+        _join(sp_indptr_parts, np.int64),
+        _join(sp_index_parts, np.int64),
+        _join(sp_data_parts, np.complex128),
+        sp_indptr_ptr,
+        sp_data_ptr,
+    )
+    return packed, scratch_rows
 
 
 @njit(cache=True)
@@ -1795,3 +2159,456 @@ class NumbaDMEngine(NumpyDMEngine):
             np.ascontiguousarray(self.state), strides, dims, index
         )
         return index
+
+
+# --- gate fusion ---
+#
+# Merging adjacent steps into one wider step trades passes for arithmetic. The
+# dense kernel's cost is ~linear in the local dimension, while the diagonal and
+# permutation kernels are flat in it, and monomial matrices (at most one nonzero
+# per row - `_classify_matrix`'s _DIAGONAL/_PERMUTATION) are closed under
+# multiplication. So a run of phase or permutation gates collapses into one pass
+# at any width, while dense runs merge only while `_pass_cost` says the wider
+# pass is cheaper. Fusion multiplies matrices together, so it equals the unfused
+# plan to floating-point tolerance, not bit for bit.
+
+# Local dimension at which dense compute overtakes memory, setting `_pass_cost`.
+_DENSE_COST_KNEE = 6.0
+# Operator size below which fusion's plan-preparation cost outweighs the passes
+# it saves.
+_MIN_SIZE_TO_FUSE = 1 << 18
+# Widest merged operator, per structure. Monomials are capped by the bookkeeping
+# each merge rebuilds; dense is a backstop the cost model stops well short of.
+_MAX_FUSED_MONOMIAL_DIM = 1 << 12
+_MAX_FUSED_DENSE_DIM = 1 << 6
+
+
+def _pass_cost(code: int, local_dim: int) -> float:
+    """Relative cost of one pass, normalized to a 1-qubit dense pass."""
+    if code == _DENSE:
+        return max(1.0, local_dim / _DENSE_COST_KNEE)
+    return 1.0
+
+
+def _local_places(dims: Sequence[int]) -> list[int]:
+    """Mixed-radix place values with element 0 most significant."""
+    places = [1] * len(dims)
+    for i in range(len(dims) - 2, -1, -1):
+        places[i] = places[i + 1] * dims[i + 1]
+    return places
+
+
+def _embedding(
+    from_targets: tuple[int, ...], to_targets: tuple[int, ...], dims: Sequence[int]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Index maps embedding a ``from_targets`` operator into ``to_targets``.
+
+    Returns ``(local, base, offsets)``: ``local[x]`` is the narrow row wide
+    index ``x`` selects, ``base[x]`` is ``x`` with the narrow digits cleared,
+    and ``offsets[r]`` is the wide offset of narrow index ``r``. Both index
+    spaces are most-significant-first in their own target order.
+    """
+    to_dims = [dims[t] for t in to_targets]
+    from_dims = [dims[t] for t in from_targets]
+    to_places = _local_places(to_dims)
+    from_places = _local_places(from_dims)
+    positions = [to_targets.index(t) for t in from_targets]
+
+    wide = np.arange(prod(to_dims), dtype=np.int64)
+    narrow = np.arange(prod(from_dims), dtype=np.int64)
+    local = np.zeros_like(wide)
+    offsets = np.zeros_like(narrow)
+    for i, position in enumerate(positions):
+        local += ((wide // to_places[position]) % to_dims[position]) * from_places[i]
+        offsets += ((narrow // from_places[i]) % from_dims[i]) * to_places[position]
+    return local, wide - offsets[local], offsets
+
+
+def _monomial_operand(
+    targets: tuple[int, ...], union: tuple[int, ...], dims: Sequence[int]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Descriptor letting `_compose_monomials` embed ``targets`` into ``union``.
+
+    Returns ``(positions, places, offsets)``: where each subsystem sits in
+    ``union``, its own place values, and the wide offset of each narrow index.
+    """
+    narrow_dims = [dims[t] for t in targets]
+    places = _local_places(narrow_dims)
+    positions = [union.index(t) for t in targets]
+    to_places = _local_places([dims[t] for t in union])
+    narrow = np.arange(prod(narrow_dims), dtype=np.int64)
+    offsets = np.zeros_like(narrow)
+    for i, position in enumerate(positions):
+        offsets += ((narrow // places[i]) % narrow_dims[i]) * to_places[position]
+    return (
+        np.asarray(positions, dtype=np.int64),
+        np.asarray(places, dtype=np.int64),
+        offsets,
+    )
+
+
+@njit(cache=True)
+def _compose_monomials(
+    b_columns,
+    b_values,
+    b_positions,
+    b_places,
+    b_offsets,
+    s_columns,
+    s_values,
+    s_positions,
+    s_places,
+    s_offsets,
+    to_places,
+    to_dims,
+) -> tuple:  # pragma: no cover - compiled by Numba
+    """Embed two monomials onto a shared index space and multiply them.
+
+    ``b`` runs first and ``s`` second, so this builds ``s . b``.
+    """
+    size = 1
+    for i in range(to_dims.shape[0]):
+        size *= to_dims[i]
+    out_columns = np.empty(size, dtype=np.int64)
+    out_values = np.empty(size, dtype=np.complex128)
+    for x in range(size):
+        row_s = 0
+        for i in range(s_positions.shape[0]):
+            p = s_positions[i]
+            row_s += ((x // to_places[p]) % to_dims[p]) * s_places[i]
+        # Clear this operand's digits from x, then set the ones it maps to.
+        y = x - s_offsets[row_s] + s_offsets[s_columns[row_s]]
+        row_b = 0
+        for i in range(b_positions.shape[0]):
+            p = b_positions[i]
+            row_b += ((y // to_places[p]) % to_dims[p]) * b_places[i]
+        out_columns[x] = y - b_offsets[row_b] + b_offsets[b_columns[row_b]]
+        out_values[x] = s_values[row_s] * b_values[row_b]
+    return out_columns, out_values
+
+
+def _embed_dense(
+    matrix: np.ndarray,
+    from_targets: tuple[int, ...],
+    to_targets: tuple[int, ...],
+    dims: Sequence[int],
+) -> np.ndarray:
+    """Widen a dense matrix onto ``to_targets``, tensoring identity onto the rest."""
+    local, base, offsets = _embedding(from_targets, to_targets, dims)
+    size = len(local)
+    out = np.zeros((size, size), dtype=np.complex128)
+    rows = np.arange(size, dtype=np.int64)
+    for column, offset in enumerate(offsets):
+        out[rows, base + offset] = matrix[local, column]
+    return out
+
+
+@dataclass
+class _FusionBlock:
+    """A run of adjacent payloads accumulated into one operator.
+
+    ``code`` is the accumulated structure: monomial while every merged step was
+    monomial, dense from the first dense one onwards.
+    """
+
+    targets: tuple[int, ...]
+    code: int
+    columns: np.ndarray | None
+    values: np.ndarray | None
+    matrix: np.ndarray | None
+    merged: int
+
+    @property
+    def local_dim(self) -> int:
+        return len(self.columns) if self.code != _DENSE else len(self.matrix)
+
+    def cost(self) -> float:
+        return _pass_cost(self.code, self.local_dim)
+
+
+def _payload_block(payload: tuple) -> _FusionBlock:
+    """Start a block from one payload."""
+    matrix, code, columns, values, _sparse, targets = payload
+    monomial = code in (_DIAGONAL, _PERMUTATION)
+    local_dim = len(columns) if monomial else len(matrix)
+    return _FusionBlock(
+        targets=targets,
+        code=code,
+        columns=np.asarray(columns[:local_dim], dtype=np.int64) if monomial else None,
+        values=(
+            np.asarray(values[:local_dim], dtype=np.complex128) if monomial else None
+        ),
+        matrix=None if monomial else np.asarray(matrix, dtype=np.complex128),
+        merged=1,
+    )
+
+
+def _block_payload(block: _FusionBlock, original: tuple) -> tuple:
+    """Convert a block back into a payload, or hand back the untouched original."""
+    if block.merged == 1:
+        return original
+    if block.code == _DENSE:
+        return (block.matrix, _DENSE, None, None, None, block.targets)
+    # A monomial whose columns never move reaches the cheaper in-place kernel.
+    identity = np.array_equal(block.columns, np.arange(len(block.columns)))
+    code = _DIAGONAL if identity else _PERMUTATION
+    return (None, code, block.columns, block.values, None, block.targets)
+
+
+def _merge_block(
+    block: _FusionBlock, payload: tuple, dims: Sequence[int]
+) -> _FusionBlock | None:
+    """Merge ``payload`` after ``block``, or return ``None`` to keep them apart.
+
+    Accepted only when the combined pass is strictly cheaper than the two it
+    replaces. Caps are checked before anything is materialized.
+    """
+    _matrix, code, _columns, _values, _sparse, targets = payload
+    union = tuple(sorted(set(block.targets) | set(targets)))
+    local_dim = prod(dims[t] for t in union)
+    monomial = block.code != _DENSE and code in (_DIAGONAL, _PERMUTATION)
+    merged_code = _PERMUTATION if monomial else _DENSE
+    cap = _MAX_FUSED_MONOMIAL_DIM if monomial else _MAX_FUSED_DENSE_DIM
+    if local_dim > cap:
+        return None
+    apart = block.cost() + _pass_cost(code, prod(dims[t] for t in targets))
+    if _pass_cost(merged_code, local_dim) >= apart:
+        return None
+
+    step = _payload_block(payload)
+    if monomial:
+        to_dims = np.asarray([dims[t] for t in union], dtype=np.int64)
+        to_places = np.asarray(_local_places(list(to_dims)), dtype=np.int64)
+        columns, values = _compose_monomials(
+            block.columns,
+            block.values,
+            *_monomial_operand(block.targets, union, dims),
+            step.columns,
+            step.values,
+            *_monomial_operand(step.targets, union, dims),
+            to_places,
+            to_dims,
+        )
+        return _FusionBlock(
+            targets=union,
+            code=_PERMUTATION,
+            columns=columns,
+            values=values,
+            matrix=None,
+            merged=block.merged + 1,
+        )
+    return _FusionBlock(
+        targets=union,
+        code=_DENSE,
+        columns=None,
+        values=None,
+        matrix=_widen_dense(step, union, dims) @ _widen_dense(block, union, dims),
+        merged=block.merged + 1,
+    )
+
+
+def _widen_dense(
+    block: _FusionBlock, union: tuple[int, ...], dims: Sequence[int]
+) -> np.ndarray:
+    """A block's dense matrix on ``union``, materializing a monomial if needed."""
+    if block.code == _DENSE:
+        matrix = block.matrix
+    else:
+        matrix = np.zeros((len(block.columns),) * 2, dtype=np.complex128)
+        matrix[np.arange(len(block.columns)), block.columns] = block.values
+    if block.targets == union:
+        return matrix
+    return _embed_dense(matrix, block.targets, union, dims)
+
+
+def _fuse_operator_payloads(payloads: list[tuple], dims: Sequence[int]) -> list[tuple]:
+    """Merge adjacent operator payloads into wider ones where that is cheaper.
+
+    A greedy left-to-right pass over payloads in execution order; only adjacent
+    payloads merge, so no commutation analysis is involved. A CSR step is a
+    barrier on both sides, since `_pass_cost` cannot see its skipped zeros.
+    """
+    fused: list[tuple] = []
+    block: _FusionBlock | None = None
+    source: tuple | None = None
+    for payload in payloads:
+        if payload[4] is not None:
+            if block is not None:
+                fused.append(_block_payload(block, source))
+                block = source = None
+            fused.append(payload)
+            continue
+        if block is None:
+            block, source = _payload_block(payload), payload
+            continue
+        merged = _merge_block(block, payload, dims)
+        if merged is None:
+            fused.append(_block_payload(block, source))
+            block, source = _payload_block(payload), payload
+        else:
+            block = merged
+    if block is not None:
+        fused.append(_block_payload(block, source))
+    return fused
+
+
+# --- operator engines ---
+#
+# An operator is its state twin evolved on many columns at once. `run` takes the
+# fused whole-plan path; a single application falls back to the per-gate coset
+# kernels over a column-batched apply plan, which is a `columns`-sized
+# never-targeted subsystem prepended to the dims.
+
+
+class _NumbaOperatorRunMixin(_NumpyOperatorEngine):
+    """Fused whole-plan execution for the Numba operator engines.
+
+    Leaves supply `_operator_row_dims` and `_operator_payloads`.
+    """
+
+    def run(
+        self,
+        plan: list,
+        shots: int,
+        seed: int | None,
+        request,
+        *,
+        config: EngineConfig | None = None,
+    ) -> RawResult:
+        """Evolve the identity operator through ``plan`` in one fused call.
+
+        ``shots`` and ``seed`` are unused, as on the NumPy twin.
+        """
+        config = config or self.config
+        with _thread_scope(config):
+            self.initialize(self._dims, self._n_clbits)
+            payloads = self._operator_payloads(plan)
+            if payloads:
+                row_dims = self._operator_row_dims()
+                operator = np.ascontiguousarray(self.state, dtype=np.complex128)
+                flat = operator.reshape(-1)
+                n_columns = operator.shape[1]
+                if flat.shape[0] >= _MIN_SIZE_TO_FUSE:
+                    payloads = _fuse_operator_payloads(payloads, row_dims)
+                packed, scratch_rows = _pack_operator_plan(
+                    payloads, row_dims, n_columns
+                )
+                n_chunks = _operator_chunks(
+                    len(payloads), flat.shape[0], n_columns, config
+                )
+                if n_chunks > 1:
+                    _run_operator_plan_parallel(
+                        flat, n_columns, packed, scratch_rows, n_chunks
+                    )
+                else:
+                    _run_operator_plan_serial(flat, n_columns, packed, scratch_rows)
+                self._state = flat.reshape(operator.shape)
+            state = self.export_state() if getattr(request, self._state_field) else None
+            return RawResult(state=state)
+
+    def _operator_row_dims(self) -> tuple[int, ...]:
+        """Subsystem dimensions the operator's row index decomposes into."""
+        raise NotImplementedError
+
+    def _operator_payloads(self, plan: list) -> list[tuple]:
+        """Resolve ``plan`` into `_pack_operator_plan` payloads."""
+        raise NotImplementedError
+
+
+# Deep base list by design: the leaf adds only its plan builder and payloads.
+class NumbaUnitaryEngine(  # pylint: disable=too-many-ancestors
+    _NumbaOperatorRunMixin, NumbaSVEngine, NumpyUnitaryEngine
+):
+    """Unitary engine with Numba-jitted numeric kernels.
+
+    ``U`` is ``size`` statevector columns over a row index that decomposes into
+    the plain system dims; every step is a gate.
+    """
+
+    def __init__(self, name: str = "numba-unitary", config: EngineConfig | None = None):
+        super().__init__(name, config)
+
+    def _operator_row_dims(self) -> tuple[int, ...]:
+        return self._dims
+
+    def _operator_payloads(self, plan: list) -> list[tuple]:
+        payloads = []
+        for step in plan:
+            assert isinstance(
+                step, ApplyMatrixStep
+            ), "unitary execution accepts only matrix steps"
+            code, columns, values = self._resolve_structure(step)
+            payloads.append(
+                (step.matrix, code, columns, values, None, tuple(step.target_indices))
+            )
+        return payloads
+
+    def _build_apply_plan(self, targets: tuple[int, ...]) -> tuple:
+        """Kernel layout for ``targets`` over the column-batched dims."""
+        size = prod(self._dims) if self._dims else 1
+        extended = (size,) + self._dims
+        return _compute_apply_plan(extended, tuple(1 + t for t in targets))
+
+    def _launch_resolved(
+        self,
+        state: np.ndarray,
+        matrix: np.ndarray,
+        targets: Sequence[int],
+        code: int,
+        columns: np.ndarray,
+        values: np.ndarray,
+    ) -> np.ndarray:
+        """Run the inherited launch over the operator's flat ``(row, column)`` buffer."""
+        operator = np.ascontiguousarray(state, dtype=np.complex128)
+        flat = super()._launch_resolved(
+            operator.reshape(-1), matrix, targets, code, columns, values
+        )
+        return flat.reshape(operator.shape)
+
+
+# Deep base list by design: the leaf adds only its plan builder and payloads.
+class NumbaSuperopEngine(  # pylint: disable=too-many-ancestors
+    _NumbaOperatorRunMixin, NumbaDMEngine, NumpySuperopEngine
+):
+    """Super-operator engine with Numba-jitted numeric kernels.
+
+    ``S`` is ``size**2`` density-matrix columns over a row index that decomposes
+    into the doubled ``bra + ket`` dims. Every step - gate, channel, or reset -
+    resolves to one super-operator on the combined ket+bra super-target.
+    """
+
+    def __init__(self, name: str = "numba-superop", config: EngineConfig | None = None):
+        super().__init__(name, config)
+
+    def _operator_row_dims(self) -> tuple[int, ...]:
+        return self._dims + self._dims
+
+    def _operator_payloads(self, plan: list) -> list[tuple]:
+        n = len(self._dims)
+        payloads = []
+        for step in _fuse_gate_channels(plan):
+            # A reset is the Kraus channel sum_k |0><k|.
+            resolved_steps = (
+                [self._reset_channel(index) for index in step.reset_indices]
+                if isinstance(step, ResetStep)
+                else [step]
+            )
+            for resolved in resolved_steps:
+                superop, code, columns, values, sparse = self._resolve_superop(resolved)
+                targets = tuple(resolved.target_indices)
+                # Ket group first, so the local index is ``ket * D + bra``.
+                row_targets = tuple(n + t for t in targets) + targets
+                payloads.append((superop, code, columns, values, sparse, row_targets))
+        return payloads
+
+    def _sandwich_plan(self, targets: tuple[int, ...]) -> tuple:
+        """Super-operator layout for ``targets`` over the column-batched doubled dims."""
+        plan = self._sandwich_plans.get(targets)
+        if plan is None:
+            n = len(self._dims)
+            size = prod(self._dims) if self._dims else 1
+            extended = (size * size,) + self._dims + self._dims
+            super_targets = [1 + n + t for t in targets] + [1 + t for t in targets]
+            plan = _compute_apply_plan(extended, super_targets, _MIN_SIZE_TO_THREAD_DM)
+            self._sandwich_plans[targets] = plan
+        return plan

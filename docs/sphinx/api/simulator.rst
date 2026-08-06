@@ -19,8 +19,65 @@ General-purpose simulator
   is an accepted alias.
 - ``method="density_matrix"`` simulates exact mixed states. ``"DM"`` is
   an accepted alias.
+- ``method="unitary"`` and ``method="superop"`` return the program's *map*
+  instead of a state under it. See :ref:`operator-methods` below.
 - Pass a :py:class:`~fatqat.NoiseModel` with ``noise=...`` to run the same program with
   channel or readout noise.
+
+.. _operator-methods:
+
+Operator methods
+----------------
+
+``method="unitary"`` returns the program's ``(D, D)`` unitary and
+``method="superop"`` its ``(D**2, D**2)`` super-operator, where ``D`` is the
+product of the subsystem dimensions. Both run one deterministic pass with no
+shots and no sampling, so ``final_state`` defaults to ``True`` and ``shots``
+is ignored.
+
+.. code-block:: python
+
+   import fatqat as fq
+   import fatqat.operations as op
+
+   bell = fq.Program(2)
+   bell.add(op.H, 0)
+   bell.add(op.CX, (0, 1))
+
+   unitary = fq.simulator.Simulator("unitary").run(bell).result().get_unitary()
+   superop = fq.simulator.Simulator("superop").run(bell).result().get_superop()
+
+``unitary[:, 0]`` is the statevector the same program prepares. The
+super-operator is row-major vectorized, matching what
+:py:meth:`~fatqat.Result.get_density_matrix` output flattens into:
+``superop @ rho.reshape(-1)`` reshaped back to ``(D, D)`` is the program
+applied to ``rho``. For a noise-free program it equals
+``numpy.kron(unitary, unitary.conj())``.
+
+.. list-table:: What each operator method accepts
+   :header-rows: 1
+   :widths: 34 22 22 22
+
+   * - Program feature
+     - ``statevector`` / ``density_matrix``
+     - ``unitary``
+     - ``superop``
+   * - Gates
+     - yes
+     - yes
+     - yes
+   * - :py:data:`~fatqat.operations.Reset`, channel noise
+     - yes
+     - **rejected**
+     - yes (exact channels)
+   * - Measurement, feedforward, ``counts``
+     - yes
+     - **rejected**
+     - **rejected**
+
+Rejections raise :py:class:`~fatqat.errors.BackendValidationError` directly
+from ``run()``, before any execution. Memory grows as ``4**n`` for ``unitary``
+and ``16**n`` for ``superop``, so keep super-operator circuits small.
 
 Run a program
 -------------

@@ -85,6 +85,22 @@ class _DensityMatrixResultRequest:
 
 
 @dataclass(frozen=True)
+class _UnitaryResultRequest:
+    """Resolved result fields requested for one unitary execution."""
+
+    counts: bool
+    unitary: bool
+
+
+@dataclass(frozen=True)
+class _SuperopResultRequest:
+    """Resolved result fields requested for one super-operator execution."""
+
+    counts: bool
+    superop: bool
+
+
+@dataclass(frozen=True)
 class RawResult:
     """Engine-produced execution data before public Result packaging."""
 

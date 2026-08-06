@@ -140,6 +140,8 @@ class Result:
         metadata: Mapping[str, Any] | None = None,
         classical_dims: Sequence[int] = (),
         density_matrix: np.ndarray | None = None,
+        unitary: np.ndarray | None = None,
+        superop: np.ndarray | None = None,
         data: Mapping[str, Any] | None = None,
     ) -> None:
         """Create a result from backend-produced fields.
@@ -154,12 +156,21 @@ class Result:
             classical_dims: Per-clbit classical dimensions, used to render
                 `get_counts()` display strings.
             density_matrix: Optional density-matrix array.
+            unitary: Optional unitary-matrix array.
+            superop: Optional super-operator-matrix array.
             data: Additional backend-specific result artifacts. Their names
                 are included in :attr:`available_data` and retrieved with
                 :meth:`get_data`.
         """
         self._data = dict(data) if data is not None else {}
-        reserved = {"counts", "final_state", "statevector", "density_matrix"}
+        reserved = {
+            "counts",
+            "final_state",
+            "statevector",
+            "density_matrix",
+            "unitary",
+            "superop",
+        }
         collisions = reserved & self._data.keys()
         if collisions:
             names = ", ".join(sorted(collisions))
@@ -169,6 +180,8 @@ class Result:
         self._counts = counts
         self._statevector = statevector
         self._density_matrix = density_matrix
+        self._unitary = unitary
+        self._superop = superop
         self.available_data = frozenset(available) | frozenset(self._data)
         self.metadata = dict(metadata) if metadata is not None else {}
         self._classical_dims = tuple(classical_dims)
@@ -280,3 +293,60 @@ class Result:
                 "density_matrix not available in this result"
             )
         return self._density_matrix
+
+    def get_unitary(self) -> np.ndarray:
+        """Return the program's unitary matrix.
+
+        Returns:
+            A ``(D, D)`` array, where ``D`` is the product of the subsystem
+            dimensions. Column ``j`` is the state the program prepares from
+            basis state ``|j>``, so column 0 is the statevector a
+            ``method="statevector"`` run of the same program returns.
+
+        Raises:
+            ResultFieldUnavailableError: If a unitary was not produced.
+
+        Examples:
+            >>> import fatqat as fq
+            >>> import fatqat.operations as op
+            >>> program = fq.Program(1)
+            >>> program.add(op.H, 0)
+            >>> fq.simulator.Simulator("unitary").run(program).result().get_unitary()
+            array([[ 0.70710678+0.j,  0.70710678+0.j],
+                   [ 0.70710678+0.j, -0.70710678+0.j]])
+        """
+        if "unitary" not in self.available_data:
+            raise ResultFieldUnavailableError("unitary not available in this result")
+        return self._unitary
+
+    def get_superop(self) -> np.ndarray:
+        """Return the program's super-operator matrix.
+
+        The vectorization is row-major (``vec(rho) = rho.reshape(-1)``), the
+        same convention :meth:`get_density_matrix` output flattens into, so
+        ``superop @ rho.reshape(-1)`` reshaped back to ``(D, D)`` is the
+        program applied to ``rho``. A unitary program's super-operator is
+        ``numpy.kron(U, U.conj())``. Note that Qiskit's ``SuperOp`` uses the
+        column-major convention instead, which transposes the index pairs.
+
+        Returns:
+            A ``(D**2, D**2)`` array, where ``D`` is the product of the
+            subsystem dimensions.
+
+        Raises:
+            ResultFieldUnavailableError: If a super-operator was not produced.
+
+        Examples:
+            >>> import fatqat as fq
+            >>> import fatqat.operations as op
+            >>> program = fq.Program(1)
+            >>> program.add(op.X, 0)
+            >>> fq.simulator.Simulator("superop").run(program).result().get_superop()
+            array([[0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j],
+                   [0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j],
+                   [0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j],
+                   [1.+0.j, 0.+0.j, 0.+0.j, 0.+0.j]])
+        """
+        if "superop" not in self.available_data:
+            raise ResultFieldUnavailableError("superop not available in this result")
+        return self._superop

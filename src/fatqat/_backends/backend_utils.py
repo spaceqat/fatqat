@@ -56,13 +56,17 @@ class _LoweringContext:
 class _PlanFacts:
     """Program facts needed for backend result defaults and validation.
 
-    ``has_channel`` defaults to ``False`` so channel-free construction sites
-    (and the fake-backend lowering) stay unchanged.
+    ``has_channel`` and ``has_condition`` default to ``False`` so
+    channel-free / condition-free construction sites (and the fake-backend
+    lowering) stay unchanged. ``has_condition`` is read only by the operator
+    methods; the state methods classify conditions per step instead
+    (`_analyze_terminal_measurements`).
     """
 
     has_measurement: bool
     has_reset: bool
     has_channel: bool = False
+    has_condition: bool = False
 
 
 def _normalize_config(

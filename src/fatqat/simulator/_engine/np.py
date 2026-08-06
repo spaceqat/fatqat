@@ -1,13 +1,20 @@
 """NumPy engines for the matrix backend family.
 
 `NumpySVEngine` (statevector) and `NumpyDMEngine` (density matrix) are the
-two concrete `MatrixEngine` implementations. They share every semantics-agnostic
+two *state* `MatrixEngine` implementations. They share every semantics-agnostic
 piece - strategy selection, the fast single-evolution path, the per-shot dynamic
 path (serial or parallel across workers), ``initialize`` and
 ``measure_subsystems`` - through `_NumpyMatrixEngine`. Each leaf class then
 contributes only its numeric kernels (allocate / apply / probabilities /
 collapse / reset) plus two class knobs (``_state_field``,
 ``_reset_forces_dynamic``); no public method branches on semantics.
+
+`NumpyUnitaryEngine` and `NumpySuperopEngine` are the two *operator* engines:
+they compute the program's map rather than a state under it. Each is its state
+twin evolved on many columns at once - a unitary is ``size`` statevector
+columns (column ``j`` is ``U|j>``), a super-operator is ``size**2``
+density-matrix columns (column ``b`` is the image of basis matrix ``E_b``).
+`_NumpyOperatorEngine` replaces ``run`` with one deterministic pass.
 
 Conventions:
 
@@ -641,3 +648,160 @@ class NumpyDMEngine(_NumpyMatrixEngine):
         post = post.reshape(local_dims + local_dims + rest_shape)
         inverse_perm = np.argsort(moved + remaining)
         self._state = np.transpose(post, inverse_perm).reshape(rho.shape)
+
+
+# --- operator engines ---
+
+
+class _NumpyOperatorEngine(_NumpyMatrixEngine):
+    """Deterministic single-pass execution for the operator representations.
+
+    Replaces `_NumpyMatrixEngine`'s fast/per-shot split with one evolution of
+    the identity operator; the sampling kernels are unsupported.
+    """
+
+    def run(
+        self,
+        plan: list[ResolvedStep],
+        shots: int,
+        seed: int | None,
+        request: ResultRequest,
+        *,
+        config: EngineConfig | None = None,
+    ) -> RawResult:
+        """Evolve the identity operator once through ``plan`` and export it.
+
+        ``shots``, ``seed``, and ``config`` are accepted for interface parity
+        and unused, as is the ``rng`` handed to the exact-channel kernels.
+        """
+        assert (
+            self._state is not None
+        ), "engine not initialized; call initialize() first"
+        self.initialize(self._dims, self._n_clbits)
+        rng = np.random.default_rng(seed)
+        for step in plan:
+            assert not isinstance(
+                step, MeasurementStep
+            ), "operator execution cannot represent a measurement"
+            assert (
+                step.condition is None
+            ), "operator execution cannot represent a feedforward condition"
+            if isinstance(step, ApplyMatrixStep):
+                self.apply(step)
+            elif isinstance(step, ApplyChannelStep):
+                self.apply_channel(step, rng)
+            elif isinstance(step, ResetStep):
+                self.reset_subsystems(step.reset_indices, rng)
+            else:
+                raise TypeError(
+                    f"unknown resolved execution step {type(step).__name__}"
+                )
+
+        state = self.export_state() if getattr(request, self._state_field) else None
+        return RawResult(state=state)
+
+    def probabilities(self) -> np.ndarray:
+        """Unsupported: an operator is a map, not a distribution over states."""
+        raise NotImplementedError(
+            f"{self._state_field} execution has no basis-state distribution"
+        )
+
+    def collapse(
+        self, measured_subsystems: Sequence[int], rng: np.random.Generator
+    ) -> int:
+        """Unsupported: an operator cannot be projected onto one outcome."""
+        raise NotImplementedError(
+            f"{self._state_field} execution cannot represent a measurement"
+        )
+
+
+class NumpyUnitaryEngine(_NumpyOperatorEngine, NumpySVEngine):
+    """Unitary engine: evolves ``U`` as a ``(size, size)`` operator matrix.
+
+    Column ``j`` of ``U`` is the statevector ``U|j>``, so the whole operator is
+    the statevector kernel run on ``size`` columns at once.
+    """
+
+    _state_field = "unitary"
+
+    def __init__(self, name: str = "numpy-unitary", config: EngineConfig | None = None):
+        super().__init__(name, config)
+
+    def _allocate(self, size: int) -> np.ndarray:
+        return np.eye(size, dtype=complex)
+
+    def _apply_local(
+        self, state: np.ndarray, matrix: np.ndarray, targets: Sequence[int]
+    ) -> np.ndarray:
+        """Apply a local matrix to every column of the operator at once."""
+        n = len(self._dims)
+        k = len(targets)
+        local_dims = tuple(self._dims[t] for t in targets)
+        columns = state.shape[1]
+        tensor = state.reshape(self._reversed_dims + (columns,))
+        m = np.asarray(matrix, dtype=complex).reshape(local_dims + local_dims)
+        target_axes = [n - 1 - q for q in targets]
+        return _contract_local(m, tensor, target_axes, n + 1, k).reshape(state.shape)
+
+
+class NumpySuperopEngine(_NumpyOperatorEngine, NumpyDMEngine):
+    """Super-operator engine: evolves ``S`` as a ``(size**2, size**2)`` matrix.
+
+    Column ``b`` of ``S`` is the vectorized image of basis matrix ``E_b``, so
+    the whole channel is the density-matrix kernel run on ``size**2`` columns at
+    once, in the row-major vectorization the density matrix already uses
+    (``vec(rho) = rho.reshape(-1)``, i.e. ``S = kron(M, conj(M))``).
+    """
+
+    _state_field = "superop"
+
+    def __init__(self, name: str = "numpy-superop", config: EngineConfig | None = None):
+        super().__init__(name, config)
+        # Keyed by (subsystem, dimension), so an entry can never go stale.
+        self._reset_channels: dict[tuple[int, int], ApplyChannelStep] = {}
+
+    def _allocate(self, size: int) -> np.ndarray:
+        return np.eye(size * size, dtype=complex)
+
+    def _apply_local_sandwich(
+        self, rho: np.ndarray, matrix: np.ndarray, targets: Sequence[int]
+    ) -> np.ndarray:
+        """Return ``M_T . M_T^dagger`` applied to every column at once."""
+        n = len(self._dims)
+        k = len(targets)
+        local_dims = tuple(self._dims[t] for t in targets)
+        columns = rho.shape[1]
+        tensor = rho.reshape(self._reversed_dims * 2 + (columns,))
+        m = np.asarray(matrix, dtype=complex).reshape(local_dims + local_dims)
+        total = 2 * n + 1
+        ket_axes = [n - 1 - q for q in targets]
+        bra_axes = [2 * n - 1 - q for q in targets]
+        tensor = _contract_local(m, tensor, ket_axes, total, k)
+        tensor = _contract_local(m.conj(), tensor, bra_axes, total, k)
+        return tensor.reshape(rho.shape)
+
+    def reset_subsystems(
+        self, indices: Sequence[int], rng: np.random.Generator | None = None
+    ) -> None:
+        """Reset ``indices`` through the Kraus channel ``sum_k |0><k| . |k><0|``.
+
+        Equal to the density matrix's partial-trace reset. Deterministic -
+        ``rng`` is accepted only for interface parity.
+        """
+        assert len(indices) >= 1, "reset_subsystems requires at least one index"
+        for index in indices:
+            self.apply_channel(self._reset_channel(index), rng)
+
+    def _reset_channel(self, index: int) -> ApplyChannelStep:
+        """The single-subsystem reset channel for ``index``, built once."""
+        dim = self._dims[index]
+        step = self._reset_channels.get((index, dim))
+        if step is None:
+            kraus = []
+            for outcome in range(dim):
+                operator = np.zeros((dim, dim), dtype=complex)
+                operator[0, outcome] = 1.0
+                kraus.append(operator)
+            step = ApplyChannelStep(kraus_ops=tuple(kraus), target_indices=(index,))
+            self._reset_channels[(index, dim)] = step
+        return step
