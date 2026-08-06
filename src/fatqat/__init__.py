@@ -5,6 +5,7 @@ from . import errors
 from . import noise
 from . import operations as ops
 from . import simulator
+from .estimator import Estimator
 from .job import Job
 from .noise import NoiseModel
 from .observable import Observable
@@ -29,6 +30,7 @@ __all__ = [
     "emulator",
     "errors",
     "noise",
+    "Estimator",
     "NoiseModel",
     "Observable",
     "Program",
