@@ -16,6 +16,10 @@ Read result data
 - :py:meth:`~fatqat.Result.get_density_matrix` returns a requested density matrix.
 - :py:meth:`~fatqat.Result.get_unitary` returns a requested unitary matrix.
 - :py:meth:`~fatqat.Result.get_superop` returns a requested super-operator matrix.
+- :py:meth:`~fatqat.Result.get_expectation` and :py:meth:`~fatqat.Result.get_std`
+  return an expectation value and its standard error. These come from
+  :py:class:`~fatqat.Estimator` rather than from a backend run; see
+  :doc:`estimator`.
 
 :py:attr:`~fatqat.Result.available_data` lists the fields actually produced.
 :py:attr:`~fatqat.Result.metadata` records run context, including the effective result
