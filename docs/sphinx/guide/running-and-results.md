@@ -39,8 +39,8 @@ omitted for the backend default:
 - `counts` defaults to `True` when the program has at least one measurement,
   `False` otherwise.
 - `final_state` defaults to `True` only when the program is non-stochastic.
-  Its concrete representation follows the backend's `method`: a statevector
-  or density matrix.
+  Its concrete representation follows the backend's `method`: a statevector,
+  density matrix, unitary, or super-operator.
 - Requesting `final_state=True` for a stochastic program is only valid for
   `shots == 1`, since only one shot's post-measurement state is returned.
 
@@ -59,6 +59,30 @@ state = (
 )
 ```
 
+## Computing the program's map
+
+`method="unitary"` and `method="superop"` return the program's operator
+instead of a state under it. Both run one deterministic pass — no shots, no
+sampling — so `final_state` defaults to `True` and `shots` is ignored:
+
+```python
+unitary = fq.simulator.Simulator("unitary").run(bell).result().get_unitary()
+superop = fq.simulator.Simulator("superop").run(bell).result().get_superop()
+```
+
+`unitary[:, 0]` is the statevector the same program prepares, and for a
+noise-free program `superop` equals `numpy.kron(unitary, unitary.conj())`.
+The super-operator is row-major vectorized: `superop @ rho.reshape(-1)`
+reshaped back to `(D, D)` is the program applied to `rho`. (Qiskit's
+`SuperOp` uses the column-major convention instead, which swaps the two
+index pairs.)
+
+Both methods reject anything an operator cannot express, before running:
+measurement, feedforward conditions, and a `counts` request on either;
+{py:data}`~fatqat.operations.Reset` and channel noise on `unitary` only —
+`superop` applies both as exact channels. Memory grows as `4**n` for
+`unitary` and `16**n` for `superop`, so keep `superop` circuits small.
+
 ## Reading a Result
 
 The accessors below are a reference listing, not a runnable script — each
@@ -73,8 +97,9 @@ result.metadata                 # shots, backend name, effective configurations
 ```
 
 `final_state` is a request name, not an artifact name. When it is produced,
-`available_data` contains the method-native name: `"statevector"` for a
-statevector backend or `"density_matrix"` for a density-matrix backend.
+`available_data` contains the method-native name: `"statevector"`,
+`"density_matrix"`, `"unitary"`, or `"superop"`, matching the backend's
+`method`.
 
 Calling an accessor for a field that wasn't produced raises
 {py:exc}`~fatqat.errors.ResultFieldUnavailableError` rather than returning

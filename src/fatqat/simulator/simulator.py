@@ -1,34 +1,36 @@
 """Unified gate-level simulator backend with Qiskit-style method selection.
 
 `Simulator` is the single entry point for matrix-family simulation:
-``Simulator(method="statevector")`` and
-``Simulator(method="density_matrix")`` (aliases ``"SV"`` / ``"DM"``,
-case-insensitive) select the state representation, exactly like Qiskit Aer's
-``AerSimulator(method=...)``. It is the only gate-level backend:
-per-representation backend classes do not exist. Pulse-level emulation is the
-sibling package :mod:`fatqat.emulator`.
+``Simulator(method=...)`` selects the representation - ``"statevector"`` /
+``"density_matrix"`` (aliases ``"SV"`` / ``"DM"``) for a *state*, or
+``"unitary"`` / ``"superop"`` for the program's *map* - exactly like Qiskit
+Aer's ``AerSimulator(method=...)``. Names are case-insensitive. It is the only
+gate-level backend: per-representation backend classes do not exist.
+Pulse-level emulation is the sibling package :mod:`fatqat.emulator`.
 
 Everything method-independent lives here once: per-run simulation/result-config
 normalization, lowering (including the compiler-facing `Barrier` skip),
 validation, execution orchestration, and public `Result` assembly. The
-method-dependent facts are bound as instance attributes in ``__init__`` -
-the backend never branches on method afterwards:
+method-dependent facts come from one `_MethodSpec` table entry, bound as
+instance attributes in ``__init__`` - the backend never branches on method
+afterwards:
 
-- ``_state_field``: the native state field name (``"statevector"`` or
-  ``"density_matrix"``). Drives the result-config flag read, the `Result`
+- ``_state_field``: the native result field name, which is the canonical
+  method name itself. Drives the result-config flag read, the `Result`
   keyword, the availability name, the metadata echo, and validation wording.
 - ``_engine_cls``: the `MatrixEngine` subclass the (method, runtime) pair
-  drives (`NumpySVEngine`, `NumpyDMEngine`, or the optional
-  `NumbaSVEngine` / `NumbaDMEngine`); one instance is bound to
-  ``_engine`` and reused across runs.
+  drives (`NumpySVEngine`, `NumpyDMEngine`, `NumpyUnitaryEngine`,
+  `NumpySuperopEngine`, or their optional Numba twins); one instance is bound
+  to ``_engine`` and reused across runs.
 - ``_request_cls``: the method's engine-request value object. The public
   ``final_state`` result request is translated to that representation's
   native state field immediately before execution.
 - ``_nonunitary_is_stochastic``: whether non-unitary maps (reset, channel
-  noise) make execution stochastic for the state representation (`True`
-  for statevector, which must sample one branch of any non-unitary map;
-  `False` for density matrix, which applies them as deterministic
-  channels).
+  noise) make execution stochastic for the representation (`True` for
+  statevector, which must sample one branch of any non-unitary map; `False`
+  for the rest, which apply them as deterministic channels).
+- ``_is_operator`` / ``_executes_nonunitary``: what the representation can
+  execute at all, checked in `_validate_method_support` before any run.
 
 The backend/engine seam: this class constructs the method's `MatrixEngine`
 subclass once, then calls ``engine.initialize(system_dims, n_clbits)``
@@ -41,7 +43,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from ..errors import (
@@ -67,7 +69,12 @@ from ..result import (
     counts_dict_from_arrays,
 )
 from ._engine.base import MatrixEngine
-from ._engine.np import NumpyDMEngine, NumpySVEngine
+from ._engine.np import (
+    NumpyDMEngine,
+    NumpySuperopEngine,
+    NumpySVEngine,
+    NumpyUnitaryEngine,
+)
 from .._backends.backend_utils import (
     _LoweringContext,
     _PlanFacts,
@@ -80,6 +87,8 @@ from .._backends.engine_contract import (
     _EngineConfig,
     _SimulationConfig,
     _StateVectorResultRequest,
+    _SuperopResultRequest,
+    _UnitaryResultRequest,
 )
 from .._backends.view_normalization import ProgramInstruction, _break_grouped_operations
 from .._backends.steps import (
@@ -95,16 +104,85 @@ _METHOD_ALIASES = {
     "sv": "statevector",
     "density_matrix": "density_matrix",
     "dm": "density_matrix",
+    "unitary": "unitary",
+    "superop": "superop",
+}
+
+
+@dataclass(frozen=True)
+class _MethodSpec:
+    """Everything the chosen simulation method binds into a `Simulator`.
+
+    Attributes:
+        request_cls: The method's engine-request value object.
+        numpy_engine: The `MatrixEngine` subclass for ``runtime="numpy"``.
+        numba_engine_name: The `fatqat.simulator._engine.nb` attribute naming
+            the ``runtime="numba"`` twin, held as a name so that optional
+            module is resolved lazily.
+        nonunitary_is_stochastic: Whether non-unitary maps (reset, channel
+            noise) make execution stochastic for this representation.
+        is_operator: Whether the method computes the program's map rather than
+            a state under it.
+        executes_nonunitary: Whether the representation can apply a non-unitary
+            map at all.
+    """
+
+    request_cls: type
+    numpy_engine: type[MatrixEngine]
+    numba_engine_name: str
+    nonunitary_is_stochastic: bool
+    is_operator: bool
+    executes_nonunitary: bool
+
+
+_METHOD_SPECS: dict[str, _MethodSpec] = {
+    "statevector": _MethodSpec(
+        request_cls=_StateVectorResultRequest,
+        numpy_engine=NumpySVEngine,
+        numba_engine_name="NumbaSVEngine",
+        # A pure state must sample one branch of any non-unitary map.
+        nonunitary_is_stochastic=True,
+        is_operator=False,
+        executes_nonunitary=True,
+    ),
+    "density_matrix": _MethodSpec(
+        request_cls=_DensityMatrixResultRequest,
+        numpy_engine=NumpyDMEngine,
+        numba_engine_name="NumbaDMEngine",
+        # A density matrix holds the full ensemble, so only measurement is
+        # stochastic.
+        nonunitary_is_stochastic=False,
+        is_operator=False,
+        executes_nonunitary=True,
+    ),
+    "unitary": _MethodSpec(
+        request_cls=_UnitaryResultRequest,
+        numpy_engine=NumpyUnitaryEngine,
+        numba_engine_name="NumbaUnitaryEngine",
+        nonunitary_is_stochastic=False,
+        is_operator=True,
+        executes_nonunitary=False,
+    ),
+    "superop": _MethodSpec(
+        request_cls=_SuperopResultRequest,
+        numpy_engine=NumpySuperopEngine,
+        numba_engine_name="NumbaSuperopEngine",
+        nonunitary_is_stochastic=False,
+        is_operator=True,
+        executes_nonunitary=True,
+    ),
 }
 
 
 class Simulator:
     """Matrix-family simulator backend for ``fatqat.Program`` execution.
 
-    The simulation method selects the state representation and its
-    semantics; everything else (supported operations, grouped measurement,
-    feedforward conditions, reset, execution strategies, result handling) is
-    method-independent:
+    The simulation method selects the representation and its semantics;
+    everything else (supported operations, grouped measurement, feedforward
+    conditions, reset, execution strategies, result handling) is
+    method-independent.
+
+    Two methods simulate a **state** the program prepares:
 
     - ``method="statevector"`` (alias ``"SV"``): pure-state simulation. The
       native result field is ``statevector``. Reset samples a branch, so any
@@ -114,7 +192,22 @@ class Simulator:
       the deterministic partial-trace channel, so reset alone neither makes
       a program stochastic nor forces per-shot execution.
 
-    Each run is classified into a fast path (evolve once, sample requested
+    Two methods compute the program's **map** instead, in one deterministic
+    pass with no shots and no sampling. Both reject measurement, feedforward
+    conditions, and a ``counts`` request, since an operator has no classical
+    register and no outcomes to sample:
+
+    - ``method="unitary"``: the program's ``(D, D)`` unitary, where ``D`` is
+      the product of the subsystem dimensions. Native result field
+      ``unitary``. Reset and channel noise are rejected - a unitary cannot
+      represent a non-unitary map.
+    - ``method="superop"``: the program's ``(D**2, D**2)`` super-operator on
+      the row-major vectorized density matrix. Native result field
+      ``superop``. Reset and channel noise are accepted; both are exact
+      channels, as under density-matrix semantics. Memory grows as ``16**n``
+      for ``n`` qubits, so this method is for small circuits.
+
+    A state run is classified into a fast path (evolve once, sample requested
     counts from the terminal measurement distribution) or a dynamic path
     (per-shot replay with an explicit classical register) when the program
     contains classical conditions, reuse of measured subsystems, or - under
@@ -188,8 +281,9 @@ class Simulator:
 
         Args:
             method: Simulation method: ``"statevector"`` or
-                ``"density_matrix"``, or the case-insensitive short aliases
-                ``"SV"`` / ``"DM"``.
+                ``"density_matrix"`` (case-insensitive short aliases ``"SV"``
+                / ``"DM"``) for a state, or ``"unitary"`` / ``"superop"`` for
+                the program's map.
             implementation_map: Optional matrix implementation map controlling
                 which operations this backend supports and how their matrices
                 are built. ``None`` (the default) uses
@@ -222,48 +316,34 @@ class Simulator:
         if normalized is None:
             raise BackendValidationError(
                 f"unsupported method={method!r}; expected one of "
-                "'statevector'/'SV' or 'density_matrix'/'DM'"
+                "'statevector'/'SV', 'density_matrix'/'DM', 'unitary', or "
+                "'superop'"
             )
         normalized_runtime = str(runtime).lower()
         if normalized_runtime not in ("numpy", "numba"):
             raise BackendValidationError(
                 f"unsupported runtime={runtime!r}; expected 'numpy' or 'numba'"
             )
-        # Method- and runtime-dependent facts, bound once. This block is the
-        # single dispatch point: the methods below read the bound attributes
-        # and never branch on method or runtime themselves.
+        # The single dispatch point; the canonical method name doubles as the
+        # native result field name.
+        spec = _METHOD_SPECS[normalized]
         self._state_field = normalized
-        self._engine_cls: type[MatrixEngine]
-        if normalized == "statevector":
-            self._request_cls = _StateVectorResultRequest
-            self._engine_cls = NumpySVEngine
-            # A pure state cannot represent the mixed output of a non-unitary
-            # map, so reset and channel noise must each sample one branch - a
-            # random event, like measurement.
-            self._nonunitary_is_stochastic = True
-        else:
-            self._request_cls = _DensityMatrixResultRequest
-            self._engine_cls = NumpyDMEngine
-            # A density matrix holds the full ensemble, so reset is the
-            # deterministic channel |0><0| (x) Tr_target(rho) and channel
-            # noise is the exact Kraus sum: only measurement (whose outcome
-            # is recorded) is stochastic.
-            self._nonunitary_is_stochastic = False
+        self._request_cls = spec.request_cls
+        self._nonunitary_is_stochastic = spec.nonunitary_is_stochastic
+        self._is_operator = spec.is_operator
+        self._executes_nonunitary = spec.executes_nonunitary
+        self._engine_cls: type[MatrixEngine] = spec.numpy_engine
         if normalized_runtime == "numba":
-            # The runtime axis swaps the simulator class only; every other
-            # method-bound fact above is representation semantics and stays.
             try:
                 # Lazy: numba is an optional dependency, and fatqat.simulator's
                 # package __init__ deliberately never imports the nb module.
-                from ._engine.nb import NumbaDMEngine, NumbaSVEngine
+                from ._engine import nb
             except ImportError as exc:
                 raise BackendValidationError(
                     "runtime='numba' requires the optional numba dependency "
                     "(install the 'numba' group)"
                 ) from exc
-            self._engine_cls = (
-                NumbaSVEngine if normalized == "statevector" else NumbaDMEngine
-            )
+            self._engine_cls = getattr(nb, spec.numba_engine_name)
         self._runtime = normalized_runtime
 
         if implementation_map is None:
@@ -453,6 +533,7 @@ class Simulator:
         always stochastic; reset and channel noise only when
         ``_nonunitary_is_stochastic``.
         """
+        self._validate_method_support(config, facts)
         request = _resolve_result_request(
             config,
             facts,
@@ -486,6 +567,43 @@ class Simulator:
             raise BackendValidationError(
                 f"{self._state_field} with {stochastic_sources} is only supported "
                 "for shots == 1"
+            )
+
+    def _validate_method_support(
+        self, config: _ResultConfig, facts: _PlanFacts
+    ) -> None:
+        """Reject programs and requests the chosen method cannot represent.
+
+        Raises:
+            BackendValidationError: If the lowered program or the result
+                request uses something this method cannot execute.
+        """
+        if not self._is_operator:
+            return
+        method = self._state_field
+        if facts.has_measurement:
+            raise BackendValidationError(
+                f"method={method!r} cannot execute a measurement; it computes "
+                "the program's operator, which no measurement outcome is part "
+                "of (use method='statevector' or 'density_matrix' to sample "
+                "outcomes)"
+            )
+        if facts.has_condition:
+            raise BackendValidationError(
+                f"method={method!r} cannot execute a feedforward condition; it "
+                "has no classical register to evaluate one against"
+            )
+        if config.counts is True:
+            raise BackendValidationError(
+                f"method={method!r} cannot produce counts; it computes the "
+                "program's operator rather than sampling outcomes from it"
+            )
+        if not self._executes_nonunitary and (facts.has_reset or facts.has_channel):
+            source = "reset" if facts.has_reset else "channel noise"
+            raise BackendValidationError(
+                f"method={method!r} cannot execute {source}; a unitary cannot "
+                "represent a non-unitary map (use method='superop' for the "
+                "program's channel)"
             )
 
     def _validate_runtime_config(self, simulation: _SimulationConfig) -> None:
@@ -694,6 +812,9 @@ class Simulator:
                 has_measurement=any(isinstance(s, MeasurementStep) for s in plan),
                 has_reset=any(isinstance(s, ResetStep) for s in plan),
                 has_channel=any(isinstance(s, ApplyChannelStep) for s in plan),
+                has_condition=any(
+                    getattr(s, "condition", None) is not None for s in plan
+                ),
             ),
         )
 
