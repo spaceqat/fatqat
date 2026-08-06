@@ -102,6 +102,38 @@ calibration-derived model:
 `SCQubitIBMSimulator.default_noise_model()`. The full noise guide belongs
 to the Sphinx docs.
 
+## Expectation values
+
+An `Observable` plus an `Estimator` reads a quantity off the final state
+instead of going through counts. The program carries no measurement — a
+measurement would collapse the state the value is read from:
+
+```python
+program = fq.Program(2)             # no clbits, no measurement
+program.add(op.H, 0)
+program.add(op.CX, (0, 1))
+
+estimator = fq.Estimator(fq.simulator.Simulator(method="SV"))
+observables = [fq.Observable([("ZZ", 1.0)]), fq.Observable([("XX", 0.5)])]
+print(estimator.run(program, observables).result().get_expectation())
+# [1.  0.5]
+```
+
+Labels are little-endian, matching the counts strings, and coefficients
+must be real. For a wide register name only the non-identity factors —
+`fq.Observable.from_sparse([("XY", (3, 7), 1.5)], num_qubits=100)` — which
+also reaches the `ZERO`/`ONE` projectors, so site occupation is written
+directly as `<ONE_i>`. The `2**n x 2**n` matrix is never built.
+
+Passing a list evaluates every observable against **one** evolution. This is
+where a simulator beats hardware, which must fan a multi-basis observable out
+into one circuit per commuting group and run each separately.
+
+`shots=0` (the default, unlike `Simulator.run`) computes the value exactly,
+including under `method="DM"` noise. `shots > 0` draws real samples to
+reproduce a finite-shot experiment's statistical error, and
+`result.get_std()` reports the standard error.
+
 ## Qudits
 
 Registers take a per-slot dimension; gates like `Shift`, `Clock`, `Sum`, and
