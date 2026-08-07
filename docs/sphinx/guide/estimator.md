@@ -102,6 +102,24 @@ the final state and reads any observable off it directly, so the evolution is
 paid for once no matter how many observables or terms follow. Passing a list
 rather than calling `run` repeatedly is what claims that saving.
 
+### A note on speed
+
+Once the evolution is shared, the remaining cost is one sweep over the state
+per term — so with many terms, evaluation rather than evolution dominates. That
+sweep is compiled when the optional `numba` dependency is installed, which is
+worth roughly an order of magnitude on a large state.
+
+Nothing needs to be configured: the compiled kernel is used whenever `numba`
+can be imported, and the NumPy path is a complete fallback otherwise. It is
+**independent of the backend's `runtime=`** — that selects how the *program* is
+evolved, while this is how the *observable* is evaluated, and a
+`runtime="numpy"` backend benefits from the compiled kernel just as much.
+
+The two agree to floating-point rounding rather than bit for bit, because NumPy
+sums pairwise and a loop sums in order. The compiled kernel sums in blocks so
+that its rounding error stays flat as the state grows rather than accumulating
+across a million amplitudes.
+
 ## Exact and sampled
 
 `shots=0` — the default — computes the value exactly from the final state. Note
