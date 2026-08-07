@@ -55,6 +55,18 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
 
+# The doctest builder compares printed text exactly, and many examples in this
+# project print complex arrays. A value that is zero in exact arithmetic can
+# come back as a denormal residue - a Kraus sum leaving 1.1e-35j on a density
+# matrix, say - and whether it does depends on the machine's BLAS, so an
+# example that reads correctly here can fail on a CI runner. `suppress=True`
+# prints such a residue as `0.` instead of in scientific notation, which is
+# both what the example means and what a reader would write down. Every array
+# in these examples is O(1), so nothing meaningful is being hidden; an example
+# that genuinely needs to show a small magnitude should print the number rather
+# than the array.
+doctest_global_setup = "import numpy; numpy.set_printoptions(suppress=True)"
+
 html_theme = "pydata_sphinx_theme"
 html_static_path: list[str] = []
 html_theme_options = {
