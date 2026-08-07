@@ -37,12 +37,18 @@ jobs:
       - name: Run doctests
         run: uv run pytest --doctest-modules src/fatqat
 
-  # Separate job so the base matrix keeps exercising the package on an
-  # unconstrained numpy, while this job installs the optional `numba` group
-  # (which pins numpy < 2.5) and actually runs the Numba engine tests instead
-  # of skipping them. `--group numba` is passed to `uv run` too, otherwise it
-  # would re-sync the environment without the group and drop numba.
-  test-numba:
+  # The base matrix above installs no optional group, which is what keeps the
+  # package honest on an unconstrained numpy and exercises every fallback path.
+  # The cost is that anything guarded by an optional dependency skips there, so
+  # this job installs every group and is where those tests actually run. It
+  # reports zero skips; a skip here means a test lost its coverage entirely.
+  #
+  # `--all-groups` rather than `--group numba`: the numba group alone still left
+  # `test_draw.py` (needs `draw`) and `test_against_qiskit.py` (needs `qiskit`)
+  # skipping in every job that runs pytest, so those two never ran in CI at all.
+  # The groups are repeated on `uv run`, which would otherwise re-sync without
+  # them.
+  test-all-groups:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -53,11 +59,11 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      - name: Install dependencies (with numba)
-        run: uv sync --group numba
+      - name: Install dependencies (every optional group)
+        run: uv sync --all-groups
 
-      - name: Run tests
-        run: uv run --group numba pytest
+      - name: Run tests, requiring no skips
+        run: uv run --all-groups pytest -p no:randomly -rs --strict-markers
 
       - name: Run doctests
-        run: uv run --group numba pytest --doctest-modules src/fatqat
+        run: uv run --all-groups pytest --doctest-modules src/fatqat
