@@ -26,6 +26,15 @@ jobs:
       - name: Build documentation
         run: uv run sphinx-build -b html -W --keep-going -T docs/sphinx docs/sphinx/_build
 
+      # The test job already runs doctests, but through pytest with
+      # scipy-doctest, which compares floats with a tolerance. Sphinx's own
+      # doctest builder compares the printed text exactly, so an example whose
+      # last bit of rounding drifts passes there and fails here. Running both
+      # is the point: whichever runner a contributor reaches for, the examples
+      # they read in the docs are the ones that were checked.
+      - name: Run doctests as the docs build sees them
+        run: uv run sphinx-build -b doctest -T docs/sphinx docs/sphinx/_doctest
+
       - name: Upload built files
         uses: actions/upload-artifact@v7
         with:

@@ -77,7 +77,7 @@ class Estimator:
         >>> program.add(op.CX, (0, 1))
         >>> estimator = fq.Estimator(fq.simulator.Simulator(method="SV"))
         >>> result = estimator.run(program, fq.Observable([("ZZ", 1.0)])).result()
-        >>> float(result.get_expectation())
+        >>> round(float(result.get_expectation()), 10)
         1.0
     """
 
