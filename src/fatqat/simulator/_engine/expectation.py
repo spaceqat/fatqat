@@ -33,6 +33,9 @@ index without distinguishing the two groups.
 
 from __future__ import annotations
 
+import importlib.util
+from collections.abc import Callable
+
 import numpy as np
 
 # (letter -> contributes to) masks. Y is both a bit flip and a sign, which is
@@ -100,6 +103,78 @@ def _weights(
     return weight
 
 
+def _statevector_term_numpy(
+    state: np.ndarray,
+    index: np.ndarray,
+    x_mask: int,
+    z_mask: int,
+    zero_mask: int,
+    one_mask: int,
+) -> complex:
+    """Return ``<psi|T|psi>`` for one term, as array operations."""
+    permuted = index ^ x_mask
+    weight = _weights(permuted, z_mask, zero_mask, one_mask)
+    # <psi|T|psi> = sum_k conj(psi_k) * weight(k^x) * psi_{k^x}
+    return complex(np.vdot(state, weight * state[permuted]))
+
+
+def _density_matrix_term_numpy(
+    rho: np.ndarray,
+    index: np.ndarray,
+    x_mask: int,
+    z_mask: int,
+    zero_mask: int,
+    one_mask: int,
+) -> complex:
+    """Return ``Tr(rho T)`` for one term, as array operations."""
+    weight = _weights(index, z_mask, zero_mask, one_mask)
+    shifted_diagonal = rho[index, index ^ x_mask]
+    return complex(np.sum(weight * shifted_diagonal))
+
+
+def _load_compiled_terms() -> tuple[Callable[..., complex], ...] | None:
+    """Return the compiled per-term kernels, or ``None`` when numba is absent.
+
+    ``numba`` is an optional dependency, so importing it must not be a
+    condition of using an observable at all. Deferring the import here - rather
+    than at module scope - keeps that true.
+
+    The absence of numba is the *only* reason this falls back. Any other import
+    failure propagates: a compiled kernel that cannot load where numba is
+    installed is a bug, and silently substituting the NumPy path would hide it -
+    the run would still produce right answers, slowly, while the tests written
+    to catch it went quiet. Checking the spec rather than catching every
+    ``ImportError`` is what keeps those two cases apart.
+    """
+    if importlib.util.find_spec("numba") is None:
+        return None
+    from . import expectation_nb
+
+    return expectation_nb.statevector_term, expectation_nb.density_matrix_term
+
+
+_COMPILED = _load_compiled_terms()
+USING_COMPILED_KERNEL = _COMPILED is not None
+
+
+def _bind_term_evaluator(
+    state: np.ndarray, compiled_index: int, fallback: Callable[..., complex]
+) -> Callable[[int, int, int, int], complex]:
+    """Return ``masks -> value`` for one state, with the implementation chosen.
+
+    Choosing once per call rather than once per term is the point: the term
+    loop stays a single call with no branch, and the two implementations differ
+    only in what they need to close over. The NumPy form needs an index array
+    across the whole state; the compiled form walks the range itself, so
+    building that array for it would allocate 8 bytes per amplitude for nothing.
+    """
+    if _COMPILED is not None:
+        kernel = _COMPILED[compiled_index]
+        return lambda *masks: kernel(state, *masks)
+    index = np.arange(state.shape[0])
+    return lambda *masks: fallback(state, index, *masks)
+
+
 def expectation_statevector(
     state: np.ndarray, terms: tuple[tuple[float, tuple[tuple[int, str], ...]], ...]
 ) -> float:
@@ -109,16 +184,13 @@ def expectation_statevector(
     the same state in turn, which is the whole point of evaluating a
     many-term observable in one place: the evolution is paid for once.
     """
-    index = np.arange(state.shape[0])
+    term_value = _bind_term_evaluator(state, 0, _statevector_term_numpy)
     total = 0.0 + 0.0j
     for coefficient, factors in terms:
         if coefficient == 0.0:
             continue  # a zero coefficient contributes nothing; skip the pass
         x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors)
-        permuted = index ^ x_mask
-        weight = _weights(permuted, z_mask, zero_mask, one_mask)
-        # <psi|T|psi> = sum_k conj(psi_k) * weight(k^x) * psi_{k^x}
-        value = np.vdot(state, weight * state[permuted])
+        value = term_value(x_mask, z_mask, zero_mask, one_mask)
         total += coefficient * value * (1j**n_y)
     return float(total.real)
 
@@ -132,13 +204,12 @@ def expectation_density_matrix(
     picks out one shifted diagonal of ``rho``, so only ``2**n`` entries are
     read per term rather than the full ``4**n`` matrix.
     """
-    index = np.arange(rho.shape[0])
+    term_value = _bind_term_evaluator(rho, 1, _density_matrix_term_numpy)
     total = 0.0 + 0.0j
     for coefficient, factors in terms:
         if coefficient == 0.0:
             continue
         x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors)
-        weight = _weights(index, z_mask, zero_mask, one_mask)
-        shifted_diagonal = rho[index, index ^ x_mask]
-        total += coefficient * np.sum(weight * shifted_diagonal) * (1j**n_y)
+        value = term_value(x_mask, z_mask, zero_mask, one_mask)
+        total += coefficient * value * (1j**n_y)
     return float(total.real)
