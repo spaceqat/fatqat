@@ -356,3 +356,44 @@ def test_sampled_metadata_records_the_shot_count():
     result = _estimator().run(_bell(), Observable([("ZZ", 1.0)]), shots=512).result()
 
     assert result.metadata["shots"] == 512
+
+
+# --- backends that produce an operator, not a state --------------------------
+
+
+@pytest.mark.parametrize("method", ["unitary", "superop"])
+def test_operator_backend_rejected_at_construction(method):
+    # Rejected when the estimator is built, not when it is run: the mismatch
+    # is a property of the backend alone, so there is no reason to make the
+    # caller lower and evolve a program before hearing about it.
+    backend = fq.simulator.Simulator(method=method)
+
+    with pytest.raises(BackendValidationError, match="produces a state"):
+        fq.Estimator(backend)
+
+
+@pytest.mark.parametrize("method", ["unitary", "superop"])
+def test_operator_rejection_names_the_method_and_the_fix(method):
+    backend = fq.simulator.Simulator(method=method)
+
+    with pytest.raises(BackendValidationError) as caught:
+        fq.Estimator(backend)
+
+    message = str(caught.value)
+    assert method in message  # says which method it saw
+    assert "statevector" in message and "density_matrix" in message  # and the fix
+
+
+@pytest.mark.parametrize("method", ["SV", "DM", "statevector", "density_matrix"])
+def test_state_backends_still_accepted(method):
+    assert fq.Estimator(fq.simulator.Simulator(method=method)) is not None
+
+
+def test_backend_without_a_method_property_is_left_alone():
+    # Duck typing is the constructor's only contract, so a backend that
+    # predates the property must not be refused on that basis.
+    class _Bare:
+        def run(self, *args, **kwargs):
+            raise AssertionError("not reached")
+
+    assert fq.Estimator(_Bare()) is not None

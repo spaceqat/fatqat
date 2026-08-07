@@ -146,3 +146,51 @@ def test_invalid_configuration_fails_directly(argument, config, match):
 
     with pytest.raises(BackendValidationError, match=match):
         Simulator().run(_measured_superposition(), **kwargs)
+
+
+# --- public method accessor --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "argument, expected",
+    [
+        ("SV", "statevector"),
+        ("statevector", "statevector"),
+        ("DM", "density_matrix"),
+        ("density_matrix", "density_matrix"),
+        ("unitary", "unitary"),
+        ("superop", "superop"),
+    ],
+)
+def test_method_reports_the_canonical_name(argument, expected):
+    # The alias is normalized away, so a caller matching on this value never
+    # has to know which spelling the backend was built with.
+    assert fq.simulator.Simulator(method=argument).method == expected
+
+
+def test_method_matches_the_metadata_of_a_run():
+    # One string for both the precondition check and the result: a caller that
+    # branches on backend.method can read the same value back off the result.
+    program = fq.Program(1)
+    program.add(fq.ops.H, 0)
+
+    for argument in ("SV", "DM"):
+        backend = fq.simulator.Simulator(method=argument)
+        result = backend.run(
+            program, shots=0, result_config={"counts": False, "final_state": True}
+        ).result()
+
+        assert backend.method == result.metadata["method"]
+        assert backend.method in result.available_data
+
+
+def test_method_is_read_only():
+    backend = fq.simulator.Simulator(method="SV")
+
+    with pytest.raises(AttributeError):
+        backend.method = "density_matrix"
+
+
+def test_method_does_not_require_a_run():
+    # The whole point: it is a precondition, answerable before any evolution.
+    assert fq.simulator.Simulator(method="unitary").method == "unitary"

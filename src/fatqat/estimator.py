@@ -61,7 +61,13 @@ class Estimator:
         backend: A constructed backend, e.g.
             ``fq.simulator.Simulator(method="DM", noise=noise)``. Its method,
             runtime and noise model are used as-is; the estimator never
-            overrides them.
+            overrides them. The method must produce a *state* -
+            ``"statevector"`` or ``"density_matrix"``; see
+            :py:func:`_validate_backend`.
+
+    Raises:
+        BackendValidationError: If the backend produces an operator rather
+            than a state.
 
     Examples:
         >>> import fatqat as fq
@@ -71,11 +77,12 @@ class Estimator:
         >>> program.add(op.CX, (0, 1))
         >>> estimator = fq.Estimator(fq.simulator.Simulator(method="SV"))
         >>> result = estimator.run(program, fq.Observable([("ZZ", 1.0)])).result()
-        >>> float(result.get_expectation())
+        >>> round(float(result.get_expectation()), 10)
         1.0
     """
 
     def __init__(self, backend: Any) -> None:
+        _validate_backend(backend)
         self._backend = backend
 
     def run(
@@ -264,6 +271,36 @@ def _sample(
         # max(..., 0) guards a variance driven slightly negative by rounding.
         variance += coefficient**2 * max(second_moment - mean**2, 0.0) / shots
     return total, math.sqrt(variance)
+
+
+_STATE_METHODS = ("statevector", "density_matrix")
+
+
+def _validate_backend(backend: Any) -> None:
+    """Reject a backend whose method produces an operator rather than a state.
+
+    An expectation value is ``<psi|O|psi>`` or ``Tr(rho O)``: it contracts an
+    observable against a *state*. ``method="unitary"`` and ``method="superop"``
+    produce the program's *map* instead, and a map has no expectation value
+    until an input state is named. ``U|0...0>`` would be one, but assuming that
+    silently would answer a question the caller never asked, so the estimator
+    declines rather than guessing.
+
+    Checked at construction, using the backend's public ``method``, so the
+    mismatch surfaces at ``fq.Estimator(backend)`` - before any program is
+    lowered or evolved. A backend that predates the ``method`` property is
+    left alone here and validated by whatever its run produces.
+    """
+    method = getattr(backend, "method", None)
+    if method is None or method in _STATE_METHODS:
+        return
+    raise BackendValidationError(
+        f"an estimator needs a backend that produces a state, but "
+        f"method={method!r} produces the program's operator. An expectation "
+        "value contracts an observable against a state, and an operator has "
+        "none until an input state is named. Use method='statevector' or "
+        "method='density_matrix'"
+    )
 
 
 def _normalize_observables(

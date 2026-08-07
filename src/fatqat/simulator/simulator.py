@@ -362,6 +362,30 @@ class Simulator:
         self._engine = self._engine_cls(config=_EngineConfig())
         self._engine_system: tuple[tuple[int, ...], int] | None = None
 
+    @property
+    def method(self) -> str:
+        """Canonical name of the state representation this backend runs.
+
+        One of ``"statevector"``, ``"density_matrix"``, ``"unitary"`` or
+        ``"superop"`` - the canonical name, not whatever alias was passed in,
+        so ``method="SV"`` reports ``"statevector"``. This is the same string
+        that appears as ``result.metadata["method"]`` and as the result's
+        native state field, so a caller can match on one value everywhere.
+
+        Reading it does not run anything: the method is fixed at construction.
+        That is what makes it usable as a precondition - a tool that only
+        supports some representations can say so before paying for an
+        evolution, instead of failing on a missing result field afterwards.
+
+        Examples:
+            >>> import fatqat as fq
+            >>> fq.simulator.Simulator(method="SV").method
+            'statevector'
+            >>> fq.simulator.Simulator(method="DM").method
+            'density_matrix'
+        """
+        return self._state_field
+
     def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
         """Resolve this run's effective public resource layout.
 

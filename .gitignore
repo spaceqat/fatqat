@@ -5,6 +5,7 @@ __pycache__/
 dist/
 *.egg-info/
 docs/sphinx/_build/
+docs/sphinx/_doctest/
 
 # Superpowers working artifacts (specs, plans, reviews) — not part of the code
 docs/superpowers/
