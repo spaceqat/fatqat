@@ -92,6 +92,15 @@ Run a program
   :py:class:`~fatqat.Result`. Its status and failure lifecycle controls are described in
   :doc:`experimental` as an evolving API.
 
+:py:attr:`method <fatqat.simulator.Simulator.method>` reports the canonical
+name of the state representation the backend runs — ``"statevector"``,
+``"density_matrix"``, ``"unitary"``, or ``"superop"``. Aliases are normalized
+away, so ``Simulator(method="SV").method`` is ``"statevector"``. It is the same
+string that appears as ``result.metadata["method"]`` and as the result's native
+state field, and reading it runs nothing, so a tool that supports only some
+representations can check it as a precondition rather than discovering the
+mismatch through a missing result field.
+
 See :doc:`../guide/running-and-results` for complete counts, statevector,
 and density-matrix examples. The optional parallel-shot settings are
 documented in :doc:`../guide/advanced`.
