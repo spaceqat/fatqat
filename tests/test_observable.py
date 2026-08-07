@@ -4,6 +4,7 @@ Asserts on the constructed value object only - expectation values are covered
 by the kernel and Estimator tests.
 """
 
+import numpy as np
 import pytest
 
 import fatqat as fq
@@ -167,3 +168,51 @@ def test_wrong_input_shapes_rejected():
 
 def test_exported_at_top_level():
     assert fq.Observable is Observable
+
+
+# --- numpy integers as qubit indices -----------------------------------------
+
+
+def test_numpy_integers_are_accepted_as_qubits():
+    # Building a many-body observable from numpy is the natural way to do it -
+    # rng.choice for a lattice sample, arange for a chain - and those yield
+    # np.int64 rather than int.
+    rng = np.random.default_rng(0)
+    qubits = tuple(rng.choice(8, 2, replace=False))
+    assert all(isinstance(q, np.integer) for q in qubits)
+
+    observable = Observable.from_sparse([("ZZ", qubits, 1.0)], num_qubits=np.int64(8))
+
+    assert observable.num_qubits == 8
+    assert isinstance(observable.num_qubits, int)
+
+
+def test_numpy_qubits_are_narrowed_to_python_ints():
+    # Stored as plain ints so terms hash and repr the same however they were
+    # built, and so an equal term compares equal across construction routes.
+    from_numpy = Observable.from_sparse(
+        [("ZZ", (np.int64(1), np.int32(0)), 1.5)], num_qubits=2
+    )
+    from_python = Observable.from_sparse([("ZZ", (1, 0), 1.5)], num_qubits=2)
+
+    assert all(
+        type(qubit) is int for _, factors in from_numpy.terms for qubit, _ in factors
+    )
+    assert from_numpy == from_python
+    assert hash(from_numpy) == hash(from_python)
+
+
+@pytest.mark.parametrize(
+    "bad", [True, False, np.bool_(True), 1.5, np.float64(1.0), "0", None]
+)
+def test_non_integer_qubits_still_rejected(bad):
+    # Booleans in particular: bool subclasses int and np.bool_ sits beside
+    # np.integer, so True would otherwise pass silently as qubit 1.
+    with pytest.raises(TypeError, match="must be an int"):
+        Observable.from_sparse([("Z", (bad,), 1.0)], num_qubits=4)
+
+
+@pytest.mark.parametrize("bad", [True, np.bool_(True), 2.0, "4"])
+def test_non_integer_num_qubits_still_rejected(bad):
+    with pytest.raises(TypeError, match="must be an int"):
+        Observable.from_sparse([("Z", (0,), 1.0)], num_qubits=bad)

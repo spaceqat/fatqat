@@ -42,6 +42,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+import numpy as np
+
 # Single-character labels usable inside a dense label string. The two
 # projectors have multi-character names, so they are only reachable through
 # `from_sparse`, where each factor is named separately.
@@ -170,8 +172,7 @@ class Observable:
                 disagree in length, a qubit is out of range or repeats within a
                 term, a letter is unknown, or a coefficient is not real.
         """
-        if not isinstance(num_qubits, int) or isinstance(num_qubits, bool):
-            raise TypeError(f"num_qubits must be an int, got {num_qubits!r}")
+        num_qubits = _as_index(num_qubits, "num_qubits")
         if num_qubits < 1:
             raise ValueError(f"num_qubits must be >= 1, got {num_qubits}")
 
@@ -193,8 +194,7 @@ class Observable:
                         f"unknown letter {letter!r}; expected one of "
                         f"{sorted(_ALL_LETTERS)}"
                     )
-                if not isinstance(qubit, int) or isinstance(qubit, bool):
-                    raise TypeError(f"qubit must be an int, got {qubit!r}")
+                qubit = _as_index(qubit, "qubit")
                 if not 0 <= qubit < num_qubits:
                     raise ValueError(
                         f"qubit {qubit} is out of range for num_qubits={num_qubits}"
@@ -264,6 +264,24 @@ class Observable:
             for coeff, factors in self._terms
         )
         return f"<Observable on {self._num_qubits} qubits: {rendered}>"
+
+
+def _as_index(value: Any, what: str) -> int:
+    """Return ``value`` as a plain ``int``, accepting NumPy integers.
+
+    Qubit indices are routinely produced by NumPy - ``rng.choice(n, 2)`` when
+    sampling a lattice, ``np.arange`` when walking a chain - and those are
+    ``np.int64``, not ``int``. Refusing them would reject the natural way to
+    build a many-body observable, so they are accepted and narrowed here;
+    Qiskit accepts them too.
+
+    Booleans stay rejected, in both flavors. ``bool`` is a subclass of ``int``
+    and ``np.bool_`` sits alongside ``np.integer``, so ``True`` would otherwise
+    slip through as qubit 1 - a typo that silently means something.
+    """
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
+        raise TypeError(f"{what} must be an int, got {value!r}")
+    return int(value)
 
 
 def _split_letters(letters: str | Sequence[str]) -> list[str]:
