@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 import fatqat as fq
@@ -76,3 +78,38 @@ def test_unknown_parallel_mode_rejected_at_run():
             _random_dynamic_program(),
             simulation_config={"max_workers": 2, "parallel_mode": "not-a-mode"},
         )
+
+
+def test_workers_are_asked_to_start_single_threaded():
+    # A worker runs independent shots on small local matrices, so a BLAS thread
+    # pool inside it can only oversubscribe - the parallelism is already spent
+    # on processes. On a many-core host the reservations for those unused
+    # threads are what breaks the pool, so this pins that workers are told to
+    # start with one.
+    from fatqat.simulator._engine.parallel import (
+        _WORKER_THREAD_VARS,
+        _single_threaded_workers,
+    )
+
+    before = {name: os.environ.get(name) for name in _WORKER_THREAD_VARS}
+
+    with _single_threaded_workers():
+        assert all(os.environ[name] == "1" for name in _WORKER_THREAD_VARS)
+
+    # And the parent is handed back exactly what it had, set or unset.
+    assert {name: os.environ.get(name) for name in _WORKER_THREAD_VARS} == before
+
+
+def test_worker_thread_limit_survives_a_failure():
+    from fatqat.simulator._engine.parallel import (
+        _WORKER_THREAD_VARS,
+        _single_threaded_workers,
+    )
+
+    before = {name: os.environ.get(name) for name in _WORKER_THREAD_VARS}
+
+    with pytest.raises(RuntimeError):
+        with _single_threaded_workers():
+            raise RuntimeError("boom")
+
+    assert {name: os.environ.get(name) for name in _WORKER_THREAD_VARS} == before

@@ -15,8 +15,9 @@ from __future__ import annotations
 import importlib.util
 import os
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager
 from itertools import repeat
 from typing import TYPE_CHECKING
 
@@ -144,6 +145,49 @@ def _run_dynamic_shot_batch(
     return snapshots
 
 
+# Thread-count variables the common BLAS builds read when they load. A worker
+# runs one batch of independent shots on small local matrices, so a BLAS thread
+# pool inside it can only oversubscribe: the parallelism is already spent on
+# processes.
+_WORKER_THREAD_VARS = (
+    "OPENBLAS_NUM_THREADS",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+)
+
+
+@contextmanager
+def _single_threaded_workers() -> Iterator[None]:
+    """Make workers start their BLAS with one thread, then restore the parent.
+
+    Under ``spawn`` a worker is a fresh interpreter that inherits this process's
+    environment and imports NumPy afterwards, so setting these here - before the
+    pool starts a worker - is what reaches them. Setting them from inside a
+    worker would be too late: BLAS reads them when it loads, which has already
+    happened by the time any initializer runs.
+
+    Without this, each worker brings up a thread pool sized to the whole
+    machine. On a 32-thread host, two workers plus the parent reserve buffers
+    for 96 BLAS threads to run shots that use none of them, and OpenBLAS
+    eventually fails an allocation and aborts the worker, which surfaces as
+    ``BrokenProcessPool``.
+
+    The parent is unaffected either way: its BLAS is already loaded, so it keeps
+    the thread count it started with.
+    """
+    previous = {name: os.environ.get(name) for name in _WORKER_THREAD_VARS}
+    os.environ.update({name: "1" for name in _WORKER_THREAD_VARS})
+    try:
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
 def _run_dynamic_shots_multiprocessing(
     plan: list[ResolvedStep],
     system_dims: tuple[int, ...],
@@ -153,16 +197,19 @@ def _run_dynamic_shots_multiprocessing(
     engine_cls: _EngineFactory,
 ) -> list[tuple[int, ...]]:
     batches = _split_into_batches(seed_sequences, max_workers)
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        results = executor.map(
-            _run_dynamic_shot_batch,
-            repeat(plan),
-            repeat(system_dims),
-            repeat(n_clbits),
-            batches,
-            repeat(engine_cls),
-        )
-        return [snapshot for batch in results for snapshot in batch]
+    # The scope has to cover the map, not just construction: the pool starts
+    # workers lazily on first submit.
+    with _single_threaded_workers():
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            results = executor.map(
+                _run_dynamic_shot_batch,
+                repeat(plan),
+                repeat(system_dims),
+                repeat(n_clbits),
+                batches,
+                repeat(engine_cls),
+            )
+            return [snapshot for batch in results for snapshot in batch]
 
 
 def _run_dynamic_shots_loky(
@@ -176,7 +223,12 @@ def _run_dynamic_shots_loky(
     from loky import get_reusable_executor
 
     batches = _split_into_batches(seed_sequences, max_workers)
-    executor = get_reusable_executor(max_workers=max_workers)
+    # loky applies `env` to its workers itself, and restarts the reusable pool
+    # when it changes - the proper route for the same reason as above.
+    executor = get_reusable_executor(
+        max_workers=max_workers,
+        env={name: "1" for name in _WORKER_THREAD_VARS},
+    )
     results = executor.map(
         _run_dynamic_shot_batch,
         repeat(plan),
