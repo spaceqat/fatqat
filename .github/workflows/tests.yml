@@ -62,8 +62,11 @@ jobs:
       - name: Install dependencies (every optional group)
         run: uv sync --all-groups
 
-      - name: Run tests, requiring no skips
-        run: uv run --all-groups pytest -p no:randomly -rs --strict-markers
+      # `--fail-on-skip` is a conftest option that exits non-zero when
+      # anything skipped, so the no-skip claim is enforced rather than asserted
+      # in a comment. `-rs` names what skipped when it does.
+      - name: Run tests, failing on any skip
+        run: uv run --all-groups pytest -rs --strict-markers --fail-on-skip
 
       - name: Run doctests
         run: uv run --all-groups pytest --doctest-modules src/fatqat

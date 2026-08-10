@@ -175,6 +175,23 @@ def _single_threaded_workers() -> Iterator[None]:
 
     The parent is unaffected either way: its BLAS is already loaded, so it keeps
     the thread count it started with.
+
+    This does mutate ``os.environ``, which is process-global, for as long as the
+    pool is in use - so another thread spawning an unrelated subprocess during
+    that window would inherit the limit too. Two things bound that. It applies
+    only to ``parallel_mode="multiprocessing"``: ``"auto"`` resolves to loky
+    whenever loky is importable, and loky is a base dependency, so the default
+    path takes its own ``env=`` and never touches this process. And the window
+    cannot be narrowed to pool construction, because a pool starts workers
+    lazily as tasks are submitted - a worker spawned after the window closed
+    would read the wrong value, which is the bug this exists to prevent.
+
+    ``threadpoolctl`` does not replace this. It retunes thread pools already
+    loaded in the *current* process, and the pool that matters here belongs to
+    a process that has not started yet and will read its configuration during
+    its own import. joblib and loky solve it the same way underneath - their
+    ``inner_max_num_threads`` also arrives as environment - which is what
+    ``env=`` on the loky path already uses.
     """
     previous = {name: os.environ.get(name) for name in _WORKER_THREAD_VARS}
     os.environ.update({name: "1" for name in _WORKER_THREAD_VARS})
