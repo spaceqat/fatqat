@@ -50,6 +50,11 @@ class ResourceLayout:
         """Return the set of every device resource label in this layout."""
         return frozenset(self._labels.values())
 
+    @property
+    def refs(self) -> frozenset[RegisterRef]:
+        """Return the set of every RegisterRef in this layout."""
+        return frozenset(self._labels)
+
     def device_labels_for(
         self, refs: tuple[RegisterRef, ...]
     ) -> tuple[DeviceOperand, ...]:

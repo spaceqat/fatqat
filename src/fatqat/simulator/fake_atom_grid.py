@@ -308,7 +308,7 @@ class AtomGridSimulator(Simulator):
                 does not fit this backend's device.
         """
         resource_layout = context.resource_layout
-        loaded: set[int] = set()
+        occupied: set[RegisterRef] = set()
         realized: list[ProgramInstruction] = []
         for i, step in enumerate(operations):
             is_load = isinstance(step, AppliedOperation) and isinstance(
@@ -335,14 +335,19 @@ class AtomGridSimulator(Simulator):
                         f"the backend's ({self._rows}x{self._cols}) device "
                         "shape"
                     )
-                loaded = {
+                load_sites = {
                     r * self._cols + c
                     for r in range(load_rows)
                     for c in range(load_cols)
                 }
+                occupied = {
+                    ref
+                    for ref in resource_layout.refs
+                    if resource_layout.device_label(ref) in load_sites
+                }
                 continue
             if isinstance(step, AppliedOperation) and any(
-                resource_layout.device_label(t) not in loaded for t in step.targets
+                t not in occupied for t in step.targets
             ):
                 continue
             realized.append(step)
