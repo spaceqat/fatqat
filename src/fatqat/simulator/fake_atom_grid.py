@@ -56,6 +56,7 @@ from ..registers import (
 )
 from ..resource_layout import ResourceLayout
 from .._backends.backend_utils import _validate_grid_size
+from .._backends.steps import AtomLossStep, OccupancyInitStep
 from .simulator import Simulator
 
 if TYPE_CHECKING:
@@ -351,4 +352,11 @@ class AtomGridSimulator(Simulator):
             ):
                 continue
             realized.append(step)
-        return super()._lower(tuple(realized), context)
+        plan, facts = super()._lower(tuple(realized), context)
+        if any(isinstance(step, AtomLossStep) for step in plan):
+            occupied_indices = tuple(
+                context.engine_index_allocation.subsystem_index(ref)
+                for ref in occupied
+            )
+            plan.insert(0, OccupancyInitStep(occupied_indices=occupied_indices))
+        return plan, facts

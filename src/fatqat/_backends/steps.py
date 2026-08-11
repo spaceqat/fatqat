@@ -165,6 +165,21 @@ class AtomLossStep:
 
 
 @dataclass(frozen=True)
+class OccupancyInitStep:
+    """Front-of-plan marker carrying the shot's initial occupied subsystems.
+
+    Atom-grid lowering emits this first so the per-shot loop can seed its
+    occupancy set from the loaded atoms. It touches no state and emits no
+    physics; engines that ignore it are unaffected.
+
+    Attributes:
+        occupied_indices: Flat subsystem indices occupied at shot start.
+    """
+
+    occupied_indices: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class MeasurementStep:
     """Resolved measurement: flat subsystem indices into matching flat clbit indices.
 
@@ -255,4 +270,4 @@ class ResetStep:
     condition: tuple[tuple[int, int], ...] | None = None
 
 
-ResolvedStep = ApplyMatrixStep | ApplyChannelStep | AtomLossStep | MeasurementStep | ResetStep
+ResolvedStep = ApplyMatrixStep | ApplyChannelStep | AtomLossStep | OccupancyInitStep | MeasurementStep | ResetStep
