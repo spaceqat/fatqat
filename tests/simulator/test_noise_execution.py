@@ -1,14 +1,18 @@
 """End-to-end channel noise: lowering, path classification, DM/SV semantics."""
 
+from xml.etree.ElementPath import ops
+
 import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep
+from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep, AtomLossStep
+from fatqat.program import Program
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (
     AmplitudeDamping,
+    AtomLoss,
     Channel,
     Depolarizing,
     NoiseModel,
@@ -551,3 +555,33 @@ def test_multi_slot_extent_has_joint_kraus_dimension():
 
     assert channel_steps[0].target_indices == (1, 2)
     assert all(kraus.shape == (4, 4) for kraus in channel_steps[0].kraus_ops)
+
+
+def test_atom_loss_p1_isolated_atom_ends_in_zero():
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=1.0), operation=fq.ops.RX)
+    program = fq.Program(1, 1)
+    program.add(fq.ops.LoadAtoms(1, 1))
+    program.add(fq.ops.RX(np.pi), 0)        
+    program.measure(0, 0)
+    counts = (
+        fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
+        .run(program, shots=100, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    assert counts == {"0": 100}
+
+
+def test_atom_loss_p0_reproduces_ideal():
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=0.0), operation=fq.ops.RX)
+    program = fq.Program(1, 1)
+    program.add(fq.ops.LoadAtoms(1, 1))
+    program.add(fq.ops.RX(np.pi), 0)
+    program.measure(0, 0)
+    counts = (
+        fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
+        .run(program, shots=100, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    assert counts == {"1": 100}    

@@ -26,6 +26,7 @@ from .lindblad import (
 )
 from .model import NoiseModel
 from .registry import default_channel_implementation_map
+from .loss import AtomLoss
 
 __all__ = [
     "Channel",
@@ -40,4 +41,5 @@ __all__ = [
     "NoiseModel",
     "default_channel_implementation_map",
     "default_lindblad_implementation_map",
+    "AtomLoss",
 ]

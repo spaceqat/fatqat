@@ -14,6 +14,7 @@ from ..implementation import MatrixImplementationMap
 from ..implementation._operation_registry import _select_implementation
 from ..noise import ChannelImplementationMap, NoiseModel
 from ..noise.base import _validate_kraus_shapes
+from ..noise.loss import AtomLoss
 from ..operations import Measurement, ResetGate
 from ..program import AppliedOperation
 from ..resource_layout import ResourceLayout
@@ -25,6 +26,7 @@ from .._backends.backend_utils import (
 from .._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
+    AtomLossStep,
     MeasurementStep,
     ResetStep,
     ResolvedStep,
@@ -131,15 +133,24 @@ def _lower_gate(
     for channel, extent in noise_model.channels_for(
         type(step.operation), step.targets, resource_layout
     ):
+        extent_indices = tuple(
+                    engine_index_allocation.subsystem_index(target) for target in extent
+                )
+        if isinstance(channel, AtomLoss):
+            steps.append(
+                AtomLossStep(
+                    target_indices=extent_indices,
+                    p=channel.p,
+                    condition=condition,
+                )
+            )
+            continue
         channel_rule = channel_map.get(type(channel))
         if channel_rule is None:
             raise UnsupportedOperationError(
                 f"{type(channel).__name__} has no channel "
                 "implementation on this backend"
             )
-        extent_indices = tuple(
-            engine_index_allocation.subsystem_index(target) for target in extent
-        )
         kraus_ops = tuple(channel_rule(channel, targets=extent))
         extent_dim = prod(
             engine_index_allocation.system_dims[index] for index in extent_indices

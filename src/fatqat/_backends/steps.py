@@ -147,6 +147,24 @@ class ApplyChannelStep:
 
 
 @dataclass(frozen=True)
+class AtomLossStep:
+    """Per-atom classical loss: roll one die per target, partial-trace on hit.
+
+    Emitted right after the parent gate's `ApplyMatrixStep`, same slot as
+    `ApplyChannelStep`. Carries no arrays — loss is classical.
+
+    Attributes:
+        target_indices: Flat subsystem indices, one independent die each.
+        p: Per-atom loss probability in ``[0, 1]``.
+        condition: The parent gate's lowered feedforward guard, or ``None``.
+    """
+
+    target_indices: tuple[int, ...]
+    p: float
+    condition: tuple[tuple[int, int], ...] | None = None
+
+
+@dataclass(frozen=True)
 class MeasurementStep:
     """Resolved measurement: flat subsystem indices into matching flat clbit indices.
 
@@ -237,4 +255,4 @@ class ResetStep:
     condition: tuple[tuple[int, int], ...] | None = None
 
 
-ResolvedStep = ApplyMatrixStep | ApplyChannelStep | MeasurementStep | ResetStep
+ResolvedStep = ApplyMatrixStep | ApplyChannelStep | AtomLossStep | MeasurementStep | ResetStep

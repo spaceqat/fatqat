@@ -57,6 +57,7 @@ from ..noise import (
     ChannelImplementationMap,
     NoiseModel,
     NoiseSupportReport,
+    AtomLoss,
     default_channel_implementation_map,
 )
 from ..operations import BarrierGate, Measurement, ResetGate
@@ -894,7 +895,9 @@ class Simulator:
             label = channel_type.__name__
             if qualifiers:
                 label += f"({', '.join(qualifiers)})"
-            if always_on:
+            if isinstance(channel, AtomLoss):
+                _record(label, True, "")
+            elif always_on:
                 _record(
                     label,
                     False,

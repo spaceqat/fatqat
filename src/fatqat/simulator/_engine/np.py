@@ -66,6 +66,7 @@ from ..._backends.engine_contract import _EngineConfig as EngineConfig, RawResul
 from ..._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
+    AtomLossStep,
     MeasurementStep,
     ResetStep,
     ResolvedStep,
@@ -310,6 +311,12 @@ class _NumpyMatrixEngine(MatrixEngine):
                 target_indices=step.target_indices,
                 is_conditioned=step.condition is not None,
             )
+        if isinstance(step, AtomLossStep):
+            return _OperationExecutionFacts(
+                target_indices=step.target_indices,
+                is_conditioned=step.condition is not None,
+                forces_per_shot=True,   
+            )
         raise TypeError(f"unknown resolved execution step {type(step).__name__}")
 
     def _run_fast(
@@ -430,6 +437,11 @@ class _NumpyMatrixEngine(MatrixEngine):
             elif isinstance(step, ApplyChannelStep):
                 if _condition_matches(step.condition, clbits):
                     self.apply_channel(step, rng)
+            elif isinstance(step, AtomLossStep):
+                if _condition_matches(step.condition, clbits):
+                    for index in step.target_indices:
+                        if rng.random() < step.p:
+                            self.reset_subsystems([index], rng)
             elif isinstance(step, MeasurementStep):
                 bits = self.measure_subsystems(step.measured_indices, rng)
                 confusions = step.confusions or (None,) * len(bits)
