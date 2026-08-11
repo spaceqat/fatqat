@@ -42,6 +42,7 @@ from .qudit_gates import (
     SubspaceRZ,
     SwapLevels,
 )
+from .rearrange import Rearrange
 from .reset import Reset, ResetGate
 
 __all__ = [
@@ -72,6 +73,7 @@ __all__ = [
     "Reset",
     "Barrier",
     "LoadAtoms",
+    "Rearrange",
     "Measurement",
     "Shift",
     "Clock",

@@ -40,6 +40,7 @@ engine index coincide.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .. import operations as ops
@@ -55,7 +56,7 @@ from ..registers import (
     RegisterRef,
 )
 from ..resource_layout import ResourceLayout
-from .._backends.backend_utils import _validate_grid_size
+from .._backends.backend_utils import _PlanFacts, _validate_grid_size
 from .._backends.steps import AtomLossStep, OccupancyInitStep
 from .simulator import Simulator
 
@@ -64,7 +65,7 @@ if TYPE_CHECKING:
 
     from ..implementation import MatrixImplementation
     from ..operations import Operation
-    from .._backends.backend_utils import _LoweringContext, _PlanFacts
+    from .._backends.backend_utils import _LoweringContext
     from .simulator import ProgramInstruction
     from .._backends.steps import ResolvedStep
 
@@ -351,8 +352,44 @@ class AtomGridSimulator(Simulator):
                 t not in occupied for t in step.targets
             ):
                 continue
+            if (
+                isinstance(step, AppliedOperation)
+                and not isinstance(step.operation, ops.Rearrange)
+                and any(t not in occupied for t in step.targets)
+            ):
+                continue
             realized.append(step)
-        plan, facts = super()._lower(tuple(realized), context)
+
+        current_layout = resource_layout
+        plan: list[ResolvedStep] = []
+        seg_facts: list[_PlanFacts] = []
+        segment: list[ProgramInstruction] = []
+        for step in realized:
+            if isinstance(step, AppliedOperation) and isinstance(
+                step.operation, ops.Rearrange
+            ):
+                seg_plan, seg_fact = super()._lower(
+                    tuple(segment),
+                    replace(context, resource_layout=current_layout),
+                )
+                plan.extend(seg_plan)
+                seg_facts.append(seg_fact)
+                segment = []
+                current_layout = self._apply_rearrange(current_layout, step)
+                continue
+            segment.append(step)
+        seg_plan, seg_fact = super()._lower(
+            tuple(segment), replace(context, resource_layout=current_layout)
+        )
+        plan.extend(seg_plan)
+        seg_facts.append(seg_fact)
+
+        facts = _PlanFacts(
+            has_measurement=any(f.has_measurement for f in seg_facts),
+            has_reset=any(f.has_reset for f in seg_facts),
+            has_channel=any(f.has_channel for f in seg_facts),
+            has_condition=any(f.has_condition for f in seg_facts),
+        )
         if any(isinstance(step, AtomLossStep) for step in plan):
             occupied_indices = tuple(
                 context.engine_index_allocation.subsystem_index(ref)
@@ -360,3 +397,44 @@ class AtomGridSimulator(Simulator):
             )
             plan.insert(0, OccupancyInitStep(occupied_indices=occupied_indices))
         return plan, facts
+
+
+    def _apply_rearrange(
+        self, layout: ResourceLayout, applied: AppliedOperation
+    ) -> ResourceLayout:
+        """Return a new layout with this Rearrange's atoms relabeled to new sites.
+
+        Changes only device-site labels, never engine indices, so the caller
+        emits no step and the quantum state is unchanged (M-B2). Updates each
+        listed ref unconditionally, without checking whether its site holds an
+        atom (M-B7); atomicity means a swap needs no temporary site (S-B1).
+        Injectivity is checked over the full layout, ignoring occupancy (M-B3).
+
+        Raises:
+            BackendValidationError: If the Rearrange carries a condition
+                (M-B6); a destination site does not exist on the device; a
+                named ref is foreign to the layout; or the result is not
+                injective.
+        """
+        if applied.condition is not None:
+            raise BackendValidationError("Rearrange must be unconditional")
+        sites = applied.operation.sites
+        capacity = self._rows * self._cols
+        for site in sites:
+            if not 0 <= site < capacity:
+                raise BackendValidationError(
+                    f"Rearrange target site {site} does not exist on the "
+                    f"({self._rows}x{self._cols}) device"
+                )
+        new_labels = {ref: layout.device_label(ref) for ref in layout.refs}
+        for ref, site in zip(applied.targets, sites):
+            if ref not in new_labels:
+                raise BackendValidationError(
+                    "Rearrange names a ref that is not part of this layout"
+                )
+            new_labels[ref] = site
+        if len(set(new_labels.values())) != len(new_labels):
+            raise BackendValidationError(
+                "Rearrange result is not injective: two atoms would share a site"
+            )
+        return ResourceLayout(new_labels)

@@ -720,3 +720,121 @@ def test_measurement_of_unloaded_site_still_exposed_to_readout_noise():
         .get_counts()
     )
     assert counts == {"1": 4}
+
+
+def test_cz_becomes_legal_after_rearrange_makes_pair_adjacent():
+    atoms = GridRegister(1, 3, name="atoms")  # sites 0, 1, 2
+    illegal = Program([atoms])
+    illegal.add(ops.LoadAtoms(1, 3))
+    illegal.add(ops.CZ, (atoms[0], atoms[2]))  # sites 0 and 2: not neighbors
+    with pytest.raises(BackendValidationError):
+        AtomGridSimulator(grid_size=(1, 3))._lower_program(illegal)
+
+    legal = Program([atoms])
+    legal.add(ops.LoadAtoms(1, 3))
+    legal.add(ops.Rearrange((2, 1)), (atoms[1], atoms[2]))  # swap: atoms[2] -> site 1
+    legal.add(ops.CZ, (atoms[0], atoms[2]))  # now nearest neighbors -> legal
+    AtomGridSimulator(grid_size=(1, 3))._lower_program(legal)  # must not raise
+
+
+def test_rearrange_does_not_change_state():
+    atoms = GridRegister(1, 2, name="atoms")  # 2 atoms on a 1x3 device
+
+    def build(move):
+        p = Program([atoms])
+        p.add(ops.LoadAtoms(1, 2))
+        p.add(ops.RY(0.7), atoms[0])
+        p.add(ops.RX(1.1), atoms[1])
+        if move:
+            p.add(ops.Rearrange((2,)), atoms[0])  # move atoms[0] to a free site
+        return p
+
+    def sv(p):
+        return (
+            AtomGridSimulator(grid_size=(1, 3))
+            .run(p, result_config={"counts": False, "final_state": True})
+            .result().get_statevector()
+        )
+
+    assert np.allclose(sv(build(True)), sv(build(False)))
+
+
+def test_atomic_swap_exchanges_sites_not_state():
+    atoms = GridRegister(1, 2, name="atoms")
+
+    def build(swap):
+        p = Program([atoms])
+        p.add(ops.LoadAtoms(1, 2))
+        p.add(ops.RY(0.9), atoms[0])
+        p.add(ops.RX(0.4), atoms[1])
+        if swap:
+            p.add(ops.Rearrange((1, 0)), (atoms[0], atoms[1]))  # atomic swap
+        return p
+
+    def sv(p):
+        return (
+            AtomGridSimulator(grid_size=(1, 2))
+            .run(p, result_config={"counts": False, "final_state": True})
+            .result().get_statevector()
+        )
+
+    # Swap exchanges trap sites, not state, and needs no temp site.
+    assert np.allclose(sv(build(True)), sv(build(False)))
+
+
+def test_atom_moved_outside_load_block_still_accepts_gates():
+    atoms = GridRegister(1, 2, name="atoms")  # 2 atoms on a 1x3 device
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 2))               # load sites {0, 1}
+    p.add(ops.Rearrange((2,)), atoms[0])     # move atoms[0] to site 2 (outside block)
+    p.add(ops.RX(np.pi), atoms[0])           # must still execute
+    p.measure(atoms[0], 0)
+    counts = (
+        AtomGridSimulator(grid_size=(1, 3))
+        .run(p, shots=8, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    assert counts == {"1": 8}                # RX(pi)|0> -> |1>, not dropped
+
+
+def test_conditional_rearrange_rejected():
+    atoms = GridRegister(1, 2, name="atoms")
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 2))
+    p.measure(atoms[0], 0)
+    p.add(ops.Rearrange((2,)), atoms[0], condition=(0, 1)) 
+    with pytest.raises(BackendValidationError):
+        AtomGridSimulator(grid_size=(1, 3))._lower_program(p)
+
+
+def test_rearrange_non_injective_rejected():
+    atoms = GridRegister(1, 3, name="atoms")
+    p = Program([atoms])
+    p.add(ops.LoadAtoms(1, 3))
+    p.add(ops.Rearrange((1,)), atoms[0])     # onto atoms[1]'s site -> collision
+    with pytest.raises(BackendValidationError):
+        AtomGridSimulator(grid_size=(1, 3))._lower_program(p)
+
+
+def test_rearrange_target_site_off_device_rejected():
+    atoms = GridRegister(1, 2, name="atoms")
+    p = Program([atoms])
+    p.add(ops.LoadAtoms(1, 2))
+    p.add(ops.Rearrange((9,)), atoms[0])     # site 9 does not exist on 1x3
+    with pytest.raises(BackendValidationError):
+        AtomGridSimulator(grid_size=(1, 3))._lower_program(p)
+
+
+def test_rearrange_of_unloaded_operand_is_silently_ignored():
+    atoms = GridRegister(1, 2, name="atoms")  # on 1x3 device
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 1))               # load site 0 only; atoms[1] unloaded
+    p.add(ops.Rearrange((2,)), atoms[1])     # move the empty operand: must NOT raise
+    p.add(ops.RX(np.pi), atoms[1])           # still dropped (unloaded)
+    p.measure(atoms[1], 0)
+    counts = (
+        AtomGridSimulator(grid_size=(1, 3))
+        .run(p, shots=4, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    assert counts == {"0": 4}                # atoms[1] never got a gate -> reads 0
