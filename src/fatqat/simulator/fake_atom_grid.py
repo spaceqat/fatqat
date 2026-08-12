@@ -169,9 +169,9 @@ class AtomGridSimulator(Simulator):
            >>> program.measure(0, 0)
            >>> backend = fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
            >>> backend.run(
-           ...     program, shots=100, simulation_config={"seed": 0}
+           ...     program, shots=10, simulation_config={"seed": 0}
            ... ).result().get_counts()
-           {'2': 100}
+           {'2': 10}
 
     Example:
         This two-row, three-column circuit prepares a Hadamard on every site
