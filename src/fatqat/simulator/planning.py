@@ -124,6 +124,60 @@ def _lower_refill(
     return steps
 
 
+def _lower_channels(
+    operation_type,
+    targets,
+    condition,
+    resource_layout: ResourceLayout,
+    engine_index_allocation: _EngineIndexAllocation,
+    noise_model: NoiseModel,
+    channel_map: ChannelImplementationMap,
+) -> list[ResolvedStep]:
+    """Lower the channel noise attached to one occurrence into steps.
+
+    Shared by gate and rearrange lowering. Selection matches against the
+    occurrence's logical targets and/or resource-layout device operands
+    (never engine indices); engine indices are used only for the emitted
+    steps. An AtomLoss becomes a per-atom AtomLossStep; any other (Kraus)
+    channel becomes an ApplyChannelStep.
+    """
+    steps: list[ResolvedStep] = []
+    for channel, extent in noise_model.channels_for(
+        operation_type, targets, resource_layout
+    ):
+        extent_indices = tuple(
+            engine_index_allocation.subsystem_index(target) for target in extent
+        )
+        if isinstance(channel, AtomLoss):
+            steps.append(
+                AtomLossStep(
+                    target_indices=extent_indices,
+                    p=channel.p,
+                    condition=condition,
+                )
+            )
+            continue
+        channel_rule = channel_map.get(type(channel))
+        if channel_rule is None:
+            raise UnsupportedOperationError(
+                f"{type(channel).__name__} has no channel "
+                "implementation on this backend"
+            )
+        kraus_ops = tuple(channel_rule(channel, targets=extent))
+        extent_dim = prod(
+            engine_index_allocation.system_dims[index] for index in extent_indices
+        )
+        _validate_kraus_shapes(kraus_ops, extent_dim, type(channel).__name__)
+        steps.append(
+            ApplyChannelStep(
+                kraus_ops=kraus_ops,
+                target_indices=extent_indices,
+                condition=condition,
+            )
+        )
+    return steps
+
+
 def _lower_gate(
     step: AppliedOperation,
     resource_layout: ResourceLayout,
@@ -162,47 +216,18 @@ def _lower_gate(
             matrix=matrix,
             target_indices=engine_indices,
             condition=condition,
-            # Identity, not mechanics: the backend forwards which
-            # implementation was selected; the engine alone decides
-            # what (if anything) that means for kernel choice.
             kernel_key=rule._kernel_key(step.operation, targets=step.targets),
         )
     ]
-
-    # Noise selection matches against the occurrence's logical targets
-    # and/or resource-layout device operands (never engine indices);
-    # engine indices are used only for the emitted ApplyChannelStep.
-    for channel, extent in noise_model.channels_for(
-        type(step.operation), step.targets, resource_layout
-    ):
-        extent_indices = tuple(
-                    engine_index_allocation.subsystem_index(target) for target in extent
-                )
-        if isinstance(channel, AtomLoss):
-            steps.append(
-                AtomLossStep(
-                    target_indices=extent_indices,
-                    p=channel.p,
-                    condition=condition,
-                )
-            )
-            continue
-        channel_rule = channel_map.get(type(channel))
-        if channel_rule is None:
-            raise UnsupportedOperationError(
-                f"{type(channel).__name__} has no channel "
-                "implementation on this backend"
-            )
-        kraus_ops = tuple(channel_rule(channel, targets=extent))
-        extent_dim = prod(
-            engine_index_allocation.system_dims[index] for index in extent_indices
+    steps.extend(
+        _lower_channels(
+            type(step.operation),
+            step.targets,
+            condition,
+            resource_layout,
+            engine_index_allocation,
+            noise_model,
+            channel_map,
         )
-        _validate_kraus_shapes(kraus_ops, extent_dim, type(channel).__name__)
-        steps.append(
-            ApplyChannelStep(
-                kraus_ops=kraus_ops,
-                target_indices=extent_indices,
-                condition=condition,
-            )
-        )
+    )
     return steps

@@ -57,7 +57,15 @@ from ..registers import (
 )
 from ..resource_layout import ResourceLayout
 from .._backends.backend_utils import _PlanFacts, _validate_grid_size
-from .._backends.steps import AtomLossStep, OccupancyInitStep, RefillStep
+from .._backends.steps import (
+    ApplyChannelStep,
+    AtomLossStep,
+    MeasurementStep,
+    OccupancyInitStep,
+    RefillStep,
+    ResetStep,
+)
+from .planning import _lower_channels
 from .simulator import Simulator
 
 if TYPE_CHECKING:
@@ -368,36 +376,57 @@ class AtomGridSimulator(Simulator):
                 continue
             realized.append(step)
 
+        # Lower in segments split at each Rearrange, threading a layout that
+        # evolves across them. Rearrange emits no matrix step (M-B2), but it
+        # DOES emit its attached channel noise (transport cost) for the moved
+        # atoms; the per-shot occupancy guard skips whichever moved operand is
+        # empty (M-B5).
         current_layout = resource_layout
         plan: list[ResolvedStep] = []
-        seg_facts: list[_PlanFacts] = []
         segment: list[ProgramInstruction] = []
         for step in realized:
             if isinstance(step, AppliedOperation) and isinstance(
                 step.operation, ops.Rearrange
             ):
-                seg_plan, seg_fact = super()._lower(
-                    tuple(segment),
-                    replace(context, resource_layout=current_layout),
+                seg_plan, _ = super()._lower(
+                    tuple(segment), replace(context, resource_layout=current_layout)
                 )
                 plan.extend(seg_plan)
-                seg_facts.append(seg_fact)
                 segment = []
+                # Noise selectors match on the layout as the rearrange occurs
+                # (the atom at its source trap); engine indices are position-
+                # independent. Rearrange is unconditional (M-B6), so no guard.
+                plan.extend(
+                    _lower_channels(
+                        type(step.operation),
+                        step.targets,
+                        None,
+                        current_layout,
+                        context.engine_index_allocation,
+                        self._noise_model,
+                        self._channel_map,
+                    )
+                )
                 current_layout = self._apply_rearrange(current_layout, step)
                 continue
             segment.append(step)
-        seg_plan, seg_fact = super()._lower(
+        seg_plan, _ = super()._lower(
             tuple(segment), replace(context, resource_layout=current_layout)
         )
         plan.extend(seg_plan)
-        seg_facts.append(seg_fact)
 
+        # Derive facts from the finished plan so directly-appended rearrange
+        # noise steps are counted too (a Rearrange channel adds has_channel).
         facts = _PlanFacts(
-            has_measurement=any(f.has_measurement for f in seg_facts),
-            has_reset=any(f.has_reset for f in seg_facts),
-            has_channel=any(f.has_channel for f in seg_facts),
-            has_condition=any(f.has_condition for f in seg_facts),
+            has_measurement=any(isinstance(s, MeasurementStep) for s in plan),
+            has_reset=any(isinstance(s, ResetStep) for s in plan),
+            has_channel=any(isinstance(s, ApplyChannelStep) for s in plan),
+            has_condition=any(
+                getattr(s, "condition", None) is not None for s in plan
+            ),
         )
+        # Any per-shot occupancy step (loss removes, refill adds) needs the
+        # shot to start from the loaded set rather than a fully-occupied one.
         if any(isinstance(step, (AtomLossStep, RefillStep)) for step in plan):
             occupied_indices = tuple(
                 context.engine_index_allocation.subsystem_index(ref)

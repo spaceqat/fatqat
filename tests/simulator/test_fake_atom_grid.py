@@ -896,13 +896,14 @@ def test_refill_can_fill_a_never_loaded_site():
 
 
 def test_refill_loss_gives_loading_efficiency():
-    noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=0.4), operation=ops.Refill)   # 40% loading failure
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 1))            # load site 0; atoms[1] empty
     p.add(ops.Refill, atoms[1])          # try to load atoms[1]: succeeds ~60%
-    p.measure(atoms[1], 0)               # loaded -> reads 0 (|0>); failed -> erasure 2
+    p.measure(atoms[1], 0)              
+
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=0.4), operation=ops.Refill)
     counts = (
         AtomGridSimulator(grid_size=(1, 2), noise=noise)
         .run(p, shots=4000, simulation_config={"seed": 0})
@@ -910,3 +911,76 @@ def test_refill_loss_gives_loading_efficiency():
     )
     total = sum(counts.values())
     assert 0.55 < counts.get("0", 0) / total < 0.65   # ~60% loaded
+
+
+def test_rearrange_loss_ejects_the_moved_atom():
+    atoms = GridRegister(1, 2, name="atoms")     # 1x3 device, site 2 free
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 2))
+    p.add(ops.Rearrange((2,)), atoms[0])         # move atoms[0]; loss fires on it 
+    p.measure(atoms[0], 0)
+
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=1.0), operation=ops.Rearrange)
+    counts = (
+        AtomGridSimulator(grid_size=(1, 3), noise=noise)
+        .run(p, shots=8, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    assert counts == {"2": 8}                     # moved atom lost -> erasure
+
+
+def test_rearrange_loss_spares_an_unmoved_atom():
+    atoms = GridRegister(1, 2, name="atoms")
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 2))
+    p.add(ops.Rearrange((2,)), atoms[0])         # only atoms[0] moves
+    p.measure(atoms[1], 0)                         # atoms[1] not moved -> not lost
+
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=1.0), operation=ops.Rearrange)
+    counts = (
+        AtomGridSimulator(grid_size=(1, 3), noise=noise)
+        .run(p, shots=8, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    assert counts == {"0": 8}
+
+
+def test_rearrange_kraus_noise_applies_to_moved_atom():
+    atoms = GridRegister(1, 2, name="atoms")
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 2))
+    p.add(ops.RX(np.pi), atoms[0])               # atoms[0] -> |1>
+    p.add(ops.Rearrange((2,)), atoms[0])         # move; Depolarizing p=1 -> I/2
+    p.measure(atoms[0], 0)
+
+    noise = NoiseModel()
+    noise.add_channel(Depolarizing(p=1.0), operation=ops.Rearrange)   # full depolarize
+    counts = (
+        AtomGridSimulator(grid_size=(1, 3), noise=noise)
+        .run(p, shots=2000, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    total = sum(counts.values())
+    assert 0.4 < counts.get("1", 0) / total < 0.6   # fully mixed -> 50/50
+
+
+def test_loss_rearrange_refill_compose():
+    atoms = GridRegister(1, 2, name="atoms")
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 2))
+    p.add(ops.RY(0.0), atoms[0])                  # lose atoms[0]
+    p.add(ops.Rearrange((2,)), atoms[1])          # move atoms[1] (independent)
+    p.add(ops.Refill, atoms[0])                   # reload atoms[0] -> fresh |0>
+    p.add(ops.RX(np.pi), atoms[0])                # usable again -> |1>
+    p.measure(atoms[0], 0)
+
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=1.0), operation=ops.RY)
+    counts = (
+        AtomGridSimulator(grid_size=(1, 3), noise=noise)
+        .run(p, shots=8, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    assert counts == {"1": 8}     # loss + refill + gate compose; rearrange doesn't interfere
