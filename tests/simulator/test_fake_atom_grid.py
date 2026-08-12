@@ -753,7 +753,8 @@ def test_rearrange_does_not_change_state():
         return (
             AtomGridSimulator(grid_size=(1, 3))
             .run(p, result_config={"counts": False, "final_state": True})
-            .result().get_statevector()
+            .result()
+            .get_statevector()
         )
 
     assert np.allclose(sv(build(True)), sv(build(False)))
@@ -775,9 +776,10 @@ def test_atomic_swap_exchanges_sites_not_state():
         return (
             AtomGridSimulator(grid_size=(1, 2))
             .run(p, result_config={"counts": False, "final_state": True})
-            .result().get_statevector()
+            .result()
+            .get_statevector()
         )
-    
+
     assert np.allclose(sv(build(True)), sv(build(False)))
 
 
@@ -791,7 +793,8 @@ def test_atom_moved_outside_load_block_still_accepts_gates():
     counts = (
         AtomGridSimulator(grid_size=(1, 3))
         .run(p, shots=8, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
     assert counts == {"1": 8}
 
@@ -801,7 +804,7 @@ def test_conditional_rearrange_rejected():
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
     p.measure(atoms[0], 0)
-    p.add(ops.Rearrange((2,)), atoms[0], condition=(0, 1)) 
+    p.add(ops.Rearrange((2,)), atoms[0], condition=(0, 1))
     with pytest.raises(BackendValidationError):
         AtomGridSimulator(grid_size=(1, 3))._lower_program(p)
 
@@ -834,7 +837,8 @@ def test_rearrange_of_unloaded_operand_is_silently_ignored():
     counts = (
         AtomGridSimulator(grid_size=(1, 3))
         .run(p, shots=4, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
     assert counts == {"0": 4}
 
@@ -852,7 +856,8 @@ def test_refill_restores_a_lost_site():
     counts = (
         AtomGridSimulator(grid_size=(1, 2), noise=noise)
         .run(p, shots=8, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
     assert counts == {"1": 8}
 
@@ -873,10 +878,11 @@ def test_refill_on_occupied_site_is_a_noop():
         return (
             AtomGridSimulator(grid_size=(1, 2))
             .run(p, shots=8, simulation_config={"seed": 0})
-            .result().get_counts()
+            .result()
+            .get_counts()
         )
 
-    assert counts(build(True)) == counts(build(False)) == {"1": 8}   
+    assert counts(build(True)) == counts(build(False)) == {"1": 8}
 
 
 def test_refill_can_fill_a_never_loaded_site():
@@ -889,7 +895,8 @@ def test_refill_can_fill_a_never_loaded_site():
     counts = (
         AtomGridSimulator(grid_size=(1, 2))
         .run(p, shots=8, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
     assert counts == {"1": 8}
 
@@ -901,14 +908,15 @@ def test_refill_loss_gives_loading_efficiency():
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 1))
     p.add(ops.Refill, atoms[1])
-    p.measure(atoms[1], 0)              
+    p.measure(atoms[1], 0)
     counts = (
         AtomGridSimulator(grid_size=(1, 2), noise=noise)
         .run(p, shots=4000, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
     total = sum(counts.values())
-    assert 0.55 < counts.get("0", 0) / total < 0.65   # ~60% loaded
+    assert 0.55 < counts.get("0", 0) / total < 0.65  # ~60% loaded
 
 
 def test_rearrange_loss_ejects_the_moved_atom():
@@ -922,7 +930,8 @@ def test_rearrange_loss_ejects_the_moved_atom():
     counts = (
         AtomGridSimulator(grid_size=(1, 3), noise=noise)
         .run(p, shots=8, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
     assert counts == {"2": 8}
 
@@ -938,7 +947,8 @@ def test_rearrange_loss_spares_an_unmoved_atom():
     counts = (
         AtomGridSimulator(grid_size=(1, 3), noise=noise)
         .run(p, shots=8, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
     assert counts == {"0": 8}
 
@@ -955,10 +965,11 @@ def test_rearrange_kraus_noise_applies_to_moved_atom():
     counts = (
         AtomGridSimulator(grid_size=(1, 3), noise=noise)
         .run(p, shots=2000, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
     total = sum(counts.values())
-    assert 0.4 < counts.get("1", 0) / total < 0.6   # fully mixed -> 50/50
+    assert 0.4 < counts.get("1", 0) / total < 0.6  # fully mixed -> 50/50
 
 
 def test_loss_rearrange_refill_compose():
@@ -975,7 +986,8 @@ def test_loss_rearrange_refill_compose():
     counts = (
         AtomGridSimulator(grid_size=(1, 3), noise=noise)
         .run(p, shots=8, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
     assert counts == {"1": 8}
 

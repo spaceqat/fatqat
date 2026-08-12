@@ -560,7 +560,7 @@ def test_multi_slot_extent_has_joint_kraus_dimension():
 def test_atom_loss_p1_isolated_atom_reads_erasure():
     program = fq.Program(1, 1)
     program.add(fq.ops.LoadAtoms(1, 1))
-    program.add(fq.ops.RX(np.pi), 0)        
+    program.add(fq.ops.RX(np.pi), 0)
     program.measure(0, 0)
 
     noise = NoiseModel()
@@ -569,7 +569,8 @@ def test_atom_loss_p1_isolated_atom_reads_erasure():
     counts = (
         fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
         .run(program, shots=100, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
     assert counts == {"2": 100}
 
@@ -586,9 +587,10 @@ def test_atom_loss_p0_reproduces_ideal():
     counts = (
         fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
         .run(program, shots=100, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
-    assert counts == {"1": 100}    
+    assert counts == {"1": 100}
 
 
 def test_lost_control_does_not_dephase_survivor():
@@ -596,15 +598,17 @@ def test_lost_control_does_not_dephase_survivor():
     atoms = fq.GridRegister(1, 2, name="atoms")
     program = fq.Program([atoms], 1)
     program.add(fq.ops.LoadAtoms(1, 2))
-    def h(q):                                   
+
+    def h(q):
         program.add(fq.ops.RZ(np.pi), q)
         program.add(fq.ops.RY(np.pi / 2), q)
-    h(atoms[0])                                 
-    h(atoms[1])                                 
+
+    h(atoms[0])
+    h(atoms[1])
     program.add(fq.ops.RX(0.0), atoms[0])
     program.add(fq.ops.RX(np.pi), atoms[0])
     program.add(fq.ops.CZ, (atoms[0], atoms[1]))
-    h(atoms[1])                                
+    h(atoms[1])
     program.measure(atoms[1], 0)
 
     noise = NoiseModel()
@@ -613,6 +617,7 @@ def test_lost_control_does_not_dephase_survivor():
     counts = (
         fq.simulator.AtomGridSimulator(grid_size=(1, 2), noise=noise)
         .run(program, shots=200, simulation_config={"seed": 0})
-        .result().get_counts()
+        .result()
+        .get_counts()
     )
-    assert counts == {"0": 200}                 
+    assert counts == {"0": 200}

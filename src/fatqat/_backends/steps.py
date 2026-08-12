@@ -287,4 +287,12 @@ class RefillStep:
     condition: tuple[tuple[int, int], ...] | None = None
 
 
-ResolvedStep = ApplyMatrixStep | ApplyChannelStep | AtomLossStep | OccupancyInitStep | MeasurementStep | ResetStep | RefillStep
+ResolvedStep = (
+    ApplyMatrixStep
+    | ApplyChannelStep
+    | AtomLossStep
+    | OccupancyInitStep
+    | MeasurementStep
+    | ResetStep
+    | RefillStep
+)

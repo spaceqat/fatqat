@@ -442,14 +442,11 @@ class AtomGridSimulator(Simulator):
             has_measurement=any(isinstance(s, MeasurementStep) for s in plan),
             has_reset=any(isinstance(s, ResetStep) for s in plan),
             has_channel=any(isinstance(s, ApplyChannelStep) for s in plan),
-            has_condition=any(
-                getattr(s, "condition", None) is not None for s in plan
-            ),
+            has_condition=any(getattr(s, "condition", None) is not None for s in plan),
         )
         if any(isinstance(step, (AtomLossStep, RefillStep)) for step in plan):
             occupied_indices = tuple(
-                context.engine_index_allocation.subsystem_index(ref)
-                for ref in occupied
+                context.engine_index_allocation.subsystem_index(ref) for ref in occupied
             )
             plan.insert(0, OccupancyInitStep(occupied_indices=occupied_indices))
         return plan, facts

@@ -319,7 +319,7 @@ class _NumpyMatrixEngine(MatrixEngine):
             return _OperationExecutionFacts(
                 target_indices=step.target_indices,
                 is_conditioned=step.condition is not None,
-                forces_per_shot=True,   
+                forces_per_shot=True,
             )
         if isinstance(step, RefillStep):
             return _OperationExecutionFacts(
@@ -449,16 +449,16 @@ class _NumpyMatrixEngine(MatrixEngine):
         occupied = set(range(len(self._dims)))
         for step in plan:
             if isinstance(step, OccupancyInitStep):
-                occupied = set(step.occupied_indices)  
+                occupied = set(step.occupied_indices)
                 continue
             if isinstance(step, ApplyMatrixStep) and all(
-                    t in occupied for t in step.target_indices
-                ):
+                t in occupied for t in step.target_indices
+            ):
                 if _condition_matches(step.condition, clbits):
                     self.apply(step)
             elif isinstance(step, ApplyChannelStep) and all(
-                    t in occupied for t in step.target_indices
-                ):
+                t in occupied for t in step.target_indices
+            ):
                 if _condition_matches(step.condition, clbits):
                     self.apply_channel(step, rng)
             elif isinstance(step, AtomLossStep):
@@ -480,7 +480,11 @@ class _NumpyMatrixEngine(MatrixEngine):
                 # The collapse keeps the physical outcome; only its mapped,
                 # optionally confused report is written to the clbits.
                 for m, c, bit, reported_map, confusion in zip(
-                    step.measured_indices, step.classical_indices, bits, maps, confusions
+                    step.measured_indices,
+                    step.classical_indices,
+                    bits,
+                    maps,
+                    confusions,
                 ):
                     if m not in occupied:
                         clbits[c] = ERASURE_DIGIT
