@@ -1,13 +1,10 @@
 """End-to-end channel noise: lowering, path classification, DM/SV semantics."""
 
-from xml.etree.ElementPath import ops
-
 import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep, AtomLossStep
-from fatqat.program import Program
+from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (
@@ -594,7 +591,6 @@ def test_atom_loss_p0_reproduces_ideal():
 
 
 def test_lost_control_does_not_dephase_survivor():
-
     atoms = fq.GridRegister(1, 2, name="atoms")
     program = fq.Program([atoms], 1)
     program.add(fq.ops.LoadAtoms(1, 2))

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
-from fatqat._backends.steps import ApplyMatrixStep, ResetStep, RefillStep
+from fatqat._backends.steps import ApplyMatrixStep, ResetStep
 from fatqat.simulator import AtomGridSimulator, Simulator
 from fatqat.simulator.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
