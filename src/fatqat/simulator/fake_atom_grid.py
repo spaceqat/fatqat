@@ -57,7 +57,7 @@ from ..registers import (
 )
 from ..resource_layout import ResourceLayout
 from .._backends.backend_utils import _PlanFacts, _validate_grid_size
-from .._backends.steps import AtomLossStep, OccupancyInitStep
+from .._backends.steps import AtomLossStep, OccupancyInitStep, RefillStep
 from .simulator import Simulator
 
 if TYPE_CHECKING:
@@ -312,6 +312,13 @@ class AtomGridSimulator(Simulator):
         resource_layout = context.resource_layout
         occupied: set[RegisterRef] = set()
         realized: list[ProgramInstruction] = []
+        refill_targets = {
+            t
+            for step in operations
+            if isinstance(step, AppliedOperation)
+            and isinstance(step.operation, ops.RefillGate)
+            for t in step.targets
+        }
         for i, step in enumerate(operations):
             is_load = isinstance(step, AppliedOperation) and isinstance(
                 step.operation, ops.LoadAtoms
@@ -348,14 +355,15 @@ class AtomGridSimulator(Simulator):
                     if resource_layout.device_label(ref) in load_sites
                 }
                 continue
-            if isinstance(step, AppliedOperation) and any(
-                t not in occupied for t in step.targets
-            ):
-                continue
+            # Rearrange and Refill are exempt from the load-state drop; a gate
+            # is dropped only when a target can never hold an atom: never
+            # loaded AND never named in any Refill.
             if (
                 isinstance(step, AppliedOperation)
-                and not isinstance(step.operation, ops.Rearrange)
-                and any(t not in occupied for t in step.targets)
+                and not isinstance(step.operation, (ops.Rearrange, ops.RefillGate))
+                and any(
+                    t not in occupied and t not in refill_targets for t in step.targets
+                )
             ):
                 continue
             realized.append(step)
@@ -390,7 +398,7 @@ class AtomGridSimulator(Simulator):
             has_channel=any(f.has_channel for f in seg_facts),
             has_condition=any(f.has_condition for f in seg_facts),
         )
-        if any(isinstance(step, AtomLossStep) for step in plan):
+        if any(isinstance(step, (AtomLossStep, RefillStep)) for step in plan):
             occupied_indices = tuple(
                 context.engine_index_allocation.subsystem_index(ref)
                 for ref in occupied

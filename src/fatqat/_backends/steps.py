@@ -270,4 +270,21 @@ class ResetStep:
     condition: tuple[tuple[int, int], ...] | None = None
 
 
-ResolvedStep = ApplyMatrixStep | ApplyChannelStep | AtomLossStep | OccupancyInitStep | MeasurementStep | ResetStep
+@dataclass(frozen=True)
+class RefillStep:
+    """Reload atoms into empty target sites: a fresh |0> where unoccupied.
+
+    Per shot each currently-unoccupied target becomes occupied and is reset to
+    |0> (M-C1); an already-occupied target is left untouched (M-C2). Carries no
+    arrays.
+
+    Attributes:
+        target_indices: Flat subsystem indices to refill.
+        condition: Optional feedforward guard, or ``None``.
+    """
+
+    target_indices: tuple[int, ...]
+    condition: tuple[tuple[int, int], ...] | None = None
+
+
+ResolvedStep = ApplyMatrixStep | ApplyChannelStep | AtomLossStep | OccupancyInitStep | MeasurementStep | ResetStep | RefillStep

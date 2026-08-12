@@ -70,6 +70,7 @@ from ..._backends.steps import (
     OccupancyInitStep,
     MeasurementStep,
     ResetStep,
+    RefillStep,
     ResolvedStep,
 )
 from ...implementation.matrices import shift_matrix
@@ -320,6 +321,12 @@ class _NumpyMatrixEngine(MatrixEngine):
                 is_conditioned=step.condition is not None,
                 forces_per_shot=True,   
             )
+        if isinstance(step, RefillStep):
+            return _OperationExecutionFacts(
+                target_indices=step.target_indices,
+                is_conditioned=step.condition is not None,
+                forces_per_shot=True,
+            )
         if isinstance(step, OccupancyInitStep):
             return _OperationExecutionFacts(
                 target_indices=(),
@@ -459,6 +466,12 @@ class _NumpyMatrixEngine(MatrixEngine):
                     for index in step.target_indices:
                         if index in occupied and rng.random() < step.p:
                             occupied.discard(index)
+                            self.reset_subsystems([index], rng)
+            elif isinstance(step, RefillStep):
+                if _condition_matches(step.condition, clbits):
+                    for index in step.target_indices:
+                        if index not in occupied:
+                            occupied.add(index)
                             self.reset_subsystems([index], rng)
             elif isinstance(step, MeasurementStep):
                 bits = self.measure_subsystems(step.measured_indices, rng)

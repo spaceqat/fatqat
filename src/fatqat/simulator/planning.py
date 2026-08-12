@@ -29,6 +29,7 @@ from .._backends.steps import (
     AtomLossStep,
     MeasurementStep,
     ResetStep,
+    RefillStep,
     ResolvedStep,
 )
 
@@ -80,6 +81,47 @@ def _lower_reset(
             "channel noise attached to Reset is not supported yet"
         )
     return _lower_reset_boundary(step, engine_index_allocation)
+
+
+def _lower_refill(
+    step: AppliedOperation,
+    resource_layout: ResourceLayout,
+    engine_index_allocation: _EngineIndexAllocation,
+    noise_model: NoiseModel,
+) -> list[ResolvedStep]:
+    """Lower one ``Refill`` into a ``RefillStep`` plus any attached atom loss.
+
+    Attached ``AtomLoss`` is emitted after the refill (loading inefficiency,
+    S-C1): an atom that arrives and is immediately lost gives
+    ``p_success = 1 - p``. Only ``AtomLoss`` may attach to ``Refill`` -- a
+    Kraus channel on a reload has no meaning here.
+    """
+    condition = _resolve_condition(step.condition, engine_index_allocation)
+    engine_indices = tuple(
+        engine_index_allocation.subsystem_index(t) for t in step.targets
+    )
+    steps: list[ResolvedStep] = [
+        RefillStep(target_indices=engine_indices, condition=condition)
+    ]
+    for channel, extent in noise_model.channels_for(
+        type(step.operation), step.targets, resource_layout
+    ):
+        if not isinstance(channel, AtomLoss):
+            raise UnsupportedOperationError(
+                f"{type(channel).__name__} attached to Refill is not "
+                "supported; only AtomLoss models loading inefficiency"
+            )
+        extent_indices = tuple(
+            engine_index_allocation.subsystem_index(target) for target in extent
+        )
+        steps.append(
+            AtomLossStep(
+                target_indices=extent_indices,
+                p=channel.p,
+                condition=condition,
+            )
+        )
+    return steps
 
 
 def _lower_gate(

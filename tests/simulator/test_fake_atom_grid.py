@@ -6,11 +6,11 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
-from fatqat._backends.steps import ApplyMatrixStep, ResetStep
+from fatqat._backends.steps import ApplyMatrixStep, ResetStep, RefillStep
 from fatqat.simulator import AtomGridSimulator, Simulator
 from fatqat.simulator.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
-from fatqat.noise import Depolarizing, NoiseModel
+from fatqat.noise import Depolarizing, NoiseModel, AtomLoss
 from fatqat.program import Program
 from fatqat.registers import GridRegister, QuantumRegister
 from fatqat.resource_layout import ResourceLayout
@@ -838,3 +838,75 @@ def test_rearrange_of_unloaded_operand_is_silently_ignored():
         .result().get_counts()
     )
     assert counts == {"0": 4}                # atoms[1] never got a gate -> reads 0
+
+
+def test_refill_restores_a_lost_site():
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=1.0), operation=ops.RY)   # loss only on RY
+    atoms = GridRegister(1, 2, name="atoms")
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 2))
+    p.add(ops.RY(0.0), atoms[0])          # identity, but triggers p=1 loss on atoms[0]
+    p.add(ops.Refill, atoms[0])           # reload -> fresh |0>
+    p.add(ops.RX(np.pi), atoms[0])        # RX (no loss) works on the refilled atom
+    p.measure(atoms[0], 0)
+    counts = (
+        AtomGridSimulator(grid_size=(1, 2), noise=noise)
+        .run(p, shots=8, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    assert counts == {"1": 8}             # refilled |0> -> RX(pi) -> |1>, reads 1 (not erasure 2)
+
+
+def test_refill_on_occupied_site_is_a_noop():
+    atoms = GridRegister(1, 2, name="atoms")
+
+    def build(with_refill):
+        p = Program([atoms], 1)
+        p.add(ops.LoadAtoms(1, 2))
+        p.add(ops.RX(np.pi), atoms[0])    # atoms[0] -> |1>
+        if with_refill:
+            p.add(ops.Refill, atoms[0])   # occupied -> must be a no-op (must NOT reset to |0>)
+        p.measure(atoms[0], 0)
+        return p
+
+    def counts(p):
+        return (
+            AtomGridSimulator(grid_size=(1, 2))
+            .run(p, shots=8, simulation_config={"seed": 0})
+            .result().get_counts()
+        )
+
+    assert counts(build(True)) == counts(build(False)) == {"1": 8}   
+
+
+def test_refill_can_fill_a_never_loaded_site():
+    atoms = GridRegister(1, 2, name="atoms")
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 1))            # load site 0 only; atoms[1] never loaded
+    p.add(ops.Refill, atoms[1])          # fill the never-loaded site
+    p.add(ops.RX(np.pi), atoms[1])       # usable -> proves static drop was narrowed
+    p.measure(atoms[1], 0)
+    counts = (
+        AtomGridSimulator(grid_size=(1, 2))
+        .run(p, shots=8, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    assert counts == {"1": 8}            # refilled |0> -> RX(pi) -> |1>
+
+
+def test_refill_loss_gives_loading_efficiency():
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=0.4), operation=ops.Refill)   # 40% loading failure
+    atoms = GridRegister(1, 2, name="atoms")
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 1))            # load site 0; atoms[1] empty
+    p.add(ops.Refill, atoms[1])          # try to load atoms[1]: succeeds ~60%
+    p.measure(atoms[1], 0)               # loaded -> reads 0 (|0>); failed -> erasure 2
+    counts = (
+        AtomGridSimulator(grid_size=(1, 2), noise=noise)
+        .run(p, shots=4000, simulation_config={"seed": 0})
+        .result().get_counts()
+    )
+    total = sum(counts.values())
+    assert 0.55 < counts.get("0", 0) / total < 0.65   # ~60% loaded

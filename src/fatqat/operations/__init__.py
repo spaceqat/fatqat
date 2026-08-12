@@ -44,6 +44,7 @@ from .qudit_gates import (
 )
 from .rearrange import Rearrange
 from .reset import Reset, ResetGate
+from .refill import Refill, RefillGate
 
 __all__ = [
     "Operation",
@@ -71,6 +72,7 @@ __all__ = [
     "Phase",
     "CPhase",
     "Reset",
+    "Refill",
     "Barrier",
     "LoadAtoms",
     "Rearrange",

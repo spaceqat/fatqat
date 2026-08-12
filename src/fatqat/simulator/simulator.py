@@ -60,7 +60,7 @@ from ..noise import (
     AtomLoss,
     default_channel_implementation_map,
 )
-from ..operations import BarrierGate, Measurement, ResetGate
+from ..operations import BarrierGate, Measurement, ResetGate, RefillGate
 from ..program import AppliedOperation, Program
 from ..registers import RegisterRef
 from ..resource_layout import DeviceOperand, ResourceLayout
@@ -813,6 +813,15 @@ class Simulator:
                 if isinstance(step.operation, ResetGate):
                     plan.append(
                         planning._lower_reset(
+                            step,
+                            resource_layout,
+                            engine_index_allocation,
+                            self._noise_model,
+                        )
+                    )
+                elif isinstance(step.operation, RefillGate):
+                    plan.extend(
+                        planning._lower_refill(
                             step,
                             resource_layout,
                             engine_index_allocation,
