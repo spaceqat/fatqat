@@ -777,24 +777,23 @@ def test_atomic_swap_exchanges_sites_not_state():
             .run(p, result_config={"counts": False, "final_state": True})
             .result().get_statevector()
         )
-
-    # Swap exchanges trap sites, not state, and needs no temp site.
+    
     assert np.allclose(sv(build(True)), sv(build(False)))
 
 
 def test_atom_moved_outside_load_block_still_accepts_gates():
-    atoms = GridRegister(1, 2, name="atoms")  # 2 atoms on a 1x3 device
+    atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
-    p.add(ops.LoadAtoms(1, 2))               # load sites {0, 1}
-    p.add(ops.Rearrange((2,)), atoms[0])     # move atoms[0] to site 2 (outside block)
-    p.add(ops.RX(np.pi), atoms[0])           # must still execute
+    p.add(ops.LoadAtoms(1, 2))
+    p.add(ops.Rearrange((2,)), atoms[0])
+    p.add(ops.RX(np.pi), atoms[0])
     p.measure(atoms[0], 0)
     counts = (
         AtomGridSimulator(grid_size=(1, 3))
         .run(p, shots=8, simulation_config={"seed": 0})
         .result().get_counts()
     )
-    assert counts == {"1": 8}                # RX(pi)|0> -> |1>, not dropped
+    assert counts == {"1": 8}
 
 
 def test_conditional_rearrange_rejected():
@@ -811,7 +810,7 @@ def test_rearrange_non_injective_rejected():
     atoms = GridRegister(1, 3, name="atoms")
     p = Program([atoms])
     p.add(ops.LoadAtoms(1, 3))
-    p.add(ops.Rearrange((1,)), atoms[0])     # onto atoms[1]'s site -> collision
+    p.add(ops.Rearrange((1,)), atoms[0])
     with pytest.raises(BackendValidationError):
         AtomGridSimulator(grid_size=(1, 3))._lower_program(p)
 
@@ -820,42 +819,42 @@ def test_rearrange_target_site_off_device_rejected():
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms])
     p.add(ops.LoadAtoms(1, 2))
-    p.add(ops.Rearrange((9,)), atoms[0])     # site 9 does not exist on 1x3
+    p.add(ops.Rearrange((9,)), atoms[0])
     with pytest.raises(BackendValidationError):
         AtomGridSimulator(grid_size=(1, 3))._lower_program(p)
 
 
 def test_rearrange_of_unloaded_operand_is_silently_ignored():
-    atoms = GridRegister(1, 2, name="atoms")  # on 1x3 device
+    atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
-    p.add(ops.LoadAtoms(1, 1))               # load site 0 only; atoms[1] unloaded
-    p.add(ops.Rearrange((2,)), atoms[1])     # move the empty operand: must NOT raise
-    p.add(ops.RX(np.pi), atoms[1])           # still dropped (unloaded)
+    p.add(ops.LoadAtoms(1, 1))
+    p.add(ops.Rearrange((2,)), atoms[1])
+    p.add(ops.RX(np.pi), atoms[1])
     p.measure(atoms[1], 0)
     counts = (
         AtomGridSimulator(grid_size=(1, 3))
         .run(p, shots=4, simulation_config={"seed": 0})
         .result().get_counts()
     )
-    assert counts == {"0": 4}                # atoms[1] never got a gate -> reads 0
+    assert counts == {"0": 4}
 
 
 def test_refill_restores_a_lost_site():
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=1.0), operation=ops.RY)   # loss only on RY
+    noise.add_channel(AtomLoss(p=1.0), operation=ops.RY)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
-    p.add(ops.RY(0.0), atoms[0])          # identity, but triggers p=1 loss on atoms[0]
-    p.add(ops.Refill, atoms[0])           # reload -> fresh |0>
-    p.add(ops.RX(np.pi), atoms[0])        # RX (no loss) works on the refilled atom
+    p.add(ops.RY(0.0), atoms[0])
+    p.add(ops.Refill, atoms[0])
+    p.add(ops.RX(np.pi), atoms[0])
     p.measure(atoms[0], 0)
     counts = (
         AtomGridSimulator(grid_size=(1, 2), noise=noise)
         .run(p, shots=8, simulation_config={"seed": 0})
         .result().get_counts()
     )
-    assert counts == {"1": 8}             # refilled |0> -> RX(pi) -> |1>, reads 1 (not erasure 2)
+    assert counts == {"1": 8}
 
 
 def test_refill_on_occupied_site_is_a_noop():
@@ -864,9 +863,9 @@ def test_refill_on_occupied_site_is_a_noop():
     def build(with_refill):
         p = Program([atoms], 1)
         p.add(ops.LoadAtoms(1, 2))
-        p.add(ops.RX(np.pi), atoms[0])    # atoms[0] -> |1>
+        p.add(ops.RX(np.pi), atoms[0])
         if with_refill:
-            p.add(ops.Refill, atoms[0])   # occupied -> must be a no-op (must NOT reset to |0>)
+            p.add(ops.Refill, atoms[0])
         p.measure(atoms[0], 0)
         return p
 
@@ -883,27 +882,26 @@ def test_refill_on_occupied_site_is_a_noop():
 def test_refill_can_fill_a_never_loaded_site():
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
-    p.add(ops.LoadAtoms(1, 1))            # load site 0 only; atoms[1] never loaded
-    p.add(ops.Refill, atoms[1])          # fill the never-loaded site
-    p.add(ops.RX(np.pi), atoms[1])       # usable -> proves static drop was narrowed
+    p.add(ops.LoadAtoms(1, 1))
+    p.add(ops.Refill, atoms[1])
+    p.add(ops.RX(np.pi), atoms[1])
     p.measure(atoms[1], 0)
     counts = (
         AtomGridSimulator(grid_size=(1, 2))
         .run(p, shots=8, simulation_config={"seed": 0})
         .result().get_counts()
     )
-    assert counts == {"1": 8}            # refilled |0> -> RX(pi) -> |1>
+    assert counts == {"1": 8}
 
 
 def test_refill_loss_gives_loading_efficiency():
-    atoms = GridRegister(1, 2, name="atoms")
-    p = Program([atoms], 1)
-    p.add(ops.LoadAtoms(1, 1))            # load site 0; atoms[1] empty
-    p.add(ops.Refill, atoms[1])          # try to load atoms[1]: succeeds ~60%
-    p.measure(atoms[1], 0)              
-
     noise = NoiseModel()
     noise.add_channel(AtomLoss(p=0.4), operation=ops.Refill)
+    atoms = GridRegister(1, 2, name="atoms")
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 1))
+    p.add(ops.Refill, atoms[1])
+    p.measure(atoms[1], 0)              
     counts = (
         AtomGridSimulator(grid_size=(1, 2), noise=noise)
         .run(p, shots=4000, simulation_config={"seed": 0})
@@ -914,31 +912,29 @@ def test_refill_loss_gives_loading_efficiency():
 
 
 def test_rearrange_loss_ejects_the_moved_atom():
-    atoms = GridRegister(1, 2, name="atoms")     # 1x3 device, site 2 free
-    p = Program([atoms], 1)
-    p.add(ops.LoadAtoms(1, 2))
-    p.add(ops.Rearrange((2,)), atoms[0])         # move atoms[0]; loss fires on it 
-    p.measure(atoms[0], 0)
-
     noise = NoiseModel()
     noise.add_channel(AtomLoss(p=1.0), operation=ops.Rearrange)
+    atoms = GridRegister(1, 2, name="atoms")
+    p = Program([atoms], 1)
+    p.add(ops.LoadAtoms(1, 2))
+    p.add(ops.Rearrange((2,)), atoms[0])
+    p.measure(atoms[0], 0)
     counts = (
         AtomGridSimulator(grid_size=(1, 3), noise=noise)
         .run(p, shots=8, simulation_config={"seed": 0})
         .result().get_counts()
     )
-    assert counts == {"2": 8}                     # moved atom lost -> erasure
+    assert counts == {"2": 8}
 
 
 def test_rearrange_loss_spares_an_unmoved_atom():
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=1.0), operation=ops.Rearrange)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
-    p.add(ops.Rearrange((2,)), atoms[0])         # only atoms[0] moves
-    p.measure(atoms[1], 0)                         # atoms[1] not moved -> not lost
-
-    noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=1.0), operation=ops.Rearrange)
+    p.add(ops.Rearrange((2,)), atoms[0])
+    p.measure(atoms[1], 0)
     counts = (
         AtomGridSimulator(grid_size=(1, 3), noise=noise)
         .run(p, shots=8, simulation_config={"seed": 0})
@@ -948,15 +944,14 @@ def test_rearrange_loss_spares_an_unmoved_atom():
 
 
 def test_rearrange_kraus_noise_applies_to_moved_atom():
+    noise = NoiseModel()
+    noise.add_channel(Depolarizing(p=1.0), operation=ops.Rearrange)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
-    p.add(ops.RX(np.pi), atoms[0])               # atoms[0] -> |1>
-    p.add(ops.Rearrange((2,)), atoms[0])         # move; Depolarizing p=1 -> I/2
+    p.add(ops.RX(np.pi), atoms[0])
+    p.add(ops.Rearrange((2,)), atoms[0])
     p.measure(atoms[0], 0)
-
-    noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=1.0), operation=ops.Rearrange)   # full depolarize
     counts = (
         AtomGridSimulator(grid_size=(1, 3), noise=noise)
         .run(p, shots=2000, simulation_config={"seed": 0})
@@ -967,20 +962,46 @@ def test_rearrange_kraus_noise_applies_to_moved_atom():
 
 
 def test_loss_rearrange_refill_compose():
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=1.0), operation=ops.RY)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
-    p.add(ops.RY(0.0), atoms[0])                  # lose atoms[0]
-    p.add(ops.Rearrange((2,)), atoms[1])          # move atoms[1] (independent)
-    p.add(ops.Refill, atoms[0])                   # reload atoms[0] -> fresh |0>
-    p.add(ops.RX(np.pi), atoms[0])                # usable again -> |1>
+    p.add(ops.RY(0.0), atoms[0])
+    p.add(ops.Rearrange((2,)), atoms[1])
+    p.add(ops.Refill, atoms[0])
+    p.add(ops.RX(np.pi), atoms[0])
     p.measure(atoms[0], 0)
-
-    noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=1.0), operation=ops.RY)
     counts = (
         AtomGridSimulator(grid_size=(1, 3), noise=noise)
         .run(p, shots=8, simulation_config={"seed": 0})
         .result().get_counts()
     )
-    assert counts == {"1": 8}     # loss + refill + gate compose; rearrange doesn't interfere
+    assert counts == {"1": 8}
+
+
+def test_atom_loss_rejected_by_a_non_atom_backend():
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=0.1), operation=ops.RX)
+    report = Simulator().validate_noise(noise)
+    assert not report.supported
+    assert "AtomLoss" in report.rejected_sources
+    assert any("atom loss" in w for w in report.warnings)
+
+
+def test_atom_loss_accepted_by_atom_grid_backend():
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=0.1), operation=ops.RX)
+    report = AtomGridSimulator().validate_noise(noise)
+    assert report.supported
+    assert "AtomLoss" in report.accepted_sources
+
+
+def test_atom_loss_run_rejected_by_plain_simulator():
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=0.1), operation=ops.RX)
+    program = Program(1, 1)
+    program.add(ops.RX(np.pi), 0)
+    program.measure(0, 0)
+    with pytest.raises(BackendValidationError):
+        Simulator(noise=noise).run(program)

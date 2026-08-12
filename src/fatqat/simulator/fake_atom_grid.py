@@ -144,6 +144,35 @@ class AtomGridSimulator(Simulator):
     lifecycle driven by :py:class:`~fatqat.operations.LoadAtoms` - see
     :py:meth:`_lower`.
 
+    Atom lifecycle:
+        Beyond loading, three atom effects are available. Attach
+        :py:class:`~fatqat.operations.AtomLoss` to a gate to eject atoms per
+        shot (a lost atom reads the erasure digit ``2``, distinct from a real
+        ``|0>``); use :py:class:`~fatqat.operations.Rearrange` to move atoms to
+        new sites mid-circuit so a two-qubit gate becomes legal on a pair that
+        started non-adjacent; use :py:data:`~fatqat.operations.Refill` to
+        reload emptied sites. Imperfect loading efficiency is expressed by
+        attaching ``AtomLoss`` to ``Refill``. Only this backend models atom
+        loss; a generic backend rejects ``AtomLoss`` via
+        :py:meth:`validate_noise` rather than ignoring it.
+
+        .. doctest:: atom_grid_loss
+
+           >>> import numpy as np
+           >>> import fatqat as fq
+           >>> import fatqat.operations as op
+           >>> noise = fq.NoiseModel()
+           >>> noise.add_channel(fq.noise.AtomLoss(p=1.0), operation=op.RX)
+           >>> program = fq.Program(1, 1)
+           >>> program.add(op.LoadAtoms(1, 1))
+           >>> program.add(op.RX(np.pi), 0)
+           >>> program.measure(0, 0)
+           >>> backend = fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
+           >>> backend.run(
+           ...     program, shots=100, simulation_config={"seed": 0}
+           ... ).result().get_counts()
+           {'2': 100}
+
     Example:
         This two-row, three-column circuit prepares a Hadamard on every site
         in the first row, then creates pairwise row-1-to-row-2 CNOTs. Neither
@@ -177,6 +206,8 @@ class AtomGridSimulator(Simulator):
            >>> all(bits[:3] == bits[3:] for bits in counts)
            True
     """
+
+    _supports_atom_loss = True
 
     def __init__(
         self,
@@ -376,11 +407,6 @@ class AtomGridSimulator(Simulator):
                 continue
             realized.append(step)
 
-        # Lower in segments split at each Rearrange, threading a layout that
-        # evolves across them. Rearrange emits no matrix step (M-B2), but it
-        # DOES emit its attached channel noise (transport cost) for the moved
-        # atoms; the per-shot occupancy guard skips whichever moved operand is
-        # empty (M-B5).
         current_layout = resource_layout
         plan: list[ResolvedStep] = []
         segment: list[ProgramInstruction] = []
@@ -393,9 +419,6 @@ class AtomGridSimulator(Simulator):
                 )
                 plan.extend(seg_plan)
                 segment = []
-                # Noise selectors match on the layout as the rearrange occurs
-                # (the atom at its source trap); engine indices are position-
-                # independent. Rearrange is unconditional (M-B6), so no guard.
                 plan.extend(
                     _lower_channels(
                         type(step.operation),
@@ -415,8 +438,6 @@ class AtomGridSimulator(Simulator):
         )
         plan.extend(seg_plan)
 
-        # Derive facts from the finished plan so directly-appended rearrange
-        # noise steps are counted too (a Rearrange channel adds has_channel).
         facts = _PlanFacts(
             has_measurement=any(isinstance(s, MeasurementStep) for s in plan),
             has_reset=any(isinstance(s, ResetStep) for s in plan),
@@ -425,8 +446,6 @@ class AtomGridSimulator(Simulator):
                 getattr(s, "condition", None) is not None for s in plan
             ),
         )
-        # Any per-shot occupancy step (loss removes, refill adds) needs the
-        # shot to start from the loaded set rather than a fully-occupied one.
         if any(isinstance(step, (AtomLossStep, RefillStep)) for step in plan):
             occupied_indices = tuple(
                 context.engine_index_allocation.subsystem_index(ref)
@@ -434,7 +453,6 @@ class AtomGridSimulator(Simulator):
             )
             plan.insert(0, OccupancyInitStep(occupied_indices=occupied_indices))
         return plan, facts
-
 
     def _apply_rearrange(
         self, layout: ResourceLayout, applied: AppliedOperation
