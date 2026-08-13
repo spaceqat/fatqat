@@ -80,27 +80,81 @@ def test_unknown_parallel_mode_rejected_at_run():
         )
 
 
-def test_workers_are_asked_to_start_single_threaded():
-    # A worker runs independent shots on small local matrices, so a BLAS thread
-    # pool inside it can only oversubscribe - the parallelism is already spent
-    # on processes. On a many-core host the reservations for those unused
-    # threads are what breaks the pool, so this pins that workers are told to
-    # start with one.
-    from fatqat.simulator._engine.parallel import (
-        _WORKER_THREAD_VARS,
-        _single_threaded_workers,
-    )
+def test_multiprocessing_pool_is_created_with_the_thread_limit_applied():
+    """Pin the wiring, not the helper.
 
-    before = {name: os.environ.get(name) for name in _WORKER_THREAD_VARS}
+    The helper on its own proves nothing: deleting the `with` around the pool
+    leaves a test that only calls the helper directly still green, which is
+    exactly the regression it exists to prevent. So this intercepts the
+    executor and asserts on the environment it was actually constructed in -
+    the moment that decides what a spawned worker inherits.
+    """
+    from fatqat.simulator._engine import parallel
 
-    with _single_threaded_workers():
-        assert all(os.environ[name] == "1" for name in _WORKER_THREAD_VARS)
+    seen = {}
 
-    # And the parent is handed back exactly what it had, set or unset.
-    assert {name: os.environ.get(name) for name in _WORKER_THREAD_VARS} == before
+    class _RecordingExecutor:
+        def __init__(self, max_workers=None, **kwargs):
+            seen["env"] = dict(os.environ)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def map(self, function, *iterables):
+            # Run in-process; the point is what the environment looked like.
+            return [function(*arguments) for arguments in zip(*iterables)]
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(parallel, "ProcessPoolExecutor", _RecordingExecutor)
+        Simulator("SV").run(
+            _random_dynamic_program(),
+            shots=40,
+            simulation_config={
+                "seed": 5,
+                "max_workers": 2,
+                "parallel_mode": "multiprocessing",
+            },
+        ).result().get_counts()
+
+    assert all(seen["env"][name] == "1" for name in parallel._WORKER_THREAD_VARS)
 
 
-def test_worker_thread_limit_survives_a_failure():
+def test_loky_executor_is_given_the_thread_limit_as_env():
+    """The loky path takes the same limit through its own `env=`.
+
+    loky applies it to workers itself and restarts a reusable pool when it
+    changes, so it needs no environment mutation - but only if it is actually
+    passed, which is what this checks.
+    """
+    loky = pytest.importorskip("loky")
+    from fatqat.simulator._engine import parallel
+
+    seen = {}
+
+    class _RecordingExecutor:
+        def map(self, function, *iterables):
+            return [function(*arguments) for arguments in zip(*iterables)]
+
+    def _fake_get_reusable_executor(max_workers=None, env=None, **kwargs):
+        seen["env"] = env
+        return _RecordingExecutor()
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(loky, "get_reusable_executor", _fake_get_reusable_executor)
+        Simulator("SV").run(
+            _random_dynamic_program(),
+            shots=40,
+            simulation_config={"seed": 5, "max_workers": 2, "parallel_mode": "loky"},
+        ).result().get_counts()
+
+    assert seen["env"] == {name: "1" for name in parallel._WORKER_THREAD_VARS}
+
+
+def test_the_parent_environment_is_restored_even_on_failure():
+    """A parallel run must not leave the caller's process reconfigured."""
     from fatqat.simulator._engine.parallel import (
         _WORKER_THREAD_VARS,
         _single_threaded_workers,
@@ -110,6 +164,7 @@ def test_worker_thread_limit_survives_a_failure():
 
     with pytest.raises(RuntimeError):
         with _single_threaded_workers():
+            assert all(os.environ[name] == "1" for name in _WORKER_THREAD_VARS)
             raise RuntimeError("boom")
 
     assert {name: os.environ.get(name) for name in _WORKER_THREAD_VARS} == before
