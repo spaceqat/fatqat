@@ -1048,9 +1048,7 @@ def test_atom_loss_final_state_requires_one_shot(method):
 
 def test_atom_loss_default_result_does_not_export_a_random_state():
     result = (
-        AtomGridSimulator(
-            grid_size=(1, 1), noise=_probabilistic_atom_loss_model()
-        )
+        AtomGridSimulator(grid_size=(1, 1), noise=_probabilistic_atom_loss_model())
         .run(_atom_loss_program_without_measurement(), shots=4)
         .result()
     )
@@ -1060,9 +1058,7 @@ def test_atom_loss_default_result_does_not_export_a_random_state():
 
 def test_atom_loss_final_state_allows_one_shot():
     result = (
-        AtomGridSimulator(
-            grid_size=(1, 1), noise=_probabilistic_atom_loss_model()
-        )
+        AtomGridSimulator(grid_size=(1, 1), noise=_probabilistic_atom_loss_model())
         .run(
             _atom_loss_program_without_measurement(),
             shots=1,

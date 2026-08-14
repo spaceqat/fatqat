@@ -598,8 +598,7 @@ class Simulator:
     def _state_is_stochastic(self, facts: _PlanFacts) -> bool:
         """Whether one final state cannot represent this run's trajectories."""
         return facts.has_measurement or (
-            self._nonunitary_is_stochastic
-            and (facts.has_reset or facts.has_channel)
+            self._nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
         )
 
     def _validate_method_support(
@@ -856,9 +855,7 @@ class Simulator:
         facts, while the common simulator remains unaware of those step types.
         """
         return _PlanFacts(
-            has_measurement=any(
-                isinstance(step, MeasurementStep) for step in plan
-            ),
+            has_measurement=any(isinstance(step, MeasurementStep) for step in plan),
             has_reset=any(isinstance(step, ResetStep) for step in plan),
             has_channel=any(isinstance(step, ApplyChannelStep) for step in plan),
             has_condition=any(

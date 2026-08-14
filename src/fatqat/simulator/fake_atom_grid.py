@@ -492,9 +492,7 @@ class AtomGridSimulator(Simulator):
             plan.insert(0, OccupancyInitStep(occupied_indices=occupied_indices))
         return plan
 
-    def _analyze_plan_facts(
-        self, plan: Sequence[ResolvedStep]
-    ) -> _AtomGridPlanFacts:
+    def _analyze_plan_facts(self, plan: Sequence[ResolvedStep]) -> _AtomGridPlanFacts:
         """Extend common plan facts with atom-grid lifecycle facts."""
         common = super()._analyze_plan_facts(plan)
         return _AtomGridPlanFacts.from_common(
