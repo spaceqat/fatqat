@@ -40,8 +40,8 @@ engine index coincide.
 
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, fields, replace
+from typing import TYPE_CHECKING, cast
 
 from .. import operations as ops
 from ..errors import BackendValidationError
@@ -56,14 +56,14 @@ from ..registers import (
     RegisterRef,
 )
 from ..resource_layout import ResourceLayout
-from .._backends.backend_utils import _PlanFacts, _validate_grid_size
+from .._backends.backend_utils import (
+    _PlanFacts,
+    _validate_grid_size,
+)
 from .._backends.steps import (
-    ApplyChannelStep,
     AtomLossStep,
-    MeasurementStep,
     OccupancyInitStep,
     RefillStep,
-    ResetStep,
 )
 from .planning import _lower_channels
 from .simulator import Simulator
@@ -73,12 +73,44 @@ if TYPE_CHECKING:
 
     from ..implementation import MatrixImplementation
     from ..operations import Operation
+    from ..result import _ResultConfig
     from .._backends.backend_utils import _LoweringContext
     from .simulator import ProgramInstruction
     from .._backends.steps import ResolvedStep
 
 DEFAULT_ROWS = 4
 DEFAULT_COLS = 5
+
+
+@dataclass(frozen=True)
+class _AtomGridPlanFacts(_PlanFacts):
+    """Plan facts owned by the atom-grid occupancy lifecycle."""
+
+    has_loss: bool = False
+    has_refill: bool = False
+
+    @classmethod
+    def from_common(
+        cls,
+        common: _PlanFacts,
+        *,
+        has_loss: bool,
+        has_refill: bool,
+    ) -> _AtomGridPlanFacts:
+        """Extend common facts without manually copying their fields."""
+        common_values = {
+            field.name: getattr(common, field.name) for field in fields(_PlanFacts)
+        }
+        return cls(
+            **common_values,
+            has_loss=has_loss,
+            has_refill=has_refill,
+        )
+
+    @property
+    def has_atom_lifecycle(self) -> bool:
+        """Whether execution carries occupancy state outside the quantum state."""
+        return self.has_loss or self.has_refill
 
 
 def _nearest_neighbor_edges(rows: int, cols: int) -> tuple[tuple[int, int], ...]:
@@ -326,7 +358,7 @@ class AtomGridSimulator(Simulator):
 
     def _lower(
         self, operations: Sequence[ProgramInstruction], context: _LoweringContext
-    ) -> tuple[list[ResolvedStep], _PlanFacts]:
+    ) -> list[ResolvedStep]:
         """Apply this program's atom lifecycle, then lower normally.
 
         Every device site starts empty. The program's first instruction must
@@ -429,7 +461,7 @@ class AtomGridSimulator(Simulator):
             if isinstance(step, AppliedOperation) and isinstance(
                 step.operation, ops.Rearrange
             ):
-                seg_plan, _ = super()._lower(
+                seg_plan = super()._lower(
                     tuple(segment), replace(context, resource_layout=current_layout)
                 )
                 plan.extend(seg_plan)
@@ -448,23 +480,45 @@ class AtomGridSimulator(Simulator):
                 current_layout = self._apply_rearrange(current_layout, step)
                 continue
             segment.append(step)
-        seg_plan, _ = super()._lower(
+        seg_plan = super()._lower(
             tuple(segment), replace(context, resource_layout=current_layout)
         )
         plan.extend(seg_plan)
 
-        facts = _PlanFacts(
-            has_measurement=any(isinstance(s, MeasurementStep) for s in plan),
-            has_reset=any(isinstance(s, ResetStep) for s in plan),
-            has_channel=any(isinstance(s, ApplyChannelStep) for s in plan),
-            has_condition=any(getattr(s, "condition", None) is not None for s in plan),
-        )
         if any(isinstance(step, (AtomLossStep, RefillStep)) for step in plan):
             occupied_indices = tuple(
                 context.engine_index_allocation.subsystem_index(ref) for ref in occupied
             )
             plan.insert(0, OccupancyInitStep(occupied_indices=occupied_indices))
-        return plan, facts
+        return plan
+
+    def _analyze_plan_facts(
+        self, plan: Sequence[ResolvedStep]
+    ) -> _AtomGridPlanFacts:
+        """Extend common plan facts with atom-grid lifecycle facts."""
+        common = super()._analyze_plan_facts(plan)
+        return _AtomGridPlanFacts.from_common(
+            common,
+            has_loss=any(isinstance(step, AtomLossStep) for step in plan),
+            has_refill=any(isinstance(step, RefillStep) for step in plan),
+        )
+
+    def _state_is_stochastic(self, facts: _PlanFacts) -> bool:
+        """Interpret atom loss using this backend's state representation."""
+        atom_facts = cast(_AtomGridPlanFacts, facts)
+        return super()._state_is_stochastic(facts) or atom_facts.has_loss
+
+    def _validate_method_support(
+        self, config: _ResultConfig, facts: _PlanFacts
+    ) -> None:
+        """Reject operator methods that cannot carry atom occupancy state."""
+        super()._validate_method_support(config, facts)
+        atom_facts = cast(_AtomGridPlanFacts, facts)
+        if self._is_operator and atom_facts.has_atom_lifecycle:
+            raise BackendValidationError(
+                f"method={self._state_field!r} cannot represent atom occupancy, "
+                "loss, or refill; use method='statevector' or 'density_matrix'"
+            )
 
     def _apply_rearrange(
         self, layout: ResourceLayout, applied: AppliedOperation

@@ -449,7 +449,8 @@ class Simulator:
                 engine_index_allocation=self._allocate_engine_indices(program),
             )
         operations = _break_grouped_operations(program.operations)
-        return self._lower(operations, context)
+        plan = self._lower(operations, context)
+        return plan, self._analyze_plan_facts(plan)
 
     def run(
         self,
@@ -559,29 +560,28 @@ class Simulator:
     def _validate(self, config: _ResultConfig, shots: int, facts: _PlanFacts) -> None:
         """Validate result-config / shots constraints against the lowered program.
 
-        Operation support and dynamic classification were already resolved in
-        `_lower`. Stochasticity is representation-dependent: measurement is
-        always stochastic; reset and channel noise only when
-        ``_nonunitary_is_stochastic``.
+        Operation support and dynamic classification were already resolved
+        from the finished plan. Stochasticity is representation-dependent:
+        measurement is always stochastic; reset and Kraus-channel noise only
+        when ``_nonunitary_is_stochastic``. A backend may extend
+        ``_state_is_stochastic`` for backend-specific execution steps.
         """
         self._validate_method_support(config, facts)
+        state_is_stochastic = self._state_is_stochastic(facts)
         request = _resolve_result_request(
             config,
             facts,
             self._request_cls,
             self._state_field,
-            self._nonunitary_is_stochastic,
+            state_is_stochastic,
         )
-        stochastic = facts.has_measurement or (
-            self._nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
-        )
-        requested_state = config.final_state is True
+        state_requested = getattr(request, self._state_field)
 
         # shots is only checked when the result actually depends on it: counts
         # always sample per shot, and a stochastic state export needs shots==1
         # below. A non-stochastic state-only request ignores shots entirely
         # (see the engine's per-shot path), so any value - including 0 - is fine.
-        if (request.counts or (requested_state and stochastic)) and type(
+        if (request.counts or (state_requested and state_is_stochastic)) and type(
             shots
         ) is not int:
             raise BackendValidationError(
@@ -589,16 +589,18 @@ class Simulator:
             )
         if request.counts and shots <= 0:
             raise BackendValidationError(f"counts require shots > 0, got shots={shots}")
-        if requested_state and stochastic and shots != 1:
-            stochastic_sources = (
-                "measurement, reset, or channel noise"
-                if self._nonunitary_is_stochastic
-                else "measurement"
-            )
+        if state_requested and state_is_stochastic and shots != 1:
             raise BackendValidationError(
-                f"{self._state_field} with {stochastic_sources} is only supported "
+                f"{self._state_field} from stochastic execution is only supported "
                 "for shots == 1"
             )
+
+    def _state_is_stochastic(self, facts: _PlanFacts) -> bool:
+        """Whether one final state cannot represent this run's trajectories."""
+        return facts.has_measurement or (
+            self._nonunitary_is_stochastic
+            and (facts.has_reset or facts.has_channel)
+        )
 
     def _validate_method_support(
         self, config: _ResultConfig, facts: _PlanFacts
@@ -695,7 +697,7 @@ class Simulator:
             facts,
             self._request_cls,
             self._state_field,
-            self._nonunitary_is_stochastic,
+            self._state_is_stochastic(facts),
         )
 
         system_key = (tuple(system_dims), n_clbits)
@@ -776,8 +778,8 @@ class Simulator:
         self,
         operations: Sequence[ProgramInstruction],
         context: _LoweringContext,
-    ) -> tuple[list[ResolvedStep], _PlanFacts]:
-        """Lower a program into an execution plan and classify it, in one pass.
+    ) -> list[ResolvedStep]:
+        """Lower a program into an execution plan in one pass.
 
         Dispatches each instruction to matrix-planning helpers, threading this
         backend's noise model / implementation map / channel map through
@@ -786,9 +788,8 @@ class Simulator:
         reading `self`. `Barrier` is recognized by type and skipped
         entirely here - it is a compiler-facing marker with no simulation
         semantics, so it emits no step and cannot affect execution strategy
-        or result defaults. `_PlanFacts` is derived from the finished
-        `plan` rather than tracked by mutation, so it can never drift from
-        what the plan actually contains.
+        or result defaults. Plan facts are derived from the finished plan by
+        `_lower_program`, so they cannot drift from what will execute.
 
         The caller supplies a scalar-only instruction stream and the run's
         private lowering context. `context.resource_layout` is used for
@@ -846,15 +847,22 @@ class Simulator:
                         )
                     )
 
-        return (
-            plan,
-            _PlanFacts(
-                has_measurement=any(isinstance(s, MeasurementStep) for s in plan),
-                has_reset=any(isinstance(s, ResetStep) for s in plan),
-                has_channel=any(isinstance(s, ApplyChannelStep) for s in plan),
-                has_condition=any(
-                    getattr(s, "condition", None) is not None for s in plan
-                ),
+        return plan
+
+    def _analyze_plan_facts(self, plan: Sequence[ResolvedStep]) -> _PlanFacts:
+        """Derive common matrix-simulator facts from the finished plan.
+
+        Subclasses that emit backend-specific steps may extend the returned
+        facts, while the common simulator remains unaware of those step types.
+        """
+        return _PlanFacts(
+            has_measurement=any(
+                isinstance(step, MeasurementStep) for step in plan
+            ),
+            has_reset=any(isinstance(step, ResetStep) for step in plan),
+            has_channel=any(isinstance(step, ApplyChannelStep) for step in plan),
+            has_condition=any(
+                getattr(step, "condition", None) is not None for step in plan
             ),
         )
 
@@ -960,21 +968,16 @@ def _resolve_result_request(
     facts: _PlanFacts,
     request_cls: type,
     state_field: str,
-    nonunitary_is_stochastic: bool,
+    state_is_stochastic: bool,
 ) -> Any:
     """Resolve default result fields from config and lowered program facts.
 
     Counts default to measurement presence. The state field defaults to
-    non-stochastic execution, where stochasticity is representation-dependent:
-    measurement always; reset and channel noise only when
-    ``nonunitary_is_stochastic`` (a statevector samples one branch of any
-    non-unitary map; a density matrix applies it as a deterministic channel).
+    non-stochastic execution. The caller resolves representation-dependent
+    stochasticity once so default selection and validation cannot drift apart.
     """
-    stochastic = facts.has_measurement or (
-        nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
-    )
     counts = config.counts if config.counts is not None else facts.has_measurement
     state = config.final_state
     if state is None:
-        state = not stochastic
+        state = not state_is_stochastic
     return request_cls(counts=counts, **{state_field: state})

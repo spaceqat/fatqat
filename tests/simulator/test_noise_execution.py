@@ -171,7 +171,7 @@ def test_channel_forces_statevector_onto_dynamic_path():
 def test_statevector_export_with_noise_requires_single_shot():
     backend = Simulator(method="SV", noise=_depolarized_x_model())
     program = _x_program()
-    with pytest.raises(BackendValidationError, match="channel noise"):
+    with pytest.raises(BackendValidationError, match="stochastic execution"):
         backend.run(
             program,
             shots=4,

@@ -1017,3 +1017,88 @@ def test_atom_loss_run_rejected_by_plain_simulator():
     program.measure(0, 0)
     with pytest.raises(BackendValidationError):
         Simulator(noise=noise).run(program)
+
+
+def _atom_loss_program_without_measurement():
+    program = Program(1)
+    program.add(ops.LoadAtoms(1, 1))
+    program.add(ops.RX(np.pi), 0)
+    return program
+
+
+def _probabilistic_atom_loss_model():
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=0.5), operation=ops.RX)
+    return noise
+
+
+@pytest.mark.parametrize("method", ["statevector", "density_matrix"])
+def test_atom_loss_final_state_requires_one_shot(method):
+    backend = AtomGridSimulator(
+        grid_size=(1, 1), method=method, noise=_probabilistic_atom_loss_model()
+    )
+
+    with pytest.raises(BackendValidationError, match="stochastic execution"):
+        backend.run(
+            _atom_loss_program_without_measurement(),
+            shots=4,
+            result_config={"counts": False, "final_state": True},
+        )
+
+
+def test_atom_loss_default_result_does_not_export_a_random_state():
+    result = (
+        AtomGridSimulator(
+            grid_size=(1, 1), noise=_probabilistic_atom_loss_model()
+        )
+        .run(_atom_loss_program_without_measurement(), shots=4)
+        .result()
+    )
+
+    assert "statevector" not in result.available_data
+
+
+def test_atom_loss_final_state_allows_one_shot():
+    result = (
+        AtomGridSimulator(
+            grid_size=(1, 1), noise=_probabilistic_atom_loss_model()
+        )
+        .run(
+            _atom_loss_program_without_measurement(),
+            shots=1,
+            result_config={"counts": False, "final_state": True},
+        )
+        .result()
+    )
+
+    assert "statevector" in result.available_data
+
+
+def test_refill_only_final_state_remains_deterministic_for_any_shots():
+    program = Program(1)
+    program.add(ops.LoadAtoms(1, 1))
+    program.add(ops.RX(np.pi), 0)
+    program.add(ops.Refill, 0)
+
+    state = (
+        AtomGridSimulator(grid_size=(1, 1))
+        .run(
+            program,
+            shots=0,
+            result_config={"counts": False, "final_state": True},
+        )
+        .result()
+        .get_statevector()
+    )
+
+    assert np.allclose(np.abs(state), [0, 1])
+
+
+@pytest.mark.parametrize("method", ["unitary", "superop"])
+def test_operator_methods_reject_atom_lifecycle(method):
+    program = Program(1)
+    program.add(ops.LoadAtoms(1, 1))
+    program.add(ops.Refill, 0)
+
+    with pytest.raises(BackendValidationError, match="cannot represent atom occupancy"):
+        AtomGridSimulator(grid_size=(1, 1), method=method).run(program)

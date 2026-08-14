@@ -85,32 +85,32 @@ def test_resolve_result_request_defaults_statevector_for_nonstochastic_program()
         _PlanFacts(has_measurement=False, has_reset=False),
         _StateVectorResultRequest,
         "statevector",
-        nonunitary_is_stochastic=True,
+        state_is_stochastic=False,
     )
 
     assert request.counts is False
     assert request.statevector is True
 
 
-def test_resolve_result_request_reset_suppresses_statevector_default():
+def test_resolve_result_request_stochastic_execution_suppresses_state_default():
     request = _resolve_result_request(
         _ResultConfig(counts=None, final_state=None),
         _PlanFacts(has_measurement=False, has_reset=True),
         _StateVectorResultRequest,
         "statevector",
-        nonunitary_is_stochastic=True,
+        state_is_stochastic=True,
     )
 
     assert request.statevector is False
 
 
-def test_resolve_result_request_reset_keeps_density_matrix_default():
+def test_resolve_result_request_nonstochastic_execution_keeps_density_matrix_default():
     request = _resolve_result_request(
         _ResultConfig(counts=None, final_state=None),
         _PlanFacts(has_measurement=False, has_reset=True),
         _DensityMatrixResultRequest,
         "density_matrix",
-        nonunitary_is_stochastic=False,
+        state_is_stochastic=False,
     )
 
     assert request.counts is False
