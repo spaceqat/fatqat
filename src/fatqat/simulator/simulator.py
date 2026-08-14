@@ -777,41 +777,27 @@ class Simulator:
         operations: Sequence[ProgramInstruction],
         context: _LoweringContext,
     ) -> tuple[list[ResolvedStep], _PlanFacts]:
-        """Apply this program's atom lifecycle, then lower normally.
+        """Lower a program into an execution plan and classify it, in one pass.
 
-        Every device site starts empty. The program's first instruction must
-        be `~fatqat.operations.LoadAtoms` (unconditional, sized to fit this
-        device); it marks the top-left `rows x cols` block of sites as loaded
-        and is itself dropped before lowering, since it has no matrix. Any
-        later `LoadAtoms` is rejected - loading happens exactly once, up front.
+        Dispatches each instruction to matrix-planning helpers, threading this
+        backend's noise model / implementation map / channel map through
+        explicitly - none of the three is overridden by any backend today,
+        so they take their dependencies as plain parameters instead of
+        reading `self`. `Barrier` is recognized by type and skipped
+        entirely here - it is a compiler-facing marker with no simulation
+        semantics, so it emits no step and cannot affect execution strategy
+        or result defaults. `_PlanFacts` is derived from the finished
+        `plan` rather than tracked by mutation, so it can never drift from
+        what the plan actually contains.
 
-        Occupancy is tracked by ref (an atom keeps its slot when moved), so a
-        gate or `Reset` is statically dropped only when a target can never hold
-        an atom: never loaded AND never named in any `Refill` (the narrowed
-        static drop). Everything else survives to the engine's per-shot
-        occupancy guard. `Rearrange` and `Refill` are themselves never dropped:
-        `Rearrange` relabels an operand's position even when empty (M-B7), and
-        `Refill` may fill a never-loaded site (M-C4).
-
-        `Rearrange` changes only device-site labels, not engine indices, so it
-        emits no execution step (M-B2): the plan is lowered in segments split
-        at each `Rearrange`, each under the layout current at that point, so a
-        gate's legality follows the atoms' current positions (M-B1). A
-        `Rearrange` still emits any channel noise attached to it (transport
-        cost) for the moved atoms.
-
-        `Measurement` always lowers normally; a site no surviving gate ever
-        touched stays in its initial |0>, so measuring an unloaded site reads 0
-        deterministically under ideal execution - though a configured
-        readout-error model can still flip the reported bit, exactly as for any
-        other qubit.
-
-        Raises:
-            BackendValidationError: If the program's first instruction is not
-                `LoadAtoms`; if a later instruction is `LoadAtoms`; if
-                `LoadAtoms` or `Rearrange` carries a condition; if a shape or a
-                rearrange destination site does not fit the device; or if a
-                rearrange result is not injective.
+        The caller supplies a scalar-only instruction stream and the run's
+        private lowering context. `context.resource_layout` is used for
+        `MatrixImplementationMap` lookup (`device_operands`) and for
+        `NoiseModel.channels_for()` physical-selector matching (against the
+        occurrence's logical target refs); `context.engine_index_allocation` is
+        used for every execution index/dimension - `ApplyMatrixStep`/
+        `MeasurementStep`/`ResetStep` targets and conditions. Grouped
+        frontend operations are expanded before this method is called.
         """
         resource_layout = context.resource_layout
         engine_index_allocation = context.engine_index_allocation
