@@ -40,7 +40,8 @@ engine index coincide.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, fields, replace
+from typing import TYPE_CHECKING, cast
 
 from .. import operations as ops
 from ..errors import BackendValidationError
@@ -55,7 +56,16 @@ from ..registers import (
     RegisterRef,
 )
 from ..resource_layout import ResourceLayout
-from .._backends.backend_utils import _validate_grid_size
+from .._backends.backend_utils import (
+    _PlanFacts,
+    _validate_grid_size,
+)
+from .._backends.steps import (
+    AtomLossStep,
+    OccupancyInitStep,
+    RefillStep,
+)
+from .planning import _lower_channels
 from .simulator import Simulator
 
 if TYPE_CHECKING:
@@ -63,12 +73,44 @@ if TYPE_CHECKING:
 
     from ..implementation import MatrixImplementation
     from ..operations import Operation
-    from .._backends.backend_utils import _LoweringContext, _PlanFacts
+    from ..result import _ResultConfig
+    from .._backends.backend_utils import _LoweringContext
     from .simulator import ProgramInstruction
     from .._backends.steps import ResolvedStep
 
 DEFAULT_ROWS = 4
 DEFAULT_COLS = 5
+
+
+@dataclass(frozen=True)
+class _AtomGridPlanFacts(_PlanFacts):
+    """Plan facts owned by the atom-grid occupancy lifecycle."""
+
+    has_loss: bool = False
+    has_refill: bool = False
+
+    @classmethod
+    def from_common(
+        cls,
+        common: _PlanFacts,
+        *,
+        has_loss: bool,
+        has_refill: bool,
+    ) -> _AtomGridPlanFacts:
+        """Extend common facts without manually copying their fields."""
+        common_values = {
+            field.name: getattr(common, field.name) for field in fields(_PlanFacts)
+        }
+        return cls(
+            **common_values,
+            has_loss=has_loss,
+            has_refill=has_refill,
+        )
+
+    @property
+    def has_atom_lifecycle(self) -> bool:
+        """Whether execution carries occupancy state outside the quantum state."""
+        return self.has_loss or self.has_refill
 
 
 def _nearest_neighbor_edges(rows: int, cols: int) -> tuple[tuple[int, int], ...]:
@@ -134,6 +176,35 @@ class AtomGridSimulator(Simulator):
     lifecycle driven by :py:class:`~fatqat.operations.LoadAtoms` - see
     :py:meth:`_lower`.
 
+    Atom lifecycle:
+        Beyond loading, three atom effects are available. Attach
+        :py:class:`~fatqat.operations.AtomLoss` to a gate to eject atoms per
+        shot (a lost atom reads the erasure digit ``2``, distinct from a real
+        ``|0>``); use :py:class:`~fatqat.operations.Rearrange` to move atoms to
+        new sites mid-circuit so a two-qubit gate becomes legal on a pair that
+        started non-adjacent; use :py:data:`~fatqat.operations.Refill` to
+        reload emptied sites. Imperfect loading efficiency is expressed by
+        attaching ``AtomLoss`` to ``Refill``. Only this backend models atom
+        loss; a generic backend rejects ``AtomLoss`` via
+        :py:meth:`validate_noise` rather than ignoring it.
+
+        .. doctest:: atom_grid_loss
+
+           >>> import numpy as np
+           >>> import fatqat as fq
+           >>> import fatqat.operations as op
+           >>> noise = fq.NoiseModel()
+           >>> noise.add_channel(fq.noise.AtomLoss(p=1.0), operation=op.RX)
+           >>> program = fq.Program(1, 1)
+           >>> program.add(op.LoadAtoms(1, 1))
+           >>> program.add(op.RX(np.pi), 0)
+           >>> program.measure(0, 0)
+           >>> backend = fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
+           >>> backend.run(
+           ...     program, shots=10, simulation_config={"seed": 0}
+           ... ).result().get_counts()
+           {'2': 10}
+
     Example:
         This two-row, three-column circuit prepares a Hadamard on every site
         in the first row, then creates pairwise row-1-to-row-2 CNOTs. Neither
@@ -167,6 +238,8 @@ class AtomGridSimulator(Simulator):
            >>> all(bits[:3] == bits[3:] for bits in counts)
            True
     """
+
+    _supports_atom_loss = True
 
     def __init__(
         self,
@@ -285,31 +358,53 @@ class AtomGridSimulator(Simulator):
 
     def _lower(
         self, operations: Sequence[ProgramInstruction], context: _LoweringContext
-    ) -> tuple[list[ResolvedStep], _PlanFacts]:
-        """Apply this program's atom-loading lifecycle, then lower normally.
+    ) -> list[ResolvedStep]:
+        """Apply this program's atom lifecycle, then lower normally.
 
         Every device site starts empty. The program's first instruction must
-        be `~fatqat.operations.LoadAtoms` (unconditional, sized to fit this device);
-        it marks the top-left `rows x cols` block of sites as loaded and is
-        itself dropped before lowering, since it has no matrix. Any later
-        `LoadAtoms` is rejected - loading happens exactly once, up front.
-        Every other gate or `Reset` whose targets are not all loaded is
-        silently dropped (no-op): an empty site cannot hold a gate.
+        be `~fatqat.operations.LoadAtoms` (unconditional, sized to fit this
+        device); it marks the top-left `rows x cols` block of sites as loaded
+        and is itself dropped before lowering, since it has no matrix. Any
+        later `LoadAtoms` is rejected - loading happens exactly once, up front.
+
+        Occupancy is tracked by ref (an atom keeps its slot when moved), so a
+        gate or `Reset` is statically dropped only when a target can never hold
+        an atom: never loaded AND never named in any `Refill` (the narrowed
+        static drop). Everything else survives to the engine's per-shot
+        occupancy guard. `Rearrange` and `Refill` are themselves never dropped:
+        `Rearrange` relabels an operand's position even when empty (M-B7), and
+        `Refill` may fill a never-loaded site (M-C4).
+
+        `Rearrange` changes only device-site labels, not engine indices, so it
+        emits no execution step (M-B2): the plan is lowered in segments split
+        at each `Rearrange`, each under the layout current at that point, so a
+        gate's legality follows the atoms' current positions (M-B1). A
+        `Rearrange` still emits any channel noise attached to it (transport
+        cost) for the moved atoms.
+
         `Measurement` always lowers normally; a site no surviving gate ever
-        touched stays in its initial |0>, so measuring an unloaded site
-        reads 0 deterministically under ideal execution - though a
-        configured readout-error model can still flip the reported bit,
-        exactly as for any other qubit.
+        touched stays in its initial |0>, so measuring an unloaded site reads 0
+        deterministically under ideal execution - though a configured
+        readout-error model can still flip the reported bit, exactly as for any
+        other qubit.
 
         Raises:
-            BackendValidationError: If the program's first instruction is
-                not `LoadAtoms`; if any later instruction is `LoadAtoms`; if
-                `LoadAtoms` carries a condition; or if `LoadAtoms`'s shape
-                does not fit this backend's device.
+            BackendValidationError: If the program's first instruction is not
+                `LoadAtoms`; if a later instruction is `LoadAtoms`; if
+                `LoadAtoms` or `Rearrange` carries a condition; if a shape or a
+                rearrange destination site does not fit the device; or if a
+                rearrange result is not injective.
         """
         resource_layout = context.resource_layout
-        loaded: set[int] = set()
+        occupied: set[RegisterRef] = set()
         realized: list[ProgramInstruction] = []
+        refill_targets = {
+            t
+            for step in operations
+            if isinstance(step, AppliedOperation)
+            and isinstance(step.operation, ops.RefillGate)
+            for t in step.targets
+        }
         for i, step in enumerate(operations):
             is_load = isinstance(step, AppliedOperation) and isinstance(
                 step.operation, ops.LoadAtoms
@@ -335,15 +430,130 @@ class AtomGridSimulator(Simulator):
                         f"the backend's ({self._rows}x{self._cols}) device "
                         "shape"
                     )
-                loaded = {
+                load_sites = {
                     r * self._cols + c
                     for r in range(load_rows)
                     for c in range(load_cols)
                 }
+                occupied = {
+                    ref
+                    for ref in resource_layout.refs
+                    if resource_layout.device_label(ref) in load_sites
+                }
                 continue
-            if isinstance(step, AppliedOperation) and any(
-                resource_layout.device_label(t) not in loaded for t in step.targets
+            # Rearrange and Refill are exempt from the load-state drop; a gate
+            # is dropped only when a target can never hold an atom: never
+            # loaded AND never named in any Refill.
+            if (
+                isinstance(step, AppliedOperation)
+                and not isinstance(step.operation, (ops.Rearrange, ops.RefillGate))
+                and any(
+                    t not in occupied and t not in refill_targets for t in step.targets
+                )
             ):
                 continue
             realized.append(step)
-        return super()._lower(tuple(realized), context)
+
+        current_layout = resource_layout
+        plan: list[ResolvedStep] = []
+        segment: list[ProgramInstruction] = []
+        for step in realized:
+            if isinstance(step, AppliedOperation) and isinstance(
+                step.operation, ops.Rearrange
+            ):
+                seg_plan = super()._lower(
+                    tuple(segment), replace(context, resource_layout=current_layout)
+                )
+                plan.extend(seg_plan)
+                segment = []
+                plan.extend(
+                    _lower_channels(
+                        type(step.operation),
+                        step.targets,
+                        None,
+                        current_layout,
+                        context.engine_index_allocation,
+                        self._noise_model,
+                        self._channel_map,
+                    )
+                )
+                current_layout = self._apply_rearrange(current_layout, step)
+                continue
+            segment.append(step)
+        seg_plan = super()._lower(
+            tuple(segment), replace(context, resource_layout=current_layout)
+        )
+        plan.extend(seg_plan)
+
+        if any(isinstance(step, (AtomLossStep, RefillStep)) for step in plan):
+            occupied_indices = tuple(
+                context.engine_index_allocation.subsystem_index(ref) for ref in occupied
+            )
+            plan.insert(0, OccupancyInitStep(occupied_indices=occupied_indices))
+        return plan
+
+    def _analyze_plan_facts(self, plan: Sequence[ResolvedStep]) -> _AtomGridPlanFacts:
+        """Extend common plan facts with atom-grid lifecycle facts."""
+        common = super()._analyze_plan_facts(plan)
+        return _AtomGridPlanFacts.from_common(
+            common,
+            has_loss=any(isinstance(step, AtomLossStep) for step in plan),
+            has_refill=any(isinstance(step, RefillStep) for step in plan),
+        )
+
+    def _state_is_stochastic(self, facts: _PlanFacts) -> bool:
+        """Interpret atom loss using this backend's state representation."""
+        atom_facts = cast(_AtomGridPlanFacts, facts)
+        return super()._state_is_stochastic(facts) or atom_facts.has_loss
+
+    def _validate_method_support(
+        self, config: _ResultConfig, facts: _PlanFacts
+    ) -> None:
+        """Reject operator methods that cannot carry atom occupancy state."""
+        super()._validate_method_support(config, facts)
+        atom_facts = cast(_AtomGridPlanFacts, facts)
+        if self._is_operator and atom_facts.has_atom_lifecycle:
+            raise BackendValidationError(
+                f"method={self._state_field!r} cannot represent atom occupancy, "
+                "loss, or refill; use method='statevector' or 'density_matrix'"
+            )
+
+    def _apply_rearrange(
+        self, layout: ResourceLayout, applied: AppliedOperation
+    ) -> ResourceLayout:
+        """Return a new layout with this Rearrange's atoms relabeled to new sites.
+
+        Changes only device-site labels, never engine indices, so the caller
+        emits no step and the quantum state is unchanged (M-B2). Updates each
+        listed ref unconditionally, without checking whether its site holds an
+        atom (M-B7); atomicity means a swap needs no temporary site (S-B1).
+        Injectivity is checked over the full layout, ignoring occupancy (M-B3).
+
+        Raises:
+            BackendValidationError: If the Rearrange carries a condition
+                (M-B6); a destination site does not exist on the device; a
+                named ref is foreign to the layout; or the result is not
+                injective.
+        """
+        if applied.condition is not None:
+            raise BackendValidationError("Rearrange must be unconditional")
+        sites = applied.operation.sites
+        capacity = self._rows * self._cols
+        for site in sites:
+            if not 0 <= site < capacity:
+                raise BackendValidationError(
+                    f"Rearrange target site {site} does not exist on the "
+                    f"({self._rows}x{self._cols}) device"
+                )
+        new_labels = {ref: layout.device_label(ref) for ref in layout.refs}
+        for ref, site in zip(applied.targets, sites):
+            if ref not in new_labels:
+                raise BackendValidationError(
+                    "Rearrange names a ref that is not part of this layout"
+                )
+            new_labels[ref] = site
+        if len(set(new_labels.values())) != len(new_labels):
+            raise BackendValidationError(
+                "Rearrange result is not injective: two atoms would share a site"
+            )
+        return ResourceLayout(new_labels)

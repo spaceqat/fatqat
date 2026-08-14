@@ -9,6 +9,7 @@ from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (
     AmplitudeDamping,
+    AtomLoss,
     Channel,
     Depolarizing,
     NoiseModel,
@@ -170,7 +171,7 @@ def test_channel_forces_statevector_onto_dynamic_path():
 def test_statevector_export_with_noise_requires_single_shot():
     backend = Simulator(method="SV", noise=_depolarized_x_model())
     program = _x_program()
-    with pytest.raises(BackendValidationError, match="channel noise"):
+    with pytest.raises(BackendValidationError, match="stochastic execution"):
         backend.run(
             program,
             shots=4,
@@ -551,3 +552,68 @@ def test_multi_slot_extent_has_joint_kraus_dimension():
 
     assert channel_steps[0].target_indices == (1, 2)
     assert all(kraus.shape == (4, 4) for kraus in channel_steps[0].kraus_ops)
+
+
+def test_atom_loss_p1_isolated_atom_reads_erasure():
+    program = fq.Program(1, 1)
+    program.add(fq.ops.LoadAtoms(1, 1))
+    program.add(fq.ops.RX(np.pi), 0)
+    program.measure(0, 0)
+
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=1.0), operation=fq.ops.RX)
+
+    counts = (
+        fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
+        .run(program, shots=100, simulation_config={"seed": 0})
+        .result()
+        .get_counts()
+    )
+    assert counts == {"2": 100}
+
+
+def test_atom_loss_p0_reproduces_ideal():
+    program = fq.Program(1, 1)
+    program.add(fq.ops.LoadAtoms(1, 1))
+    program.add(fq.ops.RX(np.pi), 0)
+    program.measure(0, 0)
+
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=0.0), operation=fq.ops.RX)
+
+    counts = (
+        fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
+        .run(program, shots=100, simulation_config={"seed": 0})
+        .result()
+        .get_counts()
+    )
+    assert counts == {"1": 100}
+
+
+def test_lost_control_does_not_dephase_survivor():
+    atoms = fq.GridRegister(1, 2, name="atoms")
+    program = fq.Program([atoms], 1)
+    program.add(fq.ops.LoadAtoms(1, 2))
+
+    def h(q):
+        program.add(fq.ops.RZ(np.pi), q)
+        program.add(fq.ops.RY(np.pi / 2), q)
+
+    h(atoms[0])
+    h(atoms[1])
+    program.add(fq.ops.RX(0.0), atoms[0])
+    program.add(fq.ops.RX(np.pi), atoms[0])
+    program.add(fq.ops.CZ, (atoms[0], atoms[1]))
+    h(atoms[1])
+    program.measure(atoms[1], 0)
+
+    noise = NoiseModel()
+    noise.add_channel(AtomLoss(p=1.0), operation=fq.ops.RX)
+
+    counts = (
+        fq.simulator.AtomGridSimulator(grid_size=(1, 2), noise=noise)
+        .run(program, shots=200, simulation_config={"seed": 0})
+        .result()
+        .get_counts()
+    )
+    assert counts == {"0": 200}

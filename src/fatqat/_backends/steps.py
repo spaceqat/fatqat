@@ -147,6 +147,39 @@ class ApplyChannelStep:
 
 
 @dataclass(frozen=True)
+class AtomLossStep:
+    """Per-atom classical loss: roll one die per target, partial-trace on hit.
+
+    Emitted right after the parent gate's `ApplyMatrixStep`, same slot as
+    `ApplyChannelStep`. Carries no arrays — loss is classical.
+
+    Attributes:
+        target_indices: Flat subsystem indices, one independent die each.
+        p: Per-atom loss probability in ``[0, 1]``.
+        condition: The parent gate's lowered feedforward guard, or ``None``.
+    """
+
+    target_indices: tuple[int, ...]
+    p: float
+    condition: tuple[tuple[int, int], ...] | None = None
+
+
+@dataclass(frozen=True)
+class OccupancyInitStep:
+    """Front-of-plan marker carrying the shot's initial occupied subsystems.
+
+    Atom-grid lowering emits this first so the per-shot loop can seed its
+    occupancy set from the loaded atoms. It touches no state and emits no
+    physics; engines that ignore it are unaffected.
+
+    Attributes:
+        occupied_indices: Flat subsystem indices occupied at shot start.
+    """
+
+    occupied_indices: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class MeasurementStep:
     """Resolved measurement: flat subsystem indices into matching flat clbit indices.
 
@@ -237,4 +270,29 @@ class ResetStep:
     condition: tuple[tuple[int, int], ...] | None = None
 
 
-ResolvedStep = ApplyMatrixStep | ApplyChannelStep | MeasurementStep | ResetStep
+@dataclass(frozen=True)
+class RefillStep:
+    """Reload atoms into empty target sites: a fresh |0> where unoccupied.
+
+    Per shot each currently-unoccupied target becomes occupied and is reset to
+    |0> (M-C1); an already-occupied target is left untouched (M-C2). Carries no
+    arrays.
+
+    Attributes:
+        target_indices: Flat subsystem indices to refill.
+        condition: Optional feedforward guard, or ``None``.
+    """
+
+    target_indices: tuple[int, ...]
+    condition: tuple[tuple[int, int], ...] | None = None
+
+
+ResolvedStep = (
+    ApplyMatrixStep
+    | ApplyChannelStep
+    | AtomLossStep
+    | OccupancyInitStep
+    | MeasurementStep
+    | ResetStep
+    | RefillStep
+)

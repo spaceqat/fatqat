@@ -66,13 +66,18 @@ from ..._backends.engine_contract import _EngineConfig as EngineConfig, RawResul
 from ..._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
+    AtomLossStep,
+    OccupancyInitStep,
     MeasurementStep,
     ResetStep,
+    RefillStep,
     ResolvedStep,
 )
 from ...implementation.matrices import shift_matrix
 from ...result import decode_indices_to_clbit_rows, reduce_to_counts
 from .base import ResultRequest, MatrixEngine
+
+ERASURE_DIGIT = 2
 
 # --- shared numeric primitives ---
 
@@ -310,6 +315,24 @@ class _NumpyMatrixEngine(MatrixEngine):
                 target_indices=step.target_indices,
                 is_conditioned=step.condition is not None,
             )
+        if isinstance(step, AtomLossStep):
+            return _OperationExecutionFacts(
+                target_indices=step.target_indices,
+                is_conditioned=step.condition is not None,
+                forces_per_shot=True,
+            )
+        if isinstance(step, RefillStep):
+            return _OperationExecutionFacts(
+                target_indices=step.target_indices,
+                is_conditioned=step.condition is not None,
+                forces_per_shot=True,
+            )
+        if isinstance(step, OccupancyInitStep):
+            return _OperationExecutionFacts(
+                target_indices=(),
+                is_conditioned=False,
+                forces_per_shot=False,
+            )
         raise TypeError(f"unknown resolved execution step {type(step).__name__}")
 
     def _run_fast(
@@ -423,27 +446,57 @@ class _NumpyMatrixEngine(MatrixEngine):
         under statevector semantics).
         """
         clbits = [0] * self._n_clbits
+        occupied = set(range(len(self._dims)))
         for step in plan:
-            if isinstance(step, ApplyMatrixStep):
+            if isinstance(step, OccupancyInitStep):
+                occupied = set(step.occupied_indices)
+                continue
+            if isinstance(step, ApplyMatrixStep) and all(
+                t in occupied for t in step.target_indices
+            ):
                 if _condition_matches(step.condition, clbits):
                     self.apply(step)
-            elif isinstance(step, ApplyChannelStep):
+            elif isinstance(step, ApplyChannelStep) and all(
+                t in occupied for t in step.target_indices
+            ):
                 if _condition_matches(step.condition, clbits):
                     self.apply_channel(step, rng)
+            elif isinstance(step, AtomLossStep):
+                if _condition_matches(step.condition, clbits):
+                    for index in step.target_indices:
+                        if index in occupied and rng.random() < step.p:
+                            occupied.discard(index)
+                            self.reset_subsystems([index], rng)
+            elif isinstance(step, RefillStep):
+                if _condition_matches(step.condition, clbits):
+                    for index in step.target_indices:
+                        if index not in occupied:
+                            occupied.add(index)
+                            self.reset_subsystems([index], rng)
             elif isinstance(step, MeasurementStep):
                 bits = self.measure_subsystems(step.measured_indices, rng)
                 confusions = step.confusions or (None,) * len(bits)
                 maps = step.reported_digit_maps or (None,) * len(bits)
                 # The collapse keeps the physical outcome; only its mapped,
                 # optionally confused report is written to the clbits.
-                for c, bit, reported_map, confusion in zip(
-                    step.classical_indices, bits, maps, confusions
+                for m, c, bit, reported_map, confusion in zip(
+                    step.measured_indices,
+                    step.classical_indices,
+                    bits,
+                    maps,
+                    confusions,
                 ):
-                    clbits[c] = _report_digit(
-                        _map_physical_digit(bit, reported_map), confusion, rng
-                    )
-            elif _condition_matches(step.condition, clbits):
-                self.reset_subsystems(step.reset_indices, rng)
+                    if m not in occupied:
+                        clbits[c] = ERASURE_DIGIT
+                    else:
+                        clbits[c] = _report_digit(
+                            _map_physical_digit(bit, reported_map), confusion, rng
+                        )
+            elif isinstance(step, ResetStep):
+                if _condition_matches(step.condition, clbits) and all(
+                    t in occupied for t in step.reset_indices
+                ):
+                    self.reset_subsystems(step.reset_indices, rng)
         return tuple(clbits)
 
 

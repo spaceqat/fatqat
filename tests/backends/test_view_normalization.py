@@ -125,7 +125,7 @@ def test_lower_uses_resource_layout_device_labels_for_lookup_and_engine_indices_
         engine_index_allocation=engine_index_allocation,
     )
     operations = _break_grouped_operations(program.operations)
-    plan, _facts = backend._lower(operations, context)
+    plan = backend._lower(operations, context)
     assert _matrix_steps(plan)[0].target_indices == (0, 1)
 
 
