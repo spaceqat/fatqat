@@ -7,8 +7,9 @@ need to customize its implementation map. For custom matrix rules or
 device-specific maps, see :doc:`experimental`.
 
 This page covers gate-level simulation, where operations are applied as
-finite matrices or Kraus maps. For pulse-level emulation of calibrated
-controls on a physics model, see :doc:`pulse-emulator`.
+finite matrices or Kraus maps. For pulse-resolved physical models, see the
+:doc:`superconducting reference <pulse-emulator>` or the
+:doc:`three-level and two-level neutral-atom reference <atom-emulators>`.
 
 General-purpose simulator
 -------------------------
@@ -287,7 +288,7 @@ execution, subject to any supplied readout noise.
    backend = fq.simulator.AtomGridSimulator()  # 4 by 5 device
 
 On that default device, the 2 by 3 frontend grid occupies labels ``0, 1, 2,
-5, 6, 7``: its second logical row starts at device label ``5``, not ``3``.
+5, 6, 7``: its second frontend row starts at device label ``5``, not ``3``.
 Use device labels for connectivity checks, but program references or flat
 indices for :py:class:`~fatqat.NoiseModel` selectors. This backend has no
 calibration-derived default noise model; a supplied

@@ -22,8 +22,14 @@ Short follow-on snippets state when they assume an existing `program` or import.
 5. [Expectation values](estimator.md) — read observables off a state instead
    of going through counts.
 
-6. [Superconducting pulse simulation](superconducting-pulse.md) introduces
-   calibrated native pulses in a physical transmon model.
+6. [Superconducting transmon emulation](superconducting-pulse.md) covers both
+   calibrated gates and direct controls in a three-level transmon model.
+7. [Neutral-atom emulation](neutral-atoms.md) compares the three-level and
+   two-level atom physics systems by capability.
+8. [Three-level atom emulation](atom-3level.md) covers calibrated gates,
+   selected-site direct controls, full-pair crosstalk, and qutrit results.
+9. [Two-level atom emulation](atom-2level.md) covers global direct controls,
+   sampled waveforms, interaction policies, and Lindblad modes.
 
 If an example fails or its output surprises you, see
 [Troubleshooting](troubleshooting.md).
@@ -40,5 +46,8 @@ noise
 advanced
 estimator
 superconducting-pulse
+neutral-atoms
+atom-3level
+atom-2level
 troubleshooting
 ```

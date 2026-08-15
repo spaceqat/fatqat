@@ -23,8 +23,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --group docs
 
-      - name: Build documentation
-        run: uv run sphinx-build -b html -W --keep-going -T docs/sphinx docs/sphinx/_build
+      - name: Build HTML documentation
+        run: uv run sphinx-build -b html -W --keep-going -T docs/sphinx docs/sphinx/_build/html
+
+      - name: Run documentation doctests
+        run: uv run sphinx-build -b doctest -W -T docs/sphinx docs/sphinx/_build/doctest
 
       # The test job already runs doctests, but through pytest with
       # scipy-doctest, which compares floats with a tolerance. Sphinx's own
@@ -39,5 +42,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: fatqat_html_docs
-          path: docs/sphinx/_build/*
+          path: docs/sphinx/_build/html/**
           if-no-files-found: error

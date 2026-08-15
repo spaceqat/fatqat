@@ -36,18 +36,20 @@ Built-in channels
 probability ``p`` or a continuous ``rate`` (the inverse of the target
 backend's declared time unit). For operation-scoped noise, matrix backends
 resolve ``p`` directly into Kraus operators and reject ``rate`` mode (no
-duration is available); the superconducting pulse backend resolves either
-mode into a collapse-operator rate using the realized operation duration.
-Always-on damping requires ``rate`` mode and a time-aware pulse backend.
+duration is available). A pulse emulator whose effective Lindblad map
+registers the descriptor resolves either mode into a collapse-operator rate
+using the realized operation duration. Always-on damping requires ``rate``
+mode and a registered rule on that pulse-emulator instance.
 
 :py:class:`~fatqat.noise.ThermalRelaxation` (``t1``, ``t2``) describes the
-same T1/T2 model for always-on pulse noise and offers
+same T1/T2 model for operation-scoped or always-on pulse noise when registered
+and offers
 ``as_channels(duration)`` to produce compatible finite qubit channels.
 
-Always-on pulse noise
----------------------
+Pulse Lindblad noise
+--------------------
 
-On the superconducting pulse backend, register
+On the default superconducting pulse backend, register
 :py:class:`~fatqat.noise.ThermalRelaxation` or rate-mode damping without an
 ``operation`` to act throughout pulse and idle evolution:
 
@@ -60,9 +62,13 @@ On the superconducting pulse backend, register
 
 Providing ``operation=op.X`` instead scopes the same descriptor to each
 matching placed pulse interval. Matrix-family backends reject always-on
-entries because they have no continuous-time evolution model. The pulse
-backend still rejects unsupported descriptors such as ``Depolarizing``.
-Coherent ZZ is not available in v0.1.
+entries because they have no continuous-time evolution model. A pulse emulator
+accepts only descriptor types registered in its effective
+``LindbladImplementationMap`` and still applies its family dimension,
+scope/mode, selector, and operator-shape rules. Operation-scoped registrations
+apply to eligible ordinary operations; ``NoiseModel`` deliberately forbids
+selecting direct ``PulseOperation`` blocks this way. Coherent ZZ is not in the
+default transmon map.
 
 The :doc:`../guide/noise` guide explains method choice, target selection,
 and a readout-error matrix example. Physical device selectors and custom

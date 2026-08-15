@@ -50,7 +50,11 @@ from ..errors import (
     BackendValidationError,
     NoMeasurementWarning,
 )
-from .._engine_index_allocation import _EngineIndexAllocation
+from .._index_allocation import (
+    _ClassicalAllocation,
+    _EngineAllocation,
+    _describe_state_axes,
+)
 from ..implementation import MatrixImplementationMap, default_matrix_implementation_map
 from ..job import Job
 from ..noise import (
@@ -80,6 +84,8 @@ from .._backends.backend_utils import (
     _LoweringContext,
     _PlanFacts,
     _normalize_config,
+    _resolve_result_flags,
+    _validate_result_shots,
 )
 from . import planning
 from .._backends.engine_contract import (
@@ -134,6 +140,15 @@ class _MethodSpec:
     nonunitary_is_stochastic: bool
     is_operator: bool
     executes_nonunitary: bool
+
+
+@dataclass(frozen=True)
+class _PreparedMatrixProgram:
+    """One run's lowered plan and final resource/index context."""
+
+    plan: list[ResolvedStep]
+    facts: _PlanFacts
+    context: _LoweringContext
 
 
 _METHOD_SPECS: dict[str, _MethodSpec] = {
@@ -393,7 +408,7 @@ class Simulator:
         """
         return self._state_field
 
-    def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
+    def _default_resource_layout(self, program: Program) -> ResourceLayout:
         """Resolve this run's effective public resource layout.
 
         The base implementation is the generic simulator's trivial mapping
@@ -402,7 +417,7 @@ class Simulator:
         (or any other non-trivial mapping policy) overrides this hook; it is
         also where such a backend validates device-resource concerns like
         capacity, dimension, or grid fit, since those are properties of the
-        logical-to-physical mapping, not of engine index allocation.
+        program-to-device mapping, not of engine index allocation.
 
         Args:
             program: Program whose quantum registers should be mapped.
@@ -418,17 +433,94 @@ class Simulator:
                 index += 1
         return ResourceLayout(labels)
 
-    def _allocate_engine_indices(self, program: Program) -> _EngineIndexAllocation:
-        """Build this run's private engine-facing flat allocation.
+    def _legal_device_operands(
+        self, program: Program, resource_layout: ResourceLayout
+    ) -> frozenset[DeviceOperand]:
+        """Return the device operands legal for physical selectors this run."""
+        return resource_layout.device_labels
 
-        Args:
-            program: Program whose registers should be flattened.
+    def _physical_dimension(
+        self, device_operand: DeviceOperand, resource_layout: ResourceLayout
+    ) -> int:
+        """Return the local model dimension for one selected device operand."""
+        return resource_layout._ref_for_label(device_operand).register.dim
 
-        Returns:
-            Engine allocation mapping register references to flat subsystem
-            and classical indices.
-        """
-        return _EngineIndexAllocation.from_program(program)
+    def _validate_resource_layout(
+        self,
+        program: Program,
+        resource_layout: ResourceLayout,
+        legal_device_operands: frozenset[DeviceOperand],
+    ) -> None:
+        """Validate one public layout without assigning numerical axes."""
+        program_refs = frozenset(
+            register[index]
+            for register in program.quantum_registers
+            for index in range(register.size)
+        )
+        foreign = resource_layout.refs - program_refs
+        if foreign:
+            raise BackendValidationError(
+                "resource layout contains a RegisterRef outside this program"
+            )
+        missing = program_refs - resource_layout.refs
+        if missing:
+            raise BackendValidationError(
+                "resource layout does not cover every declared quantum ref"
+            )
+        if not resource_layout.device_labels <= legal_device_operands:
+            raise BackendValidationError(
+                "resource layout names a device operand outside this backend"
+            )
+        if len(resource_layout.device_labels) != len(resource_layout.refs):
+            raise BackendValidationError(
+                "resource layout maps multiple refs to one exclusive device operand"
+            )
+        for ref in resource_layout.refs:
+            operand = resource_layout.device_label(ref)
+            if ref.register.dim != self._physical_dimension(operand, resource_layout):
+                raise BackendValidationError(
+                    "resource layout maps incompatible program and device dimensions"
+                )
+
+    def _resolve_resource_layout(
+        self,
+        program: Program,
+        supplied_layout: ResourceLayout | None = None,
+    ) -> ResourceLayout:
+        """Resolve and validate the effective public resource layout once."""
+        resource_layout = (
+            self._default_resource_layout(program)
+            if supplied_layout is None
+            else supplied_layout
+        )
+        legal = self._legal_device_operands(program, resource_layout)
+        self._validate_resource_layout(program, resource_layout, legal)
+        return resource_layout
+
+    def _modeled_subsystems(
+        self, program: Program, resource_layout: ResourceLayout
+    ) -> tuple[tuple[DeviceOperand, int], ...]:
+        """Return selected matrix subsystems in program declaration order."""
+        return tuple(
+            (
+                resource_layout.device_label(ref),
+                self._physical_dimension(
+                    resource_layout.device_label(ref), resource_layout
+                ),
+            )
+            for register in program.quantum_registers
+            for ref in (register[index] for index in range(register.size))
+        )
+
+    def _allocate_engine_indices(
+        self, program: Program, resource_layout: ResourceLayout
+    ) -> _EngineAllocation:
+        """Build the private engine allocation from the modeled physical order."""
+        modeled = self._modeled_subsystems(program, resource_layout)
+        return _EngineAllocation(
+            tuple(operand for operand, _dimension in modeled),
+            tuple(dimension for _operand, dimension in modeled),
+        )
 
     def _lower_program(
         self,
@@ -439,24 +531,51 @@ class Simulator:
         """Prepare and lower one program using the backend's resource policy.
 
         ``context`` lets a caller that already resolved this run's
-        `ResourceLayout` and `_EngineIndexAllocation` (see ``run()``) thread both
+        `ResourceLayout` and `_EngineAllocation` (see ``run()``) thread both
         through unchanged, so lowering never re-resolves either. When omitted
         (standalone use, e.g. in tests), both are resolved once here.
         """
+        prepared = self._prepare_program(program, context=context)
+        return prepared.plan, prepared.facts
+
+    def _prepare_program(
+        self,
+        program: Program,
+        *,
+        context: _LoweringContext | None = None,
+    ) -> _PreparedMatrixProgram:
+        """Lower once and retain the final resource snapshot for results."""
         if context is None:
+            resource_layout = self._resolve_resource_layout(program)
             context = _LoweringContext(
-                resource_layout=self._resolve_resource_layout(program),
-                engine_index_allocation=self._allocate_engine_indices(program),
+                resource_layout=resource_layout,
+                engine_allocation=self._allocate_engine_indices(
+                    program, resource_layout
+                ),
+                classical_allocation=_ClassicalAllocation.from_program(program),
             )
         operations = _break_grouped_operations(program.operations)
-        plan = self._lower(operations, context)
-        return plan, self._analyze_plan_facts(plan)
+        plan, final_context = self._lower_with_context(operations, context)
+        return _PreparedMatrixProgram(
+            plan,
+            self._analyze_plan_facts(plan),
+            final_context,
+        )
+
+    def _lower_with_context(
+        self,
+        operations: Sequence[ProgramInstruction],
+        context: _LoweringContext,
+    ) -> tuple[list[ResolvedStep], _LoweringContext]:
+        """Lower and return the resource snapshot active after the plan."""
+        return self._lower(operations, context), context
 
     def run(
         self,
         program: Program,
         *,
         shots: int = 1024,
+        resource_layout: ResourceLayout | None = None,
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
     ) -> Job:
@@ -478,6 +597,10 @@ class Simulator:
             shots: Number of circuit repetitions. Counts and a stochastic
                 final-state request require a positive integer; a
                 non-stochastic final-state-only request ignores it.
+            resource_layout: Optional public mapping from program quantum
+                refs to backend device operands. A supplied layout must cover
+                every declared quantum ref. The backend supplies its default
+                mapping when omitted.
             simulation_config: Optional simulator-only dictionary. Unknown or
                 incompatible entries raise an error.
             result_config: Optional result-request dictionary. Unknown or
@@ -515,30 +638,34 @@ class Simulator:
         # public-facing effective mapping (available to backend validation);
         # the engine index allocation stays private to execution preparation. Both
         # are paired into one private lowering context and threaded through
-        # `_lower_program`/`_lower` unchanged, so lowering never re-resolves
-        # either value.
-        resource_layout = self._resolve_resource_layout(program)
-        engine_index_allocation = self._allocate_engine_indices(program)
+        # preparation/lowering unchanged, so lowering never re-resolves either
+        # value.
+        resource_layout = self._resolve_resource_layout(program, resource_layout)
+        engine_allocation = self._allocate_engine_indices(program, resource_layout)
+        classical_allocation = _ClassicalAllocation.from_program(program)
         # Strict selector-identity validation runs immediately after the
         # effective resource layout is known and before any lowering/plan
         # step is built, on this same direct-raise path: a foreign ref or
         # unmapped device label fails run() directly rather than being
         # silently skipped in channels_for()/readout_error_for() matching.
-        self._noise_model.validate_for(program, resource_layout)
+        self._noise_model.validate_for(
+            program, self._legal_device_operands(program, resource_layout)
+        )
         report = self.validate_noise(self._noise_model)
         if not report.supported:
             raise BackendValidationError("; ".join(report.warnings))
         context = _LoweringContext(
             resource_layout=resource_layout,
-            engine_index_allocation=engine_index_allocation,
+            engine_allocation=engine_allocation,
+            classical_allocation=classical_allocation,
         )
-        plan, facts = self._lower_program(program, context=context)
-        self._validate(config, shots, facts)
+        prepared = self._prepare_program(program, context=context)
+        self._validate(config, shots, prepared.facts)
         self._validate_additional_config(
             config=config,
             simulation=simulation,
             shots=shots,
-            facts=facts,
+            facts=prepared.facts,
         )
         try:
             return Job.done(
@@ -546,11 +673,7 @@ class Simulator:
                     config,
                     simulation,
                     shots,
-                    plan,
-                    facts,
-                    engine_index_allocation.system_dims,
-                    engine_index_allocation.classical_dims,
-                    engine_index_allocation.n_clbits,
+                    prepared,
                 )
             )
         except Exception as exc:  # execution-stage failure
@@ -567,33 +690,40 @@ class Simulator:
         ``_state_is_stochastic`` for backend-specific execution steps.
         """
         self._validate_method_support(config, facts)
-        state_is_stochastic = self._state_is_stochastic(facts)
-        request = _resolve_result_request(
+        stochastic = self._state_is_stochastic(facts)
+        counts, final_state = _resolve_result_flags(
             config,
-            facts,
-            self._request_cls,
-            self._state_field,
-            state_is_stochastic,
+            has_measurement=facts.has_measurement,
+            stochastic_final_state=stochastic,
         )
-        state_requested = getattr(request, self._state_field)
+        request = self._request_cls(counts=counts, **{self._state_field: final_state})
+        requested_state = config.final_state is True
 
         # shots is only checked when the result actually depends on it: counts
         # always sample per shot, and a stochastic state export needs shots==1
         # below. A non-stochastic state-only request ignores shots entirely
         # (see the engine's per-shot path), so any value - including 0 - is fine.
-        if (request.counts or (state_requested and state_is_stochastic)) and type(
-            shots
-        ) is not int:
-            raise BackendValidationError(
-                f"shots must be an int when requested results depend on it, got {shots!r}"
-            )
-        if request.counts and shots <= 0:
-            raise BackendValidationError(f"counts require shots > 0, got shots={shots}")
-        if state_requested and state_is_stochastic and shots != 1:
-            raise BackendValidationError(
-                f"{self._state_field} from stochastic execution is only supported "
-                "for shots == 1"
-            )
+        common_stochastic = facts.has_measurement or (
+            self._nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
+        )
+        if stochastic and (not common_stochastic or not facts.has_measurement):
+            stochastic_sources = "stochastic execution"
+        elif self._nonunitary_is_stochastic:
+            stochastic_sources = "measurement, reset, or channel noise"
+        else:
+            stochastic_sources = "measurement"
+        _validate_result_shots(
+            counts=request.counts,
+            explicit_final_state=requested_state,
+            stochastic_final_state=stochastic,
+            shots=shots,
+            shots_type_error=(
+                "shots must be an int when requested results depend on it, "
+                f"got {shots!r}"
+            ),
+            state_label=self._state_field,
+            stochastic_sources=stochastic_sources,
+        )
 
     def _state_is_stochastic(self, facts: _PlanFacts) -> bool:
         """Whether one final state cannot represent this run's trajectories."""
@@ -684,20 +814,23 @@ class Simulator:
         config: _ResultConfig,
         simulation: _SimulationConfig,
         shots: int,
-        plan: list[ResolvedStep],
-        facts: _PlanFacts,
-        system_dims: tuple[int, ...],
-        classical_dims: tuple[int, ...],
-        n_clbits: int,
+        prepared: _PreparedMatrixProgram,
     ) -> Result:
         """Execute a lowered program and assemble the requested result fields."""
-        request = _resolve_result_request(
+        plan = prepared.plan
+        facts = prepared.facts
+        engine_allocation = prepared.context.engine_allocation
+        classical_allocation = prepared.context.classical_allocation
+        system_dims = engine_allocation.system_dims
+        classical_dims = classical_allocation.classical_dims
+        n_clbits = classical_allocation.n_clbits
+        stochastic = self._state_is_stochastic(facts)
+        counts, final_state = _resolve_result_flags(
             config,
-            facts,
-            self._request_cls,
-            self._state_field,
-            self._state_is_stochastic(facts),
+            has_measurement=facts.has_measurement,
+            stochastic_final_state=stochastic,
         )
+        request = self._request_cls(counts=counts, **{self._state_field: final_state})
 
         system_key = (tuple(system_dims), n_clbits)
         if self._engine_system != system_key:
@@ -742,19 +875,30 @@ class Simulator:
             simulation=simulation,
             raw=raw,
         )
+        effective_result_config = asdict(config)
+        effective_result_config.update(
+            counts=request.counts,
+            final_state=state_requested,
+        )
+        metadata = {
+            "shots": shots,
+            "backend_name": type(self).__name__,
+            "method": self._state_field,
+            "runtime": self._runtime,
+            "simulation_config": asdict(simulation),
+            "result_config": effective_result_config,
+        }
+        if state_requested:
+            metadata["state_axes"] = _describe_state_axes(
+                engine_allocation,
+                prepared.context.resource_layout,
+            )
         return Result(
             counts=counts,
             available=frozenset(available),
             classical_dims=classical_dims,
             data=extra_data,
-            metadata={
-                "shots": shots,
-                "backend_name": type(self).__name__,
-                "method": self._state_field,
-                "runtime": self._runtime,
-                "simulation_config": asdict(simulation),
-                "result_config": asdict(config),
-            },
+            metadata=metadata,
             **{self._state_field: state},
         )
 
@@ -794,13 +938,14 @@ class Simulator:
         private lowering context. `context.resource_layout` is used for
         `MatrixImplementationMap` lookup (`device_operands`) and for
         `NoiseModel.channels_for()` physical-selector matching (against the
-        occurrence's logical target refs); `context.engine_index_allocation` is
+        occurrence's program target refs); `context.engine_allocation` is
         used for every execution index/dimension - `ApplyMatrixStep`/
         `MeasurementStep`/`ResetStep` targets and conditions. Grouped
         frontend operations are expanded before this method is called.
         """
         resource_layout = context.resource_layout
-        engine_index_allocation = context.engine_index_allocation
+        engine_allocation = context.engine_allocation
+        classical_allocation = context.classical_allocation
         plan: list[ResolvedStep] = []
 
         for step in operations:
@@ -809,7 +954,8 @@ class Simulator:
                     planning._lower_measurement(
                         step,
                         resource_layout,
-                        engine_index_allocation,
+                        engine_allocation,
+                        classical_allocation,
                         self._noise_model,
                     )
                 )
@@ -821,7 +967,8 @@ class Simulator:
                         planning._lower_reset(
                             step,
                             resource_layout,
-                            engine_index_allocation,
+                            engine_allocation,
+                            classical_allocation,
                             self._noise_model,
                         )
                     )
@@ -830,7 +977,8 @@ class Simulator:
                         planning._lower_refill(
                             step,
                             resource_layout,
-                            engine_index_allocation,
+                            engine_allocation,
+                            classical_allocation,
                             self._noise_model,
                         )
                     )
@@ -839,7 +987,8 @@ class Simulator:
                         planning._lower_gate(
                             step,
                             resource_layout,
-                            engine_index_allocation,
+                            engine_allocation,
+                            classical_allocation,
                             self._impl_map,
                             self._noise_model,
                             self._channel_map,
@@ -958,23 +1107,3 @@ class Simulator:
             rejected_sources=tuple(rejected),
             warnings=tuple(warnings_),
         )
-
-
-def _resolve_result_request(
-    config: _ResultConfig,
-    facts: _PlanFacts,
-    request_cls: type,
-    state_field: str,
-    state_is_stochastic: bool,
-) -> Any:
-    """Resolve default result fields from config and lowered program facts.
-
-    Counts default to measurement presence. The state field defaults to
-    non-stochastic execution. The caller resolves representation-dependent
-    stochasticity once so default selection and validation cannot drift apart.
-    """
-    counts = config.counts if config.counts is not None else facts.has_measurement
-    state = config.final_state
-    if state is None:
-        state = not state_is_stochastic
-    return request_cls(counts=counts, **{state_field: state})

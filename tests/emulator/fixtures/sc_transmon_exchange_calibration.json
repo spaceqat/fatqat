@@ -1,22 +1,33 @@
 {
-  "format": "fatqat.calibration",
-  "schema_version": 1,
-  "builder": {"id": "sc.transmon_exchange", "version": 1},
-  "model": {"id": "test-sc-2q", "revision": "2026-07-26"},
+  "format": {"id": "sc.transmon_exchange_fixed_pulse", "version": 1},
+  "calibration": {"id": "test-sc-2q-fixed-pulse", "revision": "2026-07-26"},
+  "units": {
+    "time": "ns",
+    "frequency": "GHz",
+    "dimensionless": "1"
+  },
   "recipes": {
     "rx_ry": {
-      "duration_ns": 20.0,
+      "duration": 20.0,
       "drag_coefficient": 1.0
     },
-    "iswap": {"duration_ns": 40.0},
+    "iswap": {"duration": 40.0},
     "cz": {
-      "edges": [
+      "default": {
+        "detuning_operand": 0,
+        "duration": 60.0,
+        "ramp_duration": 3.0,
+        "detuning": 0.22
+      },
+      "overrides": [
         {
-          "subsystems": ["q0", "q1"],
-          "detuning_subsystem": "q0",
-          "duration_ns": 60.0,
-          "ramp_duration_ns": 3.0,
-          "detuning_ghz": 0.22
+          "device_operands": ["q0", "q1"],
+          "recipe": {
+            "detuning_operand": 0,
+            "duration": 60.0,
+            "ramp_duration": 3.0,
+            "detuning": 0.22
+          }
         }
       ]
     }

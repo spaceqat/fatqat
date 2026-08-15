@@ -126,7 +126,7 @@ Detailed implementation-map reference
 Pulse implementation-map customization
 ---------------------------------------
 
-:py:class:`~fatqat.emulator.Emulator` resolves each native operation
+:py:class:`~fatqat.emulator.TransmonEmulator` resolves each native operation
 family (``RX``, ``RY``, ``RZ``, ``iSwap``, oriented ``CZ``) to a physical
 pulse realization through a
 :py:class:`~fatqat.emulator.PulseImplementationMap` - the pulse family's
@@ -135,34 +135,40 @@ counterpart to the matrix implementation map above:
 .. code-block:: text
 
    Simulator: Operation -> MatrixImplementationMap      -> matrix          -> ApplyMatrixStep
-   Emulator:     Operation -> PulseImplementationMap -> PulseDefinition -> (lowered) pulse block
+   TransmonEmulator:     Operation -> PulseImplementationMap -> PulseDefinition -> (lowered) pulse block
+
+``PulseImplementationMap`` is the public rule-map value type; constructors use
+the precise ``gate_implementation_map=`` keyword because direct
+``PulseOperation`` controls bypass rule lookup. All three emulators expose the
+same optional gate-map capability. The two-level atom family has an empty
+built-in map, so ordinary gates require user-supplied rules.
 
 Replacing or adding a gate realization - for example a custom ``CZ`` -
-never requires subclassing :py:class:`~fatqat.emulator.Emulator` or
+never requires subclassing :py:class:`~fatqat.emulator.TransmonEmulator` or
 touching private emulator modules:
 
 .. code-block:: python
 
    import fatqat as fq
 
-   def custom_cz(operation, *, targets, model, calibration):
-       first, second = (
-           model.subsystem_ids[model.bind_resource(t)] for t in targets
-       )
-       # Build the physical realization from model-owned resources; a rule
-       # may also read calibration.recipe(name) for calibrated numbers.
+   def custom_cz(operation, *, device_operands):
+       first, second = device_operands
+       # Model/calibration facts needed here were compiled into this closure.
        return fq.emulator.PulseDefinition(
            duration=...,
-           controls=(...,),          # SampledControl values
-           resource_claims=(...,),   # model.resource(...) / model.coupling(...)
+           controls=(...,),          # PulseControl values
            post_actions=(...,),      # optional PhaseShift / PhaseSwap
        )
 
-   implementations = fq.emulator.default_superconducting_pulse_implementation_map()
+   calibration = fq.emulator.TransmonCalibration(calibration_document)
+   implementations = fq.emulator.default_transmon_gate_implementation_map(
+       model=model, calibration=calibration
+   )
+   implementations.remove(fq.ops.CZ)
    implementations.add(fq.ops.CZ, custom_cz)
 
-   backend = fq.emulator.Emulator(
-       model, calibration, pulse_implementation_map=implementations
+   backend = fq.emulator.TransmonEmulator(
+       model, gate_implementation_map=implementations
    )
 
 Calibration versus implementation
@@ -177,7 +183,8 @@ implementation rule changes the *mechanism* itself: the waveform shape,
 which physical control channels are driven, which resources are claimed, or
 what frame corrections are applied. A calibration document is never a place
 to select or smuggle in executable behavior - it stays plain, immutable
-data, validated against exactly one model identity.
+data. A custom calibration is a complete separate document; package defaults
+are nominal simulation baselines rather than hardware-fidelity guarantees.
 
 The built-in ``CZ`` rule derives its nominal virtual frame correction by
 integrating its generated detuning waveform. This is a model-derived
@@ -187,15 +194,14 @@ improve the realized gate quality.
 Rule signature and reusable definitions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A pulse implementation rule is a callable ``f(operation, *, targets, model,
-calibration) -> PulseDefinition``. ``targets`` are the ordered
-physical-model resource handles corresponding to the operation's ordered
-program targets - never a program ``RegisterRef`` and never an engine
-index. A rule may read immutable facts from ``model`` (subsystem
-frequencies, anharmonicities, declared couplings) and from ``calibration``
-(via ``calibration.recipe(name)``), and returns only the physical
-realization: duration, sampled controls, the model resources/couplings it
-claims, and any post-block frame actions.
+A reusable pulse implementation rule is a callable
+``f(operation, *, device_operands) -> PulseDefinition``.
+``device_operands`` is the same exact ordered tuple used for map selection -
+never a program ``RegisterRef`` and never an engine index. Model and
+calibration facts are compiled into fixed definitions or callable closures
+before the emulator receives the map. The returned definition contains only
+duration, sampled controls, and optional post-block frame actions; target
+binding derives private scheduling claims later.
 
 A :py:class:`~fatqat.emulator.PulseDefinition` is immutable and carries no
 classical condition, resolved noise, engine index, or schedule position -
@@ -217,20 +223,21 @@ Registration modes
 :py:meth:`~fatqat.emulator.PulseImplementationMap.add` (``op, implementation,
 *, device_operands=None``) follows the same two-mode policy as
 :py:meth:`~fatqat.implementation.MatrixImplementationMap.add`: an operation
-family has either one unconstrained rule, applying to every legal target of
-the correct arity, or a finite set of rules keyed by ordered
+family has either one unconstrained operand-aware rule, applying across device
+operands, or a finite set of rules keyed by ordered
 ``device_operands`` - never both for the same family. Replacing the default
-unconstrained ``CZ`` rule is a normal ``add(op.CZ, replacement)``. Building
-a device-specific ``CZ`` table instead means calling ``remove(op.CZ)`` on
-the existing unconstrained rule first, then registering every supported
-ordered edge explicitly; there is no simultaneous
-device-specific-override-plus-unconstrained-fallback mode.
+CZ table with an unconstrained replacement means calling ``remove(op.CZ)``
+first. The same remove-first rule applies when changing standard unconstrained
+RX to device-specific entries. Implementations may be direct fixed
+``PulseDefinition`` values, operand-unaware callables with explicit
+registration operands, or operand-aware reusable callables with an explicitly
+named ``device_operands`` parameter.
 
 Time coordinate
 ~~~~~~~~~~~~~~~~
 
-``duration``, and every :py:class:`~fatqat.emulator.SampledControl`'s
-``tlist``/``start_offset``, use the owning model's native time coordinate
+``duration``, every :py:class:`~fatqat.emulator.PulseControl`'s
+``waveform.times``, and its ``start_offset`` use the owning model's native time coordinate
 (``model.time_unit`` - nanoseconds, for the built-in superconducting
 transmon model). The pulse-authoring types themselves are time-unit-neutral
 and never assume ``ns``.
@@ -238,8 +245,9 @@ and never assume ``ns``.
 Backend copy semantics
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-:py:class:`~fatqat.emulator.Emulator` copies a supplied
-``pulse_implementation_map=`` immediately at construction, exactly like
+:py:class:`~fatqat.emulator.TransmonEmulator` and
+:py:class:`~fatqat.emulator.Atom3LevelEmulator` copy a supplied
+``gate_implementation_map=`` immediately at construction, exactly like
 ``implementation_map=`` above: later mutations of the caller's map never
 affect an already-constructed backend.
 

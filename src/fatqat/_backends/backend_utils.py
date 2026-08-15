@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from typing import Any
 
-from .._engine_index_allocation import _EngineIndexAllocation
+from .._index_allocation import _ClassicalAllocation, _EngineAllocation
 from ..errors import BackendValidationError
 from ..noise import NoiseModel
 from ..operations.measurement import Measurement
@@ -35,7 +35,7 @@ def _validate_grid_size(grid_size: object) -> tuple[int, int]:
 
 @dataclass(frozen=True)
 class _LoweringContext:
-    """Private per-run pairing of the resolved `ResourceLayout` and `_EngineIndexAllocation`.
+    """Private per-run values needed to resolve public resources to engine axes.
 
     A lowering-time implementation convenience only: it is not public and it
     does not combine one program ref's device label and engine index into a
@@ -51,7 +51,14 @@ class _LoweringContext:
     """
 
     resource_layout: ResourceLayout
-    engine_index_allocation: _EngineIndexAllocation
+    engine_allocation: _EngineAllocation
+    classical_allocation: _ClassicalAllocation
+
+    def engine_index(self, ref: RegisterRef) -> int:
+        """Resolve a program ref through the public layout to an engine axis."""
+        return self.engine_allocation.engine_index(
+            self.resource_layout.device_label(ref)
+        )
 
 
 @dataclass(frozen=True)
@@ -69,6 +76,10 @@ class _PlanFacts:
     has_reset: bool
     has_channel: bool = False
     has_condition: bool = False
+
+
+# TODO(architecture): reconsider unifying matrix and pulse plan facts only if
+# another continuous-time backend also needs elapsed-evolution information.
 
 
 def _normalize_config(
@@ -103,20 +114,60 @@ def _normalize_config(
     return config_cls(**config)
 
 
+def _resolve_result_flags(
+    config: Any,
+    *,
+    has_measurement: bool,
+    stochastic_final_state: bool,
+) -> tuple[bool, bool]:
+    """Resolve shared counts/final-state defaults without choosing a representation."""
+    counts = config.counts if config.counts is not None else has_measurement
+    final_state = config.final_state
+    if final_state is None:
+        final_state = not stochastic_final_state
+    return counts, final_state
+
+
+def _validate_result_shots(
+    *,
+    counts: bool,
+    explicit_final_state: bool,
+    stochastic_final_state: bool,
+    shots: Any,
+    shots_type_error: str,
+    state_label: str,
+    stochastic_sources: str,
+) -> None:
+    """Validate shot-dependent outputs while preserving caller-owned wording."""
+    if (counts or (explicit_final_state and stochastic_final_state)) and type(
+        shots
+    ) is not int:
+        raise BackendValidationError(shots_type_error)
+    if counts and shots <= 0:
+        raise BackendValidationError(f"counts require shots > 0, got shots={shots}")
+    if explicit_final_state and stochastic_final_state and shots != 1:
+        raise BackendValidationError(
+            f"{state_label} with {stochastic_sources} is only supported for shots == 1"
+        )
+
+
 def _resolve_condition(
     condition: tuple[tuple[object, int], ...] | None,
-    engine_index_allocation: _EngineIndexAllocation,
+    classical_allocation: _ClassicalAllocation,
 ) -> tuple[tuple[int, int], ...] | None:
     """Lower a frontend condition to ``(clbit_index, value)`` AND-terms."""
     if condition is None:
         return None
     return tuple(
-        (engine_index_allocation.clbit_index(ref), val) for ref, val in condition
+        (classical_allocation.classical_index(ref), val) for ref, val in condition
     )
 
 
 def _lower_reset_boundary(
-    step: AppliedOperation, engine_index_allocation: _EngineIndexAllocation
+    step: AppliedOperation,
+    resource_layout: ResourceLayout,
+    engine_allocation: _EngineAllocation,
+    classical_allocation: _ClassicalAllocation,
 ) -> ResetStep:
     """Resolve the reset indices and condition shared by backend families.
 
@@ -126,9 +177,10 @@ def _lower_reset_boundary(
     """
     return ResetStep(
         reset_indices=tuple(
-            engine_index_allocation.subsystem_index(target) for target in step.targets
+            engine_allocation.engine_index(resource_layout.device_label(target))
+            for target in step.targets
         ),
-        condition=_resolve_condition(step.condition, engine_index_allocation),
+        condition=_resolve_condition(step.condition, classical_allocation),
     )
 
 
@@ -144,19 +196,18 @@ def _resolve_confusions(
     ``readout_error_for`` is the single source of truth per subsystem; this
     function only collapses an all-``None`` resolution back to ``None`` so
     the noise-free (and the common) case allocates nothing on the step.
-    Selection matches against each measured ref's logical identity and/or
+    Selection matches against each measured ref's RegisterRef identity and/or
     resource-layout device label (never an engine index); the paired engine
     index is used only in the error message, never derived backward from a
     device label.
 
     Shared by the matrix and pulse families: each caller supplies its own
-    ``reported_digit_maps`` (matrix's per-subsystem identity range, pulse's
-    literal qutrit-to-bit map), and this validates a selected confusion
+    ``reported_digit_maps`` (matrix's per-subsystem identity range or a pulse
+    model's physical-to-reported map), and this validates a selected confusion
     matrix's shape against the reported dimension implied by that map
     (``max(reported_map) + 1``) - it does not also require the map's length
-    to equal any subsystem's physical Hilbert dimension, since pulse's
-    program-declared (qubit) dimension and its simulated (qutrit) dimension
-    deliberately differ.
+    to equal any program-declared subsystem dimension, since a pulse model may
+    embed a program subsystem in a different physical dimension.
 
     Raises :py:exc:`~fatqat.errors.BackendValidationError` if a selected
     matrix's dimension does not match the reported classical digit dimension.
@@ -184,7 +235,8 @@ def _lower_measurement_boundary(
     step: Measurement,
     reported_digit_maps: tuple[tuple[int, ...], ...],
     resource_layout: ResourceLayout,
-    engine_index_allocation: _EngineIndexAllocation,
+    engine_allocation: _EngineAllocation,
+    classical_allocation: _ClassicalAllocation,
     noise_model: NoiseModel,
 ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[Any, ...] | None]:
     """Resolve the measurement-lowering boundary shared by both backend families.
@@ -198,10 +250,11 @@ def _lower_measurement_boundary(
     supplied map; it never decides the step's stored map itself.
     """
     measured_indices = tuple(
-        engine_index_allocation.subsystem_index(target) for target in step.targets
+        engine_allocation.engine_index(resource_layout.device_label(target))
+        for target in step.targets
     )
     classical_indices = tuple(
-        engine_index_allocation.clbit_index(output) for output in step.outputs
+        classical_allocation.classical_index(output) for output in step.outputs
     )
     confusions = _resolve_confusions(
         step.targets,

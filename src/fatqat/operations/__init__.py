@@ -30,6 +30,7 @@ from .fixed_gates import (
 from .load_atom import LoadAtoms
 from .measurement import Measurement
 from .parametric_gates import CPhase, Phase, RX, RY, RZ
+from .pulse import PulseOperation
 from .qudit_gates import (
     CClock,
     Clock,
@@ -87,4 +88,5 @@ __all__ = [
     "SubspaceRY",
     "SubspaceRZ",
     "CClock",
+    "PulseOperation",
 ]

@@ -38,7 +38,8 @@ import functools
 import io
 from typing import Any
 
-from .operations import BarrierGate, Measurement, ResetGate
+from .errors import UnsupportedOperationError
+from .operations import BarrierGate, Measurement, PulseOperation, ResetGate
 from .program import Program
 from .registers import RegisterRef, RegisterView, _view_members
 
@@ -324,6 +325,10 @@ def to_qubit_circuit(program: Program):
                     _wire(output, clbit_index),
                 )
             continue
+        if isinstance(step.operation, PulseOperation):
+            raise UnsupportedOperationError(
+                "PulseOperation is not supported by circuit drawing"
+            )
         # Applied gate/reset/barrier - expand any grouped target first so each
         # emitted element acts on scalar wires.
         for operands in _expand_targets(step.targets):

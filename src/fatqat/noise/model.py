@@ -13,18 +13,18 @@ program's resource layout.
 Gate-channel target selectors come in two identity spaces, both compared
 directly - never through the private engine allocation:
 
-- ``tuple[RegisterRef, ...]`` - logical, frontend refs, how a user pins noise
+- ``tuple[RegisterRef, ...]`` - program refs, how a user pins noise
   to their own program's subsystems. Matched by ref equality against the
-lowered occurrence's targets.
-
-``slots`` is a third, orthogonal concept: zero-based positional indices in a
-matched occurrence's target tuple. It is neither a logical ref, a device
-label, nor an engine index; it determines the channel's execution extent.
+  lowered occurrence's targets.
 - ``tuple[DeviceOperand, ...]`` - physical, opaque device resource labels, how a
   backend authors default noise for its device before any user program (or
   register) exists. Matched against
   :py:meth:`~fatqat.resource_layout.ResourceLayout.device_labels_for` for the
   lowered occurrence's targets.
+
+``slots`` is a third, orthogonal concept: zero-based positional indices in a
+matched occurrence's target tuple. It is neither a program ref, a device
+label, nor an engine index; it determines the channel's execution extent.
 
 A bare integer selector is a physical device-resource label, never a flat
 engine index and never converted into a `RegisterRef`. See
@@ -32,7 +32,7 @@ docs/superpowers/specs/2026-07-22-fatqat-resource-layout-and-noise-selector-desi
 
 Readout-error selectors share the same two identity spaces, but the stored
 selector is scalar - ``None``, one `RegisterRef`, or one physical device
-resource label - never a tuple. A logical selector is matched by ref equality
+resource label - never a tuple. A RegisterRef selector is matched by equality
 against the measured target; a physical selector is matched against
 :py:meth:`~fatqat.resource_layout.ResourceLayout.device_label` for that
 target. See `readout_error_for`.
@@ -54,7 +54,7 @@ from ..resource_layout import DeviceOperand, ResourceLayout
 from .base import Channel
 
 # One entry per add_channel() call: an all-targets fallback (None), a
-# logical ref-tuple selector, or a physical device-label-tuple selector
+# RegisterRef-tuple selector, or a physical device-label-tuple selector
 # (homogeneous, validated).
 _GateSelector = tuple[RegisterRef, ...] | tuple[DeviceOperand, ...] | None
 
@@ -65,7 +65,7 @@ _GateSelector = tuple[RegisterRef, ...] | tuple[DeviceOperand, ...] | None
 _GateTargetsArg = _GateSelector | RegisterRef | DeviceOperand
 
 # One entry per add_readout_error() call: an all-subsystems fallback (None),
-# a logical RegisterRef selector, or a physical device-label selector
+# a RegisterRef selector, or a physical device-label selector
 # (scalar, unlike _GateSelector - a readout error names one measured
 # subsystem, not an occurrence's whole target tuple).
 _ReadoutSelector = RegisterRef | DeviceOperand | None
@@ -148,7 +148,7 @@ class NoiseModel:
             targets: For operation-scoped noise, ``None`` applies to every
                 occurrence. A tuple
                 of quantum :py:class:`~fatqat.registers.RegisterRef` pins the
-                channel to one logical program-target tuple; a tuple of
+                channel to one program-target tuple; a tuple of
                 opaque device resource labels (e.g. ``int``, ``str``) pins it
                 to one physical occurrence in the backend's device address
                 space. The two forms cannot be mixed in one selector, and a
@@ -173,7 +173,7 @@ class NoiseModel:
           It can therefore *lower* the noise on its target by evicting a
           stronger default; restate the default at the specific level to
           keep it.
-        - A logical selector is compared to the lowered occurrence's target
+        - A RegisterRef selector is compared to the lowered occurrence's target
           refs by equality; a physical selector is compared to the lowered
           occurrence's device resource labels
           (:py:meth:`~fatqat.resource_layout.ResourceLayout.device_labels_for`)
@@ -202,6 +202,11 @@ class NoiseModel:
             normalized_slots = None
         else:
             op_cls = _resolve_operation_class(operation)
+            if op_cls._is_direct_control:
+                raise ValueError(
+                    f"{op_cls.__name__} is a direct-control operation and cannot "
+                    "have operation-scoped noise"
+                )
             if op_cls is BarrierGate:
                 raise ValueError(
                     "Barrier is a compiler marker with no execution semantics; "
@@ -221,7 +226,7 @@ class NoiseModel:
     ) -> list[tuple[Channel, tuple[RegisterRef, ...]]]:
         """Return the channels selected for one lowered operation occurrence.
 
-        A logical selector matches when it equals ``targets``; a physical
+        A RegisterRef selector matches when it equals ``targets``; a physical
         selector matches when it equals
         ``resource_layout.device_labels_for(targets)``. Both kinds of specific
         match accumulate (in registration order); all-targets (``None``)
@@ -230,7 +235,7 @@ class NoiseModel:
 
         Args:
             operation: The occurrence's operation (instance or class).
-            targets: The occurrence's logical target refs, as lowered from
+            targets: The occurrence's program target refs, as lowered from
                 the program (never engine indices).
             resource_layout: The run's public resource layout, used to
                 resolve physical selectors.
@@ -307,7 +312,7 @@ class NoiseModel:
                 lowering.
             target: ``None`` (default) applies to every measured subsystem. A
                 quantum :py:class:`~fatqat.registers.RegisterRef` pins it to
-                one logical subsystem (matched by ref equality); an opaque
+                one program subsystem (matched by ref equality); an opaque
                 device resource label (e.g. ``int``, ``str``) pins it to one
                 physical measured subsystem in the backend's device address
                 space (matched via
@@ -380,7 +385,7 @@ class NoiseModel:
     ) -> np.ndarray | None:
         """Return the confusion matrix selected for one measured subsystem.
 
-        A logical selector matches when it equals ``target``; a physical
+        A RegisterRef selector matches when it equals ``target``; a physical
         selector matches when it equals
         ``resource_layout.device_label(target)``. Readout errors do not
         accumulate: a matching specific selector replaces the all-target
@@ -388,7 +393,7 @@ class NoiseModel:
         the most recently registered one wins.
 
         Args:
-            target: The measured subsystem's logical ref, as lowered from
+            target: The measured subsystem's program ref, as lowered from
                 the program (never an engine index).
             resource_layout: The run's public resource layout, used to
                 resolve physical selectors.
@@ -410,39 +415,41 @@ class NoiseModel:
                     specific = matrix
         return specific if specific is not None else fallback
 
-    def validate_for(self, program: Program, resource_layout: ResourceLayout) -> None:
+    def validate_for(
+        self,
+        program: Program,
+        legal_device_operands: frozenset[DeviceOperand],
+    ) -> None:
         """Validate every stored selector's identity legality for one run.
 
         This checks selector-identity legality only, not selector firing: a
         valid selector that matches no gate occurrence (or, for readout,
         names a subsystem that is never measured) is a permitted no-effect
-        entry, not a validation error. A logical selector is legal when every
+        entry, not a validation error. A RegisterRef selector is legal when every
         ref it names belongs to ``program``'s quantum registers; a physical
-        selector is legal when every label it names is a member of
-        ``resource_layout.device_labels`` - the run's effective layout, which
-        already establishes that a label denotes a legal, occupied device
-        resource. Both stored shapes are checked: tuple gate-channel
+        selector is legal when every label it names is a member of the
+        backend-supplied ``legal_device_operands`` universe. That universe may
+        include modeled subsystems not addressed by the run's resource layout.
+        Both stored shapes are checked: tuple gate-channel
         selectors and scalar readout selectors are validated independently,
         not through a shared representation.
 
         Args:
             program: The program this run will execute; defines the legal
-                logical `RegisterRef` space.
-            resource_layout: The run's effective resource layout; defines the
-                legal physical device-label space.
+                program `RegisterRef` space.
+            legal_device_operands: Physical operands the backend accepts for
+                selectors on this run.
 
         Raises:
             BackendValidationError: If any stored selector names a
                 `RegisterRef` foreign to ``program`` or a device label absent
-                from ``resource_layout.device_labels``.
+                from ``legal_device_operands``.
         """
         program_refs = frozenset(
             ref
             for register in program.quantum_registers
             for ref in (register[i] for i in range(register.size))
         )
-        device_labels = resource_layout.device_labels
-
         for entry in self._channels:
             selector = entry.selector
             if selector is None:
@@ -456,11 +463,11 @@ class NoiseModel:
                         )
             else:
                 for label in selector:
-                    if label not in device_labels:
+                    if label not in legal_device_operands:
                         raise BackendValidationError(
                             "noise selector names a device resource "
-                            f"label not in the effective resource "
-                            f"layout: {label!r}"
+                            f"label outside the backend's legal device "
+                            f"universe: {label!r}"
                         )
 
         for selector, _matrix in self._readout_errors:
@@ -473,10 +480,10 @@ class NoiseModel:
                         f"not part of this program: {selector!r}"
                     )
             else:
-                if selector not in device_labels:
+                if selector not in legal_device_operands:
                     raise BackendValidationError(
                         "readout-error selector names a device resource "
-                        f"label not in the effective resource layout: "
+                        f"label outside the backend's legal device universe: "
                         f"{selector!r}"
                     )
 
@@ -524,7 +531,7 @@ def _is_ref_selector(selector: tuple[DeviceOperand, ...]) -> bool:
 
 
 def _validate_scalar_selector(selector: Any, label: str) -> None:
-    """Validate a logical ref or opaque hashable physical label."""
+    """Validate a RegisterRef or opaque hashable device label."""
     if selector is None:
         return
     if isinstance(selector, RegisterView):
@@ -559,7 +566,7 @@ def _normalize_selector(
 ) -> _GateSelector:
     """Validate and normalize an ``add_channel`` target selector.
 
-    A selector is ``None``, a tuple wholly of `RegisterRef` (logical), a
+    A selector is ``None``, a tuple wholly of `RegisterRef`, a
     tuple wholly of some other hashable (physical device resource labels),
     or a single `RegisterRef`/hashable as shorthand for a one-element
     tuple - the length check below then rejects it for any operation whose
@@ -589,7 +596,7 @@ def _normalize_selector(
                 )
     elif any(is_ref):
         raise TypeError(
-            "targets must be all RegisterRef (logical) or all device "
+            "targets must be all RegisterRef or all device "
             f"resource labels (physical), not mixed; got {selector!r}"
         )
     expected = op_cls._num_subsystems

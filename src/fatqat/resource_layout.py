@@ -4,7 +4,7 @@
 defined device resource labels (a physical site, coordinate, or any other
 hashable backend identity). It carries no dimensions, no classical-slot
 positions, and no engine subsystem indices - those belong to the private
-engine index allocation in `fatqat._engine_index_allocation`. See
+engine allocation in `fatqat._index_allocation`. See
 docs/superpowers/specs/2026-07-22-fatqat-resource-layout-and-noise-selector-design.md.
 """
 
@@ -33,6 +33,9 @@ class ResourceLayout:
                 resource label.
         """
         self._labels: dict[RegisterRef, DeviceOperand] = dict(labels)
+        self._refs_by_label: dict[DeviceOperand, RegisterRef | None] = {}
+        for ref, label in self._labels.items():
+            self._refs_by_label[label] = None if label in self._refs_by_label else ref
 
     def device_label(self, ref: RegisterRef) -> DeviceOperand:
         """Return the device resource label mapped to ``ref``.
@@ -64,3 +67,16 @@ class ResourceLayout:
             KeyError: If any ref in ``refs`` is not part of this layout.
         """
         return tuple(self.device_label(ref) for ref in refs)
+
+    def _ref_for_label(self, label: DeviceOperand) -> RegisterRef:
+        """Return the unique program ref for a backend-owned device label.
+
+        Raises:
+            KeyError: If the label is absent or maps from multiple refs. Public
+                layouts need not be injective; family backends using this
+                private reverse seam must provide an injective layout.
+        """
+        ref = self._refs_by_label.get(label)
+        if ref is None:
+            raise KeyError("device label must identify exactly one program ref")
+        return ref

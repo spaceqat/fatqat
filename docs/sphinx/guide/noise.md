@@ -81,10 +81,11 @@ implementation maps:
 - `Simulator` (the matrix family) resolves `p` directly into Kraus
   operators, and rejects `rate` mode - no gate carries a duration in matrix
   lowering today, so there is nothing to convert it with.
-- The superconducting pulse backend (see {doc}`superconducting-pulse`)
-  resolves either mode into a collapse-operator rate, using the realized
-  operation's own duration. Without an `operation` selector, rate mode is
-  always active, including idle intervals.
+- A pulse emulator whose effective `LindbladImplementationMap` registers the
+  descriptor resolves either mode into a collapse-operator rate, using the
+  realized operation's own duration. Without an `operation` selector, rate
+  mode is always active, including idle intervals. Family defaults differ;
+  supplied maps replace those defaults.
 
 A probability of exactly `1` is a valid finite channel but has no finite
 rate, so converting it to `rate` mode raises rather than silently
@@ -96,6 +97,8 @@ Registration scope is represented by `operation`: omitting it means
 always-on, while `operation=op.X` selects matching `X` blocks. Rate mode does
 not by itself mean globally active. Probability mode requires an operation
 scope because a finite probability has no meaning without an interval.
+Operation-scoped pulse resolution applies to eligible ordinary operations;
+`NoiseModel` rejects direct `PulseOperation` as an operation selector.
 
 ## Targeting specific qubits
 
@@ -150,9 +153,10 @@ noise.add_channel(dephasing, operation=op.H)
 
 The library never derives durations itself — operations carry no time — so
 the caller supplies how long the noisy gate takes. `t2 <= 2*t1` is enforced
-(the physical bound: pure dephasing cannot be negative). On a pulse backend,
-register the same descriptor without an operation to act throughout pulse
-and idle evolution:
+(the physical bound: pure dephasing cannot be negative). On a pulse backend
+with a registered `ThermalRelaxation` rule, register the descriptor with an
+ordinary operation to scope it to realized blocks, or without an operation to
+act throughout pulse and idle evolution:
 
 ```python
 noise.add_channel(relaxation, targets=(program.quantum_registers[0][0],))

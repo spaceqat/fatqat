@@ -1,18 +1,21 @@
 {
-  "format": "fatqat.physics-model",
-  "schema_version": 1,
-  "builder": {"id": "sc.transmon_exchange", "version": 1},
+  "format": {"id": "sc.transmon_exchange", "version": 1},
   "model": {"id": "test-sc-2q", "revision": "2026-07-26"},
-  "parameters": {
-    "units": {
-      "subsystems": {"frequency": "GHz", "anharmonicity": "GHz"}
-    },
-    "subsystems": [
-      {"id": "q0", "frequency": 5.1, "anharmonicity": -0.22},
-      {"id": "q1", "frequency": 5.22, "anharmonicity": -0.24}
-    ],
-    "couplings": [
+  "system": {
+    "subsystem_type": "transmon",
+    "subsystems": ["q0", "q1"],
+    "control_edges": [
       {"id": "e0", "subsystems": ["q0", "q1"]}
     ]
+  },
+  "units": {
+    "frequency": "GHz",
+    "anharmonicity": "GHz"
+  },
+  "parameters": {
+    "subsystems": {
+      "q0": {"frequency": 5.1, "anharmonicity": -0.22},
+      "q1": {"frequency": 5.22, "anharmonicity": -0.24}
+    }
   }
 }

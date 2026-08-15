@@ -160,13 +160,13 @@ def test_run_resolves_resource_layout_and_engine_index_allocation_exactly_once(
     original_resource_layout = backend._resolve_resource_layout
     original_allocate_engine_indices = backend._allocate_engine_indices
 
-    def counting_resource_layout(program):
+    def counting_resource_layout(program, supplied_layout=None):
         calls["resource_layout"] += 1
-        return original_resource_layout(program)
+        return original_resource_layout(program, supplied_layout)
 
-    def counting_allocate_engine_indices(program):
+    def counting_allocate_engine_indices(program, resource_layout):
         calls["engine"] += 1
-        return original_allocate_engine_indices(program)
+        return original_allocate_engine_indices(program, resource_layout)
 
     monkeypatch.setattr(backend, "_resolve_resource_layout", counting_resource_layout)
     monkeypatch.setattr(
@@ -184,7 +184,7 @@ def test_resource_layout_failure_raises_directly_not_as_a_failed_job():
     # A validation failure in _resolve_resource_layout must propagate
     # directly from run(), never be captured into Job.failed().
     class _ExplodingResourceLayoutBackend(Simulator):
-        def _resolve_resource_layout(self, program):
+        def _resolve_resource_layout(self, program, supplied_layout=None):
             raise BackendValidationError("resource layout boom")
 
     backend = _ExplodingResourceLayoutBackend()
@@ -201,7 +201,7 @@ def test_engine_index_allocation_failure_raises_directly_not_as_a_failed_job(
     # not a subclass override: no real backend overrides this hook (unlike
     # _resolve_resource_layout above), so a subclass would misrepresent it
     # as a supported extension point.
-    def exploding(program):
+    def exploding(program, resource_layout):
         raise BackendValidationError("engine allocation boom")
 
     backend = Simulator()

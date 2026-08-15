@@ -52,7 +52,7 @@ _ResultRequest = StateVectorResultRequest | DensityMatrixResultRequest
 def _shot_seed_sequences(
     seed: int | None, n_iters: int
 ) -> list[np.random.SeedSequence]:
-    """Spawn one independent child `SeedSequence` per logical shot.
+    """Spawn one independent child `SeedSequence` per sampled shot.
 
     Child streams are derived from a single root sequence in shot order, so
     serial and parallel execution draw from the same reproducible per-shot

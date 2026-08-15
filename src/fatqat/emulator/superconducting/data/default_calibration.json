@@ -1,0 +1,33 @@
+{
+  "format": {
+    "id": "sc.transmon_exchange_fixed_pulse",
+    "version": 1
+  },
+  "calibration": {
+    "id": "fatqat_default_transmon_v1",
+    "revision": "2026-08-09"
+  },
+  "units": {
+    "time": "ns",
+    "frequency": "GHz",
+    "dimensionless": "1"
+  },
+  "recipes": {
+    "rx_ry": {
+      "duration": 20.0,
+      "drag_coefficient": 1.0
+    },
+    "iswap": {
+      "duration": 40.0
+    },
+    "cz": {
+      "default": {
+        "detuning_operand": 0,
+        "duration": 60.0,
+        "ramp_duration": 3.0,
+        "detuning": 0.22
+      },
+      "overrides": []
+    }
+  }
+}

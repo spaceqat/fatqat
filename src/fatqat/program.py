@@ -58,8 +58,15 @@ class AppliedOperation:
     def __post_init__(self) -> None:
         expected = self.operation.num_targets
         if expected is None:
-            if len(self.targets) < 1:
-                raise ValueError(f"{self.operation.name} expects at least one target")
+            minimum = self.operation.min_targets
+            if len(self.targets) < minimum:
+                if minimum == 1:
+                    raise ValueError(
+                        f"{self.operation.name} expects at least one target"
+                    )
+                raise ValueError(
+                    f"{self.operation.name} expects at least {minimum} targets"
+                )
         elif len(self.targets) != expected:
             raise ValueError(
                 f"{self.operation.name} expects {expected} target(s), "

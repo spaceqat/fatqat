@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from math import prod
 
-from .._engine_index_allocation import _EngineIndexAllocation
+from .._index_allocation import _ClassicalAllocation, _EngineAllocation
 from ..errors import (
     BackendValidationError,
     MatrixImplementationError,
@@ -14,8 +14,8 @@ from ..implementation import MatrixImplementationMap
 from ..implementation._operation_registry import _select_implementation
 from ..noise import ChannelImplementationMap, NoiseModel
 from ..noise.base import _validate_kraus_shapes
+from ..operations import Measurement, PulseOperation, ResetGate
 from ..noise.loss import AtomLoss
-from ..operations import Measurement, ResetGate
 from ..program import AppliedOperation
 from ..resource_layout import ResourceLayout
 from .._backends.backend_utils import (
@@ -37,24 +37,27 @@ from .._backends.steps import (
 def _lower_measurement(
     step: Measurement,
     resource_layout: ResourceLayout,
-    engine_index_allocation: _EngineIndexAllocation,
+    engine_allocation: _EngineAllocation,
+    classical_allocation: _ClassicalAllocation,
     noise_model: NoiseModel,
 ) -> MeasurementStep:
     """Lower one ``Measurement`` instruction into a ``MeasurementStep``."""
     # Only used to build reported_digit_maps below; _lower_measurement_boundary
     # independently resolves the authoritative measured_indices from step.targets.
     digit_map_indices = tuple(
-        engine_index_allocation.subsystem_index(q) for q in step.targets
+        engine_allocation.engine_index(resource_layout.device_label(q))
+        for q in step.targets
     )
     reported_digit_maps = tuple(
-        tuple(range(engine_index_allocation.system_dims[measured]))
+        tuple(range(engine_allocation.system_dims[measured]))
         for measured in digit_map_indices
     )
     measured_indices, classical_indices, confusions = _lower_measurement_boundary(
         step,
         reported_digit_maps,
         resource_layout,
-        engine_index_allocation,
+        engine_allocation,
+        classical_allocation,
         noise_model,
     )
     return MeasurementStep(
@@ -72,7 +75,8 @@ def _lower_measurement(
 def _lower_reset(
     step: AppliedOperation,
     resource_layout: ResourceLayout,
-    engine_index_allocation: _EngineIndexAllocation,
+    engine_allocation: _EngineAllocation,
+    classical_allocation: _ClassicalAllocation,
     noise_model: NoiseModel,
 ) -> ResetStep:
     """Lower one ``Reset`` operation, rejecting unimplemented channel noise."""
@@ -80,13 +84,19 @@ def _lower_reset(
         raise UnsupportedOperationError(
             "channel noise attached to Reset is not supported yet"
         )
-    return _lower_reset_boundary(step, engine_index_allocation)
+    return _lower_reset_boundary(
+        step,
+        resource_layout,
+        engine_allocation,
+        classical_allocation,
+    )
 
 
 def _lower_refill(
     step: AppliedOperation,
     resource_layout: ResourceLayout,
-    engine_index_allocation: _EngineIndexAllocation,
+    engine_allocation: _EngineAllocation,
+    classical_allocation: _ClassicalAllocation,
     noise_model: NoiseModel,
 ) -> list[ResolvedStep]:
     """Lower one ``Refill`` into a ``RefillStep`` plus any attached atom loss.
@@ -96,9 +106,10 @@ def _lower_refill(
     ``p_success = 1 - p``. Only ``AtomLoss`` may attach to ``Refill`` -- a
     Kraus channel on a reload has no meaning here.
     """
-    condition = _resolve_condition(step.condition, engine_index_allocation)
+    condition = _resolve_condition(step.condition, classical_allocation)
     engine_indices = tuple(
-        engine_index_allocation.subsystem_index(t) for t in step.targets
+        engine_allocation.engine_index(resource_layout.device_label(t))
+        for t in step.targets
     )
     steps: list[ResolvedStep] = [
         RefillStep(target_indices=engine_indices, condition=condition)
@@ -112,7 +123,8 @@ def _lower_refill(
                 "supported; only AtomLoss models loading inefficiency"
             )
         extent_indices = tuple(
-            engine_index_allocation.subsystem_index(target) for target in extent
+            engine_allocation.engine_index(resource_layout.device_label(target))
+            for target in extent
         )
         steps.append(
             AtomLossStep(
@@ -129,14 +141,14 @@ def _lower_channels(
     targets,
     condition,
     resource_layout: ResourceLayout,
-    engine_index_allocation: _EngineIndexAllocation,
+    engine_allocation: _EngineAllocation,
     noise_model: NoiseModel,
     channel_map: ChannelImplementationMap,
 ) -> list[ResolvedStep]:
     """Lower the channel noise attached to one occurrence into steps.
 
     Shared by gate and rearrange lowering. Selection matches against the
-    occurrence's logical targets and/or resource-layout device operands
+    occurrence's program targets and/or resource-layout device operands
     (never engine indices); engine indices are used only for the emitted
     steps. An AtomLoss becomes a per-atom AtomLossStep; any other (Kraus)
     channel becomes an ApplyChannelStep.
@@ -146,7 +158,8 @@ def _lower_channels(
         operation_type, targets, resource_layout
     ):
         extent_indices = tuple(
-            engine_index_allocation.subsystem_index(target) for target in extent
+            engine_allocation.engine_index(resource_layout.device_label(target))
+            for target in extent
         )
         if isinstance(channel, AtomLoss):
             steps.append(
@@ -165,7 +178,7 @@ def _lower_channels(
             )
         kraus_ops = tuple(channel_rule(channel, targets=extent))
         extent_dim = prod(
-            engine_index_allocation.system_dims[index] for index in extent_indices
+            engine_allocation.system_dims[index] for index in extent_indices
         )
         _validate_kraus_shapes(kraus_ops, extent_dim, type(channel).__name__)
         steps.append(
@@ -181,17 +194,23 @@ def _lower_channels(
 def _lower_gate(
     step: AppliedOperation,
     resource_layout: ResourceLayout,
-    engine_index_allocation: _EngineIndexAllocation,
+    engine_allocation: _EngineAllocation,
+    classical_allocation: _ClassicalAllocation,
     impl_map: MatrixImplementationMap,
     noise_model: NoiseModel,
     channel_map: ChannelImplementationMap,
 ) -> list[ResolvedStep]:
     """Lower one ordinary-gate operation and its attached channel noise."""
+    if isinstance(step.operation, PulseOperation):
+        raise UnsupportedOperationError(
+            "PulseOperation is not supported by the matrix simulator"
+        )
     device_operands = resource_layout.device_labels_for(step.targets)
     engine_indices = tuple(
-        engine_index_allocation.subsystem_index(t) for t in step.targets
+        engine_allocation.engine_index(resource_layout.device_label(t))
+        for t in step.targets
     )
-    condition = _resolve_condition(step.condition, engine_index_allocation)
+    condition = _resolve_condition(step.condition, classical_allocation)
 
     rule = _select_implementation(step.operation, device_operands, impl_map)
     try:
@@ -201,7 +220,7 @@ def _lower_gate(
             f"implementation for {type(step.operation).__name__} raised: {exc}"
         ) from exc
 
-    target_dims = tuple(engine_index_allocation.system_dims[i] for i in engine_indices)
+    target_dims = tuple(engine_allocation.system_dims[i] for i in engine_indices)
     expected = prod(target_dims)
     if matrix.shape != (expected, expected):
         raise BackendValidationError(
@@ -225,7 +244,7 @@ def _lower_gate(
             step.targets,
             condition,
             resource_layout,
-            engine_index_allocation,
+            engine_allocation,
             noise_model,
             channel_map,
         )

@@ -55,6 +55,11 @@ def _require_fixed_arity(op_cls: type[Operation]) -> None:
             f"{op_cls.__name__} has variable arity (_num_subsystems is None); "
             "implementation maps only support fixed-arity operations"
         )
+    if op_cls._is_direct_control:
+        raise TypeError(
+            f"{op_cls.__name__} is a direct-control operation and cannot have "
+            "an implementation-map registration"
+        )
 
 
 def _normalize_device_operands(device_operands: DeviceOperands) -> DeviceOperands:

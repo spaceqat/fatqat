@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+from fatqat.emulator import ControlChannel, PulseControl
 from fatqat.simulator import Simulator
 from fatqat.errors import (
     BackendValidationError,
@@ -14,6 +15,7 @@ from fatqat.errors import (
 )
 from fatqat import operations as ops
 from fatqat.program import Program
+from fatqat.waveforms import SampledWaveform
 
 
 def test_counts_default_with_measurement():
@@ -299,6 +301,24 @@ def test_unsupported_operation_raises():
     p = Program(1)
     p.add(Bogus(), 0)
     with pytest.raises(fq.errors.UnsupportedOperationError):
+        Simulator("DM").run(p, result_config={"counts": False})
+
+
+def test_matrix_simulator_explicitly_rejects_pulse_operation():
+    p = Program(1)
+    p.add(
+        fq.ops.PulseOperation(
+            1.0,
+            (
+                PulseControl(
+                    ControlChannel(),
+                    SampledWaveform((0.0, 1.0), (1.0, 1.0)),
+                ),
+            ),
+        )
+    )
+
+    with pytest.raises(fq.errors.UnsupportedOperationError, match="PulseOperation"):
         Simulator("DM").run(p, result_config={"counts": False})
 
 

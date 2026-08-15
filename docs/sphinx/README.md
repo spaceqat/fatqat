@@ -6,12 +6,13 @@ fails the build instead of silently vanishing:
 
 ```sh
 uv sync --group docs
-sphinx-build -b html -W docs/sphinx docs/sphinx/_build
+uv run sphinx-build -b html -W docs/sphinx docs/sphinx/_build/html
 ```
 
-Open `docs/sphinx/_build/index.html`.
+Open `docs/sphinx/_build/html/index.html`. This matches the existing
+`Makefile` and `make.bat` `<build-dir>/<builder>` layout; direct commands and
+CI are converging on that convention.
 
-The `Build HTML documentation` GitHub Actions workflow builds the same way
-on every push/PR to `main` and uploads the result as a workflow artifact
-(`fatqat_html_docs`) — there is no hosting/publishing step yet, so download
-the artifact from the run to view it.
+The `Build HTML documentation` GitHub Actions workflow also runs the Sphinx
+doctest builder. It uploads only `docs/sphinx/_build/html` as the
+`fatqat_html_docs` artifact; there is no hosting/publishing step yet.

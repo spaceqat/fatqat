@@ -55,7 +55,8 @@ from ..registers import (
     GridRegister,
     RegisterRef,
 )
-from ..resource_layout import ResourceLayout
+from ..resource_layout import DeviceOperand, ResourceLayout
+from .._index_allocation import _EngineAllocation
 from .._backends.backend_utils import (
     _PlanFacts,
     _validate_grid_size,
@@ -294,7 +295,28 @@ class AtomGridSimulator(Simulator):
         """
         return self._impl_map.copy()
 
-    def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
+    def _resolve_resource_layout(
+        self,
+        program: Program,
+        supplied_layout: ResourceLayout | None = None,
+    ) -> ResourceLayout:
+        if supplied_layout is not None:
+            raise BackendValidationError(
+                "AtomGridSimulator does not accept a supplied resource layout"
+            )
+        return super()._resolve_resource_layout(program)
+
+    def _legal_device_operands(
+        self, program: Program, resource_layout: ResourceLayout
+    ) -> frozenset[DeviceOperand]:
+        return frozenset(range(self._rows * self._cols))
+
+    def _physical_dimension(
+        self, device_operand: DeviceOperand, resource_layout: ResourceLayout
+    ) -> int:
+        return 2
+
+    def _default_resource_layout(self, program: Program) -> ResourceLayout:
         """Reject any shape the fake device can't run, then map top-left.
 
         Applies equally to a scalar-only program with no `GridRegister`:
@@ -337,7 +359,7 @@ class AtomGridSimulator(Simulator):
                 f"program, got {len(grid_registers)}"
             )
         if not grid_registers:
-            return super()._resolve_resource_layout(program)
+            return super()._default_resource_layout(program)
 
         grid = grid_registers[0]
         if len(program.quantum_registers) != 1:
@@ -356,9 +378,9 @@ class AtomGridSimulator(Simulator):
             labels[grid[index]] = row * self._cols + col
         return ResourceLayout(labels)
 
-    def _lower(
+    def _lower_with_context(
         self, operations: Sequence[ProgramInstruction], context: _LoweringContext
-    ) -> list[ResolvedStep]:
+    ) -> tuple[list[ResolvedStep], _LoweringContext]:
         """Apply this program's atom lifecycle, then lower normally.
 
         Every device site starts empty. The program's first instruction must
@@ -455,6 +477,7 @@ class AtomGridSimulator(Simulator):
             realized.append(step)
 
         current_layout = resource_layout
+        current_allocation = context.engine_allocation
         plan: list[ResolvedStep] = []
         segment: list[ProgramInstruction] = []
         for step in realized:
@@ -462,35 +485,67 @@ class AtomGridSimulator(Simulator):
                 step.operation, ops.Rearrange
             ):
                 seg_plan = super()._lower(
-                    tuple(segment), replace(context, resource_layout=current_layout)
+                    tuple(segment),
+                    replace(
+                        context,
+                        resource_layout=current_layout,
+                        engine_allocation=current_allocation,
+                    ),
                 )
                 plan.extend(seg_plan)
                 segment = []
+                next_layout = self._apply_rearrange(current_layout, step)
+                next_allocation = self._rebind_engine_allocation(
+                    current_layout,
+                    current_allocation,
+                    next_layout,
+                )
                 plan.extend(
                     _lower_channels(
                         type(step.operation),
                         step.targets,
                         None,
                         current_layout,
-                        context.engine_index_allocation,
+                        current_allocation,
                         self._noise_model,
                         self._channel_map,
                     )
                 )
-                current_layout = self._apply_rearrange(current_layout, step)
+                current_layout = next_layout
+                current_allocation = next_allocation
                 continue
             segment.append(step)
         seg_plan = super()._lower(
-            tuple(segment), replace(context, resource_layout=current_layout)
+            tuple(segment),
+            replace(
+                context,
+                resource_layout=current_layout,
+                engine_allocation=current_allocation,
+            ),
         )
         plan.extend(seg_plan)
 
         if any(isinstance(step, (AtomLossStep, RefillStep)) for step in plan):
-            occupied_indices = tuple(
-                context.engine_index_allocation.subsystem_index(ref) for ref in occupied
-            )
+            occupied_indices = tuple(context.engine_index(ref) for ref in occupied)
             plan.insert(0, OccupancyInitStep(occupied_indices=occupied_indices))
-        return plan
+        return plan, replace(
+            context,
+            resource_layout=current_layout,
+            engine_allocation=current_allocation,
+        )
+
+    @staticmethod
+    def _rebind_engine_allocation(
+        current_layout: ResourceLayout,
+        current_allocation: _EngineAllocation,
+        next_layout: ResourceLayout,
+    ) -> _EngineAllocation:
+        """Move site bindings while preserving every carrier's engine slot."""
+        next_operands = tuple(
+            next_layout.device_label(current_layout._ref_for_label(operand))
+            for operand in current_allocation.device_operands
+        )
+        return _EngineAllocation(next_operands, current_allocation.system_dims)
 
     def _analyze_plan_facts(self, plan: Sequence[ResolvedStep]) -> _AtomGridPlanFacts:
         """Extend common plan facts with atom-grid lifecycle facts."""

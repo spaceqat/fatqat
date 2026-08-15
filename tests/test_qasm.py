@@ -11,8 +11,9 @@ import math
 import pytest
 
 import fatqat as fc
+from fatqat.emulator import ControlChannel, PulseControl
 from fatqat import operations as ops
-from fatqat.operations import Measurement
+from fatqat.operations import Measurement, PulseOperation
 from fatqat.qasm import (
     QASMTranspileError,
     QasmExportError,
@@ -20,6 +21,7 @@ from fatqat.qasm import (
     program_to_qasm,
     qasm_to_program,
 )
+from fatqat.waveforms import SampledWaveform
 
 # ===========================================================================
 # Export direction: fatqat.Program -> OpenQASM
@@ -540,3 +542,21 @@ def test_from_qasm3_if_block_and_gate_aliases():
         (program.classical_registers[0][0], 1),
         (program.classical_registers[0][1], 0),
     )
+
+
+def test_qasm_export_rejects_pulse_operation_explicitly():
+    program = fc.Program(1)
+    program.add(
+        PulseOperation(
+            1.0,
+            (
+                PulseControl(
+                    ControlChannel(),
+                    SampledWaveform((0.0, 1.0), (1.0, 1.0)),
+                ),
+            ),
+        )
+    )
+
+    with pytest.raises(QasmExportError, match="PulseOperation is not supported"):
+        program_to_qasm(program)

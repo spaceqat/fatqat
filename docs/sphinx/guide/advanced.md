@@ -113,15 +113,28 @@ which shape you passed by inspecting the callable's signature.
 
 ### Custom pulse implementations
 
-`fq.emulator.Emulator` has the same customization shape for its own
+`fq.emulator.TransmonEmulator` has the same customization shape for its own
 native operations, through a `PulseImplementationMap` instead of an
-`MatrixImplementationMap`: copy `default_superconducting_pulse_implementation_map()`,
+`MatrixImplementationMap`: build
+`default_transmon_gate_implementation_map(model=..., calibration=...)`,
 register a replacement rule, and construct the backend with
-`pulse_implementation_map=`. See
+`gate_implementation_map=`. See
 [Superconducting pulse simulation](superconducting-pulse.md) for the
-pulse-specific rule contract - a pulse rule returns a `PulseDefinition`
-(duration, sampled controls, resource claims, frame actions) rather than a
-matrix, and never touches calibration data.
+pulse-specific rule contract. A pulse rule receives `operation` and optionally
+keyword-only `device_operands`; it returns a claim-free `PulseDefinition`
+(duration, sampled controls, frame actions) rather than a matrix.
+
+This public gate-map customization hook belongs to all three pulse emulators.
+`Atom2LevelEmulator` has an empty built-in map, so custom rules can add ordinary
+gate behavior without changing its global direct-control path. Direct
+`PulseOperation` values on every system bypass gate lookup.
+
+Pulse maps support a fixed definition, an operand-unaware callable registered
+for explicit `device_operands`, or an operand-aware reusable callable with an
+explicit `device_operands` parameter. Call `remove(operation)` before changing
+an operation family between unconstrained and device-specific registration
+modes; this applies equally to the standard CZ tables and unconstrained RX
+rules.
 
 ## Parallel execution
 

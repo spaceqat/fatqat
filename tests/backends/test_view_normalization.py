@@ -2,7 +2,7 @@
 
 `_break_grouped_operations()` is the temporary scalar view-normalization
 stage: it must run before scalar lowering and must not carry any resource-
-mapping policy of its own (that lives in `ResourceLayout`/`_EngineIndexAllocation`
+mapping policy of its own (that lives in `ResourceLayout`/`_EngineAllocation`
 and the private `_LoweringContext` that pairs them for one run's lowering).
 
 Pairing legality (matching selector kind, equal cardinality, no same-register
@@ -18,6 +18,7 @@ from fatqat import operations as ops
 from fatqat._backends.steps import ApplyMatrixStep
 from fatqat.simulator import Simulator
 from fatqat._backends.backend_utils import _LoweringContext
+from fatqat._index_allocation import _ClassicalAllocation
 from fatqat.simulator.simulator import _break_grouped_operations
 from fatqat.implementation import (
     MatrixImplementationMap,
@@ -97,7 +98,7 @@ def test_base_backend_executes_grouped_views_with_identity_mapping():
     assert result.get_statevector() is not None
 
 
-# --- private lowering context: ResourceLayout for lookup, _EngineIndexAllocation
+# --- private lowering context: ResourceLayout for lookup, _EngineAllocation
 # for execution indices -----------------------------------------------------
 
 
@@ -107,13 +108,13 @@ def test_lower_uses_resource_layout_device_labels_for_lookup_and_engine_indices_
     # device operands (99, 100), so lowering can only have succeeded by using
     # `ResourceLayout.device_labels_for()` for the implementation-map lookup;
     # the resulting step must still carry the *engine* indices (0, 1), from
-    # `_EngineIndexAllocation`, not the device labels used for lookup.
+    # `_EngineAllocation`, not the device labels used for lookup.
     program = Program(2)
     program.add(ops.CZ, (0, 1))
     q0, q1 = program.quantum_registers[0][0], program.quantum_registers[0][1]
 
-    engine_index_allocation = Simulator()._allocate_engine_indices(program)
     resource_layout = ResourceLayout({q0: 99, q1: 100})
+    engine_allocation = Simulator()._allocate_engine_indices(program, resource_layout)
 
     cz_rule = default_matrix_implementation_map().implementation_for(ops.CZ)
     implementation_map = MatrixImplementationMap()
@@ -122,7 +123,8 @@ def test_lower_uses_resource_layout_device_labels_for_lookup_and_engine_indices_
 
     context = _LoweringContext(
         resource_layout=resource_layout,
-        engine_index_allocation=engine_index_allocation,
+        engine_allocation=engine_allocation,
+        classical_allocation=_ClassicalAllocation.from_program(program),
     )
     operations = _break_grouped_operations(program.operations)
     plan = backend._lower(operations, context)

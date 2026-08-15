@@ -44,6 +44,33 @@ Atom loading
    :members:
    :show-inheritance:
 
+Pulse operations and waveforms
+------------------------------
+
+:py:class:`~fatqat.operations.PulseOperation` is a backend-independent
+time block containing one or more :py:class:`~fatqat.emulator.PulseControl`
+bindings. Obtain structural control addresses from the selected physics model,
+construct immutable waveforms under ``fatqat.waveforms``, and bind them with
+``PulseControl(channel, waveform, start_offset=...)``. The emulator validates
+the waveform shape and structural control addresses when lowering the
+operation, then derives target-owned scheduling claims for its private
+execution block.
+
+A :py:class:`~fatqat.waveforms.SampledWaveform` supplies a finite nonuniform,
+strictly increasing time grid starting at zero. Its final time is the waveform
+duration; a control's offset plus that duration must fit inside the enclosing
+operation duration. Function and symbolic waveforms remain future work.
+
+.. autoclass:: fatqat.operations.PulseOperation
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.waveforms.SampledWaveform
+   :members:
+
+.. autoclass:: fatqat.emulator.PulseControl
+   :members:
+
 Parametric gates
 -----------------
 

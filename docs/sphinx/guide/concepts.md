@@ -1,11 +1,12 @@
 # Core concepts
 
-A fatqat program has six user-facing pieces. Each has one job:
+A fatqat program has seven user-facing pieces. Each has one job:
 
 | Concept | What you use it for |
 | --- | --- |
 | {py:class}`~fatqat.Program` | Record gates, measurements, and their order. |
 | registers and references | Name the quantum and classical slots that operations use. |
+| {py:class}`~fatqat.ResourceLayout` | Optionally map program quantum references to backend device operands for one run. |
 | operations | Describe a gate or reset before it is added to a program. |
 | backend | Validate and execute a program. |
 | {py:class}`~fatqat.Job` | Represent one submitted run; call ``result()`` to obtain its output. |
@@ -13,7 +14,7 @@ A fatqat program has six user-facing pieces. Each has one job:
 
 ## Program
 
-{py:class}`~fatqat.Program` is the frontend object you build. It owns the program’s logical
+{py:class}`~fatqat.Program` is the frontend object you build. It owns the program’s
 registers and the ordered instructions you add. It does not execute those
 instructions itself.
 
@@ -78,6 +79,13 @@ The backend handles validation and execution. ``run()`` returns a {py:class}`~fa
 intentionally small: obtain the result, then read it. Applications do not
 configure the simulator engine or its private execution state.
 
+Backends provide a default {py:class}`~fatqat.ResourceLayout`. Pass an explicit
+one to ``run(resource_layout=...)`` only when you need a different legal
+program-to-device binding, for example mapping two program qubits to selected
+transmons in a larger model. The layout contains public device identities; it
+must cover every declared quantum reference and does not expose or choose the
+numerical tensor axes owned by the backend.
+
 ## Optional grid registers
 
 {py:class}`~fatqat.GridRegister` is useful when your program’s qubits have a rectangular
@@ -90,6 +98,7 @@ program = fq.Program([atoms])
 program.add(op.RX(0.2), atoms.row(1))
 ```
 
-The grid is a logical description. A backend applies any device-specific
-mapping and connectivity checks when it runs the program; normal users do
-not configure physical labels or resource layouts themselves.
+The grid is an abstract description. A backend applies its device-specific
+default mapping and connectivity checks when it runs the program. A backend
+may deliberately reject a supplied layout when its workflow owns placement;
+{py:class}`~fatqat.simulator.AtomGridSimulator` currently does so.

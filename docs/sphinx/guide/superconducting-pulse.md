@@ -1,22 +1,26 @@
-# Superconducting pulse simulation
+# Superconducting transmon emulation
 
-`fq.emulator.Emulator` realizes a small native superconducting gate set
+`fq.emulator.TransmonEmulator` realizes a small native superconducting gate set
 as calibrated controls on fixed three-level transmons. It is a physical
 simulator, separate from the two-level IBM- and Google-style fake backends.
 The public API accepts ordinary data and NumPy results: QuTiP and qutip-qip
 objects remain implementation details.
 
+Gate-authored programs and direct controls are separate capabilities. This
+system supports both: gates use a gate implementation map, while direct
+`PulseOperation` values already contain model-authored structural controls and
+bypass it. The private bound target validates those addresses during shared
+preparation.
+
 This guide explains the workflow. See {doc}`../api/pulse-emulator` for exact
-constructor and method signatures, model/calibration accessors, pulse-rule
+constructor and method signatures, model/calibration values, pulse-rule
 contracts, and generated reference documentation.
 
 ## Create a backend
 
-Keep the hardware model and its calibration as separate JSON-compatible
-documents. The model declares ordered transmon IDs, frequencies,
-anharmonicities, and coupling edges. The calibration names the exact model
-identity and supplies gate durations, DRAG settings, and per-edge CZ detuning
-values.
+The common workflow needs only the hardware model. The model declares ordered
+transmon IDs, frequencies, anharmonicities, and coupling edges; the emulator
+compiles a nominal package calibration internally.
 
 Each declared frequency is the nominal 0-to-1 transition frequency and
 defines that transmon's implicit resonant rotating-frame carrier. The current
@@ -27,22 +31,57 @@ under a new model version.
 ```python
 import fatqat as fq
 
-model = fq.emulator.load_physics_model(model_document)
-calibration = fq.emulator.load_calibration_spec(calibration_document, model)
-backend = fq.emulator.Emulator(model, calibration)
+model = fq.emulator.TransmonModel(model_document)
+backend = fq.emulator.TransmonEmulator(model)
 ```
 
-The program's qubits bind to model subsystems in declaration order. A model
-may contain additional, unused transmons; they remain part of physical
-evolution and final-state output.
+For an explicit calibration, keep it as a separate complete JSON-compatible
+document, compile a map, and pass only that map to the emulator:
+
+```python
+calibration = fq.emulator.TransmonCalibration(calibration_document)
+gate_map = fq.emulator.default_transmon_gate_implementation_map(
+    model=model,
+    calibration=calibration,
+)
+backend = fq.emulator.TransmonEmulator(
+    model,
+    gate_implementation_map=gate_map,
+)
+```
+
+The calibration document has its own durable identity but no model field.
+The source model contributes pulse-design facts such as anharmonicity and
+structural controls when the map is built.
+
+A compiled map may be reused on a distinct richer target model when every
+structural label and edge referenced by its definitions still exists. That
+reuses the coarse-source pulse design; it does not silently redesign DRAG from
+the richer target's anharmonicity. Rebuild the map with the richer source
+model when redesign is what you intend.
+
+The model document uses structured format identity
+`{"id": "sc.transmon_exchange", "version": 1}`, ordered
+`system.subsystems`, and `system.control_edges`. Frequency and
+anharmonicity units are top-level quantity kinds. Calibration recipe fields
+use unsuffixed persisted names such as `duration`, `ramp_duration`, and
+`detuning`; the Python runtime exposes unit-explicit conversion properties.
+
+By default, the program's qubits bind to model subsystems in declaration
+order. Pass ``resource_layout=ResourceLayout({...})`` to ``run()`` or
+``propagator()`` to bind program refs to selected transmon IDs instead. The
+backend—not the user—allocates numerical tensor axes over the complete model.
+Additional, unaddressed transmons therefore remain part of drift, noise,
+physical evolution, and final-state output.
 
 ## Native operations and results
 
 The backend accepts the calibrated physical gates `RX`, `RY`, `iSwap`, and
-oriented `CZ`, plus `RZ`, which realizes as an exact virtual frame rotation
+ordered `CZ`, plus `RZ`, which realizes as an exact virtual frame rotation
 with no physical control and no calibration degree of freedom. `iSwap` and
-`CZ` require a declared model coupling. For `CZ`, program target order must
-match the calibration's detuning orientation.
+`CZ` require a declared model coupling. Both orders of each declared edge are
+compiled; an ordered CZ override applies only to its exact operand tuple, with
+the calibration's default recipe used otherwise.
 
 The built-in `CZ` realization calculates its nominal virtual frame correction
 by integrating the generated detuning waveform. This keeps the correction
@@ -71,10 +110,42 @@ It is the full physical qutrit state, including leakage and every transmon in
 the selected model. For `m = len(model.subsystems)`, its shape is
 `(3**m, 3**m)`, not `(2**n, 2**n)` for the program's qubits. A run containing
 measurement may export this sampled posterior only with `shots=1`.
+``result.metadata["state_axes"]`` lists those full-model factors in backend
+allocation order using transmon IDs. Only addressed transmons also carry a
+program ``RegisterRef``; unaddressed transmons carry ``None``. No private
+numerical axis is exposed.
 
 The accepted result request keys are `counts` and `final_state`. By default,
 counts are requested when the program contains measurement, while a final
 state is requested only for a program without measurement.
+
+## Direct drive, detuning, and exchange controls
+
+Model factories also support model-neutral direct operations. Complex drive
+samples encode quadratures; detuning and exchange use their model-defined
+rates. Each structural control address identifies its subsystem or edge, so
+the operation has no ordinary program targets:
+
+```python
+duration = 20.0
+controls = (
+    fq.emulator.PulseControl(
+        model.drive_control("q0"),
+        fq.waveforms.SampledWaveform((0.0, duration), (0.02, 0.02j)),
+    ),
+    fq.emulator.PulseControl(
+        model.exchange_control("q0", "q1"),
+        fq.waveforms.SampledWaveform((0.0, duration), (0.01, 0.01)),
+    ),
+)
+direct_program = fq.Program(2)
+direct_program.add(fq.ops.PulseOperation(duration, controls))
+```
+
+Direct blocks can coexist with calibrated gates. `iSwap` remains a gate whose
+built-in realization drives the `exchange` control; `iSwap` is not a channel
+name. Structural control addresses can be reused with compatible model
+instances.
 
 ## Coherent propagators
 
@@ -111,33 +182,43 @@ on a frame-only, zero-duration program because no time elapses.
 ## Custom gate realizations
 
 Each native operation resolves to its physical pulse recipe through a
-`pulse_implementation_map=`, defaulting to
-`fq.emulator.default_superconducting_pulse_implementation_map()`. Copy that
-default map and replace one gate's realization to change *how* a gate is
+`gate_implementation_map=`. Build a fresh standard map from a model and
+calibration, then replace one gate's realization to change *how* a gate is
 physically executed - the waveform shape, which control channels are
 driven, which model resources are claimed - without editing calibration
-data or subclassing `Emulator`:
+data or subclassing `TransmonEmulator`:
+
+The map object is still named `PulseImplementationMap`; the constructor
+keyword is gate-specific because the map is not involved in direct control.
 
 ```python
-def custom_cz(operation, *, targets, model, calibration):
+def custom_cz(operation, *, device_operands):
+    first, second = device_operands
     ...
     return fq.emulator.PulseDefinition(
         duration=...,
         controls=(...,),
-        resource_claims=(...,),
     )
 
-implementations = fq.emulator.default_superconducting_pulse_implementation_map()
+calibration = fq.emulator.TransmonCalibration(calibration_document)
+implementations = fq.emulator.default_transmon_gate_implementation_map(
+    model=model,
+    calibration=calibration,
+)
+implementations.remove(fq.ops.CZ)
 implementations.add(fq.ops.CZ, custom_cz)
-backend = fq.emulator.Emulator(
-    model, calibration, pulse_implementation_map=implementations
+backend = fq.emulator.TransmonEmulator(
+    model, gate_implementation_map=implementations
 )
 ```
 
 Changing a calibrated *number* (a gate duration, a DRAG coefficient, a
 per-edge detuning) is a calibration-document change. Changing the physical
 *mechanism* a gate uses is an implementation-map change; the calibration
-document itself is never a place to select executable behavior. See
+document itself is never a place to select executable behavior. Supply a
+complete separate custom document rather than patching the package default.
+The package default is a nominal simulation baseline, not a hardware-fidelity
+guarantee. See
 [Advanced user topics](advanced.md) for the matrix-family version of this
 same pattern, and {doc}`../api/experimental` for the full rule contract,
 registration modes, and error semantics.
@@ -187,6 +268,7 @@ active only over that gate's own placed time interval: idle time and other
 concurrent, disjoint gates are unaffected, and a conditionally disabled gate
 contributes neither its controls nor its attached noise. This composes with
 always-on noise rather than replacing it - both scopes share the same
-registration and collapse-operator implementation. Every other
-channel type (e.g. `Depolarizing`) is still rejected, and coherent ZZ is
-explicitly deferred in v0.1.
+registration and collapse-operator implementation. The default map also
+accepts `ThermalRelaxation(t1, t2)` in operation-scoped or always-on form.
+Other descriptors (for example `Depolarizing`) require a supplied replacement
+map with a valid local Lindblad rule. Coherent ZZ is not in the default map.

@@ -5,7 +5,7 @@ import pytest
 
 import fatqat as fq
 from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep
-from fatqat.simulator import Simulator
+from fatqat.simulator import SCQubitIBMSimulator, Simulator
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (
     AmplitudeDamping,
@@ -394,7 +394,7 @@ def test_run_rejects_unmapped_physical_gate_label_directly():
     # (99,) on a three-subsystem generic-simulator program: not a member of
     # the effective layout's device labels for this run.
     program = fq.Program(3)
-    program.add(fq.ops.H, 0)
+    program.add(fq.ops.RZ(0.1), 0)
     noise = NoiseModel()
     noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X, targets=(99,))
     backend = Simulator(noise=noise)
@@ -404,15 +404,13 @@ def test_run_rejects_unmapped_physical_gate_label_directly():
 
 
 def test_run_succeeds_when_valid_gate_selector_matches_no_occurrence():
-    # A valid selector (real device label) that the program never triggers
-    # is a permitted no-effect entry, not a validation error.
+    # Site 15 is legal on the fixed device but is not modeled by this run.
+    # The selector validates and produces no numerical term.
     program = fq.Program(3)
-    program.add(fq.ops.H, 0)
+    program.add(fq.ops.RZ(0.1), 0)
     noise = NoiseModel()
-    noise.add_channel(
-        Depolarizing(p=0.1), operation=fq.ops.Y, targets=(2,)
-    )  # no Y in program
-    backend = Simulator(noise=noise)
+    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.Y, targets=(15,))
+    backend = SCQubitIBMSimulator(noise=noise)
 
     result = backend.run(program).result()
     assert result is not None

@@ -11,7 +11,7 @@ from fatqat.simulator import AtomGridSimulator, Simulator
 from fatqat.simulator.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import Depolarizing, NoiseModel, AtomLoss
-from fatqat.program import Program
+from fatqat.program import AppliedOperation, Program
 from fatqat.registers import GridRegister, QuantumRegister
 from fatqat.resource_layout import ResourceLayout
 
@@ -28,10 +28,9 @@ def test_default_shape_is_4x5():
     p_fits = Program(20)
     p_fits.add(ops.RX(0.1), 0)
     # 4x5 = 20 qubits fits exactly.
-    layout = backend._allocate_engine_indices(p_fits)
-    assert layout.n_subsystems == 20
-
     resource_layout = backend._resolve_resource_layout(p_fits)
+    allocation = backend._allocate_engine_indices(p_fits, resource_layout)
+    assert allocation.n_subsystems == 20
     assert isinstance(resource_layout, ResourceLayout)
 
     p_too_big = Program(21)
@@ -84,8 +83,8 @@ def test_2x3_grid_binds_top_left_on_default_4x5_backend():
     p.add(ops.RX(0.1), atoms.all())
 
     backend = AtomGridSimulator()  # default 4x5
-    engine_index_allocation = backend._allocate_engine_indices(p)
     resource_layout = backend._resolve_resource_layout(p)
+    engine_index_allocation = backend._allocate_engine_indices(p, resource_layout)
 
     assert tuple(resource_layout.device_label(atoms[i]) for i in range(6)) == (
         0,
@@ -96,7 +95,8 @@ def test_2x3_grid_binds_top_left_on_default_4x5_backend():
         7,
     )
     assert tuple(
-        engine_index_allocation.subsystem_index(atoms[i]) for i in range(6)
+        engine_index_allocation.engine_index(resource_layout.device_label(atoms[i]))
+        for i in range(6)
     ) == tuple(range(6))
 
 
@@ -108,9 +108,9 @@ def test_scalar_grid_ref_uses_grid_binder_device_label_not_identity():
     p = Program([atoms])
     backend = AtomGridSimulator()  # default 4x5
     ref = atoms[3]
-    engine_index_allocation = backend._allocate_engine_indices(p)
     resource_layout = backend._resolve_resource_layout(p)
-    assert engine_index_allocation.subsystem_index(ref) == 3
+    engine_index_allocation = backend._allocate_engine_indices(p, resource_layout)
+    assert engine_index_allocation.engine_index(resource_layout.device_label(ref)) == 3
     assert resource_layout.device_label(ref) == 5
 
 
@@ -222,32 +222,10 @@ def test_scalar_only_program_uses_identity_binding():
     p = Program(3)
     backend = AtomGridSimulator()
     ref = p.quantum_registers[0][2]
-    engine_index_allocation = backend._allocate_engine_indices(p)
     resource_layout = backend._resolve_resource_layout(p)
-    assert engine_index_allocation.subsystem_index(ref) == 2
+    engine_index_allocation = backend._allocate_engine_indices(p, resource_layout)
+    assert engine_index_allocation.engine_index(resource_layout.device_label(ref)) == 2
     assert resource_layout.device_label(ref) == 2
-
-
-def test_allocate_engine_has_no_atom_grid_validation_left():
-    # `_allocate_engine_indices()` now just delegates to the generic engine-
-    # flattening behavior: an over-capacity, non-qubit-dim, or ill-shaped
-    # program flattens without complaint here (validation moved wholesale to
-    # `_resolve_resource_layout()`).
-    backend = AtomGridSimulator()  # capacity 20
-
-    p_too_big = Program(21)
-    engine_index_allocation = backend._allocate_engine_indices(p_too_big)
-    assert engine_index_allocation.n_subsystems == 21
-
-    p_bad_dim = Program([QuantumRegister(4, dim=3)])
-    engine_index_allocation = backend._allocate_engine_indices(p_bad_dim)
-    assert engine_index_allocation.n_subsystems == 4
-
-    atoms1 = GridRegister(2, 2, name="a1")
-    atoms2 = GridRegister(2, 2, name="a2")
-    p_two_grids = Program([atoms1, atoms2])
-    engine_index_allocation = backend._allocate_engine_indices(p_two_grids)
-    assert engine_index_allocation.n_subsystems == 8
 
 
 # --- implementation_map capability API -----------------------------------------
@@ -478,7 +456,7 @@ def test_lowering_uses_resource_layout_device_operands_and_engine_index_allocati
     # (0, 5), not the engine-index pair (0, 3), so lowering only succeeds by
     # looking up `MatrixImplementationMap` with device operands sourced from
     # `ResourceLayout`. The resulting `ApplyMatrixStep`, however, must carry
-    # the *engine* indices (0, 3) from `_EngineIndexAllocation` - the private
+    # the *engine* indices (0, 3) from `_EngineAllocation` - the private
     # lowering context keeps the two identities separate end to end.
     atoms = GridRegister(2, 3, name="atoms")
     program = Program([atoms])
@@ -508,9 +486,9 @@ def test_run_resolves_resource_layout_exactly_once_even_with_grid_mapping():
     calls = {"resource_layout": 0}
     original = backend._resolve_resource_layout
 
-    def counting(program):
+    def counting(program, supplied_layout=None):
         calls["resource_layout"] += 1
-        return original(program)
+        return original(program, supplied_layout)
 
     backend._resolve_resource_layout = counting
     backend.run(program, result_config={"counts": False, "final_state": True})
@@ -780,7 +758,41 @@ def test_atomic_swap_exchanges_sites_not_state():
             .get_statevector()
         )
 
-    assert np.allclose(sv(build(True)), sv(build(False)))
+    swapped = build(True)
+    backend = AtomGridSimulator(grid_size=(1, 2))
+    initial_layout = backend._resolve_resource_layout(swapped)
+    initial_allocation = backend._allocate_engine_indices(swapped, initial_layout)
+    rearrange = next(
+        step
+        for step in swapped.operations
+        if isinstance(step, AppliedOperation)
+        and isinstance(step.operation, ops.Rearrange)
+    )
+    next_layout = backend._apply_rearrange(initial_layout, rearrange)
+    next_allocation = backend._rebind_engine_allocation(
+        initial_layout, initial_allocation, next_layout
+    )
+
+    assert tuple(
+        next_layout.device_label(ref) for ref in (atoms[0], atoms[1])
+    ) != tuple(initial_layout.device_label(ref) for ref in (atoms[0], atoms[1]))
+    assert next_allocation.device_operands != initial_allocation.device_operands
+    for ref in (atoms[0], atoms[1]):
+        assert initial_allocation.engine_index(
+            initial_layout.device_label(ref)
+        ) == next_allocation.engine_index(next_layout.device_label(ref))
+    swapped_result = backend.run(
+        swapped,
+        result_config={"counts": False, "final_state": True},
+    ).result()
+    assert swapped_result.metadata["state_axes"] == [
+        {"device_operand": 1, "register_ref": atoms[0]},
+        {"device_operand": 0, "register_ref": atoms[1]},
+    ]
+    assert all(
+        "engine_index" not in axis for axis in swapped_result.metadata["state_axes"]
+    )
+    assert np.allclose(swapped_result.get_statevector(), sv(build(False)))
 
 
 def test_atom_moved_outside_load_block_still_accepts_gates():
@@ -955,7 +967,7 @@ def test_rearrange_loss_spares_an_unmoved_atom():
 
 def test_rearrange_kraus_noise_applies_to_moved_atom():
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=1.0), operation=ops.Rearrange)
+    noise.add_channel(Depolarizing(p=1.0), operation=ops.Rearrange, targets=(0,))
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))

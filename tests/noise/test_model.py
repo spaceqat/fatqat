@@ -6,9 +6,15 @@ import pytest
 import fatqat as fq
 from fatqat.errors import BackendValidationError
 from fatqat.noise import AmplitudeDamping, Depolarizing, NoiseModel, PhaseDamping
-from fatqat.operations import ResetGate
+from fatqat._pulse_values import ControlChannel, PulseControl
+from fatqat.operations import PulseOperation, ResetGate
 from fatqat.registers import GridRegister
 from fatqat.resource_layout import ResourceLayout
+from fatqat.waveforms import SampledWaveform
+
+
+class _DirectChannel(ControlChannel):
+    pass
 
 
 def _resource_layout_for(program):
@@ -187,6 +193,18 @@ def test_add_channel_rejects_barrier():
         NoiseModel().add_channel(Depolarizing(p=0.1), operation=fq.ops.Barrier)
 
 
+def test_add_channel_rejects_direct_control_scope_but_accepts_always_on():
+    direct = PulseOperation(
+        1.0,
+        (PulseControl(_DirectChannel(), SampledWaveform((0.0, 1.0), (0.0, 0.0))),),
+    )
+    noise = NoiseModel()
+    with pytest.raises(ValueError, match="direct-control"):
+        noise.add_channel(Depolarizing(p=0.1), operation=direct)
+    noise.add_channel(PhaseDamping(rate=0.01))
+    assert noise.channel_registrations() == ((noise._channels[0].channel, None),)
+
+
 def test_add_channel_accepts_reset():
     noise = NoiseModel()
     noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.Reset)
@@ -313,7 +331,7 @@ def test_channel_types_lists_every_attached_descriptor_type():
 
 # --- readout error registration and lookup ---
 #
-# Readout selectors mirror the gate-channel identity spaces (logical
+# Readout selectors mirror the gate-channel identity spaces (RegisterRef
 # RegisterRef vs. physical device-resource label), but the stored selector is
 # scalar (None | RegisterRef | device label), not a tuple, and matching
 # selection is single-winner (most-recently-registered specific match wins),
@@ -452,7 +470,7 @@ def test_validate_for_accepts_valid_selectors_that_match_no_occurrence():
     noise.add_readout_error(_C_MILD, target=q[1])  # never measured
     noise.add_readout_error(_C_MILD, target=2)  # never measured
 
-    noise.validate_for(program, layout)  # must not raise
+    noise.validate_for(program, layout.device_labels)  # must not raise
 
 
 def test_validate_for_rejects_foreign_logical_gate_selector():
@@ -462,7 +480,7 @@ def test_validate_for_rejects_foreign_logical_gate_selector():
     noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X, targets=(foreign[0],))
 
     with pytest.raises(BackendValidationError):
-        noise.validate_for(program, layout)
+        noise.validate_for(program, layout.device_labels)
 
 
 def test_validate_for_rejects_foreign_logical_readout_selector():
@@ -472,7 +490,7 @@ def test_validate_for_rejects_foreign_logical_readout_selector():
     noise.add_readout_error(_C_MILD, target=foreign[0])
 
     with pytest.raises(BackendValidationError):
-        noise.validate_for(program, layout)
+        noise.validate_for(program, layout.device_labels)
 
 
 def test_validate_for_rejects_unmapped_physical_gate_label():
@@ -483,7 +501,7 @@ def test_validate_for_rejects_unmapped_physical_gate_label():
     noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X, targets=(99,))
 
     with pytest.raises(BackendValidationError):
-        noise.validate_for(program, layout)
+        noise.validate_for(program, layout.device_labels)
 
 
 def test_validate_for_rejects_unmapped_physical_readout_label():
@@ -492,7 +510,7 @@ def test_validate_for_rejects_unmapped_physical_readout_label():
     noise.add_readout_error(_C_MILD, target=99)
 
     with pytest.raises(BackendValidationError):
-        noise.validate_for(program, layout)
+        noise.validate_for(program, layout.device_labels)
 
 
 def test_validate_for_checks_both_stored_selector_shapes_in_one_model():
@@ -504,9 +522,9 @@ def test_validate_for_checks_both_stored_selector_shapes_in_one_model():
     noise.add_readout_error(_C_MILD, target=99)
 
     with pytest.raises(BackendValidationError):
-        noise.validate_for(program, layout)
+        noise.validate_for(program, layout.device_labels)
 
 
 def test_validate_for_accepts_noise_free_model():
     program, layout = _three_qubit_program_and_layout()
-    NoiseModel().validate_for(program, layout)  # must not raise
+    NoiseModel().validate_for(program, layout.device_labels)  # must not raise

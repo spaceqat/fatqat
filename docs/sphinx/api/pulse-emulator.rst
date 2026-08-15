@@ -6,19 +6,25 @@ The superconducting pulse emulator is the physical-control counterpart to
 :py:class:`~fatqat.Program`, validate and lower it through an implementation
 map, and return an eager :py:class:`~fatqat.Job`. They differ after lowering:
 the matrix backend applies finite matrices or Kraus maps to program-level
-subsystems, while :py:class:`~fatqat.emulator.Emulator` schedules sampled
+subsystems, while :py:class:`~fatqat.emulator.TransmonEmulator` schedules sampled
 controls and integrates the full three-level transmon model.
+
+Gate-authored and direct-control programs are independent paths on this
+backend. A gate is resolved through ``gate_implementation_map``; a direct
+:py:class:`~fatqat.operations.PulseOperation` already carries physical
+controls and bypasses that map.
 
 All supported imports on this page come from ``fatqat.emulator``. The classes
 that schedule lowered blocks, manage shots, or adapt them to QuTiP live under
 ``fatqat.emulator`` but remain private implementation details. In particular,
 applications do not construct ``PulseEngine``, ``PulseBlock``, or
-``SCQutipAdapter``.
+``_TransmonQutipAdapter``.
 
 Backend lifecycle
 -----------------
 
-Construct a backend from a physics-model document and its matching calibration:
+The common path constructs a backend from a physics-model document and uses a
+nominal package calibration internally:
 
 .. code-block:: python
 
@@ -26,19 +32,38 @@ Construct a backend from a physics-model document and its matching calibration:
    import fatqat as fq
 
    with open("model.json", encoding="utf-8") as stream:
-       model = fq.emulator.load_physics_model(json.load(stream))
+       model = fq.emulator.TransmonModel(json.load(stream))
+   backend = fq.emulator.TransmonEmulator(model)
+
+For an explicit calibration, compile the portable document into a map before
+constructing the emulator:
+
+.. code-block:: python
+
    with open("calibration.json", encoding="utf-8") as stream:
-       calibration = fq.emulator.load_calibration_spec(json.load(stream), model)
+       calibration = fq.emulator.TransmonCalibration(json.load(stream))
+   gate_map = fq.emulator.default_transmon_gate_implementation_map(
+       model=model,
+       calibration=calibration,
+   )
+   backend = fq.emulator.TransmonEmulator(
+       model,
+       gate_implementation_map=gate_map,
+   )
 
-   backend = fq.emulator.Emulator(model, calibration)
+The package default is a nominal simulation baseline, not a hardware-fidelity
+guarantee. A custom calibration is a complete separate document rather than a
+patch applied to the packaged JSON.
 
-The calibration must repeat the model's builder ID/version and model
-ID/revision exactly. Program qubits bind to ``model.subsystem_ids`` in
-declaration order. Unaddressed model transmons still participate in the full
-physical state and therefore still contribute factors of three to result and
-propagator dimensions.
+Program qubits bind to ``model.subsystem_ids`` in declaration order by
+default. ``run(resource_layout=...)`` and ``propagator(resource_layout=...)``
+accept an explicit :py:class:`~fatqat.ResourceLayout` whose device operands
+are model subsystem IDs. Unaddressed model transmons still participate in the
+full physical state and therefore still contribute factors of three to result
+and propagator dimensions. Their ordered public identities appear in result
+``state_axes`` metadata; private tensor indices do not.
 
-``Emulator(...)`` accepts these optional extension inputs:
+``TransmonEmulator(...)`` accepts these optional extension inputs:
 
 .. list-table:: Constructor options
    :header-rows: 1
@@ -53,7 +78,7 @@ propagator dimensions.
      - A :py:class:`~fatqat.noise.LindbladImplementationMap` mapping channel
        descriptors to local collapse operators. The backend copies it;
        ``None`` uses :py:func:`~fatqat.noise.default_lindblad_implementation_map`.
-   * - ``pulse_implementation_map``
+   * - ``gate_implementation_map``
      - A :py:class:`~fatqat.emulator.PulseImplementationMap` mapping operation
        families/ordered device operands to reusable pulse definitions. The
        backend copies it; ``None`` uses the built-in map.
@@ -61,7 +86,7 @@ propagator dimensions.
 Run configuration and results
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:py:meth:`~fatqat.emulator.Emulator.run` has the same eager job boundary as
+:py:meth:`~fatqat.emulator.TransmonEmulator.run` has the same eager job boundary as
 :py:meth:`~fatqat.simulator.Simulator.run`, but pulse-specific
 configuration and state semantics:
 
@@ -106,6 +131,10 @@ Measurement first samples a physical level, maps ``0, 1, 2`` to ``0, 1, 1``,
 then applies any classical readout-confusion matrix. Reset prepares physical
 ``|0>``.
 
+Result metadata keeps the effective ``simulation_config`` and
+``result_config`` plus common solver facts. It does not duplicate the model or
+target document; retain those inputs separately when provenance is required.
+
 Validation failures (invalid documents, model capacity/dimension, selectors,
 configuration, unsupported operations, and pulse-rule failures) raise directly
 from ``run()``. Failures after solver execution begins are represented by a
@@ -115,7 +144,7 @@ failed returned job; ``job.result()`` raises
 Coherent propagators
 ~~~~~~~~~~~~~~~~~~~~
 
-:py:meth:`~fatqat.emulator.Emulator.propagator` returns a complex NumPy
+:py:meth:`~fatqat.emulator.TransmonEmulator.propagator` returns a complex NumPy
 array for the complete physical model. Measurement, reset, and classical
 conditions are rejected because they do not define one coherent operator.
 Nonzero evolution with bound collapse operators is also rejected. A
@@ -131,18 +160,24 @@ phase-invariantly.
 Backend reference
 ~~~~~~~~~~~~~~~~~
 
-.. autoclass:: fatqat.emulator.Emulator
+.. autoclass:: fatqat.emulator.TransmonEmulator
    :members: run, propagator, validate_noise
 
 Physics model and calibration
 -----------------------------
 
-The public loaders accept JSON-compatible mappings and return immutable
-objects. Documents are exact-schema, data-only envelopes: missing/unknown
-keys, unsupported versions/builders, non-finite values, or executable Python
-objects are rejected. Loading the same persisted document twice creates two
-model instances with the same durable identity but distinct opaque handles;
-handles must never be mixed between instances.
+The public model and calibration constructors accept decoded JSON-compatible
+mappings. Applications own file and ``json.load`` handling. Documents are
+exact-schema, data-only envelopes: missing or unknown keys, unsupported format
+versions, non-finite values, or executable Python objects are rejected. Private
+package-owned registries dispatch the structured ``format`` ID/version before
+family-specific body validation.
+
+Constructing the same persisted document twice creates semantically equal,
+unhashable values with the same durable identity. Public control and frame
+addresses are structural and may be reused with a compatible model. During
+lowering, the bound target derives opaque target-local scheduling claims from
+those addresses.
 
 The built-in model contains fixed qutrit transmons and an arbitrary undirected
 coupling graph. A coupling declares where controlled exchange operations may
@@ -150,25 +185,26 @@ be driven; it is not a residual always-on exchange Hamiltonian. Frequencies
 define the implicit resonant carriers. The current model uses ``Delta_i = 0``,
 so changing a frequency alone does not alter current numerical evolution.
 
-Loader and builder reference
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Construction and identity reference
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: fatqat.emulator.load_physics_model
+.. autoclass:: fatqat.emulator.FormatIdentity
 
-.. autofunction:: fatqat.emulator.load_calibration_spec
+.. autoclass:: fatqat.emulator.ModelIdentity
 
-.. autoclass:: fatqat.emulator.SCTransmonExchangeBuilder
-   :members: build
+.. autoclass:: fatqat.emulator.CalibrationIdentity
 
-Returned physics-model interface
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. autoclass:: fatqat.emulator.TransmonModel
 
-Application code normally obtains the model from
-:py:func:`~fatqat.emulator.load_physics_model` and does not import or construct
-its concrete class. Its supported read interface is:
+.. autoclass:: fatqat.emulator.TransmonCalibration
 
-``model.key``
-   Complete immutable builder/model snapshot identity.
+.. autofunction:: fatqat.emulator.default_transmon_calibration
+
+``model.format``, ``model.kind``, and ``model.identity`` identify the source
+grammar and durable model snapshot. ``calibration.format`` and
+``calibration.identity`` identify the portable calibration snapshot. It has
+no target-model field.
+No public registry, builder, generic document mapping, or model key is exposed.
 
 ``model.subsystems``
    Ordered immutable transmon records with ``id``, ``frequency_ghz``, and
@@ -189,14 +225,14 @@ Two units govern every pulse a rule emits, and both come from the model:
 
 ``model.time_unit`` (``"ns"``)
    The coordinate for ``PulseDefinition.duration`` and for each
-   ``SampledControl``'s ``tlist`` and ``start_offset``.
+   ``PulseControl`` waveform and ``start_offset``.
 
 ``model.control_unit`` (``"rad/ns"``)
-   The unit of every ``SampledControl.coefficients`` value, for all three
+   The unit of every ``SampledWaveform.values`` entry, for all three
    channel kinds. This is an **angular** rate, not an ordinary frequency.
 
-Model and calibration documents store ordinary frequencies in GHz
-(``frequency``, ``anharmonicity``, ``detuning_ghz``). A custom rule must
+Model and calibration documents store ordinary frequencies in GHz under the
+unsuffixed keys ``frequency``, ``anharmonicity``, and ``detuning``. A custom rule must
 convert those to angular rates before using them as coefficients; emitting
 GHz directly is wrong by a factor of ``2*pi`` and cannot be detected from
 the samples, so it produces a silently incorrect simulation rather than an
@@ -205,94 +241,92 @@ error. Use
 the single definition of that conversion and is what the built-in
 realizations and the solver adapter both call.
 
-.. autoattribute:: fatqat.emulator.superconducting.SCTransmonModel.time_unit
+.. autoattribute:: fatqat.emulator.superconducting.TransmonModel.time_unit
 
-.. autoattribute:: fatqat.emulator.superconducting.SCTransmonModel.control_unit
+.. autoattribute:: fatqat.emulator.superconducting.TransmonModel.control_unit
 
-.. autoattribute:: fatqat.emulator.superconducting.SCTransmonModel.subsystem_ids
+.. autoattribute:: fatqat.emulator.superconducting.TransmonModel.subsystem_ids
 
-.. autoattribute:: fatqat.emulator.superconducting.SCTransmonModel.physical_dimension
+.. autoattribute:: fatqat.emulator.superconducting.TransmonModel.physical_dimension
 
-The following accessors mint opaque handles for custom pulse definitions.
-Never instantiate handle classes directly. ``resource`` claims a subsystem;
-``coupling`` claims an edge for scheduling; the three control accessors choose
-the Hamiltonian mechanism; ``frame`` selects a virtual-drive phase ledger.
+The control accessors choose the Hamiltonian mechanism and ``frame`` selects a
+virtual-drive phase ledger. Public custom definitions use those structural
+addresses; private target binding derives scheduling claims.
 
-.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.resource
+.. automethod:: fatqat.emulator.superconducting.TransmonModel.drive_control
 
-.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.drive_control
+.. automethod:: fatqat.emulator.superconducting.TransmonModel.detuning_control
 
-.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.detuning_control
+.. automethod:: fatqat.emulator.superconducting.TransmonModel.exchange_control
 
-.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.exchange_control
+.. automethod:: fatqat.emulator.superconducting.TransmonModel.frame
 
-.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.frame
-
-.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.coupling
-
-``bind_resource``, ``bind_control``, ``bind_frame``, and ``bind_coupling``
-validate that a handle was minted by this exact model instance and return its
-ordinal. They are useful inside a custom realization when translating the
-ordered ``targets`` supplied by the implementation map.
-
-.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.bind_resource
-
-.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.bind_control
-
-.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.bind_frame
-
-.. automethod:: fatqat.emulator.superconducting.SCTransmonModel.bind_coupling
+The emulator's private bound target validates these structural addresses once
+during program preparation. Pulse rules normally consume ordered
+``device_operands`` values directly; neither public models nor numerical
+adapters expose a second binding API.
 
 Returned calibration interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``calibration.key`` identifies its exact model snapshot and
-``calibration.recipes`` is recursively immutable. Custom rules should normally
-read a named recipe through:
+The built-in calibration schema contains ``rx_ry``, ``iswap``, and per-edge
+``cz`` recipes. Those persisted recipes normalize to private, unit-explicit
+values captured by the built-in realization. Raw ``recipes`` and a generic
+``recipe()`` accessor are deliberately not public; custom recipe schemas are
+outside the v1 extension contract. ``RZ`` is virtual and has no calibration
+recipe.
 
-.. automethod:: fatqat.emulator.superconducting.CalibrationSpec.recipe
-
-The built-in schema contains ``rx_ry``, ``iswap``, and per-edge ``cz``
-recipes. ``RZ`` is virtual and deliberately has no calibration recipe.
+The public scalar unit accessors ``recipe_time_unit``,
+``recipe_frequency_unit``, and ``recipe_dimensionless_unit`` describe the
+persisted recipe quantities. They are distinct from the model's pulse
+coordinate ``time_unit`` and ``control_unit``.
 
 Pulse implementation maps
 -------------------------
 
-A pulse implementation map is the direct analog of the matrix family's
+A :py:class:`~fatqat.emulator.PulseImplementationMap` is the map value type
+used for gate realization. The public type keeps its established pulse-rule
+name, while the constructor keyword is the capability-specific
+``gate_implementation_map``. Direct controls do not require or consult it.
+
+The map is the direct analogue of the matrix family's
 :py:class:`~fatqat.implementation.MatrixImplementationMap`:
 
 .. code-block:: text
 
    Simulator: operation -> matrix rule -> matrix -> matrix plan step
-   Emulator:     operation -> pulse rule  -> PulseDefinition -> PulseBlock
+   TransmonEmulator:     operation -> pulse rule  -> PulseDefinition -> PulseBlock
 
 The last ``PulseBlock`` is private. Lowering attaches occurrence-specific
 conditions, resolved noise, engine indices, and optional schedule position;
 a reusable :py:class:`~fatqat.emulator.PulseDefinition` contains none of
 those facts.
 
-A rule has exactly this callable shape:
+A reusable operand-aware rule has this callable shape:
 
 .. code-block:: python
 
-   def rule(operation, *, targets, model, calibration):
+   def rule(operation, *, device_operands):
        return fq.emulator.PulseDefinition(...)
 
-``targets`` are ordered model-minted subsystem-resource handles corresponding
-to the operation's ordered device operands. They are not program
-``RegisterRef`` values and not engine indices. The rule may inspect immutable
-model facts and calibration recipes and must return one pulse definition.
+``device_operands`` is the exact ordered tuple used for map selection, such as
+``("q0", "q1")``. It contains neither program ``RegisterRef`` values nor
+engine indices. Model and calibration facts needed by realization should already
+be compiled into the rule closure or fixed definition.
 
-Registration follows the matrix map's two mutually exclusive modes per
-operation family: one unconstrained rule, or a finite table keyed by ordered
-``device_operands``. Calling ``add`` again replaces a rule in the same mode.
+Registration accepts a fixed ``PulseDefinition``, an operand-unaware callable
+registered with explicit ``device_operands``, or an operand-aware callable
+with an explicitly named ``device_operands`` parameter. It follows the matrix
+map's two mutually exclusive modes per operation family: one unconstrained
+operand-aware rule, or a finite table keyed by ordered ``device_operands``.
+Calling ``add`` again replaces a rule in the same mode.
 Call ``remove(op)`` before changing modes. A custom rule's deliberate
 :py:class:`~fatqat.errors.BackendValidationError` (including
 :py:class:`~fatqat.errors.UnsupportedOperationError`) propagates unchanged;
 other exceptions and non-``PulseDefinition`` returns become
 :py:class:`~fatqat.errors.PulseImplementationError`.
 
-.. autofunction:: fatqat.emulator.default_superconducting_pulse_implementation_map
+.. autofunction:: fatqat.emulator.default_transmon_gate_implementation_map
 
 .. autoclass:: fatqat.emulator.PulseImplementationMap
    :members:
@@ -305,15 +339,20 @@ are unit-neutral. The built-in transmon model's unit is nanoseconds.
 
 A positive-duration definition requires at least one sampled control; a
 zero-duration definition forbids controls. Every control must end within the
-enclosing duration. A definition always claims at least one model resource,
-including for virtual operations. Controls sharing one channel must be summed
-explicitly before construction rather than relying on implicit addition.
+enclosing duration. Lowering derives claims from the occurrence, controls,
+and frames. Controls sharing one channel must be summed explicitly before
+construction rather than relying on implicit addition.
 
 .. autoclass:: fatqat.emulator.PulseDefinition
    :members:
 
-.. autoclass:: fatqat.emulator.SampledControl
+.. autoclass:: fatqat.emulator.PulseControl
    :members:
+   :no-index:
+
+.. autoclass:: fatqat.waveforms.SampledWaveform
+   :members:
+   :no-index:
 
 .. autoclass:: fatqat.emulator.PhaseShift
    :members:
@@ -333,40 +372,61 @@ do not affect it:
    import numpy as np
    import fatqat as fq
 
-   def custom_cz(operation, *, targets, model, calibration):
-       first, second = (
-           model.subsystem_ids[model.bind_resource(target)] for target in targets
-       )
+   def custom_cz(operation, *, device_operands):
+       first, second = device_operands
        duration = 20.0
        samples = np.linspace(0.0, duration, 129)
        envelope = np.zeros_like(samples)
        return fq.emulator.PulseDefinition(
            duration=duration,
            controls=(
-               fq.emulator.SampledControl(
-                   model.exchange_control(first, second), samples, envelope
+               fq.emulator.PulseControl(
+                   model.exchange_control(first, second),
+                   fq.waveforms.SampledWaveform(samples, envelope),
                ),
-           ),
-           resource_claims=(
-               model.resource(first),
-               model.resource(second),
-               model.coupling(first, second),
            ),
        )
 
-   implementations = (
-       fq.emulator.default_superconducting_pulse_implementation_map()
+   calibration = fq.emulator.TransmonCalibration(calibration_document)
+   implementations = fq.emulator.default_transmon_gate_implementation_map(
+       model=model,
+       calibration=calibration,
    )
+   implementations.remove(fq.ops.CZ)
    implementations.add(fq.ops.CZ, custom_cz)
-   backend = fq.emulator.Emulator(
+   backend = fq.emulator.TransmonEmulator(
        model,
-       calibration,
-       pulse_implementation_map=implementations,
+       gate_implementation_map=implementations,
    )
 
 The zero envelope is intentionally only a structural example, not a physical
 CZ implementation. A real rule must choose a calibrated waveform and any
 required post-frame correction.
+
+Direct controls
+~~~~~~~~~~~~~~~
+
+The same model control addresses can be used without a gate-realization
+callback. A direct operation carries no ordinary program targets because its
+controls already contain their physical addresses:
+
+.. code-block:: python
+
+   duration = 20.0
+   drive = fq.emulator.PulseControl(
+       model.drive_control("q0"),
+       fq.waveforms.SampledWaveform((0.0, duration), (0.02, 0.02j)),
+   )
+   exchange = fq.emulator.PulseControl(
+       model.exchange_control("q0", "q1"),
+       fq.waveforms.SampledWaveform((0.0, duration), (0.01, 0.01)),
+   )
+   program = fq.Program(2)
+   program.add(fq.ops.PulseOperation(duration, (drive, exchange)))
+
+Complex drive values encode the model's two quadratures. ``iSwap`` is a gate
+whose built-in realization uses the ``exchange`` mechanism; ``iSwap`` is not
+a channel name.
 
 Lindblad implementation extension
 ---------------------------------
@@ -385,7 +445,18 @@ interval; lowering and the concrete adapter own those steps.
 
 .. autofunction:: fatqat.noise.default_lindblad_implementation_map
 
-Use :py:meth:`~fatqat.emulator.Emulator.validate_noise` for an advisory,
+Use :py:meth:`~fatqat.emulator.TransmonEmulator.validate_noise` for an advisory,
 instance-sensitive capability report. Execution additionally validates each
 noise selector against the current program/resource layout.
 
+Neutral-atom pulse emulators
+----------------------------
+
+The three-level and two-level atom backends share this pulse execution
+foundation. Both accept optional gate and Lindblad implementation maps.
+``Atom3LevelEmulator`` has built-in gate recipes and selected-site direct
+controls. ``Atom2LevelEmulator`` has an empty built-in gate map and global
+direct controls; user-supplied gate rules use the same shared path.
+Their task-oriented reference and generated public API live on
+:doc:`atom-emulators`. Start with :doc:`../guide/neutral-atoms` when choosing
+between them.

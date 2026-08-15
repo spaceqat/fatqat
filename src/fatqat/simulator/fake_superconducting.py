@@ -48,7 +48,7 @@ from ..noise import Depolarizing, NoiseModel, ThermalRelaxation
 from ..operations import Operation
 from ..program import Program
 from ..registers import GridRegister, RegisterRef
-from ..resource_layout import ResourceLayout
+from ..resource_layout import DeviceOperand, ResourceLayout
 from .._backends.backend_utils import _validate_grid_size
 from .simulator import Simulator
 
@@ -148,7 +148,17 @@ class _SCQubitSimulator(Simulator):
         """
         return self._impl_map.copy()
 
-    def _resolve_resource_layout(self, program: Program) -> ResourceLayout:
+    def _legal_device_operands(
+        self, program: Program, resource_layout: ResourceLayout
+    ) -> frozenset[DeviceOperand]:
+        return frozenset(range(self._rows * self._cols))
+
+    def _physical_dimension(
+        self, device_operand: DeviceOperand, resource_layout: ResourceLayout
+    ) -> int:
+        return 2
+
+    def _default_resource_layout(self, program: Program) -> ResourceLayout:
         """Reject any shape the fake device can't run, then map onto it.
 
         Applies equally to a scalar-only program with no `GridRegister`:
@@ -191,7 +201,7 @@ class _SCQubitSimulator(Simulator):
                 f"got {len(grid_registers)}"
             )
         if not grid_registers:
-            return super()._resolve_resource_layout(program)
+            return super()._default_resource_layout(program)
 
         grid = grid_registers[0]
         if len(program.quantum_registers) != 1:

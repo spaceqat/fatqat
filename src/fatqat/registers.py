@@ -185,7 +185,7 @@ Selector = AllSelector | RowSelector | ColumnSelector | BlockSelector
 class GridRegister(QuantumRegister):
     """Quantum register arranged as a rectangular, row-major grid.
 
-    A ``GridRegister`` is a backend-neutral logical resource: it carries
+    A ``GridRegister`` is a backend-neutral abstract resource: it carries
     ``rows`` and ``cols`` but no physical-site or placement information.
     Selection helpers (``all``, ``row``, ``column``, ``block``) return
     immutable ``RegisterView`` values that hold a structured selector rather

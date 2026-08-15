@@ -19,11 +19,15 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as op
+from fatqat.emulator import ControlChannel, PulseControl
+from fatqat.waveforms import SampledWaveform
 
 pytest.importorskip("qutip_qip")
 
 # pylint: disable=wrong-import-position  # needs the importorskip above
 from fatqat.draw import draw, to_qubit_circuit
+from fatqat.errors import UnsupportedOperationError
+from fatqat.operations import PulseOperation
 
 # pylint: enable=wrong-import-position
 
@@ -146,3 +150,21 @@ def test_matplotlib_renderer_returns_a_savable_figure():
 
     figure = draw(_bell(), "matplotlib")
     assert isinstance(figure, matplotlib.figure.Figure)
+
+
+def test_drawing_rejects_pulse_operations_before_qutip_translation():
+    program = fq.Program(1)
+    program.add(
+        PulseOperation(
+            1.0,
+            (
+                PulseControl(
+                    ControlChannel(),
+                    SampledWaveform((0.0, 1.0), (1.0, 1.0)),
+                ),
+            ),
+        )
+    )
+
+    with pytest.raises(UnsupportedOperationError, match="PulseOperation"):
+        to_qubit_circuit(program)

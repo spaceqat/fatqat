@@ -1150,6 +1150,9 @@ def to_qasm(program: Program, version: int = 3) -> str:
         assert isinstance(step, AppliedOperation)
         op = step.operation
 
+        if isinstance(op, ops.PulseOperation):
+            raise QasmExportError("PulseOperation is not supported by QASM export")
+
         if any(isinstance(t, RegisterView) for t in step.targets):
             raise QasmExportError(
                 f"{op.name}: cannot export a RegisterView target to QASM; "

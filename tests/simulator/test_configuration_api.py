@@ -148,6 +148,45 @@ def test_invalid_configuration_fails_directly(argument, config, match):
         Simulator().run(_measured_superposition(), **kwargs)
 
 
+def test_simulator_result_shot_validation_preserves_exact_messages():
+    program = _measured_superposition()
+
+    with pytest.raises(BackendValidationError) as exc:
+        Simulator("SV").run(program, shots=1.5)
+    assert str(exc.value) == (
+        "shots must be an int when requested results depend on it, got 1.5"
+    )
+
+    with pytest.raises(BackendValidationError) as exc:
+        Simulator("SV").run(program, shots=0)
+    assert str(exc.value) == "counts require shots > 0, got shots=0"
+
+    with pytest.raises(BackendValidationError) as exc:
+        Simulator("SV").run(program, shots=2, result_config={"final_state": True})
+    assert str(exc.value) == (
+        "statevector with measurement, reset, or channel noise is only supported "
+        "for shots == 1"
+    )
+
+
+def test_validation_and_execution_use_identical_result_flag_resolution(monkeypatch):
+    from fatqat.simulator import simulator as simulator_module
+
+    original = simulator_module._resolve_result_flags
+    resolved = []
+
+    def record(*args, **kwargs):
+        flags = original(*args, **kwargs)
+        resolved.append(flags)
+        return flags
+
+    monkeypatch.setattr(simulator_module, "_resolve_result_flags", record)
+    result = Simulator("SV").run(fq.Program(1), shots=7).result()
+
+    assert result.get_statevector().shape == (2,)
+    assert resolved == [(False, True), (False, True)]
+
+
 # --- public method accessor --------------------------------------------------
 
 

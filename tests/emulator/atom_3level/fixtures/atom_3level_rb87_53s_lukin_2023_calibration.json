@@ -1,0 +1,25 @@
+{
+  "format": {"id": "atom.rb87_rydberg_3level_fixed_pulse", "version": 1},
+  "calibration": {
+    "id": "rb87_53s_lukin_2023_v1",
+    "revision": "2026-08-05"
+  },
+  "units": {
+    "angular_frequency": "rad/us",
+    "angle": "rad",
+    "cycles": "cycle",
+    "dimensionless": "1"
+  },
+  "recipes": {
+    "rx_ry": {"omega_01": 6.283185307179586},
+    "cz": {
+      "omega_1r": 28.902652413026097,
+      "phase_amplitude": 0.704973391304749,
+      "phase_rate_ratio": 1.0431,
+      "phase_offset": -0.7318,
+      "linear_phase_rate_ratio": 0.0,
+      "duration_area": 1.215,
+      "local_z_correction": 2.099085629
+    }
+  }
+}

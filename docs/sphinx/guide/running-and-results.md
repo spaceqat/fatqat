@@ -24,8 +24,12 @@ configuration incompatible with the requested result fields.
 
 Key arguments:
 
-- `shots`: how many logical shots to run when counts are requested. Ignored
+- `shots`: how many sampled executions to run when counts are requested. Ignored
   for a purely deterministic final-state request.
+- `resource_layout`: an optional {py:class}`~fatqat.ResourceLayout` mapping
+  every declared program quantum reference to a backend device operand. When
+  omitted, the backend applies its documented default. This never selects
+  numerical tensor indices.
 - `simulation_config`: a plain dict for simulator-only controls: `seed`,
   `max_workers`, `parallel_mode`, and `numba_parallel`. A fixed seed makes
   sampling reproducible regardless of serial or worker-process execution.
@@ -96,10 +100,25 @@ result.available_data           # frozenset of field names actually present
 result.metadata                 # shots, backend name, effective configurations
 ```
 
+Pulse-emulator metadata retains the effective ``simulation_config`` and
+``result_config`` and common solver facts. It does not duplicate model,
+target, arrangement, or control-table data; retain those inputs separately or
+attach application metadata when provenance is needed.
+
 `final_state` is a request name, not an artifact name. When it is produced,
 `available_data` contains the method-native name: `"statevector"`,
 `"density_matrix"`, `"unitary"`, or `"superop"`, matching the backend's
 `method`.
+
+When a complete state or operator is returned, ``metadata["state_axes"]``
+describes its tensor factors in order. Each entry contains a public
+``device_operand`` and a ``register_ref`` containing the program's actual
+{py:class}`~fatqat.RegisterRef`, or ``None`` when that subsystem is not
+addressed by the program. Because it preserves the public domain object,
+``state_axes`` is not a JSON-serialization format. The list position is the
+tensor-axis position; no engine index is published or accepted as a later
+selector. A physical model may therefore report axes that have a device
+operand but no program reference.
 
 Calling an accessor for a field that wasn't produced raises
 {py:exc}`~fatqat.errors.ResultFieldUnavailableError` rather than returning

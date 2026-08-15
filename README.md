@@ -162,6 +162,32 @@ sorted(op.name for op in impl_map.supported_operations())   # ['CZ', 'RZ', 'SX',
 impl_map.supports(op.CX)                                     # False
 ```
 
+## Physics emulators
+
+Three pulse-resolved physics systems live under `fq.emulator`. Gate-authored
+and direct-control programs are independent capabilities; supporting one does
+not determine whether a backend supports the other.
+
+| System | Physical basis | Gate-authored programs | Direct controls | Gate map |
+|---|---|---|---|---|
+| `TransmonEmulator` | three-level transmons | yes | yes | public, optional `gate_implementation_map=` with a built-in default |
+| `Atom3LevelEmulator` | `\|0>, \|1>, \|r>` atoms | yes | yes | public, optional `gate_implementation_map=` with a built-in default |
+| `Atom2LevelEmulator` | `\|g>, \|r>` atoms | no | yes, global drive/detuning | none |
+
+The common workflow hides nominal package calibration defaults:
+
+```python
+transmons = fq.emulator.TransmonEmulator(transmon_model)
+atoms = fq.emulator.Atom3LevelEmulator(atom_model, arrangement=arrangement)
+```
+
+For explicit calibration, construct a complete calibration document, compile
+it with the corresponding required-input standard map builder, then pass only
+that map to the emulator. Calibration is portable map-construction data, not
+mutable emulator state. Package defaults are simulation baselines rather than
+hardware-fidelity guarantees. See the Sphinx emulator guides for the complete
+workflow, physical controls, noise, and result semantics.
+
 ## OpenQASM
 
 Programs translate to and from OpenQASM 2.0/3.0 text:
@@ -194,19 +220,22 @@ fails the build instead of silently vanishing:
 
 ```sh
 uv sync --group docs
-uv run sphinx-build -b html -W docs/sphinx docs/sphinx/_build
+uv run sphinx-build -b html -W docs/sphinx docs/sphinx/_build/html
 ```
 
-Then open `docs/sphinx/_build/index.html`. There's no CI job or hosting for
-this yet — it's for local/internal use.
+Then open `docs/sphinx/_build/html/index.html`. This matches the existing
+`docs/sphinx/Makefile` and `make.bat` `<build-dir>/<builder>` layout; direct
+commands and CI use the same convention. CI uploads the HTML output as an
+artifact but does not publish it.
 
 ## Project layout
 
 - `src/fatqat/` — package source: `Program`, `operations` (gates,
   measurement, reset, barrier), `simulator` (the gate-level `Simulator`, the
   fake devices, and `simulator._engine` — the NumPy and Numba `MatrixEngine`
-  implementations that own the state), `emulator` (the pulse-level `Emulator`
-  and its `PulseEngine`), `_backends` (private infrastructure both families
+  implementations that own the state), `emulator` (the transmon, three-level
+  atom, and two-level atom physics emulators and their shared `PulseEngine`),
+  `_backends` (private infrastructure both backend families
   share: resolved execution steps, the backend/engine contract, lowering
   helpers), `implementation` (gate-matrix rules and registry), `noise`
   (channels, `NoiseModel`, readout error), registers, layout, jobs, results,

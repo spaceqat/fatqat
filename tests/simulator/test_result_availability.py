@@ -15,9 +15,13 @@ from fatqat.program import Program
 def test_statevector_default_attached_when_no_measurement():
     p = Program(1)
     p.add(ops.H, 0)
-    job = Simulator("SV").run(p, result_config={"counts": False})
-    sv = job.result().get_statevector()
+    result = Simulator("SV").run(p).result()
+    sv = result.get_statevector()
     assert np.allclose(sv, np.array([1, 1]) / np.sqrt(2))
+    assert result.metadata["result_config"] == {
+        "counts": False,
+        "final_state": True,
+    }
 
 
 def test_statevector_not_attached_by_default_with_measurement():

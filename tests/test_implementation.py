@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
+from fatqat._pulse_values import ControlChannel, PulseControl
 from fatqat._backends.steps import ApplyMatrixStep
 from fatqat.implementation import (
     FixedMatrix,
@@ -24,6 +25,19 @@ from fatqat.implementation.matrices import (
     swap_levels_matrix,
 )
 from fatqat.registers import QuantumRegister
+from fatqat.waveforms import SampledWaveform
+
+
+class _DirectChannel(ControlChannel):
+    pass
+
+
+def _direct_pulse():
+    return ops.PulseOperation(
+        1.0,
+        (PulseControl(_DirectChannel(), SampledWaveform((0.0, 1.0), (0.0, 0.0))),),
+    )
+
 
 # --- Fixed-gate registration ------------------------------------------------
 # We deliberately do not re-assert each fixed gate's literal matrix: those
@@ -235,6 +249,12 @@ def test_add_rejects_variable_arity_operation(rule):
     m = MatrixImplementationMap()
     with pytest.raises(TypeError, match="variable arity"):
         m.add(VariableGate, rule)
+
+
+def test_add_rejects_direct_control_operations():
+    m = MatrixImplementationMap()
+    with pytest.raises(TypeError, match="direct-control"):
+        m.add(_direct_pulse(), np.eye(2, dtype=complex))
 
 
 def test_add_checks_variable_arity_before_wrapping_an_invalid_rule():

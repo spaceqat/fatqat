@@ -29,7 +29,7 @@ unambiguous in programs with several registers:
 Grid registers
 --------------
 
-:py:class:`~fatqat.GridRegister` (``rows, cols, name=None, dim=2``) is an optional logical
+:py:class:`~fatqat.GridRegister` (``rows, cols, name=None, dim=2``) is an optional abstract
 rectangular quantum register. Its helpers return targets for the supported
 grid-aware gates:
 
