@@ -93,9 +93,7 @@ class Atom2LevelEmulator(_PulseBackend):
             gate_implementation_map=effective_gate_map,
             lindblad_implementation_map=effective_lindblad_map,
         )
-        report = self._classify_noise(self._noise_model)
-        if not report.supported:
-            raise BackendValidationError("; ".join(report.warnings))
+        self._require_captured_noise_support()
         self._set_target(_Atom2LevelTarget(model, arrangement, policy))
 
     @property

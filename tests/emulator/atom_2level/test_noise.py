@@ -127,7 +127,7 @@ def _single_site_x_map(model):
 )
 def test_support_accepts_only_background_rate_damping(model, channel):
     backend = _backend(model)
-    report = backend.validate_noise(_noise(channel))
+    report = backend.check_noise_support(_noise(channel))
     assert report.supported
     assert report.accepted_sources == (f"{type(channel).__name__}(rate, background)",)
     assert _backend(model, _noise(channel)).model is model
@@ -147,7 +147,7 @@ def test_support_accepts_only_background_rate_damping(model, channel):
 def test_support_rejects_probability_unsupported_scoped_and_wrong_arity_noise(
     model, noise
 ):
-    report = _backend(model).validate_noise(noise)
+    report = _backend(model).check_noise_support(noise)
     assert not report.supported
     assert report.rejected_sources
     with pytest.raises(BackendValidationError, match="not supported"):
@@ -157,7 +157,7 @@ def test_support_rejects_probability_unsupported_scoped_and_wrong_arity_noise(
 def test_support_rejects_readout_confusion(model):
     noise = fq.NoiseModel()
     noise.add(fq.noise.ReadoutConfusion(np.eye(2)))
-    report = _backend(model).validate_noise(noise)
+    report = _backend(model).check_noise_support(noise)
     assert not report.supported
     assert "ReadoutConfusion" in report.rejected_sources
 
@@ -165,7 +165,7 @@ def test_support_rejects_readout_confusion(model):
 def test_explicit_equivalent_map_enables_rate_operation_scope(model):
     channel = AmplitudeDamping(rate=0.2)
     noise = _noise(channel, operation=fq.ops.X)
-    assert not _backend(model).validate_noise(noise).supported
+    assert not _backend(model).check_noise_support(noise).supported
 
     explicit = _backend(
         model,
@@ -199,7 +199,7 @@ def test_explicit_map_rejects_wrong_probability_and_rate_arity(model, channel):
         lindblad_map=_explicit_damping_map(),
     )
 
-    report = backend.validate_noise(noise)
+    report = backend.check_noise_support(noise)
 
     assert not report.supported
     expected_label = (
@@ -225,7 +225,7 @@ def test_explicit_map_keeps_background_rate_and_rejects_probability(model):
             _noise(PhaseDamping(rate=0.2)),
             lindblad_map=implementations,
         )
-        .validate_noise(_noise(PhaseDamping(rate=0.2)))
+        .check_noise_support(_noise(PhaseDamping(rate=0.2)))
         .supported
     )
     with pytest.raises(BackendValidationError, match="not supported"):

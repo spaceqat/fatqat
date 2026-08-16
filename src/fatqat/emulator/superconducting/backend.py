@@ -56,6 +56,7 @@ class TransmonEmulator(_PulseBackend):
             gate_implementation_map=effective_gate_map,
             lindblad_implementation_map=effective_lindblad_map,
         )
+        self._require_captured_noise_support()
         self._set_target(_TransmonTarget(model))
 
     def _classify_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:

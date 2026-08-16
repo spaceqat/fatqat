@@ -187,7 +187,7 @@ class AtomGridSimulator(Simulator):
         reload emptied sites. Imperfect loading efficiency is expressed by
         attaching ``Loss`` to ``Refill``. Only this backend models atom
         loss; a generic backend rejects ``Loss`` via
-        :py:meth:`validate_noise` rather than ignoring it.
+        :py:meth:`check_noise_support` rather than ignoring it.
 
         .. doctest:: atom_grid_loss
 

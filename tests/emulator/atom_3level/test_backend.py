@@ -277,12 +277,12 @@ def test_atom_3level_noise_is_retained_validated_and_binary(
     backend = _backend(atom_3level_model, atom_3level_calibration, noise=empty)
     assert backend._noise_model is not empty
     assert backend._noise_model._noise_sources() == ()
-    assert backend.validate_noise(empty).supported
+    assert backend.check_noise_support(empty).supported
     readout = _readout(np.array([[0.9, 0.1], [0.1, 0.9]]))
-    assert backend.validate_noise(readout).supported
+    assert backend.check_noise_support(readout).supported
     assert (
         _backend(atom_3level_model, atom_3level_calibration, noise=readout)
-        .validate_noise(readout)
+        .check_noise_support(readout)
         .supported
     )
 
@@ -294,12 +294,12 @@ def test_atom_3level_noise_is_retained_validated_and_binary(
     ):
         rejected = NoiseModel()
         rejected.add(channel, operation=fq.ops.X)
-        assert not backend.validate_noise(rejected).supported
+        assert not backend.check_noise_support(rejected).supported
         with pytest.raises(BackendValidationError, match=type(channel).__name__):
             _backend(atom_3level_model, atom_3level_calibration, noise=rejected)
 
     empty.add(PhaseDamping(rate=0.1), operation=fq.ops.X)
-    assert not backend.validate_noise(empty).supported
+    assert not backend.check_noise_support(empty).supported
     driven = fq.Program(2)
     driven.add(fq.ops.RX(0.1), 0)
     backend.run(driven).result()

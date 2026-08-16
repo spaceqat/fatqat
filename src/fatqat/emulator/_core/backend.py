@@ -112,6 +112,13 @@ class _PulseBackend(ABC):
         self._target = target
 
     @final
+    def _require_captured_noise_support(self) -> None:
+        """Reject an unsupported captured model before target construction."""
+        report = self.check_noise_support(self._noise_model)
+        if not report.supported:
+            raise BackendValidationError("; ".join(report.warnings))
+
+    @final
     def _prepare_program(
         self,
         program: Program,
@@ -135,9 +142,6 @@ class _PulseBackend(ABC):
         )
         classical_allocation = _ClassicalAllocation.from_program(program)
         self._noise_model._validate_for(program, frozenset(self._target.device_labels))
-        report = self.validate_noise(self._noise_model)
-        if not report.supported:
-            raise BackendValidationError("; ".join(report.warnings))
         context = _PulseLoweringContext(
             resource_layout=resolved_layout,
             engine_allocation=engine_allocation,
@@ -600,8 +604,24 @@ class _PulseBackend(ABC):
         raise NotImplementedError
 
     @final
-    def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        """Classify noise support through the one shared public boundary."""
+    def check_noise_support(self, noise_model: NoiseModel) -> NoiseSupportReport:
+        """Report whether this backend can execute an explicit noise model.
+
+        This check is program-agnostic. It classifies source types, authored
+        parameter modes, background support, loss support, and readout
+        support. Program references and physical selectors are validated when
+        a concrete program and resource layout are prepared.
+
+        Args:
+            noise_model: Noise model to inspect without executing a program.
+
+        Returns:
+            A frozen report naming accepted and rejected sources.
+
+        Raises:
+            BackendValidationError: If ``noise_model`` is not a
+                :class:`~fatqat.NoiseModel`.
+        """
         if not isinstance(noise_model, NoiseModel):
             raise BackendValidationError("noise_model must be a NoiseModel")
         return self._classify_noise(noise_model)

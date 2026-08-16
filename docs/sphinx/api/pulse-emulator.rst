@@ -161,7 +161,7 @@ Backend reference
 ~~~~~~~~~~~~~~~~~
 
 .. autoclass:: fatqat.emulator.TransmonEmulator
-   :members: run, propagator, validate_noise
+   :members: run, propagator, check_noise_support
 
 Physics model and calibration
 -----------------------------
@@ -447,7 +447,7 @@ operators are not expanded through this local payload.
 
 .. autofunction:: fatqat.noise.default_lindblad_implementation_map
 
-Use :py:meth:`~fatqat.emulator.TransmonEmulator.validate_noise` for an advisory,
+Use :py:meth:`~fatqat.emulator.TransmonEmulator.check_noise_support` for an advisory,
 instance-sensitive capability report. Execution additionally validates each
 noise selector against the current program/resource layout.
 

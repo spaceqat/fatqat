@@ -138,6 +138,18 @@ def test_operations_without_noise_boundaries_reject_atomically(operation):
     assert noise._noise_sources() == ()
 
 
+def test_refill_accepts_only_loss_atomically():
+    noise = NoiseModel()
+
+    with pytest.raises(ValueError, match="Refill accepts only Loss"):
+        noise.add(PhaseDamping(p=0.1), operation=fq.ops.Refill)
+
+    assert noise._noise_sources() == ()
+    loss = Loss(p=0.1)
+    noise.add(loss, operation=fq.ops.Refill)
+    assert noise._noise_sources() == ((loss, type(fq.ops.Refill)),)
+
+
 def test_occurrence_selector_is_exact_ordered_and_positions_select_extent():
     _program, q, layout = _program_and_layout()
     damping = AmplitudeDamping(p=0.1)

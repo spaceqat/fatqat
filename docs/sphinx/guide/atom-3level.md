@@ -228,7 +228,7 @@ registered `3 x 3` local qutrit collapse operators from authored generator
 declarations. `operation=...` limits a generator to matching blocks; omitting
 it declares target-local background noise. Finite probabilities are rejected
 rather than converted with a realized duration. Qutrit amplitude damping needs
-two adjacent-transition rates. Use `backend.validate_noise(noise_model)` to
+two adjacent-transition rates. Use `backend.check_noise_support(noise_model)` to
 inspect the effective instance capability without executing a program.
 
 Physical atom loss, occupancy changes, Rydberg `T1`, quasi-static `T2_star`,

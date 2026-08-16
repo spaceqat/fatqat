@@ -263,11 +263,12 @@ noise.add(fq.noise.Depolarizing(p=0.02), operation=op.H)
 ```
 
 Built-in declarations are immutable. Treat custom declarations as immutable
-after registration. {py:meth}`~fatqat.simulator.Simulator.validate_noise` and
-the corresponding emulator methods report whether an explicit model's source
-types, parameter modes, and readout shapes are supported. Program selectors
-and physical labels are validated when a concrete program and layout are
-prepared.
+after registration. Construction rejects a captured model containing an
+unsupported source. To inspect another model without constructing a new
+backend, {py:meth}`~fatqat.simulator.Simulator.check_noise_support` and the
+corresponding emulator methods return an advisory capability report. Program
+selectors and physical labels are validated only when a concrete program and
+layout are prepared.
 
 ## Execution method
 

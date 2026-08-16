@@ -66,7 +66,7 @@ class _UnsupportedAlwaysOn(Channel):
 def test_support_reports_reject_unknown_background_sources(model, calibration):
     noise = NoiseModel()
     noise.add(_UnsupportedAlwaysOn(), targets="q0")
-    report = TransmonEmulator(model).validate_noise(noise)
+    report = TransmonEmulator(model).check_noise_support(noise)
     assert report.rejected_sources == ("_UnsupportedAlwaysOn(background)",)
     assert not report.supported
 
@@ -75,7 +75,7 @@ def test_matrix_backend_keeps_gate_channels_and_rejects_background_noise():
     noise = NoiseModel()
     noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
     noise.add(ThermalRelaxation(t1=100, t2=150), targets=0)
-    report = Simulator().validate_noise(noise)
+    report = Simulator().check_noise_support(noise)
     assert "Depolarizing" in report.accepted_sources
     assert "ThermalRelaxation(background)" in report.rejected_sources
 
@@ -83,7 +83,7 @@ def test_matrix_backend_keeps_gate_channels_and_rejects_background_noise():
 def test_pulse_backend_names_each_rejected_gate_channel_source(model, calibration):
     noise = NoiseModel()
     noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
-    report = TransmonEmulator(model).validate_noise(noise)
+    report = TransmonEmulator(model).check_noise_support(noise)
     assert report.rejected_sources == ("Depolarizing",)
 
 
@@ -119,7 +119,7 @@ def test_pulse_backend_accepts_and_executes_thermal_relaxation(model, calibratio
     noise = NoiseModel()
     noise.add(ThermalRelaxation(t1=100, t2=150), targets="q0")
     backend = TransmonEmulator(model, noise=noise)
-    report = backend.validate_noise(noise)
+    report = backend.check_noise_support(noise)
     assert report.supported
     assert report.accepted_sources == ("ThermalRelaxation(background)",)
 

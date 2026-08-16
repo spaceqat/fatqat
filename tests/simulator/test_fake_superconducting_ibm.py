@@ -275,7 +275,7 @@ def test_backend_is_ideal_by_default():
 
 def test_default_noise_model_is_fully_supported():
     model = SCQubitIBMSimulator.default_noise_model()
-    report = SCQubitIBMSimulator().validate_noise(model)
+    report = SCQubitIBMSimulator().check_noise_support(model)
 
     assert report.supported is True
     assert set(report.accepted_sources) == {

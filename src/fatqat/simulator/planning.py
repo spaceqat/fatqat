@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from math import prod
+from typing import cast
 
 from .._index_allocation import _ClassicalAllocation, _EngineAllocation
 from ..errors import (
@@ -109,14 +110,10 @@ def _lower_refill(
     steps: list[ResolvedStep] = [
         RefillStep(target_indices=engine_indices, condition=condition)
     ]
-    for channel, extent in noise_model._noise_for_occurrence(
+    for declaration, extent in noise_model._noise_for_occurrence(
         type(step.operation), step.targets, resource_layout
     ):
-        if not isinstance(channel, Loss):
-            raise UnsupportedOperationError(
-                f"{type(channel).__name__} attached to Refill is not "
-                "supported; only Loss models loading inefficiency"
-            )
+        loss = cast(Loss, declaration)
         extent_indices = tuple(
             engine_allocation.engine_index(resource_layout.device_label(target))
             for target in extent
@@ -124,7 +121,7 @@ def _lower_refill(
         steps.append(
             LossStep(
                 target_indices=extent_indices,
-                p=channel.p,
+                p=loss.p,
                 condition=condition,
             )
         )

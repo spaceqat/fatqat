@@ -6,7 +6,7 @@ import pytest
 import fatqat as fq
 from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep
 from fatqat.simulator import SCQubitIBMSimulator, Simulator
-from fatqat.errors import BackendValidationError, UnsupportedOperationError
+from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     AmplitudeDamping,
     Loss,
@@ -77,16 +77,14 @@ def test_noise_free_backend_lowers_no_channel_steps():
     assert facts.has_channel is False
 
 
-def test_unresolvable_channel_type_raises():
+def test_unresolvable_channel_type_rejects_at_construction():
     class Leakage(Channel):
         pass
 
     noise = NoiseModel()
     noise.add(Leakage(), operation=fq.ops.X)
-    backend = Simulator(noise=noise)
-    program = _x_program()
-    with pytest.raises(UnsupportedOperationError, match="Leakage"):
-        backend._lower_program(program)
+    with pytest.raises(BackendValidationError, match="Leakage"):
+        Simulator(noise=noise)
 
 
 def test_mis_shaped_rule_rejected_but_non_cptp_accepted():
@@ -317,24 +315,29 @@ def test_parallel_dynamic_shots_match_serial_with_channels():
     assert parallel == serial
 
 
-# --- validate_noise ---
+# --- check_noise_support ---
 
 
-def test_validate_noise_accepts_catalog_channels():
-    report = Simulator().validate_noise(_depolarized_x_model())
+def test_check_noise_support_accepts_catalog_channels():
+    report = Simulator().check_noise_support(_depolarized_x_model())
 
     assert report.supported is True
     assert report.accepted_sources == ("Depolarizing",)
     assert report.rejected_sources == ()
 
 
-def test_validate_noise_rejects_unknown_channel():
+def test_check_noise_support_requires_a_noise_model():
+    with pytest.raises(BackendValidationError, match="noise_model"):
+        Simulator().check_noise_support(object())
+
+
+def test_check_noise_support_rejects_unknown_channel():
     class Leakage(Channel):
         pass
 
     noise = NoiseModel()
     noise.add(Leakage(), operation=fq.ops.X)
-    report = Simulator().validate_noise(noise)
+    report = Simulator().check_noise_support(noise)
 
     assert report.supported is False
     assert report.rejected_sources == ("Leakage",)
@@ -342,10 +345,10 @@ def test_validate_noise_rejects_unknown_channel():
     assert len(report.warnings) == 1
 
 
-def test_validate_noise_reports_rate_mode_damping_as_unsupported():
+def test_check_noise_support_reports_rate_mode_damping_as_unsupported():
     noise = NoiseModel()
     noise.add(AmplitudeDamping(rate=0.01), operation=fq.ops.X)
-    report = Simulator().validate_noise(noise)
+    report = Simulator().check_noise_support(noise)
 
     assert report.supported is False
     assert report.rejected_sources == ("AmplitudeDamping(rate)",)
@@ -355,13 +358,13 @@ def test_validate_noise_reports_rate_mode_damping_as_unsupported():
 def test_matrix_capability_rejects_background_and_thermal_generator_forms():
     background = NoiseModel()
     background.add(PhaseDamping(rate=0.01), targets=0)
-    background_report = Simulator().validate_noise(background)
+    background_report = Simulator().check_noise_support(background)
     assert not background_report.supported
     assert "background" in background_report.rejected_sources[0]
 
     thermal = NoiseModel()
     thermal.add(ThermalRelaxation(t1=60e-6, t2=80e-6), operation=fq.ops.X)
-    thermal_report = Simulator().validate_noise(thermal)
+    thermal_report = Simulator().check_noise_support(thermal)
     assert not thermal_report.supported
     assert thermal_report.rejected_sources == ("ThermalRelaxation",)
 
@@ -378,7 +381,9 @@ def test_matrix_custom_finite_channels_are_map_driven_not_field_name_driven():
     noise = NoiseModel()
     noise.add(CustomFinite(), operation=fq.ops.X)
 
-    report = Simulator(channel_implementation_map=channel_map).validate_noise(noise)
+    report = Simulator(channel_implementation_map=channel_map).check_noise_support(
+        noise
+    )
     assert report.supported
     assert report.accepted_sources == ("CustomFinite",)
 
@@ -392,7 +397,9 @@ def test_matrix_rejects_thermal_relaxation_even_with_a_registered_kraus_rule():
     noise = NoiseModel()
     noise.add(ThermalRelaxation(t1=60e-6, t2=80e-6), operation=fq.ops.X)
 
-    report = Simulator(channel_implementation_map=channel_map).validate_noise(noise)
+    report = Simulator(channel_implementation_map=channel_map).check_noise_support(
+        noise
+    )
     assert not report.supported
     assert report.rejected_sources == ("ThermalRelaxation",)
     assert "matrix-family policy" in report.warnings[0]
@@ -409,27 +416,42 @@ def test_matrix_backend_captures_noise_registrations_at_construction():
         _x_program(), result_config={"counts": False, "final_state": True}
     ).result()
     assert np.allclose(result.get_density_matrix(), np.diag([0.0, 1.0]))
-    assert "AmplitudeDamping(p)" in backend.validate_noise(source).accepted_sources
+    assert "AmplitudeDamping(p)" in backend.check_noise_support(source).accepted_sources
 
 
-def test_validate_noise_distinguishes_p_and_rate_mode_of_the_same_class():
+def test_matrix_backend_checks_captured_noise_once_at_construction(monkeypatch):
+    calls = []
+    original = Simulator.check_noise_support
+
+    def count_checks(self, noise_model):
+        calls.append(noise_model)
+        return original(self, noise_model)
+
+    monkeypatch.setattr(Simulator, "check_noise_support", count_checks)
+    noise = _depolarized_x_model()
+    backend = Simulator(noise=noise)
+
+    assert len(calls) == 1
+    backend.run(_x_program())
+    assert len(calls) == 1
+
+
+def test_check_noise_support_distinguishes_p_and_rate_mode_of_the_same_class():
     noise = NoiseModel()
     noise.add(AmplitudeDamping(p=0.1), operation=fq.ops.X)
     noise.add(AmplitudeDamping(rate=0.01), operation=fq.ops.H)
-    report = Simulator().validate_noise(noise)
+    report = Simulator().check_noise_support(noise)
 
     assert report.supported is False
     assert report.accepted_sources == ("AmplitudeDamping(p)",)
     assert report.rejected_sources == ("AmplitudeDamping(rate)",)
 
 
-def test_run_rejects_rate_mode_damping_before_execution():
+def test_constructor_rejects_rate_mode_damping():
     noise = NoiseModel()
     noise.add(AmplitudeDamping(rate=0.01), operation=fq.ops.X)
-    backend = Simulator(noise=noise)
-
     with pytest.raises(BackendValidationError, match="rate mode"):
-        backend.run(_x_program())
+        Simulator(noise=noise)
 
 
 # --- validate_for: run() direct-raise strict selector-identity validation ---

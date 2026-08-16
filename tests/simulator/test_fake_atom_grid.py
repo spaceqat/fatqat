@@ -1082,7 +1082,7 @@ def test_loss_rearrange_refill_compose():
 def test_atom_loss_rejected_by_a_non_atom_backend():
     noise = NoiseModel()
     noise.add(Loss(p=0.1), operation=ops.RX)
-    report = Simulator().validate_noise(noise)
+    report = Simulator().check_noise_support(noise)
     assert not report.supported
     assert "Loss" in report.rejected_sources
     assert any("carrier loss" in w for w in report.warnings)
@@ -1091,7 +1091,7 @@ def test_atom_loss_rejected_by_a_non_atom_backend():
 def test_atom_loss_accepted_by_atom_grid_backend():
     noise = NoiseModel()
     noise.add(Loss(p=0.1), operation=ops.RX)
-    report = AtomGridSimulator().validate_noise(noise)
+    report = AtomGridSimulator().check_noise_support(noise)
     assert report.supported
     assert "Loss" in report.accepted_sources
 

@@ -289,7 +289,7 @@ class Simulator:
 
     # Whether this backend implements the per-shot atom-occupancy lifecycle
     # Loss needs (loading, per-shot loss, refill). False on the generic
-    # matrix backends, which reject Loss via validate_noise rather than
+    # matrix backends, which reject Loss via check_noise_support rather than
     # silently ignoring it; AtomGridSimulator sets it True.
     _supports_loss: bool = False
 
@@ -334,7 +334,8 @@ class Simulator:
         Raises:
             BackendValidationError: If ``method`` or ``runtime`` is not one
                 of the supported names, or ``runtime="numba"`` is requested
-                without the numba dependency installed.
+                without the numba dependency installed, or the captured noise
+                model contains a source this backend cannot execute.
         """
         normalized = _METHOD_ALIASES.get(str(method).lower())
         if normalized is None:
@@ -373,11 +374,16 @@ class Simulator:
         if implementation_map is None:
             implementation_map = default_matrix_implementation_map()
         self._impl_map = implementation_map.copy()
+        if noise is not None and not isinstance(noise, NoiseModel):
+            raise BackendValidationError("noise must be a NoiseModel or None")
         source_noise = noise if noise is not None else NoiseModel()
         self._noise_model = source_noise._copy()
         if channel_implementation_map is None:
             channel_implementation_map = default_channel_implementation_map()
         self._channel_map = channel_implementation_map.copy()
+        report = self.check_noise_support(self._noise_model)
+        if not report.supported:
+            raise BackendValidationError("; ".join(report.warnings))
         # The simulator is constructed once and re-initialized per run so its
         # buffers can be reused. Because it holds per-run state, a single
         # backend instance is NOT safe for concurrent run() calls
@@ -652,9 +658,6 @@ class Simulator:
         self._noise_model._validate_for(
             program, self._legal_device_operands(program, resource_layout)
         )
-        report = self.validate_noise(self._noise_model)
-        if not report.supported:
-            raise BackendValidationError("; ".join(report.warnings))
         context = _LoweringContext(
             resource_layout=resource_layout,
             engine_allocation=engine_allocation,
@@ -1012,7 +1015,7 @@ class Simulator:
             ),
         )
 
-    def validate_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
+    def check_noise_support(self, noise_model: NoiseModel) -> NoiseSupportReport:
         """Report which parts of a noise model this backend can execute.
 
         A channel descriptor type is supported exactly when the backend's
@@ -1038,7 +1041,13 @@ class Simulator:
 
         Returns:
             A frozen report naming accepted and rejected sources.
+
+        Raises:
+            BackendValidationError: If ``noise_model`` is not a
+                :class:`~fatqat.NoiseModel`.
         """
+        if not isinstance(noise_model, NoiseModel):
+            raise BackendValidationError("noise_model must be a NoiseModel")
         accepted: list[str] = []
         rejected: list[str] = []
         warnings_: list[str] = []

@@ -7,7 +7,7 @@ from typing import Any, overload
 
 from ..errors import BackendValidationError
 from ..implementation._operation_registry import _resolve_operation_class
-from ..operations import BarrierGate, LoadAtoms, Operation, ResetGate
+from ..operations import BarrierGate, LoadAtoms, Operation, RefillGate, ResetGate
 from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView
 from ..resource_layout import DeviceOperand, ResourceLayout
@@ -161,7 +161,8 @@ class NoiseModel:
                 readout declaration receives a dynamical-only argument.
             ValueError: If the scope, arity, positions, or registration overlap
                 is invalid. ``Barrier``, ``LoadAtoms``, direct pulse controls,
-                and ``Reset`` do not currently accept attached noise.
+                and ``Reset`` do not currently accept attached noise;
+                ``Refill`` accepts only ``Loss``.
 
         Examples:
             Select the first operand of every ``CZ`` occurrence:
@@ -227,6 +228,8 @@ class NoiseModel:
             positions = None
         else:
             op_cls = _normalize_noise_operation(op_value)
+            if op_cls is RefillGate and not isinstance(declaration, Loss):
+                raise ValueError("Refill accepts only Loss as loading inefficiency")
             selector = _normalize_occurrence_selector(op_cls, targets)
             positions = _normalize_target_positions(
                 op_cls, declaration, selector, positions_value

@@ -254,7 +254,7 @@ def test_pauli_channel_is_an_accepted_backend_capability():
     noise = NoiseModel()
     noise.add(PauliChannel({"X": 0.1}), operation=fq.ops.X)
 
-    report = Simulator().validate_noise(noise)
+    report = Simulator().check_noise_support(noise)
 
     assert report.supported is True
     assert report.accepted_sources == ("PauliChannel",)

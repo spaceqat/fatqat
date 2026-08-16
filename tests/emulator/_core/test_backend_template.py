@@ -232,6 +232,7 @@ class _TemplateBackend(_PulseBackend):
     _coherent_execution_mode = "density_matrix"
 
     def __init__(self, target, *, noise=None, gate_map=None, lindblad_map=None):
+        self._local_dimension = target.local_dimension
         self.source_validations = 0
         self.classifications = 0
         self.runner_calls = 0
@@ -248,6 +249,7 @@ class _TemplateBackend(_PulseBackend):
                 LindbladImplementationMap() if lindblad_map is None else lindblad_map
             ),
         )
+        self._require_captured_noise_support()
         self._set_target(target)
 
     def _validate_source_program(self, program):
@@ -259,7 +261,7 @@ class _TemplateBackend(_PulseBackend):
         return _classify_lindblad_noise(
             noise_model,
             self._lindblad_implementation_map,
-            local_dimension=self._target.local_dimension,
+            local_dimension=self._local_dimension,
             backend_name=type(self).__name__,
             supports_readout_confusion=False,
         )
@@ -451,16 +453,13 @@ def test_operation_scoped_probability_rejects_without_implicit_conversion():
         AmplitudeDamping(p=0.2),
         operation=fq.ops.X,
     )
-    backend = _TemplateBackend(
-        target,
-        noise=noise,
-        gate_map=_gate_map(target),
-        lindblad_map=_lindblad_map(),
-    )
-    program = fq.Program(1)
-    program.add(fq.ops.X, 0)
     with pytest.raises(BackendValidationError, match="finite probability mode"):
-        backend._prepare_program(program)
+        _TemplateBackend(
+            target,
+            noise=noise,
+            gate_map=_gate_map(target),
+            lindblad_map=_lindblad_map(),
+        )
 
 
 def test_operation_scoped_rate_keeps_target_binding_and_fact_scope_separate():
@@ -526,7 +525,7 @@ def test_missing_or_empty_lindblad_implementation_rejects_explicitly():
     noise = _CountingNoiseModel()
     noise.add(AmplitudeDamping(rate=0.1), targets="q0")
     with pytest.raises(BackendValidationError, match="no registered"):
-        _TemplateBackend(target, noise=noise)._prepare_program(fq.Program(1))
+        _TemplateBackend(target, noise=noise)
 
     empty_map = LindbladImplementationMap()
     empty_map.register(AmplitudeDamping, lambda channel, **kwargs: ())
@@ -629,7 +628,7 @@ def test_constructor_copies_maps_and_captures_noise_registrations():
     noise.add(AmplitudeDamping(rate=0.2), targets="q0")
     prepared = backend._prepare_program(fq.Program(1))
     assert prepared.background_noise == ()
-    assert backend.validate_noise(noise).supported
+    assert backend.check_noise_support(noise).supported
 
 
 def test_explicit_empty_maps_remain_empty_and_constructor_types_are_checked():
@@ -671,12 +670,12 @@ def test_explicit_empty_maps_remain_empty_and_constructor_types_are_checked():
 def test_public_noise_validation_checks_type_then_calls_classifier_once():
     backend = _TemplateBackend(_CountingTarget())
     with pytest.raises(BackendValidationError, match="noise_model"):
-        backend.validate_noise(object())
-    assert backend.classifications == 0
-
-    report = backend.validate_noise(NoiseModel())
-    assert report.supported
+        backend.check_noise_support(object())
     assert backend.classifications == 1
+
+    report = backend.check_noise_support(NoiseModel())
+    assert report.supported
+    assert backend.classifications == 2
 
 
 def test_shared_workflows_are_final_and_only_four_family_hooks_remain():
@@ -700,7 +699,7 @@ def test_shared_workflows_are_final_and_only_four_family_hooks_remain():
         "_prepare_program",
         "_execute",
         "_assemble_result",
-        "validate_noise",
+        "check_noise_support",
     ):
         assert getattr(getattr(_PulseBackend, name), "__final__", False)
     assert not hasattr(_PulseBackend, "_create_runner_from_bindings")

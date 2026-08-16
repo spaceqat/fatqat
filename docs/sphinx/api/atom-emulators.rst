@@ -119,7 +119,7 @@ Construction and execution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: fatqat.emulator.Atom3LevelEmulator
-   :members: model, arrangement, run, propagator, validate_noise
+   :members: model, arrangement, run, propagator, check_noise_support
 
 ``propagator()`` returns the coherent full-qutrit ``(3**N, 3**N)`` operator.
 It rejects measurement, reset, and conditions. ``apply_final_frame=True``
@@ -170,7 +170,7 @@ Construction and execution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: fatqat.emulator.Atom2LevelEmulator
-   :members: model, arrangement, interaction_policy, run, propagator, validate_noise
+   :members: model, arrangement, interaction_policy, run, propagator, check_noise_support
 
 ``propagator()`` returns a coherent ``(2**N, 2**N)`` operator. It rejects
 measurement and any nonempty elapsed plan with accepted Lindblad noise. An

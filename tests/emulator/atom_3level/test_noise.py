@@ -92,7 +92,7 @@ def test_default_rejects_physical_channels_but_custom_map_classifies_them(
         noise=operation_noise,
         lindblad_map=_lindblad_map(),
     )
-    assert custom.validate_noise(operation_noise).supported
+    assert custom.check_noise_support(operation_noise).supported
 
     background = _noise(PhaseDamping(rate=0.3))
     assert (
@@ -101,13 +101,13 @@ def test_default_rejects_physical_channels_but_custom_map_classifies_them(
             noise=background,
             lindblad_map=_lindblad_map(),
         )
-        .validate_noise(background)
+        .check_noise_support(background)
         .supported
     )
 
     probability_background = _noise(PhaseDamping(p=0.2))
     classifier = _backend(atom_3level_model, lindblad_map=_lindblad_map())
-    assert not classifier.validate_noise(probability_background).supported
+    assert not classifier.check_noise_support(probability_background).supported
     with pytest.raises(BackendValidationError, match="PhaseDamping"):
         _backend(
             atom_3level_model,
@@ -123,7 +123,7 @@ def test_custom_map_rejects_qutrit_amplitude_damping_with_wrong_arity(
     implementations.register(AmplitudeDamping, amplitude_damping_lindblad_rule)
     backend = _backend(atom_3level_model, lindblad_map=implementations)
     invalid = _noise(AmplitudeDamping(rate=(0.1,)), operation=fq.ops.RX)
-    report = backend.validate_noise(invalid)
+    report = backend.check_noise_support(invalid)
     assert not report.supported
     assert report.rejected_sources == ("AmplitudeDamping(rate-arity-1)",)
     assert "requires 2 damping values" in report.warnings[0]
@@ -132,7 +132,7 @@ def test_custom_map_rejects_qutrit_amplitude_damping_with_wrong_arity(
         AmplitudeDamping(rate=(0.1, 0.2)),
         operation=fq.ops.RX,
     )
-    assert backend.validate_noise(valid).supported
+    assert backend.check_noise_support(valid).supported
 
 
 def test_attached_noise_is_classified_once_before_target_construction(
@@ -188,7 +188,7 @@ def test_readout_shape_rule_is_independent_of_custom_lindblad_map(
             noise=valid,
             lindblad_map=_lindblad_map(),
         )
-        .validate_noise(valid)
+        .check_noise_support(valid)
         .supported
     )
 

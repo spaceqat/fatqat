@@ -310,8 +310,8 @@ def test_numba_partially_confused_measurement_only_draws_where_attached():
     assert counts["numba"] == counts["numpy"]
 
 
-def test_validate_noise_reports_readout_confusion_as_accepted():
-    report = Simulator().validate_noise(_readout_model(_FLIP_30))
+def test_check_noise_support_reports_readout_confusion_as_accepted():
+    report = Simulator().check_noise_support(_readout_model(_FLIP_30))
 
     assert report.supported is True
     assert "ReadoutConfusion" in report.accepted_sources
