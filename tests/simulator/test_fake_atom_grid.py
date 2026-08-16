@@ -10,7 +10,13 @@ from fatqat._backends.steps import ApplyMatrixStep, LossStep, RefillStep, ResetS
 from fatqat.simulator import AtomGridSimulator, Simulator
 from fatqat.simulator.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
-from fatqat.noise import Depolarizing, NoiseModel, Loss
+from fatqat.noise import (
+    Depolarizing,
+    Loss,
+    NoiseModel,
+    PhaseDamping,
+    ReadoutConfusion,
+)
 from fatqat.program import AppliedOperation, Program
 from fatqat.registers import GridRegister, QuantumRegister
 from fatqat.resource_layout import ResourceLayout
@@ -132,14 +138,19 @@ def test_physical_noise_selector_uses_device_label_not_engine_index():
 
     channel = Depolarizing(p=0.1)
     noise = NoiseModel()
-    noise.add_channel(channel, operation=ops.RX, targets=(5,))
+    noise.add(channel, operation=ops.RX, targets=(5,))
 
-    assert noise.channels_for(ops.RX, (ref,), resource_layout) == [(channel, (ref,))]
+    assert noise._noise_for_occurrence(ops.RX, (ref,), resource_layout) == [
+        (channel, (ref,))
+    ]
 
     stale_engine_index_selector = NoiseModel()
-    stale_engine_index_selector.add_channel(channel, operation=ops.RX, targets=(3,))
+    stale_engine_index_selector.add(channel, operation=ops.RX, targets=(3,))
     assert (
-        stale_engine_index_selector.channels_for(ops.RX, (ref,), resource_layout) == []
+        stale_engine_index_selector._noise_for_occurrence(
+            ops.RX, (ref,), resource_layout
+        )
+        == []
     )
 
 
@@ -159,13 +170,16 @@ def test_physical_readout_selector_uses_device_label_not_engine_index():
 
     matrix = np.array([[0.9, 0.2], [0.1, 0.8]])
     noise = NoiseModel()
-    noise.add_readout_error(matrix, target=5)
+    noise.add(ReadoutConfusion(matrix), targets=5)
 
-    assert np.array_equal(noise.readout_error_for(ref, resource_layout), matrix)
+    selected = noise._readout_confusion_for(ref, resource_layout)
+    assert np.array_equal(selected.matrix, matrix)
 
     stale_engine_index_selector = NoiseModel()
-    stale_engine_index_selector.add_readout_error(matrix, target=3)
-    assert stale_engine_index_selector.readout_error_for(ref, resource_layout) is None
+    stale_engine_index_selector.add(ReadoutConfusion(matrix), targets=3)
+    assert (
+        stale_engine_index_selector._readout_confusion_for(ref, resource_layout) is None
+    )
 
 
 # --- sole-register / fit / multiplicity rules ----------------------------------
@@ -686,7 +700,7 @@ def test_measurement_of_unloaded_site_still_exposed_to_readout_noise():
     # NoiseModel, even though its underlying quantum state is a clean |0>.
     matrix = np.array([[0.0, 1.0], [1.0, 0.0]])
     noise = NoiseModel()
-    noise.add_readout_error(matrix, target=1)
+    noise.add(ReadoutConfusion(matrix), targets=1)
 
     p = Program(2, 1)
     p.add(ops.LoadAtoms(1, 1))
@@ -857,7 +871,7 @@ def test_rearrange_of_unloaded_operand_is_silently_ignored():
 
 def test_refill_restores_a_lost_site():
     noise = NoiseModel()
-    noise.add_channel(Loss(p=1.0), operation=ops.RY)
+    noise.add(Loss(p=1.0), operation=ops.RY)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
@@ -915,7 +929,7 @@ def test_refill_can_fill_a_never_loaded_site():
 
 def test_refill_loss_gives_loading_efficiency():
     noise = NoiseModel()
-    noise.add_channel(Loss(p=0.4), operation=ops.Refill)
+    noise.add(Loss(p=0.4), operation=ops.Refill)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 1))
@@ -937,7 +951,7 @@ def test_refill_loss_gives_loading_efficiency():
 
 def test_multi_carrier_loss_samples_each_carrier_independently():
     noise = NoiseModel()
-    noise.add_channel(Loss(p=0.5), operation=ops.CZ)
+    noise.add(Loss(p=0.5), operation=ops.CZ)
     atoms = GridRegister(1, 2, name="atoms")
     program = Program([atoms], 2)
     program.add(ops.LoadAtoms(1, 2))
@@ -960,7 +974,7 @@ def test_multi_carrier_loss_samples_each_carrier_independently():
 
 def test_rearrange_loss_ejects_the_moved_atom():
     noise = NoiseModel()
-    noise.add_channel(Loss(p=1.0), operation=ops.Rearrange)
+    noise.add(Loss(p=1.0), operation=ops.Rearrange)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
@@ -977,7 +991,7 @@ def test_rearrange_loss_ejects_the_moved_atom():
 
 def test_rearrange_loss_spares_an_unmoved_atom():
     noise = NoiseModel()
-    noise.add_channel(Loss(p=1.0), operation=ops.Rearrange)
+    noise.add(Loss(p=1.0), operation=ops.Rearrange)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
@@ -992,9 +1006,43 @@ def test_rearrange_loss_spares_an_unmoved_atom():
     assert counts == {"0": 8}
 
 
+def test_post_rearrange_layout_alias_rejects_only_when_event_matches():
+    atoms = GridRegister(1, 2, name="atoms")
+    base = Program([atoms], 1)
+    base.add(ops.LoadAtoms(1, 2))
+    base.add(ops.Rearrange((2,)), atoms[0])
+
+    dynamical = NoiseModel()
+    dynamical.add(PhaseDamping(p=0.1), operation=ops.RX, targets=atoms[0])
+    dynamical.add(PhaseDamping(p=0.2), operation=ops.RX, targets=2)
+    # The selectors alias after Rearrange, but without RX neither registration
+    # matches an event and the model remains a valid no-op.
+    AtomGridSimulator(grid_size=(1, 3), noise=dynamical).run(base, shots=1)
+
+    with_rx = Program([atoms], 1)
+    with_rx.add(ops.LoadAtoms(1, 2))
+    with_rx.add(ops.Rearrange((2,)), atoms[0])
+    with_rx.add(ops.RX(0.1), atoms[0])
+    with pytest.raises(BackendValidationError, match="both match"):
+        AtomGridSimulator(grid_size=(1, 3), noise=dynamical).run(with_rx)
+
+    readout = NoiseModel()
+    readout.add(ReadoutConfusion(np.eye(2)), targets=atoms[0])
+    readout.add(
+        ReadoutConfusion([[0.9, 0.1], [0.1, 0.9]]),
+        targets=2,
+    )
+    measured = Program([atoms], 1)
+    measured.add(ops.LoadAtoms(1, 2))
+    measured.add(ops.Rearrange((2,)), atoms[0])
+    measured.measure(atoms[0], 0)
+    with pytest.raises(BackendValidationError, match="multiple ReadoutConfusion"):
+        AtomGridSimulator(grid_size=(1, 3), noise=readout).run(measured)
+
+
 def test_rearrange_kraus_noise_applies_to_moved_atom():
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=1.0), operation=ops.Rearrange, targets=(0,))
+    noise.add(Depolarizing(p=1.0), operation=ops.Rearrange, targets=(0,))
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
@@ -1013,7 +1061,7 @@ def test_rearrange_kraus_noise_applies_to_moved_atom():
 
 def test_loss_rearrange_refill_compose():
     noise = NoiseModel()
-    noise.add_channel(Loss(p=1.0), operation=ops.RY)
+    noise.add(Loss(p=1.0), operation=ops.RY)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
@@ -1033,16 +1081,16 @@ def test_loss_rearrange_refill_compose():
 
 def test_atom_loss_rejected_by_a_non_atom_backend():
     noise = NoiseModel()
-    noise.add_channel(Loss(p=0.1), operation=ops.RX)
+    noise.add(Loss(p=0.1), operation=ops.RX)
     report = Simulator().validate_noise(noise)
     assert not report.supported
     assert "Loss" in report.rejected_sources
-    assert any("atom loss" in w for w in report.warnings)
+    assert any("carrier loss" in w for w in report.warnings)
 
 
 def test_atom_loss_accepted_by_atom_grid_backend():
     noise = NoiseModel()
-    noise.add_channel(Loss(p=0.1), operation=ops.RX)
+    noise.add(Loss(p=0.1), operation=ops.RX)
     report = AtomGridSimulator().validate_noise(noise)
     assert report.supported
     assert "Loss" in report.accepted_sources
@@ -1050,7 +1098,7 @@ def test_atom_loss_accepted_by_atom_grid_backend():
 
 def test_atom_loss_run_rejected_by_plain_simulator():
     noise = NoiseModel()
-    noise.add_channel(Loss(p=0.1), operation=ops.RX)
+    noise.add(Loss(p=0.1), operation=ops.RX)
     program = Program(1, 1)
     program.add(ops.RX(np.pi), 0)
     program.measure(0, 0)
@@ -1067,7 +1115,7 @@ def _atom_loss_program_without_measurement():
 
 def _probabilistic_atom_loss_model():
     noise = NoiseModel()
-    noise.add_channel(Loss(p=0.5), operation=ops.RX)
+    noise.add(Loss(p=0.5), operation=ops.RX)
     return noise
 
 

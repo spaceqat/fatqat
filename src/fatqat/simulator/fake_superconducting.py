@@ -44,7 +44,7 @@ from ..implementation import (
     MatrixImplementation,
     default_matrix_implementation_map,
 )
-from ..noise import Depolarizing, NoiseModel, ThermalRelaxation
+from ..noise import Depolarizing, NoiseModel, ReadoutConfusion, ThermalRelaxation
 from ..operations import Operation
 from ..program import Program
 from ..registers import GridRegister, RegisterRef
@@ -344,19 +344,21 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         noise = NoiseModel()
         damping, dephasing = _THERMAL_RELAXATION.as_channels(_SX_DURATION)
         for gate in (ops.X, ops.SX):
-            noise.add_channel(damping, operation=gate)
-            noise.add_channel(dephasing, operation=gate)
+            noise.add(damping, operation=gate)
+            noise.add(dephasing, operation=gate)
         cz_damping, cz_dephasing = _THERMAL_RELAXATION.as_channels(_CZ_DURATION)
         for slot in (0, 1):
-            noise.add_channel(cz_damping, operation=ops.CZ, slots=(slot,))
-            noise.add_channel(cz_dephasing, operation=ops.CZ, slots=(slot,))
-        noise.add_channel(Depolarizing(p=_CZ_DEPOLARIZING_P), operation=ops.CZ)
-        noise.add_readout_error(
-            np.array(
-                [
-                    [1 - _READOUT_P01, _READOUT_P10],
-                    [_READOUT_P01, 1 - _READOUT_P10],
-                ]
+            noise.add(cz_damping, operation=ops.CZ, target_positions=(slot,))
+            noise.add(cz_dephasing, operation=ops.CZ, target_positions=(slot,))
+        noise.add(Depolarizing(p=_CZ_DEPOLARIZING_P), operation=ops.CZ)
+        noise.add(
+            ReadoutConfusion(
+                np.array(
+                    [
+                        [1 - _READOUT_P01, _READOUT_P10],
+                        [_READOUT_P01, 1 - _READOUT_P10],
+                    ]
+                )
             )
         )
         return noise
@@ -490,26 +492,28 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         noise = NoiseModel()
         damping, dephasing = _THERMAL_RELAXATION.as_channels(_ROTATION_DURATION)
         for gate in (ops.RX, ops.RY, ops.RZ):
-            noise.add_channel(damping, operation=gate)
-            noise.add_channel(dephasing, operation=gate)
+            noise.add(damping, operation=gate)
+            noise.add(dephasing, operation=gate)
         iswap_damping, iswap_dephasing = _THERMAL_RELAXATION.as_channels(
             _ISWAP_DURATION
         )
         for slot in (0, 1):
-            noise.add_channel(iswap_damping, operation=ops.iSwap, slots=(slot,))
-            noise.add_channel(iswap_dephasing, operation=ops.iSwap, slots=(slot,))
-        noise.add_channel(Depolarizing(p=_ISWAP_DEPOLARIZING_P), operation=ops.iSwap)
+            noise.add(iswap_damping, operation=ops.iSwap, target_positions=(slot,))
+            noise.add(iswap_dephasing, operation=ops.iSwap, target_positions=(slot,))
+        noise.add(Depolarizing(p=_ISWAP_DEPOLARIZING_P), operation=ops.iSwap)
         cz_damping, cz_dephasing = _THERMAL_RELAXATION.as_channels(_CZ_DURATION)
         for slot in (0, 1):
-            noise.add_channel(cz_damping, operation=ops.CZ, slots=(slot,))
-            noise.add_channel(cz_dephasing, operation=ops.CZ, slots=(slot,))
-        noise.add_channel(Depolarizing(p=_CZ_DEPOLARIZING_P), operation=ops.CZ)
-        noise.add_readout_error(
-            np.array(
-                [
-                    [1 - _READOUT_P01, _READOUT_P10],
-                    [_READOUT_P01, 1 - _READOUT_P10],
-                ]
+            noise.add(cz_damping, operation=ops.CZ, target_positions=(slot,))
+            noise.add(cz_dephasing, operation=ops.CZ, target_positions=(slot,))
+        noise.add(Depolarizing(p=_CZ_DEPOLARIZING_P), operation=ops.CZ)
+        noise.add(
+            ReadoutConfusion(
+                np.array(
+                    [
+                        [1 - _READOUT_P01, _READOUT_P10],
+                        [_READOUT_P01, 1 - _READOUT_P10],
+                    ]
+                )
             )
         )
         return noise

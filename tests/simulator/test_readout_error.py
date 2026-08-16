@@ -19,7 +19,7 @@ import fatqat as fq
 from fatqat._backends.steps import MeasurementStep
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError
-from fatqat.noise import NoiseModel
+from fatqat.noise import NoiseModel, ReadoutConfusion
 from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
 
 _ALWAYS_ONE = np.array([[0.0, 0.0], [1.0, 1.0]])  # report 1 whatever is true
@@ -28,7 +28,7 @@ _FLIP_30 = np.array([[0.7, 0.0], [0.3, 1.0]])  # P(report 1 | true 0) = 0.3
 
 def _readout_model(matrix, target=None):
     noise = NoiseModel()
-    noise.add_readout_error(matrix, target=target)
+    noise.add(ReadoutConfusion(matrix), targets=target)
     return noise
 
 
@@ -181,7 +181,7 @@ def test_reused_qubit_evolves_from_the_true_state():
     # be 1 and the key "11".
     always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
     noise = NoiseModel()
-    noise.add_readout_error(always_flip, target=0)
+    noise.add(ReadoutConfusion(always_flip), targets=0)
     program = fq.Program(1, 2)
     program.measure(0, 0)
     program.add(fq.ops.X, 0)
@@ -262,8 +262,8 @@ def test_numba_fused_kernel_matches_numpy_on_a_qudit_confusion_plan():
 
     def counts_for(runtime):
         noise = NoiseModel()
-        noise.add_readout_error(confusion)
-        noise.add_channel(PhaseDamping(p=0.2), operation=fq.ops.Shift)
+        noise.add(ReadoutConfusion(confusion))
+        noise.add(PhaseDamping(p=0.2), operation=fq.ops.Shift)
         qreg = fq.QuantumRegister(2, dim=3)
         creg = fq.ClassicalRegister(2, dim=3)
         program = fq.Program([qreg], [creg])
@@ -293,7 +293,7 @@ def test_numba_partially_confused_measurement_only_draws_where_attached():
     pytest.importorskip("numba")
 
     noise = NoiseModel()
-    noise.add_readout_error(_FLIP_30, target=1)  # q0 reports without error
+    noise.add(ReadoutConfusion(_FLIP_30), targets=1)  # q0 reports without error
     program = fq.Program(2, 2)
     program.add(fq.ops.H, 0)
     program.measure((0, 1), (0, 1))
@@ -314,7 +314,7 @@ def test_validate_noise_reports_readout_error_as_accepted():
     report = Simulator().validate_noise(_readout_model(_FLIP_30))
 
     assert report.supported is True
-    assert "readout_error" in report.accepted_sources
+    assert "ReadoutConfusion" in report.accepted_sources
 
 
 # --- validate_for: run() direct-raise strict selector-identity validation ---

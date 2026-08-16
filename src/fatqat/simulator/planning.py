@@ -14,7 +14,7 @@ from ..implementation import MatrixImplementationMap
 from ..implementation._operation_registry import _select_implementation
 from ..noise import ChannelImplementationMap, NoiseModel
 from ..noise.base import _validate_kraus_shapes
-from ..operations import Measurement, PulseOperation, ResetGate
+from ..operations import Measurement, PulseOperation
 from ..noise.loss import Loss
 from ..program import AppliedOperation
 from ..resource_layout import ResourceLayout
@@ -77,13 +77,8 @@ def _lower_reset(
     resource_layout: ResourceLayout,
     engine_allocation: _EngineAllocation,
     classical_allocation: _ClassicalAllocation,
-    noise_model: NoiseModel,
 ) -> ResetStep:
-    """Lower one ``Reset`` operation, rejecting unimplemented channel noise."""
-    if noise_model.channels_for(ResetGate, step.targets, resource_layout):
-        raise UnsupportedOperationError(
-            "channel noise attached to Reset is not supported yet"
-        )
+    """Lower one ``Reset`` operation after admission rejected attached noise."""
     return _lower_reset_boundary(
         step,
         resource_layout,
@@ -114,7 +109,7 @@ def _lower_refill(
     steps: list[ResolvedStep] = [
         RefillStep(target_indices=engine_indices, condition=condition)
     ]
-    for channel, extent in noise_model.channels_for(
+    for channel, extent in noise_model._noise_for_occurrence(
         type(step.operation), step.targets, resource_layout
     ):
         if not isinstance(channel, Loss):
@@ -154,7 +149,7 @@ def _lower_channels(
     channel becomes an ApplyChannelStep.
     """
     steps: list[ResolvedStep] = []
-    for channel, extent in noise_model.channels_for(
+    for channel, extent in noise_model._noise_for_occurrence(
         operation_type, targets, resource_layout
     ):
         extent_indices = tuple(

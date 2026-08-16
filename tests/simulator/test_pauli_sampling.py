@@ -53,10 +53,8 @@ def _ghz_program(n=3):
 def _pauli_noise():
     """A one- and a two-qubit Pauli channel, on the two gates of a GHZ chain."""
     noise = NoiseModel()
-    noise.add_channel(PauliChannel({"X": 0.08, "Z": 0.05}), operation=fq.ops.H)
-    noise.add_channel(
-        PauliChannel({"XI": 0.04, "IX": 0.03, "ZZ": 0.02}), operation=fq.ops.CX
-    )
+    noise.add(PauliChannel({"X": 0.08, "Z": 0.05}), operation=fq.ops.H)
+    noise.add(PauliChannel({"XI": 0.04, "IX": 0.03, "ZZ": 0.02}), operation=fq.ops.CX)
     return noise
 
 
@@ -139,7 +137,7 @@ def test_a_certain_pauli_error_acts_exactly_like_the_gate(
     # stride is 1). A final-state request also routes numba to its serial
     # fallback rather than the fused kernel, covering that path too.
     noise = NoiseModel()
-    noise.add_channel(PauliChannel({string: 1.0}), operation=fq.ops.CX)
+    noise.add(PauliChannel({string: 1.0}), operation=fq.ops.CX)
     program = fq.Program(2)
     program.add(fq.ops.CX, (0, 1))
 
@@ -183,7 +181,7 @@ def test_a_long_sampled_chain_keeps_the_state_normalized(runtime):
     # No occurrence renormalizes the state, so nothing but round-off may
     # accumulate over a long chain of drawn operators.
     noise = NoiseModel()
-    noise.add_channel(PauliChannel({"X": 0.3, "Y": 0.2, "Z": 0.2}), operation=fq.ops.RY)
+    noise.add(PauliChannel({"X": 0.3, "Y": 0.2, "Z": 0.2}), operation=fq.ops.RY)
     program = fq.Program(4)
     for layer in range(30):
         for q in range(4):
@@ -233,8 +231,8 @@ def test_a_mixed_plan_routes_each_channel_independently(runtime):
     # One plan carrying both a scaled-unitary channel and a damping channel:
     # the per-channel decision must not become a per-plan one.
     noise = NoiseModel()
-    noise.add_channel(PauliChannel({"X": 0.1}), operation=fq.ops.H)
-    noise.add_channel(AmplitudeDamping(p=0.15), operation=fq.ops.CX, slots=(1,))
+    noise.add(PauliChannel({"X": 0.1}), operation=fq.ops.H)
+    noise.add(AmplitudeDamping(p=0.15), operation=fq.ops.CX, target_positions=(1,))
     shots = 20000
     program = _ghz_program(n=2)
 
@@ -254,7 +252,7 @@ def test_a_mixed_plan_routes_each_channel_independently(runtime):
 
 def test_pauli_channel_is_an_accepted_backend_capability():
     noise = NoiseModel()
-    noise.add_channel(PauliChannel({"X": 0.1}), operation=fq.ops.X)
+    noise.add(PauliChannel({"X": 0.1}), operation=fq.ops.X)
 
     report = Simulator().validate_noise(noise)
 
@@ -279,7 +277,7 @@ def test_a_custom_non_unitary_channel_rule_still_runs():
     assert _unitary_branch_probabilities(_leak_rule(_Leak(), targets=())) is None
 
     noise = NoiseModel()
-    noise.add_channel(_Leak(), operation=fq.ops.H)
+    noise.add(_Leak(), operation=fq.ops.H)
     program = fq.Program(1, 1)
     program.add(fq.ops.H, 0)
     program.measure(0, 0)

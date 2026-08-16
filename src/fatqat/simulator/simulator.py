@@ -58,10 +58,13 @@ from .._index_allocation import (
 from ..implementation import MatrixImplementationMap, default_matrix_implementation_map
 from ..job import Job
 from ..noise import (
+    AmplitudeDamping,
     ChannelImplementationMap,
+    PhaseDamping,
     NoiseModel,
     NoiseSupportReport,
     Loss,
+    ThermalRelaxation,
     default_channel_implementation_map,
 )
 from ..operations import BarrierGate, Measurement, ResetGate, RefillGate
@@ -320,9 +323,8 @@ class Simulator:
                 and requires the optional ``numba`` dependency, which raises
                 here, at construction, rather than at run time.
             noise: Optional :py:class:`~fatqat.NoiseModel` applied to every
-                run. ``None`` (the default) means noise-free execution. The
-                backend holds a reference (not a copy): a noise model is
-                standalone, reusable state the user may keep building.
+                run. ``None`` means noise-free execution. The backend captures
+                the model's registrations once at construction.
             channel_implementation_map: Optional map controlling which
                 `Channel` descriptor types this backend can resolve and how
                 their Kraus operators are built. ``None`` (the default) uses
@@ -371,9 +373,8 @@ class Simulator:
         if implementation_map is None:
             implementation_map = default_matrix_implementation_map()
         self._impl_map = implementation_map.copy()
-        # The noise model is held by reference (it is standalone, reusable
-        # user state); the channel map is copied, like the matrix map.
-        self._noise_model = noise if noise is not None else NoiseModel()
+        source_noise = noise if noise is not None else NoiseModel()
+        self._noise_model = source_noise._copy()
         if channel_implementation_map is None:
             channel_implementation_map = default_channel_implementation_map()
         self._channel_map = channel_implementation_map.copy()
@@ -647,8 +648,8 @@ class Simulator:
         # effective resource layout is known and before any lowering/plan
         # step is built, on this same direct-raise path: a foreign ref or
         # unmapped device label fails run() directly rather than being
-        # silently skipped in channels_for()/readout_error_for() matching.
-        self._noise_model.validate_for(
+        # silently skipped in selector matching.
+        self._noise_model._validate_for(
             program, self._legal_device_operands(program, resource_layout)
         )
         report = self.validate_noise(self._noise_model)
@@ -937,7 +938,7 @@ class Simulator:
         The caller supplies a scalar-only instruction stream and the run's
         private lowering context. `context.resource_layout` is used for
         `MatrixImplementationMap` lookup (`device_operands`) and for
-        `NoiseModel.channels_for()` physical-selector matching (against the
+        `NoiseModel._noise_for_occurrence()` physical-selector matching (against the
         occurrence's program target refs); `context.engine_allocation` is
         used for every execution index/dimension - `ApplyMatrixStep`/
         `MeasurementStep`/`ResetStep` targets and conditions. Grouped
@@ -969,7 +970,6 @@ class Simulator:
                             resource_layout,
                             engine_allocation,
                             classical_allocation,
-                            self._noise_model,
                         )
                     )
                 elif isinstance(step.operation, RefillGate):
@@ -1029,9 +1029,9 @@ class Simulator:
         are display identities only, never registry keys, and are
         deduplicated while preserving first registration order.
 
-        Always-on registrations are rejected because this backend has no
-        continuous-time evolution model, and Reset-keyed entries are rejected
-        until reset-attached channels are wired.
+        Background registrations are rejected because this backend has no
+        continuous-time evolution model. Reset-bound noise cannot pass model
+        admission.
 
         Args:
             noise_model: The noise model to check; it is not executed.
@@ -1052,15 +1052,16 @@ class Simulator:
             if not supported:
                 warnings_.append(warning)
 
-        for channel, operation in noise_model.channel_registrations():
+        for channel, operation in noise_model._noise_sources():
             channel_type = type(channel)
-            always_on = operation is None
-            rate_mode = hasattr(channel, "rate") and channel.rate is not None
+            background = operation is None
+            built_in_damping = channel_type in (AmplitudeDamping, PhaseDamping)
+            rate_mode = built_in_damping and channel.rate is not None
             qualifiers: list[str] = []
-            if hasattr(channel, "rate"):
+            if built_in_damping:
                 qualifiers.append("rate" if rate_mode else "p")
-            if always_on:
-                qualifiers.append("always-on")
+            if background:
+                qualifiers.append("background")
             label = channel_type.__name__
             if qualifiers:
                 label += f"({', '.join(qualifiers)})"
@@ -1072,14 +1073,21 @@ class Simulator:
                         label,
                         False,
                         f"{label} is not supported: this backend does not model "
-                        "atom loss (use AtomGridSimulator)",
+                        "carrier loss (use AtomGridSimulator)",
                     )
-            elif always_on:
+            elif background:
                 _record(
                     label,
                     False,
                     f"{label} is not supported: this matrix backend has no "
                     "continuous-time evolution model",
+                )
+            elif channel_type is ThermalRelaxation:
+                _record(
+                    label,
+                    False,
+                    f"{label} is a generator/time declaration; explicitly "
+                    "convert it with as_channels(duration) for a matrix backend",
                 )
             elif self._channel_map.get(channel_type) is None:
                 _record(
@@ -1096,11 +1104,8 @@ class Simulator:
                 )
             else:
                 _record(label, True, "")
-        if noise_model.has_readout_error():
-            accepted.append("readout_error")
-        if noise_model.has_noise_for(ResetGate):
-            rejected.append("Reset")
-            warnings_.append("channel noise attached to Reset is not supported yet")
+        if noise_model._readout_confusions():
+            accepted.append("ReadoutConfusion")
         return NoiseSupportReport(
             supported=not rejected,
             accepted_sources=tuple(accepted),

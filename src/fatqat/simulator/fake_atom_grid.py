@@ -195,7 +195,7 @@ class AtomGridSimulator(Simulator):
            >>> import fatqat as fq
            >>> import fatqat.operations as op
            >>> noise = fq.NoiseModel()
-           >>> noise.add_channel(fq.noise.Loss(p=1.0), operation=op.RX)
+           >>> noise.add(fq.noise.Loss(p=1.0), operation=op.RX)
            >>> program = fq.Program(1, 1)
            >>> program.add(op.LoadAtoms(1, 1))
            >>> program.add(op.RX(np.pi), 0)

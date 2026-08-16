@@ -288,11 +288,13 @@ def test_default_noise_model_is_fully_supported():
         "AmplitudeDamping(p)",
         "Depolarizing",
         "PhaseDamping(p)",
-        "readout_error",
+        "ReadoutConfusion",
     }
-    assert model.channel_types() == frozenset(
-        {AmplitudeDamping, Depolarizing, PhaseDamping}
-    )
+    assert {type(source) for source, _operation in model._noise_sources()} == {
+        AmplitudeDamping,
+        Depolarizing,
+        PhaseDamping,
+    }
 
 
 def test_noisy_backend_leaks_errors_but_stays_mostly_correct():
@@ -338,15 +340,17 @@ def test_rz_carries_relaxation_like_other_google_rotations():
 def test_default_noise_model_is_a_fresh_extensible_model():
     first = SCQubitGoogleSimulator.default_noise_model()
     second = SCQubitGoogleSimulator.default_noise_model()
-    first.add_channel(Depolarizing(p=0.5), operation=ops.RX)
+    first.add(Depolarizing(p=0.5), operation=ops.RX)
 
-    assert Depolarizing in first.channel_types()
+    assert Depolarizing in {
+        type(source) for source, _operation in first._noise_sources()
+    }
     # Each call builds an independent model; user edits never leak back.
     program = Program(1)
     backend = SCQubitGoogleSimulator()
     assert not any(
         isinstance(c, Depolarizing) and c.p == 0.5
-        for c, _extent in second.channels_for(
+        for c, _extent in second._noise_for_occurrence(
             ops.RX,
             (program.quantum_registers[0][0],),
             backend._resolve_resource_layout(program),

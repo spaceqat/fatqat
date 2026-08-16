@@ -14,6 +14,7 @@ from fatqat.noise import (
     Depolarizing,
     NoiseModel,
     PhaseDamping,
+    ThermalRelaxation,
     default_channel_implementation_map,
 )
 from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
@@ -28,7 +29,7 @@ def _total_variation(counts_a, counts_b, shots):
 
 def _depolarized_x_model(p=0.2):
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=p), operation=fq.ops.X)
+    noise.add(Depolarizing(p=p), operation=fq.ops.X)
     return noise
 
 
@@ -81,7 +82,7 @@ def test_unresolvable_channel_type_raises():
         pass
 
     noise = NoiseModel()
-    noise.add_channel(Leakage(), operation=fq.ops.X)
+    noise.add(Leakage(), operation=fq.ops.X)
     backend = Simulator(noise=noise)
     program = _x_program()
     with pytest.raises(UnsupportedOperationError, match="Leakage"):
@@ -99,7 +100,7 @@ def test_mis_shaped_rule_rejected_but_non_cptp_accepted():
         Custom, lambda channel, *, targets: (np.eye(3, dtype=complex),)
     )
     noise = NoiseModel()
-    noise.add_channel(Custom(), operation=fq.ops.X)
+    noise.add(Custom(), operation=fq.ops.X)
     backend = Simulator(noise=noise, channel_implementation_map=channel_map)
     program = _x_program()
     with pytest.raises(BackendValidationError, match="shape"):
@@ -122,7 +123,7 @@ def test_viewed_gate_resolves_a_channel_per_expanded_member():
     atoms = GridRegister(2, 3, name="atoms")
     program = fq.Program([atoms])
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.RX)
+    noise.add(Depolarizing(p=0.1), operation=fq.ops.RX)
     backend = Simulator(noise=noise)
     program.add(fq.ops.RX(0.3), atoms.row(0))  # members at engine indices 0,1,2
     plan, facts = backend._lower_program(program)
@@ -139,14 +140,10 @@ def test_viewed_gate_resolves_a_channel_per_expanded_member():
     assert facts.has_channel is True
 
 
-def test_reset_attached_channels_raise_until_wired():
+def test_reset_attached_channels_reject_at_admission():
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.Reset)
-    backend = Simulator(noise=noise)
-    program = fq.Program(1)
-    program.add(fq.ops.Reset, 0)
-    with pytest.raises(UnsupportedOperationError, match="Reset"):
-        backend._lower_program(program)
+    with pytest.raises(ValueError, match="Reset"):
+        noise.add(Depolarizing(p=0.1), operation=fq.ops.Reset)
 
 
 # --- path classification ---
@@ -331,24 +328,23 @@ def test_validate_noise_accepts_catalog_channels():
     assert report.rejected_sources == ()
 
 
-def test_validate_noise_rejects_unknown_channel_and_reset():
+def test_validate_noise_rejects_unknown_channel():
     class Leakage(Channel):
         pass
 
     noise = NoiseModel()
-    noise.add_channel(Leakage(), operation=fq.ops.X)
-    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.Reset)
+    noise.add(Leakage(), operation=fq.ops.X)
     report = Simulator().validate_noise(noise)
 
     assert report.supported is False
-    assert set(report.rejected_sources) == {"Leakage", "Reset"}
-    assert "Depolarizing" in report.accepted_sources
-    assert len(report.warnings) == 2
+    assert report.rejected_sources == ("Leakage",)
+    assert report.accepted_sources == ()
+    assert len(report.warnings) == 1
 
 
 def test_validate_noise_reports_rate_mode_damping_as_unsupported():
     noise = NoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.01), operation=fq.ops.X)
+    noise.add(AmplitudeDamping(rate=0.01), operation=fq.ops.X)
     report = Simulator().validate_noise(noise)
 
     assert report.supported is False
@@ -356,10 +352,68 @@ def test_validate_noise_reports_rate_mode_damping_as_unsupported():
     assert report.accepted_sources == ()
 
 
+def test_matrix_capability_rejects_background_and_thermal_generator_forms():
+    background = NoiseModel()
+    background.add(PhaseDamping(rate=0.01), targets=0)
+    background_report = Simulator().validate_noise(background)
+    assert not background_report.supported
+    assert "background" in background_report.rejected_sources[0]
+
+    thermal = NoiseModel()
+    thermal.add(ThermalRelaxation(t1=60e-6, t2=80e-6), operation=fq.ops.X)
+    thermal_report = Simulator().validate_noise(thermal)
+    assert not thermal_report.supported
+    assert thermal_report.rejected_sources == ("ThermalRelaxation",)
+
+
+def test_matrix_custom_finite_channels_are_map_driven_not_field_name_driven():
+    class CustomFinite(Channel):
+        rate = "a finite-channel calibration label, not a generator mode"
+
+    channel_map = default_channel_implementation_map()
+    channel_map.register(
+        CustomFinite,
+        lambda channel, *, targets: (np.eye(2, dtype=complex),),
+    )
+    noise = NoiseModel()
+    noise.add(CustomFinite(), operation=fq.ops.X)
+
+    report = Simulator(channel_implementation_map=channel_map).validate_noise(noise)
+    assert report.supported
+    assert report.accepted_sources == ("CustomFinite",)
+
+
+def test_matrix_rejects_thermal_relaxation_even_with_a_registered_kraus_rule():
+    channel_map = default_channel_implementation_map()
+    channel_map.register(
+        ThermalRelaxation,
+        lambda channel, *, targets: (np.eye(2, dtype=complex),),
+    )
+    noise = NoiseModel()
+    noise.add(ThermalRelaxation(t1=60e-6, t2=80e-6), operation=fq.ops.X)
+
+    report = Simulator(channel_implementation_map=channel_map).validate_noise(noise)
+    assert not report.supported
+    assert report.rejected_sources == ("ThermalRelaxation",)
+
+
+def test_matrix_backend_captures_noise_registrations_at_construction():
+    source = NoiseModel()
+    source.add(Depolarizing(p=0.0), operation=fq.ops.X)
+    backend = Simulator(method="DM", noise=source)
+    source.add(AmplitudeDamping(p=1.0), operation=fq.ops.X)
+
+    result = backend.run(
+        _x_program(), result_config={"counts": False, "final_state": True}
+    ).result()
+    assert np.allclose(result.get_density_matrix(), np.diag([0.0, 1.0]))
+    assert "AmplitudeDamping(p)" in backend.validate_noise(source).accepted_sources
+
+
 def test_validate_noise_distinguishes_p_and_rate_mode_of_the_same_class():
     noise = NoiseModel()
-    noise.add_channel(AmplitudeDamping(p=0.1), operation=fq.ops.X)
-    noise.add_channel(AmplitudeDamping(rate=0.01), operation=fq.ops.H)
+    noise.add(AmplitudeDamping(p=0.1), operation=fq.ops.X)
+    noise.add(AmplitudeDamping(rate=0.01), operation=fq.ops.H)
     report = Simulator().validate_noise(noise)
 
     assert report.supported is False
@@ -369,7 +423,7 @@ def test_validate_noise_distinguishes_p_and_rate_mode_of_the_same_class():
 
 def test_run_rejects_rate_mode_damping_before_execution():
     noise = NoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.01), operation=fq.ops.X)
+    noise.add(AmplitudeDamping(rate=0.01), operation=fq.ops.X)
     backend = Simulator(noise=noise)
 
     with pytest.raises(BackendValidationError, match="rate mode"):
@@ -383,7 +437,7 @@ def test_run_rejects_foreign_logical_gate_selector_directly():
     program = _x_program()
     foreign = fq.QuantumRegister(1, name="q")
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X, targets=(foreign[0],))
+    noise.add(Depolarizing(p=0.1), operation=fq.ops.X, targets=(foreign[0],))
     backend = Simulator(noise=noise)
 
     with pytest.raises(BackendValidationError):
@@ -396,7 +450,7 @@ def test_run_rejects_unmapped_physical_gate_label_directly():
     program = fq.Program(3)
     program.add(fq.ops.RZ(0.1), 0)
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X, targets=(99,))
+    noise.add(Depolarizing(p=0.1), operation=fq.ops.X, targets=(99,))
     backend = Simulator(noise=noise)
 
     with pytest.raises(BackendValidationError):
@@ -409,7 +463,7 @@ def test_run_succeeds_when_valid_gate_selector_matches_no_occurrence():
     program = fq.Program(3)
     program.add(fq.ops.RZ(0.1), 0)
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.Y, targets=(15,))
+    noise.add(Depolarizing(p=0.1), operation=fq.ops.Y, targets=(15,))
     backend = SCQubitIBMSimulator(noise=noise)
 
     result = backend.run(program).result()
@@ -424,7 +478,7 @@ def test_numba_fused_kernel_compiles_channel_plans_matching_numpy():
     from fatqat.simulator._engine.nb import NumbaSVEngine, _plan_compilable
 
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.3), operation=fq.ops.X)
+    noise.add(Depolarizing(p=0.3), operation=fq.ops.X)
     backend = Simulator(noise=noise)
     program = fq.Program(1, 1)
     program.add(fq.ops.X, 0)
@@ -458,8 +512,8 @@ def test_numba_fused_channel_kernel_matches_numpy_on_a_qudit_dynamic_plan():
 
     def counts_for(runtime):
         noise = NoiseModel()
-        noise.add_channel(AmplitudeDamping(p=(0.2, 0.3)), operation=fq.ops.Shift)
-        noise.add_channel(PhaseDamping(p=0.15), operation=fq.ops.Shift)
+        noise.add(AmplitudeDamping(p=(0.2, 0.3)), operation=fq.ops.Shift)
+        noise.add(PhaseDamping(p=0.15), operation=fq.ops.Shift)
         qreg = fq.QuantumRegister(2, dim=3)
         creg = fq.ClassicalRegister(2, dim=3)
         program = fq.Program([qreg], [creg])
@@ -510,8 +564,8 @@ def test_numba_dm_channel_matches_numpy_on_a_qudit_channel_plan():
     pytest.importorskip("numba")
 
     noise = NoiseModel()
-    noise.add_channel(AmplitudeDamping(p=(0.2, 0.3)), operation=fq.ops.Shift)
-    noise.add_channel(PhaseDamping(p=0.4), operation=fq.ops.Shift)
+    noise.add(AmplitudeDamping(p=(0.2, 0.3)), operation=fq.ops.Shift)
+    noise.add(PhaseDamping(p=0.4), operation=fq.ops.Shift)
     qreg = fq.QuantumRegister(1, dim=3)
 
     states = []
@@ -535,8 +589,8 @@ def test_scoped_damping_decays_only_the_selected_cz_slot():
         # CZ changes only the |11> phase, leaving these populations intact.
         program.add(fq.ops.CZ, (0, 1))
         noise = NoiseModel()
-        noise.add_channel(
-            AmplitudeDamping(p=(0.5,)), operation=fq.ops.CZ, slots=(slot,)
+        noise.add(
+            AmplitudeDamping(p=(0.5,)), operation=fq.ops.CZ, target_positions=(slot,)
         )
 
         density_matrix = (
@@ -558,7 +612,7 @@ def test_scoped_channel_uses_only_the_qudit_extent_dimension():
     program = fq.Program([fq.QuantumRegister(2, dim=3)])
     program.add(fq.ops.Sum, (0, 1))
     noise = NoiseModel()
-    noise.add_channel(PhaseDamping(p=0.1), operation=fq.ops.Sum, slots=(1,))
+    noise.add(PhaseDamping(p=0.1), operation=fq.ops.Sum, target_positions=(1,))
 
     plan, _ = Simulator(noise=noise)._lower_program(program)
     channel_steps = [step for step in plan if isinstance(step, ApplyChannelStep)]
@@ -571,7 +625,7 @@ def test_multi_slot_extent_has_joint_kraus_dimension():
     program = fq.Program(3)
     program.add(fq.ops.CCX, (0, 1, 2))
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.01), operation=fq.ops.CCX, slots=(1, 2))
+    noise.add(Depolarizing(p=0.01), operation=fq.ops.CCX, target_positions=(1, 2))
 
     plan, _ = Simulator(noise=noise)._lower_program(program)
     channel_steps = [step for step in plan if isinstance(step, ApplyChannelStep)]
@@ -587,7 +641,7 @@ def test_atom_loss_p1_isolated_atom_reads_erasure():
     program.measure(0, 0)
 
     noise = NoiseModel()
-    noise.add_channel(Loss(p=1.0), operation=fq.ops.RX)
+    noise.add(Loss(p=1.0), operation=fq.ops.RX)
 
     counts = (
         fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
@@ -605,7 +659,7 @@ def test_atom_loss_p0_reproduces_ideal():
     program.measure(0, 0)
 
     noise = NoiseModel()
-    noise.add_channel(Loss(p=0.0), operation=fq.ops.RX)
+    noise.add(Loss(p=0.0), operation=fq.ops.RX)
 
     counts = (
         fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
@@ -634,7 +688,7 @@ def test_lost_control_does_not_dephase_survivor():
     program.measure(atoms[1], 0)
 
     noise = NoiseModel()
-    noise.add_channel(Loss(p=1.0), operation=fq.ops.RX)
+    noise.add(Loss(p=1.0), operation=fq.ops.RX)
 
     counts = (
         fq.simulator.AtomGridSimulator(grid_size=(1, 2), noise=noise)
