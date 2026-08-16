@@ -405,6 +405,11 @@ def _normalize_occurrence_selector(
 ) -> _Selector:
     if targets is None:
         return None
+    if isinstance(targets, list):
+        raise TypeError(
+            "occurrence noise targets must be a scalar selector or a non-empty "
+            "ordered tuple; lists are not accepted"
+        )
     selector = targets if isinstance(targets, tuple) else (targets,)
     if not selector:
         raise ValueError("targets must be None or a non-empty ordered selector")
@@ -585,6 +590,8 @@ def _check_readout_conflict(
     proposed: _ReadoutSelector,
 ) -> None:
     for selector, _declaration in registrations:
+        if selector is None and proposed is None:
+            raise ValueError("universal ReadoutConfusion is already registered")
         if selector is None or proposed is None:
             raise ValueError(
                 "universal and targeted ReadoutConfusion registrations cannot coexist"

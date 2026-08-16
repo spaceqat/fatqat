@@ -395,6 +395,8 @@ def test_matrix_rejects_thermal_relaxation_even_with_a_registered_kraus_rule():
     report = Simulator(channel_implementation_map=channel_map).validate_noise(noise)
     assert not report.supported
     assert report.rejected_sources == ("ThermalRelaxation",)
+    assert "matrix-family policy" in report.warnings[0]
+    assert "registered channel implementation" in report.warnings[0]
 
 
 def test_matrix_backend_captures_noise_registrations_at_construction():

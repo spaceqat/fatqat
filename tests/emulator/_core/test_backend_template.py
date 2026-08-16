@@ -37,6 +37,7 @@ from fatqat.noise import (
     AmplitudeDamping,
     LindbladImplementationMap,
     NoiseModel,
+    PauliChannel,
 )
 from fatqat.noise.lindblad import amplitude_damping_lindblad_rule
 from fatqat.resource_layout import ResourceLayout
@@ -536,6 +537,28 @@ def test_missing_or_empty_lindblad_implementation_rejects_explicitly():
     )
     with pytest.raises(BackendValidationError, match="no Lindblad operators"):
         backend._prepare_program(fq.Program(1))
+
+
+def test_pauli_channel_policy_is_explicit_even_with_a_registered_rule():
+    noise = NoiseModel()
+    noise.add(PauliChannel({"X": 0.1}), operation=fq.ops.X)
+    implementation_map = LindbladImplementationMap()
+    implementation_map.register(
+        PauliChannel,
+        lambda channel, *, physical_dimension: (np.eye(physical_dimension),),
+    )
+
+    report = _classify_lindblad_noise(
+        noise,
+        implementation_map,
+        local_dimension=2,
+        backend_name="TemplateBackend",
+        supports_readout_confusion=True,
+    )
+
+    assert not report.supported
+    assert "pulse-family policy" in report.warnings[0]
+    assert "registered Lindblad implementation" in report.warnings[0]
 
 
 def test_invalid_local_operator_shape_rejects_at_shared_resolution_boundary():

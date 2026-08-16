@@ -1086,8 +1086,10 @@ class Simulator:
                 _record(
                     label,
                     False,
-                    f"{label} is a generator/time declaration; explicitly "
-                    "convert it with as_channels(duration) for a matrix backend",
+                    f"{label} is rejected by matrix-family policy because it "
+                    "is a generator/time declaration; a registered channel "
+                    "implementation does not override that policy. Explicitly "
+                    "convert it with as_channels(duration)",
                 )
             elif self._channel_map.get(channel_type) is None:
                 _record(

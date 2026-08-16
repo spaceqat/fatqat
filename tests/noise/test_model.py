@@ -39,6 +39,8 @@ def test_add_is_the_only_public_registration_verb_and_returns_none():
         "channels_for",
         "always_on_channels_for",
         "readout_error_for",
+        "has_noise_for",
+        "channel_types",
         "channel_registrations",
         "metadata",
         "_channels",
@@ -63,6 +65,18 @@ def test_readout_rejects_tuple_targets_even_when_length_one():
 
     with pytest.raises(TypeError, match="scalar"):
         noise.add(_CONFUSION, targets=(0,))
+
+
+def test_occurrence_selector_rejects_lists_with_tuple_guidance():
+    program = fq.Program(2)
+    q = program.quantum_registers[0]
+
+    with pytest.raises(TypeError, match="ordered tuple; lists are not accepted"):
+        NoiseModel().add(
+            Depolarizing(p=0.1),
+            operation=fq.ops.CX,
+            targets=[q[0], q[1]],
+        )
 
 
 def test_operation_is_occurrence_scope_and_omission_is_background_scope():
@@ -112,7 +126,8 @@ def test_background_scope_rejects_nonlocal_or_positional_forms(declaration, kwar
 
 
 @pytest.mark.parametrize(
-    "operation", [fq.ops.Barrier, fq.ops.LoadAtoms(1, 1), fq.ops.Reset]
+    "operation",
+    [fq.ops.Barrier, fq.ops.LoadAtoms(1, 1), fq.ops.Reset, fq.ops.PulseOperation],
 )
 def test_operations_without_noise_boundaries_reject_atomically(operation):
     noise = NoiseModel()
@@ -256,6 +271,14 @@ def test_universal_and_targeted_readout_cannot_coexist():
 
     with pytest.raises(ValueError, match="cannot coexist"):
         noise.add(ReadoutConfusion(np.eye(2)), targets=0)
+
+
+def test_universal_readout_cannot_be_registered_twice():
+    noise = NoiseModel()
+    noise.add(_CONFUSION)
+
+    with pytest.raises(ValueError, match="universal.*already registered"):
+        noise.add(ReadoutConfusion(np.eye(2)))
 
 
 def test_readout_logical_physical_alias_rejects_at_measurement():

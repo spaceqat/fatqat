@@ -121,7 +121,10 @@ def _classify_lindblad_noise(
         elif finite_mode:
             reason = "finite probability mode is not a pulse generator"
         elif channel_type is PauliChannel:
-            reason = "PauliChannel is finite-only and has no inferred generator"
+            reason = (
+                "pulse-family policy treats PauliChannel as finite-only; a "
+                "registered Lindblad implementation does not override that policy"
+            )
         elif not background and not allow_operation_scoped:
             reason = "the built-in defaults accept only background generators"
         elif implementation_map.get(channel_type) is None:
