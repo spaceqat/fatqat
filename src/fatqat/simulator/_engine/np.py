@@ -43,6 +43,11 @@ Semantics differences:
   unravelling, one rng draw), forcing the per-shot path; the density matrix
   applies the exact Kraus sum ``sum_i K_i rho K_i^dagger`` (no rng draw), so
   an unconditional channel stays on the fast path.
+- a channel of scaled unitaries (every Pauli channel; also `Depolarizing` and
+  `PhaseDamping` in any dimension) has state-independent branch probabilities,
+  so the statevector draws its branch from that fixed vector and applies only
+  the operator it drew. One rng draw either way, so which sampler a channel
+  takes affects neither the stream nor path classification.
 - measurement reporting is identical on both: the collapse keeps the physical
   outcome, maps it to a reported digit, then optionally resamples that digit
   through ``MeasurementStep.confusions``. It never affects path
@@ -74,8 +79,14 @@ from ..._backends.steps import (
     ResolvedStep,
 )
 from ...implementation.matrices import shift_matrix
+from ...noise.base import _sampled_unitary_branches
 from ...result import decode_indices_to_clbit_rows, reduce_to_counts
 from .base import ResultRequest, MatrixEngine
+
+# What `_sampled_unitary_branches` resolves a channel step to: branch
+# probabilities, unit-norm operators, identity flags - or None for a channel
+# that must be weighed against the state.
+_Branches = tuple[np.ndarray, tuple[np.ndarray, ...], tuple[bool, ...]] | None
 
 ERASURE_DIGIT = 2
 
@@ -511,6 +522,11 @@ class NumpySVEngine(_NumpyMatrixEngine):
 
     def __init__(self, name: str = "numpy-sv", config: EngineConfig | None = None):
         super().__init__(name, config, state_semantics="sv")
+        # Per-step channel route, keyed by id(step) with the step pinned in the
+        # value so a recycled id can never alias. Depends on the step's frozen
+        # Kraus operators alone, not on system dims, so `initialize` must not
+        # clear it - the per-shot loop re-initializes once per trajectory.
+        self._channel_routes: dict[int, tuple[ApplyChannelStep, _Branches]] = {}
 
     def _allocate(self, size: int) -> np.ndarray:
         state = np.zeros(size, dtype=complex)
@@ -521,17 +537,60 @@ class NumpySVEngine(_NumpyMatrixEngine):
         self._state = self._apply_local(self.state, step.matrix, step.target_indices)
 
     def apply_channel(self, step: ApplyChannelStep, rng: np.random.Generator) -> None:
-        """Sample one Kraus branch (quantum-jump unravelling) and renormalize.
+        """Sample one Kraus branch, by the cheapest sampler the operators allow.
+
+        A channel of scaled unitaries takes `_apply_sampled_unitary`, which
+        draws from a fixed probability vector; everything else takes the
+        general quantum-jump path. Both consume exactly one rng draw.
+        """
+        branches = self._channel_route(step)
+        if branches is None:
+            self._apply_kraus_jump(step, rng)
+        else:
+            self._apply_sampled_unitary(branches, step.target_indices, rng)
+
+    def _channel_route(self, step: ApplyChannelStep) -> _Branches:
+        """Resolve a channel step's branch-weighing route once, then cache it."""
+        cached = self._channel_routes.get(id(step))
+        if cached is not None and cached[0] is step:
+            return cached[1]
+        branches = _sampled_unitary_branches(step.kraus_ops)
+        self._channel_routes[id(step)] = (step, branches)
+        return branches
+
+    def _apply_sampled_unitary(
+        self,
+        branches: tuple[np.ndarray, tuple[np.ndarray, ...], tuple[bool, ...]],
+        targets: tuple[int, ...],
+        rng: np.random.Generator,
+    ) -> None:
+        """Draw one branch of a scaled-unitary channel and apply only that one.
+
+        Nothing reads the state except the apply itself: the weights are
+        state-independent, the operators are already unit-norm, and a draw on
+        the identity returns without touching an amplitude. Only one operator
+        is ever applied, so the state needs no defensive copy.
+        """
+        probabilities, unitaries, identities = branches
+        chosen = int(
+            rng.choice(len(probabilities), p=probabilities / probabilities.sum())
+        )
+        if identities[chosen]:
+            return
+        self._state = self._apply_local(self.state, unitaries[chosen], targets)
+
+    def _apply_kraus_jump(
+        self, step: ApplyChannelStep, rng: np.random.Generator
+    ) -> None:
+        """Quantum-jump unravelling for a channel of general Kraus operators.
 
         Each candidate branch ``K_i |psi>`` is produced by the same local-apply
         primitive gates use; its squared norm is the branch probability. One
-        branch is drawn (consuming one rng draw, same posture as measurement
-        and reset) and kept, normalized.
+        branch is drawn and kept, normalized.
 
-        Each branch starts from a fresh copy of the state: ``_apply_local`` is
-        only contracted to *return* the new state, and a subclass kernel (the
-        Numba one) legitimately updates its input buffer in place - reusing
-        ``self.state`` across branches would then corrupt the source mid-loop.
+        Each branch starts from a fresh copy of the state: reusing
+        ``self.state`` across branches would let an in-place kernel (the Numba
+        subclass's) corrupt the source mid-loop.
         """
         source = self.state
         branches = [

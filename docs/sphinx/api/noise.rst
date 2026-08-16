@@ -31,6 +31,7 @@ Built-in channels
 - :py:class:`~fatqat.noise.Depolarizing` (``p``)
 - :py:class:`~fatqat.noise.AmplitudeDamping` (``p=(p,)`` or ``rate=(rate,)``)
 - :py:class:`~fatqat.noise.PhaseDamping` (``p`` or ``rate``)
+- :py:class:`~fatqat.noise.PauliChannel` (``{"XI": p, ...}``)
 
 ``AmplitudeDamping`` and ``PhaseDamping`` accept exactly one of a finite
 probability ``p`` or a continuous ``rate`` (the inverse of the target
@@ -93,6 +94,10 @@ Detailed reference
    :show-inheritance:
 
 .. autoclass:: fatqat.noise.PhaseDamping
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.noise.PauliChannel
    :members:
    :show-inheritance:
 

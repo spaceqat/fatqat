@@ -17,6 +17,7 @@ from .base import (
 from .catalog import (
     AmplitudeDamping,
     Depolarizing,
+    PauliChannel,
     PhaseDamping,
 )
 from .relaxation import ThermalRelaxation
@@ -38,6 +39,7 @@ __all__ = [
     "Depolarizing",
     "AmplitudeDamping",
     "PhaseDamping",
+    "PauliChannel",
     "NoiseModel",
     "default_channel_implementation_map",
     "default_lindblad_implementation_map",

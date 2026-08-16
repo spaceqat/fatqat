@@ -48,6 +48,8 @@ from math import sqrt
 import numpy as np
 from numba import njit
 
+from .base import _sampled_unitary_branches
+
 
 def _kraus_stack(kraus_ops: Sequence[np.ndarray]) -> np.ndarray:
     """Stack a channel's Kraus tuple into one contiguous ``(num, d, d)`` array.
@@ -77,29 +79,26 @@ def _inverse_cdf_pick(
     search cannot run off the end; the clamp holds that invariant explicitly
     because callers use the result to index memory.
 
+    The cdf is never materialized: it is accumulated twice instead, once for
+    its total and once to find the crossing. Same additions and same division
+    per entry, and a cdf is non-decreasing, so this is bit-identical to
+    bisecting the array.
+
     ``simulator._engine.nb`` has the same two steps for basis-index sampling. It is
     duplicated rather than imported: this module must not import from
     ``simulator._engine.nb`` (see the module docstring on the forced direction).
     """
     n = probabilities.shape[0]
-    cdf = np.empty(n, dtype=np.float64)
+    total = 0.0
+    for i in range(n):
+        total += probabilities[i]
+
     running = 0.0
     for i in range(n):
         running += probabilities[i]
-        cdf[i] = running
-    last = cdf[n - 1]
-    for i in range(n):
-        cdf[i] = cdf[i] / last
-
-    lo = 0
-    hi = n
-    while lo < hi:
-        mid = (lo + hi) // 2
-        if cdf[mid] <= u:
-            lo = mid + 1
-        else:
-            hi = mid
-    return min(lo, n - 1)
+        if running / total > u:
+            return i
+    return n - 1
 
 
 @njit(cache=True)
@@ -204,9 +203,22 @@ def _compile_channel_table(entries: Sequence[tuple]) -> tuple:
     every branch from one ``O(size)`` reduced density matrix and these ``d x d``
     operators, never by materializing and norming ``num`` full branches.
 
-    Returns the kernel's positional channel arrays: per-channel pointers into
-    the Kraus / offset / complement pools, then the pools themselves (the Kraus
-    stack, the ``M_i`` stack, and the offset / complement backings).
+    A channel of scaled unitaries (`_sampled_unitary_branches`) needs neither.
+    Its branch probabilities go into ``cdf_flat`` already accumulated and
+    normalized, its operators into ``kra_flat`` already divided by their own
+    scale, and ``ident_flat`` marks the branches that are the identity - so
+    the kernel's per-occurrence work is a search, and usually nothing else.
+    ``cdf_ptr`` is the channel's offset into ``cdf_flat`` and ``ident_flat``
+    alike, or ``-1`` for a channel weighed against the state. ``mmat_diag``
+    marks a channel whose ``M_i`` are all diagonal, weighable from the target
+    marginal alone.
+
+    ``mmat_flat`` is taken of whatever ``kra_flat`` holds, so
+    ``M_i = K_i^dagger K_i`` is true of the stored operators either way.
+
+    Returns the kernel's positional channel arrays: per-channel pointers and
+    flags, then the pools themselves (the Kraus stack, the ``M_i`` stack, and
+    the offset / complement / cdf / identity backings).
     """
     kra_ptr: list[int] = []
     num_kraus: list[int] = []
@@ -214,14 +226,30 @@ def _compile_channel_table(entries: Sequence[tuple]) -> tuple:
     off_ptr: list[int] = []
     comp_ptr: list[int] = []
     comp_len: list[int] = []
+    cdf_ptr: list[int] = []
+    mmat_diag: list[int] = []
     kra_flat: list[complex] = []
     mmat_flat: list[complex] = []
     off_flat: list[int] = []
     comp_stride_flat: list[int] = []
     comp_dim_flat: list[int] = []
+    cdf_flat: list[float] = []
+    ident_flat: list[int] = []
 
     for kraus_ops, offsets, comp_strides, comp_dims in entries:
-        stack = _kraus_stack(kraus_ops)
+        branches = _sampled_unitary_branches(tuple(kraus_ops))
+        if branches is None:
+            cdf_ptr.append(-1)
+            stack = _kraus_stack(kraus_ops)
+        else:
+            probabilities, unitaries, identities = branches
+            cdf_ptr.append(len(cdf_flat))
+            # Same running sums and division `_inverse_cdf_pick` would do per
+            # draw, so a search over this finds the index it would have.
+            cumulative = np.cumsum(probabilities)
+            cdf_flat.extend(float(c) for c in cumulative / cumulative[-1])
+            ident_flat.extend(int(flag) for flag in identities)
+            stack = _kraus_stack(unitaries)
         assert (
             stack.shape[1] == offsets.shape[0]
         ), "Kraus dimension must equal the coset layout's local dimension"
@@ -229,8 +257,16 @@ def _compile_channel_table(entries: Sequence[tuple]) -> tuple:
         num_kraus.append(stack.shape[0])
         local_dim.append(stack.shape[1])
         kra_flat.extend(stack.ravel().tolist())
+        diagonal_only = True
         for kraus in stack:
-            mmat_flat.extend((kraus.conj().T @ kraus).ravel().tolist())
+            mmat = kraus.conj().T @ kraus
+            mmat_flat.extend(mmat.ravel().tolist())
+            # Exact zeros, like `_classify_matrix`: a merely tiny off-diagonal
+            # entry is a real one and must take the general path.
+            diagonal_only = diagonal_only and not np.any(
+                mmat - np.diag(np.diagonal(mmat))
+            )
+        mmat_diag.append(int(diagonal_only))
         off_ptr.append(len(off_flat))
         off_flat.extend(int(o) for o in offsets)
         comp_ptr.append(len(comp_stride_flat))
@@ -248,11 +284,15 @@ def _compile_channel_table(entries: Sequence[tuple]) -> tuple:
         i64(off_ptr),
         i64(comp_ptr),
         i64(comp_len),
+        i64(cdf_ptr),
+        i64(mmat_diag),
         np.asarray(kra_flat, dtype=np.complex128),
         np.asarray(mmat_flat, dtype=np.complex128),
         i64(off_flat),
         i64(comp_stride_flat),
         i64(comp_dim_flat),
+        np.asarray(cdf_flat, dtype=np.float64),
+        i64(ident_flat),
     )
 
 

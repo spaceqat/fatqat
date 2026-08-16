@@ -55,7 +55,12 @@ def test_copy_is_independent():
 def test_default_map_covers_catalog():
     channel_map = default_channel_implementation_map()
     names = {c.__name__ for c in channel_map.supported_channels()}
-    assert names == {"Depolarizing", "AmplitudeDamping", "PhaseDamping"}
+    assert names == {
+        "Depolarizing",
+        "AmplitudeDamping",
+        "PhaseDamping",
+        "PauliChannel",
+    }
 
 
 def test_validate_shapes_accepts_complete_kraus_set():

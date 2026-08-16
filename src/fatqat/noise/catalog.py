@@ -7,12 +7,13 @@ the register dimension of their actual targets, read inside the rule - one
 
 Arity is a property of the descriptor class: `Depolarizing` acts jointly on
 however many subsystems the gate it is attached to targets; `AmplitudeDamping`
-and `PhaseDamping` are single-subsystem channels.
+and `PhaseDamping` are single-subsystem channels. `PauliChannel` is the one
+entry whose arity is per-instance - the width of the Pauli strings it carries.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from math import expm1, isfinite, log1p, prod
 from typing import ClassVar
@@ -20,7 +21,7 @@ from typing import ClassVar
 import numpy as np
 
 from ..errors import BackendValidationError
-from ..implementation.matrices import clock_matrix, shift_matrix
+from ..implementation.matrices import _I, _X, _Y, _Z, clock_matrix, shift_matrix
 from ..registers import RegisterRef
 from .base import Channel
 
@@ -150,6 +151,151 @@ def depolarizing_rule(
             weyl = shift_matrix(dim, a) @ clock_matrix(dim, b)
             ops.append(np.sqrt(p / dim**2) * weyl)
     return tuple(ops)
+
+
+_PAULI_MATRICES = {"I": _I, "X": _X, "Y": _Y, "Z": _Z}
+
+_PAULI_PROBABILITY_TOL = 1e-9
+
+
+def _pauli_string_matrix(string: str) -> np.ndarray:
+    """Build a Pauli string's ``2**k x 2**k`` matrix, ``string[0]`` most-significant.
+
+    ``string[0]`` describes ``targets[0]``, the matrix's most-significant index
+    digit - the same convention as a gate matrix, and the reverse of Qiskit's
+    ``Pauli("IX")`` reading.
+    """
+    matrix = _PAULI_MATRICES[string[0]]
+    for letter in string[1:]:
+        matrix = np.kron(matrix, _PAULI_MATRICES[letter])
+    return matrix
+
+
+def _normalize_pauli_terms(
+    terms: Mapping[str, float] | Sequence[tuple[str, float]],
+) -> tuple[tuple[str, float], ...]:
+    """Normalize a Pauli-term mapping or pair sequence into canonical form.
+
+    Canonical form leads with the all-identity term carrying the probability
+    the other terms leave unassigned, followed by the non-identity terms in the
+    order given. An explicit identity entry must agree with that implied value.
+    """
+    items = tuple(terms.items()) if isinstance(terms, Mapping) else tuple(terms)
+    if not items:
+        raise ValueError("PauliChannel requires at least one term")
+
+    width = -1
+    seen: set[str] = set()
+    for entry in items:
+        if len(entry) != 2:
+            raise ValueError(
+                f"PauliChannel term must be a (string, p) pair, got {entry!r}"
+            )
+        string, p = entry
+        if not isinstance(string, str) or not string:
+            raise ValueError(
+                f"PauliChannel term label must be a non-empty string, got {string!r}"
+            )
+        if any(letter not in _PAULI_MATRICES for letter in string):
+            raise ValueError(
+                f"PauliChannel term {string!r} must use only the letters I, X, Y, Z"
+            )
+        if width < 0:
+            width = len(string)
+        elif len(string) != width:
+            raise ValueError(
+                f"PauliChannel terms must all be the same width; got {len(string)} "
+                f"for {string!r} after {width}"
+            )
+        if string in seen:
+            raise ValueError(f"PauliChannel term {string!r} is registered twice")
+        seen.add(string)
+        _require_probability(p, f"PauliChannel[{string}]")
+
+    identity = "I" * width
+    others = tuple((string, float(p)) for string, p in items if string != identity)
+    assigned = sum(p for _, p in others)
+    if assigned > 1.0 + _PAULI_PROBABILITY_TOL:
+        raise ValueError(
+            f"PauliChannel error probabilities sum to {assigned}, which exceeds 1"
+        )
+    implied = max(0.0, 1.0 - assigned)
+    for string, p in items:
+        if string == identity and abs(p - implied) > _PAULI_PROBABILITY_TOL:
+            raise ValueError(
+                f"PauliChannel identity probability {p} conflicts with the "
+                f"{implied} its other terms leave unassigned"
+            )
+    return ((identity, implied),) + others
+
+
+@dataclass(frozen=True)
+class PauliChannel(Channel):
+    """A stochastic Pauli channel: ``rho -> sum_i p_i P_i rho P_i``.
+
+    Each term names a Pauli string over the subsystems the channel is attached
+    to and the probability that error occurs.
+
+    Qubits only (``dim == 2``), checked at resolution time; use `Depolarizing`
+    for the dimension-generic uniform channel.
+
+    Attributes:
+        terms: ``(pauli_string, probability)`` pairs, the all-identity term
+            first. Accepts a mapping or a sequence of pairs; the width of the
+            strings sets the channel's arity, ``string[0]`` describing the
+            first target.
+
+    Probabilities need not sum to 1: whatever the error terms leave unassigned
+    becomes the probability of the all-identity (no-error) term. Stating that
+    term explicitly is allowed, but only with the value the others imply.
+
+    Examples:
+        A biased single-qubit channel, 1% X and 2% Z:
+
+        >>> import fatqat as fq
+        >>> fq.noise.PauliChannel({"X": 0.01, "Z": 0.02}).terms
+        (('I', 0.97), ('X', 0.01), ('Z', 0.02))
+
+        A correlated two-qubit channel for a CX:
+
+        >>> fq.noise.PauliChannel({"XX": 0.005, "ZI": 0.01}).num_subsystems
+        2
+    """
+
+    terms: tuple[tuple[str, float], ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "terms", _normalize_pauli_terms(self.terms))
+
+    @property
+    def num_subsystems(self) -> int:
+        """Number of qubits the channel acts on: the width of its Pauli strings."""
+        return len(self.terms[0][0])
+
+
+def pauli_channel_rule(
+    channel: PauliChannel, *, targets: tuple[RegisterRef, ...]
+) -> tuple[np.ndarray, ...]:
+    """Resolve `PauliChannel` into one ``sqrt(p_i) P_i`` Kraus operator per term.
+
+    Completeness is immediate: every ``P_i`` is unitary, so
+    ``sum_i K_i^H K_i = (sum_i p_i) I = I``.
+
+    Raises:
+        BackendValidationError: If the target count does not match the term
+            width, or any target is not a qubit.
+    """
+    _require_channel_arity(channel, targets, "PauliChannel")
+    for ref in targets:
+        if ref.register.dim != 2:
+            raise BackendValidationError(
+                "PauliChannel is defined on qubits only, but a target has "
+                f"dimension {ref.register.dim}; use Depolarizing or PhaseDamping "
+                "for a dimension-generic channel"
+            )
+    return tuple(
+        np.sqrt(p) * _pauli_string_matrix(string) for string, p in channel.terms
+    )
 
 
 @dataclass(frozen=True, kw_only=True)

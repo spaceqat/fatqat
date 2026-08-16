@@ -52,6 +52,7 @@ from qiskit_aer.noise import (
     NoiseModel as AerNoiseModel,
     amplitude_damping_error,
     depolarizing_error,
+    pauli_error,
     phase_damping_error,
     thermal_relaxation_error,
 )
@@ -373,6 +374,38 @@ def test_depolarizing_on_two_qubit_gate_matches_aer(runtime):
     noise = fq.NoiseModel()
     noise.add_channel(fq.noise.Depolarizing(p=0.1), operation=fq.ops.CX)
     aer_model = _aer_model(depolarizing_error(0.1, 2), ["cx"])
+
+    _assert_close(
+        _fatqat_rho(program, runtime, noise),
+        _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
+    )
+
+
+def test_pauli_channel_matches_aer(runtime):
+    program, circuit = _bell()
+    noise = fq.NoiseModel()
+    noise.add_channel(fq.noise.PauliChannel({"X": 0.08, "Z": 0.05}), operation=fq.ops.H)
+    aer_model = _aer_model(pauli_error([("X", 0.08), ("Z", 0.05), ("I", 0.87)]), ["h"])
+
+    _assert_close(
+        _fatqat_rho(program, runtime, noise),
+        _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
+    )
+
+
+def test_two_qubit_pauli_channel_matches_aer_under_its_reversed_reading(runtime):
+    # Term labels read in opposite directions: fatqat's first character
+    # describes the gate's first target, Qiskit's its last, so "XI" here and
+    # "IX" there name the same operator. The channel is asymmetric across the
+    # two qubits so that the distinction is observable.
+    program, circuit = _bell()
+    noise = fq.NoiseModel()
+    noise.add_channel(
+        fq.noise.PauliChannel({"XI": 0.09, "ZZ": 0.04}), operation=fq.ops.CX
+    )
+    aer_model = _aer_model(
+        pauli_error([("IX", 0.09), ("ZZ", 0.04), ("II", 0.87)]), ["cx"]
+    )
 
     _assert_close(
         _fatqat_rho(program, runtime, noise),

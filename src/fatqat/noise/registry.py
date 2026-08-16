@@ -6,9 +6,11 @@ from .base import ChannelImplementationMap
 from .catalog import (
     AmplitudeDamping,
     Depolarizing,
+    PauliChannel,
     PhaseDamping,
     amplitude_damping_rule,
     depolarizing_rule,
+    pauli_channel_rule,
     phase_damping_rule,
 )
 
@@ -19,4 +21,5 @@ def default_channel_implementation_map() -> ChannelImplementationMap:
     channel_map.register(Depolarizing, depolarizing_rule)
     channel_map.register(AmplitudeDamping, amplitude_damping_rule)
     channel_map.register(PhaseDamping, phase_damping_rule)
+    channel_map.register(PauliChannel, pauli_channel_rule)
     return channel_map

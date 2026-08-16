@@ -149,6 +149,69 @@ class NoiseSupportReport:
     warnings: tuple[str, ...] = ()
 
 
+# Round-off slack when testing ``K^H K`` for a multiple of the identity.
+_UNITARY_BRANCH_ATOL = 1e-12
+
+
+def _unitary_branch_probabilities(
+    kraus_ops: tuple[np.ndarray, ...],
+) -> np.ndarray | None:
+    """Branch probabilities of a channel of scaled unitaries, else ``None``.
+
+    Every operator must satisfy ``K_i^H K_i = p_i I``, which makes the branch
+    probability ``<psi|K_i^H K_i|psi> = p_i`` independent of the state. The
+    test is on operator content, not on descriptor type: `Depolarizing` and
+    `PhaseDamping` satisfy it in any dimension, `AmplitudeDamping` does not.
+
+    Returns the ``p_i`` in Kraus order, unnormalized; ``None`` when any
+    operator fails the test or the channel is degenerately all-zero.
+    """
+    probabilities = np.empty(len(kraus_ops), dtype=float)
+    for i, kraus in enumerate(kraus_ops):
+        gram = kraus.conj().T @ kraus
+        dim = gram.shape[0]
+        p = float(np.real(np.trace(gram))) / dim
+        if not np.allclose(gram, p * np.eye(dim), rtol=0.0, atol=_UNITARY_BRANCH_ATOL):
+            return None
+        probabilities[i] = max(p, 0.0)
+    if probabilities.sum() <= 0.0:
+        return None
+    return probabilities
+
+
+def _sampled_unitary_branches(
+    kraus_ops: tuple[np.ndarray, ...],
+) -> tuple[np.ndarray, tuple[np.ndarray, ...], tuple[bool, ...]] | None:
+    """Everything a sampler needs to draw one branch without touching the state.
+
+    Returns ``(probabilities, unitaries, is_identity)`` for a scaled-unitary
+    channel, or ``None`` when `_unitary_branch_probabilities` rejects it.
+    ``unitaries`` are the operators divided by their own scale, so applying a
+    drawn one preserves the norm; ``is_identity`` marks the branches a sampler
+    can skip outright. A zero-probability branch keeps its operator unscaled
+    and can never be drawn.
+    """
+    probabilities = _unitary_branch_probabilities(kraus_ops)
+    if probabilities is None:
+        return None
+    unitaries: list[np.ndarray] = []
+    identities: list[bool] = []
+    for kraus, p in zip(kraus_ops, probabilities):
+        unitary = kraus / np.sqrt(p) if p > 0.0 else kraus
+        unitaries.append(unitary)
+        identities.append(
+            bool(
+                np.allclose(
+                    unitary,
+                    np.eye(unitary.shape[0]),
+                    rtol=0.0,
+                    atol=_UNITARY_BRANCH_ATOL,
+                )
+            )
+        )
+    return probabilities, tuple(unitaries), tuple(identities)
+
+
 def _validate_kraus_shapes(
     kraus_ops: tuple[np.ndarray, ...], dim: int, label: str
 ) -> None:

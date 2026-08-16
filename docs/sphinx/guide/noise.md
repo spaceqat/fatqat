@@ -48,6 +48,16 @@ catalog:
 - {py:class}`~fatqat.noise.PhaseDamping` `(p or rate)` — pure dephasing:
   populations are untouched, coherences decay (at factor `1-p` for a qubit).
   Single-subsystem.
+- {py:class}`~fatqat.noise.PauliChannel` `(terms)` — a stochastic Pauli error,
+  given as `{pauli_string: probability}`. Qubits only; the width of the
+  strings sets the arity, and `string[0]` describes the gate's *first* target
+  (the reverse of Qiskit's `Pauli` reading). Whatever the terms leave
+  unassigned is the probability of no error:
+
+  ```python
+  noise.add_channel(fq.noise.PauliChannel({"X": 0.008, "Z": 0.012}), operation=op.RZ)
+  noise.add_channel(fq.noise.PauliChannel({"XI": 0.006, "ZZ": 0.004}), operation=op.CX)
+  ```
 
 Attaching several channels to the same gate stacks them as independent
 mechanisms, applied in registration order:
@@ -203,6 +213,20 @@ converge to the same counts:
 Prefer `method="DM"` for exact noisy distributions while the system fits in
 memory (a density matrix is quadratically larger); prefer `method="SV"`
 trajectories for larger systems or genuinely per-shot questions.
+
+How a statevector trajectory picks its branch depends on the channel. When
+every Kraus operator is a scaled unitary — every `PauliChannel`, and also
+`Depolarizing` and `PhaseDamping` in any dimension — the branch probabilities
+are fixed constants rather than functions of the state, so the shot draws
+straight from them and applies only the operator it drew (*Pauli sampling*).
+Since a physical error probability is small, that draw is usually the identity
+and the occurrence costs nothing at all. Channels that move population between
+levels, such as `AmplitudeDamping`, have to be weighed against the state
+instead, and are correspondingly more expensive per occurrence.
+
+Both are the same estimator of the same channel and consume one random draw
+per occurrence, so which one a channel takes changes cost, never semantics or
+the seeded result.
 
 ## Device-authored noise
 

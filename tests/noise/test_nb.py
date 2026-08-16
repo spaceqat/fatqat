@@ -12,10 +12,12 @@ pytest.importorskip("numba")
 
 # pylint: disable=wrong-import-position
 import fatqat as fq
-from fatqat.noise import AmplitudeDamping, Depolarizing, PhaseDamping
+from fatqat.noise import AmplitudeDamping, Depolarizing, PauliChannel, PhaseDamping
+from fatqat.noise.base import _unitary_branch_probabilities
 from fatqat.noise.catalog import (
     amplitude_damping_rule,
     depolarizing_rule,
+    pauli_channel_rule,
     phase_damping_rule,
 )
 from fatqat.noise.nb import (
@@ -243,20 +245,47 @@ def test_compile_readout_table_rejects_confusions_that_do_not_align():
 def test_compile_channel_table_is_empty_but_typed_without_channels():
     # A channel-free plan still hands the kernel arrays; only their dtypes and
     # emptiness matter for Numba's typing.
-    kra_ptr, num_kraus, local_dim, off_ptr, comp_ptr, comp_len, *pools = (
-        _compile_channel_table([])
-    )
+    (
+        kra_ptr,
+        num_kraus,
+        local_dim,
+        off_ptr,
+        comp_ptr,
+        comp_len,
+        cdf_ptr,
+        mmat_diag,
+        *pools,
+    ) = _compile_channel_table([])
 
-    for array in (kra_ptr, num_kraus, local_dim, off_ptr, comp_ptr, comp_len):
+    for array in (
+        kra_ptr,
+        num_kraus,
+        local_dim,
+        off_ptr,
+        comp_ptr,
+        comp_len,
+        cdf_ptr,
+        mmat_diag,
+    ):
         assert array.dtype == np.int64
         assert array.size == 0
-    kra_flat, mmat_flat, off_flat, comp_stride_flat, comp_dim_flat = pools
+    (
+        kra_flat,
+        mmat_flat,
+        off_flat,
+        comp_stride_flat,
+        comp_dim_flat,
+        cdf_flat,
+        ident_flat,
+    ) = pools
     for array in (kra_flat, mmat_flat):
         assert array.dtype == np.complex128
         assert array.size == 0
-    for array in (off_flat, comp_stride_flat, comp_dim_flat):
+    for array in (off_flat, comp_stride_flat, comp_dim_flat, ident_flat):
         assert array.dtype == np.int64
         assert array.size == 0
+    assert cdf_flat.dtype == np.float64
+    assert cdf_flat.size == 0
 
 
 def test_compile_channel_table_lays_out_two_channels_back_to_back():
@@ -274,11 +303,15 @@ def test_compile_channel_table_lays_out_two_channels_back_to_back():
         off_ptr,
         comp_ptr,
         comp_len,
+        cdf_ptr,
+        mmat_diag,
         kra_flat,
         mmat_flat,
         off_flat,
         comp_stride_flat,
         comp_dim_flat,
+        cdf_flat,
+        ident_flat,
     ) = _compile_channel_table(entries)
 
     assert num_kraus.tolist() == [4, 3]
@@ -293,14 +326,72 @@ def test_compile_channel_table_lays_out_two_channels_back_to_back():
     assert comp_len.tolist() == [1, 1]
     assert comp_stride_flat.tolist() == [2, 1]
     assert comp_dim_flat.tolist() == [3, 2]
-    # Row-major per operator, operators in Kraus order.
-    assert np.array_equal(kra_flat[:4].reshape(2, 2), qubit_ops[0])
-    assert np.array_equal(kra_flat[16:25].reshape(3, 3), qutrit_ops[0])
+    # Row-major per operator, operators in Kraus order. Both channels are
+    # scaled unitaries, so each operator is stored divided by its own scale -
+    # K_0 being a multiple of the identity lands in the pool as the identity.
+    assert np.allclose(kra_flat[:4].reshape(2, 2), np.eye(2))
+    assert np.allclose(kra_flat[16:25].reshape(3, 3), np.eye(3))
+    scale = np.sqrt(_unitary_branch_probabilities(qubit_ops)[1])
+    assert np.allclose(kra_flat[4:8].reshape(2, 2), qubit_ops[1] / scale)
     # M_i = K_i^dagger K_i shares the Kraus pool's layout and its per-channel
-    # pointer, one d x d Hermitian block per operator, in Kraus order.
+    # pointer, one d x d Hermitian block per operator, in Kraus order - taken
+    # of whatever the pool holds, so a scaled operator's block is I.
     assert mmat_flat.size == 16 + 27
-    k0 = qubit_ops[0]
-    assert np.allclose(mmat_flat[:4].reshape(2, 2), k0.conj().T @ k0)
+    assert np.allclose(mmat_flat[:4].reshape(2, 2), np.eye(2))
+    # Each carries a branch-cdf block plus parallel identity flags marking K_0
+    # as the branch to skip. A cdf is non-decreasing and ends at exactly 1.
+    assert cdf_ptr.tolist() == [0, 4]
+    assert cdf_flat.size == 4 + 3
+    for block in (cdf_flat[:4], cdf_flat[4:]):
+        assert np.all(np.diff(block) >= 0)
+        assert block[-1] == 1.0
+    assert ident_flat.tolist() == [1, 0, 0, 0, 1, 0, 0]
+    # Both are scaled unitaries, so every M_i is a multiple of the identity.
+    assert mmat_diag.tolist() == [1, 1]
+
+
+def test_compile_channel_table_flags_only_the_scaled_unitary_channels():
+    # The decision is per channel, not per plan.
+    pauli_ops = _kraus_for(PauliChannel({"X": 0.1, "Z": 0.05}), pauli_channel_rule, 2)
+    damping_ops = _kraus_for(AmplitudeDamping(p=(0.2,)), amplitude_damping_rule, 2)
+    layout = (np.array([0, 1]), np.array([2]), np.array([2]))
+    entries = [(pauli_ops, *layout), (damping_ops, *layout)]
+
+    (
+        _kra_ptr,
+        _num_kraus,
+        _local_dim,
+        _off_ptr,
+        _comp_ptr,
+        _comp_len,
+        cdf_ptr,
+        _mmat_diag,
+        *pools,
+    ) = _compile_channel_table(entries)
+    cdf_flat, ident_flat = pools[-2], pools[-1]
+
+    # Only the Pauli channel's three operators reach the cdf and identity
+    # pools; the damping channel contributes nothing to either.
+    assert cdf_ptr.tolist() == [0, -1]
+    assert np.allclose(cdf_flat, np.cumsum([0.85, 0.1, 0.05]))
+    assert ident_flat.tolist() == [1, 0, 0]
+
+
+def test_compile_channel_table_flags_a_diagonal_weighing_by_content():
+    # Amplitude damping's M_i are diagonal; a channel measuring in a rotated
+    # basis is the negative case.
+    damping_ops = _kraus_for(AmplitudeDamping(p=(0.2,)), amplitude_damping_rule, 2)
+    rotated_ops = (
+        np.array([[1.0, 1.0], [0.0, 0.0]], dtype=complex) / np.sqrt(2),
+        np.array([[1.0, -1.0], [0.0, 0.0]], dtype=complex) / np.sqrt(2),
+    )
+    assert np.allclose(sum(k.conj().T @ k for k in rotated_ops), np.eye(2))
+    layout = (np.array([0, 1]), np.array([2]), np.array([2]))
+    entries = [(damping_ops, *layout), (rotated_ops, *layout)]
+
+    mmat_diag = _compile_channel_table(entries)[7]
+
+    assert mmat_diag.tolist() == [1, 0]
 
 
 def test_compile_channel_table_rejects_a_layout_of_the_wrong_local_dimension():

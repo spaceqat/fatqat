@@ -475,6 +475,34 @@ def test_numba_fused_channel_kernel_matches_numpy_on_a_qudit_dynamic_plan():
     assert _total_variation(counts_for("numba"), counts_for("numpy"), 400) < 0.05
 
 
+def test_reduced_diagonal_matches_the_full_reduced_density_matrix():
+    # The marginal the diagonal weighing reads must be the diagonal of what
+    # the general path builds, for any target tuple and mix of dimensions.
+    pytest.importorskip("numba")
+    from fatqat.simulator._engine.nb import (
+        NumbaSVEngine,
+        _reduced_density,
+        _reduced_diagonal,
+    )
+
+    dims = (2, 3, 2)
+    size = 12
+    rng = np.random.default_rng(5)
+    state = rng.normal(size=size) + 1j * rng.normal(size=size)
+    state /= np.linalg.norm(state)
+
+    engine = NumbaSVEngine()
+    engine.initialize(dims, 0)
+    for targets in ((0,), (1,), (0, 2), (2, 1)):
+        offsets, comp_strides, comp_dims, _, _ = engine._build_apply_plan(targets)
+        cosets = size // offsets.shape[0]
+        full = _reduced_density(state, offsets, comp_strides, comp_dims, cosets)
+        marginal = _reduced_diagonal(state, offsets, comp_strides, comp_dims, cosets)
+
+        assert np.allclose(marginal, np.real(np.diagonal(full)))
+        assert np.isclose(marginal.sum(), 1.0)
+
+
 def test_numba_dm_channel_matches_numpy_on_a_qudit_channel_plan():
     # The DM channel path applies the numba-built super-operator in one pass
     # while NumPy sums per-Kraus sandwiches, so the two agree numerically not

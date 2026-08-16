@@ -5,12 +5,16 @@ import pytest
 
 import fatqat as fq
 from fatqat.errors import BackendValidationError
+from fatqat.implementation.matrices import _X
 from fatqat.noise.catalog import (
     AmplitudeDamping,
     Depolarizing,
+    PauliChannel,
     PhaseDamping,
+    _pauli_string_matrix,
     amplitude_damping_rule,
     depolarizing_rule,
+    pauli_channel_rule,
     phase_damping_rule,
 )
 
@@ -204,6 +208,99 @@ def test_amplitude_damping_descriptor_validation():
 
 def test_descriptors_hold_parameters_not_arrays():
     channel = Depolarizing(p=0.1)
+    assert not any(
+        isinstance(v, np.ndarray) for v in vars(channel).values()
+    ), "descriptors must never precompute or store Kraus arrays"
+
+
+# --- PauliChannel ---
+
+
+def test_pauli_channel_leads_with_the_unassigned_identity_weight():
+    channel = PauliChannel({"X": 0.01, "Z": 0.02})
+
+    assert channel.terms == (("I", 0.97), ("X", 0.01), ("Z", 0.02))
+    assert channel.num_subsystems == 1
+
+
+def test_pauli_channel_accepts_a_pair_sequence_and_an_explicit_identity():
+    from_pairs = PauliChannel([("XX", 0.05), ("ZI", 0.01)])
+    with_identity = PauliChannel({"II": 0.94, "XX": 0.05, "ZI": 0.01})
+
+    assert from_pairs.terms == with_identity.terms
+    assert from_pairs.num_subsystems == 2
+
+
+def test_pauli_channel_rejects_an_identity_the_other_terms_contradict():
+    with pytest.raises(ValueError, match="conflicts"):
+        PauliChannel({"I": 0.5, "X": 0.1})
+
+
+@pytest.mark.parametrize(
+    "bad_terms",
+    [
+        {},
+        {"X": 0.6, "Z": 0.7},
+        {"X": 0.1, "YY": 0.1},
+        {"Q": 0.1},
+        {"": 0.1},
+        {"X": 1.5},
+        [("X", 0.1), ("X", 0.2)],
+    ],
+)
+def test_pauli_channel_descriptor_validation(bad_terms):
+    with pytest.raises(ValueError):
+        PauliChannel(bad_terms)
+
+
+@pytest.mark.parametrize("width", [1, 2])
+def test_pauli_channel_action_matches_its_term_sum(width):
+    terms = {"X" * width: 0.1, "Z" * width: 0.05}
+    channel = PauliChannel(terms)
+    kraus_ops = pauli_channel_rule(channel, targets=_refs(*([2] * width)))
+
+    dim = 2**width
+    assert len(kraus_ops) == 3
+    _assert_cptp(kraus_ops, dim)
+    rho = _random_rho(dim)
+    expected = sum(
+        p * _pauli_string_matrix(s) @ rho @ _pauli_string_matrix(s).conj().T
+        for s, p in channel.terms
+    )
+    assert np.allclose(_apply(kraus_ops, rho), expected)
+
+
+def test_pauli_channel_reproduces_depolarizing_at_one_qubit():
+    # Depolarizing(p) at d=2 is the uniform Pauli channel with weight p/4 each.
+    p = 0.3
+    pauli = pauli_channel_rule(
+        PauliChannel({"X": p / 4, "Y": p / 4, "Z": p / 4}), targets=_refs(2)
+    )
+    rho = _random_rho(2)
+
+    expected = _apply(depolarizing_rule(Depolarizing(p=p), targets=_refs(2)), rho)
+    assert np.allclose(_apply(pauli, rho), expected)
+
+
+def test_pauli_string_reads_left_to_right_as_most_to_least_significant():
+    # string[0] describes targets[0], which is the local matrix's MSB - the
+    # same convention gate matrices use, and the reverse of Qiskit's Pauli.
+    assert np.allclose(_pauli_string_matrix("XI"), np.kron(_X, np.eye(2)))
+    assert np.allclose(_pauli_string_matrix("IX"), np.kron(np.eye(2), _X))
+
+
+def test_pauli_channel_rejects_non_qubit_targets():
+    with pytest.raises(BackendValidationError, match="qubits only"):
+        pauli_channel_rule(PauliChannel({"X": 0.1}), targets=_refs(3))
+
+
+def test_pauli_channel_rejects_a_target_count_its_terms_do_not_cover():
+    with pytest.raises(BackendValidationError):
+        pauli_channel_rule(PauliChannel({"X": 0.1}), targets=_refs(2, 2))
+
+
+def test_pauli_channel_holds_parameters_not_arrays():
+    channel = PauliChannel({"X": 0.1})
     assert not any(
         isinstance(v, np.ndarray) for v in vars(channel).values()
     ), "descriptors must never precompute or store Kraus arrays"
