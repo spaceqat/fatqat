@@ -171,9 +171,8 @@ def _lower_reset_boundary(
 ) -> ResetStep:
     """Resolve the reset indices and condition shared by backend families.
 
-    Backend-specific policy belongs in each caller before this boundary. For
-    example, the matrix backend rejects channel noise attached to Reset,
-    whereas the pulse backend rejects gate-keyed channel noise globally.
+    NoiseModel admission rejects Reset-bound noise, so this boundary owns only
+    reset index and condition lowering.
     """
     return ResetStep(
         reset_indices=tuple(
@@ -193,7 +192,7 @@ def _resolve_confusions(
 ) -> tuple[Any, ...] | None:
     """Resolve per-subsystem readout confusion matrices for one measurement.
 
-    ``readout_error_for`` is the single source of truth per subsystem; this
+    ``_readout_confusion_for`` is the single source of truth per subsystem; this
     function only collapses an all-``None`` resolution back to ``None`` so
     the noise-free (and the common) case allocates nothing on the step.
     Selection matches against each measured ref's RegisterRef identity and/or
@@ -216,8 +215,9 @@ def _resolve_confusions(
     for target, measured, reported_map in zip(
         measured_targets, measured_indices, reported_digit_maps
     ):
-        confusion = noise_model.readout_error_for(target, resource_layout)
-        if confusion is not None:
+        declaration = noise_model._readout_confusion_for(target, resource_layout)
+        confusion = None if declaration is None else declaration.matrix
+        if declaration is not None:
             reported_dim = max(reported_map) + 1
             if confusion.shape != (reported_dim, reported_dim):
                 raise BackendValidationError(

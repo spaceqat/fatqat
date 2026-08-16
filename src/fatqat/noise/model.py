@@ -1,543 +1,350 @@
-"""NoiseModel: the routing container mapping scopes and targets to channels.
-
-A `NoiseModel` holds *which* channel descriptors apply, *where*, and *when* -
-selection facts only, no Kraus arrays and no execution logic. An optional
-operation selector defines the activation scope: ``operation=None`` is
-always-on, while an operation class selects matching occurrences.
-It is standalone and reusable: independent of any `Program`, usable across
-backends, and passed to a backend by reference via its ``noise=`` constructor
-parameter. Resolution into concrete Kraus payloads happens at backend
-lowering, where descriptors meet the `ChannelImplementationMap` and the
-program's resource layout.
-
-Gate-channel target selectors come in two identity spaces, both compared
-directly - never through the private engine allocation:
-
-- ``tuple[RegisterRef, ...]`` - program refs, how a user pins noise
-  to their own program's subsystems. Matched by ref equality against the
-  lowered occurrence's targets.
-- ``tuple[DeviceOperand, ...]`` - physical, opaque device resource labels, how a
-  backend authors default noise for its device before any user program (or
-  register) exists. Matched against
-  :py:meth:`~fatqat.resource_layout.ResourceLayout.device_labels_for` for the
-  lowered occurrence's targets.
-
-``slots`` is a third, orthogonal concept: zero-based positional indices in a
-matched occurrence's target tuple. It is neither a program ref, a device
-label, nor an engine index; it determines the channel's execution extent.
-
-A bare integer selector is a physical device-resource label, never a flat
-engine index and never converted into a `RegisterRef`. See
-docs/superpowers/specs/2026-07-22-fatqat-resource-layout-and-noise-selector-design.md.
-
-Readout-error selectors share the same two identity spaces, but the stored
-selector is scalar - ``None``, one `RegisterRef`, or one physical device
-resource label - never a tuple. A RegisterRef selector is matched by equality
-against the measured target; a physical selector is matched against
-:py:meth:`~fatqat.resource_layout.ResourceLayout.device_label` for that
-target. See `readout_error_for`.
-"""
+"""Backend-neutral authoring, scope validation, and selection for noise."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
-
-import numpy as np
+from typing import Any, overload
 
 from ..errors import BackendValidationError
 from ..implementation._operation_registry import _resolve_operation_class
-from ..operations import BarrierGate, Operation
+from ..operations import BarrierGate, LoadAtoms, Operation, ResetGate
 from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView
 from ..resource_layout import DeviceOperand, ResourceLayout
 from .base import Channel
+from .loss import Loss
+from .readout import ReadoutConfusion
 
-# One entry per add_channel() call: an all-targets fallback (None), a
-# RegisterRef-tuple selector, or a physical device-label-tuple selector
-# (homogeneous, validated).
-_GateSelector = tuple[RegisterRef, ...] | tuple[DeviceOperand, ...] | None
-
-# What add_channel() itself accepts as `targets`: everything _GateSelector
-# does, plus a bare RegisterRef/device label as shorthand for a one-element
-# tuple (only valid for a fixed arity-1 operation - _normalize_selector
-# wraps it and the existing length check rejects it otherwise).
-_GateTargetsArg = _GateSelector | RegisterRef | DeviceOperand
-
-# One entry per add_readout_error() call: an all-subsystems fallback (None),
-# a RegisterRef selector, or a physical device-label selector
-# (scalar, unlike _GateSelector - a readout error names one measured
-# subsystem, not an occurrence's whole target tuple).
+_Selector = tuple[RegisterRef, ...] | tuple[DeviceOperand, ...] | None
+_TargetsArg = _Selector | RegisterRef | DeviceOperand
 _ReadoutSelector = RegisterRef | DeviceOperand | None
-_Slots = tuple[int, ...] | None
+_TargetPositions = tuple[int, ...] | None
+_Declaration = Channel | Loss
+_UNSET = object()
 
 
-@dataclass(frozen=True)
-class _ChannelEntry:
-    """One channel registration with activation and target scope."""
+@dataclass(frozen=True, slots=True)
+class _NoiseRegistration:
+    """One physical declaration plus its backend-neutral routing facts."""
 
+    declaration: _Declaration
     operation: type[Operation] | None
-    selector: _GateSelector
-    slots: _Slots
-    channel: Channel
+    selector: _Selector
+    target_positions: _TargetPositions
 
 
 class NoiseModel:
-    """Selection container for channel-representable noise.
+    """Mutable authoring container for physical noise declarations.
 
-    Each entry combines a descriptor, an optional operation activation scope,
-    and a target selector. Specific targets replace defaults within the same
-    activation scope; repeated registrations accumulate as independent
-    physical mechanisms in registration order.
+    ``operation`` is structural: a concrete operation attaches dynamical noise
+    to matching occurrences; omitting it declares local background noise.
+    ``targets`` restricts operands and never means "after every gate".
 
-    Attributes:
-        metadata: Free-form user annotations, never interpreted here.
-
-    Examples:
-        Depolarize every ``X`` gate and run under density-matrix semantics:
-
-        >>> import fatqat as fq
-        >>> import fatqat.operations as op
-        >>> noise = fq.NoiseModel()
-        >>> noise.add_channel(fq.noise.Depolarizing(p=0.2), operation=op.X)
-        >>> program = fq.Program(1)
-        >>> program.add(op.X, 0)
-        >>> result = fq.simulator.Simulator(method="DM", noise=noise).run(
-        ...     program,
-        ...     result_config={"counts": False, "final_state": True},
-        ... ).result()
-        >>> result.get_density_matrix()
-        array([[0.1+0.j, 0. +0.j],
-               [0. +0.j, 0.9+0.j]])
+    Backends copy the two registration lists when they are constructed. Built-
+    in declarations are immutable; custom `Channel` declarations must be
+    treated as effectively immutable after registration.
     """
 
     def __init__(self) -> None:
-        self._channels: list[_ChannelEntry] = []
-        self._readout_errors: list[tuple[_ReadoutSelector, np.ndarray]] = []
-        self.metadata: dict[str, Any] = {}
-
-    def add_channel(
-        self,
-        channel: Channel,
-        *,
-        operation: Operation | type[Operation] | None = None,
-        targets: _GateTargetsArg = None,
-        slots: tuple[int, ...] | int | None = None,
-    ) -> None:
-        """Register an always-on or operation-scoped channel.
-
-        The descriptor is first and activation scope is explicit through the
-        keyword-only ``operation`` argument::
-
-            noise.add_channel(AmplitudeDamping(rate=0.01), targets=(q[0],))
-            noise.add_channel(
-                AmplitudeDamping(rate=0.01),
-                operation=op.X,
-                targets=(q[0],),
-            )
-
-        Omitting ``operation`` means always-on. Supplying it activates the
-        channel only for matching operation occurrences.
-
-        Args:
-            channel: The channel descriptor.
-            operation: Optional :py:class:`~fatqat.operations.Operation`
-                instance
-                (e.g. ``op.X``) or subclass, normalized to the class for
-                matching. ``None`` means always-on. `Barrier` is rejected.
-            targets: For operation-scoped noise, ``None`` applies to every
-                occurrence. A tuple
-                of quantum :py:class:`~fatqat.registers.RegisterRef` pins the
-                channel to one program-target tuple; a tuple of
-                opaque device resource labels (e.g. ``int``, ``str``) pins it
-                to one physical occurrence in the backend's device address
-                space. The two forms cannot be mixed in one selector, and a
-                :py:class:`~fatqat.registers.RegisterView` is never accepted
-                (scalar refs only). For a fixed arity-1 operation, a bare
-                `RegisterRef` or device label is also accepted as shorthand
-                for a one-element tuple. For always-on noise, ``None`` applies
-                independently to every physical subsystem and one scalar or
-                one-element tuple selects a specific subsystem.
-            slots: For operation-scoped noise, ``None`` applies the channel jointly to the
-                whole occurrence. An int or strictly increasing tuple of
-                zero-based occurrence positions scopes the channel to those
-                subsystems instead. Always-on noise does not accept slots.
-
-        Selection semantics, precisely:
-
-        - Entries matching the same occurrence accumulate, in registration
-          order - each is an independent mechanism, so attaching a channel
-          twice applies it twice.
-        - A specific-target entry replaces the all-targets default of the
-          same extent on the occurrences it matches, and only those.
-          It can therefore *lower* the noise on its target by evicting a
-          stronger default; restate the default at the specific level to
-          keep it.
-        - A RegisterRef selector is compared to the lowered occurrence's target
-          refs by equality; a physical selector is compared to the lowered
-          occurrence's device resource labels
-          (:py:meth:`~fatqat.resource_layout.ResourceLayout.device_labels_for`)
-          by equality. See :py:meth:`channels_for`.
-
-        Raises:
-            TypeError: If ``operation`` is not an operation, ``channel`` is
-                not a `Channel`, or ``targets`` mixes or mistypes selector
-                elements (including a `RegisterView`).
-            ValueError: If ``operation`` is `Barrier`, ``targets`` is empty,
-                or its length does not match a fixed-arity operation.
-        """
-        if not isinstance(channel, Channel):
-            raise TypeError(f"expected a Channel descriptor, got {channel!r}")
-
-        if operation is None:
-            if slots is not None:
-                raise ValueError("always-on channel noise does not accept slots")
-            if channel.num_subsystems != 1:
-                raise ValueError(
-                    "always-on channel noise currently requires a "
-                    "single-subsystem descriptor"
-                )
-            selector = _normalize_always_on_selector(targets)
-            op_cls = None
-            normalized_slots = None
-        else:
-            op_cls = _resolve_operation_class(operation)
-            if op_cls._is_direct_control:
-                raise ValueError(
-                    f"{op_cls.__name__} is a direct-control operation and cannot "
-                    "have operation-scoped noise"
-                )
-            if op_cls is BarrierGate:
-                raise ValueError(
-                    "Barrier is a compiler marker with no execution semantics; "
-                    "channel noise cannot attach to it"
-                )
-            selector = _normalize_selector(op_cls, targets)
-            normalized_slots = _normalize_slots(op_cls, channel, selector, slots)
-        self._channels.append(
-            _ChannelEntry(op_cls, selector, normalized_slots, channel)
+        self._noise_registrations: list[_NoiseRegistration] = []
+        self._readout_registrations: list[tuple[_ReadoutSelector, ReadoutConfusion]] = (
+            []
         )
 
-    def channels_for(
+    @overload
+    def add(
+        self,
+        declaration: ReadoutConfusion,
+        *,
+        targets: _ReadoutSelector = None,
+    ) -> None: ...
+
+    @overload
+    def add(
+        self,
+        declaration: _Declaration,
+        *,
+        operation: Operation | type[Operation] | None = None,
+        targets: _TargetsArg = None,
+        target_positions: tuple[int, ...] | int | None = None,
+    ) -> None: ...
+
+    def add(
+        self,
+        declaration: _Declaration | ReadoutConfusion,
+        *,
+        operation: Operation | type[Operation] | None | object = _UNSET,
+        targets: _TargetsArg = None,
+        target_positions: tuple[int, ...] | int | None | object = _UNSET,
+    ) -> None:
+        """Register one declaration after complete, atomic validation."""
+        if isinstance(declaration, ReadoutConfusion):
+            if operation is not _UNSET:
+                raise TypeError(
+                    "ReadoutConfusion is intrinsically measurement-bound; "
+                    "omit operation"
+                )
+            if target_positions is not _UNSET:
+                raise TypeError("ReadoutConfusion does not accept target_positions")
+            selector = _normalize_readout_selector(targets)
+            _check_readout_conflict(self._readout_registrations, selector)
+            self._readout_registrations.append((selector, declaration))
+            return
+
+        if not isinstance(declaration, (Channel, Loss)):
+            raise TypeError(
+                "declaration must be a Channel, Loss, or ReadoutConfusion, "
+                f"got {declaration!r}"
+            )
+
+        op_value = None if operation is _UNSET else operation
+        positions_value = None if target_positions is _UNSET else target_positions
+        if op_value is None:
+            if targets is None:
+                raise ValueError(
+                    "background noise requires exactly one target; omitting "
+                    "operation is not shorthand for every gate"
+                )
+            if positions_value is not None:
+                raise ValueError("background noise does not accept target_positions")
+            selector = _normalize_background_selector(targets)
+            if _declaration_arity(declaration) != 1:
+                raise ValueError(
+                    "background noise requires a single-subsystem declaration; "
+                    f"{type(declaration).__name__} is not authored with arity 1"
+                )
+            op_cls = None
+            positions = None
+        else:
+            op_cls = _normalize_noise_operation(op_value)
+            selector = _normalize_occurrence_selector(op_cls, targets)
+            positions = _normalize_target_positions(
+                op_cls, declaration, selector, positions_value
+            )
+
+        proposed = _NoiseRegistration(declaration, op_cls, selector, positions)
+        _check_noise_conflict(self._noise_registrations, proposed)
+        self._noise_registrations.append(proposed)
+
+    def _noise_for_occurrence(
         self,
         operation: Operation | type[Operation],
         targets: tuple[RegisterRef, ...],
         resource_layout: ResourceLayout,
-    ) -> list[tuple[Channel, tuple[RegisterRef, ...]]]:
-        """Return the channels selected for one lowered operation occurrence.
-
-        A RegisterRef selector matches when it equals ``targets``; a physical
-        selector matches when it equals
-        ``resource_layout.device_labels_for(targets)``. Both kinds of specific
-        match accumulate (in registration order); all-targets (``None``)
-        entries apply only when no specific selector of their same extent
-        matched. Returns ``(channel, extent)`` pairs.
-
-        Args:
-            operation: The occurrence's operation (instance or class).
-            targets: The occurrence's program target refs, as lowered from
-                the program (never engine indices).
-            resource_layout: The run's public resource layout, used to
-                resolve physical selectors.
-        """
+    ) -> list[tuple[_Declaration, tuple[RegisterRef, ...]]]:
+        """Select declarations for one exact ordered operation occurrence."""
         op_cls = _resolve_operation_class(operation)
-        entries = [entry for entry in self._channels if entry.operation is op_cls]
-        if not entries:
-            return []
-        targets = tuple(targets)
-        classified: list[bool | None] = []
-        has_specific: dict[_Slots, bool] = {}
-        device_operands: tuple[DeviceOperand, ...] | None = None
-        for entry in entries:
-            selector = entry.selector
-            if selector is None:
-                classified.append(False)
-            elif _is_ref_selector(selector):
-                if selector == targets:
-                    classified.append(True)
-                    has_specific[entry.slots] = True
-                else:
-                    classified.append(None)
-            else:
-                if device_operands is None:
-                    device_operands = resource_layout.device_labels_for(targets)
-                if device_operands == selector:
-                    classified.append(True)
-                    has_specific[entry.slots] = True
-                else:
-                    classified.append(None)
-
-        resolved: list[tuple[Channel, tuple[RegisterRef, ...]]] = []
-        for entry, status in zip(entries, classified):
-            if status is None or (status is False and has_specific.get(entry.slots)):
+        occurrence = tuple(targets)
+        physical: tuple[DeviceOperand, ...] | None = None
+        matches: list[_NoiseRegistration] = []
+        for registration in self._noise_registrations:
+            if registration.operation is not op_cls:
                 continue
-            if entry.slots is not None and max(entry.slots) >= len(targets):
+            selector = registration.selector
+            if selector is None or (
+                _is_ref_selector(selector) and selector == occurrence
+            ):
+                matches.append(registration)
+                continue
+            if not _is_ref_selector(selector):
+                if physical is None:
+                    physical = resource_layout.device_labels_for(occurrence)
+                if selector == physical:
+                    matches.append(registration)
+
+        _reject_actual_noise_conflicts(matches)
+        resolved: list[tuple[_Declaration, tuple[RegisterRef, ...]]] = []
+        for registration in matches:
+            positions = registration.target_positions
+            if positions is not None and max(positions) >= len(occurrence):
                 raise BackendValidationError(
-                    f"slot {max(entry.slots)} is out of range for {type(entry.channel).__name__} "
-                    f"on this {len(targets)}-subsystem occurrence"
+                    f"target position {max(positions)} is out of range for "
+                    f"{type(registration.declaration).__name__} on this "
+                    f"{len(occurrence)}-subsystem {op_cls.__name__} occurrence"
                 )
             extent = (
-                targets
-                if entry.slots is None
-                else tuple(targets[index] for index in entry.slots)
+                occurrence
+                if positions is None
+                else tuple(occurrence[index] for index in positions)
             )
-            expected = entry.channel.num_subsystems
+            expected = _declaration_arity(registration.declaration)
             if expected is not None and len(extent) != expected:
                 raise BackendValidationError(
-                    f"{type(entry.channel).__name__} acts on {expected} subsystem(s), "
-                    f"got an extent of {len(extent)}"
+                    f"{type(registration.declaration).__name__} acts on "
+                    f"{expected} subsystem(s), got an extent of {len(extent)} "
+                    f"for {op_cls.__name__}"
                 )
-            resolved.append((entry.channel, extent))
+            resolved.append((registration.declaration, extent))
         return resolved
 
-    def add_readout_error(
-        self,
-        confusion_matrix: np.ndarray,
-        *,
-        target: _ReadoutSelector = None,
-    ) -> None:
-        """Attach a classical readout confusion matrix to measurements.
-
-        Readout error is classical, not a quantum channel: the physical
-        collapse is always true, and only the *reported* classical value is
-        resampled through the confusion matrix. Feedforward conditions read
-        the reported value (real control electronics see only the readout
-        result); qubit reuse and state export see the true post-measurement
-        state. It therefore never changes execution-strategy classification.
-
-        Args:
-            confusion_matrix: ``(d, d)`` column-stochastic matrix with
-                ``C[i, j] = P(report i | true j)``. Copied and frozen; its
-                dimension is checked against the measured subsystem at
-                lowering.
-            target: ``None`` (default) applies to every measured subsystem. A
-                quantum :py:class:`~fatqat.registers.RegisterRef` pins it to
-                one program subsystem (matched by ref equality); an opaque
-                device resource label (e.g. ``int``, ``str``) pins it to one
-                physical measured subsystem in the backend's device address
-                space (matched via
-                :py:meth:`~fatqat.resource_layout.ResourceLayout.device_label`).
-                A :py:class:`~fatqat.registers.RegisterView` is never
-                accepted (scalar refs only). Among entries matching the same
-                subsystem, the most recently registered one wins - readout
-                selection does not accumulate like gate-channel selection.
-
-        Raises:
-            TypeError: If ``target`` is a `RegisterView`, or a `RegisterRef`
-                not into a `QuantumRegister`.
-            ValueError: If the matrix is not square, at least ``2 x 2``, with
-                entries in ``[0, 1]`` and columns summing to 1.
-        """
-        matrix = np.array(confusion_matrix, dtype=float, copy=True)
-        if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
-            raise ValueError(
-                f"confusion matrix must be square, got shape {matrix.shape}"
-            )
-        if matrix.shape[0] < 2:
-            raise ValueError(
-                f"confusion matrix side length must be >= 2, got {matrix.shape[0]}"
-            )
-        if np.any(matrix < 0) or np.any(matrix > 1):
-            raise ValueError("confusion matrix entries must be in [0, 1]")
-        if not np.allclose(matrix.sum(axis=0), 1.0):
-            raise ValueError(
-                "confusion matrix must be column-stochastic: each column "
-                "C[:, j] = P(report | true j) must sum to 1"
-            )
-        if isinstance(target, RegisterView):
-            raise TypeError(
-                "readout-error target must be a scalar RegisterRef or a "
-                f"device resource label, not a RegisterView; got {target!r}"
-            )
-        if isinstance(target, RegisterRef) and not isinstance(
-            target.register, QuantumRegister
-        ):
-            raise TypeError(
-                "readout-error target refs must point into a "
-                f"QuantumRegister, got a ref into {type(target.register).__name__}"
-            )
-        matrix.flags.writeable = False
-        self._readout_errors.append((target, matrix))
-
-    def always_on_channels_for(
+    def _background_noise_for(
         self,
         target: RegisterRef | None,
         device_label: DeviceOperand,
     ) -> tuple[Channel, ...]:
-        """Resolve always-on channels for one physical device label."""
-        defaults: list[Channel] = []
-        specifics: list[Channel] = []
-        for entry in self._channels:
-            if entry.operation is not None:
+        """Select local background declarations for one physical subsystem."""
+        matches: list[_NoiseRegistration] = []
+        for registration in self._noise_registrations:
+            if registration.operation is not None:
                 continue
-            selector = entry.selector
-            if selector is None:
-                defaults.append(entry.channel)
-            elif _is_ref_selector(selector):
+            selector = registration.selector
+            if _is_ref_selector(selector):
                 if target is not None and selector == (target,):
-                    specifics.append(entry.channel)
+                    matches.append(registration)
             elif selector == (device_label,):
-                specifics.append(entry.channel)
-        return tuple(specifics if specifics else defaults)
+                matches.append(registration)
+        _reject_actual_noise_conflicts(matches)
+        return tuple(registration.declaration for registration in matches)
 
-    def readout_error_for(
-        self, target: RegisterRef, resource_layout: ResourceLayout
-    ) -> np.ndarray | None:
-        """Return the confusion matrix selected for one measured subsystem.
-
-        A RegisterRef selector matches when it equals ``target``; a physical
-        selector matches when it equals
-        ``resource_layout.device_label(target)``. Readout errors do not
-        accumulate: a matching specific selector replaces the all-target
-        (``None``) default, and among several matching specific selectors
-        the most recently registered one wins.
-
-        Args:
-            target: The measured subsystem's program ref, as lowered from
-                the program (never an engine index).
-            resource_layout: The run's public resource layout, used to
-                resolve physical selectors.
-        """
-        specific = fallback = None
-        device_label_known = False
-        device_label: DeviceOperand = None
-        for selector, matrix in self._readout_errors:
+    def _readout_confusion_for(
+        self,
+        target: RegisterRef,
+        resource_layout: ResourceLayout,
+    ) -> ReadoutConfusion | None:
+        """Select the unique readout declaration for one measured operand."""
+        device_label: DeviceOperand | object = _UNSET
+        matches: list[tuple[_ReadoutSelector, ReadoutConfusion]] = []
+        for selector, declaration in self._readout_registrations:
             if selector is None:
-                fallback = matrix
+                matches.append((selector, declaration))
             elif isinstance(selector, RegisterRef):
                 if selector == target:
-                    specific = matrix
+                    matches.append((selector, declaration))
             else:
-                if not device_label_known:
+                if device_label is _UNSET:
                     device_label = resource_layout.device_label(target)
-                    device_label_known = True
-                if device_label == selector:
-                    specific = matrix
-        return specific if specific is not None else fallback
+                if selector == device_label:
+                    matches.append((selector, declaration))
+        if len(matches) > 1:
+            selectors = ", ".join(repr(selector) for selector, _ in matches)
+            raise BackendValidationError(
+                "multiple ReadoutConfusion registrations match measured target "
+                f"{target!r}: {selectors}"
+            )
+        return matches[0][1] if matches else None
 
-    def validate_for(
+    def _validate_for(
         self,
         program: Program,
         legal_device_operands: frozenset[DeviceOperand],
     ) -> None:
-        """Validate every stored selector's identity legality for one run.
-
-        This checks selector-identity legality only, not selector firing: a
-        valid selector that matches no gate occurrence (or, for readout,
-        names a subsystem that is never measured) is a permitted no-effect
-        entry, not a validation error. A RegisterRef selector is legal when every
-        ref it names belongs to ``program``'s quantum registers; a physical
-        selector is legal when every label it names is a member of the
-        backend-supplied ``legal_device_operands`` universe. That universe may
-        include modeled subsystems not addressed by the run's resource layout.
-        Both stored shapes are checked: tuple gate-channel
-        selectors and scalar readout selectors are validated independently,
-        not through a shared representation.
-
-        Args:
-            program: The program this run will execute; defines the legal
-                program `RegisterRef` space.
-            legal_device_operands: Physical operands the backend accepts for
-                selectors on this run.
-
-        Raises:
-            BackendValidationError: If any stored selector names a
-                `RegisterRef` foreign to ``program`` or a device label absent
-                from ``legal_device_operands``.
-        """
+        """Validate stored logical ownership and physical-label legality."""
         program_refs = frozenset(
-            ref
+            register[index]
             for register in program.quantum_registers
-            for ref in (register[i] for i in range(register.size))
+            for index in range(register.size)
         )
-        for entry in self._channels:
-            selector = entry.selector
+        for registration in self._noise_registrations:
+            _validate_selector_for_run(
+                registration.selector,
+                program_refs,
+                legal_device_operands,
+                "noise",
+            )
+        for selector, _declaration in self._readout_registrations:
             if selector is None:
                 continue
-            if _is_ref_selector(selector):
-                for ref in selector:
-                    if ref not in program_refs:
-                        raise BackendValidationError(
-                            "noise selector names a RegisterRef that is "
-                            f"not part of this program: {ref!r}"
-                        )
-            else:
-                for label in selector:
-                    if label not in legal_device_operands:
-                        raise BackendValidationError(
-                            "noise selector names a device resource "
-                            f"label outside the backend's legal device "
-                            f"universe: {label!r}"
-                        )
+            _validate_selector_for_run(
+                (selector,),
+                program_refs,
+                legal_device_operands,
+                "readout confusion",
+            )
 
-        for selector, _matrix in self._readout_errors:
-            if selector is None:
-                continue
-            if isinstance(selector, RegisterRef):
-                if selector not in program_refs:
-                    raise BackendValidationError(
-                        "readout-error selector names a RegisterRef that is "
-                        f"not part of this program: {selector!r}"
-                    )
-            else:
-                if selector not in legal_device_operands:
-                    raise BackendValidationError(
-                        "readout-error selector names a device resource "
-                        f"label outside the backend's legal device universe: "
-                        f"{selector!r}"
-                    )
+    def _copy(self) -> NoiseModel:
+        """Return an independent registration container sharing declarations."""
+        copied = NoiseModel()
+        copied._noise_registrations = self._noise_registrations.copy()
+        copied._readout_registrations = self._readout_registrations.copy()
+        return copied
 
-    def has_readout_error(self) -> bool:
-        """Return whether any readout-error entry is registered."""
-        return bool(self._readout_errors)
-
-    def has_noise_for(self, operation: Operation | type[Operation]) -> bool:
-        """Return whether any entry is keyed on this operation family."""
-        op_cls = _resolve_operation_class(operation)
-        return any(entry.operation is op_cls for entry in self._channels)
-
-    def channel_types(self) -> frozenset[type[Channel]]:
-        """Return every descriptor type attached anywhere in this model."""
-        return frozenset(type(entry.channel) for entry in self._channels)
-
-    def channels(self) -> tuple[Channel, ...]:
-        """Return every attached channel descriptor instance, in registration order.
-
-        A read-only capability-validation seam: unlike `channel_types()`,
-        this exposes actual instances so a backend can inspect
-        per-instance parameterization (e.g. `AmplitudeDamping`'s
-        probability-vs-rate mode) rather than only class coverage. Never
-        exposes occurrence selectors - callers get descriptors, not where
-        they attach.
-        """
-        return tuple(entry.channel for entry in self._channels)
-
-    def channel_registrations(
+    def _noise_sources(
         self,
-    ) -> tuple[tuple[Channel, type[Operation] | None], ...]:
-        """Return descriptors with their activation scopes for capability checks.
+    ) -> tuple[tuple[_Declaration, type[Operation] | None], ...]:
+        """Project only facts needed for backend capability classification."""
+        return tuple(
+            (registration.declaration, registration.operation)
+            for registration in self._noise_registrations
+        )
 
-        ``operation is None`` denotes always-on scope. Selectors and slots stay
-        private because backend capability reporting needs to know *when* a
-        descriptor acts, not which user or device target selected it.
-        """
-        return tuple((entry.channel, entry.operation) for entry in self._channels)
-
-
-def _is_ref_selector(selector: tuple[DeviceOperand, ...]) -> bool:
-    """Return whether a validated, homogeneous gate selector is RegisterRef-based,
-    as opposed to a physical device-label selector."""
-    return isinstance(selector[0], RegisterRef)
+    def _readout_confusions(self) -> tuple[ReadoutConfusion, ...]:
+        """Project readout values for backend capability classification."""
+        return tuple(
+            declaration for _selector, declaration in self._readout_registrations
+        )
 
 
-def _validate_scalar_selector(selector: Any, label: str) -> None:
-    """Validate a RegisterRef or opaque hashable device label."""
+def _normalize_noise_operation(value: object) -> type[Operation]:
+    op_cls = _resolve_operation_class(value)
+    if op_cls._is_direct_control:
+        raise ValueError(
+            f"{op_cls.__name__} is a direct-control operation and has no "
+            "attachable noise boundary"
+        )
+    if op_cls is BarrierGate:
+        raise ValueError("Barrier is a compiler marker with no noise boundary")
+    if op_cls is LoadAtoms:
+        raise ValueError("LoadAtoms is device initialization with no noise boundary")
+    if op_cls is ResetGate:
+        raise ValueError("Reset has no attached-noise realization")
+    return op_cls
+
+
+def _normalize_occurrence_selector(
+    op_cls: type[Operation], targets: _TargetsArg
+) -> _Selector:
+    if targets is None:
+        return None
+    selector = targets if isinstance(targets, tuple) else (targets,)
+    if not selector:
+        raise ValueError("targets must be None or a non-empty ordered selector")
+    _validate_homogeneous_selector(selector, "noise")
+    arity = op_cls._num_subsystems
+    if arity is not None and len(selector) != arity:
+        raise ValueError(
+            f"{op_cls.__name__} targets {arity} subsystem(s), got a selector "
+            f"of length {len(selector)}"
+        )
+    return selector
+
+
+def _normalize_background_selector(targets: _TargetsArg) -> _Selector:
+    selector = targets if isinstance(targets, tuple) else (targets,)
+    if len(selector) != 1:
+        raise ValueError("background noise targets must select exactly one subsystem")
+    _validate_homogeneous_selector(selector, "background noise")
+    return selector
+
+
+def _normalize_readout_selector(targets: _TargetsArg) -> _ReadoutSelector:
+    if isinstance(targets, tuple):
+        raise TypeError(
+            "ReadoutConfusion targets must be one scalar RegisterRef or device "
+            "label; correlated readout is not supported"
+        )
+    _validate_scalar_selector(targets, "ReadoutConfusion")
+    return targets
+
+
+def _validate_homogeneous_selector(selector: tuple[Any, ...], label: str) -> None:
+    for target in selector:
+        if target is None:
+            raise TypeError(f"{label} physical targets cannot be None")
+        _validate_scalar_selector(target, label)
+    ref_flags = tuple(isinstance(target, RegisterRef) for target in selector)
+    if any(ref_flags) and not all(ref_flags):
+        raise TypeError(
+            f"{label} targets must be all RegisterRef or all physical device labels"
+        )
+
+
+def _validate_scalar_selector(selector: object, label: str) -> None:
     if selector is None:
         return
     if isinstance(selector, RegisterView):
         raise TypeError(
-            f"{label} target must be a scalar RegisterRef or a device "
-            f"resource label, not a RegisterView; got {selector!r}"
+            f"{label} target must be a scalar RegisterRef or physical device "
+            f"label, not RegisterView; got {selector!r}"
         )
     if isinstance(selector, RegisterRef):
         if not isinstance(selector.register, QuantumRegister):
@@ -549,116 +356,156 @@ def _validate_scalar_selector(selector: Any, label: str) -> None:
         raise TypeError(f"{label} physical target must be hashable") from exc
 
 
-def _normalize_always_on_selector(targets: _GateTargetsArg) -> _GateSelector:
-    """Normalize one optional always-on subsystem selector."""
-    if targets is None:
-        return None
-    selector = targets if isinstance(targets, tuple) else (targets,)
-    if len(selector) != 1:
-        raise ValueError("always-on channel targets must select exactly one subsystem")
-    _validate_scalar_selector(selector[0], "always-on channel")
-    return selector
-
-
-def _normalize_selector(
+def _normalize_target_positions(
     op_cls: type[Operation],
-    targets: _GateTargetsArg,
-) -> _GateSelector:
-    """Validate and normalize an ``add_channel`` target selector.
-
-    A selector is ``None``, a tuple wholly of `RegisterRef`, a
-    tuple wholly of some other hashable (physical device resource labels),
-    or a single `RegisterRef`/hashable as shorthand for a one-element
-    tuple - the length check below then rejects it for any operation whose
-    fixed arity isn't 1. Mixing the two tuple forms, or including a
-    `RegisterView`, is rejected; a physical label is opaque and is not
-    itself validated (any hashable value is a legal device resource label
-    until run-time validation against an actual `ResourceLayout`).
-    """
-    if targets is None:
-        return None
-    selector = targets if isinstance(targets, tuple) else (targets,)
-    if len(selector) == 0:
-        raise ValueError("targets must be None or a non-empty tuple")
-    for t in selector:
-        if isinstance(t, RegisterView):
-            raise TypeError(
-                "noise targets must be scalar RegisterRef or device "
-                f"resource labels, not a RegisterView; got {t!r}"
-            )
-    is_ref = [isinstance(t, RegisterRef) for t in selector]
-    if all(is_ref):
-        for ref in selector:
-            if not isinstance(ref.register, QuantumRegister):
-                raise TypeError(
-                    "noise target refs must point into a QuantumRegister, "
-                    f"got a ref into {type(ref.register).__name__}"
-                )
-    elif any(is_ref):
-        raise TypeError(
-            "targets must be all RegisterRef or all device "
-            f"resource labels (physical), not mixed; got {selector!r}"
-        )
-    expected = op_cls._num_subsystems
-    if expected is not None and len(selector) != expected:
-        raise ValueError(
-            f"{op_cls.__name__} targets {expected} subsystem(s), "
-            f"got a selector of length {len(selector)}"
-        )
-    return selector
-
-
-def _normalize_slots(
-    op_cls: type[Operation],
-    channel: Channel,
-    selector: _GateSelector,
-    slots: tuple[int, ...] | int | None,
-) -> _Slots:
-    """Validate a positional channel extent and normalize full coverage."""
-    if slots is None:
+    declaration: _Declaration,
+    selector: _Selector,
+    positions: object,
+) -> _TargetPositions:
+    if positions is None:
         normalized = None
     else:
-        normalized = (slots,) if isinstance(slots, int) else slots
+        normalized = (positions,) if isinstance(positions, int) else positions
         if not isinstance(normalized, tuple):
-            raise TypeError("slots must be an int, a tuple of ints, or None")
+            raise TypeError("target_positions must be an int, tuple of ints, or None")
         if not normalized:
-            raise ValueError("slots must be non-empty")
-        if any(not isinstance(i, int) or isinstance(i, bool) for i in normalized):
-            raise TypeError("each slot must be int")
-        if any(i < 0 for i in normalized):
-            raise ValueError("slots must be non-negative")
+            raise ValueError("target_positions must be non-empty")
+        if any(
+            not isinstance(index, int) or isinstance(index, bool)
+            for index in normalized
+        ):
+            raise TypeError("each target position must be an int")
+        if any(index < 0 for index in normalized):
+            raise ValueError("target_positions must be non-negative")
         if any(left >= right for left, right in zip(normalized, normalized[1:])):
-            raise ValueError("slots must be strictly increasing")
-        if (
-            op_cls._num_subsystems is not None
-            and max(normalized) >= op_cls._num_subsystems
-        ):
+            raise ValueError("target_positions must be strictly increasing")
+
+    occurrence_width = op_cls._num_subsystems
+    if occurrence_width is None and selector is not None:
+        occurrence_width = len(selector)
+    if occurrence_width is not None and normalized is not None:
+        if max(normalized) >= occurrence_width:
             raise ValueError(
-                f"slot {max(normalized)} is out of range for {op_cls.__name__}"
+                f"target position {max(normalized)} is out of range for "
+                f"{op_cls.__name__}"
             )
-        if selector is not None and max(normalized) >= len(selector):
-            raise ValueError("slot is out of range for the explicit targets selector")
-        if (
-            channel.num_subsystems is not None
-            and len(normalized) != channel.num_subsystems
-        ):
-            raise ValueError(
-                f"{type(channel).__name__} takes {channel.num_subsystems} subsystem(s), "
-                f"got {len(normalized)} slots"
-            )
-        if op_cls._num_subsystems is not None and normalized == tuple(
-            range(op_cls._num_subsystems)
-        ):
+        if normalized == tuple(range(occurrence_width)):
             normalized = None
 
-    if (
-        normalized is None
-        and channel.num_subsystems is not None
-        and op_cls._num_subsystems is not None
-        and channel.num_subsystems != op_cls._num_subsystems
-    ):
-        raise ValueError(
-            f"{type(channel).__name__} cannot attach to all {op_cls._num_subsystems} "
-            "subsystems; use slots="
-        )
+    declaration_width = _declaration_arity(declaration)
+    extent_width = len(normalized) if normalized is not None else occurrence_width
+    if declaration_width is not None and extent_width is not None:
+        if declaration_width != extent_width:
+            raise ValueError(
+                f"{type(declaration).__name__} acts on {declaration_width} "
+                f"subsystem(s), got an extent of {extent_width}; use "
+                "target_positions to select its extent"
+            )
     return normalized
+
+
+def _declaration_arity(declaration: _Declaration) -> int | None:
+    return None if isinstance(declaration, Loss) else declaration.num_subsystems
+
+
+def _is_ref_selector(selector: _Selector) -> bool:
+    return selector is not None and isinstance(selector[0], RegisterRef)
+
+
+def _selectors_can_overlap(left: _Selector, right: _Selector) -> bool:
+    if left is None or right is None:
+        return True
+    left_refs = _is_ref_selector(left)
+    right_refs = _is_ref_selector(right)
+    if left_refs != right_refs:
+        return False
+    return left == right
+
+
+def _positions_overlap(left: _TargetPositions, right: _TargetPositions) -> bool:
+    if left is None or right is None:
+        return True
+    return bool(set(left).intersection(right))
+
+
+def _registrations_conflict(
+    left: _NoiseRegistration,
+    right: _NoiseRegistration,
+    *,
+    actual_match: bool = False,
+) -> bool:
+    if type(left.declaration) is not type(right.declaration):
+        return False
+    if left.operation is not right.operation:
+        return False
+    if not actual_match and not _selectors_can_overlap(left.selector, right.selector):
+        return False
+    return _positions_overlap(left.target_positions, right.target_positions)
+
+
+def _check_noise_conflict(
+    registrations: list[_NoiseRegistration], proposed: _NoiseRegistration
+) -> None:
+    for existing in registrations:
+        if _registrations_conflict(existing, proposed):
+            scope = (
+                "background"
+                if proposed.operation is None
+                else proposed.operation.__name__
+            )
+            raise ValueError(
+                f"overlapping {type(proposed.declaration).__name__} noise is "
+                f"already registered in {scope} scope"
+            )
+
+
+def _reject_actual_noise_conflicts(matches: list[_NoiseRegistration]) -> None:
+    for index, left in enumerate(matches):
+        for right in matches[index + 1 :]:
+            if _registrations_conflict(left, right, actual_match=True):
+                raise BackendValidationError(
+                    f"logical and physical noise selectors {left.selector!r} and "
+                    f"{right.selector!r} both match the same "
+                    f"{type(left.declaration).__name__} extent"
+                )
+
+
+def _check_readout_conflict(
+    registrations: list[tuple[_ReadoutSelector, ReadoutConfusion]],
+    proposed: _ReadoutSelector,
+) -> None:
+    for selector, _declaration in registrations:
+        if selector is None or proposed is None:
+            raise ValueError(
+                "universal and targeted ReadoutConfusion registrations cannot coexist"
+            )
+        selector_is_ref = isinstance(selector, RegisterRef)
+        proposed_is_ref = isinstance(proposed, RegisterRef)
+        if selector_is_ref == proposed_is_ref and selector == proposed:
+            raise ValueError(
+                f"ReadoutConfusion is already registered for target {proposed!r}"
+            )
+
+
+def _validate_selector_for_run(
+    selector: _Selector,
+    program_refs: frozenset[RegisterRef],
+    legal_device_operands: frozenset[DeviceOperand],
+    label: str,
+) -> None:
+    if selector is None:
+        return
+    if _is_ref_selector(selector):
+        for ref in selector:
+            if ref not in program_refs:
+                raise BackendValidationError(
+                    f"{label} selector names a RegisterRef outside this program: "
+                    f"{ref!r}"
+                )
+    else:
+        for device_label in selector:
+            if device_label not in legal_device_operands:
+                raise BackendValidationError(
+                    f"{label} selector names a device resource label outside "
+                    f"the backend's legal universe: {device_label!r}"
+                )

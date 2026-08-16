@@ -21,7 +21,7 @@ from fatqat._backends.backend_utils import (
 )
 from fatqat._backends.steps import ResetStep
 from fatqat.errors import BackendValidationError
-from fatqat.noise import NoiseModel
+from fatqat.noise import NoiseModel, ReadoutConfusion
 from fatqat.program import AppliedOperation
 from fatqat.resource_layout import ResourceLayout
 from fatqat.result import _ResultConfig
@@ -185,7 +185,7 @@ def _one_qubit_measurement_setup(confusion, *, reported_digit_map):
     classical_allocation = _ClassicalAllocation.from_program(program)
     noise = NoiseModel()
     if confusion is not None:
-        noise.add_readout_error(confusion, target=q0)
+        noise.add(ReadoutConfusion(confusion), targets=q0)
     return (
         step,
         (reported_digit_map,),
