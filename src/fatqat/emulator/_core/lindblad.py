@@ -9,12 +9,13 @@ import numpy as np
 from ...errors import BackendValidationError
 from ...noise import (
     AmplitudeDamping,
+    Loss,
     LindbladImplementationMap,
     NoiseModel,
     NoiseSupportReport,
+    PauliChannel,
+    PhaseDamping,
 )
-
-_NO_RATE = object()
 
 
 @dataclass(frozen=True)
@@ -70,8 +71,8 @@ def _classify_lindblad_noise(
     local_dimension: int,
     backend_name: str,
     allow_operation_scoped: bool = True,
-    supports_readout_error: bool,
-    readout_error_shape: tuple[int, int] | None = None,
+    supports_readout_confusion: bool,
+    readout_confusion_shape: tuple[int, int] | None = None,
 ) -> NoiseSupportReport:
     """Classify shared pulse-noise rules plus narrow family policy knobs."""
     accepted: list[str] = []
@@ -79,29 +80,27 @@ def _classify_lindblad_noise(
     warnings: list[str] = []
     seen: set[str] = set()
 
-    for channel, operation in noise_model.channel_registrations():
-        always_on = operation is None
-        rate = getattr(channel, "rate", _NO_RATE)
-        mode: str | None = None
-        damping_values = None
-        if rate is not _NO_RATE:
-            mode = "rate" if rate is not None else "p"
-            damping_values = rate if rate is not None else getattr(channel, "p")
+    for channel, operation in noise_model._noise_sources():
+        background = operation is None
+        channel_type = type(channel)
+        built_in_damping = channel_type in (AmplitudeDamping, PhaseDamping)
+        finite_mode = built_in_damping and channel.p is not None
+        mode = None
+        if built_in_damping:
+            mode = "p" if finite_mode else "rate"
 
-        invalid_amplitude_arity = (
-            isinstance(channel, AmplitudeDamping)
-            and len(damping_values) != local_dimension - 1
+        invalid_amplitude_arity = channel_type is AmplitudeDamping and (
+            channel.rate is not None and len(channel.rate) != local_dimension - 1
         )
         if invalid_amplitude_arity:
-            assert mode is not None
-            mode += f"-arity-{len(damping_values)}"
+            mode += f"-arity-{len(channel.rate)}"
 
         qualifiers: list[str] = []
         if mode is not None:
             qualifiers.append(mode)
-        if always_on:
-            qualifiers.append("always-on")
-        label = type(channel).__name__
+        if background:
+            qualifiers.append("background")
+        label = channel_type.__name__
         if qualifiers:
             label += f"({', '.join(qualifiers)})"
         if label in seen:
@@ -109,16 +108,23 @@ def _classify_lindblad_noise(
         seen.add(label)
 
         reason = None
-        if invalid_amplitude_arity:
+        authored_arity = None if isinstance(channel, Loss) else channel.num_subsystems
+        if isinstance(channel, Loss):
+            reason = "carrier occupancy loss is not a Lindblad generator"
+        elif authored_arity is not None and authored_arity != 1:
+            reason = "pulse Lindblad declarations must be single-subsystem"
+        elif invalid_amplitude_arity:
             reason = (
                 f"local dimension {local_dimension} requires "
                 f"{local_dimension - 1} damping values"
             )
-        elif always_on and rate is None:
-            reason = "always-on damping requires rate mode"
-        elif not always_on and not allow_operation_scoped:
-            reason = "the built-in defaults accept only always-on rate damping"
-        elif implementation_map.get(type(channel)) is None:
+        elif finite_mode:
+            reason = "finite probability mode is not a pulse generator"
+        elif channel_type is PauliChannel:
+            reason = "PauliChannel is finite-only and has no inferred generator"
+        elif not background and not allow_operation_scoped:
+            reason = "the built-in defaults accept only background generators"
+        elif implementation_map.get(channel_type) is None:
             reason = "no registered Lindblad implementation"
 
         if reason is None:
@@ -127,22 +133,23 @@ def _classify_lindblad_noise(
             rejected.append(label)
             warnings.append(f"{label} is not supported by {backend_name}: {reason}")
 
-    if noise_model.has_readout_error():
+    readout_confusions = noise_model._readout_confusions()
+    if readout_confusions:
         reason = None
-        if not supports_readout_error:
+        if not supports_readout_confusion:
             reason = "this family has no readout-confusion boundary"
-        elif readout_error_shape is not None and any(
-            matrix.shape != readout_error_shape
-            for _selector, matrix in noise_model._readout_errors
+        elif readout_confusion_shape is not None and any(
+            declaration.matrix.shape != readout_confusion_shape
+            for declaration in readout_confusions
         ):
-            shape = " x ".join(str(dimension) for dimension in readout_error_shape)
+            shape = " x ".join(str(dimension) for dimension in readout_confusion_shape)
             reason = f"readout confusion must be a {shape} matrix"
         if reason is None:
-            accepted.append("readout_error")
+            accepted.append("ReadoutConfusion")
         else:
-            rejected.append("readout_error")
+            rejected.append("ReadoutConfusion")
             warnings.append(
-                f"readout_error is not supported by {backend_name}: {reason}"
+                f"ReadoutConfusion is not supported by {backend_name}: {reason}"
             )
 
     return NoiseSupportReport(

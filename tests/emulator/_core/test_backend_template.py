@@ -10,7 +10,10 @@ import fatqat as fq
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator._core.backend import _PulseBackend
 from fatqat.emulator._core.engine import PulseEngine
-from fatqat.emulator._core.lindblad import ResolvedLindbladTerm
+from fatqat.emulator._core.lindblad import (
+    ResolvedLindbladTerm,
+    _classify_lindblad_noise,
+)
 from fatqat.emulator._core.outcome import (
     _PulseExecutionSummary,
     _PulseShotOutcome,
@@ -34,7 +37,6 @@ from fatqat.noise import (
     AmplitudeDamping,
     LindbladImplementationMap,
     NoiseModel,
-    NoiseSupportReport,
 )
 from fatqat.noise.lindblad import amplitude_damping_lindblad_rule
 from fatqat.resource_layout import ResourceLayout
@@ -46,25 +48,31 @@ class _CountingNoiseModel(NoiseModel):
         super().__init__()
         self.selector_validations = 0
         self.operation_selections = 0
-        self.always_on_selections = 0
+        self.background_selections = 0
 
-    def validate_for(self, program, legal_device_operands):
+    def _validate_for(self, program, legal_device_operands):
         self.selector_validations += 1
-        return super().validate_for(program, legal_device_operands)
+        return super()._validate_for(program, legal_device_operands)
 
-    def channels_for(self, operation, targets, resource_layout):
+    def _noise_for_occurrence(self, operation, targets, resource_layout):
         self.operation_selections += 1
-        return super().channels_for(operation, targets, resource_layout)
+        return super()._noise_for_occurrence(operation, targets, resource_layout)
 
-    def always_on_channels_for(self, target, device_label):
-        self.always_on_selections += 1
-        return super().always_on_channels_for(target, device_label)
+    def _background_noise_for(self, target, device_label):
+        self.background_selections += 1
+        return super()._background_noise_for(target, device_label)
+
+    def _copy(self):
+        copied = type(self)()
+        copied._noise_registrations = self._noise_registrations.copy()
+        copied._readout_registrations = self._readout_registrations.copy()
+        return copied
 
 
 class _NoMatchNoiseModel(_CountingNoiseModel):
-    def always_on_channels_for(self, target, device_label):
+    def _background_noise_for(self, target, device_label):
         del target, device_label
-        self.always_on_selections += 1
+        self.background_selections += 1
         return ()
 
 
@@ -247,13 +255,12 @@ class _TemplateBackend(_PulseBackend):
 
     def _classify_noise(self, noise_model):
         self.classifications += 1
-        supported = all(
-            self._lindblad_implementation_map.get(type(channel)) is not None
-            for channel, _operation in noise_model.channel_registrations()
-        )
-        return NoiseSupportReport(
-            supported,
-            warnings=() if supported else ("unsupported fake noise",),
+        return _classify_lindblad_noise(
+            noise_model,
+            self._lindblad_implementation_map,
+            local_dimension=self._target.local_dimension,
+            backend_name=type(self).__name__,
+            supports_readout_confusion=False,
         )
 
     def _resolve_execution_mode(self, facts):
@@ -308,17 +315,19 @@ def _gate_map(target, *, with_frame=False):
         )
 
     implementation_map.add(fq.ops.X, realize)
+    implementation_map.add(fq.ops.Y, realize)
     return implementation_map
 
 
 def test_preparation_builds_one_complete_immutable_value_exactly_once():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
-    noise.add_channel(
+    noise.add(
         AmplitudeDamping(rate=0.2),
         operation=fq.ops.X,
     )
-    noise.add_channel(AmplitudeDamping(rate=0.1))
+    for label in target.device_labels:
+        noise.add(AmplitudeDamping(rate=0.1), targets=label)
     backend = _TemplateBackend(
         target,
         noise=noise,
@@ -340,17 +349,21 @@ def test_preparation_builds_one_complete_immutable_value_exactly_once():
     )
     assert prepared.resource_layout.device_labels_for(refs) == ("q0", "q1")
     assert len(prepared.plan[0].noise) == 1
-    assert len(prepared.always_on_noise) == 3
+    assert len(prepared.background_noise) == 3
     assert prepared.facts.has_nonzero_evolution
     assert prepared.facts.has_resolved_lindblad
-    assert prepared.facts.has_supported_always_on_lindblad_registration
+    assert prepared.facts.has_supported_background_lindblad_registration
     assert target.bind_program_calls == 1
     assert target.bind_control_calls == 1
     assert target.bind_gate_operands_calls == 1
     assert target.validate_control_calls == 1
-    assert noise.selector_validations == 1
-    assert noise.operation_selections == 1
-    assert noise.always_on_selections == 3
+    captured_noise = backend._noise_model
+    assert noise.selector_validations == 0
+    assert noise.operation_selections == 0
+    assert noise.background_selections == 0
+    assert captured_noise.selector_validations == 1
+    assert captured_noise.operation_selections == 1
+    assert captured_noise.background_selections == 3
     assert backend.source_validations == 1
     assert backend.classifications == 1
     with pytest.raises(FrozenInstanceError):
@@ -396,17 +409,18 @@ def test_direct_control_can_target_an_unreferenced_modeled_subsystem():
     assert prepared.plan[0].control_bindings[0].engine_indices == (2,)
 
 
-def test_always_on_default_binds_an_undeclared_physical_target():
+def test_background_targets_bind_declared_and_unreferenced_physical_targets():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.1))
+    for label in target.device_labels:
+        noise.add(AmplitudeDamping(rate=0.1), targets=label)
     backend = _TemplateBackend(
         target,
         noise=noise,
         lindblad_map=_lindblad_map(),
     )
     prepared = backend._prepare_program(fq.Program(1))
-    assert tuple(term.engine_indices for term in prepared.always_on_noise) == (
+    assert tuple(term.engine_indices for term in prepared.background_noise) == (
         (0,),
         (1,),
         (2,),
@@ -416,7 +430,7 @@ def test_always_on_default_binds_an_undeclared_physical_target():
 def test_resolved_terms_use_local_not_full_hilbert_dimension():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.1))
+    noise.add(AmplitudeDamping(rate=0.1), targets="q0")
     backend = _TemplateBackend(
         target,
         noise=noise,
@@ -425,14 +439,14 @@ def test_resolved_terms_use_local_not_full_hilbert_dimension():
     prepared = backend._prepare_program(fq.Program(1))
     assert all(
         term.local_operator.shape == (target.local_dimension,) * 2
-        for term in prepared.always_on_noise
+        for term in prepared.background_noise
     )
 
 
-def test_operation_scoped_probability_is_resolved_over_realized_duration():
+def test_operation_scoped_probability_rejects_without_implicit_conversion():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
-    noise.add_channel(
+    noise.add(
         AmplitudeDamping(p=0.2),
         operation=fq.ops.X,
     )
@@ -444,18 +458,14 @@ def test_operation_scoped_probability_is_resolved_over_realized_duration():
     )
     program = fq.Program(1)
     program.add(fq.ops.X, 0)
-    prepared = backend._prepare_program(program)
-    term = prepared.plan[0].noise[0]
-    expected_rate = -np.log1p(-0.2) / 0.5
-    assert abs(term.local_operator[0, 1]) ** 2 == pytest.approx(expected_rate)
-    assert term.engine_indices == (0,)
-    assert not prepared.facts.has_supported_always_on_lindblad_registration
+    with pytest.raises(BackendValidationError, match="finite probability mode"):
+        backend._prepare_program(program)
 
 
 def test_operation_scoped_rate_keeps_target_binding_and_fact_scope_separate():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
+    noise.add(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
     backend = _TemplateBackend(
         target,
         noise=noise,
@@ -471,13 +481,32 @@ def test_operation_scoped_rate_keeps_target_binding_and_fact_scope_separate():
     assert term.engine_indices == (0,)
     assert abs(term.local_operator[0, 1]) ** 2 == pytest.approx(0.2)
     assert prepared.facts.has_resolved_lindblad
-    assert not prepared.facts.has_supported_always_on_lindblad_registration
+    assert not prepared.facts.has_supported_background_lindblad_registration
 
 
-def test_supported_always_on_registration_can_set_capability_without_resolution():
+def test_supported_noise_for_an_absent_operation_is_a_valid_no_op():
+    target = _CountingTarget()
+    noise = _CountingNoiseModel()
+    noise.add(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
+    backend = _TemplateBackend(
+        target,
+        noise=noise,
+        gate_map=_gate_map(target),
+        lindblad_map=_lindblad_map(),
+    )
+    program = fq.Program(1)
+    program.add(fq.ops.Y, 0)
+
+    prepared = backend._prepare_program(program)
+
+    assert prepared.plan[0].noise == ()
+    assert not prepared.facts.has_resolved_lindblad
+
+
+def test_supported_background_registration_can_set_capability_without_resolution():
     target = _CountingTarget()
     noise = _NoMatchNoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.2))
+    noise.add(AmplitudeDamping(rate=0.2), targets="q0")
     backend = _TemplateBackend(
         target,
         noise=noise,
@@ -486,16 +515,16 @@ def test_supported_always_on_registration_can_set_capability_without_resolution(
 
     prepared = backend._prepare_program(fq.Program(1))
 
-    assert prepared.always_on_noise == ()
+    assert prepared.background_noise == ()
     assert not prepared.facts.has_resolved_lindblad
-    assert prepared.facts.has_supported_always_on_lindblad_registration
+    assert prepared.facts.has_supported_background_lindblad_registration
 
 
 def test_missing_or_empty_lindblad_implementation_rejects_explicitly():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.1))
-    with pytest.raises(BackendValidationError, match="unsupported fake noise"):
+    noise.add(AmplitudeDamping(rate=0.1), targets="q0")
+    with pytest.raises(BackendValidationError, match="no registered"):
         _TemplateBackend(target, noise=noise)._prepare_program(fq.Program(1))
 
     empty_map = LindbladImplementationMap()
@@ -512,7 +541,7 @@ def test_missing_or_empty_lindblad_implementation_rejects_explicitly():
 def test_invalid_local_operator_shape_rejects_at_shared_resolution_boundary():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.1))
+    noise.add(AmplitudeDamping(rate=0.1), targets="q0")
     invalid_map = LindbladImplementationMap()
     invalid_map.register(
         AmplitudeDamping,
@@ -551,7 +580,7 @@ def test_invalid_shots_raise_directly_after_preparation_without_a_runner():
     assert backend.classifications == 1
 
 
-def test_constructor_owns_one_copy_of_each_map_and_retains_noise_reference():
+def test_constructor_copies_maps_and_captures_noise_registrations():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
     gate_map = _gate_map(target)
@@ -567,16 +596,17 @@ def test_constructor_owns_one_copy_of_each_map_and_retains_noise_reference():
     gate_map.remove(fq.ops.X)
     lindblad_map.register(AmplitudeDamping, lambda channel, **kwargs: ())
 
-    assert backend._noise_model is noise
+    assert backend._noise_model is not noise
     assert backend._gate_implementation_map.supports(fq.ops.X)
     assert (
         backend._lindblad_implementation_map.get(AmplitudeDamping)
         is original_lindblad_rule
     )
 
-    noise.add_channel(AmplitudeDamping(rate=0.2))
+    noise.add(AmplitudeDamping(rate=0.2), targets="q0")
     prepared = backend._prepare_program(fq.Program(1))
-    assert prepared.always_on_noise
+    assert prepared.background_noise == ()
+    assert backend.validate_noise(noise).supported
 
 
 def test_explicit_empty_maps_remain_empty_and_constructor_types_are_checked():
@@ -737,7 +767,7 @@ def _frame_gate_map(target):
 def test_propagator_empty_and_frame_only_paths_use_fixed_coherent_mode():
     target = _CountingTarget(("q0",))
     noise = NoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.2))
+    noise.add(AmplitudeDamping(rate=0.2), targets="q0")
     backend = _TemplateBackend(
         target,
         noise=noise,
@@ -796,7 +826,7 @@ def test_propagator_rejects_noncoherent_facts_before_runner(
 def test_propagator_rejects_elapsed_resolved_noise_before_runner():
     target = _CountingTarget(("q0",))
     noise = NoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
+    noise.add(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
     backend = _TemplateBackend(
         target,
         noise=noise,

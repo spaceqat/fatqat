@@ -193,7 +193,7 @@ def test_maps_are_copied_once_and_explicit_empty_maps_stay_empty(model):
 def test_invalid_attached_noise_rejects_before_target_construction(model, monkeypatch):
     arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
     noise = fq.NoiseModel()
-    noise.add_channel(ThermalRelaxation(t1=10.0, t2=15.0))
+    noise.add(ThermalRelaxation(t1=10.0, t2=15.0), targets=0)
 
     def target_must_not_be_built(*_args, **_kwargs):
         raise AssertionError("target was built before capability classification")
@@ -209,7 +209,7 @@ def test_invalid_attached_noise_rejects_before_target_construction(model, monkey
 def test_constructor_classifies_attached_noise_exactly_once(model, monkeypatch):
     arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
     noise = fq.NoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=0.2))
+    noise.add(AmplitudeDamping(rate=0.2), targets=0)
     calls = 0
     classify = Atom2LevelEmulator._classify_noise
 

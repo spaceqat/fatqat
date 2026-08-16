@@ -129,7 +129,10 @@ def test_reset_reprepares_only_target_and_guard_can_skip_it(model):
 
 def test_confused_reported_value_drives_later_guarded_pulse(make_backend):
     noise = NoiseModel()
-    noise.add_readout_error(np.array([[0.0, 1.0], [1.0, 0.0]]), target="q0")
+    noise.add(
+        fq.noise.ReadoutConfusion(np.array([[0.0, 1.0], [1.0, 0.0]])),
+        targets="q0",
+    )
     backend = make_backend(noise)
     program = fq.Program(2, 1)
     program.measure(0, 0)
@@ -271,12 +274,11 @@ def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames(model):
     adapter = _adapter(
         model,
         kind=_ExcitedAdapter,
-        always_on_noise=bind_lindblad_operators(
+        background_noise=bind_lindblad_operators(
             resolve_lindblad_operators(
                 thermal,
                 implementation_map=default_lindblad_implementation_map(),
                 physical_dimension=model.physical_dimension,
-                duration=None,
             ),
             engine_indices=(0,),
         ),

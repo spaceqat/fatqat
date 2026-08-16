@@ -64,12 +64,12 @@ class _TransmonQutipAdapter:
         target: _TransmonTarget,
         *,
         engine_allocation: _EngineAllocation,
-        always_on_noise: tuple[ResolvedLindbladTerm, ...] = (),
+        background_noise: tuple[ResolvedLindbladTerm, ...] = (),
         retain_final_state: bool = True,
     ) -> None:
         """Adapt one already-bound physical target to the QuTiP layer.
 
-        The engine allocation fixes full-model tensor order. ``always_on_noise``
+        The engine allocation fixes full-model tensor order. ``background_noise``
         contains already resolved local collapse terms; the adapter never
         interprets source noise descriptors.
         """
@@ -80,7 +80,7 @@ class _TransmonQutipAdapter:
             raise BackendValidationError("retain_final_state must be a bool")
         self._retain_final_state = retain_final_state
         self._solver_used = "none"
-        self._always_on_noise = tuple(always_on_noise)
+        self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
         expected_operands = tuple(self._target.model.subsystem_ids)
         if (
@@ -153,7 +153,7 @@ class _TransmonQutipAdapter:
         """Evolve one placed region and commit enabled post-frame actions.
 
         False enable flags suppress a block's controls, operation-scoped noise,
-        and post-actions while elapsed region time and always-on dynamics
+        and post-actions while elapsed region time and background dynamics
         remain active.
         """
         bound = self._bind_run(
@@ -284,16 +284,16 @@ class _TransmonQutipAdapter:
         return _BoundDynamics(
             hamiltonian=hamiltonian,
             collapse_operators=(
-                self._always_on_collapse_operators() + tuple(local_collapse)
+                self._background_collapse_operators() + tuple(local_collapse)
             ),
             output_frames=frames,
         )
 
-    def _always_on_collapse_operators(self) -> tuple[Any, ...]:
-        """Expand resolved always-on terms only when dynamics need them."""
+    def _background_collapse_operators(self) -> tuple[Any, ...]:
+        """Expand resolved background terms only when dynamics need them."""
         if self._collapse_operators is None:
-            self._collapse_operators = self._build_always_on_noise(
-                self._always_on_noise
+            self._collapse_operators = self._build_background_noise(
+                self._background_noise
             )
         return self._collapse_operators
 
@@ -382,10 +382,10 @@ class _TransmonQutipAdapter:
             drift.add_drift(local, engine_index)
         return drift
 
-    def _build_always_on_noise(
+    def _build_background_noise(
         self, bindings: tuple[ResolvedLindbladTerm, ...]
     ) -> tuple[Any, ...]:
-        """Build constant collapse terms from resolved always-on bindings."""
+        """Build constant collapse terms from resolved background bindings."""
         noise_pulse = Pulse(None, None)
         for binding in bindings:
             for local_qobj, ordinal in self._lindblad_ops(binding):

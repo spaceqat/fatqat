@@ -50,7 +50,7 @@ class PulsePlanFacts:
     has_conditions: bool = False
     has_nonzero_evolution: bool = False
     has_resolved_lindblad: bool = False
-    has_supported_always_on_lindblad_registration: bool = False
+    has_supported_background_lindblad_registration: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,11 +71,11 @@ class _PreparedPulseProgram:
     resource_layout: ResourceLayout
     engine_allocation: _EngineAllocation
     classical_allocation: _ClassicalAllocation
-    always_on_noise: tuple[ResolvedLindbladTerm, ...]
+    background_noise: tuple[ResolvedLindbladTerm, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "plan", tuple(self.plan))
-        object.__setattr__(self, "always_on_noise", tuple(self.always_on_noise))
+        object.__setattr__(self, "background_noise", tuple(self.background_noise))
 
 
 def _lower_measurement(
@@ -183,7 +183,6 @@ def _prepare_control_bindings(
 
 def _resolve_operation_noise(
     step: AppliedOperation,
-    duration: float,
     *,
     target: _PulseTarget,
     context: _PulseLoweringContext,
@@ -192,11 +191,16 @@ def _resolve_operation_noise(
 ) -> tuple[tuple[ResolvedLindbladTerm, ...], tuple[int, ...]]:
     terms: list[ResolvedLindbladTerm] = []
     engine_indices: list[int] = []
-    for channel, extent in noise_model.channels_for(
+    for channel, extent in noise_model._noise_for_occurrence(
         type(step.operation),
         step.targets,
         context.resource_layout,
     ):
+        if len(extent) != 1:
+            raise BackendValidationError(
+                f"{type(channel).__name__} selected a {len(extent)}-subsystem "
+                "extent; pulse Lindblad noise must be local to one subsystem"
+            )
         extent_indices = tuple(
             context.engine_allocation.engine_index(
                 context.resource_layout.device_label(resource)
@@ -210,7 +214,6 @@ def _resolve_operation_noise(
                     channel,
                     implementation_map=implementation_map,
                     physical_dimension=target.local_dimension,
-                    duration=duration,
                 ),
                 engine_indices=extent_indices,
             )
@@ -246,7 +249,6 @@ def _lower_gate(
     )
     noise, noise_indices = _resolve_operation_noise(
         step,
-        definition.duration,
         target=target,
         context=context,
         noise_model=noise_model,
@@ -311,7 +313,7 @@ def _lower_direct(
     )
 
 
-def _resolve_always_on_noise(
+def _resolve_background_noise(
     *,
     target: _PulseTarget,
     resource_layout: ResourceLayout,
@@ -319,21 +321,20 @@ def _resolve_always_on_noise(
     noise_model: NoiseModel,
     implementation_map: LindbladImplementationMap,
 ) -> tuple[ResolvedLindbladTerm, ...]:
-    """Resolve always-on terms once in complete target-ordinal order."""
+    """Resolve background terms once in complete target-ordinal order."""
     terms: list[ResolvedLindbladTerm] = []
     for engine_index, device_label in enumerate(engine_allocation.device_operands):
         try:
             resource = resource_layout._ref_for_label(device_label)
         except KeyError:
             resource = None
-        for channel in noise_model.always_on_channels_for(resource, device_label):
+        for channel in noise_model._background_noise_for(resource, device_label):
             terms.extend(
                 bind_lindblad_operators(
                     resolve_lindblad_operators(
                         channel,
                         implementation_map=implementation_map,
                         physical_dimension=target.local_dimension,
-                        duration=None,
                     ),
                     engine_indices=(engine_index,),
                 )
@@ -343,9 +344,9 @@ def _resolve_always_on_noise(
 
 def _derive_plan_facts(
     plan: tuple[PulsePlanStep, ...],
-    always_on_noise: tuple[ResolvedLindbladTerm, ...],
+    background_noise: tuple[ResolvedLindbladTerm, ...],
     *,
-    has_supported_always_on_lindblad_registration: bool,
+    has_supported_background_lindblad_registration: bool,
 ) -> PulsePlanFacts:
     return PulsePlanFacts(
         has_measurement=any(isinstance(step, MeasurementStep) for step in plan),
@@ -356,9 +357,9 @@ def _derive_plan_facts(
         has_nonzero_evolution=any(
             isinstance(step, PulseBlock) and step.duration > 0.0 for step in plan
         ),
-        has_resolved_lindblad=bool(always_on_noise)
+        has_resolved_lindblad=bool(background_noise)
         or any(isinstance(step, PulseBlock) and bool(step.noise) for step in plan),
-        has_supported_always_on_lindblad_registration=(
-            has_supported_always_on_lindblad_registration
+        has_supported_background_lindblad_registration=(
+            has_supported_background_lindblad_registration
         ),
     )

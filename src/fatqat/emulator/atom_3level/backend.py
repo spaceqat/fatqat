@@ -86,8 +86,8 @@ class Atom3LevelEmulator(_PulseBackend):
             self._lindblad_implementation_map,
             local_dimension=self.model.local_dimension,
             backend_name=type(self).__name__,
-            supports_readout_error=True,
-            readout_error_shape=(2, 2),
+            supports_readout_confusion=True,
+            readout_confusion_shape=(2, 2),
         )
 
     def _resolve_execution_mode(self, facts: PulsePlanFacts) -> ExecutionMode:
@@ -110,7 +110,7 @@ class Atom3LevelEmulator(_PulseBackend):
         return _Atom3LevelQutipAdapter(
             self._target,
             engine_allocation=prepared.engine_allocation,
-            always_on_noise=prepared.always_on_noise,
+            background_noise=prepared.background_noise,
             retain_final_state=retain_final_state,
         )
 

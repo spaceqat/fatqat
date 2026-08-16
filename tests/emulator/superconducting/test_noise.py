@@ -1,4 +1,4 @@
-"""Always-on channel selection and qutrit lowering tests."""
+"""Background generator selection and qutrit lowering tests."""
 
 import numpy as np
 import pytest
@@ -38,52 +38,51 @@ def test_thermal_relaxation_validates_finite_t1_t2_bounds():
             ThermalRelaxation(t1=values[0], t2=values[1])
 
 
-def test_always_on_selection_specifics_replace_defaults_and_accumulate():
+def test_background_logical_physical_alias_rejects_on_actual_match():
     program = fq.Program(1)
     ref = program.quantum_registers[0][0]
     layout = ResourceLayout({ref: "q0"})
-    default = ThermalRelaxation(t1=100, t2=150)
     physical = ThermalRelaxation(t1=200, t2=300)
     by_ref = ThermalRelaxation(t1=400, t2=600)
     noise = NoiseModel()
-    noise.add_channel(default)
-    noise.add_channel(physical, targets="q0")
-    noise.add_channel(by_ref, targets=ref)
+    noise.add(physical, targets="q0")
+    noise.add(by_ref, targets=ref)
 
-    noise.validate_for(program, layout.device_labels)
-    assert noise.always_on_channels_for(ref, "q0") == (physical, by_ref)
-    assert noise.always_on_channels_for(None, "q1") == (default,)
+    noise._validate_for(program, layout.device_labels)
+    with pytest.raises(BackendValidationError, match="both match"):
+        noise._background_noise_for(ref, "q0")
+    assert noise._background_noise_for(None, "q1") == ()
 
     illegal = NoiseModel()
-    illegal.add_channel(default, targets="q1")
-    with pytest.raises(BackendValidationError, match="legal device universe"):
-        illegal.validate_for(program, layout.device_labels)
+    illegal.add(physical, targets="q1")
+    with pytest.raises(BackendValidationError, match="legal universe"):
+        illegal._validate_for(program, layout.device_labels)
 
 
 class _UnsupportedAlwaysOn(Channel):
     _num_subsystems = 1
 
 
-def test_support_reports_reject_unknown_always_on_sources(model, calibration):
+def test_support_reports_reject_unknown_background_sources(model, calibration):
     noise = NoiseModel()
-    noise.add_channel(_UnsupportedAlwaysOn())
+    noise.add(_UnsupportedAlwaysOn(), targets="q0")
     report = TransmonEmulator(model).validate_noise(noise)
-    assert report.rejected_sources == ("_UnsupportedAlwaysOn(always-on)",)
+    assert report.rejected_sources == ("_UnsupportedAlwaysOn(background)",)
     assert not report.supported
 
 
-def test_matrix_backend_keeps_gate_channels_and_rejects_always_on_noise():
+def test_matrix_backend_keeps_gate_channels_and_rejects_background_noise():
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X)
-    noise.add_channel(ThermalRelaxation(t1=100, t2=150))
+    noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
+    noise.add(ThermalRelaxation(t1=100, t2=150), targets=0)
     report = Simulator().validate_noise(noise)
     assert "Depolarizing" in report.accepted_sources
-    assert "ThermalRelaxation(always-on)" in report.rejected_sources
+    assert "ThermalRelaxation(background)" in report.rejected_sources
 
 
 def test_pulse_backend_names_each_rejected_gate_channel_source(model, calibration):
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.X)
+    noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
     report = TransmonEmulator(model).validate_noise(noise)
     assert report.rejected_sources == ("Depolarizing",)
 
@@ -91,13 +90,13 @@ def test_pulse_backend_names_each_rejected_gate_channel_source(model, calibratio
 def test_qutrit_collapse_coefficients_and_t2_limit_are_exact(model, calibration):
     noise = NoiseModel()
     source = ThermalRelaxation(t1=100, t2=120)
-    noise.add_channel(source, targets="q0")
+    noise.add(source, targets="q0")
     backend = TransmonEmulator(model, noise=noise)
     adapter = _adapter(
         model,
-        always_on_noise=backend._prepare_program(fq.Program(1)).always_on_noise,
+        background_noise=backend._prepare_program(fq.Program(1)).background_noise,
     )
-    collapse = adapter._always_on_collapse_operators()
+    collapse = adapter._background_collapse_operators()
     assert len(collapse) == 2
     expected_t1 = np.sqrt(source.amplitude_rate) * adapter._annihilation[0]
     expected_phi = np.sqrt(2 * source.pure_dephasing_rate) * adapter._number[0]
@@ -105,22 +104,24 @@ def test_qutrit_collapse_coefficients_and_t2_limit_are_exact(model, calibration)
     assert np.allclose(collapse[1](0).full(), expected_phi.full())
 
     limited_noise = NoiseModel()
-    limited_noise.add_channel(ThermalRelaxation(t1=100, t2=200), targets="q0")
+    limited_noise.add(ThermalRelaxation(t1=100, t2=200), targets="q0")
     limited_backend = TransmonEmulator(model, noise=limited_noise)
     adapter = _adapter(
         model,
-        always_on_noise=limited_backend._prepare_program(fq.Program(1)).always_on_noise,
+        background_noise=limited_backend._prepare_program(
+            fq.Program(1)
+        ).background_noise,
     )
-    assert len(adapter._always_on_collapse_operators()) == 1
+    assert len(adapter._background_collapse_operators()) == 1
 
 
 def test_pulse_backend_accepts_and_executes_thermal_relaxation(model, calibration):
     noise = NoiseModel()
-    noise.add_channel(ThermalRelaxation(t1=100, t2=150))
+    noise.add(ThermalRelaxation(t1=100, t2=150), targets="q0")
     backend = TransmonEmulator(model, noise=noise)
     report = backend.validate_noise(noise)
     assert report.supported
-    assert report.accepted_sources == ("ThermalRelaxation(always-on)",)
+    assert report.accepted_sources == ("ThermalRelaxation(background)",)
 
     program = fq.Program(1)
     program.add(fq.ops.RX(0.3), 0)
@@ -130,17 +131,16 @@ def test_pulse_backend_accepts_and_executes_thermal_relaxation(model, calibratio
     assert result.get_density_matrix().shape == (9, 9)
 
 
-def test_default_noise_covers_unused_model_subsystems_but_specific_replaces_it(
+def test_explicit_background_noise_covers_referenced_and_unused_subsystems(
     model, calibration
 ):
     program = fq.Program(1)
-    backend = TransmonEmulator(model)
-    default = ThermalRelaxation(t1=100, t2=200)
-    specific = ThermalRelaxation(t1=50, t2=100)
-    backend._noise_model.add_channel(default)
-    backend._noise_model.add_channel(specific, targets=program.quantum_registers[0][0])
+    noise = NoiseModel()
+    noise.add(ThermalRelaxation(t1=50, t2=100), targets="q0")
+    noise.add(ThermalRelaxation(t1=100, t2=200), targets="q1")
+    backend = TransmonEmulator(model, noise=noise)
 
-    selected = backend._prepare_program(program).always_on_noise
+    selected = backend._prepare_program(program).background_noise
     assert [term.engine_indices for term in selected] == [(0,), (1,)]
     assert np.allclose(
         selected[0].local_operator,

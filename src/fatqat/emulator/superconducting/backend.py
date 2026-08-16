@@ -64,7 +64,7 @@ class TransmonEmulator(_PulseBackend):
             self._lindblad_implementation_map,
             local_dimension=self.model.local_dimension,
             backend_name=type(self).__name__,
-            supports_readout_error=True,
+            supports_readout_confusion=True,
         )
 
     def _resolve_execution_mode(self, facts: PulsePlanFacts) -> ExecutionMode:
@@ -87,7 +87,7 @@ class TransmonEmulator(_PulseBackend):
         return _TransmonQutipAdapter(
             self._target,
             engine_allocation=prepared.engine_allocation,
-            always_on_noise=prepared.always_on_noise,
+            background_noise=prepared.background_noise,
             retain_final_state=retain_final_state,
         )
 

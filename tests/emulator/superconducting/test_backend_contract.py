@@ -66,7 +66,7 @@ def test_constructor_signature_map_type_and_model_ownership_are_exact(model):
         "_direct_control_target_indices",
         "_lower_gate_noise",
         "_engine_index_to_model_ordinal",
-        "_always_on_noise",
+        "_background_noise",
         "_physical_dimension",
         "_create_runner_from_bindings",
     ):
@@ -158,7 +158,7 @@ def test_propagator_rejects_noncoherent_program_features_and_noise(
         backend.propagator(conditioned)
 
     noise = NoiseModel()
-    noise.add_channel(PhaseDamping(rate=0.001), targets="q0")
+    noise.add(PhaseDamping(rate=0.001), targets="q0")
     noisy_backend = make_backend(noise)
     driven = fq.Program(1)
     driven.add(fq.ops.RX(0.2), 0)
@@ -170,7 +170,7 @@ def test_propagator_allows_noise_when_frame_only_plan_has_zero_duration(
     make_backend, monkeypatch
 ):
     noise = NoiseModel()
-    noise.add_channel(PhaseDamping(rate=0.001), targets="q0")
+    noise.add(PhaseDamping(rate=0.001), targets="q0")
     backend = make_backend(noise)
     program = fq.Program(1)
     program.add(fq.ops.RZ(0.2), 0)
@@ -182,7 +182,7 @@ def test_propagator_allows_noise_when_frame_only_plan_has_zero_duration(
 
     monkeypatch.setattr(
         qutip_adapter._TransmonQutipAdapter,
-        "_build_always_on_noise",
+        "_build_background_noise",
         forbidden_dissipative_or_solver_work,
     )
     monkeypatch.setattr(qutip_adapter, "mesolve", forbidden_dissipative_or_solver_work)
@@ -255,7 +255,7 @@ def test_final_state_measurement_constraint_and_reset_only_determinism_validate_
 
 def test_invalid_shots_follow_preparation_but_precede_runner(make_backend, monkeypatch):
     noise = NoiseModel()
-    noise.add_channel(PhaseDamping(rate=0.01), targets="q0")
+    noise.add(PhaseDamping(rate=0.01), targets="q0")
     backend = make_backend(noise)
     program = fq.Program(1, 1)
     program.measure(0, 0)
@@ -298,8 +298,9 @@ def test_layout_binds_model_ids_while_engine_indices_stay_private(backend):
 
 def test_common_preparation_owns_target_and_lindblad_binding_once(model, monkeypatch):
     noise = NoiseModel()
-    noise.add_channel(PhaseDamping(rate=0.02), operation=fq.ops.RX)
-    noise.add_channel(ThermalRelaxation(t1=100.0, t2=150.0))
+    noise.add(PhaseDamping(rate=0.02), operation=fq.ops.RX)
+    noise.add(ThermalRelaxation(t1=100.0, t2=150.0), targets="q0")
+    noise.add(ThermalRelaxation(t1=100.0, t2=150.0), targets="q1")
     backend = TransmonEmulator(model, noise=noise)
     program = fq.Program(1)
     program.add(fq.ops.RX(0.3), 0)
@@ -344,7 +345,7 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
     }
     model = TransmonModel(model_document)
     noise = NoiseModel()
-    noise.add_channel(PhaseDamping(rate=0.02), targets="q1")
+    noise.add(PhaseDamping(rate=0.02), targets="q1")
     backend = TransmonEmulator(model, noise=noise)
     program = fq.Program(2)
     program.add(fq.ops.RX(0.3), 0)
@@ -356,7 +357,7 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
 
     assert prepared.engine_allocation.device_operands == ("q0", "q1", "q2")
     assert prepared.plan[0].target_indices == (2,)
-    assert tuple(term.engine_indices for term in prepared.always_on_noise) == ((1,),)
+    assert tuple(term.engine_indices for term in prepared.background_noise) == ((1,),)
     assert result.metadata["state_axes"] == [
         {"device_operand": "q0", "register_ref": q1},
         {"device_operand": "q1", "register_ref": None},

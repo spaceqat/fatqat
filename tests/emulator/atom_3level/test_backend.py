@@ -275,7 +275,8 @@ def test_atom_3level_noise_is_retained_validated_and_binary(
 ):
     empty = NoiseModel()
     backend = _backend(atom_3level_model, atom_3level_calibration, noise=empty)
-    assert backend._noise_model is empty
+    assert backend._noise_model is not empty
+    assert backend._noise_model._noise_sources() == ()
     assert backend.validate_noise(empty).supported
     readout = _readout(np.array([[0.9, 0.1], [0.1, 0.9]]))
     assert backend.validate_noise(readout).supported
@@ -292,22 +293,17 @@ def test_atom_3level_noise_is_retained_validated_and_binary(
         Depolarizing(p=0.1),
     ):
         rejected = NoiseModel()
-        rejected.add_channel(channel, operation=fq.ops.X)
+        rejected.add(channel, operation=fq.ops.X)
         assert not backend.validate_noise(rejected).supported
         with pytest.raises(BackendValidationError, match=type(channel).__name__):
             _backend(atom_3level_model, atom_3level_calibration, noise=rejected)
 
-    empty.add_channel(PhaseDamping(p=0.1), operation=fq.ops.X)
-
-    def runner_must_not_be_built(*_args, **_kwargs):
-        pytest.fail("unsupported atom noise reached adapter construction")
-
-    backend._create_runner = runner_must_not_be_built
+    empty.add(PhaseDamping(rate=0.1), operation=fq.ops.X)
+    assert not backend.validate_noise(empty).supported
     driven = fq.Program(2)
     driven.add(fq.ops.RX(0.1), 0)
-    for call in (lambda: backend.run(driven), lambda: backend.propagator(driven)):
-        with pytest.raises(BackendValidationError, match="PhaseDamping"):
-            call()
+    backend.run(driven).result()
+    backend.propagator(driven)
 
     with pytest.raises(BackendValidationError, match="2 x 2"):
         _backend(atom_3level_model, atom_3level_calibration, noise=_readout(np.eye(3)))
@@ -315,7 +311,7 @@ def test_atom_3level_noise_is_retained_validated_and_binary(
 
 def _readout(matrix):
     model = NoiseModel()
-    model.add_readout_error(matrix)
+    model.add(fq.noise.ReadoutConfusion(matrix))
     return model
 
 

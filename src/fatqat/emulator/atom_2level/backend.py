@@ -149,13 +149,13 @@ class Atom2LevelEmulator(_PulseBackend):
             local_dimension=self.model.local_dimension,
             backend_name=type(self).__name__,
             allow_operation_scoped=not self._uses_builtin_lindblad_defaults,
-            supports_readout_error=False,
+            supports_readout_confusion=False,
         )
 
     def _resolve_execution_mode(self, facts: PulsePlanFacts) -> ExecutionMode:
         has_lindblad = (
             facts.has_resolved_lindblad
-            or facts.has_supported_always_on_lindblad_registration
+            or facts.has_supported_background_lindblad_registration
         )
         if has_lindblad and facts.has_measurement:
             return "trajectory" if facts.has_nonzero_evolution else "statevector"
@@ -175,7 +175,7 @@ class Atom2LevelEmulator(_PulseBackend):
         return _Atom2LevelQutipAdapter(
             self._target,
             engine_allocation=prepared.engine_allocation,
-            always_on_noise=prepared.always_on_noise,
+            background_noise=prepared.background_noise,
             execution_mode=execution_mode,
             retain_final_state=retain_final_state,
         )

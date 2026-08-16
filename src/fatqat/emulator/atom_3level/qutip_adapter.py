@@ -48,7 +48,7 @@ class _Atom3LevelQutipAdapter:
         target: _Atom3LevelTarget,
         *,
         engine_allocation: _EngineAllocation,
-        always_on_noise: tuple[ResolvedLindbladTerm, ...] = (),
+        background_noise: tuple[ResolvedLindbladTerm, ...] = (),
         retain_final_state: bool = True,
     ) -> None:
         if not isinstance(target, _Atom3LevelTarget):
@@ -66,7 +66,7 @@ class _Atom3LevelQutipAdapter:
         self._engine_allocation = engine_allocation
         self._retain_final_state = retain_final_state
         self._solver_used = "none"
-        self._always_on_noise = tuple(always_on_noise)
+        self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
         self._dims = list(engine_allocation.system_dims)
         self.local_raman_raising = Qobj(
@@ -203,7 +203,7 @@ class _Atom3LevelQutipAdapter:
                 solver_state,
                 [context.time, run.end_time],
                 c_ops=(
-                    self._always_on_collapse_operators()
+                    self._background_collapse_operators()
                     + self._bind_block_collapse_operators(run, enabled)
                 ),
                 options=_SOLVER_OPTIONS,
@@ -312,10 +312,10 @@ class _Atom3LevelQutipAdapter:
             operator * context.state * operator.dag() for operator in operators
         )
 
-    def _always_on_collapse_operators(self) -> tuple[Any, ...]:
+    def _background_collapse_operators(self) -> tuple[Any, ...]:
         if self._collapse_operators is None:
             self._collapse_operators = self._expand_collapse_terms(
-                self._always_on_noise
+                self._background_noise
             )
         return self._collapse_operators
 

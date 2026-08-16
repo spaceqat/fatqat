@@ -21,7 +21,7 @@ from fatqat.emulator.atom_2level.qutip_adapter import _Atom2LevelQutipAdapter
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     AmplitudeDamping,
-    AtomLoss,
+    Loss,
     LindbladImplementationMap,
     PhaseDamping,
     ThermalRelaxation,
@@ -64,7 +64,9 @@ def _backend(
 
 def _noise(channel, *, operation=None, targets=None):
     noise = fq.NoiseModel()
-    noise.add_channel(channel, operation=operation, targets=targets)
+    if operation is None and targets is None:
+        targets = 0
+    noise.add(channel, operation=operation, targets=targets)
     return noise
 
 
@@ -123,11 +125,11 @@ def _single_site_x_map(model):
     "channel",
     [AmplitudeDamping(rate=0.2), PhaseDamping(rate=0.3)],
 )
-def test_support_accepts_only_always_on_rate_damping(model, channel):
+def test_support_accepts_only_background_rate_damping(model, channel):
     backend = _backend(model)
     report = backend.validate_noise(_noise(channel))
     assert report.supported
-    assert report.accepted_sources == (f"{type(channel).__name__}(rate, always-on)",)
+    assert report.accepted_sources == (f"{type(channel).__name__}(rate, background)",)
     assert _backend(model, _noise(channel)).model is model
 
 
@@ -139,7 +141,7 @@ def test_support_accepts_only_always_on_rate_damping(model, channel):
         _noise(ThermalRelaxation(t1=10.0, t2=15.0)),
         _noise(AmplitudeDamping(rate=0.2), operation=fq.ops.X),
         _noise(AmplitudeDamping(rate=(0.1, 0.2))),
-        _noise(AtomLoss(p=0.2), operation=fq.ops.X),
+        _noise(Loss(p=0.2), operation=fq.ops.X),
     ],
 )
 def test_support_rejects_probability_unsupported_scoped_and_wrong_arity_noise(
@@ -152,19 +154,16 @@ def test_support_rejects_probability_unsupported_scoped_and_wrong_arity_noise(
         _backend(model, noise)
 
 
-def test_support_rejects_readout_error(model):
+def test_support_rejects_readout_confusion(model):
     noise = fq.NoiseModel()
-    noise.add_readout_error(np.eye(2))
+    noise.add(fq.noise.ReadoutConfusion(np.eye(2)))
     report = _backend(model).validate_noise(noise)
     assert not report.supported
-    assert "readout_error" in report.rejected_sources
+    assert "ReadoutConfusion" in report.rejected_sources
 
 
-@pytest.mark.parametrize(
-    "channel",
-    (AmplitudeDamping(p=0.2), AmplitudeDamping(rate=0.2)),
-)
-def test_explicit_equivalent_map_enables_shared_operation_scopes(model, channel):
+def test_explicit_equivalent_map_enables_rate_operation_scope(model):
+    channel = AmplitudeDamping(rate=0.2)
     noise = _noise(channel, operation=fq.ops.X)
     assert not _backend(model).validate_noise(noise).supported
 
@@ -179,9 +178,7 @@ def test_explicit_equivalent_map_enables_shared_operation_scopes(model, channel)
     prepared = explicit._prepare_program(program)
 
     term = prepared.plan[0].noise[0]
-    expected_rate = (
-        -np.log1p(-channel.p[0]) / 0.5 if channel.p is not None else channel.rate[0]
-    )
+    expected_rate = channel.rate[0]
     assert term.engine_indices == (0,)
     assert abs(term.local_operator[0, 1]) ** 2 == pytest.approx(expected_rate)
     assert explicit.run(program).result().available_data == {"density_matrix"}
@@ -205,9 +202,12 @@ def test_explicit_map_rejects_wrong_probability_and_rate_arity(model, channel):
     report = backend.validate_noise(noise)
 
     assert not report.supported
-    assert report.rejected_sources == (
-        "AmplitudeDamping(" f"{'p' if channel.p is not None else 'rate'}-arity-2)",
+    expected_label = (
+        "AmplitudeDamping(p)"
+        if channel.p is not None
+        else "AmplitudeDamping(rate-arity-2)"
     )
+    assert report.rejected_sources == (expected_label,)
     with pytest.raises(BackendValidationError, match="not supported"):
         _backend(
             model,
@@ -217,7 +217,7 @@ def test_explicit_map_rejects_wrong_probability_and_rate_arity(model, channel):
         )
 
 
-def test_explicit_map_keeps_always_on_rate_and_rejects_probability(model):
+def test_explicit_map_keeps_background_rate_and_rejects_probability(model):
     implementations = _explicit_damping_map()
     assert (
         _backend(
@@ -334,11 +334,13 @@ def test_invalid_noise_selector_is_rejected_against_the_run_layout(model):
         backend.run(fq.Program(1))
 
 
-def test_default_and_specific_selectors_bind_independently_to_sites(model):
-    default = _noise(AmplitudeDamping(rate=0.25))
-    backend = _backend(model, default, sites=2)
+def test_explicit_background_selectors_bind_independently_to_sites(model):
+    per_site = fq.NoiseModel()
+    per_site.add(AmplitudeDamping(rate=0.25), targets=0)
+    per_site.add(AmplitudeDamping(rate=0.25), targets=1)
+    backend = _backend(model, per_site, sites=2)
     program = fq.Program(2)
-    terms = backend._prepare_program(program).always_on_noise
+    terms = backend._prepare_program(program).background_noise
     assert [term.engine_indices for term in terms] == [(0,), (1,)]
     expected = np.asarray([[0.0, np.sqrt(0.25)], [0.0, 0.0]])
     assert all(term.local_operator == pytest.approx(expected) for term in terms)
@@ -348,7 +350,7 @@ def test_default_and_specific_selectors_bind_independently_to_sites(model):
         _noise(PhaseDamping(rate=0.5), targets=(1,)),
         sites=2,
     )
-    terms = targeted._prepare_program(program).always_on_noise
+    terms = targeted._prepare_program(program).background_noise
     assert len(terms) == 1
     assert terms[0].engine_indices == (1,)
     assert terms[0].local_operator == pytest.approx(np.diag([0.0, np.sqrt(1.0)]))
@@ -362,7 +364,7 @@ def test_logical_one_element_selector_targets_exactly_one_site(model):
         _noise(AmplitudeDamping(rate=0.2), targets=selected),
         sites=2,
     )
-    terms = backend._prepare_program(program).always_on_noise
+    terms = backend._prepare_program(program).background_noise
     assert [term.engine_indices for term in terms] == [(0,)]
 
 
@@ -399,7 +401,7 @@ def test_one_atom_damping_matches_analytic_master_equation(model, kind):
     adapter = _Atom2LevelQutipAdapter(
         backend._target,
         engine_allocation=prepared.engine_allocation,
-        always_on_noise=prepared.always_on_noise,
+        background_noise=prepared.background_noise,
         execution_mode="density_matrix",
     )
     if kind == "amplitude":
@@ -431,7 +433,10 @@ def test_unmeasured_noise_returns_exact_density_matrix(model):
 
 def test_two_atom_mesolve_matches_independently_assembled_master_equation(model):
     gamma = 0.15
-    backend = _backend(model, _noise(AmplitudeDamping(rate=gamma)), sites=2)
+    per_site = fq.NoiseModel()
+    per_site.add(AmplitudeDamping(rate=gamma), targets=0)
+    per_site.add(AmplitudeDamping(rate=gamma), targets=1)
+    backend = _backend(model, per_site, sites=2)
     duration = 0.4
     amplitude = 0.8
     program = _pulse_program(

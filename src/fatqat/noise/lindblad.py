@@ -16,26 +16,6 @@ class LindbladImplementationMap(_ChannelImplementationRegistry):
     """Resolve channel descriptors to local Lindblad-operator matrices."""
 
 
-def _channel_rate(
-    channel: Channel, duration: float | None
-) -> float | tuple[float, ...]:
-    """Resolve probability mode over one interval, or require an always-on rate."""
-    if duration is None:
-        rate = getattr(channel, "rate", None)
-        if rate is None:
-            raise BackendValidationError(
-                f"always-on {type(channel).__name__} requires rate mode"
-            )
-        return rate
-    try:
-        return channel.as_rate(duration)
-    except ValueError as exc:
-        raise BackendValidationError(
-            f"{type(channel).__name__} cannot be lowered for this pulse "
-            f"occurrence: {exc}"
-        ) from exc
-
-
 def _amplitude_lindblad_operator(
     rates: tuple[float, ...], physical_dimension: int
 ) -> np.ndarray:
@@ -51,28 +31,33 @@ def _amplitude_lindblad_operator(
 
 
 def amplitude_damping_lindblad_rule(
-    channel: Channel, *, physical_dimension: int, duration: float | None
+    channel: Channel, *, physical_dimension: int
 ) -> tuple[np.ndarray, ...]:
     """Resolve amplitude damping to its local ladder-jump operator."""
     assert isinstance(channel, AmplitudeDamping)
-    rate = _channel_rate(channel, duration)
-    assert isinstance(rate, tuple)
-    return (_amplitude_lindblad_operator(rate, physical_dimension),)
+    if channel.rate is None:
+        raise BackendValidationError(
+            "AmplitudeDamping requires authored rate mode on a pulse backend"
+        )
+    return (_amplitude_lindblad_operator(channel.rate, physical_dimension),)
 
 
 def phase_damping_lindblad_rule(
-    channel: Channel, *, physical_dimension: int, duration: float | None
+    channel: Channel, *, physical_dimension: int
 ) -> tuple[np.ndarray, ...]:
     """Resolve phase damping to its convention-matched local number operator."""
     assert isinstance(channel, PhaseDamping)
-    rate = _channel_rate(channel, duration)
-    assert isinstance(rate, float)
+    rate = channel.rate
+    if rate is None:
+        raise BackendValidationError(
+            "PhaseDamping requires authored rate or t_phi mode on a pulse backend"
+        )
     number = np.diag(np.arange(physical_dimension, dtype=float)).astype(complex)
     return (sqrt(2 * rate) * number,)
 
 
 def thermal_relaxation_lindblad_rule(
-    channel: Channel, *, physical_dimension: int, duration: float | None
+    channel: Channel, *, physical_dimension: int
 ) -> tuple[np.ndarray, ...]:
     """Resolve T1/T2 relaxation into amplitude and residual-dephasing operators."""
     assert isinstance(channel, ThermalRelaxation)
@@ -100,7 +85,6 @@ def resolve_lindblad_operators(
     *,
     implementation_map: LindbladImplementationMap,
     physical_dimension: int,
-    duration: float | None,
 ) -> tuple[np.ndarray, ...]:
     """Resolve a channel to validated local Lindblad-operator matrices."""
     rule = implementation_map.get(type(channel))
@@ -108,13 +92,7 @@ def resolve_lindblad_operators(
         raise UnsupportedOperationError(
             f"{type(channel).__name__} has no Lindblad implementation on this backend"
         )
-    operators = tuple(
-        rule(
-            channel,
-            physical_dimension=physical_dimension,
-            duration=duration,
-        )
-    )
+    operators = tuple(rule(channel, physical_dimension=physical_dimension))
     if not operators:
         raise BackendValidationError(
             f"{type(channel).__name__} resolved to no Lindblad operators"

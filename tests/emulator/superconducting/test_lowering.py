@@ -117,7 +117,7 @@ def test_pulse_measurement_confusion_must_match_the_reported_bit_dimension(
     make_backend,
 ):
     noise = NoiseModel()
-    noise.add_readout_error(np.eye(3), target="q0")
+    noise.add(fq.noise.ReadoutConfusion(np.eye(3)), targets="q0")
     backend = make_backend(noise)
     program = fq.Program(1, 1)
     program.measure(0, 0)
@@ -126,7 +126,7 @@ def test_pulse_measurement_confusion_must_match_the_reported_bit_dimension(
     # pulse's literal (0, 1, 1) reported-digit map implies reported dimension
     # 2, so a 3x3 confusion is rejected with the same "reported classical
     # dimension" message the matrix family raises for an analogous mismatch
-    # (see tests/backend/test_readout_error.py::test_dimension_mismatch_rejected_at_lowering).
+    # (see the simulator readout-confusion dimension-mismatch coverage).
     with pytest.raises(BackendValidationError, match="reported classical dimension"):
         backend._prepare_program(program)
 
@@ -136,7 +136,7 @@ def test_pulse_measurement_accepts_a_correctly_shaped_confusion_matrix(
 ):
     always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
     noise = NoiseModel()
-    noise.add_readout_error(always_flip, target="q0")
+    noise.add(fq.noise.ReadoutConfusion(always_flip), targets="q0")
     backend = make_backend(noise)
     program = fq.Program(1, 1)
     program.measure(0, 0)

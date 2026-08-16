@@ -91,10 +91,8 @@ class _PulseBackend(ABC):
         self._model = model
         self._gate_implementation_map = gate_implementation_map.copy()
         self._lindblad_implementation_map = lindblad_implementation_map.copy()
-        # A supplied empty model is still a caller-owned mutable object.  In
-        # particular, later registrations must affect this backend instead of
-        # silently switching it to a replacement because it is falsey.
-        self._noise_model = NoiseModel() if noise is None else noise
+        source_noise = NoiseModel() if noise is None else noise
+        self._noise_model = source_noise._copy()
 
     @property
     @final
@@ -136,7 +134,7 @@ class _PulseBackend(ABC):
             ),
         )
         classical_allocation = _ClassicalAllocation.from_program(program)
-        self._noise_model.validate_for(program, frozenset(self._target.device_labels))
+        self._noise_model._validate_for(program, frozenset(self._target.device_labels))
         report = self.validate_noise(self._noise_model)
         if not report.supported:
             raise BackendValidationError("; ".join(report.warnings))
@@ -147,22 +145,22 @@ class _PulseBackend(ABC):
         )
         operations = _break_grouped_operations(program.operations)
         plan = tuple(self._lower(operations, context))
-        always_on_noise = planning._resolve_always_on_noise(
+        background_noise = planning._resolve_background_noise(
             target=self._target,
             resource_layout=resolved_layout,
             engine_allocation=engine_allocation,
             noise_model=self._noise_model,
             implementation_map=self._lindblad_implementation_map,
         )
-        supported_always_on = any(
+        supported_background = any(
             operation is None
             and self._lindblad_implementation_map.get(type(channel)) is not None
-            for channel, operation in self._noise_model.channel_registrations()
+            for channel, operation in self._noise_model._noise_sources()
         )
         facts = planning._derive_plan_facts(
             plan,
-            always_on_noise,
-            has_supported_always_on_lindblad_registration=supported_always_on,
+            background_noise,
+            has_supported_background_lindblad_registration=supported_background,
         )
         return _PreparedPulseProgram(
             plan=plan,
@@ -170,7 +168,7 @@ class _PulseBackend(ABC):
             resource_layout=resolved_layout,
             engine_allocation=engine_allocation,
             classical_allocation=classical_allocation,
-            always_on_noise=always_on_noise,
+            background_noise=background_noise,
         )
 
     @final

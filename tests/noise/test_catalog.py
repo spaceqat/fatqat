@@ -124,7 +124,7 @@ def test_phase_damping_normalizes_t_phi_to_rate():
 
 def test_phase_damping_t_phi_preserves_multilevel_number_operator_convention():
     (operator,) = phase_damping_lindblad_rule(
-        PhaseDamping(t_phi=20.0), physical_dimension=3, duration=None
+        PhaseDamping(t_phi=20.0), physical_dimension=3
     )
 
     assert np.allclose(operator, np.sqrt(2 / 20.0) * np.diag([0.0, 1.0, 2.0]))

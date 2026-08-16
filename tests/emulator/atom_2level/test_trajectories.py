@@ -31,7 +31,7 @@ def model_fixture():
 
 def _backend(model, rate=0.3):
     noise = fq.NoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=rate))
+    noise.add(AmplitudeDamping(rate=rate), targets=0)
     return Atom2LevelEmulator(
         model,
         arrangement=fq.AtomArrangement.rectangular(1, 1, 2.0),
@@ -149,7 +149,7 @@ def test_retained_trajectory_diagnostics_are_explicit(model, monkeypatch, failur
     adapter = _Atom2LevelQutipAdapter(
         backend._target,
         engine_allocation=prepared.engine_allocation,
-        always_on_noise=prepared.always_on_noise,
+        background_noise=prepared.background_noise,
         execution_mode="trajectory",
     )
     run = schedule_pulse_run((prepared.plan[0],), boundary_time=0.0)

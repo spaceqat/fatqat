@@ -53,7 +53,7 @@ class _Atom2LevelQutipAdapter:
         target: _Atom2LevelTarget,
         *,
         engine_allocation: _EngineAllocation,
-        always_on_noise: tuple[ResolvedLindbladTerm, ...] = (),
+        background_noise: tuple[ResolvedLindbladTerm, ...] = (),
         execution_mode: ExecutionMode = "statevector",
         retain_final_state: bool = True,
     ) -> None:
@@ -101,7 +101,7 @@ class _Atom2LevelQutipAdapter:
             0 * identity,
         )
         self._interaction_drift = self._build_interaction_drift()
-        self._collapse_operators = self._build_collapse_operators(always_on_noise)
+        self._collapse_operators = self._build_collapse_operators(background_noise)
 
     def solver_metadata(self) -> dict[str, Any]:
         return {

@@ -29,9 +29,11 @@ def _lindblad_map(rule=phase_damping_lindblad_rule):
     return implementations
 
 
-def _noise(channel, *, operation=None):
+def _noise(channel, *, operation=None, targets=None):
     model = NoiseModel()
-    model.add_channel(channel, operation=operation)
+    if operation is None and targets is None:
+        targets = 0
+    model.add(channel, operation=operation, targets=targets)
     return model
 
 
@@ -81,7 +83,7 @@ def test_lindblad_constructor_surface_defaults_types_and_copy_isolation(
 def test_default_rejects_physical_channels_but_custom_map_classifies_them(
     atom_3level_model,
 ):
-    operation_noise = _noise(PhaseDamping(p=0.2), operation=fq.ops.RX)
+    operation_noise = _noise(PhaseDamping(rate=0.2), operation=fq.ops.RX)
     with pytest.raises(BackendValidationError, match="PhaseDamping"):
         _backend(atom_3level_model, noise=operation_noise)
 
@@ -92,44 +94,38 @@ def test_default_rejects_physical_channels_but_custom_map_classifies_them(
     )
     assert custom.validate_noise(operation_noise).supported
 
-    always_on = _noise(PhaseDamping(rate=0.3))
+    background = _noise(PhaseDamping(rate=0.3))
     assert (
         _backend(
             atom_3level_model,
-            noise=always_on,
+            noise=background,
             lindblad_map=_lindblad_map(),
         )
-        .validate_noise(always_on)
+        .validate_noise(background)
         .supported
     )
 
-    probability_always_on = _noise(PhaseDamping(p=0.2))
+    probability_background = _noise(PhaseDamping(p=0.2))
     classifier = _backend(atom_3level_model, lindblad_map=_lindblad_map())
-    assert not classifier.validate_noise(probability_always_on).supported
+    assert not classifier.validate_noise(probability_background).supported
     with pytest.raises(BackendValidationError, match="PhaseDamping"):
         _backend(
             atom_3level_model,
-            noise=probability_always_on,
+            noise=probability_background,
             lindblad_map=_lindblad_map(),
         )
 
 
-@pytest.mark.parametrize(
-    "channel",
-    (AmplitudeDamping(p=(0.1,)), AmplitudeDamping(rate=(0.1,))),
-)
 def test_custom_map_rejects_qutrit_amplitude_damping_with_wrong_arity(
-    atom_3level_model, channel
+    atom_3level_model,
 ):
     implementations = _lindblad_map()
     implementations.register(AmplitudeDamping, amplitude_damping_lindblad_rule)
     backend = _backend(atom_3level_model, lindblad_map=implementations)
-    invalid = _noise(channel, operation=fq.ops.RX)
+    invalid = _noise(AmplitudeDamping(rate=(0.1,)), operation=fq.ops.RX)
     report = backend.validate_noise(invalid)
     assert not report.supported
-    assert report.rejected_sources == (
-        "AmplitudeDamping(" f"{'p' if channel.p is not None else 'rate'}-arity-1)",
-    )
+    assert report.rejected_sources == ("AmplitudeDamping(rate-arity-1)",)
     assert "requires 2 damping values" in report.warnings[0]
 
     valid = _noise(
@@ -185,7 +181,7 @@ def test_readout_shape_rule_is_independent_of_custom_lindblad_map(
     atom_3level_model,
 ):
     valid = NoiseModel()
-    valid.add_readout_error(np.eye(2))
+    valid.add(fq.noise.ReadoutConfusion(np.eye(2)))
     assert (
         _backend(
             atom_3level_model,
@@ -197,7 +193,7 @@ def test_readout_shape_rule_is_independent_of_custom_lindblad_map(
     )
 
     invalid = NoiseModel()
-    invalid.add_readout_error(np.eye(3))
+    invalid.add(fq.noise.ReadoutConfusion(np.eye(3)))
     with pytest.raises(BackendValidationError, match="2 x 2"):
         _backend(
             atom_3level_model,
@@ -221,14 +217,10 @@ def test_custom_rule_must_return_local_three_by_three_operators(
         backend._prepare_program(_rx_program())
 
 
-@pytest.mark.parametrize(
-    "channel",
-    (PhaseDamping(p=0.4), PhaseDamping(rate=0.4)),
-)
 def test_operation_scoped_terms_bind_qutrit_ordinals_and_change_output(
-    atom_3level_model, channel
+    atom_3level_model,
 ):
-    noise = _noise(channel, operation=fq.ops.RX)
+    noise = _noise(PhaseDamping(rate=0.4), operation=fq.ops.RX)
     noisy = _backend(
         atom_3level_model,
         noise=noise,
@@ -246,7 +238,7 @@ def test_operation_scoped_terms_bind_qutrit_ordinals_and_change_output(
     assert not np.allclose(result.get_density_matrix(), ideal.get_density_matrix())
 
 
-def test_always_on_terms_are_resolved_and_executed(atom_3level_model):
+def test_background_terms_are_resolved_and_executed(atom_3level_model):
     backend = _backend(
         atom_3level_model,
         noise=_noise(PhaseDamping(rate=0.4)),
@@ -256,8 +248,8 @@ def test_always_on_terms_are_resolved_and_executed(atom_3level_model):
     prepared = backend._prepare_program(program)
     result = backend.run(program).result()
 
-    assert len(prepared.always_on_noise) == 1
-    assert prepared.always_on_noise[0].engine_indices == (0,)
+    assert len(prepared.background_noise) == 1
+    assert prepared.background_noise[0].engine_indices == (0,)
     assert result.metadata["solver"]["solver"] == "mesolve"
 
 

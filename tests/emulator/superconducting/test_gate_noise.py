@@ -1,5 +1,6 @@
 """Gate-keyed AmplitudeDamping/PhaseDamping lowered into pulse intervals."""
 
+from dataclasses import dataclass
 from math import sqrt
 
 import numpy as np
@@ -25,13 +26,40 @@ from fatqat.waveforms import SampledWaveform
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     AmplitudeDamping,
+    Channel,
     Depolarizing,
     LindbladImplementationMap,
     NoiseModel,
+    PauliChannel,
     PhaseDamping,
     ThermalRelaxation,
 )
 from fatqat.noise.lindblad import phase_damping_lindblad_rule
+
+
+@dataclass(frozen=True)
+class _DriveBroadening(Channel):
+    """Test-only local generator whose physics is not expressed as a rate field."""
+
+    _num_subsystems = 1
+    strength: float
+
+
+@dataclass(frozen=True)
+class _TwoBodyGenerator(Channel):
+    _num_subsystems = 2
+    strength: float
+
+
+@dataclass(frozen=True)
+class _VariableWidthGenerator(Channel):
+    strength: float
+
+
+def _broadening_rule(channel, *, physical_dimension):
+    return (
+        np.sqrt(channel.strength) * np.diag(np.arange(physical_dimension, dtype=float)),
+    )
 
 
 @pytest.fixture(name="make_backend")
@@ -112,57 +140,51 @@ def _evolve(adapter, blocks, context, *, boundary=0.0):
 # --- validate_noise / capability reporting ---------------------------------
 
 
-def test_pulse_backend_accepts_gate_keyed_damping_in_either_mode(make_backend):
+def test_pulse_backend_accepts_gate_keyed_rate_and_rejects_probability(make_backend):
     noise = NoiseModel()
-    noise.add_channel(AmplitudeDamping(p=(0.01, 0.02)), operation=fq.ops.RX)
-    noise.add_channel(PhaseDamping(rate=0.001), operation=fq.ops.RX)
+    noise.add(AmplitudeDamping(p=(0.01, 0.02)), operation=fq.ops.RX)
+    noise.add(PhaseDamping(rate=0.001), operation=fq.ops.RX)
     report = make_backend(noise).validate_noise(noise)
 
-    assert report.supported is True
-    assert set(report.accepted_sources) == {
-        "AmplitudeDamping(p)",
-        "PhaseDamping(rate)",
-    }
-    assert report.rejected_sources == ()
+    assert report.supported is False
+    assert report.accepted_sources == ("PhaseDamping(rate)",)
+    assert report.rejected_sources == ("AmplitudeDamping(p)",)
+    assert "finite probability mode" in report.warnings[0]
 
 
-@pytest.mark.parametrize(
-    "channel",
-    (AmplitudeDamping(p=(0.1,)), AmplitudeDamping(rate=(0.1,))),
-)
 def test_pulse_backend_rejects_qutrit_amplitude_damping_with_wrong_arity(
-    make_backend, channel
+    make_backend,
 ):
     invalid = NoiseModel()
-    invalid.add_channel(channel, operation=fq.ops.RX)
+    invalid.add(AmplitudeDamping(rate=(0.1,)), operation=fq.ops.RX)
     report = make_backend(invalid).validate_noise(invalid)
     assert not report.supported
     assert "arity-1" in report.rejected_sources[0]
     assert "requires 2 damping values" in report.warnings[0]
 
     valid = NoiseModel()
-    valid.add_channel(AmplitudeDamping(rate=(0.1, 0.2)), operation=fq.ops.RX)
+    valid.add(AmplitudeDamping(rate=(0.1, 0.2)), operation=fq.ops.RX)
     assert make_backend(valid).validate_noise(valid).supported
 
 
-def test_pulse_backend_accepts_always_on_rate_and_rejects_probability(make_backend):
+def test_pulse_backend_accepts_background_rate_and_rejects_probability(make_backend):
     noise = NoiseModel()
-    noise.add_channel(PhaseDamping(rate=0.001), targets="q0")
-    noise.add_channel(AmplitudeDamping(p=(0.01, 0.02)), targets="q1")
+    noise.add(PhaseDamping(rate=0.001), targets="q0")
+    noise.add(AmplitudeDamping(p=(0.01, 0.02)), targets="q1")
 
     report = make_backend(noise).validate_noise(noise)
 
-    assert report.accepted_sources == ("PhaseDamping(rate, always-on)",)
-    assert report.rejected_sources == ("AmplitudeDamping(p, always-on)",)
-    assert "requires rate mode" in report.warnings[0]
+    assert report.accepted_sources == ("PhaseDamping(rate, background)",)
+    assert report.rejected_sources == ("AmplitudeDamping(p, background)",)
+    assert "finite probability mode" in report.warnings[0]
 
 
-def test_always_on_rate_lowers_to_the_same_lindblad_term(make_backend):
+def test_background_rate_lowers_to_the_same_lindblad_term(make_backend):
     noise = NoiseModel()
-    noise.add_channel(PhaseDamping(rate=0.0025), targets="q0")
+    noise.add(PhaseDamping(rate=0.0025), targets="q0")
     backend = make_backend(noise)
 
-    bindings = backend._prepare_program(fq.Program(1)).always_on_noise
+    bindings = backend._prepare_program(fq.Program(1)).background_noise
 
     assert len(bindings) == 1
     assert bindings[0].engine_indices == (0,)
@@ -173,7 +195,7 @@ def test_pulse_backend_still_rejects_channel_types_without_a_pulse_implementatio
     make_backend,
 ):
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.RX)
+    noise.add(Depolarizing(p=0.1), operation=fq.ops.RX)
     backend = make_backend(noise)
 
     report = backend.validate_noise(noise)
@@ -186,13 +208,88 @@ def test_pulse_backend_still_rejects_channel_types_without_a_pulse_implementatio
         backend.run(program)
 
 
+def test_pulse_backend_rejects_finite_pauli_channel_without_inferred_generator(
+    make_backend,
+):
+    noise = NoiseModel()
+    noise.add(PauliChannel({"X": 0.1}), operation=fq.ops.RX)
+
+    report = make_backend(noise).validate_noise(noise)
+
+    assert report.rejected_sources == ("PauliChannel",)
+    assert "finite-only" in report.warnings[0]
+
+
+def test_custom_generator_fields_are_interpreted_only_by_the_registered_rule(
+    model,
+):
+    implementations = LindbladImplementationMap()
+    implementations.register(_DriveBroadening, _broadening_rule)
+    noise = NoiseModel()
+    noise.add(_DriveBroadening(strength=0.25), operation=fq.ops.RX)
+    backend = TransmonEmulator(
+        model,
+        noise=noise,
+        lindblad_implementation_map=implementations,
+    )
+    program = fq.Program(1)
+    program.add(fq.ops.RX(0.2), 0)
+
+    report = backend.validate_noise(noise)
+    plan = backend._prepare_program(program).plan
+    (block,) = [step for step in plan if isinstance(step, PulseBlock)]
+
+    assert report.supported
+    assert np.allclose(
+        block.noise[0].local_operator,
+        _broadening_rule(
+            _DriveBroadening(strength=0.25),
+            physical_dimension=3,
+        )[0],
+    )
+
+
+def test_known_two_body_generator_is_rejected_during_capability_validation(model):
+    implementations = LindbladImplementationMap()
+    implementations.register(_TwoBodyGenerator, _broadening_rule)
+    noise = NoiseModel()
+    noise.add(_TwoBodyGenerator(strength=0.1), operation=fq.ops.CZ)
+    backend = TransmonEmulator(
+        model,
+        lindblad_implementation_map=implementations,
+    )
+
+    report = backend.validate_noise(noise)
+
+    assert report.rejected_sources == ("_TwoBodyGenerator",)
+    assert "single-subsystem" in report.warnings[0]
+
+
+def test_variable_width_generator_rejects_a_nonlocal_occurrence_at_lowering(model):
+    implementations = LindbladImplementationMap()
+    implementations.register(_VariableWidthGenerator, _broadening_rule)
+    noise = NoiseModel()
+    noise.add(_VariableWidthGenerator(strength=0.1), operation=fq.ops.CZ)
+    backend = TransmonEmulator(
+        model,
+        noise=noise,
+        lindblad_implementation_map=implementations,
+    )
+    program = fq.Program(2)
+    program.add(fq.ops.CZ, (0, 1))
+
+    assert backend.validate_noise(noise).supported
+    with pytest.raises(BackendValidationError, match="local to one subsystem"):
+        backend._prepare_program(program)
+
+
 def test_lindblad_implementation_map_declares_pulse_noise_capability(
     model, calibration
 ):
     implementations = LindbladImplementationMap()
     implementations.register(PhaseDamping, phase_damping_lindblad_rule)
     noise = NoiseModel()
-    noise.add_channel(AmplitudeDamping(rate=(0.01, 0.02)), operation=fq.ops.RX)
+    noise.add(AmplitudeDamping(rate=(0.01, 0.02)), operation=fq.ops.RX)
     backend = TransmonEmulator(
         model,
         noise=noise,
@@ -209,7 +306,7 @@ def test_run_rejects_unsupported_channel_from_lowering_even_bypassing_validate_n
     make_backend,
 ):
     noise = NoiseModel()
-    noise.add_channel(Depolarizing(p=0.1), operation=fq.ops.RX)
+    noise.add(Depolarizing(p=0.1), operation=fq.ops.RX)
     backend = make_backend(noise)
     program = fq.Program(1)
     program.add(fq.ops.RX(0.3), 0)
@@ -221,25 +318,21 @@ def test_run_rejects_unsupported_channel_from_lowering_even_bypassing_validate_n
 # --- lowering: rate resolution ----------------------------------------------
 
 
-def test_probability_mode_damping_lowers_to_the_converted_rate(make_backend):
-    backend = make_backend()
-    backend._noise_model.add_channel(
-        AmplitudeDamping(p=(0.01, 0.02)), operation=fq.ops.RX
-    )
+def test_probability_mode_damping_is_rejected_before_lowering(make_backend):
+    noise = NoiseModel()
+    noise.add(AmplitudeDamping(p=(0.01, 0.02)), operation=fq.ops.RX)
+    backend = make_backend(noise)
     program = fq.Program(1)
     program.add(fq.ops.RX(0.3), 0)
-    plan = backend._prepare_program(program).plan
-    (block,) = [step for step in plan if isinstance(step, PulseBlock)]
 
-    (binding,) = block.noise
-    expected = AmplitudeDamping(p=(0.01, 0.02)).as_rate(block.duration)
-    assert binding.engine_indices == (0,)
-    assert np.allclose(binding.local_operator, _amplitude_term(expected).local_operator)
+    with pytest.raises(BackendValidationError, match="finite probability mode"):
+        backend._prepare_program(program)
 
 
 def test_rate_mode_damping_lowers_unchanged(make_backend):
-    backend = make_backend()
-    backend._noise_model.add_channel(PhaseDamping(rate=0.0025), operation=fq.ops.RX)
+    noise = NoiseModel()
+    noise.add(PhaseDamping(rate=0.0025), operation=fq.ops.RX)
+    backend = make_backend(noise)
     program = fq.Program(1)
     program.add(fq.ops.RX(0.3), 0)
     plan = backend._prepare_program(program).plan
@@ -249,14 +342,9 @@ def test_rate_mode_damping_lowers_unchanged(make_backend):
     assert np.allclose(binding.local_operator, _phase_term(0.0025).local_operator)
 
 
-def test_gate_scoped_noise_resolves_using_the_custom_rules_realized_duration(
+def test_gate_scoped_rate_is_independent_of_the_realized_block_duration(
     model, calibration
 ):
-    # Gate-scoped noise must key off whatever duration the *selected* rule
-    # actually realizes, not a duration baked into the default recipe - the
-    # rule is chosen through PulseImplementationMap, so a custom rule with a
-    # different duration must change the resolved rate exactly as the
-    # default rule's own duration does.
     custom_duration = 7.0
 
     def custom_rx(operation, *, device_operands):
@@ -274,9 +362,12 @@ def test_gate_scoped_noise_resolves_using_the_custom_rules_realized_duration(
 
     implementations = PulseImplementationMap()
     implementations.add(fq.ops.RX, custom_rx)
-    backend = TransmonEmulator(model, gate_implementation_map=implementations)
-    backend._noise_model.add_channel(
-        AmplitudeDamping(p=(0.01, 0.02)), operation=fq.ops.RX
+    noise = NoiseModel()
+    noise.add(AmplitudeDamping(rate=(0.01, 0.02)), operation=fq.ops.RX)
+    backend = TransmonEmulator(
+        model,
+        noise=noise,
+        gate_implementation_map=implementations,
     )
 
     program = fq.Program(1)
@@ -286,32 +377,26 @@ def test_gate_scoped_noise_resolves_using_the_custom_rules_realized_duration(
 
     assert block.duration == custom_duration
     (binding,) = block.noise
-    expected = AmplitudeDamping(p=(0.01, 0.02)).as_rate(custom_duration)
-    assert np.allclose(binding.local_operator, _amplitude_term(expected).local_operator)
+    assert np.allclose(
+        binding.local_operator,
+        _amplitude_term((0.01, 0.02)).local_operator,
+    )
 
 
-def test_nonzero_probability_on_zero_duration_gate_is_rejected_at_lowering(
+def test_generator_rate_on_zero_duration_gate_is_retained_without_conversion(
     make_backend,
 ):
-    backend = make_backend()
-    backend._noise_model.add_channel(PhaseDamping(p=0.1), operation=fq.ops.RZ)
-    program = fq.Program(1)
-    program.add(fq.ops.RZ(0.2), 0)
-
-    with pytest.raises(BackendValidationError, match="zero duration"):
-        backend._prepare_program(program)
-
-
-def test_zero_probability_on_zero_duration_gate_is_a_silent_no_op(make_backend):
-    backend = make_backend()
-    backend._noise_model.add_channel(PhaseDamping(p=0.0), operation=fq.ops.RZ)
+    noise = NoiseModel()
+    noise.add(PhaseDamping(rate=0.1), operation=fq.ops.RZ)
+    backend = make_backend(noise)
     program = fq.Program(1)
     program.add(fq.ops.RZ(0.2), 0)
 
     plan = backend._prepare_program(program).plan
     (block,) = [step for step in plan if isinstance(step, PulseBlock)]
     (binding,) = block.noise
-    assert np.allclose(binding.local_operator, 0.0)
+    assert block.duration == 0.0
+    assert np.allclose(binding.local_operator, _phase_term(0.1).local_operator)
 
 
 # --- collapse-operator physics ----------------------------------------------
@@ -388,10 +473,14 @@ def test_collapse_terms_are_active_only_during_their_own_placed_block(model):
     assert population_2 == pytest.approx(np.exp(-rate * 2.0), abs=2e-4)
 
 
-def test_disabled_conditional_block_contributes_neither_control_nor_noise(model):
-    adapter = _adapter(model)
-    rate = 0.5
-    binding = _amplitude_term((0.0, rate))
+def test_disabled_conditional_block_keeps_only_background_noise_active(model):
+    local_rate = 0.5
+    background_rate = 0.2
+    adapter = _adapter(
+        model,
+        background_noise=(_amplitude_term((0.0, background_rate)),),
+    )
+    binding = _amplitude_term((0.0, local_rate))
     block = _idle_block(
         adapter, "q0", duration=4.0, noise=(binding,), condition=((0, 1),)
     )
@@ -401,7 +490,11 @@ def test_disabled_conditional_block_contributes_neither_control_nor_noise(model)
 
     adapter.evolve(run, context, (False,))  # condition not met: disabled
 
-    assert np.allclose(context.state.full(), initial.full())
+    population_2 = context.state.ptrace(0).diag()[2].real
+    assert population_2 == pytest.approx(
+        np.exp(-background_rate * block.duration),
+        abs=2e-4,
+    )
 
 
 def test_overlapping_disjoint_pulses_each_keep_their_own_noise_binding(model):
@@ -425,10 +518,10 @@ def test_overlapping_disjoint_pulses_each_keep_their_own_noise_binding(model):
     )
 
 
-# --- always-on and operation-scoped bindings compose ------------------------
+# --- background and operation-scoped bindings compose ------------------------
 
 
-def test_operation_scoped_and_always_on_noise_accumulate_then_idle_is_global_only(
+def test_operation_scoped_and_background_noise_accumulate_then_idle_is_global_only(
     model, make_backend
 ):
     t1 = 10.0
@@ -436,11 +529,11 @@ def test_operation_scoped_and_always_on_noise_accumulate_then_idle_is_global_onl
     # T2 = 2*T1 carries zero residual dephasing, keeping this test's population
     # dynamics governed purely by the two T1-type decay channels below.
     noise = NoiseModel()
-    noise.add_channel(ThermalRelaxation(t1=t1, t2=2 * t1), targets="q0")
+    noise.add(ThermalRelaxation(t1=t1, t2=2 * t1), targets="q0")
     backend = make_backend(noise)
     adapter = _adapter(
         model,
-        always_on_noise=backend._prepare_program(fq.Program(1)).always_on_noise,
+        background_noise=backend._prepare_program(fq.Program(1)).background_noise,
     )
     binding = _amplitude_term((0.0, rate_gate))
     gated_duration = 2.0
