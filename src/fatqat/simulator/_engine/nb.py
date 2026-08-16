@@ -37,7 +37,7 @@ Kronecker product preserves structure (see below).
   inherited NumPy partial-trace channel.
 
 Noise math lives in ``noise.nb`` (quantum-jump branch selection for the
-statevector, the channel super-operator for the density matrix, readout-error
+statevector, the channel super-operator for the density matrix, readout-confusion
 resampling, and the fused-kernel plan flattening); *applying* a Kraus operator
 is a plain local-matrix application on the coset kernels here. This module
 imports ``noise.nb``; the reverse is forced never to happen (see its docstring).
@@ -1522,7 +1522,7 @@ def _run_shots_kernel(
 
     Each shot (a `prange` iteration) owns a private state and classical register
     and interprets the compiled plan: conditioned gate application, projective
-    measurement with readout error, conditioned reset, and conditioned channel
+    measurement with readout confusion, conditioned reset, and conditioned channel
     noise. Uniforms are pre-drawn per shot in execution order (slice
     ``uniforms[s*max_draws:]``), consumed one per measurement, one more per
     confusion-bearing measured subsystem, and one per firing reset or channel -
@@ -1619,7 +1619,7 @@ def _plan_compilable(plan: list) -> bool:
     """Whether the fused dynamic kernel understands every step in the plan.
 
     The kernel compiles every step type the matrix family lowers today - matrix,
-    channel, measurement (including readout error), and reset. It does not yet
+    channel, measurement (including readout confusion), and reset. It does not yet
     encode non-identity physical-to-reported measurement maps. An unsupported
     step or map must not reach ``_compile_dynamic_plan``; the caller falls back
     to the inherited NumPy per-shot path instead, which executes every step type

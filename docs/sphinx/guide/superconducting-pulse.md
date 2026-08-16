@@ -245,30 +245,42 @@ reproducible.
 
 ## Noise support
 
-Use `NoiseModel.add_channel` without `operation=` to apply always-on qutrit
-noise, including idle time:
+Use {py:meth}`~fatqat.NoiseModel.add` without `operation=` to apply local
+background qutrit noise, including idle time. A background declaration must
+name exactly one target:
 
 ```python
-noise.add_channel(fq.noise.ThermalRelaxation(t1=..., t2=...))
-noise.add_channel(
-    fq.noise.AmplitudeDamping(rate=(..., ...)), targets=("q0",)
+noise.add(fq.noise.ThermalRelaxation(t1=60.0, t2=80.0), targets="q0")
+noise.add(
+    fq.noise.AmplitudeDamping(rate=(0.001, 0.002)),
+    targets="q1",
 )
 ```
 
-Classical readout confusion is also supported.
+Classical {py:class}`~fatqat.noise.ReadoutConfusion` is also supported and is
+intrinsically measurement-bound.
 
-Provide `operation=...` to scope the same channel descriptors to matching
-pulse blocks. The two primitive damping
-descriptors, {py:class}`~fatqat.noise.AmplitudeDamping` and
-{py:class}`~fatqat.noise.PhaseDamping` (see {doc}`noise`), in either `p` or
-`rate` mode - a `p`-mode instance is converted to a rate using the realized
-gate's own duration, in nanoseconds (this model's declared time unit); a
-`rate`-mode instance is used as-is. The resulting collapse operators are
-active only over that gate's own placed time interval: idle time and other
-concurrent, disjoint gates are unaffected, and a conditionally disabled gate
-contributes neither its controls nor its attached noise. This composes with
-always-on noise rather than replacing it - both scopes share the same
-registration and collapse-operator implementation. The default map also
-accepts `ThermalRelaxation(t1, t2)` in operation-scoped or always-on form.
-Other descriptors (for example `Depolarizing`) require a supplied replacement
-map with a valid local Lindblad rule. Coherent ZZ is not in the default map.
+Provide `operation=...` to scope a generator to matching pulse blocks:
+
+```python
+noise.add(
+    fq.noise.PhaseDamping(rate=0.002),
+    operation=fq.ops.X,
+    targets="q0",
+)
+```
+
+Pulse emulators use authored generator/time forms directly. They reject the
+built-in finite `p` forms and do not convert them with the realized block
+duration. The block duration controls how long the resolved generator evolves,
+not how the descriptor is interpreted. Operation-bound collapse operators are
+active only over their gate's placed interval; a conditionally disabled gate
+contributes neither control nor attached noise. Background noise remains active
+through elapsed scheduled time, including a disabled block's reserved window.
+
+Background and operation-specific registrations compose rather than replace
+one another. The default map accepts `ThermalRelaxation(t1, t2)` in either
+scope. Other descriptors require an explicit local generator rule in the
+supplied {py:class}`~fatqat.noise.LindbladImplementationMap`. Coherent ZZ is
+not in the default map. See {doc}`noise` for scope conflicts and backend
+parameter boundaries.

@@ -191,10 +191,10 @@ class MeasurementStep:
     identity-map compatibility default; normal matrix lowering supplies the
     identity maps explicitly.
 
-    ``confusions`` carries classical readout error resolved from the noise
+    ``confusions`` carries classical readout confusion resolved from the noise
     model at lowering: one optional column-stochastic confusion matrix per
     measured subsystem (aligned with ``measured_indices``), or ``None`` when
-    no readout error applies. Its dimensions are those of the reported
+    no readout confusion applies. Its dimensions are those of the reported
     classical digit, not necessarily the engine's physical subsystem. The
     physical collapse always uses the physical outcome; only the value written
     to the classical register is mapped and resampled, so state export and

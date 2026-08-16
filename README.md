@@ -79,18 +79,18 @@ dyn.measure(1, 1)
 
 Noise lives in a `NoiseModel`, built separately from the program and passed
 to the backend, so the same program runs ideal or noisy without changes.
-Quantum channels attach to gate occurrences; readout error is classical
+Quantum channels attach to gate occurrences; readout confusion is classical
 (the collapse stays true, only the reported bit is resampled):
 
 ```python
 import numpy as np
 
 noise = fq.NoiseModel()
-noise.add_channel(fq.noise.Depolarizing(p=0.05), operation=op.CX)
+noise.add(fq.noise.Depolarizing(p=0.05), operation=op.CX)
 damping, dephasing = fq.noise.ThermalRelaxation(t1=60e-6, t2=80e-6).as_channels(2e-6)
-noise.add_channel(damping, operation=op.H)
-noise.add_channel(dephasing, operation=op.H)
-noise.add_readout_error(np.array([[0.98, 0.05], [0.02, 0.95]]))
+noise.add(damping, operation=op.H)
+noise.add(dephasing, operation=op.H)
+noise.add(fq.noise.ReadoutConfusion(np.array([[0.98, 0.05], [0.02, 0.95]])))
 
 backend = fq.simulator.Simulator(method="DM", noise=noise)
 ```
@@ -238,7 +238,8 @@ artifact but does not publish it.
   `_backends` (private infrastructure both backend families
   share: resolved execution steps, the backend/engine contract, lowering
   helpers), `implementation` (gate-matrix rules and registry), `noise`
-  (channels, `NoiseModel`, readout error), registers, layout, jobs, results,
+  (physical noise declarations, `NoiseModel`, readout confusion), registers,
+  layout, jobs, results,
   QASM translation, errors.
 - `tests/` — pytest suite.
 - `docs/sphinx/` — user guide and API reference (see above).

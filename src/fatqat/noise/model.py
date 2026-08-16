@@ -34,15 +34,53 @@ class _NoiseRegistration:
 
 
 class NoiseModel:
-    """Mutable authoring container for physical noise declarations.
+    """Collect physical noise declarations for a simulator or emulator.
 
-    ``operation`` is structural: a concrete operation attaches dynamical noise
-    to matching occurrences; omitting it declares local background noise.
-    ``targets`` restricts operands and never means "after every gate".
+    A noise model is authored independently from a program and passed to a
+    backend with ``noise=...``. Use :meth:`add` for finite quantum channels,
+    pulse-generator noise, carrier loss, and classical readout confusion.
 
-    Backends copy the two registration lists when they are constructed. Built-
-    in declarations are immutable; custom `Channel` declarations must be
-    treated as effectively immutable after registration.
+    Supplying ``operation`` attaches dynamical noise to occurrences of that
+    operation. Omitting ``operation`` means local background noise and requires
+    one target. ``targets`` selects operands; it never means "after every
+    gate". Matrix simulators accept occurrence-bound finite channels. Pulse
+    emulators accept backend-supported local generator declarations in either
+    occurrence or background scope.
+
+    A backend captures the registrations when it is constructed. Later calls
+    to :meth:`add` affect backends constructed afterward, not existing backend
+    instances.
+
+    Examples:
+        Attach a finite channel to every ``X`` occurrence for a matrix
+        simulator:
+
+        >>> import fatqat as fq
+        >>> noise = fq.NoiseModel()
+        >>> noise.add(fq.noise.PhaseDamping(p=0.01), operation=fq.ops.X)
+        >>> backend = fq.simulator.Simulator(method="DM", noise=noise)
+
+        Add target-specific background relaxation and extra ``X``-block
+        dephasing for a pulse emulator:
+
+        >>> noise = fq.NoiseModel()
+        >>> noise.add(fq.noise.ThermalRelaxation(t1=60.0, t2=80.0), targets="q0")
+        >>> noise.add(
+        ...     fq.noise.PhaseDamping(rate=0.002),
+        ...     operation=fq.ops.X,
+        ...     targets="q0",
+        ... )
+
+        Register a column-stochastic classical confusion matrix. Readout is
+        intrinsically measurement-bound, so it takes no ``operation``:
+
+        >>> import numpy as np
+        >>> noise.add(
+        ...     fq.noise.ReadoutConfusion(
+        ...         np.array([[0.98, 0.04], [0.02, 0.96]])
+        ...     ),
+        ...     targets="q0",
+        ... )
     """
 
     def __init__(self) -> None:
@@ -77,7 +115,79 @@ class NoiseModel:
         targets: _TargetsArg = None,
         target_positions: tuple[int, ...] | int | None | object = _UNSET,
     ) -> None:
-        """Register one declaration after complete, atomic validation."""
+        """Add one physical noise declaration with its activation scope.
+
+        Dynamical declarations use structural scope:
+
+        * ``operation=...`` selects matching operation occurrences. Omitting
+          ``targets`` applies to every occurrence of that operation.
+        * Omitting ``operation`` declares background noise and requires exactly
+          one target. Only single-subsystem declarations are valid there.
+        * ``targets`` on an occurrence is an exact ordered operand selector.
+          A scalar is shorthand for a one-operand selector.
+        * ``target_positions`` selects the affected positions within a matched
+          occurrence. This lets independent local declarations cover disjoint
+          operands of a multi-operand gate.
+
+        :class:`~fatqat.noise.ReadoutConfusion` has intrinsic measurement scope.
+        It accepts an optional scalar target, but rejects ``operation`` and
+        ``target_positions``. At most one confusion registration may match a
+        measured operand.
+
+        Repeated or overlapping registrations of the same declaration type in
+        the same operation/background scope are rejected. Distinct physical
+        mechanisms accumulate in registration order. Background and
+        operation-specific registrations coexist because they describe
+        different activation scopes.
+
+        Args:
+            declaration: A :class:`~fatqat.noise.Channel`,
+                :class:`~fatqat.noise.Loss`, or
+                :class:`~fatqat.noise.ReadoutConfusion` value.
+            operation: Operation class or instance whose occurrences activate
+                dynamical noise. Omit for background noise. This argument is
+                invalid for ``ReadoutConfusion``.
+            targets: Program references or physical device labels. Occurrence
+                selectors are exact ordered tuples; background and readout
+                selectors identify one subsystem. Omit for operation-wide
+                noise or universal readout confusion.
+            target_positions: Increasing integer position or tuple of positions
+                within a matched operation occurrence. Omit to use the whole
+                selected occurrence. Invalid for background noise and readout
+                confusion.
+
+        Raises:
+            TypeError: If the declaration or selector shape is invalid, or a
+                readout declaration receives a dynamical-only argument.
+            ValueError: If the scope, arity, positions, or registration overlap
+                is invalid. ``Barrier``, ``LoadAtoms``, direct pulse controls,
+                and ``Reset`` do not currently accept attached noise.
+
+        Examples:
+            Select the first operand of every ``CZ`` occurrence:
+
+            >>> import fatqat as fq
+            >>> noise = fq.NoiseModel()
+            >>> noise.add(
+            ...     fq.noise.PhaseDamping(p=0.01),
+            ...     operation=fq.ops.CZ,
+            ...     target_positions=0,
+            ... )
+
+            Give both ``CZ`` operands independent local damping without an
+            overlapping operation-wide registration:
+
+            >>> noise.add(
+            ...     fq.noise.AmplitudeDamping(p=0.002),
+            ...     operation=fq.ops.CZ,
+            ...     target_positions=0,
+            ... )
+            >>> noise.add(
+            ...     fq.noise.AmplitudeDamping(p=0.003),
+            ...     operation=fq.ops.CZ,
+            ...     target_positions=1,
+            ... )
+        """
         if isinstance(declaration, ReadoutConfusion):
             if operation is not _UNSET:
                 raise TypeError(

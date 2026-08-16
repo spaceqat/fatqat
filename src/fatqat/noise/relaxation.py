@@ -14,7 +14,7 @@ class ThermalRelaxation(Channel):
 
     The values use the inverse of the owning backend/model's declared time
     unit; this descriptor itself does not impose a unit. It may be registered
-    as an always-on channel for a time-aware backend, while
+    as background noise for a time-aware backend, while
     :meth:`as_channels` gives the equivalent finite channel pair over one
     explicit duration.
     """

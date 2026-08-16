@@ -23,7 +23,7 @@ most once per program. Any later gate or `~fatqat.operations.Reset` whose target
 are not all loaded is silently dropped - an empty site cannot hold a gate.
 `~fatqat.operations.Measurement` is never filtered by load state: a site no
 surviving gate ever touched stays in its initial `|0>`, so it reads `0`
-deterministically under ideal execution, though a configured readout-error
+deterministically under ideal execution, though a configured readout confusion
 model can still flip the reported classical bit like any other qubit. See
 ``docs/superpowers/specs/2026-07-22-fatqat-grid-register-resource-binding-and-fake-atom-grid-backend-design.md``
 and
@@ -407,7 +407,7 @@ class AtomGridSimulator(Simulator):
         `Measurement` always lowers normally; a site no surviving gate ever
         touched stays in its initial |0>, so measuring an unloaded site reads 0
         deterministically under ideal execution - though a configured
-        readout-error model can still flip the reported bit, exactly as for any
+        readout confusion can still flip the reported bit, exactly as for any
         other qubit.
 
         Raises:
@@ -557,7 +557,7 @@ class AtomGridSimulator(Simulator):
         )
 
     def _state_is_stochastic(self, facts: _PlanFacts) -> bool:
-        """Interpret atom loss using this backend's state representation."""
+        """Interpret carrier (atom) loss in this backend's state representation."""
         atom_facts = cast(_AtomGridPlanFacts, facts)
         return super()._state_is_stochastic(facts) or atom_facts.has_loss
 

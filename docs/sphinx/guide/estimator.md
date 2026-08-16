@@ -168,7 +168,7 @@ stays exact:
 
 ```python
 noise = fq.NoiseModel()
-noise.add_channel(fq.noise.Depolarizing(p=0.1), operation=op.CX)
+noise.add(fq.noise.Depolarizing(p=0.1), operation=op.CX)
 
 estimator = fq.Estimator(fq.simulator.Simulator(method="DM", noise=noise))
 print(estimator.run(program, fq.Observable([("ZZ", 1.0)])).result().get_expectation())

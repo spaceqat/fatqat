@@ -150,9 +150,9 @@ fresh portable :py:class:`~fatqat.emulator.PulseImplementationMap`. The v1
 atom recipes deliberately do not inspect or retain source C6 or geometry.
 ``Atom3LevelEmulator`` copies a supplied map; direct controls bypass it.
 Its optional ``lindblad_implementation_map`` is also copied. Registered
-operation-scoped probability/rate descriptors and always-on rate descriptors
-then use shared pulse-noise resolution, with ``3 x 3`` local operators and two
-values for qutrit amplitude damping.
+operation-scoped or target-local background generators then use shared
+pulse-noise resolution, with ``3 x 3`` local operators and two rates for
+qutrit amplitude damping. Finite channel probabilities are not converted.
 
 Two-level atom emulator
 -----------------------
@@ -203,16 +203,16 @@ without enumerating all pairs. The explicit full-pair policy includes every
 Lindblad capability and mode selection
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The two-level emulator accepts always-on, rate-form
+The two-level emulator accepts local background, rate-form
 :py:class:`~fatqat.noise.AmplitudeDamping` and
-:py:class:`~fatqat.noise.PhaseDamping`. A registration with no target expands
-independently across every site; a scalar or one-element selector limits it to
-one site. This is the implicit built-in Lindblad-map behavior. Supplying a
-replacement map opts into shared registered operation-scoped probability/rate
-and always-on rate behavior, subject to the two-level dimension and the
-family's selector restrictions. Amplitude damping requires exactly one
-adjacent-transition value in either mode. Readout confusion and unregistered channel
-families are rejected.
+:py:class:`~fatqat.noise.PhaseDamping`. Each background registration must name
+one site; enumerate sites explicitly when the same generator is present on
+several. This is the built-in Lindblad-map behavior. Supplying a replacement
+map can add operation-scoped or background generator declarations, subject to
+the two-level dimension and local selector restrictions. Finite ``p`` forms
+are rejected rather than converted with a pulse duration. Amplitude damping
+requires exactly one adjacent-transition rate. Readout confusion and
+unregistered channel families are rejected.
 
 With no Lindblad registration, the two-level backend uses a ket-preserving solve.
 An unmeasured noisy program uses an exact ensemble density-matrix solve. A

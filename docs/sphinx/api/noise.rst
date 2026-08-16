@@ -1,91 +1,84 @@
 Noise (``fq.noise``)
 ====================
 
-Channel-representable noise and classical readout error are configured
-separately from a :py:class:`~fatqat.Program`. A :py:class:`~fatqat.NoiseModel` describes how a backend
-alters a run; it is not an instruction you add to a program.
+Noise is authored independently from a :py:class:`~fatqat.Program`. Put
+physical declarations in :py:class:`~fatqat.NoiseModel`, then pass the model
+to a simulator or emulator with ``noise=...``.
 
-Build the program and the noise model independently, then pass the model as
-``noise=...`` when constructing :py:class:`~fatqat.simulator.Simulator`. The backend combines
-them only while executing the program.
+Quick start
+-----------
 
-Create and attach noise
------------------------
-
-:py:class:`~fatqat.NoiseModel` is normally created as ``noise = fq.NoiseModel()``.
-
-:py:meth:`add_channel <fatqat.NoiseModel.add_channel>`
-(``channel, *, operation=None, targets=None, slots=None``) registers a quantum
-channel. Omit ``operation`` for always-on noise, or provide an operation such
-as ``operation=op.X`` to activate it only for matching occurrences. Omit
-``targets`` for the corresponding default scope; use a qubit reference such
-as ``targets=(program.quantum_registers[0][0],)`` to select one qubit.
-
-:py:meth:`add_readout_error <fatqat.NoiseModel.add_readout_error>` (``confusion_matrix, *, target=None``) attaches
-classical measurement error. The matrix uses
-``C[reported, true] = P(reported | true)``.
-
-Built-in channels
------------------
-
-- :py:class:`~fatqat.noise.Depolarizing` (``p``)
-- :py:class:`~fatqat.noise.AmplitudeDamping` (``p=(p,)`` or ``rate=(rate,)``)
-- :py:class:`~fatqat.noise.PhaseDamping` (``p`` or ``rate``)
-- :py:class:`~fatqat.noise.PauliChannel` (``{"XI": p, ...}``)
-
-``AmplitudeDamping`` and ``PhaseDamping`` accept exactly one of a finite
-probability ``p`` or a continuous ``rate`` (the inverse of the target
-backend's declared time unit). For operation-scoped noise, matrix backends
-resolve ``p`` directly into Kraus operators and reject ``rate`` mode (no
-duration is available). A pulse emulator whose effective Lindblad map
-registers the descriptor resolves either mode into a collapse-operator rate
-using the realized operation duration. Always-on damping requires ``rate``
-mode and a registered rule on that pulse-emulator instance.
-
-:py:class:`~fatqat.noise.ThermalRelaxation` (``t1``, ``t2``) describes the
-same T1/T2 model for operation-scoped or always-on pulse noise when registered
-and offers
-``as_channels(duration)`` to produce compatible finite qubit channels.
-
-Pulse Lindblad noise
---------------------
-
-On the default superconducting pulse backend, register
-:py:class:`~fatqat.noise.ThermalRelaxation` or rate-mode damping without an
-``operation`` to act throughout pulse and idle evolution:
+Use :py:meth:`~fatqat.NoiseModel.add` for every supported source. The
+declaration identifies the source; the remaining arguments identify its
+activation scope.
 
 .. code-block:: python
 
-   noise.add_channel(
-       fq.noise.AmplitudeDamping(rate=(0.001, 0.002)),
-       targets=(program.quantum_registers[0][0],),
+   import numpy as np
+   import fatqat as fq
+   import fatqat.operations as op
+
+   noise = fq.NoiseModel()
+
+   # A finite channel at every X occurrence.
+   noise.add(fq.noise.PhaseDamping(p=0.01), operation=op.X)
+
+   # A different physical source on CZ's first operand.
+   noise.add(
+       fq.noise.AmplitudeDamping(p=0.002),
+       operation=op.CZ,
+       target_positions=0,
    )
 
-Providing ``operation=op.X`` instead scopes the same descriptor to each
-matching placed pulse interval. Matrix-family backends reject always-on
-entries because they have no continuous-time evolution model. A pulse emulator
-accepts only descriptor types registered in its effective
-``LindbladImplementationMap`` and still applies its family dimension,
-scope/mode, selector, and operator-shape rules. Operation-scoped registrations
-apply to eligible ordinary operations; ``NoiseModel`` deliberately forbids
-selecting direct ``PulseOperation`` blocks this way. Coherent ZZ is not in the
-default transmon map.
+   # Classical measurement-report confusion.
+   noise.add(
+       fq.noise.ReadoutConfusion(
+           np.array([[0.98, 0.04], [0.02, 0.96]])
+       )
+   )
 
-The :doc:`../guide/noise` guide explains method choice, target selection,
-and a readout-error matrix example. Physical device selectors and custom
-channel implementation machinery are backend-author concerns and are not
-part of the normal application API.
+Matrix simulators accept supported finite channel declarations with an
+``operation``. Pulse emulators accept supported local generator/time
+declarations either on an operation window or as background noise on exactly
+one target. FATQAT does not infer a generator from a finite probability or a
+finite channel from a rate.
 
-Detailed reference
-------------------
+.. code-block:: python
+
+   pulse_noise = fq.NoiseModel()
+   pulse_noise.add(
+       fq.noise.ThermalRelaxation(t1=60.0, t2=80.0),
+       targets="q0",
+   )
+   pulse_noise.add(
+       fq.noise.PhaseDamping(rate=0.002),
+       operation=op.X,
+       targets="q0",
+   )
+
+The :doc:`../guide/noise` guide covers ordered target selectors,
+``target_positions``, conflict rejection, explicit conversion utilities,
+readout semantics, carrier loss, backend lifecycle capture, and custom
+implementation maps.
+
+Noise model
+-----------
 
 .. autoclass:: fatqat.NoiseModel
-   :members: add_channel, channels_for, always_on_channels_for,
-      add_readout_error, readout_error_for, validate_for,
-      has_readout_error, has_noise_for, channel_types, channel_registrations
+   :members: add
    :show-inheritance:
 
+Finite and generator-capable channels
+-------------------------------------
+
+.. autoclass:: fatqat.noise.Channel
+   :members:
+
 .. autoclass:: fatqat.noise.Depolarizing
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.noise.PauliChannel
    :members:
    :show-inheritance:
 
@@ -97,10 +90,30 @@ Detailed reference
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqat.noise.PauliChannel
-   :members:
-   :show-inheritance:
-
 .. autoclass:: fatqat.noise.ThermalRelaxation
    :members:
    :show-inheritance:
+
+Specialized physical and classical sources
+------------------------------------------
+
+.. autoclass:: fatqat.noise.Loss
+   :members:
+
+.. autoclass:: fatqat.noise.ReadoutConfusion
+   :members:
+
+Backend implementation maps
+---------------------------
+
+Most users only choose declarations and a backend. Backend authors can extend
+the exact-type implementation maps without changing :class:`NoiseModel`.
+Finite-channel rules and pulse-generator rules are intentionally separate.
+
+.. autoclass:: fatqat.noise.ChannelImplementationMap
+   :members: register, supported_channels
+
+.. autofunction:: fatqat.noise.default_channel_implementation_map
+
+Pulse-generator map signatures and defaults are documented in
+:doc:`pulse-emulator`.

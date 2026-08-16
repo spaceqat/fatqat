@@ -172,7 +172,7 @@ def _map_physical_digit(physical_digit: int, reported_digit_map) -> int:
 
 
 def _report_digit(reported_digit: int, confusion, rng: np.random.Generator) -> int:
-    """Optionally resample one reported digit through readout error.
+    """Optionally resample one reported digit through readout confusion.
 
     ``confusion`` is column-stochastic (``C[i, j] = P(report i | mapped j)``)
     or ``None`` for an error-free readout. Only the reported classical value

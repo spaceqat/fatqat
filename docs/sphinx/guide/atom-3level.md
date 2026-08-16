@@ -224,10 +224,11 @@ not optimize, retune, reject, or warn about that pulse.
 Binary `2 x 2` classical readout-confusion matrices are supported directly.
 The default Lindblad implementation map is empty, so physical channel
 descriptors reject unless the user supplies a map. A supplied map can enable
-registered `3 x 3` local qutrit collapse operators: operation-scoped
-probability or rate descriptors are resolved over the realized block duration,
-while always-on descriptors require rate form. Qutrit amplitude damping needs
-two adjacent-transition values. Use `backend.validate_noise(noise_model)` to
+registered `3 x 3` local qutrit collapse operators from authored generator
+declarations. `operation=...` limits a generator to matching blocks; omitting
+it declares target-local background noise. Finite probabilities are rejected
+rather than converted with a realized duration. Qutrit amplitude damping needs
+two adjacent-transition rates. Use `backend.validate_noise(noise_model)` to
 inspect the effective instance capability without executing a program.
 
 Physical atom loss, occupancy changes, Rydberg `T1`, quasi-static `T2_star`,

@@ -94,7 +94,7 @@ def _lower_refill(
     classical_allocation: _ClassicalAllocation,
     noise_model: NoiseModel,
 ) -> list[ResolvedStep]:
-    """Lower one ``Refill`` into a ``RefillStep`` plus any attached atom loss.
+    """Lower one ``Refill`` into a ``RefillStep`` plus attached carrier loss.
 
     Attached ``Loss`` is emitted after the refill (loading inefficiency,
     S-C1): an atom that arrives and is immediately lost gives

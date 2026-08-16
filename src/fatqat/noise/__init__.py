@@ -5,7 +5,7 @@ Users build a `NoiseModel` from channel descriptors
 classical readout confusion matrices, then pass it to a backend via
 ``noise=``. Matrix backends resolve supported operation-scoped channels into
 Kraus operators; continuous simulators resolve supported descriptors into
-local Lindblad operators. Readout error stays classical.
+local Lindblad operators. Readout confusion stays classical.
 """
 
 from .base import (

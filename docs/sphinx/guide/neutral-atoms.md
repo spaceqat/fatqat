@@ -42,7 +42,7 @@ invariant, not an arbitrary-coordinate arrangement or transport API.
 | Interaction graph | signed `C6/R^6` over every occupied pair | nearest-neighbor by default; explicit full-pair option |
 | Ideal final state | full-qutrit density matrix | full two-level statevector |
 | Measurement during a program | measurement, reset, and classical conditions use the shared pulse engine | terminal measurement suffix only |
-| Default noise behavior | binary readout confusion; no Lindblad descriptors | always-on rate-form amplitude or phase damping |
+| Default noise behavior | binary readout confusion; no Lindblad descriptors | target-local background rate-form amplitude or phase damping |
 | Typical use | calibrated gates, coherent leakage, or selected-site drives | global Rydberg dynamics and shaped drive/detuning controls |
 
 Choose the three-level emulator when calibration, coherent Rydberg leakage,

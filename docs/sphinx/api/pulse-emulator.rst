@@ -433,11 +433,13 @@ Lindblad implementation extension
 
 The pulse backend's channel-capability declaration is a
 :py:class:`~fatqat.noise.LindbladImplementationMap`. A rule receives
-``(channel, *, physical_dimension, duration)`` and returns one or more local
-square NumPy collapse-operator matrices. ``duration`` is the realized block
-duration for operation-scoped noise and ``None`` for always-on noise. The
-backend-neutral map does not tensor-expand matrices or decide their activation
-interval; lowering and the concrete adapter own those steps.
+``(declaration, *, physical_dimension)`` and returns one or more local square
+NumPy collapse-operator matrices. The declaration must already express its
+generator physics; rules do not receive a duration and do not convert finite
+probabilities. An operation-bound term evolves over its matched pulse block,
+while a target-only term is background noise over elapsed scheduled time.
+Resolved generators are single-subsystem; correlated or nonlocal collapse
+operators are not expanded through this local payload.
 
 .. autoclass:: fatqat.noise.LindbladImplementationMap
    :members:

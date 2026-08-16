@@ -154,7 +154,7 @@ def test_physical_noise_selector_uses_device_label_not_engine_index():
     )
 
 
-# --- readout-error selectors: physical labels, not engine indices --------------
+# --- readout-confusion selectors: physical labels, not engine indices ----------
 
 
 def test_physical_readout_selector_uses_device_label_not_engine_index():

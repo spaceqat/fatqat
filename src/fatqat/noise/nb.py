@@ -1,4 +1,4 @@
-"""Numba kernels for noise math: channel Kraus payloads and readout error.
+"""Numba kernels for noise math: channel Kraus payloads and readout confusion.
 
 The Kraus payload of an ``ApplyChannelStep`` needs two things done to it that
 gate matrices never need, and this module is where both live as Numba kernels:
@@ -10,7 +10,7 @@ gate matrices never need, and this module is where both live as Numba kernels:
   super-operator ``sum_i kron(K_i, conj(K_i))`` acting on ``vec(rho)``
   (`_kraus_superop_kernel`).
 
-Classical readout error is the other noise source with in-kernel math, and it
+Classical readout confusion is the other noise source with in-kernel math, and it
 is not a channel: the collapse keeps the true outcome and only the *reported*
 digit is resampled through a column-stochastic confusion matrix
 (`_report_digit_kernel`).

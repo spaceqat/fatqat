@@ -122,11 +122,13 @@ is empty, so ordinary gates reject by default; a user-supplied
 Reset, conditions, local direct targets, mid-circuit measurement, and a pulse
 after measurement remain outside the current two-level contract.
 
-The implicit Lindblad map supports always-on rate-form amplitude and phase
-damping. A supplied replacement map can enable registered operation-scoped
-probability/rate and always-on rate descriptors under the family's selector
-and two-level operator-shape rules. Amplitude damping requires exactly one
-adjacent-transition value in either mode. With noise and no measurement the backend
+The implicit Lindblad map supports target-local background rate-form amplitude
+and phase damping. Enumerate sites explicitly when the same generator is
+present on several. A supplied replacement map can enable registered
+operation-scoped or background generator descriptors under the family's
+selector and two-level operator-shape rules. Finite probabilities are not
+converted to rates. Amplitude damping requires exactly one adjacent-transition
+rate. With noise and no measurement the backend
 returns an exact density matrix; with terminal measurement it runs seeded
 trajectories. See {doc}`../api/atom-emulators` for the exact result and noise
 contracts.

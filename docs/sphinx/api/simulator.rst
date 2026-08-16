@@ -23,7 +23,7 @@ General-purpose simulator
 - ``method="unitary"`` and ``method="superop"`` return the program's *map*
   instead of a state under it. See :ref:`operator-methods` below.
 - Pass a :py:class:`~fatqat.NoiseModel` with ``noise=...`` to run the same program with
-  channel or readout noise.
+  channel or readout-confusion noise.
 
 .. _operator-methods:
 
@@ -273,7 +273,7 @@ Every atom-grid program must begin with an unconditional
 top-left rectangle named by ``LoadAtoms(rows, cols)``. A later ``LoadAtoms``
 is rejected; a gate or reset touching an unloaded site is a no-op. Measurement
 remains valid on unloaded sites and reports the initial ``0`` in ideal
-execution, subject to any supplied readout noise.
+execution, subject to any supplied readout confusion.
 
 .. code-block:: python
 

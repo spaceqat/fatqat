@@ -24,7 +24,7 @@ def _estimator(method="SV", noise=None):
 
 def _noise_model():
     noise = fq.NoiseModel()
-    noise.add_channel(fq.noise.Depolarizing(p=0.1), operation=op.CX)
+    noise.add(fq.noise.Depolarizing(p=0.1), operation=op.CX)
     return noise
 
 
@@ -169,7 +169,7 @@ def test_noise_that_never_fires_is_accepted():
     # from the noise model alone would reject a perfectly well-defined value;
     # the backend knows what actually landed in *this* program.
     noise = fq.NoiseModel()
-    noise.add_channel(fq.noise.Depolarizing(p=0.1), operation=op.Swap)
+    noise.add(fq.noise.Depolarizing(p=0.1), operation=op.Swap)
 
     value = (
         _estimator("SV", noise=noise)

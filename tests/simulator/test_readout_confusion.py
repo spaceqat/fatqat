@@ -1,8 +1,8 @@
-"""Classical readout error: lowering, both execution paths, true-vs-reported.
+"""Classical readout confusion: lowering and true-vs-reported behavior.
 
 Every bare-int ``target=`` below is a physical device-resource label (see
-``NoiseModel.add_readout_error``/``readout_error_for``), never an engine
-index - it is only numerically equal to the measured subsystem's engine
+``NoiseModel.add(ReadoutConfusion(...), targets=...)``), never an engine index.
+It is only numerically equal to the measured subsystem's engine
 index because `Simulator`'s default `_resolve_resource_layout` policy
 happens to assign device labels in declaration order, coinciding with
 `_EngineAllocation`'s flat indices for this generic backend. That coincidence
@@ -50,7 +50,7 @@ def test_confusions_resolved_onto_measurement_step():
     assert measurement.confusions is not None
     assert np.array_equal(measurement.confusions[0], _FLIP_30)
     assert not measurement.confusions[0].flags.writeable
-    # Readout error is classical: it is not channel noise and must not
+    # Readout confusion is classical: it is not channel noise and must not
     # change result defaults or stochasticity classification.
     assert facts.has_channel is False
 
@@ -89,7 +89,7 @@ def test_dimension_mismatch_rejected_at_lowering():
         backend._lower_program(program)
 
 
-def test_readout_error_keeps_fast_path_on_both_methods():
+def test_readout_confusion_keeps_fast_path_on_both_methods():
     backend = Simulator(noise=_readout_model(_FLIP_30))
     program = _measured_program()
     plan, _ = backend._lower_program(program)
@@ -156,7 +156,7 @@ def test_feedforward_reads_the_reported_bit_not_the_true_one():
 
 def test_collapse_and_state_export_keep_the_true_outcome():
     # Despite the always-report-1 readout, the post-measurement state of the
-    # |0> qubit must still be exactly |0>: readout error is classical only.
+    # |0> qubit must still be exactly |0>: readout confusion is classical only.
     program = _measured_program()
     result = (
         Simulator(method="SV", noise=_readout_model(_ALWAYS_ONE))
@@ -196,7 +196,7 @@ def test_reused_qubit_evolves_from_the_true_state():
     assert counts == {"01": 50}
 
 
-def test_parallel_dynamic_shots_match_serial_with_readout_error():
+def test_parallel_dynamic_shots_match_serial_with_readout_confusion():
     noise = _readout_model(_FLIP_30)
     program = fq.Program(1, 2)
     program.measure(0, 0)
@@ -220,7 +220,7 @@ def test_parallel_dynamic_shots_match_serial_with_readout_error():
     assert parallel == serial
 
 
-def test_numba_fused_kernel_applies_readout_error():
+def test_numba_fused_kernel_applies_readout_confusion():
     # Regression: the fused per-shot kernel used to write the true measured
     # digit straight into the classical register, so a dynamic plan's readout
     # error was silently dropped under runtime="numba" - X then always-flip
@@ -310,7 +310,7 @@ def test_numba_partially_confused_measurement_only_draws_where_attached():
     assert counts["numba"] == counts["numpy"]
 
 
-def test_validate_noise_reports_readout_error_as_accepted():
+def test_validate_noise_reports_readout_confusion_as_accepted():
     report = Simulator().validate_noise(_readout_model(_FLIP_30))
 
     assert report.supported is True
