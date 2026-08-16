@@ -62,7 +62,7 @@ from .._backends.backend_utils import (
     _validate_grid_size,
 )
 from .._backends.steps import (
-    AtomLossStep,
+    LossStep,
     OccupancyInitStep,
     RefillStep,
 )
@@ -179,14 +179,14 @@ class AtomGridSimulator(Simulator):
 
     Atom lifecycle:
         Beyond loading, three atom effects are available. Attach
-        :py:class:`~fatqat.operations.AtomLoss` to a gate to eject atoms per
+        :py:class:`~fatqat.noise.Loss` to a gate to eject atoms per
         shot (a lost atom reads the erasure digit ``2``, distinct from a real
         ``|0>``); use :py:class:`~fatqat.operations.Rearrange` to move atoms to
         new sites mid-circuit so a two-qubit gate becomes legal on a pair that
         started non-adjacent; use :py:data:`~fatqat.operations.Refill` to
         reload emptied sites. Imperfect loading efficiency is expressed by
-        attaching ``AtomLoss`` to ``Refill``. Only this backend models atom
-        loss; a generic backend rejects ``AtomLoss`` via
+        attaching ``Loss`` to ``Refill``. Only this backend models atom
+        loss; a generic backend rejects ``Loss`` via
         :py:meth:`validate_noise` rather than ignoring it.
 
         .. doctest:: atom_grid_loss
@@ -195,7 +195,7 @@ class AtomGridSimulator(Simulator):
            >>> import fatqat as fq
            >>> import fatqat.operations as op
            >>> noise = fq.NoiseModel()
-           >>> noise.add_channel(fq.noise.AtomLoss(p=1.0), operation=op.RX)
+           >>> noise.add_channel(fq.noise.Loss(p=1.0), operation=op.RX)
            >>> program = fq.Program(1, 1)
            >>> program.add(op.LoadAtoms(1, 1))
            >>> program.add(op.RX(np.pi), 0)
@@ -240,7 +240,7 @@ class AtomGridSimulator(Simulator):
            True
     """
 
-    _supports_atom_loss = True
+    _supports_loss = True
 
     def __init__(
         self,
@@ -525,7 +525,7 @@ class AtomGridSimulator(Simulator):
         )
         plan.extend(seg_plan)
 
-        if any(isinstance(step, (AtomLossStep, RefillStep)) for step in plan):
+        if any(isinstance(step, (LossStep, RefillStep)) for step in plan):
             occupied_indices = tuple(context.engine_index(ref) for ref in occupied)
             plan.insert(0, OccupancyInitStep(occupied_indices=occupied_indices))
         return plan, replace(
@@ -552,7 +552,7 @@ class AtomGridSimulator(Simulator):
         common = super()._analyze_plan_facts(plan)
         return _AtomGridPlanFacts.from_common(
             common,
-            has_loss=any(isinstance(step, AtomLossStep) for step in plan),
+            has_loss=any(isinstance(step, LossStep) for step in plan),
             has_refill=any(isinstance(step, RefillStep) for step in plan),
         )
 

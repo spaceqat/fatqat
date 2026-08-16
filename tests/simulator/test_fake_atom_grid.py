@@ -6,11 +6,11 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
-from fatqat._backends.steps import ApplyMatrixStep, ResetStep
+from fatqat._backends.steps import ApplyMatrixStep, LossStep, RefillStep, ResetStep
 from fatqat.simulator import AtomGridSimulator, Simulator
 from fatqat.simulator.fake_atom_grid import fake_atom_grid_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
-from fatqat.noise import Depolarizing, NoiseModel, AtomLoss
+from fatqat.noise import Depolarizing, NoiseModel, Loss
 from fatqat.program import AppliedOperation, Program
 from fatqat.registers import GridRegister, QuantumRegister
 from fatqat.resource_layout import ResourceLayout
@@ -857,7 +857,7 @@ def test_rearrange_of_unloaded_operand_is_silently_ignored():
 
 def test_refill_restores_a_lost_site():
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=1.0), operation=ops.RY)
+    noise.add_channel(Loss(p=1.0), operation=ops.RY)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
@@ -915,25 +915,52 @@ def test_refill_can_fill_a_never_loaded_site():
 
 def test_refill_loss_gives_loading_efficiency():
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=0.4), operation=ops.Refill)
+    noise.add_channel(Loss(p=0.4), operation=ops.Refill)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 1))
     p.add(ops.Refill, atoms[1])
     p.measure(atoms[1], 0)
+    backend = AtomGridSimulator(grid_size=(1, 2), noise=noise)
+    plan, _ = backend._lower_program(p)
+    refill_index = next(
+        i for i, step in enumerate(plan) if isinstance(step, RefillStep)
+    )
+    assert isinstance(plan[refill_index + 1], LossStep)
+
     counts = (
-        AtomGridSimulator(grid_size=(1, 2), noise=noise)
-        .run(p, shots=4000, simulation_config={"seed": 0})
-        .result()
-        .get_counts()
+        backend.run(p, shots=4000, simulation_config={"seed": 0}).result().get_counts()
     )
     total = sum(counts.values())
     assert 0.55 < counts.get("0", 0) / total < 0.65  # ~60% loaded
 
 
+def test_multi_carrier_loss_samples_each_carrier_independently():
+    noise = NoiseModel()
+    noise.add_channel(Loss(p=0.5), operation=ops.CZ)
+    atoms = GridRegister(1, 2, name="atoms")
+    program = Program([atoms], 2)
+    program.add(ops.LoadAtoms(1, 2))
+    program.add(ops.CZ, (atoms[0], atoms[1]))
+    program.measure((atoms[0], atoms[1]), (0, 1))
+
+    backend = AtomGridSimulator(grid_size=(1, 2), noise=noise)
+    plan, _ = backend._lower_program(program)
+    loss_step = next(step for step in plan if isinstance(step, LossStep))
+    assert loss_step.target_indices == (0, 1)
+
+    counts = (
+        backend.run(program, shots=4000, simulation_config={"seed": 2})
+        .result()
+        .get_counts()
+    )
+    for outcome in ("00", "02", "20", "22"):
+        assert 0.20 < counts.get(outcome, 0) / 4000 < 0.30
+
+
 def test_rearrange_loss_ejects_the_moved_atom():
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=1.0), operation=ops.Rearrange)
+    noise.add_channel(Loss(p=1.0), operation=ops.Rearrange)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
@@ -950,7 +977,7 @@ def test_rearrange_loss_ejects_the_moved_atom():
 
 def test_rearrange_loss_spares_an_unmoved_atom():
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=1.0), operation=ops.Rearrange)
+    noise.add_channel(Loss(p=1.0), operation=ops.Rearrange)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
@@ -986,7 +1013,7 @@ def test_rearrange_kraus_noise_applies_to_moved_atom():
 
 def test_loss_rearrange_refill_compose():
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=1.0), operation=ops.RY)
+    noise.add_channel(Loss(p=1.0), operation=ops.RY)
     atoms = GridRegister(1, 2, name="atoms")
     p = Program([atoms], 1)
     p.add(ops.LoadAtoms(1, 2))
@@ -1006,24 +1033,24 @@ def test_loss_rearrange_refill_compose():
 
 def test_atom_loss_rejected_by_a_non_atom_backend():
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=0.1), operation=ops.RX)
+    noise.add_channel(Loss(p=0.1), operation=ops.RX)
     report = Simulator().validate_noise(noise)
     assert not report.supported
-    assert "AtomLoss" in report.rejected_sources
+    assert "Loss" in report.rejected_sources
     assert any("atom loss" in w for w in report.warnings)
 
 
 def test_atom_loss_accepted_by_atom_grid_backend():
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=0.1), operation=ops.RX)
+    noise.add_channel(Loss(p=0.1), operation=ops.RX)
     report = AtomGridSimulator().validate_noise(noise)
     assert report.supported
-    assert "AtomLoss" in report.accepted_sources
+    assert "Loss" in report.accepted_sources
 
 
 def test_atom_loss_run_rejected_by_plain_simulator():
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=0.1), operation=ops.RX)
+    noise.add_channel(Loss(p=0.1), operation=ops.RX)
     program = Program(1, 1)
     program.add(ops.RX(np.pi), 0)
     program.measure(0, 0)
@@ -1040,7 +1067,7 @@ def _atom_loss_program_without_measurement():
 
 def _probabilistic_atom_loss_model():
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=0.5), operation=ops.RX)
+    noise.add_channel(Loss(p=0.5), operation=ops.RX)
     return noise
 
 

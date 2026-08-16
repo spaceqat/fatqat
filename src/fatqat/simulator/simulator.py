@@ -61,7 +61,7 @@ from ..noise import (
     ChannelImplementationMap,
     NoiseModel,
     NoiseSupportReport,
-    AtomLoss,
+    Loss,
     default_channel_implementation_map,
 )
 from ..operations import BarrierGate, Measurement, ResetGate, RefillGate
@@ -285,10 +285,10 @@ class Simulator:
     _simulation_config_cls: type[_SimulationConfig] = _SimulationConfig
 
     # Whether this backend implements the per-shot atom-occupancy lifecycle
-    # AtomLoss needs (loading, per-shot loss, refill). False on the generic
-    # matrix backends, which reject AtomLoss via validate_noise rather than
+    # Loss needs (loading, per-shot loss, refill). False on the generic
+    # matrix backends, which reject Loss via validate_noise rather than
     # silently ignoring it; AtomGridSimulator sets it True.
-    _supports_atom_loss: bool = False
+    _supports_loss: bool = False
 
     def __init__(
         self,
@@ -1064,8 +1064,8 @@ class Simulator:
             label = channel_type.__name__
             if qualifiers:
                 label += f"({', '.join(qualifiers)})"
-            if isinstance(channel, AtomLoss):
-                if self._supports_atom_loss:
+            if isinstance(channel, Loss):
+                if self._supports_loss:
                     _record(label, True, "")
                 else:
                     _record(

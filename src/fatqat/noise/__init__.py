@@ -1,4 +1,4 @@
-"""Noise simulation surface: channels, readout error, and calibration converters.
+"""Noise simulation surface: physical declarations and backend converters.
 
 Users build a `NoiseModel` from channel descriptors
 (``fq.noise.Depolarizing`` and friends, plus `ThermalRelaxation`) and
@@ -27,7 +27,8 @@ from .lindblad import (
 )
 from .model import NoiseModel
 from .registry import default_channel_implementation_map
-from .loss import AtomLoss
+from .loss import Loss
+from .readout import ReadoutConfusion
 
 __all__ = [
     "Channel",
@@ -43,5 +44,6 @@ __all__ = [
     "NoiseModel",
     "default_channel_implementation_map",
     "default_lindblad_implementation_map",
-    "AtomLoss",
+    "Loss",
+    "ReadoutConfusion",
 ]

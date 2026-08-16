@@ -21,7 +21,7 @@ class RefillGate(Operation):
 
     Has no matrix; the atom-grid backend resolves it to a per-shot refill step
     by operation type, exactly like ``Reset``. Imperfect loading efficiency is
-    expressed by attaching ``AtomLoss`` to ``Refill`` (the atom arrives, then
+    expressed by attaching ``Loss`` to ``Refill`` (the carrier arrives, then
     may be lost), not by a success-rate parameter (S-C1). The class is not part
     of the public ``fatqat.operations`` surface but stays attribute-accessible
     for isinstance checks; ``Refill`` (the singleton) is what users build with.

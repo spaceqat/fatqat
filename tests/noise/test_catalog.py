@@ -17,6 +17,7 @@ from fatqat.noise.catalog import (
     pauli_channel_rule,
     phase_damping_rule,
 )
+from fatqat.noise.lindblad import phase_damping_lindblad_rule
 
 
 def _refs(*dims):
@@ -108,11 +109,33 @@ def test_amplitude_damping_requires_exactly_one_of_p_or_rate():
         AmplitudeDamping(p=0.1, rate=0.1)
 
 
-def test_phase_damping_requires_exactly_one_of_p_or_rate():
+def test_phase_damping_requires_exactly_one_parameterization():
     with pytest.raises(ValueError, match="exactly one"):
         PhaseDamping()
     with pytest.raises(ValueError, match="exactly one"):
         PhaseDamping(p=0.1, rate=0.1)
+    with pytest.raises(ValueError, match="exactly one"):
+        PhaseDamping(p=0.1, t_phi=2.0)
+
+
+def test_phase_damping_normalizes_t_phi_to_rate():
+    assert PhaseDamping(t_phi=20.0) == PhaseDamping(rate=0.05)
+
+
+def test_phase_damping_t_phi_preserves_multilevel_number_operator_convention():
+    (operator,) = phase_damping_lindblad_rule(
+        PhaseDamping(t_phi=20.0), physical_dimension=3, duration=None
+    )
+
+    assert np.allclose(operator, np.sqrt(2 / 20.0) * np.diag([0.0, 1.0, 2.0]))
+
+
+@pytest.mark.parametrize(
+    "bad_t_phi", [0.0, -1.0, True, "2", float("inf"), float("nan")]
+)
+def test_phase_damping_t_phi_validation(bad_t_phi):
+    with pytest.raises(ValueError, match="t_phi"):
+        PhaseDamping(t_phi=bad_t_phi)
 
 
 @pytest.mark.parametrize("bad_rate", [-0.1, True, "0.1", float("inf"), float("nan")])

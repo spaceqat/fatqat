@@ -15,7 +15,7 @@ from ..implementation._operation_registry import _select_implementation
 from ..noise import ChannelImplementationMap, NoiseModel
 from ..noise.base import _validate_kraus_shapes
 from ..operations import Measurement, PulseOperation, ResetGate
-from ..noise.loss import AtomLoss
+from ..noise.loss import Loss
 from ..program import AppliedOperation
 from ..resource_layout import ResourceLayout
 from .._backends.backend_utils import (
@@ -26,7 +26,7 @@ from .._backends.backend_utils import (
 from .._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
-    AtomLossStep,
+    LossStep,
     MeasurementStep,
     ResetStep,
     RefillStep,
@@ -101,9 +101,9 @@ def _lower_refill(
 ) -> list[ResolvedStep]:
     """Lower one ``Refill`` into a ``RefillStep`` plus any attached atom loss.
 
-    Attached ``AtomLoss`` is emitted after the refill (loading inefficiency,
+    Attached ``Loss`` is emitted after the refill (loading inefficiency,
     S-C1): an atom that arrives and is immediately lost gives
-    ``p_success = 1 - p``. Only ``AtomLoss`` may attach to ``Refill`` -- a
+    ``p_success = 1 - p``. Only ``Loss`` may attach to ``Refill`` -- a
     Kraus channel on a reload has no meaning here.
     """
     condition = _resolve_condition(step.condition, classical_allocation)
@@ -117,17 +117,17 @@ def _lower_refill(
     for channel, extent in noise_model.channels_for(
         type(step.operation), step.targets, resource_layout
     ):
-        if not isinstance(channel, AtomLoss):
+        if not isinstance(channel, Loss):
             raise UnsupportedOperationError(
                 f"{type(channel).__name__} attached to Refill is not "
-                "supported; only AtomLoss models loading inefficiency"
+                "supported; only Loss models loading inefficiency"
             )
         extent_indices = tuple(
             engine_allocation.engine_index(resource_layout.device_label(target))
             for target in extent
         )
         steps.append(
-            AtomLossStep(
+            LossStep(
                 target_indices=extent_indices,
                 p=channel.p,
                 condition=condition,
@@ -150,7 +150,7 @@ def _lower_channels(
     Shared by gate and rearrange lowering. Selection matches against the
     occurrence's program targets and/or resource-layout device operands
     (never engine indices); engine indices are used only for the emitted
-    steps. An AtomLoss becomes a per-atom AtomLossStep; any other (Kraus)
+    steps. A Loss becomes a per-carrier LossStep; any other (Kraus)
     channel becomes an ApplyChannelStep.
     """
     steps: list[ResolvedStep] = []
@@ -161,9 +161,9 @@ def _lower_channels(
             engine_allocation.engine_index(resource_layout.device_label(target))
             for target in extent
         )
-        if isinstance(channel, AtomLoss):
+        if isinstance(channel, Loss):
             steps.append(
-                AtomLossStep(
+                LossStep(
                     target_indices=extent_indices,
                     p=channel.p,
                     condition=condition,

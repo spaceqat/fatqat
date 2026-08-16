@@ -14,7 +14,7 @@ entry whose arity is per-instance - the width of the Pauli strings it carries.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from math import expm1, isfinite, log1p, prod
 from typing import ClassVar
 
@@ -404,7 +404,9 @@ class PhaseDamping(Channel):
     preserved exactly; at ``d=2`` off-diagonal coherence survives at factor
     ``1 - p``.
 
-    Exactly one of ``p`` and ``rate`` must be given, keyword-only.
+    Exactly one of ``p``, ``rate``, and ``t_phi`` must be given,
+    keyword-only. ``t_phi`` is normalized immediately to
+    ``rate = 1 / t_phi``.
 
     Attributes:
         p: Probability of full dephasing for one finite channel application,
@@ -416,14 +418,27 @@ class PhaseDamping(Channel):
     _num_subsystems: ClassVar[int | None] = 1
     p: float | None = None
     rate: float | None = None
+    t_phi: InitVar[float | None] = None
 
-    def __post_init__(self) -> None:
-        if (self.p is None) == (self.rate is None):
-            raise ValueError("PhaseDamping requires exactly one of p or rate")
+    def __post_init__(self, t_phi: float | None) -> None:
+        if sum(value is not None for value in (self.p, self.rate, t_phi)) != 1:
+            raise ValueError("PhaseDamping requires exactly one of p, rate, or t_phi")
         if self.p is not None:
             _require_probability(self.p, "PhaseDamping.p")
-        else:
+        elif self.rate is not None:
             _require_rate(self.rate, "PhaseDamping.rate")
+        else:
+            if isinstance(t_phi, bool) or not isinstance(t_phi, (int, float)):
+                raise ValueError(
+                    "PhaseDamping.t_phi must be a finite, positive real number, "
+                    f"got {t_phi!r}"
+                )
+            if not isfinite(t_phi) or t_phi <= 0.0:
+                raise ValueError(
+                    "PhaseDamping.t_phi must be a finite, positive real number, "
+                    f"got {t_phi!r}"
+                )
+            object.__setattr__(self, "rate", 1.0 / t_phi)
 
     def as_probability(self, duration: float) -> float:
         """Return this channel's probability over ``duration``.

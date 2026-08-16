@@ -9,7 +9,7 @@ from fatqat.simulator import SCQubitIBMSimulator, Simulator
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (
     AmplitudeDamping,
-    AtomLoss,
+    Loss,
     Channel,
     Depolarizing,
     NoiseModel,
@@ -587,7 +587,7 @@ def test_atom_loss_p1_isolated_atom_reads_erasure():
     program.measure(0, 0)
 
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=1.0), operation=fq.ops.RX)
+    noise.add_channel(Loss(p=1.0), operation=fq.ops.RX)
 
     counts = (
         fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
@@ -605,7 +605,7 @@ def test_atom_loss_p0_reproduces_ideal():
     program.measure(0, 0)
 
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=0.0), operation=fq.ops.RX)
+    noise.add_channel(Loss(p=0.0), operation=fq.ops.RX)
 
     counts = (
         fq.simulator.AtomGridSimulator(grid_size=(1, 1), noise=noise)
@@ -634,7 +634,7 @@ def test_lost_control_does_not_dephase_survivor():
     program.measure(atoms[1], 0)
 
     noise = NoiseModel()
-    noise.add_channel(AtomLoss(p=1.0), operation=fq.ops.RX)
+    noise.add_channel(Loss(p=1.0), operation=fq.ops.RX)
 
     counts = (
         fq.simulator.AtomGridSimulator(grid_size=(1, 2), noise=noise)

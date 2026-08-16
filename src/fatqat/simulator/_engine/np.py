@@ -71,7 +71,7 @@ from ..._backends.engine_contract import _EngineConfig as EngineConfig, RawResul
 from ..._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
-    AtomLossStep,
+    LossStep,
     OccupancyInitStep,
     MeasurementStep,
     ResetStep,
@@ -326,7 +326,7 @@ class _NumpyMatrixEngine(MatrixEngine):
                 target_indices=step.target_indices,
                 is_conditioned=step.condition is not None,
             )
-        if isinstance(step, AtomLossStep):
+        if isinstance(step, LossStep):
             return _OperationExecutionFacts(
                 target_indices=step.target_indices,
                 is_conditioned=step.condition is not None,
@@ -472,7 +472,7 @@ class _NumpyMatrixEngine(MatrixEngine):
             ):
                 if _condition_matches(step.condition, clbits):
                     self.apply_channel(step, rng)
-            elif isinstance(step, AtomLossStep):
+            elif isinstance(step, LossStep):
                 if _condition_matches(step.condition, clbits):
                     for index in step.target_indices:
                         if index in occupied and rng.random() < step.p:

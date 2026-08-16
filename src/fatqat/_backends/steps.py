@@ -147,15 +147,15 @@ class ApplyChannelStep:
 
 
 @dataclass(frozen=True)
-class AtomLossStep:
-    """Per-atom classical loss: roll one die per target, partial-trace on hit.
+class LossStep:
+    """Per-carrier occupancy loss: sample each target independently.
 
     Emitted right after the parent gate's `ApplyMatrixStep`, same slot as
     `ApplyChannelStep`. Carries no arrays — loss is classical.
 
     Attributes:
         target_indices: Flat subsystem indices, one independent die each.
-        p: Per-atom loss probability in ``[0, 1]``.
+        p: Per-carrier loss probability in ``[0, 1]``.
         condition: The parent gate's lowered feedforward guard, or ``None``.
     """
 
@@ -290,7 +290,7 @@ class RefillStep:
 ResolvedStep = (
     ApplyMatrixStep
     | ApplyChannelStep
-    | AtomLossStep
+    | LossStep
     | OccupancyInitStep
     | MeasurementStep
     | ResetStep
