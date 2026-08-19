@@ -6,7 +6,9 @@ import pytest
 import fatqat as fq
 import fatqat.operations as op
 from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
+from fatqat.job import Job
 from fatqat.observable import Observable
+from fatqat.result import Result
 
 
 def _bell(measured=False):
@@ -26,6 +28,169 @@ def _noise_model():
     noise = fq.NoiseModel()
     noise.add(fq.noise.Depolarizing(p=0.1), operation=op.CX)
     return noise
+
+
+def _parameterized_template():
+    features = fq.ParameterVector("features", 2)
+    theta = fq.ParameterVector("theta", 2)
+    program = fq.Program(2)
+    program.add(op.RX(features[0]), 0)
+    program.add(op.RY(theta[0]), 0)
+    program.add(op.RX(features[1]), 1)
+    program.add(op.RY(theta[1]), 1)
+    return program, features, theta
+
+
+# --- parameter sweeps -------------------------------------------------------
+
+
+def test_exact_scalar_parameter_sweep_matches_explicit_runs():
+    angle = fq.Parameter("angle")
+    program = fq.Program(1)
+    program.add(op.RY(angle), 0)
+    observable = Observable([("Z", 1.0)])
+    values = np.array([0.0, 0.4, 1.1])
+    estimator = _estimator()
+
+    swept = estimator.run_sweep(program, observable, {angle: values}).result()
+    explicit = [
+        estimator.run(program.assign_parameters({angle: value}), observable).result()
+        for value in values
+    ]
+
+    assert [result.get_expectation() for result in swept] == pytest.approx(
+        [result.get_expectation() for result in explicit]
+    )
+    assert [result.get_std() for result in swept] == [0.0, 0.0, 0.0]
+
+
+def test_qnn_shaped_vector_sweep_preserves_multi_observable_shape():
+    program, features, theta = _parameterized_template()
+    feature_batch = np.array([[0.1, 0.2], [0.4, 0.5], [0.7, 0.8]])
+    theta_value = np.array([0.3, 0.6])
+    theta_batch = np.broadcast_to(theta_value, (len(feature_batch), len(theta)))
+    observables = [Observable([("ZI", 1.0)]), Observable([("IZ", 1.0)])]
+    estimator = _estimator()
+
+    swept = estimator.run_sweep(
+        program,
+        observables,
+        {features: feature_batch, theta: theta_batch},
+    ).result()
+    explicit = [
+        estimator.run(
+            program.assign_parameters(
+                {features: feature_batch[index], theta: theta_batch[index]}
+            ),
+            observables,
+        ).result()
+        for index in range(len(feature_batch))
+    ]
+
+    assert all(result.get_expectation().shape == (2,) for result in swept)
+    assert all(
+        np.allclose(left.get_expectation(), right.get_expectation())
+        for left, right in zip(swept, explicit, strict=True)
+    )
+
+
+def test_sampled_sweep_matches_same_seed_repeated_runs_and_forwards_options(
+    monkeypatch,
+):
+    angle = fq.Parameter("angle")
+    program = fq.Program(1)
+    program.add(op.RY(angle), 0)
+    observable = Observable([("X", 1.0)])
+    values = np.array([0.2, 0.9])
+    estimator = _estimator()
+    original_run = estimator.run
+    forwarded = []
+
+    def record(bound, supplied_observables, **kwargs):
+        forwarded.append((supplied_observables, kwargs))
+        return original_run(bound, supplied_observables, **kwargs)
+
+    monkeypatch.setattr(estimator, "run", record)
+    config = {"seed": 23}
+    swept = estimator.run_sweep(
+        program,
+        observable,
+        {angle: values},
+        shots=256,
+        simulation_config=config,
+    ).result()
+    monkeypatch.setattr(estimator, "run", original_run)
+    explicit = [
+        original_run(
+            program.assign_parameters({angle: value}),
+            observable,
+            shots=256,
+            simulation_config=config,
+        ).result()
+        for value in values
+    ]
+
+    assert [result.get_expectation() for result in swept] == [
+        result.get_expectation() for result in explicit
+    ]
+    assert [result.get_std() for result in swept] == pytest.approx(
+        [result.get_std() for result in explicit]
+    )
+    assert forwarded == [
+        (observable, {"shots": 256, "simulation_config": config}),
+        (observable, {"shots": 256, "simulation_config": config}),
+    ]
+
+
+def test_estimator_sweep_direct_inner_failure_propagates(monkeypatch):
+    angle = fq.Parameter("angle")
+    program = fq.Program(1)
+    program.add(op.RX(angle), 0)
+    observable = Observable([("Z", 1.0)])
+    estimator = _estimator()
+
+    def fail_on_second(bound, _observables, **_kwargs):
+        if bound.operations[0].operation.theta == 0.2:
+            raise BackendValidationError("direct point failure")
+        return Job.done(Result(data={"expectation": 1.0, "std": 0.0}))
+
+    monkeypatch.setattr(estimator, "run", fail_on_second)
+    with pytest.raises(BackendValidationError, match="direct point failure"):
+        estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
+
+
+def test_estimator_sweep_failed_point_job_fails_outer_job(monkeypatch):
+    angle = fq.Parameter("angle")
+    program = fq.Program(1)
+    program.add(op.RX(angle), 0)
+    observable = Observable([("Z", 1.0)])
+    estimator = _estimator()
+    error = KeyboardInterrupt("stored point failure")
+
+    def fail_on_second(bound, _observables, **_kwargs):
+        if bound.operations[0].operation.theta == 0.2:
+            return Job.failed(error)
+        return Job.done(Result(data={"expectation": 1.0, "std": 0.0}))
+
+    monkeypatch.setattr(estimator, "run", fail_on_second)
+    outer = estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
+
+    with pytest.raises(KeyboardInterrupt, match="stored point failure") as caught:
+        outer.result()
+    assert caught.value is error
+
+
+def test_ordinary_estimator_rejects_unbound_without_translating_message():
+    angle = fq.Parameter("angle")
+    program = fq.Program(1)
+    program.add(op.RX(angle), 0)
+
+    with pytest.raises(
+        BackendValidationError,
+        match="^program has unbound parameters: angle$",
+    ) as caught:
+        _estimator().run(program, Observable([("Z", 1.0)]))
+    assert "no single final state" not in str(caught.value)
 
 
 # --- exact values ------------------------------------------------------------

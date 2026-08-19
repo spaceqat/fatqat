@@ -47,6 +47,11 @@ from :py:meth:`Simulator.run <fatqat.simulator.Simulator.run>`, whose ``shots``
 defaults to 1024. A positive ``shots`` samples, reproducing the statistical
 error of a finite-shot experiment.
 
+:py:meth:`Estimator.run_sweep <fatqat.Estimator.run_sweep>` adds a required
+object-keyed binding batch after ``observables``. It returns one ordered
+``list[Result]`` while preserving the ordinary scalar or array result shape
+inside each element. See :doc:`../guide/parameters-and-sweeps`.
+
 Read the result
 ---------------
 

@@ -83,12 +83,12 @@ and ``16**n`` for ``superop``, so keep super-operator circuits small.
 Run a program
 -------------
 
-:py:meth:`run <~fatqat.simulator.Simulator.run>` (``program, *, shots=1024, result_config=None, seed=None``)
+:py:meth:`run <~fatqat.simulator.Simulator.run>` (``program, *, shots=1024, simulation_config=None, result_config=None``)
 
 - ``shots`` controls how many samples are collected when counts are
   requested.
 - ``result_config`` selects ``counts`` and the method’s native state field.
-- ``seed`` makes sampled results reproducible.
+- A ``seed`` inside ``simulation_config`` makes sampled results reproducible.
 - ``run(...)`` returns a :py:class:`~fatqat.Job`. Call ``job.result()`` to obtain the
   :py:class:`~fatqat.Result`. Its status and failure lifecycle controls are described in
   :doc:`experimental` as an evolving API.
@@ -105,6 +105,11 @@ mismatch through a missing result field.
 See :doc:`../guide/running-and-results` for complete counts, statevector,
 and density-matrix examples. The optional parallel-shot settings are
 documented in :doc:`../guide/advanced`.
+
+:py:meth:`run_sweep <~fatqat.simulator.Simulator.run_sweep>` accepts an
+object-keyed parameter batch and returns one eager job whose payload is an
+ordered ``list[Result]``. See :doc:`../guide/parameters-and-sweeps` for shapes,
+binding rules, and repeated-run semantics.
 
 Constrained simulated targets
 -----------------------------

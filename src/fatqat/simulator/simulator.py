@@ -46,6 +46,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from .._parameter_binding import (
+    _normalize_parameter_batch,
+    _raise_for_unbound_parameters,
+)
 from ..errors import (
     BackendValidationError,
     NoMeasurementWarning,
@@ -68,6 +72,7 @@ from ..noise import (
     default_channel_implementation_map,
 )
 from ..operations import BarrierGate, Measurement, ResetGate, RefillGate
+from ..parameters import Parameter, ParameterVector
 from ..program import AppliedOperation, Program
 from ..registers import RegisterRef
 from ..resource_layout import DeviceOperand, ResourceLayout
@@ -585,7 +590,7 @@ class Simulator:
         resource_layout: ResourceLayout | None = None,
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
-    ) -> Job:
+    ) -> Job[Result]:
         """Validate, execute, and package one program run.
 
         Resolves the program's effective resource layout and private engine
@@ -625,6 +630,7 @@ class Simulator:
                 without a backend implementation, or one whose target key is
                 illegal for this backend.
         """
+        _raise_for_unbound_parameters(program.operations)
         simulation = _normalize_config(
             simulation_config,
             self._simulation_config_cls,
@@ -682,6 +688,83 @@ class Simulator:
             )
         except Exception as exc:  # execution-stage failure
             return Job.failed(exc)
+
+    def run_sweep(
+        self,
+        program: Program,
+        bindings: Mapping[Parameter | ParameterVector, object],
+        *,
+        shots: int = 1024,
+        resource_layout: ResourceLayout | None = None,
+        simulation_config: dict[str, Any] | None = None,
+        result_config: dict[str, Any] | None = None,
+    ) -> Job[list[Result]]:
+        """Bind and execute every row of one complete parameter batch.
+
+        Single parameters accept shape ``(N,)`` and vectors accept shape
+        ``(N, M)``. The returned eager job contains one ordinary ``Result`` per
+        row, in input order. Version 1 delegates to :meth:`run` once per row.
+
+        Args:
+            program: Parameterized template program.
+            bindings: Complete object-keyed parameter batch.
+            shots: Number of repetitions forwarded to every row.
+            resource_layout: Optional layout forwarded unchanged to every row.
+            simulation_config: Simulator options forwarded unchanged. An
+                explicit seed is reused for every row, so sampled row errors
+                are correlated; see :doc:`../guide/parameters-and-sweeps`.
+            result_config: Result request forwarded unchanged.
+
+        Returns:
+            An eager job carrying an ordered list of row results. If a point
+            job fails, ``result()`` re-raises that error and no partial result
+            list is exposed.
+
+        Raises:
+            TypeError: If ``bindings`` is not an object-keyed mapping or a
+                batch contains values other than built-in ``int``/``float``
+                or NumPy integer/floating scalars.
+            ValueError: If the program is not parameterized, assignments are
+                missing or duplicated, or batch ranks and lengths disagree.
+            BackendValidationError: If a bound row or forwarded run option
+                fails normal Simulator validation.
+
+        Examples:
+            Sweep one angle and request the final state from every row:
+
+            >>> import fatqat as fq
+            >>> import fatqat.operations as op
+            >>> theta = fq.Parameter("theta")
+            >>> program = fq.Program(1)
+            >>> program.add(op.RX(theta), 0)
+            >>> backend = fq.simulator.Simulator("SV")
+            >>> results = backend.run_sweep(
+            ...     program,
+            ...     {theta: [0.0, 0.5]},
+            ...     shots=0,
+            ...     result_config={"counts": False, "final_state": True},
+            ... ).result()
+            >>> len(results)
+            2
+            >>> ["statevector" in result.available_data for result in results]
+            [True, True]
+        """
+        rows = _normalize_parameter_batch(program.operations, bindings)
+        results: list[Result] = []
+        for row in rows:
+            bound = program._assign_normalized_parameters(row)
+            point_job = self.run(
+                bound,
+                shots=shots,
+                resource_layout=resource_layout,
+                simulation_config=simulation_config,
+                result_config=result_config,
+            )
+            try:
+                results.append(point_job.result())
+            except BaseException as exc:
+                return Job.failed(exc)
+        return Job.done(results)
 
     # --- validation (raises directly from run) ---
     def _validate(self, config: _ResultConfig, shots: int, facts: _PlanFacts) -> None:

@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
+from ..parameters import Parameter
 from .base import Operation
 
 
@@ -279,7 +280,7 @@ class SubspaceRX(Operation):
         subspace: Pair of distinct, non-negative level indices (j, k).
     """
 
-    theta: float
+    theta: float | Parameter
     subspace: tuple[int, int]
     name: ClassVar[str] = "SubspaceRX"
     _num_subsystems: ClassVar[int] = 1
@@ -336,7 +337,7 @@ class SubspaceRY(Operation):
         subspace: Pair of distinct, non-negative level indices (j, k).
     """
 
-    theta: float
+    theta: float | Parameter
     subspace: tuple[int, int]
     name: ClassVar[str] = "SubspaceRY"
     _num_subsystems: ClassVar[int] = 1
@@ -391,7 +392,7 @@ class SubspaceRZ(Operation):
         subspace: Pair of distinct, non-negative level indices (j, k).
     """
 
-    theta: float
+    theta: float | Parameter
     subspace: tuple[int, int]
     name: ClassVar[str] = "SubspaceRZ"
     _num_subsystems: ClassVar[int] = 1

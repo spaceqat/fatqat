@@ -560,3 +560,15 @@ def test_qasm_export_rejects_pulse_operation_explicitly():
 
     with pytest.raises(QasmExportError, match="PulseOperation is not supported"):
         program_to_qasm(program)
+
+
+def test_qasm_export_rejects_unbound_parameters_descriptively():
+    theta = fc.Parameter("theta")
+    program = fc.Program(1)
+    program.add(ops.RX(theta), 0)
+
+    with pytest.raises(
+        fc.errors.BackendValidationError,
+        match=r"^program has unbound parameters: theta$",
+    ):
+        program_to_qasm(program)

@@ -50,6 +50,9 @@ counts.
 
 :py:meth:`~fatqat.Program.copy` returns an independent copy when you want to branch a
 program before adding more instructions.
+:py:meth:`~fatqat.Program.assign_parameters` returns a new program with the
+selected identity-based parameter objects replaced. See
+:doc:`../guide/parameters-and-sweeps` for partial binding and vector examples.
 For examples, see :doc:`../guide/concepts` and
 :doc:`../guide/measurement-and-conditions`.
 
@@ -57,9 +60,17 @@ Detailed reference
 ------------------
 
 .. autoclass:: fatqat.Program
-   :members: operations, add, measure, measure_all, copy
+   :members: operations, add, measure, measure_all, copy, assign_parameters
    :show-inheritance:
 
 .. autoclass:: fatqat.Measurement
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.Parameter
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.ParameterVector
    :members:
    :show-inheritance:

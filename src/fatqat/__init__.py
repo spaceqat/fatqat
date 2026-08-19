@@ -12,6 +12,7 @@ from .job import Job
 from .noise import NoiseModel
 from .observable import Observable
 from .operations import Measurement
+from .parameters import Parameter, ParameterVector
 from .program import AppliedOperation, Program
 from .registers import (
     ClassicalRegister,
@@ -39,6 +40,8 @@ __all__ = [
     "Program",
     "AppliedOperation",
     "Measurement",
+    "Parameter",
+    "ParameterVector",
     "Register",
     "QuantumRegister",
     "ClassicalRegister",

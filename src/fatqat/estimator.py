@@ -6,7 +6,7 @@ An `Estimator` wraps an already-constructed backend and reports
 noise model; the estimator adds only the observable step, so the same backend
 can serve counts through ``backend.run`` and expectation values here.
 
-The program is evolved **once** per call and every observable is evaluated
+The program is evolved **once** per ``run()`` call and every observable is evaluated
 against that same state. This is the structural advantage a simulator has over
 hardware: hardware must fan a multi-basis observable out into several circuits
 (one per commuting group, each with its own basis-rotation gates), while a
@@ -37,14 +37,20 @@ by two numbers per term.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from typing import Any, Callable
 
 import numpy as np
 
+from ._parameter_binding import (
+    _normalize_parameter_batch,
+    _raise_for_unbound_parameters,
+)
 from .errors import BackendValidationError
 from .job import Job
 from .observable import Observable
 from .operations import Measurement
+from .parameters import Parameter, ParameterVector
 from .program import Program
 from .result import Result
 from .simulator._engine.expectation import (
@@ -92,7 +98,7 @@ class Estimator:
         *,
         shots: int = 0,
         simulation_config: dict[str, Any] | None = None,
-    ) -> Job:
+    ) -> Job[Result]:
         """Evaluate one or more observables on a program.
 
         Args:
@@ -116,6 +122,8 @@ class Estimator:
             error, which is ``0`` for an exact run.
 
         Raises:
+            TypeError: If ``observables`` is not an ``Observable`` or a
+                sequence containing only ``Observable`` values.
             BackendValidationError: If the program measures, if the backend's
                 execution is not deterministic, if an observable's width does
                 not match the program, if the program uses non-qubit registers,
@@ -124,6 +132,7 @@ class Estimator:
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
         _validate_program(program, observable_list)
+        _raise_for_unbound_parameters(program.operations)
 
         try:
             values, deviations = self._evaluate(
@@ -151,6 +160,81 @@ class Estimator:
                 },
             )
         )
+
+    def run_sweep(
+        self,
+        program: Program,
+        observables: Observable | list[Observable] | tuple[Observable, ...],
+        bindings: Mapping[Parameter | ParameterVector, object],
+        *,
+        shots: int = 0,
+        simulation_config: dict[str, Any] | None = None,
+    ) -> Job[list[Result]]:
+        """Bind and evaluate every row of one complete parameter batch.
+
+        Binding shapes match :meth:`fatqat.simulator.Simulator.run_sweep`.
+        Each list element is the ordinary result of one :meth:`run` call, so a
+        single observable remains scalar and a sequence remains array-shaped.
+
+        Args:
+            program: Parameterized template program.
+            observables: One observable or a sequence evaluated for every row.
+            bindings: Complete object-keyed parameter batch.
+            shots: Exact or sampled Estimator mode forwarded to every row.
+            simulation_config: Backend and sampling options forwarded
+                unchanged. An explicit seed is reused for every row, so
+                sampled row errors are correlated; see
+                :doc:`../guide/parameters-and-sweeps`.
+
+        Returns:
+            An eager job carrying an ordered list of row results. If a point
+            job fails, ``result()`` re-raises that error and no partial result
+            list is exposed.
+
+        Raises:
+            TypeError: If ``bindings`` is not an object-keyed mapping or a
+                batch contains values other than built-in ``int``/``float``
+                or NumPy integer/floating scalars, or if ``observables`` is
+                not an ``Observable`` or a sequence containing only
+                ``Observable`` values.
+            ValueError: If the program is not parameterized, assignments are
+                missing or duplicated, or batch ranks and lengths disagree.
+            BackendValidationError: If the observables, bound program, shots,
+                or backend execution mode fail normal Estimator validation.
+
+        Examples:
+            Each result keeps the ordinary single-observable scalar shape:
+
+            >>> import fatqat as fq
+            >>> import fatqat.operations as op
+            >>> theta = fq.Parameter("theta")
+            >>> program = fq.Program(1)
+            >>> program.add(op.RY(theta), 0)
+            >>> estimator = fq.Estimator(fq.simulator.Simulator("SV"))
+            >>> observable = fq.Observable([("Z", 1.0)])
+            >>> results = estimator.run_sweep(
+            ...     program, observable, {theta: [0.0, 1.0]}
+            ... ).result()
+            >>> len(results)
+            2
+            >>> [round(result.get_expectation(), 6) for result in results]
+            [1.0, 0.540302]
+        """
+        rows = _normalize_parameter_batch(program.operations, bindings)
+        results: list[Result] = []
+        for row in rows:
+            bound = program._assign_normalized_parameters(row)
+            point_job = self.run(
+                bound,
+                observables,
+                shots=shots,
+                simulation_config=simulation_config,
+            )
+            try:
+                results.append(point_job.result())
+            except BaseException as exc:
+                return Job.failed(exc)
+        return Job.done(results)
 
     def _evaluate(
         self,

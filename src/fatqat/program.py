@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, TypeVar
 
+from ._parameter_binding import (
+    _normalize_parameter_mapping,
+    _replace_parameterized_instructions,
+)
 from .operations import Measurement, Operation
+from .parameters import Parameter, ParameterVector
 from .registers import (
     QuantumRegister,
     RegisterRef,
@@ -419,10 +424,79 @@ class Program:
 
     def copy(self) -> "Program":
         """Return an independent copy with private operation storage and copied metadata."""
+        return self._copy_with_operations(self._operations)
+
+    def _copy_with_operations(
+        self,
+        operations: (
+            tuple[AppliedOperation | Measurement, ...]
+            | list[AppliedOperation | Measurement]
+        ),
+    ) -> "Program":
+        """Copy program structure and metadata around trusted instructions.
+
+        Callers already own instruction validation. The fresh list and
+        metadata dictionary keep the returned program independent without
+        rebuilding registers through the public constructor.
+        """
         new = Program.__new__(Program)
         new.quantum_registers = tuple(self.quantum_registers)
         new.classical_registers = tuple(self.classical_registers)
-        new._operations = list(self._operations)
+        new._operations = list(operations)
         new._operations_view = tuple(new._operations)
         new.metadata = dict(self.metadata)
         return new
+
+    def assign_parameters(
+        self,
+        values: Mapping[Parameter | ParameterVector, object],
+    ) -> "Program":
+        """Return a copy with the supplied parameter identities replaced.
+
+        Binding is partial and never mutates the template program. Vector keys
+        expand in their explicit declaration order.
+
+        Args:
+            values: Object-keyed scalar or vector assignments. String keys and
+                positional values are not accepted.
+
+        Returns:
+            An independent program containing the selected numeric values.
+
+        Raises:
+            TypeError: If the mapping, a key, a value container, or a scalar
+                has the wrong type.
+            ValueError: If a key is absent, duplicated after vector expansion,
+                or has an incompatible vector shape.
+
+        Examples:
+            Bind a vector at once while leaving the template unchanged:
+
+            >>> import fatqat as fq
+            >>> import fatqat.operations as op
+            >>> angles = fq.ParameterVector("angles", 2)
+            >>> program = fq.Program(2)
+            >>> program.add(op.RX(angles[0]), 0)
+            >>> program.add(op.RY(angles[1]), 1)
+            >>> bound = program.assign_parameters({angles: [0.1, 0.2]})
+            >>> [instruction.operation.theta for instruction in bound.operations]
+            [0.1, 0.2]
+            >>> program.operations[0].operation.theta is angles[0]
+            True
+        """
+        normalized = _normalize_parameter_mapping(self.operations, values)
+        operations = _replace_parameterized_instructions(self.operations, normalized)
+        return self._copy_with_operations(operations)
+
+    def _assign_normalized_parameters(
+        self,
+        values: Mapping[Parameter, object],
+    ) -> "Program":
+        """Bind one trusted sweep row without repeating public validation.
+
+        ``_normalize_parameter_batch`` guarantees complete identity-keyed
+        scalar rows before this method is called. Keeping this seam separate
+        prevents every sweep point from rechecking the same batch contract.
+        """
+        operations = _replace_parameterized_instructions(self.operations, values)
+        return self._copy_with_operations(operations)
