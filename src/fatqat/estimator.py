@@ -122,6 +122,8 @@ class Estimator:
             error, which is ``0`` for an exact run.
 
         Raises:
+            TypeError: If ``observables`` is not an ``Observable`` or a
+                sequence containing only ``Observable`` values.
             BackendValidationError: If the program measures, if the backend's
                 execution is not deterministic, if an observable's width does
                 not match the program, if the program uses non-qubit registers,
@@ -182,7 +184,37 @@ class Estimator:
             simulation_config: Backend and sampling options forwarded unchanged.
 
         Returns:
-            An eager job carrying an ordered list of row results.
+            An eager job carrying an ordered list of row results. If a point
+            job fails, ``result()`` re-raises that error and no partial result
+            list is exposed.
+
+        Raises:
+            TypeError: If ``bindings`` is not an object-keyed mapping or a
+                batch contains non-real scalar values, or if ``observables``
+                is not an ``Observable`` or a sequence containing only
+                ``Observable`` values.
+            ValueError: If the program is not parameterized, assignments are
+                missing or duplicated, or batch ranks and lengths disagree.
+            BackendValidationError: If the observables, bound program, shots,
+                or backend execution mode fail normal Estimator validation.
+
+        Examples:
+            Each result keeps the ordinary single-observable scalar shape:
+
+            >>> import fatqat as fq
+            >>> import fatqat.operations as op
+            >>> theta = fq.Parameter("theta")
+            >>> program = fq.Program(1)
+            >>> program.add(op.RY(theta), 0)
+            >>> estimator = fq.Estimator(fq.simulator.Simulator("SV"))
+            >>> observable = fq.Observable([("Z", 1.0)])
+            >>> results = estimator.run_sweep(
+            ...     program, observable, {theta: [0.0, 1.0]}
+            ... ).result()
+            >>> len(results)
+            2
+            >>> [round(result.get_expectation(), 6) for result in results]
+            [1.0, 0.540302]
         """
         rows = _normalize_parameter_batch(program.operations, bindings)
         results: list[Result] = []

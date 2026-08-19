@@ -429,7 +429,12 @@ class Program:
             | list[AppliedOperation | Measurement]
         ),
     ) -> "Program":
-        """Copy this program around a trusted instruction sequence."""
+        """Copy program structure and metadata around trusted instructions.
+
+        Callers already own instruction validation. The fresh list and
+        metadata dictionary keep the returned program independent without
+        rebuilding registers through the public constructor.
+        """
         new = Program.__new__(Program)
         new.quantum_registers = tuple(self.quantum_registers)
         new.classical_registers = tuple(self.classical_registers)
@@ -459,6 +464,21 @@ class Program:
                 has the wrong type.
             ValueError: If a key is absent, duplicated after vector expansion,
                 or has an incompatible vector shape.
+
+        Examples:
+            Bind a vector at once while leaving the template unchanged:
+
+            >>> import fatqat as fq
+            >>> import fatqat.operations as op
+            >>> angles = fq.ParameterVector("angles", 2)
+            >>> program = fq.Program(2)
+            >>> program.add(op.RX(angles[0]), 0)
+            >>> program.add(op.RY(angles[1]), 1)
+            >>> bound = program.assign_parameters({angles: [0.1, 0.2]})
+            >>> [instruction.operation.theta for instruction in bound.operations]
+            [0.1, 0.2]
+            >>> program.operations[0].operation.theta is angles[0]
+            True
         """
         from ._parameter_binding import (  # pylint: disable=import-outside-toplevel
             _normalize_parameter_mapping,
@@ -473,7 +493,12 @@ class Program:
         self,
         values: Mapping[Parameter, object],
     ) -> "Program":
-        """Bind a trusted normalized mapping without repeating validation."""
+        """Bind one trusted sweep row without repeating public validation.
+
+        ``_normalize_parameter_batch`` guarantees complete identity-keyed
+        scalar rows before this method is called. Keeping this seam separate
+        prevents every sweep point from rechecking the same batch contract.
+        """
         from ._parameter_binding import (  # pylint: disable=import-outside-toplevel
             _replace_parameterized_instructions,
         )

@@ -17,7 +17,12 @@ ValueT = TypeVar("ValueT")
 
 
 def _discover_parameters(instructions: Sequence[Any]) -> tuple[Parameter, ...]:
-    """Return direct operation-field parameters in stable discovery order."""
+    """Find direct operation-field parameters in first-appearance order.
+
+    Discovery intentionally inspects only top-level fields of dataclass
+    operations. It de-duplicates by parameter identity and is the common
+    ordering source for binding, sweep rows, and unbound diagnostics.
+    """
     discovered: list[Parameter] = []
     seen: set[Parameter] = set()
     for instruction in instructions:
@@ -33,13 +38,22 @@ def _discover_parameters(instructions: Sequence[Any]) -> tuple[Parameter, ...]:
 
 
 def _validate_parameter_scalar(value: object) -> Real:
-    """Validate and return one Python or NumPy real scalar unchanged."""
+    """Enforce the shared scalar policy without coercing the accepted value.
+
+    Keeping Python and NumPy real scalars unchanged avoids introducing a
+    second conversion policy between single-point and batch binding.
+    """
     if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
         raise TypeError("parameter values must be real scalars")
     return value
 
 
 def _materialize_vector_value(value: object) -> list[object]:
+    """Materialize one vector assignment and require a one-dimensional shape.
+
+    Iterables are consumed exactly once. Element scalar validation remains the
+    caller's responsibility so this helper owns only container shape.
+    """
     if isinstance(value, (str, bytes, Mapping)):
         raise TypeError("parameter vector values must be one-dimensional sequences")
     if isinstance(value, np.ndarray):
@@ -68,7 +82,12 @@ def _expand_parameter_bindings(
     normalize_parameter: Callable[[object], ValueT],
     split_vector: Callable[[ParameterVector, object], Sequence[ValueT]],
 ) -> tuple[tuple[Parameter, ...], dict[Parameter, ValueT]]:
-    """Expand object keys once for single-point and batch normalization."""
+    """Own key validation and vector expansion for every binding path.
+
+    The callbacks provide path-specific scalar or column normalization. This
+    function alone checks key types, program membership, and duplicate scalar
+    assignments, preventing the public and sweep paths from drifting.
+    """
     if not isinstance(values, Mapping):
         raise TypeError("parameter values must be a mapping")
 
@@ -115,7 +134,11 @@ def _normalize_parameter_mapping(
     instructions: Sequence[Any],
     values: Mapping[Parameter | ParameterVector, object],
 ) -> dict[Parameter, Real]:
-    """Validate and expand one partial public parameter mapping."""
+    """Normalize one partial public mapping into stable scalar-key order.
+
+    Missing parameters are valid here because ``Program.assign_parameters``
+    supports partial binding. All supplied keys and values are fully checked.
+    """
 
     def normalize_vector(_vector: ParameterVector, raw_value: object) -> Sequence[Real]:
         return tuple(
@@ -138,6 +161,12 @@ def _normalize_parameter_mapping(
 
 
 def _materialize_batch_array(value: object, *, expected_ndim: int) -> np.ndarray:
+    """Materialize one batch value and enforce its rank and positive length.
+
+    Object dtype permits element-wise use of the shared scalar validator.
+    Width and cross-column length checks belong to the batch normalizer, which
+    has the necessary parameter context.
+    """
     if isinstance(value, (str, bytes, Mapping)):
         raise TypeError("parameter batch values must be array-like containers")
     if isinstance(value, np.ndarray) or np.isscalar(value):
@@ -166,7 +195,12 @@ def _normalize_parameter_batch(
     instructions: Sequence[Any],
     bindings: Mapping[Parameter | ParameterVector, object],
 ) -> tuple[dict[Parameter, Real], ...]:
-    """Normalize a complete object-keyed binding batch into ordered rows."""
+    """Validate a complete binding batch and return trusted ordered rows.
+
+    This is the sole batch-validation boundary. Each returned mapping covers
+    every discovered parameter and is safe for ``_assign_normalized_parameters``
+    without repeating public binding checks.
+    """
 
     def normalize_parameter(value: object) -> np.ndarray:
         return _materialize_batch_array(value, expected_ndim=1)
@@ -218,7 +252,12 @@ def _replace_parameterized_instructions(
     instructions: Sequence[Any],
     normalized_values: Mapping[Parameter, object],
 ) -> tuple[Any, ...]:
-    """Replace direct parameter fields using an already-normalized mapping."""
+    """Copy instructions while replacing fields from a trusted scalar mapping.
+
+    This structural helper deliberately performs no binding validation. It
+    preserves instruction targets and conditions and creates a new operation
+    only when at least one direct field is replaced.
+    """
     replaced_instructions: list[Any] = []
     for instruction in instructions:
         operation = getattr(instruction, "operation", None)
@@ -246,6 +285,11 @@ def _replace_parameterized_instructions(
 
 
 def _format_unbound_parameters(parameters: Sequence[Parameter]) -> str:
+    """Format diagnostic labels and disambiguate same-named identities.
+
+    Ordinal suffixes are local to the message and follow discovery order; they
+    are never accepted as binding keys.
+    """
     counts = Counter(parameter.name for parameter in parameters)
     ordinals: defaultdict[str, int] = defaultdict(int)
     labels: list[str] = []
@@ -260,7 +304,11 @@ def _format_unbound_parameters(parameters: Sequence[Parameter]) -> str:
 
 
 def _raise_for_unbound_parameters(instructions: Sequence[Any]) -> None:
-    """Raise the shared backend diagnostic for remaining parameters."""
+    """Reject parameters before a backend realizes numeric operations.
+
+    Simulator, Estimator, and pulse entry points share this guard so an
+    unbound placeholder never leaks into matrix or pulse implementation code.
+    """
     parameters = _discover_parameters(instructions)
     if parameters:
         raise BackendValidationError(

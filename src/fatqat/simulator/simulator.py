@@ -714,7 +714,37 @@ class Simulator:
             result_config: Result request forwarded unchanged.
 
         Returns:
-            An eager job carrying an ordered list of row results.
+            An eager job carrying an ordered list of row results. If a point
+            job fails, ``result()`` re-raises that error and no partial result
+            list is exposed.
+
+        Raises:
+            TypeError: If ``bindings`` is not an object-keyed mapping or a
+                batch contains non-real scalar values.
+            ValueError: If the program is not parameterized, assignments are
+                missing or duplicated, or batch ranks and lengths disagree.
+            BackendValidationError: If a bound row or forwarded run option
+                fails normal Simulator validation.
+
+        Examples:
+            Sweep one angle and request the final state from every row:
+
+            >>> import fatqat as fq
+            >>> import fatqat.operations as op
+            >>> theta = fq.Parameter("theta")
+            >>> program = fq.Program(1)
+            >>> program.add(op.RX(theta), 0)
+            >>> backend = fq.simulator.Simulator("SV")
+            >>> results = backend.run_sweep(
+            ...     program,
+            ...     {theta: [0.0, 0.5]},
+            ...     shots=0,
+            ...     result_config={"counts": False, "final_state": True},
+            ... ).result()
+            >>> len(results)
+            2
+            >>> ["statevector" in result.available_data for result in results]
+            [True, True]
         """
         rows = _normalize_parameter_batch(program.operations, bindings)
         results: list[Result] = []

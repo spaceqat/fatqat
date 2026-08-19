@@ -13,6 +13,15 @@ class Job(Generic[T]):
     Phase 1 jobs are already terminal when returned. ``DONE`` jobs return
     their result, while ``ERROR`` jobs re-raise their stored exception from
     ``result()``.
+
+    Examples:
+        Ordinary runs carry one result; sweeps carry an ordered result list:
+
+        >>> from fatqat import Job
+        >>> Job.done("payload").result()
+        'payload'
+        >>> Job.done([1, 2]).result()
+        [1, 2]
     """
 
     def __init__(
@@ -44,6 +53,9 @@ class Job(Generic[T]):
 
     def result(self) -> T:
         """Return the result payload or raise the terminal job error.
+
+        Returns:
+            The payload supplied to :meth:`done`.
 
         Raises:
             BaseException: Re-raises the stored error for ``ERROR`` jobs.
