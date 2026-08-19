@@ -37,14 +37,20 @@ by two numbers per term.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from typing import Any, Callable
 
 import numpy as np
 
+from ._parameter_binding import (
+    _normalize_parameter_batch,
+    _raise_for_unbound_parameters,
+)
 from .errors import BackendValidationError
 from .job import Job
 from .observable import Observable
 from .operations import Measurement
+from .parameters import Parameter, ParameterVector
 from .program import Program
 from .result import Result
 from .simulator._engine.expectation import (
@@ -92,7 +98,7 @@ class Estimator:
         *,
         shots: int = 0,
         simulation_config: dict[str, Any] | None = None,
-    ) -> Job:
+    ) -> Job[Result]:
         """Evaluate one or more observables on a program.
 
         Args:
@@ -124,6 +130,7 @@ class Estimator:
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
         _validate_program(program, observable_list)
+        _raise_for_unbound_parameters(program.operations)
 
         try:
             values, deviations = self._evaluate(
@@ -151,6 +158,32 @@ class Estimator:
                 },
             )
         )
+
+    def run_sweep(
+        self,
+        program: Program,
+        observables: Observable | list[Observable] | tuple[Observable, ...],
+        bindings: Mapping[Parameter | ParameterVector, object],
+        *,
+        shots: int = 0,
+        simulation_config: dict[str, Any] | None = None,
+    ) -> Job[list[Result]]:
+        """Bind and evaluate every row of one complete parameter batch."""
+        rows = _normalize_parameter_batch(program.operations, bindings)
+        results: list[Result] = []
+        for row in rows:
+            bound = program._assign_normalized_parameters(row)
+            point_job = self.run(
+                bound,
+                observables,
+                shots=shots,
+                simulation_config=simulation_config,
+            )
+            try:
+                results.append(point_job.result())
+            except BaseException as exc:
+                return Job.failed(exc)
+        return Job.done(results)
 
     def _evaluate(
         self,
