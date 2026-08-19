@@ -218,6 +218,16 @@ def test_binding_rejects_vector_rank_errors(value):
         program.assign_parameters({angles: value})
 
 
+def test_binding_rejects_nonrectangular_vector_container():
+    angles = fq.ParameterVector("angles", 2)
+    program = fq.Program(2)
+    program.add(fq.ops.RX(angles[0]), 0)
+    program.add(fq.ops.RY(angles[1]), 1)
+
+    with pytest.raises(ValueError, match="rectangular container"):
+        program.assign_parameters({angles: [np.zeros((2, 2)), np.zeros((2, 3))]})
+
+
 def test_binding_rejects_wrong_vector_length_and_bad_element():
     angles = fq.ParameterVector("angles", 2)
     program = fq.Program(2)

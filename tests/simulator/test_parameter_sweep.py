@@ -208,6 +208,19 @@ def test_invalid_batches_raise_before_execution(build, error):
         Simulator("SV").run_sweep(program, build(program, angles, bias))
 
 
+def test_nonrectangular_batch_reports_parameter_context():
+    program, angles, bias = _rotation_template()
+
+    with pytest.raises(ValueError, match="parameter batch values.*rectangular"):
+        Simulator("SV").run_sweep(
+            program,
+            {
+                angles: [np.zeros((2, 2)), np.zeros((2, 3))],
+                bias: [0.1, 0.2],
+            },
+        )
+
+
 def test_parameter_free_and_zero_width_batches_are_rejected():
     with pytest.raises(ValueError, match="parameterized program"):
         Simulator().run_sweep(fq.Program(1), {})

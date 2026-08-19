@@ -69,7 +69,12 @@ def _materialize_vector_value(value: object) -> list[object]:
         raise TypeError(
             "parameter vector values must be one-dimensional sequences"
         ) from exc
-    array = np.asarray(materialized, dtype=object)
+    try:
+        array = np.asarray(materialized, dtype=object)
+    except ValueError as exc:
+        raise ValueError(
+            "parameter vector values must form a rectangular container"
+        ) from exc
     if array.ndim != 1:
         raise ValueError("parameter vector values must be one-dimensional")
     return materialized
@@ -178,7 +183,12 @@ def _materialize_batch_array(value: object, *, expected_ndim: int) -> np.ndarray
             raise TypeError(
                 "parameter batch values must be array-like containers"
             ) from exc
-        array = np.asarray(materialized, dtype=object)
+        try:
+            array = np.asarray(materialized, dtype=object)
+        except ValueError as exc:
+            raise ValueError(
+                "parameter batch values must form a rectangular container"
+            ) from exc
     if array.ndim != expected_ndim:
         raise ValueError(
             f"parameter batch value must have rank {expected_ndim}, got {array.ndim}"
