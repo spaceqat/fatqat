@@ -36,7 +36,8 @@ parameters named `"theta"`, or two vectors named `"angles"`, remain distinct
 objects and distinct mapping keys. String keys are not accepted.
 
 Ordinary Simulator, Estimator, and pulse-emulator execution rejects any
-remaining unbound parameter before matrix or pulse realization.
+remaining unbound parameter before numeric realization. QASM export does the
+same before formatting numeric gate arguments.
 
 ## Simulator sweeps
 

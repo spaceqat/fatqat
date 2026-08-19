@@ -1,6 +1,7 @@
 """Tests for Simulator parameter sweeps and shared unbound guards."""
 
 import inspect
+from fractions import Fraction
 
 import numpy as np
 import pytest
@@ -175,7 +176,7 @@ def test_batch_validation_finishes_before_row_zero(monkeypatch):
         backend.run_sweep(
             program,
             {
-                angles: [[0.1, 0.2], [0.3, "bad"]],
+                angles: [[0.1, 0.2], [0.3, Fraction(1, 3)]],
                 bias: [0.4, 0.5],
             },
         )

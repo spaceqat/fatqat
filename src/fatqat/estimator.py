@@ -181,7 +181,10 @@ class Estimator:
             observables: One observable or a sequence evaluated for every row.
             bindings: Complete object-keyed parameter batch.
             shots: Exact or sampled Estimator mode forwarded to every row.
-            simulation_config: Backend and sampling options forwarded unchanged.
+            simulation_config: Backend and sampling options forwarded
+                unchanged. An explicit seed is reused for every row, so
+                sampled row errors are correlated; see
+                :doc:`../guide/parameters-and-sweeps`.
 
         Returns:
             An eager job carrying an ordered list of row results. If a point
@@ -190,8 +193,9 @@ class Estimator:
 
         Raises:
             TypeError: If ``bindings`` is not an object-keyed mapping or a
-                batch contains non-real scalar values, or if ``observables``
-                is not an ``Observable`` or a sequence containing only
+                batch contains values other than built-in ``int``/``float``
+                or NumPy integer/floating scalars, or if ``observables`` is
+                not an ``Observable`` or a sequence containing only
                 ``Observable`` values.
             ValueError: If the program is not parameterized, assignments are
                 missing or duplicated, or batch ranks and lengths disagree.

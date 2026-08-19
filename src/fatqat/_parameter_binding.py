@@ -40,11 +40,14 @@ def _discover_parameters(instructions: Sequence[Any]) -> tuple[Parameter, ...]:
 def _validate_parameter_scalar(value: object) -> Real:
     """Enforce the shared scalar policy without coercing the accepted value.
 
-    Keeping Python and NumPy real scalars unchanged avoids introducing a
-    second conversion policy between single-point and batch binding.
+    Keeping built-in ``int``/``float`` and NumPy integer/floating scalars
+    unchanged avoids introducing a second conversion policy between
+    single-point and batch binding.
     """
-    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
-        raise TypeError("parameter values must be real scalars")
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (int, float, np.integer, np.floating)
+    ):
+        raise TypeError("parameter values must be int, float, or NumPy real scalars")
     return value
 
 
@@ -66,10 +69,7 @@ def _materialize_vector_value(value: object) -> list[object]:
         raise TypeError(
             "parameter vector values must be one-dimensional sequences"
         ) from exc
-    try:
-        array = np.asarray(materialized, dtype=object)
-    except ValueError as exc:
-        raise ValueError("parameter vector values must be one-dimensional") from exc
+    array = np.asarray(materialized, dtype=object)
     if array.ndim != 1:
         raise ValueError("parameter vector values must be one-dimensional")
     return materialized
@@ -178,10 +178,7 @@ def _materialize_batch_array(value: object, *, expected_ndim: int) -> np.ndarray
             raise TypeError(
                 "parameter batch values must be array-like containers"
             ) from exc
-        try:
-            array = np.asarray(materialized, dtype=object)
-        except ValueError as exc:
-            raise ValueError("parameter batch values must not be ragged") from exc
+        array = np.asarray(materialized, dtype=object)
     if array.ndim != expected_ndim:
         raise ValueError(
             f"parameter batch value must have rank {expected_ndim}, got {array.ndim}"
@@ -274,13 +271,7 @@ def _replace_parameterized_instructions(
             replaced_instructions.append(instruction)
             continue
         new_operation = replace(operation, **replacements)
-        replaced_instructions.append(
-            type(instruction)(
-                operation=new_operation,
-                targets=instruction.targets,
-                condition=instruction.condition,
-            )
-        )
+        replaced_instructions.append(replace(instruction, operation=new_operation))
     return tuple(replaced_instructions)
 
 
@@ -306,8 +297,8 @@ def _format_unbound_parameters(parameters: Sequence[Parameter]) -> str:
 def _raise_for_unbound_parameters(instructions: Sequence[Any]) -> None:
     """Reject parameters before a backend realizes numeric operations.
 
-    Simulator, Estimator, and pulse entry points share this guard so an
-    unbound placeholder never leaks into matrix or pulse implementation code.
+    Simulator, Estimator, pulse, and QASM entry points share this guard so an
+    unbound placeholder never leaks into numeric realization or export code.
     """
     parameters = _discover_parameters(instructions)
     if parameters:

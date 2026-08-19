@@ -710,7 +710,9 @@ class Simulator:
             bindings: Complete object-keyed parameter batch.
             shots: Number of repetitions forwarded to every row.
             resource_layout: Optional layout forwarded unchanged to every row.
-            simulation_config: Simulator options forwarded unchanged.
+            simulation_config: Simulator options forwarded unchanged. An
+                explicit seed is reused for every row, so sampled row errors
+                are correlated; see :doc:`../guide/parameters-and-sweeps`.
             result_config: Result request forwarded unchanged.
 
         Returns:
@@ -720,7 +722,8 @@ class Simulator:
 
         Raises:
             TypeError: If ``bindings`` is not an object-keyed mapping or a
-                batch contains non-real scalar values.
+                batch contains values other than built-in ``int``/``float``
+                or NumPy integer/floating scalars.
             ValueError: If the program is not parameterized, assignments are
                 missing or duplicated, or batch ranks and lengths disagree.
             BackendValidationError: If a bound row or forwarded run option

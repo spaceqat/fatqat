@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, TypeVar
 
+from ._parameter_binding import (
+    _normalize_parameter_mapping,
+    _replace_parameterized_instructions,
+)
 from .operations import Measurement, Operation
 from .parameters import Parameter, ParameterVector
 from .registers import (
@@ -480,11 +484,6 @@ class Program:
             >>> program.operations[0].operation.theta is angles[0]
             True
         """
-        from ._parameter_binding import (  # pylint: disable=import-outside-toplevel
-            _normalize_parameter_mapping,
-            _replace_parameterized_instructions,
-        )
-
         normalized = _normalize_parameter_mapping(self.operations, values)
         operations = _replace_parameterized_instructions(self.operations, normalized)
         return self._copy_with_operations(operations)
@@ -499,9 +498,5 @@ class Program:
         scalar rows before this method is called. Keeping this seam separate
         prevents every sweep point from rechecking the same batch contract.
         """
-        from ._parameter_binding import (  # pylint: disable=import-outside-toplevel
-            _replace_parameterized_instructions,
-        )
-
         operations = _replace_parameterized_instructions(self.operations, values)
         return self._copy_with_operations(operations)

@@ -1,6 +1,7 @@
 """Tests for immutable program parameter binding."""
 
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import ClassVar
 
 import numpy as np
@@ -23,16 +24,17 @@ def test_binds_one_parameter_without_mutating_template():
     assert bound is not program
 
 
-def test_binds_shared_parameter_in_every_direct_field():
+@pytest.mark.parametrize("value", [1, 0.5, np.int64(1), np.float64(0.5)])
+def test_binds_shared_parameter_in_every_direct_field(value):
     theta = fq.Parameter("theta")
     program = fq.Program(2)
     program.add(fq.ops.RX(theta), 0)
     program.add(fq.ops.RY(theta), 1)
 
-    bound = program.assign_parameters({theta: np.float64(0.5)})
+    bound = program.assign_parameters({theta: value})
 
-    assert bound.operations[0].operation.theta == np.float64(0.5)
-    assert bound.operations[1].operation.theta == np.float64(0.5)
+    assert bound.operations[0].operation.theta == value
+    assert bound.operations[1].operation.theta == value
 
 
 def test_binds_complete_vector_and_mixed_individual_parameter():
@@ -179,7 +181,9 @@ def test_duplicate_vector_and_element_assignment_is_rejected():
         program.assign_parameters({angles: [0.1, 0.2], angles[0]: 0.3})
 
 
-@pytest.mark.parametrize("value", [True, 1 + 2j, "0.1", [0.1], np.bool_(True)])
+@pytest.mark.parametrize(
+    "value", [True, 1 + 2j, "0.1", [0.1], np.bool_(True), Fraction(1, 3)]
+)
 def test_binding_rejects_invalid_scalar_values(value):
     theta = fq.Parameter("theta")
     program = fq.Program(1)

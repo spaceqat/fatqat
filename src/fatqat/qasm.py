@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from . import operations as ops
+from ._parameter_binding import _raise_for_unbound_parameters
 from .program import AppliedOperation, Program
 from .registers import (
     ClassicalRegister,
@@ -1127,13 +1128,16 @@ def to_qasm(program: Program, version: int = 3) -> str:
         Complete OpenQASM source text, ready to write to a `.qasm` file.
 
     Raises:
+        BackendValidationError: If the program contains unbound parameters.
         QasmExportError: If the program uses a qudit register (dim != 2), an
             operation with no QASM equivalent, or (QASM 2 only) a classical
             condition that cannot be expressed as a whole-register equality.
+        ValueError: If ``version`` is neither ``2`` nor ``3``.
     """
     if version not in (2, 3):
         raise ValueError(f"version must be 2 or 3, got {version!r}")
 
+    _raise_for_unbound_parameters(program.operations)
     layout = _Layout(program)
     body: list[str] = []
     uses_iswap = False
