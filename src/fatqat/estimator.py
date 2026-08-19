@@ -6,7 +6,7 @@ An `Estimator` wraps an already-constructed backend and reports
 noise model; the estimator adds only the observable step, so the same backend
 can serve counts through ``backend.run`` and expectation values here.
 
-The program is evolved **once** per call and every observable is evaluated
+The program is evolved **once** per ``run()`` call and every observable is evaluated
 against that same state. This is the structural advantage a simulator has over
 hardware: hardware must fan a multi-basis observable out into several circuits
 (one per commuting group, each with its own basis-rotation gates), while a
@@ -168,7 +168,22 @@ class Estimator:
         shots: int = 0,
         simulation_config: dict[str, Any] | None = None,
     ) -> Job[list[Result]]:
-        """Bind and evaluate every row of one complete parameter batch."""
+        """Bind and evaluate every row of one complete parameter batch.
+
+        Binding shapes match :meth:`fatqat.simulator.Simulator.run_sweep`.
+        Each list element is the ordinary result of one :meth:`run` call, so a
+        single observable remains scalar and a sequence remains array-shaped.
+
+        Args:
+            program: Parameterized template program.
+            observables: One observable or a sequence evaluated for every row.
+            bindings: Complete object-keyed parameter batch.
+            shots: Exact or sampled Estimator mode forwarded to every row.
+            simulation_config: Backend and sampling options forwarded unchanged.
+
+        Returns:
+            An eager job carrying an ordered list of row results.
+        """
         rows = _normalize_parameter_batch(program.operations, bindings)
         results: list[Result] = []
         for row in rows:

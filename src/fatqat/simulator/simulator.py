@@ -699,7 +699,23 @@ class Simulator:
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
     ) -> Job[list[Result]]:
-        """Bind and execute every row of one complete parameter batch."""
+        """Bind and execute every row of one complete parameter batch.
+
+        Single parameters accept shape ``(N,)`` and vectors accept shape
+        ``(N, M)``. The returned eager job contains one ordinary ``Result`` per
+        row, in input order. Version 1 delegates to :meth:`run` once per row.
+
+        Args:
+            program: Parameterized template program.
+            bindings: Complete object-keyed parameter batch.
+            shots: Number of repetitions forwarded to every row.
+            resource_layout: Optional layout forwarded unchanged to every row.
+            simulation_config: Simulator options forwarded unchanged.
+            result_config: Result request forwarded unchanged.
+
+        Returns:
+            An eager job carrying an ordered list of row results.
+        """
         rows = _normalize_parameter_batch(program.operations, bindings)
         results: list[Result] = []
         for row in rows:

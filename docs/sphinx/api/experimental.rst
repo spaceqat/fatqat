@@ -23,6 +23,11 @@ status ``"DONE"``; an error job has status ``"ERROR"``. Treat these status
 strings and the current eager behavior as evolving: do not build polling,
 queuing, or long-running orchestration around them yet.
 
+``Job`` is generic in its completed payload without changing this lifecycle.
+Ordinary Simulator and Estimator calls use ``Job[Result]``. Their parameter
+sweep methods use the same runtime class with ``Job[list[Result]]``, ordered by
+binding row; there is no separate sweep-job type.
+
 Detailed Job reference
 ----------------------
 
@@ -30,8 +35,8 @@ Detailed Job reference
    :members:
    :show-inheritance:
 
-:py:attr:`~fatqat.Job.status` records the current state. :py:attr:`~fatqat.Job.error` holds the stored
-exception for an ``"ERROR"`` job and is otherwise ``None``.
+:py:attr:`~fatqat.Job.status` records the current state. A failed job keeps its
+exception private and re-raises it from :py:meth:`~fatqat.Job.result`.
 
 Direct :py:class:`~fatqat.Result` construction
 -----------------------------------------------
@@ -41,9 +46,10 @@ The current constructor is:
 :py:class:`~fatqat.Result` (``counts=None, statevector=None, available=frozenset(), metadata=None, classical_dims=(), density_matrix=None``)
 
 Use it only when adapting an external execution path or creating focused
-tests. Normal programs should receive a ``Result`` from ``job.result()`` so
-the backend can populate metadata and the available-data contract
-consistently.
+tests. An ordinary backend or Estimator run returns one ``Result`` from
+``job.result()``; a parameter sweep returns an ordered ``list[Result]``. In
+both cases the execution family populates each result's metadata and
+available-data contract.
 
 For the stable result readers, see :doc:`result`. For the normal program
 flow, start with :doc:`../guide/running-and-results`.

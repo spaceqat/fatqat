@@ -446,6 +446,19 @@ class Program:
 
         Binding is partial and never mutates the template program. Vector keys
         expand in their explicit declaration order.
+
+        Args:
+            values: Object-keyed scalar or vector assignments. String keys and
+                positional values are not accepted.
+
+        Returns:
+            An independent program containing the selected numeric values.
+
+        Raises:
+            TypeError: If the mapping, a key, a value container, or a scalar
+                has the wrong type.
+            ValueError: If a key is absent, duplicated after vector expansion,
+                or has an incompatible vector shape.
         """
         from ._parameter_binding import (  # pylint: disable=import-outside-toplevel
             _normalize_parameter_mapping,

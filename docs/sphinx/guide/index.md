@@ -16,19 +16,21 @@ Short follow-on snippets state when they assume an existing `program` or import.
 3. [Gates](gates.md), [measurement and conditions](measurement-and-conditions.md),
    and [running and results](running-and-results.md) — write and interpret
    programs.
-4. [Noise](noise.md) and [advanced user topics](advanced.md) — opt into
+4. [Parameters and sweeps](parameters-and-sweeps.md) — bind one reusable
+   template or execute an ordered parameter batch.
+5. [Noise](noise.md) and [advanced user topics](advanced.md) — opt into
    optional simulation features.
 
-5. [Expectation values](estimator.md) — read observables off a state instead
+6. [Expectation values](estimator.md) — read observables off a state instead
    of going through counts.
 
-6. [Superconducting transmon emulation](superconducting-pulse.md) covers both
+7. [Superconducting transmon emulation](superconducting-pulse.md) covers both
    calibrated gates and direct controls in a three-level transmon model.
-7. [Neutral-atom emulation](neutral-atoms.md) compares the three-level and
+8. [Neutral-atom emulation](neutral-atoms.md) compares the three-level and
    two-level atom physics systems by capability.
-8. [Three-level atom emulation](atom-3level.md) covers calibrated gates,
+9. [Three-level atom emulation](atom-3level.md) covers calibrated gates,
    selected-site direct controls, full-pair crosstalk, and qutrit results.
-9. [Two-level atom emulation](atom-2level.md) covers global direct controls,
+10. [Two-level atom emulation](atom-2level.md) covers global direct controls,
    sampled waveforms, interaction policies, and Lindblad modes.
 
 If an example fails or its output surprises you, see
@@ -42,6 +44,7 @@ concepts
 gates
 measurement-and-conditions
 running-and-results
+parameters-and-sweeps
 noise
 advanced
 estimator
