@@ -808,6 +808,24 @@ def test_propagator_empty_and_frame_only_paths_use_fixed_coherent_mode():
     assert backend.execution_mode_calls == 0
 
 
+def test_unbound_gate_is_rejected_before_shared_pulse_preparation():
+    target = _CountingTarget(("q0",))
+    backend = _TemplateBackend(target)
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(fq.ops.RX(theta), 0)
+
+    for execute in (backend.run, backend.propagator):
+        with pytest.raises(
+            BackendValidationError,
+            match="program has unbound parameters: theta",
+        ):
+            execute(program)
+
+    assert target.bind_program_calls == 0
+    assert backend.source_validations == 0
+
+
 def _measurement_program():
     program = fq.Program(1, 1)
     program.measure(0, 0)

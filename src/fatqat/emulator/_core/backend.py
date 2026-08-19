@@ -9,6 +9,7 @@ from typing import Any, Literal, final
 
 import numpy as np
 
+from ..._parameter_binding import _raise_for_unbound_parameters
 from ..._index_allocation import (
     _ClassicalAllocation,
     _EngineAllocation,
@@ -305,6 +306,7 @@ class _PulseBackend(ABC):
             "result_config",
             backend_name=self._backend_name(),
         )
+        _raise_for_unbound_parameters(program.operations)
         prepared = self._prepare_program(program, resource_layout)
         request = self._validate(
             result,
@@ -368,6 +370,7 @@ class _PulseBackend(ABC):
         if type(apply_final_frame) is not bool:
             raise BackendValidationError("apply_final_frame must be a bool")
         schedule_mode = _validate_schedule_mode(schedule_mode)
+        _raise_for_unbound_parameters(program.operations)
         prepared = self._prepare_program(program, resource_layout)
 
         if not prepared.plan:

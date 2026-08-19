@@ -46,6 +46,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from .._parameter_binding import (
+    _normalize_parameter_batch,
+    _raise_for_unbound_parameters,
+)
 from ..errors import (
     BackendValidationError,
     NoMeasurementWarning,
@@ -68,6 +72,7 @@ from ..noise import (
     default_channel_implementation_map,
 )
 from ..operations import BarrierGate, Measurement, ResetGate, RefillGate
+from ..parameters import Parameter, ParameterVector
 from ..program import AppliedOperation, Program
 from ..registers import RegisterRef
 from ..resource_layout import DeviceOperand, ResourceLayout
@@ -585,7 +590,7 @@ class Simulator:
         resource_layout: ResourceLayout | None = None,
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
-    ) -> Job:
+    ) -> Job[Result]:
         """Validate, execute, and package one program run.
 
         Resolves the program's effective resource layout and private engine
@@ -625,6 +630,7 @@ class Simulator:
                 without a backend implementation, or one whose target key is
                 illegal for this backend.
         """
+        _raise_for_unbound_parameters(program.operations)
         simulation = _normalize_config(
             simulation_config,
             self._simulation_config_cls,
@@ -682,6 +688,34 @@ class Simulator:
             )
         except Exception as exc:  # execution-stage failure
             return Job.failed(exc)
+
+    def run_sweep(
+        self,
+        program: Program,
+        bindings: Mapping[Parameter | ParameterVector, object],
+        *,
+        shots: int = 1024,
+        resource_layout: ResourceLayout | None = None,
+        simulation_config: dict[str, Any] | None = None,
+        result_config: dict[str, Any] | None = None,
+    ) -> Job[list[Result]]:
+        """Bind and execute every row of one complete parameter batch."""
+        rows = _normalize_parameter_batch(program.operations, bindings)
+        results: list[Result] = []
+        for row in rows:
+            bound = program._assign_normalized_parameters(row)
+            point_job = self.run(
+                bound,
+                shots=shots,
+                resource_layout=resource_layout,
+                simulation_config=simulation_config,
+                result_config=result_config,
+            )
+            try:
+                results.append(point_job.result())
+            except BaseException as exc:
+                return Job.failed(exc)
+        return Job.done(results)
 
     # --- validation (raises directly from run) ---
     def _validate(self, config: _ResultConfig, shots: int, facts: _PlanFacts) -> None:
