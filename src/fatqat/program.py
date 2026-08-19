@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, TypeVar
 
 from .operations import Measurement, Operation
+from .parameters import Parameter, ParameterVector
 from .registers import (
     QuantumRegister,
     RegisterRef,
@@ -419,10 +420,50 @@ class Program:
 
     def copy(self) -> "Program":
         """Return an independent copy with private operation storage and copied metadata."""
+        return self._copy_with_operations(self._operations)
+
+    def _copy_with_operations(
+        self,
+        operations: (
+            tuple[AppliedOperation | Measurement, ...]
+            | list[AppliedOperation | Measurement]
+        ),
+    ) -> "Program":
+        """Copy this program around a trusted instruction sequence."""
         new = Program.__new__(Program)
         new.quantum_registers = tuple(self.quantum_registers)
         new.classical_registers = tuple(self.classical_registers)
-        new._operations = list(self._operations)
+        new._operations = list(operations)
         new._operations_view = tuple(new._operations)
         new.metadata = dict(self.metadata)
         return new
+
+    def assign_parameters(
+        self,
+        values: Mapping[Parameter | ParameterVector, object],
+    ) -> "Program":
+        """Return a copy with the supplied parameter identities replaced.
+
+        Binding is partial and never mutates the template program. Vector keys
+        expand in their explicit declaration order.
+        """
+        from ._parameter_binding import (  # pylint: disable=import-outside-toplevel
+            _normalize_parameter_mapping,
+            _replace_parameterized_instructions,
+        )
+
+        normalized = _normalize_parameter_mapping(self.operations, values)
+        operations = _replace_parameterized_instructions(self.operations, normalized)
+        return self._copy_with_operations(operations)
+
+    def _assign_normalized_parameters(
+        self,
+        values: Mapping[Parameter, object],
+    ) -> "Program":
+        """Bind a trusted normalized mapping without repeating validation."""
+        from ._parameter_binding import (  # pylint: disable=import-outside-toplevel
+            _replace_parameterized_instructions,
+        )
+
+        operations = _replace_parameterized_instructions(self.operations, values)
+        return self._copy_with_operations(operations)
