@@ -2,7 +2,7 @@
 
 import pytest
 
-from fatqat import operations as ops
+from fatqat import Parameter, operations as ops
 from fatqat.operations import Operation
 
 
@@ -42,6 +42,25 @@ def test_parametric_gate_is_class_storing_theta():
     assert g.num_targets == 1
     assert ops.RY(0.3).name == "RY"
     assert ops.RZ(0.4).name == "RZ"
+
+
+@pytest.mark.parametrize(
+    "gate_factory",
+    [
+        ops.RX,
+        ops.RY,
+        ops.RZ,
+        ops.Phase,
+        ops.CPhase,
+        lambda theta: ops.SubspaceRX(theta, (0, 1)),
+        lambda theta: ops.SubspaceRY(theta, (0, 1)),
+        lambda theta: ops.SubspaceRZ(theta, (0, 1)),
+    ],
+)
+def test_angle_gates_accept_parameter_values(gate_factory):
+    theta = Parameter("theta")
+
+    assert gate_factory(theta).theta is theta
 
 
 def test_gates_distinguished_by_class():

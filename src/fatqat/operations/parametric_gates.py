@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
+from ..parameters import Parameter
 from .base import Operation
 
 # ---------------------------------------------------------------------------
@@ -44,7 +45,7 @@ class RX(Operation):
         theta: Rotation angle in radians.
     """
 
-    theta: float
+    theta: float | Parameter
     name: ClassVar[str] = "RX"
     _num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
@@ -65,7 +66,7 @@ class RY(Operation):
         theta: Rotation angle in radians.
     """
 
-    theta: float
+    theta: float | Parameter
     name: ClassVar[str] = "RY"
     _num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
@@ -88,7 +89,7 @@ class RZ(Operation):
         theta: Rotation angle in radians.
     """
 
-    theta: float
+    theta: float | Parameter
     name: ClassVar[str] = "RZ"
     _num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
@@ -106,7 +107,7 @@ class Phase(Operation):
         theta: Phase angle in radians.
     """
 
-    theta: float
+    theta: float | Parameter
     name: ClassVar[str] = "Phase"
     _num_subsystems: ClassVar[int] = 1
 
@@ -134,6 +135,6 @@ class CPhase(Operation):
         theta: Phase angle in radians.
     """
 
-    theta: float
+    theta: float | Parameter
     name: ClassVar[str] = "CPhase"
     _num_subsystems: ClassVar[int] = 2
