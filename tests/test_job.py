@@ -11,6 +11,15 @@ def test_done_job_returns_result():
     assert job.result() == "RESULT"
 
 
+def test_done_job_returns_same_ordered_list_payload():
+    results = [object(), object()]
+
+    job = Job.done(results)
+
+    assert job.result() is results
+    assert job.result() == [results[0], results[1]]
+
+
 def test_error_job_reraises():
     job = Job.failed(ValueError("boom"))
     assert job.status == "ERROR"
@@ -18,7 +27,22 @@ def test_error_job_reraises():
         job.result()
 
 
+def test_error_job_reraises_base_exception_payload():
+    error = KeyboardInterrupt("stopped")
+    job = Job.failed(error)
+
+    with pytest.raises(KeyboardInterrupt, match="stopped") as caught:
+        job.result()
+    assert caught.value is error
+
+
 def test_result_raises_for_non_terminal_status():
     job = Job(status="PENDING")
     with pytest.raises(RuntimeError, match="not complete"):
         job.result()
+
+
+def test_no_sweep_job_type_is_exposed():
+    import fatqat as fq
+
+    assert not hasattr(fq, "SweepJob")
