@@ -148,9 +148,9 @@ def test_statevector_kernel_does_not_modify_the_state(states):
 
 
 def test_sign_uses_selection_not_uint8_arithmetic(states):
-    # np.bitwise_count returns uint8; deriving the sign arithmetically would
-    # wrap -1 to 255 whenever z_mask is non-empty. A Z-heavy term would then be
-    # wildly wrong while a pure-X term still passed, so pin the Z case.
+    # Parity is folded through unsigned intermediates. A Z-heavy term would be
+    # wildly wrong while a pure-X term still passed if the sign wrapped, so pin
+    # the Z case.
     statevector, _ = states
     observable = Observable([("ZZZZZ", 1.0)])
     reference = complex(np.vdot(statevector, _dense(observable) @ statevector)).real

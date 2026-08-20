@@ -73,9 +73,8 @@ counts stay reproducible per engine (float-summation differences from NumPy
 mean they are not bit-identical across engines - the documented contract,
 see `np.py`).
 
-Numba compiles kernels lazily on first call and is an optional dependency (the
-``numba`` group), so this module is never imported from ``fatqat.simulator._engine``'s
-``__init__``; import it explicitly.
+Numba compiles kernels lazily on first call. This module is never imported from
+``fatqat.simulator._engine``'s ``__init__``; import it explicitly.
 
 Conventions match `np.py`: little-endian flat indexing (subsystem ``q`` has
 place value ``prod(dims[:q])``, subsystem 0 least-significant) and a local gate

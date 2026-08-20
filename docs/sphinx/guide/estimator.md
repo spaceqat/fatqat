@@ -106,7 +106,7 @@ rather than calling `run` repeatedly is what claims that saving.
 
 Once the evolution is shared, the remaining cost is one sweep over the state
 per term — so with many terms, evaluation rather than evolution dominates. That
-sweep is compiled when the optional `numba` dependency is installed, which is
+sweep is compiled with the `numba` package dependency, which is
 worth roughly an order of magnitude on a large state.
 
 Nothing needs to be configured: the compiled kernel is used whenever `numba`

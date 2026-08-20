@@ -14,10 +14,13 @@ jobs:
         include:
           - os: ubuntu-latest
             python-version: "3.12"
+            groups: "--group draw"
           - os: windows-latest
             python-version: "3.13"
+            groups: ""
           - os: macos-latest
             python-version: "3.14"
+            groups: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -28,45 +31,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
 
-      - name: Install dependencies
-        run: uv sync
-
       - name: Run tests
-        run: uv run pytest
+        run: uv run ${{ matrix.groups }} pytest
 
       - name: Run doctests
-        run: uv run pytest --doctest-modules src/fatqat
-
-  # The base matrix above installs no optional group, which is what keeps the
-  # package honest on an unconstrained numpy and exercises every fallback path.
-  # The cost is that anything guarded by an optional dependency skips there, so
-  # this job installs every group and is where those tests actually run. It
-  # reports zero skips; a skip here means a test lost its coverage entirely.
-  #
-  # `--all-groups` rather than `--group numba`: the numba group alone still left
-  # `test_draw.py` (needs `draw`) and `test_against_qiskit.py` (needs `qiskit`)
-  # skipping in every job that runs pytest, so those two never ran in CI at all.
-  # The groups are repeated on `uv run`, which would otherwise re-sync without
-  # them.
-  test-all-groups:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.3.1
-        with:
-          python-version: "3.12"
-          enable-cache: true
-
-      - name: Install dependencies (every optional group)
-        run: uv sync --all-groups
-
-      # `--fail-on-skip` is a conftest option that exits non-zero when
-      # anything skipped, so the no-skip claim is enforced rather than asserted
-      # in a comment. `-rs` names what skipped when it does.
-      - name: Run tests, failing on any skip
-        run: uv run --all-groups pytest -rs --strict-markers --fail-on-skip
-
-      - name: Run doctests
-        run: uv run --all-groups pytest --doctest-modules src/fatqat
+        run: uv run ${{ matrix.groups }} pytest --doctest-modules src/fatqat

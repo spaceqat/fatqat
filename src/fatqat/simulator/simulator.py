@@ -20,7 +20,7 @@ afterwards:
   keyword, the availability name, the metadata echo, and validation wording.
 - ``_engine_cls``: the `MatrixEngine` subclass the (method, runtime) pair
   drives (`NumpySVEngine`, `NumpyDMEngine`, `NumpyUnitaryEngine`,
-  `NumpySuperopEngine`, or their optional Numba twins); one instance is bound
+  `NumpySuperopEngine`, or their Numba twins); one instance is bound
   to ``_engine`` and reused across runs.
 - ``_request_cls``: the method's engine-request value object. The public
   ``final_state`` result request is translated to that representation's
@@ -132,8 +132,8 @@ class _MethodSpec:
         request_cls: The method's engine-request value object.
         numpy_engine: The `MatrixEngine` subclass for ``runtime="numpy"``.
         numba_engine_name: The `fatqat.simulator._engine.nb` attribute naming
-            the ``runtime="numba"`` twin, held as a name so that optional
-            module is resolved lazily.
+            the ``runtime="numba"`` twin, held as a name so the module is
+            resolved lazily.
         nonunitary_is_stochastic: Whether non-unitary maps (reset, channel
             noise) make execution stochastic for this representation.
         is_operator: Whether the method computes the program's map rather than
@@ -251,9 +251,8 @@ class Simulator:
     hardware job's repetition count.
 
     The ``runtime`` argument selects the execution technology for the chosen
-    representation - ``"numpy"`` (default) or ``"numba"`` (optional
-    dependency). The runtime never changes
-    simulation semantics, only how fast the same numbers are computed;
+    representation - ``"numba"`` (default) or ``"numpy"``. The runtime never
+    changes simulation semantics, only how fast the same numbers are computed;
     dynamic-shot worker processes use the selected runtime as well. The two
     parallelism axes are separate: ``max_workers`` / ``parallel_mode``
     distribute dynamic shots across OS processes on either runtime, while
@@ -302,7 +301,7 @@ class Simulator:
         self,
         method: str = "statevector",
         *,
-        runtime: str = "numpy",
+        runtime: str = "numba",
         implementation_map: MatrixImplementationMap | None = None,
         noise: NoiseModel | None = None,
         channel_implementation_map: ChannelImplementationMap | None = None,
@@ -320,13 +319,11 @@ class Simulator:
                 ``default_matrix_implementation_map()``. The backend copies
                 whatever map it receives, so mutating the caller's map object
                 after construction does not change this backend's behavior.
-            runtime: Execution technology: ``"numpy"`` (the default) or
-                ``"numba"``, case-insensitive. The runtime selects *how* the
+            runtime: Execution technology: ``"numba"`` (the default) or
+                ``"numpy"``, case-insensitive. The runtime selects *how* the
                 chosen state representation is computed, never its semantics:
                 results are identical up to the documented per-simulator RNG
-                reproducibility contract. ``"numba"`` supports both methods
-                and requires the optional ``numba`` dependency, which raises
-                here, at construction, rather than at run time.
+                reproducibility contract. Both runtimes support every method.
             noise: Optional :py:class:`~fatqat.NoiseModel` applied to every
                 run. ``None`` means noise-free execution. The backend captures
                 the model's registrations once at construction.
@@ -338,9 +335,9 @@ class Simulator:
 
         Raises:
             BackendValidationError: If ``method`` or ``runtime`` is not one
-                of the supported names, or ``runtime="numba"`` is requested
-                without the numba dependency installed, or the captured noise
-                model contains a source this backend cannot execute.
+                of the supported names, the required numba dependency cannot
+                be imported, or the captured noise model contains a source
+                this backend cannot execute.
         """
         normalized = _METHOD_ALIASES.get(str(method).lower())
         if normalized is None:
@@ -365,13 +362,13 @@ class Simulator:
         self._engine_cls: type[MatrixEngine] = spec.numpy_engine
         if normalized_runtime == "numba":
             try:
-                # Lazy: numba is an optional dependency, and fatqat.simulator's
-                # package __init__ deliberately never imports the nb module.
+                # Lazy: fatqat.simulator's package __init__ deliberately never
+                # imports the Numba engine module.
                 from ._engine import nb
             except ImportError as exc:
                 raise BackendValidationError(
-                    "runtime='numba' requires the optional numba dependency "
-                    "(install the 'numba' group)"
+                    "runtime='numba' requires the numba dependency; reinstall "
+                    "fatqat to repair the environment"
                 ) from exc
             self._engine_cls = getattr(nb, spec.numba_engine_name)
         self._runtime = normalized_runtime

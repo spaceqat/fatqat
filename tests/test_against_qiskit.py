@@ -11,8 +11,7 @@ column-major, so super-operator comparisons pass through `_to_row_major`;
 `test_qiskit_superop_conversion_is_not_a_no_op` pins that the conversion is
 real work and not an accidental identity. Every
 case runs on both fatqat runtimes (the ``runtime`` fixture): ``numpy``, and
-``numba`` when the optional dependency is installed (skipped otherwise; CI
-installs it, so both axes are mandatory there). The internal parity tests
+``numba`` using the package dependency. The internal parity tests
 pin numba against numpy shot-for-shot; this axis pins both against a
 reference that cannot share a bug with either. Ideal
 circuits compare against ``qiskit.quantum_info`` exact evolution (Qiskit's
@@ -34,7 +33,7 @@ statevector execution under noise (stochastic trajectories), qudits (no Aer
 analogue), and reset/feedforward dynamics (Aer's semantics differ).
 
 Requires the optional ``qiskit`` dependency group; the module self-skips
-without it, exactly like the numba-only tests.
+without it.
 """
 
 import numpy as np
@@ -64,7 +63,7 @@ _ATOL = 1e-12
 
 @pytest.fixture(params=["numpy", "numba"], name="runtime")
 def _runtime(request):
-    """Both execution runtimes; the numba axis skips if numba is absent."""
+    """Return each supported execution runtime."""
     if request.param == "numba":
         pytest.importorskip("numba")
     return request.param

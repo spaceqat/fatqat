@@ -13,8 +13,8 @@ five full-length temporaries, one of them a fancy-index gather that reads memory
 in permuted order. The compiled loop keeps the running sum in a register and
 touches each amplitude once.
 
-This module imports ``numba`` at module scope and is imported lazily, so a
-fatqat installed without the optional ``numba`` group simply never loads it.
+This module imports ``numba`` at module scope and is itself imported lazily to
+keep package import lightweight.
 """
 
 from __future__ import annotations

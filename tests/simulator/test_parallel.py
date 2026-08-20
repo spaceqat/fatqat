@@ -109,7 +109,7 @@ def test_multiprocessing_pool_is_created_with_the_thread_limit_applied():
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(parallel, "ProcessPoolExecutor", _RecordingExecutor)
-        Simulator("SV").run(
+        Simulator("SV", runtime="numpy").run(
             _random_dynamic_program(),
             shots=40,
             simulation_config={
@@ -144,7 +144,7 @@ def test_loky_executor_is_given_the_thread_limit_as_env():
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(loky, "get_reusable_executor", _fake_get_reusable_executor)
-        Simulator("SV").run(
+        Simulator("SV", runtime="numpy").run(
             _random_dynamic_program(),
             shots=40,
             simulation_config={"seed": 5, "max_workers": 2, "parallel_mode": "loky"},

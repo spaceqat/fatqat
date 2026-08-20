@@ -48,9 +48,9 @@ print(rho.diagonal().real)          # [0.5 0.  0.  0.5]
 ## Runtimes
 
 `runtime` selects the execution technology for the chosen representation —
-`"numpy"` (the default) or `"numba"` for JIT-compiled kernels (both methods;
-requires the optional `numba` dependency). The runtime never changes
-results, only how fast they are computed:
+`"numba"` (the default, using JIT-compiled kernels) or `"numpy"`. Both runtimes
+support the statevector, density-matrix, unitary, and superoperator methods.
+The runtime never changes results, only how fast they are computed:
 
 ```python
 backend = fq.simulator.Simulator(method="SV", runtime="numba")
@@ -209,7 +209,6 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 ```sh
 uv sync                 # install runtime + dev dependencies into .venv
 uv run pytest           # run the test suite
-uv sync --group numba   # optional: enables runtime="numba"
 ```
 
 ## Documentation

@@ -109,7 +109,7 @@ def _cz_definition(
     exchange_grid = _sample_grid(parked_duration)
     exchange = _hann(exchange_grid, parked_duration, sqrt(2) * pi / parked_duration)
     detuning_subsystem = calibration._cz_detuning_subsystem(first, second)
-    detuning_phase = float(np.trapezoid(detuning, detuning_grid))
+    detuning_phase = float(_cumulative_trapezoid(detuning, detuning_grid)[-1])
     return PulseDefinition(
         duration,
         (

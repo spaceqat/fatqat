@@ -176,5 +176,5 @@ def test_parity_helper_agrees_with_popcount():
 
     values = [0, 1, 3, 255, 1 << 20, (1 << 33) | 5, (1 << 62) | (1 << 3) | 1]
     for value in values:
-        expected = bool(int(np.bitwise_count(np.uint64(value))) & 1)
+        expected = bool(value.bit_count() & 1)
         assert _odd_parity(value) is expected

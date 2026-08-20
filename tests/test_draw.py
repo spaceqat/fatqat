@@ -2,8 +2,8 @@
 
 Asserts on the translated ``QubitCircuit`` structure (gate names, controls,
 targets, classical controls) rather than on rendered images. Self-skips when
-the optional ``qutip-qip`` dependency is absent, exactly like the numba- and
-qiskit-only tests.
+the optional ``qutip-qip`` dependency is absent, exactly like the qiskit-only
+tests.
 
 Both supported QuTiP-QIP APIs are asserted against through `_elements`, which
 normalizes the two ways a built circuit exposes its contents. Assertions avoid

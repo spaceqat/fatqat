@@ -5,7 +5,6 @@ import pytest
 import fatqat as fq
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError
-from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
 
 
 def _bell_program():
@@ -16,9 +15,33 @@ def _bell_program():
     return program
 
 
-def test_default_runtime_is_numpy():
-    assert type(Simulator()._engine) is NumpySVEngine
-    assert type(Simulator(method="DM")._engine) is NumpyDMEngine
+@pytest.mark.parametrize(
+    ("method", "engine_name"),
+    [
+        ("statevector", "NumbaSVEngine"),
+        ("density_matrix", "NumbaDMEngine"),
+        ("unitary", "NumbaUnitaryEngine"),
+        ("superop", "NumbaSuperopEngine"),
+    ],
+)
+def test_default_runtime_is_numba_for_every_method(method, engine_name):
+    from fatqat.simulator._engine import nb
+
+    assert type(Simulator(method=method)._engine) is getattr(nb, engine_name)
+
+
+@pytest.mark.parametrize(
+    "backend_cls",
+    [
+        fq.simulator.AtomGridSimulator,
+        fq.simulator.SCQubitIBMSimulator,
+        fq.simulator.SCQubitGoogleSimulator,
+    ],
+)
+def test_fake_simulator_defaults_to_numba(backend_cls):
+    from fatqat.simulator._engine.nb import NumbaSVEngine
+
+    assert type(backend_cls()._engine) is NumbaSVEngine
 
 
 def test_numba_runtime_selects_the_numba_engine():
@@ -51,7 +74,7 @@ def test_metadata_echoes_the_runtime():
         .run(_bell_program(), shots=4, simulation_config={"seed": 1})
         .result()
     )
-    assert result.metadata["runtime"] == "numpy"
+    assert result.metadata["runtime"] == "numba"
 
 
 def test_numba_runtime_produces_valid_bell_counts_through_the_portal():

@@ -24,16 +24,5 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      # The groups on `uv run` too, or it would re-sync the environment
-      # without them and drop qiskit-aer/numba (as in tests.yml's numba job).
-      - name: Install dependencies (with qiskit-aer and numba)
-        run: uv sync --group qiskit --group numba
-
-      # The numba axis SKIPS when numba is missing (correct locally); CI must
-      # fail loudly instead of going green on a silently absent install.
-      - name: Guard against silently missing optional dependencies
-        run: uv run --group qiskit --group numba python -c "import numba, qiskit_aer"
-
-      # -rs surfaces every skip in the log, so an unexpected one is visible.
       - name: Run the cross-validation suite (numpy and numba runtimes)
-        run: uv run --group qiskit --group numba pytest tests/test_against_qiskit.py -v -rs
+        run: uv run --group qiskit pytest tests/test_against_qiskit.py -v

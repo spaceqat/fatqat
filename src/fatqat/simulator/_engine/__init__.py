@@ -15,5 +15,5 @@ contract to public API. Users reach simulation through
 
 Import the concrete modules directly (``from ._engine.np import
 NumpySVEngine``). ``nb`` is imported lazily by the `Simulator`, since numba
-is an optional dependency.
+compilation is only needed when that runtime is selected.
 """

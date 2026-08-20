@@ -120,7 +120,7 @@ class _SCQubitSimulator(Simulator):
         rows: int,
         cols: int,
         method: str = "statevector",
-        runtime: str = "numpy",
+        runtime: str = "numba",
         noise: NoiseModel | None = None,
     ) -> None:
         # rows/cols arrive pre-validated: each subclass's __init__ validates
@@ -272,7 +272,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         *,
         grid_size: tuple[int, int] = DEFAULT_GRID_SIZE,
         method: str = "statevector",
-        runtime: str = "numpy",
+        runtime: str = "numba",
         noise: NoiseModel | None = None,
     ) -> None:
         """Create a fake IBM-style superconducting backend.
@@ -418,7 +418,7 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         *,
         grid_size: tuple[int, int] = DEFAULT_GRID_SIZE,
         method: str = "statevector",
-        runtime: str = "numpy",
+        runtime: str = "numba",
         noise: NoiseModel | None = None,
     ) -> None:
         """Create a fake Google-style superconducting backend.

@@ -5,6 +5,7 @@ description = "Quantum noisy simulator (MVP Phase 1)"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.23.2",
+    "numba>=0.59",
     "loky>=3.0.0",
     "qutip>=5.1,<6",
     "qutip-qip>=0.4,<0.5",
@@ -21,10 +22,6 @@ packages = ["src/fatqat"]
 [dependency-groups]
 dev = ["pytest>=8", "scipy-doctest>=1.0"]
 docs = ["sphinx", "pydata-sphinx-theme", "myst-parser", "sphinx-design", "sphinx-copybutton"]
-# Optional: enables the Numba statevector engine (fatqat.simulator._engine.nb)
-# and its tests. Not required by the base package. Note: numba currently pins
-# numpy < 2.5, so `uv sync --group numba` may downgrade numpy.
-numba = ["numba>=0.66"]
 # Optional: enables tests/test_against_qiskit.py, the numerical cross-check
 # against Qiskit Aer (see .github/workflows/qiskit-compat.yml). Never required
 # by the package itself; the module self-skips when qiskit-aer is absent.

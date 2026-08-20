@@ -92,11 +92,18 @@ def _weights(
     Combines the Z sign ``(-1)**popcount(index & z_mask)`` with the projector
     mask, which keeps only states whose bits match what the projectors select.
 
-    ``np.bitwise_count`` returns ``uint8``; computing the sign by arithmetic on
-    it (``1 - 2 * count``) would wrap around to 255 instead of -1, so the sign
-    is selected rather than computed.
+    XOR-folding computes parity without requiring ``np.bitwise_count``, which
+    was added after the oldest NumPy supported by Numba 0.59. The sign is then
+    selected rather than computed arithmetically on an unsigned value.
     """
-    weight = np.where(np.bitwise_count(index & z_mask) & 1, -1.0, 1.0)
+    parity = np.asarray(index & z_mask, dtype=np.uint64)
+    parity = parity ^ (parity >> 32)
+    parity = parity ^ (parity >> 16)
+    parity = parity ^ (parity >> 8)
+    parity = parity ^ (parity >> 4)
+    parity = parity ^ (parity >> 2)
+    parity = parity ^ (parity >> 1)
+    weight = np.where(parity & 1, -1.0, 1.0)
     if zero_mask or one_mask:
         keep = ((index & one_mask) == one_mask) & ((index & zero_mask) == 0)
         weight = weight * keep
@@ -135,9 +142,9 @@ def _density_matrix_term_numpy(
 def _load_compiled_terms() -> tuple[Callable[..., complex], ...] | None:
     """Return the compiled per-term kernels, or ``None`` when numba is absent.
 
-    ``numba`` is an optional dependency, so importing it must not be a
-    condition of using an observable at all. Deferring the import here - rather
-    than at module scope - keeps that true.
+    Deferring the Numba import here rather than at module scope keeps package
+    import lightweight and preserves the NumPy fallback for deliberately
+    minimal or damaged environments.
 
     The absence of numba is the *only* reason this falls back. Any other import
     failure propagates: a compiled kernel that cannot load where numba is

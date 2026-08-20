@@ -11,7 +11,7 @@ the assertions here fall into three groups:
 - across runtimes: ``numpy`` and ``numba`` must agree elementwise.
 
 Every numeric test runs on both runtimes through the ``runtime`` fixture;
-the ``numba`` axis skips when the optional dependency is absent.
+the ``numba`` axis exercises the package's default runtime dependency.
 """
 
 import numpy as np
@@ -28,7 +28,7 @@ _ATOL = 1e-12
 
 @pytest.fixture(params=["numpy", "numba"], name="runtime")
 def _runtime(request):
-    """Both execution runtimes; the numba axis skips if numba is absent."""
+    """Return each supported execution runtime."""
     if request.param == "numba":
         pytest.importorskip("numba")
     return request.param
@@ -556,7 +556,7 @@ def test_only_the_method_native_field_is_available(method, produced, absent):
 def test_metadata_echoes_the_operator_method(method):
     result = Simulator(method).run(_ghz_program(2)).result()
     assert result.metadata["method"] == method
-    assert result.metadata["runtime"] == "numpy"
+    assert result.metadata["runtime"] == "numba"
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])

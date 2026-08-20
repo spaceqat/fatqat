@@ -247,7 +247,7 @@ class AtomGridSimulator(Simulator):
         *,
         grid_size: tuple[int, int] = (DEFAULT_ROWS, DEFAULT_COLS),
         method: str = "statevector",
-        runtime: str = "numpy",
+        runtime: str = "numba",
         noise: NoiseModel | None = None,
     ) -> None:
         """Create a fake atom-grid backend of the given shape.

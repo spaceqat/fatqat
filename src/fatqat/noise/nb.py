@@ -30,10 +30,10 @@ callees in its body as module globals at compile time, so the fused shots
 kernel cannot reach a channel kernel it does not import at module scope, and
 importing back would cycle.
 
-Numba compiles kernels lazily on first call. Numba is an optional dependency
-(the ``numba`` group), so this module is never imported from ``fatqat.noise``'s
-package ``__init__``; import it explicitly (``from fatqat.noise.nb import
-...``), exactly as ``fatqat.simulator._engine.nb`` is treated.
+Numba compiles kernels lazily on first call. This module is never imported from
+``fatqat.noise``'s package ``__init__``; import it explicitly
+(``from fatqat.noise.nb import ...``), exactly as
+``fatqat.simulator._engine.nb`` is treated.
 
 Conventions match ``simulator._engine.np`` / ``simulator._engine.nb``: little-endian flat
 indexing, and a local Kraus matrix whose most-significant index digit is
