@@ -218,14 +218,18 @@ with warnings-as-errors, so a missing docstring or broken cross-reference
 fails the build instead of silently vanishing:
 
 ```sh
-uv sync --group docs
-uv run sphinx-build -b html -W docs/sphinx docs/sphinx/_build/html
+python -m venv .venv
+# Activate .venv for your shell, then:
+python -m pip install -r docs/requirements.txt
+python -m sphinx -b html -W docs/sphinx docs/sphinx/_build/html
 ```
 
 Then open `docs/sphinx/_build/html/index.html`. This matches the existing
 `docs/sphinx/Makefile` and `make.bat` `<build-dir>/<builder>` layout; direct
-commands and CI use the same convention. CI uploads the HTML output as an
-artifact but does not publish it.
+commands and Read the Docs use the same convention. Read the Docs builds the
+published HTML with warnings treated as errors. The documentation environment
+has its own Python 3.12 pin in `docs/requirements.txt`; its builds do not
+consume the root uv lock used by the development workflows.
 
 ## Project layout
 

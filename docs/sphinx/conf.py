@@ -16,6 +16,7 @@ extensions = [
     "myst_parser",
     "sphinx_design",
     "sphinx_copybutton",
+    "sphinx_gallery.gen_gallery",
 ]
 
 source_suffix = {
@@ -66,6 +67,20 @@ intersphinx_mapping = {
 # that genuinely needs to show a small magnitude should print the number rather
 # than the array.
 doctest_global_setup = "import numpy; numpy.set_printoptions(suppress=True)"
+
+# Tutorial sources stay as small, reviewable Python files outside the Sphinx
+# source tree. Sphinx-Gallery executes every file during a clean docs build,
+# writes its generated RST, figures, and notebooks below ``docs/sphinx/tutorials``,
+# and makes the per-page notebook available as an HTML download. The generated
+# tree is a build product and is ignored by Git.
+sphinx_gallery_conf = {
+    "examples_dirs": "../../tutorials",
+    "gallery_dirs": "tutorials",
+    "filename_pattern": r"\.py$",
+    "abort_on_example_error": True,
+    "download_all_examples": False,
+    "notebook_images": False,
+}
 
 html_theme = "pydata_sphinx_theme"
 html_static_path: list[str] = []

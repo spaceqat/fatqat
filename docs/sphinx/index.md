@@ -46,6 +46,14 @@ Understand programs, registers, operations, backends, and results before
 moving to optional features.
 :::
 
+:::{grid-item-card} {octicon}`beaker` Work through tutorials
+:link: tutorials/index
+:link-type: doc
+
+Run narrative examples with their printed results and figures, or download
+an automatically generated Jupyter notebook.
+:::
+
 :::{grid-item-card} {octicon}`graph` Read results
 :link: guide/running-and-results
 :link-type: doc
@@ -67,5 +75,6 @@ Look up the application-facing objects used in the guide.
 :hidden:
 
 guide/index
+tutorials/index
 api/index
 ```
