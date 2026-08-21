@@ -1,9 +1,8 @@
 """Render a fatqat :py:class:`~fatqat.Program` as a circuit diagram via QuTiP-QIP.
 
-This is an optional feature: it requires the ``qutip-qip`` package (the
-``draw`` dependency group). The dependency is imported lazily, inside the
-functions that need it, so importing :py:mod:`fatqat.draw` - and the rest of
-fatqat - never requires ``qutip-qip`` to be installed.
+QuTiP-QIP is imported lazily inside the functions that need it, keeping the
+base :mod:`fatqat` import lightweight even though drawing support is included
+in every installation.
 
 Two entry points:
 
@@ -77,17 +76,16 @@ _NATIVE_GATES: dict[str, tuple[str, int, str | None]] = {
 
 
 def _require_qutip():
-    """Import QuTiP-QIP's ``QubitCircuit``, or raise a clear install hint.
+    """Import QuTiP-QIP's ``QubitCircuit``, or raise a clear repair hint.
 
-    Imported lazily so that ``import fatqat.draw`` works without ``qutip-qip``;
-    only actually *drawing* a circuit needs the dependency.
+    Imported lazily so that importing fatqat does not load the drawing stack.
     """
     try:
         from qutip_qip.circuit import QubitCircuit
     except ImportError as exc:  # pragma: no cover - only hit without qutip-qip
         raise ImportError(
-            "fatqat.draw requires the optional 'qutip-qip' dependency; "
-            "install it with `uv sync --group draw` (or `pip install qutip-qip`)."
+            "fatqat requires 'qutip-qip' for circuit drawing; "
+            "reinstall fatqat to restore its required dependencies."
         ) from exc
     return QubitCircuit
 

@@ -1,9 +1,7 @@
 """Translation of a Program into a QuTiP-QIP circuit for drawing.
 
 Asserts on the translated ``QubitCircuit`` structure (gate names, controls,
-targets, classical controls) rather than on rendered images. Self-skips when
-the optional ``qutip-qip`` dependency is absent, exactly like the qiskit-only
-tests.
+targets, classical controls) rather than on rendered images.
 
 Both supported QuTiP-QIP APIs are asserted against through `_elements`, which
 normalizes the two ways a built circuit exposes its contents. Assertions avoid
@@ -15,21 +13,18 @@ custom-box labels, and the classical-control wiring.
 from dataclasses import dataclass
 from typing import ClassVar
 
+import matplotlib
 import pytest
 
 import fatqat as fq
 import fatqat.operations as op
 from fatqat.emulator import ControlChannel, PulseControl
 from fatqat.waveforms import SampledWaveform
-
-pytest.importorskip("qutip_qip")
-
-# pylint: disable=wrong-import-position  # needs the importorskip above
 from fatqat.draw import draw, to_qubit_circuit
 from fatqat.errors import UnsupportedOperationError
 from fatqat.operations import PulseOperation
 
-# pylint: enable=wrong-import-position
+matplotlib.use("Agg")
 
 
 def _elements(circuit):
@@ -145,9 +140,6 @@ def test_text_renderer_returns_the_terminal_diagram():
 
 
 def test_matplotlib_renderer_returns_a_savable_figure():
-    matplotlib = pytest.importorskip("matplotlib")
-    matplotlib.use("Agg")
-
     figure = draw(_bell(), "matplotlib")
     assert isinstance(figure, matplotlib.figure.Figure)
 

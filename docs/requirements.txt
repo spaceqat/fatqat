@@ -46,6 +46,8 @@ jinja2==3.1.6
     #   sphinx
 kiwisolver==1.5.0
     # via matplotlib
+llvmlite==0.49.0
+    # via numba
 loky==3.5.6
     # via fatqat
 markdown-it-py==4.2.0
@@ -55,18 +57,23 @@ markdown-it-py==4.2.0
 markupsafe==3.0.3
     # via jinja2
 matplotlib==3.11.1
-    # via -r docs/requirements.in
+    # via
+    #   -r docs/requirements.in
+    #   fatqat
 mdit-py-plugins==0.6.1
     # via myst-parser
 mdurl==0.1.2
     # via markdown-it-py
 myst-parser==5.1.0
     # via -r docs/requirements.in
+numba==0.67.0
+    # via fatqat
 numpy==2.5.2
     # via
     #   contourpy
     #   fatqat
     #   matplotlib
+    #   numba
     #   qutip
     #   qutip-qip
     #   scipy

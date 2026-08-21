@@ -18,8 +18,8 @@ CI are converging on that convention.
 
 The direct documentation dependencies are declared in
 `docs/requirements.in`. `docs/requirements.txt` pins the Python 3.12 runtime
-and documentation dependencies consumed by local builds, GitHub Actions, and
-Read the Docs; do not edit it by hand. After changing the input file,
+and documentation dependencies consumed by local builds and Read the Docs;
+do not edit it by hand. After changing the input file,
 regenerate the pin from the repository root with Python 3.12:
 
 ```sh
@@ -27,8 +27,8 @@ python -m pip install pip-tools==7.6.1
 python -m piptools compile --strip-extras --output-file docs/requirements.txt docs/requirements.in
 ```
 
-This documentation environment is deliberately independent of the root uv
-lock, which continues to serve the other development and test workflows.
+This pinned documentation environment is deliberately independent of the
+contributor's development and test environment.
 
 ## Authoring executable tutorials
 

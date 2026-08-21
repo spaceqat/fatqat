@@ -1,14 +1,15 @@
 [project]
 name = "fatqat"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Quantum noisy simulator (MVP Phase 1)"
 requires-python = ">=3.12"
 dependencies = [
-    "numpy>=1.23.2",
+    "numpy>=1.26",
     "numba>=0.59",
     "loky>=3.0.0",
     "qutip>=5.1,<6",
     "qutip-qip>=0.4,<0.5",
+    "matplotlib>=3.8",
     "scipy>=1.12,<2",
 ]
 
@@ -19,18 +20,23 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/fatqat"]
 
+[tool.hatch.version]
+path = "src/fatqat/__init__.py"
+
 [dependency-groups]
 dev = ["pytest>=8", "scipy-doctest>=1.0"]
-docs = ["sphinx", "pydata-sphinx-theme", "myst-parser", "sphinx-design", "sphinx-copybutton"]
+docs = [
+    "sphinx",
+    "pydata-sphinx-theme",
+    "myst-parser",
+    "sphinx-design",
+    "sphinx-copybutton",
+    "sphinx-gallery",
+]
 # Optional: enables tests/test_against_qiskit.py, the numerical cross-check
-# against Qiskit Aer (see .github/workflows/qiskit-compat.yml). Never required
+# against Qiskit Aer (see .github/workflows/cross-validation.yml). Never required
 # by the package itself; the module self-skips when qiskit-aer is absent.
 qiskit = ["qiskit-aer>=0.17"]
-# Optional: enables fatqat.draw (circuit diagrams via QuTiP-QIP) and its tests.
-# matplotlib is listed explicitly because qutip-qip does not depend on it, yet
-# the PNG renderer needs it. Never required by the package itself; fatqat.draw
-# imports both lazily and tests/test_draw.py self-skips when they are absent.
-draw = ["qutip-qip>=0.3", "matplotlib>=3.5"]
 # Formatting (black) and static analysis (pylint). Drives scripts/format.sh,
 # scripts/lint.sh, and the Lint CI workflow. See [tool.black] / [tool.pylint].
 lint = ["black>=24", "pylint>=3"]

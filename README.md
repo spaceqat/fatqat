@@ -8,6 +8,17 @@ statevector, density matrix). Programs are backend-agnostic: the same
 program runs pure or mixed, ideal or noisy, NumPy or JIT-compiled, without
 changes.
 
+## Installation
+
+fatqat is not yet published on PyPI. Until the first package release, install
+it from a source checkout:
+
+```sh
+git clone https://github.com/BoxiLi/fatqat.git
+cd fatqat
+python -m pip install .
+```
+
 ## Quick start
 
 ```python
@@ -220,13 +231,15 @@ program = from_qasm(
 print(to_qasm(program))             # OpenQASM 3.0 by default
 ```
 
-## Dev setup
+## Development
 
-This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
+Install the source tree in editable mode together with the development
+dependencies, then run the test suite:
 
 ```sh
-uv sync                 # install runtime + dev dependencies into .venv
-uv run pytest           # run the test suite
+python -m pip install --upgrade pip
+python -m pip install --editable . --group dev
+python -m pytest
 ```
 
 ## Documentation
@@ -246,8 +259,8 @@ Then open `docs/sphinx/_build/html/index.html`. This matches the existing
 `docs/sphinx/Makefile` and `make.bat` `<build-dir>/<builder>` layout; direct
 commands and Read the Docs use the same convention. Read the Docs builds the
 published HTML with warnings treated as errors. The documentation environment
-has its own Python 3.12 pin in `docs/requirements.txt`; its builds do not
-consume the root uv lock used by the development workflows.
+has its own Python 3.12 pin in `docs/requirements.txt`, keeping documentation
+builds reproducible independently of the contributor environment.
 
 ## Project layout
 
