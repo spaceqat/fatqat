@@ -42,7 +42,7 @@ class PulseOperation(Operation):
         >>> from fatqat import ops
         >>> from fatqat.emulator import PulseControl, TransmonModel
         >>> from fatqat.waveforms import SampledWaveform
-        >>> model = TransmonModel({
+        >>> model = TransmonModel.from_document({
         ...     "format": {"id": "sc.transmon_exchange", "version": 1},
         ...     "model": {"id": "doc-example", "revision": "1"},
         ...     "system": {
@@ -56,7 +56,7 @@ class PulseOperation(Operation):
         ...     }},
         ... })
         >>> control = PulseControl(
-        ...     model.drive_control("q0"),
+        ...     model.control.drive("q0"),
         ...     SampledWaveform((0.0, 1.0), (0.0, 0.2j)),
         ... )
         >>> operation = ops.PulseOperation(1.0, (control,))

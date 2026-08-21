@@ -99,7 +99,7 @@ def _drive_block(
         target,
         (
             PulseControl(
-                target.model.drive_control(subsystem_id),
+                target.model.control.drive(subsystem_id),
                 SampledWaveform(tlist, coefficients),
             ),
         ),
@@ -187,7 +187,7 @@ def test_completed_outcome_can_skip_final_state_copy(model):
 def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints(model):
     adapter = _adapter(model)
     child = PulseControl(
-        model.drive_control("q0"),
+        model.control.drive("q0"),
         SampledWaveform(
             (0.0, 0.3, 0.7, 1.0),
             (1.0 + 2.0j, 3.0 + 4.0j, -2.0 + 1.0j, 5.0 + 6.0j),
@@ -261,7 +261,7 @@ def test_exchange_keeps_both_qutrit_leakage_paths_and_matches_reference(model):
         adapter._target,
         (
             PulseControl(
-                model.exchange_control("q0", "q1"),
+                model.control.exchange("q0", "q1"),
                 SampledWaveform(
                     (0.0, duration),
                     (amplitude, amplitude),
@@ -327,7 +327,7 @@ def test_drift_and_detuning_match_independent_qutrit_phase_facts(model):
         adapter._target,
         (
             PulseControl(
-                model.detuning_control("q0"),
+                model.control.detuning("q0"),
                 SampledWaveform((0.0, duration), (detuning, detuning)),
             ),
         ),
@@ -541,8 +541,8 @@ def test_frame_ledger_survives_boundary_and_respects_post_action_time(
 def test_drive_and_exchange_bindings_use_carried_target_facts(model):
     adapter = _adapter(model)
     target = adapter._target
-    drive = target.bind_control(model.drive_control("q0"))
-    exchange = target.bind_control(model.exchange_control("q0", "q1"))
+    drive = target.bind_control(model.control.drive("q0"))
+    exchange = target.bind_control(model.control.exchange("q0", "q1"))
     assert drive.kind == "drive"
     assert drive.device_operands == ("q0",)
     assert exchange.kind == "exchange"

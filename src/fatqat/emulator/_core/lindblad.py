@@ -9,6 +9,7 @@ import numpy as np
 from ...errors import BackendValidationError
 from ...noise import (
     AmplitudeDamping,
+    Depolarizing,
     Loss,
     LindbladImplementationMap,
     NoiseModel,
@@ -83,7 +84,11 @@ def _classify_lindblad_noise(
     for channel, operation in noise_model._noise_sources():
         background = operation is None
         channel_type = type(channel)
-        built_in_damping = channel_type in (AmplitudeDamping, PhaseDamping)
+        built_in_damping = channel_type in (
+            AmplitudeDamping,
+            PhaseDamping,
+            Depolarizing,
+        )
         finite_mode = built_in_damping and channel.p is not None
         mode = None
         if built_in_damping:

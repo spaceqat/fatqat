@@ -287,7 +287,7 @@ def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames(model):
     frame = model.frame("q0")
     controls = (
         PulseControl(
-            model.drive_control("q0"),
+            model.control.drive("q0"),
             SampledWaveform([0.0, 20.0], [10.0, 10.0]),
         ),
     )
@@ -330,11 +330,11 @@ def test_custom_cz_rule_executes_end_to_end_and_yields_a_valid_physical_state(
             duration,
             (
                 PulseControl(
-                    model.detuning_control(first),
+                    model.control.detuning(first),
                     SampledWaveform(detuning_grid, detuning),
                 ),
                 PulseControl(
-                    model.exchange_control(first, second),
+                    model.control.exchange(first, second),
                     SampledWaveform(exchange_grid, exchange),
                 ),
             ),

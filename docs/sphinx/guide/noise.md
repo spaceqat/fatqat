@@ -39,7 +39,8 @@ carrier loss, or classical measurement confusion.
 
 ## Built-in declarations
 
-- {py:class}`~fatqat.noise.Depolarizing` `(p)` is a finite joint channel.
+- {py:class}`~fatqat.noise.Depolarizing` accepts exactly one of finite joint
+  probability `p` or local continuous `rate`.
 - {py:class}`~fatqat.noise.PauliChannel` `(terms)` is a finite qubit channel.
   The Pauli-string width sets its arity, and the string order follows the
   ordered occurrence targets (`string[0]` describes the first target).
@@ -183,6 +184,11 @@ continuous rate:
   and reject `rate`, `t_phi`, `t1`, and `t2` generator/time forms;
 - pulse emulators accept backend-supported local generator/time forms and
   reject built-in finite `p` forms, even when an operation has a duration.
+
+For example, `Depolarizing(p=0.01)` is matrix-channel mode, while
+`Depolarizing(rate=0.002)` is pulse-generator mode. The explicit
+`as_probability(duration)` and `as_rate(duration)` utilities are available
+when application code owns the reference duration.
 
 This keeps authored physics explicit. Use descriptor utilities when *you* own
 the reference duration:

@@ -21,7 +21,7 @@ def _drive_definition(model, subsystem_id, amplitude):
         1.0,
         (
             PulseControl(
-                model.drive_control(subsystem_id),
+                model.control.drive(subsystem_id),
                 SampledWaveform((0.0, 1.0), (amplitude, amplitude)),
             ),
         ),
@@ -93,7 +93,7 @@ def test_structural_control_from_distinct_source_binds_to_target(
     program = fq.Program(1)
     program.add(fq.ops.X, 0)
     (block,) = backend._prepare_program(program).plan
-    assert block.controls[0].channel == model.drive_control("q0")
+    assert block.controls[0].channel == model.control.drive("q0")
 
 
 def test_definition_shape_and_target_containment_fail_at_owned_boundaries(
@@ -104,7 +104,7 @@ def test_definition_shape_and_target_containment_fail_at_owned_boundaries(
             1.0,
             (
                 PulseControl(
-                    model.drive_control("q0"),
+                    model.control.drive("q0"),
                     SampledWaveform((0.0, 2.0), (0.0, 0.0)),
                 ),
             ),
@@ -133,7 +133,7 @@ def test_documented_custom_cz_uses_only_public_structural_values(model, calibrat
             duration,
             (
                 PulseControl(
-                    model.exchange_control(first, second),
+                    model.control.exchange(first, second),
                     SampledWaveform((0.0, duration), (0.0, 0.0)),
                 ),
             ),

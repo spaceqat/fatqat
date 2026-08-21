@@ -19,8 +19,10 @@ def test_rectangular_arrangement_is_row_major_3d_immutable_value():
         (1.5, 1.5, 0.0),
         (3.0, 1.5, 0.0),
     )
-    assert arrangement.cardinality == 6
-    assert len(arrangement) == 6
+    assert (
+        arrangement.num_sites == len(arrangement) == len(arrangement.coordinates) == 6
+    )
+    assert not hasattr(arrangement, "cardinality")
     assert not hasattr(arrangement, "occupancy")
     assert arrangement == AtomArrangement.rectangular(2, 3, 1.5)
     assert hash(arrangement) == hash(AtomArrangement.rectangular(2, 3, 1.5))

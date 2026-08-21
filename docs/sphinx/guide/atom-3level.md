@@ -76,7 +76,9 @@ copied and executed without package-private fixtures:
 ...         },
 ...     },
 ... }
->>> model = fq.emulator.Atom3LevelModel(model_document)
+>>> model = fq.emulator.Atom3LevelModel.from_document(model_document)
+>>> tuple(model.available_controls)
+('raman', 'rydberg')
 >>> arrangement = fq.AtomArrangement.rectangular(rows=1, cols=2, spacing=2.0)
 >>> backend = fq.emulator.Atom3LevelEmulator(
 ...     model, arrangement=arrangement
@@ -150,11 +152,11 @@ than ordinary program targets, identifies the site:
 ...     0.5,
 ...     (
 ...         fq.emulator.PulseControl(
-...             model.raman_control(0),
+...             model.control.raman(0),
 ...             fq.waveforms.SampledWaveform((0.0, 0.5), (0.2, 0.2j)),
 ...         ),
 ...         fq.emulator.PulseControl(
-...             model.rydberg_control(1),
+...             model.control.rydberg(1),
 ...             fq.waveforms.SampledWaveform((0.0, 0.5), (0.1, 0.1)),
 ...         ),
 ...     ),
@@ -241,7 +243,8 @@ The three-level emulator accepts a public `PulseImplementationMap`. Standard
 maps come from `default_atom_3level_gate_implementation_map(model=...,
 calibration=...)`; custom operand-aware rules receive plain site ordinals in
 `device_operands` and return claim-free `PulseDefinition` values using public
-`frame()`, `raman_control()`, and `rydberg_control()` structural addresses.
+`frame()`, `model.control.raman()`, and `model.control.rydberg()` structural
+addresses.
 Direct control continues to bypass gate-map lookup. Package defaults are
 nominal simulation baselines rather than hardware-fidelity guarantees; use a
 complete separate calibration document for custom values instead of patching

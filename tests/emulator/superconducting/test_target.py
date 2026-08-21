@@ -12,9 +12,9 @@ from fatqat.errors import BackendValidationError
 
 
 def test_target_precomputes_topology_and_semantic_bindings(model_document):
-    target = _TransmonTarget(TransmonModel(model_document))
-    drive = target.bind_control(target.model.drive_control("q0"))
-    exchange = target.bind_control(target.model.exchange_control("q0", "q1"))
+    target = _TransmonTarget(TransmonModel.from_document(model_document))
+    drive = target.bind_control(target.model.control.drive("q0"))
+    exchange = target.bind_control(target.model.control.exchange("q0", "q1"))
     frame = target.bind_frame(target.model.frame("q1"))
     assert target.device_labels == ("q0", "q1")
     assert (target.local_dimension, target.hilbert_dimension) == (3, 9)
@@ -35,15 +35,15 @@ def test_target_precomputes_topology_and_semantic_bindings(model_document):
 
 
 def test_addresses_are_portable_but_claims_are_target_local(model_document):
-    first = _TransmonTarget(TransmonModel(model_document))
-    second = _TransmonTarget(TransmonModel(deepcopy(model_document)))
-    address = second.model.drive_control("q0")
-    assert address == first.model.drive_control("q0")
+    first = _TransmonTarget(TransmonModel.from_document(model_document))
+    second = _TransmonTarget(TransmonModel.from_document(deepcopy(model_document)))
+    address = second.model.control.drive("q0")
+    assert address == first.model.control.drive("q0")
     assert first.bind_control(address).claims != second.bind_control(address).claims
 
 
 def test_program_binding_accepts_only_a_binary_declaration_prefix(model_document):
-    target = _TransmonTarget(TransmonModel(model_document))
+    target = _TransmonTarget(TransmonModel.from_document(model_document))
     program = fq.Program(1)
     binding = target.bind_program(program)
     assert binding.device_label(program.quantum_registers[0][0]) == "q0"
@@ -64,7 +64,7 @@ def test_program_binding_reads_each_declared_resource_once(model_document):
             reads.append(index)
             return register[index]
 
-    binding = _TransmonTarget(TransmonModel(model_document)).bind_program(
+    binding = _TransmonTarget(TransmonModel.from_document(model_document)).bind_program(
         SimpleNamespace(quantum_registers=(CountingRegister(),))
     )
     assert len(binding.refs) == 2
@@ -74,10 +74,10 @@ def test_program_binding_reads_each_declared_resource_once(model_document):
 def test_target_rejects_unknown_labels_edges_and_families(
     model_document, atom_3level_model
 ):
-    target = _TransmonTarget(TransmonModel(model_document))
+    target = _TransmonTarget(TransmonModel.from_document(model_document))
     with pytest.raises(BackendValidationError, match="unknown model subsystem"):
-        target.bind_control(target.model.drive_control("missing"))
+        target.bind_control(target.model.control.drive("missing"))
     with pytest.raises(BackendValidationError, match="no declared coupling"):
-        target.bind_control(target.model.exchange_control("q0", "missing"))
+        target.bind_control(target.model.control.exchange("q0", "missing"))
     with pytest.raises(BackendValidationError, match="foreign"):
-        target.bind_control(atom_3level_model.raman_control(0))
+        target.bind_control(atom_3level_model.control.raman(0))

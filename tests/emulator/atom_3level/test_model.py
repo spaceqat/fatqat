@@ -15,12 +15,14 @@ from fatqat.errors import BackendValidationError
 
 def test_model_is_direct_frozen_slotted_semantic_value(atom_3level_model_document):
     pristine = deepcopy(atom_3level_model_document)
-    model = Atom3LevelModel(atom_3level_model_document)
+    model = Atom3LevelModel.from_document(atom_3level_model_document)
     atom_3level_model_document["parameters"]["c6"] = -1
 
-    assert tuple(inspect.signature(Atom3LevelModel).parameters) == ("document",)
-    assert model == Atom3LevelModel(pristine)
-    assert isinstance(model == Atom3LevelModel(pristine), bool)
+    assert tuple(inspect.signature(Atom3LevelModel.from_document).parameters) == (
+        "document",
+    )
+    assert model == Atom3LevelModel.from_document(pristine)
+    assert isinstance(model == Atom3LevelModel.from_document(pristine), bool)
     assert model.format == FormatIdentity("atom.rb87_rydberg_3level", 1)
     assert model.identity == ModelIdentity("rb87-53s-reference", "2026-08-05")
     assert model.kind == "atom.rydberg_3level"
@@ -43,6 +45,13 @@ def test_model_is_direct_frozen_slotted_semantic_value(atom_3level_model_documen
         "parser",
     ):
         assert not hasattr(model, removed)
+
+
+def test_direct_construction_is_removed(atom_3level_model_document):
+    with pytest.raises(TypeError, match="from_document"):
+        Atom3LevelModel()
+    with pytest.raises(TypeError, match="from_document"):
+        Atom3LevelModel(atom_3level_model_document)
 
 
 @pytest.mark.parametrize(
@@ -68,7 +77,7 @@ def test_model_requires_exact_schema(atom_3level_model_document, path, key, muta
     else:
         cursor["unexpected"] = None
     with pytest.raises(BackendValidationError):
-        Atom3LevelModel(atom_3level_model_document)
+        Atom3LevelModel.from_document(atom_3level_model_document)
 
 
 @pytest.mark.parametrize(
@@ -91,21 +100,23 @@ def test_model_rejects_invalid_constants_and_numbers(
 ):
     mutate(atom_3level_model_document)
     with pytest.raises(BackendValidationError):
-        Atom3LevelModel(atom_3level_model_document)
+        Atom3LevelModel.from_document(atom_3level_model_document)
 
 
 def test_model_factories_return_portable_structural_addresses(
     atom_3level_model_document,
 ):
-    first = Atom3LevelModel(atom_3level_model_document)
-    second = Atom3LevelModel(deepcopy(atom_3level_model_document))
-    assert isinstance(first.raman_control(2), _ControlAddress)
-    assert isinstance(first.rydberg_control(2), _ControlAddress)
+    first = Atom3LevelModel.from_document(atom_3level_model_document)
+    second = Atom3LevelModel.from_document(deepcopy(atom_3level_model_document))
+    assert isinstance(first.control.raman(2), _ControlAddress)
+    assert isinstance(first.control.rydberg(2), _ControlAddress)
     assert isinstance(first.frame(2), _FrameAddress)
-    assert first.raman_control(2) == second.raman_control(2)
+    assert first.control.raman(2) == second.control.raman(2)
     assert first.frame(2) == second.frame(2)
     with pytest.raises(BackendValidationError):
-        first.raman_control(-1)
+        first.control.raman(-1)
+    with pytest.raises(BackendValidationError):
+        first.control.rydberg(True)
 
 
 def test_model_uses_one_immutable_exact_format_table():

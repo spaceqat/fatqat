@@ -67,8 +67,10 @@ def test_source_c6_and_identity_do_not_redesign_v1_definitions(
     second_document = deepcopy(atom_3level_model_document)
     second_document["model"]["revision"] = "different-source"
     second_document["parameters"]["c6"] *= -3
-    first = _map(Atom3LevelModel(first_document), atom_3level_calibration)
-    second = _map(Atom3LevelModel(second_document), atom_3level_calibration)
+    first = _map(Atom3LevelModel.from_document(first_document), atom_3level_calibration)
+    second = _map(
+        Atom3LevelModel.from_document(second_document), atom_3level_calibration
+    )
     for operation, operands in (
         (ops.RX(0.7), (0,)),
         (ops.RY(-0.2), (1,)),
@@ -86,7 +88,7 @@ def test_rules_use_plain_ordinals_and_return_structural_claim_free_values(
 ):
     implementations = _map(atom_3level_model, atom_3level_calibration)
     rx = _resolve(implementations, ops.RX(0.3), (2,))
-    assert rx.controls[0].channel == atom_3level_model.raman_control(2)
+    assert rx.controls[0].channel == atom_3level_model.control.raman(2)
     assert not hasattr(rx, "resource_claims")
     assert rx.controls[0].channel.operands == (2,)
 
@@ -96,8 +98,8 @@ def test_rules_use_plain_ordinals_and_return_structural_claim_free_values(
 
     cz = _resolve(implementations, ops.CZ, (2, 0))
     assert [control.channel for control in cz.controls] == [
-        atom_3level_model.rydberg_control(2),
-        atom_3level_model.rydberg_control(0),
+        atom_3level_model.control.rydberg(2),
+        atom_3level_model.control.rydberg(0),
     ]
     assert tuple(control.channel.operands for control in cz.controls) == ((2,), (0,))
 

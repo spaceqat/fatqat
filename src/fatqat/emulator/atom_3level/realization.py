@@ -78,7 +78,7 @@ def default_atom_3level_gate_implementation_map(
             duration,
             (
                 PulseControl(
-                    model.raman_control(target),
+                    model.control.raman(target),
                     SampledWaveform((0.0, duration), (coefficient, coefficient)),
                 ),
             ),
@@ -104,7 +104,7 @@ def default_atom_3level_gate_implementation_map(
             cz_duration,
             tuple(
                 PulseControl(
-                    model.rydberg_control(target),
+                    model.control.rydberg(target),
                     SampledWaveform(grid, coefficients),
                 )
                 for target in targets

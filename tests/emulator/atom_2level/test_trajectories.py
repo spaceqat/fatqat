@@ -26,7 +26,9 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
 @pytest.fixture(name="model")
 def model_fixture():
-    return Atom2LevelModel(json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    return Atom2LevelModel.from_document(
+        json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    )
 
 
 def _backend(model, rate=0.3):
@@ -40,14 +42,16 @@ def _backend(model, rate=0.3):
 
 
 def _program(*, measured=True, amplitude=1.0, duration=0.6):
-    model = Atom2LevelModel(json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    model = Atom2LevelModel.from_document(
+        json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    )
     program = fq.Program(1, 1 if measured else 0)
     program.add(
         fq.ops.PulseOperation(
             duration,
             (
                 PulseControl(
-                    model.drive_control(),
+                    model.control.drive(),
                     SampledWaveform((0.0, duration), (amplitude, amplitude)),
                 ),
             ),

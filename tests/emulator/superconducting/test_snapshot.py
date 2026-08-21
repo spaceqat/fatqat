@@ -13,9 +13,11 @@ from fatqat.errors import BackendValidationError
 def test_public_snapshot_constructors_are_document_only(
     model_document, calibration_document
 ):
-    assert tuple(inspect.signature(TransmonModel).parameters) == ("document",)
+    assert tuple(inspect.signature(TransmonModel.from_document).parameters) == (
+        "document",
+    )
     assert tuple(inspect.signature(TransmonCalibration).parameters) == ("document",)
-    model = TransmonModel(model_document)
+    model = TransmonModel.from_document(model_document)
     calibration = TransmonCalibration(calibration_document)
     assert model.format == FormatIdentity("sc.transmon_exchange", 1)
     assert calibration.format == FormatIdentity("sc.transmon_exchange_fixed_pulse", 1)
@@ -50,6 +52,6 @@ def test_model_and_calibration_format_dispatch_remain_distinct(
     model_document, calibration_document
 ):
     with pytest.raises(BackendValidationError, match="unknown format"):
-        TransmonModel(calibration_document)
+        TransmonModel.from_document(calibration_document)
     with pytest.raises(BackendValidationError, match="unknown format"):
         TransmonCalibration(model_document)

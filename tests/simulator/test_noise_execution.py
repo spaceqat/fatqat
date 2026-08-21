@@ -321,7 +321,7 @@ def test_check_noise_support_accepts_catalog_channels():
     report = Simulator().check_noise_support(_depolarized_x_model())
 
     assert report.supported is True
-    assert report.accepted_sources == ("Depolarizing",)
+    assert report.accepted_sources == ("Depolarizing(p)",)
     assert report.rejected_sources == ()
 
 
@@ -435,20 +435,31 @@ def test_matrix_backend_checks_captured_noise_once_at_construction(monkeypatch):
     assert len(calls) == 1
 
 
-def test_check_noise_support_distinguishes_p_and_rate_mode_of_the_same_class():
+def test_check_noise_support_distinguishes_probability_and_rate_modes():
     noise = NoiseModel()
     noise.add(AmplitudeDamping(p=0.1), operation=fq.ops.X)
     noise.add(AmplitudeDamping(rate=0.01), operation=fq.ops.H)
+    noise.add(Depolarizing(p=0.1), operation=fq.ops.Y)
+    noise.add(Depolarizing(rate=0.01), operation=fq.ops.Z)
     report = Simulator().check_noise_support(noise)
 
     assert report.supported is False
-    assert report.accepted_sources == ("AmplitudeDamping(p)",)
-    assert report.rejected_sources == ("AmplitudeDamping(rate)",)
+    assert report.accepted_sources == (
+        "AmplitudeDamping(p)",
+        "Depolarizing(p)",
+    )
+    assert report.rejected_sources == (
+        "AmplitudeDamping(rate)",
+        "Depolarizing(rate)",
+    )
 
 
-def test_constructor_rejects_rate_mode_damping():
+@pytest.mark.parametrize(
+    "channel", [AmplitudeDamping(rate=0.01), Depolarizing(rate=0.01)]
+)
+def test_constructor_rejects_rate_mode_channels(channel):
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(rate=0.01), operation=fq.ops.X)
+    noise.add(channel, operation=fq.ops.X)
     with pytest.raises(BackendValidationError, match="rate mode"):
         Simulator(noise=noise)
 

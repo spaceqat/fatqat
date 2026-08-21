@@ -66,6 +66,7 @@ from ..job import Job
 from ..noise import (
     AmplitudeDamping,
     ChannelImplementationMap,
+    Depolarizing,
     PhaseDamping,
     NoiseModel,
     NoiseSupportReport,
@@ -1209,8 +1210,8 @@ class Simulator:
         A channel descriptor type is supported exactly when the backend's
         channel implementation map has a rule for it - the map's coverage is
         the capability declaration. A descriptor that distinguishes
-        probability and rate parameterization (any instance exposing a
-        ``rate`` attribute, e.g. `AmplitudeDamping`, `PhaseDamping`) is
+        probability and rate parameterization (`AmplitudeDamping`,
+        `PhaseDamping`, and `Depolarizing`) is
         reported under a mode-qualified label such as ``"AmplitudeDamping(p)"``
         rather than its bare class name: this matrix family never resolves a
         rate without a duration, so a rate-mode instance is unsupported even
@@ -1252,7 +1253,11 @@ class Simulator:
         for channel, operation in noise_model._noise_sources():
             channel_type = type(channel)
             background = operation is None
-            built_in_damping = channel_type in (AmplitudeDamping, PhaseDamping)
+            built_in_damping = channel_type in (
+                AmplitudeDamping,
+                PhaseDamping,
+                Depolarizing,
+            )
             rate_mode = built_in_damping and channel.rate is not None
             qualifiers: list[str] = []
             if built_in_damping:

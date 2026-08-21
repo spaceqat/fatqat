@@ -25,11 +25,11 @@ def _control(channel, values, *, duration=1.0, offset=0.0):
 def test_direct_detuning_and_exchange_have_exact_engine_targets(backend):
     detuning = fq.ops.PulseOperation(
         1.0,
-        (_control(backend.model.detuning_control("q0"), (0.1, 0.1)),),
+        (_control(backend.model.control.detuning("q0"), (0.1, 0.1)),),
     )
     exchange = fq.ops.PulseOperation(
         1.0,
-        (_control(backend.model.exchange_control("q1", "q0"), (0.02, 0.02)),),
+        (_control(backend.model.control.exchange("q1", "q0"), (0.02, 0.02)),),
     )
     program = fq.Program(2)
     program.add(detuning)
@@ -39,7 +39,7 @@ def test_direct_detuning_and_exchange_have_exact_engine_targets(backend):
 
     assert plan[0].target_indices == (0,)
     assert plan[1].target_indices == (0, 1)
-    assert plan[1].controls[0].channel == backend.model.exchange_control("q0", "q1")
+    assert plan[1].controls[0].channel == backend.model.control.exchange("q0", "q1")
 
 
 def test_concurrent_drive_and_offset_exchange_lower_into_one_atomic_block(backend):
@@ -47,12 +47,12 @@ def test_concurrent_drive_and_offset_exchange_lower_into_one_atomic_block(backen
         2.0,
         (
             _control(
-                backend.model.drive_control("q0"),
+                backend.model.control.drive("q0"),
                 (0.0, 0.04 + 0.01j),
                 duration=2.0,
             ),
             _control(
-                backend.model.exchange_control("q0", "q1"),
+                backend.model.control.exchange("q0", "q1"),
                 (0.0, 0.015),
                 duration=1.0,
                 offset=0.5,
@@ -73,7 +73,7 @@ def test_concurrent_drive_and_offset_exchange_lower_into_one_atomic_block(backen
 def test_condition_is_preserved_on_direct_control(backend):
     operation = fq.ops.PulseOperation(
         1.0,
-        (_control(backend.model.drive_control("q1"), (0.0, 0.1j)),),
+        (_control(backend.model.control.drive("q1"), (0.0, 0.1j)),),
     )
     program = fq.Program(2, 1)
     program.add(operation, condition=(0, 1))
@@ -87,9 +87,9 @@ def test_condition_is_preserved_on_direct_control(backend):
 @pytest.mark.parametrize("kind", ("detuning", "exchange"))
 def test_real_only_direct_controls_reject_complex_envelopes(backend, kind):
     channel = (
-        backend.model.detuning_control("q0")
+        backend.model.control.detuning("q0")
         if kind == "detuning"
-        else backend.model.exchange_control("q0", "q1")
+        else backend.model.control.exchange("q0", "q1")
     )
     program = fq.Program(2)
     program.add(
@@ -104,8 +104,8 @@ def test_real_only_direct_controls_reject_complex_envelopes(backend, kind):
 
 
 def test_reversed_exchange_handles_are_duplicate_channels(backend):
-    forward = _control(backend.model.exchange_control("q0", "q1"), (0.0, 0.01))
-    reverse = _control(backend.model.exchange_control("q1", "q0"), (0.0, 0.01))
+    forward = _control(backend.model.control.exchange("q0", "q1"), (0.0, 0.01))
+    reverse = _control(backend.model.control.exchange("q1", "q0"), (0.0, 0.01))
 
     with pytest.raises(ValueError, match="one channel"):
         fq.ops.PulseOperation(1.0, (forward, reverse))
@@ -118,7 +118,7 @@ def test_direct_drive_propagator_matches_independent_full_hamiltonian(backend):
         duration,
         (
             _control(
-                backend.model.drive_control("q0"),
+                backend.model.control.drive("q0"),
                 (amplitude, amplitude),
                 duration=duration,
             ),
@@ -146,7 +146,7 @@ def test_direct_condition_changes_actual_execution(backend):
         0.5,
         (
             _control(
-                backend.model.drive_control("q0"),
+                backend.model.control.drive("q0"),
                 (0.8, 0.8),
                 duration=0.5,
             ),
@@ -175,7 +175,7 @@ def test_direct_condition_changes_actual_execution(backend):
 def test_disjoint_direct_control_after_measurement_retains_fast_path(backend):
     operation = fq.ops.PulseOperation(
         1.0,
-        (_control(backend.model.drive_control("q1"), (0.0, 0.1)),),
+        (_control(backend.model.control.drive("q1"), (0.0, 0.1)),),
     )
     program = fq.Program(2, 1)
     program.measure(0, 0)

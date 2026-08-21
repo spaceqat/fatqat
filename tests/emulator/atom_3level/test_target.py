@@ -13,7 +13,8 @@ from fatqat.errors import BackendValidationError
 
 def _target(document, sites=2):
     return _Atom3LevelTarget(
-        Atom3LevelModel(document), fq.AtomArrangement.rectangular(1, sites, 2.0)
+        Atom3LevelModel.from_document(document),
+        fq.AtomArrangement.rectangular(1, sites, 2.0),
     )
 
 
@@ -21,7 +22,7 @@ def test_target_binds_controls_frames_claims_dimensions_and_interactions(
     atom_3level_model_document,
 ):
     target = _target(atom_3level_model_document)
-    control = target.bind_control(target.model.raman_control(1))
+    control = target.bind_control(target.model.control.raman(1))
     frame = target.bind_frame(target.model.frame(1))
     assert (target.local_dimension, target.hilbert_dimension) == (3, 9)
     assert target.device_labels == (0, 1)
@@ -38,10 +39,10 @@ def test_target_binds_controls_frames_claims_dimensions_and_interactions(
 def test_addresses_are_portable_but_claims_are_target_local(atom_3level_model_document):
     first = _target(atom_3level_model_document)
     second = _target(deepcopy(atom_3level_model_document))
-    assert first.model.raman_control(0) == second.model.raman_control(0)
+    assert first.model.control.raman(0) == second.model.control.raman(0)
     assert (
-        first.bind_control(second.model.raman_control(0)).claims
-        != second.bind_control(second.model.raman_control(0)).claims
+        first.bind_control(second.model.control.raman(0)).claims
+        != second.bind_control(second.model.control.raman(0)).claims
     )
 
 

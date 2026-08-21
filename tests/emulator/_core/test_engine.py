@@ -36,7 +36,7 @@ def _physical_block(
 ):
     controls = (
         PulseControl(
-            model.drive_control(subsystem_id),
+            model.control.drive(subsystem_id),
             SampledWaveform((0.0, duration), (0.0, 0.0)),
         ),
     )

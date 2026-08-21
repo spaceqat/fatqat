@@ -32,7 +32,7 @@ nominal package calibration internally:
    import fatqat as fq
 
    with open("model.json", encoding="utf-8") as stream:
-       model = fq.emulator.TransmonModel(json.load(stream))
+       model = fq.emulator.TransmonModel.from_document(json.load(stream))
    backend = fq.emulator.TransmonEmulator(model)
 
 For an explicit calibration, compile the portable document into a map before
@@ -249,15 +249,30 @@ realizations and the solver adapter both call.
 
 .. autoattribute:: fatqat.emulator.superconducting.TransmonModel.physical_dimension
 
-The control accessors choose the Hamiltonian mechanism and ``frame`` selects a
-virtual-drive phase ledger. Public custom definitions use those structural
-addresses; private target binding derives scheduling claims.
+The immutable ``model.control`` namespace chooses the Hamiltonian mechanism,
+while ``frame`` selects a virtual-drive phase ledger. Its selectors are also
+available by name through the immutable ``model.available_controls`` mapping.
+Each mapping entry describes a supported control kind, not every fully bound
+channel instance. Selectors expose ``scope``, required ``operands``,
+``coefficient_domain``, and ``coefficient_unit`` for lightweight inspection.
+Calling one produces a structural address; the final target still validates
+operand existence, declared pairs, waveform type, and coefficient values.
 
-.. automethod:: fatqat.emulator.superconducting.TransmonModel.drive_control
+.. code-block:: python
 
-.. automethod:: fatqat.emulator.superconducting.TransmonModel.detuning_control
+   drive = model.control.drive("q0")
+   detuning = model.control.detuning("q1")
+   exchange = model.control.exchange("q0", "q1")
 
-.. automethod:: fatqat.emulator.superconducting.TransmonModel.exchange_control
+   assert model.available_controls["drive"] is model.control.drive
+
+   for name, selector in model.available_controls.items():
+       print(name, selector.scope, selector.operands,
+             selector.coefficient_domain, selector.coefficient_unit)
+
+.. autoattribute:: fatqat.emulator.superconducting.TransmonModel.control
+
+.. autoattribute:: fatqat.emulator.superconducting.TransmonModel.available_controls
 
 .. automethod:: fatqat.emulator.superconducting.TransmonModel.frame
 
@@ -381,7 +396,7 @@ do not affect it:
            duration=duration,
            controls=(
                fq.emulator.PulseControl(
-                   model.exchange_control(first, second),
+                   model.control.exchange(first, second),
                    fq.waveforms.SampledWaveform(samples, envelope),
                ),
            ),
@@ -414,11 +429,11 @@ controls already contain their physical addresses:
 
    duration = 20.0
    drive = fq.emulator.PulseControl(
-       model.drive_control("q0"),
+       model.control.drive("q0"),
        fq.waveforms.SampledWaveform((0.0, duration), (0.02, 0.02j)),
    )
    exchange = fq.emulator.PulseControl(
-       model.exchange_control("q0", "q1"),
+       model.control.exchange("q0", "q1"),
        fq.waveforms.SampledWaveform((0.0, duration), (0.01, 0.01)),
    )
    program = fq.Program(2)

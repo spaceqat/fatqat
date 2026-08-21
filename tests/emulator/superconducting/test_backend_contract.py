@@ -343,7 +343,7 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
         "frequency": 5.35,
         "anharmonicity": -0.25,
     }
-    model = TransmonModel(model_document)
+    model = TransmonModel.from_document(model_document)
     noise = NoiseModel()
     noise.add(PhaseDamping(rate=0.02), targets="q1")
     backend = TransmonEmulator(model, noise=noise)
@@ -424,7 +424,7 @@ def test_unrealizable_envelope_is_rejected_identically_by_run_and_propagator(
             10.0,
             (
                 PulseControl(
-                    model.detuning_control(subsystem_id),
+                    model.control.detuning(subsystem_id),
                     SampledWaveform((0.0, 10.0), (0.1 + 0.2j, 0.1 + 0.2j)),
                 ),
             ),

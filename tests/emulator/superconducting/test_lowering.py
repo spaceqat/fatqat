@@ -67,7 +67,7 @@ def test_superconducting_backend_lowers_direct_drive_operation(backend):
         1.0,
         (
             PulseControl(
-                backend.model.drive_control("q0"),
+                backend.model.control.drive("q0"),
                 SampledWaveform((0.0, 1.0), (0.0, 0.1j)),
             ),
         ),
@@ -97,7 +97,7 @@ def test_edgeless_source_is_unsupported_while_reversed_cz_is_valid(
 ):
     disconnected_document = model_document
     disconnected_document["system"]["control_edges"] = []
-    disconnected = TransmonModel(disconnected_document)
+    disconnected = TransmonModel.from_document(disconnected_document)
     disconnected_backend = TransmonEmulator(disconnected)
     iswap = fq.Program(2)
     iswap.add(fq.ops.iSwap, (0, 1))
@@ -107,7 +107,7 @@ def test_edgeless_source_is_unsupported_while_reversed_cz_is_valid(
     reversed_cz = fq.Program(2)
     reversed_cz.add(fq.ops.CZ, (1, 0))
     (block,) = backend._prepare_program(reversed_cz).plan
-    assert block.controls[0].channel == backend.model.detuning_control("q1")
+    assert block.controls[0].channel == backend.model.control.detuning("q1")
 
 
 # --- shared measurement-lowering boundary: confusion validation parity -----
@@ -157,7 +157,7 @@ def _constant_definition(model, subsystem_id):
         1.0,
         (
             PulseControl(
-                model.drive_control(subsystem_id),
+                model.control.drive(subsystem_id),
                 SampledWaveform((0.0, 1.0), (0.3, 0.3)),
             ),
         ),
@@ -212,7 +212,7 @@ def test_custom_cz_rule_changes_emitted_controls_without_touching_program_or_ada
 
     assert block.duration == 1.0
     (control,) = block.controls
-    assert control.channel == model.drive_control("q0")
+    assert control.channel == model.control.drive("q0")
     assert np.allclose(control.waveform.values, (0.3, 0.3))
     # target_indices comes from the occurrence's own program targets, not
     # from whatever the rule's returned definition happens to claim: the
@@ -273,7 +273,7 @@ def test_coarse_compiled_map_transfers_unchanged_but_rebuild_redesigns_drag(
     )
     finer_document = deepcopy(model_document)
     finer_document["parameters"]["subsystems"]["q0"]["anharmonicity"] = -0.4
-    finer = TransmonModel(finer_document)
+    finer = TransmonModel.from_document(finer_document)
     source_backend = TransmonEmulator(model, gate_implementation_map=source_map)
     transferred = TransmonEmulator(finer, gate_implementation_map=source_map)
     rebuilt = TransmonEmulator(

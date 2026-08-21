@@ -24,7 +24,7 @@ def _spacing(value: Any) -> float:
 
 @dataclass(frozen=True, init=False)
 class AtomArrangement:
-    """An immutable rectangular arrangement of initially occupied atom sites.
+    """An immutable rectangular arrangement of physical sites.
 
     Construct arrangements with :meth:`rectangular`. The current three-level
     and two-level atom emulators expose no arbitrary-coordinate public
@@ -42,7 +42,7 @@ class AtomArrangement:
     Examples:
         >>> import fatqat as fq
         >>> arrangement = fq.AtomArrangement.rectangular(2, 3, 6.0)
-        >>> arrangement.cardinality
+        >>> arrangement.num_sites
         6
         >>> arrangement.coordinates[3]
         (0.0, 6.0, 0.0)
@@ -64,8 +64,8 @@ class AtomArrangement:
                 for the current neutral-atom model families.
 
         Returns:
-            An immutable arrangement with ``rows * cols`` initially occupied
-            sites and coordinates ``(column * spacing, row * spacing, 0)``.
+            An immutable arrangement with ``rows * cols`` declared sites and
+            coordinates ``(column * spacing, row * spacing, 0)``.
 
         Raises:
             ValueError: If a dimension is not a positive integer or spacing
@@ -87,13 +87,19 @@ class AtomArrangement:
         return instance
 
     @property
-    def cardinality(self) -> int:
-        """Number of occupied sites, equal to ``rows * cols``.
+    def num_sites(self) -> int:
+        """Return the exact number of declared physical sites.
 
-        This count is public geometry information and does not expose the
-        private engine indices assigned during a run.
+        Returns:
+            The number of coordinates in this immutable geometry. This is a
+            site count, not a dynamic atom-occupancy count.
         """
         return len(self.coordinates)
 
     def __len__(self) -> int:
-        return self.cardinality
+        """Return the concise sequence-style site count.
+
+        Returns:
+            The same exact geometry count as :attr:`num_sites`.
+        """
+        return self.num_sites

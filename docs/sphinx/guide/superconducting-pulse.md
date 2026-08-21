@@ -31,7 +31,8 @@ under a new model version.
 ```python
 import fatqat as fq
 
-model = fq.emulator.TransmonModel(model_document)
+model = fq.emulator.TransmonModel.from_document(model_document)
+assert tuple(model.available_controls) == ("drive", "detuning", "exchange")
 backend = fq.emulator.TransmonEmulator(model)
 ```
 
@@ -130,11 +131,11 @@ the operation has no ordinary program targets:
 duration = 20.0
 controls = (
     fq.emulator.PulseControl(
-        model.drive_control("q0"),
+        model.control.drive("q0"),
         fq.waveforms.SampledWaveform((0.0, duration), (0.02, 0.02j)),
     ),
     fq.emulator.PulseControl(
-        model.exchange_control("q0", "q1"),
+        model.control.exchange("q0", "q1"),
         fq.waveforms.SampledWaveform((0.0, duration), (0.01, 0.01)),
     ),
 )

@@ -286,7 +286,7 @@ def test_default_noise_model_is_fully_supported():
     assert report.supported is True
     assert set(report.accepted_sources) == {
         "AmplitudeDamping(p)",
-        "Depolarizing",
+        "Depolarizing(p)",
         "PhaseDamping(p)",
         "ReadoutConfusion",
     }

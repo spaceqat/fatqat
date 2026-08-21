@@ -75,6 +75,30 @@ def _parse_calibration_identity(value: Any, path: str) -> CalibrationIdentity:
     )
 
 
+def _validate_model_document_envelope(value: Mapping[str, Any], path: str) -> None:
+    """Validate the shared model envelope and optional provenance object.
+
+    Family parsers remain responsible for the contents of ``system``,
+    ``units``, and ``parameters``. This helper owns only the exact top-level
+    variants shared by all physics-model documents.
+    """
+    base_keys = {"format", "model", "system", "units", "parameters"}
+    keys = set(value)
+    if keys not in (base_keys, base_keys | {"provenance"}):
+        _exact_keys(value, base_keys, path)
+    if "provenance" not in value:
+        return
+    provenance_path = f"{path}.provenance"
+    provenance = _mapping(value["provenance"], provenance_path)
+    _exact_keys(provenance, {"description", "sources"}, provenance_path)
+    _string(provenance["description"], f"{provenance_path}.description")
+    sources = provenance["sources"]
+    if not isinstance(sources, list):
+        _fail(f"{provenance_path}.sources", "must be an array")
+    for index, source in enumerate(sources):
+        _string(source, f"{provenance_path}.sources[{index}]")
+
+
 def _dispatch_document(
     document: Any,
     path: str,

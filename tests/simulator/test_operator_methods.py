@@ -109,7 +109,7 @@ def _noisy_program() -> Program:
 
 def _depolarizing_noise() -> fq.NoiseModel:
     noise = fq.NoiseModel()
-    noise.add(fq.noise.Depolarizing(0.15), operation=ops.H)
+    noise.add(fq.noise.Depolarizing(p=0.15), operation=ops.H)
     return noise
 
 
@@ -459,7 +459,7 @@ def test_gate_fusion_leaves_a_sparse_step_alone():
     """A CSR super-operator keeps its sparse walk instead of joining a dense block."""
     nb = _numba_engines()
     noise = fq.NoiseModel()
-    noise.add(fq.noise.Depolarizing(0.2), operation=ops.H)
+    noise.add(fq.noise.Depolarizing(p=0.2), operation=ops.H)
     backend = Simulator("superop", runtime="numba", noise=noise)
     program = Program(2)
     program.add(ops.RZ(0.4), 0)
@@ -514,7 +514,7 @@ def test_fused_superop_covers_every_structure_code():
     program.add(ops.H, 0)  # dense super-operator
     program.add(ops.Reset, 1)  # Kraus channel
     noise = fq.NoiseModel()
-    noise.add(fq.noise.Depolarizing(0.2), operation=ops.H)  # sparse CSR
+    noise.add(fq.noise.Depolarizing(p=0.2), operation=ops.H)  # sparse CSR
 
     backend = Simulator("superop", runtime="numba", noise=noise)
     plan, _ = backend._lower_program(program)
@@ -629,7 +629,7 @@ def test_unitary_rejects_channel_noise():
 def test_unitary_accepts_a_noise_model_that_never_fires():
     """Support is decided by the lowered plan, not by the model being present."""
     noise = fq.NoiseModel()
-    noise.add(fq.noise.Depolarizing(0.1), operation=ops.Y)
+    noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.Y)
     unitary = _unitary_of(_noisy_program(), noise=noise).get_unitary()
     assert np.allclose(unitary, _unitary_of(_noisy_program()).get_unitary(), atol=_ATOL)
 

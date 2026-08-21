@@ -126,9 +126,9 @@ def test_bare_pi_area_transfers_the_selected_transition(atom_3level_model, trans
     omega = 7.0
     duration = np.pi / omega
     channel = (
-        adapter._target.model.raman_control(0)
+        adapter._target.model.control.raman(0)
         if transition == "raman"
-        else adapter._target.model.rydberg_control(0)
+        else adapter._target.model.control.rydberg(0)
     )
     unitary = adapter.propagator(
         _run(adapter, (_constant(channel, omega, duration),), duration)
@@ -151,7 +151,7 @@ def test_simultaneous_rydberg_drives_couple_one_one_symmetrically(
     omega = 7.0
     duration = np.pi / (2.0 * omega)
     controls = tuple(
-        _constant(adapter._target.model.rydberg_control(site), omega, duration)
+        _constant(adapter._target.model.control.rydberg(site), omega, duration)
         for site in (0, 1)
     )
     unitary = adapter.propagator(_run(adapter, controls, duration))
@@ -163,7 +163,7 @@ def test_simultaneous_rydberg_drives_couple_one_one_symmetrically(
 
 def _max_double_rydberg_population(adapter, *, omega, duration):
     controls = tuple(
-        _constant(adapter._target.model.rydberg_control(site), omega, duration)
+        _constant(adapter._target.model.control.rydberg(site), omega, duration)
         for site in (0, 1)
     )
     bound = adapter._bind_run(
@@ -189,8 +189,8 @@ def test_finite_blockade_suppresses_double_rydberg_population(
     finite = deepcopy(atom_3level_model_document)
     finite["parameters"]["c6"] = 100.0 * omega
     coordinates = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
-    no_interaction = _adapter(Atom3LevelModel(negligible), coordinates)
-    finite_blockade = _adapter(Atom3LevelModel(finite), coordinates)
+    no_interaction = _adapter(Atom3LevelModel.from_document(negligible), coordinates)
+    finite_blockade = _adapter(Atom3LevelModel.from_document(finite), coordinates)
 
     assert finite_blockade._target.interactions[
         0
@@ -279,9 +279,9 @@ def test_positive_frame_shift_rotates_later_controls_in_execution_and_propagator
     omega = 7.0
     duration = np.pi / (2.0 * omega)
     channel = (
-        adapter._target.model.raman_control(0)
+        adapter._target.model.control.raman(0)
         if transition == "raman"
-        else adapter._target.model.rydberg_control(0)
+        else adapter._target.model.control.rydberg(0)
     )
     driven = _block(
         adapter,

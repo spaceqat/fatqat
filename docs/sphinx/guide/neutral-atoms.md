@@ -38,11 +38,11 @@ tracked outside the quantum state, with no coordinates or transport API.
 | Direct-control program | selected-site Raman/Rydberg `PulseOperation` values | global drive/detuning `PulseOperation` values |
 | Gate implementation map | optional replacement map with built-in default | optional replacement map with empty default |
 | Lindblad implementation map | optional replacement map; empty default | optional replacement map; built-in two-level damping default |
-| Backend inputs | physics model, arrangement, optional maps | physics model, arrangement, interaction policy, optional maps |
-| Interaction graph | signed `C6/R^6` over every occupied pair | nearest-neighbor by default; explicit full-pair option |
+| Backend inputs | physics model, arrangement, optional maps | physics model, arrangement, optional interaction cutoff and maps |
+| Interaction pairs | signed `C6/R^6` over every declared-site pair | coordinate-derived, all pairs by default; optional distance cutoff |
 | Ideal final state | full-qutrit density matrix | full two-level statevector |
 | Measurement during a program | measurement, reset, and classical conditions use the shared pulse engine | terminal measurement suffix only |
-| Default noise behavior | binary readout confusion; no Lindblad descriptors | target-local background rate-form amplitude or phase damping |
+| Default noise behavior | binary readout confusion; no Lindblad descriptors | rate-form amplitude/phase damping, thermal relaxation, depolarization, and binary readout confusion |
 | Typical use | calibrated gates, coherent leakage, or selected-site drives | global Rydberg dynamics and shaped drive/detuning controls |
 
 Choose the three-level emulator when calibration, coherent Rydberg leakage,
@@ -57,7 +57,7 @@ Both emulators keep three kinds of information separate:
 
 1. A versioned physics-model document defines species, levels, units, and the
    signed `C6` coefficient.
-2. An {py:class}`~fatqat.AtomArrangement` defines occupied rectangular site
+2. An {py:class}`~fatqat.AtomArrangement` defines rectangular physical-site
    coordinates in row-major order.
 3. The `Program` declares one dimension-two quantum resource per arrangement
    site. Resources bind to sites in declaration order.
@@ -77,9 +77,15 @@ arrangement = fq.AtomArrangement.rectangular(
 )
 ```
 
-The arrangement is immutable and initially fully occupied. Arbitrary
-coordinates, transport, loading, and refill are outside the current emulator
-contracts.
+The arrangement is immutable geometry; it does not represent dynamic atom
+occupancy. Arbitrary coordinates, transport, loading, loss, and refill are
+outside the current pulse-emulator contracts.
+
+`arrangement.num_sites` is the exact number of declared coordinates and equals
+`len(arrangement)`; a pulse program must have exactly that many resources.
+This differs from `AtomArraySimulator(num_sites=6)`, where `num_sites` is a
+maximum capacity and smaller programs are valid. `AtomArraySimulator()` is
+unbounded.
 
 ## Shared run and result workflow
 

@@ -79,7 +79,7 @@ def _idle_block(adapter, subsystem_id, *, duration, noise=(), condition=None):
     model = target.model
     controls = (
         PulseControl(
-            model.drive_control(subsystem_id),
+            model.control.drive(subsystem_id),
             SampledWaveform((0.0, duration), (0.0, 0.0)),
         ),
     )
@@ -200,7 +200,7 @@ def test_pulse_backend_still_rejects_channel_types_without_a_pulse_implementatio
 
     report = backend.check_noise_support(noise)
     assert report.supported is False
-    assert report.rejected_sources == ("Depolarizing",)
+    assert report.rejected_sources == ("Depolarizing(p)",)
 
     with pytest.raises(BackendValidationError, match="Depolarizing"):
         make_backend(noise)
@@ -338,7 +338,7 @@ def test_gate_scoped_rate_is_independent_of_the_realized_block_duration(
             custom_duration,
             (
                 PulseControl(
-                    model.drive_control(subsystem_id),
+                    model.control.drive(subsystem_id),
                     SampledWaveform((0.0, custom_duration), (0.0, 0.0)),
                 ),
             ),

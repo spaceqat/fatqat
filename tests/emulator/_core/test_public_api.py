@@ -8,8 +8,11 @@ workflow that exercises those exports end to end lives in
 import importlib.util
 import inspect
 import json
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from typing import get_type_hints
+
+import pytest
 
 import fatqat as fq
 from fatqat.emulator import (
@@ -20,7 +23,6 @@ from fatqat.emulator import (
     Atom3LevelCalibration,
     Atom3LevelModel,
     FormatIdentity,
-    GridInteractionPolicy,
     ModelIdentity,
     PhaseShift,
     PhaseSwap,
@@ -83,7 +85,6 @@ def test_family_and_aggregate_exports_are_exact():
         "default_atom_3level_calibration",
         "default_atom_3level_gate_implementation_map",
         "Atom2LevelModel",
-        "GridInteractionPolicy",
         "FormatIdentity",
         "ModelIdentity",
         "CalibrationIdentity",
@@ -91,7 +92,6 @@ def test_family_and_aggregate_exports_are_exact():
     assert tuple(atom_2level.__all__) == (
         "Atom2LevelEmulator",
         "Atom2LevelModel",
-        "GridInteractionPolicy",
     )
     assert tuple(atom_3level.__all__) == (
         "Atom3LevelEmulator",
@@ -307,7 +307,8 @@ def test_atom_2level_family_exports_final_public_values_only():
 
     assert fq.emulator.Atom2LevelEmulator is Atom2LevelEmulator
     assert fq.emulator.Atom2LevelModel is Atom2LevelModel
-    assert fq.emulator.GridInteractionPolicy is GridInteractionPolicy
+    assert not hasattr(fq.emulator, "GridInteractionPolicy")
+    assert not hasattr(atom_2level, "GridInteractionPolicy")
     assert Atom2LevelEmulator.__module__ == "fatqat.emulator.atom_2level.backend"
     assert Atom2LevelModel.__module__ == "fatqat.emulator.atom_2level.model"
     for private_name in (
@@ -331,6 +332,7 @@ def test_removed_two_level_atom_surface_has_no_compatibility_aliases():
             assert not hasattr(owner, name)
             assert name not in owner.__all__
     assert importlib.util.find_spec("fatqat.emulator." + "atom") is None
+    assert importlib.util.find_spec("fatqat.emulator.atom_2level.policy") is None
 
 
 def test_atom_2level_constructor_has_general_map_keywords():
@@ -338,7 +340,7 @@ def test_atom_2level_constructor_has_general_map_keywords():
     assert tuple(parameters) == (
         "model",
         "arrangement",
-        "interaction_policy",
+        "interaction_cutoff",
         "noise",
         "gate_implementation_map",
         "lindblad_implementation_map",
@@ -348,14 +350,14 @@ def test_atom_2level_constructor_has_general_map_keywords():
         parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
         for name in (
             "arrangement",
-            "interaction_policy",
+            "interaction_cutoff",
             "noise",
             "gate_implementation_map",
             "lindblad_implementation_map",
         )
     )
     assert parameters["arrangement"].default is inspect.Parameter.empty
-    assert parameters["interaction_policy"].default is None
+    assert parameters["interaction_cutoff"].default is None
     assert parameters["noise"].default is None
     assert parameters["gate_implementation_map"].default is None
     assert parameters["lindblad_implementation_map"].default is None
@@ -434,20 +436,116 @@ def test_models_author_structural_controls_and_frames_without_public_handles(
         / "fixtures"
         / "atom_2level_reference.json"
     )
-    atom_2level_model = Atom2LevelModel(
+    atom_2level_model = Atom2LevelModel.from_document(
         json.loads(document_path.read_text(encoding="utf-8"))
     )
     controls = (
-        model.drive_control("q0"),
-        model.exchange_control("q0", "q1"),
-        atom_3level_model.raman_control(0),
-        atom_3level_model.rydberg_control(0),
-        atom_2level_model.drive_control(),
-        atom_2level_model.detuning_control(),
+        model.control.drive("q0"),
+        model.control.exchange("q0", "q1"),
+        atom_3level_model.control.raman(0),
+        atom_3level_model.control.rydberg(0),
+        atom_2level_model.control.drive(),
+        atom_2level_model.control.detuning(),
     )
     assert all(isinstance(control, ControlChannel) for control in controls)
     for frame in (model.frame("q0"), atom_3level_model.frame(0)):
         assert PhaseShift(frame, 0.1).frame is frame
+
+
+def test_model_control_discovery_is_minimal_immutable_and_family_owned(
+    model, model_document, atom_3level_model, atom_3level_model_document
+):
+    document_path = (
+        Path(__file__).parents[1]
+        / "atom_2level"
+        / "fixtures"
+        / "atom_2level_reference.json"
+    )
+    atom_2level_model = Atom2LevelModel.from_document(
+        json.loads(document_path.read_text(encoding="utf-8"))
+    )
+    atom_2level_peer = Atom2LevelModel.from_document(
+        json.loads(document_path.read_text(encoding="utf-8"))
+    )
+    families = (
+        (
+            atom_2level_model,
+            atom_2level_peer,
+            {
+                "drive": ("global", (), "complex", "rad/us"),
+                "detuning": ("global", (), "real", "rad/us"),
+            },
+        ),
+        (
+            atom_3level_model,
+            Atom3LevelModel.from_document(atom_3level_model_document),
+            {
+                "raman": ("local", ("site",), "complex", "rad/us"),
+                "rydberg": ("local", ("site",), "complex", "rad/us"),
+            },
+        ),
+        (
+            model,
+            TransmonModel.from_document(model_document),
+            {
+                "drive": (
+                    "local",
+                    ("subsystem_id",),
+                    "complex",
+                    "rad/ns",
+                ),
+                "detuning": (
+                    "local",
+                    ("subsystem_id",),
+                    "real",
+                    "rad/ns",
+                ),
+                "exchange": (
+                    "pair",
+                    ("first", "second"),
+                    "real",
+                    "rad/ns",
+                ),
+            },
+        ),
+    )
+
+    for physics_model, peer, expected in families:
+        assert tuple(physics_model.available_controls) == tuple(expected)
+        assert physics_model.control is peer.control
+        assert physics_model.available_controls is peer.available_controls
+        for name, metadata in expected.items():
+            selector = physics_model.available_controls[name]
+            assert selector is getattr(physics_model.control, name)
+            assert selector is peer.available_controls[name]
+            assert (
+                selector.scope,
+                selector.operands,
+                selector.coefficient_domain,
+                selector.coefficient_unit,
+            ) == metadata
+        with pytest.raises(TypeError):
+            physics_model.available_controls["other"] = object()
+        with pytest.raises((AttributeError, FrozenInstanceError, TypeError)):
+            physics_model.control.other = object()
+        with pytest.raises((AttributeError, FrozenInstanceError)):
+            next(iter(physics_model.available_controls.values())).scope = "other"
+
+    namespaces = tuple(physics_model.control for physics_model, _, _ in families)
+    assert len({id(namespace) for namespace in namespaces}) == len(namespaces)
+    assert atom_2level_model.control.drive is not model.control.drive
+    assert tuple(inspect.signature(atom_2level_model.control.drive).parameters) == ()
+    assert tuple(inspect.signature(atom_3level_model.control.raman).parameters) == (
+        "site",
+    )
+    assert tuple(inspect.signature(model.control.exchange).parameters) == (
+        "first",
+        "second",
+    )
+    assert "Rydberg drive" in inspect.getdoc(atom_2level_model.control.drive)
+    assert "subsystem pair" in inspect.getdoc(model.control.exchange)
+    assert not hasattr(Atom3LevelModel, "control_families")
+    assert not hasattr(fq.emulator, "ControlSelector")
 
 
 def test_concrete_target_owned_claim_classes_are_not_exported():

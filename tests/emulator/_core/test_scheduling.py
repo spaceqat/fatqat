@@ -22,7 +22,7 @@ _COUPLING_CLAIM = _TargetClaim(_OWNER, "coupling", 0)
 def _block(model, subsystem_id, duration):
     controls = (
         PulseControl(
-            model.drive_control(subsystem_id),
+            model.control.drive(subsystem_id),
             SampledWaveform((0.0, duration), (0.0, 0.0)),
         ),
     )
@@ -50,7 +50,7 @@ def test_asap_and_alap_share_makespan_but_place_independent_work_differently(mod
 def test_pair_claims_conservatively_conflict_with_endpoint_work(model):
     controls = (
         PulseControl(
-            model.exchange_control("q0", "q1"),
+            model.control.exchange("q0", "q1"),
             SampledWaveform((0.0, 2.0), (0.0, 0.0)),
         ),
     )
