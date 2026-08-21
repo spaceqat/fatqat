@@ -594,7 +594,7 @@ def test_atom_3level_load_atoms_is_ordinary_unsupported_operation(
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
     program = fq.Program(2)
-    program.add(fq.ops.LoadAtoms(1, 2))
+    program.add(fq.ops.Put, (0, 1))
     with pytest.raises(UnsupportedOperationError):
         backend.run(program)
 

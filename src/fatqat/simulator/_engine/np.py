@@ -72,10 +72,9 @@ from ..._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
     LossStep,
-    OccupancyInitStep,
     MeasurementStep,
     ResetStep,
-    RefillStep,
+    PutStep,
     ResolvedStep,
 )
 from ...implementation.matrices import shift_matrix
@@ -281,6 +280,7 @@ class _NumpyMatrixEngine(MatrixEngine):
         request: ResultRequest,
         *,
         config: EngineConfig | None = None,
+        initial_occupied: frozenset[int] | None = None,
     ) -> RawResult:
         assert (
             self._state is not None
@@ -289,7 +289,9 @@ class _NumpyMatrixEngine(MatrixEngine):
         plan = self._prepare_execution_plan(plan, effective)
         is_dynamic, measurements = self._analyze_plan(plan)
         if is_dynamic:
-            return self._run_per_shot(plan, shots, seed, request, effective)
+            return self._run_per_shot(
+                plan, shots, seed, request, effective, initial_occupied
+            )
         return self._run_fast(
             plan, measurements, shots, np.random.default_rng(seed), request
         )
@@ -334,17 +336,11 @@ class _NumpyMatrixEngine(MatrixEngine):
                 is_conditioned=step.condition is not None,
                 forces_per_shot=True,
             )
-        if isinstance(step, RefillStep):
+        if isinstance(step, PutStep):
             return _OperationExecutionFacts(
                 target_indices=step.target_indices,
                 is_conditioned=step.condition is not None,
                 forces_per_shot=True,
-            )
-        if isinstance(step, OccupancyInitStep):
-            return _OperationExecutionFacts(
-                target_indices=(),
-                is_conditioned=False,
-                forces_per_shot=False,
             )
         raise TypeError(f"unknown resolved execution step {type(step).__name__}")
 
@@ -403,6 +399,7 @@ class _NumpyMatrixEngine(MatrixEngine):
         seed: int | None,
         request: ResultRequest,
         config: EngineConfig,
+        initial_occupied: frozenset[int] | None = None,
     ) -> RawResult:
         """Run dynamic execution one trajectory at a time or via worker batches."""
         from .parallel import (
@@ -428,6 +425,7 @@ class _NumpyMatrixEngine(MatrixEngine):
                 seed_sequences,
                 max_workers,
                 type(self),
+                initial_occupied,
                 self._initial_state,
             )
         else:
@@ -435,7 +433,9 @@ class _NumpyMatrixEngine(MatrixEngine):
             for seed_sequence in seed_sequences:
                 self.initialize(self._dims, self._n_clbits)
                 snapshots.append(
-                    self._run_one_shot(plan, np.random.default_rng(seed_sequence))
+                    self._run_one_shot(
+                        plan, np.random.default_rng(seed_sequence), initial_occupied
+                    )
                 )
 
         outcome_keys = outcome_counts = state = None
@@ -451,20 +451,30 @@ class _NumpyMatrixEngine(MatrixEngine):
         )
 
     def _run_one_shot(
-        self, plan: list[ResolvedStep], rng: np.random.Generator
+        self,
+        plan: list[ResolvedStep],
+        rng: np.random.Generator,
+        initial_occupied: frozenset[int] | None = None,
     ) -> tuple[int, ...]:
         """Run one dynamic-path shot and return its final clbit snapshot.
 
         Shared by the serial path and `parallel.py`'s worker batches; it touches
         the state only through the interface methods (reset consumes rng only
         under statevector semantics).
+
+        ``initial_occupied`` is the atom simulator's per-shot starting
+        occupancy, supplied at run initialization rather than as a plan step:
+        ``None`` means every subsystem is present (the plain-backend default),
+        while an explicit set seeds only those subsystems as occupied so
+        `~fatqat.operations.Put` fills the rest.
         """
         clbits = [0] * self._n_clbits
-        occupied = set(range(len(self._dims)))
+        occupied = (
+            set(range(len(self._dims)))
+            if initial_occupied is None
+            else set(initial_occupied)
+        )
         for step in plan:
-            if isinstance(step, OccupancyInitStep):
-                occupied = set(step.occupied_indices)
-                continue
             if isinstance(step, ApplyMatrixStep) and all(
                 t in occupied for t in step.target_indices
             ):
@@ -481,7 +491,7 @@ class _NumpyMatrixEngine(MatrixEngine):
                         if index in occupied and rng.random() < step.p:
                             occupied.discard(index)
                             self.reset_subsystems([index], rng)
-            elif isinstance(step, RefillStep):
+            elif isinstance(step, PutStep):
                 if _condition_matches(step.condition, clbits):
                     for index in step.target_indices:
                         if index not in occupied:
@@ -796,12 +806,15 @@ class _NumpyOperatorEngine(_NumpyMatrixEngine):
         request: ResultRequest,
         *,
         config: EngineConfig | None = None,
+        initial_occupied: frozenset[int] | None = None,
     ) -> RawResult:
         """Evolve the identity operator once through ``plan`` and export it.
 
-        ``shots`` is accepted for interface parity and unused. ``config``
-        selects any execution-plan rewrite, while ``seed`` initializes the
-        ``rng`` handed to exact-channel kernels.
+        ``shots`` and ``initial_occupied`` are accepted for interface parity
+        and unused (an operator representation computes the program's map, not a
+        per-shot trajectory, so it has no occupancy). ``config`` selects any
+        execution-plan rewrite, while ``seed`` initializes the ``rng`` handed to
+        the exact-channel kernels.
         """
         assert (
             self._state is not None

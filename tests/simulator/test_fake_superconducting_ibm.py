@@ -179,12 +179,12 @@ def test_fake_backend_allows_measurement_and_reset_on_any_qubit():
 
 
 def test_grid_register_binds_top_left_on_4x4_device():
-    atoms = GridRegister(2, 3, name="atoms")
-    p = Program([atoms])
+    qubits = GridRegister(2, 3, name="qubits")
+    p = Program([qubits])
     backend = SCQubitIBMSimulator()
     resource_layout = backend._resolve_resource_layout(p)
     assert isinstance(resource_layout, ResourceLayout)
-    assert tuple(resource_layout.device_label(atoms[i]) for i in range(6)) == (
+    assert tuple(resource_layout.device_label(qubits[i]) for i in range(6)) == (
         0,
         1,
         2,
@@ -195,17 +195,17 @@ def test_grid_register_binds_top_left_on_4x4_device():
 
 
 def test_grid_register_scalar_ref_uses_grid_binder_device_label_not_identity():
-    atoms = GridRegister(2, 3, name="atoms")
-    p = Program([atoms])
+    qubits = GridRegister(2, 3, name="qubits")
+    p = Program([qubits])
     backend = SCQubitIBMSimulator()
     resource_layout = backend._resolve_resource_layout(p)
-    assert resource_layout.device_label(atoms[3]) == 4
+    assert resource_layout.device_label(qubits[3]) == 4
 
 
 def test_rejects_grid_register_combined_with_other_quantum_register():
-    atoms = GridRegister(2, 2, name="atoms")
+    qubits = GridRegister(2, 2, name="qubits")
     other = QuantumRegister(2, name="q")
-    p = Program([atoms, other])
+    p = Program([qubits, other])
     backend = SCQubitIBMSimulator()
     with pytest.raises(BackendValidationError, match="SCQubitIBMSimulator"):
         backend._resolve_resource_layout(p)
@@ -221,8 +221,8 @@ def test_rejects_two_grid_registers():
 
 
 def test_rejects_grid_that_does_not_fit_device_even_with_enough_total_capacity():
-    atoms = GridRegister(8, 2, name="atoms")
-    p = Program([atoms])
+    qubits = GridRegister(8, 2, name="qubits")
+    p = Program([qubits])
     backend = SCQubitIBMSimulator()
     with pytest.raises(BackendValidationError):
         backend._resolve_resource_layout(p)
@@ -237,10 +237,10 @@ def test_naive_scalar_program_still_uses_declaration_order_identity_binding():
 
 
 def test_grid_register_program_runs_end_to_end():
-    atoms = GridRegister(1, 3, name="atoms")
-    p = Program([atoms])
-    p.add(ops.SX, atoms[0])
-    p.add(ops.CZ, (atoms[0], atoms[1]))
+    qubits = GridRegister(1, 3, name="qubits")
+    p = Program([qubits])
+    p.add(ops.SX, qubits[0])
+    p.add(ops.CZ, (qubits[0], qubits[1]))
     result = (
         SCQubitIBMSimulator()
         .run(p, result_config={"counts": False, "final_state": True})

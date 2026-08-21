@@ -264,7 +264,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
     that do not fit that device shape (too many qubits, or any non-qubit-dimension
     register), and grid-aware resource mapping (see
     `_resolve_resource_layout`). Qubits here are always "on" - there is no
-    atom-loading concept, unlike :py:class:`~fatqat.simulator.AtomGridSimulator`.
+    atom-loading concept, unlike :py:class:`~fatqat.simulator.AtomArraySimulator`.
     """
 
     def __init__(
@@ -410,7 +410,7 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
     that device shape (too many qubits, or any non-qubit-dimension
     register), and grid-aware resource mapping (see
     `_resolve_resource_layout`). Qubits here are always "on" - there is no
-    atom-loading concept, unlike :py:class:`~fatqat.simulator.AtomGridSimulator`.
+    atom-loading concept, unlike :py:class:`~fatqat.simulator.AtomArraySimulator`.
     """
 
     def __init__(

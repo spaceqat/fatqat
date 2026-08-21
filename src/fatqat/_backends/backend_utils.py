@@ -44,10 +44,10 @@ class _LoweringContext:
     `MatrixImplementationMap` lookup keys (`device_operands`) and reads
     `engine_index_allocation` for every execution-plan index/dimension
     (`ApplyMatrixStep` targets, measurement, reset, and condition lowering).
-    Both values are resolved once per run. The engine index allocation is
-    always threaded through lowering unchanged; the resource layout is too on
-    every backend except the atom grid, where ``Rearrange`` evolves it across
-    lowering (engine indices still never change).
+    Both values are resolved once per run and threaded through lowering
+    unchanged on every backend (engine indices and the resource layout both
+    stay fixed); the neutral-atom backend evolves a separate
+    ``AtomConnectivity`` graph across ``Pair``/``Unpair``, not the layout.
     """
 
     resource_layout: ResourceLayout

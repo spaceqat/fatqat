@@ -6,7 +6,7 @@ The two neutral-atom emulators share the application-facing lifecycle of
 :py:class:`~fatqat.Program`, receive an eager :py:class:`~fatqat.Job`, and read
 the requested fields from :py:class:`~fatqat.Result`. They are pulse-resolved
 physical emulators rather than modes of
-:py:class:`~fatqat.simulator.AtomGridSimulator`.
+:py:class:`~fatqat.simulator.AtomArraySimulator`.
 
 Use :py:class:`~fatqat.emulator.Atom3LevelEmulator` for calibrated gates or
 selected-site direct controls in the physical ``|0>, |1>, |r>`` model. Use

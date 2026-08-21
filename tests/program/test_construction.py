@@ -77,10 +77,10 @@ def test_resolve_quantum_ref_rejects_foreign_ref():
 
 
 def test_resolve_quantum_ref_stays_scalar_only_and_rejects_register_view():
-    atoms = GridRegister(2, 2, name="atoms")
-    p = Program([atoms])
+    qubits = GridRegister(2, 2, name="qubits")
+    p = Program([qubits])
     with pytest.raises(TypeError):
-        p._resolve_quantum_ref(atoms.row(0))
+        p._resolve_quantum_ref(qubits.row(0))
 
 
 def test_metadata_defaults_to_empty_dict():

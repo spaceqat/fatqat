@@ -212,9 +212,9 @@ def test_view_bearing_program_rejected_before_scalar_ref_formatting():
     # RegisterView-bearing programs are not QASM-exportable yet; the guard
     # must fire before to_qasm() ever tries to format a scalar ref, not
     # crash later with a missing-attribute error.
-    atoms = fc.GridRegister(1, 2, name="atoms")
-    p = fc.Program([atoms])
-    p.add(fc.ops.RX(0.3), atoms.row(0))
+    qubits = fc.GridRegister(1, 2, name="qubits")
+    p = fc.Program([qubits])
+    p.add(fc.ops.RX(0.3), qubits.row(0))
     with pytest.raises(QasmExportError, match="view"):
         program_to_qasm(p, version=3)
 

@@ -6,7 +6,7 @@ Rb87 three-level model `|0>, |1>, |r>`. Use it when gate calibration, coherent
 Rydberg leakage, atom spacing, or parallel-gate crosstalk is part of the
 question. For global direct control in a two-level model, use
 [the two-level emulator](atom-2level.md); for fast ideal qubit gates on a
-constrained grid, use {py:class}`~fatqat.simulator.AtomGridSimulator`.
+connectivity-constrained target, use {py:class}`~fatqat.simulator.AtomArraySimulator`.
 
 See [Neutral-atom emulation](neutral-atoms.md) for a side-by-side comparison
 and {doc}`../api/atom-emulators` for exact signatures.
@@ -118,7 +118,7 @@ row-major coordinates.
 | classical condition | supported by the shared pulse execution path |
 | `Barrier` | structural no-op |
 | direct `PulseOperation` | per-site Raman or Rydberg control addresses from the model |
-| `LoadAtoms`; ordinary gates without a registered rule | rejected |
+| `Put`/`Pair`/`Unpair`; ordinary gates without a registered rule | rejected |
 
 Here is the minimal calibrated-CZ program and deterministic final-state
 request:

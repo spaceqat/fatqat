@@ -282,8 +282,8 @@ def test_ordinary_gates_are_unsupported_before_runner_construction(model, monkey
 
     for operation, targets in (
         (fq.ops.X, 0),
-        (fq.ops.Rearrange((1, 0)), (0, 1)),
-        (fq.ops.Refill, 0),
+        (fq.ops.Pair, (0, 1)),
+        (fq.ops.Put, 0),
     ):
         program = fq.Program(2)
         program.add(operation, targets)

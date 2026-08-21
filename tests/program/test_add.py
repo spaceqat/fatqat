@@ -118,20 +118,20 @@ def test_add_subspace_rotation_in_range_succeeds(op_cls):
     "make_op", [lambda: ops.RX(0.1), lambda: ops.RY(0.1), lambda: ops.RZ(0.1)]
 )
 def test_add_accepts_view_for_rotation_gates(make_op):
-    atoms = GridRegister(2, 2, name="atoms")
-    p = Program([atoms])
-    p.add(make_op(), atoms.row(0))
+    qubits = GridRegister(2, 2, name="qubits")
+    p = Program([qubits])
+    p.add(make_op(), qubits.row(0))
     ao = p.operations[0]
-    assert ao.targets == (atoms.row(0),)
+    assert ao.targets == (qubits.row(0),)
 
 
 @pytest.mark.parametrize("op", [ops.CX, ops.CZ])
 def test_add_accepts_view_pair_for_cx_cz(op):
-    atoms = GridRegister(2, 2, name="atoms")
-    p = Program([atoms])
-    p.add(op, (atoms.row(0), atoms.row(1)))
+    qubits = GridRegister(2, 2, name="qubits")
+    p = Program([qubits])
+    p.add(op, (qubits.row(0), qubits.row(1)))
     ao = p.operations[0]
-    assert ao.targets == (atoms.row(0), atoms.row(1))
+    assert ao.targets == (qubits.row(0), qubits.row(1))
 
 
 @pytest.mark.parametrize(
@@ -150,9 +150,9 @@ def test_add_accepts_view_pair_for_cx_cz(op):
     ],
 )
 def test_add_rejects_view_for_scalar_only_operations(op):
-    atoms = GridRegister(2, 2, name="atoms")
-    p = Program([atoms])
-    views = (atoms.row(0), atoms.row(1), atoms.all(), atoms.column(0))
+    qubits = GridRegister(2, 2, name="qubits")
+    p = Program([qubits])
+    views = (qubits.row(0), qubits.row(1), qubits.all(), qubits.column(0))
     arity = op.num_targets
     targets = views[0] if arity == 1 else views[:arity]
     with pytest.raises(ValueError):
@@ -160,33 +160,33 @@ def test_add_rejects_view_for_scalar_only_operations(op):
 
 
 def test_add_rejects_view_for_reset():
-    atoms = GridRegister(2, 2, name="atoms")
-    p = Program([atoms])
+    qubits = GridRegister(2, 2, name="qubits")
+    p = Program([qubits])
     with pytest.raises(ValueError):
-        p.add(ops.Reset, atoms.row(0))
+        p.add(ops.Reset, qubits.row(0))
 
 
 def test_add_rejects_view_from_foreign_program():
-    atoms = GridRegister(2, 2, name="atoms")
-    p = Program([atoms])
-    foreign_atoms = GridRegister(2, 2, name="foreign")  # not in p.quantum_registers
+    qubits = GridRegister(2, 2, name="qubits")
+    p = Program([qubits])
+    foreign_qubits = GridRegister(2, 2, name="foreign")  # not in p.quantum_registers
     with pytest.raises(ValueError):
-        p.add(ops.RX(0.1), foreign_atoms.row(0))
+        p.add(ops.RX(0.1), foreign_qubits.row(0))
 
 
 def test_add_view_target_is_not_treated_as_scalar_ref():
-    atoms = GridRegister(1, 2, name="atoms")
-    p = Program([atoms])
-    p.add(ops.RX(0.1), atoms.row(0))
+    qubits = GridRegister(1, 2, name="qubits")
+    p = Program([qubits])
+    p.add(ops.RX(0.1), qubits.row(0))
     ao = p.operations[0]
     assert isinstance(ao.targets[0], RegisterView)
 
 
 def test_add_rejects_scalar_view_mixture_for_two_target_op():
-    atoms = GridRegister(2, 2, name="atoms")
-    p = Program([atoms])
+    qubits = GridRegister(2, 2, name="qubits")
+    p = Program([qubits])
     with pytest.raises(ValueError, match="mixes a scalar target with a view"):
-        p.add(ops.CX, (atoms.row(1), atoms[0]))
+        p.add(ops.CX, (qubits.row(1), qubits[0]))
 
 
 def test_add_targets_optional_for_zero_arity_operation():

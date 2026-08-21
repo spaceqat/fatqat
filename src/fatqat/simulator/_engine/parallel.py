@@ -41,7 +41,10 @@ if TYPE_CHECKING:
         initial_state: np.ndarray | None
 
         def _run_one_shot(
-            self, plan: list[ResolvedStep], rng: np.random.Generator
+            self,
+            plan: list[ResolvedStep],
+            rng: np.random.Generator,
+            initial_occupied: frozenset[int] | None = None,
         ) -> tuple[int, ...]: ...
 
     class _EngineFactory(Protocol):
@@ -135,6 +138,7 @@ def _run_dynamic_shot_batch(
     n_clbits: int,
     seed_batch: list[np.random.SeedSequence],
     engine_cls: _EngineFactory,
+    initial_occupied: frozenset[int] | None = None,
     initial_state: np.ndarray | None = None,
 ) -> list[tuple[int, ...]]:
     """Run a contiguous batch of dynamic shots in one worker with one engine.
@@ -150,7 +154,9 @@ def _run_dynamic_shot_batch(
     for seed_sequence in seed_batch:
         engine.initialize(system_dims, n_clbits)
         snapshots.append(
-            engine._run_one_shot(plan, np.random.default_rng(seed_sequence))
+            engine._run_one_shot(
+                plan, np.random.default_rng(seed_sequence), initial_occupied
+            )
         )
     return snapshots
 
@@ -222,6 +228,7 @@ def _run_dynamic_shots_multiprocessing(
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
     engine_cls: _EngineFactory,
+    initial_occupied: frozenset[int] | None = None,
     initial_state: np.ndarray | None = None,
 ) -> list[tuple[int, ...]]:
     batches = _split_into_batches(seed_sequences, max_workers)
@@ -236,6 +243,7 @@ def _run_dynamic_shots_multiprocessing(
                 repeat(n_clbits),
                 batches,
                 repeat(engine_cls),
+                repeat(initial_occupied),
                 repeat(initial_state),
             )
             return [snapshot for batch in results for snapshot in batch]
@@ -248,6 +256,7 @@ def _run_dynamic_shots_loky(
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
     engine_cls: _EngineFactory,
+    initial_occupied: frozenset[int] | None = None,
     initial_state: np.ndarray | None = None,
 ) -> list[tuple[int, ...]]:
     from loky import get_reusable_executor
@@ -266,6 +275,7 @@ def _run_dynamic_shots_loky(
         repeat(n_clbits),
         batches,
         repeat(engine_cls),
+        repeat(initial_occupied),
         repeat(initial_state),
     )
     return [snapshot for batch in results for snapshot in batch]
@@ -279,6 +289,7 @@ def _run_dynamic_shots_parallel(
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
     engine_cls: _EngineFactory,
+    initial_occupied: frozenset[int] | None = None,
     initial_state: np.ndarray | None = None,
 ) -> list[tuple[int, ...]]:
     """Dispatch shots to worker processes. Caller must supply ``max_workers``.
@@ -286,7 +297,9 @@ def _run_dynamic_shots_parallel(
     ``max_workers`` is the same value `_planned_workers` already returned, passed
     through rather than recomputed so there is one source of truth for the
     parallel/serial decision. ``engine_cls`` selects which `MatrixEngine`
-    subclass each worker constructs.
+    subclass each worker constructs. ``initial_occupied`` is the atom
+    simulator's per-shot starting occupancy, forwarded verbatim to each
+    worker's per-shot loop (``None`` keeps the all-present default).
     """
     mode_name = _resolve_parallel_mode_name(config.parallel_mode)
     if mode_name == "loky":
@@ -298,6 +311,7 @@ def _run_dynamic_shots_parallel(
                 seed_sequences,
                 max_workers,
                 engine_cls,
+                initial_occupied,
                 initial_state,
             )
         warnings.warn(
@@ -314,5 +328,6 @@ def _run_dynamic_shots_parallel(
         seed_sequences,
         max_workers,
         engine_cls,
+        initial_occupied,
         initial_state,
     )

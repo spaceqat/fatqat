@@ -1,5 +1,4 @@
 Simulator (``fq.simulator``)
-============================
 
 A backend validates and executes a :py:class:`~fatqat.Program`. Normal applications use a
 backend through :py:meth:`run <~fatqat.simulator.Simulator.run>` and read the resulting :py:class:`~fatqat.Result`; they do not
@@ -116,7 +115,7 @@ Constrained simulated targets
 
 :py:class:`~fatqat.simulator.SCQubitIBMSimulator`,
 :py:class:`~fatqat.simulator.SCQubitGoogleSimulator`, and
-:py:class:`~fatqat.simulator.AtomGridSimulator` are optional
+:py:class:`~fatqat.simulator.AtomArraySimulator` are optional
 simulated targets with fixed native-gate and connectivity constraints. Use
 them when those constraints are part of an experiment or test, not as the
 default backend for a first program.
@@ -263,39 +262,47 @@ asymmetric readout probabilities ``P(report 1 | true 0) = 0.02`` and
 See :doc:`noise` for channel execution, readout semantics, and custom noise
 models.
 
-Neutral-atom grid target
-~~~~~~~~~~~~~~~~~~~~~~~~
+Neutral-atom array target
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:py:class:`~fatqat.simulator.AtomGridSimulator` accepts a ``grid_size=(rows,
-cols)`` layout (``(4, 5)`` by default). Its uniform native gates are
+:py:class:`~fatqat.simulator.AtomArraySimulator` accepts an optional
+``num_sites`` capacity (unbounded by default): the number of trap sites, each
+holding at most one atom, with no fixed topology. Leave it unset for no
+capacity limit, or pass a positive integer to model a device of fixed size. Its uniform native gates are
 :py:class:`~fatqat.operations.RX`, :py:class:`~fatqat.operations.RY`, and
-:py:class:`~fatqat.operations.RZ`; :py:data:`~fatqat.operations.CZ` is native
-only on directed nearest-neighbour pairs. Query those pairs through
-``implementation_map`` rather than deriving them from the shape.
+:py:class:`~fatqat.operations.RZ`; :py:data:`~fatqat.operations.CZ` is native on
+any connected pair. Two-qubit-gate legality follows a dynamic connectivity
+graph (:py:class:`~fatqat.connectivity.AtomConnectivity`): a ``CZ`` on a pair
+that is not currently paired is silently dropped, like a gate on an empty site.
 
-Every atom-grid program must begin with an unconditional
-:py:class:`~fatqat.operations.LoadAtoms` that fits the device. It loads the
-top-left rectangle named by ``LoadAtoms(rows, cols)``. A later ``LoadAtoms``
-is rejected; a gate or reset touching an unloaded site is a no-op. Measurement
-remains valid on unloaded sites and reports the initial ``0`` in ideal
-execution, subject to any supplied readout confusion.
+Every site starts empty. :py:data:`~fatqat.operations.Put` loads a fresh
+``|0⟩`` atom into its targets; :py:data:`~fatqat.operations.Pair` connects two
+atoms and :py:data:`~fatqat.operations.Unpair` disconnects them. A gate whose
+target is never loaded by any ``Put`` is dropped; a program that uses neither
+``Put`` nor atom loss keeps every declared qubit present. A lost or empty site
+measures the erasure digit ``2``. Attach
+:py:class:`~fatqat.noise.Loss` to a gate to eject atoms per shot, to
+``Put`` to model imperfect loading, or to ``Pair``/``Unpair`` to model movement
+cost.
 
 .. code-block:: python
 
    import fatqat as fq
+   import fatqat.operations as op
 
-   atoms = fq.GridRegister(2, 3, name="atoms")
+   atoms = fq.QuantumRegister(2, name="atoms")
    program = fq.Program([atoms])
-   program.add(op.LoadAtoms(2, 3))
-   program.add(op.RX(0.2), atoms.row(0))
-   program.add(op.CZ, (atoms[0], atoms[3]))
+   program.add(op.Put, (0, 1))     # load both atoms
+   program.add(op.Pair, (0, 1))    # connect them so CZ is legal
+   program.add(op.RX(0.2), 0)
+   program.add(op.CZ, (0, 1))
 
-   backend = fq.simulator.AtomGridSimulator()  # 4 by 5 device
+   backend = fq.simulator.AtomArraySimulator()  # unbounded capacity by default
 
-On that default device, the 2 by 3 frontend grid occupies labels ``0, 1, 2,
-5, 6, 7``: its second frontend row starts at device label ``5``, not ``3``.
-Use device labels for connectivity checks, but program references or flat
-indices for :py:class:`~fatqat.NoiseModel` selectors. This backend has no
+Registers map to device labels in declaration order; a
+:py:class:`~fatqat.GridRegister`, if passed, is treated as a plain flat register
+(no coordinates). Use program references or flat indices for
+:py:class:`~fatqat.NoiseModel` selectors. This backend has no
 calibration-derived default noise model; a supplied
 :py:class:`~fatqat.NoiseModel` is a user simulation choice.
 
@@ -314,6 +321,10 @@ Detailed reference
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqat.simulator.AtomGridSimulator
+.. autoclass:: fatqat.simulator.AtomArraySimulator
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.connectivity.AtomConnectivity
    :members:
    :show-inheritance:

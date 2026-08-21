@@ -67,27 +67,27 @@ def test_validate_targets_hook_is_called_with_resolved_targets():
 
 
 def test_applied_operation_accepts_view_for_view_capable_operation():
-    atoms = GridRegister(2, 2, name="atoms")
-    ao = AppliedOperation(operation=ops.RX(0.1), targets=(atoms.row(0),))
-    assert ao.targets == (atoms.row(0),)
+    qubits = GridRegister(2, 2, name="qubits")
+    ao = AppliedOperation(operation=ops.RX(0.1), targets=(qubits.row(0),))
+    assert ao.targets == (qubits.row(0),)
 
 
 def test_applied_operation_rejects_view_for_scalar_only_operation():
-    atoms = GridRegister(2, 2, name="atoms")
+    qubits = GridRegister(2, 2, name="qubits")
     with pytest.raises(ValueError):
-        AppliedOperation(operation=ops.H, targets=(atoms.row(0),))
+        AppliedOperation(operation=ops.H, targets=(qubits.row(0),))
 
 
 def test_applied_operation_view_arity_checked_before_scalar_validation():
     # CX/CZ expect exactly 2 target *expressions*; a view counts as one
     # expression regardless of how many members it selects.
-    atoms = GridRegister(2, 2, name="atoms")
+    qubits = GridRegister(2, 2, name="qubits")
     with pytest.raises(ValueError):
-        AppliedOperation(operation=ops.CX, targets=(atoms.row(0),))
+        AppliedOperation(operation=ops.CX, targets=(qubits.row(0),))
 
 
 def test_applied_operation_view_bearing_skips_validate_hook():
-    atoms = GridRegister(2, 2, name="atoms")
+    qubits = GridRegister(2, 2, name="qubits")
     calls = []
 
     @dataclass(frozen=True)
@@ -105,8 +105,8 @@ def test_applied_operation_view_bearing_skips_validate_hook():
     # Non-overlapping views (distinct rows): legal pairing, so only the
     # per-operation validate_targets() hook is at stake here - it must not
     # run for view-bearing targets, unlike the scalar path.
-    ao = AppliedOperation(operation=_Probe(), targets=(atoms.row(0), atoms.row(1)))
-    assert ao.targets == (atoms.row(0), atoms.row(1))
+    ao = AppliedOperation(operation=_Probe(), targets=(qubits.row(0), qubits.row(1)))
+    assert ao.targets == (qubits.row(0), qubits.row(1))
     assert calls == []
 
 
@@ -118,17 +118,17 @@ def test_applied_operation_view_bearing_skips_validate_hook():
 
 
 def test_applied_operation_rejects_same_view_repeated():
-    atoms = GridRegister(2, 2, name="atoms")
+    qubits = GridRegister(2, 2, name="qubits")
     with pytest.raises(ValueError, match="overlapping"):
-        AppliedOperation(operation=ops.CX, targets=(atoms.row(0), atoms.row(0)))
+        AppliedOperation(operation=ops.CX, targets=(qubits.row(0), qubits.row(0)))
 
 
 def test_applied_operation_rejects_cross_selector_type_pairing():
-    atoms = GridRegister(3, 3, name="atoms")
+    qubits = GridRegister(3, 3, name="qubits")
     # Equal cardinality (3 vs 3), but a row and a column are different
     # selector kinds - forbidden regardless of size match.
     with pytest.raises(ValueError, match="selector kind"):
-        AppliedOperation(operation=ops.CX, targets=(atoms.row(0), atoms.column(0)))
+        AppliedOperation(operation=ops.CX, targets=(qubits.row(0), qubits.column(0)))
 
 
 def test_applied_operation_rejects_unequal_cardinality_across_registers():
@@ -139,31 +139,31 @@ def test_applied_operation_rejects_unequal_cardinality_across_registers():
 
 
 def test_applied_operation_accepts_disjoint_rows_same_register():
-    atoms = GridRegister(2, 2, name="atoms")
-    ao = AppliedOperation(operation=ops.CX, targets=(atoms.row(0), atoms.row(1)))
-    assert ao.targets == (atoms.row(0), atoms.row(1))
+    qubits = GridRegister(2, 2, name="qubits")
+    ao = AppliedOperation(operation=ops.CX, targets=(qubits.row(0), qubits.row(1)))
+    assert ao.targets == (qubits.row(0), qubits.row(1))
 
 
 def test_applied_operation_rejects_overlapping_blocks():
-    atoms = GridRegister(2, 3, name="atoms")
-    first = atoms.block(rows=(0, 2), cols=(0, 2))
-    second = atoms.block(rows=(0, 2), cols=(1, 3))  # shares column 1
+    qubits = GridRegister(2, 3, name="qubits")
+    first = qubits.block(rows=(0, 2), cols=(0, 2))
+    second = qubits.block(rows=(0, 2), cols=(1, 3))  # shares column 1
     with pytest.raises(ValueError, match="overlapping"):
         AppliedOperation(operation=ops.CX, targets=(first, second))
 
 
 def test_applied_operation_accepts_non_overlapping_equal_size_blocks():
-    atoms = GridRegister(2, 4, name="atoms")
-    first = atoms.block(rows=(0, 2), cols=(0, 2))
-    second = atoms.block(rows=(0, 2), cols=(2, 4))
+    qubits = GridRegister(2, 4, name="qubits")
+    first = qubits.block(rows=(0, 2), cols=(0, 2))
+    second = qubits.block(rows=(0, 2), cols=(2, 4))
     ao = AppliedOperation(operation=ops.CX, targets=(first, second))
     assert ao.targets == (first, second)
 
 
 def test_applied_operation_rejects_all_paired_with_all():
-    atoms = GridRegister(2, 2, name="atoms")
+    qubits = GridRegister(2, 2, name="qubits")
     with pytest.raises(ValueError, match="overlapping"):
-        AppliedOperation(operation=ops.CX, targets=(atoms.all(), atoms.all()))
+        AppliedOperation(operation=ops.CX, targets=(qubits.all(), qubits.all()))
 
 
 def test_zero_arity_operation_class_is_legal():

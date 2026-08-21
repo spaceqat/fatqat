@@ -169,21 +169,6 @@ class LossStep:
 
 
 @dataclass(frozen=True)
-class OccupancyInitStep:
-    """Front-of-plan marker carrying the shot's initial occupied subsystems.
-
-    Atom-grid lowering emits this first so the per-shot loop can seed its
-    occupancy set from the loaded atoms. It touches no state and emits no
-    physics; engines that ignore it are unaffected.
-
-    Attributes:
-        occupied_indices: Flat subsystem indices occupied at shot start.
-    """
-
-    occupied_indices: tuple[int, ...]
-
-
-@dataclass(frozen=True)
 class MeasurementStep:
     """Resolved measurement: flat subsystem indices into matching flat clbit indices.
 
@@ -275,7 +260,7 @@ class ResetStep:
 
 
 @dataclass(frozen=True)
-class RefillStep:
+class PutStep:
     """Reload atoms into empty target sites: a fresh |0> where unoccupied.
 
     Per shot each currently-unoccupied target becomes occupied and is reset to
@@ -295,8 +280,7 @@ ResolvedStep = (
     ApplyMatrixStep
     | ApplyChannelStep
     | LossStep
-    | OccupancyInitStep
     | MeasurementStep
     | ResetStep
-    | RefillStep
+    | PutStep
 )

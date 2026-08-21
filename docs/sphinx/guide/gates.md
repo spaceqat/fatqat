@@ -66,10 +66,10 @@ view-capable operations are `RX`, `RY`, `RZ`, `CX`, and `CZ`.
 import fatqat as fq
 import fatqat.operations as op
 
-atoms = fq.GridRegister(2, 3, name="atoms")
-program = fq.Program([atoms])
-program.add(op.RX(0.2), atoms.row(1))
-program.add(op.CX, (atoms.row(0), atoms.row(1)))
+qubits = fq.GridRegister(2, 3, name="qubits")
+program = fq.Program([qubits])
+program.add(op.RX(0.2), qubits.row(1))
+program.add(op.CX, (qubits.row(0), qubits.row(1)))
 ```
 
 The two views in the `CX` example are paired in order: the first entry in

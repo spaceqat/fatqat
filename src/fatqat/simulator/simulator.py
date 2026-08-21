@@ -73,7 +73,7 @@ from ..noise import (
     ThermalRelaxation,
     default_channel_implementation_map,
 )
-from ..operations import BarrierGate, Measurement, ResetGate, RefillGate
+from ..operations import BarrierGate, Measurement, PutGate, ResetGate
 from ..parameters import Parameter, ParameterVector
 from ..program import AppliedOperation, Program
 from ..registers import RegisterRef
@@ -154,11 +154,21 @@ class _MethodSpec:
 
 @dataclass(frozen=True)
 class _PreparedMatrixProgram:
-    """One run's lowered plan and final resource/index context."""
+    """One run's lowered plan and final resource/index context.
+
+    ``initial_occupied`` is the per-shot starting occupancy the engine seeds
+    before executing the plan: ``None`` (the plain-backend default) means every
+    subsystem is present, while an explicit set names the subsystems occupied
+    at shot start. It is an initialization input of the run, not a plan step -
+    the atom simulator supplies it (see ``Simulator._initial_occupancy``)
+    because occupancy is one of its concerns, not an operation the engine
+    lowers.
+    """
 
     plan: list[ResolvedStep]
     facts: _PlanFacts
     context: _LoweringContext
+    initial_occupied: frozenset[int] | None = None
 
 
 _METHOD_SPECS: dict[str, _MethodSpec] = {
@@ -296,7 +306,7 @@ class Simulator:
     # Whether this backend implements the per-shot atom-occupancy lifecycle
     # Loss needs (loading, per-shot loss, refill). False on the generic
     # matrix backends, which reject Loss via check_noise_support rather than
-    # silently ignoring it; AtomGridSimulator sets it True.
+    # silently ignoring it; AtomArraySimulator sets it True.
     _supports_loss: bool = False
 
     def __init__(
@@ -571,6 +581,7 @@ class Simulator:
             plan,
             self._analyze_plan_facts(plan),
             final_context,
+            self._initial_occupancy(plan),
         )
 
     def _lower_with_context(
@@ -1007,6 +1018,7 @@ class Simulator:
                 simulation.seed,
                 request,
                 config=simulation.engine_config(),
+                initial_occupied=prepared.initial_occupied,
             )
         finally:
             # Execution is eager and every evolving/result buffer owns its
@@ -1140,9 +1152,9 @@ class Simulator:
                             classical_allocation,
                         )
                     )
-                elif isinstance(step.operation, RefillGate):
+                elif isinstance(step.operation, PutGate):
                     plan.extend(
-                        planning._lower_refill(
+                        planning._lower_put(
                             step,
                             resource_layout,
                             engine_allocation,
@@ -1179,6 +1191,17 @@ class Simulator:
                 getattr(step, "condition", None) is not None for step in plan
             ),
         )
+
+    def _initial_occupancy(self, plan: Sequence[ResolvedStep]) -> frozenset[int] | None:
+        """Subsystems present at shot start, or ``None`` for 'all present'.
+
+        This is the engine's per-shot occupancy seed, resolved at run
+        preparation rather than lowered as a plan step: occupancy is a backend
+        concern, not an operation. The common simulator has no occupancy notion,
+        so every subsystem is present; the atom simulator overrides this to seed
+        an empty register that `~fatqat.operations.Put` then fills.
+        """
+        return None
 
     def check_noise_support(self, noise_model: NoiseModel) -> NoiseSupportReport:
         """Report which parts of a noise model this backend can execute.
@@ -1247,7 +1270,7 @@ class Simulator:
                         label,
                         False,
                         f"{label} is not supported: this backend does not model "
-                        "carrier loss (use AtomGridSimulator)",
+                        "carrier loss (use AtomArraySimulator)",
                     )
             elif background:
                 _record(

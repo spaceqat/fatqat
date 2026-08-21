@@ -149,11 +149,11 @@ def test_measure_matching_dims_ok():
 
 
 def test_measure_rejects_register_view_target():
-    atoms = GridRegister(2, 2, name="atoms")
+    qubits = GridRegister(2, 2, name="qubits")
     cr = ClassicalRegister(4)
-    p = Program([atoms], [cr])
+    p = Program([qubits], [cr])
     with pytest.raises(TypeError):
-        p.measure(atoms.row(0), 0)
+        p.measure(qubits.row(0), 0)
 
 
 def test_measure_all_dim_mismatch_raises():

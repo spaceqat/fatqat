@@ -93,12 +93,12 @@ layout. Its {py:meth}`~fatqat.GridRegister.row`, {py:meth}`~fatqat.GridRegister.
 targets accepted by selected rotation and two-qubit gates:
 
 ```python
-atoms = fq.GridRegister(2, 3, name="atoms")
-program = fq.Program([atoms])
-program.add(op.RX(0.2), atoms.row(1))
+qubits = fq.GridRegister(2, 3, name="qubits")
+program = fq.Program([qubits])
+program.add(op.RX(0.2), qubits.row(1))
 ```
 
 The grid is an abstract description. A backend applies its device-specific
 default mapping and connectivity checks when it runs the program. A backend
-may deliberately reject a supplied layout when its workflow owns placement;
-{py:class}`~fatqat.simulator.AtomGridSimulator` currently does so.
+may deliberately constrain or reject a supplied layout when its workflow
+owns placement.

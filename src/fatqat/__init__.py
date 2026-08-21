@@ -22,6 +22,7 @@ from .registers import (
     RegisterRef,
     RegisterView,
 )
+from .connectivity import AtomConnectivity
 from .resource_layout import DeviceOperand, ResourceLayout
 from .result import Result
 
@@ -48,6 +49,7 @@ __all__ = [
     "RegisterRef",
     "GridRegister",
     "RegisterView",
+    "AtomConnectivity",
     "ResourceLayout",
     "DeviceOperand",
     "Job",

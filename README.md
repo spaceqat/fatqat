@@ -191,6 +191,11 @@ sorted(op.name for op in impl_map.supported_operations())   # ['CZ', 'RZ', 'SX',
 impl_map.supports(op.CX)                                     # False
 ```
 
+The neutral-atom target `AtomArraySimulator` (`RX`, `RY`, `RZ`, `CZ`) has no
+fixed topology at all: `op.Put` loads atoms into sites, and a `CZ` is legal
+only while its two atoms are connected by `op.Pair` (undone by `op.Unpair`),
+so connectivity is rearranged mid-circuit.
+
 ## Physics emulators
 
 Three pulse-resolved physics systems live under `fq.emulator`. Gate-authored
@@ -275,5 +280,6 @@ builds reproducible independently of the contributor environment.
   (physical noise declarations, `NoiseModel`, readout confusion), registers,
   layout, jobs, results,
   QASM translation, errors.
+- `examples/` — runnable end-to-end scripts (smoke-tested by `tests/test_examples.py`).
 - `tests/` — pytest suite.
 - `docs/sphinx/` — user guide and API reference (see above).

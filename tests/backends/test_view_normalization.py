@@ -50,33 +50,33 @@ def test_scalar_only_and_measurement_instructions_pass_through_unchanged():
 def test_grouped_rotation_expands_in_view_order_and_preserves_operation_data(
     selector_name, expected_indices
 ):
-    atoms = GridRegister(2, 3, name="atoms")
-    program = Program([atoms], 1)
+    qubits = GridRegister(2, 3, name="qubits")
+    program = Program([qubits], 1)
     operation = ops.RX(0.3)
-    program.add(operation, getattr(atoms, selector_name)(0), condition=(0, 1))
+    program.add(operation, getattr(qubits, selector_name)(0), condition=(0, 1))
     broken = _break_grouped_operations(program.operations)
     assert [step.targets for step in broken] == [
-        (atoms[index],) for index in expected_indices
+        (qubits[index],) for index in expected_indices
     ]
     assert all(step.operation is operation for step in broken)
     assert all(step.condition == program.operations[0].condition for step in broken)
 
 
 def test_grouped_two_target_operation_zips_views_in_order():
-    atoms = GridRegister(2, 2, name="atoms")
-    program = Program([atoms])
-    program.add(ops.CX, (atoms.row(0), atoms.row(1)))
+    qubits = GridRegister(2, 2, name="qubits")
+    program = Program([qubits])
+    program.add(ops.CX, (qubits.row(0), qubits.row(1)))
     broken = _break_grouped_operations(program.operations)
     assert [step.targets for step in broken] == [
-        (atoms[0], atoms[2]),
-        (atoms[1], atoms[3]),
+        (qubits[0], qubits[2]),
+        (qubits[1], qubits[3]),
     ]
 
 
 def test_grouped_operation_does_not_mutate_program():
-    atoms = GridRegister(2, 2, name="atoms")
-    program = Program([atoms])
-    program.add(ops.RX(0.3), atoms.row(0))
+    qubits = GridRegister(2, 2, name="qubits")
+    program = Program([qubits])
+    program.add(ops.RX(0.3), qubits.row(0))
     before = program.operations
     broken = _break_grouped_operations(program.operations)
     assert program.operations is before
@@ -84,9 +84,9 @@ def test_grouped_operation_does_not_mutate_program():
 
 
 def test_base_backend_executes_grouped_views_with_identity_mapping():
-    atoms = GridRegister(2, 2, name="atoms")
-    program = Program([atoms])
-    program.add(ops.RX(0.3), atoms.row(0))
+    qubits = GridRegister(2, 2, name="qubits")
+    program = Program([qubits])
+    program.add(ops.RX(0.3), qubits.row(0))
     result = (
         Simulator()
         .run(

@@ -119,25 +119,25 @@ def test_registerref_is_usable_as_a_dict_key():
 
 
 def test_grid_register_is_quantum_register_with_derived_size():
-    atoms = GridRegister(2, 3)
-    assert isinstance(atoms, QuantumRegister)
-    assert atoms.rows == 2
-    assert atoms.cols == 3
-    assert atoms.size == 6
-    assert atoms.dim == 2
+    qubits = GridRegister(2, 3)
+    assert isinstance(qubits, QuantumRegister)
+    assert qubits.rows == 2
+    assert qubits.cols == 3
+    assert qubits.size == 6
+    assert qubits.dim == 2
 
 
 def test_grid_register_accepts_name_metadata_dim_by_keyword():
-    atoms = GridRegister(2, 3, name="atoms", metadata={"k": 1}, dim=2)
-    assert atoms.name == "atoms"
-    assert atoms.metadata == {"k": 1}
+    qubits = GridRegister(2, 3, name="qubits", metadata={"k": 1}, dim=2)
+    assert qubits.name == "qubits"
+    assert qubits.metadata == {"k": 1}
 
 
 def test_grid_register_metadata_is_copied_not_aliased():
     meta = {"k": 1}
-    atoms = GridRegister(2, 2, metadata=meta)
+    qubits = GridRegister(2, 2, metadata=meta)
     meta["k"] = 2
-    assert atoms.metadata == {"k": 1}
+    assert qubits.metadata == {"k": 1}
 
 
 @pytest.mark.parametrize("rows,cols", [(0, 3), (-1, 3), (3, 0), (3, -1)])
@@ -162,29 +162,29 @@ def test_grid_register_dim_follows_quantum_register_rules():
 
 
 def test_grid_register_is_frozen():
-    atoms = GridRegister(2, 3)
+    qubits = GridRegister(2, 3)
     with pytest.raises(Exception):
-        atoms.rows = 5
+        qubits.rows = 5
 
 
 def test_grid_register_scalar_indexing_is_row_major():
-    atoms = GridRegister(2, 3)
+    qubits = GridRegister(2, 3)
     # (row, col) -> row * cols + col
     for row in range(2):
         for col in range(3):
             index = row * 3 + col
-            ref = atoms[index]
+            ref = qubits[index]
             assert isinstance(ref, RegisterRef)
-            assert ref.register is atoms
+            assert ref.register is qubits
             assert ref.index == index
 
 
 def test_grid_register_scalar_indexing_out_of_range_raises_indexerror():
-    atoms = GridRegister(2, 3)
+    qubits = GridRegister(2, 3)
     with pytest.raises(IndexError):
-        atoms[6]
+        qubits[6]
     with pytest.raises(IndexError):
-        atoms[-1]
+        qubits[-1]
 
 
 def test_distinct_grid_registers_with_identical_fields_are_not_equal():
@@ -192,73 +192,73 @@ def test_distinct_grid_registers_with_identical_fields_are_not_equal():
 
 
 def test_grid_registers_are_hashable_and_identity_based():
-    atoms = GridRegister(2, 3)
-    assert isinstance(hash(atoms), int)
+    qubits = GridRegister(2, 3)
+    assert isinstance(hash(qubits), int)
     assert len({GridRegister(2, 3), GridRegister(2, 3)}) == 2
-    assert len({atoms, atoms}) == 1
+    assert len({qubits, qubits}) == 1
 
 
 # --- GridRegister selection helpers -----------------------------------------
 
 
 def test_all_returns_view_with_all_selector():
-    atoms = GridRegister(2, 3)
-    view = atoms.all()
+    qubits = GridRegister(2, 3)
+    view = qubits.all()
     assert isinstance(view, RegisterView)
-    assert view.register is atoms
+    assert view.register is qubits
     assert view.selector == AllSelector()
 
 
 def test_row_returns_view_with_row_selector():
-    atoms = GridRegister(2, 3)
-    view = atoms.row(1)
-    assert view.register is atoms
+    qubits = GridRegister(2, 3)
+    view = qubits.row(1)
+    assert view.register is qubits
     assert view.selector == RowSelector(row=1)
 
 
 def test_row_rejects_out_of_bounds_index():
-    atoms = GridRegister(2, 3)
+    qubits = GridRegister(2, 3)
     with pytest.raises(IndexError):
-        atoms.row(2)
+        qubits.row(2)
     with pytest.raises(IndexError):
-        atoms.row(-1)
+        qubits.row(-1)
 
 
 def test_row_rejects_non_int_index():
-    atoms = GridRegister(2, 3)
+    qubits = GridRegister(2, 3)
     with pytest.raises(TypeError):
-        atoms.row(1.0)
+        qubits.row(1.0)
     with pytest.raises(TypeError):
-        atoms.row(True)
+        qubits.row(True)
 
 
 def test_column_returns_view_with_column_selector():
-    atoms = GridRegister(2, 3)
-    view = atoms.column(2)
-    assert view.register is atoms
+    qubits = GridRegister(2, 3)
+    view = qubits.column(2)
+    assert view.register is qubits
     assert view.selector == ColumnSelector(col=2)
 
 
 def test_column_rejects_out_of_bounds_index():
-    atoms = GridRegister(2, 3)
+    qubits = GridRegister(2, 3)
     with pytest.raises(IndexError):
-        atoms.column(3)
+        qubits.column(3)
     with pytest.raises(IndexError):
-        atoms.column(-1)
+        qubits.column(-1)
 
 
 def test_column_rejects_non_int_index():
-    atoms = GridRegister(2, 3)
+    qubits = GridRegister(2, 3)
     with pytest.raises(TypeError):
-        atoms.column(1.0)
+        qubits.column(1.0)
     with pytest.raises(TypeError):
-        atoms.column(True)
+        qubits.column(True)
 
 
 def test_block_returns_view_with_block_selector():
-    atoms = GridRegister(4, 5)
-    view = atoms.block(rows=(0, 2), cols=(1, 3))
-    assert view.register is atoms
+    qubits = GridRegister(4, 5)
+    view = qubits.block(rows=(0, 2), cols=(1, 3))
+    assert view.register is qubits
     assert view.selector == BlockSelector(rows=(0, 2), cols=(1, 3))
 
 
@@ -276,22 +276,22 @@ def test_block_returns_view_with_block_selector():
     ],
 )
 def test_block_rejects_invalid_half_open_ranges(rows, cols):
-    atoms = GridRegister(4, 5)
+    qubits = GridRegister(4, 5)
     with pytest.raises(ValueError):
-        atoms.block(rows=rows, cols=cols)
+        qubits.block(rows=rows, cols=cols)
 
 
 def test_block_rejects_non_int_range_endpoints():
-    atoms = GridRegister(4, 5)
+    qubits = GridRegister(4, 5)
     with pytest.raises(TypeError):
-        atoms.block(rows=(0.0, 2), cols=(0, 2))
+        qubits.block(rows=(0.0, 2), cols=(0, 2))
     with pytest.raises(TypeError):
-        atoms.block(rows=(0, 2), cols=(0, 2.0))
+        qubits.block(rows=(0, 2), cols=(0, 2.0))
 
 
 def test_block_full_grid_is_valid():
-    atoms = GridRegister(4, 5)
-    view = atoms.block(rows=(0, 4), cols=(0, 5))
+    qubits = GridRegister(4, 5)
+    view = qubits.block(rows=(0, 4), cols=(0, 5))
     assert view.selector == BlockSelector(rows=(0, 4), cols=(0, 5))
 
 
@@ -299,32 +299,32 @@ def test_block_full_grid_is_valid():
 
 
 def test_register_view_is_frozen():
-    atoms = GridRegister(2, 3)
-    view = atoms.all()
+    qubits = GridRegister(2, 3)
+    view = qubits.all()
     with pytest.raises(Exception):
         view.selector = RowSelector(row=0)
 
 
 def test_register_view_is_hashable():
-    atoms = GridRegister(2, 3)
-    assert isinstance(hash(atoms.all()), int)
-    assert isinstance(hash(atoms.row(0)), int)
-    assert isinstance(hash(atoms.column(0)), int)
-    assert isinstance(hash(atoms.block(rows=(0, 1), cols=(0, 1))), int)
+    qubits = GridRegister(2, 3)
+    assert isinstance(hash(qubits.all()), int)
+    assert isinstance(hash(qubits.row(0)), int)
+    assert isinstance(hash(qubits.column(0)), int)
+    assert isinstance(hash(qubits.block(rows=(0, 1), cols=(0, 1))), int)
 
 
 def test_register_view_usable_in_set_and_as_dict_key():
-    atoms = GridRegister(2, 3)
-    views = {atoms.all(), atoms.row(0), atoms.row(0), atoms.column(1)}
+    qubits = GridRegister(2, 3)
+    views = {qubits.all(), qubits.row(0), qubits.row(0), qubits.column(1)}
     assert len(views) == 3
-    mapping = {atoms.row(0): "row0"}
-    assert mapping[atoms.row(0)] == "row0"
+    mapping = {qubits.row(0): "row0"}
+    assert mapping[qubits.row(0)] == "row0"
 
 
 def test_register_view_equal_views_on_same_register_compare_equal():
-    atoms = GridRegister(2, 3)
-    assert atoms.row(0) == atoms.row(0)
-    assert atoms.all() == atoms.all()
+    qubits = GridRegister(2, 3)
+    assert qubits.row(0) == qubits.row(0)
+    assert qubits.all() == qubits.all()
 
 
 def test_register_view_on_different_registers_are_not_equal():
@@ -334,10 +334,10 @@ def test_register_view_on_different_registers_are_not_equal():
 
 
 def test_register_view_different_selectors_are_not_equal():
-    atoms = GridRegister(2, 3)
-    assert atoms.row(0) != atoms.row(1)
-    assert atoms.row(0) != atoms.column(0)
-    assert atoms.all() != atoms.row(0)
+    qubits = GridRegister(2, 3)
+    assert qubits.row(0) != qubits.row(1)
+    assert qubits.row(0) != qubits.column(0)
+    assert qubits.all() != qubits.row(0)
 
 
 def test_selectors_are_hashable():

@@ -110,8 +110,8 @@ pulse_noise.add(fq.noise.PhaseDamping(rate=0.002), operation=op.X)
 pulse_noise.add(fq.noise.PhaseDamping(t_phi=500.0), targets="q0")
 ```
 
-`Barrier`, `LoadAtoms`, direct `PulseOperation`, and `Reset` have no attached
-noise boundary and are rejected by `NoiseModel.add`. `Refill` is the narrow
+`Barrier`, direct `PulseOperation`, and `Reset` have no attached
+noise boundary and are rejected by `NoiseModel.add`. `Put` is the narrow
 exception on an occupancy backend: it accepts only {py:class}`~fatqat.noise.Loss`,
 which is applied after refill and therefore models loading failure or immediate
 post-load loss.
@@ -238,7 +238,7 @@ readout is not supported; `targets` is scalar.
 {py:class}`~fatqat.noise.Loss` is not amplitude damping. On an
 occupancy-aware backend, `p` is sampled independently for each selected,
 currently present carrier after the matched occurrence. A hit removes the
-carrier and its correlations; absence persists until `Refill`. Later
+carrier and its correlations; absence persists until `Put`. Later
 operations requiring an absent carrier are skipped, and measurement reports
 the backend's absence/erasure outcome.
 

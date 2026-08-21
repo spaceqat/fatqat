@@ -33,7 +33,6 @@ def test_default_runtime_is_numba_for_every_method(method, engine_name):
 @pytest.mark.parametrize(
     "backend_cls",
     [
-        fq.simulator.AtomGridSimulator,
         fq.simulator.SCQubitIBMSimulator,
         fq.simulator.SCQubitGoogleSimulator,
     ],

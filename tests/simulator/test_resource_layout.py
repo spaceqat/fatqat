@@ -2,12 +2,9 @@
 
 import pytest
 
-from fatqat import operations as ops
-from fatqat._backends.backend_utils import _LoweringContext
-from fatqat._backends.steps import ApplyMatrixStep, MeasurementStep
-from fatqat._index_allocation import _ClassicalAllocation, _EngineAllocation
+from fatqat._index_allocation import _EngineAllocation
 from fatqat.errors import BackendValidationError
-from fatqat.simulator import AtomGridSimulator, Simulator
+from fatqat.simulator import Simulator
 from fatqat.program import Program
 from fatqat.registers import QuantumRegister
 from fatqat.resource_layout import ResourceLayout
@@ -115,42 +112,3 @@ def test_supplied_layout_must_cover_unused_declared_quantum_refs():
 
     with pytest.raises(BackendValidationError, match="every declared quantum ref"):
         Simulator().run(program, resource_layout=partial)
-
-
-def test_supplied_layout_composes_sparse_device_labels_to_dense_engine_axes():
-    left = QuantumRegister(1, name="q")
-    right = QuantumRegister(1, name="q")
-    program = Program([left, right], 2)
-    program.add(ops.X, left[0])
-    program.measure((left[0], right[0]), (0, 1))
-    q0, q1 = left[0], right[0]
-    supplied = ResourceLayout({q0: 9, q1: 3})
-    backend = Simulator()
-
-    result = backend.run(
-        program,
-        shots=1,
-        resource_layout=supplied,
-        result_config={"counts": False, "final_state": True},
-    ).result()
-    resolved = backend._resolve_resource_layout(program, supplied)
-    engine = backend._allocate_engine_indices(program, resolved)
-    context = _LoweringContext(
-        resource_layout=resolved,
-        engine_allocation=engine,
-        classical_allocation=_ClassicalAllocation.from_program(program),
-    )
-    plan, _facts = backend._lower_program(program, context=context)
-
-    assert engine.device_operands == (9, 3)
-    matrix_step = next(step for step in plan if isinstance(step, ApplyMatrixStep))
-    assert matrix_step.target_indices == (0,)
-    measurement = next(step for step in plan if isinstance(step, MeasurementStep))
-    assert measurement.measured_indices == (0, 1)
-    assert result.metadata["state_axes"] == [
-        {"device_operand": 9, "register_ref": left[0]},
-        {"device_operand": 3, "register_ref": right[0]},
-    ]
-    assert all("engine_index" not in axis for axis in result.metadata["state_axes"])
-    with pytest.raises(BackendValidationError, match="does not accept"):
-        AtomGridSimulator().run(program, resource_layout=supplied)

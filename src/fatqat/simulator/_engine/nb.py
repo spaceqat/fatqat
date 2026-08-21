@@ -1680,10 +1680,26 @@ class NumbaSVEngine(NumpySVEngine):
         super().initialize(system_dims, n_clbits)
         self._apply_plans = {}
 
-    def run(self, plan, shots, seed, request, *, config: EngineConfig | None = None):
+    def run(
+        self,
+        plan,
+        shots,
+        seed,
+        request,
+        *,
+        config: EngineConfig | None = None,
+        initial_occupied: frozenset[int] | None = None,
+    ):
         """Run inside this config's Numba thread scope (see `_thread_scope`)."""
         with _thread_scope(config or self.config):
-            return super().run(plan, shots, seed, request, config=config)
+            return super().run(
+                plan,
+                shots,
+                seed,
+                request,
+                config=config,
+                initial_occupied=initial_occupied,
+            )
 
     def _resolve_structure(
         self, step: ApplyMatrixStep
@@ -1786,6 +1802,7 @@ class NumbaSVEngine(NumpySVEngine):
         seed: int | None,
         request,
         config: EngineConfig,
+        initial_occupied: frozenset[int] | None = None,
     ) -> RawResult:
         """Dynamic execution: fuse the per-shot trajectory, run shots in parallel.
 
@@ -1796,13 +1813,21 @@ class NumbaSVEngine(NumpySVEngine):
         (see `_plan_compilable`), and the no-work case fall back to the serial
         base path, which keeps ``self._state`` for the export.
 
+        The fused kernel only ever runs a `_plan_compilable` plan, which by
+        construction carries no atom lifecycle (`~fatqat.operations.Put` /
+        atom loss) and therefore no occupancy seeding; ``initial_occupied`` is
+        consequently non-default only on the fallback path, where it is
+        forwarded to the semantics-complete base per-shot executor.
+
         ``config``'s ``max_workers`` / ``parallel_mode`` reach only that fallback
         path: they distribute shots across OS processes, which the fused kernel
         does not use.
         """
         state_requested = getattr(request, self._state_field)
         if state_requested or not request.counts or not _plan_compilable(plan):
-            return super()._run_per_shot(plan, shots, seed, request, config)
+            return super()._run_per_shot(
+                plan, shots, seed, request, config, initial_occupied
+            )
 
         from .parallel import _shot_seed_sequences
 
@@ -2162,7 +2187,16 @@ class NumbaDMEngine(NumpyDMEngine):
         super().initialize(system_dims, n_clbits)
         self._sandwich_plans = {}
 
-    def run(self, plan, shots, seed, request, *, config: EngineConfig | None = None):
+    def run(
+        self,
+        plan,
+        shots,
+        seed,
+        request,
+        *,
+        config: EngineConfig | None = None,
+        initial_occupied: frozenset[int] | None = None,
+    ):
         """Run inside this config's Numba thread scope (see `_thread_scope`).
 
         Adjacent unconditional gate/channel pairs on the same targets are fused
@@ -2179,6 +2213,7 @@ class NumbaDMEngine(NumpyDMEngine):
                 seed,
                 request,
                 config=effective,
+                initial_occupied=initial_occupied,
             )
 
     def _prepare_execution_plan(self, plan: list, config: EngineConfig) -> list:
@@ -2612,10 +2647,12 @@ class _NumbaOperatorRunMixin(_NumpyOperatorEngine):
         request,
         *,
         config: EngineConfig | None = None,
+        initial_occupied: frozenset[int] | None = None,
     ) -> RawResult:
         """Evolve the identity operator through ``plan`` in one fused call.
 
-        ``shots`` and ``seed`` are unused, as on the NumPy twin.
+        ``shots``, ``seed``, and ``initial_occupied`` are unused, as on the
+        NumPy twin.
         """
         config = config or self.config
         with _thread_scope(config):

@@ -201,11 +201,11 @@ class GridRegister(QuantumRegister):
 
     Examples:
         >>> import fatqat as fq
-        >>> atoms = fq.GridRegister(2, 3, name="atoms")
-        >>> atoms.size
+        >>> qubits = fq.GridRegister(2, 3, name="qubits")
+        >>> qubits.size
         6
-        >>> atoms[4]
-        RegisterRef(register=GridRegister(size=6, name='atoms', metadata={}, dim=2, rows=2, cols=3), index=4)
+        >>> qubits[4]
+        RegisterRef(register=GridRegister(size=6, name='qubits', metadata={}, dim=2, rows=2, cols=3), index=4)
     """
 
     rows: int

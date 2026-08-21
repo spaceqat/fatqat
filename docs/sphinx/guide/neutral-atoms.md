@@ -15,19 +15,19 @@ Gate-authored and direct-control programming are independent paths. The
 three-level system has built-in gate recipes. The two-level system has an empty
 built-in gate map but accepts user-supplied gate rules through the same path.
 
-Neither class is a mode of {py:class}`~fatqat.simulator.AtomGridSimulator`.
+Neither class is a mode of {py:class}`~fatqat.simulator.AtomArraySimulator`.
 That simulator is a fast, constrained gate-level target: it applies finite
-qubit matrices and enforces a nearest-neighbor grid. The emulators integrate
+qubit matrices and enforces a dynamic connectivity graph. The emulators integrate
 time-dependent physical Hamiltonians and retain their model's complete
 Hilbert space.
 
-The gate-level AtomGrid prototype keeps a fixed private carrier slot and
-Hilbert-space dimension for every declared grid resource during a run.
-``Rearrange`` replaces its private RegisterRef-to-site and site-to-axis snapshots
-inversely, so the quantum state and tensor-axis order remain unchanged while
-later gates see the new discrete sites. Loss and refill update separate
-occupancy metadata on those fixed slots. This is an AtomGrid-specific grid
-invariant, not an arbitrary-coordinate arrangement or transport API.
+The gate-level AtomArray prototype keeps a fixed private carrier slot and
+Hilbert-space dimension for every declared resource during a run.
+``Pair`` and ``Unpair`` edit a separate connectivity graph that decides
+two-qubit-gate legality, leaving the quantum state and tensor-axis order
+unchanged. Loss and ``Put`` update separate occupancy metadata on those fixed
+slots. This is an AtomArray-specific invariant: connectivity and occupancy are
+tracked outside the quantum state, with no coordinates or transport API.
 
 ## Choose an emulator
 
@@ -49,7 +49,7 @@ Choose the three-level emulator when calibration, coherent Rydberg leakage,
 or selected-site controls are part of the experiment. Choose the two-level
 emulator for global drive/detuning dynamics. If only gate connectivity and
 ideal qubit behavior matter, use
-{py:class}`~fatqat.simulator.AtomGridSimulator` instead.
+{py:class}`~fatqat.simulator.AtomArraySimulator` instead.
 
 ## Shared construction model
 

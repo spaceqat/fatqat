@@ -27,9 +27,10 @@ from .fixed_gates import (
     Z,
     iSwap,
 )
-from .load_atom import LoadAtoms
 from .measurement import Measurement
+from .pairing import Pair, PairGate, Unpair, UnpairGate
 from .parametric_gates import CPhase, Phase, RX, RY, RZ, U, U1, U2, U3
+from .put import Put, PutGate
 from .pulse import PulseOperation
 from .qudit_gates import (
     CClock,
@@ -43,9 +44,7 @@ from .qudit_gates import (
     SubspaceRZ,
     SwapLevels,
 )
-from .rearrange import Rearrange
 from .reset import Reset, ResetGate
-from .refill import Refill, RefillGate
 
 __all__ = [
     "Operation",
@@ -77,10 +76,10 @@ __all__ = [
     "U3",
     "CPhase",
     "Reset",
-    "Refill",
     "Barrier",
-    "LoadAtoms",
-    "Rearrange",
+    "Put",
+    "Pair",
+    "Unpair",
     "Measurement",
     "Shift",
     "Clock",

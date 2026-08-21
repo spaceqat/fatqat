@@ -37,12 +37,20 @@ Fixed single-qubit gates
 .. autodata:: fatqat.operations.Y
 .. autodata:: fatqat.operations.Z
 
-Atom loading
-------------
+Atom lifecycle
+--------------
 
-.. autoclass:: fatqat.operations.LoadAtoms
-   :members:
-   :show-inheritance:
+:py:data:`~fatqat.operations.Put` loads a fresh ``|0⟩`` atom into empty target
+sites: ``program.add(op.Put, (0, 1))``.
+:py:data:`~fatqat.operations.Pair` connects two atoms so a two-qubit gate is
+legal on the pair, and :py:data:`~fatqat.operations.Unpair` disconnects them:
+``program.add(op.Pair, (0, 1))``. These are interpreted by
+:py:class:`~fatqat.simulator.AtomArraySimulator`; see its documentation for the
+connectivity and occupancy model.
+
+.. autodata:: fatqat.operations.Put
+.. autodata:: fatqat.operations.Pair
+.. autodata:: fatqat.operations.Unpair
 
 Pulse operations and waveforms
 ------------------------------

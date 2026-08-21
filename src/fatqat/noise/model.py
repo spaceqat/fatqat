@@ -7,7 +7,7 @@ from typing import Any, overload
 
 from ..errors import BackendValidationError
 from ..implementation._operation_registry import _resolve_operation_class
-from ..operations import BarrierGate, LoadAtoms, Operation, RefillGate, ResetGate
+from ..operations import BarrierGate, Operation, PutGate, ResetGate
 from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView
 from ..resource_layout import DeviceOperand, ResourceLayout
@@ -160,9 +160,9 @@ class NoiseModel:
             TypeError: If the declaration or selector shape is invalid, or a
                 readout declaration receives a dynamical-only argument.
             ValueError: If the scope, arity, positions, or registration overlap
-                is invalid. ``Barrier``, ``LoadAtoms``, direct pulse controls,
-                and ``Reset`` do not currently accept attached noise;
-                ``Refill`` accepts only ``Loss``.
+                is invalid. ``Barrier``, direct pulse controls, and ``Reset``
+                do not currently accept attached noise; ``Put`` accepts
+                only ``Loss``.
 
         Examples:
             Select the first operand of every ``CZ`` occurrence:
@@ -228,8 +228,8 @@ class NoiseModel:
             positions = None
         else:
             op_cls = _normalize_noise_operation(op_value)
-            if op_cls is RefillGate and not isinstance(declaration, Loss):
-                raise ValueError("Refill accepts only Loss as loading inefficiency")
+            if op_cls is PutGate and not isinstance(declaration, Loss):
+                raise ValueError("Put accepts only Loss as loading inefficiency")
             selector = _normalize_occurrence_selector(op_cls, targets)
             positions = _normalize_target_positions(
                 op_cls, declaration, selector, positions_value
@@ -396,8 +396,6 @@ def _normalize_noise_operation(value: object) -> type[Operation]:
         )
     if op_cls is BarrierGate:
         raise ValueError("Barrier is a compiler marker with no noise boundary")
-    if op_cls is LoadAtoms:
-        raise ValueError("LoadAtoms is device initialization with no noise boundary")
     if op_cls is ResetGate:
         raise ValueError("Reset has no attached-noise realization")
     return op_cls

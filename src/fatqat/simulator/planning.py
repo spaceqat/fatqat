@@ -30,7 +30,7 @@ from .._backends.steps import (
     LossStep,
     MeasurementStep,
     ResetStep,
-    RefillStep,
+    PutStep,
     ResolvedStep,
 )
 
@@ -88,19 +88,20 @@ def _lower_reset(
     )
 
 
-def _lower_refill(
+def _lower_put(
     step: AppliedOperation,
     resource_layout: ResourceLayout,
     engine_allocation: _EngineAllocation,
     classical_allocation: _ClassicalAllocation,
     noise_model: NoiseModel,
 ) -> list[ResolvedStep]:
-    """Lower one ``Refill`` into a ``RefillStep`` plus attached carrier loss.
+    """Lower one ``Put`` into a ``PutStep`` plus attached carrier loss.
 
-    Attached ``Loss`` is emitted after the refill (loading inefficiency,
-    S-C1): an atom that arrives and is immediately lost gives
-    ``p_success = 1 - p``. Only ``Loss`` may attach to ``Refill`` -- a
-    Kraus channel on a reload has no meaning here.
+    ``Put`` loads a fresh ``|0>`` atom into each currently-empty target site,
+    reusing the engine's per-shot ``PutStep``. Attached ``Loss`` is
+    emitted after the fill (loading inefficiency, S-C1): an atom that arrives
+    and is immediately lost gives ``p_success = 1 - p``. Only ``Loss`` may
+    attach to ``Put`` -- a Kraus channel on a reload has no meaning here.
     """
     condition = _resolve_condition(step.condition, classical_allocation)
     engine_indices = tuple(
@@ -108,7 +109,7 @@ def _lower_refill(
         for t in step.targets
     )
     steps: list[ResolvedStep] = [
-        RefillStep(target_indices=engine_indices, condition=condition)
+        PutStep(target_indices=engine_indices, condition=condition)
     ]
     for declaration, extent in noise_model._noise_for_occurrence(
         type(step.operation), step.targets, resource_layout
@@ -139,7 +140,7 @@ def _lower_channels(
 ) -> list[ResolvedStep]:
     """Lower the channel noise attached to one occurrence into steps.
 
-    Shared by gate and rearrange lowering. Selection matches against the
+    Shared by gate and Pair/Unpair lowering. Selection matches against the
     occurrence's program targets and/or resource-layout device operands
     (never engine indices); engine indices are used only for the emitted
     steps. A Loss becomes a per-carrier LossStep; any other (Kraus)

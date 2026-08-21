@@ -7,8 +7,7 @@ index because `Simulator`'s default `_resolve_resource_layout` policy
 happens to assign device labels in declaration order, coinciding with
 `_EngineAllocation`'s flat indices for this generic backend. That coincidence
 is backend-specific, not part of the selector's meaning; see
-`tests/backend/test_fake_atom_grid.py`'s
-`test_physical_readout_selector_uses_device_label_not_engine_index` for a
+`tests/simulator/test_fake_atom_array.py`'s readout-selector tests for a
 non-trivial layout where a device label and its engine index diverge.
 """
 

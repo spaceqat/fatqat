@@ -127,7 +127,7 @@ def test_background_scope_rejects_nonlocal_or_positional_forms(declaration, kwar
 
 @pytest.mark.parametrize(
     "operation",
-    [fq.ops.Barrier, fq.ops.LoadAtoms(1, 1), fq.ops.Reset, fq.ops.PulseOperation],
+    [fq.ops.Barrier, fq.ops.Reset, fq.ops.PulseOperation],
 )
 def test_operations_without_noise_boundaries_reject_atomically(operation):
     noise = NoiseModel()
@@ -138,16 +138,16 @@ def test_operations_without_noise_boundaries_reject_atomically(operation):
     assert noise._noise_sources() == ()
 
 
-def test_refill_accepts_only_loss_atomically():
+def test_put_accepts_only_loss_atomically():
     noise = NoiseModel()
 
-    with pytest.raises(ValueError, match="Refill accepts only Loss"):
-        noise.add(PhaseDamping(p=0.1), operation=fq.ops.Refill)
+    with pytest.raises(ValueError, match="Put accepts only Loss"):
+        noise.add(PhaseDamping(p=0.1), operation=fq.ops.Put)
 
     assert noise._noise_sources() == ()
     loss = Loss(p=0.1)
-    noise.add(loss, operation=fq.ops.Refill)
-    assert noise._noise_sources() == ((loss, type(fq.ops.Refill)),)
+    noise.add(loss, operation=fq.ops.Put)
+    assert noise._noise_sources() == ((loss, type(fq.ops.Put)),)
 
 
 def test_occurrence_selector_is_exact_ordered_and_positions_select_extent():

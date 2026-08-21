@@ -110,6 +110,7 @@ class MatrixEngine(ABC):
         request: ResultRequest,
         *,
         config: EngineConfig | None = None,
+        initial_occupied: frozenset[int] | None = None,
     ) -> RawResult: ...
 
     @abstractmethod
