@@ -285,9 +285,11 @@ class _NumpyMatrixEngine(MatrixEngine):
         assert (
             self._state is not None
         ), "engine not initialized; call initialize() first"
+        effective = config or self.config
+        plan = self._prepare_execution_plan(plan, effective)
         is_dynamic, measurements = self._analyze_plan(plan)
         if is_dynamic:
-            return self._run_per_shot(plan, shots, seed, request, config or self.config)
+            return self._run_per_shot(plan, shots, seed, request, effective)
         return self._run_fast(
             plan, measurements, shots, np.random.default_rng(seed), request
         )
@@ -426,6 +428,7 @@ class _NumpyMatrixEngine(MatrixEngine):
                 seed_sequences,
                 max_workers,
                 type(self),
+                self._initial_state,
             )
         else:
             snapshots = []
@@ -529,6 +532,10 @@ class NumpySVEngine(_NumpyMatrixEngine):
         self._channel_routes: dict[int, tuple[ApplyChannelStep, _Branches]] = {}
 
     def _allocate(self, size: int) -> np.ndarray:
+        if self._initial_state is not None:
+            # Copy: each shot evolves its own buffer, and the caller's array
+            # must survive the run unchanged.
+            return np.array(self._initial_state, dtype=complex).reshape(size)
         state = np.zeros(size, dtype=complex)
         state[0] = 1.0
         return state
@@ -662,6 +669,15 @@ class NumpyDMEngine(_NumpyMatrixEngine):
         super().__init__(name, config, state_semantics="dm")
 
     def _allocate(self, size: int) -> np.ndarray:
+        given = self._initial_state
+        if given is not None:
+            given = np.asarray(given, dtype=complex)
+            # A ket is accepted as shorthand for the pure state it describes,
+            # so the same array can start a statevector and a density-matrix
+            # run without the caller forming the outer product twice.
+            if given.ndim == 1:
+                return np.outer(given, given.conj())
+            return np.array(given, dtype=complex)
         state = np.zeros((size, size), dtype=complex)
         state[0, 0] = 1.0
         return state
@@ -783,12 +799,14 @@ class _NumpyOperatorEngine(_NumpyMatrixEngine):
     ) -> RawResult:
         """Evolve the identity operator once through ``plan`` and export it.
 
-        ``shots``, ``seed``, and ``config`` are accepted for interface parity
-        and unused, as is the ``rng`` handed to the exact-channel kernels.
+        ``shots`` is accepted for interface parity and unused. ``config``
+        selects any execution-plan rewrite, while ``seed`` initializes the
+        ``rng`` handed to exact-channel kernels.
         """
         assert (
             self._state is not None
         ), "engine not initialized; call initialize() first"
+        plan = self._prepare_execution_plan(plan, config or self.config)
         self.initialize(self._dims, self._n_clbits)
         rng = np.random.default_rng(seed)
         for step in plan:

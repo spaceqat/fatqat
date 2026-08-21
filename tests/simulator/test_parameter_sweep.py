@@ -113,6 +113,7 @@ def test_counts_seed_and_all_options_match_manual_repeated_runs(monkeypatch):
     program.add(fq.ops.RY(theta), 0)
     program.measure(0, 0)
     layout = ResourceLayout({program.quantum_registers[0][0]: 0})
+    initial_state = [0.0, 1.0]
     simulation_config = {"seed": 17, "parallel_mode": "serial"}
     result_config = {"counts": True, "final_state": False}
     backend = Simulator("SV")
@@ -130,6 +131,7 @@ def test_counts_seed_and_all_options_match_manual_repeated_runs(monkeypatch):
         {theta: values},
         shots=64,
         resource_layout=layout,
+        initial_state=initial_state,
         simulation_config=simulation_config,
         result_config=result_config,
     ).result()
@@ -139,6 +141,7 @@ def test_counts_seed_and_all_options_match_manual_repeated_runs(monkeypatch):
             program.assign_parameters({theta: value}),
             shots=64,
             resource_layout=layout,
+            initial_state=initial_state,
             simulation_config=simulation_config,
             result_config=result_config,
         ).result()
@@ -154,6 +157,7 @@ def test_counts_seed_and_all_options_match_manual_repeated_runs(monkeypatch):
         == {
             "shots": 64,
             "resource_layout": layout,
+            "initial_state": initial_state,
             "simulation_config": simulation_config,
             "result_config": result_config,
         }

@@ -152,3 +152,7 @@ a single thread — the setting to use when you are parallelizing at a higher
 level yourself (say, several circuits at once) and per-run thread pools would
 oversubscribe the machine. It changes no results, and it is rejected on
 `runtime="numpy"`, which has no threads to switch off.
+
+The same config accepts `fusion=None` (the default), `True`, or `False`. Numba
+resolves `None` to enabled; explicit booleans enable or disable fusion. NumPy
+accepts only `None`, because it has no fuser to configure.

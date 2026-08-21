@@ -1511,7 +1511,9 @@ def _run_shots_kernel(
     ch_comp_dim_flat,  # concatenated complement dimensions
     ch_cdf_flat,  # concatenated scaled-unitary branch cdfs, normalized (float64)
     ch_ident_flat,  # 1 where that branch is the identity, so the draw is a no-op
-    size,  # statevector length prod(dims); each shot allocates its own buffer
+    start,  # custom-state template; empty when the default state is requested
+    state_size,  # flat state width, kept explicit when `start` is empty
+    custom_start,  # whether each shot must copy `start` rather than build |0...0>
     n_clbits,  # classical-register width: per-shot clbits and result columns
     shots,  # number of independent trajectories - the `prange` extent
     uniforms,  # pre-drawn uniforms, shots*max_draws in execution order
@@ -1531,8 +1533,16 @@ def _run_shots_kernel(
     num_steps = step_kind.shape[0]
     results = np.zeros((shots, n_clbits), dtype=np.int64)
     for shot in prange(shots):  # pylint: disable=not-an-iterable
-        state = np.zeros(size, dtype=np.complex128)
-        state[0] = 1.0 + 0.0j
+        if custom_start:
+            # A caller-supplied state must survive unchanged to seed every
+            # trajectory, so each shot necessarily gets its own copy.
+            state = start.copy()
+        else:
+            # Keep the original zero-state fast path: initialize the private
+            # shot buffer directly instead of first reading a full template
+            # only to copy it.
+            state = np.zeros(state_size, dtype=np.complex128)
+            state[0] = 1.0 + 0.0j
         clbits = np.zeros(n_clbits, dtype=np.int64)
         draw = shot * max_draws
 
@@ -1572,7 +1582,7 @@ def _run_shots_kernel(
                     val_flat,
                     comp_stride_flat,
                     comp_dim_flat,
-                    size,
+                    state_size,
                 )
             elif kind == 2 and passes:  # reset
                 state = _reset_step(
@@ -1604,7 +1614,7 @@ def _run_shots_kernel(
                     ch_comp_dim_flat,
                     ch_cdf_flat,
                     ch_ident_flat,
-                    size,
+                    state_size,
                     uniforms[draw],
                 )
                 draw += 1
@@ -1799,9 +1809,28 @@ class NumbaSVEngine(NumpySVEngine):
                 seed_sequence
             ).random(max_draws)
 
-        size = prod(self._dims) if self._dims else 1
+        state_size = prod(self._dims) if self._dims else 1
+        custom_start = self._initial_state is not None
+        # The custom template is read-only: each shot takes the private copy it
+        # evolves. `ascontiguousarray` therefore aliases the validated common
+        # case and copies only when layout or dtype requires it. The default
+        # path passes no O(D) template at all.
+        start = (
+            np.ascontiguousarray(self._initial_state, dtype=np.complex128).reshape(
+                state_size
+            )
+            if custom_start
+            else np.empty(0, dtype=np.complex128)
+        )
         rows = _run_shots_kernel(
-            *plan_arrays, size, self._n_clbits, shots, uniforms, max_draws
+            *plan_arrays,
+            start,
+            state_size,
+            custom_start,
+            self._n_clbits,
+            shots,
+            uniforms,
+            max_draws,
         )
         outcome_keys, outcome_counts = reduce_to_counts(rows)
         return RawResult(
@@ -2134,12 +2163,28 @@ class NumbaDMEngine(NumpyDMEngine):
 
         Adjacent unconditional gate/channel pairs on the same targets are fused
         into one super-operator first (`_fuse_gate_channels`), halving the
-        memory-bound passes a noisy circuit takes.
+        memory-bound passes a noisy circuit takes - unless this run's config
+        sets ``fusion=False``, which leaves the plan as lowered so a caller
+        comparing numbers has one fewer reordering to account for.
         """
-        with _thread_scope(config or self.config):
+        effective = config or self.config
+        with _thread_scope(effective):
             return super().run(
-                _fuse_gate_channels(plan), shots, seed, request, config=config
+                plan,
+                shots,
+                seed,
+                request,
+                config=effective,
             )
+
+    def _prepare_execution_plan(self, plan: list, config: EngineConfig) -> list:
+        """Merge each gate into the channel that follows it on the same targets.
+
+        Skipped when ``fusion`` is off: the merge is exact as algebra but
+        reassociates the products, so a caller comparing numbers across
+        runtimes has one fewer reordering to account for.
+        """
+        return _fuse_gate_channels(plan) if config.fusion else plan
 
     def _sandwich_plan(self, targets: tuple[int, ...]) -> tuple:
         """Super-operator apply plan for ``targets`` over the doubled dims.
@@ -2571,13 +2616,16 @@ class _NumbaOperatorRunMixin(_NumpyOperatorEngine):
         config = config or self.config
         with _thread_scope(config):
             self.initialize(self._dims, self._n_clbits)
-            payloads = self._operator_payloads(plan)
+            execution_plan = self._prepare_execution_plan(plan, config)
+            payloads = self._operator_payloads(execution_plan)
             if payloads:
                 row_dims = self._operator_row_dims()
                 operator = np.ascontiguousarray(self.state, dtype=np.complex128)
                 flat = operator.reshape(-1)
                 n_columns = operator.shape[1]
-                if flat.shape[0] >= _MIN_SIZE_TO_FUSE:
+                # Merging widens each pass but reassociates the products, so
+                # `fusion=False` opts out and keeps the plan as lowered.
+                if config.fusion and flat.shape[0] >= _MIN_SIZE_TO_FUSE:
                     payloads = _fuse_operator_payloads(payloads, row_dims)
                 packed, scratch_rows = _pack_operator_plan(
                     payloads, row_dims, n_columns
@@ -2600,7 +2648,7 @@ class _NumbaOperatorRunMixin(_NumpyOperatorEngine):
         raise NotImplementedError
 
     def _operator_payloads(self, plan: list) -> list[tuple]:
-        """Resolve ``plan`` into `_pack_operator_plan` payloads."""
+        """Resolve an already-prepared ``plan`` into numeric payloads."""
         raise NotImplementedError
 
 
@@ -2621,6 +2669,7 @@ class NumbaUnitaryEngine(  # pylint: disable=too-many-ancestors
         return self._dims
 
     def _operator_payloads(self, plan: list) -> list[tuple]:
+        # A unitary plan holds only gates, so it reaches this translator as lowered.
         payloads = []
         for step in plan:
             assert isinstance(
@@ -2675,7 +2724,7 @@ class NumbaSuperopEngine(  # pylint: disable=too-many-ancestors
     def _operator_payloads(self, plan: list) -> list[tuple]:
         n = len(self._dims)
         payloads = []
-        for step in _fuse_gate_channels(plan):
+        for step in plan:
             # A reset is the Kraus channel sum_k |0><k|.
             resolved_steps = (
                 [self._reset_channel(index) for index in step.reset_indices]

@@ -19,12 +19,17 @@ class _EngineConfig:
     ``max_workers`` / ``parallel_mode`` steer OS-process distribution of
     dynamic shots. ``numba_parallel`` is a different axis: it turns the Numba
     runtime's in-process thread parallelism on or off for one run (it has no
-    meaning for the NumPy runtime, which never spawns threads).
+    meaning for the NumPy runtime, which never spawns threads). ``fusion`` is a
+    third: it allows or forbids merging adjacent plan steps into wider ones,
+    which changes the order the same arithmetic is performed in and so the last
+    bits of the result. Like ``numba_parallel`` it reaches only the Numba
+    runtime, which is the only one with a fuser.
     """
 
     max_workers: Any = None
     parallel_mode: Any = "auto"
     numba_parallel: Any = True
+    fusion: Any = True
 
     def __post_init__(self) -> None:
         mw = self.max_workers
@@ -40,21 +45,32 @@ class _EngineConfig:
             raise BackendValidationError(
                 f"numba_parallel must be a bool, got {self.numba_parallel!r}"
             )
+        if type(self.fusion) is not bool:
+            raise BackendValidationError(f"fusion must be a bool, got {self.fusion!r}")
 
 
 @dataclass(frozen=True)
 class _SimulationConfig:
-    """Normalized simulator-only controls for one backend run."""
+    """Normalized simulator-only controls for one backend run.
+
+    ``fusion=None`` delegates to the runtime default. Explicit booleans are
+    runtime-specific requests and are resolved before crossing into the engine.
+    """
 
     seed: int | None = None
     parallel_mode: Any = "auto"
     max_workers: Any = None
     numba_parallel: Any = True
+    fusion: Any = None
 
     def __post_init__(self) -> None:
         if self.seed is not None and (type(self.seed) is not int):
             raise BackendValidationError(
                 f"seed must be an int or None, got {self.seed!r}"
+            )
+        if self.fusion is not None and type(self.fusion) is not bool:
+            raise BackendValidationError(
+                f"fusion must be a bool or None, got {self.fusion!r}"
             )
         # Reuse the engine-config validator for the shared execution fields.
         self.engine_config()
@@ -65,6 +81,7 @@ class _SimulationConfig:
             max_workers=self.max_workers,
             parallel_mode=self.parallel_mode,
             numba_parallel=self.numba_parallel,
+            fusion=True if self.fusion is None else self.fusion,
         )
 
 

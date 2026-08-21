@@ -23,8 +23,9 @@ class _EmulatorConfig:
 
     Deliberately standalone rather than derived from the matrix family's
     ``_SimulationConfig``: that base carries ``parallel_mode``,
-    ``max_workers``, and ``numba_parallel``, which steer the matrix engine's
-    process- and thread-level parallelism. Pulse execution integrates a
+    ``max_workers``, ``numba_parallel``, and ``fusion``, which steer the matrix
+    engine's process-, thread-, and plan-level execution. Pulse execution
+    integrates a
     physics model through one serial solver call and has no such engine to
     steer, so inheriting those fields would advertise tuning that silently
     does nothing. `_normalize_config` derives accepted keys from this

@@ -50,12 +50,30 @@ print(rho.diagonal().real)          # [0.5 0.  0.  0.5]
 `runtime` selects the execution technology for the chosen representation —
 `"numba"` (the default, using JIT-compiled kernels) or `"numpy"`. Both runtimes
 support the statevector, density-matrix, unitary, and superoperator methods.
-The runtime never changes results, only how fast they are computed:
+They compute the same quantities, with results agreeing to floating-point
+rounding:
 
 ```python
 backend = fq.simulator.Simulator(method="SV", runtime="numba")
-noisy = fq.simulator.Simulator(method="DM", runtime="numba")
+noise = fq.NoiseModel()
+noise.add(fq.noise.Depolarizing(p=0.05), operation=op.CX)
+noisy = fq.simulator.Simulator(method="DM", runtime="numba", noise=noise)
 ```
+
+They are not bit-identical, because the `numba` runtime may fuse adjacent
+plan steps into wider ones, which performs the same arithmetic in a
+different order. `fusion=False` turns that off — useful when comparing
+numbers across runtimes, or bisecting a discrepancy:
+
+```python
+exact_order = noisy.run(
+    bell,
+    simulation_config={"fusion": False},
+)
+```
+
+The default is `None` (use the runtime default). Numba resolves that to enabled,
+matching Qiskit Aer's `fusion_enable` default.
 
 ## Dynamic circuits
 

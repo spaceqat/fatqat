@@ -38,6 +38,8 @@ if TYPE_CHECKING:
 
         def initialize(self, system_dims: Sequence[int], n_clbits: int = 0) -> None: ...
 
+        initial_state: np.ndarray | None
+
         def _run_one_shot(
             self, plan: list[ResolvedStep], rng: np.random.Generator
         ) -> tuple[int, ...]: ...
@@ -133,9 +135,17 @@ def _run_dynamic_shot_batch(
     n_clbits: int,
     seed_batch: list[np.random.SeedSequence],
     engine_cls: _EngineFactory,
+    initial_state: np.ndarray | None = None,
 ) -> list[tuple[int, ...]]:
-    """Run a contiguous batch of dynamic shots in one worker with one engine."""
+    """Run a contiguous batch of dynamic shots in one worker with one engine.
+
+    A worker builds its own engine, so the run's initial state has to travel
+    with the work: without it the worker would start every shot from the
+    all-zero state while the serial path started somewhere else, and the two
+    would disagree silently rather than fail.
+    """
     engine = engine_cls()
+    engine.initial_state = initial_state
     snapshots: list[tuple[int, ...]] = []
     for seed_sequence in seed_batch:
         engine.initialize(system_dims, n_clbits)
@@ -212,6 +222,7 @@ def _run_dynamic_shots_multiprocessing(
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
     engine_cls: _EngineFactory,
+    initial_state: np.ndarray | None = None,
 ) -> list[tuple[int, ...]]:
     batches = _split_into_batches(seed_sequences, max_workers)
     # The scope has to cover the map, not just construction: the pool starts
@@ -225,6 +236,7 @@ def _run_dynamic_shots_multiprocessing(
                 repeat(n_clbits),
                 batches,
                 repeat(engine_cls),
+                repeat(initial_state),
             )
             return [snapshot for batch in results for snapshot in batch]
 
@@ -236,6 +248,7 @@ def _run_dynamic_shots_loky(
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
     engine_cls: _EngineFactory,
+    initial_state: np.ndarray | None = None,
 ) -> list[tuple[int, ...]]:
     from loky import get_reusable_executor
 
@@ -253,6 +266,7 @@ def _run_dynamic_shots_loky(
         repeat(n_clbits),
         batches,
         repeat(engine_cls),
+        repeat(initial_state),
     )
     return [snapshot for batch in results for snapshot in batch]
 
@@ -265,6 +279,7 @@ def _run_dynamic_shots_parallel(
     seed_sequences: list[np.random.SeedSequence],
     max_workers: int,
     engine_cls: _EngineFactory,
+    initial_state: np.ndarray | None = None,
 ) -> list[tuple[int, ...]]:
     """Dispatch shots to worker processes. Caller must supply ``max_workers``.
 
@@ -277,7 +292,13 @@ def _run_dynamic_shots_parallel(
     if mode_name == "loky":
         if _loky_available():
             return _run_dynamic_shots_loky(
-                plan, system_dims, n_clbits, seed_sequences, max_workers, engine_cls
+                plan,
+                system_dims,
+                n_clbits,
+                seed_sequences,
+                max_workers,
+                engine_cls,
+                initial_state,
             )
         warnings.warn(
             "parallel_mode='loky' requested but loky is unavailable; "
@@ -287,5 +308,11 @@ def _run_dynamic_shots_parallel(
         )
     # "multiprocessing", plus the loky-unavailable fallback above.
     return _run_dynamic_shots_multiprocessing(
-        plan, system_dims, n_clbits, seed_sequences, max_workers, engine_cls
+        plan,
+        system_dims,
+        n_clbits,
+        seed_sequences,
+        max_workers,
+        engine_cls,
+        initial_state,
     )

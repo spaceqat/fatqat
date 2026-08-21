@@ -46,6 +46,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
+import numpy as np
+
 from .._parameter_binding import (
     _normalize_parameter_batch,
     _raise_for_unbound_parameters,
@@ -245,7 +247,7 @@ class Simulator:
     branch, which makes execution stochastic and forces per-shot replay.
 
     Per-run ``simulation_config`` controls local execution only: ``seed``,
-    ``max_workers``, ``parallel_mode``, and ``numba_parallel``.
+    ``max_workers``, ``parallel_mode``, ``numba_parallel``, and ``fusion``.
     ``result_config`` controls the execution record: ``counts`` and
     ``final_state``. ``shots`` is an explicit ``run()`` argument, matching a
     hardware job's repetition count.
@@ -585,6 +587,7 @@ class Simulator:
         *,
         shots: int = 1024,
         resource_layout: ResourceLayout | None = None,
+        initial_state: Any = None,
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
     ) -> Job[Result]:
@@ -595,8 +598,9 @@ class Simulator:
         returns an eager ``Job`` whose ``result()`` yields a ``Result``.
 
         ``simulation_config`` controls local execution only: ``seed``,
-        ``max_workers``, ``parallel_mode``, and ``numba_parallel`` (the last
-        requires ``runtime="numba"``). ``result_config`` describes the
+        ``max_workers``, ``parallel_mode``, ``numba_parallel``, and ``fusion``.
+        Explicit ``fusion`` values and non-default ``numba_parallel`` require
+        ``runtime="numba"``. ``result_config`` describes the
         requested result artifacts: ``counts`` and ``final_state``. The
         latter asks a simulator to return its terminal state in the
         representation selected by this backend's ``method``.
@@ -610,6 +614,13 @@ class Simulator:
                 refs to backend device operands. A supplied layout must cover
                 every declared quantum ref. The backend supplies its default
                 mapping when omitted.
+            initial_state: Optional state to start every shot from instead of
+                the all-zero computational state. A statevector run takes a
+                ``(D,)`` vector; a density-matrix run takes ``(D, D)``, or a
+                ``(D,)`` vector read as the pure state it describes. ``D`` is
+                the product of the program's subsystem dimensions, so qudits
+                work without a separate form. Only the shape is checked - see
+                :py:meth:`_validate_initial_state`.
             simulation_config: Optional simulator-only dictionary. Unknown or
                 incompatible entries raise an error.
             result_config: Optional result-request dictionary. Unknown or
@@ -653,6 +664,9 @@ class Simulator:
         resource_layout = self._resolve_resource_layout(program, resource_layout)
         engine_allocation = self._allocate_engine_indices(program, resource_layout)
         classical_allocation = _ClassicalAllocation.from_program(program)
+        initial_state = self._validate_initial_state(
+            initial_state, engine_allocation.system_dims
+        )
         # Strict selector-identity validation runs immediately after the
         # effective resource layout is known and before any lowering/plan
         # step is built, on this same direct-raise path: a foreign ref or
@@ -681,6 +695,7 @@ class Simulator:
                     simulation,
                     shots,
                     prepared,
+                    initial_state,
                 )
             )
         except Exception as exc:  # execution-stage failure
@@ -693,6 +708,7 @@ class Simulator:
         *,
         shots: int = 1024,
         resource_layout: ResourceLayout | None = None,
+        initial_state: Any = None,
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
     ) -> Job[list[Result]]:
@@ -707,6 +723,7 @@ class Simulator:
             bindings: Complete object-keyed parameter batch.
             shots: Number of repetitions forwarded to every row.
             resource_layout: Optional layout forwarded unchanged to every row.
+            initial_state: Optional starting state forwarded unchanged to every row.
             simulation_config: Simulator options forwarded unchanged. An
                 explicit seed is reused for every row, so sampled row errors
                 are correlated; see :doc:`../guide/parameters-and-sweeps`.
@@ -754,6 +771,7 @@ class Simulator:
                 bound,
                 shots=shots,
                 resource_layout=resource_layout,
+                initial_state=initial_state,
                 simulation_config=simulation_config,
                 result_config=result_config,
             )
@@ -764,6 +782,58 @@ class Simulator:
         return Job.done(results)
 
     # --- validation (raises directly from run) ---
+    def _validate_initial_state(
+        self, initial_state: Any, system_dims: tuple[int, ...]
+    ) -> np.ndarray | None:
+        """Check an ``initial_state`` against this method, and return it as an array.
+
+        Only the *shape* is checked. Normalization, hermiticity and positivity
+        are deliberately not enforced, because nothing downstream relies on
+        them: sampling derives its distribution defensively - a statevector run
+        divides ``|psi|**2`` by its own sum, and a density-matrix run clips the
+        diagonal at zero before doing the same - so an unusual operator evolves
+        and samples without special handling. Refusing one would only stop
+        somebody running the same arithmetic on a matrix we have no reason to
+        object to, and there is no Hermitian-only optimization here that would
+        make the refusal honest.
+
+        One consequence worth knowing: given an unnormalized input, an exported
+        final state is faithfully unnormalized while counts come from the
+        normalized distribution. Both are self-consistent; they answer
+        different questions.
+
+        Operator methods are rejected. ``unitary`` and ``superop`` compute the
+        program's map rather than a state evolving under it, so there is
+        nothing for a starting state to be.
+        """
+        if initial_state is None:
+            return None
+        if self._is_operator:
+            raise BackendValidationError(
+                f"initial_state is not meaningful for method={self._state_field!r}, "
+                "which computes the program's map rather than a state evolving "
+                "under it. Use method='statevector' or method='density_matrix'"
+            )
+        state = np.asarray(initial_state, dtype=complex)
+        size = 1
+        for dimension in system_dims:
+            size *= dimension
+        # A density matrix also takes a ket, read as the pure state it
+        # describes, so one array can start both representations.
+        allowed = (
+            ((size,), (size, size))
+            if self._state_field == "density_matrix"
+            else ((size,),)
+        )
+        if state.shape not in allowed:
+            expected = " or ".join(str(shape) for shape in allowed)
+            raise BackendValidationError(
+                f"initial_state has shape {state.shape}, but this program has "
+                f"subsystem dimensions {tuple(system_dims)}, so "
+                f"method={self._state_field!r} needs {expected}"
+            )
+        return state
+
     def _validate(self, config: _ResultConfig, shots: int, facts: _PlanFacts) -> None:
         """Validate result-config / shots constraints against the lowered program.
 
@@ -875,6 +945,11 @@ class Simulator:
                 f"backend uses runtime={self._runtime!r} (use max_workers / "
                 "parallel_mode to control NumPy-path parallelism)"
             )
+        if self._runtime != "numba" and simulation.fusion is not None:
+            raise BackendValidationError(
+                "explicit fusion settings are only supported with "
+                "runtime='numba'; use fusion=None for the NumPy runtime"
+            )
 
     def _validate_additional_config(
         self,
@@ -899,6 +974,7 @@ class Simulator:
         simulation: _SimulationConfig,
         shots: int,
         prepared: _PreparedMatrixProgram,
+        initial_state: np.ndarray | None = None,
     ) -> Result:
         """Execute a lowered program and assemble the requested result fields."""
         plan = prepared.plan
@@ -920,14 +996,23 @@ class Simulator:
         if self._engine_system != system_key:
             self._engine.initialize(system_dims, n_clbits)
             self._engine_system = system_key
-
-        raw = self._engine.run(
-            plan,
-            shots,
-            simulation.seed,
-            request,
-            config=simulation.engine_config(),
-        )
+        # Set every run, deliberately outside the cache branch above: the engine
+        # is reused whenever the system shape repeats, so binding the state to
+        # that branch would let a second run silently inherit the first one's.
+        self._engine.initial_state = initial_state
+        try:
+            raw = self._engine.run(
+                plan,
+                shots,
+                simulation.seed,
+                request,
+                config=simulation.engine_config(),
+            )
+        finally:
+            # Execution is eager and every evolving/result buffer owns its
+            # storage, so retaining a potentially large caller array here only
+            # extends its lifetime until the next run or backend destruction.
+            self._engine.initial_state = None
         counts = None
         state = raw.state
         state_requested = getattr(request, self._state_field)

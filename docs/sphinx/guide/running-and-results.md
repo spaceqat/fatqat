@@ -31,8 +31,9 @@ Key arguments:
   omitted, the backend applies its documented default. This never selects
   numerical tensor indices.
 - `simulation_config`: a plain dict for simulator-only controls: `seed`,
-  `max_workers`, `parallel_mode`, and `numba_parallel`. A fixed seed makes
-  sampling reproducible regardless of serial or worker-process execution.
+  `max_workers`, `parallel_mode`, `numba_parallel`, and `fusion`. A fixed seed
+  makes sampling reproducible regardless of serial or worker-process execution.
+  `fusion=None` selects the runtime default; explicit booleans require Numba.
 - `result_config`: a plain dict selecting which result artifacts to produce.
 
 ## Choosing result fields

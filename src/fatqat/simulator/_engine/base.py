@@ -32,6 +32,7 @@ class MatrixEngine(ABC):
         self.state_semantics = state_semantics
 
         self._state: np.ndarray = None  # type: ignore[assignment]
+        self._initial_state: np.ndarray | None = None
         self._dims: tuple[int, ...] = ()
         self._reversed_dims: tuple[int, ...] = ()
         self._n_clbits = 0
@@ -45,6 +46,47 @@ class MatrixEngine(ABC):
     @state.setter
     def state(self, value: np.ndarray) -> None:
         self._state = value
+
+    @property
+    def initial_state(self) -> np.ndarray | None:
+        """State every shot starts from, or ``None`` for the all-zero state.
+
+        Held on the engine rather than passed to `initialize` because
+        `initialize` is also how a dynamic run returns to the start of the next
+        shot: a per-shot reset must land on the state this run began with, not
+        on the computational zero. Standard paths read it through `_allocate`;
+        the compiled multi-shot path uses it as a read-only template and can
+        initialize the default zero-state buffers directly without one.
+
+        Every evolving buffer owns its storage, so a caller's array is never
+        evolved in place.
+        """
+        return self._initial_state
+
+    @initial_state.setter
+    def initial_state(self, value: np.ndarray | None) -> None:
+        self._initial_state = value
+
+    def _prepare_execution_plan(
+        self, plan: list[ResolvedStep], config: EngineConfig
+    ) -> list[ResolvedStep]:
+        """Return the plan this engine will actually execute.
+
+        Every engine passes a plan through here before executing it, and any
+        rewrite an engine makes to a plan lives here and nowhere else. The base
+        engine rewrites nothing.
+
+        The single point exists because the alternative had already failed:
+        fusion was applied at whichever sites happened to need it, so adding a
+        switch meant finding them all, and one was missed - leaving a setting
+        that appeared to work. A rewrite added here reaches every path by
+        construction; one added at a call site reaches only that call.
+
+        ``config`` is the *effective* config for this run, not the engine's
+        construction default, since a per-run option has to be able to change
+        what the plan becomes.
+        """
+        return plan
 
     @property
     def n_subsystems(self) -> int:
