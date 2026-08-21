@@ -118,6 +118,50 @@ class Phase(Operation):
 
 
 @dataclass(frozen=True)
+class U(Operation):
+    """General single-qubit unitary (Qiskit ``UGate`` compatibility).
+
+    Matches Qiskit ``U(theta, phi, lam)`` parameter order.
+    """
+
+    theta: float
+    phi: float
+    lam: float
+    name: ClassVar[str] = "U"
+    _num_subsystems: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class U1(Operation):
+    """Single-qubit phase gate (Qiskit ``U1Gate`` / legacy ``u1`` compatibility)."""
+
+    lam: float
+    name: ClassVar[str] = "U1"
+    _num_subsystems: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class U2(Operation):
+    """Single-qubit U2 gate (Qiskit ``U2Gate`` compatibility)."""
+
+    phi: float
+    lam: float
+    name: ClassVar[str] = "U2"
+    _num_subsystems: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
+class U3(Operation):
+    """Single-qubit U3 gate (Qiskit ``U3Gate`` / legacy ``u3`` compatibility)."""
+
+    theta: float
+    phi: float
+    lam: float
+    name: ClassVar[str] = "U3"
+    _num_subsystems: ClassVar[int] = 1
+
+
+@dataclass(frozen=True)
 class CPhase(Operation):
     """Controlled phase gate: applies ``diag(1, e^{i theta})`` to the target
     when the control is ``|1>``.

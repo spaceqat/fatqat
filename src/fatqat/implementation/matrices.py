@@ -237,6 +237,35 @@ def _phase(op: ops.Phase) -> np.ndarray:
     return np.array([[1, 0], [0, np.exp(1j * theta)]], dtype=complex)
 
 
+def u_matrix(theta: float, phi: float, lam: float) -> np.ndarray:
+    """Build the Qiskit-compatible U(theta, phi, lam) matrix."""
+    c = np.cos(theta / 2)
+    s = np.sin(theta / 2)
+    return np.array(
+        [
+            [c, -np.exp(1j * lam) * s],
+            [np.exp(1j * phi) * s, np.exp(1j * (phi + lam)) * c],
+        ],
+        dtype=complex,
+    )
+
+
+def _u(op: ops.U) -> np.ndarray:
+    return u_matrix(op.theta, op.phi, op.lam)
+
+
+def _u1(op: ops.U1) -> np.ndarray:
+    return _phase(ops.Phase(op.lam))
+
+
+def _u2(op: ops.U2) -> np.ndarray:
+    return u_matrix(np.pi / 2, op.phi, op.lam)
+
+
+def _u3(op: ops.U3) -> np.ndarray:
+    return u_matrix(op.theta, op.phi, op.lam)
+
+
 def _cphase(op: ops.CPhase) -> np.ndarray:
     """Build the CPhase matrix from the operation's angle."""
     theta = op.theta

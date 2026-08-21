@@ -29,7 +29,7 @@ from .fixed_gates import (
 )
 from .load_atom import LoadAtoms
 from .measurement import Measurement
-from .parametric_gates import CPhase, Phase, RX, RY, RZ
+from .parametric_gates import CPhase, Phase, RX, RY, RZ, U, U1, U2, U3
 from .pulse import PulseOperation
 from .qudit_gates import (
     CClock,
@@ -71,6 +71,10 @@ __all__ = [
     "RY",
     "RZ",
     "Phase",
+    "U",
+    "U1",
+    "U2",
+    "U3",
     "CPhase",
     "Reset",
     "Refill",

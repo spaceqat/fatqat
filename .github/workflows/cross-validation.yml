@@ -29,5 +29,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install . --group dev --group qiskit
 
-      - name: Run the cross-validation suite (numpy and numba runtimes)
-        run: python -m pytest tests/test_against_qiskit.py -v
+      - name: Run the Qiskit integration and cross-validation suites
+        run: >-
+          python -m pytest
+          tests/test_qiskit_integration.py
+          tests/test_against_qiskit.py
+          -v
