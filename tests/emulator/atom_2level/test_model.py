@@ -35,16 +35,14 @@ def test_from_document_is_geometry_free_immutable_and_unit_explicit(document):
     assert isinstance(model == Atom2LevelModel.from_document(source), bool)
     assert model.format == FormatIdentity("atom.rb87_rydberg_2level", 1)
     assert model.kind == "atom.rydberg_2level"
-    assert model.identity == ModelIdentity(
-        "synthetic-atom2level-reference", "2026-08-22"
-    )
+    assert model.identity == ModelIdentity("rb87-53s-two-level-reference", "2026-08-22")
     assert model.species == "Rb87"
-    assert model.ground_state == "synthetic-ground-state"
-    assert model.rydberg_state == "synthetic-rydberg-state"
+    assert model.ground_state == "5S1/2,F=2,mF=0"
+    assert model.rydberg_state == "53S1/2,mJ=+1/2"
     assert model.basis_order == ("g", "r")
     assert model.local_dimension == 2
     assert model.interaction_law == "C6/R^6"
-    assert model.c6_angular_per_us_um6 == 1.0
+    assert model.c6_angular_per_us_um6 == 180955.73684677208
     assert (
         model.distance_unit,
         model.time_unit,

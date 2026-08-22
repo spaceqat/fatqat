@@ -91,13 +91,10 @@ def test_booleans_are_rejected_by_exact_integer_and_numeric_validators():
 
 
 @pytest.mark.parametrize(
-    "provenance",
-    [
-        {"description": "Literature-derived reference.", "sources": ["doi:1"]},
-        {"description": "Synthetic reference.", "sources": []},
-    ],
+    "references",
+    [["doi:1"], []],
 )
-def test_model_envelope_accepts_base_schema_and_valid_provenance(provenance):
+def test_model_envelope_accepts_base_schema_and_valid_references(references):
     base = {
         "format": {},
         "model": {},
@@ -107,7 +104,7 @@ def test_model_envelope_accepts_base_schema_and_valid_provenance(provenance):
     }
     _validate_model_document_envelope(base, "physics model")
     _validate_model_document_envelope(
-        {**base, "provenance": provenance}, "physics model"
+        {**base, "references": references}, "physics model"
     )
 
 
@@ -116,20 +113,14 @@ def test_model_envelope_accepts_base_schema_and_valid_provenance(provenance):
     [
         lambda document: document.update(extra=None),
         lambda document: document.pop("system"),
-        lambda document: document.update(provenance={"description": "text"}),
-        lambda document: document.update(provenance={"description": "", "sources": []}),
+        lambda document: document.update(references="doi:1"),
+        lambda document: document.update(references=[""]),
         lambda document: document.update(
-            provenance={"description": "text", "sources": "citation"}
-        ),
-        lambda document: document.update(
-            provenance={"description": "text", "sources": [""]}
-        ),
-        lambda document: document.update(
-            provenance={"description": "text", "sources": [], "extra": None}
+            provenance={"description": "obsolete", "sources": []}
         ),
     ],
 )
-def test_model_envelope_rejects_nonexact_or_invalid_provenance(mutate):
+def test_model_envelope_rejects_nonexact_or_invalid_references(mutate):
     document = {
         "format": {},
         "model": {},
@@ -148,12 +139,12 @@ def test_model_envelope_rejects_nonexact_or_invalid_provenance(mutate):
         (
             lambda document: document.update(extra=None),
             "unknown ['extra']",
-            "provenance",
+            "references",
         ),
-        (lambda document: document.pop("units"), "missing ['units']", "provenance"),
+        (lambda document: document.pop("units"), "missing ['units']", "references"),
     ],
 )
-def test_model_envelope_reports_only_the_fault_beside_valid_provenance(
+def test_model_envelope_reports_only_the_fault_beside_valid_references(
     mutate, expected, unexpected
 ):
     document = {
@@ -162,7 +153,7 @@ def test_model_envelope_reports_only_the_fault_beside_valid_provenance(
         "system": {},
         "units": {},
         "parameters": {},
-        "provenance": {"description": "Synthetic reference.", "sources": []},
+        "references": [],
     }
     mutate(document)
 

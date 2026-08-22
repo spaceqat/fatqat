@@ -33,7 +33,7 @@ document.
 
 This complete two-site example loads the public reference model catalog and
 defines the separate calibration inline. Inspect the loaded snapshot before
-construction; its provenance records the Evered et al. source.
+construction; its references identify the Evered et al. source.
 
 ```{doctest}
 >>> import fatqat as fq
@@ -42,7 +42,7 @@ construction; its provenance records the Evered et al. source.
 {'id': 'rb87-53s-reference', 'revision': '2026-08-05'}
 >>> model_document["parameters"]
 {'mass': 86.9091805, 'c6': 180955.73684677208}
->>> len(model_document["provenance"]["sources"])
+>>> len(model_document["references"])
 1
 >>> calibration_document = {
 ...     "format": {

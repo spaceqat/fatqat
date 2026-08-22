@@ -6,7 +6,7 @@
     "basis": {
       "0": "5S1/2,F=1,mF=0",
       "1": "5S1/2,F=2,mF=0",
-      "r": "53S1/2,mJ=1/2"
+      "r": "53S1/2,mJ=+1/2"
     },
     "transitions": {"rydberg": {"from": "1", "to": "r"}}
   },
@@ -21,10 +21,5 @@
     "mass": 86.9091805,
     "c6": 180955.73684677208
   },
-  "provenance": {
-    "description": "Literature-derived Rb87 53S reference snapshot used by the three-level emulator.",
-    "sources": [
-      "S. J. Evered et al., High-fidelity parallel entangling gates on a neutral atom quantum computer, Nature 622, 268-272 (2023), DOI:10.1038/s41586-023-06481-y, arXiv:2304.05420."
-    ]
-  }
+  "references": ["doi:10.1038/s41586-023-06481-y"]
 }

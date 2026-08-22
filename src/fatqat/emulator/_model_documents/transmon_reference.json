@@ -17,9 +17,5 @@
       "q0": {"frequency": 5.1, "anharmonicity": -0.22},
       "q1": {"frequency": 5.22, "anharmonicity": -0.24}
     }
-  },
-  "provenance": {
-    "description": "Synthetic two-transmon exchange reference for examples and tests; the frequencies and anharmonicities are not a device calibration.",
-    "sources": []
   }
 }

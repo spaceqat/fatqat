@@ -35,7 +35,7 @@ the family model explicitly, and uses a nominal package calibration internally:
    print(model_document["model"])
    print(model_document["units"])
    print(model_document["parameters"])
-   print(model_document["provenance"])
+   print(model_document.get("references", []))
    model = fq.emulator.TransmonModel.from_document(model_document)
    backend = fq.emulator.TransmonEmulator(model)
 

@@ -1,11 +1,11 @@
 {
   "format": {"id": "atom.rb87_rydberg_2level", "version": 1},
-  "model": {"id": "synthetic-atom2level-reference", "revision": "2026-08-22"},
+  "model": {"id": "rb87-53s-two-level-reference", "revision": "2026-08-22"},
   "system": {
     "species": "Rb87",
     "basis": {
-      "g": "synthetic-ground-state",
-      "r": "synthetic-rydberg-state"
+      "g": "5S1/2,F=2,mF=0",
+      "r": "53S1/2,mJ=+1/2"
     },
     "transitions": {"rydberg": {"from": "g", "to": "r"}}
   },
@@ -16,7 +16,7 @@
     "c6": "rad/us*um^6"
   },
   "parameters": {
-    "c6": 1.0,
+    "c6": 180955.73684677208,
     "channel_limits": {
       "rydberg_global": {
         "max_amplitude": null,
@@ -27,8 +27,5 @@
       }
     }
   },
-  "provenance": {
-    "description": "Syntax and execution reference for the two-level Rb87 model schema. Its basis labels and C6 value are synthetic and intended for examples and tests, not as literature values or a device calibration.",
-    "sources": []
-  }
+  "references": ["doi:10.1038/s41586-023-06481-y"]
 }

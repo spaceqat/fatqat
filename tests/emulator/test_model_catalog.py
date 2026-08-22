@@ -10,7 +10,7 @@ _EXPECTED = {
     "atom2level.reference": (
         fq.emulator.Atom2LevelModel,
         "atom.rb87_rydberg_2level",
-        "synthetic-atom2level-reference",
+        "rb87-53s-two-level-reference",
         "2026-08-22",
         {
             "distance": "um",
@@ -65,7 +65,7 @@ def test_load_model_document_returns_independent_mutable_graphs():
     first = fq.emulator.load_model_document("atom3level.reference")
     original = deepcopy(first)
     first["parameters"]["mass"] = 1.0
-    first["provenance"]["sources"].append("changed")
+    first["references"].append("changed")
 
     second = fq.emulator.load_model_document("atom3level.reference")
     assert second == original
@@ -84,9 +84,10 @@ def test_reference_document_has_expected_payload_and_constructs(name, expected):
     assert document["model"] == {"id": model_id, "revision": revision}
     assert document["units"] == units
     assert isinstance(document["parameters"], dict) and document["parameters"]
-    assert set(document["provenance"]) == {"description", "sources"}
-    assert document["provenance"]["description"]
-    assert isinstance(document["provenance"]["sources"], list)
+    if name.startswith("atom"):
+        assert document["references"] == ["doi:10.1038/s41586-023-06481-y"]
+    else:
+        assert "references" not in document
     assert isinstance(model_type.from_document(document), model_type)
 
 
@@ -96,7 +97,7 @@ def test_reference_document_has_expected_payload_and_constructs(name, expected):
         (
             "atom2level.reference",
             {
-                "c6": 1.0,
+                "c6": 180955.73684677208,
                 "channel_limits": {
                     "rydberg_global": {
                         "max_amplitude": None,
@@ -107,7 +108,7 @@ def test_reference_document_has_expected_payload_and_constructs(name, expected):
                     }
                 },
             },
-            None,
+            "10.1038/s41586-023-06481-y",
         ),
         (
             "atom3level.reference",
@@ -126,18 +127,27 @@ def test_reference_document_has_expected_payload_and_constructs(name, expected):
         ),
     ],
 )
-def test_reference_parameters_and_provenance_are_pinned(
+def test_reference_parameters_and_references_are_pinned(
     name, parameters, source_marker
 ):
     document = fq.emulator.load_model_document(name)
-    provenance = document["provenance"]
 
     assert document["parameters"] == parameters
     if source_marker is None:
-        assert provenance["sources"] == []
-        assert "synthetic" in provenance["description"].lower()
+        assert "references" not in document
     else:
-        assert source_marker in provenance["sources"][0]
+        assert source_marker in document["references"][0]
+
+
+def test_atom_reference_documents_share_the_53s_physical_profile():
+    atom2 = fq.emulator.load_model_document("atom2level.reference")
+    atom3 = fq.emulator.load_model_document("atom3level.reference")
+
+    assert atom2["system"]["species"] == atom3["system"]["species"]
+    assert atom2["system"]["basis"]["g"] == atom3["system"]["basis"]["1"]
+    assert atom2["system"]["basis"]["r"] == atom3["system"]["basis"]["r"]
+    assert atom2["parameters"]["c6"] == atom3["parameters"]["c6"]
+    assert atom2["references"] == atom3["references"]
 
 
 def test_private_catalog_resources_are_not_public_exports():

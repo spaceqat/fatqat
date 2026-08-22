@@ -28,7 +28,7 @@ def available_model_documents() -> tuple[str, ...]:
 def load_model_document(name: str) -> dict[str, object]:
     """Load a fresh mutable copy of one reference model document.
 
-    Inspect the returned identity, units, parameters, and provenance before
+    Inspect the returned identity, units, parameters, and references before
     passing it to the corresponding model family's ``from_document`` method.
     Mutating a returned document never changes later loads.
 

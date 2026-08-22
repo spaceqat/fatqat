@@ -22,7 +22,11 @@ from .._core.target import _ControlAddress, _FrameAddress
 _MODEL_FORMAT = FormatIdentity("atom.rb87_rydberg_3level", 1)
 _MODEL_KIND = "atom.rydberg_3level"
 _FAMILY = "atom.rydberg_3level"
-_BASIS = {"0": "5S1/2,F=1,mF=0", "1": "5S1/2,F=2,mF=0", "r": "53S1/2,mJ=1/2"}
+_BASIS = {
+    "0": "5S1/2,F=1,mF=0",
+    "1": "5S1/2,F=2,mF=0",
+    "r": "53S1/2,mJ=+1/2",
+}
 _MODEL_UNITS = {
     "mass": "u",
     "distance": "um",

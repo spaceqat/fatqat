@@ -18,24 +18,24 @@ Function and symbolic waveforms remain future work.
 ## Complete direct-control example
 
 The model document stays geometry-free. Load the packaged reference explicitly
-and inspect its identity, units, parameters, and provenance before choosing it.
-This reference's identity, basis labels, and `c6=1.0` are deliberately
-synthetic; they demonstrate the API and are not literature values or a device
-calibration.
+and inspect its identity, units, parameters, and references before choosing it.
+The packaged model is an effective two-level reduction of the Rb87 53S
+`|1> <-> |r>` profile used by the three-level emulator, not a universal Rb
+constant or a device calibration.
 
 ```{doctest}
 >>> import fatqat as fq
 >>> model_document = fq.emulator.load_model_document("atom2level.reference")
 >>> model_document["model"]
-{'id': 'synthetic-atom2level-reference', 'revision': '2026-08-22'}
+{'id': 'rb87-53s-two-level-reference', 'revision': '2026-08-22'}
 >>> model_document["units"]["distance"], model_document["parameters"]["c6"]
-('um', 1.0)
->>> model_document["provenance"]["sources"]
-[]
+('um', 180955.73684677208)
+>>> model_document["references"]
+['doi:10.1038/s41586-023-06481-y']
 >>> model = fq.emulator.Atom2LevelModel.from_document(model_document)
 >>> tuple(model.available_controls)
 ('drive', 'detuning')
->>> arrangement = fq.AtomArrangement.rectangular(rows=1, cols=2, spacing=2.0)
+>>> arrangement = fq.AtomArrangement.rectangular(rows=1, cols=2, spacing=6.0)
 >>> backend = fq.emulator.Atom2LevelEmulator(model, arrangement=arrangement)
 >>> drive_waveform = fq.waveforms.SampledWaveform(
 ...     (0.0, 0.4, 1.0),
@@ -55,6 +55,14 @@ calibration.
 >>> result.get_statevector().shape
 (4,)
 ```
+
+Evered et al. report a 2 µm separation with
+$V_\mathrm{Ryd}/2\pi \approx 450$ MHz. The stored effective profile uses the
+agreed positive-sign convention and derives
+$C_6/\hbar = 2\pi \times 450 \times 2^6 =
+180955.73684677208$ rad/µs·µm⁶. The experimental input is approximate; the
+digits identify the reproducible derived snapshot rather than additional
+measurement precision.
 
 The complex drive value is the physical complex envelope: its magnitude and
 argument encode amplitude and phase together. Detuning samples must be real.

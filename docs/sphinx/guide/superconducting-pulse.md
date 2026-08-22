@@ -35,7 +35,7 @@ model_document = fq.emulator.load_model_document("transmon.reference")
 print(model_document["model"])
 print(model_document["units"])
 print(model_document["parameters"])
-print(model_document["provenance"])
+print(model_document.get("references", []))
 model = fq.emulator.TransmonModel.from_document(model_document)
 assert tuple(model.available_controls) == ("drive", "detuning", "exchange")
 backend = fq.emulator.TransmonEmulator(model)
@@ -43,7 +43,8 @@ backend = fq.emulator.TransmonEmulator(model)
 
 The packaged Transmon snapshot is explicitly synthetic and is not a device
 calibration. Copy and edit the returned dictionary when authoring a model, and
-change its identity, revision, and provenance whenever physical values change.
+change its identity and revision whenever physical values change. Add
+`references` only when useful citations exist.
 
 For an explicit calibration, keep it as a separate complete JSON-compatible
 document, compile a map, and pass only that map to the emulator:
