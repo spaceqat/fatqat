@@ -222,8 +222,9 @@ class NoiseModel:
             selector = _normalize_background_selector(targets)
             if isinstance(declaration, Depolarizing) and declaration.p is not None:
                 raise ValueError(
-                    "background noise requires continuous-rate mode; "
-                    "Depolarizing(p) is a finite-probability declaration"
+                    "Depolarizing(p) is width-agnostic and cannot be registered "
+                    "as single-subsystem background noise; use "
+                    "Depolarizing(rate=...)"
                 )
             if _declaration_arity(declaration) != 1:
                 raise ValueError(
