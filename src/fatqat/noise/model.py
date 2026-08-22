@@ -12,6 +12,7 @@ from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView
 from ..resource_layout import DeviceOperand, ResourceLayout
 from .base import Channel
+from .catalog import Depolarizing
 from .loss import Loss
 from .readout import ReadoutConfusion
 
@@ -219,6 +220,12 @@ class NoiseModel:
             if positions_value is not None:
                 raise ValueError("background noise does not accept target_positions")
             selector = _normalize_background_selector(targets)
+            if isinstance(declaration, Depolarizing) and declaration.p is not None:
+                raise ValueError(
+                    "Depolarizing(p) is width-agnostic and cannot be registered "
+                    "as single-subsystem background noise; use "
+                    "Depolarizing(rate=...)"
+                )
             if _declaration_arity(declaration) != 1:
                 raise ValueError(
                     "background noise requires a single-subsystem declaration; "

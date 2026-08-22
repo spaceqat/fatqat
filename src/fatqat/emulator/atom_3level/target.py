@@ -40,15 +40,15 @@ class _Atom3LevelTarget:
 
     def __init__(self, model: Atom3LevelModel, arrangement: AtomArrangement) -> None:
         self.model = model
-        self.device_labels = tuple(range(arrangement.cardinality))
-        self.hilbert_dimension = 3**arrangement.cardinality
+        self.device_labels = tuple(range(arrangement.num_sites))
+        self.hilbert_dimension = 3**arrangement.num_sites
         owner = object()
         self._claims = tuple(
             _TargetClaim(owner, "site", ordinal) for ordinal in self.device_labels
         )
         values = []
-        for first in range(arrangement.cardinality):
-            for second in range(first + 1, arrangement.cardinality):
+        for first in range(arrangement.num_sites):
+            for second in range(first + 1, arrangement.num_sites):
                 distance = dist(
                     arrangement.coordinates[first], arrangement.coordinates[second]
                 )

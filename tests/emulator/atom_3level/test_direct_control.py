@@ -28,8 +28,8 @@ def _control(channel, value, duration=0.3):
 @pytest.mark.parametrize(
     ("factory_name", "raising"),
     (
-        ("raman_control", np.array([[0, 0, 0], [1, 0, 0], [0, 0, 0]])),
-        ("rydberg_control", np.array([[0, 0, 0], [0, 0, 0], [0, 1, 0]])),
+        ("raman", np.array([[0, 0, 0], [1, 0, 0], [0, 0, 0]])),
+        ("rydberg", np.array([[0, 0, 0], [0, 0, 0], [0, 1, 0]])),
     ),
 )
 def test_local_direct_propagator_matches_independent_qutrit_reference(
@@ -38,7 +38,7 @@ def test_local_direct_propagator_matches_independent_qutrit_reference(
     backend = _backend(atom_3level_model, atom_3level_calibration, sites=1)
     duration = 0.3
     envelope = 0.4 + 0.2j
-    channel = getattr(atom_3level_model, factory_name)(0)
+    channel = getattr(atom_3level_model.control, factory_name)(0)
     operation = fq.ops.PulseOperation(
         duration, (_control(channel, envelope, duration),)
     )
@@ -60,8 +60,8 @@ def test_concurrent_disjoint_raman_and_rydberg_controls_share_one_block(
     operation = fq.ops.PulseOperation(
         0.3,
         (
-            _control(atom_3level_model.raman_control(0), 0.2 + 0.1j),
-            _control(atom_3level_model.rydberg_control(1), -0.3j),
+            _control(atom_3level_model.control.raman(0), 0.2 + 0.1j),
+            _control(atom_3level_model.control.rydberg(1), -0.3j),
         ),
     )
     program = fq.Program(2)
@@ -86,8 +86,8 @@ def test_controls_sharing_a_site_deduplicate_target_and_claim(
     operation = fq.ops.PulseOperation(
         0.3,
         (
-            _control(atom_3level_model.raman_control(0), 0.2),
-            _control(atom_3level_model.rydberg_control(0), 0.3j),
+            _control(atom_3level_model.control.raman(0), 0.2),
+            _control(atom_3level_model.control.rydberg(0), 0.3j),
         ),
     )
     program = fq.Program(1)
@@ -106,7 +106,7 @@ def test_structural_controls_reuse_across_compatible_arrangements(
     atom_3level_model, atom_3level_calibration
 ):
     operation = fq.ops.PulseOperation(
-        0.3, (_control(atom_3level_model.rydberg_control(1), 0.2j),)
+        0.3, (_control(atom_3level_model.control.rydberg(1), 0.2j),)
     )
     program = fq.Program(2)
     program.add(operation)
@@ -126,10 +126,10 @@ def test_structural_controls_reuse_across_compatible_arrangements(
 def test_direct_rydberg_drives_coexist_with_signed_all_pair_drift(
     atom_3level_model_document, atom_3level_calibration_document
 ):
-    positive_model = Atom3LevelModel(deepcopy(atom_3level_model_document))
+    positive_model = Atom3LevelModel.from_document(deepcopy(atom_3level_model_document))
     negative_document = deepcopy(atom_3level_model_document)
     negative_document["parameters"]["c6"] *= -1
-    negative_model = Atom3LevelModel(negative_document)
+    negative_model = Atom3LevelModel.from_document(negative_document)
     positive_calibration = Atom3LevelCalibration(
         deepcopy(atom_3level_calibration_document)
     )
@@ -137,8 +137,8 @@ def test_direct_rydberg_drives_coexist_with_signed_all_pair_drift(
         deepcopy(atom_3level_calibration_document)
     )
     controls = (
-        _control(positive_model.rydberg_control(0), 0.2, 0.1),
-        _control(positive_model.rydberg_control(1), 0.2, 0.1),
+        _control(positive_model.control.rydberg(0), 0.2, 0.1),
+        _control(positive_model.control.rydberg(1), 0.2, 0.1),
     )
     program = fq.Program(2)
     program.add(fq.ops.PulseOperation(0.1, controls))
@@ -160,7 +160,7 @@ def test_condition_changes_actual_direct_atom_execution(
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration, sites=1)
     operation = fq.ops.PulseOperation(
-        0.4, (_control(atom_3level_model.raman_control(0), 1.0, 0.4),)
+        0.4, (_control(atom_3level_model.control.raman(0), 1.0, 0.4),)
     )
     enabled = fq.Program(1, 1)
     enabled.add(operation, condition=(0, 0))
@@ -189,7 +189,7 @@ def test_disjoint_post_measurement_direct_atom_drive_retains_fast_path(
     program = fq.Program(2, 1)
     program.measure(0, 0)
     program.add(
-        fq.ops.PulseOperation(0.3, (_control(atom_3level_model.raman_control(1), 0.1),))
+        fq.ops.PulseOperation(0.3, (_control(atom_3level_model.control.raman(1), 0.1),))
     )
 
     plan = backend._prepare_program(program).plan
@@ -205,8 +205,8 @@ def test_direct_control_rejects_wrong_family_and_absent_site(
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
     for channel, match in (
-        (model.drive_control("q0"), "foreign atom control"),
-        (atom_3level_model.rydberg_control(2), "unknown atom site"),
+        (model.control.drive("q0"), "foreign atom control"),
+        (atom_3level_model.control.rydberg(2), "unknown atom site"),
     ):
         program = fq.Program(2)
         program.add(fq.ops.PulseOperation(0.3, (_control(channel, 0.1),)))

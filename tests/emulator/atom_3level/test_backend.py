@@ -108,7 +108,7 @@ def test_atom_3level_backend_lowers_model_factory_direct_control(
         1.0,
         (
             PulseControl(
-                atom_3level_model.raman_control(0),
+                atom_3level_model.control.raman(0),
                 SampledWaveform((0.0, 1.0), (0.0, 0.1j)),
             ),
         ),
@@ -160,12 +160,12 @@ def test_atom_3level_default_map_does_not_bind_calibration_to_model_identity(
 ):
     same_identity = deepcopy(atom_3level_model_document)
     same_identity["parameters"]["c6"] *= -1
-    declared_same = fq.emulator.Atom3LevelModel(same_identity)
+    declared_same = fq.emulator.Atom3LevelModel.from_document(same_identity)
     assert _backend(declared_same, atom_3level_calibration).model is declared_same
 
     changed_identity = deepcopy(atom_3level_model_document)
     changed_identity["model"]["revision"] = "new-revision"
-    changed_model = fq.emulator.Atom3LevelModel(changed_identity)
+    changed_model = fq.emulator.Atom3LevelModel.from_document(changed_identity)
     assert _backend(changed_model, atom_3level_calibration).model is changed_model
 
 
@@ -214,7 +214,7 @@ def test_compiled_map_transfers_while_target_c6_and_geometry_control_evolution(
     changed_document = deepcopy(atom_3level_model_document)
     changed_document["model"]["revision"] = "finer-target"
     changed_document["parameters"]["c6"] *= -1
-    changed_model = fq.emulator.Atom3LevelModel(changed_document)
+    changed_model = fq.emulator.Atom3LevelModel.from_document(changed_document)
     source_target = fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.AtomArrangement.rectangular(1, 2, 2.0),
@@ -250,8 +250,8 @@ def test_custom_map_uses_only_public_atom_structural_authoring_values(
         return fq.emulator.PulseDefinition(
             0.2,
             (
-                PulseControl(atom_3level_model.raman_control(site), waveform),
-                PulseControl(atom_3level_model.rydberg_control(site), waveform),
+                PulseControl(atom_3level_model.control.raman(site), waveform),
+                PulseControl(atom_3level_model.control.rydberg(site), waveform),
             ),
             (fq.emulator.PhaseShift(atom_3level_model.frame(site), 0.1),),
         )
@@ -613,7 +613,7 @@ def test_weak_blockade_neither_rejects_nor_emits_the_removed_advisory(
 
     negative_document = deepcopy(atom_3level_model_document)
     negative_document["parameters"]["c6"] = -atom_3level_model.c6_angular_per_us_um6
-    negative_model = fq.emulator.Atom3LevelModel(negative_document)
+    negative_model = fq.emulator.Atom3LevelModel.from_document(negative_document)
     negative = _backend(negative_model, atom_3level_calibration, spacing=20.0)
     negative.propagator(pair)
     assert negative._target.interactions[0].signed_strength_rad_per_us < 0

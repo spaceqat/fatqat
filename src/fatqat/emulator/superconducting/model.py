@@ -6,17 +6,19 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from math import pi, sqrt
 from types import MappingProxyType
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 import numpy as np
 
 from ...errors import BackendValidationError
+from .._core.control_discovery import _ControlSelector
 from .._core.document_validation import _exact_keys, _fail, _mapping, _number, _string
 from .._core.model_document import (
     FormatIdentity,
     ModelIdentity,
     _dispatch_document,
     _parse_model_identity,
+    _validate_model_document_envelope,
 )
 from .._core.target import _ControlAddress, _FrameAddress
 from .._core.value_validation import _freeze
@@ -28,12 +30,27 @@ _MODEL_UNITS = {"frequency": "GHz", "anharmonicity": "GHz"}
 
 
 def angular_rate_from_ghz(value: float) -> float:
-    """Convert an ordinary frequency in GHz to angular rate in rad/ns."""
+    """Convert an ordinary frequency in GHz to angular rate in rad/ns.
+
+    Args:
+        value: Ordinary frequency in GHz.
+
+    Returns:
+        The corresponding angular rate in radians per nanosecond.
+    """
     return 2 * pi * value
 
 
 @dataclass(frozen=True, slots=True)
 class Transmon:
+    """Physical parameters of one declared transmon subsystem.
+
+    Attributes:
+        id: Stable subsystem label used when selecting controls.
+        frequency_ghz: Ordinary transition frequency in GHz.
+        anharmonicity_ghz: Signed anharmonicity in GHz.
+    """
+
     id: str
     frequency_ghz: float
     anharmonicity_ghz: float
@@ -41,6 +58,13 @@ class Transmon:
 
 @dataclass(frozen=True, slots=True)
 class Coupling:
+    """One declared pair-addressed control edge.
+
+    Attributes:
+        id: Stable coupling label from the model document.
+        subsystem_ids: Ordered pair of endpoint subsystem labels.
+    """
+
     id: str
     subsystem_ids: tuple[str, str]
 
@@ -51,9 +75,103 @@ def _label(value: object, owner: str) -> str:
     return value
 
 
+def _drive_control(subsystem_id: str) -> _ControlAddress:
+    """Select the complex-valued drive control for one subsystem.
+
+    Args:
+        subsystem_id: Nonempty subsystem label. Target binding later verifies
+            that the subsystem is declared by the model.
+
+    Returns:
+        An opaque channel address for use with
+        :class:`~fatqat.emulator.PulseControl`.
+
+    Raises:
+        BackendValidationError: If ``subsystem_id`` is not a nonempty string.
+    """
+    return _ControlAddress(
+        _FAMILY, "drive", (_label(subsystem_id, "control subsystem label"),)
+    )
+
+
+def _detuning_control(subsystem_id: str) -> _ControlAddress:
+    """Select the real-valued detuning control for one subsystem.
+
+    Args:
+        subsystem_id: Nonempty subsystem label. Target binding later verifies
+            that the subsystem is declared by the model.
+
+    Returns:
+        An opaque channel address for use with
+        :class:`~fatqat.emulator.PulseControl`.
+
+    Raises:
+        BackendValidationError: If ``subsystem_id`` is not a nonempty string.
+    """
+    return _ControlAddress(
+        _FAMILY, "detuning", (_label(subsystem_id, "control subsystem label"),)
+    )
+
+
+def _exchange_control(first: str, second: str) -> _ControlAddress:
+    """Select the real-valued exchange control for a subsystem pair.
+
+    Args:
+        first: Nonempty label of one endpoint.
+        second: Nonempty label of the distinct other endpoint.
+
+    Returns:
+        An opaque canonical pair address for use with
+        :class:`~fatqat.emulator.PulseControl`.
+
+    Raises:
+        BackendValidationError: If an endpoint is empty or the two endpoints
+            are equal. Target binding later verifies the declared edge.
+    """
+    endpoints = (
+        _label(first, "control subsystem label"),
+        _label(second, "control subsystem label"),
+    )
+    if endpoints[0] == endpoints[1]:
+        raise BackendValidationError(
+            "exchange control requires two distinct subsystem labels"
+        )
+    return _ControlAddress(_FAMILY, "exchange", tuple(sorted(endpoints)))
+
+
+_DRIVE_SELECTOR = _ControlSelector(
+    "local", ("subsystem_id",), "complex", "rad/ns", _drive_control
+)
+_DETUNING_SELECTOR = _ControlSelector(
+    "local", ("subsystem_id",), "real", "rad/ns", _detuning_control
+)
+_EXCHANGE_SELECTOR = _ControlSelector(
+    "pair", ("first", "second"), "real", "rad/ns", _exchange_control
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _TransmonControls:
+    """Immutable namespace for transmon control selectors."""
+
+    drive: _ControlSelector = _DRIVE_SELECTOR
+    detuning: _ControlSelector = _DETUNING_SELECTOR
+    exchange: _ControlSelector = _EXCHANGE_SELECTOR
+
+
+_CONTROLS = _TransmonControls()
+_AVAILABLE_CONTROLS = MappingProxyType(
+    {
+        "drive": _CONTROLS.drive,
+        "detuning": _CONTROLS.detuning,
+        "exchange": _CONTROLS.exchange,
+    }
+)
+
+
 def _parse_model(data: Mapping[str, Any]) -> tuple[Any, ...]:
     path = "physics model"
-    _exact_keys(data, {"format", "model", "system", "units", "parameters"}, path)
+    _validate_model_document_envelope(data, path)
     identity = _parse_model_identity(data["model"], f"{path}.model")
     system = _mapping(data["system"], f"{path}.system")
     _exact_keys(
@@ -124,7 +242,12 @@ _MODEL_PARSERS = MappingProxyType({_MODEL_FORMAT: _parse_model})
 
 @dataclass(frozen=True, slots=True, init=False, eq=False)
 class TransmonModel:
-    """Immutable engine-neutral qutrit transmon physics model."""
+    """Immutable engine-neutral qutrit transmon physics model.
+
+    Construct this value with :meth:`from_document`, then select local and
+    pair-addressed pulse channels through :attr:`control`. Final target
+    binding verifies subsystem labels and declared coupling pairs.
+    """
 
     format: FormatIdentity
     identity: ModelIdentity
@@ -143,7 +266,28 @@ class TransmonModel:
     time_unit: ClassVar[str] = "ns"
     control_unit: ClassVar[str] = "rad/ns"
 
-    def __init__(self, document: Mapping[str, Any]) -> None:
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        """Reject direct construction in favor of :meth:`from_document`.
+
+        Raises:
+            TypeError: Always. Physics model selection must be explicit.
+        """
+        raise TypeError("TransmonModel must be constructed with from_document()")
+
+    @classmethod
+    def from_document(cls, document: Mapping[str, Any]) -> Self:
+        """Construct a validated transmon model from a JSON document.
+
+        Args:
+            document: Mapping using the supported transmon/exchange schema.
+
+        Returns:
+            An immutable engine-neutral transmon physics model.
+
+        Raises:
+            BackendValidationError: If the document has an unsupported format
+                or contains invalid model data.
+        """
         source_format, parsed = _dispatch_document(
             document, "physics model", _MODEL_PARSERS
         )
@@ -152,40 +296,60 @@ class TransmonModel:
             np.array([[0.0, 1.0, 0.0], [0.0, 0.0, sqrt(2)], [0.0, 0.0, 0.0]])
         )
         number = _freeze(np.diag([0.0, 1.0, 2.0]))
-        object.__setattr__(self, "format", source_format)
-        object.__setattr__(self, "identity", identity)
-        object.__setattr__(self, "subsystems", subsystems)
-        object.__setattr__(self, "couplings", couplings)
-        object.__setattr__(self, "annihilation", annihilation)
-        object.__setattr__(self, "number", number)
+        model = object.__new__(cls)
+        object.__setattr__(model, "format", source_format)
+        object.__setattr__(model, "identity", identity)
+        object.__setattr__(model, "subsystems", subsystems)
+        object.__setattr__(model, "couplings", couplings)
+        object.__setattr__(model, "annihilation", annihilation)
+        object.__setattr__(model, "number", number)
+        return model
 
     @property
     def subsystem_ids(self) -> tuple[str, ...]:
+        """Return subsystem labels in the model document's declared order.
+
+        Returns:
+            An immutable tuple of labels accepted by local control selectors.
+        """
         return tuple(subsystem.id for subsystem in self.subsystems)
 
-    def drive_control(self, subsystem_id: str) -> _ControlAddress:
-        return _ControlAddress(
-            _FAMILY, "drive", (_label(subsystem_id, "control subsystem label"),)
-        )
+    @property
+    def control(self) -> _TransmonControls:
+        """Return the immutable namespace of supported control selectors.
 
-    def detuning_control(self, subsystem_id: str) -> _ControlAddress:
-        return _ControlAddress(
-            _FAMILY, "detuning", (_label(subsystem_id, "control subsystem label"),)
-        )
+        Returns:
+            A family-owned namespace containing ``drive``, ``detuning``, and
+            ``exchange``.
+        """
+        return _CONTROLS
+
+    @property
+    def available_controls(self) -> Mapping[str, _ControlSelector]:
+        """Return inspectable selectors keyed by their public control names.
+
+        Returns:
+            An immutable mapping whose values are the selectors on
+            :attr:`control`.
+        """
+        return _AVAILABLE_CONTROLS
 
     def frame(self, subsystem_id: str) -> _FrameAddress:
-        return _FrameAddress(_FAMILY, (_label(subsystem_id, "frame subsystem label"),))
+        """Select the virtual drive frame for one subsystem.
 
-    def exchange_control(self, first: str, second: str) -> _ControlAddress:
-        endpoints = (
-            _label(first, "control subsystem label"),
-            _label(second, "control subsystem label"),
-        )
-        if endpoints[0] == endpoints[1]:
-            raise BackendValidationError(
-                "exchange control requires two distinct subsystem labels"
-            )
-        return _ControlAddress(_FAMILY, "exchange", tuple(sorted(endpoints)))
+        Args:
+            subsystem_id: Nonempty subsystem label. Target binding later
+                verifies that it is declared by the model.
+
+        Returns:
+            An opaque frame address for :class:`~fatqat.emulator.PhaseShift`
+            and :class:`~fatqat.emulator.PhaseSwap`.
+
+        Raises:
+            BackendValidationError: If ``subsystem_id`` is not a nonempty
+                string.
+        """
+        return _FrameAddress(_FAMILY, (_label(subsystem_id, "frame subsystem label"),))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TransmonModel):

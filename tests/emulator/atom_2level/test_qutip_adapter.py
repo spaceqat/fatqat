@@ -16,10 +16,7 @@ from fatqat.emulator._core.engine import PulseEngine, _ShotContext
 from fatqat.emulator._core.pulse import PulseBlock
 from fatqat.emulator._core.target import _PreparedControlBinding
 from fatqat.emulator._core.scheduling import schedule_pulse_run
-from fatqat.emulator.atom_2level import (
-    Atom2LevelModel,
-    GridInteractionPolicy,
-)
+from fatqat.emulator.atom_2level import Atom2LevelModel
 from fatqat.emulator.atom_2level.qutip_adapter import _Atom2LevelQutipAdapter
 from fatqat.emulator.atom_2level.target import _Atom2LevelTarget
 from fatqat.errors import BackendValidationError
@@ -28,13 +25,13 @@ from fatqat.waveforms import SampledWaveform
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
 
-def _target(site_count=2, *, c6=1.0, policy=None):
+def _target(site_count=2, *, c6=1.0, interaction_cutoff=2.0):
     document = json.loads(_FIXTURE.read_text(encoding="utf-8"))
     document["parameters"]["c6"] = c6
     return _Atom2LevelTarget(
-        Atom2LevelModel(document),
+        Atom2LevelModel.from_document(document),
         AtomArrangement.rectangular(1, site_count, 2.0),
-        policy or GridInteractionPolicy.nearest_neighbor(),
+        interaction_cutoff,
     )
 
 
@@ -56,14 +53,14 @@ def _block(target, duration=1.0, **components):
         raise AssertionError(f"unknown test components: {tuple(components)}")
     controls = (
         PulseControl(
-            target.model.drive_control(),
+            target.model.control.drive(),
             SampledWaveform(
                 (0.0, duration),
                 (amplitude * np.exp(1j * phase),) * 2,
             ),
         ),
         PulseControl(
-            target.model.detuning_control(),
+            target.model.control.detuning(),
             SampledWaveform((0.0, duration), (detuning, detuning)),
         ),
     )
@@ -223,7 +220,7 @@ def test_interaction_drift_is_one_sparse_diagonal_operator():
 def test_windowed_coefficient_uses_qutip_sampled_array_interpolation(monkeypatch):
     target = _target(site_count=1)
     child = PulseControl(
-        target.model.drive_control(),
+        target.model.control.drive(),
         SampledWaveform(
             (0.0, 0.2, 0.8, 1.0),
             (0.1j, 0.2 + 0.3j, -0.4j, 0.2),

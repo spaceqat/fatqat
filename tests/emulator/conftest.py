@@ -63,7 +63,7 @@ def atom_3level_calibration_document_fixture() -> dict:
 
 @pytest.fixture(name="atom_3level_model")
 def atom_3level_model_fixture(atom_3level_model_document):
-    return Atom3LevelModel(atom_3level_model_document)
+    return Atom3LevelModel.from_document(atom_3level_model_document)
 
 
 @pytest.fixture(name="atom_3level_calibration")
@@ -76,7 +76,7 @@ def atom_3level_calibration_fixture(
 @pytest.fixture(name="model", scope="session")
 def model_fixture():
     """The shared immutable physics model."""
-    return TransmonModel(_read("sc_transmon_exchange.json"))
+    return TransmonModel.from_document(_read("sc_transmon_exchange.json"))
 
 
 @pytest.fixture(name="calibration", scope="session")
@@ -90,7 +90,7 @@ def build_model_and_calibration_fixture():
     """Build independent sources for structural-address portability tests."""
 
     def build():
-        built = TransmonModel(_read("sc_transmon_exchange.json"))
+        built = TransmonModel.from_document(_read("sc_transmon_exchange.json"))
         return built, TransmonCalibration(
             _read("sc_transmon_exchange_calibration.json")
         )

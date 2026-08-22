@@ -14,11 +14,13 @@ from fatqat.errors import BackendValidationError
 
 def test_model_is_direct_frozen_slotted_semantic_value(model_document):
     pristine = deepcopy(model_document)
-    model = TransmonModel(model_document)
+    model = TransmonModel.from_document(model_document)
     model_document["parameters"]["subsystems"]["q0"]["frequency"] = 99
-    assert tuple(inspect.signature(TransmonModel).parameters) == ("document",)
-    assert model == TransmonModel(pristine)
-    assert isinstance(model == TransmonModel(pristine), bool)
+    assert tuple(inspect.signature(TransmonModel.from_document).parameters) == (
+        "document",
+    )
+    assert model == TransmonModel.from_document(pristine)
+    assert isinstance(model == TransmonModel.from_document(pristine), bool)
     assert model.subsystem_ids == ("q0", "q1")
     assert tuple(item.frequency_ghz for item in model.subsystems) == (5.1, 5.22)
     assert model.couplings[0].subsystem_ids == ("q0", "q1")
@@ -46,6 +48,13 @@ def test_model_is_direct_frozen_slotted_semantic_value(model_document):
         assert not hasattr(model, removed)
 
 
+def test_direct_construction_is_removed(model_document):
+    with pytest.raises(TypeError, match="from_document"):
+        TransmonModel()
+    with pytest.raises(TypeError, match="from_document"):
+        TransmonModel(model_document)
+
+
 @pytest.mark.parametrize(
     ("path", "key"),
     [
@@ -71,7 +80,7 @@ def test_model_requires_exact_schema(model_document, path, key, mutation):
     else:
         cursor["unexpected"] = None
     with pytest.raises(BackendValidationError):
-        TransmonModel(model_document)
+        TransmonModel.from_document(model_document)
 
 
 @pytest.mark.parametrize(
@@ -97,27 +106,29 @@ def test_model_requires_exact_schema(model_document, path, key, mutation):
 def test_model_rejects_invalid_topology_and_parameters(model_document, mutate):
     mutate(model_document)
     with pytest.raises(BackendValidationError):
-        TransmonModel(model_document)
+        TransmonModel.from_document(model_document)
 
 
 def test_undirected_edge_order_has_no_semantic_effect(model_document):
     reversed_edge = deepcopy(model_document)
     reversed_edge["system"]["control_edges"][0]["subsystems"].reverse()
-    assert TransmonModel(model_document) == TransmonModel(reversed_edge)
+    assert TransmonModel.from_document(model_document) == TransmonModel.from_document(
+        reversed_edge
+    )
 
 
 def test_model_factories_return_portable_structural_addresses(model_document):
-    first = TransmonModel(model_document)
-    second = TransmonModel(deepcopy(model_document))
-    assert isinstance(first.drive_control("q0"), _ControlAddress)
-    assert isinstance(first.detuning_control("q0"), _ControlAddress)
-    assert isinstance(first.exchange_control("q0", "q1"), _ControlAddress)
+    first = TransmonModel.from_document(model_document)
+    second = TransmonModel.from_document(deepcopy(model_document))
+    assert isinstance(first.control.drive("q0"), _ControlAddress)
+    assert isinstance(first.control.detuning("q0"), _ControlAddress)
+    assert isinstance(first.control.exchange("q0", "q1"), _ControlAddress)
     assert isinstance(first.frame("q0"), _FrameAddress)
-    assert first.drive_control("q0") == second.drive_control("q0")
-    assert first.exchange_control("q1", "q0") == second.exchange_control("q0", "q1")
+    assert first.control.drive("q0") == second.control.drive("q0")
+    assert first.control.exchange("q1", "q0") == second.control.exchange("q0", "q1")
     assert first.frame("q0") == second.frame("q0")
     with pytest.raises(BackendValidationError):
-        first.exchange_control("q0", "q0")
+        first.control.exchange("q0", "q0")
     for removed in (
         "resource",
         "coupling",
@@ -133,7 +144,7 @@ def test_model_factories_return_portable_structural_addresses(model_document):
 
 
 def test_model_copies_stored_topology_containers(model_document):
-    model = TransmonModel(model_document)
+    model = TransmonModel.from_document(model_document)
     model_document["system"]["subsystems"][0] = "changed"
     model_document["system"]["control_edges"][0]["subsystems"].reverse()
     model_document["system"]["control_edges"].clear()
@@ -147,7 +158,11 @@ def test_arbitrary_connectivity_is_valid(model_document):
         "frequency": 5.3,
         "anharmonicity": -0.2,
     }
-    assert TransmonModel(model_document).subsystem_ids == ("q0", "q1", "q2")
+    assert TransmonModel.from_document(model_document).subsystem_ids == (
+        "q0",
+        "q1",
+        "q2",
+    )
 
 
 def test_model_uses_one_immutable_exact_format_table():

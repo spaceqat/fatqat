@@ -14,10 +14,7 @@ from fatqat.emulator._core.engine import PulseEngine, _ShotContext
 from fatqat.emulator._core.pulse import PulseBlock
 from fatqat.emulator._core.target import _PreparedControlBinding
 from fatqat.emulator._core.scheduling import schedule_pulse_run
-from fatqat.emulator.atom_2level import (
-    Atom2LevelModel,
-    GridInteractionPolicy,
-)
+from fatqat.emulator.atom_2level import Atom2LevelModel
 from fatqat.emulator.atom_2level.qutip_adapter import _Atom2LevelQutipAdapter
 from fatqat.emulator.atom_2level.target import _Atom2LevelTarget
 from fatqat.waveforms import SampledWaveform
@@ -30,13 +27,13 @@ from tests.emulator.atom_2level.reference.two_level_hamiltonian import (
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
 
-def _target(site_count=1, *, c6=0.0, policy=None, spacing=2.0):
+def _target(site_count=1, *, c6=0.0, interaction_cutoff=2.0, spacing=2.0):
     document = json.loads(_FIXTURE.read_text(encoding="utf-8"))
     document["parameters"]["c6"] = c6
     return _Atom2LevelTarget(
-        Atom2LevelModel(document),
+        Atom2LevelModel.from_document(document),
         AtomArrangement.rectangular(1, site_count, spacing),
-        policy or GridInteractionPolicy.nearest_neighbor(),
+        interaction_cutoff,
     )
 
 
@@ -50,10 +47,10 @@ def _block(target, duration, *, amplitude, detuning=0.0, phase=0.0):
 
     controls = (
         PulseControl(
-            target.model.drive_control(),
+            target.model.control.drive(),
             sampled(amplitude, np.exp(1j * phase)),
         ),
-        PulseControl(target.model.detuning_control(), sampled(detuning)),
+        PulseControl(target.model.control.detuning(), sampled(detuning)),
     )
     target_bindings = tuple(
         target.bind_control(control.channel) for control in controls
@@ -162,20 +159,20 @@ def test_signed_two_atom_interaction_matches_independent_dense_oracle(c6):
     assert state == pytest.approx(expected, abs=4e-9)
 
 
-def test_nearest_neighbor_omits_long_range_pair_and_full_pair_restores_it():
+def test_spacing_cutoff_omits_long_range_pair_and_no_cutoff_restores_it():
     c6 = 64.0
     spacing = 2.0
     nearest_target = _target(
         site_count=3,
         c6=c6,
         spacing=spacing,
-        policy=GridInteractionPolicy.nearest_neighbor(),
+        interaction_cutoff=spacing,
     )
     full_target = _target(
         site_count=3,
         c6=c6,
         spacing=spacing,
-        policy=GridInteractionPolicy.full_pair(),
+        interaction_cutoff=None,
     )
     nearest = _adapter(nearest_target)
     full = _adapter(full_target)

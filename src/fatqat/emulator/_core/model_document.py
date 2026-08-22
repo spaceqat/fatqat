@@ -75,6 +75,28 @@ def _parse_calibration_identity(value: Any, path: str) -> CalibrationIdentity:
     )
 
 
+def _validate_model_document_envelope(value: Mapping[str, Any], path: str) -> None:
+    """Validate the shared model envelope and optional citation references.
+
+    Family parsers remain responsible for the contents of ``system``,
+    ``units``, and ``parameters``. This helper accepts only the base top-level
+    envelope or that envelope plus ``references``. When supplied, references
+    are a JSON array of nonempty strings; citation syntax and meaning remain
+    outside structural validation.
+    """
+    base_keys = {"format", "model", "system", "units", "parameters"}
+    allowed = base_keys | {"references"} if "references" in value else base_keys
+    _exact_keys(value, allowed, path)
+    if "references" not in value:
+        return
+    references_path = f"{path}.references"
+    references = value["references"]
+    if not isinstance(references, list):
+        _fail(references_path, "must be an array")
+    for index, reference in enumerate(references):
+        _string(reference, f"{references_path}[{index}]")
+
+
 def _dispatch_document(
     document: Any,
     path: str,

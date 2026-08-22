@@ -23,16 +23,20 @@ applications do not construct ``PulseEngine``, ``PulseBlock``, or
 Backend lifecycle
 -----------------
 
-The common path constructs a backend from a physics-model document and uses a
-nominal package calibration internally:
+The common path selects and inspects a named reference document, constructs
+the family model explicitly, and uses a nominal package calibration internally:
 
 .. code-block:: python
 
    import json
    import fatqat as fq
 
-   with open("model.json", encoding="utf-8") as stream:
-       model = fq.emulator.TransmonModel(json.load(stream))
+   model_document = fq.emulator.load_model_document("transmon.reference")
+   print(model_document["model"])
+   print(model_document["units"])
+   print(model_document["parameters"])
+   print(model_document.get("references", []))
+   model = fq.emulator.TransmonModel.from_document(model_document)
    backend = fq.emulator.TransmonEmulator(model)
 
 For an explicit calibration, compile the portable document into a map before
@@ -166,12 +170,15 @@ Backend reference
 Physics model and calibration
 -----------------------------
 
-The public model and calibration constructors accept decoded JSON-compatible
-mappings. Applications own file and ``json.load`` handling. Documents are
-exact-schema, data-only envelopes: missing or unknown keys, unsupported format
-versions, non-finite values, or executable Python objects are rejected. Private
-package-owned registries dispatch the structured ``format`` ID/version before
-family-specific body validation.
+``TransmonModel.from_document(...)`` accepts a decoded JSON-compatible model
+mapping; direct model construction is forbidden. The calibration constructor
+separately accepts its decoded calibration mapping. Use
+``load_model_document("transmon.reference")`` for the packaged reference, while
+applications own file and ``json.load`` handling for custom documents.
+Documents are exact-schema, data-only envelopes: missing or unknown keys,
+unsupported format versions, non-finite values, or executable Python objects
+are rejected. Private package-owned registries dispatch the structured
+``format`` ID/version before family-specific body validation.
 
 Constructing the same persisted document twice creates semantically equal,
 unhashable values with the same durable identity. Public control and frame
@@ -194,6 +201,10 @@ Construction and identity reference
 
 .. autoclass:: fatqat.emulator.CalibrationIdentity
 
+.. autofunction:: fatqat.emulator.available_model_documents
+
+.. autofunction:: fatqat.emulator.load_model_document
+
 .. autoclass:: fatqat.emulator.TransmonModel
 
 .. autoclass:: fatqat.emulator.TransmonCalibration
@@ -204,7 +215,8 @@ Construction and identity reference
 grammar and durable model snapshot. ``calibration.format`` and
 ``calibration.identity`` identify the portable calibration snapshot. It has
 no target-model field.
-No public registry, builder, generic document mapping, or model key is exposed.
+The catalog exposes only stable logical names and fresh decoded dictionaries;
+it does not expose package paths, a generic model builder, or model keys.
 
 ``model.subsystems``
    Ordered immutable transmon records with ``id``, ``frequency_ghz``, and
@@ -249,15 +261,30 @@ realizations and the solver adapter both call.
 
 .. autoattribute:: fatqat.emulator.superconducting.TransmonModel.physical_dimension
 
-The control accessors choose the Hamiltonian mechanism and ``frame`` selects a
-virtual-drive phase ledger. Public custom definitions use those structural
-addresses; private target binding derives scheduling claims.
+The immutable ``model.control`` namespace chooses the Hamiltonian mechanism,
+while ``frame`` selects a virtual-drive phase ledger. Its selectors are also
+available by name through the immutable ``model.available_controls`` mapping.
+Each mapping entry describes a supported control kind, not every fully bound
+channel instance. Selectors expose ``scope``, required ``operands``,
+``coefficient_domain``, and ``coefficient_unit`` for lightweight inspection.
+Calling one produces a structural address; the final target still validates
+operand existence, declared pairs, waveform type, and coefficient values.
 
-.. automethod:: fatqat.emulator.superconducting.TransmonModel.drive_control
+.. code-block:: python
 
-.. automethod:: fatqat.emulator.superconducting.TransmonModel.detuning_control
+   drive = model.control.drive("q0")
+   detuning = model.control.detuning("q1")
+   exchange = model.control.exchange("q0", "q1")
 
-.. automethod:: fatqat.emulator.superconducting.TransmonModel.exchange_control
+   assert model.available_controls["drive"] is model.control.drive
+
+   for name, selector in model.available_controls.items():
+       print(name, selector.scope, selector.operands,
+             selector.coefficient_domain, selector.coefficient_unit)
+
+.. autoattribute:: fatqat.emulator.superconducting.TransmonModel.control
+
+.. autoattribute:: fatqat.emulator.superconducting.TransmonModel.available_controls
 
 .. automethod:: fatqat.emulator.superconducting.TransmonModel.frame
 
@@ -381,7 +408,7 @@ do not affect it:
            duration=duration,
            controls=(
                fq.emulator.PulseControl(
-                   model.exchange_control(first, second),
+                   model.control.exchange(first, second),
                    fq.waveforms.SampledWaveform(samples, envelope),
                ),
            ),
@@ -414,11 +441,11 @@ controls already contain their physical addresses:
 
    duration = 20.0
    drive = fq.emulator.PulseControl(
-       model.drive_control("q0"),
+       model.control.drive("q0"),
        fq.waveforms.SampledWaveform((0.0, duration), (0.02, 0.02j)),
    )
    exchange = fq.emulator.PulseControl(
-       model.exchange_control("q0", "q1"),
+       model.control.exchange("q0", "q1"),
        fq.waveforms.SampledWaveform((0.0, duration), (0.01, 0.01)),
    )
    program = fq.Program(2)

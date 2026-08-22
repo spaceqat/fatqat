@@ -267,7 +267,7 @@ def test_operation_scoped_collapse_uses_the_scheduled_block_window(
             0.2,
             (
                 PulseControl(
-                    atom_3level_model.raman_control(0),
+                    atom_3level_model.control.raman(0),
                     SampledWaveform((0.0, 0.2), (0.0, 0.0)),
                 ),
             ),

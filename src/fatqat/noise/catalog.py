@@ -5,10 +5,10 @@ and their rules pair in ``implementation.matrices``. All entries resolve at
 the register dimension of their actual targets, read inside the rule - one
 ``Depolarizing(p=0.01)`` instance is reusable on any dimension.
 
-Arity is a property of the descriptor class: `Depolarizing` acts jointly on
-however many subsystems the gate it is attached to targets; `AmplitudeDamping`
-and `PhaseDamping` are single-subsystem channels. `PauliChannel` is the one
-entry whose arity is per-instance - the width of the Pauli strings it carries.
+Arity usually belongs to the descriptor class. Probability-form
+`Depolarizing` is width-agnostic while rate form is local to one subsystem;
+`AmplitudeDamping` and `PhaseDamping` are single-subsystem channels.
+`PauliChannel` derives its per-instance arity from its Pauli-string width.
 """
 
 from __future__ import annotations
@@ -109,23 +109,83 @@ def _rate_to_p(rate: float, duration: float) -> float:
     return -expm1(-rate * duration)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Depolarizing(Channel):
-    """Uniform depolarizing channel ``rho -> (1-p) rho + p I/d``.
+    """Uniform depolarization in finite-probability or continuous-rate mode.
 
-    Acts jointly on all subsystems of the gate occurrence it is attached to:
-    ``d`` is the combined dimension of the targets, so the same descriptor
-    depolarizes a single qubit, a qutrit, or the joint space of a two-qubit
-    gate alike.
+    Exactly one of ``p`` and ``rate`` must be supplied. Matrix backends consume
+    probability mode over an operation occurrence. Pulse emulators consume
+    rate mode as a local continuous generator; backends do not convert modes
+    implicitly.
 
     Attributes:
-        p: Probability of full depolarization, in ``[0, 1]``.
+        p: Probability of full depolarization for one finite channel
+            application, in ``[0, 1]``.
+        rate: Depolarization rate in the pulse backend's inverse time unit.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> fq.noise.Depolarizing(p=0.01).p
+        0.01
+        >>> fq.noise.Depolarizing(rate=0.002).rate
+        0.002
     """
 
-    p: float
+    p: float | None = None
+    rate: float | None = None
 
     def __post_init__(self) -> None:
-        _require_probability(self.p, "Depolarizing.p")
+        if (self.p is None) == (self.rate is None):
+            raise ValueError("Depolarizing requires exactly one of p or rate")
+        if self.p is not None:
+            _require_probability(self.p, "Depolarizing.p")
+        else:
+            _require_rate(self.rate, "Depolarizing.rate")
+
+    @property
+    def num_subsystems(self) -> int | None:
+        """Return the declaration arity implied by the authored mode.
+
+        Returns:
+            ``1`` for local continuous-rate mode, or ``None`` for
+            width-agnostic finite-probability mode.
+        """
+        return 1 if self.rate is not None else None
+
+    def as_probability(self, duration: float) -> float:
+        """Return this declaration's probability over a duration.
+
+        Args:
+            duration: Finite nonnegative elapsed time in the backend's unit.
+
+        Returns:
+            Authored ``p`` unchanged, or ``1 - exp(-rate * duration)``.
+
+        Raises:
+            ValueError: If ``duration`` is invalid.
+        """
+        if self.p is not None:
+            _require_duration(duration)
+            return self.p
+        return _rate_to_p(self.rate, duration)
+
+    def as_rate(self, duration: float) -> float:
+        """Return this declaration's continuous rate over a duration.
+
+        Args:
+            duration: Finite nonnegative elapsed time in the backend's unit.
+
+        Returns:
+            Authored ``rate`` unchanged, or ``-log(1 - p) / duration``.
+
+        Raises:
+            ValueError: If ``duration`` is invalid or the finite probability
+                has no finite rate for that duration.
+        """
+        if self.rate is not None:
+            _require_duration(duration)
+            return self.rate
+        return _p_to_rate(self.p, duration)
 
 
 def depolarizing_rule(
@@ -142,6 +202,11 @@ def depolarizing_rule(
     ``K rho K^H``.
     """
     p = channel.p
+    if p is None:
+        raise BackendValidationError(
+            "Depolarizing in rate mode has no matrix-backend Kraus "
+            "implementation; use probability mode or a pulse backend"
+        )
     dim = prod(ref.register.dim for ref in targets)
     ops = [np.sqrt(1 - p + p / dim**2) * np.eye(dim, dtype=complex)]
     for a in range(dim):

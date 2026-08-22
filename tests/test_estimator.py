@@ -230,7 +230,7 @@ def test_occupation_via_one_projector():
 
 
 def test_density_matrix_with_noise_stays_exact():
-    # Depolarizing(0.1) on the CX pulls the ideal +1 down to +0.9 exactly -
+    # Depolarizing(p=0.1) on the CX pulls the ideal +1 down to +0.9 exactly -
     # a density matrix applies the Kraus sum, so no sampling is involved.
     estimator = _estimator("DM", noise=_noise_model())
 

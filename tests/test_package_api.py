@@ -41,19 +41,17 @@ def test_atom_2level_model_values_are_exported_only_from_emulator_namespaces():
     from fatqat.emulator.atom_2level import (
         Atom2LevelEmulator,
         Atom2LevelModel,
-        GridInteractionPolicy,
     )
 
     assert fq.emulator.Atom2LevelEmulator is Atom2LevelEmulator
     assert fq.emulator.Atom2LevelModel is Atom2LevelModel
-    assert fq.emulator.GridInteractionPolicy is GridInteractionPolicy
+    assert not hasattr(fq.emulator, "GridInteractionPolicy")
     assert not hasattr(fq.emulator, "Channel" + "Description")
     assert not hasattr(fq.emulator, "ControlComponent" + "Description")
     assert not hasattr(fq.emulator, "load_" + "analog_atom_" + "physics_model")
     for name in (
         "Atom2LevelEmulator",
         "Atom2LevelModel",
-        "GridInteractionPolicy",
     ):
         assert not hasattr(fq, name)
 

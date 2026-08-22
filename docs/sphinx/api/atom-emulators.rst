@@ -24,10 +24,15 @@ Both backends require an immutable rectangular
 ``(column * spacing, row * spacing, 0)``, and the current atom models interpret
 spacing in micrometres. A program must declare exactly one dimension-two
 quantum resource per site; declaration order binds resources to coordinates.
-Every site is initially occupied.
+The arrangement declares geometry, not dynamic atom occupancy.
+``arrangement.num_sites`` is the exact coordinate count, ``len(arrangement)``
+is its concise equivalent, and a pulse program must match that count exactly.
+By contrast, ``AtomArraySimulator(num_sites=6)`` declares a maximum gate-level
+device capacity and accepts programs with at most six resources; omitting its
+``num_sites`` argument leaves that simulator unbounded.
 
 .. autoclass:: fatqat.AtomArrangement
-   :members: rectangular, cardinality
+   :members: rectangular, num_sites
 
 Run and result contract
 -----------------------
@@ -93,8 +98,6 @@ Use ``result.available_data`` when code must handle more than one execution
 mode. Neither backend exposes QuTiP values.
 
 Family metadata records target model ``format`` and model kind/ID/revision.
-Two-level metadata keeps arrangement coordinates, interaction policy, basis/order,
-solver, and unit provenance without defining a content digest.
 
 Three-level atom emulator
 -------------------------
@@ -129,11 +132,14 @@ propagator before that final composition. Readout-only noise is inert.
 Model and calibration values
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The direct constructors accept exact-schema, decoded JSON-compatible mappings
-and return semantically comparable, unhashable immutable objects. Application
-code owns file I/O. The model owns species, explicit basis and transition
-facts, top-level quantity-kind units, mass, and signed ``C6``. The calibration
-owns portable Raman and CZ control recipes and contains no model identity.
+``Atom3LevelModel.from_document(...)`` accepts an exact-schema decoded mapping
+and returns a semantically comparable, unhashable immutable model. Use
+``load_model_document("atom3level.reference")`` for the packaged reference;
+application code owns file I/O for custom documents. The calibration class
+separately accepts its decoded calibration mapping. The model owns species,
+explicit basis and transition facts, top-level quantity-kind units, mass, and
+signed ``C6``. The calibration owns portable Raman and CZ control recipes and
+contains no model identity.
 
 .. autoclass:: fatqat.emulator.Atom3LevelModel
    :members:
@@ -170,7 +176,7 @@ Construction and execution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: fatqat.emulator.Atom2LevelEmulator
-   :members: model, arrangement, interaction_policy, run, propagator, check_noise_support
+   :members: model, arrangement, interaction_cutoff, run, propagator, check_noise_support
 
 ``propagator()`` returns a coherent ``(2**N, 2**N)`` operator. It rejects
 measurement and any nonempty elapsed plan with accepted Lindblad noise. An
@@ -184,35 +190,42 @@ the ``C6/R^6`` interaction law, and optional channel bounds. It contains no
 geometry or calibration.
 
 .. autoclass:: fatqat.emulator.Atom2LevelModel
-   :members: angular_frequency_unit, drive_control, detuning_control
+   :members: angular_frequency_unit, control, available_controls
 
 The global drive accepts a complex :py:class:`~fatqat.waveforms.SampledWaveform`;
 its complex values encode amplitude and phase together. The global detuning
 accepts real samples. Both use ``rad/us`` and apply to every arrangement site.
 
-Interaction policy
+Interaction cutoff
 ~~~~~~~~~~~~~~~~~~
 
-The default nearest-neighbor policy includes row/column four-neighbor edges
-without enumerating all pairs. The explicit full-pair policy includes every
-``i < j`` pair. Both are static during evolution.
-
-.. autoclass:: fatqat.emulator.GridInteractionPolicy
-   :members: nearest_neighbor, full_pair
+Interaction pairs are derived privately from Euclidean coordinate distances.
+The default ``interaction_cutoff=None`` keeps every unordered pair and
+preserves the complete ``C6/R^6`` Hamiltonian. A finite nonnegative cutoff
+is a hard numerical truncation in the model distance unit (currently
+micrometres): it keeps pairs whose distance is inclusively at or below the
+cutoff, while ``0.0`` disables pair interactions. The implementation uses a
+fixed eight-machine-epsilon representation allowance at that inclusive
+boundary so decimal rectangular spacings behave consistently; it is not a
+user-adjustable physical tolerance. For a rectangular arrangement,
+``interaction_cutoff=arrangement.spacing`` keeps only horizontal and vertical
+nearest pairs. This parameter deletes Hamiltonian terms and is not a physical
+blockade radius.
 
 Lindblad capability and mode selection
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The two-level emulator accepts local background, rate-form
 :py:class:`~fatqat.noise.AmplitudeDamping` and
-:py:class:`~fatqat.noise.PhaseDamping`. Each background registration must name
-one site; enumerate sites explicitly when the same generator is present on
-several. This is the built-in Lindblad-map behavior. Supplying a replacement
-map can add operation-scoped or background generator declarations, subject to
-the two-level dimension and local selector restrictions. Finite ``p`` forms
-are rejected rather than converted with a pulse duration. Amplitude damping
-requires exactly one adjacent-transition rate. Readout confusion and
-unregistered channel families are rejected.
+:py:class:`~fatqat.noise.PhaseDamping`,
+:py:class:`~fatqat.noise.ThermalRelaxation`, and rate-form
+:py:class:`~fatqat.noise.Depolarizing`. Each background registration names one
+site; enumerate sites explicitly when the same generator is present on
+several. Rates use inverse microseconds and relaxation times use microseconds.
+Finite ``p`` forms are rejected rather than converted with a pulse duration.
+Binary :py:class:`~fatqat.noise.ReadoutConfusion` is a classical report channel
+applied only to the reported digit after physical collapse, not a Lindblad
+operator. ``Loss`` and ``IncoherentTransitions`` remain unsupported.
 
 With no Lindblad registration, the two-level backend uses a ket-preserving solve.
 An unmeasured noisy program uses an exact ensemble density-matrix solve. A

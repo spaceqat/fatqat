@@ -31,29 +31,19 @@ documents. The model owns species, levels, units, and `C6`; the portable
 calibration owns only gate-control recipe data. Geometry belongs to neither
 document.
 
-This complete two-site example defines both documents inline so it can be
-copied and executed without package-private fixtures:
+This complete two-site example loads the public reference model catalog and
+defines the separate calibration inline. Inspect the loaded snapshot before
+construction; its references identify the Evered et al. source.
 
 ```{doctest}
 >>> import fatqat as fq
->>> model_document = {
-...     "format": {"id": "atom.rb87_rydberg_3level", "version": 1},
-...     "model": {"id": "rb87-53s-reference", "revision": "2026-08-05"},
-...     "system": {
-...         "species": "Rb87",
-...         "basis": {
-...             "0": "5S1/2,F=1,mF=0",
-...             "1": "5S1/2,F=2,mF=0",
-...             "r": "53S1/2,mJ=1/2",
-...         },
-...         "transitions": {"rydberg": {"from": "1", "to": "r"}},
-...     },
-...     "units": {
-...         "mass": "u", "distance": "um", "time": "us",
-...         "angular_frequency": "rad/us", "c6": "rad/us*um^6",
-...     },
-...     "parameters": {"mass": 86.9091805, "c6": 180955.73684677208},
-... }
+>>> model_document = fq.emulator.load_model_document("atom3level.reference")
+>>> model_document["model"]
+{'id': 'rb87-53s-reference', 'revision': '2026-08-22'}
+>>> model_document["parameters"]
+{'mass': 86.9091805, 'c6': 180955.73684677208}
+>>> len(model_document["references"])
+1
 >>> calibration_document = {
 ...     "format": {
 ...         "id": "atom.rb87_rydberg_3level_fixed_pulse", "version": 1,
@@ -76,7 +66,9 @@ copied and executed without package-private fixtures:
 ...         },
 ...     },
 ... }
->>> model = fq.emulator.Atom3LevelModel(model_document)
+>>> model = fq.emulator.Atom3LevelModel.from_document(model_document)
+>>> tuple(model.available_controls)
+('raman', 'rydberg')
 >>> arrangement = fq.AtomArrangement.rectangular(rows=1, cols=2, spacing=2.0)
 >>> backend = fq.emulator.Atom3LevelEmulator(
 ...     model, arrangement=arrangement
@@ -150,11 +142,11 @@ than ordinary program targets, identifies the site:
 ...     0.5,
 ...     (
 ...         fq.emulator.PulseControl(
-...             model.raman_control(0),
+...             model.control.raman(0),
 ...             fq.waveforms.SampledWaveform((0.0, 0.5), (0.2, 0.2j)),
 ...         ),
 ...         fq.emulator.PulseControl(
-...             model.rydberg_control(1),
+...             model.control.rydberg(1),
 ...             fq.waveforms.SampledWaveform((0.0, 0.5), (0.1, 0.1)),
 ...         ),
 ...     ),
@@ -241,7 +233,8 @@ The three-level emulator accepts a public `PulseImplementationMap`. Standard
 maps come from `default_atom_3level_gate_implementation_map(model=...,
 calibration=...)`; custom operand-aware rules receive plain site ordinals in
 `device_operands` and return claim-free `PulseDefinition` values using public
-`frame()`, `raman_control()`, and `rydberg_control()` structural addresses.
+`frame()`, `model.control.raman()`, and `model.control.rydberg()` structural
+addresses.
 Direct control continues to bypass gate-map lookup. Package defaults are
 nominal simulation baselines rather than hardware-fidelity guarantees; use a
 complete separate calibration document for custom values instead of patching

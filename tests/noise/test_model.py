@@ -94,6 +94,15 @@ def test_operation_is_occurrence_scope_and_omission_is_background_scope():
     assert noise._background_noise_for(q[0], 0) == ()
 
 
+def test_rate_depolarizing_is_a_single_site_background_declaration():
+    noise = NoiseModel()
+    channel = Depolarizing(rate=0.2)
+    noise.add(channel, targets=1)
+    _program, q, _layout = _program_and_layout()
+
+    assert noise._background_noise_for(q[1], 1) == (channel,)
+
+
 def test_operationless_noise_is_not_an_every_gate_shorthand():
     with pytest.raises(ValueError, match="not shorthand"):
         NoiseModel().add(PhaseDamping(p=0.1))

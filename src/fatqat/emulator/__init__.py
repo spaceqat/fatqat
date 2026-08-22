@@ -8,7 +8,7 @@ ordinary gates through a :class:`PulseImplementationMap`, accept direct
 The common workflow lets each gate-capable emulator compile its package
 default internally::
 
-    model = TransmonModel(model_document)
+    model = TransmonModel.from_document(model_document)
     result = TransmonEmulator(model).run(program).result()
 
 Calibration documents are portable inputs to the standard map builders, not
@@ -33,10 +33,10 @@ from ._core.model_document import (
     FormatIdentity,
     ModelIdentity,
 )
+from ._model_catalog import available_model_documents, load_model_document
 from .atom_2level import (
     Atom2LevelEmulator,
     Atom2LevelModel,
-    GridInteractionPolicy,
 )
 from .atom_3level import (
     Atom3LevelCalibration,
@@ -79,8 +79,9 @@ __all__ = [
     "default_atom_3level_calibration",
     "default_atom_3level_gate_implementation_map",
     "Atom2LevelModel",
-    "GridInteractionPolicy",
     "FormatIdentity",
     "ModelIdentity",
     "CalibrationIdentity",
+    "available_model_documents",
+    "load_model_document",
 ]

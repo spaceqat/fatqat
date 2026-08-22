@@ -26,5 +26,6 @@
         "max_duration": null
       }
     }
-  }
+  },
+  "references": ["doi:10.1038/s41586-023-06481-y"]
 }

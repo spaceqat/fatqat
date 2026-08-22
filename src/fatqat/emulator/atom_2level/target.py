@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import dist
+import sys
 
 import numpy as np
 
@@ -26,21 +27,69 @@ from .._core.waveform import (
     _real_spline_minimum_and_maximum,
 )
 from .model import Atom2LevelModel
-from .policy import GridInteractionPolicy, _interaction_edges
 
 _FAMILY = "atom.rydberg_2level"
 
 
 @dataclass(frozen=True, slots=True)
 class _Atom2LevelInteraction:
+    """Store one arrangement-derived Hamiltonian interaction term.
+
+    Ordinals follow arrangement coordinate order. The signed strength retains
+    the model's C6 sign and is already divided by the sixth power of distance.
+    """
+
     first: int
     second: int
     distance_um: float
     signed_strength_rad_per_us: float
 
 
+def _within_interaction_cutoff(
+    first: tuple[float, float, float],
+    second: tuple[float, float, float],
+    distance: float,
+    cutoff: float | None,
+) -> bool:
+    """Test an interaction distance against the numerical cutoff.
+
+    ``None`` retains every pair and the explicit zero value retains none. A
+    distance at or below a finite cutoff is included. Values just above the
+    boundary are included only within ``8 * epsilon * scale``, where ``scale``
+    is the largest distance, cutoff, or absolute coordinate component. This
+    fixed allowance compensates for arithmetic used to construct rectangular
+    coordinates without defining an adjustable physical tolerance.
+
+    Args:
+        first: First site's three-dimensional coordinate.
+        second: Second site's three-dimensional coordinate.
+        distance: Precomputed Euclidean distance between the coordinates.
+        cutoff: Normalized finite nonnegative cutoff, or ``None``.
+
+    Returns:
+        Whether the pair contributes an interaction term.
+    """
+    if cutoff is None:
+        return True
+    if cutoff == 0.0:
+        return False
+    if distance <= cutoff:
+        return True
+    scale = max(
+        distance,
+        cutoff,
+        *(abs(component) for point in (first, second) for component in point),
+    )
+    return distance - cutoff <= 8 * sys.float_info.epsilon * scale
+
+
 class _Atom2LevelTarget:
-    """Bind one two-level model to immutable arrangement topology."""
+    """Bind one two-level model to immutable site geometry.
+
+    Construction derives the deterministic unordered interaction table once.
+    Later lowering uses this target to validate structural control addresses,
+    resource binding, and scheduling claims without exposing a public graph.
+    """
 
     local_dimension = 2
 
@@ -48,28 +97,36 @@ class _Atom2LevelTarget:
         self,
         model: Atom2LevelModel,
         arrangement: AtomArrangement,
-        policy: GridInteractionPolicy,
+        interaction_cutoff: float | None,
     ) -> None:
         self.model = model
-        self.device_labels = tuple(range(arrangement.cardinality))
-        self.hilbert_dimension = 2**arrangement.cardinality
+        self.device_labels = tuple(range(arrangement.num_sites))
+        self.hilbert_dimension = 2**arrangement.num_sites
         owner = object()
         self._claims = tuple(
             _TargetClaim(owner, "site", ordinal) for ordinal in self.device_labels
         )
         interactions = []
-        for first, second in _interaction_edges(policy, arrangement):
-            distance = dist(
-                arrangement.coordinates[first], arrangement.coordinates[second]
-            )
-            interactions.append(
-                _Atom2LevelInteraction(
-                    first,
-                    second,
+        coordinates = arrangement.coordinates
+        for first in range(arrangement.num_sites):
+            for second in range(first + 1, arrangement.num_sites):
+                first_coordinate = coordinates[first]
+                second_coordinate = coordinates[second]
+                distance = dist(first_coordinate, second_coordinate)
+                if _within_interaction_cutoff(
+                    first_coordinate,
+                    second_coordinate,
                     distance,
-                    model.c6_angular_per_us_um6 / distance**6,
-                )
-            )
+                    interaction_cutoff,
+                ):
+                    interactions.append(
+                        _Atom2LevelInteraction(
+                            first,
+                            second,
+                            distance,
+                            model.c6_angular_per_us_um6 / distance**6,
+                        )
+                    )
         self.interactions = tuple(interactions)
 
     def bind_control(self, reference: ControlChannel) -> _ControlBinding:

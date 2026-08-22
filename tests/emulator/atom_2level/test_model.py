@@ -23,23 +23,26 @@ def document_fixture():
     return json.loads(_FIXTURE.read_text(encoding="utf-8"))
 
 
-def test_direct_constructor_is_geometry_free_immutable_and_unit_explicit(document):
-    assert tuple(inspect.signature(Atom2LevelModel).parameters) == ("document",)
+def test_from_document_is_geometry_free_immutable_and_unit_explicit(document):
+    assert tuple(inspect.signature(Atom2LevelModel.from_document).parameters) == (
+        "document",
+    )
     source = deepcopy(document)
-    model = Atom2LevelModel(document)
+    model = Atom2LevelModel.from_document(document)
     document["system"]["basis"]["g"] = "changed"
 
-    assert model == Atom2LevelModel(source)
-    assert isinstance(model == Atom2LevelModel(source), bool)
+    assert model == Atom2LevelModel.from_document(source)
+    assert isinstance(model == Atom2LevelModel.from_document(source), bool)
     assert model.format == FormatIdentity("atom.rb87_rydberg_2level", 1)
     assert model.kind == "atom.rydberg_2level"
-    assert model.identity == ModelIdentity("rb87-70s-analog-reference", "2026-08-07")
+    assert model.identity == ModelIdentity("rb87-53s-two-level-reference", "2026-08-22")
     assert model.species == "Rb87"
-    assert model.ground_state == "5S1/2,F=2,mF=2"
+    assert model.ground_state == "5S1/2,F=2,mF=0"
+    assert model.rydberg_state == "53S1/2,mJ=+1/2"
     assert model.basis_order == ("g", "r")
     assert model.local_dimension == 2
     assert model.interaction_law == "C6/R^6"
-    assert model.c6_angular_per_us_um6 == 1.0
+    assert model.c6_angular_per_us_um6 == 180955.73684677208
     assert (
         model.distance_unit,
         model.time_unit,
@@ -58,10 +61,17 @@ def test_direct_constructor_is_geometry_free_immutable_and_unit_explicit(documen
         del model.identity
 
 
+def test_direct_construction_is_removed(document):
+    with pytest.raises(TypeError, match="from_document"):
+        Atom2LevelModel()
+    with pytest.raises(TypeError, match="from_document"):
+        Atom2LevelModel(document)
+
+
 @pytest.mark.parametrize("c6", [-2.0, 0.0, 2.0])
 def test_constructor_accepts_finite_signed_or_zero_c6(document, c6):
     document["parameters"]["c6"] = c6
-    assert Atom2LevelModel(document).c6_angular_per_us_um6 == c6
+    assert Atom2LevelModel.from_document(document).c6_angular_per_us_um6 == c6
 
 
 @pytest.mark.parametrize(
@@ -91,7 +101,7 @@ def test_constructor_requires_exact_keys_at_every_level(
     else:
         cursor["unexpected"] = None
     with pytest.raises(BackendValidationError):
-        Atom2LevelModel(document)
+        Atom2LevelModel.from_document(document)
 
 
 @pytest.mark.parametrize(
@@ -112,7 +122,7 @@ def test_constructor_requires_exact_keys_at_every_level(
 def test_constructor_rejects_invalid_fixed_model_facts(document, mutate):
     mutate(document)
     with pytest.raises(BackendValidationError):
-        Atom2LevelModel(document)
+        Atom2LevelModel.from_document(document)
 
 
 @pytest.mark.parametrize(
@@ -130,7 +140,7 @@ def test_constructor_rejects_invalid_fixed_model_facts(document, mutate):
 def test_constructor_rejects_invalid_optional_limits(document, field, value):
     document["parameters"]["channel_limits"]["rydberg_global"][field] = value
     with pytest.raises(BackendValidationError):
-        Atom2LevelModel(document)
+        Atom2LevelModel.from_document(document)
 
 
 @pytest.mark.parametrize(
@@ -143,36 +153,36 @@ def test_constructor_rejects_invalid_optional_limits(document, field, value):
 def test_constructor_rejects_inverted_limit_pairs(document, updates):
     document["parameters"]["channel_limits"]["rydberg_global"].update(updates)
     with pytest.raises(BackendValidationError):
-        Atom2LevelModel(document)
+        Atom2LevelModel.from_document(document)
 
 
-def test_control_factories_have_exact_zero_argument_structural_contract(document):
-    first = Atom2LevelModel(document)
+def test_control_selectors_have_exact_zero_argument_structural_contract(document):
+    first = Atom2LevelModel.from_document(document)
     changed = deepcopy(document)
     changed["parameters"]["c6"] = -2.0
-    second = Atom2LevelModel(changed)
+    second = Atom2LevelModel.from_document(changed)
 
-    assert tuple(inspect.signature(first.drive_control).parameters) == ()
-    assert tuple(inspect.signature(first.detuning_control).parameters) == ()
-    assert isinstance(first.drive_control(), ControlChannel)
-    assert isinstance(first.detuning_control(), ControlChannel)
-    assert first.drive_control() == second.drive_control()
-    assert first.detuning_control() == second.detuning_control()
-    assert first.drive_control() != first.detuning_control()
-    assert type(first.drive_control()).__name__.startswith("_")
+    assert isinstance(first.control.drive(), ControlChannel)
+    assert isinstance(first.control.detuning(), ControlChannel)
+    assert first.control.drive() == second.control.drive()
+    assert first.control.detuning() == second.control.detuning()
+    assert first.control.drive() != first.control.detuning()
+    assert type(first.control.drive()).__name__.startswith("_")
+    with pytest.raises(TypeError):
+        first.control.drive(0)
 
 
 def test_removed_legacy_discovery_types_are_not_public(document):
     import fatqat.emulator.atom_2level as atom_2level
 
-    model = Atom2LevelModel(document)
+    model = Atom2LevelModel.from_document(document)
     assert not hasattr(atom_2level, "Channel" + "Description")
     assert not hasattr(atom_2level, "ControlComponent" + "Description")
     assert not hasattr(model, "describe_" + "channel")
 
 
 def test_model_is_a_direct_frozen_slotted_value_with_exact_parser_table(document):
-    model = Atom2LevelModel(document)
+    model = Atom2LevelModel.from_document(document)
     assert tuple(_MODEL_PARSERS) == (FormatIdentity("atom.rb87_rydberg_2level", 1),)
     assert not next(
         field for field in fields(Atom2LevelModel) if field.name == "format"
@@ -189,5 +199,5 @@ def test_model_is_a_direct_frozen_slotted_value_with_exact_parser_table(document
         "parser",
     ):
         assert not hasattr(model, removed)
-    assert isinstance(model.drive_control(), _ControlAddress)
-    assert isinstance(model.detuning_control(), _ControlAddress)
+    assert isinstance(model.control.drive(), _ControlAddress)
+    assert isinstance(model.control.detuning(), _ControlAddress)

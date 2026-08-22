@@ -1,0 +1,21 @@
+{
+  "format": {"id": "sc.transmon_exchange", "version": 1},
+  "model": {"id": "synthetic-transmon-exchange-reference", "revision": "2026-08-22"},
+  "system": {
+    "subsystem_type": "transmon",
+    "subsystems": ["q0", "q1"],
+    "control_edges": [
+      {"id": "e0", "subsystems": ["q0", "q1"]}
+    ]
+  },
+  "units": {
+    "frequency": "GHz",
+    "anharmonicity": "GHz"
+  },
+  "parameters": {
+    "subsystems": {
+      "q0": {"frequency": 5.1, "anharmonicity": -0.22},
+      "q1": {"frequency": 5.22, "anharmonicity": -0.24}
+    }
+  }
+}

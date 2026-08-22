@@ -5,14 +5,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 from .._core.document_validation import _exact_keys, _fail, _mapping, _number, _string
+from .._core.control_discovery import _ControlSelector
 from .._core.model_document import (
     FormatIdentity,
     ModelIdentity,
     _dispatch_document,
     _parse_model_identity,
+    _validate_model_document_envelope,
 )
 from .._core.target import _ControlAddress
 
@@ -32,8 +34,44 @@ _LIMIT_KEYS = {
     "min_duration",
     "max_duration",
 }
-_DRIVE_CONTROL = _ControlAddress(_FAMILY, "drive")
-_DETUNING_CONTROL = _ControlAddress(_FAMILY, "detuning")
+
+
+def _drive_control() -> _ControlAddress:
+    """Select the global complex-valued Rydberg drive control.
+
+    Returns:
+        An opaque channel address for use with
+        :class:`~fatqat.emulator.PulseControl`.
+    """
+    return _ControlAddress(_FAMILY, "drive")
+
+
+def _detuning_control() -> _ControlAddress:
+    """Select the global real-valued detuning control.
+
+    Returns:
+        An opaque channel address for use with
+        :class:`~fatqat.emulator.PulseControl`.
+    """
+    return _ControlAddress(_FAMILY, "detuning")
+
+
+_DRIVE_SELECTOR = _ControlSelector("global", (), "complex", "rad/us", _drive_control)
+_DETUNING_SELECTOR = _ControlSelector("global", (), "real", "rad/us", _detuning_control)
+
+
+@dataclass(frozen=True, slots=True)
+class _Atom2Controls:
+    """Immutable namespace for two-level atom control selectors."""
+
+    drive: _ControlSelector = _DRIVE_SELECTOR
+    detuning: _ControlSelector = _DETUNING_SELECTOR
+
+
+_CONTROLS = _Atom2Controls()
+_AVAILABLE_CONTROLS = MappingProxyType(
+    {"drive": _CONTROLS.drive, "detuning": _CONTROLS.detuning}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +132,7 @@ def _parse_limits(value: Any) -> _GlobalControlLimits:
 
 def _parse_model(data: Mapping[str, Any]) -> tuple[Any, ...]:
     path = "physics model"
-    _exact_keys(data, {"format", "model", "system", "units", "parameters"}, path)
+    _validate_model_document_envelope(data, path)
     identity = _parse_model_identity(data["model"], f"{path}.model")
     system = _mapping(data["system"], f"{path}.system")
     _exact_keys(system, {"species", "basis", "transitions"}, f"{path}.system")
@@ -133,7 +171,12 @@ _MODEL_PARSERS = MappingProxyType({_MODEL_FORMAT: _parse_model})
 
 @dataclass(frozen=True, slots=True, init=False)
 class Atom2LevelModel:
-    """Immutable geometry-free two-level Rydberg physics model."""
+    """Immutable geometry-free two-level Rydberg physics model.
+
+    Construct this value with :meth:`from_document`, then discover structural
+    pulse channels through :attr:`control` or :attr:`available_controls`.
+    Geometry is supplied separately to :class:`Atom2LevelEmulator`.
+    """
 
     format: FormatIdentity = field(compare=False)
     identity: ModelIdentity
@@ -153,7 +196,28 @@ class Atom2LevelModel:
     angular_frequency_unit: ClassVar[str] = _UNITS["angular_frequency"]
     c6_unit: ClassVar[str] = _UNITS["c6"]
 
-    def __init__(self, document: Mapping[str, Any]) -> None:
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        """Reject direct construction in favor of :meth:`from_document`.
+
+        Raises:
+            TypeError: Always. Physics model selection must be explicit.
+        """
+        raise TypeError("Atom2LevelModel must be constructed with from_document()")
+
+    @classmethod
+    def from_document(cls, document: Mapping[str, Any]) -> Self:
+        """Construct a validated two-level atom model from a JSON document.
+
+        Args:
+            document: Mapping using the supported Atom2Level model schema.
+
+        Returns:
+            An immutable, geometry-free physics model.
+
+        Raises:
+            BackendValidationError: If the document has an unsupported format
+                or contains invalid model data.
+        """
         source_format, parsed = _dispatch_document(
             document, "physics model", _MODEL_PARSERS
         )
@@ -165,21 +229,34 @@ class Atom2LevelModel:
             c6,
             limits,
         ) = parsed
-        object.__setattr__(self, "format", source_format)
-        object.__setattr__(self, "identity", identity)
-        object.__setattr__(self, "species", species)
-        object.__setattr__(self, "ground_state", ground)
-        object.__setattr__(self, "rydberg_state", rydberg)
-        object.__setattr__(self, "c6_angular_per_us_um6", c6)
-        object.__setattr__(self, "_limits", limits)
+        model = object.__new__(cls)
+        object.__setattr__(model, "format", source_format)
+        object.__setattr__(model, "identity", identity)
+        object.__setattr__(model, "species", species)
+        object.__setattr__(model, "ground_state", ground)
+        object.__setattr__(model, "rydberg_state", rydberg)
+        object.__setattr__(model, "c6_angular_per_us_um6", c6)
+        object.__setattr__(model, "_limits", limits)
+        return model
 
-    def drive_control(self) -> _ControlAddress:
-        """Return the structural global complex-drive control."""
-        return _DRIVE_CONTROL
+    @property
+    def control(self) -> _Atom2Controls:
+        """Return the immutable namespace of supported control selectors.
 
-    def detuning_control(self) -> _ControlAddress:
-        """Return the structural global real-detuning control."""
-        return _DETUNING_CONTROL
+        Returns:
+            A family-owned namespace containing ``drive`` and ``detuning``.
+        """
+        return _CONTROLS
+
+    @property
+    def available_controls(self) -> Mapping[str, _ControlSelector]:
+        """Return inspectable selectors keyed by their public control names.
+
+        Returns:
+            An immutable mapping whose values are the selectors on
+            :attr:`control`.
+        """
+        return _AVAILABLE_CONTROLS
 
 
 __all__ = ["Atom2LevelModel"]

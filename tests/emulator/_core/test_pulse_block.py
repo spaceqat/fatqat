@@ -20,7 +20,7 @@ def _claim(ordinal=0):
 
 def _control(model, subsystem_id="q0", *, offset=0.0):
     return PulseControl(
-        model.drive_control(subsystem_id),
+        model.control.drive(subsystem_id),
         SampledWaveform((0.0, 1.0), (0.0, 0.0)),
         offset,
     )

@@ -76,7 +76,7 @@ def test_matrix_backend_keeps_gate_channels_and_rejects_background_noise():
     noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
     noise.add(ThermalRelaxation(t1=100, t2=150), targets=0)
     report = Simulator().check_noise_support(noise)
-    assert "Depolarizing" in report.accepted_sources
+    assert "Depolarizing(p)" in report.accepted_sources
     assert "ThermalRelaxation(background)" in report.rejected_sources
 
 
@@ -84,7 +84,7 @@ def test_pulse_backend_names_each_rejected_gate_channel_source(model, calibratio
     noise = NoiseModel()
     noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
     report = TransmonEmulator(model).check_noise_support(noise)
-    assert report.rejected_sources == ("Depolarizing",)
+    assert report.rejected_sources == ("Depolarizing(p)",)
 
 
 def test_qutrit_collapse_coefficients_and_t2_limit_are_exact(model, calibration):

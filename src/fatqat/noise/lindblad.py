@@ -8,7 +8,8 @@ import numpy as np
 
 from ..errors import BackendValidationError, UnsupportedOperationError
 from .base import Channel, _ChannelImplementationRegistry
-from .catalog import AmplitudeDamping, PhaseDamping
+from ..implementation.matrices import clock_matrix, shift_matrix
+from .catalog import AmplitudeDamping, Depolarizing, PhaseDamping
 from .relaxation import ThermalRelaxation
 
 
@@ -54,6 +55,42 @@ def phase_damping_lindblad_rule(
         )
     number = np.diag(np.arange(physical_dimension, dtype=float)).astype(complex)
     return (sqrt(2 * rate) * number,)
+
+
+def depolarizing_lindblad_rule(
+    channel: Channel, *, physical_dimension: int
+) -> tuple[np.ndarray, ...]:
+    """Resolve continuous depolarization to nonidentity Weyl operators.
+
+    The ``sqrt(rate) / d`` scaling yields the local generator
+    ``rate * (trace(rho) * I / d - rho)`` in every finite dimension.
+
+    Args:
+        channel: A depolarizing declaration authored in continuous-rate mode.
+        physical_dimension: Local Hilbert-space dimension of the target site.
+
+    Returns:
+        The ``d**2 - 1`` scaled nonidentity Weyl jump operators.
+
+    Raises:
+        BackendValidationError: If the declaration is in probability mode.
+    """
+    assert isinstance(channel, Depolarizing)
+    if channel.rate is None:
+        raise BackendValidationError(
+            "Depolarizing requires authored rate mode on a pulse backend"
+        )
+    scale = sqrt(channel.rate) / physical_dimension
+    return tuple(
+        scale
+        * (
+            shift_matrix(physical_dimension, shift)
+            @ clock_matrix(physical_dimension, phase)
+        )
+        for shift in range(physical_dimension)
+        for phase in range(physical_dimension)
+        if (shift, phase) != (0, 0)
+    )
 
 
 def thermal_relaxation_lindblad_rule(

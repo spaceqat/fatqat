@@ -48,7 +48,7 @@ def test_builder_signature_and_runtime_types_are_exact(model, calibration):
 def test_drag_uses_compiled_source_anharmonicity_and_calibration(
     model_document, calibration_document
 ):
-    source = TransmonModel(model_document)
+    source = TransmonModel.from_document(model_document)
     calibration = TransmonCalibration(calibration_document)
     baseline = _resolve(ops.RX(0.7), ("q0",), model=source, calibration=calibration)
 
@@ -57,7 +57,7 @@ def test_drag_uses_compiled_source_anharmonicity_and_calibration(
     redesigned = _resolve(
         ops.RX(0.7),
         ("q0",),
-        model=TransmonModel(changed_model),
+        model=TransmonModel.from_document(changed_model),
         calibration=calibration,
     )
     assert not np.allclose(
@@ -120,9 +120,9 @@ def test_two_body_rules_cover_both_orders_and_select_ordered_cz_override(
     forward = _resolve(ops.CZ, ("q0", "q1"), model=model, calibration=calibration)
     reverse = _resolve(ops.CZ, ("q1", "q0"), model=model, calibration=calibration)
     assert forward.duration == 64.0
-    assert forward.controls[0].channel == model.detuning_control("q1")
+    assert forward.controls[0].channel == model.control.detuning("q1")
     assert reverse.duration == 60.0
-    assert reverse.controls[0].channel == model.detuning_control("q1")
+    assert reverse.controls[0].channel == model.control.detuning("q1")
 
     iswap_forward = _resolve(
         ops.iSwap, ("q0", "q1"), model=model, calibration=calibration

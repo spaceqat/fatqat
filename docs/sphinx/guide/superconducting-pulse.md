@@ -31,9 +31,20 @@ under a new model version.
 ```python
 import fatqat as fq
 
-model = fq.emulator.TransmonModel(model_document)
+model_document = fq.emulator.load_model_document("transmon.reference")
+print(model_document["model"])
+print(model_document["units"])
+print(model_document["parameters"])
+print(model_document.get("references", []))
+model = fq.emulator.TransmonModel.from_document(model_document)
+assert tuple(model.available_controls) == ("drive", "detuning", "exchange")
 backend = fq.emulator.TransmonEmulator(model)
 ```
+
+The packaged Transmon snapshot is explicitly synthetic and is not a device
+calibration. Copy and edit the returned dictionary when authoring a model, and
+change its identity and revision whenever physical values change. Add
+`references` only when useful citations exist.
 
 For an explicit calibration, keep it as a separate complete JSON-compatible
 document, compile a map, and pass only that map to the emulator:
@@ -130,11 +141,11 @@ the operation has no ordinary program targets:
 duration = 20.0
 controls = (
     fq.emulator.PulseControl(
-        model.drive_control("q0"),
+        model.control.drive("q0"),
         fq.waveforms.SampledWaveform((0.0, duration), (0.02, 0.02j)),
     ),
     fq.emulator.PulseControl(
-        model.exchange_control("q0", "q1"),
+        model.control.exchange("q0", "q1"),
         fq.waveforms.SampledWaveform((0.0, duration), (0.01, 0.01)),
     ),
 )

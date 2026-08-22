@@ -21,15 +21,16 @@ from fatqat.emulator.atom_2level.qutip_adapter import _Atom2LevelQutipAdapter
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     AmplitudeDamping,
+    Depolarizing,
     Loss,
     LindbladImplementationMap,
     PhaseDamping,
+    ReadoutConfusion,
     ThermalRelaxation,
 )
 from fatqat.noise.lindblad import (
     amplitude_damping_lindblad_rule,
     phase_damping_lindblad_rule,
-    thermal_relaxation_lindblad_rule,
 )
 from fatqat.waveforms import SampledWaveform
 
@@ -42,7 +43,9 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
 @pytest.fixture(name="model")
 def model_fixture():
-    return Atom2LevelModel(json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    return Atom2LevelModel.from_document(
+        json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    )
 
 
 def _backend(
@@ -71,14 +74,16 @@ def _noise(channel, *, operation=None, targets=None):
 
 
 def _pulse_program(sites=1, *, measured=False, amplitude=0.0, duration=1.0):
-    model = Atom2LevelModel(json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    model = Atom2LevelModel.from_document(
+        json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    )
     program = fq.Program(sites, sites if measured else 0)
     program.add(
         fq.ops.PulseOperation(
             duration,
             (
                 PulseControl(
-                    model.drive_control(),
+                    model.control.drive(),
                     SampledWaveform((0.0, duration), (amplitude, amplitude)),
                 ),
             ),
@@ -111,7 +116,7 @@ def _single_site_x_map(model):
             0.5,
             (
                 PulseControl(
-                    model.drive_control(),
+                    model.control.drive(),
                     SampledWaveform((0.0, 0.5), (0.0, 0.0)),
                 ),
             ),
@@ -123,13 +128,19 @@ def _single_site_x_map(model):
 
 @pytest.mark.parametrize(
     "channel",
-    [AmplitudeDamping(rate=0.2), PhaseDamping(rate=0.3)],
+    [
+        AmplitudeDamping(rate=0.2),
+        PhaseDamping(rate=0.3),
+        ThermalRelaxation(t1=10.0, t2=15.0),
+        Depolarizing(rate=0.2),
+    ],
 )
-def test_support_accepts_only_background_rate_damping(model, channel):
+def test_support_accepts_builtin_background_generators(model, channel):
     backend = _backend(model)
     report = backend.check_noise_support(_noise(channel))
     assert report.supported
-    assert report.accepted_sources == (f"{type(channel).__name__}(rate, background)",)
+    mode = "rate, " if hasattr(channel, "rate") else ""
+    assert report.accepted_sources == (f"{type(channel).__name__}({mode}background)",)
     assert _backend(model, _noise(channel)).model is model
 
 
@@ -138,7 +149,7 @@ def test_support_accepts_only_background_rate_damping(model, channel):
     [
         _noise(AmplitudeDamping(p=0.2)),
         _noise(PhaseDamping(p=0.2)),
-        _noise(ThermalRelaxation(t1=10.0, t2=15.0)),
+        _noise(Depolarizing(p=0.2), operation=fq.ops.X),
         _noise(AmplitudeDamping(rate=0.2), operation=fq.ops.X),
         _noise(AmplitudeDamping(rate=(0.1, 0.2))),
         _noise(Loss(p=0.2), operation=fq.ops.X),
@@ -154,12 +165,18 @@ def test_support_rejects_probability_unsupported_scoped_and_wrong_arity_noise(
         _backend(model, noise)
 
 
-def test_support_rejects_readout_confusion(model):
+def test_support_accepts_binary_and_rejects_nonbinary_readout_confusion(model):
     noise = fq.NoiseModel()
-    noise.add(fq.noise.ReadoutConfusion(np.eye(2)))
+    noise.add(ReadoutConfusion(np.eye(2)))
     report = _backend(model).check_noise_support(noise)
-    assert not report.supported
-    assert "ReadoutConfusion" in report.rejected_sources
+    assert report.supported
+    assert report.accepted_sources == ("ReadoutConfusion",)
+
+    invalid = fq.NoiseModel()
+    invalid.add(ReadoutConfusion(np.eye(3)))
+    invalid_report = _backend(model).check_noise_support(invalid)
+    assert not invalid_report.supported
+    assert invalid_report.rejected_sources == ("ReadoutConfusion",)
 
 
 def test_explicit_equivalent_map_enables_rate_operation_scope(model):
@@ -236,24 +253,6 @@ def test_explicit_map_keeps_background_rate_and_rejects_probability(model):
         )
 
 
-def test_explicit_map_can_add_a_nondefault_lindblad_descriptor(model):
-    implementations = LindbladImplementationMap()
-    implementations.register(
-        ThermalRelaxation,
-        thermal_relaxation_lindblad_rule,
-    )
-    backend = _backend(
-        model,
-        _noise(ThermalRelaxation(t1=10.0, t2=15.0)),
-        lindblad_map=implementations,
-    )
-
-    result = backend.run(fq.Program(1)).result()
-
-    assert result.available_data == {"density_matrix"}
-    assert result.metadata["solver"]["solver"] == "none"
-
-
 def test_operation_scoped_terms_reach_the_adapter_time_window(model, monkeypatch):
     noise = _noise(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
     backend = _backend(
@@ -268,7 +267,7 @@ def test_operation_scoped_terms_reach_the_adapter_time_window(model, monkeypatch
             0.3,
             (
                 PulseControl(
-                    model.drive_control(),
+                    model.control.drive(),
                     SampledWaveform((0.0, 0.3), (0.0, 0.0)),
                 ),
             ),
@@ -418,6 +417,34 @@ def test_one_atom_damping_matches_analytic_master_equation(model, kind):
     adapter.evolve(run, context, (True,))
 
     assert context.state.full() == pytest.approx(expected, abs=2e-8)
+
+
+def test_continuous_depolarization_matches_probability_law(model):
+    rate = 0.4
+    duration = 0.8
+    backend = _backend(model, _noise(Depolarizing(rate=rate)))
+    result = backend.run(_pulse_program(amplitude=0.0, duration=duration)).result()
+
+    probability = 1.0 - np.exp(-rate * duration)
+    expected = (1.0 - probability) * np.diag([1.0, 0.0]) + probability * np.eye(2) / 2
+    assert result.get_density_matrix() == pytest.approx(expected, abs=2e-8)
+
+
+def test_readout_confusion_changes_only_the_reported_digit(model):
+    noise = fq.NoiseModel()
+    noise.add(ReadoutConfusion(np.array([[0.0, 1.0], [1.0, 0.0]])))
+    backend = _backend(model, noise)
+    program = fq.Program(1, 1)
+    program.measure(0, 0)
+
+    result = backend.run(
+        program,
+        shots=1,
+        result_config={"counts": True, "final_state": True},
+    ).result()
+
+    assert result.get_counts() == {"1": 1}
+    assert result.get_statevector() == pytest.approx(np.asarray([1.0, 0.0]))
 
 
 def test_unmeasured_noise_returns_exact_density_matrix(model):

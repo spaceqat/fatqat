@@ -2,6 +2,7 @@
 
 import inspect
 import json
+from math import inf, nan
 from pathlib import Path
 
 import numpy as np
@@ -12,13 +13,13 @@ from fatqat._pulse_values import PulseControl
 from fatqat.emulator.atom_2level import (
     Atom2LevelModel,
     Atom2LevelEmulator,
-    GridInteractionPolicy,
 )
 from fatqat.emulator._core.backend import _PulseBackend
 from fatqat.emulator._core.pulse import PulseDefinition, PulseImplementationMap
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (
     AmplitudeDamping,
+    Depolarizing,
     LindbladImplementationMap,
     PhaseDamping,
     ThermalRelaxation,
@@ -31,20 +32,24 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
 @pytest.fixture(name="model")
 def model_fixture():
-    return Atom2LevelModel(json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    return Atom2LevelModel.from_document(
+        json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    )
 
 
-def _backend(model, *, site_count=2, policy=None, noise=None):
+def _backend(model, *, site_count=2, interaction_cutoff=None, noise=None):
     return Atom2LevelEmulator(
         model,
         arrangement=fq.AtomArrangement.rectangular(1, site_count, 2.0),
-        interaction_policy=policy,
+        interaction_cutoff=interaction_cutoff,
         noise=noise,
     )
 
 
 def _pulse(duration=1.0, **components):
-    model = Atom2LevelModel(json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    model = Atom2LevelModel.from_document(
+        json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    )
     amplitude = components.pop("amplitude", 1.0)
     phase = components.pop("phase", 0.0)
     detuning = components.pop("detuning", None)
@@ -52,7 +57,7 @@ def _pulse(duration=1.0, **components):
         raise AssertionError(f"unknown test pulse components: {tuple(components)}")
     controls = [
         PulseControl(
-            model.drive_control(),
+            model.control.drive(),
             SampledWaveform(
                 (0.0, duration),
                 (amplitude * np.exp(1j * phase),) * 2,
@@ -62,7 +67,7 @@ def _pulse(duration=1.0, **components):
     if detuning is not None:
         controls.append(
             PulseControl(
-                model.detuning_control(),
+                model.control.detuning(),
                 SampledWaveform((0.0, duration), (detuning, detuning)),
             )
         )
@@ -74,7 +79,7 @@ def test_public_constructor_has_only_the_locked_two_level_arguments(model):
     assert tuple(signature.parameters) == (
         "model",
         "arrangement",
-        "interaction_policy",
+        "interaction_cutoff",
         "noise",
         "gate_implementation_map",
         "lindblad_implementation_map",
@@ -86,13 +91,15 @@ def test_public_constructor_has_only_the_locked_two_level_arguments(model):
     backend = Atom2LevelEmulator(model, arrangement=arrangement)
     assert backend.model is model
     assert backend.arrangement is arrangement
-    assert backend.interaction_policy.mode == "nearest_neighbor"
+    assert backend.interaction_cutoff is None
     assert not hasattr(backend, "calibration")
     assert type(backend).__bases__ == (_PulseBackend,)
     assert not backend._gate_implementation_map.supported_operations()
     assert backend._lindblad_implementation_map.supported_channels() == {
         AmplitudeDamping,
+        Depolarizing,
         PhaseDamping,
+        ThermalRelaxation,
     }
     assert not any(
         name in type(backend).__dict__
@@ -108,31 +115,62 @@ def test_public_constructor_has_only_the_locked_two_level_arguments(model):
     )
 
 
-def test_explicit_policy_identity_and_constructor_types_are_preserved(model):
+def test_cutoff_normalization_read_only_properties_and_constructor_types(model):
     arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
-    policy = GridInteractionPolicy.full_pair()
-    backend = Atom2LevelEmulator(
-        model, arrangement=arrangement, interaction_policy=policy
-    )
+    backend = Atom2LevelEmulator(model, arrangement=arrangement, interaction_cutoff=2)
     assert backend.arrangement is arrangement
-    assert backend.interaction_policy is policy
+    assert backend.interaction_cutoff == 2.0
     with pytest.raises(AttributeError):
         backend.arrangement = fq.AtomArrangement.rectangular(1, 2, 3.0)
     with pytest.raises(AttributeError):
-        backend.interaction_policy = GridInteractionPolicy.nearest_neighbor()
+        backend.interaction_cutoff = 3.0
 
     with pytest.raises(BackendValidationError, match="Atom2LevelModel"):
         Atom2LevelEmulator(object(), arrangement=arrangement)
     with pytest.raises(BackendValidationError, match="AtomArrangement"):
         Atom2LevelEmulator(model, arrangement=object())
-    with pytest.raises(BackendValidationError, match="GridInteractionPolicy"):
-        Atom2LevelEmulator(model, arrangement=arrangement, interaction_policy=object())
     with pytest.raises(BackendValidationError, match="gate_implementation_map"):
         Atom2LevelEmulator(
             model,
             arrangement=arrangement,
             gate_implementation_map=object(),
         )
+
+
+@pytest.mark.parametrize("cutoff", [True, -1, nan, inf, -inf, "2", 1j, object()])
+def test_constructor_rejects_invalid_interaction_cutoffs(model, cutoff):
+    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    with pytest.raises(
+        BackendValidationError,
+        match="interaction_cutoff must be None or a finite nonnegative real number",
+    ):
+        Atom2LevelEmulator(model, arrangement=arrangement, interaction_cutoff=cutoff)
+
+
+@pytest.mark.parametrize(
+    ("authored", "normalized"),
+    [(None, None), (0, 0.0), (2, 2.0), (2.5, 2.5)],
+)
+def test_constructor_normalizes_valid_interaction_cutoffs(model, authored, normalized):
+    backend = Atom2LevelEmulator(
+        model,
+        arrangement=fq.AtomArrangement.rectangular(1, 2, 2.0),
+        interaction_cutoff=authored,
+    )
+    assert backend.interaction_cutoff == normalized
+
+
+def test_removed_interaction_policy_keyword_and_property_are_absent(model):
+    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    with pytest.raises(TypeError, match="interaction_policy"):
+        Atom2LevelEmulator(
+            model,
+            arrangement=arrangement,
+            interaction_policy=None,
+        )
+    assert not hasattr(
+        Atom2LevelEmulator(model, arrangement=arrangement), "interaction_policy"
+    )
     with pytest.raises(BackendValidationError, match="lindblad_implementation_map"):
         Atom2LevelEmulator(
             model,
@@ -150,7 +188,7 @@ def _global_gate_map(model, operation=fq.ops.CZ):
             0.2,
             (
                 PulseControl(
-                    model.drive_control(),
+                    model.control.drive(),
                     SampledWaveform((0.0, 0.2), (0.0, 0.0)),
                 ),
             ),
@@ -193,7 +231,7 @@ def test_maps_are_copied_once_and_explicit_empty_maps_stay_empty(model):
 def test_invalid_attached_noise_rejects_before_target_construction(model, monkeypatch):
     arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
     noise = fq.NoiseModel()
-    noise.add(ThermalRelaxation(t1=10.0, t2=15.0), targets=0)
+    noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
 
     def target_must_not_be_built(*_args, **_kwargs):
         raise AssertionError("target was built before capability classification")
@@ -260,14 +298,15 @@ def test_backend_exposes_no_legacy_discovery_method(model):
 
     assert not hasattr(backend, "describe_" + "channel")
     assert backend._target.model is model
-    assert model.drive_control() == backend.model.drive_control()
-    assert model.detuning_control() == backend.model.detuning_control()
+    assert model.control.drive() == backend.model.control.drive()
+    assert model.control.detuning() == backend.model.control.detuning()
 
 
-def test_program_binding_requires_exact_binary_arrangement_cardinality(model):
+def test_program_binding_requires_exact_binary_arrangement_site_count(model):
     backend = _backend(model)
-    with pytest.raises(BackendValidationError, match="exactly one"):
-        backend.run(fq.Program(1))
+    for program_size in (1, 3):
+        with pytest.raises(BackendValidationError, match="exactly one"):
+            backend.run(fq.Program(program_size))
     with pytest.raises(BackendValidationError, match="dimension-two"):
         backend.run(fq.Program([fq.QuantumRegister(2, dim=3)]))
 

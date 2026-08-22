@@ -17,7 +17,10 @@ from fatqat.noise.catalog import (
     pauli_channel_rule,
     phase_damping_rule,
 )
-from fatqat.noise.lindblad import phase_damping_lindblad_rule
+from fatqat.noise.lindblad import (
+    depolarizing_lindblad_rule,
+    phase_damping_lindblad_rule,
+)
 
 
 def _refs(*dims):
@@ -61,6 +64,63 @@ def test_depolarizing_acts_jointly_on_multi_subsystem_targets():
     rho = _random_rho(4)
     expected = (1 - p) * rho + p * np.eye(4) / 4
     assert np.allclose(_apply(kraus_ops, rho), expected)
+
+
+def test_depolarizing_dual_mode_contract_is_keyword_only_and_mode_specific():
+    with pytest.raises(TypeError):
+        Depolarizing(0.1)
+    with pytest.raises(ValueError, match="exactly one"):
+        Depolarizing()
+    with pytest.raises(ValueError, match="exactly one"):
+        Depolarizing(p=0.1, rate=0.2)
+
+    finite = Depolarizing(p=0.1)
+    continuous = Depolarizing(rate=0.2)
+    assert (finite.p, finite.rate, finite.num_subsystems) == (0.1, None, None)
+    assert (continuous.p, continuous.rate, continuous.num_subsystems) == (
+        None,
+        0.2,
+        1,
+    )
+
+
+@pytest.mark.parametrize("bad_rate", [-0.1, True, "0.1", np.inf, np.nan])
+def test_depolarizing_rate_validation(bad_rate):
+    with pytest.raises(ValueError, match="rate"):
+        Depolarizing(rate=bad_rate)
+
+
+def test_depolarizing_explicit_modes_round_trip():
+    duration = 2.0
+    rate = 0.05
+    probability = Depolarizing(rate=rate).as_probability(duration)
+    assert probability == pytest.approx(1 - np.exp(-rate * duration))
+    assert Depolarizing(p=probability).as_rate(duration) == pytest.approx(rate)
+
+
+def test_matrix_depolarizing_rule_rejects_rate_mode():
+    with pytest.raises(BackendValidationError, match="rate mode"):
+        depolarizing_rule(Depolarizing(rate=0.1), targets=_refs(2))
+
+
+@pytest.mark.parametrize("dim", [2, 3])
+def test_depolarizing_lindblad_rule_matches_dimension_generic_generator(dim):
+    rate = 0.3
+    operators = depolarizing_lindblad_rule(
+        Depolarizing(rate=rate), physical_dimension=dim
+    )
+    rho = _random_rho(dim)
+    generated = sum(
+        operator @ rho @ operator.conj().T
+        - 0.5
+        * (operator.conj().T @ operator @ rho + rho @ operator.conj().T @ operator)
+        for operator in operators
+    )
+
+    assert len(operators) == dim**2 - 1
+    assert all(operator.shape == (dim, dim) for operator in operators)
+    expected = rate * (np.trace(rho) * np.eye(dim) / dim - rho)
+    assert np.allclose(generated, expected)
 
 
 def test_amplitude_damping_qubit_decay():
@@ -214,7 +274,7 @@ def test_phase_damping_rejects_multi_target_gates():
         phase_damping_rule(PhaseDamping(p=0.1), targets=_refs(2, 2))
 
 
-@pytest.mark.parametrize("bad_p", [-0.1, 1.5, True, "0.1"])
+@pytest.mark.parametrize("bad_p", [-0.1, 1.5, True, "0.1", np.inf, np.nan])
 def test_descriptor_probability_validation(bad_p):
     with pytest.raises(ValueError):
         Depolarizing(p=bad_p)

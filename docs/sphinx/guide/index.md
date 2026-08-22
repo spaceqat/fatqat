@@ -31,7 +31,7 @@ Short follow-on snippets state when they assume an existing `program` or import.
 9. [Three-level atom emulation](atom-3level.md) covers calibrated gates,
    selected-site direct controls, full-pair crosstalk, and qutrit results.
 10. [Two-level atom emulation](atom-2level.md) covers global direct controls,
-   sampled waveforms, interaction policies, and Lindblad modes.
+   sampled waveforms, distance-cutoff interactions, and Lindblad modes.
 
 If an example fails or its output surprises you, see
 [Troubleshooting](troubleshooting.md).

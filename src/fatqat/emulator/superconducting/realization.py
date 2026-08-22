@@ -77,7 +77,7 @@ def _iswap_definition(
         duration,
         (
             PulseControl(
-                model.exchange_control(first, second),
+                model.control.exchange(first, second),
                 SampledWaveform(tlist, exchange),
             ),
         ),
@@ -114,11 +114,11 @@ def _cz_definition(
         duration,
         (
             PulseControl(
-                model.detuning_control(detuning_subsystem),
+                model.control.detuning(detuning_subsystem),
                 SampledWaveform(detuning_grid, detuning),
             ),
             PulseControl(
-                model.exchange_control(first, second),
+                model.control.exchange(first, second),
                 SampledWaveform(exchange_grid, exchange),
                 ramp,
             ),
@@ -139,7 +139,7 @@ def default_transmon_gate_implementation_map(
     drag_contexts = {
         subsystem.id: _DragContext(
             angular_rate_from_ghz(subsystem.anharmonicity_ghz),
-            model.drive_control(subsystem.id),
+            model.control.drive(subsystem.id),
             model.frame(subsystem.id),
             calibration._rx_ry_duration_ns,
             calibration._rx_ry_drag_coefficient,

@@ -23,7 +23,7 @@ def _definition(model, subsystem_id="q0"):
         1.0,
         (
             PulseControl(
-                model.drive_control(subsystem_id),
+                model.control.drive(subsystem_id),
                 SampledWaveform((0.0, 1.0), (0.0, 0.0)),
             ),
         ),
@@ -93,7 +93,7 @@ def test_operand_aware_function_and_callable_object_receive_exact_tuple(model):
         implementations.add(ops.X, implementation)
         rule = implementations.implementation_for(ops.X, device_operands=("q1",))
         result = _invoke_pulse_rule(rule, ops.X, device_operands=("q1",))
-        assert result.controls[0].channel == model.drive_control("q1")
+        assert result.controls[0].channel == model.control.drive("q1")
 
     assert received == [("q1",), ("q1",)]
 

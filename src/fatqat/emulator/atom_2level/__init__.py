@@ -7,10 +7,8 @@ other pulse-emulator families.
 
 from .backend import Atom2LevelEmulator
 from .model import Atom2LevelModel
-from .policy import GridInteractionPolicy
 
 __all__ = [
     "Atom2LevelEmulator",
     "Atom2LevelModel",
-    "GridInteractionPolicy",
 ]
