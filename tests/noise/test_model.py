@@ -134,6 +134,11 @@ def test_background_scope_rejects_nonlocal_or_positional_forms(declaration, kwar
         NoiseModel().add(declaration, **kwargs)
 
 
+def test_probability_depolarizing_background_error_names_authored_mode():
+    with pytest.raises(ValueError, match=r"Depolarizing\(p\).*finite-probability"):
+        NoiseModel().add(Depolarizing(p=0.1), targets=0)
+
+
 @pytest.mark.parametrize(
     "operation",
     [fq.ops.Barrier, fq.ops.Reset, fq.ops.PulseOperation],

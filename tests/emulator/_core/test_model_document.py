@@ -140,3 +140,33 @@ def test_model_envelope_rejects_nonexact_or_invalid_provenance(mutate):
     mutate(document)
     with pytest.raises(BackendValidationError):
         _validate_model_document_envelope(document, "physics model")
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected", "unexpected"),
+    [
+        (
+            lambda document: document.update(extra=None),
+            "unknown ['extra']",
+            "provenance",
+        ),
+        (lambda document: document.pop("units"), "missing ['units']", "provenance"),
+    ],
+)
+def test_model_envelope_reports_only_the_fault_beside_valid_provenance(
+    mutate, expected, unexpected
+):
+    document = {
+        "format": {},
+        "model": {},
+        "system": {},
+        "units": {},
+        "parameters": {},
+        "provenance": {"description": "Synthetic reference.", "sources": []},
+    }
+    mutate(document)
+
+    with pytest.raises(BackendValidationError) as captured:
+        _validate_model_document_envelope(document, "physics model")
+    assert expected in str(captured.value)
+    assert unexpected not in str(captured.value)

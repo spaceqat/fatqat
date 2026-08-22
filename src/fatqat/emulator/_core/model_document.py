@@ -83,9 +83,8 @@ def _validate_model_document_envelope(value: Mapping[str, Any], path: str) -> No
     variants shared by all physics-model documents.
     """
     base_keys = {"format", "model", "system", "units", "parameters"}
-    keys = set(value)
-    if keys not in (base_keys, base_keys | {"provenance"}):
-        _exact_keys(value, base_keys, path)
+    allowed = base_keys | {"provenance"} if "provenance" in value else base_keys
+    _exact_keys(value, allowed, path)
     if "provenance" not in value:
         return
     provenance_path = f"{path}.provenance"

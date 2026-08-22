@@ -19,14 +19,15 @@ Function and symbolic waveforms remain future work.
 
 The model document stays geometry-free. Load the packaged reference explicitly
 and inspect its identity, units, parameters, and provenance before choosing it.
-This reference's `c6=1.0` is deliberately synthetic; it demonstrates the API
-and is not a literature value or device calibration.
+This reference's identity, basis labels, and `c6=1.0` are deliberately
+synthetic; they demonstrate the API and are not literature values or a device
+calibration.
 
 ```{doctest}
 >>> import fatqat as fq
 >>> model_document = fq.emulator.load_model_document("atom2level.reference")
 >>> model_document["model"]
-{'id': 'rb87-70s-analog-reference', 'revision': '2026-08-07'}
+{'id': 'synthetic-atom2level-reference', 'revision': '2026-08-22'}
 >>> model_document["units"]["distance"], model_document["parameters"]["c6"]
 ('um', 1.0)
 >>> model_document["provenance"]["sources"]

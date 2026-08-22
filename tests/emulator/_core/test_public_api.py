@@ -322,6 +322,18 @@ def test_atom_2level_family_exports_final_public_values_only():
         assert not hasattr(atom_2level, private_name)
 
 
+def test_control_selector_repr_contains_only_stable_authoring_metadata():
+    model = Atom2LevelModel.from_document(
+        fq.emulator.load_model_document("atom2level.reference")
+    )
+
+    representation = repr(model.control.drive)
+    assert "scope='global'" in representation
+    assert "coefficient_domain='complex'" in representation
+    assert "_factory" not in representation
+    assert "0x" not in representation
+
+
 def test_removed_two_level_atom_surface_has_no_compatibility_aliases():
     from fatqat.emulator import atom_2level
 

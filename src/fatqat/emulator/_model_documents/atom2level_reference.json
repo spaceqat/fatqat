@@ -1,11 +1,11 @@
 {
   "format": {"id": "atom.rb87_rydberg_2level", "version": 1},
-  "model": {"id": "rb87-70s-analog-reference", "revision": "2026-08-07"},
+  "model": {"id": "synthetic-atom2level-reference", "revision": "2026-08-22"},
   "system": {
     "species": "Rb87",
     "basis": {
-      "g": "5S1/2,F=2,mF=2",
-      "r": "70S1/2,mJ=1/2"
+      "g": "synthetic-ground-state",
+      "r": "synthetic-rydberg-state"
     },
     "transitions": {"rydberg": {"from": "g", "to": "r"}}
   },
@@ -28,7 +28,7 @@
     }
   },
   "provenance": {
-    "description": "Syntax and execution reference for the two-level Rb87 70S model. Its C6 value is synthetic and intended for examples and tests, not as a literature value or device calibration.",
+    "description": "Syntax and execution reference for the two-level Rb87 model schema. Its basis labels and C6 value are synthetic and intended for examples and tests, not as literature values or a device calibration.",
     "sources": []
   }
 }

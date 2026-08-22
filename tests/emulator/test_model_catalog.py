@@ -10,8 +10,8 @@ _EXPECTED = {
     "atom2level.reference": (
         fq.emulator.Atom2LevelModel,
         "atom.rb87_rydberg_2level",
-        "rb87-70s-analog-reference",
-        "2026-08-07",
+        "synthetic-atom2level-reference",
+        "2026-08-22",
         {
             "distance": "um",
             "time": "us",

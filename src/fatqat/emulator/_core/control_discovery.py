@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .target import _ControlAddress
 
@@ -20,7 +20,7 @@ class _ControlSelector:
     operands: tuple[str, ...]
     coefficient_domain: str
     coefficient_unit: str
-    _factory: Callable[..., _ControlAddress]
+    _factory: Callable[..., _ControlAddress] = field(repr=False)
 
     @property
     def __wrapped__(self) -> Callable[..., _ControlAddress]:
