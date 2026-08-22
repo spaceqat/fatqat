@@ -33,6 +33,7 @@ from ._core.model_document import (
     FormatIdentity,
     ModelIdentity,
 )
+from ._model_catalog import available_model_documents, load_model_document
 from .atom_2level import (
     Atom2LevelEmulator,
     Atom2LevelModel,
@@ -81,4 +82,6 @@ __all__ = [
     "FormatIdentity",
     "ModelIdentity",
     "CalibrationIdentity",
+    "available_model_documents",
+    "load_model_document",
 ]

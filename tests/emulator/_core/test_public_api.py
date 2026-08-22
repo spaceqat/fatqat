@@ -88,6 +88,8 @@ def test_family_and_aggregate_exports_are_exact():
         "FormatIdentity",
         "ModelIdentity",
         "CalibrationIdentity",
+        "available_model_documents",
+        "load_model_document",
     )
     assert tuple(atom_2level.__all__) == (
         "Atom2LevelEmulator",

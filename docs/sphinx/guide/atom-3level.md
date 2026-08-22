@@ -31,29 +31,19 @@ documents. The model owns species, levels, units, and `C6`; the portable
 calibration owns only gate-control recipe data. Geometry belongs to neither
 document.
 
-This complete two-site example defines both documents inline so it can be
-copied and executed without package-private fixtures:
+This complete two-site example loads the public reference model catalog and
+defines the separate calibration inline. Inspect the loaded snapshot before
+construction; its provenance records the Evered et al. source.
 
 ```{doctest}
 >>> import fatqat as fq
->>> model_document = {
-...     "format": {"id": "atom.rb87_rydberg_3level", "version": 1},
-...     "model": {"id": "rb87-53s-reference", "revision": "2026-08-05"},
-...     "system": {
-...         "species": "Rb87",
-...         "basis": {
-...             "0": "5S1/2,F=1,mF=0",
-...             "1": "5S1/2,F=2,mF=0",
-...             "r": "53S1/2,mJ=1/2",
-...         },
-...         "transitions": {"rydberg": {"from": "1", "to": "r"}},
-...     },
-...     "units": {
-...         "mass": "u", "distance": "um", "time": "us",
-...         "angular_frequency": "rad/us", "c6": "rad/us*um^6",
-...     },
-...     "parameters": {"mass": 86.9091805, "c6": 180955.73684677208},
-... }
+>>> model_document = fq.emulator.load_model_document("atom3level.reference")
+>>> model_document["model"]
+{'id': 'rb87-53s-reference', 'revision': '2026-08-05'}
+>>> model_document["parameters"]
+{'mass': 86.9091805, 'c6': 180955.73684677208}
+>>> len(model_document["provenance"]["sources"])
+1
 >>> calibration_document = {
 ...     "format": {
 ...         "id": "atom.rb87_rydberg_3level_fixed_pulse", "version": 1,

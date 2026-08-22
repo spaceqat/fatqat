@@ -1,0 +1,30 @@
+{
+  "format": {"id": "atom.rb87_rydberg_3level", "version": 1},
+  "model": {"id": "rb87-53s-reference", "revision": "2026-08-05"},
+  "system": {
+    "species": "Rb87",
+    "basis": {
+      "0": "5S1/2,F=1,mF=0",
+      "1": "5S1/2,F=2,mF=0",
+      "r": "53S1/2,mJ=1/2"
+    },
+    "transitions": {"rydberg": {"from": "1", "to": "r"}}
+  },
+  "units": {
+    "mass": "u",
+    "distance": "um",
+    "time": "us",
+    "angular_frequency": "rad/us",
+    "c6": "rad/us*um^6"
+  },
+  "parameters": {
+    "mass": 86.9091805,
+    "c6": 180955.73684677208
+  },
+  "provenance": {
+    "description": "Literature-derived Rb87 53S reference snapshot used by the three-level emulator.",
+    "sources": [
+      "S. J. Evered et al., High-fidelity parallel entangling gates on a neutral atom quantum computer, Nature 622, 268-272 (2023), DOI:10.1038/s41586-023-06481-y, arXiv:2304.05420."
+    ]
+  }
+}

@@ -17,34 +17,20 @@ Function and symbolic waveforms remain future work.
 
 ## Complete direct-control example
 
-The model document stays geometry-free. The `rydberg_global` key below is the
-persisted v1 model-schema spelling; it is not an authoring channel name.
+The model document stays geometry-free. Load the packaged reference explicitly
+and inspect its identity, units, parameters, and provenance before choosing it.
+This reference's `c6=1.0` is deliberately synthetic; it demonstrates the API
+and is not a literature value or device calibration.
 
 ```{doctest}
 >>> import fatqat as fq
->>> model_document = {
-...     "format": {"id": "atom.rb87_rydberg_2level", "version": 1},
-...     "model": {"id": "rb87-70s-analog-reference", "revision": "2026-08-07"},
-...     "system": {
-...         "species": "Rb87",
-...         "basis": {"g": "5S1/2,F=2,mF=2", "r": "70S1/2,mJ=1/2"},
-...         "transitions": {"rydberg": {"from": "g", "to": "r"}},
-...     },
-...     "units": {
-...         "distance": "um", "time": "us",
-...         "angular_frequency": "rad/us", "c6": "rad/us*um^6",
-...     },
-...     "parameters": {
-...         "c6": 1.0,
-...         "channel_limits": {
-...             "rydberg_global": {
-...                 "max_amplitude": None,
-...                 "min_detuning": None, "max_detuning": None,
-...                 "min_duration": None, "max_duration": None,
-...             },
-...         },
-...     },
-... }
+>>> model_document = fq.emulator.load_model_document("atom2level.reference")
+>>> model_document["model"]
+{'id': 'rb87-70s-analog-reference', 'revision': '2026-08-07'}
+>>> model_document["units"]["distance"], model_document["parameters"]["c6"]
+('um', 1.0)
+>>> model_document["provenance"]["sources"]
+[]
 >>> model = fq.emulator.Atom2LevelModel.from_document(model_document)
 >>> tuple(model.available_controls)
 ('drive', 'detuning')

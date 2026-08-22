@@ -132,11 +132,14 @@ propagator before that final composition. Readout-only noise is inert.
 Model and calibration values
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The direct constructors accept exact-schema, decoded JSON-compatible mappings
-and return semantically comparable, unhashable immutable objects. Application
-code owns file I/O. The model owns species, explicit basis and transition
-facts, top-level quantity-kind units, mass, and signed ``C6``. The calibration
-owns portable Raman and CZ control recipes and contains no model identity.
+``Atom3LevelModel.from_document(...)`` accepts an exact-schema decoded mapping
+and returns a semantically comparable, unhashable immutable model. Use
+``load_model_document("atom3level.reference")`` for the packaged reference;
+application code owns file I/O for custom documents. The calibration class
+separately accepts its decoded calibration mapping. The model owns species,
+explicit basis and transition facts, top-level quantity-kind units, mass, and
+signed ``C6``. The calibration owns portable Raman and CZ control recipes and
+contains no model identity.
 
 .. autoclass:: fatqat.emulator.Atom3LevelModel
    :members:
