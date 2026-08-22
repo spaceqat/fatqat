@@ -24,7 +24,7 @@ def test_model_is_direct_frozen_slotted_semantic_value(atom_3level_model_documen
     assert model == Atom3LevelModel.from_document(pristine)
     assert isinstance(model == Atom3LevelModel.from_document(pristine), bool)
     assert model.format == FormatIdentity("atom.rb87_rydberg_3level", 1)
-    assert model.identity == ModelIdentity("rb87-53s-reference", "2026-08-05")
+    assert model.identity == ModelIdentity("rb87-53s-reference", "2026-08-22")
     assert model.kind == "atom.rydberg_3level"
     assert model.species == "Rb87"
     assert model.local_dimension == 3

@@ -39,7 +39,7 @@ construction; its references identify the Evered et al. source.
 >>> import fatqat as fq
 >>> model_document = fq.emulator.load_model_document("atom3level.reference")
 >>> model_document["model"]
-{'id': 'rb87-53s-reference', 'revision': '2026-08-05'}
+{'id': 'rb87-53s-reference', 'revision': '2026-08-22'}
 >>> model_document["parameters"]
 {'mass': 86.9091805, 'c6': 180955.73684677208}
 >>> len(model_document["references"])

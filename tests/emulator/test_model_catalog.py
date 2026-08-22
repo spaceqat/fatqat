@@ -23,7 +23,7 @@ _EXPECTED = {
         fq.emulator.Atom3LevelModel,
         "atom.rb87_rydberg_3level",
         "rb87-53s-reference",
-        "2026-08-05",
+        "2026-08-22",
         {
             "mass": "u",
             "distance": "um",
@@ -35,8 +35,8 @@ _EXPECTED = {
     "transmon.reference": (
         fq.emulator.TransmonModel,
         "sc.transmon_exchange",
-        "test-sc-2q",
-        "2026-07-26",
+        "synthetic-transmon-exchange-reference",
+        "2026-08-22",
         {"frequency": "GHz", "anharmonicity": "GHz"},
     ),
 }
