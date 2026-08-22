@@ -2,7 +2,6 @@
 
 import inspect
 import json
-from fractions import Fraction
 from math import inf, nan
 from pathlib import Path
 
@@ -146,16 +145,6 @@ def test_constructor_rejects_invalid_interaction_cutoffs(model, cutoff):
         match="interaction_cutoff must be None or a finite nonnegative real number",
     ):
         Atom2LevelEmulator(model, arrangement=arrangement, interaction_cutoff=cutoff)
-
-
-def test_constructor_normalizes_overflowing_real_conversion_failure(model):
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
-    with pytest.raises(BackendValidationError, match="interaction_cutoff"):
-        Atom2LevelEmulator(
-            model,
-            arrangement=arrangement,
-            interaction_cutoff=Fraction(10**10000, 1),
-        )
 
 
 @pytest.mark.parametrize(

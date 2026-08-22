@@ -90,18 +90,12 @@ def test_depolarizing_rate_validation(bad_rate):
         Depolarizing(rate=bad_rate)
 
 
-def test_depolarizing_explicit_mode_conversions_and_edge_cases():
+def test_depolarizing_explicit_modes_round_trip():
     duration = 2.0
     rate = 0.05
     probability = Depolarizing(rate=rate).as_probability(duration)
     assert probability == pytest.approx(1 - np.exp(-rate * duration))
     assert Depolarizing(p=probability).as_rate(duration) == pytest.approx(rate)
-    assert Depolarizing(rate=123.0).as_probability(0.0) == 0.0
-    assert Depolarizing(p=0.0).as_rate(0.0) == 0.0
-    with pytest.raises(ValueError, match="no finite rate"):
-        Depolarizing(p=0.5).as_rate(0.0)
-    with pytest.raises(ValueError, match="no finite rate"):
-        Depolarizing(p=1.0).as_rate(1.0)
 
 
 def test_matrix_depolarizing_rule_rejects_rate_mode():

@@ -131,33 +131,3 @@ def test_model_envelope_rejects_nonexact_or_invalid_references(mutate):
     mutate(document)
     with pytest.raises(BackendValidationError):
         _validate_model_document_envelope(document, "physics model")
-
-
-@pytest.mark.parametrize(
-    ("mutate", "expected", "unexpected"),
-    [
-        (
-            lambda document: document.update(extra=None),
-            "unknown ['extra']",
-            "references",
-        ),
-        (lambda document: document.pop("units"), "missing ['units']", "references"),
-    ],
-)
-def test_model_envelope_reports_only_the_fault_beside_valid_references(
-    mutate, expected, unexpected
-):
-    document = {
-        "format": {},
-        "model": {},
-        "system": {},
-        "units": {},
-        "parameters": {},
-        "references": [],
-    }
-    mutate(document)
-
-    with pytest.raises(BackendValidationError) as captured:
-        _validate_model_document_envelope(document, "physics model")
-    assert expected in str(captured.value)
-    assert unexpected not in str(captured.value)

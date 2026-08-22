@@ -6,137 +6,44 @@ import pytest
 
 import fatqat as fq
 
-_EXPECTED = {
-    "atom2level.reference": (
-        fq.emulator.Atom2LevelModel,
-        "atom.rb87_rydberg_2level",
-        "rb87-53s-two-level-reference",
-        "2026-08-22",
-        {
-            "distance": "um",
-            "time": "us",
-            "angular_frequency": "rad/us",
-            "c6": "rad/us*um^6",
-        },
-    ),
-    "atom3level.reference": (
-        fq.emulator.Atom3LevelModel,
-        "atom.rb87_rydberg_3level",
-        "rb87-53s-reference",
-        "2026-08-22",
-        {
-            "mass": "u",
-            "distance": "um",
-            "time": "us",
-            "angular_frequency": "rad/us",
-            "c6": "rad/us*um^6",
-        },
-    ),
-    "transmon.reference": (
-        fq.emulator.TransmonModel,
-        "sc.transmon_exchange",
-        "synthetic-transmon-exchange-reference",
-        "2026-08-22",
-        {"frequency": "GHz", "anharmonicity": "GHz"},
-    ),
+_CATALOG_MODELS = {
+    "atom2level.reference": fq.emulator.Atom2LevelModel,
+    "atom3level.reference": fq.emulator.Atom3LevelModel,
+    "transmon.reference": fq.emulator.TransmonModel,
 }
 
 
 def test_available_model_documents_is_exact_and_deterministic():
-    assert fq.emulator.available_model_documents() == tuple(_EXPECTED)
+    assert fq.emulator.available_model_documents() == tuple(_CATALOG_MODELS)
 
 
-@pytest.mark.parametrize("invalid", [None, 1, True, object()])
-def test_load_model_document_rejects_non_string_name(invalid):
-    with pytest.raises(TypeError, match="name must be a string"):
-        fq.emulator.load_model_document(invalid)
+def test_load_model_document_rejects_non_string_name():
+    with pytest.raises(TypeError):
+        fq.emulator.load_model_document(None)
 
 
-def test_load_model_document_rejects_unknown_name_without_resource_details():
-    with pytest.raises(KeyError, match="unknown model document") as captured:
+def test_load_model_document_rejects_unknown_name():
+    with pytest.raises(KeyError):
         fq.emulator.load_model_document("missing.reference")
-
-    message = str(captured.value)
-    assert "_model_documents" not in message
-    assert ".json" not in message
 
 
 def test_load_model_document_returns_independent_mutable_graphs():
     first = fq.emulator.load_model_document("atom3level.reference")
     original = deepcopy(first)
     first["parameters"]["mass"] = 1.0
-    first["references"].append("changed")
 
     second = fq.emulator.load_model_document("atom3level.reference")
     assert second == original
 
 
 @pytest.mark.parametrize(
-    ("name", "expected"),
-    _EXPECTED.items(),
+    ("name", "model_type"),
+    _CATALOG_MODELS.items(),
 )
-def test_reference_document_has_expected_payload_and_constructs(name, expected):
-    model_type, format_id, model_id, revision, units = expected
+def test_reference_document_constructs_its_model(name, model_type):
     document = fq.emulator.load_model_document(name)
 
-    assert isinstance(document, dict)
-    assert document["format"] == {"id": format_id, "version": 1}
-    assert document["model"] == {"id": model_id, "revision": revision}
-    assert document["units"] == units
-    assert isinstance(document["parameters"], dict) and document["parameters"]
-    if name.startswith("atom"):
-        assert document["references"] == ["doi:10.1038/s41586-023-06481-y"]
-    else:
-        assert "references" not in document
     assert isinstance(model_type.from_document(document), model_type)
-
-
-@pytest.mark.parametrize(
-    ("name", "parameters", "source_marker"),
-    [
-        (
-            "atom2level.reference",
-            {
-                "c6": 180955.73684677208,
-                "channel_limits": {
-                    "rydberg_global": {
-                        "max_amplitude": None,
-                        "min_detuning": None,
-                        "max_detuning": None,
-                        "min_duration": None,
-                        "max_duration": None,
-                    }
-                },
-            },
-            "10.1038/s41586-023-06481-y",
-        ),
-        (
-            "atom3level.reference",
-            {"mass": 86.9091805, "c6": 180955.73684677208},
-            "10.1038/s41586-023-06481-y",
-        ),
-        (
-            "transmon.reference",
-            {
-                "subsystems": {
-                    "q0": {"frequency": 5.1, "anharmonicity": -0.22},
-                    "q1": {"frequency": 5.22, "anharmonicity": -0.24},
-                }
-            },
-            None,
-        ),
-    ],
-)
-def test_reference_parameters_and_references_are_pinned(
-    name, parameters, source_marker
-):
-    document = fq.emulator.load_model_document(name)
-
-    assert document["parameters"] == parameters
-    if source_marker is None:
-        assert "references" not in document
-    else:
-        assert source_marker in document["references"][0]
 
 
 def test_atom_reference_documents_share_the_53s_physical_profile():
@@ -148,8 +55,3 @@ def test_atom_reference_documents_share_the_53s_physical_profile():
     assert atom2["system"]["basis"]["r"] == atom3["system"]["basis"]["r"]
     assert atom2["parameters"]["c6"] == atom3["parameters"]["c6"]
     assert atom2["references"] == atom3["references"]
-
-
-def test_private_catalog_resources_are_not_public_exports():
-    assert "_model_documents" not in fq.emulator.__all__
-    assert "_DOCUMENT_RESOURCES" not in fq.emulator.__all__

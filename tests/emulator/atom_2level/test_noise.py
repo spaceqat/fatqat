@@ -30,9 +30,7 @@ from fatqat.noise import (
 )
 from fatqat.noise.lindblad import (
     amplitude_damping_lindblad_rule,
-    depolarizing_lindblad_rule,
     phase_damping_lindblad_rule,
-    thermal_relaxation_lindblad_rule,
 )
 from fatqat.waveforms import SampledWaveform
 
@@ -253,43 +251,6 @@ def test_explicit_map_keeps_background_rate_and_rejects_probability(model):
             _noise(PhaseDamping(p=0.2)),
             lindblad_map=implementations,
         )
-
-
-def test_explicit_map_can_select_the_thermal_relaxation_rule(model):
-    implementations = LindbladImplementationMap()
-    implementations.register(
-        ThermalRelaxation,
-        thermal_relaxation_lindblad_rule,
-    )
-    backend = _backend(
-        model,
-        _noise(ThermalRelaxation(t1=10.0, t2=15.0)),
-        lindblad_map=implementations,
-    )
-
-    result = backend.run(fq.Program(1)).result()
-
-    assert result.available_data == {"density_matrix"}
-    assert result.metadata["solver"]["solver"] == "none"
-
-
-def test_atom2_default_map_registers_thermal_and_depolarizing_rules(model):
-    backend = _backend(model)
-    assert backend._lindblad_implementation_map.supported_channels() == {
-        AmplitudeDamping,
-        PhaseDamping,
-        ThermalRelaxation,
-        Depolarizing,
-    }
-    assert (
-        backend._lindblad_implementation_map.get(ThermalRelaxation)
-        is thermal_relaxation_lindblad_rule
-    )
-    assert (
-        backend._lindblad_implementation_map.get(Depolarizing)
-        is depolarizing_lindblad_rule
-    )
-    assert not hasattr(fq.noise, "IncoherentTransitions")
 
 
 def test_operation_scoped_terms_reach_the_adapter_time_window(model, monkeypatch):

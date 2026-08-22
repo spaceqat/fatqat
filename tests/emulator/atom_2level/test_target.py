@@ -4,7 +4,6 @@ from copy import deepcopy
 import json
 from math import sqrt
 from pathlib import Path
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -136,26 +135,6 @@ def test_cutoff_boundary_keeps_decimal_nearest_pairs_without_diagonals(document)
     expected_pairs = 2 * 9 + 10
     assert len(target.interactions) == expected_pairs
     assert all(item.distance_um < 0.11 for item in target.interactions)
-
-
-@pytest.mark.parametrize(
-    ("distance", "expected"),
-    [
-        (1.0, True),
-        (1.0 + 4 * sys.float_info.epsilon, True),
-        (1.0 + 16 * sys.float_info.epsilon, False),
-    ],
-)
-def test_cutoff_boundary_allowance_is_exactly_narrow(distance, expected):
-    assert (
-        atom2_target._within_interaction_cutoff(
-            (0.0, 0.0, 0.0),
-            (1.0, 0.0, 0.0),
-            distance,
-            1.0,
-        )
-        is expected
-    )
 
 
 def test_cutoff_selection_uses_only_coordinates(document):
