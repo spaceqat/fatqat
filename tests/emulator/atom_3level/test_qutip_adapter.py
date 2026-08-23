@@ -97,8 +97,8 @@ def _frame_shift_block(adapter, angle, *, site=0):
 
 
 def _population(unitary, initial_levels, final_levels):
-    initial = tensor(*(basis(3, level) for level in initial_levels))
-    final = tensor(*(basis(3, level) for level in final_levels))
+    initial = tensor(*(basis(3, level) for level in reversed(initial_levels)))
+    final = tensor(*(basis(3, level) for level in reversed(final_levels)))
     return abs(final.overlap(unitary * initial)) ** 2
 
 
@@ -219,13 +219,13 @@ def test_state_copy_measurement_reset_and_completed_payload(atom_3level_model):
     assert np.allclose(outcome.final_state, ket2dm(basis(3, 0)).full())
 
 
-def test_measurement_indices_are_engine_tensor_axes(atom_3level_model):
+def test_measurement_indices_are_canonical_axes(atom_3level_model):
     adapter = _adapter(
         atom_3level_model,
         ((0.0, 0.0, 0.0), (2.0, 0.0, 0.0)),
     )
     context = _ShotContext(
-        ket2dm(tensor(basis(3, 0), basis(3, 2))),
+        ket2dm(tensor(basis(3, 2), basis(3, 0))),
         [0],
         np.random.default_rng(4),
     )

@@ -136,7 +136,7 @@ def test_propagator_applies_the_terminal_frame_by_default(backend):
     expected_frame = np.diag(np.exp(1j * angle * np.arange(3)))
 
     assert np.allclose(dynamical, np.eye(9))
-    assert np.allclose(complete, np.kron(expected_frame, np.eye(3)))
+    assert np.allclose(complete, np.kron(np.eye(3), expected_frame))
 
 
 def test_propagator_rejects_noncoherent_program_features_and_noise(
@@ -192,7 +192,7 @@ def test_propagator_allows_noise_when_frame_only_plan_has_zero_duration(
         forbidden_dissipative_or_solver_work,
     )
 
-    expected = np.kron(np.diag(np.exp(0.2j * np.arange(3))), np.eye(3))
+    expected = np.kron(np.eye(3), np.diag(np.exp(0.2j * np.arange(3))))
     assert np.allclose(backend.propagator(program), expected)
 
 
@@ -347,13 +347,20 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
     noise = NoiseModel()
     noise.add(PhaseDamping(rate=0.02), targets="q1")
     backend = TransmonEmulator(model, noise=noise)
-    program = fq.Program(2)
-    program.add(fq.ops.RX(0.3), 0)
+    program = fq.Program(2, 1)
+    program.add(fq.ops.RX(np.pi), 0)
+    program.measure(0, 0)
     q0, q1 = program.quantum_registers[0][0], program.quantum_registers[0][1]
     layout = ResourceLayout({q0: "q2", q1: "q0"})
 
     prepared = backend._prepare_program(program, layout)
-    result = backend.run(program, resource_layout=layout).result()
+    result = backend.run(
+        program,
+        resource_layout=layout,
+        shots=1,
+        simulation_config={"seed": 17},
+        result_config={"counts": True, "final_state": True},
+    ).result()
 
     assert prepared.engine_allocation.device_operands == ("q0", "q1", "q2")
     assert prepared.plan[0].target_indices == (2,)
@@ -364,6 +371,12 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
         {"device_operand": "q2", "register_ref": q0},
     ]
     assert all("engine_index" not in axis for axis in result.metadata["state_axes"])
+    assert result.get_counts() == {"1": 1}
+    density = result.get_density_matrix()
+    q2_excited_indices = (3**2, 2 * 3**2)
+    assert sum(np.real(density[index, index]) for index in q2_excited_indices) == (
+        pytest.approx(1.0)
+    )
 
 
 def test_capacity_and_non_qubit_programs_fail_before_execution(backend):

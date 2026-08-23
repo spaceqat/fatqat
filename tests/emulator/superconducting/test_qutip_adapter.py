@@ -55,6 +55,11 @@ def _adapter(model, **kwargs):
     )
 
 
+def _qutip_tensor(*canonical_factors):
+    """Construct a QuTiP value from canonical least-significant-first factors."""
+    return tensor(*reversed(canonical_factors))
+
+
 def _block(target, controls, duration, *, post_actions=(), condition=None):
     controls = tuple(controls)
     target_bindings = tuple(
@@ -222,9 +227,9 @@ def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints(model):
     annihilation = Qobj(model.annihilation)
     x_operator = annihilation + annihilation.dag()
     y_operator = -1j * (annihilation - annihilation.dag())
-    expected_hamiltonian = spline(time).real * tensor(x_operator, qeye(3)) + spline(
-        time
-    ).imag * tensor(y_operator, qeye(3))
+    expected_hamiltonian = spline(time).real * _qutip_tensor(
+        x_operator, qeye(3)
+    ) + spline(time).imag * _qutip_tensor(y_operator, qeye(3))
     assert np.allclose(evolution(time).full(), expected_hamiltonian.full())
 
 
@@ -246,7 +251,9 @@ def test_constant_drive_matches_an_independent_full_model_hamiltonian(model):
 
     annihilation = Qobj(model.annihilation)
     drift = adapter._drift.get_ideal_qobjevo([3, 3])(0.0)
-    hamiltonian = drift + amplitude * tensor(annihilation + annihilation.dag(), qeye(3))
+    hamiltonian = drift + amplitude * _qutip_tensor(
+        annihilation + annihilation.dag(), qeye(3)
+    )
     initial = adapter.initial_state()
     unitary = (-1j * hamiltonian * duration).expm()
     expected = unitary * initial * unitary.dag()
@@ -296,9 +303,9 @@ def test_realized_iswap_matches_the_public_positive_i_phase_convention(
         target=adapter._target,
         calibration=calibration,
     )
-    ket_00 = tensor(basis(3, 0), basis(3, 0))
-    ket_01 = tensor(basis(3, 0), basis(3, 1))
-    ket_10 = tensor(basis(3, 1), basis(3, 0))
+    ket_00 = _qutip_tensor(basis(3, 0), basis(3, 0))
+    ket_01 = _qutip_tensor(basis(3, 0), basis(3, 1))
+    ket_10 = _qutip_tensor(basis(3, 1), basis(3, 0))
     initial = ket2dm((ket_00 + ket_01 + 0.3 * ket_10).unit())
     actual = _evolve(adapter, (block,), _context(adapter, initial)).state
     expected = ket2dm((ket_00 + 1j * ket_10 + 0.3j * ket_01).unit())
@@ -308,8 +315,8 @@ def test_realized_iswap_matches_the_public_positive_i_phase_convention(
 def test_drift_and_detuning_match_independent_qutrit_phase_facts(model):
     adapter = _adapter(model)
     duration = 0.17
-    ket_00 = tensor(basis(3, 0), basis(3, 0))
-    ket_20 = tensor(basis(3, 2), basis(3, 0))
+    ket_00 = _qutip_tensor(basis(3, 0), basis(3, 0))
+    ket_20 = _qutip_tensor(basis(3, 2), basis(3, 0))
     initial = ket2dm((ket_00 + ket_20).unit())
     idle = _drive_block(
         adapter._target,
@@ -341,7 +348,7 @@ def test_drift_and_detuning_match_independent_qutrit_phase_facts(model):
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
 
 
-def test_control_on_q1_keeps_complete_model_tensor_order(model):
+def test_control_on_q1_keeps_complete_model_canonical_state_order(model):
     adapter = _adapter(model)
     outcomes = PulseEngine(adapter).run(
         (_drive_block(adapter._target, "q1"),),
@@ -350,8 +357,8 @@ def test_control_on_q1_keeps_complete_model_tensor_order(model):
         rng=np.random.default_rng(3),
     )
     physical = Qobj(outcomes[0].final_state, dims=[[3, 3], [3, 3]])
-    assert np.allclose(physical.ptrace(0).full(), ket2dm(basis(3, 0)).full())
-    assert physical.ptrace(1).diag()[0].real < 0.999
+    assert np.allclose(physical.ptrace(1).full(), ket2dm(basis(3, 0)).full())
+    assert physical.ptrace(0).diag()[0].real < 0.999
 
 
 def test_drift_covers_leading_internal_and_trailing_idle_intervals(model):
@@ -374,7 +381,7 @@ def test_drift_covers_leading_internal_and_trailing_idle_intervals(model):
         ),
         start_time=3.0,
     )
-    ket = tensor((basis(3, 0) + basis(3, 2)).unit(), basis(3, 0))
+    ket = _qutip_tensor((basis(3, 0) + basis(3, 2)).unit(), basis(3, 0))
     initial = ket2dm(ket)
     context = _context(adapter, initial)
     run = schedule_pulse_run((first, second), boundary_time=0.0)
@@ -400,8 +407,8 @@ def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data(
 
     drift = adapter._drift.get_ideal_qobjevo([3, 3])(0.0)
     parked = drift + 2 * pi * detuning_ghz * adapter._number[0]
-    state_20 = tensor(basis(3, 2), basis(3, 0))
-    state_11 = tensor(basis(3, 1), basis(3, 1))
+    state_20 = _qutip_tensor(basis(3, 2), basis(3, 0))
+    state_11 = _qutip_tensor(basis(3, 1), basis(3, 1))
     energy_20 = complex(state_20.dag() * parked * state_20).real
     energy_11 = complex(state_11.dag() * parked * state_11).real
     assert np.isclose(energy_20, energy_11)
@@ -451,20 +458,20 @@ def test_realized_cz_matches_an_independent_synchronized_hamiltonian(
         2
         * pi
         * subsystem.anharmonicity_ghz
-        * tensor(
+        * _qutip_tensor(
             number * (number - identity) / 2 if ordinal == 0 else identity,
             number * (number - identity) / 2 if ordinal == 1 else identity,
         )
         for ordinal, subsystem in enumerate(model.subsystems)
     )
-    exchange_operator = tensor(annihilation.dag(), annihilation) + tensor(
+    exchange_operator = _qutip_tensor(annihilation.dag(), annihilation) + _qutip_tensor(
         annihilation, annihilation.dag()
     )
-    initial = ket2dm(tensor(basis(3, 1), basis(3, 1)))
+    initial = ket2dm(_qutip_tensor(basis(3, 1), basis(3, 1)))
     expected = mesolve(
         [
             drift,
-            [tensor(number, identity), detuning_spline],
+            [_qutip_tensor(number, identity), detuning_spline],
             [exchange_operator, parked_exchange],
         ],
         initial,
@@ -571,9 +578,8 @@ def test_frame_only_run_returns_frames_without_constructing_dynamics(model):
     )
     assert isinstance(bound, _BoundFrames)
     assert bound.output_frames[model.frame("q0")] == pytest.approx(0.4)
-    expected = tensor(
-        Qobj(np.diag(np.exp(1j * 0.4 * np.arange(3)))),
-        Qobj(np.eye(3)),
+    expected = _qutip_tensor(
+        Qobj(np.diag(np.exp(1j * 0.4 * np.arange(3)))), Qobj(np.eye(3))
     )
     assert np.allclose(adapter.propagator(run).full(), expected.full())
     assert adapter.solver_metadata()["solver"] == "none"
@@ -594,15 +600,15 @@ def test_disabled_block_suppresses_control_and_post_frame_but_advances_time(mode
     assert np.allclose(context.state.full(), adapter.initial_state().full())
 
 
-def test_measurement_and_reset_indices_are_engine_tensor_axes(model):
+def test_measurement_and_reset_indices_are_canonical_physical_axes(model):
     adapter = _adapter(model)
-    state = ket2dm(tensor(basis(3, 0), basis(3, 2)))
+    state = ket2dm(_qutip_tensor(basis(3, 0), basis(3, 2)))
     context = _context(adapter, state, memory=(0,))
     step = MeasurementStep((0,), (0,), reported_digit_maps=((0, 1, 1),))
     adapter.execute_boundary(step, context)
     assert context.classical_memory == [0]
     adapter.execute_boundary(ResetStep((1,)), context)
-    expected = ket2dm(tensor(basis(3, 0), basis(3, 0)))
+    expected = ket2dm(_qutip_tensor(basis(3, 0), basis(3, 0)))
     assert np.allclose(context.state.full(), expected.full())
 
 
@@ -617,7 +623,7 @@ def test_engine_allocation_must_cover_the_complete_model(model):
 
 def test_measurement_uses_supplied_confusion_and_binary_digit_map(model):
     adapter = _adapter(model)
-    state = ket2dm(tensor(basis(3, 2), basis(3, 0)))
+    state = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
     context = _context(adapter, state, memory=(0,))
     adapter.execute_boundary(
         MeasurementStep(

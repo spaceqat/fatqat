@@ -126,10 +126,10 @@ def test_counts_only_finish_does_not_materialize_a_statevector():
     assert outcome.classical_digits == (1,)
 
 
-def test_measurement_indices_are_engine_tensor_axes():
+def test_measurement_indices_are_canonical_axes_and_state_is_little_endian():
     adapter = _adapter(_target())
     context = _ShotContext(
-        tensor(basis(2, 1), basis(2, 0)),
+        tensor(basis(2, 0), basis(2, 1)),
         [0, 0],
         np.random.default_rng(2),
     )
@@ -142,7 +142,7 @@ def test_measurement_indices_are_engine_tensor_axes():
     adapter.execute_boundary(step, context)
 
     assert context.classical_memory == [1, 0]
-    assert np.asarray(context.state.full()).reshape(-1).tolist() == [0.0, 0.0, 1.0, 0.0]
+    assert np.asarray(context.state.full()).reshape(-1).tolist() == [0.0, 1.0, 0.0, 0.0]
 
 
 def test_engine_allocation_must_match_the_complete_target():

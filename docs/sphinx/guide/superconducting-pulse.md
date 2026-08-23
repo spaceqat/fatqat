@@ -121,10 +121,10 @@ It is the full physical qutrit state, including leakage and every transmon in
 the selected model. For `m = len(model.subsystems)`, its shape is
 `(3**m, 3**m)`, not `(2**n, 2**n)` for the program's qubits. A run containing
 measurement may export this sampled posterior only with `shots=1`.
-``result.metadata["state_axes"]`` lists those full-model factors in backend
-allocation order using transmon IDs. Only addressed transmons also carry a
-program ``RegisterRef``; unaddressed transmons carry ``None``. No private
-numerical axis is exposed.
+``result.metadata["state_axes"]`` lists those full-model subsystems in
+canonical least-to-most-significant order using transmon IDs. Only addressed
+transmons also carry a program ``RegisterRef``; unaddressed transmons carry
+``None``. No private solver factor number is exposed.
 
 The accepted result request keys are `counts` and `final_state`. By default,
 counts are requested when the program contains measurement, while a final

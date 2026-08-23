@@ -119,6 +119,11 @@ def _adapter(model, **kwargs):
     )
 
 
+def _qutip_tensor(*canonical_factors):
+    """Construct a QuTiP value from canonical least-significant-first factors."""
+    return tensor(*reversed(canonical_factors))
+
+
 def _amplitude_term(rates, *, ordinal=0):
     operator = np.zeros((3, 3), dtype=complex)
     for level, rate in enumerate(rates, start=1):
@@ -392,10 +397,10 @@ def test_amplitude_damping_rate_reproduces_exponential_population_decay(model):
     rate = 0.3
     binding = _amplitude_term((0.0, rate))  # only the 2 -> 1 transition is active
     block = _idle_block(adapter, "q0", duration=duration, noise=(binding,))
-    initial = ket2dm(tensor(basis(3, 2), basis(3, 0)))
+    initial = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
     context = _evolve(adapter, (block,), _context(adapter, initial))
 
-    population_2 = context.state.ptrace(0).diag()[2].real
+    population_2 = context.state.ptrace(1).diag()[2].real
     assert population_2 == pytest.approx(np.exp(-rate * duration), abs=2e-4)
 
 
@@ -404,8 +409,7 @@ def test_amplitude_damping_uses_one_combined_ladder_jump(model):
     t1 = 10.0
     binding = _amplitude_term((1 / t1, 2 / t1))
 
-    ((jump, ordinal),) = adapter._lindblad_ops(binding)
-    assert ordinal == 0
+    ((jump, _factor_index),) = adapter._lindblad_ops(binding)
     assert np.allclose(
         jump.full(), np.sqrt(1 / t1) * adapter._local_annihilation.full()
     )
@@ -418,10 +422,10 @@ def test_phase_damping_rate_reproduces_exact_coherence_decay(model):
     binding = _phase_term(rate)
     block = _idle_block(adapter, "q0", duration=duration, noise=(binding,))
     plus = (basis(3, 0) + basis(3, 1)).unit()
-    initial = ket2dm(tensor(plus, basis(3, 0)))
+    initial = ket2dm(_qutip_tensor(plus, basis(3, 0)))
     context = _evolve(adapter, (block,), _context(adapter, initial))
 
-    coherence = context.state.ptrace(0).full()[0, 1]
+    coherence = context.state.ptrace(1).full()[0, 1]
     assert coherence == pytest.approx(0.5 * np.exp(-rate * duration), abs=2e-4)
 
 
@@ -449,10 +453,10 @@ def test_collapse_terms_are_active_only_during_their_own_placed_block(model):
     # Both blocks claim "q0", so ASAP scheduling serializes `quiet` right
     # after `noisy` without needing an explicit start time.
     quiet = _idle_block(adapter, "q0", duration=3.0)
-    initial = ket2dm(tensor(basis(3, 2), basis(3, 0)))
+    initial = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
     context = _evolve(adapter, (noisy, quiet), _context(adapter, initial))
 
-    population_2 = context.state.ptrace(0).diag()[2].real
+    population_2 = context.state.ptrace(1).diag()[2].real
     # Only `noisy`'s own 2.0ns window contributes decay, not the full 5.0ns run.
     assert population_2 == pytest.approx(np.exp(-rate * 2.0), abs=2e-4)
 
@@ -468,13 +472,13 @@ def test_disabled_conditional_block_keeps_only_background_noise_active(model):
     block = _idle_block(
         adapter, "q0", duration=4.0, noise=(binding,), condition=((0, 1),)
     )
-    initial = ket2dm(tensor(basis(3, 2), basis(3, 0)))
+    initial = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
     context = _context(adapter, initial)
     run = schedule_pulse_run((block,), boundary_time=0.0)
 
     adapter.evolve(run, context, (False,))  # condition not met: disabled
 
-    population_2 = context.state.ptrace(0).diag()[2].real
+    population_2 = context.state.ptrace(1).diag()[2].real
     assert population_2 == pytest.approx(
         np.exp(-background_rate * block.duration),
         abs=2e-4,
@@ -490,14 +494,14 @@ def test_overlapping_disjoint_pulses_each_keep_their_own_noise_binding(model):
     duration = 3.0
     block_q0 = _idle_block(adapter, "q0", duration=duration, noise=(binding_q0,))
     block_q1 = _idle_block(adapter, "q1", duration=duration, noise=(binding_q1,))
-    initial = ket2dm(tensor(basis(3, 2), basis(3, 2)))
+    initial = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 2)))
     context = _evolve(adapter, (block_q0, block_q1), _context(adapter, initial))
 
     state = context.state
-    assert state.ptrace(0).diag()[2].real == pytest.approx(
+    assert state.ptrace(1).diag()[2].real == pytest.approx(
         np.exp(-rate_q0 * duration), abs=2e-4
     )
-    assert state.ptrace(1).diag()[2].real == pytest.approx(
+    assert state.ptrace(0).diag()[2].real == pytest.approx(
         np.exp(-rate_q1 * duration), abs=2e-4
     )
 
@@ -524,7 +528,7 @@ def test_operation_scoped_and_background_noise_accumulate_then_idle_is_global_on
     idle_duration = 3.0
     gated = _idle_block(adapter, "q0", duration=gated_duration, noise=(binding,))
     idle_after = _idle_block(adapter, "q0", duration=idle_duration)  # global only
-    initial = ket2dm(tensor(basis(3, 2), basis(3, 0)))
+    initial = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
     context = _evolve(adapter, (gated, idle_after), _context(adapter, initial))
 
     # The natural annihilation operator's sqrt(n) scaling doubles T1's rate at
@@ -534,5 +538,5 @@ def test_operation_scoped_and_background_noise_accumulate_then_idle_is_global_on
     expected = np.exp(-(global_rate + rate_gate) * gated_duration) * np.exp(
         -global_rate * idle_duration
     )
-    population_2 = context.state.ptrace(0).diag()[2].real
+    population_2 = context.state.ptrace(1).diag()[2].real
     assert population_2 == pytest.approx(expected, abs=2e-4)

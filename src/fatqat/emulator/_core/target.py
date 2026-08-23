@@ -94,7 +94,11 @@ class _ControlBinding:
 
 @dataclass(frozen=True, slots=True)
 class _PreparedControlBinding:
-    """One control bound to numerical engine axes for a prepared run."""
+    """One control bound to canonical physical axes for a prepared run.
+
+    Axis 0 is the least-significant subsystem in returned flat states. Solver
+    adapters translate these indices to their own tensor-factor order.
+    """
 
     kind: str
     engine_indices: tuple[int, ...]

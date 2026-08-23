@@ -30,6 +30,7 @@ from .._core.engine import _ShotContext, _condition_matches
 from .._core.lindblad import ResolvedLindbladTerm
 from .._core.outcome import _PulseShotOutcome
 from .._core.pulse import PhaseShift, PhaseSwap, PulseBlock
+from .._core.qutip_allocation import _QutipEngineAllocation
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.target import _PreparedControlBinding
 from .._core.value_validation import TIME_EPSILON
@@ -69,9 +70,9 @@ class _TransmonQutipAdapter:
     ) -> None:
         """Adapt one already-bound physical target to the QuTiP layer.
 
-        The engine allocation fixes full-model tensor order. ``background_noise``
-        contains already resolved local collapse terms; the adapter never
-        interprets source noise descriptors.
+        The engine allocation fixes canonical physical-axis order.
+        ``background_noise`` contains already resolved local collapse terms;
+        the adapter never interprets source noise descriptors.
         """
         if not isinstance(target, _TransmonTarget):
             raise BackendValidationError("transmon adapter requires a transmon target")
@@ -93,7 +94,8 @@ class _TransmonQutipAdapter:
                 "order"
             )
         self._engine_allocation = engine_allocation
-        self._dims = list(engine_allocation.system_dims)
+        self._qutip_allocation = _QutipEngineAllocation(engine_allocation)
+        self._dims = list(self._qutip_allocation.qutip_dims)
         self._local_annihilation = Qobj(self._target.model.annihilation)
         self._local_number = Qobj(self._target.model.number)
         self._annihilation = tuple(
@@ -301,10 +303,10 @@ class _TransmonQutipAdapter:
         """Build the full-model basis transform for terminal frame angles."""
         factors = []
         levels = np.arange(self._target.model.physical_dimension)
-        for subsystem_id in self._target.model.subsystem_ids:
+        for subsystem_id in self._engine_allocation.device_operands:
             angle = frames.get(self._target.model.frame(subsystem_id), 0.0)
             factors.append(Qobj(np.diag(np.exp(1j * angle * levels))))
-        return tensor(*factors)
+        return tensor(*self._qutip_allocation.factor_order(factors))
 
     def execute_boundary(
         self, step: MeasurementStep | ResetStep, context: _ShotContext
@@ -355,7 +357,7 @@ class _TransmonQutipAdapter:
     def _expand_local(self, ordinal: int, operator: Any) -> Any:
         """Tensor-expand one local operator at a model subsystem ordinal."""
         factors = [qeye(dimension) for dimension in self._dims]
-        factors[ordinal] = operator
+        factors[self._qutip_allocation.factor_index(ordinal)] = operator
         return tensor(*factors)
 
     def _build_drift(self) -> Drift:
@@ -379,7 +381,10 @@ class _TransmonQutipAdapter:
                 * (self._local_number - identity)
                 / 2
             )
-            drift.add_drift(local, engine_index)
+            drift.add_drift(
+                local,
+                self._qutip_allocation.factor_index(engine_index),
+            )
         return drift
 
     def _build_background_noise(
@@ -388,10 +393,10 @@ class _TransmonQutipAdapter:
         """Build constant collapse terms from resolved background bindings."""
         noise_pulse = Pulse(None, None)
         for binding in bindings:
-            for local_qobj, ordinal in self._lindblad_ops(binding):
+            for local_qobj, factor_index in self._lindblad_ops(binding):
                 noise_pulse.add_lindblad_noise(
                     local_qobj,
-                    ordinal,
+                    factor_index,
                     coeff=True,
                 )
         if not noise_pulse.lindblad_noise:
@@ -425,19 +430,21 @@ class _TransmonQutipAdapter:
         )
         noise_pulse = Pulse(None, None)
         for binding in block.noise:
-            for local_qobj, ordinal in self._lindblad_ops(binding):
+            for local_qobj, factor_index in self._lindblad_ops(binding):
                 noise_pulse.add_lindblad_noise(
-                    local_qobj, ordinal, tlist=tlist, coeff=window
+                    local_qobj, factor_index, tlist=tlist, coeff=window
                 )
         return noise_pulse
 
     def _lindblad_ops(self, term: ResolvedLindbladTerm) -> list[tuple[Any, int]]:
-        """Adapt one backend-neutral Lindblad term to local QuTiP operators."""
+        """Adapt one backend-neutral term to local operators and QuTiP factors."""
         local_qobj = Qobj(term.local_operator)
         return [
             (
                 local_qobj,
-                self._validate_noise_ordinal(ordinal),
+                self._qutip_allocation.factor_index(
+                    self._validate_noise_ordinal(ordinal)
+                ),
             )
             for ordinal in term.engine_indices
         ]
@@ -505,7 +512,7 @@ class _TransmonQutipAdapter:
                 raise BackendValidationError("detuning requires one engine index")
             return Pulse(
                 self._local_number,
-                binding.engine_indices[0],
+                self._qutip_allocation.factor_index(binding.engine_indices[0]),
                 tlist=absolute_tlist,
                 coeff=coefficients.real,
                 spline_kind="cubic",
@@ -514,7 +521,9 @@ class _TransmonQutipAdapter:
         if binding.kind == "exchange":
             if len(binding.engine_indices) != 2:
                 raise BackendValidationError("exchange requires two engine indices")
-            targets = list(binding.engine_indices)
+            targets = list(
+                self._qutip_allocation.factor_indices(binding.engine_indices)
+            )
             exchange = tensor(
                 self._local_annihilation.dag(), self._local_annihilation
             ) + tensor(self._local_annihilation, self._local_annihilation.dag())
@@ -531,6 +540,7 @@ class _TransmonQutipAdapter:
         if len(binding.engine_indices) != 1:
             raise BackendValidationError("drive requires one engine index")
         engine_index = binding.engine_indices[0]
+        factor_index = self._qutip_allocation.factor_index(engine_index)
         subsystem_id = self._engine_allocation.device_operands[engine_index]
         phase = np.exp(
             -1j
@@ -544,7 +554,7 @@ class _TransmonQutipAdapter:
         y_operator = -1j * (self._local_annihilation - self._local_annihilation.dag())
         pulse = Pulse(
             x_operator,
-            engine_index,
+            factor_index,
             tlist=absolute_tlist,
             coeff=envelope.real,
             spline_kind="cubic",
@@ -552,7 +562,7 @@ class _TransmonQutipAdapter:
         )
         pulse.add_coherent_noise(
             y_operator,
-            engine_index,
+            factor_index,
             tlist=absolute_tlist,
             coeff=envelope.imag,
         )

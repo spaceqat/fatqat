@@ -28,6 +28,7 @@ from ..._pulse_values import PulseControl
 from .._core.engine import _ShotContext
 from .._core.lindblad import ResolvedLindbladTerm
 from .._core.outcome import ExecutionMode, _PulseShotOutcome
+from .._core.qutip_allocation import _QutipEngineAllocation
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
 from .._core.waveform import _REQUESTED_SPLINE_DEGREE
@@ -78,11 +79,12 @@ class _Atom2LevelQutipAdapter:
 
         self._target = target
         self._engine_allocation = engine_allocation
+        self._qutip_allocation = _QutipEngineAllocation(engine_allocation)
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
         self._solver_used = "none"
         self._site_count = engine_allocation.n_subsystems
-        self._dims = list(engine_allocation.system_dims)
+        self._dims = list(self._qutip_allocation.qutip_dims)
         self.local_raising = Qobj(np.asarray([[0.0, 0.0], [1.0, 0.0]], complex))
         self.local_number = Qobj(np.diag([0.0, 1.0]))
         identity = tensor(*(qeye(2) for _ in range(self._site_count)))
@@ -308,9 +310,9 @@ class _Atom2LevelQutipAdapter:
             )
         return tuple(state.copy() for state in final_states)
 
-    def _expand_local(self, ordinal: int, operator: Any) -> Any:
+    def _expand_local(self, canonical_axis: int, operator: Any) -> Any:
         factors = [qeye(2) for _ in range(self._site_count)]
-        factors[ordinal] = operator
+        factors[self._qutip_allocation.factor_index(canonical_axis)] = operator
         return tensor(*factors)
 
     def _build_interaction_drift(self) -> Any:
@@ -320,10 +322,8 @@ class _Atom2LevelQutipAdapter:
         for interaction in self._target.interactions:
             first = self._engine_allocation.engine_index(interaction.first)
             second = self._engine_allocation.engine_index(interaction.second)
-            first_shift = self._site_count - 1 - first
-            second_shift = self._site_count - 1 - second
-            both_occupied = ((basis_indices >> first_shift) & 1) * (
-                (basis_indices >> second_shift) & 1
+            both_occupied = ((basis_indices >> first) & 1) * (
+                (basis_indices >> second) & 1
             )
             diagonal += interaction.signed_strength_rad_per_us * both_occupied
         return Qobj(
@@ -448,11 +448,10 @@ class _Atom2LevelQutipAdapter:
                     raise BackendValidationError("unknown two-level atom control kind")
         return QobjEvo(terms)
 
-    def _measure(self, ordinal: int, context: _ShotContext) -> int:
+    def _measure(self, canonical_axis: int, context: _ShotContext) -> int:
         state = self._statevector(context.state)
         basis_indices = np.arange(len(state), dtype=np.int64)
-        bit_shift = self._site_count - 1 - ordinal
-        digits = (basis_indices >> bit_shift) & 1
+        digits = (basis_indices >> canonical_axis) & 1
         probabilities = np.bincount(
             digits,
             weights=np.abs(state) ** 2,

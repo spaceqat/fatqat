@@ -370,7 +370,7 @@ def test_atom_3level_declaration_order_binds_multi_register_nonprefix_refs(
     assert allocation.system_dims == (3, 3)
     assert np.allclose(
         propagator,
-        np.kron(np.eye(3), np.diag((1.0, np.exp(0.2j), 1.0))),
+        np.kron(np.diag((1.0, np.exp(0.2j), 1.0)), np.eye(3)),
     )
 
 
@@ -417,7 +417,7 @@ def test_atom_3level_binary_measurement_reset_and_readout_propagator_inert(
 
 @pytest.mark.parametrize(
     ("first", "second", "expected_index"),
-    ((0, 0, 0), (0, 1, 1), (1, 0, 3), (1, 1, 4)),
+    ((0, 0, 0), (0, 1, 3), (1, 0, 1), (1, 1, 4)),
 )
 def test_atom_3level_all_computational_inputs_remain_physical_qutrit_states(
     atom_3level_model, atom_3level_calibration, first, second, expected_index
@@ -450,8 +450,8 @@ def test_atom_3level_superposition_and_raw_vs_final_frame_propagators(
         .get_density_matrix()
     )
     assert density[0, 0].real == pytest.approx(0.5, abs=2e-6)
-    assert density[3, 3].real == pytest.approx(0.5, abs=2e-6)
-    assert abs(density[0, 3]) > 0.49
+    assert density[1, 1].real == pytest.approx(0.5, abs=2e-6)
+    assert abs(density[0, 1]) > 0.49
 
     framed = fq.Program(2)
     framed.add(fq.ops.RZ(0.37), 0)
@@ -476,10 +476,12 @@ def test_atom_3level_measurement_returns_the_physical_single_shot_posterior_befo
     ).result()
     density = result.get_density_matrix()
     assert density.shape == (9, 9)
-    # The state is physically collapsed to |00> or |10>, never a binary-only
-    # state-space artifact.
-    assert result.get_counts() in ({"0": 1}, {"1": 1})
-    assert max(density[0, 0].real, density[3, 3].real) > 0.999999
+    # Canonical axis 0 is the least-significant qutrit digit, so the physical
+    # posterior occupies flat index 0 or 1, never a binary-only artifact.
+    counts = result.get_counts()
+    assert counts in ({"0": 1}, {"1": 1})
+    outcome = int(next(iter(counts)))
+    assert density[outcome, outcome].real > 0.999999
 
 
 def test_atom_3level_feedforward_uses_the_reported_binary_bit_and_sampling_is_seeded(

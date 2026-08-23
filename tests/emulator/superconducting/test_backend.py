@@ -60,9 +60,17 @@ def _adapter(model, *, kind=_TransmonQutipAdapter, **kwargs):
     )
 
 
+def _qutip_tensor(*canonical_factors):
+    """Construct a QuTiP value from canonical least-significant-first factors."""
+    return tensor(*reversed(canonical_factors))
+
+
 def test_partial_entangled_measurement_collapses_the_physical_posterior(model):
     adapter = _adapter(model)
-    ket = (tensor(basis(3, 0), basis(3, 0)) + tensor(basis(3, 1), basis(3, 2))).unit()
+    ket = (
+        _qutip_tensor(basis(3, 0), basis(3, 0))
+        + _qutip_tensor(basis(3, 1), basis(3, 2))
+    ).unit()
     context = _context(adapter, ket2dm(ket), seed=4)
     adapter.execute_boundary(
         MeasurementStep((0,), (0,), reported_digit_maps=((0, 1, 2),)),
@@ -71,7 +79,7 @@ def test_partial_entangled_measurement_collapses_the_physical_posterior(model):
 
     outcome = context.classical_memory[0]
     assert outcome in (0, 1)
-    posterior = context.state.ptrace(1)
+    posterior = context.state.ptrace(0)
     expected = ket2dm(basis(3, 0 if outcome == 0 else 2))
     assert np.allclose(posterior.full(), expected.full())
 
@@ -80,7 +88,7 @@ def test_grouped_measurement_preserves_declared_outcome_order(model):
     adapter = _adapter(model)
     context = _context(
         adapter,
-        ket2dm(tensor(basis(3, 1), basis(3, 2))),
+        ket2dm(_qutip_tensor(basis(3, 1), basis(3, 2))),
         classical=(0, 0),
     )
     adapter.execute_boundary(
@@ -96,7 +104,7 @@ def test_grouped_measurement_preserves_declared_outcome_order(model):
 
 def test_leakage_reports_one_then_confusion_changes_only_classical_value(model):
     adapter = _adapter(model)
-    leaked = ket2dm(tensor(basis(3, 2), basis(3, 0)))
+    leaked = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
     context = _context(adapter, leaked)
     adapter.execute_boundary(
         MeasurementStep(
@@ -114,7 +122,8 @@ def test_leakage_reports_one_then_confusion_changes_only_classical_value(model):
 def test_reset_reprepares_only_target_and_guard_can_skip_it(model):
     adapter = _adapter(model)
     entangled = (
-        tensor(basis(3, 1), basis(3, 0)) + tensor(basis(3, 2), basis(3, 2))
+        _qutip_tensor(basis(3, 1), basis(3, 0))
+        + _qutip_tensor(basis(3, 2), basis(3, 2))
     ).unit()
     context = _context(adapter, ket2dm(entangled))
     adapter.execute_boundary(ResetStep((0,), condition=((0, 1),)), context)
@@ -123,7 +132,7 @@ def test_reset_reprepares_only_target_and_guard_can_skip_it(model):
     context.classical_memory[0] = 1
     adapter.execute_boundary(ResetStep((0,), condition=((0, 1),)), context)
     expected_other = (ket2dm(basis(3, 0)) + ket2dm(basis(3, 2))) / 2
-    expected = tensor(ket2dm(basis(3, 0)), expected_other)
+    expected = _qutip_tensor(ket2dm(basis(3, 0)), expected_other)
     assert np.allclose(context.state.full(), expected.full())
 
 
@@ -145,8 +154,8 @@ def test_confused_reported_value_drives_later_guarded_pulse(make_backend):
 
     assert result.get_counts() == {"1": 1}
     density = Qobj(result.get_density_matrix(), dims=[[3, 3], [3, 3]])
-    assert density.ptrace(1).diag()[1].real > 0.8
-    assert np.allclose(density.ptrace(0).full(), ket2dm(basis(3, 0)).full())
+    assert density.ptrace(0).diag()[1].real > 0.8
+    assert np.allclose(density.ptrace(1).full(), ket2dm(basis(3, 0)).full())
 
 
 def test_seeded_dynamic_replay_is_reproducible(make_backend):
@@ -209,7 +218,7 @@ def test_reset_and_both_guarded_boundary_outcomes_preserve_later_frame_use(
             .result()
             .get_density_matrix()
         )
-        return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(0).full()
+        return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(1).full()
 
     continuous = fq.Program(2)
     continuous.add(fq.ops.RZ(0.3), 0)
@@ -244,7 +253,7 @@ def test_both_guarded_pulse_outcomes_flush_before_later_frame_aware_drive(make_b
             .result()
             .get_density_matrix()
         )
-        return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(0).full()
+        return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(1).full()
 
     continuous = fq.Program(2)
     continuous.add(fq.ops.RZ(0.3), 0)
@@ -262,7 +271,7 @@ def test_both_guarded_pulse_outcomes_flush_before_later_frame_aware_drive(make_b
 
 class _ExcitedAdapter(_TransmonQutipAdapter):
     def initial_state(self):
-        return ket2dm(tensor(basis(3, 2), basis(3, 0)))
+        return ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
 
     def finish_shot(self, context):
         result = super().finish_shot(context)
@@ -306,7 +315,7 @@ def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames(model):
     )
     shot, frames = outcome
     density = Qobj(shot.final_state, dims=[[3, 3], [3, 3]])
-    assert density.ptrace(0).diag()[2].real < 0.1
+    assert density.ptrace(1).diag()[2].real < 0.1
     assert frames == {}
 
 

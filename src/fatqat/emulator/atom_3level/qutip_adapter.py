@@ -32,6 +32,7 @@ from .._core.engine import _ShotContext, _condition_matches
 from .._core.lindblad import ResolvedLindbladTerm
 from .._core.outcome import _PulseShotOutcome
 from .._core.pulse import PhaseShift, PhaseSwap
+from .._core.qutip_allocation import _QutipEngineAllocation
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
 from .._core.target import _PreparedControlBinding
@@ -64,11 +65,12 @@ class _Atom3LevelQutipAdapter:
                 "atom engine allocation must cover the complete target in target order"
             )
         self._engine_allocation = engine_allocation
+        self._qutip_allocation = _QutipEngineAllocation(engine_allocation)
         self._retain_final_state = retain_final_state
         self._solver_used = "none"
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
-        self._dims = list(engine_allocation.system_dims)
+        self._dims = list(self._qutip_allocation.qutip_dims)
         self.local_raman_raising = Qobj(
             np.array([[0, 0, 0], [1, 0, 0], [0, 0, 0]], complex)
         )
@@ -121,18 +123,22 @@ class _Atom3LevelQutipAdapter:
         drift = 0 * tensor(*(qeye(3) for _ in self._dims))
         for value in self._target.interactions:
             factors = [qeye(3) for _ in self._dims]
-            factors[self._engine_allocation.engine_index(value.first)] = (
-                self.local_rydberg_number
-            )
-            factors[self._engine_allocation.engine_index(value.second)] = (
-                self.local_rydberg_number
-            )
+            factors[
+                self._qutip_allocation.factor_index(
+                    self._engine_allocation.engine_index(value.first)
+                )
+            ] = self.local_rydberg_number
+            factors[
+                self._qutip_allocation.factor_index(
+                    self._engine_allocation.engine_index(value.second)
+                )
+            ] = self.local_rydberg_number
             drift += value.signed_strength_rad_per_us * tensor(*factors)
         return drift
 
     def _expand(self, ordinal: int, local: Qobj) -> Qobj:
         factors = [qeye(3) for _ in self._dims]
-        factors[ordinal] = local
+        factors[self._qutip_allocation.factor_index(ordinal)] = local
         return tensor(*factors)
 
     def _bind_child(
@@ -151,6 +157,7 @@ class _Atom3LevelQutipAdapter:
         if len(binding.engine_indices) != 1:
             raise BackendValidationError("atom controls require one engine index")
         engine_index = binding.engine_indices[0]
+        qutip_target = self._qutip_allocation.factor_index(engine_index)
         coefficients = np.asarray(child.waveform.values, dtype=complex)
         site = self._engine_allocation.device_operands[engine_index]
         frame_angle = frames.get(self._target.model.frame(site), 0.0)
@@ -172,7 +179,7 @@ class _Atom3LevelQutipAdapter:
         y_operator = -1j * (lowering - lowering.dag())
         pulse = Pulse(
             x_operator,
-            engine_index,
+            qutip_target,
             tlist=absolute_tlist,
             coeff=0.5 * envelope.real,
             spline_kind="cubic",
@@ -180,7 +187,7 @@ class _Atom3LevelQutipAdapter:
         )
         pulse.add_coherent_noise(
             y_operator,
-            engine_index,
+            qutip_target,
             tlist=absolute_tlist,
             coeff=0.5 * envelope.imag,
         )
@@ -412,9 +419,8 @@ class _Atom3LevelQutipAdapter:
         return _BoundDynamics(hamiltonian=hamiltonian, output_frames=frames)
 
     def _frame_unitary(self, frames: dict[Any, float]) -> Qobj:
-        return tensor(
-            *(
-                self.local_frame(frames.get(self._target.model.frame(site), 0.0))
-                for site in self._engine_allocation.device_operands
-            )
+        canonical_factors = tuple(
+            self.local_frame(frames.get(self._target.model.frame(site), 0.0))
+            for site in self._engine_allocation.device_operands
         )
+        return tensor(*self._qutip_allocation.factor_order(canonical_factors))
