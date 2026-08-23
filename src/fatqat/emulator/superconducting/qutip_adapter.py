@@ -30,10 +30,10 @@ from .._core.engine import _ShotContext, _condition_matches
 from .._core.lindblad import ResolvedLindbladTerm
 from .._core.outcome import _PulseShotOutcome
 from .._core.pulse import PhaseShift, PhaseSwap, PulseBlock
-from .._core.qutip_allocation import _QutipEngineAllocation
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.target import _PreparedControlBinding
 from .._core.value_validation import TIME_EPSILON
+from .._qutip_space import _QutipTensorSpace
 from .model import angular_rate_from_ghz
 from .target import _TransmonTarget
 
@@ -94,22 +94,22 @@ class _TransmonQutipAdapter:
                 "order"
             )
         self._engine_allocation = engine_allocation
-        self._qutip_allocation = _QutipEngineAllocation(engine_allocation)
-        self._dims = list(self._qutip_allocation.qutip_dims)
+        self._qutip_space = _QutipTensorSpace(engine_allocation)
+        self._dims = list(self._qutip_space.dims)
         self._local_annihilation = Qobj(self._target.model.annihilation)
         self._local_number = Qobj(self._target.model.number)
         self._annihilation = tuple(
-            self._expand_local(ordinal, self._local_annihilation)
+            self._qutip_space.expand_local(ordinal, self._local_annihilation)
             for ordinal in range(len(self._target.model.subsystems))
         )
         self._number = tuple(
-            self._expand_local(ordinal, self._local_number)
+            self._qutip_space.expand_local(ordinal, self._local_number)
             for ordinal in range(len(self._target.model.subsystems))
         )
         self._drift = self._build_drift()
         self._projectors = tuple(
             tuple(
-                self._expand_local(
+                self._qutip_space.expand_local(
                     ordinal, ket2dm(basis(target.local_dimension, level))
                 )
                 for level in range(target.local_dimension)
@@ -118,7 +118,7 @@ class _TransmonQutipAdapter:
         )
         self._reset_operators = tuple(
             tuple(
-                self._expand_local(
+                self._qutip_space.expand_local(
                     ordinal,
                     basis(target.local_dimension, 0)
                     * basis(target.local_dimension, level).dag(),
@@ -138,7 +138,9 @@ class _TransmonQutipAdapter:
 
     def initial_state(self) -> Any:
         """Create the full-model physical ground-state density matrix."""
-        ket = tensor(*(basis(dimension, 0) for dimension in self._dims))
+        ket = self._qutip_space.full_tensor(
+            [basis(dimension, 0) for dimension in self._engine_allocation.system_dims]
+        )
         return ket2dm(ket)
 
     @staticmethod
@@ -198,7 +200,9 @@ class _TransmonQutipAdapter:
             input_frames={},
         )
         if isinstance(bound, _BoundFrames):
-            unitary = tensor(*(qeye(dimension) for dimension in self._dims))
+            unitary = self._qutip_space.full_tensor(
+                [qeye(dimension) for dimension in self._engine_allocation.system_dims]
+            )
         elif bound.collapse_operators:
             raise BackendValidationError(
                 "propagator is unavailable for dissipative pulse evolution"
@@ -306,7 +310,7 @@ class _TransmonQutipAdapter:
         for subsystem_id in self._engine_allocation.device_operands:
             angle = frames.get(self._target.model.frame(subsystem_id), 0.0)
             factors.append(Qobj(np.diag(np.exp(1j * angle * levels))))
-        return tensor(*self._qutip_allocation.factor_order(factors))
+        return self._qutip_space.full_tensor(factors)
 
     def execute_boundary(
         self, step: MeasurementStep | ResetStep, context: _ShotContext
@@ -354,12 +358,6 @@ class _TransmonQutipAdapter:
             classical_digits=tuple(context.classical_memory),
         )
 
-    def _expand_local(self, ordinal: int, operator: Any) -> Any:
-        """Tensor-expand one local operator at a model subsystem ordinal."""
-        factors = [qeye(dimension) for dimension in self._dims]
-        factors[self._qutip_allocation.factor_index(ordinal)] = operator
-        return tensor(*factors)
-
     def _build_drift(self) -> Drift:
         """Build the rotating-frame local-anharmonicity drift.
 
@@ -383,7 +381,7 @@ class _TransmonQutipAdapter:
             )
             drift.add_drift(
                 local,
-                self._qutip_allocation.factor_index(engine_index),
+                self._qutip_space.target(engine_index),
             )
         return drift
 
@@ -442,9 +440,7 @@ class _TransmonQutipAdapter:
         return [
             (
                 local_qobj,
-                self._qutip_allocation.factor_index(
-                    self._validate_noise_ordinal(ordinal)
-                ),
+                self._qutip_space.target(self._validate_noise_ordinal(ordinal)),
             )
             for ordinal in term.engine_indices
         ]
@@ -512,7 +508,7 @@ class _TransmonQutipAdapter:
                 raise BackendValidationError("detuning requires one engine index")
             return Pulse(
                 self._local_number,
-                self._qutip_allocation.factor_index(binding.engine_indices[0]),
+                self._qutip_space.target(binding.engine_indices[0]),
                 tlist=absolute_tlist,
                 coeff=coefficients.real,
                 spline_kind="cubic",
@@ -521,9 +517,7 @@ class _TransmonQutipAdapter:
         if binding.kind == "exchange":
             if len(binding.engine_indices) != 2:
                 raise BackendValidationError("exchange requires two engine indices")
-            targets = list(
-                self._qutip_allocation.factor_indices(binding.engine_indices)
-            )
+            targets = list(self._qutip_space.targets(binding.engine_indices))
             exchange = tensor(
                 self._local_annihilation.dag(), self._local_annihilation
             ) + tensor(self._local_annihilation, self._local_annihilation.dag())
@@ -540,7 +534,7 @@ class _TransmonQutipAdapter:
         if len(binding.engine_indices) != 1:
             raise BackendValidationError("drive requires one engine index")
         engine_index = binding.engine_indices[0]
-        factor_index = self._qutip_allocation.factor_index(engine_index)
+        factor_index = self._qutip_space.target(engine_index)
         subsystem_id = self._engine_allocation.device_operands[engine_index]
         phase = np.exp(
             -1j
