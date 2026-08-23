@@ -6,7 +6,6 @@ from . import noise
 from . import operations as ops
 from . import simulator
 from . import waveforms
-from .atom_arrangement import AtomArrangement
 from .estimator import Estimator
 from .job import Job
 from .noise import NoiseModel
@@ -54,5 +53,4 @@ __all__ = [
     "DeviceOperand",
     "Job",
     "Result",
-    "AtomArrangement",
 ]

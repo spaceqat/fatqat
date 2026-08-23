@@ -58,7 +58,7 @@ def _backend(
 ):
     return Atom2LevelEmulator(
         model,
-        arrangement=fq.AtomArrangement.rectangular(1, sites, 2.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, sites, 2.0),
         noise=noise,
         gate_implementation_map=gate_map,
         lindblad_implementation_map=lindblad_map,

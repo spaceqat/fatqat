@@ -31,7 +31,7 @@ def _model(**limits):
 def _backend(model, *, rows=1, columns=2, spacing=2.0):
     return Atom2LevelEmulator(
         model,
-        arrangement=fq.AtomArrangement.rectangular(rows, columns, spacing),
+        arrangement=fq.emulator.AtomArrangement.rectangular(rows, columns, spacing),
     )
 
 

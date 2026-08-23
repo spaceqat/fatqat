@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from qutip import basis, ket2dm, mesolve, tensor
 
-from fatqat import AtomArrangement
+from fatqat.emulator import AtomArrangement
 from fatqat._backends.steps import MeasurementStep, ResetStep
 from fatqat._index_allocation import _EngineAllocation
 from fatqat._pulse_values import PulseControl

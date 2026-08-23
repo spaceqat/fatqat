@@ -28,6 +28,7 @@ public backends and realization modules supply family-specific physics.
 
 from __future__ import annotations
 
+from .atom_arrangement import AtomArrangement
 from ._core.model_document import (
     CalibrationIdentity,
     FormatIdentity,
@@ -79,6 +80,7 @@ __all__ = [
     "default_atom_3level_calibration",
     "default_atom_3level_gate_implementation_map",
     "Atom2LevelModel",
+    "AtomArrangement",
     "FormatIdentity",
     "ModelIdentity",
     "CalibrationIdentity",

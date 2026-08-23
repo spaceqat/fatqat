@@ -26,7 +26,7 @@ def backend_fixture():
     )
     return Atom2LevelEmulator(
         model,
-        arrangement=fq.AtomArrangement.rectangular(1, 2, 2.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
     )
 
 

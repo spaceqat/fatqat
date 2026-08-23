@@ -36,7 +36,7 @@ def _backend(model, rate=0.3):
     noise.add(AmplitudeDamping(rate=rate), targets=0)
     return Atom2LevelEmulator(
         model,
-        arrangement=fq.AtomArrangement.rectangular(1, 1, 2.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, 1, 2.0),
         noise=noise,
     )
 

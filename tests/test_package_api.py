@@ -18,14 +18,15 @@ def test_waveform_and_pulse_authoring_names_are_namespaced():
     assert not hasattr(fq, "SampledWaveform")
 
 
-def test_atom_3level_arrangement_is_the_top_level_data_value():
-    from fatqat.atom_arrangement import AtomArrangement
+def test_atom_arrangement_is_owned_by_the_emulator_namespace():
+    from fatqat.emulator import AtomArrangement
     from fatqat.emulator.atom_3level import (
         Atom3LevelCalibration,
         Atom3LevelModel,
     )
 
-    assert fq.AtomArrangement is AtomArrangement
+    assert fq.emulator.AtomArrangement is AtomArrangement
+    assert not hasattr(fq, "AtomArrangement")
     assert not hasattr(fq, "Atom3LevelModel")
     assert not hasattr(fq, "Atom3LevelEmulator")
     assert hasattr(fq.emulator, "Atom3LevelEmulator")

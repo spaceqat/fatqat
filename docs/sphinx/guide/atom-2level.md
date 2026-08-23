@@ -35,7 +35,7 @@ constant or a device calibration.
 >>> model = fq.emulator.Atom2LevelModel.from_document(model_document)
 >>> tuple(model.available_controls)
 ('drive', 'detuning')
->>> arrangement = fq.AtomArrangement.rectangular(rows=1, cols=2, spacing=6.0)
+>>> arrangement = fq.emulator.AtomArrangement.chain(num_sites=2, spacing=6.0)
 >>> backend = fq.emulator.Atom2LevelEmulator(model, arrangement=arrangement)
 >>> drive_waveform = fq.waveforms.SampledWaveform(
 ...     (0.0, 0.4, 1.0),

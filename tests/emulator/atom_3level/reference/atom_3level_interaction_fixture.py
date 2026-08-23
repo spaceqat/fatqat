@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fatqat import AtomArrangement
+from fatqat.emulator import AtomArrangement
 from fatqat._index_allocation import _ClassicalAllocation, _EngineAllocation
 from fatqat.emulator._core import planning
 from fatqat.emulator._core.planning import _PulseLoweringContext

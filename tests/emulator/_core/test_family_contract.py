@@ -19,7 +19,7 @@ def family_backend_fixture(request, model, atom_3level_model):
         return fq.emulator.TransmonEmulator(model)
     return fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
-        arrangement=fq.AtomArrangement.rectangular(1, 2, 2.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
     )
 
 

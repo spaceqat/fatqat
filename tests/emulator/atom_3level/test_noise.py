@@ -40,7 +40,7 @@ def _noise(channel, *, operation=None, targets=None):
 def _backend(model, *, noise=None, lindblad_map=None):
     return fq.emulator.Atom3LevelEmulator(
         model,
-        arrangement=fq.AtomArrangement.rectangular(1, 1, 2.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, 1, 2.0),
         noise=noise,
         lindblad_implementation_map=lindblad_map,
     )
@@ -138,7 +138,7 @@ def test_custom_map_rejects_qutrit_amplitude_damping_with_wrong_arity(
 def test_attached_noise_is_classified_once_before_target_construction(
     atom_3level_model, monkeypatch
 ):
-    arrangement = fq.AtomArrangement.rectangular(1, 1, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 1, 2.0)
     invalid = _noise(PhaseDamping(rate=0.2))
 
     def target_must_not_be_built(*_args, **_kwargs):

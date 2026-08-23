@@ -24,12 +24,12 @@ def _spacing(value: Any) -> float:
 
 @dataclass(frozen=True, init=False)
 class AtomArrangement:
-    """An immutable rectangular arrangement of physical sites.
+    """An immutable regular arrangement of physical atom sites.
 
-    Construct arrangements with :meth:`rectangular`. The current three-level
-    and two-level atom emulators expose no arbitrary-coordinate public
-    constructor. Coordinates are in micrometres and ordered row-major, with
-    the x coordinate advancing across columns.
+    Construct arrangements with :meth:`chain` or :meth:`rectangular`.
+    Coordinates are in micrometres and ordered row-major, with the x
+    coordinate advancing across columns. Arbitrary-coordinate construction is
+    not part of the current public API.
 
     Attributes:
         rows: Positive number of rows.
@@ -41,17 +41,35 @@ class AtomArrangement:
 
     Examples:
         >>> import fatqat as fq
-        >>> arrangement = fq.AtomArrangement.rectangular(2, 3, 6.0)
+        >>> arrangement = fq.emulator.AtomArrangement.chain(3, spacing=6.0)
         >>> arrangement.num_sites
-        6
-        >>> arrangement.coordinates[3]
-        (0.0, 6.0, 0.0)
+        3
+        >>> arrangement.coordinates[2]
+        (12.0, 0.0, 0.0)
     """
 
     rows: int
     cols: int
     spacing: float
     coordinates: tuple[tuple[float, float, float], ...]
+
+    @classmethod
+    def chain(cls, num_sites: int, spacing: float) -> AtomArrangement:
+        """Create a one-dimensional chain ordered along the x axis.
+
+        Args:
+            num_sites: Positive number of physical sites.
+            spacing: Positive finite nearest-neighbor spacing in micrometres.
+
+        Returns:
+            An immutable one-row arrangement with ``num_sites`` coordinates.
+
+        Raises:
+            ValueError: If ``num_sites`` is not a positive integer or spacing
+                is not a positive finite real number. Booleans are rejected.
+        """
+        num_sites = _dimension(num_sites, "num_sites")
+        return cls.rectangular(rows=1, cols=num_sites, spacing=spacing)
 
     @classmethod
     def rectangular(cls, rows: int, cols: int, spacing: float) -> AtomArrangement:

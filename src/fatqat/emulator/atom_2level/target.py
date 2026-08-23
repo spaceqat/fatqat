@@ -9,7 +9,7 @@ import sys
 import numpy as np
 
 from ..._pulse_values import ControlChannel, PulseControl
-from ...atom_arrangement import AtomArrangement
+from ..atom_arrangement import AtomArrangement
 from ...errors import BackendValidationError
 from ...implementation import DeviceOperands
 from ...program import Program

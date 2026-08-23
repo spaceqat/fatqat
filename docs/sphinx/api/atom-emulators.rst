@@ -19,8 +19,8 @@ workflows are in :doc:`../guide/neutral-atoms`,
 Common arrangement and binding
 ------------------------------
 
-Both backends require an immutable rectangular
-:py:class:`~fatqat.AtomArrangement`. Coordinates are row-major,
+Both backends require an immutable regular
+:py:class:`~fatqat.emulator.AtomArrangement`. Coordinates are row-major,
 ``(column * spacing, row * spacing, 0)``, and the current atom models interpret
 spacing in micrometres. A program must declare exactly one dimension-two
 quantum resource per site; declaration order binds resources to coordinates.
@@ -31,8 +31,8 @@ By contrast, ``AtomArraySimulator(num_sites=6)`` declares a maximum gate-level
 device capacity and accepts programs with at most six resources; omitting its
 ``num_sites`` argument leaves that simulator unbounded.
 
-.. autoclass:: fatqat.AtomArrangement
-   :members: rectangular, num_sites
+.. autoclass:: fatqat.emulator.AtomArrangement
+   :members: chain, rectangular, num_sites
 
 Run and result contract
 -----------------------

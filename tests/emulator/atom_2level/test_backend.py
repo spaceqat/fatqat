@@ -40,7 +40,7 @@ def model_fixture():
 def _backend(model, *, site_count=2, interaction_cutoff=None, noise=None):
     return Atom2LevelEmulator(
         model,
-        arrangement=fq.AtomArrangement.rectangular(1, site_count, 2.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, site_count, 2.0),
         interaction_cutoff=interaction_cutoff,
         noise=noise,
     )
@@ -87,7 +87,7 @@ def test_public_constructor_has_only_the_locked_two_level_arguments(model):
     assert signature.parameters["arrangement"].kind is inspect.Parameter.KEYWORD_ONLY
     assert not any(name in signature.parameters for name in ("calibration", "solver"))
 
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     backend = Atom2LevelEmulator(model, arrangement=arrangement)
     assert backend.model is model
     assert backend.arrangement is arrangement
@@ -116,12 +116,12 @@ def test_public_constructor_has_only_the_locked_two_level_arguments(model):
 
 
 def test_cutoff_normalization_read_only_properties_and_constructor_types(model):
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     backend = Atom2LevelEmulator(model, arrangement=arrangement, interaction_cutoff=2)
     assert backend.arrangement is arrangement
     assert backend.interaction_cutoff == 2.0
     with pytest.raises(AttributeError):
-        backend.arrangement = fq.AtomArrangement.rectangular(1, 2, 3.0)
+        backend.arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 3.0)
     with pytest.raises(AttributeError):
         backend.interaction_cutoff = 3.0
 
@@ -139,7 +139,7 @@ def test_cutoff_normalization_read_only_properties_and_constructor_types(model):
 
 @pytest.mark.parametrize("cutoff", [True, -1, nan, inf, -inf, "2", 1j, object()])
 def test_constructor_rejects_invalid_interaction_cutoffs(model, cutoff):
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     with pytest.raises(
         BackendValidationError,
         match="interaction_cutoff must be None or a finite nonnegative real number",
@@ -154,14 +154,14 @@ def test_constructor_rejects_invalid_interaction_cutoffs(model, cutoff):
 def test_constructor_normalizes_valid_interaction_cutoffs(model, authored, normalized):
     backend = Atom2LevelEmulator(
         model,
-        arrangement=fq.AtomArrangement.rectangular(1, 2, 2.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
         interaction_cutoff=authored,
     )
     assert backend.interaction_cutoff == normalized
 
 
 def test_removed_interaction_policy_keyword_and_property_are_absent(model):
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     with pytest.raises(TypeError, match="interaction_policy"):
         Atom2LevelEmulator(
             model,
@@ -199,7 +199,7 @@ def _global_gate_map(model, operation=fq.ops.CZ):
 
 
 def test_maps_are_copied_once_and_explicit_empty_maps_stay_empty(model):
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     gate_map = _global_gate_map(model)
     lindblad_map = LindbladImplementationMap()
     lindblad_map.register(AmplitudeDamping, amplitude_damping_lindblad_rule)
@@ -229,7 +229,7 @@ def test_maps_are_copied_once_and_explicit_empty_maps_stay_empty(model):
 
 
 def test_invalid_attached_noise_rejects_before_target_construction(model, monkeypatch):
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     noise = fq.NoiseModel()
     noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
 
@@ -245,7 +245,7 @@ def test_invalid_attached_noise_rejects_before_target_construction(model, monkey
 
 
 def test_constructor_classifies_attached_noise_exactly_once(model, monkeypatch):
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     noise = fq.NoiseModel()
     noise.add(AmplitudeDamping(rate=0.2), targets=0)
     calls = 0
@@ -266,7 +266,7 @@ def test_constructor_classifies_attached_noise_exactly_once(model, monkeypatch):
 def test_custom_global_gate_requires_and_executes_a_whole_arrangement_occurrence(
     model,
 ):
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     backend = Atom2LevelEmulator(
         model,
         arrangement=arrangement,

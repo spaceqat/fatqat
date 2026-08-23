@@ -17,7 +17,7 @@ from fatqat.waveforms import SampledWaveform
 def _backend(model, calibration, sites=2):
     return fq.emulator.Atom3LevelEmulator(
         model,
-        arrangement=fq.AtomArrangement.rectangular(1, sites, 2.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, sites, 2.0),
     )
 
 
@@ -114,7 +114,7 @@ def test_structural_controls_reuse_across_compatible_arrangements(
     first = _backend(atom_3level_model, atom_3level_calibration, sites=2)
     second = fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
-        arrangement=fq.AtomArrangement.rectangular(2, 1, 3.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(2, 1, 3.0),
     )
 
     first_plan = first._prepare_program(program).plan
