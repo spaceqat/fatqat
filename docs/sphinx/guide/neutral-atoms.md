@@ -57,7 +57,7 @@ Both emulators keep three kinds of information separate:
 
 1. A versioned physics-model document defines species, levels, units, and the
    signed `C6` coefficient.
-2. An {py:class}`~fatqat.AtomArrangement` defines rectangular physical-site
+2. An {py:class}`~fatqat.emulator.AtomArrangement` defines regular physical-site
    coordinates in row-major order.
 3. The `Program` declares one dimension-two quantum resource per arrangement
    site. Resources bind to sites in declaration order.
@@ -70,7 +70,7 @@ supplied map can add ordinary gates. Its model supplies global drive and
 detuning addresses, and direct programs supply their sampled waveforms.
 
 ```python
-arrangement = fq.AtomArrangement.rectangular(
+arrangement = fq.emulator.AtomArrangement.rectangular(
     rows=2,
     cols=3,
     spacing=6.0,  # um for the current atom models

@@ -14,7 +14,7 @@ from fatqat.errors import BackendValidationError
 def _target(document, sites=2):
     return _Atom3LevelTarget(
         Atom3LevelModel.from_document(document),
-        fq.AtomArrangement.rectangular(1, sites, 2.0),
+        fq.emulator.AtomArrangement.rectangular(1, sites, 2.0),
     )
 
 

@@ -1,11 +1,11 @@
-"""Public rectangular neutral-atom arrangement value tests."""
+"""Public regular neutral-atom arrangement value tests."""
 
 from math import inf, nan
 from operator import setitem
 
 import pytest
 
-from fatqat import AtomArrangement
+from fatqat.emulator import AtomArrangement
 
 
 def test_rectangular_arrangement_is_row_major_3d_immutable_value():
@@ -31,6 +31,18 @@ def test_rectangular_arrangement_is_row_major_3d_immutable_value():
         setitem(arrangement.coordinates, 0, (99.0, 0.0, 0.0))
     with pytest.raises((AttributeError, TypeError)):
         arrangement.rows = 99
+
+
+def test_chain_arrangement_is_the_one_row_convenience_geometry():
+    arrangement = AtomArrangement.chain(num_sites=3, spacing=1.5)
+
+    assert arrangement.coordinates == (
+        (0.0, 0.0, 0.0),
+        (1.5, 0.0, 0.0),
+        (3.0, 0.0, 0.0),
+    )
+    with pytest.raises(ValueError):
+        AtomArrangement.chain(num_sites=0, spacing=1.5)
 
 
 @pytest.mark.parametrize(

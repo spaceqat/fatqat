@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...atom_arrangement import AtomArrangement
+from ..atom_arrangement import AtomArrangement
 from ...errors import BackendValidationError
 from ...noise import (
     LindbladImplementationMap,

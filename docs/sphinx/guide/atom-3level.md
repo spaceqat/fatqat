@@ -69,7 +69,7 @@ construction; its references identify the Evered et al. source.
 >>> model = fq.emulator.Atom3LevelModel.from_document(model_document)
 >>> tuple(model.available_controls)
 ('raman', 'rydberg')
->>> arrangement = fq.AtomArrangement.rectangular(rows=1, cols=2, spacing=2.0)
+>>> arrangement = fq.emulator.AtomArrangement.rectangular(rows=1, cols=2, spacing=2.0)
 >>> backend = fq.emulator.Atom3LevelEmulator(
 ...     model, arrangement=arrangement
 ... )

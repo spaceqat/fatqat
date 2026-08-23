@@ -27,7 +27,7 @@ def document_fixture():
 def _target(document, sites=2, *, interaction_cutoff=2.0, spacing=2.0):
     return _Atom2LevelTarget(
         Atom2LevelModel.from_document(document),
-        fq.AtomArrangement.rectangular(1, sites, spacing),
+        fq.emulator.AtomArrangement.rectangular(1, sites, spacing),
         interaction_cutoff,
     )
 
@@ -103,7 +103,7 @@ def test_no_cutoff_prepares_every_signed_interaction_once(document):
 
 def test_cutoff_selects_coordinate_distance_shells_and_preserves_strength(document):
     document["parameters"]["c6"] = -64.0
-    arrangement = fq.AtomArrangement.rectangular(2, 3, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(2, 3, 2.0)
     model = Atom2LevelModel.from_document(document)
 
     all_pairs = _Atom2LevelTarget(model, arrangement, None)
@@ -127,7 +127,7 @@ def test_cutoff_selects_coordinate_distance_shells_and_preserves_strength(docume
 
 
 def test_cutoff_boundary_keeps_decimal_nearest_pairs_without_diagonals(document):
-    arrangement = fq.AtomArrangement.rectangular(2, 10, 0.1)
+    arrangement = fq.emulator.AtomArrangement.rectangular(2, 10, 0.1)
     target = _Atom2LevelTarget(
         Atom2LevelModel.from_document(document), arrangement, arrangement.spacing
     )

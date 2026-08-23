@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from qutip import basis, tensor
 
-from fatqat import AtomArrangement
+from fatqat.emulator import AtomArrangement
 from fatqat._pulse_values import PulseControl
 from fatqat._index_allocation import _EngineAllocation
 from fatqat.emulator._core.engine import PulseEngine, _ShotContext

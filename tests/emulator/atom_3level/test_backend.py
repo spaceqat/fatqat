@@ -37,7 +37,7 @@ def _backend(
 ):
     return fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
-        arrangement=fq.AtomArrangement.rectangular(rows, cols, spacing),
+        arrangement=fq.emulator.AtomArrangement.rectangular(rows, cols, spacing),
         noise=noise,
     )
 
@@ -67,7 +67,7 @@ def test_atom_3level_public_signature_and_private_ownership(
         is inspect.Parameter.KEYWORD_ONLY
     )
     assert signature.parameters["gate_implementation_map"].default is None
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     backend = fq.emulator.Atom3LevelEmulator(atom_3level_model, arrangement=arrangement)
     assert backend.model is atom_3level_model
     assert backend.arrangement is arrangement
@@ -172,7 +172,7 @@ def test_atom_3level_default_map_does_not_bind_calibration_to_model_identity(
 def test_atom_3level_supplied_map_is_type_checked_copied_and_empty_is_explicit(
     atom_3level_model, atom_3level_calibration
 ):
-    arrangement = fq.AtomArrangement.rectangular(1, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     with pytest.raises(BackendValidationError, match="PulseImplementationMap"):
         fq.emulator.Atom3LevelEmulator(
             atom_3level_model,
@@ -217,12 +217,12 @@ def test_compiled_map_transfers_while_target_c6_and_geometry_control_evolution(
     changed_model = fq.emulator.Atom3LevelModel.from_document(changed_document)
     source_target = fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
-        arrangement=fq.AtomArrangement.rectangular(1, 2, 2.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
         gate_implementation_map=compiled,
     )
     changed_target = fq.emulator.Atom3LevelEmulator(
         changed_model,
-        arrangement=fq.AtomArrangement.rectangular(1, 2, 3.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 3.0),
         gate_implementation_map=compiled,
     )
     program = fq.Program(2)
@@ -259,7 +259,7 @@ def test_custom_map_uses_only_public_atom_structural_authoring_values(
     implementation_map.add(fq.ops.X, custom_x)
     backend = fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
-        arrangement=fq.AtomArrangement.rectangular(1, 1, 2.0),
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, 1, 2.0),
         gate_implementation_map=implementation_map,
     )
     program = fq.Program(1)

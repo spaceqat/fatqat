@@ -8,7 +8,7 @@ import pytest
 from qutip import Qobj, basis, tensor
 
 import fatqat.emulator.atom_2level.qutip_adapter as atom2_qutip_adapter
-from fatqat import AtomArrangement
+from fatqat.emulator import AtomArrangement
 from fatqat._backends.steps import MeasurementStep, ResetStep
 from fatqat._index_allocation import _EngineAllocation
 from fatqat._pulse_values import PulseControl

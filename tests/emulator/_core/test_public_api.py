@@ -84,6 +84,7 @@ def test_family_and_aggregate_exports_are_exact():
         "default_atom_3level_calibration",
         "default_atom_3level_gate_implementation_map",
         "Atom2LevelModel",
+        "AtomArrangement",
         "FormatIdentity",
         "ModelIdentity",
         "CalibrationIdentity",

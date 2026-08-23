@@ -14,7 +14,7 @@ from fatqat.emulator.atom_3level.target import _Atom3LevelTarget
 def test_target_computes_each_public_two_by_two_pair_exactly_once(
     atom_3level_model, monkeypatch
 ):
-    arrangement = fq.AtomArrangement.rectangular(2, 2, 2.0)
+    arrangement = fq.emulator.AtomArrangement.rectangular(2, 2, 2.0)
     calls = []
     original_dist = target_module.dist
 
