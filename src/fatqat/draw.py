@@ -37,12 +37,18 @@ import functools
 import io
 from typing import Any
 
+from . import operations as ops
 from .errors import UnsupportedOperationError
 from .operations import BarrierGate, Measurement, PulseOperation, ResetGate
 from .program import Program
 from .registers import RegisterRef, RegisterView, _view_members
 
-# Map fatqat operation names to their native QuTiP-QIP gate. Each value is
+# Map exact fatqat built-in operation types to their native QuTiP-QIP gate.
+# Using types instead of public ``Operation.name`` strings prevents a custom
+# operation that happens to reuse a built-in display name from being silently
+# reinterpreted as that built-in.
+#
+# Each value is
 # ``(qutip_name, n_controls, param_attr)``:
 #   - qutip_name : the gate name QuTiP-QIP draws (its spellings differ from
 #     fatqat's - e.g. Hadamard is "SNOT", sqrt-X is "SQRTNOT").
@@ -53,25 +59,27 @@ from .registers import RegisterRef, RegisterView, _view_members
 #   - param_attr : the operation attribute to pass to QuTiP as ``arg_value``
 #     (the rotation/phase angle), or ``None`` for a non-parametric gate.
 # Any operation *not* listed here is drawn as a labeled box (see _add_operation).
-_NATIVE_GATES: dict[str, tuple[str, int, str | None]] = {
-    "H": ("SNOT", 0, None),
-    "X": ("X", 0, None),
-    "Y": ("Y", 0, None),
-    "Z": ("Z", 0, None),
-    "S": ("S", 0, None),
-    "T": ("T", 0, None),
-    "SX": ("SQRTNOT", 0, None),
-    "RX": ("RX", 0, "theta"),
-    "RY": ("RY", 0, "theta"),
-    "RZ": ("RZ", 0, "theta"),
-    "Phase": ("PHASEGATE", 0, "theta"),
-    "CX": ("CNOT", 1, None),
-    "CZ": ("CZ", 1, None),
-    "CPhase": ("CPHASE", 1, "theta"),
-    "Swap": ("SWAP", 0, None),
-    "iSwap": ("ISWAP", 0, None),
-    "CCX": ("TOFFOLI", 2, None),
-    "CSwap": ("FREDKIN", 1, None),
+_NATIVE_GATES: dict[type[ops.Operation], tuple[str, int, str | None]] = {
+    type(ops.H): ("SNOT", 0, None),
+    type(ops.X): ("X", 0, None),
+    type(ops.Y): ("Y", 0, None),
+    type(ops.Z): ("Z", 0, None),
+    type(ops.S): ("S", 0, None),
+    type(ops.T): ("T", 0, None),
+    type(ops.SX): ("SQRTNOT", 0, None),
+    ops.RX: ("RX", 0, "theta"),
+    ops.RY: ("RY", 0, "theta"),
+    ops.RZ: ("RZ", 0, "theta"),
+    ops.Phase: ("PHASEGATE", 0, "theta"),
+    type(ops.CX): ("CNOT", 1, None),
+    type(ops.CY): ("CY", 1, None),
+    type(ops.CZ): ("CZ", 1, None),
+    type(ops.CS): ("CS", 1, None),
+    ops.CPhase: ("CPHASE", 1, "theta"),
+    type(ops.Swap): ("SWAP", 0, None),
+    type(ops.iSwap): ("ISWAP", 0, None),
+    type(ops.CCX): ("TOFFOLI", 2, None),
+    type(ops.CSwap): ("FREDKIN", 1, None),
 }
 
 
@@ -198,21 +206,70 @@ def _optional(**kwargs) -> dict:
     return {key: value for key, value in kwargs.items() if value}
 
 
-def _add_box(circuit, label: str, wires: list[int], classical_controls) -> None:
+def _add_box(
+    circuit,
+    label: str,
+    wires: list[int],
+    classical_controls,
+    *,
+    arg_label: str | None = None,
+    classical_control_value: int | None = None,
+) -> None:
     """Add a labeled box spanning ``wires``, on either API."""
-    gate = label if _gate_api() == _API_STRING else _box_gate(label, len(wires))
+    if _gate_api() == _API_STRING:
+        # Passing a label string through ``QubitCircuit.add_gate`` asks QuTiP
+        # to resolve it in its native registry. A custom gate named ``CY``,
+        # ``CS`` or any other registered spelling would then be reinterpreted
+        # (and can fail arity validation). A generic Gate instance bypasses
+        # that lookup and guarantees this remains a plain drawing box.
+        from qutip_qip.operations import Gate
+
+        gate = Gate(
+            name=label,
+            targets=wires,
+            arg_label=arg_label,
+            classical_control_value=classical_control_value,
+            **_optional(classical_controls=classical_controls),
+        )
+        circuit.add_gate(gate)
+        return
+    # Class-API gate instances retain their own label rather than an
+    # ``arg_label=`` passed to ``add_gate``. Put a conditional box's complete
+    # display label on the drawing-only class itself.
+    gate = _box_gate(arg_label or label, len(wires))
+    optional = _optional(classical_controls=classical_controls)
+    if classical_control_value is not None:
+        optional["classical_control_value"] = classical_control_value
     circuit.add_gate(
-        gate, targets=wires, **_optional(classical_controls=classical_controls)
+        gate,
+        targets=wires,
+        **optional,
     )
 
 
 def _add_native(
-    circuit, qutip_name: str, controls, targets, arg_value, classical_controls
+    circuit,
+    qutip_name: str,
+    controls,
+    targets,
+    arg_value,
+    classical_controls,
+    *,
+    arg_label: str | None = None,
+    classical_control_value: int | None = None,
 ) -> None:
     """Add a gate QuTiP implements natively, on either API."""
     optional = _optional(controls=controls, classical_controls=classical_controls)
+    if classical_control_value is not None:
+        optional["classical_control_value"] = classical_control_value
     if _gate_api() == _API_STRING:
-        circuit.add_gate(qutip_name, targets=targets, arg_value=arg_value, **optional)
+        circuit.add_gate(
+            qutip_name,
+            targets=targets,
+            arg_value=arg_value,
+            arg_label=arg_label,
+            **optional,
+        )
         return
     # Class-based API: parametric gates are passed as instances carrying their
     # angle (`arg_value=` is deprecated), non-parametric ones as the class.
@@ -244,6 +301,73 @@ def _mat_renderer_cls():
     except ImportError:
         from qutip_qip.circuit.mat_renderer import MatRenderer  # released
     return MatRenderer
+
+
+def _adapt_legacy_condition_controls(circuit) -> None:
+    """Expose 0.4 classical controls to renderers as drawing-only controls.
+
+    QuTiP-QIP 0.4 stores ``classical_controls`` but neither renderer reads the
+    field. Negative control indices are safe on its drawing-only ``Gate`` and
+    map each cbit into the renderer's combined qbit/cbit layer arrays:
+    ``c0 -> -num_cbits``, ..., ``cN -> -1``. The replacement remains local to
+    the fresh circuit created by :func:`draw`; :func:`to_qubit_circuit` keeps
+    returning its normal semantic translation.
+    """
+    from qutip_qip.operations import Gate
+
+    for index, gate in enumerate(circuit.gates):
+        classical_controls = getattr(gate, "classical_controls", None)
+        if not classical_controls:
+            continue
+        virtual_controls = [
+            control - circuit.num_cbits for control in classical_controls
+        ]
+        circuit.gates[index] = Gate(
+            name="_fatqat_conditioned",
+            targets=list(gate.targets),
+            controls=list(gate.controls or ()) + virtual_controls,
+            arg_label=getattr(gate, "arg_label", None) or gate.name,
+        )
+
+
+def _render_matplotlib(circuit, **kwargs):
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    axis = kwargs.pop("ax", None)
+    owns_figure = axis is None
+    if owns_figure:
+        figure = Figure()
+        FigureCanvasAgg(figure)
+        axis = figure.add_subplot(111)
+    else:
+        figure = axis.get_figure()
+
+    renderer = _mat_renderer_cls()(circuit, ax=axis, **kwargs)
+    if _gate_api() == _API_STRING:
+        renderer._layer_list.update(
+            {
+                cbit - renderer._cwires: [renderer._start_pad]
+                for cbit in range(renderer._cwires)
+            }
+        )
+    if owns_figure:
+        figure.set_dpi(renderer.style.dpi)
+
+    # QuTiP hard-codes pyplot layout/show calls. Keep them figure-local and
+    # non-interactive while its renderer runs, then restore them immediately.
+    import matplotlib.pyplot as plt
+
+    original_tight_layout = plt.tight_layout
+    original_show = plt.show
+    plt.tight_layout = figure.tight_layout
+    plt.show = lambda *args, **kw: None
+    try:
+        renderer.canvas_plot()
+    finally:
+        plt.tight_layout = original_tight_layout
+        plt.show = original_show
+    return renderer.fig
 
 
 def _wire_maps(program: Program) -> tuple[dict, dict]:
@@ -339,16 +463,33 @@ def _add_operation(circuit, step, operands, qubit_index, clbit_index):
     operation = step.operation
     wires = [_wire(ref, qubit_index) for ref in operands]
 
-    # A feedforward condition draws as a classical control wire. QuTiP's
-    # ``classical_controls`` records only *which* clbits gate the operation,
-    # not the value they must equal, so a ``(clbit, 0)`` term or a multi-term
-    # AND is drawn as an ordinary classical control - the diagram cannot show
-    # the exact predicate, only that the operation is classically conditioned.
-    classical_controls = (
-        [_wire(ref, clbit_index) for ref, _ in step.condition]
+    # Preserve both the controlled cbits and their exact predicate. Released
+    # QuTiP stores these fields but needs the small renderer adapter above to
+    # show them; the newer class API renders its cbit instructions directly.
+    condition_terms = (
+        [(_wire(ref, clbit_index), value) for ref, value in step.condition]
         if step.condition
+        else []
+    )
+    classical_controls = [wire for wire, _ in condition_terms] or None
+    # QuTiP represents binary control literals as an integer whose highest bit
+    # corresponds to the first listed cbit. Preserve that semantic value when
+    # possible. Higher-dimensional classical values remain explicit in the
+    # visible predicate label even though QuTiP has no mixed-radix field.
+    classical_control_value = (
+        sum(
+            value << (len(condition_terms) - index - 1)
+            for index, (_, value) in enumerate(condition_terms)
+        )
+        if condition_terms and all(value in (0, 1) for _, value in condition_terms)
         else None
     )
+
+    def conditioned_label(label: str) -> str | None:
+        if not condition_terms:
+            return None
+        predicate = " & ".join(f"c{wire}={value}" for wire, value in condition_terms)
+        return f"{label} if {predicate}"
 
     # Barrier: QuTiP-QIP has no barrier primitive, so draw it as a labeled box
     # spanning its wires. (A dashed separator would require reaching into
@@ -361,10 +502,17 @@ def _add_operation(circuit, step, operands, qubit_index, clbit_index):
     # Reset: also no native primitive; draw a small ``|0>`` box per target.
     if isinstance(operation, ResetGate):
         for wire in wires:
-            _add_box(circuit, "|0>", [wire], classical_controls)
+            _add_box(
+                circuit,
+                "|0>",
+                [wire],
+                classical_controls,
+                arg_label=conditioned_label("|0>"),
+                classical_control_value=classical_control_value,
+            )
         return
 
-    native = _NATIVE_GATES.get(operation.name)
+    native = _NATIVE_GATES.get(type(operation))
     if native is not None:
         qutip_name, n_controls, param_attr = native
         _add_native(
@@ -374,14 +522,23 @@ def _add_operation(circuit, step, operands, qubit_index, clbit_index):
             targets=wires[n_controls:],
             arg_value=getattr(operation, param_attr) if param_attr else None,
             classical_controls=classical_controls,
+            arg_label=conditioned_label(operation.name),
+            classical_control_value=classical_control_value,
         )
         return
 
     # Any other operation - a user-defined custom gate, a gate QuTiP lacks
-    # (e.g. Sdg, Tdg, CY, CS), or a qudit gate (Shift, Clock, Sum, ...) - is
+    # (e.g. Sdg or Tdg), or a qudit gate (Shift, Clock, Sum, ...) - is
     # drawn as a labeled box carrying its own name. This is what keeps drawing
     # total: an unknown gate produces a named box instead of an error.
-    _add_box(circuit, operation.name, wires, classical_controls)
+    _add_box(
+        circuit,
+        operation.name,
+        wires,
+        classical_controls,
+        arg_label=conditioned_label(operation.name),
+        classical_control_value=classical_control_value,
+    )
 
 
 def draw(program: Program, renderer: str = "matplotlib", **kwargs: Any):
@@ -403,28 +560,16 @@ def draw(program: Program, renderer: str = "matplotlib", **kwargs: Any):
     circuit = to_qubit_circuit(program)
 
     if renderer == "text":
-        # QuTiP's text renderer prints to stdout and returns None; capture it
-        # so the caller gets the diagram as a string to print or save.
+        if _gate_api() == _API_STRING:
+            _adapt_legacy_condition_controls(circuit)
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             circuit.draw("text", **kwargs)
         return buffer.getvalue()
 
     if renderer == "matplotlib":
-        # ``QubitCircuit.draw("matplotlib")`` calls ``plt.show()`` and returns
-        # None, which is no good for "return a Figure the caller saves". Use
-        # the underlying ``MatRenderer`` (which exposes ``.fig``) and suppress
-        # its ``plt.show()`` so nothing pops up and the Figure is returned.
-        import matplotlib.pyplot as plt
-
-        mat_renderer_cls = _mat_renderer_cls()
-        original_show = plt.show
-        plt.show = lambda *args, **kw: None
-        try:
-            mat_renderer = mat_renderer_cls(circuit, **kwargs)
-            mat_renderer.canvas_plot()
-        finally:
-            plt.show = original_show
-        return mat_renderer.fig
+        if _gate_api() == _API_STRING:
+            _adapt_legacy_condition_controls(circuit)
+        return _render_matplotlib(circuit, **kwargs)
 
     return circuit.draw(renderer, **kwargs)
