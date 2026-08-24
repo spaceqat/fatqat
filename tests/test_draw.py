@@ -20,7 +20,7 @@ import fatqat as fq
 import fatqat.operations as op
 from fatqat.emulator import ControlChannel, PulseControl
 from fatqat.waveforms import SampledWaveform
-from fatqat.draw import draw, to_qubit_circuit
+from fatqat.draw import to_qubit_circuit
 from fatqat.errors import UnsupportedOperationError
 from fatqat.operations import PulseOperation
 
@@ -160,7 +160,7 @@ def _bell():
 def test_text_renderer_returns_the_terminal_diagram():
     program = fq.Program(1)
     program.add(_Custom(), 0)
-    text = draw(program, "text")
+    text = program.draw("text")
 
     # Returned, not printed - so the caller can print, log, or save it.
     assert isinstance(text, str)
@@ -172,7 +172,7 @@ def test_text_renderer_draws_and_orders_feedforward_condition():
     program.measure(0, 0)
     program.add(op.X, 1, condition=(0, 0))
 
-    text = draw(program, "text")
+    text = program.draw("text")
     lines = text.splitlines()
     measurement_line = next(line for line in lines if " M " in line)
     q0_line = next(line for line in lines if line.lstrip().startswith("q0 "))
@@ -185,7 +185,7 @@ def test_text_renderer_draws_and_orders_feedforward_condition():
 
 
 def test_matplotlib_renderer_returns_a_savable_figure():
-    figure = draw(_bell(), "matplotlib")
+    figure = _bell().draw()
     assert isinstance(figure, matplotlib.figure.Figure)
 
 
@@ -194,7 +194,7 @@ def test_matplotlib_renderer_draws_and_orders_feedforward_condition():
     program.measure(0, 0)
     program.add(op.X, 1, condition=(0, 0))
 
-    figure = draw(program, "matplotlib")
+    figure = program.draw("matplotlib")
     axis = figure.axes[0]
     label = next(text for text in axis.texts if text.get_text() == "X if c0=0")
     gate_x = label.get_position()[0]

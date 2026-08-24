@@ -4,13 +4,12 @@ QuTiP-QIP is imported lazily inside the functions that need it, keeping the
 base :mod:`fatqat` import lightweight even though drawing support is included
 in every installation.
 
-Two entry points:
+The public entry points are:
 
 - :py:func:`to_qubit_circuit` translates a program into a
   ``qutip_qip.circuit.QubitCircuit`` (the reusable seam - call QuTiP's own
   ``.draw(...)`` on the result if you want its full set of options).
-- :py:func:`draw` is a thin convenience wrapper that renders the circuit as a
-  matplotlib ``Figure`` (save it yourself with ``fig.savefig("circuit.png")``)
+- :py:meth:`fatqat.Program.draw` renders the circuit as a matplotlib ``Figure``
   or as a text-diagram ``str`` for the terminal.
 
 Translation is one-directional (fatqat -> QuTiP) and for drawing only: the
@@ -35,13 +34,15 @@ from __future__ import annotations
 import contextlib
 import functools
 import io
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import operations as ops
 from .errors import UnsupportedOperationError
 from .operations import BarrierGate, Measurement, PulseOperation, ResetGate
-from .program import Program
 from .registers import RegisterRef, RegisterView, _view_members
+
+if TYPE_CHECKING:
+    from .program import Program
 
 # Map exact fatqat built-in operation types to their native QuTiP-QIP gate.
 # Using types instead of public ``Operation.name`` strings prevents a custom
@@ -310,8 +311,8 @@ def _adapt_legacy_condition_controls(circuit) -> None:
     field. Negative control indices are safe on its drawing-only ``Gate`` and
     map each cbit into the renderer's combined qbit/cbit layer arrays:
     ``c0 -> -num_cbits``, ..., ``cN -> -1``. The replacement remains local to
-    the fresh circuit created by :func:`draw`; :func:`to_qubit_circuit` keeps
-    returning its normal semantic translation.
+    the fresh circuit created by :meth:`fatqat.Program.draw`;
+    :func:`to_qubit_circuit` keeps returning its normal semantic translation.
     """
     from qutip_qip.operations import Gate
 
@@ -541,8 +542,8 @@ def _add_operation(circuit, step, operands, qubit_index, clbit_index):
     )
 
 
-def draw(program: Program, renderer: str = "matplotlib", **kwargs: Any):
-    """Render a program's circuit diagram.
+def _draw_program(program: Program, renderer: str = "matplotlib", **kwargs: Any):
+    """Implement :meth:`fatqat.Program.draw` without loading QuTiP eagerly.
 
     Args:
         program: The program to draw.
