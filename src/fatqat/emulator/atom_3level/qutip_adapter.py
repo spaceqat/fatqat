@@ -14,7 +14,6 @@ from qutip import (
     mesolve,
     propagator as qutip_propagator,
     qeye,
-    tensor,
 )
 from qutip_qip.pulse import Pulse
 
@@ -35,6 +34,7 @@ from .._core.pulse import PhaseShift, PhaseSwap
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
 from .._core.target import _PreparedControlBinding
+from .._qutip_space import _QutipTensorSpace
 from .target import _Atom3LevelTarget
 
 _SOLVER_OPTIONS = {"method": "adams", "atol": 1e-11, "rtol": 1e-9, "nsteps": 100000}
@@ -64,11 +64,12 @@ class _Atom3LevelQutipAdapter:
                 "atom engine allocation must cover the complete target in target order"
             )
         self._engine_allocation = engine_allocation
+        self._qutip_space = _QutipTensorSpace(engine_allocation)
         self._retain_final_state = retain_final_state
         self._solver_used = "none"
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
-        self._dims = list(engine_allocation.system_dims)
+        self._dims = list(self._qutip_space.dims)
         self.local_raman_raising = Qobj(
             np.array([[0, 0, 0], [1, 0, 0], [0, 0, 0]], complex)
         )
@@ -77,18 +78,21 @@ class _Atom3LevelQutipAdapter:
         )
         self.local_rydberg_number = Qobj(np.diag([0, 0, 1]))
         self._projectors = tuple(
-            tuple(self._expand(ordinal, ket2dm(basis(3, level))) for level in range(3))
-            for ordinal in range(len(self._dims))
+            tuple(
+                self._qutip_space.expand_local(ordinal, ket2dm(basis(3, level)))
+                for level in range(3)
+            )
+            for ordinal in range(engine_allocation.n_subsystems)
         )
         self._reset_operators = tuple(
             tuple(
-                self._expand(
+                self._qutip_space.expand_local(
                     ordinal,
                     basis(3, 0) * basis(3, level).dag(),
                 )
                 for level in range(3)
             )
-            for ordinal in range(len(self._dims))
+            for ordinal in range(engine_allocation.n_subsystems)
         )
 
     def solver_metadata(self) -> dict[str, Any]:
@@ -111,29 +115,32 @@ class _Atom3LevelQutipAdapter:
         return Qobj(np.diag([1.0, np.exp(1j * theta), 1.0]))
 
     def initial_state(self) -> Any:
-        return ket2dm(tensor(*(basis(3, 0) for _ in self._dims)))
+        return ket2dm(
+            self._qutip_space.full_tensor(
+                tuple(basis(dim, 0) for dim in self._engine_allocation.system_dims)
+            )
+        )
 
     @staticmethod
     def copy_state(state: Any) -> Any:
         return state.copy()
 
     def interaction_drift(self) -> Qobj:
-        drift = 0 * tensor(*(qeye(3) for _ in self._dims))
+        drift = 0 * self._qutip_space.full_tensor(
+            tuple(qeye(dim) for dim in self._engine_allocation.system_dims)
+        )
         for value in self._target.interactions:
-            factors = [qeye(3) for _ in self._dims]
+            factors = [qeye(dim) for dim in self._engine_allocation.system_dims]
             factors[self._engine_allocation.engine_index(value.first)] = (
                 self.local_rydberg_number
             )
             factors[self._engine_allocation.engine_index(value.second)] = (
                 self.local_rydberg_number
             )
-            drift += value.signed_strength_rad_per_us * tensor(*factors)
+            drift += value.signed_strength_rad_per_us * self._qutip_space.full_tensor(
+                factors
+            )
         return drift
-
-    def _expand(self, ordinal: int, local: Qobj) -> Qobj:
-        factors = [qeye(3) for _ in self._dims]
-        factors[ordinal] = local
-        return tensor(*factors)
 
     def _bind_child(
         self,
@@ -151,6 +158,7 @@ class _Atom3LevelQutipAdapter:
         if len(binding.engine_indices) != 1:
             raise BackendValidationError("atom controls require one engine index")
         engine_index = binding.engine_indices[0]
+        qutip_target = self._qutip_space.target(engine_index)
         coefficients = np.asarray(child.waveform.values, dtype=complex)
         site = self._engine_allocation.device_operands[engine_index]
         frame_angle = frames.get(self._target.model.frame(site), 0.0)
@@ -172,7 +180,7 @@ class _Atom3LevelQutipAdapter:
         y_operator = -1j * (lowering - lowering.dag())
         pulse = Pulse(
             x_operator,
-            engine_index,
+            qutip_target,
             tlist=absolute_tlist,
             coeff=0.5 * envelope.real,
             spline_kind="cubic",
@@ -180,7 +188,7 @@ class _Atom3LevelQutipAdapter:
         )
         pulse.add_coherent_noise(
             y_operator,
-            engine_index,
+            qutip_target,
             tlist=absolute_tlist,
             coeff=0.5 * envelope.imag,
         )
@@ -225,7 +233,9 @@ class _Atom3LevelQutipAdapter:
             input_frames={},
         )
         if isinstance(bound, _BoundFrames):
-            unitary = tensor(*(qeye(3) for _ in self._dims))
+            unitary = self._qutip_space.full_tensor(
+                tuple(qeye(dim) for dim in self._engine_allocation.system_dims)
+            )
         else:
             self._solver_used = "propagator"
             unitary = qutip_propagator(
@@ -330,7 +340,7 @@ class _Atom3LevelQutipAdapter:
                     raise BackendValidationError(
                         f"unknown atom Lindblad engine index {engine_index!r}"
                     )
-                result.append(self._expand(engine_index, local))
+                result.append(self._qutip_space.expand_local(engine_index, local))
         return tuple(result)
 
     def _bind_block_collapse_operators(
@@ -412,9 +422,8 @@ class _Atom3LevelQutipAdapter:
         return _BoundDynamics(hamiltonian=hamiltonian, output_frames=frames)
 
     def _frame_unitary(self, frames: dict[Any, float]) -> Qobj:
-        return tensor(
-            *(
-                self.local_frame(frames.get(self._target.model.frame(site), 0.0))
-                for site in self._engine_allocation.device_operands
-            )
+        canonical_factors = tuple(
+            self.local_frame(frames.get(self._target.model.frame(site), 0.0))
+            for site in self._engine_allocation.device_operands
         )
+        return self._qutip_space.full_tensor(canonical_factors)

@@ -17,7 +17,6 @@ from qutip import (
     propagator,
     qeye,
     sesolve,
-    tensor,
 )
 from scipy.sparse import diags
 
@@ -31,6 +30,7 @@ from .._core.outcome import ExecutionMode, _PulseShotOutcome
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
 from .._core.waveform import _REQUESTED_SPLINE_DEGREE
+from .._qutip_space import _QutipTensorSpace
 from .target import _Atom2LevelTarget
 
 _SOLVER_OPTIONS = {
@@ -78,24 +78,27 @@ class _Atom2LevelQutipAdapter:
 
         self._target = target
         self._engine_allocation = engine_allocation
+        self._qutip_space = _QutipTensorSpace(engine_allocation)
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
         self._solver_used = "none"
         self._site_count = engine_allocation.n_subsystems
-        self._dims = list(engine_allocation.system_dims)
+        self._dims = list(self._qutip_space.dims)
         self.local_raising = Qobj(np.asarray([[0.0, 0.0], [1.0, 0.0]], complex))
         self.local_number = Qobj(np.diag([0.0, 1.0]))
-        identity = tensor(*(qeye(2) for _ in range(self._site_count)))
+        identity = self._qutip_space.full_tensor(
+            [qeye(2) for _ in range(self._site_count)]
+        )
         self._global_raising = sum(
             (
-                self._expand_local(site, self.local_raising)
+                self._qutip_space.expand_local(site, self.local_raising)
                 for site in range(self._site_count)
             ),
             0 * identity,
         )
         self._global_number = sum(
             (
-                self._expand_local(site, self.local_number)
+                self._qutip_space.expand_local(site, self.local_number)
                 for site in range(self._site_count)
             ),
             0 * identity,
@@ -110,7 +113,9 @@ class _Atom2LevelQutipAdapter:
         }
 
     def initial_state(self) -> Any:
-        ket = tensor(*(basis(2, 0) for _ in range(self._site_count)))
+        ket = self._qutip_space.full_tensor(
+            [basis(2, 0) for _ in range(self._site_count)]
+        )
         return ket2dm(ket) if self._execution_mode == "density_matrix" else ket
 
     def copy_state(self, state: Any) -> Any:
@@ -308,11 +313,6 @@ class _Atom2LevelQutipAdapter:
             )
         return tuple(state.copy() for state in final_states)
 
-    def _expand_local(self, ordinal: int, operator: Any) -> Any:
-        factors = [qeye(2) for _ in range(self._site_count)]
-        factors[ordinal] = operator
-        return tensor(*factors)
-
     def _build_interaction_drift(self) -> Any:
         dimension = 2**self._site_count
         basis_indices = np.arange(dimension, dtype=np.int64)
@@ -320,10 +320,8 @@ class _Atom2LevelQutipAdapter:
         for interaction in self._target.interactions:
             first = self._engine_allocation.engine_index(interaction.first)
             second = self._engine_allocation.engine_index(interaction.second)
-            first_shift = self._site_count - 1 - first
-            second_shift = self._site_count - 1 - second
-            both_occupied = ((basis_indices >> first_shift) & 1) * (
-                (basis_indices >> second_shift) & 1
+            both_occupied = ((basis_indices >> first) & 1) * (
+                (basis_indices >> second) & 1
             )
             diagonal += interaction.signed_strength_rad_per_us * both_occupied
         return Qobj(
@@ -342,7 +340,7 @@ class _Atom2LevelQutipAdapter:
                     raise BackendValidationError(
                         f"unknown two-level Lindblad engine index {engine_index!r}"
                     )
-                result.append(self._expand_local(engine_index, local))
+                result.append(self._qutip_space.expand_local(engine_index, local))
         return tuple(result)
 
     def _bind_block_collapse_operators(
@@ -377,7 +375,7 @@ class _Atom2LevelQutipAdapter:
                     result.append(
                         QobjEvo(
                             [
-                                self._expand_local(engine_index, local),
+                                self._qutip_space.expand_local(engine_index, local),
                                 coefficient(window, args={}),
                             ]
                         )
@@ -448,11 +446,10 @@ class _Atom2LevelQutipAdapter:
                     raise BackendValidationError("unknown two-level atom control kind")
         return QobjEvo(terms)
 
-    def _measure(self, ordinal: int, context: _ShotContext) -> int:
+    def _measure(self, canonical_axis: int, context: _ShotContext) -> int:
         state = self._statevector(context.state)
         basis_indices = np.arange(len(state), dtype=np.int64)
-        bit_shift = self._site_count - 1 - ordinal
-        digits = (basis_indices >> bit_shift) & 1
+        digits = (basis_indices >> canonical_axis) & 1
         probabilities = np.bincount(
             digits,
             weights=np.abs(state) ** 2,

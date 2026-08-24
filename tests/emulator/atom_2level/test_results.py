@@ -127,7 +127,9 @@ def test_one_shot_requested_posterior_is_an_independent_collapsed_ket(backend):
         result_config={"counts": True, "final_state": True},
     ).result()
     state = result.get_statevector()
+    counts = result.get_counts()
 
     assert state.shape == (4,)
     assert np.count_nonzero(np.abs(state) > 1e-10) == 1
     assert np.linalg.norm(state) == pytest.approx(1.0)
+    assert counts == {format(int(np.argmax(np.abs(state))), "02b"): 1}

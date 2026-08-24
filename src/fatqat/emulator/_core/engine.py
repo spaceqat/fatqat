@@ -47,7 +47,10 @@ class _PulseModelRunner(Protocol):
     boundary placement. A runner owns model-specific state evolution,
     measurement/reset physics, and conversion of one completed shot into a
     backend-facing payload. The protocol deliberately uses ``Any`` so QuTiP
-    values remain confined to the concrete adapter.
+    values remain confined to the concrete adapter. Regardless of its internal
+    solver representation, a runner's completed state and propagator must use
+    its engine allocation's canonical little-endian basis order: physical axis
+    0 is the least-significant subsystem.
     """
 
     def initial_state(self) -> Any: ...

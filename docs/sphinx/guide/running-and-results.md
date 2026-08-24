@@ -112,14 +112,17 @@ attach application metadata when provenance is needed.
 `method`.
 
 When a complete state or operator is returned, ``metadata["state_axes"]``
-describes its tensor factors in order. Each entry contains a public
-``device_operand`` and a ``register_ref`` containing the program's actual
+describes its physical subsystems in canonical order. Each entry contains a
+public ``device_operand`` and a ``register_ref`` containing the program's actual
 {py:class}`~fatqat.RegisterRef`, or ``None`` when that subsystem is not
 addressed by the program. Because it preserves the public domain object,
-``state_axes`` is not a JSON-serialization format. The list position is the
-tensor-axis position; no engine index is published or accepted as a later
-selector. A physical model may therefore report axes that have a device
-operand but no program reference.
+``state_axes`` is not a JSON-serialization format. List position 0 is the
+least-significant subsystem of a flat basis index; for local dimensions
+``dims``, position ``q`` has place value ``prod(dims[:q])``. Density-matrix
+rows and columns use the same basis order. These positions are not NumPy
+reshape axes or solver-library tensor-factor numbers, and no private engine
+index is published or accepted as a later selector. A physical model may
+therefore report axes that have a device operand but no program reference.
 
 Calling an accessor for a field that wasn't produced raises
 {py:exc}`~fatqat.errors.ResultFieldUnavailableError` rather than returning

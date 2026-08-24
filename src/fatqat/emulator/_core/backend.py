@@ -349,11 +349,12 @@ class _PulseBackend(ABC):
         before that final basis transformation.
 
         The result is a complex NumPy array over the selected model family's
-        full physical Hilbert space and uses that model's documented tensor
-        and frame conventions. Measurement, reset, and classical conditions
-        are rejected. Bound collapse terms are rejected when the plan contains
-        nonzero elapsed evolution; rate-based noise has no effect on an empty
-        or frame-only plan because no time elapses.
+        full physical Hilbert space. Its rows and columns use the same
+        canonical little-endian basis order as returned states: physical axis
+        0 is the least-significant subsystem. Measurement, reset, and classical
+        conditions are rejected. Bound collapse terms are rejected when the
+        plan contains nonzero elapsed evolution; rate-based noise has no effect
+        on an empty or frame-only plan because no time elapses.
 
         Args:
             program: Coherent program to lower, schedule, and propagate.

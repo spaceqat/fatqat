@@ -21,6 +21,12 @@ class _PulseResultRequest:
 
 @dataclass(frozen=True)
 class _PulseShotOutcome:
+    """One shot in canonical physical-axis order at the backend boundary.
+
+    A retained statevector is flat in canonical little-endian basis order. A
+    retained density matrix uses that same order for both rows and columns.
+    """
+
     final_state: np.ndarray | None
     final_state_kind: FinalStateKind
     classical_digits: tuple[int, ...]

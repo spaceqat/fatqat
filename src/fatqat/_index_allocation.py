@@ -16,7 +16,7 @@ def _describe_state_axes(
     engine_allocation: "_EngineAllocation",
     resource_layout: ResourceLayout,
 ) -> list[dict[str, object]]:
-    """Describe engine-ordered state axes using only public resource identities."""
+    """Describe canonical least-to-most-significant physical state axes."""
     refs_by_operand = {
         resource_layout.device_label(ref): ref for ref in resource_layout.refs
     }
@@ -31,7 +31,12 @@ def _describe_state_axes(
 
 @dataclass(frozen=True, slots=True)
 class _EngineAllocation:
-    """Engine-ordered modeled device operands and their local dimensions."""
+    """Modeled device operands in canonical little-endian subsystem order.
+
+    Axis 0 is the least-significant digit of a returned flat basis index.
+    Concrete engines translate these canonical axes to any library-specific
+    tensor-factor order internally.
+    """
 
     device_operands: tuple[DeviceOperand, ...]
     system_dims: tuple[int, ...]
@@ -62,7 +67,7 @@ class _EngineAllocation:
         return len(self.system_dims)
 
     def engine_index(self, device_operand: DeviceOperand) -> int:
-        """Return the private tensor index for a modeled device operand."""
+        """Return the canonical physical axis for a modeled device operand."""
         try:
             return self._engine_indices[device_operand]
         except KeyError:
