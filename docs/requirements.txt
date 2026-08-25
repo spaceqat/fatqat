@@ -22,8 +22,6 @@ charset-normalizer==3.5.1
     # via requests
 cloudpickle==3.1.2
     # via loky
-colorama==0.4.6
-    # via sphinx
 contourpy==1.3.3
     # via matplotlib
 cycler==0.12.1
@@ -44,6 +42,8 @@ jinja2==3.1.6
     #   myst-parser
     #   pydata-sphinx-theme
     #   sphinx
+joblib==1.5.3
+    # via scikit-learn
 kiwisolver==1.5.0
     # via matplotlib
 llvmlite==0.49.0
@@ -66,6 +66,8 @@ mdurl==0.1.2
     # via markdown-it-py
 myst-parser==5.1.0
     # via -r docs/requirements.in
+narwhals==2.25.0
+    # via scikit-learn
 numba==0.67.0
     # via fatqat
 numpy==2.5.2
@@ -76,6 +78,7 @@ numpy==2.5.2
     #   numba
     #   qutip
     #   qutip-qip
+    #   scikit-learn
     #   scipy
 packaging==26.3
     # via
@@ -112,11 +115,14 @@ requests==2.34.2
     #   sphinx
 roman-numerals==4.1.0
     # via sphinx
+scikit-learn==1.9.0
+    # via -r docs/requirements.in
 scipy==1.18.0
     # via
     #   fatqat
     #   qutip
     #   qutip-qip
+    #   scikit-learn
 six==1.17.0
     # via python-dateutil
 snowballstemmer==3.1.1
@@ -149,6 +155,8 @@ sphinxcontrib-qthelp==2.0.0
     # via sphinx
 sphinxcontrib-serializinghtml==2.0.0
     # via sphinx
+threadpoolctl==3.6.0
+    # via scikit-learn
 typing-extensions==4.16.0
     # via beautifulsoup4
 urllib3==2.7.0

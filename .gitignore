@@ -1,4 +1,5 @@
 .venv/
+.venv-docs/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -20,3 +21,7 @@ docs/design/
 # Local git worktrees used for isolated subagent-driven development
 .worktrees/
 benchmarks/
+
+# uv is optional, per-user tooling; a local lockfile is a user artifact
+uv.lock
+AGENTS.md
