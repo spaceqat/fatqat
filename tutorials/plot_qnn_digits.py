@@ -74,7 +74,6 @@ from sklearn.datasets import load_digits
 
 import fatqat as fq
 import fatqat.operations as op
-from fatqat.draw import draw
 
 NUM_QUBITS = 4
 NUM_ROUNDS = 4  # 4 rounds x 4 qubits consume the 16 pooled pixels
@@ -142,7 +141,7 @@ template = build_template()
 # then ``RZ(θ)`` on every wire and closes with the CX ring, repeated four
 # times.
 
-figure = draw(template, "matplotlib")
+figure = template.draw("matplotlib")
 figure.set_size_inches(16, 4)
 
 # %%

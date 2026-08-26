@@ -180,6 +180,17 @@ class Program:
             self._operations_view = tuple(self._operations)
         return self._operations_view
 
+    def draw(self, renderer: str = "matplotlib", **kwargs: Any) -> Any:
+        """Render this program as a circuit diagram.
+
+        ``renderer="matplotlib"`` returns a matplotlib ``Figure`` and
+        ``renderer="text"`` returns a terminal diagram string. Other renderer
+        names are forwarded to QuTiP-QIP.
+        """
+        from .draw import _draw_program
+
+        return _draw_program(self, renderer, **kwargs)
+
     @staticmethod
     def _coerce_registers(
         spec: int | list[RegisterT] | tuple[RegisterT, ...],

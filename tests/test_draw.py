@@ -20,11 +20,9 @@ import fatqat as fq
 import fatqat.operations as op
 from fatqat.emulator import ControlChannel, PulseControl
 from fatqat.waveforms import SampledWaveform
-from fatqat.draw import draw, to_qubit_circuit
+from fatqat.draw import to_qubit_circuit
 from fatqat.errors import UnsupportedOperationError
 from fatqat.operations import PulseOperation
-
-matplotlib.use("Agg")
 
 
 def _elements(circuit):
@@ -66,6 +64,14 @@ class _Custom(op.Operation):
     _num_subsystems: ClassVar[int] = 1
 
 
+@dataclass(frozen=True)
+class _CustomCY(op.Operation):
+    """A custom two-wire box whose label collides with a QuTiP gate name."""
+
+    name: ClassVar[str] = "CY"
+    _num_subsystems: ClassVar[int] = 2
+
+
 def test_gates_translate_to_qutip_equivalents():
     # Native names, a parametric angle, and the controls-first convention
     # (CX -> control 0 / target 1; CCX -> TOFFOLI with controls 0,1).
@@ -84,6 +90,17 @@ def test_gates_translate_to_qutip_equivalents():
     assert (elements[3][2], elements[3][1]) == ([0, 1], [2])
 
 
+@pytest.mark.parametrize("gate", (op.CY, op.CS))
+def test_controlled_y_and_s_translate_with_control_first(gate):
+    program = fq.Program(2)
+    program.add(gate, (0, 1))
+
+    ((_, targets, controls, _),) = _elements(to_qubit_circuit(program))
+
+    assert controls == [0]
+    assert targets == [1]
+
+
 def test_custom_gate_draws_as_a_box_with_its_name():
     program = fq.Program(1)
     program.add(_Custom(), 0)
@@ -92,6 +109,17 @@ def test_custom_gate_draws_as_a_box_with_its_name():
     assert name == "MyG"  # the box carries the operation's own name
     assert targets == [0]
     assert controls == []  # unknown gate: plain box, no control dot
+
+
+def test_custom_gate_name_collision_stays_a_plain_box():
+    program = fq.Program(2)
+    program.add(_CustomCY(), (0, 1))
+
+    ((name, targets, controls, _),) = _elements(to_qubit_circuit(program))
+
+    assert name == "CY"
+    assert targets == [0, 1]
+    assert controls == []
 
 
 def test_measurement_reset_barrier_and_condition_translate():
@@ -132,16 +160,41 @@ def _bell():
 def test_text_renderer_returns_the_terminal_diagram():
     program = fq.Program(1)
     program.add(_Custom(), 0)
-    text = draw(program, "text")
+    text = program.draw("text")
 
     # Returned, not printed - so the caller can print, log, or save it.
     assert isinstance(text, str)
     assert "MyG" in text  # a label fatqat controls on both QuTiP versions
 
 
+def test_text_renderer_draws_feedforward_condition():
+    program = fq.Program(2, 1)
+    program.measure(0, 0)
+    program.add(op.X, 1, condition=(0, 0))
+
+    text = program.draw("text")
+    classical_line = next(
+        line for line in text.splitlines() if line.lstrip().startswith("c0 ")
+    )
+
+    assert "X if c0=0" in text
+    assert "█" in classical_line
+
+
 def test_matplotlib_renderer_returns_a_savable_figure():
-    figure = draw(_bell(), "matplotlib")
+    figure = _bell().draw()
     assert isinstance(figure, matplotlib.figure.Figure)
+
+
+def test_matplotlib_renderer_draws_feedforward_condition():
+    program = fq.Program(2, 1)
+    program.measure(0, 0)
+    program.add(op.X, 1, condition=(0, 0))
+
+    figure = program.draw("matplotlib")
+    figure.canvas.draw()
+
+    assert "X if c0=0" in {text.get_text() for text in figure.axes[0].texts}
 
 
 def test_drawing_rejects_pulse_operations_before_qutip_translation():

@@ -48,6 +48,12 @@ tuples for grouped measurement:
 slot in declaration order. It requires matching quantum and classical slot
 counts.
 
+Draw a circuit
+--------------
+
+:py:meth:`~fatqat.Program.draw` renders the program as a matplotlib figure by
+default. Pass ``"text"`` to return a terminal diagram string instead.
+
 :py:meth:`~fatqat.Program.copy` returns an independent copy when you want to branch a
 program before adding more instructions.
 :py:meth:`~fatqat.Program.assign_parameters` returns a new program with the
@@ -60,7 +66,7 @@ Detailed reference
 ------------------
 
 .. autoclass:: fatqat.Program
-   :members: operations, add, measure, measure_all, copy, assign_parameters
+   :members: operations, add, measure, measure_all, draw, copy, assign_parameters
    :show-inheritance:
 
 .. autoclass:: fatqat.Measurement
