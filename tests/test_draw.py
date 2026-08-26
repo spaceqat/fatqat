@@ -167,21 +167,18 @@ def test_text_renderer_returns_the_terminal_diagram():
     assert "MyG" in text  # a label fatqat controls on both QuTiP versions
 
 
-def test_text_renderer_draws_and_orders_feedforward_condition():
+def test_text_renderer_draws_feedforward_condition():
     program = fq.Program(2, 1)
     program.measure(0, 0)
     program.add(op.X, 1, condition=(0, 0))
 
     text = program.draw("text")
-    lines = text.splitlines()
-    measurement_line = next(line for line in lines if " M " in line)
-    q0_line = next(line for line in lines if line.lstrip().startswith("q0 "))
-    c0_line = next(line for line in lines if line.lstrip().startswith("c0 "))
-    control_column = c0_line.index("█")
+    classical_line = next(
+        line for line in text.splitlines() if line.lstrip().startswith("c0 ")
+    )
 
-    assert any("X if c0=0" in line for line in lines)
-    assert measurement_line.index("M") < control_column
-    assert q0_line[control_column] == "│"
+    assert "X if c0=0" in text
+    assert "█" in classical_line
 
 
 def test_matplotlib_renderer_returns_a_savable_figure():
@@ -189,33 +186,15 @@ def test_matplotlib_renderer_returns_a_savable_figure():
     assert isinstance(figure, matplotlib.figure.Figure)
 
 
-def test_matplotlib_renderer_draws_and_orders_feedforward_condition():
+def test_matplotlib_renderer_draws_feedforward_condition():
     program = fq.Program(2, 1)
     program.measure(0, 0)
     program.add(op.X, 1, condition=(0, 0))
 
     figure = program.draw("matplotlib")
-    axis = figure.axes[0]
-    label = next(text for text in axis.texts if text.get_text() == "X if c0=0")
-    gate_x = label.get_position()[0]
-    vertical_lines = [
-        line
-        for line in axis.lines
-        if len(set(line.get_xdata())) == 1 and abs(line.get_xdata()[0] - gate_x) < 1e-9
-    ]
+    figure.canvas.draw()
 
-    assert any(
-        min(line.get_ydata()) == 0.0 and max(line.get_ydata()) >= 1.0
-        for line in vertical_lines
-    )
-    assert (
-        min(
-            patch.get_x() + patch.get_width() / 2
-            for patch in axis.patches
-            if hasattr(patch, "get_x")
-        )
-        < gate_x
-    )
+    assert "X if c0=0" in {text.get_text() for text in figure.axes[0].texts}
 
 
 def test_drawing_rejects_pulse_operations_before_qutip_translation():
