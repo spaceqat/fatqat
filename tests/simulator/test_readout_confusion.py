@@ -19,7 +19,6 @@ from fatqat._backends.steps import MeasurementStep
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError
 from fatqat.noise import NoiseModel, ReadoutConfusion
-from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
 
 _ALWAYS_ONE = np.array([[0.0, 0.0], [1.0, 1.0]])  # report 1 whatever is true
 _FLIP_30 = np.array([[0.7, 0.0], [0.3, 1.0]])  # P(report 1 | true 0) = 0.3
@@ -88,13 +87,13 @@ def test_dimension_mismatch_rejected_at_lowering():
         backend._lower_program(program)
 
 
-def test_readout_confusion_keeps_fast_path_on_both_methods():
-    backend = Simulator(noise=_readout_model(_FLIP_30))
+def test_readout_confusion_keeps_single_pass_shape():
     program = _measured_program()
-    plan, _ = backend._lower_program(program)
+    _plan, facts = Simulator(
+        "statevector", noise=_readout_model(_FLIP_30)
+    )._lower_program(program)
 
-    assert NumpySVEngine()._analyze_plan(plan)[0] is False
-    assert NumpyDMEngine()._analyze_plan(plan)[0] is False
+    assert facts.execution_shape == "single_pass"
 
 
 # --- execution: fast path ---
@@ -195,7 +194,7 @@ def test_reused_qubit_evolves_from_the_true_state():
     assert counts == {"01": 50}
 
 
-def test_parallel_dynamic_shots_match_serial_with_readout_confusion():
+def test_threaded_compiled_shots_match_serial_with_readout_confusion():
     noise = _readout_model(_FLIP_30)
     program = fq.Program(1, 2)
     program.measure(0, 0)
@@ -204,14 +203,29 @@ def test_parallel_dynamic_shots_match_serial_with_readout_confusion():
     serial = (
         Simulator(noise=noise)
         .run(
-            program, shots=8, simulation_config={"seed": 13, "parallel_mode": "serial"}
+            program,
+            shots=8,
+            simulation_config={
+                "seed": 13,
+                "shot_parallelism": "serial",
+                "kernel_parallelism": "serial",
+            },
         )
         .result()
         .get_counts()
     )
     parallel = (
         Simulator(noise=noise)
-        .run(program, shots=8, simulation_config={"seed": 13, "max_workers": 2})
+        .run(
+            program,
+            shots=8,
+            simulation_config={
+                "seed": 13,
+                "shot_parallelism": "threads",
+                "kernel_parallelism": "serial",
+                "max_workers": 2,
+            },
+        )
         .result()
         .get_counts()
     )
@@ -219,8 +233,8 @@ def test_parallel_dynamic_shots_match_serial_with_readout_confusion():
     assert parallel == serial
 
 
-def test_numba_fused_kernel_applies_readout_confusion():
-    # Regression: the fused per-shot kernel used to write the true measured
+def test_numba_compiled_multi_shot_kernel_applies_readout_confusion():
+    # Regression: the compiled multi-shot kernel used to write the true measured
     # digit straight into the classical register, so a dynamic plan's readout
     # error was silently dropped under runtime="numba" - X then always-flip
     # readout reported "1" instead of "0".
@@ -249,7 +263,7 @@ def test_numba_fused_kernel_applies_readout_confusion():
     assert counts["numba"] == counts["numpy"] == {"0": 64}
 
 
-def test_numba_fused_kernel_matches_numpy_on_a_qudit_confusion_plan():
+def test_numba_compiled_multi_shot_matches_numpy_on_a_qudit_confusion_plan():
     # A non-deterministic 3x3 confusion on a qutrit, mixed with a channel, a
     # feedforward gate and a reset: the reported digits are resampled in the
     # kernel, and the extra per-confusion uniform must keep the whole per-shot

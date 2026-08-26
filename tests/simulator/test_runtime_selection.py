@@ -1,5 +1,6 @@
 """Runtime selection on Simulator: dispatch, errors, and equivalence."""
 
+import numpy as np
 import pytest
 
 import fatqat as fq
@@ -88,12 +89,11 @@ def test_numba_runtime_produces_valid_bell_counts_through_the_portal():
     assert sum(counts.values()) == 200
 
 
-# --- numba_parallel: in-process thread parallelism, on or off ---
+# --- explicit serial and Numba-thread execution ---
 
 
 def _dynamic_program():
-    # A reset forces the dynamic path, where the fused kernel's `prange` shot
-    # loop is what `numba_parallel` switches off.
+    # A reset selects the compiled multi-shot path and its shot-parallel loop.
     program = fq.Program(1, 1)
     program.add(fq.ops.H, 0)
     program.measure(0, 0)
@@ -101,91 +101,139 @@ def _dynamic_program():
     return program
 
 
-def test_numba_parallel_off_produces_identical_counts():
+def test_serial_and_threaded_compiled_shots_are_identical():
     pytest.importorskip("numba")
 
-    def counts_for(numba_parallel):
+    def counts_for(shot_parallelism, max_workers):
         return (
             Simulator(runtime="numba")
             .run(
                 _dynamic_program(),
                 shots=64,
-                simulation_config={"seed": 7, "numba_parallel": numba_parallel},
+                simulation_config={
+                    "seed": 7,
+                    "shot_parallelism": shot_parallelism,
+                    "kernel_parallelism": "serial",
+                    "max_workers": max_workers,
+                },
             )
             .result()
             .get_counts()
         )
 
-    assert counts_for(False) == counts_for(True)
+    assert counts_for("serial", 1) == counts_for("threads", 2)
 
 
-def test_numba_parallel_off_restores_the_thread_count():
-    # `set_num_threads` is process-wide, so the run must put it back.
+def test_serial_shots_with_threaded_kernels_match_serial_kernels():
+    pytest.importorskip("numba")
+    from fatqat.simulator import AtomArraySimulator
+    from fatqat.simulator._engine import nb
+
+    if nb._MAX_THREADS < 2:
+        pytest.skip("Numba exposes no parallel thread capacity")
+
+    program = fq.Program(2, 2)
+    program.add(fq.ops.Put, (0, 1))
+    program.add(fq.ops.RX(np.pi / 3), 0)
+    program.measure((0, 1), (0, 1))
+    backend = AtomArraySimulator(num_sites=2, runtime="numba")
+
+    def run(kernel_parallelism, max_workers):
+        return backend.run(
+            program,
+            shots=1,
+            simulation_config={
+                "seed": 11,
+                "shot_parallelism": "serial",
+                "kernel_parallelism": kernel_parallelism,
+                "max_workers": max_workers,
+            },
+            result_config={"counts": True, "final_state": True},
+        ).result()
+
+    serial = run("serial", 1)
+    threaded = run("threads", 2)
+    assert threaded.get_counts() == serial.get_counts()
+    assert np.array_equal(threaded.get_statevector(), serial.get_statevector())
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_numba_kernel_thread_scope_expands_and_restores(fail, monkeypatch):
     numba = pytest.importorskip("numba")
+    from fatqat.simulator._engine import nb
+
+    if nb._MAX_THREADS < 2:
+        pytest.skip("Numba exposes no parallel thread capacity")
+
+    original_limit = numba.get_num_threads()
+    expected = 2
+    numba.set_num_threads(1)
     before = numba.get_num_threads()
+    original = nb.NumbaSVEngine._run_shot_seed_batch
 
-    Simulator(runtime="numba").run(
-        _dynamic_program(),
-        shots=64,
-        simulation_config={"seed": 7, "numba_parallel": False},
-    ).result()
+    def probe(self, *args, **kwargs):
+        assert numba.get_num_threads() == expected
+        if fail:
+            raise RuntimeError("numeric failure")
+        return original(self, *args, **kwargs)
 
-    assert numba.get_num_threads() == before
+    monkeypatch.setattr(nb.NumbaSVEngine, "_run_shot_seed_batch", probe)
+    simulation_config = {
+        "seed": 7,
+        "shot_parallelism": "serial",
+        "kernel_parallelism": "threads",
+        "max_workers": expected,
+    }
 
-
-@pytest.mark.parametrize("method", ["SV", "DM"])
-@pytest.mark.parametrize("numba_parallel", [True, False])
-def test_numba_parallel_confines_the_pool_for_the_whole_run(
-    method, numba_parallel, monkeypatch
-):
-    # Probed from inside the simulator's own run, where every kernel the run
-    # touches sees the pool - the fused shot loop and the gate-level coset
-    # chunks alike, on either representation.
-    numba = pytest.importorskip("numba")
-    from fatqat.simulator._engine.np import _NumpyMatrixEngine
-
-    observed = []
-    original = _NumpyMatrixEngine._analyze_plan
-
-    def probe(self, plan):
-        observed.append(numba.get_num_threads())
-        return original(self, plan)
-
-    monkeypatch.setattr(_NumpyMatrixEngine, "_analyze_plan", probe)
-    Simulator(method=method, runtime="numba").run(
-        _dynamic_program(),
-        shots=8,
-        simulation_config={"seed": 7, "numba_parallel": numba_parallel},
-    ).result()
-
-    expected = numba.get_num_threads() if numba_parallel else 1
-    assert observed == [expected]
-
-
-def test_numpy_runtime_rejects_numba_parallel():
-    with pytest.raises(BackendValidationError, match="numba_parallel"):
-        Simulator(runtime="numpy").run(
-            _bell_program(),
-            shots=4,
-            simulation_config={"numba_parallel": False},
-        )
-    # The default value is not a request, so it stays accepted everywhere.
-    Simulator(runtime="numpy").run(
-        _bell_program(), shots=4, simulation_config={"numba_parallel": True}
-    ).result()
-
-
-def test_numba_parallel_must_be_a_bool():
-    with pytest.raises(BackendValidationError, match="numba_parallel"):
-        Simulator(runtime="numpy").run(
-            _bell_program(), shots=4, simulation_config={"numba_parallel": 0}
+    try:
+        job = Simulator(runtime="numba").run(
+            _dynamic_program(),
+            shots=8,
+            simulation_config=simulation_config,
         )
 
+        if fail:
+            with pytest.raises(RuntimeError, match="numeric failure"):
+                job.result()
+        else:
+            job.result()
 
-def test_metadata_echoes_numba_parallel():
+        assert numba.get_num_threads() == before
+    finally:
+        numba.set_num_threads(original_limit)
+
+
+def test_explicit_threads_accepts_an_empty_plan():
+    pytest.importorskip("numba")
+    from fatqat.simulator._engine import nb
+
+    state = (
+        Simulator(runtime="numba")
+        .run(
+            fq.Program(1),
+            simulation_config={
+                "kernel_parallelism": "threads",
+                "max_workers": nb._MAX_THREADS + 1,
+            },
+        )
+        .result()
+        .get_statevector()
+    )
+
+    assert state.tolist() == [(1 + 0j), 0j]
+
+
+def test_metadata_echoes_only_the_requested_public_configuration():
     result = (
         Simulator()
         .run(_bell_program(), shots=4, simulation_config={"seed": 1})
         .result()
     )
-    assert result.metadata["simulation_config"]["numba_parallel"] is True
+    assert result.metadata["simulation_config"] == {
+        "seed": 1,
+        "shot_parallelism": "auto",
+        "kernel_parallelism": "auto",
+        "max_workers": None,
+        "fusion": False,
+    }
+    assert "execution" not in result.metadata

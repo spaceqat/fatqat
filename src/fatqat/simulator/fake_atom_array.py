@@ -38,8 +38,8 @@ lifecycle; see `~fatqat.connectivity.AtomConnectivity` and
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
-from typing import TYPE_CHECKING, cast
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from .. import operations as ops
 from ..connectivity import AtomConnectivity
@@ -51,12 +51,12 @@ from ..implementation import (
 from ..noise import NoiseModel
 from ..program import AppliedOperation, Program
 from ..resource_layout import ResourceLayout
-from .._backends.backend_utils import _PlanFacts
 from .._backends.steps import (
     LossStep,
     PutStep,
 )
-from .planning import _lower_channels
+from ._execution_contract import _PlanFacts
+from .planning import _lower_channels, _lower_put
 from .simulator import Simulator
 
 if TYPE_CHECKING:
@@ -70,35 +70,12 @@ if TYPE_CHECKING:
     from .._backends.steps import ResolvedStep
 
 
-@dataclass(frozen=True)
-class _AtomArrayPlanFacts(_PlanFacts):
+@dataclass(frozen=True, slots=True)
+class _AtomArrayPlanFacts:
     """Plan facts owned by the atom occupancy lifecycle."""
 
     has_loss: bool = False
-    has_put: bool = False
-
-    @classmethod
-    def from_common(
-        cls,
-        common: _PlanFacts,
-        *,
-        has_loss: bool,
-        has_put: bool,
-    ) -> _AtomArrayPlanFacts:
-        """Extend common facts without manually copying their fields."""
-        common_values = {
-            field.name: getattr(common, field.name) for field in fields(_PlanFacts)
-        }
-        return cls(
-            **common_values,
-            has_loss=has_loss,
-            has_put=has_put,
-        )
-
-    @property
-    def has_atom_lifecycle(self) -> bool:
-        """Whether execution carries occupancy state outside the quantum state."""
-        return self.has_loss or self.has_put
+    has_atom_lifecycle: bool = False
 
 
 def fake_atom_array_implementation_map() -> MatrixImplementationMap:
@@ -209,7 +186,11 @@ class AtomArraySimulator(Simulator):
            >>> counts = backend.run(
            ...     program,
            ...     shots=1000,
-           ...     simulation_config={"seed": 1, "parallel_mode": "serial"},
+           ...     simulation_config={
+           ...         "seed": 1,
+           ...         "shot_parallelism": "serial",
+           ...         "kernel_parallelism": "serial",
+           ...     },
            ... ).result().get_counts()
            >>> all(bits[0] == bits[1] for bits in counts)  # only 00 and 11 occur
            True
@@ -392,7 +373,7 @@ class AtomArraySimulator(Simulator):
         plan.extend(self._lower_segment(segment, connectivity, context))
         return plan
 
-    def _initial_occupancy(self, plan: Sequence[ResolvedStep]) -> frozenset[int] | None:
+    def _initial_occupancy(self, facts: _AtomArrayPlanFacts) -> frozenset[int] | None:
         """Seed occupancy empty whenever the program has an atom lifecycle.
 
         A ``Put`` or an atom loss makes occupancy shot-dependent: every site
@@ -402,9 +383,7 @@ class AtomArraySimulator(Simulator):
         This is the engine's per-shot occupancy seed, delivered as a run
         initialization input rather than a lowered plan step.
         """
-        if any(isinstance(step, (LossStep, PutStep)) for step in plan):
-            return frozenset()
-        return None
+        return frozenset() if facts.has_atom_lifecycle else None
 
     def _lower_segment(
         self,
@@ -423,7 +402,34 @@ class AtomArraySimulator(Simulator):
         """
         for step in segment:
             self._require_pairing(step, connectivity)
-        return super()._lower(segment, context)
+
+        plan: list[ResolvedStep] = []
+        ordinary: list[ProgramInstruction] = []
+        lower_common = super()._lower
+
+        def flush_ordinary() -> None:
+            if ordinary:
+                plan.extend(lower_common(tuple(ordinary), context))
+                ordinary.clear()
+
+        for step in segment:
+            if isinstance(step, AppliedOperation) and isinstance(
+                step.operation, ops.PutGate
+            ):
+                flush_ordinary()
+                plan.extend(
+                    _lower_put(
+                        step,
+                        context.resource_layout,
+                        context.engine_allocation,
+                        context.classical_allocation,
+                        self._noise_model,
+                    )
+                )
+            else:
+                ordinary.append(step)
+        flush_ordinary()
+        return plan
 
     def _require_pairing(
         self, step: ProgramInstruction, connectivity: AtomConnectivity
@@ -474,27 +480,58 @@ class AtomArraySimulator(Simulator):
                 "silently per shot."
             )
 
-    def _analyze_plan_facts(self, plan: Sequence[ResolvedStep]) -> _AtomArrayPlanFacts:
-        """Extend common plan facts with atom-grid lifecycle facts."""
-        common = super()._analyze_plan_facts(plan)
-        return _AtomArrayPlanFacts.from_common(
+    def _analyze_lowered_plan(
+        self, plan: tuple[ResolvedStep, ...]
+    ) -> tuple[_PlanFacts, frozenset[int] | None]:
+        """Translate atom lifecycle semantics into common plan consequences."""
+        common = self._analyze_common_plan_facts(
+            plan,
+            claimed_step_types=(LossStep, PutStep),
+        )
+        atom_facts = self._analyze_atom_plan_facts(plan)
+        execution_shape = common.execution_shape
+        deferred_measurements = common.deferred_measurements
+        if not self._is_operator and atom_facts.has_atom_lifecycle:
+            execution_shape = "per_shot"
+            deferred_measurements = ()
+        translated = replace(
             common,
-            has_loss=any(isinstance(step, LossStep) for step in plan),
-            has_put=any(isinstance(step, PutStep) for step in plan),
+            execution_shape=execution_shape,
+            deferred_measurements=deferred_measurements,
+            stochastic_final_state=(
+                common.stochastic_final_state or atom_facts.has_loss
+            ),
+        )
+        return translated, self._initial_occupancy(atom_facts)
+
+    def _analyze_atom_plan_facts(
+        self, plan: Sequence[ResolvedStep]
+    ) -> _AtomArrayPlanFacts:
+        """Collect the atom-only lifecycle facts in one cohesive scan."""
+        has_loss = False
+        has_put = False
+        for step in plan:
+            has_loss = has_loss or isinstance(step, LossStep)
+            has_put = has_put or isinstance(step, PutStep)
+        return _AtomArrayPlanFacts(
+            has_loss=has_loss,
+            has_atom_lifecycle=has_loss or has_put,
         )
 
-    def _state_is_stochastic(self, facts: _PlanFacts) -> bool:
-        """Interpret atom loss using this backend's state representation."""
-        atom_facts = cast(_AtomArrayPlanFacts, facts)
-        return super()._state_is_stochastic(facts) or atom_facts.has_loss
-
     def _validate_method_support(
-        self, config: _ResultConfig, facts: _PlanFacts
+        self,
+        config: _ResultConfig,
+        facts: _PlanFacts,
+        *,
+        initial_occupied: frozenset[int] | None,
     ) -> None:
         """Reject operator methods that cannot carry atom occupancy state."""
-        super()._validate_method_support(config, facts)
-        atom_facts = cast(_AtomArrayPlanFacts, facts)
-        if self._is_operator and atom_facts.has_atom_lifecycle:
+        super()._validate_method_support(
+            config,
+            facts,
+            initial_occupied=initial_occupied,
+        )
+        if self._is_operator and initial_occupied is not None:
             raise BackendValidationError(
                 f"method={self._state_field!r} cannot represent atom occupancy, "
                 "loss, or refill; use method='statevector' or 'density_matrix'"

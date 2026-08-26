@@ -1,4 +1,4 @@
-"""Value objects crossing the matrix-family backend/engine boundary."""
+"""Normalized controls, result requests, and raw matrix execution results."""
 
 from __future__ import annotations
 
@@ -9,80 +9,62 @@ import numpy as np
 
 from ..errors import BackendValidationError
 
-_PARALLEL_MODE_NAMES = frozenset({"auto", "serial", "multiprocessing", "loky"})
+_SHOT_PARALLELISM_NAMES = frozenset({"auto", "serial", "threads", "processes"})
+_KERNEL_PARALLELISM_NAMES = frozenset({"auto", "serial", "threads"})
 
 
-@dataclass(frozen=True)
-class _EngineConfig:
-    """Normalized statevector engine execution-strategy options.
-
-    ``max_workers`` / ``parallel_mode`` steer OS-process distribution of
-    dynamic shots. ``numba_parallel`` is a different axis: it turns the Numba
-    runtime's in-process thread parallelism on or off for one run (it has no
-    meaning for the NumPy runtime, which never spawns threads). ``fusion`` is a
-    third: it allows or forbids merging adjacent plan steps into wider ones,
-    which changes the order the same arithmetic is performed in and so the last
-    bits of the result. Like ``numba_parallel`` it reaches only the Numba
-    runtime, which is the only one with a fuser.
-    """
-
-    max_workers: Any = None
-    parallel_mode: Any = "auto"
-    numba_parallel: Any = True
-    fusion: Any = True
-
-    def __post_init__(self) -> None:
-        mw = self.max_workers
-        if mw is not None and (type(mw) is not int or mw < 1):
-            raise BackendValidationError(
-                f"max_workers must be a positive int or None, got {mw!r}"
-            )
-        if self.parallel_mode not in _PARALLEL_MODE_NAMES:
-            raise BackendValidationError(
-                f"unsupported parallel_mode={self.parallel_mode!r}"
-            )
-        if type(self.numba_parallel) is not bool:
-            raise BackendValidationError(
-                f"numba_parallel must be a bool, got {self.numba_parallel!r}"
-            )
-        if type(self.fusion) is not bool:
-            raise BackendValidationError(f"fusion must be a bool, got {self.fusion!r}")
-
-
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class _SimulationConfig:
-    """Normalized simulator-only controls for one backend run.
-
-    ``fusion=None`` delegates to the runtime default. Explicit booleans are
-    runtime-specific requests and are resolved before crossing into the engine.
-    """
+    """Normalized public matrix-simulator controls for one backend run."""
 
     seed: int | None = None
-    parallel_mode: Any = "auto"
+    shot_parallelism: Any = "auto"
+    kernel_parallelism: Any = "auto"
     max_workers: Any = None
-    numba_parallel: Any = True
-    fusion: Any = None
+    fusion: Any = False
 
     def __post_init__(self) -> None:
         if self.seed is not None and (type(self.seed) is not int):
             raise BackendValidationError(
                 f"seed must be an int or None, got {self.seed!r}"
             )
-        if self.fusion is not None and type(self.fusion) is not bool:
+        if not isinstance(self.shot_parallelism, str) or (
+            self.shot_parallelism not in _SHOT_PARALLELISM_NAMES
+        ):
             raise BackendValidationError(
-                f"fusion must be a bool or None, got {self.fusion!r}"
+                f"unsupported shot_parallelism={self.shot_parallelism!r}; expected "
+                "'auto', 'serial', 'threads', or 'processes'"
             )
-        # Reuse the engine-config validator for the shared execution fields.
-        self.engine_config()
-
-    def engine_config(self) -> _EngineConfig:
-        """Return the engine's execution-strategy portion of this config."""
-        return _EngineConfig(
-            max_workers=self.max_workers,
-            parallel_mode=self.parallel_mode,
-            numba_parallel=self.numba_parallel,
-            fusion=True if self.fusion is None else self.fusion,
-        )
+        if not isinstance(self.kernel_parallelism, str) or (
+            self.kernel_parallelism not in _KERNEL_PARALLELISM_NAMES
+        ):
+            raise BackendValidationError(
+                "unsupported kernel_parallelism="
+                f"{self.kernel_parallelism!r}; expected 'auto', 'serial', or "
+                "'threads'"
+            )
+        if self.max_workers is not None and (
+            type(self.max_workers) is not int or self.max_workers < 1
+        ):
+            raise BackendValidationError(
+                "max_workers must be a positive int or None, got "
+                f"{self.max_workers!r}"
+            )
+        if self.shot_parallelism in {"threads", "processes"} and (
+            self.kernel_parallelism == "threads"
+        ):
+            raise BackendValidationError(
+                "shot and kernel parallelism cannot both be explicitly parallel"
+            )
+        if self.max_workers == 1 and (
+            self.shot_parallelism in {"threads", "processes"}
+            or self.kernel_parallelism == "threads"
+        ):
+            raise BackendValidationError(
+                "max_workers=1 contradicts explicit threaded or process parallelism"
+            )
+        if type(self.fusion) is not bool:
+            raise BackendValidationError(f"fusion must be a bool, got {self.fusion!r}")
 
 
 @dataclass(frozen=True)
@@ -115,6 +97,14 @@ class _SuperopResultRequest:
 
     counts: bool
     superop: bool
+
+
+_ResultRequest = (
+    _StateVectorResultRequest
+    | _DensityMatrixResultRequest
+    | _UnitaryResultRequest
+    | _SuperopResultRequest
+)
 
 
 @dataclass(frozen=True)

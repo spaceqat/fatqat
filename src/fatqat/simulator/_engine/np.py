@@ -1,20 +1,19 @@
 """NumPy engines for the matrix backend family.
 
 `NumpySVEngine` (statevector) and `NumpyDMEngine` (density matrix) are the
-two *state* `MatrixEngine` implementations. They share every semantics-agnostic
-piece - strategy selection, the fast single-evolution path, the per-shot dynamic
-path (serial or parallel across workers), ``initialize`` and
-``measure_subsystems`` - through `_NumpyMatrixEngine`. Each leaf class then
-contributes only its numeric kernels (allocate / apply / probabilities /
-collapse / reset) plus two class knobs (``_state_field``,
-``_reset_forces_dynamic``); no public method branches on semantics.
+two *state* `MatrixEngine` implementations. They share static capabilities,
+one-time plan materialization, the fast single-evolution path, local per-shot
+replay, ``initialize``, and ``measure_subsystems`` through
+`_NumpyMatrixEngine`. Each leaf class contributes only its numeric kernels
+(allocate / apply / probabilities / collapse / reset) and result field;
+simulator-owned facts decide the semantic execution shape before this layer.
 
 `NumpyUnitaryEngine` and `NumpySuperopEngine` are the two *operator* engines:
 they compute the program's map rather than a state under it. Each is its state
 twin evolved on many columns at once - a unitary is ``size`` statevector
 columns (column ``j`` is ``U|j>``), a super-operator is ``size**2``
 density-matrix columns (column ``b`` is the image of basis matrix ``E_b``).
-`_NumpyOperatorEngine` replaces ``run`` with one deterministic pass.
+`_NumpyOperatorEngine` specializes local execution as one deterministic pass.
 
 Conventions:
 
@@ -59,15 +58,16 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from collections.abc import Sequence
+from contextlib import nullcontext
 from math import prod
+from typing import Any
 
 import numpy as np
 
-from ..._backends._execution_analysis import (
-    _OperationExecutionFacts,
-    _analyze_terminal_measurements,
+from ..._backends.engine_contract import (
+    _ResultRequest as ResultRequest,
+    RawResult,
 )
-from ..._backends.engine_contract import _EngineConfig as EngineConfig, RawResult
 from ..._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
@@ -80,7 +80,11 @@ from ..._backends.steps import (
 from ...implementation.matrices import shift_matrix
 from ...noise.base import _sampled_unitary_branches
 from ...result import decode_indices_to_clbit_rows, reduce_to_counts
-from .base import ResultRequest, MatrixEngine
+from .._execution_contract import (
+    _ExecutionContext as ExecutionContext,
+    _ExecutionPolicy as ExecutionPolicy,
+)
+from .base import MatrixEngine, _shot_seed_sequences
 
 # What `_sampled_unitary_branches` resolves a channel step to: branch
 # probabilities, unit-norm operators, identity flags - or None for a channel
@@ -233,28 +237,32 @@ def _apply_measurement_reporting(
 class _NumpyMatrixEngine(MatrixEngine):
     """Semantics-agnostic execution for the NumPy matrix-family engines.
 
-    Owns strategy selection and both run paths and expresses them purely through
-    the abstract kernels. Subclasses supply ``_allocate``, ``apply``,
-    ``apply_channel``, ``probabilities``, ``collapse``, ``reset_subsystems``
-    and two class knobs:
+    Owns local materialization and semantic execution through abstract kernels.
+    Subclasses supply ``_allocate``, ``apply``, ``apply_channel``,
+    ``probabilities``, ``collapse``, ``reset_subsystems`` and one class knob:
 
     - ``_state_field``: the request/result state field this engine populates
       (``"statevector"`` or ``"density_matrix"``).
-    - ``_reset_forces_dynamic``: whether a reset makes execution stochastic and
-      thus forces the per-shot path (statevector: True; density matrix: False).
     """
 
     _state_field: str
-    _reset_forces_dynamic: bool
 
-    def initialize(self, system_dims: Sequence[int], n_clbits: int = 0) -> None:
-        self._set_dims(system_dims)
-        self._n_clbits = int(n_clbits)
-        self._state = self._allocate(prod(self._dims) if self._dims else 1)
+    def initialize(
+        self,
+        system_dims: Sequence[int],
+        n_clbits: int = 0,
+        *,
+        initial_state: np.ndarray | None = None,
+    ) -> None:
+        self.configure_system(system_dims, n_clbits)
+        self._state = self._allocate(
+            prod(self._dims) if self._dims else 1,
+            initial_state,
+        )
 
     @abstractmethod
-    def _allocate(self, size: int) -> np.ndarray:
-        """Return the all-zero computational state over ``size`` basis states."""
+    def _allocate(self, size: int, initial_state: np.ndarray | None) -> np.ndarray:
+        """Return a fresh owned state over ``size`` basis states."""
 
     @abstractmethod
     def apply_channel(self, step: ApplyChannelStep, rng: np.random.Generator) -> None:
@@ -272,85 +280,55 @@ class _NumpyMatrixEngine(MatrixEngine):
         flat = self.collapse(indices, rng)
         return tuple(_digit(flat, index, self._dims) for index in indices)
 
-    def run(
+    def materialize_execution(
         self,
-        plan: list[ResolvedStep],
-        shots: int,
-        seed: int | None,
-        request: ResultRequest,
+        plan: tuple[ResolvedStep, ...],
         *,
-        config: EngineConfig | None = None,
-        initial_occupied: frozenset[int] | None = None,
+        system_dims: tuple[int, ...],
+        n_clbits: int,
+        deferred_measurements: tuple[tuple[int, int], ...],
+        policy: ExecutionPolicy,
+    ) -> tuple[tuple[ResolvedStep, ...], tuple[tuple[int, int], ...]]:
+        """Retain the canonical plan and finalized deferred measurements."""
+        del policy
+        self.configure_system(system_dims, n_clbits)
+        return plan, deferred_measurements
+
+    def _execution_scope(self, policy: ExecutionPolicy):
+        """Return this runtime's local numeric-execution scope."""
+        return nullcontext()
+
+    def execute_local(
+        self,
+        context: ExecutionContext,
+        payload: Any,
+        policy: ExecutionPolicy,
     ) -> RawResult:
-        assert (
-            self._state is not None
-        ), "engine not initialized; call initialize() first"
-        effective = config or self.config
-        plan = self._prepare_execution_plan(plan, effective)
-        is_dynamic, measurements = self._analyze_plan(plan)
-        if is_dynamic:
-            return self._run_per_shot(
-                plan, shots, seed, request, effective, initial_occupied
+        """Execute one materialized state plan without dispatching."""
+        assert policy.shot_strategy != "processes"
+        self.configure_system(context.system_dims, context.n_clbits)
+        plan, measurements = payload[:2]
+        with self._execution_scope(policy):
+            if context.execution_shape == "per_shot":
+                return self._run_per_shot_local(plan, context)
+            assert context.execution_shape == "single_pass"
+            return self._run_fast(
+                plan,
+                measurements,
+                context.shots,
+                np.random.default_rng(context.seed),
+                context.request,
+                context.initial_state,
             )
-        return self._run_fast(
-            plan, measurements, shots, np.random.default_rng(seed), request
-        )
-
-    def _analyze_plan(
-        self, plan: list[ResolvedStep]
-    ) -> tuple[bool, list[tuple[int, int]]]:
-        """Return the shared fast-path decision and matrix measurement pairs."""
-        is_dynamic, measurements = _analyze_terminal_measurements(
-            plan, self._operation_execution_facts
-        )
-        return is_dynamic, [
-            pair
-            for step in measurements
-            for pair in zip(step.measured_indices, step.classical_indices)
-        ]
-
-    def _operation_execution_facts(
-        self, step: ResolvedStep
-    ) -> _OperationExecutionFacts:
-        """Describe one matrix operation for shared dynamic-plan analysis."""
-        if isinstance(step, ResetStep):
-            return _OperationExecutionFacts(
-                target_indices=step.reset_indices,
-                is_conditioned=step.condition is not None,
-                forces_per_shot=self._reset_forces_dynamic,
-            )
-        if isinstance(step, ApplyChannelStep):
-            return _OperationExecutionFacts(
-                target_indices=step.target_indices,
-                is_conditioned=step.condition is not None,
-                forces_per_shot=self._reset_forces_dynamic,
-            )
-        if isinstance(step, ApplyMatrixStep):
-            return _OperationExecutionFacts(
-                target_indices=step.target_indices,
-                is_conditioned=step.condition is not None,
-            )
-        if isinstance(step, LossStep):
-            return _OperationExecutionFacts(
-                target_indices=step.target_indices,
-                is_conditioned=step.condition is not None,
-                forces_per_shot=True,
-            )
-        if isinstance(step, PutStep):
-            return _OperationExecutionFacts(
-                target_indices=step.target_indices,
-                is_conditioned=step.condition is not None,
-                forces_per_shot=True,
-            )
-        raise TypeError(f"unknown resolved execution step {type(step).__name__}")
 
     def _run_fast(
         self,
-        plan: list[ResolvedStep],
-        measurements: list[tuple[int, int]],
+        plan: Sequence[ResolvedStep],
+        measurements: Sequence[tuple[int, int]],
         shots: int,
         rng: np.random.Generator,
         request: ResultRequest,
+        initial_state: np.ndarray | None,
     ) -> RawResult:
         """Evolve once, optionally sample counts, optionally export the state.
 
@@ -360,7 +338,11 @@ class _NumpyMatrixEngine(MatrixEngine):
         path.
         """
         state_requested = getattr(request, self._state_field)
-        self.initialize(self._dims, self._n_clbits)
+        self.initialize(
+            self._dims,
+            self._n_clbits,
+            initial_state=initial_state,
+        )
         for step in plan:
             if isinstance(step, ApplyMatrixStep):
                 self.apply(step)
@@ -392,51 +374,21 @@ class _NumpyMatrixEngine(MatrixEngine):
             outcome_keys=outcome_keys, outcome_counts=outcome_counts, state=state
         )
 
-    def _run_per_shot(
+    def _run_per_shot_local(
         self,
-        plan: list[ResolvedStep],
-        shots: int,
-        seed: int | None,
-        request: ResultRequest,
-        config: EngineConfig,
-        initial_occupied: frozenset[int] | None = None,
+        plan: Sequence[ResolvedStep],
+        context: ExecutionContext,
     ) -> RawResult:
-        """Run dynamic execution one trajectory at a time or via worker batches."""
-        from .parallel import (
-            _planned_workers,
-            _run_dynamic_shots_parallel,
-            _shot_seed_sequences,
-        )
-
+        """Replay dynamic trajectories locally under an already-resolved policy."""
+        request = context.request
         state_requested = getattr(request, self._state_field)
-        n_iters = shots if request.counts else (1 if state_requested else 0)
-        seed_sequences = _shot_seed_sequences(seed, n_iters)
-
-        # A state export must come from this process, so it never parallelizes.
-        max_workers = (
-            None if state_requested else _planned_workers(config, request, n_iters)
+        n_iters = context.shots if request.counts else (1 if state_requested else 0)
+        snapshots = self._run_shot_seed_batch(
+            plan,
+            _shot_seed_sequences(context.seed, n_iters),
+            context.initial_occupied,
+            context.initial_state,
         )
-        if max_workers is not None:
-            snapshots = _run_dynamic_shots_parallel(
-                config,
-                plan,
-                self._dims,
-                self._n_clbits,
-                seed_sequences,
-                max_workers,
-                type(self),
-                initial_occupied,
-                self._initial_state,
-            )
-        else:
-            snapshots = []
-            for seed_sequence in seed_sequences:
-                self.initialize(self._dims, self._n_clbits)
-                snapshots.append(
-                    self._run_one_shot(
-                        plan, np.random.default_rng(seed_sequence), initial_occupied
-                    )
-                )
 
         outcome_keys = outcome_counts = state = None
         if request.counts:
@@ -450,9 +402,50 @@ class _NumpyMatrixEngine(MatrixEngine):
             outcome_keys=outcome_keys, outcome_counts=outcome_counts, state=state
         )
 
+    def _run_shot_seed_batch(
+        self,
+        plan: Sequence[ResolvedStep],
+        seed_sequences: Sequence[np.random.SeedSequence],
+        initial_occupied: frozenset[int] | None,
+        initial_state: np.ndarray | None,
+    ) -> list[tuple[int, ...]]:
+        snapshots = []
+        for seed_sequence in seed_sequences:
+            self.initialize(
+                self._dims,
+                self._n_clbits,
+                initial_state=initial_state,
+            )
+            snapshots.append(
+                self._run_one_shot(
+                    plan, np.random.default_rng(seed_sequence), initial_occupied
+                )
+            )
+        return snapshots
+
+    def execute_shot_batch(
+        self,
+        context: ExecutionContext,
+        payload: Any,
+        seed_batch: list[np.random.SeedSequence],
+        policy: ExecutionPolicy,
+    ) -> list[tuple[int, ...]]:
+        """Non-dispatching worker entry for one ordered batch of shots."""
+        assert policy.shot_strategy == "serial"
+        assert policy.kernel_strategy == "serial"
+        self.configure_system(context.system_dims, context.n_clbits)
+        plan = payload[0]
+        with self._execution_scope(policy):
+            return self._run_shot_seed_batch(
+                plan,
+                seed_batch,
+                context.initial_occupied,
+                context.initial_state,
+            )
+
     def _run_one_shot(
         self,
-        plan: list[ResolvedStep],
+        plan: Sequence[ResolvedStep],
         rng: np.random.Generator,
         initial_occupied: frozenset[int] | None = None,
     ) -> tuple[int, ...]:
@@ -531,21 +524,20 @@ class NumpySVEngine(_NumpyMatrixEngine):
     """State-vector engine: evolves ``|psi>`` as a flat little-endian array."""
 
     _state_field = "statevector"
-    _reset_forces_dynamic = True
 
-    def __init__(self, name: str = "numpy-sv", config: EngineConfig | None = None):
-        super().__init__(name, config, state_semantics="sv")
+    def __init__(self, name: str = "numpy-sv"):
+        super().__init__(name, state_semantics="sv")
         # Per-step channel route, keyed by id(step) with the step pinned in the
         # value so a recycled id can never alias. Depends on the step's frozen
         # Kraus operators alone, not on system dims, so `initialize` must not
         # clear it - the per-shot loop re-initializes once per trajectory.
         self._channel_routes: dict[int, tuple[ApplyChannelStep, _Branches]] = {}
 
-    def _allocate(self, size: int) -> np.ndarray:
-        if self._initial_state is not None:
+    def _allocate(self, size: int, initial_state: np.ndarray | None) -> np.ndarray:
+        if initial_state is not None:
             # Copy: each shot evolves its own buffer, and the caller's array
             # must survive the run unchanged.
-            return np.array(self._initial_state, dtype=complex).reshape(size)
+            return np.array(initial_state, dtype=complex).reshape(size)
         state = np.zeros(size, dtype=complex)
         state[0] = 1.0
         return state
@@ -673,13 +665,12 @@ class NumpyDMEngine(_NumpyMatrixEngine):
     """Density-matrix engine: evolves ``rho`` as a ``(size, size)`` matrix."""
 
     _state_field = "density_matrix"
-    _reset_forces_dynamic = False
 
-    def __init__(self, name: str = "numpy-dm", config: EngineConfig | None = None):
-        super().__init__(name, config, state_semantics="dm")
+    def __init__(self, name: str = "numpy-dm"):
+        super().__init__(name, state_semantics="dm")
 
-    def _allocate(self, size: int) -> np.ndarray:
-        given = self._initial_state
+    def _allocate(self, size: int, initial_state: np.ndarray | None) -> np.ndarray:
+        given = initial_state
         if given is not None:
             given = np.asarray(given, dtype=complex)
             # A ket is accepted as shorthand for the pure state it describes,
@@ -798,30 +789,33 @@ class _NumpyOperatorEngine(_NumpyMatrixEngine):
     the identity operator; the sampling kernels are unsupported.
     """
 
-    def run(
+    def execute_local(
         self,
-        plan: list[ResolvedStep],
-        shots: int,
-        seed: int | None,
-        request: ResultRequest,
-        *,
-        config: EngineConfig | None = None,
-        initial_occupied: frozenset[int] | None = None,
+        context: ExecutionContext,
+        payload: Any,
+        policy: ExecutionPolicy,
     ) -> RawResult:
-        """Evolve the identity operator once through ``plan`` and export it.
+        """Evolve one already-materialized operator plan in this process."""
+        assert policy.shot_strategy == "none"
+        assert context.execution_shape == "operator"
+        self.configure_system(context.system_dims, context.n_clbits)
+        plan = payload[0]
+        with self._execution_scope(policy):
+            self.initialize(
+                self._dims,
+                self._n_clbits,
+                initial_state=context.initial_state,
+            )
+            rng = np.random.default_rng(context.seed)
+            request = context.request
+            return self._run_operator_plan(plan, rng, request)
 
-        ``shots`` and ``initial_occupied`` are accepted for interface parity
-        and unused (an operator representation computes the program's map, not a
-        per-shot trajectory, so it has no occupancy). ``config`` selects any
-        execution-plan rewrite, while ``seed`` initializes the ``rng`` handed to
-        the exact-channel kernels.
-        """
-        assert (
-            self._state is not None
-        ), "engine not initialized; call initialize() first"
-        plan = self._prepare_execution_plan(plan, config or self.config)
-        self.initialize(self._dims, self._n_clbits)
-        rng = np.random.default_rng(seed)
+    def _run_operator_plan(
+        self,
+        plan: Sequence[ResolvedStep],
+        rng: np.random.Generator,
+        request: ResultRequest,
+    ) -> RawResult:
         for step in plan:
             assert not isinstance(
                 step, MeasurementStep
@@ -867,10 +861,11 @@ class NumpyUnitaryEngine(_NumpyOperatorEngine, NumpySVEngine):
 
     _state_field = "unitary"
 
-    def __init__(self, name: str = "numpy-unitary", config: EngineConfig | None = None):
-        super().__init__(name, config)
+    def __init__(self, name: str = "numpy-unitary"):
+        super().__init__(name)
 
-    def _allocate(self, size: int) -> np.ndarray:
+    def _allocate(self, size: int, initial_state: np.ndarray | None) -> np.ndarray:
+        assert initial_state is None, "operator execution has no initial state"
         return np.eye(size, dtype=complex)
 
     def _apply_local(
@@ -898,12 +893,13 @@ class NumpySuperopEngine(_NumpyOperatorEngine, NumpyDMEngine):
 
     _state_field = "superop"
 
-    def __init__(self, name: str = "numpy-superop", config: EngineConfig | None = None):
-        super().__init__(name, config)
+    def __init__(self, name: str = "numpy-superop"):
+        super().__init__(name)
         # Keyed by (subsystem, dimension), so an entry can never go stale.
         self._reset_channels: dict[tuple[int, int], ApplyChannelStep] = {}
 
-    def _allocate(self, size: int) -> np.ndarray:
+    def _allocate(self, size: int, initial_state: np.ndarray | None) -> np.ndarray:
+        assert initial_state is None, "operator execution has no initial state"
         return np.eye(size * size, dtype=complex)
 
     def _apply_local_sandwich(

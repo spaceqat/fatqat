@@ -22,14 +22,12 @@ class _EmulatorConfig:
     ``run(simulation_config={...})``.
 
     Deliberately standalone rather than derived from the matrix family's
-    ``_SimulationConfig``: that base carries ``parallel_mode``,
-    ``max_workers``, ``numba_parallel``, and ``fusion``, which steer the matrix
-    engine's process-, thread-, and plan-level execution. Pulse execution
-    integrates a
-    physics model through one serial solver call and has no such engine to
-    steer, so inheriting those fields would advertise tuning that silently
-    does nothing. `_normalize_config` derives accepted keys from this
-    schema, so they are now rejected by name instead.
+    ``_SimulationConfig``: that base carries ``shot_parallelism``,
+    ``kernel_parallelism``, ``max_workers``, and ``fusion``, which steer matrix
+    execution. Pulse execution integrates a physics model through one serial
+    solver call and has no such engine to steer, so inheriting those fields
+    would advertise tuning that silently does nothing. `_normalize_config`
+    derives accepted keys from this schema, so they are rejected by name instead.
 
     ``schedule_mode`` selects lightweight ASAP or ALAP pulse placement.
     """

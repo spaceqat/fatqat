@@ -2,7 +2,7 @@
 
 Pins three things: which channels qualify, that the route is the *same*
 estimator as the general quantum-jump path (not merely a statistically similar
-one), and that both hold on either runtime and on both the fused per-shot
+one), and that both hold on either runtime and on both the compiled multi-shot
 kernel and the serial fallback.
 """
 
@@ -64,7 +64,11 @@ def _counts(runtime, noise, program, shots=2000, seed=7):
         .run(
             program,
             shots=shots,
-            simulation_config={"seed": seed, "parallel_mode": "serial"},
+            simulation_config={
+                "seed": seed,
+                "shot_parallelism": "serial",
+                "kernel_parallelism": "serial",
+            },
         )
         .result()
         .get_counts()
@@ -135,7 +139,7 @@ def test_a_certain_pauli_error_acts_exactly_like_the_gate(
     # p=1 on one term makes the channel deterministic, pinning both the sampler
     # and the string's endianness (string[0] describes targets[0], whose flat
     # stride is 1). A final-state request also routes numba to its serial
-    # fallback rather than the fused kernel, covering that path too.
+    # fallback rather than the compiled multi-shot kernel, covering that path too.
     noise = NoiseModel()
     noise.add(PauliChannel({string: 1.0}), operation=fq.ops.CX)
     program = fq.Program(2)
@@ -292,13 +296,22 @@ def test_a_custom_non_unitary_channel_rule_still_runs():
     assert sum(counts.values()) == 512
 
 
-def test_pauli_channel_parallel_dynamic_shots_match_serial():
+def test_pauli_channel_process_batches_match_serial():
     program = _ghz_program(n=2)
     noise = _pauli_noise()
     serial = _counts("numpy", noise, program, shots=8, seed=13)
     parallel = (
-        Simulator("SV", noise=noise)
-        .run(program, shots=8, simulation_config={"seed": 13, "max_workers": 2})
+        Simulator("SV", runtime="numpy", noise=noise)
+        .run(
+            program,
+            shots=8,
+            simulation_config={
+                "seed": 13,
+                "shot_parallelism": "processes",
+                "kernel_parallelism": "serial",
+                "max_workers": 2,
+            },
+        )
         .result()
         .get_counts()
     )

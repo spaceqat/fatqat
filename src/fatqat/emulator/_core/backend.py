@@ -258,9 +258,10 @@ class _PulseBackend(ABC):
         by default and may be ``"ALAP"``; both are lightweight placement
         policies over dependencies and claimed physical resources, not
         compiler-produced hardware schedules. The matrix backend's
-        ``parallel_mode`` / ``max_workers`` / ``numba_parallel`` are rejected
-        here: pulse execution is one serial solver call with no engine those
-        settings could steer.
+        ``shot_parallelism``, ``kernel_parallelism``, ``max_workers``, and
+        ``fusion`` are rejected here:
+        pulse execution is one serial solver call with no engine those settings
+        could steer.
 
         ``result_config`` accepts ``counts`` and ``final_state``. When omitted,
         counts default on for programs containing measurement and the final

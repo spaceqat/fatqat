@@ -1,18 +1,23 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
-from ..._backends.engine_contract import (
-    _DensityMatrixResultRequest as DensityMatrixResultRequest,
-    _EngineConfig as EngineConfig,
-    _StateVectorResultRequest as StateVectorResultRequest,
-    RawResult,
+from ..._backends.engine_contract import RawResult
+from ..._backends.steps import ApplyMatrixStep, ResolvedStep
+from .._execution_contract import (
+    _EngineCapabilities,
+    _ExecutionContext as ExecutionContext,
+    _ExecutionPolicy as ExecutionPolicy,
 )
-from ..._backends.steps import ResolvedStep, ApplyMatrixStep
 
-ResultRequest = DensityMatrixResultRequest | StateVectorResultRequest
+
+def _shot_seed_sequences(
+    seed: int | None, n_iters: int
+) -> list[np.random.SeedSequence]:
+    """Spawn stable, ordered child streams for sampled shots."""
+    return np.random.SeedSequence(seed).spawn(n_iters)
 
 
 class MatrixEngine(ABC):
@@ -20,19 +25,20 @@ class MatrixEngine(ABC):
     Abstract base class and interface contract for all engines.
     """
 
+    _supports_kernel_threads = False
+    _thread_capacity = 1
+    _supports_fusion = False
+
     def __init__(
         self,
         name: str,
-        config: EngineConfig | None = None,
         *,
         state_semantics: Literal["sv", "dm"],
     ):
         self.name = name
-        self.config = config or EngineConfig()
         self.state_semantics = state_semantics
 
-        self._state: np.ndarray = None  # type: ignore[assignment]
-        self._initial_state: np.ndarray | None = None
+        self._state: np.ndarray | None = None
         self._dims: tuple[int, ...] = ()
         self._reversed_dims: tuple[int, ...] = ()
         self._n_clbits = 0
@@ -48,53 +54,37 @@ class MatrixEngine(ABC):
         self._state = value
 
     @property
-    def initial_state(self) -> np.ndarray | None:
-        """State every shot starts from, or ``None`` for the all-zero state.
-
-        Held on the engine rather than passed to `initialize` because
-        `initialize` is also how a dynamic run returns to the start of the next
-        shot: a per-shot reset must land on the state this run began with, not
-        on the computational zero. Standard paths read it through `_allocate`;
-        the compiled multi-shot path uses it as a read-only template and can
-        initialize the default zero-state buffers directly without one.
-
-        Every evolving buffer owns its storage, so a caller's array is never
-        evolved in place.
-        """
-        return self._initial_state
-
-    @initial_state.setter
-    def initial_state(self, value: np.ndarray | None) -> None:
-        self._initial_state = value
-
-    def _prepare_execution_plan(
-        self, plan: list[ResolvedStep], config: EngineConfig
-    ) -> list[ResolvedStep]:
-        """Return the plan this engine will actually execute.
-
-        Every engine passes a plan through here before executing it, and any
-        rewrite an engine makes to a plan lives here and nowhere else. The base
-        engine rewrites nothing.
-
-        The single point exists because the alternative had already failed:
-        fusion was applied at whichever sites happened to need it, so adding a
-        switch meant finding them all, and one was missed - leaving a setting
-        that appeared to work. A rewrite added here reaches every path by
-        construction; one added at a call site reaches only that call.
-
-        ``config`` is the *effective* config for this run, not the engine's
-        construction default, since a per-run option has to be able to change
-        what the plan becomes.
-        """
-        return plan
-
-    @property
     def n_subsystems(self) -> int:
         return len(self._dims)
 
+    @property
+    def capabilities(self) -> _EngineCapabilities:
+        """Return static numerical support without initializing the engine."""
+        return _EngineCapabilities(
+            supports_kernel_threads=self._supports_kernel_threads,
+            thread_capacity=self._thread_capacity,
+            supports_fusion=self._supports_fusion,
+        )
+
+    def compiled_multi_shot_compatible(self, plan: Sequence[ResolvedStep]) -> bool:
+        """Whether this engine can own the complete per-shot outer loop."""
+        return False
+
+    def configure_system(self, system_dims: Sequence[int], n_clbits: int = 0) -> None:
+        """Configure dimensions without allocating an evolving state."""
+        self._set_dims(system_dims)
+        self._n_clbits = int(n_clbits)
+        self._state = None
+
     @abstractmethod
-    def initialize(self, system_dims: Sequence[int], n_clbits: int = 0) -> None:
-        """Configure dimensions and reset to the all-zero computational state."""
+    def initialize(
+        self,
+        system_dims: Sequence[int],
+        n_clbits: int = 0,
+        *,
+        initial_state: np.ndarray | None = None,
+    ) -> None:
+        """Configure the system and allocate a fresh owned evolving state."""
 
     def _set_dims(self, system_dims: Sequence[int]) -> None:
         """Set ``_dims`` and its cached reverse together, so they never drift apart."""
@@ -102,16 +92,35 @@ class MatrixEngine(ABC):
         self._reversed_dims = tuple(reversed(self._dims))
 
     @abstractmethod
-    def run(
+    def materialize_execution(
         self,
-        plan: list[ResolvedStep],
-        shots: int,
-        seed: int | None,
-        request: ResultRequest,
+        plan: tuple[ResolvedStep, ...],
         *,
-        config: EngineConfig | None = None,
-        initial_occupied: frozenset[int] | None = None,
-    ) -> RawResult: ...
+        system_dims: tuple[int, ...],
+        n_clbits: int,
+        deferred_measurements: tuple[tuple[int, int], ...],
+        policy: ExecutionPolicy,
+    ) -> Any:
+        """Build the engine-owned immutable payload for this run."""
+
+    @abstractmethod
+    def execute_local(
+        self,
+        context: ExecutionContext,
+        payload: Any,
+        policy: ExecutionPolicy,
+    ) -> RawResult:
+        """Execute a materialized payload locally without dispatching."""
+
+    def execute_shot_batch(
+        self,
+        context: ExecutionContext,
+        payload: Any,
+        seed_batch: list[np.random.SeedSequence],
+        policy: ExecutionPolicy,
+    ) -> list[tuple[int, ...]]:
+        """Execute one ordered shot batch on engines that support it."""
+        raise NotImplementedError
 
     @abstractmethod
     def measure_subsystems(

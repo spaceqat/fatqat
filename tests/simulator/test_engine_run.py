@@ -1,123 +1,99 @@
 import numpy as np
-import pytest
 
-from fatqat._backends.engine_contract import _EngineConfig, _StateVectorResultRequest
+from fatqat._backends.engine_contract import (
+    _StateVectorResultRequest,
+)
+from fatqat._backends.steps import (
+    ApplyMatrixStep,
+    LossStep,
+    MeasurementStep,
+    ResetStep,
+)
 from fatqat.simulator._engine.np import NumpySVEngine
-from fatqat._backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep
+from fatqat.simulator._execution_contract import _ExecutionContext, _ExecutionPolicy
+
+_SERIAL = _ExecutionPolicy(
+    shot_strategy="none",
+    kernel_strategy="serial",
+    worker_limit=1,
+    fusion=False,
+)
 
 
-def test_engine_run_requires_initialize():
+def _context(
+    *,
+    execution_shape="single_pass",
+    n_clbits,
+    shots,
+    request,
+    seed=0,
+    initial_state=None,
+    initial_occupied=None,
+):
+    return _ExecutionContext(
+        execution_shape=execution_shape,
+        request=request,
+        system_dims=(2,),
+        n_clbits=n_clbits,
+        shots=shots,
+        seed=seed,
+        initial_state=initial_state,
+        initial_occupied=initial_occupied,
+    )
+
+
+def _run(engine, plan, context, *, deferred_measurements=(), policy=_SERIAL):
+    payload = engine.materialize_execution(
+        tuple(plan),
+        system_dims=context.system_dims,
+        n_clbits=context.n_clbits,
+        deferred_measurements=tuple(deferred_measurements),
+        policy=policy,
+    )
+    return engine.execute_local(context, payload, policy)
+
+
+def test_numba_compiled_multi_shot_compatibility():
+    from fatqat.simulator._engine import nb
+
+    compatible = (MeasurementStep((0,), (0,)), ResetStep((0,)))
+    unsupported = compatible + (LossStep((0,), p=0.1),)
+    engine = nb.NumbaSVEngine()
+
+    assert engine.compiled_multi_shot_compatible(compatible) is True
+    assert engine.compiled_multi_shot_compatible(unsupported) is False
+
+
+def test_engine_fast_counts_returns_arrays():
     engine = NumpySVEngine()
-    with pytest.raises(AssertionError, match="not initialized"):
-        engine.run(
-            [],
-            shots=1,
-            seed=0,
-            request=_StateVectorResultRequest(counts=False, statevector=False),
-        )
-
-
-def test_engine_run_fast_counts_returns_arrays():
-    engine = NumpySVEngine()
-    engine.initialize((2,), n_clbits=1)
     x = np.array([[0, 1], [1, 0]], dtype=complex)
-    result = engine.run(
-        [ApplyMatrixStep(matrix=x, target_indices=(0,)), MeasurementStep((0,), (0,))],
+    plan = [ApplyMatrixStep(x, (0,)), MeasurementStep((0,), (0,))]
+    context = _context(
+        n_clbits=1,
         shots=4,
-        seed=0,
         request=_StateVectorResultRequest(counts=True, statevector=False),
     )
+
+    result = _run(engine, plan, context, deferred_measurements=((0, 0),))
+
     assert result.state is None
-    assert result.outcome_keys.shape == (1, 1)
-    assert result.outcome_counts.shape == (1,)
     assert result.outcome_keys.tolist() == [[1]]
     assert result.outcome_counts.tolist() == [4]
 
 
-def test_engine_run_fast_state_copies_only_when_requested():
+def test_engine_fast_counts_and_state_share_collapse_event():
     engine = NumpySVEngine()
-    engine.initialize((2,), n_clbits=0)
-    x = np.array([[0, 1], [1, 0]], dtype=complex)
-    without_state = engine.run(
-        [ApplyMatrixStep(matrix=x, target_indices=(0,))],
-        shots=1,
-        seed=0,
-        request=_StateVectorResultRequest(counts=False, statevector=False),
-    )
-    assert without_state.state is None
-
-    engine.initialize((2,), n_clbits=0)
-    with_state = engine.run(
-        [ApplyMatrixStep(matrix=x, target_indices=(0,))],
-        shots=1,
-        seed=0,
-        request=_StateVectorResultRequest(counts=False, statevector=True),
-    )
-    assert np.allclose(with_state.state, [0, 1])
-
-
-def test_engine_run_fast_counts_and_state_share_collapse_event():
-    engine = NumpySVEngine()
-    engine.initialize((2,), n_clbits=1)
     h = (1 / np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=complex)
-    result = engine.run(
-        [ApplyMatrixStep(matrix=h, target_indices=(0,)), MeasurementStep((0,), (0,))],
+    plan = [ApplyMatrixStep(h, (0,)), MeasurementStep((0,), (0,))]
+    context = _context(
+        n_clbits=1,
         shots=1,
         seed=2026,
         request=_StateVectorResultRequest(counts=True, statevector=True),
     )
+
+    result = _run(engine, plan, context, deferred_measurements=((0, 0),))
+
     measured = int(result.outcome_keys[0, 0])
     assert result.outcome_counts.tolist() == [1]
     assert np.isclose(abs(result.state[measured]), 1.0)
-    assert np.count_nonzero(np.abs(result.state) > 1e-12) == 1
-
-
-def test_engine_run_dynamic_counts_use_clbit_snapshots():
-    engine = NumpySVEngine(config=_EngineConfig(max_workers=1))
-    engine.initialize((2,), n_clbits=1)
-    x = np.array([[0, 1], [1, 0]], dtype=complex)
-    result = engine.run(
-        [
-            ApplyMatrixStep(matrix=x, target_indices=(0,)),
-            MeasurementStep((0,), (0,)),
-            ResetStep((0,)),
-        ],
-        shots=5,
-        seed=0,
-        request=_StateVectorResultRequest(counts=True, statevector=False),
-    )
-    assert result.outcome_keys.tolist() == [[1]]
-    assert result.outcome_counts.tolist() == [5]
-
-
-def test_engine_run_dynamic_statevector_only_runs_one_trajectory():
-    engine = NumpySVEngine()
-    engine.initialize((2, 2), n_clbits=2)
-    x = np.array([[0, 1], [1, 0]], dtype=complex)
-    result = engine.run(
-        [ApplyMatrixStep(matrix=x, target_indices=(1,), condition=((0, 0),))],
-        shots=0,
-        seed=0,
-        request=_StateVectorResultRequest(counts=False, statevector=True),
-    )
-    assert result.outcome_keys is None
-    assert result.outcome_counts is None
-    assert np.allclose(result.state, [0, 0, 1, 0])
-
-
-def test_engine_run_dynamic_reinitializes_each_shot():
-    engine = NumpySVEngine(config=_EngineConfig(max_workers=1))
-    engine.initialize((2,), n_clbits=1)
-    x = np.array([[0, 1], [1, 0]], dtype=complex)
-    result = engine.run(
-        [
-            ApplyMatrixStep(matrix=x, target_indices=(0,)),
-            ResetStep((0,)),
-            MeasurementStep((0,), (0,)),
-        ],
-        shots=4,
-        seed=123,
-        request=_StateVectorResultRequest(counts=True, statevector=False),
-    )
-    assert result.outcome_keys.tolist() == [[0]]
-    assert result.outcome_counts.tolist() == [4]

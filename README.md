@@ -61,8 +61,8 @@ print(rho.diagonal().real)          # [0.5 0.  0.  0.5]
 `runtime` selects the execution technology for the chosen representation —
 `"numba"` (the default, using JIT-compiled kernels) or `"numpy"`. Both runtimes
 support the statevector, density-matrix, unitary, and superoperator methods.
-They compute the same quantities, with results agreeing to floating-point
-rounding:
+They implement the same simulation: deterministic arrays agree to
+floating-point rounding and sampled results agree in distribution:
 
 ```python
 backend = fq.simulator.Simulator(method="SV", runtime="numba")
@@ -71,28 +71,45 @@ noise.add(fq.noise.Depolarizing(p=0.05), operation=op.CX)
 noisy = fq.simulator.Simulator(method="DM", runtime="numba", noise=noise)
 ```
 
-They are not bit-identical, because the `numba` runtime may fuse adjacent
-plan steps into wider ones, which performs the same arithmetic in a
-different order. `fusion=False` turns that off — useful when comparing
-numbers across runtimes, or bisecting a discrepancy:
+Numba remains the recommended runtime for repeated circuits and sustained
+workloads. Its first use may spend time compiling kernels or loading their
+on-disk cache; later calls reuse those signatures. Changing circuit gates,
+topology, or qubit count normally does not recompile a compatible execution
+path, because Numba specializes on array types and ranks rather than circuit
+contents. Choose NumPy when predictable latency for a small one-off run matters
+more than throughput.
+
+Matrix execution exposes `shot_parallelism` for work across sampled shots and
+`kernel_parallelism` for numerical work inside one evolution. Both default to
+`"auto"`, which applies FATQAT's current conservative selection heuristics while
+avoiding nested worker pools. `max_workers` is a ceiling for whichever axis is
+selected; it does not make program operations overlap or run out of order. See
+[Advanced user topics](docs/sphinx/guide/advanced.md#execution-configuration) for
+the supported combinations.
+
+Operation fusion is a separate opt-in rewrite. `fusion=False` is the default.
+`fusion=True` is supported by the Numba density-matrix, unitary, and
+superoperator methods. It can improve throughput on longer plans by reducing
+numeric passes over the state or operator, while changing floating-point
+association order:
 
 ```python
-exact_order = noisy.run(
+fused = noisy.run(
     bell,
-    simulation_config={"fusion": False},
+    simulation_config={"fusion": True},
 )
 ```
 
-The default is `None` (use the runtime default). Numba resolves that to enabled,
-matching Qiskit Aer's `fusion_enable` default.
+Fusion does not select Numba's compiled multi-shot statevector execution; that
+path also works with the default unfused plan.
 
 ## Dynamic circuits
 
 Measurement, feedforward, and reset are first-class program constructs; a
 `Barrier` is a compiler-facing marker with no simulation effect. The backend
 automatically switches between a fast single-evolution path and per-shot
-replay (parallelized across processes for large shot counts) depending on
-what the program needs:
+or compiled multi-shot execution, and chooses an execution strategy based on
+the requested results and workload:
 
 ```python
 dyn = fq.Program(2, 2)

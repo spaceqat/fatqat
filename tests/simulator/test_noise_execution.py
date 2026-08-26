@@ -16,7 +16,8 @@ from fatqat.noise import (
     ThermalRelaxation,
     default_channel_implementation_map,
 )
-from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
+from fatqat.simulator._engine.np import NumpySVEngine
+from fatqat.simulator._execution_contract import _ExecutionContext, _ExecutionPolicy
 
 
 def _total_variation(counts_a, counts_b, shots):
@@ -149,17 +150,17 @@ def test_reset_attached_channels_reject_at_admission():
 def test_unconditional_channel_keeps_density_matrix_on_fast_path():
     backend = Simulator(method="DM", noise=_depolarized_x_model())
     program = _x_program(with_measurement=True)
-    plan, _ = backend._lower_program(program)
+    _plan, facts = backend._lower_program(program)
 
-    assert NumpyDMEngine()._analyze_plan(plan)[0] is False
+    assert facts.execution_shape == "single_pass"
 
 
 def test_channel_forces_statevector_onto_dynamic_path():
     backend = Simulator(method="SV", noise=_depolarized_x_model())
     program = _x_program(with_measurement=True)
-    plan, _ = backend._lower_program(program)
+    _plan, facts = backend._lower_program(program)
 
-    assert NumpySVEngine()._analyze_plan(plan)[0] is True
+    assert facts.execution_shape == "per_shot"
 
 
 def test_statevector_export_with_noise_requires_single_shot():
@@ -293,20 +294,35 @@ def test_seeded_noisy_runs_are_reproducible():
     assert first == second
 
 
-def test_parallel_dynamic_shots_match_serial_with_channels():
+def test_threaded_compiled_shots_match_serial_with_channels():
     noise = _depolarized_x_model()
     program = _x_program(with_measurement=True)
     serial = (
         Simulator(method="SV", noise=noise)
         .run(
-            program, shots=8, simulation_config={"seed": 13, "parallel_mode": "serial"}
+            program,
+            shots=8,
+            simulation_config={
+                "seed": 13,
+                "shot_parallelism": "serial",
+                "kernel_parallelism": "serial",
+            },
         )
         .result()
         .get_counts()
     )
     parallel = (
         Simulator(method="SV", noise=noise)
-        .run(program, shots=8, simulation_config={"seed": 13, "max_workers": 2})
+        .run(
+            program,
+            shots=8,
+            simulation_config={
+                "seed": 13,
+                "shot_parallelism": "threads",
+                "kernel_parallelism": "serial",
+                "max_workers": 2,
+            },
+        )
         .result()
         .get_counts()
     )
@@ -504,8 +520,8 @@ def test_run_succeeds_when_valid_gate_selector_matches_no_occurrence():
     assert result is not None
 
 
-def test_numba_fused_kernel_compiles_channel_plans_matching_numpy():
-    # A channel-bearing plan compiles into the fused numba kernel, which weighs
+def test_numba_compiled_multi_shot_plan_matches_numpy_channels():
+    # A channel-bearing plan compiles into the multi-shot Numba kernel, which weighs
     # quantum-jump branches from the reduced density matrix while NumPy norms
     # each branch - same distribution, counts agree statistically not bit-wise.
     pytest.importorskip("numba")
@@ -517,17 +533,40 @@ def test_numba_fused_kernel_compiles_channel_plans_matching_numpy():
     program = fq.Program(1, 1)
     program.add(fq.ops.X, 0)
     program.measure(0, 0)
-    plan, _ = backend._lower_program(program)
+    plan, facts = backend._lower_program(program)
     assert _plan_compilable(plan) is True
 
-    # Below the auto-parallel floor so both simulators run in-process serial.
+    # Direct engine execution below supplies an explicit private serial policy.
     shots = 400
     request = backend._request_cls(counts=True, statevector=False)
     counts = {}
     for cls in (NumpySVEngine, NumbaSVEngine):
         simulator = cls()
-        simulator.initialize((2,), 1)
-        raw = simulator.run(plan, shots, 7, request)
+        context = _ExecutionContext(
+            execution_shape=facts.execution_shape,
+            request=request,
+            system_dims=(2,),
+            n_clbits=1,
+            shots=shots,
+            seed=7,
+            initial_state=None,
+            initial_occupied=None,
+        )
+        policy = _ExecutionPolicy(
+            shot_strategy="serial",
+            kernel_strategy="serial",
+            worker_limit=1,
+            fusion=False,
+            use_compiled_multi_shot_kernel=cls is NumbaSVEngine,
+        )
+        payload = simulator.materialize_execution(
+            tuple(plan),
+            system_dims=context.system_dims,
+            n_clbits=context.n_clbits,
+            deferred_measurements=facts.deferred_measurements,
+            policy=policy,
+        )
+        raw = simulator.execute_local(context, payload, policy)
         counts[cls.__name__] = dict(
             zip(
                 (tuple(key) for key in raw.outcome_keys.tolist()),
@@ -538,8 +577,8 @@ def test_numba_fused_kernel_compiles_channel_plans_matching_numpy():
     assert tv < 0.05
 
 
-def test_numba_fused_channel_kernel_matches_numpy_on_a_qudit_dynamic_plan():
-    # Every fused step kind at once on a qutrit register: two channels on one
+def test_numba_compiled_multi_shot_matches_numpy_on_a_qudit_dynamic_plan():
+    # Every compiled step kind at once on a qutrit register: two channels on one
     # occurrence, a feedforward gate, a reset, two measurements. Draw order must
     # stay aligned with NumPy; counts agree statistically, not bit-for-bit.
     pytest.importorskip("numba")

@@ -37,14 +37,15 @@ def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
     program.measure_all()
 
     result = (
-        fq.simulator.Simulator("SV")
+        fq.simulator.Simulator("SV", runtime="numpy")
         .run(
             program,
             shots=12,
             simulation_config={
                 "seed": 2026,
                 "max_workers": 2,
-                "parallel_mode": "multiprocessing",
+                "shot_parallelism": "processes",
+                "kernel_parallelism": "serial",
             },
             result_config={"counts": True},
         )

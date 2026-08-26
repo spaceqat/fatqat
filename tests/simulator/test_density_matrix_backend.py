@@ -173,21 +173,38 @@ def test_dynamic_counts_deterministic_for_fixed_seed():
     assert set(first) <= {"00", "11"}
 
 
-def test_dynamic_counts_parallel_matches_serial():
+def test_dynamic_counts_process_batches_match_serial():
     p = Program(2, 2)
     p.add(ops.H, 0)
     p.measure(0, 0)
     p.add(ops.X, 1, condition=(0, 1))
     p.measure(1, 1)
     serial = (
-        Simulator("DM")
-        .run(p, shots=40, simulation_config={"seed": 9, "parallel_mode": "serial"})
+        Simulator("DM", runtime="numpy")
+        .run(
+            p,
+            shots=40,
+            simulation_config={
+                "seed": 9,
+                "shot_parallelism": "serial",
+                "kernel_parallelism": "serial",
+            },
+        )
         .result()
         .get_counts()
     )
     parallel = (
-        Simulator("DM")
-        .run(p, shots=40, simulation_config={"seed": 9, "max_workers": 2})
+        Simulator("DM", runtime="numpy")
+        .run(
+            p,
+            shots=40,
+            simulation_config={
+                "seed": 9,
+                "shot_parallelism": "processes",
+                "kernel_parallelism": "serial",
+                "max_workers": 2,
+            },
+        )
         .result()
         .get_counts()
     )

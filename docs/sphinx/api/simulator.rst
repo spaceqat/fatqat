@@ -87,7 +87,13 @@ Run a program
 - ``shots`` controls how many samples are collected when counts are
   requested.
 - ``result_config`` selects ``counts`` and the method’s native state field.
-- A ``seed`` inside ``simulation_config`` makes sampled results reproducible.
+- ``simulation_config`` accepts ``seed``, ``shot_parallelism``
+  (``"auto"``, ``"serial"``, ``"threads"``, or ``"processes"``),
+  ``kernel_parallelism`` (``"auto"``, ``"serial"``, or ``"threads"``), a
+  shared ``max_workers`` ceiling, and independent ``fusion=False``. At most
+  one parallel axis is selected for a run.
+- A seed makes a fixed complete configuration reproducible. Exact guarantees
+  across execution strategies are documented in :doc:`../guide/advanced`.
 - ``run(...)`` returns a :py:class:`~fatqat.Job`. Call ``job.result()`` to obtain the
   :py:class:`~fatqat.Result`. Its status and failure lifecycle controls are described in
   :doc:`experimental` as an evolving API.
@@ -102,7 +108,7 @@ representations can check it as a precondition rather than discovering the
 mismatch through a missing result field.
 
 See :doc:`../guide/running-and-results` for complete counts, statevector,
-and density-matrix examples. The optional parallel-shot settings are
+and density-matrix examples. The execution-strategy settings are
 documented in :doc:`../guide/advanced`.
 
 :py:meth:`run_sweep <~fatqat.simulator.Simulator.run_sweep>` accepts an

@@ -52,6 +52,11 @@ class _ExtendedResultBackend(Simulator):
         return {}
 
 
+class _FailingAssemblyBackend(Simulator):
+    def _additional_result_data(self, *, config, simulation, raw):
+        raise RuntimeError("result assembly failed")
+
+
 def _measured_superposition() -> fq.Program:
     program = fq.Program(1, 1)
     program.add(fq.ops.SX, 0)
@@ -65,7 +70,11 @@ def test_simulation_and_result_configuration_are_separate():
         .run(
             _measured_superposition(),
             shots=1,
-            simulation_config={"seed": 4, "parallel_mode": "serial"},
+            simulation_config={
+                "seed": 4,
+                "shot_parallelism": "serial",
+                "kernel_parallelism": "serial",
+            },
             result_config={"counts": True, "final_state": True},
         )
         .result()
@@ -76,6 +85,13 @@ def test_simulation_and_result_configuration_are_separate():
     assert result.metadata["result_config"] == {
         "counts": True,
         "final_state": True,
+    }
+    assert result.metadata["simulation_config"] == {
+        "seed": 4,
+        "shot_parallelism": "serial",
+        "kernel_parallelism": "serial",
+        "max_workers": None,
+        "fusion": False,
     }
 
 
@@ -116,6 +132,22 @@ def test_backend_result_schema_controls_accepted_configuration_keys():
 
     with pytest.raises(BackendValidationError, match="hardware_trace must be bool"):
         backend.run(program, result_config={"hardware_trace": "yes"})
+
+
+def test_request_validation_precedes_backend_specific_config_validation():
+    with pytest.raises(BackendValidationError, match="counts require shots > 0"):
+        _ExtendedResultBackend().run(
+            _measured_superposition(),
+            shots=0,
+            result_config={"hardware_trace": True},
+        )
+
+
+def test_result_assembly_failure_belongs_to_the_job():
+    job = _FailingAssemblyBackend().run(fq.Program(1))
+
+    with pytest.raises(RuntimeError, match="result assembly failed"):
+        job.result()
 
 
 @pytest.mark.parametrize(
@@ -167,24 +199,6 @@ def test_simulator_result_shot_validation_preserves_exact_messages():
         "statevector with measurement, reset, or channel noise is only supported "
         "for shots == 1"
     )
-
-
-def test_validation_and_execution_use_identical_result_flag_resolution(monkeypatch):
-    from fatqat.simulator import simulator as simulator_module
-
-    original = simulator_module._resolve_result_flags
-    resolved = []
-
-    def record(*args, **kwargs):
-        flags = original(*args, **kwargs)
-        resolved.append(flags)
-        return flags
-
-    monkeypatch.setattr(simulator_module, "_resolve_result_flags", record)
-    result = Simulator("SV").run(fq.Program(1), shots=7).result()
-
-    assert result.get_statevector().shape == (2,)
-    assert resolved == [(False, True), (False, True)]
 
 
 # --- public method accessor --------------------------------------------------

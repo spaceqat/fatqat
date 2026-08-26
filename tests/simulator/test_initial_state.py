@@ -95,21 +95,30 @@ def test_density_matrix_run_accepts_a_mixed_state():
     )
 
 
-def test_a_second_run_does_not_inherit_the_first_one_s_state():
-    """The engine is reused across runs of the same shape, so it must be reset.
+@pytest.mark.parametrize(
+    ("method", "runtime"),
+    [("SV", "numpy"), ("SV", "numba"), ("DM", "numpy")],
+)
+def test_reused_backend_uses_each_runs_own_initial_state(method, runtime):
+    """Same-shape reuse never retains either a template or evolved state."""
+    if runtime == "numba":
+        pytest.importorskip("numba")
+    backend = Simulator(method=method, runtime=runtime)
 
-    Held on the engine and never cleared, a state given to one run would still
-    be there for the next - which would look like a correct run of the wrong
-    experiment.
-    """
-    backend = Simulator(method="SV")
+    def populations(initial_state=None):
+        result = backend.run(
+            _cx_program(),
+            shots=0,
+            initial_state=initial_state,
+            result_config=_STATE_ONLY,
+        ).result()
+        if method == "SV":
+            return np.abs(result.get_statevector()) ** 2
+        return np.real(np.diag(result.get_density_matrix()))
 
-    backend.run(
-        _cx_program(), shots=0, result_config=_STATE_ONLY, initial_state=[0, 1, 0, 0]
-    ).result()
-    second = backend.run(_cx_program(), shots=0, result_config=_STATE_ONLY).result()
-
-    assert second.get_statevector() == pytest.approx([1, 0, 0, 0], abs=1e-12)
+    assert populations([0, 1, 0, 0]) == pytest.approx([0, 0, 0, 1])
+    assert populations([0, 0, 1, 0]) == pytest.approx([0, 0, 1, 0])
+    assert populations() == pytest.approx([1, 0, 0, 0])
 
 
 def test_qudit_registers_are_supported():
@@ -236,7 +245,11 @@ def test_every_shot_of_a_dynamic_run_starts_from_the_state(runtime):
             _dynamic_program(),
             shots=400,
             initial_state=[0, 0, 1, 0],
-            simulation_config={"seed": 7, "parallel_mode": "serial"},
+            simulation_config={
+                "seed": 7,
+                "shot_parallelism": "serial",
+                "kernel_parallelism": "serial",
+            },
         )
         .result()
         .get_counts()
@@ -247,23 +260,14 @@ def test_every_shot_of_a_dynamic_run_starts_from_the_state(runtime):
     assert set(counts) == {"10", "01"}
 
 
-@pytest.mark.parametrize("runtime", _RUNTIMES)
-@pytest.mark.parametrize("parallel_mode", ["multiprocessing", "loky"])
-def test_parallel_workers_agree_with_serial(parallel_mode, runtime, monkeypatch):
+def test_numba_process_workers_preserve_initial_state():
     # A worker builds its own engine. Without the state travelling with the
     # work it would start from zero while the serial path did not, and the two
     # would disagree silently.
+    pytest.importorskip("numba")
+    runtime = "numba"
     start = [0, 0, 1, 0]
     program = _dynamic_program()
-    if runtime == "numba":
-        # This program is normally handled by Numba's whole-shot kernel and
-        # therefore never creates workers. Force the supported fallback so the
-        # Numba engine class, plan, and initial state are actually serialized
-        # through the worker path this test promises to cover.
-        from fatqat.simulator._engine import nb
-
-        monkeypatch.setattr(nb, "_plan_compilable", lambda plan: False)
-
     serial = (
         Simulator(method="SV", runtime=runtime)
         .run(
@@ -284,7 +288,8 @@ def test_parallel_workers_agree_with_serial(parallel_mode, runtime, monkeypatch)
             simulation_config={
                 "seed": 7,
                 "max_workers": 2,
-                "parallel_mode": parallel_mode,
+                "shot_parallelism": "processes",
+                "kernel_parallelism": "serial",
             },
         )
         .result()
@@ -292,62 +297,6 @@ def test_parallel_workers_agree_with_serial(parallel_mode, runtime, monkeypatch)
     )
 
     assert parallel == serial
-
-
-def test_the_worker_batch_is_handed_the_state():
-    # Pin the wiring rather than the effect. Intercepting the executor - rather
-    # than the worker function, which has to stay picklable - captures exactly
-    # what would have been shipped, so dropping the state from the dispatch
-    # fails here instead of only surfacing as a numeric disagreement.
-    from fatqat.simulator._engine import parallel
-
-    seen = {}
-
-    class _RecordingExecutor:
-        def __init__(self, max_workers=None, **kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def map(self, function, *iterables):
-            # zip stops at the finite `batches` iterable, so the repeat()s
-            # bound themselves.
-            calls = list(zip(*iterables))
-            seen["last_argument"] = calls[0][-1]
-            return [function(*arguments) for arguments in calls]
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(parallel, "ProcessPoolExecutor", _RecordingExecutor)
-        Simulator(method="SV", runtime="numpy").run(
-            _dynamic_program(),
-            shots=40,
-            initial_state=[0, 0, 1, 0],
-            simulation_config={
-                "seed": 3,
-                "max_workers": 2,
-                "parallel_mode": "multiprocessing",
-            },
-        ).result().get_counts()
-
-    assert seen["last_argument"] == pytest.approx([0, 0, 1, 0])
-
-
-def test_a_later_run_does_not_inherit_an_earlier_initial_state():
-    # The engine is reused whenever the system shape repeats, so a state bound
-    # to that cache would leak into the next run of the same shape.
-    backend = Simulator(method="SV")
-    program = _cx_program()
-
-    backend.run(
-        program, shots=0, initial_state=[0, 1, 0, 0], result_config=_STATE_ONLY
-    ).result()
-    second = backend.run(program, shots=0, result_config=_STATE_ONLY).result()
-
-    assert second.get_statevector() == pytest.approx([1, 0, 0, 0], abs=1e-12)
 
 
 def test_the_callers_array_is_not_evolved_in_place():
@@ -359,12 +308,3 @@ def test_the_callers_array_is_not_evolved_in_place():
     ).result()
 
     assert np.array_equal(start, untouched)
-
-
-def test_the_engine_releases_the_initial_state_after_the_eager_run():
-    backend = Simulator(method="SV")
-    backend.run(
-        _cx_program(), shots=0, initial_state=[0, 1, 0, 0], result_config=_STATE_ONLY
-    ).result()
-
-    assert backend._engine.initial_state is None

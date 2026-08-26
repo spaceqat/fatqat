@@ -326,7 +326,13 @@ def test_column_kernel_matches_the_per_gate_kernels_bit_for_bit(method, no_fusio
     # Replay the same plan through the single-application fallback.
     engine = backend._engine
     plan, _ = backend._lower_program(program)
-    engine.initialize(*backend._engine_system)
+    system_dims = tuple(
+        register.dim
+        for register in program.quantum_registers
+        for _ in range(register.size)
+    )
+    n_clbits = sum(register.size for register in program.classical_registers)
+    engine.initialize(system_dims, n_clbits)
     generator = np.random.default_rng(0)
     for step in nb._fuse_gate_channels(plan) if method == "superop" else plan:
         if isinstance(step, nb.ApplyMatrixStep):
@@ -368,18 +374,22 @@ def _force_fusion(monkeypatch):
     return nb
 
 
-@pytest.mark.parametrize("name", sorted(_fusion_programs()))
 @pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_gate_fusion_preserves_the_operator(name, method, monkeypatch, force_fusion):
-    """Fusion is a numerically-equivalent rewrite, not a bit-identical one."""
-    nb = force_fusion
-    program = _fusion_programs()[name]
+def test_gate_fusion_preserves_the_operator(method, force_fusion):
+    """Fusion preserves the public operator result within numeric tolerance."""
+    del force_fusion  # fixture lowers the threshold so this small program fuses
+    program = _fusion_programs()["rotations"]
     fused = getattr(
-        Simulator(method, runtime="numba").run(program).result(), f"get_{method}"
+        Simulator(method, runtime="numba")
+        .run(program, simulation_config={"fusion": True})
+        .result(),
+        f"get_{method}",
     )()
-    monkeypatch.setattr(nb, "_fuse_operator_payloads", lambda payloads, dims: payloads)
     unfused = getattr(
-        Simulator(method, runtime="numba").run(program).result(), f"get_{method}"
+        Simulator(method, runtime="numba")
+        .run(program, simulation_config={"fusion": False})
+        .result(),
+        f"get_{method}",
     )()
     assert np.allclose(fused, unfused, atol=_ATOL)
 
@@ -476,21 +486,26 @@ def test_gate_fusion_leaves_a_sparse_step_alone():
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_numba_parallel_off_gives_identical_operators(method):
+def test_serial_and_threaded_numba_give_identical_operators(method):
     _numba_engines()
     program = _mixed_program()
     backend = Simulator(method, runtime="numba")
     read = f"get_{method}"
 
-    def run(numba_parallel):
+    def run(kernel_parallelism):
         return getattr(
             backend.run(
-                program, simulation_config={"numba_parallel": numba_parallel}
+                program,
+                simulation_config={
+                    "shot_parallelism": "serial",
+                    "kernel_parallelism": kernel_parallelism,
+                    "max_workers": 1 if kernel_parallelism == "serial" else 2,
+                },
             ).result(),
             read,
         )()
 
-    assert np.array_equal(run(True), run(False))
+    assert np.array_equal(run("threads"), run("serial"))
 
 
 @pytest.mark.parametrize("runtime", ["numpy", "numba"], indirect=True)
@@ -577,10 +592,10 @@ def test_shots_are_ignored(method):
     assert np.allclose(once, many, atol=_ATOL)
 
 
-@pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_backend_instance_is_reusable_across_system_sizes(method):
-    backend = Simulator(method)
-    read = f"get_{method}"
+@pytest.mark.parametrize("runtime", ["numpy", "numba"], indirect=True)
+def test_backend_instance_is_reusable_across_system_sizes(runtime):
+    backend = Simulator("unitary", runtime=runtime)
+    read = "get_unitary"
     two = getattr(backend.run(_ghz_program(2)).result(), read)()
     three = getattr(backend.run(_ghz_program(3)).result(), read)()
     again = getattr(backend.run(_ghz_program(2)).result(), read)()

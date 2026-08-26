@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from fatqat import operations as ops
-from fatqat._backends.steps import ApplyMatrixStep, ResetStep
+from fatqat._backends.steps import ApplyMatrixStep, LossStep, PutStep, ResetStep
 from fatqat.simulator import AtomArraySimulator, Simulator
 from fatqat.simulator.fake_atom_array import fake_atom_array_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
@@ -264,6 +264,92 @@ def test_conditional_unpair_rejected():
 # --- Put atom lifecycle -------------------------------------------------------
 
 
+def test_atom_lifecycle_translates_to_common_facts_and_occupancy():
+    program = Program(1)
+    program.add(ops.Put, 0)
+
+    _plan, facts, occupied = AtomArraySimulator(num_sites=1)._prepare_program(program)
+
+    assert facts.execution_shape == "per_shot"
+    assert facts.stochastic_final_state is False
+    assert facts.deferred_measurements == ()
+    assert occupied == frozenset()
+
+
+def test_atom_loss_translates_to_stochastic_per_shot_execution():
+    noise = NoiseModel()
+    noise.add(Loss(p=0.5), operation=ops.RX)
+    program = Program(1)
+    program.add(ops.RX(0.1), 0)
+
+    _plan, facts, occupied = AtomArraySimulator(
+        num_sites=1, noise=noise
+    )._prepare_program(program)
+
+    assert facts.execution_shape == "per_shot"
+    assert facts.stochastic_final_state is True
+    assert occupied == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("step_kind", "step_type"),
+    [("put", PutStep), ("loss", LossStep)],
+)
+def test_atom_extension_steps_preserve_conditions(step_kind, step_type):
+    noise = NoiseModel()
+    program = Program(1, 1)
+    if step_kind == "put":
+        program.add(ops.Put, 0, condition=(0, 0))
+    else:
+        noise.add(Loss(p=0.5), operation=ops.RX)
+        program.add(ops.RX(0.1), 0, condition=(0, 0))
+
+    backend = AtomArraySimulator(num_sites=1, noise=noise)
+    plan, _facts = backend._lower_program(program)
+    extension = next(step for step in plan if isinstance(step, step_type))
+
+    assert extension.condition == ((0, 0),)
+    facts, _occupied = backend._analyze_lowered_plan((extension,))
+    assert facts.execution_shape == "per_shot"
+    assert facts.has_condition is True
+
+
+def test_atom_lifecycle_clears_deferred_measurements():
+    program = Program(1, 1)
+    program.add(ops.Put, 0)
+    program.measure(0, 0)
+
+    _plan, facts = AtomArraySimulator(num_sites=1)._lower_program(program)
+
+    assert facts.execution_shape == "per_shot"
+    assert facts.deferred_measurements == ()
+    assert facts.written_clbits == frozenset({0})
+
+
+def test_gate_before_put_executes_while_empty():
+    program = Program(1, 1)
+    program.add(ops.RX(np.pi), 0)  # native X-equivalent; skipped while empty
+    program.add(ops.Put, 0)
+    program.measure(0, 0)
+
+    counts = (
+        AtomArraySimulator(num_sites=1)
+        .run(program, shots=8, simulation_config={"seed": 0})
+        .result()
+        .get_counts()
+    )
+
+    assert counts == {"0": 8}
+
+
+def test_plain_simulator_rejects_atom_put():
+    program = Program(1)
+    program.add(ops.Put, 0)
+
+    with pytest.raises(UnsupportedOperationError):
+        Simulator().run(program)
+
+
 def test_no_lifecycle_program_keeps_every_qubit_present():
     # A program that uses neither Put nor loss imposes no occupancy: it behaves
     # like the plain backend, every declared qubit present.
@@ -277,6 +363,16 @@ def test_no_lifecycle_program_keeps_every_qubit_present():
         .get_counts()
     )
     assert counts == {"1": 4}
+
+
+def test_no_lifecycle_has_no_occupancy_seed():
+    program = Program(1)
+    program.add(ops.RX(0.1), 0)
+
+    _plan, facts, occupied = AtomArraySimulator(num_sites=1)._prepare_program(program)
+
+    assert facts.execution_shape == "single_pass"
+    assert occupied is None
 
 
 def test_gate_on_never_put_site_is_dropped():
@@ -391,6 +487,35 @@ def test_put_on_occupied_site_is_a_noop():
         )
 
     assert counts(build(True)) == counts(build(False)) == {"1": 8}
+
+
+def test_process_workers_preserve_initial_atom_occupancy():
+    pytest.importorskip("numba")
+    program = Program(1, 1)
+    program.add(ops.RX(np.pi), 0)
+    program.add(ops.Put, 0)
+    program.measure(0, 0)
+    backend = AtomArraySimulator(num_sites=1, runtime="numba")
+
+    def counts(shot_parallelism):
+        return (
+            backend.run(
+                program,
+                shots=8,
+                simulation_config={
+                    "seed": 7,
+                    "shot_parallelism": shot_parallelism,
+                    "kernel_parallelism": "serial",
+                    "max_workers": 2 if shot_parallelism == "processes" else 1,
+                },
+            )
+            .result()
+            .get_counts()
+        )
+
+    # Empty occupancy skips RX, then Put loads |0>. Dropping the explicit
+    # occupancy seed in a worker would apply RX first and report 1 instead.
+    assert counts("processes") == counts("serial") == {"0": 8}
 
 
 # --- atom loss ----------------------------------------------------------------
@@ -517,33 +642,11 @@ def test_operator_methods_reject_atom_lifecycle(method):
 def test_empty_program_lowers_to_nothing():
     p = Program(0, 0)
     plan, facts = AtomArraySimulator(num_sites=1)._lower_program(p)
-    assert plan == []
+    assert plan == ()
     assert not facts.has_measurement
-
-
-def test_device_label_for_method_is_gone():
-    assert "_device_label_for" not in AtomArraySimulator.__dict__
 
 
 def test_atom_array_simulator_is_public():
     import fatqat.simulator as simulator_pkg
 
     assert "AtomArraySimulator" in simulator_pkg.__all__
-
-
-def test_run_resolves_resource_layout_exactly_once():
-    program = Program(6)
-    program.add(ops.Put, 0)
-    program.add(ops.RX(0.1), 0)
-
-    backend = AtomArraySimulator()
-    calls = {"n": 0}
-    original = backend._resolve_resource_layout
-
-    def counting(program, supplied_layout=None):
-        calls["n"] += 1
-        return original(program, supplied_layout)
-
-    backend._resolve_resource_layout = counting
-    backend.run(program, result_config={"counts": False, "final_state": True})
-    assert calls["n"] == 1

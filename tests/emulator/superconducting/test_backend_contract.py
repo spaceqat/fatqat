@@ -87,16 +87,24 @@ def test_emulator_config_carries_only_the_controls_pulse_execution_honors():
     assert _EmulatorConfig().seed is None
 
 
-@pytest.mark.parametrize("knob", ["parallel_mode", "max_workers", "numba_parallel"])
+@pytest.mark.parametrize(
+    ("knob", "value"),
+    [
+        ("shot_parallelism", "threads"),
+        ("kernel_parallelism", "threads"),
+        ("max_workers", 2),
+        ("fusion", True),
+    ],
+)
 def test_matrix_execution_knobs_are_rejected_rather_than_silently_ignored(
-    backend, knob
+    backend, knob, value
 ):
     # These belong to the matrix engine. The emulator has no engine to steer
     # with them, so accepting one would promise tuning that never happens.
     program = fq.Program(1)
     program.add(fq.ops.RZ(0.2), 0)
     with pytest.raises(BackendValidationError, match=knob):
-        backend.run(program, simulation_config={knob: 1})
+        backend.run(program, simulation_config={knob: value})
 
 
 def test_run_directly_validates_config_and_executes_ideal_program(backend):

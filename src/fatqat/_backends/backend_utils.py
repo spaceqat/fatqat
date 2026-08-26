@@ -61,27 +61,6 @@ class _LoweringContext:
         )
 
 
-@dataclass(frozen=True)
-class _PlanFacts:
-    """Program facts needed for backend result defaults and validation.
-
-    ``has_channel`` and ``has_condition`` default to ``False`` so
-    channel-free / condition-free construction sites (and the fake-backend
-    lowering) stay unchanged. ``has_condition`` is read only by the operator
-    methods; the state methods classify conditions per step instead
-    (`_analyze_terminal_measurements`).
-    """
-
-    has_measurement: bool
-    has_reset: bool
-    has_channel: bool = False
-    has_condition: bool = False
-
-
-# TODO(architecture): reconsider unifying matrix and pulse plan facts only if
-# another continuous-time backend also needs elapsed-evolution information.
-
-
 def _normalize_config(
     config: dict[str, Any] | None,
     config_cls: type,

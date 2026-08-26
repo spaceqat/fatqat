@@ -26,17 +26,19 @@ afterwards:
   ``final_state`` result request is translated to that representation's
   native state field immediately before execution.
 - ``_nonunitary_is_stochastic``: whether non-unitary maps (reset, channel
-  noise) make execution stochastic for the representation (`True` for
-  statevector, which must sample one branch of any non-unitary map; `False`
-  for the rest, which apply them as deterministic channels).
+  noise) make the final state stochastic. Statevector samples one branch;
+  unitary keeps the defensive `True` fact but rejects non-unitary maps through
+  ``_executes_nonunitary``; density-matrix and superoperator methods apply
+  deterministic channels and use `False`.
 - ``_is_operator`` / ``_executes_nonunitary``: what the representation can
   execute at all, checked in `_validate_method_support` before any run.
 
 The backend/engine seam: this class constructs the method's `MatrixEngine`
-subclass once, then calls ``engine.initialize(system_dims, n_clbits)``
-and ``engine.run(plan, shots, seed, request, config=...) -> RawResult`` per run.
-The backend owns validation, lowering, and result assembly; the engine owns the
-state and the numerics.
+subclass once. Each run analyzes one frozen plan, resolves static engine
+capabilities and public controls into one private policy, then copies only the
+runtime semantic shape into a slim execution context. The engine materializes
+its numeric payload once and performs local numeric execution; this module owns
+process dispatch and public result assembly.
 """
 
 from __future__ import annotations
@@ -74,7 +76,7 @@ from ..noise import (
     ThermalRelaxation,
     default_channel_implementation_map,
 )
-from ..operations import BarrierGate, Measurement, PutGate, ResetGate
+from ..operations import BarrierGate, Measurement, ResetGate
 from ..parameters import Parameter, ParameterVector
 from ..program import AppliedOperation, Program
 from ..registers import RegisterRef
@@ -83,8 +85,10 @@ from ..result import (
     Result,
     _ResultConfig,
     counts_dict_from_arrays,
+    reduce_to_counts,
 )
 from ._engine.base import MatrixEngine
+from ._engine.parallel import _run_shots_in_processes
 from ._engine.np import (
     NumpyDMEngine,
     NumpySuperopEngine,
@@ -93,24 +97,31 @@ from ._engine.np import (
 )
 from .._backends.backend_utils import (
     _LoweringContext,
-    _PlanFacts,
     _normalize_config,
     _resolve_result_flags,
     _validate_result_shots,
 )
 from . import planning
+from ._execution_contract import _ExecutionContext, _ExecutionPolicy, _PlanFacts
 from .._backends.engine_contract import (
     RawResult,
     _DensityMatrixResultRequest,
-    _EngineConfig,
+    _ResultRequest,
     _SimulationConfig,
     _StateVectorResultRequest,
     _SuperopResultRequest,
     _UnitaryResultRequest,
 )
+from ._execution_policy import (
+    _materialization_policy,
+    _resolve_execution_policy,
+    _should_probe_compiled_multi_shot,
+    _validate_execution_controls,
+)
 from .._backends.view_normalization import ProgramInstruction, _break_grouped_operations
 from .._backends.steps import (
     ApplyChannelStep,
+    ApplyMatrixStep,
     MeasurementStep,
     ResetStep,
     ResolvedStep,
@@ -125,6 +136,38 @@ _METHOD_ALIASES = {
     "unitary": "unitary",
     "superop": "superop",
 }
+
+
+def _dispatch_execution(
+    engine: MatrixEngine,
+    context: _ExecutionContext,
+    payload: Any,
+    policy: _ExecutionPolicy,
+) -> RawResult:
+    """Dispatch one prepared execution without leaking routes into engines."""
+    state_requested = any(
+        getattr(context.request, field, False)
+        for field in ("statevector", "density_matrix", "unitary", "superop")
+    )
+    if policy.use_compiled_multi_shot_kernel:
+        assert context.execution_shape == "per_shot"
+        assert context.request.counts and not state_requested
+        assert context.initial_occupied is None
+
+    if policy.shot_strategy in ("none", "serial", "threads"):
+        return engine.execute_local(context, payload, policy)
+
+    assert policy.use_compiled_multi_shot_kernel is False
+    assert policy.shot_strategy == "processes"
+    assert context.execution_shape == "per_shot"
+    assert context.request.counts and not state_requested
+    snapshots = _run_shots_in_processes(type(engine), context, payload, policy)
+    rows = np.asarray(snapshots, dtype=int).reshape((len(snapshots), context.n_clbits))
+    outcome_keys, outcome_counts = reduce_to_counts(rows)
+    return RawResult(
+        outcome_keys=outcome_keys,
+        outcome_counts=outcome_counts,
+    )
 
 
 @dataclass(frozen=True)
@@ -153,30 +196,12 @@ class _MethodSpec:
     executes_nonunitary: bool
 
 
-@dataclass(frozen=True)
-class _PreparedMatrixProgram:
-    """One run's lowered plan and final resource/index context.
-
-    ``initial_occupied`` is the per-shot starting occupancy the engine seeds
-    before executing the plan: ``None`` (the plain-backend default) means every
-    subsystem is present, while an explicit set names the subsystems occupied
-    at shot start. It is an initialization input of the run, not a plan step -
-    the atom simulator supplies it (see ``Simulator._initial_occupancy``)
-    because occupancy is one of its concerns, not an operation the engine
-    lowers.
-    """
-
-    plan: list[ResolvedStep]
-    facts: _PlanFacts
-    context: _LoweringContext
-    initial_occupied: frozenset[int] | None = None
-
-
 _METHOD_SPECS: dict[str, _MethodSpec] = {
     "statevector": _MethodSpec(
         request_cls=_StateVectorResultRequest,
         numpy_engine=NumpySVEngine,
         numba_engine_name="NumbaSVEngine",
+        # nonunitary_is_stochastic: channel and reset
         # A pure state must sample one branch of any non-unitary map.
         nonunitary_is_stochastic=True,
         is_operator=False,
@@ -196,7 +221,7 @@ _METHOD_SPECS: dict[str, _MethodSpec] = {
         request_cls=_UnitaryResultRequest,
         numpy_engine=NumpyUnitaryEngine,
         numba_engine_name="NumbaUnitaryEngine",
-        nonunitary_is_stochastic=False,
+        nonunitary_is_stochastic=True,  # reject by validation, not implemented.
         is_operator=True,
         executes_nonunitary=False,
     ),
@@ -257,24 +282,31 @@ class Simulator:
     under statevector semantics each occurrence samples one trajectory
     branch, which makes execution stochastic and forces per-shot replay.
 
-    Per-run ``simulation_config`` controls local execution only: ``seed``,
-    ``max_workers``, ``parallel_mode``, ``numba_parallel``, and ``fusion``.
+    Per-run ``simulation_config`` accepts ``seed``, ``shot_parallelism``,
+    ``kernel_parallelism``, ``max_workers``, and ``fusion``. Shot parallelism
+    controls independent trajectories; kernel parallelism controls numerical
+    work inside one evolution and never executes program operations out of
+    order. Both axes default to ``"auto"`` and FATQAT resolves at most one
+    parallel axis. ``max_workers`` is a shared concurrency ceiling, not a
+    promise that every worker receives useful work. ``fusion`` is independent
+    of concurrency and defaults off.
     ``result_config`` controls the execution record: ``counts`` and
     ``final_state``. ``shots`` is an explicit ``run()`` argument, matching a
     hardware job's repetition count.
 
     The ``runtime`` argument selects the execution technology for the chosen
-    representation - ``"numba"`` (default) or ``"numpy"``. The runtime never
-    changes simulation semantics, only how fast the same numbers are computed;
-    dynamic-shot worker processes use the selected runtime as well. The two
-    parallelism axes are separate: ``max_workers`` / ``parallel_mode``
-    distribute dynamic shots across OS processes on either runtime, while
-    ``numba_parallel=False`` confines a ``runtime="numba"`` run to a single
-    Numba worker thread (for callers who parallelize at a higher level and must
-    not oversubscribe the machine).
+    representation - ``"numba"`` (default) or ``"numpy"``. The runtime keeps
+    the same simulation and numerical-tolerance contract while changing how
+    the work is executed;
+    dynamic-shot worker processes use the selected runtime as well. The Numba
+    runtime selects one internal thread axis appropriate to the
+    chosen axis; process workers are confined to one Numba thread so process
+    and thread parallelism never nest. A caller that needs predictable latency
+    for a small one-off run may select NumPy with both parallelism axes set to
+    ``"serial"``.
 
-    A backend instance reuses one simulator across runs, so it is efficient
-    for repeated single-threaded use but is not safe for concurrent ``run()``
+    A backend instance reuses one simulator across runs, so it is efficient for
+    repeated calls from one caller but is not safe for concurrent ``run()``
     calls.
 
     Examples:
@@ -301,7 +333,7 @@ class Simulator:
 
     # Subclasses may replace this with a dataclass derived from
     # ``_SimulationConfig`` for hardware-specific simulator controls. The
-    # base backend only consumes the inherited seed and engine-config portion.
+    # base backend consumes the inherited matrix-execution fields.
     _simulation_config_cls: type[_SimulationConfig] = _SimulationConfig
 
     # Whether this backend implements the per-shot atom-occupancy lifecycle
@@ -399,12 +431,10 @@ class Simulator:
         report = self.check_noise_support(self._noise_model)
         if not report.supported:
             raise BackendValidationError("; ".join(report.warnings))
-        # The simulator is constructed once and re-initialized per run so its
-        # buffers can be reused. Because it holds per-run state, a single
-        # backend instance is NOT safe for concurrent run() calls
-        # (single-threaded use only).
-        self._engine = self._engine_cls(config=_EngineConfig())
-        self._engine_system: tuple[tuple[int, ...], int] | None = None
+        # The engine object and its dimension-dependent numeric caches are
+        # reused, while every execution allocates or resets evolving state.
+        # A backend instance is not safe for concurrent run() calls.
+        self._engine = self._engine_cls()
 
     @property
     def method(self) -> str:
@@ -549,7 +579,7 @@ class Simulator:
         program: Program,
         *,
         context: _LoweringContext | None = None,
-    ) -> tuple[list[ResolvedStep], _PlanFacts]:
+    ) -> tuple[tuple[ResolvedStep, ...], _PlanFacts]:
         """Prepare and lower one program using the backend's resource policy.
 
         ``context`` lets a caller that already resolved this run's
@@ -557,16 +587,20 @@ class Simulator:
         through unchanged, so lowering never re-resolves either. When omitted
         (standalone use, e.g. in tests), both are resolved once here.
         """
-        prepared = self._prepare_program(program, context=context)
-        return prepared.plan, prepared.facts
+        plan, facts, _initial_occupied = self._prepare_program(program, context=context)
+        return plan, facts
 
     def _prepare_program(
         self,
         program: Program,
         *,
         context: _LoweringContext | None = None,
-    ) -> _PreparedMatrixProgram:
-        """Lower once and retain the final resource snapshot for results."""
+    ) -> tuple[
+        tuple[ResolvedStep, ...],
+        _PlanFacts,
+        frozenset[int] | None,
+    ]:
+        """Lower and freeze once, then derive common facts and occupancy."""
         if context is None:
             resource_layout = self._resolve_resource_layout(program)
             context = _LoweringContext(
@@ -577,21 +611,9 @@ class Simulator:
                 classical_allocation=_ClassicalAllocation.from_program(program),
             )
         operations = _break_grouped_operations(program.operations)
-        plan, final_context = self._lower_with_context(operations, context)
-        return _PreparedMatrixProgram(
-            plan,
-            self._analyze_plan_facts(plan),
-            final_context,
-            self._initial_occupancy(plan),
-        )
-
-    def _lower_with_context(
-        self,
-        operations: Sequence[ProgramInstruction],
-        context: _LoweringContext,
-    ) -> tuple[list[ResolvedStep], _LoweringContext]:
-        """Lower and return the resource snapshot active after the plan."""
-        return self._lower(operations, context), context
+        plan = tuple(self._lower(operations, context))
+        facts, initial_occupied = self._analyze_lowered_plan(plan)
+        return plan, facts, initial_occupied
 
     def run(
         self,
@@ -609,10 +631,14 @@ class Simulator:
         index allocation, chooses an execution strategy, runs the circuit, and
         returns an eager ``Job`` whose ``result()`` yields a ``Result``.
 
-        ``simulation_config`` controls local execution only: ``seed``,
-        ``max_workers``, ``parallel_mode``, ``numba_parallel``, and ``fusion``.
-        Explicit ``fusion`` values and non-default ``numba_parallel`` require
-        ``runtime="numba"``. ``result_config`` describes the
+        ``simulation_config`` accepts ``seed``, ``shot_parallelism``
+        (``"auto"``, ``"serial"``, ``"threads"``, or ``"processes"``),
+        ``kernel_parallelism`` (``"auto"``, ``"serial"``, or ``"threads"``),
+        ``max_workers``, and ``fusion``. Kernel parallelism is numerical work
+        inside one evolution; it never executes program operations out of
+        order. FATQAT never nests the two parallel axes. Fusion defaults off
+        and can be enabled only for the Numba density-matrix, unitary, and
+        superoperator methods. ``result_config`` describes the
         requested result artifacts: ``counts`` and ``final_state``. The
         latter asks a simulator to return its terminal state in the
         representation selected by this backend's ``method``.
@@ -663,7 +689,8 @@ class Simulator:
             "result_config",
             backend_name=type(self).__name__,
         )
-        self._validate_runtime_config(simulation)
+        capabilities = self._engine.capabilities
+        _validate_execution_controls(simulation, capabilities)
         # Both hooks are resolved exactly once per run, on the direct-raise
         # validation path, before the execution try block below: capacity,
         # dimension, grid-fit, and mapping failures must raise directly from
@@ -687,29 +714,77 @@ class Simulator:
         self._noise_model._validate_for(
             program, self._legal_device_operands(program, resource_layout)
         )
-        context = _LoweringContext(
+        lowering = _LoweringContext(
             resource_layout=resource_layout,
             engine_allocation=engine_allocation,
             classical_allocation=classical_allocation,
         )
-        prepared = self._prepare_program(program, context=context)
-        self._validate(config, shots, prepared.facts)
+        plan, facts, initial_occupied = self._prepare_program(program, context=lowering)
+        request = self._validate(
+            config,
+            shots,
+            facts,
+            initial_occupied=initial_occupied,
+        )
         self._validate_additional_config(
             config=config,
             simulation=simulation,
             shots=shots,
-            facts=prepared.facts,
+            facts=facts,
         )
-        try:
-            return Job.done(
-                self._execute(
-                    config,
-                    simulation,
-                    shots,
-                    prepared,
-                    initial_state,
-                )
+        counts_requested = request.counts
+        state_requested = getattr(request, self._state_field)
+        compiled_multi_shot_compatible = False
+        if _should_probe_compiled_multi_shot(
+            simulation,
+            facts=facts,
+            counts_requested=counts_requested,
+            state_requested=state_requested,
+            initial_occupied=initial_occupied,
+        ):
+            compiled_multi_shot_compatible = (
+                self._engine.compiled_multi_shot_compatible(plan)
             )
+        policy = _resolve_execution_policy(
+            simulation,
+            facts=facts,
+            counts_requested=counts_requested,
+            state_requested=state_requested,
+            capabilities=capabilities,
+            compiled_multi_shot_compatible=compiled_multi_shot_compatible,
+            shots=shots,
+            initial_occupied=initial_occupied,
+            plan_is_empty=not plan,
+        )
+        execution = _ExecutionContext(
+            execution_shape=facts.execution_shape,
+            request=request,
+            system_dims=tuple(engine_allocation.system_dims),
+            n_clbits=classical_allocation.n_clbits,
+            shots=shots,
+            seed=simulation.seed,
+            initial_state=initial_state,
+            initial_occupied=initial_occupied,
+        )
+        deferred_measurements = facts.deferred_measurements
+        written_clbits = facts.written_clbits
+        try:
+            raw = self._execute_engine(
+                plan=plan,
+                deferred_measurements=deferred_measurements,
+                context=execution,
+                policy=policy,
+            )
+            result = self._assemble_result(
+                raw=raw,
+                config=config,
+                simulation=simulation,
+                lowering=lowering,
+                written_clbits=written_clbits,
+                request=request,
+                shots=shots,
+            )
+            return Job.done(result)
         except Exception as exc:  # execution-stage failure
             return Job.failed(exc)
 
@@ -846,17 +921,25 @@ class Simulator:
             )
         return state
 
-    def _validate(self, config: _ResultConfig, shots: int, facts: _PlanFacts) -> None:
+    def _validate(
+        self,
+        config: _ResultConfig,
+        shots: int,
+        facts: _PlanFacts,
+        *,
+        initial_occupied: frozenset[int] | None,
+    ) -> _ResultRequest:
         """Validate result-config / shots constraints against the lowered program.
 
-        Operation support and dynamic classification were already resolved
-        from the finished plan. Stochasticity is representation-dependent:
-        measurement is always stochastic; reset and Kraus-channel noise only
-        when ``_nonunitary_is_stochastic``. A backend may extend
-        ``_state_is_stochastic`` for backend-specific execution steps.
+        Operation support, stochasticity, and semantic execution shape were
+        already translated into common facts by the selected backend.
         """
-        self._validate_method_support(config, facts)
-        stochastic = self._state_is_stochastic(facts)
+        self._validate_method_support(
+            config,
+            facts,
+            initial_occupied=initial_occupied,
+        )
+        stochastic = facts.stochastic_final_state
         counts, final_state = _resolve_result_flags(
             config,
             has_measurement=facts.has_measurement,
@@ -890,15 +973,14 @@ class Simulator:
             state_label=self._state_field,
             stochastic_sources=stochastic_sources,
         )
-
-    def _state_is_stochastic(self, facts: _PlanFacts) -> bool:
-        """Whether one final state cannot represent this run's trajectories."""
-        return facts.has_measurement or (
-            self._nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
-        )
+        return request
 
     def _validate_method_support(
-        self, config: _ResultConfig, facts: _PlanFacts
+        self,
+        config: _ResultConfig,
+        facts: _PlanFacts,
+        *,
+        initial_occupied: frozenset[int] | None,
     ) -> None:
         """Reject programs and requests the chosen method cannot represent.
 
@@ -934,35 +1016,6 @@ class Simulator:
                 "program's channel)"
             )
 
-    def _validate_runtime_config(self, simulation: _SimulationConfig) -> None:
-        """Reject simulation controls the selected ``runtime`` cannot honor.
-
-        ``numba_parallel`` turns off the Numba runtime's in-process thread
-        parallelism. The NumPy runtime has none to turn off - its parallelism is
-        the OS-process shot distribution ``max_workers`` / ``parallel_mode``
-        control - so a non-default value fails here rather than being silently
-        ignored.
-
-        Deliberately not the `_validate_additional_config` hook: that one is for
-        subclasses, which override it without calling ``super()``, so a check
-        placed there would vanish for a hardware backend.
-
-        Raises:
-            BackendValidationError: If a runtime-specific control is set for a
-                runtime that does not implement it.
-        """
-        if self._runtime != "numba" and simulation.numba_parallel is not True:
-            raise BackendValidationError(
-                "numba_parallel is only supported with runtime='numba'; this "
-                f"backend uses runtime={self._runtime!r} (use max_workers / "
-                "parallel_mode to control NumPy-path parallelism)"
-            )
-        if self._runtime != "numba" and simulation.fusion is not None:
-            raise BackendValidationError(
-                "explicit fusion settings are only supported with "
-                "runtime='numba'; use fusion=None for the NumPy runtime"
-            )
-
     def _validate_additional_config(
         self,
         *,
@@ -980,52 +1033,41 @@ class Simulator:
         """
 
     # --- execution ---
-    def _execute(
+    def _execute_engine(
         self,
+        *,
+        plan: tuple[ResolvedStep, ...],
+        deferred_measurements: tuple[tuple[int, int], ...],
+        context: _ExecutionContext,
+        policy: _ExecutionPolicy,
+    ) -> RawResult:
+        """Materialize once in the parent, then dispatch the opaque payload."""
+        local_policy = _materialization_policy(policy)
+        payload = self._engine.materialize_execution(
+            plan,
+            system_dims=context.system_dims,
+            n_clbits=context.n_clbits,
+            deferred_measurements=deferred_measurements,
+            policy=local_policy,
+        )
+        return _dispatch_execution(self._engine, context, payload, policy)
+
+    def _assemble_result(
+        self,
+        *,
+        raw: RawResult,
         config: _ResultConfig,
         simulation: _SimulationConfig,
+        lowering: _LoweringContext,
+        written_clbits: frozenset[int],
+        request: _ResultRequest,
         shots: int,
-        prepared: _PreparedMatrixProgram,
-        initial_state: np.ndarray | None = None,
     ) -> Result:
-        """Execute a lowered program and assemble the requested result fields."""
-        plan = prepared.plan
-        facts = prepared.facts
-        engine_allocation = prepared.context.engine_allocation
-        classical_allocation = prepared.context.classical_allocation
-        system_dims = engine_allocation.system_dims
+        """Build one public result without depending on execution routing."""
+        engine_allocation = lowering.engine_allocation
+        classical_allocation = lowering.classical_allocation
         classical_dims = classical_allocation.classical_dims
         n_clbits = classical_allocation.n_clbits
-        stochastic = self._state_is_stochastic(facts)
-        counts, final_state = _resolve_result_flags(
-            config,
-            has_measurement=facts.has_measurement,
-            stochastic_final_state=stochastic,
-        )
-        request = self._request_cls(counts=counts, **{self._state_field: final_state})
-
-        system_key = (tuple(system_dims), n_clbits)
-        if self._engine_system != system_key:
-            self._engine.initialize(system_dims, n_clbits)
-            self._engine_system = system_key
-        # Set every run, deliberately outside the cache branch above: the engine
-        # is reused whenever the system shape repeats, so binding the state to
-        # that branch would let a second run silently inherit the first one's.
-        self._engine.initial_state = initial_state
-        try:
-            raw = self._engine.run(
-                plan,
-                shots,
-                simulation.seed,
-                request,
-                config=simulation.engine_config(),
-                initial_occupied=prepared.initial_occupied,
-            )
-        finally:
-            # Execution is eager and every evolving/result buffer owns its
-            # storage, so retaining a potentially large caller array here only
-            # extends its lifetime until the next run or backend destruction.
-            self._engine.initial_state = None
         counts = None
         state = raw.state
         state_requested = getattr(request, self._state_field)
@@ -1038,13 +1080,7 @@ class Simulator:
 
         # NoMeasurementWarning: counts produced, some clbit never written, no state.
         if request.counts and self._state_field not in available:
-            written = {
-                c
-                for s in plan
-                if isinstance(s, MeasurementStep)
-                for c in s.classical_indices
-            }
-            if any(c not in written for c in range(n_clbits)):
+            if any(c not in written_clbits for c in range(n_clbits)):
                 warnings.warn(
                     "counts contain clbits that were never measured; "
                     "returning zero-filled counts",
@@ -1073,7 +1109,7 @@ class Simulator:
         if state_requested:
             metadata["state_axes"] = _describe_state_axes(
                 engine_allocation,
-                prepared.context.resource_layout,
+                lowering.resource_layout,
             )
         return Result(
             counts=counts,
@@ -1153,16 +1189,6 @@ class Simulator:
                             classical_allocation,
                         )
                     )
-                elif isinstance(step.operation, PutGate):
-                    plan.extend(
-                        planning._lower_put(
-                            step,
-                            resource_layout,
-                            engine_allocation,
-                            classical_allocation,
-                            self._noise_model,
-                        )
-                    )
                 else:
                     plan.extend(
                         planning._lower_gate(
@@ -1178,31 +1204,94 @@ class Simulator:
 
         return plan
 
-    def _analyze_plan_facts(self, plan: Sequence[ResolvedStep]) -> _PlanFacts:
-        """Derive common matrix-simulator facts from the finished plan.
+    def _analyze_lowered_plan(
+        self, plan: tuple[ResolvedStep, ...]
+    ) -> tuple[_PlanFacts, frozenset[int] | None]:
+        """Translate one lowered plan into common semantics and occupancy."""
+        return self._analyze_common_plan_facts(plan), None
 
-        Subclasses that emit backend-specific steps may extend the returned
-        facts, while the common simulator remains unaware of those step types.
-        """
-        return _PlanFacts(
-            has_measurement=any(isinstance(step, MeasurementStep) for step in plan),
-            has_reset=any(isinstance(step, ResetStep) for step in plan),
-            has_channel=any(isinstance(step, ApplyChannelStep) for step in plan),
-            has_condition=any(
-                getattr(step, "condition", None) is not None for step in plan
-            ),
+    def _analyze_common_plan_facts(
+        self,
+        plan: Sequence[ResolvedStep],
+        *,
+        claimed_step_types: tuple[type[object], ...] = (),
+    ) -> _PlanFacts:
+        """Exhaustively derive runtime-independent matrix execution semantics."""
+        execution_shape = "operator" if self._is_operator else "single_pass"
+        state_nonunitary_uses_trajectories = (
+            not self._is_operator and self._nonunitary_is_stochastic
         )
+        measured_indices: set[int] = set()
+        deferred_measurements: list[tuple[int, int]] = []
+        written_clbits: set[int] = set()
+        stochastic_final_state = False
+        has_measurement = False
+        has_reset = False
+        has_channel = False
+        has_condition = False
 
-    def _initial_occupancy(self, plan: Sequence[ResolvedStep]) -> frozenset[int] | None:
-        """Subsystems present at shot start, or ``None`` for 'all present'.
+        def require_per_shot() -> None:
+            nonlocal execution_shape
+            if not self._is_operator:
+                execution_shape = "per_shot"
 
-        This is the engine's per-shot occupancy seed, resolved at run
-        preparation rather than lowered as a plan step: occupancy is a backend
-        concern, not an operation. The common simulator has no occupancy notion,
-        so every subsystem is present; the atom simulator overrides this to seed
-        an empty register that `~fatqat.operations.Put` then fills.
-        """
-        return None
+        for step in plan:
+            if getattr(step, "condition", None) is not None:
+                has_condition = True
+                require_per_shot()
+
+            if claimed_step_types and isinstance(step, claimed_step_types):
+                continue
+
+            if isinstance(step, MeasurementStep):
+                has_measurement = True
+                stochastic_final_state = True
+                if measured_indices.intersection(step.measured_indices):
+                    require_per_shot()
+                measured_indices.update(step.measured_indices)
+                written_clbits.update(step.classical_indices)
+                deferred_measurements.extend(
+                    zip(step.measured_indices, step.classical_indices)
+                )
+                continue
+
+            if isinstance(step, ApplyMatrixStep):
+                target_indices = step.target_indices
+            elif isinstance(step, ResetStep):
+                has_reset = True
+                target_indices = step.reset_indices
+                if state_nonunitary_uses_trajectories:
+                    require_per_shot()
+                if self._nonunitary_is_stochastic:
+                    stochastic_final_state = True
+            elif isinstance(step, ApplyChannelStep):
+                has_channel = True
+                target_indices = step.target_indices
+                if state_nonunitary_uses_trajectories:
+                    require_per_shot()
+                if self._nonunitary_is_stochastic:
+                    stochastic_final_state = True
+            else:
+                raise TypeError(
+                    f"unknown resolved execution step {type(step).__name__}"
+                )
+
+            if measured_indices.intersection(target_indices):
+                require_per_shot()
+
+        if execution_shape != "single_pass":
+            deferred_measurements = []
+
+        return _PlanFacts(
+            execution_shape=execution_shape,
+            deferred_measurements=tuple(deferred_measurements),
+            written_clbits=frozenset(written_clbits),
+            stochastic_final_state=stochastic_final_state,
+            has_measurement=has_measurement,
+            has_reset=has_reset,
+            has_channel=has_channel,
+            has_condition=has_condition,
+        )
 
     def check_noise_support(self, noise_model: NoiseModel) -> NoiseSupportReport:
         """Report which parts of a noise model this backend can execute.

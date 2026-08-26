@@ -182,11 +182,15 @@ ghz_program = build_ghz8_program()
 
 shots = 2_000
 backend = fq.simulator.AtomArraySimulator(num_sites=NUM_ATOMS)
-counts = backend.run(
-    ghz_program,
-    shots=shots,
-    simulation_config={"seed": 7},
-).result().get_counts()
+counts = (
+    backend.run(
+        ghz_program,
+        shots=shots,
+        simulation_config={"seed": 7},
+    )
+    .result()
+    .get_counts()
+)
 
 print("Counts:", counts)
 # sphinx_gallery_start_ignore
@@ -247,10 +251,14 @@ for i in range(NUM_ATOMS - 1):
 x_parity = fq.Observable([("X" * NUM_ATOMS, 1.0)])
 
 estimator = fq.Estimator(fq.simulator.AtomArraySimulator(num_sites=NUM_ATOMS))
-values = estimator.run(
-    build_ghz8_program(measure=False),
-    zz_observables + [x_parity],
-).result().get_expectation()
+values = (
+    estimator.run(
+        build_ghz8_program(measure=False),
+        zz_observables + [x_parity],
+    )
+    .result()
+    .get_expectation()
+)
 
 for i, value in enumerate(values[:-1]):
     print(f"<Z{i}Z{i + 1}> = {value:+.6f}")
@@ -288,11 +296,15 @@ noise.add(fq.noise.Loss(p=0.01), operation=op.Pair)
 noise.add(fq.noise.Loss(p=0.01), operation=op.Unpair)
 
 lossy_backend = fq.simulator.AtomArraySimulator(num_sites=NUM_ATOMS, noise=noise)
-lossy_counts = lossy_backend.run(
-    ghz_program,
-    shots=shots,
-    simulation_config={"seed": 7},
-).result().get_counts()
+lossy_counts = (
+    lossy_backend.run(
+        ghz_program,
+        shots=shots,
+        simulation_config={"seed": 7},
+    )
+    .result()
+    .get_counts()
+)
 
 lost_shots = sum(n for bitstring, n in lossy_counts.items() if "2" in bitstring)
 print(f"{lost_shots}/{shots} shots lost at least one atom (a '2' in the readout)")

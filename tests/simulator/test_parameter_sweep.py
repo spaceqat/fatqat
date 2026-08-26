@@ -114,7 +114,11 @@ def test_counts_seed_and_all_options_match_manual_repeated_runs(monkeypatch):
     program.measure(0, 0)
     layout = ResourceLayout({program.quantum_registers[0][0]: 0})
     initial_state = [0.0, 1.0]
-    simulation_config = {"seed": 17, "parallel_mode": "serial"}
+    simulation_config = {
+        "seed": 17,
+        "shot_parallelism": "serial",
+        "kernel_parallelism": "serial",
+    }
     result_config = {"counts": True, "final_state": False}
     backend = Simulator("SV")
     original_run = backend.run

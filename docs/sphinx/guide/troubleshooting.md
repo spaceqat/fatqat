@@ -10,7 +10,7 @@ you to inspect backend or engine internals.
 | A state accessor is unavailable | Request the corresponding result field and use the backend method that provides it: `statevector` for `get_statevector()` or `density_matrix` for `get_density_matrix()`. |
 | An operation is unsupported | Start with {py:class}`~fatqat.simulator.Simulator`. A constrained target such as {py:class}`~fatqat.simulator.SCQubitIBMSimulator` or {py:class}`~fatqat.simulator.AtomArraySimulator` intentionally accepts only its own native gate set and connectivity. |
 | An integer target is ambiguous | The program has multiple registers. Pass a reference such as `program.quantum_registers[1][0]` instead of a bare integer. |
-| Counts vary between runs | Measurement is sampled. Use more `shots` for a steadier estimate and pass `seed=` for reproducible samples. |
+| Counts vary between runs | Measurement is sampled. Use more `shots` for a steadier estimate and pass `simulation_config={"seed": ...}` for reproducible samples. |
 
 ## Result fields
 

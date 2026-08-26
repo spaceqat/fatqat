@@ -336,7 +336,11 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
             >>> counts = backend.run(
             ...     program,
             ...     shots=2000,
-            ...     simulation_config={"seed": 1, "parallel_mode": "serial"},
+            ...     simulation_config={
+            ...         "seed": 1,
+            ...         "shot_parallelism": "serial",
+            ...         "kernel_parallelism": "serial",
+            ...     },
             ... ).result().get_counts()
             >>> counts["1"] > 1800  # mostly 1, but noise leaks some 0s
             True
@@ -484,7 +488,11 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
             >>> counts = backend.run(
             ...     program,
             ...     shots=2000,
-            ...     simulation_config={"seed": 1, "parallel_mode": "serial"},
+            ...     simulation_config={
+            ...         "seed": 1,
+            ...         "shot_parallelism": "serial",
+            ...         "kernel_parallelism": "serial",
+            ...     },
             ... ).result().get_counts()
             >>> counts["1"] > 1800  # mostly 1, but noise leaks some 0s
             True

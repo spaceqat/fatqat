@@ -250,9 +250,9 @@ makespan. Both modes preserve dependency order and resource exclusivity; they
 are simulation controls, not a public hardware schedule artifact.
 
 Pulse execution is serial in v0.1, so the emulator takes no parallelism
-settings at all — the matrix backend's `parallel_mode`, `max_workers`, and
-`numba_parallel` are rejected rather than silently ignored. Its matrix-only
-`fusion` setting is rejected for the same reason. Seeded runs are reproducible.
+settings at all — the matrix backend's `shot_parallelism`,
+`kernel_parallelism`, `max_workers`, and `fusion` are rejected rather than
+silently ignored. Seeded runs are reproducible.
 
 ## Noise support
 

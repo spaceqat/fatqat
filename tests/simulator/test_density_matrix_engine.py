@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
-from fatqat._backends.steps import ApplyMatrixStep, MeasurementStep, ResetStep
+from fatqat._backends.steps import ApplyMatrixStep
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
@@ -16,11 +16,6 @@ def _engine(n):
     eng = NumpyDMEngine()
     eng.initialize((2,) * n)
     return eng
-
-
-def _is_dynamic(plan):
-    """Density-matrix dynamic classification (reset is a deterministic channel)."""
-    return NumpyDMEngine()._analyze_plan(plan)[0]
 
 
 def _pure(statevector):
@@ -149,34 +144,3 @@ def test_uninitialized_engine_raises():
     eng = NumpyDMEngine()
     with pytest.raises(RuntimeError, match="initialize"):
         eng.export_state()
-
-
-def test_plan_with_unconditional_reset_is_not_dynamic():
-    # Statevector must go per-shot for reset; the density-matrix channel
-    # reset keeps the fast path.
-    plan = [
-        ApplyMatrixStep(matrix=_H, target_indices=(0,)),
-        ResetStep(reset_indices=(0,)),
-    ]
-    assert _is_dynamic(plan) is False
-
-
-def test_plan_with_conditioned_reset_is_dynamic():
-    plan = [ResetStep(reset_indices=(0,), condition=((0, 1),))]
-    assert _is_dynamic(plan) is True
-
-
-def test_plan_with_reset_on_measured_subsystem_is_dynamic():
-    plan = [
-        MeasurementStep(measured_indices=(0,), classical_indices=(0,)),
-        ResetStep(reset_indices=(0,)),
-    ]
-    assert _is_dynamic(plan) is True
-
-
-def test_plan_with_gate_on_measured_subsystem_is_dynamic():
-    plan = [
-        MeasurementStep(measured_indices=(0,), classical_indices=(0,)),
-        ApplyMatrixStep(matrix=_X, target_indices=(0,)),
-    ]
-    assert _is_dynamic(plan) is True

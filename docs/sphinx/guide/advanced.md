@@ -2,7 +2,7 @@
 
 Everything in the rest of the guide applies beyond the plain-qubit case.
 This page covers three extension points: qudits, custom matrix
-implementations, and parallel shot execution.
+implementations, and execution strategies.
 
 ## Qudits
 
@@ -136,23 +136,113 @@ an operation family between unconstrained and device-specific registration
 modes; this applies equally to the standard CZ tables and unconstrained RX
 rules.
 
-## Parallel execution
+## Execution configuration
 
-For programs on the dynamic path, `run()`'s `simulation_config={...}` accepts
-`max_workers` and `parallel_mode` (`"auto"`, `"serial"`,
-`"multiprocessing"`, or `"loky"`) to control whether shots are distributed
-across worker processes; it also accepts `seed` for reproducible sampling.
-This only affects execution strategy and random streams, never deterministic
-numerical semantics.
+The matrix simulator separates two kinds of parallel work: independent sampled
+executions belong to **shot parallelism**, while numerical work within one
+evolution belongs to **kernel parallelism**. Kernel parallelism never overlaps
+ordered program operations or executes them out of order.
 
-`runtime="numba"` has a second, independent parallelism axis: its kernels use
-Numba worker threads inside this process, which `max_workers` and
-`parallel_mode` do not govern. Pass `numba_parallel=False` to confine a run to
-a single thread — the setting to use when you are parallelizing at a higher
-level yourself (say, several circuits at once) and per-run thread pools would
-oversubscribe the machine. It changes no results, and it is rejected on
-`runtime="numpy"`, which has no threads to switch off.
+The normalized per-run configuration is:
 
-The same config accepts `fusion=None` (the default), `True`, or `False`. Numba
-resolves `None` to enabled; explicit booleans enable or disable fusion. NumPy
-accepts only `None`, because it has no fuser to configure.
+```python
+simulation_config = {
+    "seed": None,
+    "shot_parallelism": "auto",
+    "kernel_parallelism": "auto",
+    "max_workers": None,
+    "fusion": False,
+}
+```
+
+`kernel_parallelism` controls parallel numerical work inside the state or
+operator kernels of one evolution. The supported requests are:
+
+| Shot request | Kernel request | Meaning and constraints |
+| --- | --- | --- |
+| `"auto"` | `"auto"` | Choose the best-known validated strategy, using at most one parallel axis. |
+| `"serial"` | `"serial"` | Run locally with sequential shots and one numerical worker. |
+| `"serial"` | `"auto"` | Replay trajectories in order; supported kernels remain adaptive. |
+| `"serial"` | `"threads"` | Replay trajectories in order and thread supported kernels; Numba only. |
+| `"threads"` | `"serial"` or `"auto"` | Thread independent shots through a compatible compiled Numba counts-only plan; at least two shots and workers are required. Kernel `"auto"` yields to the explicit shot axis. |
+| `"processes"` | `"serial"` or `"auto"` | Shard independent shots across reusable worker processes; at least two shots and workers plus a shardable result are required. Every child uses one kernel thread. |
+| `"auto"` | `"serial"` | Auto may parallelize shots; kernels stay serial. |
+| `"auto"` | `"threads"` | Force supported Numba kernels; shot auto yields to the explicit kernel axis. |
+
+Threaded or process shots apply only to programs that need independent
+per-shot evolution, such as dynamic measurement, reset, or feedforward. A
+static circuit that evolves once and samples terminal measurements rejects
+those explicit requests. Threaded shots also require a compatible compiled
+plan. Explicit kernel threads are rejected by the NumPy runtime or when fewer
+than two threads are available; an exactly empty plan is accepted as a no-op.
+Requests that would nest threaded or process shots with threaded kernels are
+rejected. A supported explicit mode is honored even when it is slower; an
+inapplicable request fails before numerical materialization instead of silently
+changing strategy.
+
+`max_workers` is `None` or a positive integer and limits whichever axis becomes
+parallel. It cannot create independent work. An explicit parallel request with
+`max_workers=1` is contradictory and is rejected; `1` remains useful with
+`"auto"` to force a serial choice. With explicit Numba threads and no ceiling,
+FATQAT uses the available Numba capacity. With `"auto"` and no ceiling, it
+preserves the caller's active Numba thread mask. With no ceiling, process mode
+resolves a stable CPU-count worker limit for the reusable executor and only
+reduces the number of submitted batches when there are fewer shots.
+
+`"auto"` applies FATQAT's current conservative selection heuristics; it is not a
+guarantee that the selected strategy is fastest. The heuristics may evolve
+between releases, while the explicit mode meanings remain stable. Omitting the
+two parallelism fields preserves current `main` behavior, including its active
+Numba mask and automatic strategy choices. Fusion is a separate choice and
+deliberately defaults to the opt-in value `False`; omitted configuration is
+therefore not otherwise promised to be identical to current `main`.
+
+The three common configurations are:
+
+```python
+# Fully serial.
+fully_serial = {
+    "shot_parallelism": "serial",
+    "kernel_parallelism": "serial",
+}
+
+# Ordered shots with adaptive numerical kernels.
+serial_adaptive = {
+    "shot_parallelism": "serial",
+    "kernel_parallelism": "auto",
+}
+
+# Let FATQAT select at most one parallel axis (also the defaults).
+automatic = {
+    "shot_parallelism": "auto",
+    "kernel_parallelism": "auto",
+}
+```
+
+For a dynamic or noisy workload with independent trajectories, setting
+`shot_parallelism="processes"` and `kernel_parallelism="serial"` explicitly
+selects process sharding. Process startup can dominate small workloads, so use
+it only when measurement evidence supports the choice.
+
+### Fusion
+
+`fusion` is independent of concurrency and defaults to `False`. `True` may
+merge adjacent operations for Numba density-matrix, unitary, and superoperator
+execution, reducing kernel launches and numeric passes on sufficiently long
+plans. The wider intermediate work and preparation are not universally
+profitable, so benchmark the intended workload. NumPy and Numba statevector
+reject it. Compiled multi-shot statevector execution is a different mechanism
+and works with fusion disabled.
+
+### Seed reproducibility
+
+The seed contract depends on whether a strategy change also changes the
+sampling algorithm:
+
+| Comparison | Guarantee |
+| --- | --- |
+| Same fixed integer seed, complete configuration, versions, and execution environment | The sample is reproducible. |
+| Compiled multi-shot statevector counts with `kernel_parallelism="serial"` pinned, changing only `shot_parallelism` between `"serial"` and `"threads"`, or changing its ceiling | Seeded counts are identical. Omitting the kernel setting with serial shots selects ordered replay instead of the compiled loop. |
+| NumPy per-shot replay, changing only local execution versus process batching | Seeded counts are identical. |
+| Compiled multi-shot statevector noisy trajectories versus ordinary per-shot replay | The distributions agree; identical per-seed counts are not promised. |
+| Deterministic execution | Results follow the existing numerical-tolerance contract; the seed is irrelevant. |

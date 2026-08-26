@@ -1,12 +1,5 @@
-"""Turning gate fusion off, and what that is for.
+"""Turning gate fusion off without changing the numerical result."""
 
-Fusion merges adjacent plan steps into wider ones. It computes the same
-quantity by a different association, so results move in the last bits. The
-switch exists so that a caller comparing numbers - across runtimes, or against
-an independent implementation - can take that variable out.
-"""
-
-import numpy as np
 import pytest
 
 import fatqat as fq
@@ -52,29 +45,39 @@ def _density_matrix(*, fusion, runtime="numba"):
 # --- the switch itself ---------------------------------------------------
 
 
-def test_fusion_uses_the_runtime_default_by_default():
+def test_fusion_is_off_by_default():
     result = Simulator(method="DM", runtime="numba").run(
         _noisy_program(), shots=0, result_config=_STATE_ONLY
     )
-    assert result.result().metadata["simulation_config"]["fusion"] is None
+    assert result.result().metadata["simulation_config"]["fusion"] is False
 
 
-@pytest.mark.parametrize("fusion", [True, False])
-def test_numpy_runtime_rejects_an_explicit_fusion_setting(fusion):
-    with pytest.raises(BackendValidationError, match="only supported.*numba"):
+def test_numpy_runtime_rejects_enabling_fusion():
+    with pytest.raises(BackendValidationError, match="not supported.*matrix engine"):
         Simulator(method="DM", runtime="numpy").run(
-            _noisy_program(), simulation_config={"fusion": fusion}
+            _noisy_program(), simulation_config={"fusion": True}
         )
 
 
-def test_numpy_runtime_accepts_the_default():
-    result = Simulator(method="DM", runtime="numpy").run(_noisy_program()).result()
-    assert result.metadata["simulation_config"]["fusion"] is None
+def test_numpy_runtime_accepts_fusion_off():
+    result = (
+        Simulator(method="DM", runtime="numpy")
+        .run(_noisy_program(), simulation_config={"fusion": False})
+        .result()
+    )
+    assert result.metadata["simulation_config"]["fusion"] is False
+
+
+def test_numba_statevector_rejects_enabling_fusion():
+    with pytest.raises(BackendValidationError, match="compiled multi-shot"):
+        Simulator(method="SV", runtime="numba").run(
+            _noisy_program(), simulation_config={"fusion": True}
+        )
 
 
 @pytest.mark.parametrize("bad", ["yes", 1, 0])
 def test_a_non_boolean_is_rejected(bad):
-    with pytest.raises(BackendValidationError, match="fusion must be a bool or None"):
+    with pytest.raises(BackendValidationError, match="fusion must be a bool"):
         Simulator(method="DM", runtime="numba").run(
             _noisy_program(), simulation_config={"fusion": bad}
         )
@@ -90,14 +93,38 @@ def test_the_two_settings_agree_on_the_answer():
     )
 
 
-def test_disabling_fusion_changes_the_arithmetic_order():
-    # If this ever passes as bit-identical, the switch has stopped reaching the
-    # fuser and every other test here would still pass.
-    fused = _density_matrix(fusion=True)
-    unfused = _density_matrix(fusion=False)
+def test_public_fusion_switch_selects_the_materialized_rewrite(monkeypatch):
+    # The production rewrite preserves semantics, so a deterministic sentinel
+    # gives the public switch an exact observable effect without relying on
+    # platform-specific floating-point association differences.
+    from fatqat.simulator._engine import nb
 
-    assert not np.array_equal(fused, unfused)
-    assert np.abs(fused - unfused).max() < 1e-12
+    monkeypatch.setattr(nb, "_fuse_gate_channels", lambda plan: plan[-1:])
+    noise = fq.NoiseModel()
+    noise.add(fq.noise.Depolarizing(p=0.0), operation=ops.X)
+    program = fq.Program(1, 1)
+    program.add(ops.X, 0)
+    program.measure(0, 0)
+    simulator = Simulator(method="DM", runtime="numba", noise=noise)
+
+    def counts(*, fusion):
+        return (
+            simulator.run(
+                program,
+                shots=4,
+                simulation_config={
+                    "fusion": fusion,
+                    "shot_parallelism": "serial",
+                    "kernel_parallelism": "serial",
+                },
+                result_config={"counts": True, "final_state": False},
+            )
+            .result()
+            .get_counts()
+        )
+
+    assert counts(fusion=False) == {"1": 4}
+    assert counts(fusion=True) == {"0": 4}
 
 
 def test_the_unfused_numba_run_still_only_agrees_with_numpy_to_rounding():
@@ -105,63 +132,6 @@ def test_the_unfused_numba_run_still_only_agrees_with_numpy_to_rounding():
     # fusion=False does not promise bit-identity with numpy - only that one
     # source of difference has been removed.
     unfused = _density_matrix(fusion=False)
-    reference = _density_matrix(fusion=None, runtime="numpy")
+    reference = _density_matrix(fusion=False, runtime="numpy")
 
     assert unfused == pytest.approx(reference, abs=1e-12)
-
-
-# --- the wiring ----------------------------------------------------------
-
-
-@pytest.mark.parametrize("method", ["DM", "superop"])
-@pytest.mark.parametrize("fusion, expected_calls", [(None, 1), (True, 1), (False, 0)])
-def test_the_setting_reaches_the_gate_channel_fuser(method, fusion, expected_calls):
-    # Pin the wiring, not just the numbers: a switch that never reached the
-    # fuser would still satisfy the agreement tests above.
-    from fatqat.simulator._engine import nb
-
-    calls = []
-    original = nb._fuse_gate_channels
-
-    def _counting(plan):
-        calls.append(len(plan))
-        return original(plan)
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(nb, "_fuse_gate_channels", _counting)
-        Simulator(method=method, runtime="numba", noise=_noise()).run(
-            _noisy_program(),
-            shots=0,
-            simulation_config={"fusion": fusion},
-            result_config=_STATE_ONLY,
-        ).result()
-
-    assert len(calls) == expected_calls
-
-
-@pytest.mark.parametrize("method", ["unitary", "superop"])
-@pytest.mark.parametrize("fusion, expected_calls", [(None, 1), (True, 1), (False, 0)])
-def test_the_setting_reaches_the_operator_payload_fuser(method, fusion, expected_calls):
-    # Operator fusion has a separate size threshold and implementation from
-    # gate/channel fusion.  One public switch must control both, so force the
-    # size gate open and pin this second wiring path explicitly.
-    from fatqat.simulator._engine import nb
-
-    calls = []
-    original = nb._fuse_operator_payloads
-
-    def _counting(payloads, dims):
-        calls.append(len(payloads))
-        return original(payloads, dims)
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(nb, "_MIN_SIZE_TO_FUSE", 0)
-        patch.setattr(nb, "_fuse_operator_payloads", _counting)
-        Simulator(method=method, runtime="numba").run(
-            _noisy_program(),
-            shots=0,
-            simulation_config={"fusion": fusion},
-            result_config=_STATE_ONLY,
-        ).result()
-
-    assert len(calls) == expected_calls

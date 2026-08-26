@@ -31,9 +31,10 @@ Key arguments:
   omitted, the backend applies its documented default. This never selects
   numerical tensor indices.
 - `simulation_config`: a plain dict for simulator-only controls: `seed`,
-  `max_workers`, `parallel_mode`, `numba_parallel`, and `fusion`. A fixed seed
-  makes sampling reproducible regardless of serial or worker-process execution.
-  `fusion=None` selects the runtime default; explicit booleans require Numba.
+  `shot_parallelism`, `kernel_parallelism`, `max_workers`, and `fusion`.
+  Both parallelism axes default to automatic selection; fusion defaults off. See
+  [Advanced](advanced.md) for execution-mode semantics and the exact seed
+  reproducibility contract.
 - `result_config`: a plain dict selecting which result artifacts to produce.
 
 ## Choosing result fields
@@ -98,11 +99,13 @@ result.get_counts()             # {"00": 512, "11": 488}, little-endian keys
 result.get_statevector()        # numpy array, if produced
 result.get_data("samples")      # backend-specific artifact, if produced
 result.available_data           # frozenset of field names actually present
-result.metadata                 # shots, backend name, effective configurations
+result.metadata                 # shots, backend name, normalized requests
 ```
 
-Pulse-emulator metadata retains the effective ``simulation_config`` and
-``result_config`` and common solver facts. It does not duplicate model,
+Metadata retains the normalized requested ``simulation_config`` and
+``result_config`` for provenance. It does not expose the private resolved shot
+or kernel strategy, thread partition, or active worker count. Pulse-emulator
+metadata also includes common solver facts, but does not duplicate model,
 target, arrangement, or control-table data; retain those inputs separately or
 attach application metadata when provenance is needed.
 
@@ -133,5 +136,5 @@ written by a measurement, the backend still returns zero-filled counts for
 that bit but emits a {py:exc}`~fatqat.errors.NoMeasurementWarning` — usually
 a sign a measurement was forgotten.
 
-For qudits, custom matrix implementations, and parallel shot execution, see
+For qudits, custom matrix implementations, and execution strategies, see
 [Advanced](advanced.md).

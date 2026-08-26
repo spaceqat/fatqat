@@ -109,10 +109,10 @@ configuration and state semantics:
      - ``"ASAP"`` or ``"ALAP"`` lightweight placement within each continuous
        region. Both preserve dependencies and claimed-resource exclusion.
 
-These are the only two keys. The matrix backend's ``parallel_mode``,
-``max_workers``, and ``numba_parallel`` are rejected here rather than
-accepted and ignored: pulse execution is a single serial solver call, with no
-engine those settings could steer.
+These are the only two keys. The matrix backend's ``shot_parallelism``,
+``kernel_parallelism``, ``max_workers``, and ``fusion`` are rejected here
+rather than accepted and ignored: pulse execution is a single serial solver
+call, with no engine those settings could steer.
 
 .. list-table:: ``result_config`` keys
    :header-rows: 1

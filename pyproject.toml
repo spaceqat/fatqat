@@ -34,10 +34,17 @@ docs = [
     "sphinx-gallery",
     "scikit-learn",
 ]
-# Optional: enables tests/test_against_qiskit.py, the numerical cross-check
-# against Qiskit Aer (see .github/workflows/cross-validation.yml). Never required
-# by the package itself; the module self-skips when qiskit-aer is absent.
+# Optional: enables the Qiskit integration and numerical cross-check tests in
+# the full-dependency Ubuntu lane. Never required by the package itself; those
+# modules self-skip when Qiskit or Qiskit Aer is absent.
 qiskit = ["qiskit>=1.0", "qiskit-aer>=0.17"]
+# Complete test environment for one reference CI lane. Add future optional
+# integration groups here so the full suite and installed-package doctests
+# collect every supported extension without burdening the platform matrix.
+test-full = [
+    {include-group = "dev"},
+    {include-group = "qiskit"},
+]
 # Formatting (black) and static analysis (pylint). Drives scripts/format.sh,
 # scripts/lint.sh, and the Lint CI workflow. See [tool.black] / [tool.pylint].
 lint = ["black>=24", "pylint>=3"]

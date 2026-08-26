@@ -177,7 +177,7 @@ def test_report_digit_kernel_reads_the_column_of_the_true_digit():
 def test_report_digit_kernel_consumes_the_rng_stream_like_report_digit():
     # `_report_digit` on the NumPy path is rng.choice(dim, p=confusion[:, true]);
     # the kernel must land on the same digit for the same uniform, draw for draw,
-    # or the fused kernel's counts diverge from the serial path's.
+    # or the compiled multi-shot kernel's counts diverge from the replay path's.
     confusion = np.array([[0.7, 0.1, 0.2], [0.2, 0.6, 0.1], [0.1, 0.3, 0.7]])
     conf_flat = np.ascontiguousarray(confusion).ravel()
 

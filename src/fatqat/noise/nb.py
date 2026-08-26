@@ -17,7 +17,7 @@ digit is resampled through a column-stochastic confusion matrix
 
 Plus `_compile_channel_table` and `_compile_readout_table`, which flatten a
 plan's channel occurrences and per-measurement confusion matrices into the
-typed arrays the fused per-shot kernel in ``simulator._engine.nb`` walks.
+typed arrays the compiled multi-shot kernel in ``simulator._engine.nb`` walks.
 
 Division of labour with ``simulator._engine.nb``, and why it runs this way: *applying*
 a local matrix is representation machinery and stays there (one coset-walk
@@ -26,7 +26,7 @@ kernel family, shared by gates, reset shifts, and Kraus operators alike), so
 primitive and only does the channel-specific part. This keeps the dependency
 one-directional - ``simulator._engine.nb`` imports this module, never the reverse.
 That direction is forced, not stylistic: a Numba function resolves the njit
-callees in its body as module globals at compile time, so the fused shots
+callees in its body as module globals at compile time, so the compiled shots
 kernel cannot reach a channel kernel it does not import at module scope, and
 importing back would cycle.
 
@@ -187,7 +187,7 @@ def _kraus_superop_kernel(
 
 
 def _compile_channel_table(entries: Sequence[tuple]) -> tuple:
-    """Flatten a plan's channel occurrences for the fused per-shot kernel.
+    """Flatten a plan's channel occurrences for the compiled multi-shot kernel.
 
     Each entry is ``(kraus_ops, offsets, comp_strides, comp_dims)``: the
     step's resolved Kraus tuple plus the coset layout its target tuple got
@@ -197,7 +197,7 @@ def _compile_channel_table(entries: Sequence[tuple]) -> tuple:
 
     Alongside each Kraus operator this precomputes ``M_i = K_i^dagger K_i``
     (same ``(num, d, d)`` layout, indexed by the same per-channel pointer),
-    the local operator the fused kernel needs for the branch weight: the
+    the local operator the compiled kernel needs for the branch weight: the
     quantum-jump probability ``<psi|K_i^dagger K_i|psi>`` is ``Tr(M_i rho_T)``
     over the target subsystems' reduced density matrix, so the kernel weighs
     every branch from one ``O(size)`` reduced density matrix and these ``d x d``
@@ -297,7 +297,7 @@ def _compile_channel_table(entries: Sequence[tuple]) -> tuple:
 
 
 def _compile_readout_table(entries: Sequence[tuple]) -> tuple:
-    """Flatten a plan's readout confusion matrices for the fused per-shot kernel.
+    """Flatten readout confusion matrices for the compiled multi-shot kernel.
 
     Each entry is one measurement step's ``(num_subsystems, confusions)``,
     where ``confusions`` is the step's per-subsystem tuple (entries may be
