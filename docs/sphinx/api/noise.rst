@@ -16,17 +16,17 @@ activation scope.
 
    import numpy as np
    import fatqat as fq
-   import fatqat.operations as op
+   import fatqat.operations as ops
 
    noise = fq.NoiseModel()
 
    # A finite channel at every X occurrence.
-   noise.add(fq.noise.PhaseDamping(p=0.01), operation=op.X)
+   noise.add(fq.noise.PhaseDamping(p=0.01), operation=ops.X)
 
    # A different physical source on CZ's first operand.
    noise.add(
        fq.noise.AmplitudeDamping(p=0.002),
-       operation=op.CZ,
+       operation=ops.CZ,
        target_positions=0,
    )
 
@@ -52,7 +52,7 @@ finite channel from a rate.
    )
    pulse_noise.add(
        fq.noise.PhaseDamping(rate=0.002),
-       operation=op.X,
+       operation=ops.X,
        targets="q0",
    )
 
@@ -111,7 +111,7 @@ the exact-type implementation maps without changing :class:`NoiseModel`.
 Finite-channel rules and pulse-generator rules are intentionally separate.
 
 .. autoclass:: fatqat.noise.ChannelImplementationMap
-   :members: register, supported_channels
+   :members: add, supported_channels
 
 .. autofunction:: fatqat.noise.default_channel_implementation_map
 

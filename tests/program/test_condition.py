@@ -3,7 +3,7 @@
 import pytest
 
 from fatqat.program import Program
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.registers import QuantumRegister, ClassicalRegister
 
 

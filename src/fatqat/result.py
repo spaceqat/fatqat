@@ -245,9 +245,9 @@ class Result:
 
         Examples:
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> program = fq.Program(1, 1)
-            >>> program.add(op.X, 0)
+            >>> program.add(ops.X, 0)
             >>> program.measure(0, 0)
             >>> result = fq.simulator.Simulator("SV").run(program, shots=10).result()
             >>> result.get_counts()
@@ -285,9 +285,9 @@ class Result:
 
         Examples:
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> program = fq.Program(1)
-            >>> program.add(op.X, 0)
+            >>> program.add(ops.X, 0)
             >>> result = fq.simulator.Simulator("SV").run(
             ...     program,
             ...     result_config={"counts": False, "final_state": True},
@@ -312,9 +312,9 @@ class Result:
 
         Examples:
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> program = fq.Program(1)
-            >>> program.add(op.H, 0)
+            >>> program.add(ops.H, 0)
             >>> result = fq.simulator.Simulator("DM").run(
             ...     program,
             ...     result_config={"counts": False, "final_state": True},
@@ -343,9 +343,9 @@ class Result:
 
         Examples:
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> program = fq.Program(1)
-            >>> program.add(op.H, 0)
+            >>> program.add(ops.H, 0)
             >>> fq.simulator.Simulator("unitary").run(program).result().get_unitary()
             array([[ 0.70710678+0.j,  0.70710678+0.j],
                    [ 0.70710678+0.j, -0.70710678+0.j]])
@@ -373,9 +373,9 @@ class Result:
 
         Examples:
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> program = fq.Program(1)
-            >>> program.add(op.X, 0)
+            >>> program.add(ops.X, 0)
             >>> fq.simulator.Simulator("superop").run(program).result().get_superop()
             array([[0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j],
                    [0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j],

@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.simulator import (
     SCQubitGoogleSimulator,
     SCQubitIBMSimulator,
@@ -147,7 +148,7 @@ def test_validate_result_shots_uses_complete_caller_owned_messages():
 
 def test_reset_boundary_resolves_all_targets_and_condition():
     program = fq.Program(3, 1)
-    program.add(fq.ops.Reset, (0, 2), condition=(0, 1))
+    program.add(ops.Reset, (0, 2), condition=(0, 1))
     step = next(
         instruction
         for instruction in program.operations
@@ -172,9 +173,7 @@ def _one_qubit_measurement_setup(confusion, *, reported_digit_map):
     program = fq.Program(1, 1)
     program.measure(0, 0)
     (step,) = [
-        instr
-        for instr in program.operations
-        if isinstance(instr, fq.operations.Measurement)
+        instr for instr in program.operations if isinstance(instr, ops.Measurement)
     ]
     q0 = program.quantum_registers[0][0]
     resource_layout = ResourceLayout({q0: 0})

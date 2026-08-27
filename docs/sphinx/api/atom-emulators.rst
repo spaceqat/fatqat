@@ -192,7 +192,7 @@ geometry or calibration.
 .. autoclass:: fatqat.emulator.Atom2LevelModel
    :members: angular_frequency_unit, control, available_controls
 
-The global drive accepts a complex :py:class:`~fatqat.waveforms.SampledWaveform`;
+The global drive accepts a complex :py:class:`~fatqat.emulator.SampledWaveform`;
 its complex values encode amplitude and phase together. The global detuning
 accepts real samples. Both use ``rad/us`` and apply to every arrangement site.
 

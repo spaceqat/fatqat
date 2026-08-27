@@ -9,7 +9,7 @@ import numpy as np
 from ...errors import BackendValidationError
 from ..._pulse_values import PulseControl
 from ...operations import CZ, RX, RY, RZ, Operation
-from ...waveforms import SampledWaveform
+from ..._waveforms import SampledWaveform
 from .._core.pulse import PhaseShift, PulseDefinition, PulseImplementationMap
 from .calibration import Atom3LevelCalibration
 from .model import Atom3LevelModel

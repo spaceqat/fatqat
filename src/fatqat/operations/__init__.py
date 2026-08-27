@@ -1,6 +1,6 @@
 """Operation base class and built-in gates.
 
-Applications should use ``import fatqat.operations as op``.
+Applications should use ``import fatqat.operations as ops``.
 """
 
 from __future__ import annotations

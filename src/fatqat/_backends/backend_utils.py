@@ -47,7 +47,7 @@ class _LoweringContext:
     Both values are resolved once per run and threaded through lowering
     unchanged on every backend (engine indices and the resource layout both
     stay fixed); the neutral-atom backend evolves a separate
-    ``AtomConnectivity`` graph across ``Pair``/``Unpair``, not the layout.
+    private pairing graph across ``Pair``/``Unpair``, not the layout.
     """
 
     resource_layout: ResourceLayout

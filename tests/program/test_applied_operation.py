@@ -6,7 +6,7 @@ from typing import ClassVar
 import pytest
 
 from fatqat.registers import GridRegister, QuantumRegister, ClassicalRegister
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.operations import Measurement
 from fatqat.program import AppliedOperation
 
@@ -51,7 +51,7 @@ def test_validate_targets_hook_is_called_with_resolved_targets():
     @dataclass(frozen=True)
     class _Probe(ops.Operation):
         name: ClassVar[str] = "Probe"
-        _num_subsystems: ClassVar[int] = 1
+        num_subsystems: ClassVar[int] = 1
 
         def validate_targets(self, targets):
             raise ValueError(f"probe saw dim {targets[0].register.dim}")
@@ -93,7 +93,7 @@ def test_applied_operation_view_bearing_skips_validate_hook():
     @dataclass(frozen=True)
     class _Probe(ops.Operation):
         name: ClassVar[str] = "ProbeCX"
-        _num_subsystems: ClassVar[int] = 2
+        num_subsystems: ClassVar[int] = 2
         _accepts_views: ClassVar[bool] = True
 
         def validate_targets(self, targets):
@@ -170,7 +170,7 @@ def test_zero_arity_operation_class_is_legal():
     @dataclass(frozen=True)
     class _ZeroArityProbe(ops.Operation):
         name: ClassVar[str] = "ZeroArityProbe"
-        _num_subsystems: ClassVar[int] = 0
+        num_subsystems: ClassVar[int] = 0
 
     ao = AppliedOperation(operation=_ZeroArityProbe(), targets=())
     assert ao.targets == ()
@@ -180,7 +180,7 @@ def test_zero_arity_operation_rejects_any_target():
     @dataclass(frozen=True)
     class _ZeroArityProbe2(ops.Operation):
         name: ClassVar[str] = "ZeroArityProbe2"
-        _num_subsystems: ClassVar[int] = 0
+        num_subsystems: ClassVar[int] = 0
 
     qr = QuantumRegister(1)
     with pytest.raises(ValueError, match="expects 0 target"):
@@ -193,4 +193,4 @@ def test_negative_arity_operation_class_rejected():
         @dataclass(frozen=True)
         class _NegativeArityProbe(ops.Operation):
             name: ClassVar[str] = "NegativeArityProbe"
-            _num_subsystems: ClassVar[int] = -1
+            num_subsystems: ClassVar[int] = -1

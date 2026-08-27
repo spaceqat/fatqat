@@ -36,9 +36,9 @@ class Measurement:
 
     Examples:
         >>> import fatqat as fq
-        >>> import fatqat.operations as op
+        >>> import fatqat.operations as ops
         >>> program = fq.Program(1, 1)
-        >>> m = op.Measurement(
+        >>> m = ops.Measurement(
         ...     targets=(program.quantum_registers[0][0],), outputs=(program.classical_registers[0][0],)
         ... )
         >>> m.targets

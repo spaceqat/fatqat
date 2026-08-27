@@ -74,6 +74,7 @@ def test_family_and_aggregate_exports_are_exact():
         "PulseDefinition",
         "ControlChannel",
         "PulseControl",
+        "SampledWaveform",
         "PhaseShift",
         "PhaseSwap",
         "PulseImplementationMap",

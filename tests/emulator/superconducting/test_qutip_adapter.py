@@ -32,7 +32,7 @@ from fatqat.emulator.superconducting.realization import (
 )
 from fatqat.errors import BackendValidationError
 from fatqat.operations import CZ, RZ, iSwap
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 def _target(model):

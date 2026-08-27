@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.noise import (
     AmplitudeDamping,
     Channel,
@@ -43,9 +44,9 @@ def _runtime(name):
 
 def _ghz_program(n=3):
     program = fq.Program(n, n)
-    program.add(fq.ops.H, 0)
+    program.add(ops.H, 0)
     for q in range(n - 1):
-        program.add(fq.ops.CX, (q, q + 1))
+        program.add(ops.CX, (q, q + 1))
     program.measure_all()
     return program
 
@@ -53,8 +54,8 @@ def _ghz_program(n=3):
 def _pauli_noise():
     """A one- and a two-qubit Pauli channel, on the two gates of a GHZ chain."""
     noise = NoiseModel()
-    noise.add(PauliChannel({"X": 0.08, "Z": 0.05}), operation=fq.ops.H)
-    noise.add(PauliChannel({"XI": 0.04, "IX": 0.03, "ZZ": 0.02}), operation=fq.ops.CX)
+    noise.add(PauliChannel({"X": 0.08, "Z": 0.05}), operation=ops.H)
+    noise.add(PauliChannel({"XI": 0.04, "IX": 0.03, "ZZ": 0.02}), operation=ops.CX)
     return noise
 
 
@@ -141,9 +142,9 @@ def test_a_certain_pauli_error_acts_exactly_like_the_gate(
     # stride is 1). A final-state request also routes numba to its serial
     # fallback rather than the compiled multi-shot kernel, covering that path too.
     noise = NoiseModel()
-    noise.add(PauliChannel({string: 1.0}), operation=fq.ops.CX)
+    noise.add(PauliChannel({string: 1.0}), operation=ops.CX)
     program = fq.Program(2)
-    program.add(fq.ops.CX, (0, 1))
+    program.add(ops.CX, (0, 1))
 
     statevector = (
         Simulator("SV", runtime=_runtime(runtime), noise=noise)
@@ -169,11 +170,12 @@ def test_sampled_unitary_route_reproduces_the_jump_route_exactly(runtime, monkey
     sampled = _counts(runtime, noise, program)
 
     monkeypatch.setattr(
-        "fatqat.simulator._engine.np._sampled_unitary_branches", lambda ops: None
+        "fatqat.simulator._engine.np._sampled_unitary_branches",
+        lambda _kraus_ops: None,
     )
     if runtime == "numba":
         monkeypatch.setattr(
-            "fatqat.noise.nb._sampled_unitary_branches", lambda ops: None
+            "fatqat.noise.nb._sampled_unitary_branches", lambda _kraus_ops: None
         )
     jumped = _counts(runtime, noise, program)
 
@@ -185,11 +187,11 @@ def test_a_long_sampled_chain_keeps_the_state_normalized(runtime):
     # No occurrence renormalizes the state, so nothing but round-off may
     # accumulate over a long chain of drawn operators.
     noise = NoiseModel()
-    noise.add(PauliChannel({"X": 0.3, "Y": 0.2, "Z": 0.2}), operation=fq.ops.RY)
+    noise.add(PauliChannel({"X": 0.3, "Y": 0.2, "Z": 0.2}), operation=ops.RY)
     program = fq.Program(4)
     for layer in range(30):
         for q in range(4):
-            program.add(fq.ops.RY(0.3 + 0.1 * layer), q)
+            program.add(ops.RY(0.3 + 0.1 * layer), q)
 
     statevector = (
         Simulator("SV", runtime=_runtime(runtime), noise=noise)
@@ -235,8 +237,8 @@ def test_a_mixed_plan_routes_each_channel_independently(runtime):
     # One plan carrying both a scaled-unitary channel and a damping channel:
     # the per-channel decision must not become a per-plan one.
     noise = NoiseModel()
-    noise.add(PauliChannel({"X": 0.1}), operation=fq.ops.H)
-    noise.add(AmplitudeDamping(p=0.15), operation=fq.ops.CX, target_positions=(1,))
+    noise.add(PauliChannel({"X": 0.1}), operation=ops.H)
+    noise.add(AmplitudeDamping(p=0.15), operation=ops.CX, target_positions=(1,))
     shots = 20000
     program = _ghz_program(n=2)
 
@@ -256,7 +258,7 @@ def test_a_mixed_plan_routes_each_channel_independently(runtime):
 
 def test_pauli_channel_is_an_accepted_backend_capability():
     noise = NoiseModel()
-    noise.add(PauliChannel({"X": 0.1}), operation=fq.ops.X)
+    noise.add(PauliChannel({"X": 0.1}), operation=ops.X)
 
     report = Simulator().check_noise_support(noise)
 
@@ -268,7 +270,7 @@ def test_a_custom_non_unitary_channel_rule_still_runs():
     # Nothing about the routing is descriptor-keyed, so a user rule that
     # happens to produce non-unitary operators simply takes the jump path.
     class _Leak(Channel):
-        _num_subsystems = 1
+        num_subsystems = 1
 
     def _leak_rule(channel, *, targets):
         return (
@@ -277,13 +279,13 @@ def test_a_custom_non_unitary_channel_rule_still_runs():
         )
 
     channel_map = default_channel_implementation_map()
-    channel_map.register(_Leak, _leak_rule)
+    channel_map.add(_Leak, _leak_rule)
     assert _unitary_branch_probabilities(_leak_rule(_Leak(), targets=())) is None
 
     noise = NoiseModel()
-    noise.add(_Leak(), operation=fq.ops.H)
+    noise.add(_Leak(), operation=ops.H)
     program = fq.Program(1, 1)
-    program.add(fq.ops.H, 0)
+    program.add(ops.H, 0)
     program.measure(0, 0)
 
     counts = (

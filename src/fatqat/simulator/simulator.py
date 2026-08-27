@@ -54,10 +54,7 @@ from .._parameter_binding import (
     _normalize_parameter_batch,
     _raise_for_unbound_parameters,
 )
-from ..errors import (
-    BackendValidationError,
-    NoMeasurementWarning,
-)
+from ..errors import BackendValidationError
 from .._index_allocation import (
     _ClassicalAllocation,
     _EngineAllocation,
@@ -313,9 +310,9 @@ class Simulator:
         Density-matrix simulation, Qiskit style:
 
         >>> import fatqat as fq
-        >>> import fatqat.operations as op
+        >>> import fatqat.operations as ops
         >>> program = fq.Program(1)
-        >>> program.add(op.H, 0)
+        >>> program.add(ops.H, 0)
         >>> result = fq.simulator.Simulator(method="DM").run(
         ...     program,
         ...     result_config={"counts": False, "final_state": True},
@@ -784,9 +781,9 @@ class Simulator:
                 request=request,
                 shots=shots,
             )
-            return Job.done(result)
+            return Job(status="DONE", result=result)
         except Exception as exc:  # execution-stage failure
-            return Job.failed(exc)
+            return Job(status="ERROR", error=exc)
 
     def run_sweep(
         self,
@@ -834,10 +831,10 @@ class Simulator:
             Sweep one angle and request the final state from every row:
 
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> theta = fq.Parameter("theta")
             >>> program = fq.Program(1)
-            >>> program.add(op.RX(theta), 0)
+            >>> program.add(ops.RX(theta), 0)
             >>> backend = fq.simulator.Simulator("SV")
             >>> results = backend.run_sweep(
             ...     program,
@@ -865,8 +862,8 @@ class Simulator:
             try:
                 results.append(point_job.result())
             except BaseException as exc:
-                return Job.failed(exc)
-        return Job.done(results)
+                return Job(status="ERROR", error=exc)
+        return Job(status="DONE", result=results)
 
     # --- validation (raises directly from run) ---
     def _validate_initial_state(
@@ -1078,13 +1075,12 @@ class Simulator:
         if state_requested:
             available.add(self._state_field)
 
-        # NoMeasurementWarning: counts produced, some clbit never written, no state.
+        # Counts produced, some clbit never written, no state.
         if request.counts and self._state_field not in available:
             if any(c not in written_clbits for c in range(n_clbits)):
                 warnings.warn(
                     "counts contain clbits that were never measured; "
                     "returning zero-filled counts",
-                    NoMeasurementWarning,
                     stacklevel=3,
                 )
 

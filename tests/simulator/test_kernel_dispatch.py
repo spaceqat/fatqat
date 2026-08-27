@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.simulator import Simulator
 from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep, BuiltinKernelKey
 from fatqat.implementation import default_matrix_implementation_map
@@ -35,43 +36,43 @@ from fatqat.noise.nb import _kraus_stack, _kraus_superop_kernel
 _QUBIT = fq.QuantumRegister(3)
 _QUTRIT = fq.QuantumRegister(2, dim=3)
 _GATE_CASES = [
-    (fq.ops.X, (_QUBIT[0],)),
-    (fq.ops.Y, (_QUBIT[0],)),
-    (fq.ops.Z, (_QUBIT[0],)),
-    (fq.ops.H, (_QUBIT[0],)),
-    (fq.ops.I, (_QUBIT[0],)),
-    (fq.ops.S, (_QUBIT[0],)),
-    (fq.ops.Sdg, (_QUBIT[0],)),
-    (fq.ops.SX, (_QUBIT[0],)),
-    (fq.ops.T, (_QUBIT[0],)),
-    (fq.ops.Tdg, (_QUBIT[0],)),
-    (fq.ops.CX, (_QUBIT[0], _QUBIT[1])),
-    (fq.ops.CZ, (_QUBIT[0], _QUBIT[1])),
-    (fq.ops.Swap, (_QUBIT[0], _QUBIT[1])),
-    (fq.ops.CY, (_QUBIT[0], _QUBIT[1])),
-    (fq.ops.CS, (_QUBIT[0], _QUBIT[1])),
-    (fq.ops.iSwap, (_QUBIT[0], _QUBIT[1])),
-    (fq.ops.CCX, (_QUBIT[0], _QUBIT[1], _QUBIT[2])),
-    (fq.ops.CSwap, (_QUBIT[0], _QUBIT[1], _QUBIT[2])),
-    (fq.ops.RX(0.3), (_QUBIT[0],)),
-    (fq.ops.RY(0.3), (_QUBIT[0],)),
-    (fq.ops.RZ(0.3), (_QUBIT[0],)),
-    (fq.ops.Phase(0.3), (_QUBIT[0],)),
-    (fq.ops.U(0.3, 0.4, 0.5), (_QUBIT[0],)),
-    (fq.ops.U1(0.3), (_QUBIT[0],)),
-    (fq.ops.U2(0.3, 0.4), (_QUBIT[0],)),
-    (fq.ops.U3(0.3, 0.4, 0.5), (_QUBIT[0],)),
-    (fq.ops.CPhase(0.3), (_QUBIT[0], _QUBIT[1])),
-    (fq.ops.Shift(1), (_QUTRIT[0],)),
-    (fq.ops.Clock(1), (_QUTRIT[0],)),
-    (fq.ops.Sum, (_QUTRIT[0], _QUTRIT[1])),
-    (fq.ops.SwapLevels(0, 2), (_QUTRIT[0],)),
-    (fq.ops.Fourier, (_QUTRIT[0],)),
-    (fq.ops.InverseFourier, (_QUTRIT[0],)),
-    (fq.ops.SubspaceRX(0.3, (0, 1)), (_QUTRIT[0],)),
-    (fq.ops.SubspaceRY(0.3, (0, 1)), (_QUTRIT[0],)),
-    (fq.ops.SubspaceRZ(0.3, (0, 1)), (_QUTRIT[0],)),
-    (fq.ops.CClock(1), (_QUTRIT[0], _QUTRIT[1])),
+    (ops.X, (_QUBIT[0],)),
+    (ops.Y, (_QUBIT[0],)),
+    (ops.Z, (_QUBIT[0],)),
+    (ops.H, (_QUBIT[0],)),
+    (ops.I, (_QUBIT[0],)),
+    (ops.S, (_QUBIT[0],)),
+    (ops.Sdg, (_QUBIT[0],)),
+    (ops.SX, (_QUBIT[0],)),
+    (ops.T, (_QUBIT[0],)),
+    (ops.Tdg, (_QUBIT[0],)),
+    (ops.CX, (_QUBIT[0], _QUBIT[1])),
+    (ops.CZ, (_QUBIT[0], _QUBIT[1])),
+    (ops.Swap, (_QUBIT[0], _QUBIT[1])),
+    (ops.CY, (_QUBIT[0], _QUBIT[1])),
+    (ops.CS, (_QUBIT[0], _QUBIT[1])),
+    (ops.iSwap, (_QUBIT[0], _QUBIT[1])),
+    (ops.CCX, (_QUBIT[0], _QUBIT[1], _QUBIT[2])),
+    (ops.CSwap, (_QUBIT[0], _QUBIT[1], _QUBIT[2])),
+    (ops.RX(0.3), (_QUBIT[0],)),
+    (ops.RY(0.3), (_QUBIT[0],)),
+    (ops.RZ(0.3), (_QUBIT[0],)),
+    (ops.Phase(0.3), (_QUBIT[0],)),
+    (ops.U(0.3, 0.4, 0.5), (_QUBIT[0],)),
+    (ops.U1(0.3), (_QUBIT[0],)),
+    (ops.U2(0.3, 0.4), (_QUBIT[0],)),
+    (ops.U3(0.3, 0.4, 0.5), (_QUBIT[0],)),
+    (ops.CPhase(0.3), (_QUBIT[0], _QUBIT[1])),
+    (ops.Shift(1), (_QUTRIT[0],)),
+    (ops.Clock(1), (_QUTRIT[0],)),
+    (ops.Sum, (_QUTRIT[0], _QUTRIT[1])),
+    (ops.SwapLevels(0, 2), (_QUTRIT[0],)),
+    (ops.Fourier, (_QUTRIT[0],)),
+    (ops.InverseFourier, (_QUTRIT[0],)),
+    (ops.SubspaceRX(0.3, (0, 1)), (_QUTRIT[0],)),
+    (ops.SubspaceRY(0.3, (0, 1)), (_QUTRIT[0],)),
+    (ops.SubspaceRZ(0.3, (0, 1)), (_QUTRIT[0],)),
+    (ops.CClock(1), (_QUTRIT[0], _QUTRIT[1])),
 ]
 
 
@@ -150,13 +151,13 @@ def test_keyed_dispatch_matches_numpy_across_structure_classes():
     # Diagonal (RZ, CZ), permutation (X, CX, Swap), and dense (H, RX) gates
     # in one circuit; fast path, counts identical shot-for-shot.
     program = fq.Program(3, 3)
-    program.add(fq.ops.H, 0)
-    program.add(fq.ops.RZ(0.4), 0)
-    program.add(fq.ops.CX, (0, 1))
-    program.add(fq.ops.Swap, (1, 2))
-    program.add(fq.ops.CZ, (0, 2))
-    program.add(fq.ops.RX(1.1), 2)
-    program.add(fq.ops.X, 1)
+    program.add(ops.H, 0)
+    program.add(ops.RZ(0.4), 0)
+    program.add(ops.CX, (0, 1))
+    program.add(ops.Swap, (1, 2))
+    program.add(ops.CZ, (0, 2))
+    program.add(ops.RX(1.1), 2)
+    program.add(ops.X, 1)
     program.measure((0, 1, 2), (0, 1, 2))
     plan, facts, request = _plan_and_request(program)
 
@@ -167,10 +168,10 @@ def test_keyed_dispatch_matches_numpy_across_structure_classes():
 
 def test_keyed_dispatch_matches_numpy_on_the_dynamic_path():
     program = fq.Program(2, 2)
-    program.add(fq.ops.H, 0)
+    program.add(ops.H, 0)
     program.measure(0, 0)
-    program.add(fq.ops.X, 1, condition=(0, 1))
-    program.add(fq.ops.RZ(0.7), 1)
+    program.add(ops.X, 1, condition=(0, 1))
+    program.add(ops.RZ(0.7), 1)
     program.measure(1, 1)
     plan, facts, request = _plan_and_request(program)
 
@@ -201,7 +202,7 @@ def test_dense_declaration_stays_correct_at_special_parameters():
     # permutation. The declaration must stay numerically correct (the dense
     # kernel handles any matrix), just without the opportunistic speedup.
     program = fq.Program(1)
-    program.add(fq.ops.RX(np.pi), 0)
+    program.add(ops.RX(np.pi), 0)
     backend = Simulator()
     plan, _ = backend._lower_program(program)
     (step,) = plan
@@ -263,8 +264,8 @@ def test_superop_csr_skips_dense_and_round_trips_a_sparse_channel():
     # nonzero, plus a little ~1e-17 residue). Its CSR lists every nonzero in
     # column order, so the round-trip reproduces it bit for bit.
     qreg = fq.QuantumRegister(2)
-    ops = depolarizing_rule(Depolarizing(p=0.2), targets=(qreg[0], qreg[1]))
-    superop = _kraus_superop_kernel(_kraus_stack(ops))
+    kraus_ops = depolarizing_rule(Depolarizing(p=0.2), targets=(qreg[0], qreg[1]))
+    superop = _kraus_superop_kernel(_kraus_stack(kraus_ops))
     csr = _superop_csr(superop)
     assert csr is not None
     assert csr[1].size < superop.size // 2  # comfortably below the sparse floor

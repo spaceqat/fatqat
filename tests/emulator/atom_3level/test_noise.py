@@ -7,6 +7,7 @@ import pytest
 from qutip import mesolve
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator._core.scheduling import schedule_pulse_run
 from fatqat.errors import BackendValidationError
@@ -20,12 +21,12 @@ from fatqat.noise.lindblad import (
     amplitude_damping_lindblad_rule,
     phase_damping_lindblad_rule,
 )
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 def _lindblad_map(rule=phase_damping_lindblad_rule):
     implementations = LindbladImplementationMap()
-    implementations.register(PhaseDamping, rule)
+    implementations.add(PhaseDamping, rule)
     return implementations
 
 
@@ -48,7 +49,7 @@ def _backend(model, *, noise=None, lindblad_map=None):
 
 def _rx_program(angle=np.pi / 2):
     program = fq.Program(1)
-    program.add(fq.ops.RX(angle), 0)
+    program.add(ops.RX(angle), 0)
     return program
 
 
@@ -68,7 +69,7 @@ def test_lindblad_constructor_surface_defaults_types_and_copy_isolation(
 
     supplied = _lindblad_map()
     copied = _backend(atom_3level_model, lindblad_map=supplied)
-    supplied.register(PhaseDamping, lambda *_args, **_kwargs: ())
+    supplied.add(PhaseDamping, lambda *_args, **_kwargs: ())
     assert (
         copied._lindblad_implementation_map.get(PhaseDamping)
         is phase_damping_lindblad_rule
@@ -83,7 +84,7 @@ def test_lindblad_constructor_surface_defaults_types_and_copy_isolation(
 def test_default_rejects_physical_channels_but_custom_map_classifies_them(
     atom_3level_model,
 ):
-    operation_noise = _noise(PhaseDamping(rate=0.2), operation=fq.ops.RX)
+    operation_noise = _noise(PhaseDamping(rate=0.2), operation=ops.RX)
     with pytest.raises(BackendValidationError, match="PhaseDamping"):
         _backend(atom_3level_model, noise=operation_noise)
 
@@ -120,9 +121,9 @@ def test_custom_map_rejects_qutrit_amplitude_damping_with_wrong_arity(
     atom_3level_model,
 ):
     implementations = _lindblad_map()
-    implementations.register(AmplitudeDamping, amplitude_damping_lindblad_rule)
+    implementations.add(AmplitudeDamping, amplitude_damping_lindblad_rule)
     backend = _backend(atom_3level_model, lindblad_map=implementations)
-    invalid = _noise(AmplitudeDamping(rate=(0.1,)), operation=fq.ops.RX)
+    invalid = _noise(AmplitudeDamping(rate=(0.1,)), operation=ops.RX)
     report = backend.check_noise_support(invalid)
     assert not report.supported
     assert report.rejected_sources == ("AmplitudeDamping(rate-arity-1)",)
@@ -130,7 +131,7 @@ def test_custom_map_rejects_qutrit_amplitude_damping_with_wrong_arity(
 
     valid = _noise(
         AmplitudeDamping(rate=(0.1, 0.2)),
-        operation=fq.ops.RX,
+        operation=ops.RX,
     )
     assert backend.check_noise_support(valid).supported
 
@@ -210,7 +211,7 @@ def test_custom_rule_must_return_local_three_by_three_operators(
 
     backend = _backend(
         atom_3level_model,
-        noise=_noise(PhaseDamping(rate=0.2), operation=fq.ops.RX),
+        noise=_noise(PhaseDamping(rate=0.2), operation=ops.RX),
         lindblad_map=_lindblad_map(wrong_shape),
     )
     with pytest.raises(BackendValidationError, match=r"expected \(3, 3\)"):
@@ -220,7 +221,7 @@ def test_custom_rule_must_return_local_three_by_three_operators(
 def test_operation_scoped_terms_bind_qutrit_ordinals_and_change_output(
     atom_3level_model,
 ):
-    noise = _noise(PhaseDamping(rate=0.4), operation=fq.ops.RX)
+    noise = _noise(PhaseDamping(rate=0.4), operation=ops.RX)
     noisy = _backend(
         atom_3level_model,
         noise=noise,
@@ -258,12 +259,12 @@ def test_operation_scoped_collapse_uses_the_scheduled_block_window(
 ):
     backend = _backend(
         atom_3level_model,
-        noise=_noise(PhaseDamping(rate=0.4), operation=fq.ops.RX),
+        noise=_noise(PhaseDamping(rate=0.4), operation=ops.RX),
         lindblad_map=_lindblad_map(),
     )
     program = fq.Program(1)
     program.add(
-        fq.ops.PulseOperation(
+        ops.PulseOperation(
             0.2,
             (
                 PulseControl(
@@ -273,7 +274,7 @@ def test_operation_scoped_collapse_uses_the_scheduled_block_window(
             ),
         )
     )
-    program.add(fq.ops.RX(np.pi / 3), 0)
+    program.add(ops.RX(np.pi / 3), 0)
     prepared = backend._prepare_program(program)
     scheduled = schedule_pulse_run(prepared.plan, boundary_time=0.0)
     start = scheduled.starts[1]
@@ -325,7 +326,7 @@ def test_propagator_rejects_elapsed_noise_but_frame_only_skips_dissipation(
         dissipation_must_not_be_built,
     )
     frame_only = fq.Program(1)
-    frame_only.add(fq.ops.RZ(0.3), 0)
+    frame_only.add(ops.RZ(0.3), 0)
     actual = backend.propagator(frame_only)
 
     assert np.allclose(actual, np.diag((1.0, np.exp(0.3j), 1.0)))

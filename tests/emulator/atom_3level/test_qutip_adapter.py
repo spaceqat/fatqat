@@ -20,7 +20,7 @@ from fatqat.emulator.atom_3level import Atom3LevelModel
 from fatqat.emulator.atom_3level.qutip_adapter import _Atom3LevelQutipAdapter
 from fatqat.emulator.atom_3level.target import _Atom3LevelTarget
 from fatqat.errors import BackendValidationError
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 def _target(model, coordinates):

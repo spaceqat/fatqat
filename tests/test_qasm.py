@@ -12,7 +12,7 @@ import pytest
 
 import fatqat as fc
 from fatqat.emulator import ControlChannel, PulseControl
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.operations import Measurement, PulseOperation
 from fatqat.qasm import (
     QASMTranspileError,
@@ -21,7 +21,7 @@ from fatqat.qasm import (
     program_to_qasm,
     qasm_to_program,
 )
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 # ===========================================================================
 # Export direction: fatqat.Program -> OpenQASM
@@ -30,8 +30,8 @@ from fatqat.waveforms import SampledWaveform
 
 def test_bell_state_v3():
     p = fc.Program(2, 2)
-    p.add(fc.ops.H, 0)
-    p.add(fc.ops.CX, (0, 1))
+    p.add(ops.H, 0)
+    p.add(ops.CX, (0, 1))
     p.measure_all()
     out = program_to_qasm(p, version=3)
     assert "OPENQASM 3.0;" in out
@@ -44,8 +44,8 @@ def test_bell_state_v3():
 
 def test_bell_state_v2():
     p = fc.Program(2, 2)
-    p.add(fc.ops.H, 0)
-    p.add(fc.ops.CX, (0, 1))
+    p.add(ops.H, 0)
+    p.add(ops.CX, (0, 1))
     p.measure_all()
     out = program_to_qasm(p, version=2)
     assert "OPENQASM 2.0;" in out
@@ -56,23 +56,23 @@ def test_bell_state_v2():
 def test_all_fixed_gates():
     p = fc.Program(3)
     for g in (
-        fc.ops.H,
-        fc.ops.I,
-        fc.ops.S,
-        fc.ops.Sdg,
-        fc.ops.T,
-        fc.ops.Tdg,
-        fc.ops.X,
-        fc.ops.Y,
-        fc.ops.Z,
+        ops.H,
+        ops.I,
+        ops.S,
+        ops.Sdg,
+        ops.T,
+        ops.Tdg,
+        ops.X,
+        ops.Y,
+        ops.Z,
     ):
         p.add(g, 0)
-    p.add(fc.ops.CX, (0, 1))
-    p.add(fc.ops.CZ, (0, 1))
-    p.add(fc.ops.Swap, (0, 1))
-    p.add(fc.ops.CY, (0, 1))
-    p.add(fc.ops.CCX, (0, 1, 2))
-    p.add(fc.ops.CSwap, (0, 1, 2))
+    p.add(ops.CX, (0, 1))
+    p.add(ops.CZ, (0, 1))
+    p.add(ops.Swap, (0, 1))
+    p.add(ops.CY, (0, 1))
+    p.add(ops.CCX, (0, 1, 2))
+    p.add(ops.CSwap, (0, 1, 2))
     out = program_to_qasm(p, version=3)
     for expected in (
         "h q[0];",
@@ -96,14 +96,14 @@ def test_all_fixed_gates():
 
 def test_cs_maps_to_cp_pi_over_2():
     p = fc.Program(2)
-    p.add(fc.ops.CS, (0, 1))
+    p.add(ops.CS, (0, 1))
     out = program_to_qasm(p, version=3)
     assert "cp(pi/2) q[0], q[1];" in out
 
 
 def test_iswap_emits_custom_gate_and_call():
     p = fc.Program(2)
-    p.add(fc.ops.iSwap, (0, 1))
+    p.add(ops.iSwap, (0, 1))
     out = program_to_qasm(p, version=3)
     assert "gate iswap a, b {" in out
     assert "iswap q[0], q[1];" in out
@@ -111,11 +111,11 @@ def test_iswap_emits_custom_gate_and_call():
 
 def test_parametric_gates():
     p = fc.Program(2)
-    p.add(fc.ops.RX(0.3), 0)
-    p.add(fc.ops.RY(0.3), 0)
-    p.add(fc.ops.RZ(0.3), 0)
-    p.add(fc.ops.Phase(0.3), 0)
-    p.add(fc.ops.CPhase(0.3), (0, 1))
+    p.add(ops.RX(0.3), 0)
+    p.add(ops.RY(0.3), 0)
+    p.add(ops.RZ(0.3), 0)
+    p.add(ops.Phase(0.3), 0)
+    p.add(ops.CPhase(0.3), (0, 1))
     out = program_to_qasm(p, version=3)
     assert "rx(0.3) q[0];" in out
     assert "ry(0.3) q[0];" in out
@@ -126,7 +126,7 @@ def test_parametric_gates():
 
 def test_reset():
     p = fc.Program(2)
-    p.add(fc.ops.Reset, (0, 1))
+    p.add(ops.Reset, (0, 1))
     out = program_to_qasm(p, version=3)
     assert "reset q[0];" in out
     assert "reset q[1];" in out
@@ -135,7 +135,7 @@ def test_reset():
 def test_condition_v3_multi_term():
     p = fc.Program(2, 3)
     p.add(
-        fc.ops.X,
+        ops.X,
         1,
         condition=((p.classical_registers[0][0], 1), (p.classical_registers[0][2], 0)),
     )
@@ -145,14 +145,14 @@ def test_condition_v3_multi_term():
 
 def test_condition_v2_full_register_ok():
     p = fc.Program(2, 1)
-    p.add(fc.ops.X, 1, condition=(p.classical_registers[0][0], 1))
+    p.add(ops.X, 1, condition=(p.classical_registers[0][0], 1))
     out = program_to_qasm(p, version=2)
     assert "if (c == 1) x q[1];" in out
 
 
 def test_condition_v2_partial_register_rejected():
     p = fc.Program(2, 3)
-    p.add(fc.ops.X, 1, condition=(p.classical_registers[0][0], 1))
+    p.add(ops.X, 1, condition=(p.classical_registers[0][0], 1))
     with pytest.raises(QasmExportError):
         program_to_qasm(p, version=2)
 
@@ -161,7 +161,7 @@ def test_condition_v2_across_two_registers_rejected():
     a = fc.ClassicalRegister(1, name="a")
     b = fc.ClassicalRegister(1, name="b")
     p = fc.Program(2, [a, b])
-    p.add(fc.ops.X, 1, condition=((a[0], 1), (b[0], 1)))
+    p.add(ops.X, 1, condition=((a[0], 1), (b[0], 1)))
     with pytest.raises(QasmExportError, match="multiple classical registers"):
         program_to_qasm(p, version=2)
 
@@ -170,24 +170,24 @@ def test_condition_v2_across_lookalike_registers_rejected():
     a = fc.ClassicalRegister(1, name="c")
     b = fc.ClassicalRegister(1, name="c")
     p = fc.Program(2, [a, b])
-    p.add(fc.ops.X, 1, condition=((a[0], 1), (b[0], 1)))
+    p.add(ops.X, 1, condition=((a[0], 1), (b[0], 1)))
     with pytest.raises(QasmExportError, match="multiple classical registers"):
         program_to_qasm(p, version=2)
 
 
 def test_qudit_dim2_reductions():
     p = fc.Program(2)
-    p.add(fc.ops.Shift(1), 0)  # -> x
-    p.add(fc.ops.Shift(2), 0)  # -> elided
-    p.add(fc.ops.Clock(1), 0)  # -> z
-    p.add(fc.ops.Sum, (0, 1))  # -> cx
-    p.add(fc.ops.SwapLevels(0, 1), 0)  # -> x
-    p.add(fc.ops.Fourier, 0)  # -> h
-    p.add(fc.ops.InverseFourier, 0)  # -> h
-    p.add(fc.ops.SubspaceRX(0.4, (0, 1)), 0)  # -> rx(0.4)
-    p.add(fc.ops.SubspaceRY(0.4, (1, 0)), 0)  # -> ry(-0.4)
-    p.add(fc.ops.SubspaceRZ(0.4, (1, 0)), 0)  # -> rz(-0.4)
-    p.add(fc.ops.CClock(1), (0, 1))  # -> cz
+    p.add(ops.Shift(1), 0)  # -> x
+    p.add(ops.Shift(2), 0)  # -> elided
+    p.add(ops.Clock(1), 0)  # -> z
+    p.add(ops.Sum, (0, 1))  # -> cx
+    p.add(ops.SwapLevels(0, 1), 0)  # -> x
+    p.add(ops.Fourier, 0)  # -> h
+    p.add(ops.InverseFourier, 0)  # -> h
+    p.add(ops.SubspaceRX(0.4, (0, 1)), 0)  # -> rx(0.4)
+    p.add(ops.SubspaceRY(0.4, (1, 0)), 0)  # -> ry(-0.4)
+    p.add(ops.SubspaceRZ(0.4, (1, 0)), 0)  # -> rz(-0.4)
+    p.add(ops.CClock(1), (0, 1))  # -> cz
     out = program_to_qasm(p, version=3)
     assert "x q[0];" in out
     assert "// elided: Shift(power=2) is identity at dim=2" in out
@@ -203,7 +203,7 @@ def test_qudit_dim2_reductions():
 def test_qudit_dim_gt_2_rejected():
     qreg = fc.QuantumRegister(2, dim=3)
     p = fc.Program([qreg])
-    p.add(fc.ops.Clock(1), 0)
+    p.add(ops.Clock(1), 0)
     with pytest.raises(QasmExportError):
         program_to_qasm(p, version=3)
 
@@ -214,7 +214,7 @@ def test_view_bearing_program_rejected_before_scalar_ref_formatting():
     # crash later with a missing-attribute error.
     qubits = fc.GridRegister(1, 2, name="qubits")
     p = fc.Program([qubits])
-    p.add(fc.ops.RX(0.3), qubits.row(0))
+    p.add(ops.RX(0.3), qubits.row(0))
     with pytest.raises(QasmExportError, match="view"):
         program_to_qasm(p, version=3)
 
@@ -230,7 +230,7 @@ def test_export_same_named_qreg_and_creg_do_not_collide():
     qreg = fc.QuantumRegister(2, name="r")
     creg = fc.ClassicalRegister(2, name="r")
     p = fc.Program([qreg], [creg])
-    p.add(fc.ops.H, 0)
+    p.add(ops.H, 0)
     p.measure(0, 0)
 
     out = program_to_qasm(p, version=3)

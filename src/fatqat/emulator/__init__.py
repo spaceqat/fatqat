@@ -53,6 +53,7 @@ from ._core.pulse import (
     PulseImplementationMap,
 )
 from .._pulse_values import ControlChannel, PulseControl
+from .._waveforms import SampledWaveform
 from .superconducting import (
     TransmonEmulator,
     TransmonCalibration,
@@ -70,6 +71,7 @@ __all__ = [
     "PulseDefinition",
     "ControlChannel",
     "PulseControl",
+    "SampledWaveform",
     "PhaseShift",
     "PhaseSwap",
     "PulseImplementationMap",

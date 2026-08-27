@@ -9,6 +9,7 @@ import pytest
 from qutip import Qobj, basis, ket2dm, mesolve
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator._core.engine import _ShotContext
 from fatqat.emulator._core.pulse import PulseDefinition, PulseImplementationMap
@@ -32,7 +33,7 @@ from fatqat.noise.lindblad import (
     amplitude_damping_lindblad_rule,
     phase_damping_lindblad_rule,
 )
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 from tests.emulator.atom_2level.reference.two_level_hamiltonian import (
     dense_hamiltonian,
@@ -79,7 +80,7 @@ def _pulse_program(sites=1, *, measured=False, amplitude=0.0, duration=1.0):
     )
     program = fq.Program(sites, sites if measured else 0)
     program.add(
-        fq.ops.PulseOperation(
+        ops.PulseOperation(
             duration,
             (
                 PulseControl(
@@ -96,11 +97,11 @@ def _pulse_program(sites=1, *, measured=False, amplitude=0.0, duration=1.0):
 
 def _explicit_damping_map():
     implementations = LindbladImplementationMap()
-    implementations.register(
+    implementations.add(
         AmplitudeDamping,
         amplitude_damping_lindblad_rule,
     )
-    implementations.register(
+    implementations.add(
         PhaseDamping,
         phase_damping_lindblad_rule,
     )
@@ -122,7 +123,7 @@ def _single_site_x_map(model):
             ),
         )
 
-    implementations.add(fq.ops.X, realize)
+    implementations.add(ops.X, realize)
     return implementations
 
 
@@ -149,10 +150,10 @@ def test_support_accepts_builtin_background_generators(model, channel):
     [
         _noise(AmplitudeDamping(p=0.2)),
         _noise(PhaseDamping(p=0.2)),
-        _noise(Depolarizing(p=0.2), operation=fq.ops.X),
-        _noise(AmplitudeDamping(rate=0.2), operation=fq.ops.X),
+        _noise(Depolarizing(p=0.2), operation=ops.X),
+        _noise(AmplitudeDamping(rate=0.2), operation=ops.X),
         _noise(AmplitudeDamping(rate=(0.1, 0.2))),
-        _noise(Loss(p=0.2), operation=fq.ops.X),
+        _noise(Loss(p=0.2), operation=ops.X),
     ],
 )
 def test_support_rejects_probability_unsupported_scoped_and_wrong_arity_noise(
@@ -181,7 +182,7 @@ def test_support_accepts_binary_and_rejects_nonbinary_readout_confusion(model):
 
 def test_explicit_equivalent_map_enables_rate_operation_scope(model):
     channel = AmplitudeDamping(rate=0.2)
-    noise = _noise(channel, operation=fq.ops.X)
+    noise = _noise(channel, operation=ops.X)
     assert not _backend(model).check_noise_support(noise).supported
 
     explicit = _backend(
@@ -191,7 +192,7 @@ def test_explicit_equivalent_map_enables_rate_operation_scope(model):
         lindblad_map=_explicit_damping_map(),
     )
     program = fq.Program(1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     prepared = explicit._prepare_program(program)
 
     term = prepared.plan[0].noise[0]
@@ -209,7 +210,7 @@ def test_explicit_equivalent_map_enables_rate_operation_scope(model):
     ),
 )
 def test_explicit_map_rejects_wrong_probability_and_rate_arity(model, channel):
-    noise = _noise(channel, operation=fq.ops.X)
+    noise = _noise(channel, operation=ops.X)
     backend = _backend(
         model,
         gate_map=_single_site_x_map(model),
@@ -254,7 +255,7 @@ def test_explicit_map_keeps_background_rate_and_rejects_probability(model):
 
 
 def test_operation_scoped_terms_reach_the_adapter_time_window(model, monkeypatch):
-    noise = _noise(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
+    noise = _noise(AmplitudeDamping(rate=0.2), operation=ops.X)
     backend = _backend(
         model,
         noise,
@@ -263,7 +264,7 @@ def test_operation_scoped_terms_reach_the_adapter_time_window(model, monkeypatch
     )
     program = fq.Program(1)
     program.add(
-        fq.ops.PulseOperation(
+        ops.PulseOperation(
             0.3,
             (
                 PulseControl(
@@ -273,7 +274,7 @@ def test_operation_scoped_terms_reach_the_adapter_time_window(model, monkeypatch
             ),
         )
     )
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     captured = []
 
     def record(*args, c_ops=(), **kwargs):
@@ -294,7 +295,7 @@ def test_operation_scoped_terms_reach_the_adapter_time_window(model, monkeypatch
 
 
 def test_operation_scoped_terms_reach_terminal_trajectory_solver(model, monkeypatch):
-    noise = _noise(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
+    noise = _noise(AmplitudeDamping(rate=0.2), operation=ops.X)
     backend = _backend(
         model,
         noise,
@@ -302,7 +303,7 @@ def test_operation_scoped_terms_reach_terminal_trajectory_solver(model, monkeypa
         lindblad_map=_explicit_damping_map(),
     )
     program = fq.Program(1, 1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     program.measure(0, 0)
     captured = {}
 

@@ -5,13 +5,14 @@ import pytest
 from qutip import Qobj, qeye, tensor
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat._index_allocation import _EngineAllocation
 from fatqat.emulator._core.engine import PulseEngine
 from fatqat.emulator.superconducting.qutip_adapter import _TransmonQutipAdapter
 from fatqat.emulator.superconducting.target import _TransmonTarget
 from fatqat.errors import BackendValidationError
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 def _control(channel, values, *, duration=1.0, offset=0.0):
@@ -23,11 +24,11 @@ def _control(channel, values, *, duration=1.0, offset=0.0):
 
 
 def test_direct_detuning_and_exchange_have_exact_engine_targets(backend):
-    detuning = fq.ops.PulseOperation(
+    detuning = ops.PulseOperation(
         1.0,
         (_control(backend.model.control.detuning("q0"), (0.1, 0.1)),),
     )
-    exchange = fq.ops.PulseOperation(
+    exchange = ops.PulseOperation(
         1.0,
         (_control(backend.model.control.exchange("q1", "q0"), (0.02, 0.02)),),
     )
@@ -43,7 +44,7 @@ def test_direct_detuning_and_exchange_have_exact_engine_targets(backend):
 
 
 def test_concurrent_drive_and_offset_exchange_lower_into_one_atomic_block(backend):
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         2.0,
         (
             _control(
@@ -61,7 +62,7 @@ def test_concurrent_drive_and_offset_exchange_lower_into_one_atomic_block(backen
     )
     program = fq.Program(2)
     program.add(operation)
-    program.add(fq.ops.RX(0.1), 0)
+    program.add(ops.RX(0.1), 0)
 
     plan = backend._prepare_program(program).plan
 
@@ -71,7 +72,7 @@ def test_concurrent_drive_and_offset_exchange_lower_into_one_atomic_block(backen
 
 
 def test_condition_is_preserved_on_direct_control(backend):
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         1.0,
         (_control(backend.model.control.drive("q1"), (0.0, 0.1j)),),
     )
@@ -93,7 +94,7 @@ def test_real_only_direct_controls_reject_complex_envelopes(backend, kind):
     )
     program = fq.Program(2)
     program.add(
-        fq.ops.PulseOperation(
+        ops.PulseOperation(
             1.0,
             (_control(channel, (0.1 + 0.2j, 0.1 + 0.2j)),),
         )
@@ -108,13 +109,13 @@ def test_reversed_exchange_handles_are_duplicate_channels(backend):
     reverse = _control(backend.model.control.exchange("q1", "q0"), (0.0, 0.01))
 
     with pytest.raises(ValueError, match="one channel"):
-        fq.ops.PulseOperation(1.0, (forward, reverse))
+        ops.PulseOperation(1.0, (forward, reverse))
 
 
 def test_direct_drive_propagator_matches_independent_full_hamiltonian(backend):
     duration = 0.4
     amplitude = 0.07
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         duration,
         (
             _control(
@@ -142,7 +143,7 @@ def test_direct_drive_propagator_matches_independent_full_hamiltonian(backend):
 
 
 def test_direct_condition_changes_actual_execution(backend):
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         0.5,
         (
             _control(
@@ -173,7 +174,7 @@ def test_direct_condition_changes_actual_execution(backend):
 
 
 def test_disjoint_direct_control_after_measurement_retains_fast_path(backend):
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         1.0,
         (_control(backend.model.control.drive("q1"), (0.0, 0.1)),),
     )

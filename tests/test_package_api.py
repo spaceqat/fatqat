@@ -1,21 +1,29 @@
 """Tests the top-level fatqat public API surface."""
 
+import importlib
+
+import pytest
+
 import fatqat as fq
+import fatqat.operations as ops
 
 
 def test_waveform_and_pulse_authoring_names_are_namespaced():
-    from fatqat.emulator import ControlChannel, PulseControl
+    from fatqat.emulator import ControlChannel, PulseControl, SampledWaveform
     from fatqat.operations import PulseOperation
-    from fatqat.waveforms import SampledWaveform
 
     assert fq.emulator.ControlChannel is ControlChannel
     assert fq.emulator.PulseControl is PulseControl
-    assert fq.waveforms.SampledWaveform is SampledWaveform
-    assert fq.ops.PulseOperation is PulseOperation
+    assert fq.emulator.SampledWaveform is SampledWaveform
+    assert fq.operations.PulseOperation is PulseOperation
+    assert not hasattr(fq, "waveforms")
+    assert not hasattr(fq, "ops")
     assert not hasattr(fq, "ControlChannel")
     assert not hasattr(fq, "PulseControl")
     assert not hasattr(fq, "PulseOperation")
     assert not hasattr(fq, "SampledWaveform")
+    with pytest.raises(ModuleNotFoundError, match=r"fatqat\.waveforms"):
+        importlib.import_module("fatqat.waveforms")
 
 
 def test_atom_arrangement_is_owned_by_the_emulator_namespace():
@@ -59,9 +67,9 @@ def test_atom_2level_model_values_are_exported_only_from_emulator_namespaces():
 
 def test_top_level_frontend_surface():
     program = fq.Program(2, 2)
-    program.add(fq.ops.H, 0)
-    program.add(fq.ops.CZ, (0, 1))
-    program.add(fq.ops.RX(0.1), 0)
+    program.add(ops.H, 0)
+    program.add(ops.CZ, (0, 1))
+    program.add(ops.RX(0.1), 0)
     program.measure(0, 0)
     program.measure(1, 1)
 
@@ -73,6 +81,13 @@ def test_top_level_frontend_surface():
 def test_register_types_exposed():
     qr = fq.QuantumRegister(2, name="q")
     assert isinstance(qr[0], fq.RegisterRef)
+
+
+def test_atom_connectivity_is_an_internal_simulator_detail():
+    assert not hasattr(fq, "connectivity")
+    assert not hasattr(fq, "AtomConnectivity")
+    with pytest.raises(ModuleNotFoundError, match=r"fatqat\.connectivity"):
+        importlib.import_module("fatqat.connectivity")
 
 
 def test_simulator_only_under_simulator_namespace():
@@ -124,14 +139,13 @@ def test_error_classes_only_under_errors_namespace():
         BackendValidationError,
         MatrixImplementationError,
         UnsupportedOperationError,
-        NoMeasurementWarning,
     )
 
     assert fq.errors.FatqatError is FatqatError
     assert fq.errors.BackendValidationError is BackendValidationError
     assert fq.errors.MatrixImplementationError is MatrixImplementationError
     assert fq.errors.UnsupportedOperationError is UnsupportedOperationError
-    assert fq.errors.NoMeasurementWarning is NoMeasurementWarning
+    assert not hasattr(fq.errors, "NoMeasurementWarning")
     assert not hasattr(fq, "FatqatError")
 
 

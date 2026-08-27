@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat._backends.steps import (
     ApplyMatrixStep,
     MeasurementStep,
@@ -144,7 +144,7 @@ def test_plan_semantics_do_not_depend_on_numeric_runtime():
 def test_lower_unknown_gate_raises():
     class FooGate(ops.Operation):
         name = "FOO"
-        _num_subsystems = 1
+        num_subsystems = 1
 
     p = Program(1)
     p.add(FooGate(), 0)
@@ -157,7 +157,7 @@ def test_reset_and_reuse_counts():
     p = Program(1, 2)
     p.add(ops.X, 0)
     p.measure(0, 0)
-    p.add(fq.ops.Reset, 0)
+    p.add(ops.Reset, 0)
     p.measure(0, 1)
     counts = (
         Simulator("SV")
@@ -174,7 +174,7 @@ def test_dynamic_counts_use_snapshots_not_final_index():
     p = Program(1, 1)
     p.add(ops.X, 0)
     p.measure(0, 0)
-    p.add(fq.ops.Reset, 0)
+    p.add(ops.Reset, 0)
     counts = (
         Simulator("SV")
         .run(p, shots=10, simulation_config={"seed": 0})
@@ -196,7 +196,7 @@ def test_condition_only_statevector_default_at_many_shots():
 
 def test_statevector_with_reset_and_many_shots_rejected():
     p = Program(1)
-    p.add(fq.ops.Reset, 0)
+    p.add(ops.Reset, 0)
     with pytest.raises(fq.errors.BackendValidationError):
         Simulator("SV").run(p, shots=10, result_config={"final_state": True})
 
@@ -206,7 +206,7 @@ def test_conditional_reset_fires_when_guard_true():
     p = Program(1, 2)
     p.add(ops.X, 0)
     p.measure(0, 0)
-    p.add(fq.ops.Reset, 0, condition=(0, 1))
+    p.add(ops.Reset, 0, condition=(0, 1))
     p.measure(0, 1)
     counts = (
         Simulator("SV")
@@ -223,7 +223,7 @@ def test_conditional_reset_skipped_when_guard_false():
     p = Program(1, 2)
     p.add(ops.X, 0)
     p.measure(0, 0)
-    p.add(fq.ops.Reset, 0, condition=(0, 0))
+    p.add(ops.Reset, 0, condition=(0, 0))
     p.measure(0, 1)
     counts = (
         Simulator("SV")
@@ -277,7 +277,7 @@ def test_lower_adjacent_single_measurements_stay_separate_steps():
 
 def test_lower_grouped_reset_uses_all_targets():
     p = Program(3)
-    p.add(fq.ops.Reset, (0, 2))
+    p.add(ops.Reset, (0, 2))
 
     plan, facts = Simulator("SV")._lower_program(p)
 
@@ -290,7 +290,7 @@ def test_grouped_reset_resets_all_targets_in_dynamic_path():
     p = Program(2, 2)
     p.add(ops.X, 0)
     p.add(ops.X, 1)
-    p.add(fq.ops.Reset, (0, 1))
+    p.add(ops.Reset, (0, 1))
     p.measure((0, 1), (0, 1))
 
     counts = (
@@ -324,7 +324,7 @@ def _random_dynamic_program():
     p = Program(1, 1)
     p.add(ops.H, 0)
     p.measure(0, 0)
-    p.add(fq.ops.Reset, 0)
+    p.add(ops.Reset, 0)
     return p
 
 
@@ -350,7 +350,7 @@ def test_dynamic_statevector_single_shot_stays_serial_and_available():
     p = Program(1, 1)
     p.add(ops.H, 0)
     p.measure(0, 0)
-    p.add(fq.ops.Reset, 0)
+    p.add(ops.Reset, 0)
     result = (
         Simulator("SV")
         .run(

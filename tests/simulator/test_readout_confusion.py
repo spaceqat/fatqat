@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._backends.steps import MeasurementStep
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError
@@ -120,7 +121,7 @@ def test_specific_target_confuses_only_its_subsystem():
     # an always-report-one matrix would not (1 maps to 1 either way).
     always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
     program = fq.Program(2, 2)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     program.measure((0, 1), (0, 1))
     counts = (
         Simulator(noise=_readout_model(always_flip, target=1))
@@ -140,7 +141,7 @@ def test_feedforward_reads_the_reported_bit_not_the_true_one():
     # condition c0 == 1 fires and flips q1.
     program = fq.Program(2, 2)
     program.measure(0, 0)
-    program.add(fq.ops.X, 1, condition=(0, 1))
+    program.add(ops.X, 1, condition=(0, 1))
     program.measure(1, 1)
     counts = (
         Simulator(method="SV", noise=_readout_model(_ALWAYS_ONE, target=0))
@@ -182,7 +183,7 @@ def test_reused_qubit_evolves_from_the_true_state():
     noise.add(ReadoutConfusion(always_flip), targets=0)
     program = fq.Program(1, 2)
     program.measure(0, 0)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     program.measure(0, 1)
     counts = (
         Simulator(method="SV", noise=noise)
@@ -198,7 +199,7 @@ def test_threaded_compiled_shots_match_serial_with_readout_confusion():
     noise = _readout_model(_FLIP_30)
     program = fq.Program(1, 2)
     program.measure(0, 0)
-    program.add(fq.ops.X, 0, condition=(0, 1))  # forces the dynamic path
+    program.add(ops.X, 0, condition=(0, 1))  # forces the dynamic path
     program.measure(0, 1)
     serial = (
         Simulator(noise=noise)
@@ -244,9 +245,9 @@ def test_numba_compiled_multi_shot_kernel_applies_readout_confusion():
     always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
     noise = _readout_model(always_flip)
     program = fq.Program(1, 1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     program.measure(0, 0)
-    program.add(fq.ops.Reset, 0)  # a reset forces the dynamic path
+    program.add(ops.Reset, 0)  # a reset forces the dynamic path
 
     plan, _ = Simulator(noise=noise)._lower_program(program)
     assert _plan_compilable(plan) is True
@@ -276,14 +277,14 @@ def test_numba_compiled_multi_shot_matches_numpy_on_a_qudit_confusion_plan():
     def counts_for(runtime):
         noise = NoiseModel()
         noise.add(ReadoutConfusion(confusion))
-        noise.add(PhaseDamping(p=0.2), operation=fq.ops.Shift)
+        noise.add(PhaseDamping(p=0.2), operation=ops.Shift)
         qreg = fq.QuantumRegister(2, dim=3)
         creg = fq.ClassicalRegister(2, dim=3)
         program = fq.Program([qreg], [creg])
-        program.add(fq.ops.Shift(1), qreg[0])
+        program.add(ops.Shift(1), qreg[0])
         program.measure(qreg[0], creg[0])
-        program.add(fq.ops.Shift(2), qreg[1], condition=(creg[0], 1))
-        program.add(fq.ops.Reset, qreg[0])
+        program.add(ops.Shift(2), qreg[1], condition=(creg[0], 1))
+        program.add(ops.Reset, qreg[0])
         program.measure(qreg[1], creg[1])
         return (
             Simulator(method="SV", runtime=runtime, noise=noise)
@@ -308,9 +309,9 @@ def test_numba_partially_confused_measurement_only_draws_where_attached():
     noise = NoiseModel()
     noise.add(ReadoutConfusion(_FLIP_30), targets=1)  # q0 reports without error
     program = fq.Program(2, 2)
-    program.add(fq.ops.H, 0)
+    program.add(ops.H, 0)
     program.measure((0, 1), (0, 1))
-    program.add(fq.ops.Reset, 0)  # forces the dynamic path
+    program.add(ops.Reset, 0)  # forces the dynamic path
 
     counts = {
         runtime: Simulator(method="SV", runtime=runtime, noise=noise)

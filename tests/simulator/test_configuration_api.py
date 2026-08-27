@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.simulator import SCQubitIBMSimulator, Simulator
 from fatqat._backends.engine_contract import _SimulationConfig
 from fatqat.errors import BackendValidationError
@@ -59,7 +60,7 @@ class _FailingAssemblyBackend(Simulator):
 
 def _measured_superposition() -> fq.Program:
     program = fq.Program(1, 1)
-    program.add(fq.ops.SX, 0)
+    program.add(ops.SX, 0)
     program.measure(0, 0)
     return program
 
@@ -225,7 +226,7 @@ def test_method_matches_the_metadata_of_a_run():
     # One string for both the precondition check and the result: a caller that
     # branches on backend.method can read the same value back off the result.
     program = fq.Program(1)
-    program.add(fq.ops.H, 0)
+    program.add(ops.H, 0)
 
     for argument in ("SV", "DM"):
         backend = fq.simulator.Simulator(method=argument)

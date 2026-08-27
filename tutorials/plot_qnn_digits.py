@@ -73,7 +73,7 @@ from scipy.optimize import minimize
 from sklearn.datasets import load_digits
 
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 NUM_QUBITS = 4
 NUM_ROUNDS = 4  # 4 rounds x 4 qubits consume the 16 pooled pixels
@@ -127,10 +127,10 @@ def build_template():
     program = fq.Program(NUM_QUBITS)
     for r in range(NUM_ROUNDS):
         for q in range(NUM_QUBITS):
-            program.add(op.RY(FEATURES[r * NUM_QUBITS + q]), q)
-            program.add(op.RZ(WEIGHTS[r * NUM_QUBITS + q]), q)
+            program.add(ops.RY(FEATURES[r * NUM_QUBITS + q]), q)
+            program.add(ops.RZ(WEIGHTS[r * NUM_QUBITS + q]), q)
         for q in range(NUM_QUBITS):
-            program.add(op.CX, (q, (q + 1) % NUM_QUBITS))
+            program.add(ops.CX, (q, (q + 1) % NUM_QUBITS))
     return program
 
 

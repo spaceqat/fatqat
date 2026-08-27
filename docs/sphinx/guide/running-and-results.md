@@ -4,11 +4,11 @@
 
 ```python
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 program = fq.Program(2, 2)
-program.add(op.H, 0)
-program.add(op.CX, (0, 1))
+program.add(ops.H, 0)
+program.add(ops.CX, (0, 1))
 program.measure((0, 1), (0, 1))
 
 backend = fq.simulator.Simulator("SV")
@@ -55,8 +55,8 @@ The program above is stochastic, so asking it for a final state needs
 
 ```python
 bell = fq.Program(2)
-bell.add(op.H, 0)
-bell.add(op.CX, (0, 1))
+bell.add(ops.H, 0)
+bell.add(ops.CX, (0, 1))
 
 state = (
     backend.run(bell, result_config={"counts": False, "final_state": True})
@@ -133,8 +133,8 @@ Calling an accessor for a field that wasn't produced raises
 
 If you request counts on a program where some declared clbit was never
 written by a measurement, the backend still returns zero-filled counts for
-that bit but emits a {py:exc}`~fatqat.errors.NoMeasurementWarning` — usually
-a sign a measurement was forgotten.
+that bit but emits a standard `UserWarning` — usually a sign a measurement
+was forgotten.
 
 For qudits, custom matrix implementations, and execution strategies, see
 [Advanced](advanced.md).

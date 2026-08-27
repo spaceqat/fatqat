@@ -1,5 +1,5 @@
 import fatqat as fq
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.simulator import Simulator
 
 

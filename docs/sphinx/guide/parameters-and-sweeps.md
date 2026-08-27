@@ -8,12 +8,12 @@ label for people, not a lookup key.
 
 ```python
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 theta = fq.Parameter("theta")
 program = fq.Program(2)
-program.add(op.RX(theta), 0)
-program.add(op.RY(theta), 1)
+program.add(ops.RX(theta), 0)
+program.add(ops.RY(theta), 1)
 
 bound = program.assign_parameters({theta: 0.25})
 ```
@@ -24,8 +24,8 @@ Both gates in `bound` use `0.25`. The original `program` still contains
 ```python
 angles = fq.ParameterVector("angles", 2)
 template = fq.Program(2)
-template.add(op.RX(angles[0]), 0)
-template.add(op.RY(angles[1]), 1)
+template.add(ops.RX(angles[0]), 0)
+template.add(ops.RY(angles[1]), 1)
 
 partly_bound = template.assign_parameters({angles[0]: 0.1})
 fully_bound = partly_bound.assign_parameters({angles[1]: 0.2})
@@ -88,10 +88,10 @@ single-observable or multiple-observable result shape:
 features = fq.ParameterVector("features", 2)
 weights = fq.ParameterVector("weights", 2)
 qnn = fq.Program(2)
-qnn.add(op.RX(features[0]), 0)
-qnn.add(op.RY(weights[0]), 0)
-qnn.add(op.RX(features[1]), 1)
-qnn.add(op.RY(weights[1]), 1)
+qnn.add(ops.RX(features[0]), 0)
+qnn.add(ops.RY(weights[0]), 0)
+qnn.add(ops.RX(features[1]), 1)
+qnn.add(ops.RY(weights[1]), 1)
 
 X = np.array([[0.1, 0.2], [0.4, 0.5], [0.7, 0.8]])
 weight_value = np.array([0.3, 0.6])

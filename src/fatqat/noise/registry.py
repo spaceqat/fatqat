@@ -18,8 +18,8 @@ from .catalog import (
 def default_channel_implementation_map() -> ChannelImplementationMap:
     """Build the default channel implementation map for the matrix family."""
     channel_map = ChannelImplementationMap()
-    channel_map.register(Depolarizing, depolarizing_rule)
-    channel_map.register(AmplitudeDamping, amplitude_damping_rule)
-    channel_map.register(PhaseDamping, phase_damping_rule)
-    channel_map.register(PauliChannel, pauli_channel_rule)
+    channel_map.add(Depolarizing, depolarizing_rule)
+    channel_map.add(AmplitudeDamping, amplitude_damping_rule)
+    channel_map.add(PhaseDamping, phase_damping_rule)
+    channel_map.add(PauliChannel, pauli_channel_rule)
     return channel_map

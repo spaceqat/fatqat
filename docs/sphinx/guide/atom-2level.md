@@ -7,7 +7,7 @@ layers:
 This is an analog Hamiltonian-control workflow, but “analog” describes how the
 program is authored—not the identity of the two-level physics system.
 
-1. {py:class}`~fatqat.waveforms.SampledWaveform` stores immutable samples.
+1. {py:class}`~fatqat.emulator.SampledWaveform` stores immutable samples.
 2. The model returns a structural global drive or detuning address.
 3. {py:class}`~fatqat.emulator.PulseControl` binds one waveform to one address.
 4. {py:class}`~fatqat.operations.PulseOperation` groups concurrent bindings in
@@ -25,6 +25,7 @@ constant or a device calibration.
 
 ```{doctest}
 >>> import fatqat as fq
+>>> import fatqat.operations as ops
 >>> model_document = fq.emulator.load_model_document("atom2level.reference")
 >>> model_document["model"]
 {'id': 'rb87-53s-two-level-reference', 'revision': '2026-08-22'}
@@ -37,11 +38,11 @@ constant or a device calibration.
 ('drive', 'detuning')
 >>> arrangement = fq.emulator.AtomArrangement.chain(num_sites=2, spacing=6.0)
 >>> backend = fq.emulator.Atom2LevelEmulator(model, arrangement=arrangement)
->>> drive_waveform = fq.waveforms.SampledWaveform(
+>>> drive_waveform = fq.emulator.SampledWaveform(
 ...     (0.0, 0.4, 1.0),
 ...     (0.0, 0.5j, 0.25 - 0.1j),
 ... )
->>> detuning_waveform = fq.waveforms.SampledWaveform(
+>>> detuning_waveform = fq.emulator.SampledWaveform(
 ...     (0.0, 0.5, 1.0),
 ...     (-0.2, 0.1, 0.0),
 ... )
@@ -50,7 +51,7 @@ constant or a device calibration.
 ...     fq.emulator.PulseControl(model.control.detuning(), detuning_waveform),
 ... )
 >>> program = fq.Program(arrangement.num_sites)
->>> program.add(fq.ops.PulseOperation(1.0, controls))
+>>> program.add(ops.PulseOperation(1.0, controls))
 >>> result = backend.run(program).result()
 >>> result.get_statevector().shape
 (4,)

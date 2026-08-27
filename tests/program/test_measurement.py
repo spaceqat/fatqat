@@ -4,7 +4,7 @@ import pytest
 
 from fatqat.program import Program
 from fatqat.operations import Measurement
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.registers import GridRegister, QuantumRegister, ClassicalRegister
 
 

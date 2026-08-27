@@ -3,9 +3,8 @@
 from . import emulator
 from . import errors
 from . import noise
-from . import operations as ops
+from . import operations
 from . import simulator
-from . import waveforms
 from .estimator import Estimator
 from .job import Job
 from .noise import NoiseModel
@@ -21,19 +20,17 @@ from .registers import (
     RegisterRef,
     RegisterView,
 )
-from .connectivity import AtomConnectivity
 from .resource_layout import DeviceOperand, ResourceLayout
 from .result import Result
 
 __version__ = "0.0.1"
 
 __all__ = [
-    "ops",
+    "operations",
     "simulator",
     "emulator",
     "errors",
     "noise",
-    "waveforms",
     "Estimator",
     "NoiseModel",
     "Observable",
@@ -48,7 +45,6 @@ __all__ = [
     "RegisterRef",
     "GridRegister",
     "RegisterView",
-    "AtomConnectivity",
     "ResourceLayout",
     "DeviceOperand",
     "Job",

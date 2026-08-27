@@ -6,13 +6,13 @@ exported operation values and classes documented below are the supported gate
 surface. Internal implementation classes whose names end in ``Gate`` are not
 the construction surface for application code.
 
-Examples use ``import fatqat.operations as op``.
+Examples use ``import fatqat.operations as ops``.
 
 The entries below retain their generated constructors and public members
 for exact interface details.
 
 .. autoclass:: fatqat.operations.Operation
-   :members: name, num_targets, accepts_views, validate_targets
+   :members: name, num_subsystems, accepts_views, validate_targets
    :show-inheritance:
 
 Fixed single-qubit gates
@@ -24,7 +24,7 @@ Fixed single-qubit gates
 :py:obj:`~fatqat.operations.T`, :py:obj:`~fatqat.operations.Tdg`,
 :py:obj:`~fatqat.operations.X`, :py:obj:`~fatqat.operations.Y`, and
 :py:obj:`~fatqat.operations.Z` are ready-to-use values. For example:
-``program.add(op.H, 0)``.
+``program.add(ops.H, 0)``.
 
 .. autodata:: fatqat.operations.I
 .. autodata:: fatqat.operations.H
@@ -41,10 +41,10 @@ Atom lifecycle
 --------------
 
 :py:data:`~fatqat.operations.Put` loads a fresh ``|0⟩`` atom into empty target
-sites: ``program.add(op.Put, (0, 1))``.
+sites: ``program.add(ops.Put, (0, 1))``.
 :py:data:`~fatqat.operations.Pair` connects two atoms so a two-qubit gate is
 legal on the pair, and :py:data:`~fatqat.operations.Unpair` disconnects them:
-``program.add(op.Pair, (0, 1))``. These are interpreted by
+``program.add(ops.Pair, (0, 1))``. These are interpreted by
 :py:class:`~fatqat.simulator.AtomArraySimulator`; see its documentation for the
 connectivity and occupancy model.
 
@@ -58,13 +58,13 @@ Pulse operations and waveforms
 :py:class:`~fatqat.operations.PulseOperation` is a backend-independent
 time block containing one or more :py:class:`~fatqat.emulator.PulseControl`
 bindings. Obtain structural control addresses from the selected physics model,
-construct immutable waveforms under ``fatqat.waveforms``, and bind them with
+construct immutable waveforms under ``fatqat.emulator``, and bind them with
 ``PulseControl(channel, waveform, start_offset=...)``. The emulator validates
 the waveform shape and structural control addresses when lowering the
 operation, then derives target-owned scheduling claims for its private
 execution block.
 
-A :py:class:`~fatqat.waveforms.SampledWaveform` supplies a finite nonuniform,
+A :py:class:`~fatqat.emulator.SampledWaveform` supplies a finite nonuniform,
 strictly increasing time grid starting at zero. Its final time is the waveform
 duration; a control's offset plus that duration must fit inside the enclosing
 operation duration. Function and symbolic waveforms remain future work.
@@ -73,7 +73,7 @@ operation duration. Function and symbolic waveforms remain future work.
    :members:
    :show-inheritance:
 
-.. autoclass:: fatqat.waveforms.SampledWaveform
+.. autoclass:: fatqat.emulator.SampledWaveform
    :members:
 
 .. autoclass:: fatqat.emulator.PulseControl
@@ -118,7 +118,7 @@ Fixed multi-qubit gates
 :py:obj:`~fatqat.operations.CS`, :py:obj:`~fatqat.operations.iSwap`,
 :py:obj:`~fatqat.operations.CCX`, and :py:obj:`~fatqat.operations.CSwap`
 are ready-to-use values. For controlled operations, controls come before
-targets: ``program.add(op.CX, (control, target))``.
+targets: ``program.add(ops.CX, (control, target))``.
 
 .. autodata:: fatqat.operations.CX
 .. autodata:: fatqat.operations.CZ
@@ -133,10 +133,20 @@ Reset
 -----
 
 :py:data:`~fatqat.operations.Reset` prepares one or more targets in ``|0⟩``:
-``program.add(op.Reset, 0)``. See
+``program.add(ops.Reset, 0)``. See
 :doc:`../guide/measurement-and-conditions` for reset and conditions.
 
 .. autodata:: fatqat.operations.Reset
+
+Barrier
+-------
+
+:py:data:`~fatqat.operations.Barrier` marks a compiler boundary across one or
+more targets. It remains visible in :py:attr:`~fatqat.Program.operations` but
+has no numerical effect in a simulator:
+``program.add(ops.Barrier, (0, 1))``.
+
+.. autodata:: fatqat.operations.Barrier
 
 Qudit gates
 -----------

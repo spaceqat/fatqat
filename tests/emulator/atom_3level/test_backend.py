@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator._core.backend import _PulseBackend
 from fatqat.errors import (
@@ -23,7 +24,7 @@ from fatqat.noise import (
     ThermalRelaxation,
 )
 from fatqat.registers import RegisterRef
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 def _backend(
@@ -104,7 +105,7 @@ def test_atom_3level_backend_lowers_model_factory_direct_control(
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
     program = fq.Program(2)
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         1.0,
         (
             PulseControl(
@@ -188,9 +189,9 @@ def test_atom_3level_supplied_map_is_type_checked_copied_and_empty_is_explicit(
         gate_implementation_map=supplied,
     )
     assert backend._gate_implementation_map is not supplied
-    supplied.remove(fq.ops.RX)
+    supplied.remove(ops.RX)
     program = fq.Program(2)
-    program.add(fq.ops.RX(0.2), 0)
+    program.add(ops.RX(0.2), 0)
     assert backend.propagator(program).shape == (9, 9)
 
     empty = fq.emulator.PulseImplementationMap()
@@ -226,7 +227,7 @@ def test_compiled_map_transfers_while_target_c6_and_geometry_control_evolution(
         gate_implementation_map=compiled,
     )
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
     source_plan = source_target._prepare_program(program).plan
     changed_plan = changed_target._prepare_program(program).plan
     for first, second in zip(
@@ -256,14 +257,14 @@ def test_custom_map_uses_only_public_atom_structural_authoring_values(
             (fq.emulator.PhaseShift(atom_3level_model.frame(site), 0.1),),
         )
 
-    implementation_map.add(fq.ops.X, custom_x)
+    implementation_map.add(ops.X, custom_x)
     backend = fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 1, 2.0),
         gate_implementation_map=implementation_map,
     )
     program = fq.Program(1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     (block,) = backend._prepare_program(program).plan
     assert len(block.controls) == 2
     assert block.control_bindings[0].engine_indices == (0,)
@@ -293,15 +294,15 @@ def test_atom_3level_noise_is_retained_validated_and_binary(
         Depolarizing(p=0.1),
     ):
         rejected = NoiseModel()
-        rejected.add(channel, operation=fq.ops.X)
+        rejected.add(channel, operation=ops.X)
         assert not backend.check_noise_support(rejected).supported
         with pytest.raises(BackendValidationError, match=type(channel).__name__):
             _backend(atom_3level_model, atom_3level_calibration, noise=rejected)
 
-    empty.add(PhaseDamping(rate=0.1), operation=fq.ops.X)
+    empty.add(PhaseDamping(rate=0.1), operation=ops.X)
     assert not backend.check_noise_support(empty).supported
     driven = fq.Program(2)
-    driven.add(fq.ops.RX(0.1), 0)
+    driven.add(ops.RX(0.1), 0)
     backend.run(driven).result()
     backend.propagator(driven)
 
@@ -335,12 +336,12 @@ def test_atom_3level_binding_is_exact_row_major_all_occupied_for_run_and_propaga
     backend = _backend(atom_3level_model, atom_3level_calibration)
     captured = _capture_adapter_bindings(monkeypatch)
     run_program = fq.Program(2)
-    run_program.add(fq.ops.RZ(0.2), 0)
+    run_program.add(ops.RZ(0.2), 0)
     backend.run(
         run_program, result_config={"counts": False, "final_state": True}
     ).result()
     propagate_program = fq.Program(2)
-    propagate_program.add(fq.ops.RZ(0.3), 1)
+    propagate_program.add(ops.RZ(0.3), 1)
     backend.propagator(propagate_program)
     assert len(captured) == 2
     for target, allocation in captured:
@@ -359,7 +360,7 @@ def test_atom_3level_declaration_order_binds_multi_register_nonprefix_refs(
     right = fq.QuantumRegister(1, name="right")
     program = fq.Program([left, right])
     # The first operation addresses the second declaration, not a prefix.
-    program.add(fq.ops.RZ(0.2), right[0])
+    program.add(ops.RZ(0.2), right[0])
     backend = _backend(atom_3level_model, atom_3level_calibration)
     captured = _capture_adapter_bindings(monkeypatch)
     propagator = backend.propagator(program)
@@ -385,7 +386,7 @@ def test_atom_3level_exact_binding_dimension_capacity_and_qutrit_result(
     with pytest.raises(BackendValidationError, match="dimension-two"):
         backend.run(fq.Program([fq.QuantumRegister(2, dim=3)]))
     program = fq.Program(2)
-    program.add(fq.ops.RX(np.pi), 0)
+    program.add(ops.RX(np.pi), 0)
     result = backend.run(
         program, result_config={"counts": False, "final_state": True}
     ).result()
@@ -401,16 +402,16 @@ def test_atom_3level_binary_measurement_reset_and_readout_propagator_inert(
         noise=_readout(np.array([[0.0, 1.0], [1.0, 0.0]])),
     )
     program = fq.Program(2, 1)
-    program.add(fq.ops.RX(np.pi), 0)
+    program.add(ops.RX(np.pi), 0)
     program.measure(0, 0)
-    program.add(fq.ops.Reset, 0)
+    program.add(ops.Reset, 0)
     result = backend.run(
         program, shots=1, result_config={"counts": True, "final_state": True}
     ).result()
     assert result.get_counts() == {"0": 1}
     assert result.get_density_matrix().shape == (9, 9)
     coherent = fq.Program(2)
-    coherent.add(fq.ops.RZ(0.2), 0)
+    coherent.add(ops.RZ(0.2), 0)
     empty = _backend(atom_3level_model, atom_3level_calibration)
     assert np.allclose(backend.propagator(coherent), empty.propagator(coherent))
 
@@ -425,9 +426,9 @@ def test_atom_3level_all_computational_inputs_remain_physical_qutrit_states(
     backend = _backend(atom_3level_model, atom_3level_calibration)
     program = fq.Program(2)
     if first:
-        program.add(fq.ops.RX(np.pi), 0)
+        program.add(ops.RX(np.pi), 0)
     if second:
-        program.add(fq.ops.RX(np.pi), 1)
+        program.add(ops.RX(np.pi), 1)
     density = (
         backend.run(program, result_config={"counts": False, "final_state": True})
         .result()
@@ -443,7 +444,7 @@ def test_atom_3level_superposition_and_raw_vs_final_frame_propagators(
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
     superposition = fq.Program(2)
-    superposition.add(fq.ops.RX(np.pi / 2), 0)
+    superposition.add(ops.RX(np.pi / 2), 0)
     density = (
         backend.run(superposition, result_config={"counts": False, "final_state": True})
         .result()
@@ -454,7 +455,7 @@ def test_atom_3level_superposition_and_raw_vs_final_frame_propagators(
     assert abs(density[0, 1]) > 0.49
 
     framed = fq.Program(2)
-    framed.add(fq.ops.RZ(0.37), 0)
+    framed.add(ops.RZ(0.37), 0)
     raw = backend.propagator(framed, apply_final_frame=False)
     final = backend.propagator(framed, apply_final_frame=True)
     assert np.allclose(raw, np.eye(9))
@@ -466,7 +467,7 @@ def test_atom_3level_measurement_returns_the_physical_single_shot_posterior_befo
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
     program = fq.Program(2, 1)
-    program.add(fq.ops.RX(np.pi / 2), 0)
+    program.add(ops.RX(np.pi / 2), 0)
     program.measure(0, 0)
     result = backend.run(
         program,
@@ -490,11 +491,11 @@ def test_atom_3level_feedforward_uses_the_reported_binary_bit_and_sampling_is_se
     noise = _readout(np.array([[0.0, 1.0], [1.0, 0.0]]))
     backend = _backend(atom_3level_model, atom_3level_calibration, noise=noise)
     program = fq.Program(2, 1)
-    program.add(fq.ops.RX(np.pi), 0)
+    program.add(ops.RX(np.pi), 0)
     program.measure(0, 0)
     # Physical |1> reports as 0 under confusion, so this conditional rotation
     # executes and returns the qutrit to |0>.
-    program.add(fq.ops.RX(np.pi), 0, condition=(0, 0))
+    program.add(ops.RX(np.pi), 0, condition=(0, 0))
     first = backend.run(
         program,
         shots=1,
@@ -516,7 +517,7 @@ def test_atom_3level_stochastic_measurement_is_seed_reproducible(
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
     program = fq.Program(2, 1)
-    program.add(fq.ops.RX(np.pi / 2), 0)
+    program.add(ops.RX(np.pi / 2), 0)
     program.measure(0, 0)
     config = {"counts": True, "final_state": False}
     first = backend.run(
@@ -596,7 +597,7 @@ def test_atom_3level_load_atoms_is_ordinary_unsupported_operation(
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
     program = fq.Program(2)
-    program.add(fq.ops.Put, (0, 1))
+    program.add(ops.Put, (0, 1))
     with pytest.raises(UnsupportedOperationError):
         backend.run(program)
 
@@ -605,7 +606,7 @@ def test_weak_blockade_neither_rejects_nor_emits_the_removed_advisory(
     atom_3level_model, atom_3level_calibration, atom_3level_model_document
 ):
     pair = fq.Program(2)
-    pair.add(fq.ops.CZ, (0, 1))
+    pair.add(ops.CZ, (0, 1))
     weak = _backend(atom_3level_model, atom_3level_calibration, spacing=20.0)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

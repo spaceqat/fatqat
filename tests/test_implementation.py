@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat._pulse_values import ControlChannel, PulseControl
 from fatqat._backends.steps import ApplyMatrixStep
 from fatqat.implementation import (
@@ -25,7 +25,7 @@ from fatqat.implementation.matrices import (
     swap_levels_matrix,
 )
 from fatqat.registers import QuantumRegister
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 class _DirectChannel(ControlChannel):
@@ -212,7 +212,7 @@ def test_add_accepts_operation_instance_key():
 def test_add_accepts_operation_class_key():
     class MyGate(ops.Operation):
         name = "MyGate"
-        _num_subsystems = 1
+        num_subsystems = 1
 
     m = MatrixImplementationMap()
     rule = FixedMatrix(np.eye(2, dtype=complex))
@@ -244,7 +244,7 @@ def _callable_rule(op):
 def test_add_rejects_variable_arity_operation(rule):
     class VariableGate(ops.Operation):
         name = "VariableGate"
-        _num_subsystems = None
+        num_subsystems = None
 
     m = MatrixImplementationMap()
     with pytest.raises(TypeError, match="variable arity"):
@@ -260,7 +260,7 @@ def test_add_rejects_direct_control_operations():
 def test_add_checks_variable_arity_before_wrapping_an_invalid_rule():
     class VariableGate(ops.Operation):
         name = "VariableGate"
-        _num_subsystems = None
+        num_subsystems = None
 
     m = MatrixImplementationMap()
     with pytest.raises(TypeError, match="implementation maps only support"):

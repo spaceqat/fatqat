@@ -315,13 +315,9 @@ class _PulseBackend(ABC):
             prepared.facts,
         )
         try:
-            return Job.done(
-                self._execute(
-                    prepared,
-                    request,
-                    simulation,
-                    shots,
-                )
+            return Job(
+                status="DONE",
+                result=self._execute(prepared, request, simulation, shots),
             )
         except Exception as exc:  # execution failures belong on the eager Job
             # The public message stays stable and free of solver internals,
@@ -330,7 +326,7 @@ class _PulseBackend(ABC):
             # `__cause__` rather than raising keeps this an eager failed Job.
             failure = BackendExecutionError("Pulse backend execution failed")
             failure.__cause__ = exc
-            return Job.failed(failure)
+            return Job(status="ERROR", error=failure)
 
     @final
     def propagator(

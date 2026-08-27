@@ -4,14 +4,15 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError
 
 
 def _bell_program():
     program = fq.Program(2, 2)
-    program.add(fq.ops.H, 0)
-    program.add(fq.ops.CX, (0, 1))
+    program.add(ops.H, 0)
+    program.add(ops.CX, (0, 1))
     program.measure((0, 1), (0, 1))
     return program
 
@@ -95,9 +96,9 @@ def test_numba_runtime_produces_valid_bell_counts_through_the_portal():
 def _dynamic_program():
     # A reset selects the compiled multi-shot path and its shot-parallel loop.
     program = fq.Program(1, 1)
-    program.add(fq.ops.H, 0)
+    program.add(ops.H, 0)
     program.measure(0, 0)
-    program.add(fq.ops.Reset, 0)
+    program.add(ops.Reset, 0)
     return program
 
 
@@ -133,8 +134,8 @@ def test_serial_shots_with_threaded_kernels_match_serial_kernels():
         pytest.skip("Numba exposes no parallel thread capacity")
 
     program = fq.Program(2, 2)
-    program.add(fq.ops.Put, (0, 1))
-    program.add(fq.ops.RX(np.pi / 3), 0)
+    program.add(ops.Put, (0, 1))
+    program.add(ops.RX(np.pi / 3), 0)
     program.measure((0, 1), (0, 1))
     backend = AtomArraySimulator(num_sites=2, runtime="numba")
 

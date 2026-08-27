@@ -3,13 +3,13 @@
 import pytest
 
 import fatqat as fq
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.program import AppliedOperation, Program
 
 
 def test_singleton_shape():
     assert ops.Put.name == "Put"
-    assert ops.Put.num_targets is None  # variable arity, >= 1 target
+    assert ops.Put.num_subsystems is None  # variable arity, >= 1 target
     assert isinstance(ops.Put, ops.PutGate)
     assert ops.Put == ops.PutGate()
 
@@ -43,6 +43,6 @@ def test_put_rejects_duplicate_targets():
         p.add(ops.Put, (0, 0))
 
 
-def test_put_exported_on_fq_ops():
-    assert "Put" in fq.ops.__all__
-    assert fq.ops.Put is ops.Put
+def test_put_exported_on_operations_namespace():
+    assert "Put" in fq.operations.__all__
+    assert fq.operations.Put is ops.Put

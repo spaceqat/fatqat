@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._backends.engine_contract import (
     _SimulationConfig,
 )
@@ -503,12 +504,12 @@ def test_backend_accepts_custom_implementation_map():
     from fatqat.implementation import default_matrix_implementation_map
 
     implementation_map = default_matrix_implementation_map()
-    implementation_map.add(fq.ops.X, np.eye(2, dtype=complex))
+    implementation_map.add(ops.X, np.eye(2, dtype=complex))
     backend = Simulator("SV", implementation_map=implementation_map)
 
     program = fq.Program(2, 2)
-    program.add(fq.ops.X, 0)
-    program.add(fq.ops.H, 1)
+    program.add(ops.X, 0)
+    program.add(ops.H, 1)
     program.measure(0, 0)
     program.measure(1, 1)
     counts = (
@@ -525,7 +526,7 @@ def test_backend_none_implementation_map_uses_defaults():
     backend = Simulator("SV", implementation_map=None)
 
     program = fq.Program(1, 1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     program.measure(0, 0)
 
     assert backend.run(
@@ -538,10 +539,10 @@ def test_backend_copies_implementation_map_defensively():
 
     implementation_map = default_matrix_implementation_map()
     backend = Simulator("SV", implementation_map=implementation_map)
-    implementation_map.remove(fq.ops.X)
+    implementation_map.remove(ops.X)
 
     program = fq.Program(1, 1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     program.measure(0, 0)
     assert backend.run(
         program, shots=10, simulation_config={"seed": 0}

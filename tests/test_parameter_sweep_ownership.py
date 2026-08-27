@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.observable import Observable
 
 
@@ -11,7 +12,7 @@ from fatqat.observable import Observable
 def test_sweep_normalizes_once_and_never_calls_public_binding(monkeypatch, family):
     angle = fq.Parameter("angle")
     program = fq.Program(1)
-    program.add(fq.ops.RY(angle), 0)
+    program.add(ops.RY(angle), 0)
     bindings = {angle: np.array([0.1, 0.4, 0.7])}
 
     if family == "simulator":

@@ -385,7 +385,7 @@ class AmplitudeDamping(Channel):
             :py:meth:`as_probability`.
     """
 
-    _num_subsystems: ClassVar[int | None] = 1
+    num_subsystems: ClassVar[int | None] = 1
     p: tuple[float, ...] | None = None
     rate: tuple[float, ...] | None = None
 
@@ -480,7 +480,7 @@ class PhaseDamping(Channel):
             time unit. Convert with :py:meth:`as_probability`.
     """
 
-    _num_subsystems: ClassVar[int | None] = 1
+    num_subsystems: ClassVar[int | None] = 1
     p: float | None = None
     rate: float | None = None
     t_phi: InitVar[float | None] = None

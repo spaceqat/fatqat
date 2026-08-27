@@ -25,10 +25,9 @@ relative phase. We will confirm the correlations with sampled counts and then
 confirm the coherence with exact expectation values.
 
 The neutral-atom twist is connectivity. On this backend a ``CZ`` acts only on a
-pair of atoms that is currently *paired* in the program's
-:class:`~fatqat.connectivity.AtomConnectivity` graph, and
-:data:`~fatqat.operations.Pair` / :data:`~fatqat.operations.Unpair` edit that
-graph as the circuit runs. Physically, ``Pair`` stands for "move these two
+pair of atoms that is currently *paired*. The :data:`~fatqat.operations.Pair` /
+:data:`~fatqat.operations.Unpair` operations update that pairing state as the
+circuit runs. Physically, ``Pair`` stands for "move these two
 atoms into a shared entangling zone" and ``Unpair`` for "move them apart
 again" -- the atom transport that gives a reconfigurable neutral-atom processor
 its programmable connectivity. We exploit exactly this to entangle atoms that
@@ -48,7 +47,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 np.set_printoptions(precision=3, suppress=True)
 
@@ -76,18 +75,19 @@ NUM_ATOMS = 8
 
 def native_h(program: fq.Program, target: int) -> None:
     """Hadamard in the native gate set: ``RZ(pi)`` then ``RY(pi/2)``."""
-    program.add(op.RZ(np.pi), target)
-    program.add(op.RY(np.pi / 2), target)
+    program.add(ops.RZ(np.pi), target)
+    program.add(ops.RY(np.pi / 2), target)
 
 
 def native_cx(program: fq.Program, control: int, target: int) -> None:
     """``CX(control -> target)`` as ``H(target) CZ H(target)``.
 
-    The ``CZ`` in the middle is kept only while ``control`` and ``target`` are
-    currently paired; otherwise the backend silently drops it.
+    The ``CZ`` in the middle is valid only while ``control`` and ``target`` are
+    currently paired; otherwise the backend raises
+    :class:`~fatqat.errors.BackendValidationError`.
     """
     native_h(program, target)
-    program.add(op.CZ, (control, target))
+    program.add(ops.CZ, (control, target))
     native_h(program, target)
 
 
@@ -132,9 +132,9 @@ for layer_index, layer in enumerate(CX_LAYERS, start=1):
 # each pair into a shared entangling zone -- and just after we
 # :data:`~fatqat.operations.Unpair` them, freeing the atoms for the next layer's
 # regrouping. If we skipped this rearrangement, the layer-2 and layer-3 ``CZ``
-# gates would target atoms that are not paired, the backend would drop them
-# silently, and the result would collapse to a mere ``(0, 4)`` Bell pair. The
-# transport is not incidental to the algorithm; it *is* the algorithm's wiring.
+# gates would target atoms that are not paired and the backend would reject the
+# program with :class:`~fatqat.errors.BackendValidationError`. The transport is
+# not incidental to the algorithm; it *is* the algorithm's wiring.
 
 
 def build_ghz8_program(*, measure: bool = True) -> fq.Program:
@@ -148,19 +148,19 @@ def build_ghz8_program(*, measure: bool = True) -> fq.Program:
     program = fq.Program(NUM_ATOMS, NUM_ATOMS if measure else 0)
 
     # Sites start empty; load one |0> atom into each of the eight traps.
-    program.add(op.Put, tuple(range(NUM_ATOMS)))
+    program.add(ops.Put, tuple(range(NUM_ATOMS)))
 
     # Seed the tree: put atom 0 into |+>, the root the branches grow from.
     native_h(program, 0)
 
     for layer in CX_LAYERS:
         for pair in layer:  # transport the layer's atoms together
-            program.add(op.Pair, pair)
+            program.add(ops.Pair, pair)
         for control, target in layer:  # one parallel layer of CX = H CZ H
             native_cx(program, control, target)
-        program.add(op.Barrier, tuple(range(NUM_ATOMS)))  # visual layer marker
+        program.add(ops.Barrier, tuple(range(NUM_ATOMS)))  # visual layer marker
         for pair in layer:  # move the pairs apart again
-            program.add(op.Unpair, pair)
+            program.add(ops.Unpair, pair)
 
     if measure:
         program.measure_all()
@@ -292,8 +292,8 @@ np.testing.assert_allclose(np.asarray(values), 1.0, atol=1e-9)
 # during transport.
 
 noise = fq.NoiseModel()
-noise.add(fq.noise.Loss(p=0.01), operation=op.Pair)
-noise.add(fq.noise.Loss(p=0.01), operation=op.Unpair)
+noise.add(fq.noise.Loss(p=0.01), operation=ops.Pair)
+noise.add(fq.noise.Loss(p=0.01), operation=ops.Unpair)
 
 lossy_backend = fq.simulator.AtomArraySimulator(num_sites=NUM_ATOMS, noise=noise)
 lossy_counts = (
@@ -327,8 +327,11 @@ assert lost_shots > 0
 # log-depth entangling tree and introduces a realistic loss channel.
 #
 # From here, try widening the tree to sixteen atoms by adding a fourth layer,
-# raising the loss probability to watch erasures grow, or dropping the
-# ``Pair`` / ``Unpair`` calls from one layer to see the GHZ state collapse to a
-# smaller entangled cluster as the mispaired ``CZ`` gates are discarded. Because
-# this page and its downloadable notebook come from the same executable source,
-# every variation runs without copying code out of a static screenshot.
+# raising the loss probability to watch erasures grow, or intentionally
+# dropping the ``Pair`` / ``Unpair`` calls from one layer to see
+# :class:`~fatqat.simulator.AtomArraySimulator` reject the first unpaired
+# ``CZ`` with :class:`~fatqat.errors.BackendValidationError`. Restore the
+# pairing before exploring physical loss: an unpaired gate is a program error,
+# while a gate skipped after atom loss is a per-shot physical effect. This page
+# and its downloadable notebook come from the same executable source, so these
+# variations can be made directly in runnable code.

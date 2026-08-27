@@ -30,6 +30,7 @@ under a new model version.
 
 ```python
 import fatqat as fq
+import fatqat.operations as ops
 
 model_document = fq.emulator.load_model_document("transmon.reference")
 print(model_document["model"])
@@ -103,8 +104,8 @@ improve gate quality in a future calibration layer.
 
 ```python
 program = fq.Program(2, 1)
-program.add(fq.ops.RX(0.4), 0)
-program.add(fq.ops.iSwap, (0, 1))
+program.add(ops.RX(0.4), 0)
+program.add(ops.iSwap, (0, 1))
 program.measure(0, 0)
 
 result = backend.run(
@@ -142,15 +143,15 @@ duration = 20.0
 controls = (
     fq.emulator.PulseControl(
         model.control.drive("q0"),
-        fq.waveforms.SampledWaveform((0.0, duration), (0.02, 0.02j)),
+        fq.emulator.SampledWaveform((0.0, duration), (0.02, 0.02j)),
     ),
     fq.emulator.PulseControl(
         model.control.exchange("q0", "q1"),
-        fq.waveforms.SampledWaveform((0.0, duration), (0.01, 0.01)),
+        fq.emulator.SampledWaveform((0.0, duration), (0.01, 0.01)),
     ),
 )
 direct_program = fq.Program(2)
-direct_program.add(fq.ops.PulseOperation(duration, controls))
+direct_program.add(ops.PulseOperation(duration, controls))
 ```
 
 Direct blocks can coexist with calibrated gates. `iSwap` remains a gate whose
@@ -216,8 +217,8 @@ implementations = fq.emulator.default_transmon_gate_implementation_map(
     model=model,
     calibration=calibration,
 )
-implementations.remove(fq.ops.CZ)
-implementations.add(fq.ops.CZ, custom_cz)
+implementations.remove(ops.CZ)
+implementations.add(ops.CZ, custom_cz)
 backend = fq.emulator.TransmonEmulator(
     model, gate_implementation_map=implementations
 )
@@ -276,7 +277,7 @@ Provide `operation=...` to scope a generator to matching pulse blocks:
 ```python
 noise.add(
     fq.noise.PhaseDamping(rate=0.002),
-    operation=fq.ops.X,
+    operation=ops.X,
     targets="q0",
 )
 ```

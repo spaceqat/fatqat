@@ -6,7 +6,7 @@ from typing import ClassVar
 import pytest
 
 from fatqat.program import Program, AppliedOperation
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.registers import GridRegister, QuantumRegister, RegisterView
 
 
@@ -153,7 +153,7 @@ def test_add_rejects_view_for_scalar_only_operations(op):
     qubits = GridRegister(2, 2, name="qubits")
     p = Program([qubits])
     views = (qubits.row(0), qubits.row(1), qubits.all(), qubits.column(0))
-    arity = op.num_targets
+    arity = op.num_subsystems
     targets = views[0] if arity == 1 else views[:arity]
     with pytest.raises(ValueError):
         p.add(op, targets)
@@ -193,7 +193,7 @@ def test_add_targets_optional_for_zero_arity_operation():
     @dataclass(frozen=True)
     class _ZeroArityProbe(ops.Operation):
         name: ClassVar[str] = "ZeroArityProbe"
-        _num_subsystems: ClassVar[int] = 0
+        num_subsystems: ClassVar[int] = 0
 
     p = Program(1)
     p.add(_ZeroArityProbe())

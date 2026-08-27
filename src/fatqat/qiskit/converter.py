@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-import fatqat.operations as op
+import fatqat.operations as ops
 from fatqat.program import Program
 from fatqat.registers import ClassicalRegister, QuantumRegister, RegisterRef
 
@@ -95,7 +95,7 @@ def circuit_to_program(circuit: QuantumCircuit) -> Program:
                     f"got {len(qubits)}"
                 )
             program.add(
-                op.Reset,
+                ops.Reset,
                 _classical_or_quantum_ref(program, circuit, qubits[0], quantum=True),
             )
             continue
@@ -160,44 +160,44 @@ def circuit_to_program(circuit: QuantumCircuit) -> Program:
 
 
 _FIXED_1Q = {
-    "id": op.I,
-    "h": op.H,
-    "x": op.X,
-    "y": op.Y,
-    "z": op.Z,
-    "s": op.S,
-    "sdg": op.Sdg,
-    "sx": op.SX,
-    "t": op.T,
-    "tdg": op.Tdg,
+    "id": ops.I,
+    "h": ops.H,
+    "x": ops.X,
+    "y": ops.Y,
+    "z": ops.Z,
+    "s": ops.S,
+    "sdg": ops.Sdg,
+    "sx": ops.SX,
+    "t": ops.T,
+    "tdg": ops.Tdg,
 }
 
 _FIXED_2Q = {
-    "cx": op.CX,
-    "cy": op.CY,
-    "cz": op.CZ,
-    "cs": op.CS,
-    "swap": op.Swap,
-    "iswap": op.iSwap,
+    "cx": ops.CX,
+    "cy": ops.CY,
+    "cz": ops.CZ,
+    "cs": ops.CS,
+    "swap": ops.Swap,
+    "iswap": ops.iSwap,
 }
 
 _FIXED_3Q = {
-    "ccx": op.CCX,
-    "cswap": op.CSwap,
+    "ccx": ops.CCX,
+    "cswap": ops.CSwap,
 }
 
 _PARAMETRIC: dict[str, tuple[int, Callable[[list[float]], Any]]] = {
-    "rx": (1, lambda p: op.RX(p[0])),
-    "ry": (1, lambda p: op.RY(p[0])),
-    "rz": (1, lambda p: op.RZ(p[0])),
-    "p": (1, lambda p: op.Phase(p[0])),
-    "phase": (1, lambda p: op.Phase(p[0])),
-    "u1": (1, lambda p: op.U1(p[0])),
-    "u2": (2, lambda p: op.U2(p[0], p[1])),
-    "u": (3, lambda p: op.U(p[0], p[1], p[2])),
-    "u3": (3, lambda p: op.U3(p[0], p[1], p[2])),
-    "cp": (1, lambda p: op.CPhase(p[0])),
-    "cu1": (1, lambda p: op.CPhase(p[0])),
+    "rx": (1, lambda p: ops.RX(p[0])),
+    "ry": (1, lambda p: ops.RY(p[0])),
+    "rz": (1, lambda p: ops.RZ(p[0])),
+    "p": (1, lambda p: ops.Phase(p[0])),
+    "phase": (1, lambda p: ops.Phase(p[0])),
+    "u1": (1, lambda p: ops.U1(p[0])),
+    "u2": (2, lambda p: ops.U2(p[0], p[1])),
+    "u": (3, lambda p: ops.U(p[0], p[1], p[2])),
+    "u3": (3, lambda p: ops.U3(p[0], p[1], p[2])),
+    "cp": (1, lambda p: ops.CPhase(p[0])),
+    "cu1": (1, lambda p: ops.CPhase(p[0])),
 }
 
 

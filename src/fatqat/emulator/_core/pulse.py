@@ -153,7 +153,7 @@ class PulseDefinition:
     facts, attached by ``emulator._core.planning._lower_gate`` when it converts a
     definition into a target-bound `PulseBlock`.
 
-    ``duration``, every :class:`~fatqat.waveforms.SampledWaveform` time grid,
+    ``duration``, every :class:`~fatqat.emulator.SampledWaveform` time grid,
     and every :class:`~fatqat.emulator.PulseControl` ``start_offset`` use the
     owning model's native time coordinate; this type does not claim
     nanoseconds or any other unit.

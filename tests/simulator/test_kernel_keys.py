@@ -3,6 +3,7 @@
 import numpy as np
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._backends.steps import ApplyMatrixStep
 from fatqat.simulator import Simulator
 from fatqat._backends.steps import BuiltinKernelKey
@@ -33,9 +34,9 @@ def test_every_default_gate_carries_a_distinct_key():
 
 def test_lowering_copies_the_key_onto_the_step():
     program = fq.Program(2)
-    program.add(fq.ops.H, 0)
-    program.add(fq.ops.CX, (0, 1))
-    program.add(fq.ops.RZ(0.3), 1)
+    program.add(ops.H, 0)
+    program.add(ops.CX, (0, 1))
+    program.add(ops.RZ(0.3), 1)
     steps = _lowered_gate_steps(Simulator(), program)
 
     assert [s.kernel_key for s in steps] == [
@@ -50,10 +51,10 @@ def test_custom_rule_lowers_with_no_key():
     # A custom rule that happens to return exactly the X matrix stays
     # None-keyed: identity comes from the selected implementation, never
     # from matrix content.
-    custom_map.remove(fq.ops.X)
-    custom_map.add(fq.ops.X, np.array([[0, 1], [1, 0]], dtype=complex))
+    custom_map.remove(ops.X)
+    custom_map.add(ops.X, np.array([[0, 1], [1, 0]], dtype=complex))
     program = fq.Program(1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     backend = Simulator(implementation_map=custom_map)
 
     (step,) = _lowered_gate_steps(backend, program)
@@ -63,12 +64,12 @@ def test_custom_rule_lowers_with_no_key():
 def test_device_specific_rule_lowers_with_no_key():
     device_map = MatrixImplementationMap()
     device_map.add(
-        fq.ops.CZ,
+        ops.CZ,
         np.diag([1, 1, 1, -1]).astype(complex),
         device_operands=(0, 1),
     )
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
     backend = Simulator(implementation_map=device_map)
 
     (step,) = _lowered_gate_steps(backend, program)

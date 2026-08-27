@@ -2,7 +2,7 @@
 
 import pytest
 
-from fatqat import ops
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator._core.pulse import (
     PulseBlock,
@@ -15,7 +15,7 @@ from fatqat.errors import (
     PulseImplementationError,
     UnsupportedOperationError,
 )
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 def _definition(model, subsystem_id="q0"):
@@ -197,7 +197,7 @@ def test_pulse_block_return_is_rejected():
 def test_shared_registry_rejections_keep_family_neutral_wording():
     class VariableGate(ops.Operation):
         name = "VariableGate"
-        _num_subsystems = None
+        num_subsystems = None
 
     implementations = PulseImplementationMap()
     with pytest.raises(TypeError, match="implementation maps only support") as excinfo:

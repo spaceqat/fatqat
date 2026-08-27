@@ -9,7 +9,7 @@ from fatqat.emulator._core.pulse import (
     PulseDefinition,
 )
 from fatqat.errors import BackendValidationError
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 _OWNER = object()
 

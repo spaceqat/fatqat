@@ -23,11 +23,11 @@ python -m pip install .
 
 ```python
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 program = fq.Program(2, 2)          # 2 qubits, 2 clbits
-program.add(op.H, 0)
-program.add(op.CX, (0, 1))
+program.add(ops.H, 0)
+program.add(ops.CX, (0, 1))
 program.measure((0, 1), (0, 1))
 
 backend = fq.simulator.Simulator(method="SV")
@@ -44,8 +44,8 @@ instead of (or alongside) counts:
 
 ```python
 bell = fq.Program(2)
-bell.add(op.H, 0)
-bell.add(op.CX, (0, 1))
+bell.add(ops.H, 0)
+bell.add(ops.CX, (0, 1))
 
 rho = (
     fq.simulator.Simulator(method="DM")
@@ -67,7 +67,7 @@ floating-point rounding and sampled results agree in distribution:
 ```python
 backend = fq.simulator.Simulator(method="SV", runtime="numba")
 noise = fq.NoiseModel()
-noise.add(fq.noise.Depolarizing(p=0.05), operation=op.CX)
+noise.add(fq.noise.Depolarizing(p=0.05), operation=ops.CX)
 noisy = fq.simulator.Simulator(method="DM", runtime="numba", noise=noise)
 ```
 
@@ -113,11 +113,11 @@ the requested results and workload:
 
 ```python
 dyn = fq.Program(2, 2)
-dyn.add(op.H, 0)
+dyn.add(ops.H, 0)
 dyn.measure(0, 0)                # mid-circuit measurement
-dyn.add(op.X, 1, condition=(0, 1))   # applied only when clbit 0 read 1
-dyn.add(op.Reset, 0)                 # reprepare q0 in |0>
-dyn.add(op.Barrier, (0, 1))          # compiler marker, no-op here
+dyn.add(ops.X, 1, condition=(0, 1))   # applied only when clbit 0 read 1
+dyn.add(ops.Reset, 0)                 # reprepare q0 in |0>
+dyn.add(ops.Barrier, (0, 1))          # compiler marker, no-op here
 dyn.measure(1, 1)
 ```
 
@@ -132,10 +132,10 @@ Quantum channels attach to gate occurrences; readout confusion is classical
 import numpy as np
 
 noise = fq.NoiseModel()
-noise.add(fq.noise.Depolarizing(p=0.05), operation=op.CX)
+noise.add(fq.noise.Depolarizing(p=0.05), operation=ops.CX)
 damping, dephasing = fq.noise.ThermalRelaxation(t1=60e-6, t2=80e-6).as_channels(2e-6)
-noise.add(damping, operation=op.H)
-noise.add(dephasing, operation=op.H)
+noise.add(damping, operation=ops.H)
+noise.add(dephasing, operation=ops.H)
 noise.add(fq.noise.ReadoutConfusion(np.array([[0.98, 0.05], [0.02, 0.95]])))
 
 backend = fq.simulator.Simulator(method="DM", noise=noise)
@@ -156,8 +156,8 @@ measurement would collapse the state the value is read from:
 
 ```python
 program = fq.Program(2)             # no clbits, no measurement
-program.add(op.H, 0)
-program.add(op.CX, (0, 1))
+program.add(ops.H, 0)
+program.add(ops.CX, (0, 1))
 
 estimator = fq.Estimator(fq.simulator.Simulator(method="SV"))
 observables = [fq.Observable([("ZZ", 1.0)]), fq.Observable([("XX", 0.5)])]
@@ -187,8 +187,8 @@ Registers take a per-slot dimension; gates like `Shift`, `Clock`, `Sum`, and
 
 ```python
 qutrits = fq.Program([fq.QuantumRegister(2, dim=3)], [fq.ClassicalRegister(2, dim=3)])
-qutrits.add(op.Fourier, 0)
-qutrits.add(op.Sum, (0, 1))          # |i, j> -> |i, i+j mod 3>
+qutrits.add(ops.Fourier, 0)
+qutrits.add(ops.Sum, (0, 1))          # |i, j> -> |i, i+j mod 3>
 qutrits.measure_all()
 # counts over trits: {'00': 314, '11': 293, '22': 293}
 ```
@@ -204,14 +204,15 @@ can discover the device's constraints instead of hardcoding them:
 ```python
 fake = fq.simulator.SCQubitIBMSimulator()
 impl_map = fake.implementation_map
-sorted(op.name for op in impl_map.supported_operations())   # ['CZ', 'RZ', 'SX', 'X']
-impl_map.supports(op.CX)                                     # False
+sorted(operation.name for operation in impl_map.supported_operations())  # ['CZ', 'RZ', 'SX', 'X']
+impl_map.supports(ops.CX)                                     # False
 ```
 
 The neutral-atom target `AtomArraySimulator` (`RX`, `RY`, `RZ`, `CZ`) has no
-fixed topology at all: `op.Put` loads atoms into sites, and a `CZ` is legal
-only while its two atoms are connected by `op.Pair` (undone by `op.Unpair`),
-so connectivity is rearranged mid-circuit.
+fixed topology at all: `ops.Put` loads atoms into sites, and a `CZ` is legal
+only while its two atoms are connected by `ops.Pair` (undone by `ops.Unpair`),
+so connectivity is rearranged mid-circuit. An unpaired `CZ` is rejected with
+`fq.errors.BackendValidationError`.
 
 ## Physics emulators
 
@@ -223,7 +224,7 @@ not determine whether a backend supports the other.
 |---|---|---|---|---|
 | `TransmonEmulator` | three-level transmons | yes | yes | public, optional `gate_implementation_map=` with a built-in default |
 | `Atom3LevelEmulator` | `\|0>, \|1>, \|r>` atoms | yes | yes | public, optional `gate_implementation_map=` with a built-in default |
-| `Atom2LevelEmulator` | `\|g>, \|r>` atoms | no | yes, global drive/detuning | none |
+| `Atom2LevelEmulator` | `\|g>, \|r>` atoms | custom rules only | yes, global drive/detuning | public, optional `gate_implementation_map=` with an empty built-in map |
 
 The common workflow hides nominal package calibration defaults:
 

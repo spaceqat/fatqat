@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.job import Job
 from fatqat.resource_layout import ResourceLayout
 from fatqat.result import Result
@@ -17,16 +18,16 @@ def _rotation_template():
     angles = fq.ParameterVector("angles", 2)
     bias = fq.Parameter("bias")
     program = fq.Program(2)
-    program.add(fq.ops.RX(angles[0]), 0)
-    program.add(fq.ops.RY(angles[1]), 1)
-    program.add(fq.ops.RZ(bias), 0)
+    program.add(ops.RX(angles[0]), 0)
+    program.add(ops.RY(angles[1]), 1)
+    program.add(ops.RZ(bias), 0)
     return program, angles, bias
 
 
 def test_scalar_parameter_sweep_returns_ordered_results():
     theta = fq.Parameter("theta")
     program = fq.Program(1)
-    program.add(fq.ops.RX(theta), 0)
+    program.add(ops.RX(theta), 0)
     values = np.array([0.0, np.pi / 2, np.pi])
 
     results = (
@@ -79,7 +80,7 @@ def test_vector_and_multiple_parameter_batches_match_explicit_loop():
 def test_small_method_smoke_matches_repeated_runs(method):
     theta = fq.Parameter("theta")
     program = fq.Program(1)
-    program.add(fq.ops.RY(theta), 0)
+    program.add(ops.RY(theta), 0)
     values = np.array([0.2, 0.9])
     backend = Simulator(method, runtime="numpy")
 
@@ -110,7 +111,7 @@ def test_small_method_smoke_matches_repeated_runs(method):
 def test_counts_seed_and_all_options_match_manual_repeated_runs(monkeypatch):
     theta = fq.Parameter("theta")
     program = fq.Program(1, 1)
-    program.add(fq.ops.RY(theta), 0)
+    program.add(ops.RY(theta), 0)
     program.measure(0, 0)
     layout = ResourceLayout({program.quantum_registers[0][0]: 0})
     initial_state = [0.0, 1.0]
@@ -241,13 +242,13 @@ def test_parameter_free_and_zero_width_batches_are_rejected():
 def test_direct_inner_run_failure_propagates_without_returning_job(monkeypatch):
     theta = fq.Parameter("theta")
     program = fq.Program(1)
-    program.add(fq.ops.RX(theta), 0)
+    program.add(ops.RX(theta), 0)
     backend = Simulator()
 
     def fail_on_second(bound, **_kwargs):
         if bound.operations[0].operation.theta == 0.2:
             raise RuntimeError("direct row failure")
-        return Job.done(Result(metadata={"row": "first"}))
+        return Job(status="DONE", result=Result(metadata={"row": "first"}))
 
     monkeypatch.setattr(backend, "run", fail_on_second)
     with pytest.raises(RuntimeError, match="direct row failure"):
@@ -257,14 +258,14 @@ def test_direct_inner_run_failure_propagates_without_returning_job(monkeypatch):
 def test_failed_point_job_produces_failed_outer_job_without_partial_list(monkeypatch):
     theta = fq.Parameter("theta")
     program = fq.Program(1)
-    program.add(fq.ops.RX(theta), 0)
+    program.add(ops.RX(theta), 0)
     backend = Simulator()
     error = KeyboardInterrupt("point failed")
 
     def fail_on_second(bound, **_kwargs):
         if bound.operations[0].operation.theta == 0.2:
-            return Job.failed(error)
-        return Job.done(Result(metadata={"row": "first"}))
+            return Job(status="ERROR", error=error)
+        return Job(status="DONE", result=Result(metadata={"row": "first"}))
 
     monkeypatch.setattr(backend, "run", fail_on_second)
     outer = backend.run_sweep(program, {theta: [0.1, 0.2]})
@@ -277,7 +278,7 @@ def test_failed_point_job_produces_failed_outer_job_without_partial_list(monkeyp
 def test_ordinary_simulator_rejects_unbound_before_preparation(monkeypatch):
     theta = fq.Parameter("theta")
     program = fq.Program(1)
-    program.add(fq.ops.RX(theta), 0)
+    program.add(ops.RX(theta), 0)
     backend = Simulator()
 
     monkeypatch.setattr(

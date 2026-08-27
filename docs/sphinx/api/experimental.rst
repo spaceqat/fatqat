@@ -6,44 +6,26 @@ integration work, but their lifecycle semantics are not yet a stable
 application contract. They are documented here so users can make informed
 use of them without confusing them with the normal result workflow.
 
-Job lifecycle
--------------
+Direct Job construction and status values
+-----------------------------------------
 
-:py:meth:`~fatqat.simulator.Simulator.run` returns a :py:class:`~fatqat.Job`. The ordinary path remains
-``job.result()``. The current constructor and helpers are:
+The normal :py:class:`~fatqat.Job` surface is documented in :doc:`job`:
+applications receive a job from execution and use its
+:py:attr:`~fatqat.Job.status` and :py:meth:`~fatqat.Job.result` members.
 
-- :py:class:`~fatqat.Job` (``status, result=None, error=None``)
-- :py:meth:`~fatqat.Job.done` creates a completed job.
-- :py:meth:`~fatqat.Job.failed` creates an error job.
-- :py:meth:`~fatqat.Job.result` returns the result payload or re-raises the stored
-  terminal error.
-
-Current simulator jobs are terminal when returned. A completed job has
-status ``"DONE"``; an error job has status ``"ERROR"``. Treat these status
-strings and the current eager behavior as evolving: do not build polling,
-queuing, or long-running orchestration around them yet.
-
-``Job`` is generic in its completed payload without changing this lifecycle.
-Ordinary Simulator and Estimator calls use ``Job[Result]``. Their parameter
-sweep methods use the same runtime class with ``Job[list[Result]]``, ordered by
-binding row; there is no separate sweep-job type.
-
-Detailed Job reference
-----------------------
-
-.. autoclass:: fatqat.Job
-   :members:
-   :show-inheritance:
-
-:py:attr:`~fatqat.Job.status` records the current state. A failed job keeps its
-exception private and re-raises it from :py:meth:`~fatqat.Job.result`.
+Adapters and focused tests may directly construct the current eager terminal
+representation as ``Job(status, result=None, error=None)``. A completed job has
+status ``"DONE"``; an error job has status ``"ERROR"``. Direct construction,
+these exact strings, and the eager-only lifecycle remain evolving. Do not build
+polling, queuing, or long-running orchestration around them yet.
 
 Direct :py:class:`~fatqat.Result` construction
 -----------------------------------------------
 
-The current constructor is:
-
-:py:class:`~fatqat.Result` (``counts=None, statevector=None, available=frozenset(), metadata=None, classical_dims=(), density_matrix=None``)
+The current constructor is :py:class:`~fatqat.Result`
+(``counts=None, statevector=None, available=frozenset(), metadata=None,
+classical_dims=(), density_matrix=None, unitary=None, superop=None,
+data=None``).
 
 Use it only when adapting an external execution path or creating focused
 tests. An ordinary backend or Estimator run returns one ``Result`` from
@@ -70,17 +52,17 @@ example supplies a matrix for ``H`` and then runs a one-operation program:
 
    import numpy as np
    import fatqat as fq
-   import fatqat.operations as op
+   import fatqat.operations as ops
 
    rules = fq.implementation.MatrixImplementationMap()
    rules.add(
-       op.H,
+       ops.H,
        np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2),
    )
 
    backend = fq.simulator.Simulator(implementation_map=rules)
    program = fq.Program(1)
-   program.add(op.H, 0)
+   program.add(ops.H, 0)
    result = backend.run(
        program,
        shots=1,
@@ -156,6 +138,7 @@ touching private emulator modules:
 .. code-block:: python
 
    import fatqat as fq
+   import fatqat.operations as ops
 
    def custom_cz(operation, *, device_operands):
        first, second = device_operands
@@ -170,8 +153,8 @@ touching private emulator modules:
    implementations = fq.emulator.default_transmon_gate_implementation_map(
        model=model, calibration=calibration
    )
-   implementations.remove(fq.ops.CZ)
-   implementations.add(fq.ops.CZ, custom_cz)
+   implementations.remove(ops.CZ)
+   implementations.add(ops.CZ, custom_cz)
 
    backend = fq.emulator.TransmonEmulator(
        model, gate_implementation_map=implementations
@@ -232,7 +215,7 @@ Registration modes
 family has either one unconstrained operand-aware rule, applying across device
 operands, or a finite set of rules keyed by ordered
 ``device_operands`` - never both for the same family. Replacing the default
-CZ table with an unconstrained replacement means calling ``remove(op.CZ)``
+CZ table with an unconstrained replacement means calling ``remove(ops.CZ)``
 first. The same remove-first rule applies when changing standard unconstrained
 RX to device-specific entries. Implementations may be direct fixed
 ``PulseDefinition`` values, operand-unaware callables with explicit

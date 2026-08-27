@@ -19,7 +19,7 @@ class ThermalRelaxation(Channel):
     explicit duration.
     """
 
-    _num_subsystems = 1
+    num_subsystems = 1
     t1: float
     t2: float
 

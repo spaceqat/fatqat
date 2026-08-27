@@ -5,7 +5,7 @@ import pytest
 
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.program import Program
 
 
@@ -148,7 +148,7 @@ def test_barrier_is_preserved_in_program_operations():
 
 def test_resource_layout_failure_raises_directly_not_as_a_failed_job():
     # A validation failure in _resolve_resource_layout must propagate
-    # directly from run(), never be captured into Job.failed().
+    # directly from run(), never be captured into a failed Job.
     class _ExplodingResourceLayoutBackend(Simulator):
         def _resolve_resource_layout(self, program, supplied_layout=None):
             raise BackendValidationError("resource layout boom")

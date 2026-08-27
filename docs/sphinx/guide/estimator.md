@@ -7,11 +7,11 @@ through bitstrings at all.
 
 ```python
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 program = fq.Program(2)          # no classical bits, and no measurement
-program.add(op.H, 0)
-program.add(op.CX, (0, 1))
+program.add(ops.H, 0)
+program.add(ops.CX, (0, 1))
 
 estimator = fq.Estimator(fq.simulator.Simulator(method="SV"))
 result = estimator.run(program, fq.Observable([("ZZ", 1.0)])).result()
@@ -132,8 +132,8 @@ count shows the granularity a real experiment would have.
 
 ```python
 tilted = fq.Program(2)          # a state the Bell example's +-1 values would hide
-tilted.add(op.RY(1.0), 0)
-tilted.add(op.CX, (0, 1))
+tilted.add(ops.RY(1.0), 0)
+tilted.add(ops.CX, (0, 1))
 observable = fq.Observable([("ZZ", 1.0), ("XX", 0.5)])
 
 exact = estimator.run(tilted, observable).result()
@@ -168,7 +168,7 @@ stays exact:
 
 ```python
 noise = fq.NoiseModel()
-noise.add(fq.noise.Depolarizing(p=0.1), operation=op.CX)
+noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.CX)
 
 estimator = fq.Estimator(fq.simulator.Simulator(method="DM", noise=noise))
 print(estimator.run(program, fq.Observable([("ZZ", 1.0)])).result().get_expectation())

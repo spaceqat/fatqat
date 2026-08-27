@@ -86,7 +86,7 @@ class SampledWaveform(Waveform):
             not strictly increasing.
 
     Examples:
-        >>> from fatqat.waveforms import SampledWaveform
+        >>> from fatqat.emulator import SampledWaveform
         >>> waveform = SampledWaveform(
         ...     (0.0, 0.2, 0.7, 1.0),
         ...     (0.0, 0.8, 0.4, 0.0),

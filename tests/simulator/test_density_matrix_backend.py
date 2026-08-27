@@ -1,7 +1,5 @@
 """Tests density-matrix backend public behavior: counts, state availability, validation."""
 
-import warnings
-
 import numpy as np
 import pytest
 
@@ -10,12 +8,11 @@ from fatqat.emulator import ControlChannel, PulseControl
 from fatqat.simulator import Simulator
 from fatqat.errors import (
     BackendValidationError,
-    NoMeasurementWarning,
     ResultFieldUnavailableError,
 )
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.program import Program
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 def test_counts_default_with_measurement():
@@ -270,24 +267,22 @@ def test_run_rejects_non_dict_result_config():
         Simulator("DM").run(p, result_config=object())
 
 
-def test_no_measurement_warning_when_counts_only_and_no_state():
+def test_unmeasured_clbit_emits_user_warning_when_counts_only_and_no_state():
     p = Program(1, 1)  # has a clbit, never measured
     p.add(ops.H, 0)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with pytest.warns(UserWarning, match="clbits that were never measured"):
         Simulator("DM").run(
             p,
             shots=10,
             simulation_config={"seed": 0},
             result_config={"counts": True, "final_state": False},
         ).result()
-    assert any(issubclass(w.category, NoMeasurementWarning) for w in caught)
 
 
 def test_qutrit_program_counts_and_state():
     qt = fq.QuantumRegister(1, dim=3)
     program = fq.Program([qt])
-    program.add(fq.ops.Shift(1), qt[0])
+    program.add(ops.Shift(1), qt[0])
     rho = (
         Simulator("DM")
         .run(program, result_config={"counts": False})
@@ -302,7 +297,7 @@ def test_qutrit_program_counts_and_state():
 def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():
     qt = fq.QuantumRegister(1, dim=3)
     program = fq.Program([qt])
-    program.add(fq.ops.H, qt[0])  # frontend must NOT raise here
+    program.add(ops.H, qt[0])  # frontend must NOT raise here
     with pytest.raises(BackendValidationError) as exc:
         fq.simulator.Simulator("DM").run(
             program, result_config={"counts": False, "final_state": True}
@@ -312,7 +307,7 @@ def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():
 
 
 def test_unsupported_operation_raises():
-    class Bogus(fq.ops.Operation):
+    class Bogus(ops.Operation):
         pass
 
     p = Program(1)
@@ -324,7 +319,7 @@ def test_unsupported_operation_raises():
 def test_matrix_simulator_explicitly_rejects_pulse_operation():
     p = Program(1)
     p.add(
-        fq.ops.PulseOperation(
+        ops.PulseOperation(
             1.0,
             (
                 PulseControl(

@@ -6,7 +6,7 @@ import inspect
 import numpy as np
 import pytest
 
-from fatqat import ops
+import fatqat.operations as ops
 from fatqat.emulator._core.pulse import _invoke_pulse_rule
 from fatqat.emulator.superconducting import (
     TransmonCalibration,

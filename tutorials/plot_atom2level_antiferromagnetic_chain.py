@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import fatqat as fq
+import fatqat.operations as ops
 
 model_document = fq.emulator.load_model_document("atom2level.reference")
 model = fq.emulator.Atom2LevelModel.from_document(model_document)
@@ -172,20 +173,20 @@ def pulse_stage(
     duration: float,
     omega: tuple[float, float],
     detuning: tuple[float, float],
-) -> fq.ops.PulseOperation:
+) -> ops.PulseOperation:
     """Create one linear drive-and-detuning stage in model time units."""
     times = (0.0, duration)
     controls = (
         fq.emulator.PulseControl(
             model.control.drive(),
-            fq.waveforms.SampledWaveform(times, omega),
+            fq.emulator.SampledWaveform(times, omega),
         ),
         fq.emulator.PulseControl(
             model.control.detuning(),
-            fq.waveforms.SampledWaveform(times, detuning),
+            fq.emulator.SampledWaveform(times, detuning),
         ),
     )
-    return fq.ops.PulseOperation(duration, controls)
+    return ops.PulseOperation(duration, controls)
 
 
 program = fq.Program(arrangement.num_sites)

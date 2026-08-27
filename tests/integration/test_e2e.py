@@ -3,12 +3,13 @@
 import numpy as np
 
 import fatqat as fq
+import fatqat.operations as ops
 
 
 def test_minimal_workflow_from_spec():
     program = fq.Program(2, 2)
-    program.add(fq.ops.H, 0)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.H, 0)
+    program.add(ops.CZ, (0, 1))
     program.measure(0, 0)
     program.measure(1, 1)
 
@@ -30,10 +31,10 @@ def test_minimal_workflow_from_spec():
 
 def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
     program = fq.Program(2, 2)
-    program.add(fq.ops.X, 0)
-    program.add(fq.ops.X, 1)
+    program.add(ops.X, 0)
+    program.add(ops.X, 1)
     program.measure((0, 1), (0, 1))
-    program.add(fq.ops.Reset, (0, 1))
+    program.add(ops.Reset, (0, 1))
     program.measure_all()
 
     result = (
@@ -61,8 +62,8 @@ def test_heterogeneous_qutrit_qubit_program():
     ct = fq.ClassicalRegister(1, dim=3)
     cb = fq.ClassicalRegister(1, dim=2)
     program = fq.Program([qt, qb], [ct, cb])
-    program.add(fq.ops.Shift(1), qt[0])  # qutrit |0> -> |1>
-    program.add(fq.ops.X, qb[0])  # qubit  |0> -> |1>
+    program.add(ops.Shift(1), qt[0])  # qutrit |0> -> |1>
+    program.add(ops.X, qb[0])  # qubit  |0> -> |1>
     program.measure(qt[0], ct[0])
     program.measure(qb[0], cb[0])
     result = fq.simulator.Simulator("SV").run(program, shots=16).result()
@@ -76,7 +77,7 @@ def test_sum_across_mismatched_dims_fails_at_lowering():
     qt = fq.QuantumRegister(1, dim=3)
     qb = fq.QuantumRegister(1, dim=2)
     program = fq.Program([qt, qb])
-    program.add(fq.ops.Sum, (qt[0], qb[0]))  # frontend does not raise
+    program.add(ops.Sum, (qt[0], qb[0]))  # frontend does not raise
     with pytest.raises(MatrixImplementationError):
         fq.simulator.Simulator("SV").run(
             program, result_config={"counts": False, "final_state": True}
@@ -87,12 +88,12 @@ def test_sum_entangles_two_qutrits():
     qreg = fq.QuantumRegister(2, dim=3)
     creg = fq.ClassicalRegister(2, dim=3)
     program = fq.Program([qreg], [creg])
-    program.add(fq.ops.Shift(2), 0)  # control qutrit -> |2>
+    program.add(ops.Shift(2), 0)  # control qutrit -> |2>
     program.measure(0, 0)  # clbit0 = 2 (mid-circuit; deterministic)
     # Condition genuinely fires (clbit0 == 2, a value only reachable by a
     # qudit, not just 0/1), proving condition literals are compared for exact
     # equality rather than truthiness for dim > 2.
-    program.add(fq.ops.Sum, (0, 1), condition=(creg[0], 2))  # target -> (2+0)%3 = 2
+    program.add(ops.Sum, (0, 1), condition=(creg[0], 2))  # target -> (2+0)%3 = 2
     program.measure(1, 1)
     result = fq.simulator.Simulator("SV").run(program, shots=32).result()
     assert result.get_counts_as_tuples() == {(2, 2): 32}
@@ -103,7 +104,7 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
         qreg = fq.QuantumRegister(1, dim=3)
         creg = fq.ClassicalRegister(1, dim=3)
         p = fq.Program([qreg], [creg])
-        p.add(fq.ops.Shift(2), 0)  # deterministic |0> -> |2>
+        p.add(ops.Shift(2), 0)  # deterministic |0> -> |2>
         p.measure(0, 0)
         if force_dynamic:
             # Inert no-op: Shift(0) is the identity, and its condition can
@@ -112,7 +113,7 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
             # (a condition) forces the statevector engine's dynamic classification,
             # letting the dynamic path be compared against the fast path for
             # the identical program shape and seed.
-            p.add(fq.ops.Shift(0), 0, condition=(p.classical_registers[0][0], 0))
+            p.add(ops.Shift(0), 0, condition=(p.classical_registers[0][0], 0))
         return p
 
     fast_counts = (
@@ -134,9 +135,9 @@ def test_cclock_unequal_dimensions_runs_through_backend():
     qt = fq.QuantumRegister(1, dim=3)
     qb = fq.QuantumRegister(1, dim=2)
     program = fq.Program([qt, qb])
-    program.add(fq.ops.Shift(1), qt[0])  # control -> |1>
-    program.add(fq.ops.X, qb[0])  # target -> |1>
-    program.add(fq.ops.CClock(1), (qt[0], qb[0]))
+    program.add(ops.Shift(1), qt[0])  # control -> |1>
+    program.add(ops.X, qb[0])  # target -> |1>
+    program.add(ops.CClock(1), (qt[0], qb[0]))
     result = (
         fq.simulator.Simulator("SV")
         .run(program, result_config={"counts": False, "final_state": True})
@@ -165,23 +166,23 @@ def test_qutrit_circuit_with_new_gates_produces_expected_counts():
     program = fq.Program([qreg], [creg])
     # q0: |0> -> Fourier -> InverseFourier -> |0> (round-trip identity; exercises
     # Fourier/InverseFourier through the real backend without changing the state).
-    program.add(fq.ops.Fourier, 0)
-    program.add(fq.ops.InverseFourier, 0)
+    program.add(ops.Fourier, 0)
+    program.add(ops.InverseFourier, 0)
     # q0: |0> -> SwapLevels(0, 2) -> |2>
-    program.add(fq.ops.SwapLevels(0, 2), 0)
+    program.add(ops.SwapLevels(0, 2), 0)
     # q0: |2> -> SubspaceRX(pi, (0, 2)) -> -i|0>. The subspace's "k" role
     # (level 2, the current state) maps to -i times its "j" role (level 0):
     # with c=cos(pi/2)=0, s=sin(pi/2)=1, the (0,2) block sends the k-column
     # to [-i*s, 0's for the untouched level, c] = [-i, 0]. The global phase
     # is unobservable in measurement counts.
-    program.add(fq.ops.SubspaceRX(np.pi, (0, 2)), 0)
+    program.add(ops.SubspaceRX(np.pi, (0, 2)), 0)
     # q1 stays |0>, so CClock(1)'s control is always |0>: this exercises
     # CClock's wiring/dimension handling through the real backend without
     # changing the (phase-invisible-to-counts) expected outcome. CClock's
     # own phase computation is independently verified in Task 5's
     # test_cclock_unequal_dimensions_runs_through_backend, where the control
     # is prepared in a nonzero level specifically to make the phase visible.
-    program.add(fq.ops.CClock(1), (0, 1))
+    program.add(ops.CClock(1), (0, 1))
     program.measure_all()
 
     result = (
@@ -203,7 +204,7 @@ def test_qubit_only_gate_on_qutrit_does_not_raise_at_add_but_raises_at_run():
 
     qreg = fq.QuantumRegister(1, dim=3)
     program = fq.Program([qreg])
-    program.add(fq.ops.H, 0)  # frontend stays neutral: does not raise here
+    program.add(ops.H, 0)  # frontend stays neutral: does not raise here
     with pytest.raises(BackendValidationError):
         fq.simulator.Simulator("SV").run(
             program, result_config={"counts": False, "final_state": True}

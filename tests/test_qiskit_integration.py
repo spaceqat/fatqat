@@ -19,7 +19,7 @@ from qiskit.circuit.library import UGate
 from qiskit.primitives import BackendSamplerV2
 
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 from fatqat.qiskit import (
     FatqatBackend,
     QiskitBackendError,
@@ -70,7 +70,7 @@ def test_converter_u_gate_maps_to_fatqat_u():
     print(f"fatqat operation: {step.operation!r}")
 
     assert isinstance(step, fq.AppliedOperation)
-    assert isinstance(step.operation, op.U)
+    assert isinstance(step.operation, ops.U)
     assert step.operation.theta == pytest.approx(0.2)
     assert step.operation.phi == pytest.approx(0.3)
     assert step.operation.lam == pytest.approx(0.4)
@@ -251,7 +251,7 @@ def test_u_matrix_matches_qiskit_statevector():
 
     theta, phi, lam = 0.5, 0.25, -0.75
     program = fq.Program(1)
-    program.add(op.U(theta, phi, lam), 0)
+    program.add(ops.U(theta, phi, lam), 0)
 
     fatqat_state = (
         fq.simulator.Simulator("SV")

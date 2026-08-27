@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 np.set_printoptions(precision=3, suppress=True)
 
@@ -58,8 +58,8 @@ np.set_printoptions(precision=3, suppress=True)
 # measurements because we want the exact final state.
 
 bell_program = fq.Program(2)
-bell_program.add(op.H, 0)
-bell_program.add(op.CX, (0, 1))
+bell_program.add(ops.H, 0)
+bell_program.add(ops.CX, (0, 1))
 
 
 # %%
@@ -110,8 +110,8 @@ print("Exact basis probabilities:", probabilities)
 # ``"00"`` and ``"11"``.
 
 measured_program = fq.Program(2, 2)
-measured_program.add(op.H, 0)
-measured_program.add(op.CX, (0, 1))
+measured_program.add(ops.H, 0)
+measured_program.add(ops.CX, (0, 1))
 measured_program.measure((0, 1), (0, 1))
 
 

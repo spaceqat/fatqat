@@ -11,24 +11,24 @@ Fixed gates are ready-to-use values. Do not add parentheses:
 
 ```python
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 program = fq.Program(2)
-program.add(op.H, 0)
-program.add(op.X, 1)
-program.add(op.CX, (0, 1))
+program.add(ops.H, 0)
+program.add(ops.X, 1)
+program.add(ops.CX, (0, 1))
 ```
 
 Parametric gates are classes. Create one with its parameter before adding
 it. Rotation and phase angles are in radians:
 
 ```python
-program.add(op.RX(0.2), 0)
-program.add(op.RZ(1.5), 1)
-program.add(op.CPhase(0.4), (0, 1))
+program.add(ops.RX(0.2), 0)
+program.add(ops.RZ(1.5), 1)
+program.add(ops.CPhase(0.4), (0, 1))
 ```
 
-Passing `op.RX` rather than `op.RX(0.2)` is a common mistake. The
+Passing `ops.RX` rather than `ops.RX(0.2)` is a common mistake. The
 former is the gate class; the latter is the operation you add.
 
 ## Targets and target order
@@ -37,9 +37,9 @@ A one-qubit gate takes one target. A multi-qubit gate takes one tuple of
 targets:
 
 ```python
-program.add(op.H, 0)
-program.add(op.CX, (0, 1))
-program.add(op.CCX, (0, 1, 2))
+program.add(ops.H, 0)
+program.add(ops.CX, (0, 1))
+program.add(ops.CCX, (0, 1, 2))
 ```
 
 For controlled gates, controls come first and the final target comes last.
@@ -64,12 +64,12 @@ view-capable operations are `RX`, `RY`, `RZ`, `CX`, and `CZ`.
 
 ```python
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 qubits = fq.GridRegister(2, 3, name="qubits")
 program = fq.Program([qubits])
-program.add(op.RX(0.2), qubits.row(1))
-program.add(op.CX, (qubits.row(0), qubits.row(1)))
+program.add(ops.RX(0.2), qubits.row(1))
+program.add(ops.CX, (qubits.row(0), qubits.row(1)))
 ```
 
 The two views in the `CX` example are paired in order: the first entry in

@@ -33,11 +33,11 @@ A backend can support either or both:
      - Public optional ``gate_implementation_map=``; built-in default
    * - :py:class:`~fatqat.emulator.Atom2LevelEmulator`
      - ``|g>, |r>``
-     - No
+     - Custom rules only
      - Yes, global
-     - None
+     - Public optional ``gate_implementation_map=``; empty built-in default
 
-``PulseImplementationMap`` is the public map value type for both gate-capable
+``PulseImplementationMap`` is the public map value type for all three
 families. Their constructors name the capability
 ``gate_implementation_map`` because direct ``PulseOperation`` controls bypass
 gate realization entirely. Calibration documents are inputs to the standard
@@ -61,6 +61,7 @@ generated signatures, attributes, and methods for that supported surface.
    atom-emulators
    noise
    estimator
+   job
    result
    exceptions
    experimental

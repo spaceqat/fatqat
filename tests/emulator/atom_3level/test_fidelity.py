@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.emulator.atom_3level.realization import _CZ_SAMPLE_POINT_COUNT
 from fatqat._pulse_values import PulseControl
 from tests.emulator.atom_3level.reference.atom_3level_cz_reference import (
@@ -52,7 +53,7 @@ def _physical_interaction(model, calibration, ratio):
 
 def _program():
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
     return program
 
 

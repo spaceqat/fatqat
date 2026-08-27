@@ -6,45 +6,46 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.simulator import Simulator
 from fatqat.implementation import default_matrix_implementation_map
 
 _PARALLEL_ROTATIONS = (
-    (fq.ops.RX(0.4), (0,)),
-    (fq.ops.RY(-0.35), (1,)),
+    (ops.RX(0.4), (0,)),
+    (ops.RY(-0.35), (1,)),
 )
 _H0_CZ = (
-    (fq.ops.RZ(pi), (0,)),
-    (fq.ops.RY(pi / 2), (0,)),
-    (fq.ops.CZ, (0, 1)),
+    (ops.RZ(pi), (0,)),
+    (ops.RY(pi / 2), (0,)),
+    (ops.CZ, (0, 1)),
 )
 _HH_CZ = (
-    (fq.ops.RZ(pi), (0,)),
-    (fq.ops.RY(pi / 2), (0,)),
-    (fq.ops.RZ(pi), (1,)),
-    (fq.ops.RY(pi / 2), (1,)),
-    (fq.ops.CZ, (0, 1)),
+    (ops.RZ(pi), (0,)),
+    (ops.RY(pi / 2), (0,)),
+    (ops.RZ(pi), (1,)),
+    (ops.RY(pi / 2), (1,)),
+    (ops.CZ, (0, 1)),
 )
 _MIXED_CZ_ISWAP = (
-    (fq.ops.RZ(pi), (0,)),
-    (fq.ops.RY(pi / 2), (0,)),
-    (fq.ops.RY(0.7), (1,)),
-    (fq.ops.CZ, (0, 1)),
-    (fq.ops.iSwap, (0, 1)),
-    (fq.ops.RY(0.4), (0,)),
-    (fq.ops.RZ(-0.3), (1,)),
-    (fq.ops.RX(0.2), (1,)),
+    (ops.RZ(pi), (0,)),
+    (ops.RY(pi / 2), (0,)),
+    (ops.RY(0.7), (1,)),
+    (ops.CZ, (0, 1)),
+    (ops.iSwap, (0, 1)),
+    (ops.RY(0.4), (0,)),
+    (ops.RZ(-0.3), (1,)),
+    (ops.RX(0.2), (1,)),
 )
 # This is the composed-sequence guard for the virtual-frame sign convention:
 # its non-pi RZ updates precede phase-sensitive drives on the same subsystem.
 # The H-based sequences above use RZ(pi), where exp(+i*pi) == exp(-i*pi), and
 # therefore cannot distinguish the two frame-binding signs.
 _MULTIPLE_FRAMES = (
-    (fq.ops.RZ(0.2), (0,)),
-    (fq.ops.RX(0.3), (0,)),
-    (fq.ops.RZ(-0.4), (0,)),
-    (fq.ops.RY(0.5), (0,)),
-    (fq.ops.RX(-0.25), (1,)),
+    (ops.RZ(0.2), (0,)),
+    (ops.RX(0.3), (0,)),
+    (ops.RZ(-0.4), (0,)),
+    (ops.RY(0.5), (0,)),
+    (ops.RX(-0.25), (1,)),
 )
 
 
@@ -125,7 +126,7 @@ def test_virtual_frame_sequence_matches_analytic_unitary(backend):
     z_angle = pi / 2
     x_angle = 0.3
     program = program_from_operations(
-        ((fq.ops.RZ(z_angle), (0,)), (fq.ops.RX(x_angle), (0,)))
+        ((ops.RZ(z_angle), (0,)), (ops.RX(x_angle), (0,)))
     )
     actual = computational_subspace_unitary(backend, program)
 
@@ -141,10 +142,10 @@ def test_virtual_frame_sequence_matches_analytic_unitary(backend):
 
 def test_intermediate_frame_rotates_later_drive_with_virtual_z_sign(backend):
     framed_rx = fq.Program(1)
-    framed_rx.add(fq.ops.RZ(pi / 2), 0)
-    framed_rx.add(fq.ops.RX(0.3), 0)
+    framed_rx.add(ops.RZ(pi / 2), 0)
+    framed_rx.add(ops.RX(0.3), 0)
     ry = fq.Program(1)
-    ry.add(fq.ops.RY(-0.3), 0)
+    ry.add(ops.RY(-0.3), 0)
 
     assert np.allclose(
         backend.propagator(framed_rx, apply_final_frame=False),
@@ -156,15 +157,15 @@ def test_intermediate_frame_rotates_later_drive_with_virtual_z_sign(backend):
 @pytest.mark.parametrize(
     ("operation", "targets", "minimum_fidelity"),
     (
-        (fq.ops.RX(0.37), (0,), 0.9999),
-        (fq.ops.RX(0.37), (1,), 0.9999),
-        (fq.ops.RY(-0.41), (0,), 0.9999),
-        (fq.ops.RY(-0.41), (1,), 0.9999),
-        (fq.ops.RZ(0.53), (0,), 0.999999),
-        (fq.ops.RZ(0.53), (1,), 0.999999),
-        (fq.ops.iSwap, (0, 1), 0.985),
-        (fq.ops.iSwap, (1, 0), 0.985),
-        (fq.ops.CZ, (0, 1), 0.99),
+        (ops.RX(0.37), (0,), 0.9999),
+        (ops.RX(0.37), (1,), 0.9999),
+        (ops.RY(-0.41), (0,), 0.9999),
+        (ops.RY(-0.41), (1,), 0.9999),
+        (ops.RZ(0.53), (0,), 0.999999),
+        (ops.RZ(0.53), (1,), 0.999999),
+        (ops.iSwap, (0, 1), 0.985),
+        (ops.iSwap, (1, 0), 0.985),
+        (ops.CZ, (0, 1), 0.99),
     ),
     ids=(
         "rx-q0",
@@ -253,8 +254,8 @@ def test_composed_ground_state_matches_matrix_simulator(
 
 def test_run_uses_the_correct_virtual_frame_binding(backend):
     program = fq.Program(1)
-    program.add(fq.ops.RZ(pi / 2), 0)
-    program.add(fq.ops.RX(0.3), 0)
+    program.add(ops.RZ(pi / 2), 0)
+    program.add(ops.RX(0.3), 0)
     pulse_density_matrix = (
         backend.run(program, result_config={"counts": False, "final_state": True})
         .result()

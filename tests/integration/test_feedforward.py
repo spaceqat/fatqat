@@ -1,5 +1,5 @@
 import fatqat as fq
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.simulator import Simulator
 
 
@@ -71,7 +71,7 @@ def test_reset_seed_independence_matches_born_rule():
         p = fq.Program(2, 1)
         p.add(ops.H, 0)
         p.add(ops.CX, (0, 1))
-        p.add(fq.ops.Reset, 0)
+        p.add(ops.Reset, 0)
         p.measure(1, 0)
         return p
 

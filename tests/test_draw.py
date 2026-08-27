@@ -17,10 +17,9 @@ import matplotlib
 import pytest
 
 import fatqat as fq
-import fatqat.operations as op
-from fatqat.emulator import ControlChannel, PulseControl
-from fatqat.waveforms import SampledWaveform
+import fatqat.operations as ops
 from fatqat.draw import to_qubit_circuit
+from fatqat.emulator import ControlChannel, PulseControl, SampledWaveform
 from fatqat.errors import UnsupportedOperationError
 from fatqat.operations import PulseOperation
 
@@ -57,29 +56,29 @@ def _elements(circuit):
 
 
 @dataclass(frozen=True)
-class _Custom(op.Operation):
+class _Custom(ops.Operation):
     """A user-defined single-qubit gate with no native QuTiP equivalent."""
 
     name: ClassVar[str] = "MyG"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
-class _CustomCY(op.Operation):
+class _CustomCY(ops.Operation):
     """A custom two-wire box whose label collides with a QuTiP gate name."""
 
     name: ClassVar[str] = "CY"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
 
 
 def test_gates_translate_to_qutip_equivalents():
     # Native names, a parametric angle, and the controls-first convention
     # (CX -> control 0 / target 1; CCX -> TOFFOLI with controls 0,1).
     program = fq.Program(3)
-    program.add(op.H, 0)
-    program.add(op.RZ(0.7), 1)
-    program.add(op.CX, (0, 1))
-    program.add(op.CCX, (0, 1, 2))
+    program.add(ops.H, 0)
+    program.add(ops.RZ(0.7), 1)
+    program.add(ops.CX, (0, 1))
+    program.add(ops.CCX, (0, 1, 2))
     elements = _elements(to_qubit_circuit(program))
 
     assert len(elements) == 4
@@ -90,7 +89,7 @@ def test_gates_translate_to_qutip_equivalents():
     assert (elements[3][2], elements[3][1]) == ([0, 1], [2])
 
 
-@pytest.mark.parametrize("gate", (op.CY, op.CS))
+@pytest.mark.parametrize("gate", (ops.CY, ops.CS))
 def test_controlled_y_and_s_translate_with_control_first(gate):
     program = fq.Program(2)
     program.add(gate, (0, 1))
@@ -125,9 +124,9 @@ def test_custom_gate_name_collision_stays_a_plain_box():
 def test_measurement_reset_barrier_and_condition_translate():
     program = fq.Program(2, 2)
     program.measure(0, 0)
-    program.add(op.X, 1, condition=(0, 1))
-    program.add(op.Reset, 0)
-    program.add(op.Barrier, (0, 1))
+    program.add(ops.X, 1, condition=(0, 1))
+    program.add(ops.Reset, 0)
+    program.add(ops.Barrier, (0, 1))
     elements = _elements(to_qubit_circuit(program))
 
     assert [name for name, *_ in elements] == ["M", "X", "|0>", "barrier"]
@@ -140,8 +139,8 @@ def test_qudit_program_draws_as_plain_wires():
     # A diagram does not depict dimension: a qutrit register is one wire per
     # subsystem, and its qudit-only gates fall through to labeled boxes.
     program = fq.Program([fq.QuantumRegister(2, dim=3)])
-    program.add(op.Fourier, 0)
-    program.add(op.Sum, (0, 1))
+    program.add(ops.Fourier, 0)
+    program.add(ops.Sum, (0, 1))
     circuit = to_qubit_circuit(program)
 
     # one wire per subsystem (``N`` was renamed ``num_qubits``)
@@ -151,8 +150,8 @@ def test_qudit_program_draws_as_plain_wires():
 
 def _bell():
     program = fq.Program(2, 2)
-    program.add(op.H, 0)
-    program.add(op.CX, (0, 1))
+    program.add(ops.H, 0)
+    program.add(ops.CX, (0, 1))
     program.measure((0, 1), (0, 1))
     return program
 
@@ -170,7 +169,7 @@ def test_text_renderer_returns_the_terminal_diagram():
 def test_text_renderer_draws_feedforward_condition():
     program = fq.Program(2, 1)
     program.measure(0, 0)
-    program.add(op.X, 1, condition=(0, 0))
+    program.add(ops.X, 1, condition=(0, 0))
 
     text = program.draw("text")
     classical_line = next(
@@ -189,7 +188,7 @@ def test_matplotlib_renderer_returns_a_savable_figure():
 def test_matplotlib_renderer_draws_feedforward_condition():
     program = fq.Program(2, 1)
     program.measure(0, 0)
-    program.add(op.X, 1, condition=(0, 0))
+    program.add(ops.X, 1, condition=(0, 0))
 
     figure = program.draw("matplotlib")
     figure.canvas.draw()

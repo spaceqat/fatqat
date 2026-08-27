@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator._core.backend import _PulseBackend
 from fatqat.emulator._core.engine import PulseEngine
@@ -41,7 +42,7 @@ from fatqat.noise import (
 )
 from fatqat.noise.lindblad import amplitude_damping_lindblad_rule
 from fatqat.resource_layout import ResourceLayout
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 class _CountingNoiseModel(NoiseModel):
@@ -290,7 +291,7 @@ class _TemplateBackend(_PulseBackend):
 
 def _lindblad_map():
     implementation_map = LindbladImplementationMap()
-    implementation_map.register(
+    implementation_map.add(
         AmplitudeDamping,
         amplitude_damping_lindblad_rule,
     )
@@ -317,8 +318,8 @@ def _gate_map(target, *, with_frame=False):
             ),
         )
 
-    implementation_map.add(fq.ops.X, realize)
-    implementation_map.add(fq.ops.Y, realize)
+    implementation_map.add(ops.X, realize)
+    implementation_map.add(ops.Y, realize)
     return implementation_map
 
 
@@ -327,7 +328,7 @@ def test_preparation_builds_one_complete_immutable_value_exactly_once():
     noise = _CountingNoiseModel()
     noise.add(
         AmplitudeDamping(rate=0.2),
-        operation=fq.ops.X,
+        operation=ops.X,
     )
     for label in target.device_labels:
         noise.add(AmplitudeDamping(rate=0.1), targets=label)
@@ -338,7 +339,7 @@ def test_preparation_builds_one_complete_immutable_value_exactly_once():
         lindblad_map=_lindblad_map(),
     )
     program = fq.Program(2)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
 
     prepared = backend._prepare_program(program)
 
@@ -380,7 +381,7 @@ def test_direct_control_stores_the_one_binding_and_translates_target_ordinal():
         target.model.drive("q1"),
         SampledWaveform((0.0, 0.5), (0.0, 0.2)),
     )
-    operation = fq.ops.PulseOperation(0.5, (control,))
+    operation = ops.PulseOperation(0.5, (control,))
     program = fq.Program(2)
     program.add(operation)
 
@@ -396,7 +397,7 @@ def test_direct_control_stores_the_one_binding_and_translates_target_ordinal():
 def test_direct_control_can_target_an_unreferenced_modeled_subsystem():
     target = _CountingTarget()
     backend = _TemplateBackend(target)
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         0.5,
         (
             PulseControl(
@@ -451,7 +452,7 @@ def test_operation_scoped_probability_rejects_without_implicit_conversion():
     noise = _CountingNoiseModel()
     noise.add(
         AmplitudeDamping(p=0.2),
-        operation=fq.ops.X,
+        operation=ops.X,
     )
     with pytest.raises(BackendValidationError, match="finite probability mode"):
         _TemplateBackend(
@@ -465,7 +466,7 @@ def test_operation_scoped_probability_rejects_without_implicit_conversion():
 def test_operation_scoped_rate_keeps_target_binding_and_fact_scope_separate():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
-    noise.add(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
+    noise.add(AmplitudeDamping(rate=0.2), operation=ops.X)
     backend = _TemplateBackend(
         target,
         noise=noise,
@@ -473,7 +474,7 @@ def test_operation_scoped_rate_keeps_target_binding_and_fact_scope_separate():
         lindblad_map=_lindblad_map(),
     )
     program = fq.Program(1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
 
     prepared = backend._prepare_program(program)
 
@@ -487,7 +488,7 @@ def test_operation_scoped_rate_keeps_target_binding_and_fact_scope_separate():
 def test_supported_noise_for_an_absent_operation_is_a_valid_no_op():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
-    noise.add(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
+    noise.add(AmplitudeDamping(rate=0.2), operation=ops.X)
     backend = _TemplateBackend(
         target,
         noise=noise,
@@ -495,7 +496,7 @@ def test_supported_noise_for_an_absent_operation_is_a_valid_no_op():
         lindblad_map=_lindblad_map(),
     )
     program = fq.Program(1)
-    program.add(fq.ops.Y, 0)
+    program.add(ops.Y, 0)
 
     prepared = backend._prepare_program(program)
 
@@ -528,7 +529,7 @@ def test_missing_or_empty_lindblad_implementation_rejects_explicitly():
         _TemplateBackend(target, noise=noise)
 
     empty_map = LindbladImplementationMap()
-    empty_map.register(AmplitudeDamping, lambda channel, **kwargs: ())
+    empty_map.add(AmplitudeDamping, lambda channel, **kwargs: ())
     backend = _TemplateBackend(
         target,
         noise=noise,
@@ -540,9 +541,9 @@ def test_missing_or_empty_lindblad_implementation_rejects_explicitly():
 
 def test_pauli_channel_policy_is_explicit_even_with_a_registered_rule():
     noise = NoiseModel()
-    noise.add(PauliChannel({"X": 0.1}), operation=fq.ops.X)
+    noise.add(PauliChannel({"X": 0.1}), operation=ops.X)
     implementation_map = LindbladImplementationMap()
-    implementation_map.register(
+    implementation_map.add(
         PauliChannel,
         lambda channel, *, physical_dimension: (np.eye(physical_dimension),),
     )
@@ -565,7 +566,7 @@ def test_invalid_local_operator_shape_rejects_at_shared_resolution_boundary():
     noise = _CountingNoiseModel()
     noise.add(AmplitudeDamping(rate=0.1), targets="q0")
     invalid_map = LindbladImplementationMap()
-    invalid_map.register(
+    invalid_map.add(
         AmplitudeDamping,
         lambda channel, **kwargs: (np.eye(3),),
     )
@@ -615,11 +616,11 @@ def test_constructor_copies_maps_and_captures_noise_registrations():
         lindblad_map=lindblad_map,
     )
 
-    gate_map.remove(fq.ops.X)
-    lindblad_map.register(AmplitudeDamping, lambda channel, **kwargs: ())
+    gate_map.remove(ops.X)
+    lindblad_map.add(AmplitudeDamping, lambda channel, **kwargs: ())
 
     assert backend._noise_model is not noise
-    assert backend._gate_implementation_map.supports(fq.ops.X)
+    assert backend._gate_implementation_map.supports(ops.X)
     assert (
         backend._lindblad_implementation_map.get(AmplitudeDamping)
         is original_lindblad_rule
@@ -782,7 +783,7 @@ def _frame_gate_map(target):
             post_actions=(PhaseShift(target.model.frame(device_operands[0]), 0.25),),
         )
 
-    implementation_map.add(fq.ops.RZ, frame)
+    implementation_map.add(ops.RZ, frame)
     return implementation_map
 
 
@@ -801,7 +802,7 @@ def test_propagator_empty_and_frame_only_paths_use_fixed_coherent_mode():
     assert backend.runner_calls == 0
 
     program = fq.Program(1)
-    program.add(fq.ops.RZ(0.2), 0)
+    program.add(ops.RZ(0.2), 0)
     assert np.allclose(backend.propagator(program), np.eye(2))
     assert backend.runner_calls == 1
     assert backend.last_runner.propagator_calls == 1
@@ -813,7 +814,7 @@ def test_unbound_gate_is_rejected_before_shared_pulse_preparation():
     backend = _TemplateBackend(target)
     theta = fq.Parameter("theta")
     program = fq.Program(1)
-    program.add(fq.ops.RX(theta), 0)
+    program.add(ops.RX(theta), 0)
 
     for execute in (backend.run, backend.propagator):
         with pytest.raises(
@@ -834,13 +835,13 @@ def _measurement_program():
 
 def _reset_program():
     program = fq.Program(1)
-    program.add(fq.ops.Reset, 0)
+    program.add(ops.Reset, 0)
     return program
 
 
 def _conditioned_program():
     program = fq.Program(1, 1)
-    program.add(fq.ops.X, 0, condition=(0, 1))
+    program.add(ops.X, 0, condition=(0, 1))
     return program
 
 
@@ -866,7 +867,7 @@ def test_propagator_rejects_noncoherent_facts_before_runner(
 def test_propagator_rejects_elapsed_resolved_noise_before_runner():
     target = _CountingTarget(("q0",))
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(rate=0.2), operation=fq.ops.X)
+    noise.add(AmplitudeDamping(rate=0.2), operation=ops.X)
     backend = _TemplateBackend(
         target,
         noise=noise,
@@ -874,7 +875,7 @@ def test_propagator_rejects_elapsed_resolved_noise_before_runner():
         lindblad_map=_lindblad_map(),
     )
     program = fq.Program(1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
 
     with pytest.raises(BackendValidationError, match="dissipative Lindblad"):
         backend.propagator(program)

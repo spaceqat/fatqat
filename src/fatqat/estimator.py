@@ -77,10 +77,10 @@ class Estimator:
 
     Examples:
         >>> import fatqat as fq
-        >>> import fatqat.operations as op
+        >>> import fatqat.operations as ops
         >>> program = fq.Program(2)
-        >>> program.add(op.H, 0)
-        >>> program.add(op.CX, (0, 1))
+        >>> program.add(ops.H, 0)
+        >>> program.add(ops.CX, (0, 1))
         >>> estimator = fq.Estimator(fq.simulator.Simulator(method="SV"))
         >>> result = estimator.run(program, fq.Observable([("ZZ", 1.0)])).result()
         >>> round(float(result.get_expectation()), 10)
@@ -144,13 +144,14 @@ class Estimator:
             # from the backend's own validation during the run.
             raise
         except Exception as exc:  # execution-stage failure
-            return Job.failed(exc)
+            return Job(status="ERROR", error=exc)
 
         def shape(entries: list[float]) -> Any:
             return np.asarray(entries) if is_sequence else entries[0]
 
-        return Job.done(
-            Result(
+        return Job(
+            status="DONE",
+            result=Result(
                 data={"expectation": shape(values), "std": shape(deviations)},
                 metadata={
                     "shots": shots,
@@ -158,7 +159,7 @@ class Estimator:
                     "estimator_name": type(self).__name__,
                     "num_observables": len(observable_list),
                 },
-            )
+            ),
         )
 
     def run_sweep(
@@ -206,10 +207,10 @@ class Estimator:
             Each result keeps the ordinary single-observable scalar shape:
 
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> theta = fq.Parameter("theta")
             >>> program = fq.Program(1)
-            >>> program.add(op.RY(theta), 0)
+            >>> program.add(ops.RY(theta), 0)
             >>> estimator = fq.Estimator(fq.simulator.Simulator("SV"))
             >>> observable = fq.Observable([("Z", 1.0)])
             >>> results = estimator.run_sweep(
@@ -233,8 +234,8 @@ class Estimator:
             try:
                 results.append(point_job.result())
             except BaseException as exc:
-                return Job.failed(exc)
-        return Job.done(results)
+                return Job(status="ERROR", error=exc)
+        return Job(status="DONE", result=results)
 
     def _evaluate(
         self,

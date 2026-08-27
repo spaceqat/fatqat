@@ -40,6 +40,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 
 pytest.importorskip("qiskit_aer")
 
@@ -148,8 +149,8 @@ def _aer_rho(
 
 def _bell():
     program = fq.Program(2)
-    program.add(fq.ops.H, 0)
-    program.add(fq.ops.CX, (0, 1))
+    program.add(ops.H, 0)
+    program.add(ops.CX, (0, 1))
     circuit = QuantumCircuit(2)
     circuit.h(0)
     circuit.cx(0, 1)
@@ -158,9 +159,9 @@ def _bell():
 
 def _ghz3():
     program = fq.Program(3)
-    program.add(fq.ops.H, 0)
-    program.add(fq.ops.CX, (0, 1))
-    program.add(fq.ops.CX, (1, 2))
+    program.add(ops.H, 0)
+    program.add(ops.CX, (0, 1))
+    program.add(ops.CX, (1, 2))
     circuit = QuantumCircuit(3)
     circuit.h(0)
     circuit.cx(0, 1)
@@ -173,27 +174,27 @@ def _fixed_gate_coverage():
     # errors cannot cancel against each other.
     program = fq.Program(2)
     circuit = QuantumCircuit(2)
-    program.add(fq.ops.H, 0)
+    program.add(ops.H, 0)
     circuit.h(0)
-    program.add(fq.ops.X, 1)
+    program.add(ops.X, 1)
     circuit.x(1)
-    program.add(fq.ops.CX, (0, 1))
+    program.add(ops.CX, (0, 1))
     circuit.cx(0, 1)
-    program.add(fq.ops.Y, 0)
+    program.add(ops.Y, 0)
     circuit.y(0)
-    program.add(fq.ops.Z, 1)
+    program.add(ops.Z, 1)
     circuit.z(1)
-    program.add(fq.ops.S, 0)
+    program.add(ops.S, 0)
     circuit.s(0)
-    program.add(fq.ops.Sdg, 1)
+    program.add(ops.Sdg, 1)
     circuit.sdg(1)
-    program.add(fq.ops.CX, (1, 0))
+    program.add(ops.CX, (1, 0))
     circuit.cx(1, 0)
-    program.add(fq.ops.T, 0)
+    program.add(ops.T, 0)
     circuit.t(0)
-    program.add(fq.ops.Tdg, 1)
+    program.add(ops.Tdg, 1)
     circuit.tdg(1)
-    program.add(fq.ops.SX, 0)
+    program.add(ops.SX, 0)
     circuit.sx(0)
     return program, circuit
 
@@ -203,17 +204,17 @@ def _parametric_coverage():
     # mismatches behind extra symmetry.
     program = fq.Program(2)
     circuit = QuantumCircuit(2)
-    program.add(fq.ops.RX(0.3), 0)
+    program.add(ops.RX(0.3), 0)
     circuit.rx(0.3, 0)
-    program.add(fq.ops.RY(1.1), 1)
+    program.add(ops.RY(1.1), 1)
     circuit.ry(1.1, 1)
-    program.add(fq.ops.CX, (0, 1))
+    program.add(ops.CX, (0, 1))
     circuit.cx(0, 1)
-    program.add(fq.ops.RZ(0.7), 0)
+    program.add(ops.RZ(0.7), 0)
     circuit.rz(0.7, 0)
-    program.add(fq.ops.Phase(0.5), 1)
+    program.add(ops.Phase(0.5), 1)
     circuit.p(0.5, 1)
-    program.add(fq.ops.CPhase(0.9), (0, 1))
+    program.add(ops.CPhase(0.9), (0, 1))
     circuit.cp(0.9, 0, 1)
     return program, circuit
 
@@ -222,23 +223,23 @@ def _multi_qubit_coverage():
     program = fq.Program(3)
     circuit = QuantumCircuit(3)
     for q in range(3):
-        program.add(fq.ops.H, q)
+        program.add(ops.H, q)
         circuit.h(q)
-    program.add(fq.ops.T, 1)
+    program.add(ops.T, 1)
     circuit.t(1)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
     circuit.cz(0, 1)
-    program.add(fq.ops.Swap, (1, 2))
+    program.add(ops.Swap, (1, 2))
     circuit.swap(1, 2)
-    program.add(fq.ops.iSwap, (0, 1))
+    program.add(ops.iSwap, (0, 1))
     circuit.iswap(0, 1)
-    program.add(fq.ops.CY, (1, 2))
+    program.add(ops.CY, (1, 2))
     circuit.cy(1, 2)
-    program.add(fq.ops.CS, (0, 2))
+    program.add(ops.CS, (0, 2))
     circuit.cs(0, 2)
-    program.add(fq.ops.CCX, (0, 1, 2))
+    program.add(ops.CCX, (0, 1, 2))
     circuit.ccx(0, 1, 2)
-    program.add(fq.ops.CSwap, (2, 0, 1))
+    program.add(ops.CSwap, (2, 0, 1))
     circuit.cswap(2, 0, 1)
     return program, circuit
 
@@ -247,23 +248,23 @@ def _qft3():
     # Hand-rolled 3-qubit QFT from H / CPhase / Swap, on a non-trivial input.
     program = fq.Program(3)
     circuit = QuantumCircuit(3)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     circuit.x(0)
-    program.add(fq.ops.X, 2)
+    program.add(ops.X, 2)
     circuit.x(2)
-    program.add(fq.ops.H, 2)
+    program.add(ops.H, 2)
     circuit.h(2)
-    program.add(fq.ops.CPhase(np.pi / 2), (1, 2))
+    program.add(ops.CPhase(np.pi / 2), (1, 2))
     circuit.cp(np.pi / 2, 1, 2)
-    program.add(fq.ops.CPhase(np.pi / 4), (0, 2))
+    program.add(ops.CPhase(np.pi / 4), (0, 2))
     circuit.cp(np.pi / 4, 0, 2)
-    program.add(fq.ops.H, 1)
+    program.add(ops.H, 1)
     circuit.h(1)
-    program.add(fq.ops.CPhase(np.pi / 2), (0, 1))
+    program.add(ops.CPhase(np.pi / 2), (0, 1))
     circuit.cp(np.pi / 2, 0, 1)
-    program.add(fq.ops.H, 0)
+    program.add(ops.H, 0)
     circuit.h(0)
-    program.add(fq.ops.Swap, (0, 2))
+    program.add(ops.Swap, (0, 2))
     circuit.swap(0, 2)
     return program, circuit
 
@@ -320,7 +321,7 @@ def test_superop_matches_qiskit(build, runtime):
 def test_noisy_superop_matches_aer(runtime):
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add(fq.noise.Depolarizing(p=0.1), operation=fq.ops.CX)
+    noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.CX)
     aer_model = _aer_model(depolarizing_error(0.1, 2), ["cx"])
 
     ours = (
@@ -342,7 +343,7 @@ def test_qiskit_superop_conversion_is_not_a_no_op(runtime):
     # A real unitary's super-operator is symmetric under the index-pair swap,
     # so the conversion needs a genuinely complex one to be observable.
     program = fq.Program(1)
-    program.add(fq.ops.S, 0)
+    program.add(ops.S, 0)
     circuit = QuantumCircuit(1)
     circuit.s(0)
 
@@ -371,7 +372,7 @@ def _aer_model(error, gate_names):
 def test_depolarizing_on_two_qubit_gate_matches_aer(runtime):
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add(fq.noise.Depolarizing(p=0.1), operation=fq.ops.CX)
+    noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.CX)
     aer_model = _aer_model(depolarizing_error(0.1, 2), ["cx"])
 
     _assert_close(
@@ -383,7 +384,7 @@ def test_depolarizing_on_two_qubit_gate_matches_aer(runtime):
 def test_pauli_channel_matches_aer(runtime):
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add(fq.noise.PauliChannel({"X": 0.08, "Z": 0.05}), operation=fq.ops.H)
+    noise.add(fq.noise.PauliChannel({"X": 0.08, "Z": 0.05}), operation=ops.H)
     aer_model = _aer_model(pauli_error([("X", 0.08), ("Z", 0.05), ("I", 0.87)]), ["h"])
 
     _assert_close(
@@ -399,7 +400,7 @@ def test_two_qubit_pauli_channel_matches_aer_under_its_reversed_reading(runtime)
     # two qubits so that the distinction is observable.
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add(fq.noise.PauliChannel({"XI": 0.09, "ZZ": 0.04}), operation=fq.ops.CX)
+    noise.add(fq.noise.PauliChannel({"XI": 0.09, "ZZ": 0.04}), operation=ops.CX)
     aer_model = _aer_model(
         pauli_error([("IX", 0.09), ("ZZ", 0.04), ("II", 0.87)]), ["cx"]
     )
@@ -413,7 +414,7 @@ def test_two_qubit_pauli_channel_matches_aer_under_its_reversed_reading(runtime)
 def test_amplitude_damping_matches_aer(runtime):
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add(fq.noise.AmplitudeDamping(p=(0.2,)), operation=fq.ops.H)
+    noise.add(fq.noise.AmplitudeDamping(p=(0.2,)), operation=ops.H)
     aer_model = _aer_model(amplitude_damping_error(0.2), ["h"])
 
     _assert_close(
@@ -429,7 +430,7 @@ def test_phase_damping_matches_aer(runtime):
     p = 0.3
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add(fq.noise.PhaseDamping(p=p), operation=fq.ops.H)
+    noise.add(fq.noise.PhaseDamping(p=p), operation=ops.H)
     aer_model = _aer_model(phase_damping_error(1 - (1 - p) ** 2), ["h"])
 
     _assert_close(
@@ -443,8 +444,8 @@ def test_thermal_relaxation_channels_match_aer(runtime):
     program, circuit = _bell()
     damping, dephasing = fq.noise.ThermalRelaxation(t1=t1, t2=t2).as_channels(duration)
     noise = fq.NoiseModel()
-    noise.add(damping, operation=fq.ops.H)
-    noise.add(dephasing, operation=fq.ops.H)
+    noise.add(damping, operation=ops.H)
+    noise.add(dephasing, operation=ops.H)
     aer_model = _aer_model(thermal_relaxation_error(t1, t2, duration), ["h"])
 
     _assert_close(
@@ -461,8 +462,8 @@ def test_stacked_channels_compose_in_registration_order(runtime):
     p, gamma = 0.2, 0.3
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add(fq.noise.Depolarizing(p=p), operation=fq.ops.H)
-    noise.add(fq.noise.AmplitudeDamping(p=(gamma,)), operation=fq.ops.H)
+    noise.add(fq.noise.Depolarizing(p=p), operation=ops.H)
+    noise.add(fq.noise.AmplitudeDamping(p=(gamma,)), operation=ops.H)
     composed = depolarizing_error(p, 1).compose(amplitude_damping_error(gamma))
     aer_model = _aer_model(composed, ["h"])
 

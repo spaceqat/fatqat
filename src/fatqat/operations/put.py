@@ -26,23 +26,23 @@ class PutGate(Operation):
     engine's per-shot occupancy state; ``Put`` only marks targets present from
     this point.
 
-    Variable arity (one or more targets). Exposed as the singleton ``op.Put``;
+    Variable arity (one or more targets). Exposed as the singleton ``ops.Put``;
     the class stays attribute-accessible for ``isinstance`` checks.
 
     Examples:
         >>> import fatqat as fq
-        >>> import fatqat.operations as op
+        >>> import fatqat.operations as ops
         >>> program = fq.Program(3)
-        >>> program.add(op.Put, (0, 1, 2))
+        >>> program.add(ops.Put, (0, 1, 2))
         >>> program.operations[0].operation.name
         'Put'
-        >>> program.operations[0].operation.num_targets is None
+        >>> program.operations[0].operation.num_subsystems is None
         True
     """
 
     name: ClassVar[str] = "Put"
-    _num_subsystems: ClassVar[int | None] = None
+    num_subsystems: ClassVar[int | None] = None
 
 
-# singleton value: `op.Put`, not `op.Put()`.
+# singleton value: `ops.Put`, not `ops.Put()`.
 Put = PutGate()

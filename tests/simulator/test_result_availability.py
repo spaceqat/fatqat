@@ -1,14 +1,12 @@
 """Tests statevector result availability and measurement-related backend behavior."""
 
-import warnings
-
 import numpy as np
 import pytest
 
 import fatqat as fq
 from fatqat.simulator import Simulator
-from fatqat.errors import BackendValidationError, NoMeasurementWarning
-from fatqat import operations as ops
+from fatqat.errors import BackendValidationError
+import fatqat.operations as ops
 from fatqat.program import Program
 
 
@@ -116,24 +114,22 @@ def test_statevector_with_measurement_and_many_shots_rejected():
         )
 
 
-def test_no_measurement_warning_when_counts_only_and_no_state():
+def test_unmeasured_clbit_emits_user_warning_when_counts_only_and_no_state():
     p = Program(1, 1)  # has a clbit, never measured
     p.add(ops.H, 0)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with pytest.warns(UserWarning, match="clbits that were never measured"):
         Simulator("SV").run(
             p,
             shots=10,
             simulation_config={"seed": 0},
             result_config={"counts": True, "final_state": False},
         ).result()
-    assert any(issubclass(w.category, NoMeasurementWarning) for w in caught)
 
 
 def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():
     qt = fq.QuantumRegister(1, dim=3)
     program = fq.Program([qt])
-    program.add(fq.ops.H, qt[0])  # frontend must NOT raise here
+    program.add(ops.H, qt[0])  # frontend must NOT raise here
     with pytest.raises(BackendValidationError) as exc:
         fq.simulator.Simulator("SV").run(
             program, result_config={"counts": False, "final_state": True}
@@ -145,4 +141,4 @@ def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():
 def test_dim2_gate_frontend_add_does_not_raise():
     qt = fq.QuantumRegister(1, dim=3)
     program = fq.Program([qt])
-    program.add(fq.ops.X, qt[0])  # no exception at add-time
+    program.add(ops.X, qt[0])  # no exception at add-time

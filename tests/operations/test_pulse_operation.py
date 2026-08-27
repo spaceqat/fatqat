@@ -8,7 +8,7 @@ import pytest
 import fatqat as fq
 from fatqat._pulse_values import ControlChannel, PulseControl, TIME_EPSILON
 from fatqat.operations import Operation, PulseOperation
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ def test_pulse_operation_copies_controls_and_is_immutable():
     assert pulse.name == "PulseOperation"
     assert pulse.duration == 1.0
     assert pulse.controls == (_control(),)
-    assert pulse.num_targets == 0
+    assert pulse.num_subsystems == 0
     assert not hasattr(pulse, "channel")
     assert not hasattr(pulse, "components")
     with pytest.raises(FrozenInstanceError):
@@ -75,14 +75,14 @@ def test_program_accepts_only_zero_target_pulse_operation():
 
 def test_min_targets_supports_fixed_and_variable_arity():
     class Variable(Operation):
-        _num_subsystems = None
+        num_subsystems = None
 
     class ZeroMinimum(Operation):
-        _num_subsystems = None
+        num_subsystems = None
         _min_subsystems = 0
 
     class FixedIgnoresMinimum(Operation):
-        _num_subsystems = 2
+        num_subsystems = 2
         _min_subsystems = 9
 
     assert Variable().min_targets == 1
@@ -96,5 +96,5 @@ def test_invalid_minimum_fails_at_subclass_definition(bad):
         type(
             "BadMinimum",
             (Operation,),
-            {"_num_subsystems": None, "_min_subsystems": bad},
+            {"num_subsystems": None, "_min_subsystems": bad},
         )

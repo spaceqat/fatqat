@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._index_allocation import _EngineAllocation
 from fatqat.simulator import Simulator
 from fatqat.emulator.superconducting.backend import TransmonEmulator
@@ -60,7 +61,7 @@ def test_background_logical_physical_alias_rejects_on_actual_match():
 
 
 class _UnsupportedAlwaysOn(Channel):
-    _num_subsystems = 1
+    num_subsystems = 1
 
 
 def test_support_reports_reject_unknown_background_sources(model, calibration):
@@ -73,7 +74,7 @@ def test_support_reports_reject_unknown_background_sources(model, calibration):
 
 def test_matrix_backend_keeps_gate_channels_and_rejects_background_noise():
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
+    noise.add(Depolarizing(p=0.1), operation=ops.X)
     noise.add(ThermalRelaxation(t1=100, t2=150), targets=0)
     report = Simulator().check_noise_support(noise)
     assert "Depolarizing(p)" in report.accepted_sources
@@ -82,7 +83,7 @@ def test_matrix_backend_keeps_gate_channels_and_rejects_background_noise():
 
 def test_pulse_backend_names_each_rejected_gate_channel_source(model, calibration):
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
+    noise.add(Depolarizing(p=0.1), operation=ops.X)
     report = TransmonEmulator(model).check_noise_support(noise)
     assert report.rejected_sources == ("Depolarizing(p)",)
 
@@ -124,7 +125,7 @@ def test_pulse_backend_accepts_and_executes_thermal_relaxation(model, calibratio
     assert report.accepted_sources == ("ThermalRelaxation(background)",)
 
     program = fq.Program(1)
-    program.add(fq.ops.RX(0.3), 0)
+    program.add(ops.RX(0.3), 0)
     result = backend.run(
         program, result_config={"counts": False, "final_state": True}
     ).result()

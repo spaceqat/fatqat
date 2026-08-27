@@ -1,4 +1,4 @@
-"""fatqat exception hierarchy and warnings."""
+"""fatqat exception hierarchy."""
 
 from __future__ import annotations
 
@@ -34,7 +34,3 @@ class PulseImplementationError(FatqatError):
 
 class ResultFieldUnavailableError(FatqatError):
     """Raised when a Result field was not produced by this run."""
-
-
-class NoMeasurementWarning(UserWarning):
-    """Warned when counts include clbits that no measurement wrote."""

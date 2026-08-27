@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 def test_sampled_waveform_copies_sequences_to_immutable_tuples():

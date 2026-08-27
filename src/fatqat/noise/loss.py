@@ -29,8 +29,9 @@ class Loss:
         Apply independent carrier loss after each matched ``RX`` occurrence:
 
         >>> import fatqat as fq
+        >>> import fatqat.operations as ops
         >>> noise = fq.NoiseModel()
-        >>> noise.add(fq.noise.Loss(p=0.001), operation=fq.ops.RX)
+        >>> noise.add(fq.noise.Loss(p=0.001), operation=ops.RX)
 
     Attributes:
         p: Per-carrier loss probability for one occurrence.

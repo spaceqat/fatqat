@@ -14,11 +14,12 @@ backend. A gate is resolved through ``gate_implementation_map``; a direct
 :py:class:`~fatqat.operations.PulseOperation` already carries physical
 controls and bypasses that map.
 
-All supported imports on this page come from ``fatqat.emulator``. The classes
-that schedule lowered blocks, manage shots, or adapt them to QuTiP live under
-``fatqat.emulator`` but remain private implementation details. In particular,
-applications do not construct ``PulseEngine``, ``PulseBlock``, or
-``_TransmonQutipAdapter``.
+Unless an import path is written explicitly, supported imports on this page
+come from ``fatqat.emulator``. The GHz conversion helper documented below
+remains under ``fatqat.emulator.superconducting``. Classes that schedule
+lowered blocks, manage shots, or adapt them to QuTiP remain private
+implementation details. In particular, applications do not construct
+``PulseEngine``, ``PulseBlock``, or ``_TransmonQutipAdapter``.
 
 Backend lifecycle
 -----------------
@@ -364,22 +365,36 @@ Pulse-authoring values
 All pulse time values use ``model.time_unit``. The authoring types themselves
 are unit-neutral. The built-in transmon model's unit is nanoseconds.
 
-A positive-duration definition requires at least one sampled control; a
-zero-duration definition forbids controls. Every control must end within the
-enclosing duration. Lowering derives claims from the occurrence, controls,
-and frames. Controls sharing one channel must be summed explicitly before
-construction rather than relying on implicit addition.
+Direct-control values
+~~~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: fatqat.emulator.PulseDefinition
-   :members:
+Ordinary application code that constructs a direct
+:py:class:`~fatqat.operations.PulseOperation` uses ``PulseControl`` and
+``SampledWaveform``. Every control must end within the enclosing operation
+duration. Controls sharing one channel must be summed explicitly before
+construction rather than relying on implicit addition.
 
 .. autoclass:: fatqat.emulator.PulseControl
    :members:
    :no-index:
 
-.. autoclass:: fatqat.waveforms.SampledWaveform
+.. autoclass:: fatqat.emulator.SampledWaveform
    :members:
    :no-index:
+
+Advanced gate-realization values
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``PulseDefinition``, ``PhaseShift``, and ``PhaseSwap`` belong to the advanced
+extension surface for authors of custom
+:py:class:`~fatqat.emulator.PulseImplementationMap` rules. Ordinary
+application code and direct ``PulseOperation`` authoring do not construct
+them. A positive-duration definition requires at least one sampled control; a
+zero-duration definition forbids controls. Lowering derives claims from the
+operation occurrence, controls, and frames.
+
+.. autoclass:: fatqat.emulator.PulseDefinition
+   :members:
 
 .. autoclass:: fatqat.emulator.PhaseShift
    :members:
@@ -398,6 +413,7 @@ do not affect it:
 
    import numpy as np
    import fatqat as fq
+   import fatqat.operations as ops
 
    def custom_cz(operation, *, device_operands):
        first, second = device_operands
@@ -409,7 +425,7 @@ do not affect it:
            controls=(
                fq.emulator.PulseControl(
                    model.control.exchange(first, second),
-                   fq.waveforms.SampledWaveform(samples, envelope),
+                   fq.emulator.SampledWaveform(samples, envelope),
                ),
            ),
        )
@@ -419,8 +435,8 @@ do not affect it:
        model=model,
        calibration=calibration,
    )
-   implementations.remove(fq.ops.CZ)
-   implementations.add(fq.ops.CZ, custom_cz)
+   implementations.remove(ops.CZ)
+   implementations.add(ops.CZ, custom_cz)
    backend = fq.emulator.TransmonEmulator(
        model,
        gate_implementation_map=implementations,
@@ -442,14 +458,14 @@ controls already contain their physical addresses:
    duration = 20.0
    drive = fq.emulator.PulseControl(
        model.control.drive("q0"),
-       fq.waveforms.SampledWaveform((0.0, duration), (0.02, 0.02j)),
+       fq.emulator.SampledWaveform((0.0, duration), (0.02, 0.02j)),
    )
    exchange = fq.emulator.PulseControl(
        model.control.exchange("q0", "q1"),
-       fq.waveforms.SampledWaveform((0.0, duration), (0.01, 0.01)),
+       fq.emulator.SampledWaveform((0.0, duration), (0.01, 0.01)),
    )
    program = fq.Program(2)
-   program.add(fq.ops.PulseOperation(duration, (drive, exchange)))
+   program.add(ops.PulseOperation(duration, (drive, exchange)))
 
 Complex drive values encode the model's two quadratures. ``iSwap`` is a gate
 whose built-in realization uses the ``exchange`` mechanism; ``iSwap`` is not

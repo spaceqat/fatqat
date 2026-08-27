@@ -14,7 +14,7 @@ from fatqat._pulse_values import PulseControl
 from fatqat.emulator.atom_2level.model import Atom2LevelModel
 from fatqat.emulator.atom_2level.target import _Atom2LevelTarget
 from fatqat.errors import BackendValidationError
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 

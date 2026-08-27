@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat._backends.steps import ApplyMatrixStep, MeasurementStep
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError, UnsupportedOperationError

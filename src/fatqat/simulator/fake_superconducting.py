@@ -325,13 +325,13 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
 
         Examples:
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> Sim = fq.simulator.SCQubitIBMSimulator
             >>> backend = Sim(method="statevector", runtime="numpy",
             ...               noise=Sim.default_noise_model())
             >>> program = fq.Program(1, 1)
-            >>> program.add(op.SX, 0)
-            >>> program.add(op.SX, 0)  # SX SX = X, up to a phase
+            >>> program.add(ops.SX, 0)
+            >>> program.add(ops.SX, 0)  # SX SX = X, up to a phase
             >>> program.measure(0, 0)
             >>> counts = backend.run(
             ...     program,
@@ -478,12 +478,12 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         Examples:
             >>> import numpy as np
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> Sim = fq.simulator.SCQubitGoogleSimulator
             >>> backend = Sim(method="statevector", runtime="numpy",
             ...               noise=Sim.default_noise_model())
             >>> program = fq.Program(1, 1)
-            >>> program.add(op.RX(np.pi), 0)  # RX(pi) = X, up to a phase
+            >>> program.add(ops.RX(np.pi), 0)  # RX(pi) = X, up to a phase
             >>> program.measure(0, 0)
             >>> counts = backend.run(
             ...     program,

@@ -37,6 +37,7 @@ construction; its references identify the Evered et al. source.
 
 ```{doctest}
 >>> import fatqat as fq
+>>> import fatqat.operations as ops
 >>> model_document = fq.emulator.load_model_document("atom3level.reference")
 >>> model_document["model"]
 {'id': 'rb87-53s-reference', 'revision': '2026-08-22'}
@@ -117,7 +118,7 @@ request:
 
 ```{doctest}
 >>> program = fq.Program(2)
->>> program.add(fq.ops.CZ, (0, 1))
+>>> program.add(ops.CZ, (0, 1))
 >>> result = backend.run(
 ...     program,
 ...     shots=1,
@@ -138,16 +139,16 @@ encode the two quadratures of the selected transition; the address, rather
 than ordinary program targets, identifies the site:
 
 ```{doctest}
->>> direct = fq.ops.PulseOperation(
+>>> direct = ops.PulseOperation(
 ...     0.5,
 ...     (
 ...         fq.emulator.PulseControl(
 ...             model.control.raman(0),
-...             fq.waveforms.SampledWaveform((0.0, 0.5), (0.2, 0.2j)),
+...             fq.emulator.SampledWaveform((0.0, 0.5), (0.2, 0.2j)),
 ...         ),
 ...         fq.emulator.PulseControl(
 ...             model.control.rydberg(1),
-...             fq.waveforms.SampledWaveform((0.0, 0.5), (0.1, 0.1)),
+...             fq.emulator.SampledWaveform((0.0, 0.5), (0.1, 0.1)),
 ...         ),
 ...     ),
 ... )

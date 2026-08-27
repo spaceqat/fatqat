@@ -111,9 +111,9 @@ def thermal_relaxation_lindblad_rule(
 def default_lindblad_implementation_map() -> LindbladImplementationMap:
     """Return the standard continuous-noise implementations."""
     implementations = LindbladImplementationMap()
-    implementations.register(AmplitudeDamping, amplitude_damping_lindblad_rule)
-    implementations.register(PhaseDamping, phase_damping_lindblad_rule)
-    implementations.register(ThermalRelaxation, thermal_relaxation_lindblad_rule)
+    implementations.add(AmplitudeDamping, amplitude_damping_lindblad_rule)
+    implementations.add(PhaseDamping, phase_damping_lindblad_rule)
+    implementations.add(ThermalRelaxation, thermal_relaxation_lindblad_rule)
     return implementations
 
 

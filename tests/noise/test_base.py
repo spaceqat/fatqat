@@ -7,6 +7,7 @@ from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     Channel,
     ChannelImplementationMap,
+    LindbladImplementationMap,
     default_channel_implementation_map,
 )
 from fatqat.noise.base import _validate_kraus_shapes
@@ -17,36 +18,77 @@ class _CustomChannel(Channel):
     pass
 
 
+def test_num_subsystems_is_the_only_public_channel_width_name():
+    class TwoSubsystemChannel(Channel):
+        num_subsystems = 2
+
+    assert Channel.num_subsystems is None
+    assert _CustomChannel().num_subsystems is None
+    assert TwoSubsystemChannel.num_subsystems == 2
+    assert TwoSubsystemChannel().num_subsystems == 2
+    assert not hasattr(Channel, "arity")
+    assert not hasattr(TwoSubsystemChannel(), "arity")
+    assert not hasattr(Channel, "_num_subsystems")
+    assert not hasattr(TwoSubsystemChannel(), "_num_subsystems")
+
+
+def test_custom_channel_may_derive_num_subsystems_from_instance_data():
+    class DynamicChannel(Channel):
+        def __init__(self, width):
+            self.width = width
+
+        @property
+        def num_subsystems(self):
+            return self.width
+
+    assert DynamicChannel(3).num_subsystems == 3
+
+
+def test_custom_channel_rejects_retired_private_width_declaration():
+    with pytest.raises(TypeError, match="num_subsystems"):
+        type("LegacySubsystemCount", (Channel,), {"_num_subsystems": 2})
+
+
+@pytest.mark.parametrize("bad", [0, -1, 1.5, True])
+def test_custom_channel_rejects_invalid_num_subsystems(bad):
+    with pytest.raises(ValueError, match="num_subsystems"):
+        type("BadSubsystemCount", (Channel,), {"num_subsystems": bad})
+
+
 def _identity_rule(channel, *, targets):
     return (np.eye(2, dtype=complex),)
 
 
-def test_register_and_get_roundtrip():
-    channel_map = ChannelImplementationMap()
-    channel_map.register(_CustomChannel, _identity_rule)
+@pytest.mark.parametrize(
+    "map_type", [ChannelImplementationMap, LindbladImplementationMap]
+)
+def test_add_is_the_only_public_registration_verb_and_roundtrips(map_type):
+    channel_map = map_type()
+    assert channel_map.add(_CustomChannel, _identity_rule) is None
 
     assert channel_map.get(_CustomChannel) is _identity_rule
     assert channel_map.get(Depolarizing) is None
     assert channel_map.supported_channels() == frozenset({_CustomChannel})
+    assert not hasattr(channel_map, "register")
 
 
-def test_register_rejects_non_channel_type():
+def test_add_rejects_non_channel_type():
     channel_map = ChannelImplementationMap()
     with pytest.raises(TypeError):
-        channel_map.register(int, _identity_rule)
+        channel_map.add(int, _identity_rule)
 
 
-def test_register_rejects_non_callable_rule():
+def test_add_rejects_non_callable_rule():
     channel_map = ChannelImplementationMap()
     with pytest.raises(TypeError):
-        channel_map.register(_CustomChannel, "not a rule")
+        channel_map.add(_CustomChannel, "not a rule")
 
 
 def test_copy_is_independent():
     channel_map = ChannelImplementationMap()
-    channel_map.register(_CustomChannel, _identity_rule)
+    channel_map.add(_CustomChannel, _identity_rule)
     clone = channel_map.copy()
-    clone.register(Depolarizing, _identity_rule)
+    clone.add(Depolarizing, _identity_rule)
 
     assert channel_map.get(Depolarizing) is None
     assert clone.get(_CustomChannel) is _identity_rule

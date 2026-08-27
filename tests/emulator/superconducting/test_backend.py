@@ -7,6 +7,7 @@ import pytest
 from qutip import Qobj, basis, ket2dm, tensor
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat._index_allocation import _EngineAllocation
 from fatqat._backends.steps import MeasurementStep, ResetStep
@@ -23,7 +24,7 @@ from fatqat.emulator._core.pulse import (
     PulseDefinition,
 )
 from fatqat.emulator._core.target import _PreparedControlBinding
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 from fatqat.emulator.superconducting.realization import (
     default_transmon_gate_implementation_map,
 )
@@ -145,7 +146,7 @@ def test_confused_reported_value_drives_later_guarded_pulse(make_backend):
     backend = make_backend(noise)
     program = fq.Program(2, 1)
     program.measure(0, 0)
-    program.add(fq.ops.RX(pi), 1, condition=(0, 1))
+    program.add(ops.RX(pi), 1, condition=(0, 1))
     result = backend.run(
         program,
         shots=1,
@@ -161,7 +162,7 @@ def test_confused_reported_value_drives_later_guarded_pulse(make_backend):
 def test_seeded_dynamic_replay_is_reproducible(make_backend):
     backend = make_backend()
     program = fq.Program(1, 1)
-    program.add(fq.ops.RX(pi / 2), 0)
+    program.add(ops.RX(pi / 2), 0)
     program.measure(0, 0)
     config = {"counts": True, "final_state": False}
     first = backend.run(
@@ -176,9 +177,9 @@ def test_seeded_dynamic_replay_is_reproducible(make_backend):
 def test_real_boundary_preserves_frame_ledger_for_later_drive(make_backend):
     backend = make_backend()
     with_boundary = fq.Program(2, 1)
-    with_boundary.add(fq.ops.RZ(0.3), 0)
+    with_boundary.add(ops.RZ(0.3), 0)
     with_boundary.measure(1, 0)
-    with_boundary.add(fq.ops.RX(0.7), 0)
+    with_boundary.add(ops.RX(0.7), 0)
     boundary_state = (
         backend.run(
             with_boundary,
@@ -190,8 +191,8 @@ def test_real_boundary_preserves_frame_ledger_for_later_drive(make_backend):
     )
 
     continuous = fq.Program(2)
-    continuous.add(fq.ops.RZ(0.3), 0)
-    continuous.add(fq.ops.RX(0.7), 0)
+    continuous.add(ops.RZ(0.3), 0)
+    continuous.add(ops.RX(0.7), 0)
     continuous_state = (
         backend.run(
             continuous,
@@ -221,22 +222,22 @@ def test_reset_and_both_guarded_boundary_outcomes_preserve_later_frame_use(
         return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(1).full()
 
     continuous = fq.Program(2)
-    continuous.add(fq.ops.RZ(0.3), 0)
-    continuous.add(fq.ops.RX(0.7), 0)
+    continuous.add(ops.RZ(0.3), 0)
+    continuous.add(ops.RX(0.7), 0)
     expected = q0_state(continuous)
 
     reset = fq.Program(2)
-    reset.add(fq.ops.RZ(0.3), 0)
-    reset.add(fq.ops.Reset, 1)
-    reset.add(fq.ops.RX(0.7), 0)
+    reset.add(ops.RZ(0.3), 0)
+    reset.add(ops.Reset, 1)
+    reset.add(ops.RX(0.7), 0)
     assert np.allclose(q0_state(reset), expected, atol=2e-7)
 
     for required_digit in (0, 1):
         guarded = fq.Program(2, 1)
-        guarded.add(fq.ops.RZ(0.3), 0)
+        guarded.add(ops.RZ(0.3), 0)
         guarded.measure(1, 0)
-        guarded.add(fq.ops.Reset, 1, condition=(0, required_digit))
-        guarded.add(fq.ops.RX(0.7), 0)
+        guarded.add(ops.Reset, 1, condition=(0, required_digit))
+        guarded.add(ops.RX(0.7), 0)
         assert np.allclose(q0_state(guarded, shots=1), expected, atol=2e-7)
 
 
@@ -256,16 +257,16 @@ def test_both_guarded_pulse_outcomes_flush_before_later_frame_aware_drive(make_b
         return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(1).full()
 
     continuous = fq.Program(2)
-    continuous.add(fq.ops.RZ(0.3), 0)
-    continuous.add(fq.ops.RX(0.7), 0)
+    continuous.add(ops.RZ(0.3), 0)
+    continuous.add(ops.RX(0.7), 0)
     expected = q0_state(continuous, shots=0)
 
     for required_digit in (0, 1):
         guarded = fq.Program(2, 1)
-        guarded.add(fq.ops.RZ(0.3), 0)
+        guarded.add(ops.RZ(0.3), 0)
         guarded.measure(1, 0)
-        guarded.add(fq.ops.RX(0.2), 1, condition=(0, required_digit))
-        guarded.add(fq.ops.RX(0.7), 0)
+        guarded.add(ops.RX(0.2), 1, condition=(0, required_digit))
+        guarded.add(ops.RX(0.7), 0)
         assert np.allclose(q0_state(guarded, shots=1), expected, atol=2e-7)
 
 
@@ -356,12 +357,12 @@ def test_custom_cz_rule_executes_end_to_end_and_yields_a_valid_physical_state(
     implementations = default_transmon_gate_implementation_map(
         model=model, calibration=calibration
     )
-    implementations.remove(fq.ops.CZ)
-    implementations.add(fq.ops.CZ, custom_cz)
+    implementations.remove(ops.CZ)
+    implementations.add(ops.CZ, custom_cz)
     backend = TransmonEmulator(model, gate_implementation_map=implementations)
 
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
     plan = backend._prepare_program(program).plan
     (block,) = plan
     assert block.duration == 40.0

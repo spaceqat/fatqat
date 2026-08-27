@@ -3,7 +3,7 @@
 import pytest
 
 import fatqat as fq
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.program import AppliedOperation, Program
 
 
@@ -13,7 +13,7 @@ from fatqat.program import AppliedOperation, Program
 )
 def test_singleton_shape(singleton, cls, name):
     assert singleton.name == name
-    assert singleton.num_targets == 2
+    assert singleton.num_subsystems == 2
     assert isinstance(singleton, cls)
     assert singleton == cls()  # frozen value equality
 
@@ -45,12 +45,12 @@ def test_self_pair_rejected_as_duplicate_target(op):
 
 
 @pytest.mark.parametrize("op", [ops.Pair, ops.Unpair])
-def test_exported_on_fq_ops(op):
-    assert op.name in fq.ops.__all__
-    assert getattr(fq.ops, op.name) is op
+def test_exported_on_operations_namespace(op):
+    assert op.name in fq.operations.__all__
+    assert getattr(fq.operations, op.name) is op
 
 
 def test_old_operations_are_gone():
     for removed in ("Rearrange", "LoadAtoms", "Refill"):
-        assert removed not in fq.ops.__all__
-        assert not hasattr(fq.ops, removed)
+        assert removed not in fq.operations.__all__
+        assert not hasattr(fq.operations, removed)

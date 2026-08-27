@@ -61,19 +61,19 @@ def _default_lindblad_map() -> LindbladImplementationMap:
     map replaces the catalog rather than extending it implicitly.
     """
     implementations = LindbladImplementationMap()
-    implementations.register(
+    implementations.add(
         AmplitudeDamping,
         amplitude_damping_lindblad_rule,
     )
-    implementations.register(
+    implementations.add(
         PhaseDamping,
         phase_damping_lindblad_rule,
     )
-    implementations.register(
+    implementations.add(
         ThermalRelaxation,
         thermal_relaxation_lindblad_rule,
     )
-    implementations.register(
+    implementations.add(
         Depolarizing,
         depolarizing_lindblad_rule,
     )

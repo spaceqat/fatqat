@@ -18,7 +18,7 @@ type DeviceOperand = Hashable
 
 
 class ResourceLayout:
-    """Maps scalar `RegisterRef`s to opaque device resource labels.
+    """Map scalar ``RegisterRef`` objects to opaque device resource labels.
 
     Refs key this mapping by identity, not by field values: a register is an
     entity, so a lookalike built with the same size and name is a different

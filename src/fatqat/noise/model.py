@@ -57,8 +57,9 @@ class NoiseModel:
         simulator:
 
         >>> import fatqat as fq
+        >>> import fatqat.operations as ops
         >>> noise = fq.NoiseModel()
-        >>> noise.add(fq.noise.PhaseDamping(p=0.01), operation=fq.ops.X)
+        >>> noise.add(fq.noise.PhaseDamping(p=0.01), operation=ops.X)
         >>> backend = fq.simulator.Simulator(method="DM", noise=noise)
 
         Add target-specific background relaxation and extra ``X``-block
@@ -68,7 +69,7 @@ class NoiseModel:
         >>> noise.add(fq.noise.ThermalRelaxation(t1=60.0, t2=80.0), targets="q0")
         >>> noise.add(
         ...     fq.noise.PhaseDamping(rate=0.002),
-        ...     operation=fq.ops.X,
+        ...     operation=ops.X,
         ...     targets="q0",
         ... )
 
@@ -169,10 +170,11 @@ class NoiseModel:
             Select the first operand of every ``CZ`` occurrence:
 
             >>> import fatqat as fq
+            >>> import fatqat.operations as ops
             >>> noise = fq.NoiseModel()
             >>> noise.add(
             ...     fq.noise.PhaseDamping(p=0.01),
-            ...     operation=fq.ops.CZ,
+            ...     operation=ops.CZ,
             ...     target_positions=0,
             ... )
 
@@ -181,12 +183,12 @@ class NoiseModel:
 
             >>> noise.add(
             ...     fq.noise.AmplitudeDamping(p=0.002),
-            ...     operation=fq.ops.CZ,
+            ...     operation=ops.CZ,
             ...     target_positions=0,
             ... )
             >>> noise.add(
             ...     fq.noise.AmplitudeDamping(p=0.003),
-            ...     operation=fq.ops.CZ,
+            ...     operation=ops.CZ,
             ...     target_positions=1,
             ... )
         """
@@ -422,7 +424,7 @@ def _normalize_occurrence_selector(
     if not selector:
         raise ValueError("targets must be None or a non-empty ordered selector")
     _validate_homogeneous_selector(selector, "noise")
-    arity = op_cls._num_subsystems
+    arity = op_cls.num_subsystems
     if arity is not None and len(selector) != arity:
         raise ValueError(
             f"{op_cls.__name__} targets {arity} subsystem(s), got a selector "
@@ -503,7 +505,7 @@ def _normalize_target_positions(
         if any(left >= right for left, right in zip(normalized, normalized[1:])):
             raise ValueError("target_positions must be strictly increasing")
 
-    occurrence_width = op_cls._num_subsystems
+    occurrence_width = op_cls.num_subsystems
     if occurrence_width is None and selector is not None:
         occurrence_width = len(selector)
     if occurrence_width is not None and normalized is not None:

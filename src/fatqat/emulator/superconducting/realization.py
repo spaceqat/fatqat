@@ -12,7 +12,7 @@ from ..._pulse_values import ControlChannel, PulseControl
 from ...errors import BackendValidationError
 from ...operations.base import Operation
 from ...operations.parametric_gates import RY
-from ...waveforms import SampledWaveform
+from ..._waveforms import SampledWaveform
 from .._core.target import Frame
 from .._core.pulse import PhaseShift, PhaseSwap, PulseDefinition, PulseImplementationMap
 from .._core.value_validation import _finite

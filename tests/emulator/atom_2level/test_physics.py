@@ -17,7 +17,7 @@ from fatqat.emulator._core.scheduling import schedule_pulse_run
 from fatqat.emulator.atom_2level import Atom2LevelModel
 from fatqat.emulator.atom_2level.qutip_adapter import _Atom2LevelQutipAdapter
 from fatqat.emulator.atom_2level.target import _Atom2LevelTarget
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 from tests.emulator.atom_2level.reference.two_level_hamiltonian import (
     solve_constant,

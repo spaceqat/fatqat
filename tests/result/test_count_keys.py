@@ -93,6 +93,7 @@ def test_format_count_key_high_quantum_dim_stays_plain():
 
 def test_delimited_key_threshold_end_to_end():
     import fatqat as fq
+    import fatqat.operations as ops
 
     # Two classical slots so plain concatenation ("310") and the delimited
     # little-endian form ("3,10") are visibly different strings -- a single
@@ -102,8 +103,8 @@ def test_delimited_key_threshold_end_to_end():
     qreg = fq.QuantumRegister(2, dim=11)
     creg = fq.ClassicalRegister(2, dim=11)
     program = fq.Program([qreg], [creg])
-    program.add(fq.ops.Shift(10), qreg[0])  # |0> -> |10>
-    program.add(fq.ops.Shift(3), qreg[1])  # |0> -> |3>
+    program.add(ops.Shift(10), qreg[0])  # |0> -> |10>
+    program.add(ops.Shift(3), qreg[1])  # |0> -> |3>
     program.measure((qreg[0], qreg[1]), (creg[0], creg[1]))
     result = fq.simulator.Simulator("SV").run(program, shots=4).result()
     # clbit0=10, clbit1=3; little-endian (highest clbit first): "3,10".
@@ -113,6 +114,7 @@ def test_delimited_key_threshold_end_to_end():
 
 def test_high_quantum_dim_low_classical_stays_plain():
     import fatqat as fq
+    import fatqat.operations as ops
 
     # dim-11 quantum register measured into... impossible (dims must match);
     # instead: a dim-11 quantum register left UNMEASURED, low-dim classical slots.
@@ -120,7 +122,7 @@ def test_high_quantum_dim_low_classical_stays_plain():
     qb = fq.QuantumRegister(1, dim=2)
     cb = fq.ClassicalRegister(1, dim=2)
     program = fq.Program([qbig, qb], [cb])
-    program.add(fq.ops.X, qb[0])
+    program.add(ops.X, qb[0])
     program.measure(qb[0], cb[0])
     result = fq.simulator.Simulator("SV").run(program, shots=4).result()
     assert result.get_counts() == {"1": 4}  # plain string; classical dims are all <= 9

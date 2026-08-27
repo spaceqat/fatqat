@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     AmplitudeDamping,
@@ -30,7 +31,7 @@ def _program_and_layout(size=3):
 def test_add_is_the_only_public_registration_verb_and_returns_none():
     noise = NoiseModel()
 
-    assert noise.add(Depolarizing(p=0.1), operation=fq.ops.X) is None
+    assert noise.add(Depolarizing(p=0.1), operation=ops.X) is None
     assert noise.add(_CONFUSION, targets=0) is None
     assert "declaration" in inspect.signature(noise.add).parameters
     for obsolete in (
@@ -50,7 +51,7 @@ def test_add_is_the_only_public_registration_verb_and_returns_none():
 
 
 @pytest.mark.parametrize("keyword", ["operation", "target_positions"])
-@pytest.mark.parametrize("value", [None, fq.ops.X])
+@pytest.mark.parametrize("value", [None, ops.X])
 def test_readout_rejects_dynamical_scope_keywords_atomically(keyword, value):
     noise = NoiseModel()
 
@@ -74,7 +75,7 @@ def test_occurrence_selector_rejects_lists_with_tuple_guidance():
     with pytest.raises(TypeError, match="ordered tuple; lists are not accepted"):
         NoiseModel().add(
             Depolarizing(p=0.1),
-            operation=fq.ops.CX,
+            operation=ops.CX,
             targets=[q[0], q[1]],
         )
 
@@ -83,11 +84,11 @@ def test_operation_is_occurrence_scope_and_omission_is_background_scope():
     noise = NoiseModel()
     operation_channel = PhaseDamping(p=0.1)
     background_channel = PhaseDamping(rate=2.0)
-    noise.add(operation_channel, operation=fq.ops.X)
+    noise.add(operation_channel, operation=ops.X)
     noise.add(background_channel, targets=1)
     _program, q, layout = _program_and_layout()
 
-    assert noise._noise_for_occurrence(fq.ops.X, (q[0],), layout) == [
+    assert noise._noise_for_occurrence(ops.X, (q[0],), layout) == [
         (operation_channel, (q[0],))
     ]
     assert noise._background_noise_for(q[1], 1) == (background_channel,)
@@ -111,7 +112,7 @@ def test_operationless_noise_is_not_an_every_gate_shorthand():
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"operation": fq.ops.X, "targets": (None,)},
+        {"operation": ops.X, "targets": (None,)},
         {"targets": (None,)},
     ],
 )
@@ -136,7 +137,7 @@ def test_background_scope_rejects_nonlocal_or_positional_forms(declaration, kwar
 
 @pytest.mark.parametrize(
     "operation",
-    [fq.ops.Barrier, fq.ops.Reset, fq.ops.PulseOperation],
+    [ops.Barrier, ops.Reset, ops.PulseOperation],
 )
 def test_operations_without_noise_boundaries_reject_atomically(operation):
     noise = NoiseModel()
@@ -151,12 +152,12 @@ def test_put_accepts_only_loss_atomically():
     noise = NoiseModel()
 
     with pytest.raises(ValueError, match="Put accepts only Loss"):
-        noise.add(PhaseDamping(p=0.1), operation=fq.ops.Put)
+        noise.add(PhaseDamping(p=0.1), operation=ops.Put)
 
     assert noise._noise_sources() == ()
     loss = Loss(p=0.1)
-    noise.add(loss, operation=fq.ops.Put)
-    assert noise._noise_sources() == ((loss, type(fq.ops.Put)),)
+    noise.add(loss, operation=ops.Put)
+    assert noise._noise_sources() == ((loss, type(ops.Put)),)
 
 
 def test_occurrence_selector_is_exact_ordered_and_positions_select_extent():
@@ -165,15 +166,15 @@ def test_occurrence_selector_is_exact_ordered_and_positions_select_extent():
     noise = NoiseModel()
     noise.add(
         damping,
-        operation=fq.ops.CX,
+        operation=ops.CX,
         targets=(q[0], q[1]),
         target_positions=1,
     )
 
-    assert noise._noise_for_occurrence(fq.ops.CX, (q[0], q[1]), layout) == [
+    assert noise._noise_for_occurrence(ops.CX, (q[0], q[1]), layout) == [
         (damping, (q[1],))
     ]
-    assert noise._noise_for_occurrence(fq.ops.CX, (q[1], q[0]), layout) == []
+    assert noise._noise_for_occurrence(ops.CX, (q[1], q[0]), layout) == []
 
 
 def test_physical_selector_matches_exact_order_and_tuple_label_is_opaque():
@@ -183,20 +184,20 @@ def test_physical_selector_matches_exact_order_and_tuple_label_is_opaque():
     noise = NoiseModel()
     noise.add(
         channel,
-        operation=fq.ops.CX,
+        operation=ops.CX,
         targets=(("site", 0), ("site", 1)),
     )
 
-    assert noise._noise_for_occurrence(fq.ops.CX, (q[0], q[1]), layout) == [
+    assert noise._noise_for_occurrence(ops.CX, (q[0], q[1]), layout) == [
         (channel, (q[0], q[1]))
     ]
 
 
 def test_scalar_selector_is_unary_shorthand_only():
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.X, targets="q0")
+    noise.add(Depolarizing(p=0.1), operation=ops.X, targets="q0")
     with pytest.raises(ValueError, match="length"):
-        noise.add(Depolarizing(p=0.2), operation=fq.ops.CX, targets="q0")
+        noise.add(Depolarizing(p=0.2), operation=ops.CX, targets="q0")
 
 
 @pytest.mark.parametrize(
@@ -211,10 +212,10 @@ def test_scalar_selector_is_unary_shorthand_only():
 )
 def test_same_source_overlap_matrix(second, conflicts):
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.CX, target_positions=0)
+    noise.add(Depolarizing(p=0.1), operation=ops.CX, target_positions=0)
 
     def call():
-        noise.add(Depolarizing(p=0.2), operation=fq.ops.CX, **second)
+        noise.add(Depolarizing(p=0.2), operation=ops.CX, **second)
 
     if conflicts:
         with pytest.raises(ValueError, match="overlapping"):
@@ -225,8 +226,8 @@ def test_same_source_overlap_matrix(second, conflicts):
 
 def test_different_sources_and_activation_scopes_accumulate():
     noise = NoiseModel()
-    noise.add(PhaseDamping(p=0.1), operation=fq.ops.X)
-    noise.add(AmplitudeDamping(p=0.1), operation=fq.ops.X)
+    noise.add(PhaseDamping(p=0.1), operation=ops.X)
+    noise.add(AmplitudeDamping(p=0.1), operation=ops.X)
     noise.add(PhaseDamping(rate=1.0), targets=0)
 
     assert len(noise._noise_sources()) == 3
@@ -234,8 +235,8 @@ def test_different_sources_and_activation_scopes_accumulate():
 
 def test_distinct_exact_selectors_support_heterogeneous_calibration():
     noise = NoiseModel()
-    noise.add(PhaseDamping(p=0.1), operation=fq.ops.X, targets=0)
-    noise.add(PhaseDamping(p=0.2), operation=fq.ops.X, targets=1)
+    noise.add(PhaseDamping(p=0.1), operation=ops.X, targets=0)
+    noise.add(PhaseDamping(p=0.2), operation=ops.X, targets=1)
 
     assert len(noise._noise_sources()) == 2
 
@@ -243,12 +244,12 @@ def test_distinct_exact_selectors_support_heterogeneous_calibration():
 def test_logical_and_physical_alias_conflicts_only_on_actual_match():
     _program, q, layout = _program_and_layout()
     noise = NoiseModel()
-    noise.add(PhaseDamping(p=0.1), operation=fq.ops.X, targets=q[0])
-    noise.add(PhaseDamping(p=0.2), operation=fq.ops.X, targets=0)
+    noise.add(PhaseDamping(p=0.1), operation=ops.X, targets=q[0])
+    noise.add(PhaseDamping(p=0.2), operation=ops.X, targets=0)
 
-    assert noise._noise_for_occurrence(fq.ops.X, (q[1],), layout) == []
+    assert noise._noise_for_occurrence(ops.X, (q[1],), layout) == []
     with pytest.raises(BackendValidationError, match="both match"):
-        noise._noise_for_occurrence(fq.ops.X, (q[0],), layout)
+        noise._noise_for_occurrence(ops.X, (q[0],), layout)
 
 
 def test_logical_physical_alias_is_valid_across_disjoint_positions():
@@ -256,18 +257,18 @@ def test_logical_physical_alias_is_valid_across_disjoint_positions():
     noise = NoiseModel()
     noise.add(
         PhaseDamping(p=0.1),
-        operation=fq.ops.CX,
+        operation=ops.CX,
         targets=(q[0], q[1]),
         target_positions=0,
     )
     noise.add(
         PhaseDamping(p=0.2),
-        operation=fq.ops.CX,
+        operation=ops.CX,
         targets=(0, 1),
         target_positions=1,
     )
 
-    assert len(noise._noise_for_occurrence(fq.ops.CX, (q[0], q[1]), layout)) == 2
+    assert len(noise._noise_for_occurrence(ops.CX, (q[0], q[1]), layout)) == 2
 
 
 def test_readout_is_unique_per_operand_without_replacement():
@@ -317,17 +318,17 @@ def test_validate_for_checks_logical_ownership_and_physical_universe():
     program, q, layout = _program_and_layout()
     foreign = fq.QuantumRegister(1)[0]
     logical = NoiseModel()
-    logical.add(PhaseDamping(p=0.1), operation=fq.ops.X, targets=foreign)
+    logical.add(PhaseDamping(p=0.1), operation=ops.X, targets=foreign)
     with pytest.raises(BackendValidationError, match="outside this program"):
         logical._validate_for(program, frozenset(layout.device_labels))
 
     physical = NoiseModel()
-    physical.add(PhaseDamping(p=0.1), operation=fq.ops.X, targets=99)
+    physical.add(PhaseDamping(p=0.1), operation=ops.X, targets=99)
     with pytest.raises(BackendValidationError, match="legal universe"):
         physical._validate_for(program, frozenset(layout.device_labels))
 
     valid_no_match = NoiseModel()
-    valid_no_match.add(PhaseDamping(p=0.1), operation=fq.ops.Y, targets=q[2])
+    valid_no_match.add(PhaseDamping(p=0.1), operation=ops.Y, targets=q[2])
     valid_no_match._validate_for(program, frozenset(layout.device_labels))
 
 
@@ -335,12 +336,12 @@ def test_copy_owns_independent_lists_but_shares_immutable_values():
     channel = PhaseDamping(p=0.1)
     confusion = ReadoutConfusion(np.eye(2))
     source = NoiseModel()
-    source.add(channel, operation=fq.ops.X)
+    source.add(channel, operation=ops.X)
     source.add(confusion, targets=0)
     copied = source._copy()
-    source.add(AmplitudeDamping(p=0.2), operation=fq.ops.Y)
+    source.add(AmplitudeDamping(p=0.2), operation=ops.Y)
 
-    assert copied._noise_sources() == ((channel, type(fq.ops.X)),)
+    assert copied._noise_sources() == ((channel, type(ops.X)),)
     assert copied._readout_confusions()[0] is confusion
     assert len(source._noise_sources()) == 2
 
@@ -349,6 +350,6 @@ def test_register_view_and_mixed_identity_selectors_reject():
     atoms = GridRegister(2, 2)
     noise = NoiseModel()
     with pytest.raises(TypeError, match="RegisterView"):
-        noise.add(Depolarizing(p=0.1), operation=fq.ops.CX, targets=atoms.row(0))
+        noise.add(Depolarizing(p=0.1), operation=ops.CX, targets=atoms.row(0))
     with pytest.raises(TypeError, match="all RegisterRef"):
-        noise.add(Depolarizing(p=0.1), operation=fq.ops.CX, targets=(atoms[0], 1))
+        noise.add(Depolarizing(p=0.1), operation=ops.CX, targets=(atoms[0], 1))

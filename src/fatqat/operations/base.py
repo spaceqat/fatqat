@@ -19,24 +19,24 @@ class Operation:
 
     Attributes:
         name: Public operation name.
-        _num_subsystems: Number of quantum targets required by the operation, or
+        num_subsystems: Number of quantum operands required by the operation, or
             None for variable arity governed by ``min_targets``. A minimum of
             zero supports global operations whose target set is implicit.
 
     Examples:
-        >>> import fatqat.operations as op
-        >>> op.H.name
+        >>> import fatqat.operations as ops
+        >>> ops.H.name
         'H'
-        >>> op.H.num_targets
+        >>> ops.H.num_subsystems
         1
-        >>> op.CX.num_targets
+        >>> ops.CX.num_subsystems
         2
-        >>> op.RX(0.2).num_targets
+        >>> ops.RX(0.2).num_subsystems
         1
     """
 
     name: ClassVar[str] = "OP"
-    _num_subsystems: ClassVar[int | None] = 1
+    num_subsystems: ClassVar[int | None] = 1
     _min_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = False
     """Whether this operation accepts a ``RegisterView`` target expression in
@@ -58,7 +58,13 @@ class Operation:
         # where a bad value is actually a developer error - rather than on
         # every instantiation of an already-correct class.
         super().__init_subclass__(**kwargs)
-        n = cls._num_subsystems
+        for retired_name in ("num_targets", "_num_subsystems"):
+            if retired_name in cls.__dict__:
+                raise TypeError(
+                    f"{retired_name} is no longer supported on Operation "
+                    "subclasses; declare num_subsystems instead"
+                )
+        n = cls.num_subsystems
         minimum = cls._min_subsystems
         if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 0:
             raise ValueError(
@@ -66,18 +72,13 @@ class Operation:
             )
         if n is not None and (not isinstance(n, int) or isinstance(n, bool) or n < 0):
             raise ValueError(
-                f"_num_subsystems must be a non-negative int or None, got {n!r}"
+                f"num_subsystems must be a non-negative int or None, got {n!r}"
             )
-
-    @property
-    def num_targets(self) -> int | None:
-        """Number of quantum targets required, or None for variable arity."""
-        return type(self)._num_subsystems
 
     @property
     def min_targets(self) -> int:
         """Minimum accepted targets, or the exact arity for a fixed operation."""
-        fixed = self.num_targets
+        fixed = self.num_subsystems
         return type(self)._min_subsystems if fixed is None else fixed
 
     @property

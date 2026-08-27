@@ -8,6 +8,7 @@ import pytest
 from qutip import basis, ket2dm, tensor
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat._index_allocation import _EngineAllocation
 from fatqat.emulator.superconducting.backend import TransmonEmulator
@@ -22,7 +23,7 @@ from fatqat.emulator._core.pulse import (
     PulseImplementationMap,
 )
 from fatqat.emulator._core.target import _PreparedControlBinding
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     AmplitudeDamping,
@@ -41,13 +42,13 @@ from fatqat.noise.lindblad import phase_damping_lindblad_rule
 class _DriveBroadening(Channel):
     """Test-only local generator whose physics is not expressed as a rate field."""
 
-    _num_subsystems = 1
+    num_subsystems = 1
     strength: float
 
 
 @dataclass(frozen=True)
 class _TwoBodyGenerator(Channel):
-    _num_subsystems = 2
+    num_subsystems = 2
     strength: float
 
 
@@ -147,8 +148,8 @@ def _evolve(adapter, blocks, context, *, boundary=0.0):
 
 def test_pulse_backend_accepts_gate_keyed_rate_and_rejects_probability(make_backend):
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(p=(0.01, 0.02)), operation=fq.ops.RX)
-    noise.add(PhaseDamping(rate=0.001), operation=fq.ops.RX)
+    noise.add(AmplitudeDamping(p=(0.01, 0.02)), operation=ops.RX)
+    noise.add(PhaseDamping(rate=0.001), operation=ops.RX)
     report = make_backend().check_noise_support(noise)
 
     assert report.supported is False
@@ -161,14 +162,14 @@ def test_pulse_backend_rejects_qutrit_amplitude_damping_with_wrong_arity(
     make_backend,
 ):
     invalid = NoiseModel()
-    invalid.add(AmplitudeDamping(rate=(0.1,)), operation=fq.ops.RX)
+    invalid.add(AmplitudeDamping(rate=(0.1,)), operation=ops.RX)
     report = make_backend().check_noise_support(invalid)
     assert not report.supported
     assert "arity-1" in report.rejected_sources[0]
     assert "requires 2 damping values" in report.warnings[0]
 
     valid = NoiseModel()
-    valid.add(AmplitudeDamping(rate=(0.1, 0.2)), operation=fq.ops.RX)
+    valid.add(AmplitudeDamping(rate=(0.1, 0.2)), operation=ops.RX)
     assert make_backend().check_noise_support(valid).supported
 
 
@@ -200,7 +201,7 @@ def test_pulse_backend_still_rejects_channel_types_without_a_pulse_implementatio
     make_backend,
 ):
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.RX)
+    noise.add(Depolarizing(p=0.1), operation=ops.RX)
     backend = make_backend()
 
     report = backend.check_noise_support(noise)
@@ -215,7 +216,7 @@ def test_pulse_backend_rejects_finite_pauli_channel_without_inferred_generator(
     make_backend,
 ):
     noise = NoiseModel()
-    noise.add(PauliChannel({"X": 0.1}), operation=fq.ops.RX)
+    noise.add(PauliChannel({"X": 0.1}), operation=ops.RX)
 
     report = make_backend().check_noise_support(noise)
 
@@ -227,16 +228,16 @@ def test_custom_generator_fields_are_interpreted_only_by_the_registered_rule(
     model,
 ):
     implementations = LindbladImplementationMap()
-    implementations.register(_DriveBroadening, _broadening_rule)
+    implementations.add(_DriveBroadening, _broadening_rule)
     noise = NoiseModel()
-    noise.add(_DriveBroadening(strength=0.25), operation=fq.ops.RX)
+    noise.add(_DriveBroadening(strength=0.25), operation=ops.RX)
     backend = TransmonEmulator(
         model,
         noise=noise,
         lindblad_implementation_map=implementations,
     )
     program = fq.Program(1)
-    program.add(fq.ops.RX(0.2), 0)
+    program.add(ops.RX(0.2), 0)
 
     report = backend.check_noise_support(noise)
     plan = backend._prepare_program(program).plan
@@ -254,9 +255,9 @@ def test_custom_generator_fields_are_interpreted_only_by_the_registered_rule(
 
 def test_known_two_body_generator_is_rejected_during_capability_validation(model):
     implementations = LindbladImplementationMap()
-    implementations.register(_TwoBodyGenerator, _broadening_rule)
+    implementations.add(_TwoBodyGenerator, _broadening_rule)
     noise = NoiseModel()
-    noise.add(_TwoBodyGenerator(strength=0.1), operation=fq.ops.CZ)
+    noise.add(_TwoBodyGenerator(strength=0.1), operation=ops.CZ)
     backend = TransmonEmulator(
         model,
         lindblad_implementation_map=implementations,
@@ -270,16 +271,16 @@ def test_known_two_body_generator_is_rejected_during_capability_validation(model
 
 def test_variable_width_generator_rejects_a_nonlocal_occurrence_at_lowering(model):
     implementations = LindbladImplementationMap()
-    implementations.register(_VariableWidthGenerator, _broadening_rule)
+    implementations.add(_VariableWidthGenerator, _broadening_rule)
     noise = NoiseModel()
-    noise.add(_VariableWidthGenerator(strength=0.1), operation=fq.ops.CZ)
+    noise.add(_VariableWidthGenerator(strength=0.1), operation=ops.CZ)
     backend = TransmonEmulator(
         model,
         noise=noise,
         lindblad_implementation_map=implementations,
     )
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
 
     assert backend.check_noise_support(noise).supported
     with pytest.raises(BackendValidationError, match="local to one subsystem"):
@@ -290,9 +291,9 @@ def test_lindblad_implementation_map_declares_pulse_noise_capability(
     model, calibration
 ):
     implementations = LindbladImplementationMap()
-    implementations.register(PhaseDamping, phase_damping_lindblad_rule)
+    implementations.add(PhaseDamping, phase_damping_lindblad_rule)
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(rate=(0.01, 0.02)), operation=fq.ops.RX)
+    noise.add(AmplitudeDamping(rate=(0.01, 0.02)), operation=ops.RX)
     backend = TransmonEmulator(
         model,
         lindblad_implementation_map=implementations,
@@ -302,7 +303,7 @@ def test_lindblad_implementation_map_declares_pulse_noise_capability(
         "AmplitudeDamping(rate)",
     )
 
-    implementations.register(AmplitudeDamping, phase_damping_lindblad_rule)
+    implementations.add(AmplitudeDamping, phase_damping_lindblad_rule)
     assert backend.check_noise_support(noise).rejected_sources == (
         "AmplitudeDamping(rate)",
     )
@@ -313,17 +314,17 @@ def test_lindblad_implementation_map_declares_pulse_noise_capability(
 
 def test_probability_mode_damping_is_rejected_at_construction(make_backend):
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(p=(0.01, 0.02)), operation=fq.ops.RX)
+    noise.add(AmplitudeDamping(p=(0.01, 0.02)), operation=ops.RX)
     with pytest.raises(BackendValidationError, match="finite probability mode"):
         make_backend(noise)
 
 
 def test_rate_mode_damping_lowers_unchanged(make_backend):
     noise = NoiseModel()
-    noise.add(PhaseDamping(rate=0.0025), operation=fq.ops.RX)
+    noise.add(PhaseDamping(rate=0.0025), operation=ops.RX)
     backend = make_backend(noise)
     program = fq.Program(1)
-    program.add(fq.ops.RX(0.3), 0)
+    program.add(ops.RX(0.3), 0)
     plan = backend._prepare_program(program).plan
     (block,) = [step for step in plan if isinstance(step, PulseBlock)]
 
@@ -350,9 +351,9 @@ def test_gate_scoped_rate_is_independent_of_the_realized_block_duration(
         )
 
     implementations = PulseImplementationMap()
-    implementations.add(fq.ops.RX, custom_rx)
+    implementations.add(ops.RX, custom_rx)
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(rate=(0.01, 0.02)), operation=fq.ops.RX)
+    noise.add(AmplitudeDamping(rate=(0.01, 0.02)), operation=ops.RX)
     backend = TransmonEmulator(
         model,
         noise=noise,
@@ -360,7 +361,7 @@ def test_gate_scoped_rate_is_independent_of_the_realized_block_duration(
     )
 
     program = fq.Program(1)
-    program.add(fq.ops.RX(0.3), 0)
+    program.add(ops.RX(0.3), 0)
     plan = backend._prepare_program(program).plan
     (block,) = plan
 
@@ -376,10 +377,10 @@ def test_generator_rate_on_zero_duration_gate_is_retained_without_conversion(
     make_backend,
 ):
     noise = NoiseModel()
-    noise.add(PhaseDamping(rate=0.1), operation=fq.ops.RZ)
+    noise.add(PhaseDamping(rate=0.1), operation=ops.RZ)
     backend = make_backend(noise)
     program = fq.Program(1)
-    program.add(fq.ops.RZ(0.2), 0)
+    program.add(ops.RZ(0.2), 0)
 
     plan = backend._prepare_program(program).plan
     (block,) = [step for step in plan if isinstance(step, PulseBlock)]

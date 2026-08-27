@@ -7,11 +7,12 @@ import pytest
 from scipy.linalg import expm
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator.atom_3level import Atom3LevelCalibration, Atom3LevelModel
 from fatqat.emulator._core.engine import PulseEngine
 from fatqat.errors import BackendValidationError
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 
 def _backend(model, calibration, sites=2):
@@ -39,9 +40,7 @@ def test_local_direct_propagator_matches_independent_qutrit_reference(
     duration = 0.3
     envelope = 0.4 + 0.2j
     channel = getattr(atom_3level_model.control, factory_name)(0)
-    operation = fq.ops.PulseOperation(
-        duration, (_control(channel, envelope, duration),)
-    )
+    operation = ops.PulseOperation(duration, (_control(channel, envelope, duration),))
     program = fq.Program(1)
     program.add(operation)
 
@@ -57,7 +56,7 @@ def test_concurrent_disjoint_raman_and_rydberg_controls_share_one_block(
     atom_3level_model, atom_3level_calibration
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         0.3,
         (
             _control(atom_3level_model.control.raman(0), 0.2 + 0.1j),
@@ -66,7 +65,7 @@ def test_concurrent_disjoint_raman_and_rydberg_controls_share_one_block(
     )
     program = fq.Program(2)
     program.add(operation)
-    program.add(fq.ops.RX(0.1), 0)
+    program.add(ops.RX(0.1), 0)
 
     plan = backend._prepare_program(program).plan
 
@@ -83,7 +82,7 @@ def test_controls_sharing_a_site_deduplicate_target_and_claim(
     atom_3level_model, atom_3level_calibration
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration, sites=1)
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         0.3,
         (
             _control(atom_3level_model.control.raman(0), 0.2),
@@ -105,7 +104,7 @@ def test_controls_sharing_a_site_deduplicate_target_and_claim(
 def test_structural_controls_reuse_across_compatible_arrangements(
     atom_3level_model, atom_3level_calibration
 ):
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         0.3, (_control(atom_3level_model.control.rydberg(1), 0.2j),)
     )
     program = fq.Program(2)
@@ -141,7 +140,7 @@ def test_direct_rydberg_drives_coexist_with_signed_all_pair_drift(
         _control(positive_model.control.rydberg(1), 0.2, 0.1),
     )
     program = fq.Program(2)
-    program.add(fq.ops.PulseOperation(0.1, controls))
+    program.add(ops.PulseOperation(0.1, controls))
     positive = _backend(positive_model, positive_calibration)
     negative = _backend(negative_model, negative_calibration)
 
@@ -159,7 +158,7 @@ def test_condition_changes_actual_direct_atom_execution(
     atom_3level_model, atom_3level_calibration
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration, sites=1)
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         0.4, (_control(atom_3level_model.control.raman(0), 1.0, 0.4),)
     )
     enabled = fq.Program(1, 1)
@@ -189,7 +188,7 @@ def test_disjoint_post_measurement_direct_atom_drive_retains_fast_path(
     program = fq.Program(2, 1)
     program.measure(0, 0)
     program.add(
-        fq.ops.PulseOperation(0.3, (_control(atom_3level_model.control.raman(1), 0.1),))
+        ops.PulseOperation(0.3, (_control(atom_3level_model.control.raman(1), 0.1),))
     )
 
     plan = backend._prepare_program(program).plan
@@ -209,6 +208,6 @@ def test_direct_control_rejects_wrong_family_and_absent_site(
         (atom_3level_model.control.rydberg(2), "unknown atom site"),
     ):
         program = fq.Program(2)
-        program.add(fq.ops.PulseOperation(0.3, (_control(channel, 0.1),)))
+        program.add(ops.PulseOperation(0.3, (_control(channel, 0.1),)))
         with pytest.raises(BackendValidationError, match=match):
             backend._prepare_program(program)

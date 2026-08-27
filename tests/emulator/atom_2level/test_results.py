@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator._core.engine import PulseEngine
 from fatqat.emulator.atom_2level import (
@@ -14,7 +15,7 @@ from fatqat.emulator.atom_2level import (
     Atom2LevelEmulator,
 )
 from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
@@ -36,7 +37,7 @@ def _pulse_program(*, measured=False, amplitude=np.pi / 2):
     )
     program = fq.Program(2, 2 if measured else 0)
     program.add(
-        fq.ops.PulseOperation(
+        ops.PulseOperation(
             1.0,
             (
                 PulseControl(

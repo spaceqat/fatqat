@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat._backends.steps import MeasurementStep, ResetStep
 from fatqat.emulator.superconducting.backend import TransmonEmulator
@@ -14,7 +15,7 @@ from fatqat.emulator._core.pulse import (
     PulseDefinition,
     PulseImplementationMap,
 )
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 from fatqat.emulator.superconducting import TransmonModel
 from fatqat.emulator.superconducting.realization import (
     default_transmon_gate_implementation_map,
@@ -41,10 +42,10 @@ def test_lowering_produces_unplaced_blocks_and_preserves_boundaries_and_guards(
     backend,
 ):
     program = fq.Program(2, 1)
-    program.add(fq.ops.RX(0.4), 0)
+    program.add(ops.RX(0.4), 0)
     program.measure(0, 0)
-    program.add(fq.ops.RZ(0.2), 1, condition=(0, 0))
-    program.add(fq.ops.Reset, 1, condition=(0, 0))
+    program.add(ops.RZ(0.2), 1, condition=(0, 0))
+    program.add(ops.Reset, 1, condition=(0, 0))
     prepared = backend._prepare_program(program)
     plan, facts = prepared.plan, prepared.facts
 
@@ -63,7 +64,7 @@ def test_lowering_produces_unplaced_blocks_and_preserves_boundaries_and_guards(
 
 def test_superconducting_backend_lowers_direct_drive_operation(backend):
     program = fq.Program(2)
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         1.0,
         (
             PulseControl(
@@ -82,12 +83,12 @@ def test_superconducting_backend_lowers_direct_drive_operation(backend):
 
 def test_pulse_plan_facts_distinguish_virtual_and_elapsed_evolution(backend):
     virtual = fq.Program(1)
-    virtual.add(fq.ops.RZ(0.2), 0)
+    virtual.add(ops.RZ(0.2), 0)
     facts = backend._prepare_program(virtual).facts
     assert facts.has_nonzero_evolution is False
 
     driven = fq.Program(1)
-    driven.add(fq.ops.RX(0.2), 0)
+    driven.add(ops.RX(0.2), 0)
     facts = backend._prepare_program(driven).facts
     assert facts.has_nonzero_evolution is True
 
@@ -100,12 +101,12 @@ def test_edgeless_source_is_unsupported_while_reversed_cz_is_valid(
     disconnected = TransmonModel.from_document(disconnected_document)
     disconnected_backend = TransmonEmulator(disconnected)
     iswap = fq.Program(2)
-    iswap.add(fq.ops.iSwap, (0, 1))
+    iswap.add(ops.iSwap, (0, 1))
     with pytest.raises(UnsupportedOperationError, match="not supported"):
         disconnected_backend.run(iswap)
 
     reversed_cz = fq.Program(2)
-    reversed_cz.add(fq.ops.CZ, (1, 0))
+    reversed_cz.add(ops.CZ, (1, 0))
     (block,) = backend._prepare_program(reversed_cz).plan
     assert block.controls[0].channel == backend.model.control.detuning("q1")
 
@@ -175,7 +176,7 @@ def test_a_copied_default_map_produces_the_same_plan_as_the_implicit_default(
     )
     implicit = TransmonEmulator(model)
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
 
     explicit_plan = explicit._prepare_program(program).plan
     implicit_plan = implicit._prepare_program(program).plan
@@ -201,12 +202,12 @@ def test_custom_cz_rule_changes_emitted_controls_without_touching_program_or_ada
     implementations = default_transmon_gate_implementation_map(
         model=model, calibration=calibration
     )
-    implementations.remove(fq.ops.CZ)
-    implementations.add(fq.ops.CZ, custom_cz)
+    implementations.remove(ops.CZ)
+    implementations.add(ops.CZ, custom_cz)
     backend = TransmonEmulator(model, gate_implementation_map=implementations)
 
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
     plan = backend._prepare_program(program).plan
     (block,) = plan
 
@@ -231,13 +232,13 @@ def test_guarded_custom_rule_attaches_condition_only_to_the_block_not_the_defini
         return shared_definition
 
     implementations = PulseImplementationMap()
-    implementations.add(fq.ops.RX, reusable_rule)
+    implementations.add(ops.RX, reusable_rule)
     backend = TransmonEmulator(model, gate_implementation_map=implementations)
 
     program = fq.Program(1, 1)
-    program.add(fq.ops.RX(0.1), 0)
+    program.add(ops.RX(0.1), 0)
     program.measure(0, 0)
-    program.add(fq.ops.RX(0.1), 0, condition=(0, 1))
+    program.add(ops.RX(0.1), 0, condition=(0, 1))
     plan = backend._prepare_program(program).plan
     unguarded, _measurement, guarded = plan
 
@@ -258,9 +259,9 @@ def test_mutating_the_callers_map_after_construction_does_not_affect_the_backend
     )
     backend = make_backend(gate_implementation_map=implementations)
 
-    implementations.remove(fq.ops.CZ)
+    implementations.remove(ops.CZ)
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
     plan = backend._prepare_program(program).plan
     assert len(plan) == 1  # still resolves; the backend's copy is unaffected
 
@@ -283,7 +284,7 @@ def test_coarse_compiled_map_transfers_unchanged_but_rebuild_redesigns_drag(
         ),
     )
     program = fq.Program(1)
-    program.add(fq.ops.RX(0.7), 0)
+    program.add(ops.RX(0.7), 0)
     source_block = source_backend._prepare_program(program).plan[0]
     transferred_block = transferred._prepare_program(program).plan[0]
     rebuilt_block = rebuilt._prepare_program(program).plan[0]
@@ -302,7 +303,7 @@ def test_unsupported_operation_from_map_selection_raises_out_of_run_not_as_a_fai
 ):
     backend = make_backend(gate_implementation_map=PulseImplementationMap())
     program = fq.Program(1)
-    program.add(fq.ops.RX(0.3), 0)
+    program.add(ops.RX(0.3), 0)
 
     with pytest.raises(
         UnsupportedOperationError, match="not supported by this backend"
@@ -314,10 +315,10 @@ def test_unsupported_device_operands_from_map_selection_raises_out_of_run(
     make_backend,
 ):
     implementations = PulseImplementationMap()
-    implementations.add(fq.ops.CZ, lambda *a, **k: None, device_operands=("q5", "q6"))
+    implementations.add(ops.CZ, lambda *a, **k: None, device_operands=("q5", "q6"))
     backend = make_backend(gate_implementation_map=implementations)
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
 
     with pytest.raises(UnsupportedOperationError, match="device operands"):
         backend.run(program)

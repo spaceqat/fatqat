@@ -61,7 +61,7 @@ class AppliedOperation:
     condition: Condition = None
 
     def __post_init__(self) -> None:
-        expected = self.operation.num_targets
+        expected = self.operation.num_subsystems
         if expected is None:
             minimum = self.operation.min_targets
             if len(self.targets) < minimum:
@@ -131,10 +131,10 @@ class Program:
         Build a two-qubit program, add gates, then measure both qubits:
 
         >>> import fatqat as fq
-        >>> import fatqat.operations as op
+        >>> import fatqat.operations as ops
         >>> program = fq.Program(2, 2)
-        >>> program.add(op.H, 0)
-        >>> program.add(op.CZ, (0, 1))
+        >>> program.add(ops.H, 0)
+        >>> program.add(ops.CZ, (0, 1))
         >>> program.measure(0, 0)
         >>> program.measure(1, 1)
         >>> len(program.operations)
@@ -315,11 +315,11 @@ class Program:
             Add fixed and parametric gates:
 
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> program = fq.Program(2)
-            >>> program.add(op.H, 0)
-            >>> program.add(op.CZ, (0, 1))
-            >>> program.add(op.RX(0.2), 0)
+            >>> program.add(ops.H, 0)
+            >>> program.add(ops.CZ, (0, 1))
+            >>> program.add(ops.RX(0.2), 0)
         """
         if not isinstance(op, Operation):
             raise TypeError(
@@ -390,16 +390,16 @@ class Program:
             Add a terminal measurement:
 
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> program = fq.Program(1, 1)
-            >>> program.add(op.X, 0)
+            >>> program.add(ops.X, 0)
             >>> program.measure(0, 0)
 
             Add a grouped measurement:
 
             >>> program2 = fq.Program(2, 2)
-            >>> program2.add(op.H, 0)
-            >>> program2.add(op.CZ, (0, 1))
+            >>> program2.add(ops.H, 0)
+            >>> program2.add(ops.CZ, (0, 1))
             >>> program2.measure((0, 1), (0, 1))
         """
         q_operands = targets if isinstance(targets, tuple) else (targets,)
@@ -484,11 +484,11 @@ class Program:
             Bind a vector at once while leaving the template unchanged:
 
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> angles = fq.ParameterVector("angles", 2)
             >>> program = fq.Program(2)
-            >>> program.add(op.RX(angles[0]), 0)
-            >>> program.add(op.RY(angles[1]), 1)
+            >>> program.add(ops.RX(angles[0]), 0)
+            >>> program.add(ops.RY(angles[1]), 1)
             >>> bound = program.assign_parameters({angles: [0.1, 0.2]})
             >>> [instruction.operation.theta for instruction in bound.operations]
             [0.1, 0.2]

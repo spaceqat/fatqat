@@ -20,11 +20,11 @@ instructions itself.
 
 ```python
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 program = fq.Program(2, 2)
-program.add(op.H, 0)
-program.add(op.CX, (0, 1))
+program.add(ops.H, 0)
+program.add(ops.CX, (0, 1))
 program.measure((0, 1), (0, 1))
 ```
 
@@ -42,12 +42,12 @@ Indexing a register produces that reference:
 
 ```python
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 left = fq.QuantumRegister(2, name="left")
 right = fq.QuantumRegister(2, name="right")
 program = fq.Program([left, right])
-program.add(op.H, program.quantum_registers[1][0])  # first slot in "right"
+program.add(ops.H, program.quantum_registers[1][0])  # first slot in "right"
 ```
 
 Slots default to dimension 2 (qubits). Registers with `dim > 2` hold
@@ -56,8 +56,8 @@ qudits; see [Advanced user topics](advanced.md) when you need them.
 ## Operations and measurements
 
 An operation says what should happen; {py:meth}`~fatqat.Program.add` binds it to target
-slots. Fixed gates are values such as `op.X`; parametric gates are
-created with their parameter, such as `op.RX(0.2)`.
+slots. Fixed gates are values such as `ops.X`; parametric gates are
+created with their parameter, such as `ops.RX(0.2)`.
 
 Use {py:meth}`~fatqat.Program.measure` to write quantum outcomes into classical slots.
 Use [Measurement and conditions](measurement-and-conditions.md) for
@@ -95,7 +95,7 @@ targets accepted by selected rotation and two-qubit gates:
 ```python
 qubits = fq.GridRegister(2, 3, name="qubits")
 program = fq.Program([qubits])
-program.add(op.RX(0.2), qubits.row(1))
+program.add(ops.RX(0.2), qubits.row(1))
 ```
 
 The grid is an abstract description. A backend applies its device-specific

@@ -4,10 +4,10 @@ Examples:
     Build a Bell pair with ``H`` then ``CX``:
 
     >>> import fatqat as fq
-    >>> import fatqat.operations as op
+    >>> import fatqat.operations as ops
     >>> program = fq.Program(2)
-    >>> program.add(op.H, 0)
-    >>> program.add(op.CX, (0, 1))
+    >>> program.add(ops.H, 0)
+    >>> program.add(ops.CX, (0, 1))
     >>> result = fq.simulator.Simulator("SV").run(
     ...     program,
     ...     result_config={"counts": False, "final_state": True},
@@ -38,7 +38,7 @@ class HGate(Operation):
     """
 
     name: ClassVar[str] = "H"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ class IGate(Operation):
     """
 
     name: ClassVar[str] = "I"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class SGate(Operation):
     """
 
     name: ClassVar[str] = "S"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ class SdgGate(Operation):
     """
 
     name: ClassVar[str] = "Sdg"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -90,7 +90,7 @@ class SXGate(Operation):
     """
 
     name: ClassVar[str] = "SX"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -103,7 +103,7 @@ class TGate(Operation):
     """
 
     name: ClassVar[str] = "T"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -116,7 +116,7 @@ class TdgGate(Operation):
     """
 
     name: ClassVar[str] = "Tdg"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -129,7 +129,7 @@ class XGate(Operation):
     """
 
     name: ClassVar[str] = "X"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -142,7 +142,7 @@ class YGate(Operation):
     """
 
     name: ClassVar[str] = "Y"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -155,7 +155,7 @@ class ZGate(Operation):
     """
 
     name: ClassVar[str] = "Z"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +178,7 @@ class CXGate(Operation):
     """
 
     name: ClassVar[str] = "CX"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
     _accepts_views: ClassVar[bool] = True
 
 
@@ -197,7 +197,7 @@ class CZGate(Operation):
     """
 
     name: ClassVar[str] = "CZ"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
     _accepts_views: ClassVar[bool] = True
 
 
@@ -215,7 +215,7 @@ class SwapGate(Operation):
     """
 
     name: ClassVar[str] = "Swap"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -233,7 +233,7 @@ class CYGate(Operation):
     """
 
     name: ClassVar[str] = "CY"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -251,7 +251,7 @@ class CSGate(Operation):
     """
 
     name: ClassVar[str] = "CS"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -269,7 +269,7 @@ class iSwapGate(Operation):
     """
 
     name: ClassVar[str] = "iSwap"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -295,7 +295,7 @@ class CCXGate(Operation):
     """
 
     name: ClassVar[str] = "CCX"
-    _num_subsystems: ClassVar[int] = 3
+    num_subsystems: ClassVar[int] = 3
 
 
 @dataclass(frozen=True)
@@ -321,14 +321,14 @@ class CSwapGate(Operation):
     """
 
     name: ClassVar[str] = "CSwap"
-    _num_subsystems: ClassVar[int] = 3
+    num_subsystems: ClassVar[int] = 3
 
 
 # ---------------------------------------------------------------------------
 # Public fixed-gate instances
 # ---------------------------------------------------------------------------
 # These classes have no parameters, so each is exported only as a singleton
-# value (e.g. `op.H`), not as a class - unlike parametric gates, there is
+# value (e.g. `ops.H`), not as a class - unlike parametric gates, there is
 # no reason for a caller to ever name `HGate` itself.
 
 H = HGate()

@@ -7,8 +7,9 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.emulator import PulseControl, PulseDefinition
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 from fatqat.emulator.superconducting.backend import TransmonEmulator
 from fatqat.emulator.superconducting.model import TransmonModel
 from fatqat.emulator._core.backend import _PulseBackend
@@ -102,14 +103,14 @@ def test_matrix_execution_knobs_are_rejected_rather_than_silently_ignored(
     # These belong to the matrix engine. The emulator has no engine to steer
     # with them, so accepting one would promise tuning that never happens.
     program = fq.Program(1)
-    program.add(fq.ops.RZ(0.2), 0)
+    program.add(ops.RZ(0.2), 0)
     with pytest.raises(BackendValidationError, match=knob):
         backend.run(program, simulation_config={knob: value})
 
 
 def test_run_directly_validates_config_and_executes_ideal_program(backend):
     program = fq.Program(1)
-    program.add(fq.ops.RZ(0.2), 0)
+    program.add(ops.RZ(0.2), 0)
     with pytest.raises(BackendValidationError, match="result_config key"):
         backend.run(program, result_config={"density_matrix": True})
 
@@ -137,7 +138,7 @@ def test_result_metadata_keeps_common_runtime_facts(backend):
 def test_propagator_applies_the_terminal_frame_by_default(backend):
     angle = 0.2
     program = fq.Program(1)
-    program.add(fq.ops.RZ(angle), 0)
+    program.add(ops.RZ(angle), 0)
 
     dynamical = backend.propagator(program, apply_final_frame=False)
     complete = backend.propagator(program)
@@ -156,12 +157,12 @@ def test_propagator_rejects_noncoherent_program_features_and_noise(
         backend.propagator(measured)
 
     reset = fq.Program(1)
-    reset.add(fq.ops.Reset, 0)
+    reset.add(ops.Reset, 0)
     with pytest.raises(BackendValidationError, match="reset"):
         backend.propagator(reset)
 
     conditioned = fq.Program(1, 1)
-    conditioned.add(fq.ops.RX(0.2), 0, condition=(0, 1))
+    conditioned.add(ops.RX(0.2), 0, condition=(0, 1))
     with pytest.raises(BackendValidationError, match="conditioned"):
         backend.propagator(conditioned)
 
@@ -169,7 +170,7 @@ def test_propagator_rejects_noncoherent_program_features_and_noise(
     noise.add(PhaseDamping(rate=0.001), targets="q0")
     noisy_backend = make_backend(noise)
     driven = fq.Program(1)
-    driven.add(fq.ops.RX(0.2), 0)
+    driven.add(ops.RX(0.2), 0)
     with pytest.raises(BackendValidationError, match="dissipative"):
         noisy_backend.propagator(driven)
 
@@ -181,7 +182,7 @@ def test_propagator_allows_noise_when_frame_only_plan_has_zero_duration(
     noise.add(PhaseDamping(rate=0.001), targets="q0")
     backend = make_backend(noise)
     program = fq.Program(1)
-    program.add(fq.ops.RZ(0.2), 0)
+    program.add(ops.RZ(0.2), 0)
 
     from fatqat.emulator.superconducting import qutip_adapter
 
@@ -254,7 +255,7 @@ def test_final_state_measurement_constraint_and_reset_only_determinism_validate_
     )
 
     reset_only = fq.Program(1)
-    reset_only.add(fq.ops.Reset, 0)
+    reset_only.add(ops.Reset, 0)
     result = backend.run(
         reset_only, shots=0, result_config={"final_state": True}
     ).result()
@@ -281,7 +282,7 @@ def test_invalid_shots_follow_preparation_but_precede_runner(make_backend, monke
 
 def test_layout_binds_model_ids_while_engine_indices_stay_private(backend):
     program = fq.Program(2)
-    program.add(fq.ops.iSwap, (0, 1))
+    program.add(ops.iSwap, (0, 1))
     prepared = backend._prepare_program(program)
     layout = prepared.resource_layout
     allocation = prepared.engine_allocation
@@ -306,12 +307,12 @@ def test_layout_binds_model_ids_while_engine_indices_stay_private(backend):
 
 def test_common_preparation_owns_target_and_lindblad_binding_once(model, monkeypatch):
     noise = NoiseModel()
-    noise.add(PhaseDamping(rate=0.02), operation=fq.ops.RX)
+    noise.add(PhaseDamping(rate=0.02), operation=ops.RX)
     noise.add(ThermalRelaxation(t1=100.0, t2=150.0), targets="q0")
     noise.add(ThermalRelaxation(t1=100.0, t2=150.0), targets="q1")
     backend = TransmonEmulator(model, noise=noise)
     program = fq.Program(1)
-    program.add(fq.ops.RX(0.3), 0)
+    program.add(ops.RX(0.3), 0)
     target_binding_calls = 0
     lindblad_targets = []
     bind_program = backend._target.bind_program
@@ -356,7 +357,7 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
     noise.add(PhaseDamping(rate=0.02), targets="q1")
     backend = TransmonEmulator(model, noise=noise)
     program = fq.Program(2, 1)
-    program.add(fq.ops.RX(np.pi), 0)
+    program.add(ops.RX(np.pi), 0)
     program.measure(0, 0)
     q0, q1 = program.quantum_registers[0][0], program.quantum_registers[0][1]
     layout = ResourceLayout({q0: "q2", q1: "q0"})
@@ -454,11 +455,11 @@ def test_unrealizable_envelope_is_rejected_identically_by_run_and_propagator(
     implementations = default_transmon_gate_implementation_map(
         model=model, calibration=calibration
     )
-    implementations.remove(fq.ops.RX)
-    implementations.add(fq.ops.RX, complex_detuning_rx)
+    implementations.remove(ops.RX)
+    implementations.add(ops.RX, complex_detuning_rx)
     backend = TransmonEmulator(model, gate_implementation_map=implementations)
     program = fq.Program(1)
-    program.add(fq.ops.RX(0.3), 0)
+    program.add(ops.RX(0.3), 0)
 
     for call in (backend.run, backend.propagator):
         with pytest.raises(BackendValidationError, match="detuning.*must be real"):

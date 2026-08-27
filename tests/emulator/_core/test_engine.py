@@ -16,7 +16,7 @@ from fatqat.emulator._core.pulse import (
 from fatqat.emulator._core.scheduling import schedule_pulse_run
 from fatqat.emulator._core.target import _PreparedControlBinding, _TargetClaim
 from fatqat.errors import BackendValidationError
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 _OWNER = object()
 _CLAIMS = {

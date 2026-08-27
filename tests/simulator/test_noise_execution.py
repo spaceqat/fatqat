@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep
 from fatqat.simulator import SCQubitIBMSimulator, Simulator
 from fatqat.errors import BackendValidationError
@@ -29,13 +30,13 @@ def _total_variation(counts_a, counts_b, shots):
 
 def _depolarized_x_model(p=0.2):
     noise = NoiseModel()
-    noise.add(Depolarizing(p=p), operation=fq.ops.X)
+    noise.add(Depolarizing(p=p), operation=ops.X)
     return noise
 
 
 def _x_program(with_measurement=False):
     program = fq.Program(1, 1 if with_measurement else 0)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     if with_measurement:
         program.measure(0, 0)
     return program
@@ -60,7 +61,7 @@ def test_channel_lowered_right_after_its_gate_with_same_targets():
 def test_channel_inherits_the_gate_condition():
     backend = Simulator(noise=_depolarized_x_model())
     program = fq.Program(1, 1)
-    program.add(fq.ops.X, 0, condition=(0, 1))
+    program.add(ops.X, 0, condition=(0, 1))
     plan, _ = backend._lower_program(program)
 
     assert isinstance(plan[1], ApplyChannelStep)
@@ -82,7 +83,7 @@ def test_unresolvable_channel_type_rejects_at_construction():
         pass
 
     noise = NoiseModel()
-    noise.add(Leakage(), operation=fq.ops.X)
+    noise.add(Leakage(), operation=ops.X)
     with pytest.raises(BackendValidationError, match="Leakage"):
         Simulator(noise=noise)
 
@@ -94,17 +95,15 @@ def test_mis_shaped_rule_rejected_but_non_cptp_accepted():
         pass
 
     channel_map = default_channel_implementation_map()
-    channel_map.register(
-        Custom, lambda channel, *, targets: (np.eye(3, dtype=complex),)
-    )
+    channel_map.add(Custom, lambda channel, *, targets: (np.eye(3, dtype=complex),))
     noise = NoiseModel()
-    noise.add(Custom(), operation=fq.ops.X)
+    noise.add(Custom(), operation=ops.X)
     backend = Simulator(noise=noise, channel_implementation_map=channel_map)
     program = _x_program()
     with pytest.raises(BackendValidationError, match="shape"):
         backend._lower_program(program)
 
-    channel_map.register(
+    channel_map.add(
         Custom, lambda channel, *, targets: (0.5 * np.eye(2, dtype=complex),)
     )
     backend = Simulator(noise=noise, channel_implementation_map=channel_map)
@@ -121,9 +120,9 @@ def test_viewed_gate_resolves_a_channel_per_expanded_member():
     atoms = GridRegister(2, 3, name="atoms")
     program = fq.Program([atoms])
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.RX)
+    noise.add(Depolarizing(p=0.1), operation=ops.RX)
     backend = Simulator(noise=noise)
-    program.add(fq.ops.RX(0.3), atoms.row(0))  # members at engine indices 0,1,2
+    program.add(ops.RX(0.3), atoms.row(0))  # members at engine indices 0,1,2
     plan, facts = backend._lower_program(program)
 
     matrix_steps = [s for s in plan if isinstance(s, ApplyMatrixStep)]
@@ -141,7 +140,7 @@ def test_viewed_gate_resolves_a_channel_per_expanded_member():
 def test_reset_attached_channels_reject_at_admission():
     noise = NoiseModel()
     with pytest.raises(ValueError, match="Reset"):
-        noise.add(Depolarizing(p=0.1), operation=fq.ops.Reset)
+        noise.add(Depolarizing(p=0.1), operation=ops.Reset)
 
 
 # --- path classification ---
@@ -231,7 +230,7 @@ def test_skipped_conditioned_gate_skips_its_channel():
     noise = _depolarized_x_model(p=0.5)
     program = fq.Program(2, 1)
     program.measure(0, 0)
-    program.add(fq.ops.X, 1, condition=(0, 1))
+    program.add(ops.X, 1, condition=(0, 1))
     result = (
         Simulator(method="DM", noise=noise)
         .run(
@@ -255,9 +254,9 @@ def test_taken_conditioned_gate_applies_its_channel():
     p = 0.5
     noise = _depolarized_x_model(p)
     program = fq.Program(2, 1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     program.measure(0, 0)
-    program.add(fq.ops.X, 1, condition=(0, 1))
+    program.add(ops.X, 1, condition=(0, 1))
     result = (
         Simulator(method="DM", noise=noise)
         .run(
@@ -334,7 +333,8 @@ def test_threaded_compiled_shots_match_serial_with_channels():
 
 
 def test_check_noise_support_accepts_catalog_channels():
-    report = Simulator().check_noise_support(_depolarized_x_model())
+    backend = Simulator()
+    report = backend.check_noise_support(_depolarized_x_model())
 
     assert report.supported is True
     assert report.accepted_sources == ("Depolarizing(p)",)
@@ -351,7 +351,7 @@ def test_check_noise_support_rejects_unknown_channel():
         pass
 
     noise = NoiseModel()
-    noise.add(Leakage(), operation=fq.ops.X)
+    noise.add(Leakage(), operation=ops.X)
     report = Simulator().check_noise_support(noise)
 
     assert report.supported is False
@@ -362,7 +362,7 @@ def test_check_noise_support_rejects_unknown_channel():
 
 def test_check_noise_support_reports_rate_mode_damping_as_unsupported():
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(rate=0.01), operation=fq.ops.X)
+    noise.add(AmplitudeDamping(rate=0.01), operation=ops.X)
     report = Simulator().check_noise_support(noise)
 
     assert report.supported is False
@@ -378,7 +378,7 @@ def test_matrix_capability_rejects_background_and_thermal_generator_forms():
     assert "background" in background_report.rejected_sources[0]
 
     thermal = NoiseModel()
-    thermal.add(ThermalRelaxation(t1=60e-6, t2=80e-6), operation=fq.ops.X)
+    thermal.add(ThermalRelaxation(t1=60e-6, t2=80e-6), operation=ops.X)
     thermal_report = Simulator().check_noise_support(thermal)
     assert not thermal_report.supported
     assert thermal_report.rejected_sources == ("ThermalRelaxation",)
@@ -389,12 +389,12 @@ def test_matrix_custom_finite_channels_are_map_driven_not_field_name_driven():
         rate = "a finite-channel calibration label, not a generator mode"
 
     channel_map = default_channel_implementation_map()
-    channel_map.register(
+    channel_map.add(
         CustomFinite,
         lambda channel, *, targets: (np.eye(2, dtype=complex),),
     )
     noise = NoiseModel()
-    noise.add(CustomFinite(), operation=fq.ops.X)
+    noise.add(CustomFinite(), operation=ops.X)
 
     report = Simulator(channel_implementation_map=channel_map).check_noise_support(
         noise
@@ -405,12 +405,12 @@ def test_matrix_custom_finite_channels_are_map_driven_not_field_name_driven():
 
 def test_matrix_rejects_thermal_relaxation_even_with_a_registered_kraus_rule():
     channel_map = default_channel_implementation_map()
-    channel_map.register(
+    channel_map.add(
         ThermalRelaxation,
         lambda channel, *, targets: (np.eye(2, dtype=complex),),
     )
     noise = NoiseModel()
-    noise.add(ThermalRelaxation(t1=60e-6, t2=80e-6), operation=fq.ops.X)
+    noise.add(ThermalRelaxation(t1=60e-6, t2=80e-6), operation=ops.X)
 
     report = Simulator(channel_implementation_map=channel_map).check_noise_support(
         noise
@@ -423,9 +423,9 @@ def test_matrix_rejects_thermal_relaxation_even_with_a_registered_kraus_rule():
 
 def test_matrix_backend_captures_noise_registrations_at_construction():
     source = NoiseModel()
-    source.add(Depolarizing(p=0.0), operation=fq.ops.X)
+    source.add(Depolarizing(p=0.0), operation=ops.X)
     backend = Simulator(method="DM", noise=source)
-    source.add(AmplitudeDamping(p=1.0), operation=fq.ops.X)
+    source.add(AmplitudeDamping(p=1.0), operation=ops.X)
 
     result = backend.run(
         _x_program(), result_config={"counts": False, "final_state": True}
@@ -453,10 +453,10 @@ def test_matrix_backend_checks_captured_noise_once_at_construction(monkeypatch):
 
 def test_check_noise_support_distinguishes_probability_and_rate_modes():
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(p=0.1), operation=fq.ops.X)
-    noise.add(AmplitudeDamping(rate=0.01), operation=fq.ops.H)
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.Y)
-    noise.add(Depolarizing(rate=0.01), operation=fq.ops.Z)
+    noise.add(AmplitudeDamping(p=0.1), operation=ops.X)
+    noise.add(AmplitudeDamping(rate=0.01), operation=ops.H)
+    noise.add(Depolarizing(p=0.1), operation=ops.Y)
+    noise.add(Depolarizing(rate=0.01), operation=ops.Z)
     report = Simulator().check_noise_support(noise)
 
     assert report.supported is False
@@ -475,7 +475,7 @@ def test_check_noise_support_distinguishes_probability_and_rate_modes():
 )
 def test_constructor_rejects_rate_mode_channels(channel):
     noise = NoiseModel()
-    noise.add(channel, operation=fq.ops.X)
+    noise.add(channel, operation=ops.X)
     with pytest.raises(BackendValidationError, match="rate mode"):
         Simulator(noise=noise)
 
@@ -487,7 +487,7 @@ def test_run_rejects_foreign_logical_gate_selector_directly():
     program = _x_program()
     foreign = fq.QuantumRegister(1, name="q")
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.X, targets=(foreign[0],))
+    noise.add(Depolarizing(p=0.1), operation=ops.X, targets=(foreign[0],))
     backend = Simulator(noise=noise)
 
     with pytest.raises(BackendValidationError):
@@ -498,9 +498,9 @@ def test_run_rejects_unmapped_physical_gate_label_directly():
     # (99,) on a three-subsystem generic-simulator program: not a member of
     # the effective layout's device labels for this run.
     program = fq.Program(3)
-    program.add(fq.ops.RZ(0.1), 0)
+    program.add(ops.RZ(0.1), 0)
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.X, targets=(99,))
+    noise.add(Depolarizing(p=0.1), operation=ops.X, targets=(99,))
     backend = Simulator(noise=noise)
 
     with pytest.raises(BackendValidationError):
@@ -511,9 +511,9 @@ def test_run_succeeds_when_valid_gate_selector_matches_no_occurrence():
     # Site 15 is legal on the fixed device but is not modeled by this run.
     # The selector validates and produces no numerical term.
     program = fq.Program(3)
-    program.add(fq.ops.RZ(0.1), 0)
+    program.add(ops.RZ(0.1), 0)
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.Y, targets=(15,))
+    noise.add(Depolarizing(p=0.1), operation=ops.Y, targets=(15,))
     backend = SCQubitIBMSimulator(noise=noise)
 
     result = backend.run(program).result()
@@ -528,10 +528,10 @@ def test_numba_compiled_multi_shot_plan_matches_numpy_channels():
     from fatqat.simulator._engine.nb import NumbaSVEngine, _plan_compilable
 
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.3), operation=fq.ops.X)
+    noise.add(Depolarizing(p=0.3), operation=ops.X)
     backend = Simulator(noise=noise)
     program = fq.Program(1, 1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     program.measure(0, 0)
     plan, facts = backend._lower_program(program)
     assert _plan_compilable(plan) is True
@@ -585,15 +585,15 @@ def test_numba_compiled_multi_shot_matches_numpy_on_a_qudit_dynamic_plan():
 
     def counts_for(runtime):
         noise = NoiseModel()
-        noise.add(AmplitudeDamping(p=(0.2, 0.3)), operation=fq.ops.Shift)
-        noise.add(PhaseDamping(p=0.15), operation=fq.ops.Shift)
+        noise.add(AmplitudeDamping(p=(0.2, 0.3)), operation=ops.Shift)
+        noise.add(PhaseDamping(p=0.15), operation=ops.Shift)
         qreg = fq.QuantumRegister(2, dim=3)
         creg = fq.ClassicalRegister(2, dim=3)
         program = fq.Program([qreg], [creg])
-        program.add(fq.ops.Shift(1), qreg[0])
+        program.add(ops.Shift(1), qreg[0])
         program.measure(qreg[0], creg[0])
-        program.add(fq.ops.Shift(1), qreg[1], condition=(creg[0], 1))
-        program.add(fq.ops.Reset, qreg[0])
+        program.add(ops.Shift(1), qreg[1], condition=(creg[0], 1))
+        program.add(ops.Reset, qreg[0])
         program.measure(qreg[1], creg[1])
         backend = Simulator(method="SV", runtime=runtime, noise=noise)
         job = backend.run(program, shots=400, simulation_config={"seed": 11})
@@ -637,15 +637,15 @@ def test_numba_dm_channel_matches_numpy_on_a_qudit_channel_plan():
     pytest.importorskip("numba")
 
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(p=(0.2, 0.3)), operation=fq.ops.Shift)
-    noise.add(PhaseDamping(p=0.4), operation=fq.ops.Shift)
+    noise.add(AmplitudeDamping(p=(0.2, 0.3)), operation=ops.Shift)
+    noise.add(PhaseDamping(p=0.4), operation=ops.Shift)
     qreg = fq.QuantumRegister(1, dim=3)
 
     states = []
     for runtime in ("numpy", "numba"):
         program = fq.Program([qreg])
-        program.add(fq.ops.Fourier, qreg[0])
-        program.add(fq.ops.Shift(1), qreg[0])
+        program.add(ops.Fourier, qreg[0])
+        program.add(ops.Shift(1), qreg[0])
         backend = Simulator(method="DM", runtime=runtime, noise=noise)
         job = backend.run(program, result_config={"counts": False, "final_state": True})
         states.append(job.result().get_density_matrix())
@@ -657,13 +657,15 @@ def test_scoped_damping_decays_only_the_selected_cz_slot():
     """Scoped noise must affect its selected qubit, not merely lower correctly."""
     for slot, expected_marginals in ((0, (0.5, 1.0)), (1, (1.0, 0.5))):
         program = fq.Program(2)
-        program.add(fq.ops.X, 0)
-        program.add(fq.ops.X, 1)
+        program.add(ops.X, 0)
+        program.add(ops.X, 1)
         # CZ changes only the |11> phase, leaving these populations intact.
-        program.add(fq.ops.CZ, (0, 1))
+        program.add(ops.CZ, (0, 1))
         noise = NoiseModel()
         noise.add(
-            AmplitudeDamping(p=(0.5,)), operation=fq.ops.CZ, target_positions=(slot,)
+            AmplitudeDamping(p=(0.5,)),
+            operation=ops.CZ,
+            target_positions=(slot,),
         )
 
         density_matrix = (
@@ -683,9 +685,9 @@ def test_scoped_damping_decays_only_the_selected_cz_slot():
 
 def test_scoped_channel_uses_only_the_qudit_extent_dimension():
     program = fq.Program([fq.QuantumRegister(2, dim=3)])
-    program.add(fq.ops.Sum, (0, 1))
+    program.add(ops.Sum, (0, 1))
     noise = NoiseModel()
-    noise.add(PhaseDamping(p=0.1), operation=fq.ops.Sum, target_positions=(1,))
+    noise.add(PhaseDamping(p=0.1), operation=ops.Sum, target_positions=(1,))
 
     plan, _ = Simulator(noise=noise)._lower_program(program)
     channel_steps = [step for step in plan if isinstance(step, ApplyChannelStep)]
@@ -696,9 +698,9 @@ def test_scoped_channel_uses_only_the_qudit_extent_dimension():
 
 def test_multi_slot_extent_has_joint_kraus_dimension():
     program = fq.Program(3)
-    program.add(fq.ops.CCX, (0, 1, 2))
+    program.add(ops.CCX, (0, 1, 2))
     noise = NoiseModel()
-    noise.add(Depolarizing(p=0.01), operation=fq.ops.CCX, target_positions=(1, 2))
+    noise.add(Depolarizing(p=0.01), operation=ops.CCX, target_positions=(1, 2))
 
     plan, _ = Simulator(noise=noise)._lower_program(program)
     channel_steps = [step for step in plan if isinstance(step, ApplyChannelStep)]

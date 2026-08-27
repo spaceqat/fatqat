@@ -14,7 +14,7 @@ from ...errors import BackendValidationError
 from ...implementation import DeviceOperands
 from ...program import Program
 from ...resource_layout import ResourceLayout
-from ...waveforms import SampledWaveform
+from ..._waveforms import SampledWaveform
 from .._core.target import (
     Frame,
     _ControlAddress,

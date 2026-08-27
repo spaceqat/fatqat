@@ -9,7 +9,7 @@ from fatqat.emulator._core.pulse import PulseBlock
 from fatqat.emulator._core.target import _PreparedControlBinding, _TargetClaim
 from fatqat._pulse_values import PulseControl
 from fatqat.errors import BackendValidationError
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 _OWNER = object()
 _SUBSYSTEM_CLAIMS = {

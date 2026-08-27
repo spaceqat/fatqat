@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 from fatqat.observable import Observable
 from fatqat.simulator._engine.expectation import (
     expectation_density_matrix,
@@ -45,9 +45,9 @@ def _dense(observable: Observable) -> np.ndarray:
 def _program():
     program = fq.Program(_N)
     for qubit in range(_N):
-        program.add(op.RY(0.3 + 0.2 * qubit), qubit)
+        program.add(ops.RY(0.3 + 0.2 * qubit), qubit)
     for qubit in range(_N - 1):
-        program.add(op.CX, (qubit, qubit + 1))
+        program.add(ops.CX, (qubit, qubit + 1))
     return program
 
 

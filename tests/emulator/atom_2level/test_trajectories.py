@@ -9,6 +9,7 @@ import pytest
 from qutip import Qobj, basis
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator._core.engine import PulseEngine
 from fatqat.emulator._core.scheduling import schedule_pulse_run
@@ -19,7 +20,7 @@ from fatqat.emulator.atom_2level import (
 from fatqat.emulator.atom_2level.qutip_adapter import _Atom2LevelQutipAdapter
 from fatqat.errors import BackendValidationError
 from fatqat.noise import AmplitudeDamping
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
@@ -47,7 +48,7 @@ def _program(*, measured=True, amplitude=1.0, duration=0.6):
     )
     program = fq.Program(1, 1 if measured else 0)
     program.add(
-        fq.ops.PulseOperation(
+        ops.PulseOperation(
             duration,
             (
                 PulseControl(

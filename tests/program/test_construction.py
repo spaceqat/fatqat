@@ -31,7 +31,7 @@ def test_operations_tuple_view_is_cached_until_mutation():
     before = p.operations
     assert p.operations is before
 
-    from fatqat import operations as ops
+    import fatqat.operations as ops
 
     p.add(ops.H, 0)
     after = p.operations

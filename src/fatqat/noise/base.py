@@ -30,26 +30,35 @@ class Channel:
     Concrete subclasses (see ``noise.catalog``) are frozen dataclasses holding
     physical parameters only - rates, probabilities - never Kraus arrays. The
     array computation belongs entirely to the `ChannelImplementation` rule
-    registered for the subclass. A subclass may declare ``_num_subsystems``
+    registered for the subclass. A subclass may declare ``num_subsystems``
     when it has a fixed positive arity; ``None`` means it is width-agnostic.
+
+    Attributes:
+        num_subsystems: Number of subsystems the declaration acts on, or
+            ``None`` when its width is determined by an occurrence or by
+            instance data.
     """
 
-    _num_subsystems: ClassVar[int | None] = None
+    num_subsystems: ClassVar[int | None] = None
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
-        arity = cls._num_subsystems
+        if "_num_subsystems" in cls.__dict__:
+            raise TypeError(
+                "_num_subsystems is no longer supported on Channel "
+                "subclasses; declare num_subsystems instead"
+            )
+        arity = cls.num_subsystems
+        # Some descriptors derive their arity from instance data and expose
+        # it through a property under the same public name.
+        if isinstance(arity, property):
+            return
         if arity is not None and (
             not isinstance(arity, int) or isinstance(arity, bool) or arity < 1
         ):
             raise ValueError(
-                f"_num_subsystems must be a positive int or None, got {arity!r}"
+                f"num_subsystems must be a positive int or None, got {arity!r}"
             )
-
-    @property
-    def num_subsystems(self) -> int | None:
-        """Number of subsystems this channel acts on, or ``None`` for any width."""
-        return type(self)._num_subsystems
 
 
 class ChannelImplementation:
@@ -76,16 +85,16 @@ class _ChannelImplementationRegistry:
     def __init__(self) -> None:
         self._rules: dict[type[Channel], ChannelImplementation | Callable] = {}
 
-    def register(
+    def add(
         self,
         channel_type: type[Channel],
         rule: ChannelImplementation | Callable,
     ) -> None:
-        """Register one channel descriptor implementation rule.
+        """Add one channel descriptor implementation rule.
 
         Args:
             channel_type: `Channel` subclass to key the registry by.
-            rule: Backend-specific callable stored as-is; registering again
+            rule: Backend-specific callable stored as-is; adding again
                 for the same type replaces the previous rule.
 
         Raises:

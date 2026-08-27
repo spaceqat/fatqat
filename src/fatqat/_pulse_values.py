@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from numbers import Real
 
-from .waveforms import Waveform
+from ._waveforms import Waveform
 
 TIME_EPSILON = 1e-12
 """Absolute tolerance for comparisons on a model's native time axis."""
@@ -45,7 +45,7 @@ class PulseControl:
 
     Examples:
         >>> from fatqat.emulator import PulseControl, TransmonModel
-        >>> from fatqat.waveforms import SampledWaveform
+        >>> from fatqat.emulator import SampledWaveform
         >>> model = TransmonModel.from_document({
         ...     "format": {"id": "sc.transmon_exchange", "version": 1},
         ...     "model": {"id": "doc-example", "revision": "1"},

@@ -5,7 +5,7 @@ Program
 program, add operations and measurements in order, then pass it to a
 backend.
 
-Operation examples use ``import fatqat.operations as op``.
+Operation examples use ``import fatqat.operations as ops``.
 
 Create a program
 ----------------
@@ -28,8 +28,8 @@ Add an operation
 - ``condition=(clbit, value)`` applies an operation only when a previous
   measurement wrote the requested classical value.
 
-Fixed gates are values: ``program.add(op.H, 0)``. Parametric gates are
-constructed first: ``program.add(op.RX(0.2), 0)``.
+Fixed gates are values: ``program.add(ops.H, 0)``. Parametric gates are
+constructed first: ``program.add(ops.RX(0.2), 0)``.
 
 Add a measurement
 -----------------

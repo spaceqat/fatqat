@@ -38,11 +38,11 @@ is ignored.
 .. code-block:: python
 
    import fatqat as fq
-   import fatqat.operations as op
+   import fatqat.operations as ops
 
    bell = fq.Program(2)
-   bell.add(op.H, 0)
-   bell.add(op.CX, (0, 1))
+   bell.add(ops.H, 0)
+   bell.add(ops.CX, (0, 1))
 
    unitary = fq.simulator.Simulator("unitary").run(bell).result().get_unitary()
    superop = fq.simulator.Simulator("superop").run(bell).result().get_superop()
@@ -139,16 +139,16 @@ hard-code a target:
 .. code-block:: python
 
    import fatqat as fq
-   import fatqat.operations as op
+   import fatqat.operations as ops
 
    target = fq.simulator.SCQubitIBMSimulator().implementation_map
    native_families = target.supported_operations()
-   cz_edges = target.device_operands_for(op.CZ)
+   cz_edges = target.device_operands_for(ops.CZ)
 
-   assert target.supports(op.SX)
-   assert not target.device_operands_for(op.SX)  # uniform support
-   assert target.supports(op.CZ, device_operands=(0, 1))
-   assert not target.supports(op.CZ, device_operands=(0, 5))
+   assert target.supports(ops.SX)
+   assert not target.device_operands_for(ops.SX)  # uniform support
+   assert target.supports(ops.CZ, device_operands=(0, 1))
+   assert not target.supports(ops.CZ, device_operands=(0, 5))
 
 .. list-table:: Interpreting an implementation map
    :header-rows: 1
@@ -277,9 +277,10 @@ holding at most one atom, with no fixed topology. Leave it unset for no
 capacity limit, or pass a positive integer to model a device of fixed size. Its uniform native gates are
 :py:class:`~fatqat.operations.RX`, :py:class:`~fatqat.operations.RY`, and
 :py:class:`~fatqat.operations.RZ`; :py:data:`~fatqat.operations.CZ` is native on
-any connected pair. Two-qubit-gate legality follows a dynamic connectivity
-graph (:py:class:`~fatqat.connectivity.AtomConnectivity`): a ``CZ`` on a pair
-that is not currently paired is silently dropped, like a gate on an empty site.
+any connected pair. Pairing is dynamic program state: a ``CZ`` on a pair that
+is not currently connected by :py:data:`~fatqat.operations.Pair` is rejected
+with :py:class:`~fatqat.errors.BackendValidationError`. Gates on empty or lost sites
+remain no-ops because no atom is present to act on.
 
 Every site starts empty. :py:data:`~fatqat.operations.Put` loads a fresh
 ``|0⟩`` atom into its targets; :py:data:`~fatqat.operations.Pair` connects two
@@ -294,14 +295,14 @@ cost.
 .. code-block:: python
 
    import fatqat as fq
-   import fatqat.operations as op
+   import fatqat.operations as ops
 
    atoms = fq.QuantumRegister(2, name="atoms")
    program = fq.Program([atoms])
-   program.add(op.Put, (0, 1))     # load both atoms
-   program.add(op.Pair, (0, 1))    # connect them so CZ is legal
-   program.add(op.RX(0.2), 0)
-   program.add(op.CZ, (0, 1))
+   program.add(ops.Put, (0, 1))     # load both atoms
+   program.add(ops.Pair, (0, 1))    # connect them so CZ is legal
+   program.add(ops.RX(0.2), 0)
+   program.add(ops.CZ, (0, 1))
 
    backend = fq.simulator.AtomArraySimulator()  # unbounded capacity by default
 
@@ -328,9 +329,5 @@ Detailed reference
    :show-inheritance:
 
 .. autoclass:: fatqat.simulator.AtomArraySimulator
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.connectivity.AtomConnectivity
    :members:
    :show-inheritance:

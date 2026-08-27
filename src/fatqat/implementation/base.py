@@ -266,7 +266,7 @@ class MatrixImplementationMap:
         """Add an unconstrained or device-specific implementation.
 
         Args:
-            op: An :py:class:`~fatqat.operations.Operation` instance (e.g. `op.X`) or subclass (e.g. a
+            op: An :py:class:`~fatqat.operations.Operation` instance (e.g. `ops.X`) or subclass (e.g. a
                 custom gate class). Normalized to the operation's class for
                 the registry key.
             implementation: A `MatrixImplementation` instance (e.g. `FixedMatrix` or

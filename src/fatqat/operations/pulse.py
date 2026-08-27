@@ -39,9 +39,9 @@ class PulseOperation(Operation):
             empty or duplicate a channel, or a control extends past the block.
 
     Examples:
-        >>> from fatqat import ops
+        >>> import fatqat.operations as ops
         >>> from fatqat.emulator import PulseControl, TransmonModel
-        >>> from fatqat.waveforms import SampledWaveform
+        >>> from fatqat.emulator import SampledWaveform
         >>> model = TransmonModel.from_document({
         ...     "format": {"id": "sc.transmon_exchange", "version": 1},
         ...     "model": {"id": "doc-example", "revision": "1"},
@@ -60,7 +60,7 @@ class PulseOperation(Operation):
         ...     SampledWaveform((0.0, 1.0), (0.0, 0.2j)),
         ... )
         >>> operation = ops.PulseOperation(1.0, (control,))
-        >>> operation.num_targets
+        >>> operation.num_subsystems
         0
     """
 
@@ -68,7 +68,7 @@ class PulseOperation(Operation):
     controls: tuple[PulseControl, ...]
 
     name: ClassVar[str] = "PulseOperation"
-    _num_subsystems: ClassVar[int] = 0
+    num_subsystems: ClassVar[int] = 0
     _min_subsystems: ClassVar[int] = 0
     _is_direct_control: ClassVar[bool] = True
 

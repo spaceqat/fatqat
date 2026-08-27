@@ -5,6 +5,7 @@ import inspect
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator._core import planning
 from fatqat.emulator._core.pulse import PulseDefinition, PulseImplementationMap
@@ -15,7 +16,7 @@ from fatqat.emulator._core.target import (
     _TargetClaim,
 )
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 from tests.emulator._core.test_backend_template import (
     _CountingTarget,
@@ -32,7 +33,7 @@ def _control(target, label, *, duration=0.5):
 
 
 def _direct(target, label, *, duration=0.5):
-    return fq.ops.PulseOperation(
+    return ops.PulseOperation(
         duration,
         (_control(target, label, duration=duration),),
     )
@@ -57,7 +58,7 @@ def test_direct_lowering_binds_each_control_once_and_stores_exact_result():
 def test_empty_gate_map_rejects_ordinary_gate_without_a_none_sentinel():
     backend = _TemplateBackend(_CountingTarget())
     program = fq.Program(1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     with pytest.raises(UnsupportedOperationError, match="XGate"):
         backend._prepare_program(program)
 
@@ -66,7 +67,7 @@ def test_custom_gate_binds_occurrence_control_condition_and_targets_once():
     target = _CountingTarget()
     backend = _TemplateBackend(target, gate_map=_gate_map(target))
     program = fq.Program(1, 1)
-    program.add(fq.ops.X, 0, condition=(program.classical_registers[0][0], 1))
+    program.add(ops.X, 0, condition=(program.classical_registers[0][0], 1))
 
     prepared = backend._prepare_program(program)
     block = prepared.plan[0]
@@ -85,7 +86,7 @@ def test_gate_occurrence_control_and_frame_each_bind_once():
         gate_map=_gate_map(target, with_frame=True),
     )
     program = fq.Program(1)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
 
     backend._prepare_program(program)
 
@@ -105,10 +106,10 @@ def test_gate_definition_cannot_escape_its_occurrence():
             (_control(target, "q1"),),
         )
 
-    implementation_map.add(fq.ops.X, escape)
+    implementation_map.add(ops.X, escape)
     backend = _TemplateBackend(target, gate_map=implementation_map)
     program = fq.Program(2)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
     with pytest.raises(BackendValidationError, match="outside its gate occurrence"):
         backend._prepare_program(program)
 
@@ -149,7 +150,7 @@ def test_direct_multi_target_binding_translates_every_target_ordinal_once():
         SampledWaveform((0.0, 0.5), (0.0, 0.2)),
     )
     program = fq.Program(2)
-    program.add(fq.ops.PulseOperation(0.5, (control,)))
+    program.add(ops.PulseOperation(0.5, (control,)))
 
     block = _TemplateBackend(target)._prepare_program(program).plan[0]
 
@@ -174,10 +175,10 @@ def test_global_control_cannot_escape_a_narrow_gate_occurrence():
             ),
         )
 
-    implementation_map.add(fq.ops.X, global_drive)
+    implementation_map.add(ops.X, global_drive)
     backend = _TemplateBackend(target, gate_map=implementation_map)
     program = fq.Program(2)
-    program.add(fq.ops.X, 0)
+    program.add(ops.X, 0)
 
     with pytest.raises(BackendValidationError, match="outside its gate occurrence"):
         backend._prepare_program(program)
@@ -199,10 +200,10 @@ def test_global_control_can_cover_its_whole_gate_occurrence():
             ),
         )
 
-    implementation_map.add(fq.ops.CZ, global_drive)
+    implementation_map.add(ops.CZ, global_drive)
     backend = _TemplateBackend(target, gate_map=implementation_map)
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
 
     block = backend._prepare_program(program).plan[0]
 
@@ -234,7 +235,7 @@ class _SharedActuatorTarget(_CountingTarget):
 def test_target_validator_rejects_incompatible_concurrent_controls_once():
     target = _SharedActuatorTarget()
     backend = _TemplateBackend(target)
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         0.5,
         (_control(target, "q0"), _control(target, "q1")),
     )
@@ -261,8 +262,8 @@ def test_barrier_reset_measurement_and_fact_derivation_share_one_pass():
     target = _CountingTarget()
     backend = _TemplateBackend(target)
     program = fq.Program(1, 1)
-    program.add(fq.ops.Barrier, 0)
-    program.add(fq.ops.Reset, 0, condition=(program.classical_registers[0][0], 1))
+    program.add(ops.Barrier, 0)
+    program.add(ops.Reset, 0, condition=(program.classical_registers[0][0], 1))
     program.measure(0, 0)
 
     prepared = backend._prepare_program(program)

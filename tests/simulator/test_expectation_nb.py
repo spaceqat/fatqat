@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 from fatqat.observable import Observable
 from fatqat.simulator._engine import expectation as ex
 
@@ -38,9 +38,9 @@ def _program(num_qubits, depth=3):
     program = fq.Program(num_qubits)
     for layer in range(depth):
         for qubit in range(num_qubits):
-            program.add(op.RY(0.3 + 0.11 * qubit + 0.4 * layer), qubit)
+            program.add(ops.RY(0.3 + 0.11 * qubit + 0.4 * layer), qubit)
         for qubit in range(num_qubits - 1):
-            program.add(op.CX, (qubit, qubit + 1))
+            program.add(ops.CX, (qubit, qubit + 1))
     return program
 
 

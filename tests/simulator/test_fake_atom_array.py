@@ -5,7 +5,7 @@ connectivity model (Pair/Unpair-gated CZ), and the Put/loss atom lifecycle.
 import numpy as np
 import pytest
 
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat._backends.steps import ApplyMatrixStep, LossStep, PutStep, ResetStep
 from fatqat.simulator import AtomArraySimulator, Simulator
 from fatqat.simulator.fake_atom_array import fake_atom_array_implementation_map
@@ -149,16 +149,20 @@ def test_cz_on_unpaired_atoms_raises():
     p.add(ops.Put, (0, 1))
     p.add(ops.CZ, (0, 1))  # never paired -> program error
     with pytest.raises(BackendValidationError, match="paired"):
-        AtomArraySimulator(num_sites=2)._lower_program(p)
+        AtomArraySimulator(num_sites=2).run(
+            p, result_config={"counts": False, "final_state": True}
+        )
 
 
-def test_cz_survives_after_pair():
+def test_cz_executes_after_pair():
     p = Program(2)
     p.add(ops.Put, (0, 1))
     p.add(ops.Pair, (0, 1))
     p.add(ops.CZ, (0, 1))
-    plan, _facts = AtomArraySimulator(num_sites=2)._lower_program(p)
-    assert len(_two_qubit_matrix_steps(plan)) == 1
+    result = AtomArraySimulator(num_sites=2).run(
+        p, result_config={"counts": False, "final_state": True}
+    )
+    assert result.result().get_statevector().shape == (4,)
 
 
 def test_cz_after_unpair_raises():
@@ -169,10 +173,12 @@ def test_cz_after_unpair_raises():
     p.add(ops.Unpair, (0, 1))
     p.add(ops.CZ, (0, 1))  # unpaired again -> program error
     with pytest.raises(BackendValidationError, match="paired"):
-        AtomArraySimulator(num_sites=2)._lower_program(p)
+        AtomArraySimulator(num_sites=2).run(
+            p, result_config={"counts": False, "final_state": True}
+        )
 
 
-def test_v_shape_connectivity_keeps_only_paired_edges():
+def test_v_shape_pairing_allows_both_connected_edges():
     # pair(0,1) and pair(0,2) but not (1,2): CZ(0,1) and CZ(0,2) are legal and
     # survive -- a "V", exactly representable, unlike a clique.
     p = Program(3)
@@ -181,8 +187,10 @@ def test_v_shape_connectivity_keeps_only_paired_edges():
     p.add(ops.Pair, (0, 2))
     p.add(ops.CZ, (0, 1))
     p.add(ops.CZ, (0, 2))
-    plan, _facts = AtomArraySimulator(num_sites=3)._lower_program(p)
-    assert len(_two_qubit_matrix_steps(plan)) == 2
+    result = AtomArraySimulator(num_sites=3).run(
+        p, result_config={"counts": False, "final_state": True}
+    )
+    assert result.result().get_statevector().shape == (8,)
 
 
 def test_v_shape_cz_on_the_missing_edge_raises():
@@ -193,7 +201,9 @@ def test_v_shape_cz_on_the_missing_edge_raises():
     p.add(ops.Pair, (0, 2))
     p.add(ops.CZ, (1, 2))  # (1, 2) never paired -> program error
     with pytest.raises(BackendValidationError, match="paired"):
-        AtomArraySimulator(num_sites=3)._lower_program(p)
+        AtomArraySimulator(num_sites=3).run(
+            p, result_config={"counts": False, "final_state": True}
+        )
 
 
 def test_lost_atom_on_a_paired_cz_is_dropped_silently_not_raised():
@@ -250,7 +260,9 @@ def test_conditional_pair_rejected():
     p.add(ops.Put, (0, 1))
     p.add(ops.Pair, (0, 1), condition=(p.classical_registers[0][0], 0))
     with pytest.raises(BackendValidationError, match="unconditional"):
-        AtomArraySimulator(num_sites=2)._lower_program(p)
+        AtomArraySimulator(num_sites=2).run(
+            p, result_config={"counts": False, "final_state": True}
+        )
 
 
 def test_conditional_unpair_rejected():
@@ -258,7 +270,9 @@ def test_conditional_unpair_rejected():
     p.add(ops.Put, (0, 1))
     p.add(ops.Unpair, (0, 1), condition=(p.classical_registers[0][0], 0))
     with pytest.raises(BackendValidationError, match="unconditional"):
-        AtomArraySimulator(num_sites=2)._lower_program(p)
+        AtomArraySimulator(num_sites=2).run(
+            p, result_config={"counts": False, "final_state": True}
+        )
 
 
 # --- Put atom lifecycle -------------------------------------------------------

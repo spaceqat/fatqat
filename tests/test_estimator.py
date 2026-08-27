@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
 from fatqat.job import Job
 from fatqat.observable import Observable
@@ -13,8 +13,8 @@ from fatqat.result import Result
 
 def _bell(measured=False):
     program = fq.Program(2, 2) if measured else fq.Program(2)
-    program.add(op.H, 0)
-    program.add(op.CX, (0, 1))
+    program.add(ops.H, 0)
+    program.add(ops.CX, (0, 1))
     if measured:
         program.measure((0, 1), (0, 1))
     return program
@@ -26,7 +26,7 @@ def _estimator(method="SV", noise=None):
 
 def _noise_model():
     noise = fq.NoiseModel()
-    noise.add(fq.noise.Depolarizing(p=0.1), operation=op.CX)
+    noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.CX)
     return noise
 
 
@@ -34,10 +34,10 @@ def _parameterized_template():
     features = fq.ParameterVector("features", 2)
     theta = fq.ParameterVector("theta", 2)
     program = fq.Program(2)
-    program.add(op.RX(features[0]), 0)
-    program.add(op.RY(theta[0]), 0)
-    program.add(op.RX(features[1]), 1)
-    program.add(op.RY(theta[1]), 1)
+    program.add(ops.RX(features[0]), 0)
+    program.add(ops.RY(theta[0]), 0)
+    program.add(ops.RX(features[1]), 1)
+    program.add(ops.RY(theta[1]), 1)
     return program, features, theta
 
 
@@ -47,7 +47,7 @@ def _parameterized_template():
 def test_exact_scalar_parameter_sweep_matches_explicit_runs():
     angle = fq.Parameter("angle")
     program = fq.Program(1)
-    program.add(op.RY(angle), 0)
+    program.add(ops.RY(angle), 0)
     observable = Observable([("Z", 1.0)])
     values = np.array([0.0, 0.4, 1.1])
     estimator = _estimator()
@@ -99,7 +99,7 @@ def test_sampled_sweep_matches_same_seed_repeated_runs_and_forwards_options(
 ):
     angle = fq.Parameter("angle")
     program = fq.Program(1)
-    program.add(op.RY(angle), 0)
+    program.add(ops.RY(angle), 0)
     observable = Observable([("X", 1.0)])
     values = np.array([0.2, 0.9])
     estimator = _estimator()
@@ -145,14 +145,14 @@ def test_sampled_sweep_matches_same_seed_repeated_runs_and_forwards_options(
 def test_estimator_sweep_direct_inner_failure_propagates(monkeypatch):
     angle = fq.Parameter("angle")
     program = fq.Program(1)
-    program.add(op.RX(angle), 0)
+    program.add(ops.RX(angle), 0)
     observable = Observable([("Z", 1.0)])
     estimator = _estimator()
 
     def fail_on_second(bound, _observables, **_kwargs):
         if bound.operations[0].operation.theta == 0.2:
             raise BackendValidationError("direct point failure")
-        return Job.done(Result(data={"expectation": 1.0, "std": 0.0}))
+        return Job(status="DONE", result=Result(data={"expectation": 1.0, "std": 0.0}))
 
     monkeypatch.setattr(estimator, "run", fail_on_second)
     with pytest.raises(BackendValidationError, match="direct point failure"):
@@ -162,15 +162,15 @@ def test_estimator_sweep_direct_inner_failure_propagates(monkeypatch):
 def test_estimator_sweep_failed_point_job_fails_outer_job(monkeypatch):
     angle = fq.Parameter("angle")
     program = fq.Program(1)
-    program.add(op.RX(angle), 0)
+    program.add(ops.RX(angle), 0)
     observable = Observable([("Z", 1.0)])
     estimator = _estimator()
     error = KeyboardInterrupt("stored point failure")
 
     def fail_on_second(bound, _observables, **_kwargs):
         if bound.operations[0].operation.theta == 0.2:
-            return Job.failed(error)
-        return Job.done(Result(data={"expectation": 1.0, "std": 0.0}))
+            return Job(status="ERROR", error=error)
+        return Job(status="DONE", result=Result(data={"expectation": 1.0, "std": 0.0}))
 
     monkeypatch.setattr(estimator, "run", fail_on_second)
     outer = estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
@@ -183,7 +183,7 @@ def test_estimator_sweep_failed_point_job_fails_outer_job(monkeypatch):
 def test_ordinary_estimator_rejects_unbound_without_translating_message():
     angle = fq.Parameter("angle")
     program = fq.Program(1)
-    program.add(op.RX(angle), 0)
+    program.add(ops.RX(angle), 0)
 
     with pytest.raises(
         BackendValidationError,
@@ -321,8 +321,8 @@ def test_noisy_statevector_rejected(shots):
 @pytest.mark.parametrize("shots", [0, 1000])
 def test_statevector_reset_rejected(shots):
     program = fq.Program(2)
-    program.add(op.H, 0)
-    program.add(op.Reset, 0)
+    program.add(ops.H, 0)
+    program.add(ops.Reset, 0)
 
     with pytest.raises(BackendValidationError, match="no single final state"):
         _estimator("SV").run(program, Observable([("ZZ", 1.0)]), shots=shots)
@@ -334,7 +334,7 @@ def test_noise_that_never_fires_is_accepted():
     # from the noise model alone would reject a perfectly well-defined value;
     # the backend knows what actually landed in *this* program.
     noise = fq.NoiseModel()
-    noise.add(fq.noise.Depolarizing(p=0.1), operation=op.Swap)
+    noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.Swap)
 
     value = (
         _estimator("SV", noise=noise)
@@ -358,8 +358,8 @@ def test_density_matrix_reset_is_accepted():
     # A density-matrix reset is the deterministic partial-trace channel, so the
     # final state - and the expectation value - stay well defined.
     program = fq.Program(2)
-    program.add(op.H, 0)
-    program.add(op.Reset, 0)
+    program.add(ops.H, 0)
+    program.add(ops.Reset, 0)
 
     value = _estimator("DM").run(program, Observable([("ZI", 1.0)])).result()
     assert value.get_expectation() == pytest.approx(1.0, abs=1e-12)
@@ -400,9 +400,9 @@ def test_expectation_absent_from_a_plain_backend_run():
 def _sampling_program(num_qubits=3):
     program = fq.Program(num_qubits)
     for qubit in range(num_qubits):
-        program.add(op.RY(0.4 + 0.3 * qubit), qubit)
+        program.add(ops.RY(0.4 + 0.3 * qubit), qubit)
     for qubit in range(num_qubits - 1):
-        program.add(op.CX, (qubit, qubit + 1))
+        program.add(ops.CX, (qubit, qubit + 1))
     return program
 
 
@@ -410,6 +410,8 @@ def test_exact_run_reports_zero_standard_error():
     result = _estimator().run(_bell(), Observable([("ZZ", 1.0)])).result()
 
     assert result.get_std() == 0.0
+    assert result.get_data("std") == 0.0
+    assert result.available_data == frozenset({"expectation", "std"})
 
 
 @pytest.mark.parametrize("method", ["SV", "DM"])

@@ -7,15 +7,15 @@ the same program can run ideally or with different device models.
 ```python
 import numpy as np
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 program = fq.Program(2, 2)
-program.add(op.H, 0)
-program.add(op.CX, (0, 1))
+program.add(ops.H, 0)
+program.add(ops.CX, (0, 1))
 program.measure((0, 1), (0, 1))
 
 noise = fq.NoiseModel()
-noise.add(fq.noise.Depolarizing(p=0.05), operation=op.CX)
+noise.add(fq.noise.Depolarizing(p=0.05), operation=ops.CX)
 noise.add(
     fq.noise.ReadoutConfusion(
         np.array([[0.98, 0.04], [0.02, 0.96]])
@@ -63,11 +63,11 @@ registration category:
 ```python
 noise.add(
     fq.noise.PauliChannel({"X": 0.008, "Z": 0.012}),
-    operation=op.RZ,
+    operation=ops.RZ,
 )
 noise.add(
     fq.noise.PauliChannel({"XI": 0.006, "ZZ": 0.004}),
-    operation=op.CX,
+    operation=ops.CX,
 )
 ```
 
@@ -76,7 +76,7 @@ noise.add(
 The presence of `operation` has one structural meaning, independent of the
 descriptor parameters:
 
-- `operation=op.X` means occurrence-bound noise. It is considered only when
+- `operation=ops.X` means occurrence-bound noise. It is considered only when
   an `X` occurs.
 - omitting `operation` means local background noise. It requires exactly one
   target and is meaningful only on a backend with a physical timeline.
@@ -89,13 +89,13 @@ finite-channel forms are:
 ```python
 # Every X occurrence.
 wide_noise = fq.NoiseModel()
-wide_noise.add(fq.noise.PhaseDamping(p=0.01), operation=op.X)
+wide_noise.add(fq.noise.PhaseDamping(p=0.01), operation=ops.X)
 
 # Only the exact ordered X occurrence on q0.
 targeted_noise = fq.NoiseModel()
 targeted_noise.add(
     fq.noise.PhaseDamping(p=0.02),
-    operation=op.X,
+    operation=ops.X,
     targets=program.quantum_registers[0][0],
 )
 ```
@@ -105,7 +105,7 @@ Pulse emulators support operation windows and continuous background evolution:
 ```python
 # Active only during matching X blocks.
 pulse_noise = fq.NoiseModel()
-pulse_noise.add(fq.noise.PhaseDamping(rate=0.002), operation=op.X)
+pulse_noise.add(fq.noise.PhaseDamping(rate=0.002), operation=ops.X)
 
 # Active throughout elapsed pulse time on physical operand q0.
 pulse_noise.add(fq.noise.PhaseDamping(t_phi=500.0), targets="q0")
@@ -132,12 +132,12 @@ multi-operand occurrence:
 matrix_noise = fq.NoiseModel()
 matrix_noise.add(
     fq.noise.AmplitudeDamping(p=0.002),
-    operation=op.CZ,
+    operation=ops.CZ,
     target_positions=0,
 )
 matrix_noise.add(
     fq.noise.AmplitudeDamping(p=0.003),
-    operation=op.CZ,
+    operation=ops.CZ,
     target_positions=1,
 )
 ```
@@ -159,8 +159,8 @@ Different physical source types accumulate in registration order:
 
 ```python
 matrix_noise = fq.NoiseModel()
-matrix_noise.add(fq.noise.AmplitudeDamping(p=0.01), operation=op.H)
-matrix_noise.add(fq.noise.PhaseDamping(p=0.02), operation=op.H)
+matrix_noise.add(fq.noise.AmplitudeDamping(p=0.01), operation=ops.H)
+matrix_noise.add(fq.noise.PhaseDamping(p=0.02), operation=ops.H)
 ```
 
 Background and operation-specific registrations also coexist, even for the
@@ -198,8 +198,8 @@ relaxation = fq.noise.ThermalRelaxation(t1=60e-6, t2=80e-6)
 damping, dephasing = relaxation.as_channels(duration=2e-6)
 
 matrix_noise = fq.NoiseModel()
-matrix_noise.add(damping, operation=op.H)
-matrix_noise.add(dephasing, operation=op.H)
+matrix_noise.add(damping, operation=ops.H)
+matrix_noise.add(dephasing, operation=ops.H)
 ```
 
 For pulse simulation, register the timescale declaration directly on one
@@ -208,7 +208,7 @@ target or one operation window:
 ```python
 pulse_noise = fq.NoiseModel()
 pulse_noise.add(relaxation, targets="q0")
-pulse_noise.add(relaxation, operation=op.X, targets="q1")
+pulse_noise.add(relaxation, operation=ops.X, targets="q1")
 ```
 
 The backend uses the authored generator unchanged while the pulse-block
@@ -249,7 +249,7 @@ operations requiring an absent carrier are skipped, and measurement reports
 the backend's absence/erasure outcome.
 
 ```python
-noise.add(fq.noise.Loss(p=0.001), operation=op.RX)
+noise.add(fq.noise.Loss(p=0.001), operation=ops.RX)
 ```
 
 Backends without occupancy/removal semantics reject `Loss` rather than
@@ -261,11 +261,11 @@ A backend defensively captures a noise model when constructed:
 
 ```python
 noise = fq.NoiseModel()
-noise.add(fq.noise.PhaseDamping(p=0.01), operation=op.X)
+noise.add(fq.noise.PhaseDamping(p=0.01), operation=ops.X)
 backend = fq.simulator.Simulator(method="DM", noise=noise)
 
 # This affects a future backend, not `backend`.
-noise.add(fq.noise.Depolarizing(p=0.02), operation=op.H)
+noise.add(fq.noise.Depolarizing(p=0.02), operation=ops.H)
 ```
 
 Built-in declarations are immutable. Treat custom declarations as immutable
@@ -291,7 +291,7 @@ an exact-type rule in {py:class}`~fatqat.noise.ChannelImplementationMap`:
 
 ```python
 class BitFlip(fq.noise.Channel):
-    _num_subsystems = 1
+    num_subsystems = 1
 
     def __init__(self, p):
         self.p = p
@@ -306,10 +306,10 @@ def bit_flip_rule(channel, *, targets):
 
 
 channel_map = fq.noise.default_channel_implementation_map()
-channel_map.register(BitFlip, bit_flip_rule)
+channel_map.add(BitFlip, bit_flip_rule)
 
 noise = fq.NoiseModel()
-noise.add(BitFlip(p=0.05), operation=op.X)
+noise.add(BitFlip(p=0.05), operation=ops.X)
 backend = fq.simulator.Simulator(
     method="DM",
     noise=noise,

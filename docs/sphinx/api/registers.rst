@@ -19,12 +19,12 @@ unambiguous in programs with several registers:
 .. code-block:: python
 
    import fatqat as fq
-   import fatqat.operations as op
+   import fatqat.operations as ops
 
    left = fq.QuantumRegister(2, name="left")
    right = fq.QuantumRegister(2, name="right")
    program = fq.Program([left, right])
-   program.add(op.H, program.quantum_registers[1][0])
+   program.add(ops.H, program.quantum_registers[1][0])
 
 Grid registers
 --------------
@@ -39,9 +39,18 @@ grid-aware gates:
 - :py:meth:`~fatqat.GridRegister.block` selects a half-open rectangular block, for
   example ``grid.block((0, 2), (1, 3))``.
 
-Use the returned value directly in :py:meth:`~fatqat.Program.add`. You do not construct
-a register view or device mapping yourself. See :doc:`../guide/gates` for
-a paired-row example.
+Use the returned value directly in :py:meth:`~fatqat.Program.add`; applications
+do not construct a register view themselves. See :doc:`../guide/gates` for a
+paired-row example.
+
+Resource layouts
+----------------
+
+A :py:class:`~fatqat.ResourceLayout` optionally maps every program quantum
+reference to an opaque device operand for one run. Most applications use the
+backend's default mapping. Construct an explicit layout only when choosing a
+specific placement supported by that backend, then pass it through
+``run(..., resource_layout=layout)``.
 
 Detailed reference
 ------------------
@@ -67,5 +76,9 @@ Detailed reference
    :show-inheritance:
 
 .. autoclass:: fatqat.RegisterView
+   :members:
+   :show-inheritance:
+
+.. autoclass:: fatqat.ResourceLayout
    :members:
    :show-inheritance:

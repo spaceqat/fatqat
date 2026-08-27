@@ -438,7 +438,7 @@ class _QASMBuilder:
         if name in fixed:
             _require_param_count(name, params, 0)
             op = fixed[name]
-            _require_operand_count(name, op.num_targets, n_operands)
+            _require_operand_count(name, op.num_subsystems, n_operands)
             return (op,)
 
         parametric = {
@@ -455,7 +455,7 @@ class _QASMBuilder:
             count, factory = parametric[name]
             _require_param_count(name, params, count)
             op = factory(*params)
-            _require_operand_count(name, op.num_targets, n_operands)
+            _require_operand_count(name, op.num_subsystems, n_operands)
             return (op,)
 
         if name in {"u", "u3"}:
@@ -491,7 +491,7 @@ class _QASMBuilder:
         *,
         condition: tuple[tuple[RegisterRef, int], ...] | None,
     ) -> None:
-        arity = op.num_targets
+        arity = op.num_subsystems
         if arity is None:
             if len(operand_groups) != 1:
                 raise QASMTranspileError(f"{op.name} expects one register operand")

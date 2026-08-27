@@ -1,8 +1,8 @@
 """Pair / Unpair: neutral-atom connectivity edits.
 
 ``Pair`` records a connection between two atoms and ``Unpair`` removes it, so a
-two-qubit gate is legal on a connected pair. Two-qubit-gate legality follows
-the connectivity graph (``fatqat.connectivity.AtomConnectivity``).
+two-qubit gate is legal on a connected pair. Two-qubit-gate legality follows a
+dynamic graph maintained privately by the atom-array simulator.
 
 Both are "layout-class" instructions: they carry no matrix, change only the
 connectivity (never the quantum state), and emit no execution step of their own
@@ -34,23 +34,23 @@ class PairGate(Operation):
     rejects a repeated target.
 
     ``Pair`` is not a gate: it changes only which pairs may interact, never the
-    state. It is exposed as the singleton ``op.Pair`` (like ``op.Reset``); the
+    state. It is exposed as the singleton ``ops.Pair`` (like ``ops.Reset``); the
     class stays attribute-accessible for ``isinstance`` checks.
 
     Examples:
         >>> import fatqat as fq
-        >>> import fatqat.operations as op
+        >>> import fatqat.operations as ops
         >>> program = fq.Program(2)
-        >>> program.add(op.Put, (0, 1))
-        >>> program.add(op.Pair, (0, 1))
+        >>> program.add(ops.Put, (0, 1))
+        >>> program.add(ops.Pair, (0, 1))
         >>> program.operations[1].operation.name
         'Pair'
-        >>> program.operations[1].operation.num_targets
+        >>> program.operations[1].operation.num_subsystems
         2
     """
 
     name: ClassVar[str] = "Pair"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -61,23 +61,23 @@ class UnpairGate(Operation):
     touches no third atom. Removing an edge that is not present is a silent
     no-op at the connectivity level. Same constraints as ``Pair``: no matrix,
     unconditional, state-preserving, two distinct targets, and it may carry
-    movement-cost noise. Exposed as the singleton ``op.Unpair``.
+    movement-cost noise. Exposed as the singleton ``ops.Unpair``.
 
     Examples:
         >>> import fatqat as fq
-        >>> import fatqat.operations as op
+        >>> import fatqat.operations as ops
         >>> program = fq.Program(2)
-        >>> program.add(op.Put, (0, 1))
-        >>> program.add(op.Pair, (0, 1))
-        >>> program.add(op.Unpair, (0, 1))
+        >>> program.add(ops.Put, (0, 1))
+        >>> program.add(ops.Pair, (0, 1))
+        >>> program.add(ops.Unpair, (0, 1))
         >>> program.operations[2].operation.name
         'Unpair'
     """
 
     name: ClassVar[str] = "Unpair"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
 
 
-# singleton values: `op.Pair` / `op.Unpair`, not `op.Pair()`.
+# singleton values: `ops.Pair` / `ops.Unpair`, not `ops.Pair()`.
 Pair = PairGate()
 Unpair = UnpairGate()

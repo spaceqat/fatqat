@@ -2,7 +2,8 @@
 
 import pytest
 
-from fatqat import Parameter, operations as ops
+import fatqat.operations as ops
+from fatqat import Parameter
 from fatqat.operations import Operation
 
 
@@ -31,7 +32,7 @@ from fatqat.operations import Operation
 )
 def test_fixed_gate_name_and_arity(gate, name, n_subsystems):
     assert gate.name == name
-    assert gate.num_targets == n_subsystems
+    assert gate.num_subsystems == n_subsystems
 
 
 def test_parametric_gate_is_class_storing_theta():
@@ -39,7 +40,7 @@ def test_parametric_gate_is_class_storing_theta():
     assert isinstance(g, Operation)
     assert g.name == "RX"
     assert g.theta == 0.2
-    assert g.num_targets == 1
+    assert g.num_subsystems == 1
     assert ops.RY(0.3).name == "RY"
     assert ops.RZ(0.4).name == "RZ"
 
@@ -73,7 +74,7 @@ def test_phase_gate_is_class_storing_theta():
     assert isinstance(g, Operation)
     assert g.name == "Phase"
     assert g.theta == 0.7
-    assert g.num_targets == 1
+    assert g.num_subsystems == 1
 
 
 def test_operations_are_frozen():
@@ -86,17 +87,17 @@ def test_cphase_gate_is_class_storing_theta():
     assert isinstance(g, Operation)
     assert g.name == "CPhase"
     assert g.theta == 0.4
-    assert g.num_targets == 2
+    assert g.num_subsystems == 2
 
 
 def test_shift_clock_are_single_subsystem_parametric():
-    assert ops.Shift(1)._num_subsystems == 1
-    assert ops.Clock(2)._num_subsystems == 1
+    assert ops.Shift(1).num_subsystems == 1
+    assert ops.Clock(2).num_subsystems == 1
     assert ops.Shift(1).power == 1
 
 
 def test_sum_is_two_subsystem_singleton():
-    assert ops.Sum._num_subsystems == 2
+    assert ops.Sum.num_subsystems == 2
     assert ops.Sum.name == "Sum"
     assert isinstance(ops.Sum, Operation)
     assert not isinstance(ops.Sum, type)
@@ -111,7 +112,7 @@ def test_new_gates_carry_no_dim_field():
 def test_swap_levels_is_single_subsystem_parametric():
     g = ops.SwapLevels(0, 2)
     assert g.name == "SwapLevels"
-    assert g.num_targets == 1
+    assert g.num_subsystems == 1
     assert g.j == 0
     assert g.k == 2
 
@@ -127,11 +128,11 @@ def test_swap_levels_rejects_negative_indices():
 
 
 def test_fourier_is_single_subsystem_singleton():
-    assert ops.Fourier._num_subsystems == 1
+    assert ops.Fourier.num_subsystems == 1
     assert ops.Fourier.name == "Fourier"
     assert isinstance(ops.Fourier, Operation)
     assert not isinstance(ops.Fourier, type)
-    assert ops.InverseFourier._num_subsystems == 1
+    assert ops.InverseFourier.num_subsystems == 1
     assert ops.InverseFourier.name == "InverseFourier"
     assert isinstance(ops.InverseFourier, Operation)
     assert not isinstance(ops.InverseFourier, type)
@@ -148,7 +149,7 @@ def test_fourier_is_single_subsystem_singleton():
 def test_subspace_rotation_is_single_subsystem_parametric(cls, name):
     g = cls(0.3, (0, 2))
     assert g.name == name
-    assert g.num_targets == 1
+    assert g.num_subsystems == 1
     assert g.theta == 0.3
     assert g.subspace == (0, 2)
 
@@ -168,9 +169,33 @@ def test_subspace_rotation_rejects_negative_subspace_indices(cls):
 def test_cclock_is_two_subsystem_parametric():
     g = ops.CClock(1)
     assert g.name == "CClock"
-    assert g.num_targets == 2
+    assert g.num_subsystems == 2
     assert g.power == 1
 
 
 def test_cclock_carries_no_dim_field():
     assert not hasattr(ops.CClock(1), "dim")
+
+
+def test_num_subsystems_is_the_only_public_operation_width_name():
+    class CustomTwoSubsystem(Operation):
+        num_subsystems = 2
+
+    assert CustomTwoSubsystem.num_subsystems == 2
+    assert CustomTwoSubsystem().num_subsystems == 2
+    assert not hasattr(Operation, "arity")
+    assert not hasattr(ops.X, "arity")
+    assert not hasattr(Operation, "num_targets")
+    assert not hasattr(ops.X, "num_targets")
+
+
+@pytest.mark.parametrize("retired_name", ["num_targets", "_num_subsystems"])
+def test_custom_operation_rejects_retired_width_declarations(retired_name):
+    with pytest.raises(TypeError, match="num_subsystems"):
+        type("LegacySubsystemCount", (Operation,), {retired_name: 2})
+
+
+@pytest.mark.parametrize("bad", [-1, 1.5, True])
+def test_custom_operation_rejects_invalid_num_subsystems(bad):
+    with pytest.raises(ValueError, match="num_subsystems"):
+        type("BadSubsystemCount", (Operation,), {"num_subsystems": bad})

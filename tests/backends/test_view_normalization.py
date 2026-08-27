@@ -14,7 +14,7 @@ guaranteed legal.
 
 import pytest
 
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat._backends.steps import ApplyMatrixStep
 from fatqat.simulator import Simulator
 from fatqat._backends.backend_utils import _LoweringContext

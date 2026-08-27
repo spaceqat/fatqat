@@ -41,7 +41,6 @@ exclude_patterns: list[str] = [
     # Backend-author and implementation records are intentionally not part
     # of the end-user documentation site yet.
     "api/implementation.rst",
-    "api/job.rst",
     "api/errors.rst",
 ]
 

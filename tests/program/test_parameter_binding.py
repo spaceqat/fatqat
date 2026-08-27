@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._parameter_binding import _raise_for_unbound_parameters
 from fatqat.operations import Operation
 
@@ -15,7 +16,7 @@ from fatqat.operations import Operation
 def test_binds_one_parameter_without_mutating_template():
     theta = fq.Parameter("theta")
     program = fq.Program(1)
-    program.add(fq.ops.RX(theta), 0)
+    program.add(ops.RX(theta), 0)
 
     bound = program.assign_parameters({theta: 0.25})
 
@@ -28,8 +29,8 @@ def test_binds_one_parameter_without_mutating_template():
 def test_binds_shared_parameter_in_every_direct_field(value):
     theta = fq.Parameter("theta")
     program = fq.Program(2)
-    program.add(fq.ops.RX(theta), 0)
-    program.add(fq.ops.RY(theta), 1)
+    program.add(ops.RX(theta), 0)
+    program.add(ops.RY(theta), 1)
 
     bound = program.assign_parameters({theta: value})
 
@@ -41,9 +42,9 @@ def test_binds_complete_vector_and_mixed_individual_parameter():
     angles = fq.ParameterVector("angles", 2)
     bias = fq.Parameter("bias")
     program = fq.Program(3)
-    program.add(fq.ops.RX(angles[0]), 0)
-    program.add(fq.ops.RY(angles[1]), 1)
-    program.add(fq.ops.RZ(bias), 2)
+    program.add(ops.RX(angles[0]), 0)
+    program.add(ops.RY(angles[1]), 1)
+    program.add(ops.RZ(bias), 2)
 
     bound = program.assign_parameters({bias: 0.3, angles: [0.1, 0.2]})
 
@@ -58,8 +59,8 @@ def test_partial_binding_leaves_other_parameters_intact():
     first = fq.Parameter("first")
     second = fq.Parameter("second")
     program = fq.Program(2)
-    program.add(fq.ops.RX(first), 0)
-    program.add(fq.ops.RY(second), 1)
+    program.add(ops.RX(first), 0)
+    program.add(ops.RY(second), 1)
 
     bound = program.assign_parameters({first: 0.1})
 
@@ -69,7 +70,7 @@ def test_partial_binding_leaves_other_parameters_intact():
 
 def test_empty_binding_returns_independent_program_and_metadata():
     program = fq.Program(1, metadata={"owner": "template"})
-    program.add(fq.ops.H, 0)
+    program.add(ops.H, 0)
 
     bound = program.assign_parameters({})
     bound.metadata["owner"] = "bound"
@@ -85,7 +86,7 @@ def test_binding_preserves_program_structure_and_view_targets():
     classical = fq.ClassicalRegister(1, name="c")
     theta = fq.Parameter("theta")
     program = fq.Program([atoms], [classical], metadata={"kind": "view"})
-    program.add(fq.ops.RX(theta), atoms.row(0), condition=(classical[0], 1))
+    program.add(ops.RX(theta), atoms.row(0), condition=(classical[0], 1))
     program.measure(atoms[2], classical[0])
 
     bound = program.assign_parameters({theta: 0.4})
@@ -147,7 +148,7 @@ def test_binding_requires_mapping(values):
 def test_binding_rejects_invalid_and_foreign_keys():
     theta = fq.Parameter("theta")
     program = fq.Program(1)
-    program.add(fq.ops.RX(theta), 0)
+    program.add(ops.RX(theta), 0)
 
     with pytest.raises(TypeError, match="keys must be"):
         program.assign_parameters({"theta": 0.1})
@@ -158,7 +159,7 @@ def test_binding_rejects_invalid_and_foreign_keys():
 def test_vector_key_requires_every_element_in_program():
     angles = fq.ParameterVector("angles", 2)
     program = fq.Program(1)
-    program.add(fq.ops.RX(angles[0]), 0)
+    program.add(ops.RX(angles[0]), 0)
 
     with pytest.raises(ValueError, match="not fully present"):
         program.assign_parameters({angles: [0.1, 0.2]})
@@ -174,8 +175,8 @@ def test_zero_length_vector_cannot_be_bound():
 def test_duplicate_vector_and_element_assignment_is_rejected():
     angles = fq.ParameterVector("angles", 2)
     program = fq.Program(2)
-    program.add(fq.ops.RX(angles[0]), 0)
-    program.add(fq.ops.RY(angles[1]), 1)
+    program.add(ops.RX(angles[0]), 0)
+    program.add(ops.RY(angles[1]), 1)
 
     with pytest.raises(ValueError, match="assigned more than once"):
         program.assign_parameters({angles: [0.1, 0.2], angles[0]: 0.3})
@@ -187,7 +188,7 @@ def test_duplicate_vector_and_element_assignment_is_rejected():
 def test_binding_rejects_invalid_scalar_values(value):
     theta = fq.Parameter("theta")
     program = fq.Program(1)
-    program.add(fq.ops.RX(theta), 0)
+    program.add(ops.RX(theta), 0)
 
     with pytest.raises(TypeError, match="real scalars"):
         program.assign_parameters({theta: value})
@@ -197,8 +198,8 @@ def test_binding_rejects_invalid_scalar_values(value):
 def test_binding_rejects_invalid_vector_containers(value):
     angles = fq.ParameterVector("angles", 2)
     program = fq.Program(2)
-    program.add(fq.ops.RX(angles[0]), 0)
-    program.add(fq.ops.RY(angles[1]), 1)
+    program.add(ops.RX(angles[0]), 0)
+    program.add(ops.RY(angles[1]), 1)
 
     with pytest.raises(TypeError, match="one-dimensional sequences"):
         program.assign_parameters({angles: value})
@@ -211,8 +212,8 @@ def test_binding_rejects_invalid_vector_containers(value):
 def test_binding_rejects_vector_rank_errors(value):
     angles = fq.ParameterVector("angles", 2)
     program = fq.Program(2)
-    program.add(fq.ops.RX(angles[0]), 0)
-    program.add(fq.ops.RY(angles[1]), 1)
+    program.add(ops.RX(angles[0]), 0)
+    program.add(ops.RY(angles[1]), 1)
 
     with pytest.raises(ValueError, match="one-dimensional"):
         program.assign_parameters({angles: value})
@@ -221,8 +222,8 @@ def test_binding_rejects_vector_rank_errors(value):
 def test_binding_rejects_nonrectangular_vector_container():
     angles = fq.ParameterVector("angles", 2)
     program = fq.Program(2)
-    program.add(fq.ops.RX(angles[0]), 0)
-    program.add(fq.ops.RY(angles[1]), 1)
+    program.add(ops.RX(angles[0]), 0)
+    program.add(ops.RY(angles[1]), 1)
 
     with pytest.raises(ValueError, match="rectangular container"):
         program.assign_parameters({angles: [np.zeros((2, 2)), np.zeros((2, 3))]})
@@ -231,8 +232,8 @@ def test_binding_rejects_nonrectangular_vector_container():
 def test_binding_rejects_wrong_vector_length_and_bad_element():
     angles = fq.ParameterVector("angles", 2)
     program = fq.Program(2)
-    program.add(fq.ops.RX(angles[0]), 0)
-    program.add(fq.ops.RY(angles[1]), 1)
+    program.add(ops.RX(angles[0]), 0)
+    program.add(ops.RY(angles[1]), 1)
 
     with pytest.raises(ValueError, match="expects 2 values"):
         program.assign_parameters({angles: [0.1]})
@@ -245,10 +246,10 @@ def test_unbound_diagnostic_uses_stable_order_and_deduplicates_identity():
     first = fq.Parameter("theta")
     second = fq.Parameter("theta")
     program = fq.Program(4)
-    program.add(fq.ops.RX(shared), 0)
-    program.add(fq.ops.RY(first), 1)
-    program.add(fq.ops.RZ(shared), 2)
-    program.add(fq.ops.Phase(second), 3)
+    program.add(ops.RX(shared), 0)
+    program.add(ops.RY(first), 1)
+    program.add(ops.RZ(shared), 2)
+    program.add(ops.Phase(second), 3)
 
     with pytest.raises(
         fq.errors.BackendValidationError,

@@ -9,10 +9,11 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import ControlChannel, PulseControl
 from fatqat.emulator.atom_2level import Atom2LevelEmulator, Atom2LevelModel
 from fatqat.errors import BackendValidationError
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
@@ -60,9 +61,9 @@ def test_drive_only_and_detuning_only_lower_as_global_controls(kind):
     model = _model()
     backend = _backend(model)
     channel = model.control.drive() if kind == "drive" else model.control.detuning()
-    operation = fq.ops.PulseOperation(2.0, (_control(channel, 2.0, 0.3j),))
+    operation = ops.PulseOperation(2.0, (_control(channel, 2.0, 0.3j),))
     if kind == "detuning":
-        operation = fq.ops.PulseOperation(2.0, (_control(channel, 2.0, -0.3),))
+        operation = ops.PulseOperation(2.0, (_control(channel, 2.0, -0.3),))
 
     block = _lower(backend, operation)
 
@@ -87,7 +88,7 @@ def test_complex_drive_and_real_detuning_keep_knots_offsets_and_phase():
         model.control.detuning(),
         SampledWaveform((0.0, 0.4, 1.0), (-1.0, 0.0, 2.0)),
     )
-    operation = fq.ops.PulseOperation(1.0, (drive, detuning))
+    operation = ops.PulseOperation(1.0, (drive, detuning))
 
     block = _lower(backend, operation)
 
@@ -101,9 +102,9 @@ def test_sequential_direct_operations_remain_distinct_blocks():
     model = _model()
     backend = _backend(model)
     operations = (
-        fq.ops.PulseOperation(0.4, (_control(model.control.drive(), 0.4, 0.1 + 0.2j),)),
-        fq.ops.PulseOperation(0.5, (_control(model.control.detuning(), 0.5, -0.3),)),
-        fq.ops.PulseOperation(0.6, (_control(model.control.drive(), 0.6, -0.2j),)),
+        ops.PulseOperation(0.4, (_control(model.control.drive(), 0.4, 0.1 + 0.2j),)),
+        ops.PulseOperation(0.5, (_control(model.control.detuning(), 0.5, -0.3),)),
+        ops.PulseOperation(0.6, (_control(model.control.drive(), 0.6, -0.2j),)),
     )
     program = fq.Program(2)
     for operation in operations:
@@ -120,9 +121,9 @@ def test_duplicate_controls_and_endpoint_overflow_are_rejected_by_values():
     model = _model()
     first = _control(model.control.drive(), 1.0, 0.1)
     with pytest.raises(ValueError, match="one channel"):
-        fq.ops.PulseOperation(1.0, (first, first))
+        ops.PulseOperation(1.0, (first, first))
     with pytest.raises(ValueError, match="extends beyond"):
-        fq.ops.PulseOperation(
+        ops.PulseOperation(
             1.0,
             (
                 PulseControl(
@@ -138,7 +139,7 @@ def test_duration_and_complete_interpolant_limits_are_enforced():
     duration_model = _model(min_duration=0.5, max_duration=2.0)
     duration_backend = _backend(duration_model)
     for duration, message in ((0.25, "below"), (3.0, "exceeds")):
-        operation = fq.ops.PulseOperation(
+        operation = ops.PulseOperation(
             duration,
             (_control(duration_model.control.drive(), duration, 0.0),),
         )
@@ -151,7 +152,7 @@ def test_duration_and_complete_interpolant_limits_are_enforced():
         (0.0, 1.0, 2.0, 3.0),
         (0.0, 1.0j, 1.0j, 0.0),
     )
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         3.0, (PulseControl(bounded_model.control.drive(), adversarial),)
     )
     with pytest.raises(BackendValidationError, match="drive magnitude.*exceeds"):
@@ -161,7 +162,7 @@ def test_duration_and_complete_interpolant_limits_are_enforced():
 def test_detuning_is_real_and_uses_signed_cubic_extrema():
     model = _model(min_detuning=-1.0, max_detuning=1.0)
     backend = _backend(model)
-    complex_operation = fq.ops.PulseOperation(
+    complex_operation = ops.PulseOperation(
         1.0, (_control(model.control.detuning(), 1.0, 0.1j),)
     )
     with pytest.raises(BackendValidationError, match="must be real"):
@@ -171,7 +172,7 @@ def test_detuning_is_real_and_uses_signed_cubic_extrema():
         (0.0, 1.0, 2.0, 3.0),
         (0.0, 1.0, 1.0, 0.0),
     )
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         3.0, (PulseControl(model.control.detuning(), overshooting),)
     )
     with pytest.raises(BackendValidationError, match="detuning.*exceeds"):
@@ -183,7 +184,7 @@ def test_structural_controls_reuse_across_models_and_arrangements():
     second_document = json.loads(_FIXTURE.read_text(encoding="utf-8"))
     second_document["parameters"]["c6"] = -2.0
     second_model = Atom2LevelModel.from_document(deepcopy(second_document))
-    operation = fq.ops.PulseOperation(
+    operation = ops.PulseOperation(
         0.4, (_control(first_model.control.drive(), 0.4, 0.2j),)
     )
 
@@ -201,7 +202,7 @@ def test_wrong_family_control_is_rejected():
     model = _model()
     backend = _backend(model)
     program = fq.Program(2)
-    operation = fq.ops.PulseOperation(0.4, (_control(_ForeignControl(), 0.4, 0.1),))
+    operation = ops.PulseOperation(0.4, (_control(_ForeignControl(), 0.4, 0.1),))
     program.add(operation)
     with pytest.raises(BackendValidationError, match="foreign two-level atom control"):
         backend._prepare_program(program)

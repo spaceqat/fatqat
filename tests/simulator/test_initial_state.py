@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.errors import BackendValidationError
 from fatqat.simulator import Simulator
 

@@ -19,7 +19,7 @@ register can each be driven independently with their own gates:
 
 ```python
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 
 qubit = fq.QuantumRegister(1, name="qubit")            # dim=2
 qutrit = fq.QuantumRegister(1, dim=3, name="qutrit")
@@ -27,8 +27,8 @@ cbit = fq.ClassicalRegister(1, name="c_qubit")
 ctrit = fq.ClassicalRegister(1, dim=3, name="c_qutrit")
 
 program = fq.Program([qubit, qutrit], [cbit, ctrit])
-program.add(op.X, program.quantum_registers[0][0])            # qubit: |0> -> |1>
-program.add(op.Shift(1), program.quantum_registers[1][0])     # qutrit: |0> -> |1>
+program.add(ops.X, program.quantum_registers[0][0])            # qubit: |0> -> |1>
+program.add(ops.Shift(1), program.quantum_registers[1][0])     # qutrit: |0> -> |1>
 program.measure(program.quantum_registers[0][0], program.classical_registers[0][0])
 program.measure(program.quantum_registers[1][0], program.classical_registers[1][0])
 
@@ -59,13 +59,13 @@ working, then register your gate's matrix on top of it. This example adds a
 ```python
 import numpy as np
 import fatqat as fq
-import fatqat.operations as op
+import fatqat.operations as ops
 from fatqat.implementation import FixedMatrix, default_matrix_implementation_map
 
 
-class SqrtX(op.Operation):
+class SqrtX(ops.Operation):
     name = "SqrtX"
-    _num_subsystems = 1
+    num_subsystems = 1
 
 
 SQRT_X_MATRIX = 0.5 * np.array(
@@ -95,7 +95,7 @@ A few things worth noting about the shape of this API:
 - `add()` accepts a bare `np.ndarray` too — it auto-wraps into
   `FixedMatrix`, so `implementation_map.add(SqrtX, SQRT_X_MATRIX)` works
   just as well as wrapping it explicitly.
-- A custom `Operation` subclass only needs `name` and `_num_subsystems`
+- A custom `Operation` subclass only needs `name` and `num_subsystems`
   (the fixed arity the matrix implementation map requires — variable-arity
   operations aren't supported here).
 - The matrix's shape is checked against the target dimensions at lowering

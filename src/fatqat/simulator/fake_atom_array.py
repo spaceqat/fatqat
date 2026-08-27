@@ -11,8 +11,8 @@ Native gate set is exactly `~fatqat.operations.RX`, `~fatqat.operations.RY`,
 `~fatqat.operations.RZ` (single-qubit, any atom) and
 `~fatqat.operations.CZ`. Two-qubit-gate legality is
 dynamic: a ``CZ`` is legal only on a pair that is currently *paired* in the
-program's `~fatqat.connectivity.AtomConnectivity` graph, which
-`~fatqat.operations.Pair` and `~fatqat.operations.Unpair` mutate mid-circuit.
+program's connectivity graph, which `~fatqat.operations.Pair` and
+`~fatqat.operations.Unpair` mutate mid-circuit.
 A ``CZ`` on a pair that is not currently paired raises
 `~fatqat.errors.BackendValidationError`: because the connectivity graph is
 fixed at compile time, an unpaired ``CZ`` can never take effect and is treated
@@ -32,8 +32,7 @@ digit ``2``, distinct from a real ``|0>``.
 Binding carries no coordinates: quantum registers map to device labels in
 declaration order (a `~fatqat.GridRegister`, if passed, is treated as a plain
 flat register). Connectivity, occupancy, and loss are the only atom-specific
-lifecycle; see `~fatqat.connectivity.AtomConnectivity` and
-:py:meth:`AtomArraySimulator._lower`.
+lifecycle; see :py:meth:`AtomArraySimulator._lower`.
 """
 
 from __future__ import annotations
@@ -42,7 +41,6 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from .. import operations as ops
-from ..connectivity import AtomConnectivity
 from ..errors import BackendValidationError
 from ..implementation import (
     MatrixImplementationMap,
@@ -55,6 +53,7 @@ from .._backends.steps import (
     LossStep,
     PutStep,
 )
+from ._connectivity import _AtomConnectivity
 from ._execution_contract import _PlanFacts
 from .planning import _lower_channels, _lower_put
 from .simulator import Simulator
@@ -82,7 +81,7 @@ def fake_atom_array_implementation_map() -> MatrixImplementationMap:
     """Native gate map: RX/RY/RZ and CZ, all legal on any target.
 
     CZ is registered as a single universal rule; two-qubit-gate *legality* is
-    decided at lowering against the program's dynamic AtomConnectivity (see
+    decided at lowering against the program's dynamic pairing graph (see
     AtomArraySimulator._lower).
     """
     defaults = default_matrix_implementation_map()
@@ -143,12 +142,12 @@ class AtomArraySimulator(Simulator):
 
            >>> import numpy as np
            >>> import fatqat as fq
-           >>> import fatqat.operations as op
+           >>> import fatqat.operations as ops
            >>> noise = fq.NoiseModel()
-           >>> noise.add(fq.noise.Loss(p=1.0), operation=op.RX)
+           >>> noise.add(fq.noise.Loss(p=1.0), operation=ops.RX)
            >>> program = fq.Program(1, 1)
-           >>> program.add(op.Put, 0)             # load an atom into site 0
-           >>> program.add(op.RX(np.pi), 0)       # applies, then the atom is lost
+           >>> program.add(ops.Put, 0)             # load an atom into site 0
+           >>> program.add(ops.RX(np.pi), 0)       # applies, then the atom is lost
            >>> program.measure(0, 0)
            >>> backend = fq.simulator.AtomArraySimulator(num_sites=1, noise=noise)
            >>> backend.run(
@@ -160,7 +159,7 @@ class AtomArraySimulator(Simulator):
         A Bell pair built as ``CX(0 -> 1)`` on two atoms. ``CX`` is not native
         (it lowers to ``H(target)``, ``CZ``, ``H(target)``, with ``H`` emitted
         as ``RZ(pi)`` then ``RY(pi / 2)`` up to global phase), and the ``CZ``
-        only takes effect because ``op.Pair`` connects the two atoms first;
+        only takes effect because ``ops.Pair`` connects the two atoms first;
         without the pairing the ``CZ`` would raise a
         ``BackendValidationError``.
 
@@ -168,17 +167,17 @@ class AtomArraySimulator(Simulator):
 
            >>> import numpy as np
            >>> import fatqat as fq
-           >>> import fatqat.operations as op
+           >>> import fatqat.operations as ops
            >>> atoms = fq.QuantumRegister(2, name="atoms")
            >>> program = fq.Program([atoms], 2)
-           >>> program.add(op.Put, (0, 1))            # load both atoms
-           >>> program.add(op.Pair, (0, 1))           # connect them so CZ is legal
+           >>> program.add(ops.Put, (0, 1))            # load both atoms
+           >>> program.add(ops.Pair, (0, 1))           # connect them so CZ is legal
            >>> def native_h(target):
-           ...     program.add(op.RZ(np.pi), target)
-           ...     program.add(op.RY(np.pi / 2), target)
+           ...     program.add(ops.RZ(np.pi), target)
+           ...     program.add(ops.RY(np.pi / 2), target)
            >>> native_h(0)                            # superpose the control
            >>> native_h(1)                            # H on the target ...
-           >>> program.add(op.CZ, (0, 1))
+           >>> program.add(ops.CZ, (0, 1))
            >>> native_h(1)                            # ... completes CX(0 -> 1)
            >>> program.measure_all()
 
@@ -247,12 +246,12 @@ class AtomArraySimulator(Simulator):
 
         Examples:
             >>> import fatqat as fq
-            >>> import fatqat.operations as op
+            >>> import fatqat.operations as ops
             >>> backend = fq.simulator.AtomArraySimulator()
             >>> impl_map = backend.implementation_map
-            >>> sorted(op.name for op in impl_map.supported_operations())
+            >>> sorted(operation.name for operation in impl_map.supported_operations())
             ['CZ', 'RX', 'RY', 'RZ']
-            >>> impl_map.supports(op.CCX)
+            >>> impl_map.supports(ops.CCX)
             False
         """
         return self._impl_map.copy()
@@ -347,7 +346,7 @@ class AtomArraySimulator(Simulator):
                 continue  # a target can never hold an atom -> static drop
             realized.append(step)
 
-        connectivity = AtomConnectivity()
+        connectivity = _AtomConnectivity()
         plan: list[ResolvedStep] = []
         segment: list[ProgramInstruction] = []
         for step in realized:
@@ -388,7 +387,7 @@ class AtomArraySimulator(Simulator):
     def _lower_segment(
         self,
         segment: Sequence[ProgramInstruction],
-        connectivity: AtomConnectivity,
+        connectivity: _AtomConnectivity,
         context: _LoweringContext,
     ) -> list[ResolvedStep]:
         """Lower one inter-pairing segment, rejecting unpaired two-qubit gates.
@@ -432,7 +431,7 @@ class AtomArraySimulator(Simulator):
         return plan
 
     def _require_pairing(
-        self, step: ProgramInstruction, connectivity: AtomConnectivity
+        self, step: ProgramInstruction, connectivity: _AtomConnectivity
     ) -> None:
         """Reject a two-qubit gate whose atoms are not currently paired.
 
@@ -474,8 +473,8 @@ class AtomArraySimulator(Simulator):
             raise BackendValidationError(
                 f"{step.operation.name} on atoms ({a_label}, {b_label}) requires "
                 "the atoms to be paired first: a two-qubit gate is legal only "
-                "while its atoms are connected in the AtomConnectivity graph. "
-                "Add op.Pair on this pair before the gate. This is a program "
+                "while its atoms are connected in the dynamic pairing graph. "
+                "Add ops.Pair on this pair before the gate. This is a program "
                 "error, distinct from an atom lost mid-circuit, which is dropped "
                 "silently per shot."
             )
@@ -537,7 +536,9 @@ class AtomArraySimulator(Simulator):
                 "loss, or refill; use method='statevector' or 'density_matrix'"
             )
 
-    def _apply_pairing(self, connectivity, applied) -> AtomConnectivity:
+    def _apply_pairing(
+        self, connectivity: _AtomConnectivity, applied: AppliedOperation
+    ) -> _AtomConnectivity:
         """Return the connectivity after this Pair/Unpair (must be unconditional)."""
         if applied.condition is not None:
             raise BackendValidationError(

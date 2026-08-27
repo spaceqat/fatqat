@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.emulator._core.engine import PulseEngine
 from fatqat.emulator._core.outcome import _PulseShotOutcome
 from fatqat.errors import BackendExecutionError, BackendValidationError
@@ -25,7 +26,7 @@ def family_backend_fixture(request, model, atom_3level_model):
 
 def _program():
     program = fq.Program(2)
-    program.add(fq.ops.RX(0.1), 0)
+    program.add(ops.RX(0.1), 0)
     return program
 
 

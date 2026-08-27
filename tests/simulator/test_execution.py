@@ -9,14 +9,13 @@ from fatqat.simulator import Simulator
 from fatqat.errors import (
     BackendValidationError,
     MatrixImplementationError,
-    NoMeasurementWarning,
     UnsupportedOperationError,
 )
 from fatqat.implementation import (
     MatrixImplementationMap,
     default_matrix_implementation_map,
 )
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat.program import Program
 
 
@@ -64,7 +63,7 @@ def test_run_without_seed_uses_random_rng_seed(monkeypatch):
 def test_unsupported_operation_raises():
     class FooGate(ops.Operation):
         name = "FOO"
-        _num_subsystems = 1
+        num_subsystems = 1
 
     p = Program(1, 1)
     p.add(FooGate(), 0)
@@ -78,7 +77,7 @@ def test_condition_now_runs():
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 0))
     p.measure(1, 1)
-    with pytest.warns(NoMeasurementWarning):
+    with pytest.warns(UserWarning, match="clbits that were never measured"):
         counts = (
             Simulator("SV")
             .run(p, shots=16, simulation_config={"seed": 0})
@@ -140,7 +139,7 @@ def test_deterministic_with_seed():
     assert a == b
 
 
-def test_no_measurement_warning_understands_grouped_measurements():
+def test_grouped_measurements_do_not_warn_about_unmeasured_clbits():
     p = Program(2, 2)
     p.add(ops.X, 0)
     p.add(ops.X, 1)
@@ -156,7 +155,7 @@ def test_no_measurement_warning_understands_grouped_measurements():
         )
 
     assert counts == {"11": 4}
-    assert not any(issubclass(w.category, NoMeasurementWarning) for w in caught)
+    assert not caught
 
 
 def test_rule_failure_is_wrapped_with_operation_context():
@@ -181,7 +180,7 @@ def test_rule_failure_is_wrapped_with_operation_context():
 def test_custom_operation_runs_end_to_end_via_bare_callable():
     class MyX(ops.Operation):
         name = "MyX"
-        _num_subsystems = 1
+        num_subsystems = 1
 
     def my_x_rule(op):
         return np.array([[0, 1], [1, 0]], dtype=complex)

@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator.atom_2level import (
     Atom2LevelModel,
@@ -25,7 +26,7 @@ from fatqat.noise import (
     ThermalRelaxation,
 )
 from fatqat.noise.lindblad import amplitude_damping_lindblad_rule
-from fatqat.waveforms import SampledWaveform
+from fatqat.emulator import SampledWaveform
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
@@ -71,7 +72,7 @@ def _pulse(duration=1.0, **components):
                 SampledWaveform((0.0, duration), (detuning, detuning)),
             )
         )
-    return fq.ops.PulseOperation(duration, tuple(controls))
+    return ops.PulseOperation(duration, tuple(controls))
 
 
 def test_public_constructor_has_only_the_locked_two_level_arguments(model):
@@ -179,7 +180,7 @@ def test_removed_interaction_policy_keyword_and_property_are_absent(model):
         )
 
 
-def _global_gate_map(model, operation=fq.ops.CZ):
+def _global_gate_map(model, operation=ops.CZ):
     implementations = PulseImplementationMap()
 
     def global_drive(_operation, *, device_operands):
@@ -202,7 +203,7 @@ def test_maps_are_copied_once_and_explicit_empty_maps_stay_empty(model):
     arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     gate_map = _global_gate_map(model)
     lindblad_map = LindbladImplementationMap()
-    lindblad_map.register(AmplitudeDamping, amplitude_damping_lindblad_rule)
+    lindblad_map.add(AmplitudeDamping, amplitude_damping_lindblad_rule)
     backend = Atom2LevelEmulator(
         model,
         arrangement=arrangement,
@@ -210,10 +211,10 @@ def test_maps_are_copied_once_and_explicit_empty_maps_stay_empty(model):
         lindblad_implementation_map=lindblad_map,
     )
 
-    gate_map.remove(fq.ops.CZ)
-    lindblad_map.register(AmplitudeDamping, lambda channel, **kwargs: ())
+    gate_map.remove(ops.CZ)
+    lindblad_map.add(AmplitudeDamping, lambda channel, **kwargs: ())
 
-    assert backend._gate_implementation_map.supports(fq.ops.CZ)
+    assert backend._gate_implementation_map.supports(ops.CZ)
     assert (
         backend._lindblad_implementation_map.get(AmplitudeDamping)
         is amplitude_damping_lindblad_rule
@@ -231,7 +232,7 @@ def test_maps_are_copied_once_and_explicit_empty_maps_stay_empty(model):
 def test_invalid_attached_noise_rejects_before_target_construction(model, monkeypatch):
     arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     noise = fq.NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=fq.ops.X)
+    noise.add(Depolarizing(p=0.1), operation=ops.X)
 
     def target_must_not_be_built(*_args, **_kwargs):
         raise AssertionError("target was built before capability classification")
@@ -273,7 +274,7 @@ def test_custom_global_gate_requires_and_executes_a_whole_arrangement_occurrence
         gate_implementation_map=_global_gate_map(model),
     )
     program = fq.Program(2)
-    program.add(fq.ops.CZ, (0, 1))
+    program.add(ops.CZ, (0, 1))
 
     prepared = backend._prepare_program(program)
     result = backend.run(program).result()
@@ -285,10 +286,10 @@ def test_custom_global_gate_requires_and_executes_a_whole_arrangement_occurrence
     narrow = Atom2LevelEmulator(
         model,
         arrangement=arrangement,
-        gate_implementation_map=_global_gate_map(model, fq.ops.X),
+        gate_implementation_map=_global_gate_map(model, ops.X),
     )
     narrow_program = fq.Program(2)
-    narrow_program.add(fq.ops.X, 0)
+    narrow_program.add(ops.X, 0)
     with pytest.raises(BackendValidationError, match="outside its gate occurrence"):
         narrow.run(narrow_program)
 
@@ -320,9 +321,9 @@ def test_ordinary_gates_are_unsupported_before_runner_construction(model, monkey
     )
 
     for operation, targets in (
-        (fq.ops.X, 0),
-        (fq.ops.Pair, (0, 1)),
-        (fq.ops.Put, 0),
+        (ops.X, 0),
+        (ops.Pair, (0, 1)),
+        (ops.Put, 0),
     ):
         program = fq.Program(2)
         program.add(operation, targets)
@@ -333,11 +334,11 @@ def test_ordinary_gates_are_unsupported_before_runner_construction(model, monkey
 def test_barriers_are_structural_noops_even_in_terminal_measurement_suffix(model):
     backend = _backend(model)
     program = fq.Program(2, 2)
-    program.add(fq.ops.Barrier, (0, 1))
+    program.add(ops.Barrier, (0, 1))
     program.add(_pulse(amplitude=0.0))
-    program.add(fq.ops.Barrier, (0, 1))
+    program.add(ops.Barrier, (0, 1))
     program.measure((0, 1), (0, 1))
-    program.add(fq.ops.Barrier, (0, 1))
+    program.add(ops.Barrier, (0, 1))
 
     result = backend.run(program, shots=3).result()
 
@@ -348,7 +349,7 @@ def test_reset_condition_and_targeted_global_pulse_are_validation_errors(model):
     backend = _backend(model)
 
     reset = fq.Program(2)
-    reset.add(fq.ops.Reset, 0)
+    reset.add(ops.Reset, 0)
     with pytest.raises(BackendValidationError, match="reset"):
         backend.run(reset)
 

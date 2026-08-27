@@ -5,9 +5,9 @@ Examples:
 
     >>> import math
     >>> import fatqat as fq
-    >>> import fatqat.operations as op
+    >>> import fatqat.operations as ops
     >>> program = fq.Program(1)
-    >>> program.add(op.RX(math.pi), 0)
+    >>> program.add(ops.RX(math.pi), 0)
     >>> result = fq.simulator.Simulator("SV").run(
     ...     program,
     ...     shots=1,
@@ -47,7 +47,7 @@ class RX(Operation):
 
     theta: float | Parameter
     name: ClassVar[str] = "RX"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
 
 
@@ -68,7 +68,7 @@ class RY(Operation):
 
     theta: float | Parameter
     name: ClassVar[str] = "RY"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
 
 
@@ -91,7 +91,7 @@ class RZ(Operation):
 
     theta: float | Parameter
     name: ClassVar[str] = "RZ"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
 
 
@@ -109,7 +109,7 @@ class Phase(Operation):
 
     theta: float | Parameter
     name: ClassVar[str] = "Phase"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ class U(Operation):
     phi: float
     lam: float
     name: ClassVar[str] = "U"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -137,7 +137,7 @@ class U1(Operation):
 
     lam: float
     name: ClassVar[str] = "U1"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -147,7 +147,7 @@ class U2(Operation):
     phi: float
     lam: float
     name: ClassVar[str] = "U2"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -158,7 +158,7 @@ class U3(Operation):
     phi: float
     lam: float
     name: ClassVar[str] = "U3"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -181,4 +181,4 @@ class CPhase(Operation):
 
     theta: float | Parameter
     name: ClassVar[str] = "CPhase"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2

@@ -27,10 +27,10 @@ class BarrierGate(Operation):
         A barrier between preparation and measurement changes nothing:
 
         >>> import fatqat as fq
-        >>> import fatqat.operations as op
+        >>> import fatqat.operations as ops
         >>> program = fq.Program(2, 2)
-        >>> program.add(op.X, 0)
-        >>> program.add(op.Barrier, (0, 1))
+        >>> program.add(ops.X, 0)
+        >>> program.add(ops.Barrier, (0, 1))
         >>> program.measure((0, 1), (0, 1))
         >>> result = fq.simulator.Simulator().run(
         ...     program, shots=5, simulation_config={"seed": 0}
@@ -40,9 +40,9 @@ class BarrierGate(Operation):
     """
 
     name: ClassVar[str] = "Barrier"
-    _num_subsystems: ClassVar[int | None] = None
+    num_subsystems: ClassVar[int | None] = None
 
 
 # `Barrier` takes no parameters, so - like the fixed gates and `Reset` - it is
-# exported only as a singleton value: `op.Barrier`, not `op.Barrier()`.
+# exported only as a singleton value: `ops.Barrier`, not `ops.Barrier()`.
 Barrier = BarrierGate()

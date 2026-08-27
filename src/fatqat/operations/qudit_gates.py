@@ -4,10 +4,10 @@ Examples:
     ``Shift`` on a qutrit (``dim=3``) cyclically shifts the basis level:
 
     >>> import fatqat as fq
-    >>> import fatqat.operations as op
+    >>> import fatqat.operations as ops
     >>> qutrit = fq.QuantumRegister(1, dim=3)
     >>> program = fq.Program([qutrit])
-    >>> program.add(op.Shift(1), 0)
+    >>> program.add(ops.Shift(1), 0)
     >>> result = fq.simulator.Simulator("SV").run(
     ...     program,
     ...     shots=1,
@@ -52,7 +52,7 @@ class Shift(Operation):
 
     power: int
     name: ClassVar[str] = "Shift"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -80,7 +80,7 @@ class Clock(Operation):
 
     power: int
     name: ClassVar[str] = "Clock"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -128,7 +128,7 @@ class SumGate(Operation):
     """
 
     name: ClassVar[str] = "Sum"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
 
 
 # `Sum` takes no parameters, so - like the fixed gates - it is exported only
@@ -167,7 +167,7 @@ class SwapLevels(Operation):
     j: int
     k: int
     name: ClassVar[str] = "SwapLevels"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
     def __post_init__(self) -> None:
         if self.j == self.k:
@@ -207,14 +207,14 @@ class FourierGate(Operation):
         1&1&1\\\\ 1&\\omega&\\omega^2\\\\ 1&\\omega^2&\\omega
         \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
 
-    Internal only: unlike `SumGate` (attribute-accessible via `op.SumGate`
+    Internal only: unlike `SumGate` (attribute-accessible via `ops.SumGate`
     though excluded from `__all__`), this class is not imported into
-    `operations/__init__.py` at all, so it is not reachable as `op.
+    `operations/__init__.py` at all, so it is not reachable as `ops.
     FourierGate`. `Fourier` (the singleton) is the only public surface.
     """
 
     name: ClassVar[str] = "Fourier"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
@@ -239,7 +239,7 @@ class FourierdgGate(Operation):
     """
 
     name: ClassVar[str] = "InverseFourier"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
 
 # Parameterless, so exported only as singleton values (see the "Public
@@ -283,7 +283,7 @@ class SubspaceRX(Operation):
     theta: float | Parameter
     subspace: tuple[int, int]
     name: ClassVar[str] = "SubspaceRX"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
     def __post_init__(self) -> None:
         j, k = self.subspace
@@ -340,7 +340,7 @@ class SubspaceRY(Operation):
     theta: float | Parameter
     subspace: tuple[int, int]
     name: ClassVar[str] = "SubspaceRY"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
     def __post_init__(self) -> None:
         j, k = self.subspace
@@ -395,7 +395,7 @@ class SubspaceRZ(Operation):
     theta: float | Parameter
     subspace: tuple[int, int]
     name: ClassVar[str] = "SubspaceRZ"
-    _num_subsystems: ClassVar[int] = 1
+    num_subsystems: ClassVar[int] = 1
 
     def __post_init__(self) -> None:
         j, k = self.subspace
@@ -446,4 +446,4 @@ class CClock(Operation):
 
     power: int
     name: ClassVar[str] = "CClock"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2

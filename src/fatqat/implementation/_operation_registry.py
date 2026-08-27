@@ -28,7 +28,7 @@ T = TypeVar("T")
 def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]:
     """Normalize an :py:class:`~fatqat.operations.Operation` instance or subclass to its registry key.
 
-    Accepts either an :py:class:`~fatqat.operations.Operation` instance (e.g. `op.X`) or an :py:class:`~fatqat.operations.Operation`
+    Accepts either an :py:class:`~fatqat.operations.Operation` instance (e.g. `ops.X`) or an :py:class:`~fatqat.operations.Operation`
     subclass (e.g. a custom gate class) and returns the class to key the
     registry by. Applying `type(...)` unconditionally would be wrong for the
     class case: `type(MyGate)` is the metaclass `type`, not `MyGate`.
@@ -41,7 +41,7 @@ def _resolve_operation_class(op: Operation | type[Operation]) -> type[Operation]
 
 
 def _require_fixed_arity(op_cls: type[Operation]) -> None:
-    """Raise `TypeError` if `op_cls` has variable arity (`_num_subsystems is None`).
+    """Raise `TypeError` if `op_cls` has variable arity (`num_subsystems is None`).
 
     This is a deliberate scope policy, not a technical limit: rules do receive
     `targets` and could in principle size their result from `len(targets)`.
@@ -50,9 +50,9 @@ def _require_fixed_arity(op_cls: type[Operation]) -> None:
     scope for every implementation-map family unless a concrete variadic need
     appears.
     """
-    if op_cls._num_subsystems is None:
+    if op_cls.num_subsystems is None:
         raise TypeError(
-            f"{op_cls.__name__} has variable arity (_num_subsystems is None); "
+            f"{op_cls.__name__} has variable arity (num_subsystems is None); "
             "implementation maps only support fixed-arity operations"
         )
     if op_cls._is_direct_control:
@@ -79,7 +79,7 @@ def _require_device_operands_arity(
     it cannot range-check or type-check individual elements. That is left to
     the backend that constructs a device-specific map.
     """
-    expected = op_cls._num_subsystems
+    expected = op_cls.num_subsystems
     if len(device_operands) != expected:
         raise ValueError(
             f"{op_cls.__name__} expects {expected} device operand(s), "

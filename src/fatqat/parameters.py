@@ -33,11 +33,11 @@ class Parameter:
         Reuse the same object when multiple gates should share one value:
 
         >>> import fatqat as fq
-        >>> import fatqat.operations as op
+        >>> import fatqat.operations as ops
         >>> theta = fq.Parameter("theta")
         >>> program = fq.Program(2)
-        >>> program.add(op.RX(theta), 0)
-        >>> program.add(op.RY(theta), 1)
+        >>> program.add(ops.RX(theta), 0)
+        >>> program.add(ops.RY(theta), 1)
         >>> bound = program.assign_parameters({theta: 0.25})
         >>> [instruction.operation.theta for instruction in bound.operations]
         [0.25, 0.25]

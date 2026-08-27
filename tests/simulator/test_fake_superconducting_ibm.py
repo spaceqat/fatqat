@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from fatqat import operations as ops
+import fatqat.operations as ops
 from fatqat._backends.steps import ApplyChannelStep
 from fatqat.simulator import SCQubitIBMSimulator
 from fatqat.simulator.fake_superconducting import (
