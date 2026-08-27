@@ -41,8 +41,10 @@ Reference pages
    * - :doc:`operations/qudit-gates`
      - Dimension-derived gates, level constraints, and basis actions.
    * - :doc:`operations/structural`
-     - Measurement records, reset and barrier behavior, and neutral-atom
-       occupancy and connectivity operations.
+     - Measurement and reset state transitions, and compiler barrier
+       semantics.
+   * - :doc:`operations/atom-gates`
+     - Neutral-atom occupancy, pairing, and attached-noise constraints.
    * - :doc:`operations/direct-control`
      - Channel-addressed ``PulseOperation`` values and the boundary between
        construction and model-owned validation and binding.
@@ -53,6 +55,7 @@ Reference pages
    operations/qubit-gates
    operations/qudit-gates
    operations/structural
+   operations/atom-gates
    operations/direct-control
 
 Construction
