@@ -10,29 +10,44 @@ from ..registers import RegisterRef
 
 @dataclass(frozen=True)
 class Operation:
-    """Base class for immutable operation objects.
+    """Base value for operations accepted by ``Program.add``.
 
-    Fixed gates are exposed as pre-built singleton values in
-    ``fatqat.operations`` (normally imported as ``op``).
-    Parametric gates are exposed as classes and should be instantiated, such as
-    ``RX(theta)``.
+    Built-in operation fields are frozen. Values built with their documented
+    immutable argument forms are reusable; a constructor that retains a
+    caller-supplied container documents that ownership explicitly.
+    Parameter-free gates and structural instructions are ready-made singleton
+    values such as ``ops.H`` and ``ops.Reset``; do not call them. Parameterized
+    gates are classes, so construct values such as ``ops.RX(0.2)`` before
+    adding them. ``Program.add`` stores the operation value itself rather than
+    copying it.
+
+    ``Operation`` is also the extension base for custom operations. An
+    ordinary subclass declares a public ``name`` and ``num_subsystems``. A
+    positive integer gives the exact number of separate logical target
+    expressions; ``None`` gives variable arity with a minimum of one target.
+    Channel-addressed direct control uses separate internal arity plumbing and
+    is not a custom-operation pattern. A custom operation also needs a
+    compatible backend implementation; subclassing alone does not make it
+    executable.
 
     Attributes:
-        name: Public operation name.
-        num_subsystems: Number of quantum operands required by the operation, or
-            None for variable arity governed by ``min_targets``. A minimum of
-            zero supports global operations whose target set is implicit.
+        name: Stable name used in diagnostics and user-facing displays.
+        num_subsystems: Exact positive number of logical target expressions
+            for an ordinary operation, or ``None`` for variable arity. This is
+            not a count of physical resources affected during execution.
+
+    Raises:
+        TypeError: At subclass definition if the retired ``num_targets`` or
+            ``_num_subsystems`` declaration is used.
+        ValueError: At subclass definition if the declared target count is
+            negative, boolean, or not an integer (and not ``None``).
 
     Examples:
         >>> import fatqat.operations as ops
-        >>> ops.H.name
-        'H'
-        >>> ops.H.num_subsystems
-        1
-        >>> ops.CX.num_subsystems
-        2
-        >>> ops.RX(0.2).num_subsystems
-        1
+        >>> (ops.H.num_subsystems, ops.CX.num_subsystems)
+        (1, 2)
+        >>> ops.RX(0.2).name
+        'RX'
     """
 
     name: ClassVar[str] = "OP"
@@ -42,15 +57,15 @@ class Operation:
     """Whether this operation accepts a ``RegisterView`` target expression in
     addition to scalar ``RegisterRef`` targets. Only RX, RY, RZ, CX, and CZ
     opt in (set ``True``); every other operation stays scalar-only. This is
-    the single, centralized capability flag consulted by
-    ``AppliedOperation.__post_init__`` -- new code should read
-    ``accepts_views`` rather than checking operation identity or name.
+    the single, centralized capability flag consulted during instruction
+    validation. New code should read ``accepts_views`` rather than checking
+    operation identity or name.
     """
     _is_direct_control: ClassVar[bool] = False
     """Whether the operation is a direct physical-control block.
 
-    Direct controls have zero ordinary target arity but must not be registered
-    as calibrated gates or operation-scoped gate-noise selectors.
+    Direct controls take no separate logical operands. This internal flag also
+    keeps them out of calibrated-gate and operation-scoped gate-noise paths.
     """
 
     def __init_subclass__(cls, **kwargs) -> None:
@@ -77,20 +92,44 @@ class Operation:
 
     @property
     def min_targets(self) -> int:
-        """Minimum accepted targets, or the exact arity for a fixed operation."""
+        """Return the minimum accepted target count.
+
+        This is the exact count for fixed-arity operations. Public built-in
+        variable-arity operations require at least one target.
+        """
         fixed = self.num_subsystems
         return type(self)._min_subsystems if fixed is None else fixed
 
     @property
     def accepts_views(self) -> bool:
-        """Whether this operation accepts a ``RegisterView`` target expression."""
+        """Return whether ``Program.add`` accepts ``RegisterView`` targets.
+
+        The built-in view-capable operations are ``RX``, ``RY``, ``RZ``,
+        ``CX``, and ``CZ``. All other built-ins require scalar targets. A
+        custom subclass may override this property to return ``True``; shared
+        backend expansion supports unary and two-target operations.
+        """
         return type(self)._accepts_views
 
     def validate_targets(self, targets: tuple[RegisterRef, ...]) -> None:
-        """Raise ValueError if this operation's parameters are invalid for the
-        resolved target references. Default no-op; override for gates whose
-        parameters name basis levels (or otherwise depend on target identity
-        or dimension). Reads dimension as targets[i].register.dim, consistent
-        with the matrix-rule contract.
+        """Validate parameters that depend on resolved scalar targets.
+
+        For a scalar instruction, ``Program.add`` calls this hook after
+        resolving references and checking arity and duplicate targets. The
+        base implementation accepts every resolved tuple. Override it when an
+        operation parameter depends on a target property such as local
+        dimension.
+
+        For an instruction containing a ``RegisterView``, the frontend checks
+        the grouped view but defers this hook. Shared built-in backend
+        preparation expands the view and constructs one scalar instruction per
+        member or pair, which calls the hook for each emitted target tuple.
+
+        Args:
+            targets: Resolved scalar quantum references in operand order.
+
+        Raises:
+            ValueError: If the operation's parameters are incompatible with
+                the targets.
         """
         return

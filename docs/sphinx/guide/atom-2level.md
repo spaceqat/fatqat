@@ -51,7 +51,8 @@ constant or a device calibration.
 ...     fq.emulator.PulseControl(model.control.detuning(), detuning_waveform),
 ... )
 >>> program = fq.Program(arrangement.num_sites)
->>> program.add(ops.PulseOperation(1.0, controls))
+>>> operation = ops.PulseOperation(1.0, controls)
+>>> program.add(operation)
 >>> result = backend.run(program).result()
 >>> result.get_statevector().shape
 (4,)
@@ -68,8 +69,10 @@ measurement precision.
 The complex drive value is the physical complex envelope: its magnitude and
 argument encode amplitude and phase together. Detuning samples must be real.
 Both controls use the model's `rad/us` unit and act on every arrangement site.
-The operation has zero ordinary targets because its addresses already describe
-what is driven.
+`PulseOperation` does not take a separate `targets` argument. Each control's
+global channel identifies the physical resources it drives, and the selected
+emulator resolves those addresses across the arrangement during program
+preparation.
 
 For complex drive envelope $u(t)$ and real detuning $\Delta(t)$, the coherent
 Hamiltonian convention is
@@ -124,7 +127,7 @@ measurement-free programs also support `backend.propagator(program)`. A
 terminal measurement suffix returns counts by default. The built-in gate map
 is empty, so ordinary gates reject by default; a user-supplied
 `gate_implementation_map` can add them through the shared pulse-rule path.
-Reset, conditions, local direct targets, mid-circuit measurement, and a pulse
+Reset, conditions, site-specific direct controls, mid-circuit measurement, and a pulse
 after measurement remain outside the current two-level contract.
 
 The implicit Lindblad map supports target-local background rate-form amplitude

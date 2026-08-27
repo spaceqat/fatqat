@@ -17,13 +17,22 @@ def _validate_parameter_name(name: object) -> str:
 
 @dataclass(frozen=True, eq=False, slots=True)
 class Parameter:
-    """Immutable, identity-based scalar program parameter.
+    """Create an immutable, identity-based scalar program parameter.
 
-    ``name`` is used only for display and diagnostics. Two parameters with the
-    same name remain distinct binding keys.
+    ``name`` is only a display and diagnostic label. Equality and hashing use
+    object identity, so two parameters with the same name remain distinct
+    mapping keys. Reuse the same object in direct dataclass fields of operations
+    when one value should be shared, then pass that object to
+    ``Program.assign_parameters()`` or a sweep API. Parameters nested inside
+    another container are not discovered for binding.
 
     Args:
-        name: Non-empty label shown in diagnostics and representations.
+        name: Non-empty string shown in diagnostics and representations. It is
+            not accepted as a substitute for the parameter object when
+            binding.
+
+    Attributes:
+        name: Immutable display label supplied at construction.
 
     Raises:
         TypeError: If ``name`` is not a string.
@@ -39,8 +48,8 @@ class Parameter:
         >>> program.add(ops.RX(theta), 0)
         >>> program.add(ops.RY(theta), 1)
         >>> bound = program.assign_parameters({theta: 0.25})
-        >>> [instruction.operation.theta for instruction in bound.operations]
-        [0.25, 0.25]
+        >>> bound is program
+        False
     """
 
     name: str
@@ -51,16 +60,30 @@ class Parameter:
 
 @dataclass(frozen=True, eq=False, slots=True)
 class ParameterVector:
-    """Immutable ordered group of distinct :class:`Parameter` objects.
+    """Create an immutable ordered group of distinct ``Parameter`` objects.
 
-    The vector is a convenient binding key and does not make its elements
-    equal by name. Indexing the same vector repeatedly returns the same
-    parameter object.
+    The vector and all of its elements use identity-based equality. Indexing
+    the same vector repeatedly returns the same element object, including for
+    Python-style negative indices. Iteration follows increasing index order.
+    Slices and non-integer indices are not accepted.
+
+    A non-empty vector can be one key in ``Program.assign_parameters()`` when
+    every element occurs directly in a dataclass operation field. Its value
+    must be a matching-length, one-dimensional NumPy array or a non-string,
+    non-bytes, non-mapping iterable, consumed once in iteration order.
+    Individual elements are ordinary ``Parameter`` keys and support partial
+    binding. A zero-length vector can be used as an empty container but not as
+    a binding key. Parameters nested inside another container are not
+    discovered for binding.
 
     Args:
         name: Non-empty base label. Element labels use ``name[index]``.
-        length: Number of parameter elements. Zero is allowed, although an
-            empty vector cannot be used as a binding key.
+        length: Exact non-negative integer number of elements. Booleans are not
+            accepted. Zero creates an empty vector.
+
+    Attributes:
+        name: Immutable base display label.
+        length: Immutable number of parameter elements.
 
     Raises:
         TypeError: If ``name`` is not a string or ``length`` is not an integer.
@@ -94,12 +117,29 @@ class ParameterVector:
         )
 
     def __len__(self) -> int:
+        """Return the number of parameter elements."""
         return self.length
 
     def __iter__(self) -> Iterator[Parameter]:
+        """Iterate over parameter elements in index order."""
         return iter(self._parameters)
 
     def __getitem__(self, index: int) -> Parameter:
+        """Return the parameter at an integer index.
+
+        Negative indices follow normal Python sequence rules.
+
+        Args:
+            index: Exact integer element index. Booleans and slices are not
+                accepted.
+
+        Returns:
+            The stable ``Parameter`` object stored at that index.
+
+        Raises:
+            TypeError: If ``index`` is not an exact integer.
+            IndexError: If ``index`` is outside the vector.
+        """
         if type(index) is not int:
             raise TypeError("parameter vector indices must be integers")
         return self._parameters[index]

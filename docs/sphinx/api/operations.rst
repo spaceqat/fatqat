@@ -1,200 +1,105 @@
-Operations (``op``)
-=======================
+Operations
+==========
 
-Add all normal operations through :py:meth:`~fatqat.Program.add`. The
-exported operation values and classes documented below are the supported gate
-surface. Internal implementation classes whose names end in ``Gate`` are not
-the construction surface for application code.
+.. currentmodule:: fatqat.operations
 
-Examples use ``import fatqat.operations as ops``.
+Import this namespace as ``ops`` and append operation values with
+:py:meth:`fatqat.Program.add`:
 
-The entries below retain their generated constructors and public members
-for exact interface details.
+.. code-block:: python
 
-.. autoclass:: fatqat.operations.Operation
-   :members: name, num_subsystems, accepts_views, validate_targets
-   :show-inheritance:
+   import fatqat as fq
+   import fatqat.operations as ops
 
-Fixed single-qubit gates
-------------------------
+   program = fq.Program(2)
+   program.add(ops.H, 0)            # parameter-free singleton
+   program.add(ops.RX(0.2), 1)      # constructed parameterized value
+   program.add(ops.CX, (0, 1))      # ordered multi-target value
 
-:py:obj:`~fatqat.operations.I`, :py:obj:`~fatqat.operations.H`,
-:py:obj:`~fatqat.operations.S`, :py:obj:`~fatqat.operations.Sdg`,
-:py:obj:`~fatqat.operations.SX`,
-:py:obj:`~fatqat.operations.T`, :py:obj:`~fatqat.operations.Tdg`,
-:py:obj:`~fatqat.operations.X`, :py:obj:`~fatqat.operations.Y`, and
-:py:obj:`~fatqat.operations.Z` are ready-to-use values. For example:
-``program.add(ops.H, 0)``.
+Names exported through ``fatqat.operations.__all__`` are the supported public
+surface. Fixed gates and parameter-free structural operations are immutable
+singleton values and must not be called. Parameterized gates and
+``PulseOperation`` are classes that construct values with frozen fields; their
+constructor arguments and any retained-container caveats are shown on the
+family pages. ``Measurement`` records are created by ``Program`` rather than
+added directly. ``Program.add`` retains an operation value rather than copying
+it, so values built with the documented immutable inputs can safely be reused
+across instructions and programs.
 
-.. autodata:: fatqat.operations.I
-.. autodata:: fatqat.operations.H
-.. autodata:: fatqat.operations.S
-.. autodata:: fatqat.operations.Sdg
-.. autodata:: fatqat.operations.SX
-.. autodata:: fatqat.operations.T
-.. autodata:: fatqat.operations.Tdg
-.. autodata:: fatqat.operations.X
-.. autodata:: fatqat.operations.Y
-.. autodata:: fatqat.operations.Z
+Reference pages
+---------------
 
-Atom lifecycle
+.. list-table:: Operation families
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Page
+     - Contents
+   * - :doc:`operations/qubit-gates`
+     - Fixed and parameterized qubit gates, exact target order, matrices, and
+       constructor reference.
+   * - :doc:`operations/qudit-gates`
+     - Dimension-derived gates, level constraints, and basis actions.
+   * - :doc:`operations/structural`
+     - Measurement records, reset and barrier behavior, and neutral-atom
+       occupancy and connectivity operations.
+   * - :doc:`operations/direct-control`
+     - Channel-addressed ``PulseOperation`` values and the boundary between
+       construction and model-owned validation and binding.
+
+.. toctree::
+   :maxdepth: 1
+
+   operations/qubit-gates
+   operations/qudit-gates
+   operations/structural
+   operations/direct-control
+
+Construction
+------------
+
+For ordinary operations, ``Program.add`` checks that an operation value was
+supplied, resolves target references, enforces target count, and rejects
+repeated scalar targets. For a scalar instruction it also calls the
+operation's target validator. For a view instruction, it checks the
+grouped-view shape immediately; each expanded scalar member or pair reaches
+the target validator during built-in backend preparation. A direct
+``PulseOperation`` instead uses the channel-addressed contract on
+:doc:`operations/direct-control`. The frontend does not decide whether the
+selected backend implements an operation. An unsupported family raises
+:py:exc:`~fatqat.errors.UnsupportedOperationError` when the backend prepares
+the program.
+
+Most operations require scalar exact built-in ``int`` or
+:py:class:`~fatqat.RegisterRef` targets. A bare integer is valid only when the
+program has exactly one quantum register; booleans, NumPy integers, and integer
+subclasses are rejected. Controlled gates use control-first order, and the
+first local operand is the most-significant digit in the matrices and basis
+actions on the family pages.
+
+The built-in :py:class:`RX`, :py:class:`RY`, and :py:class:`RZ` operations and
+:py:data:`CX` and :py:data:`CZ` values accept
+:py:class:`~fatqat.RegisterView` targets:
+
+* A rotation on one view expands to one operation per selected member.
+* ``CX`` or ``CZ`` on two views pairs their members in view order.
+* A two-view pair must use the same selector kind and equal cardinality. Two
+  views of the same register must not overlap. Mixing a scalar with a view is
+  invalid.
+
+Those view constraints are checked when the instruction is added. Device
+topology and operation support remain backend checks. A custom ``Operation``
+subclass can override ``accepts_views`` to opt into the shared unary or
+two-target expansion path. See :doc:`../guide/gates` for the ordinary
+construction workflow and :doc:`registers` for target and view types.
+
+Operation base
 --------------
 
-:py:data:`~fatqat.operations.Put` loads a fresh ``|0⟩`` atom into empty target
-sites: ``program.add(ops.Put, (0, 1))``.
-:py:data:`~fatqat.operations.Pair` connects two atoms so a two-qubit gate is
-legal on the pair, and :py:data:`~fatqat.operations.Unpair` disconnects them:
-``program.add(ops.Pair, (0, 1))``. These are interpreted by
-:py:class:`~fatqat.simulator.AtomArraySimulator`; see its documentation for the
-connectivity and occupancy model.
+Subclassing ``Operation`` defines a new frontend value; it does not register a
+matrix or pulse realization. See :doc:`../guide/advanced` for the custom matrix
+workflow.
 
-.. autodata:: fatqat.operations.Put
-.. autodata:: fatqat.operations.Pair
-.. autodata:: fatqat.operations.Unpair
-
-Pulse operations and waveforms
-------------------------------
-
-:py:class:`~fatqat.operations.PulseOperation` is a backend-independent
-time block containing one or more :py:class:`~fatqat.emulator.PulseControl`
-bindings. Obtain structural control addresses from the selected physics model,
-construct immutable waveforms under ``fatqat.emulator``, and bind them with
-``PulseControl(channel, waveform, start_offset=...)``. The emulator validates
-the waveform shape and structural control addresses when lowering the
-operation, then derives target-owned scheduling claims for its private
-execution block.
-
-A :py:class:`~fatqat.emulator.SampledWaveform` supplies a finite nonuniform,
-strictly increasing time grid starting at zero. Its final time is the waveform
-duration; a control's offset plus that duration must fit inside the enclosing
-operation duration. Function and symbolic waveforms remain future work.
-
-.. autoclass:: fatqat.operations.PulseOperation
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.emulator.SampledWaveform
-   :members:
-
-.. autoclass:: fatqat.emulator.PulseControl
-   :members:
-
-Parametric gates
------------------
-
-:py:obj:`~fatqat.operations.RX` (``theta``),
-:py:obj:`~fatqat.operations.RY` (``theta``),
-:py:obj:`~fatqat.operations.RZ` (``theta``),
-:py:obj:`~fatqat.operations.Phase` (``theta``), and
-:py:obj:`~fatqat.operations.CPhase` (``theta``) take angles in radians.
-:py:obj:`~fatqat.operations.CPhase` uses ``(control, target)`` target
-order.
-
-.. autoclass:: fatqat.operations.RX
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.RY
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.RZ
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.Phase
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.CPhase
-   :members:
-   :show-inheritance:
-
-Fixed multi-qubit gates
-------------------------
-
-:py:obj:`~fatqat.operations.CX`, :py:obj:`~fatqat.operations.CZ`,
-:py:obj:`~fatqat.operations.Swap`, :py:obj:`~fatqat.operations.CY`,
-:py:obj:`~fatqat.operations.CS`, :py:obj:`~fatqat.operations.iSwap`,
-:py:obj:`~fatqat.operations.CCX`, and :py:obj:`~fatqat.operations.CSwap`
-are ready-to-use values. For controlled operations, controls come before
-targets: ``program.add(ops.CX, (control, target))``.
-
-.. autodata:: fatqat.operations.CX
-.. autodata:: fatqat.operations.CZ
-.. autodata:: fatqat.operations.Swap
-.. autodata:: fatqat.operations.CY
-.. autodata:: fatqat.operations.CS
-.. autodata:: fatqat.operations.iSwap
-.. autodata:: fatqat.operations.CCX
-.. autodata:: fatqat.operations.CSwap
-
-Reset
------
-
-:py:data:`~fatqat.operations.Reset` prepares one or more targets in ``|0⟩``:
-``program.add(ops.Reset, 0)``. See
-:doc:`../guide/measurement-and-conditions` for reset and conditions.
-
-.. autodata:: fatqat.operations.Reset
-
-Barrier
--------
-
-:py:data:`~fatqat.operations.Barrier` marks a compiler boundary across one or
-more targets. It remains visible in :py:attr:`~fatqat.Program.operations` but
-has no numerical effect in a simulator:
-``program.add(ops.Barrier, (0, 1))``.
-
-.. autodata:: fatqat.operations.Barrier
-
-Qudit gates
------------
-
-:py:obj:`~fatqat.operations.Shift` (``power``),
-:py:obj:`~fatqat.operations.Clock` (``power``),
-:py:obj:`~fatqat.operations.Sum`,
-:py:obj:`~fatqat.operations.SwapLevels` (``j, k``),
-:py:obj:`~fatqat.operations.Fourier`,
-:py:obj:`~fatqat.operations.InverseFourier`,
-:py:obj:`~fatqat.operations.SubspaceRX` (``theta, subspace``),
-:py:obj:`~fatqat.operations.SubspaceRY` (``theta, subspace``),
-:py:obj:`~fatqat.operations.SubspaceRZ` (``theta, subspace``), and
-:py:obj:`~fatqat.operations.CClock` (``power``) works with
-higher-dimensional registers. Read
-:doc:`../guide/advanced` for the qutrit workflow.
-The :doc:`../guide/gates` guide explains singleton versus parametric gate
-syntax, target order, and grid selections.
-
-.. autoclass:: fatqat.operations.Shift
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.Clock
-   :members:
-   :show-inheritance:
-
-.. autodata:: fatqat.operations.Sum
-
-.. autoclass:: fatqat.operations.SwapLevels
-   :members:
-   :show-inheritance:
-
-.. autodata:: fatqat.operations.Fourier
-.. autodata:: fatqat.operations.InverseFourier
-
-.. autoclass:: fatqat.operations.SubspaceRX
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.SubspaceRY
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.SubspaceRZ
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.CClock
-   :members:
+.. autoclass:: fatqat.operations.Operation
+   :members: name, num_subsystems, min_targets, accepts_views, validate_targets
    :show-inheritance:

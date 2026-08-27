@@ -10,34 +10,31 @@ from .base import Operation
 
 @dataclass(frozen=True)
 class PutGate(Operation):
-    """Add a fresh ``|0>`` atom into each target site that is currently empty.
+    """Load a fresh ``|0>`` atom into each empty target site.
 
-    ``Put`` is the atom-introduction instruction. Per shot, each target holding
-    no atom gets a fresh atom in ``|0>``, fully usable afterwards (gates apply;
-    measurement reads a normal digit, not the erasure marker); a target that
-    already holds an atom is left untouched. In a program containing ``Put``,
-    every site starts empty and is populated explicitly; ``Put`` may appear any
-    number of times and target any sites.
+    ``Put`` is implemented by ``AtomArraySimulator`` only. If a program uses
+    any ``Put``, every declared site starts empty for each shot and must be
+    populated explicitly. A target that is already occupied is left in its
+    current quantum state. A later ``Put`` can reload a lost atom in ``|0>``.
+    Other built-in matrix and pulse backends report the operation as
+    unsupported.
 
-    It has no matrix; the neutral-atom backend resolves it by type to a per-shot
-    fill step, like ``Reset``. Imperfect loading efficiency is expressed by
-    attaching ``Loss`` to ``Put`` (the atom arrives, then may be lost), not
-    by a success-rate parameter. Occupancy/count is owned entirely by the
-    engine's per-shot occupancy state; ``Put`` only marks targets present from
-    this point.
+    Loading efficiency is modeled by attaching ``fatqat.noise.Loss`` to
+    ``Put``; no other noise declaration may use this boundary. The loss is
+    evaluated after every matching ``Put`` occurrence whose condition passes,
+    including one whose target was already occupied. It shares the ``Put``
+    condition. ``Put`` itself has no success-rate argument.
 
-    Variable arity (one or more targets). Exposed as the singleton ``ops.Put``;
-    the class stays attribute-accessible for ``isinstance`` checks.
+    Add the singleton ``ops.Put`` without parentheses. It accepts one or more
+    distinct scalar targets and supports ``Program.add(condition=...)``;
+    ``RegisterView`` and an empty target tuple are rejected. This implementation
+    class is not exported through ``fatqat.operations.__all__``.
 
     Examples:
         >>> import fatqat as fq
         >>> import fatqat.operations as ops
         >>> program = fq.Program(3)
         >>> program.add(ops.Put, (0, 1, 2))
-        >>> program.operations[0].operation.name
-        'Put'
-        >>> program.operations[0].operation.num_subsystems is None
-        True
     """
 
     name: ClassVar[str] = "Put"

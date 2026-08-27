@@ -135,8 +135,12 @@ state is requested only for a program without measurement.
 
 Model factories also support model-neutral direct operations. Complex drive
 samples encode quadratures; detuning and exchange use their model-defined
-rates. Each structural control address identifies its subsystem or edge, so
-the operation has no ordinary program targets:
+rates. A direct operation does not take a separate `targets` argument. Each
+control channel identifies the physical resource or resources it drives: a
+drive or detuning channel resolves one transmon, while an exchange channel
+resolves two transmons and their declared coupling. The selected emulator
+binds these addresses directly against its model during program preparation;
+`ResourceLayout` does not remap them:
 
 ```python
 duration = 20.0
@@ -151,7 +155,8 @@ controls = (
     ),
 )
 direct_program = fq.Program(2)
-direct_program.add(ops.PulseOperation(duration, controls))
+operation = ops.PulseOperation(duration, controls)
+direct_program.add(operation)
 ```
 
 Direct blocks can coexist with calibrated gates. `iSwap` remains a gate whose

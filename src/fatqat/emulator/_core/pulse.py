@@ -384,10 +384,11 @@ class PulseImplementationMap:
     """Resolve operation families and device operands to pulse implementations.
 
     This value maps ordinary gate operations to reusable pulse definitions.
-    Direct :class:`~fatqat.operations.PulseOperation` controls bypass it and
-    lower through the shared direct-control path. A family may provide an
-    empty built-in map when it has no standard gate realizations, while the
-    same general map path remains available for user-supplied rules.
+    Channel-addressed :class:`~fatqat.operations.PulseOperation` values bypass
+    it: the selected emulator resolves each ``PulseControl.channel`` directly
+    against its physical model. A family may provide an empty built-in map
+    when it has no standard gate realizations, while the same general map path
+    remains available for user-supplied rules.
 
     Structurally identical to :class:`~fatqat.implementation.MatrixImplementationMap`
     - same instance/class

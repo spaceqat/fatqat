@@ -9,40 +9,42 @@ from ..registers import RegisterRef
 
 @dataclass(frozen=True)
 class Measurement:
-    """A measurement from one or more quantum refs into matching classical slots.
+    """Record a computational-basis measurement into classical slots.
 
-    Measurements live in ``Program.operations`` alongside applied operations
-    and preserve insertion order.
+    Measurements are instruction records with frozen fields and retain
+    insertion order alongside operations. Each quantum target is paired with
+    the classical output at the same tuple position. Their local dimensions
+    must match, so a qudit outcome is written to a classical slot of the same
+    dimension.
 
-    Like ``AppliedOperation``, ``__post_init__`` intentionally does not
-    re-validate ``targets``/``outputs`` element types or tuple-ness:
-    ``Program.measure`` already guarantees well-formed ``RegisterRef`` tuples
-    of the right register kind via
-    ``_resolve_quantum_ref``/``_resolve_classical_ref``.
-    Constructing this class directly skips that guarantee - see
-    ``AppliedOperation`` for the same tradeoff and its consequences. It does,
-    however, own the structural invariants that hold for any well-typed refs -
-    equal length, non-empty, and per-pair quantum/classical dimension match -
-    so those are checked once here and not duplicated in
-    ``measure``/``measure_all``.
+    Prefer ``Program.measure`` or ``Program.measure_all`` to construct these
+    values. Those methods resolve integers, verify register kind and ownership,
+    and pass tuples here. The direct constructor stores ``targets`` and
+    ``outputs`` exactly as supplied: it does not copy them or validate that
+    they are tuples of the correct ``RegisterRef`` kind. It only checks the
+    structural invariants described below, so malformed direct input may fail
+    later during backend preparation. A mutable container therefore remains
+    mutable and can make the record unhashable despite its frozen fields.
 
-    Attributes:
-        targets: Quantum refs to measure, stored as a tuple. Named to match
-            ``AppliedOperation.targets``: these are the subsystems the
-            instruction acts on, not the registers holding them.
-        outputs: Classical refs the outcomes are written into, stored as a
-            tuple. Not "clbits" - a `ClassicalRegister` carries ``dim``, so a
-            slot holds a d-ary digit.
+    Repeated targets and outputs are accepted. Built-in backends report every
+    target/output pair in tuple order; a repeated target repeats its collapsed
+    physical outcome (with reporting noise resolved per pair), and a repeated
+    classical output retains the later pair's reported value.
+
+    Args:
+        targets: Non-empty tuple of quantum references to measure.
+        outputs: Tuple of classical references receiving the corresponding
+            outcomes. It must have the same length and per-position dimensions
+            as ``targets``.
+
+    Raises:
+        ValueError: If the tuples are empty, have different lengths, or a
+            target/output pair has different local dimensions.
 
     Examples:
         >>> import fatqat as fq
-        >>> import fatqat.operations as ops
         >>> program = fq.Program(1, 1)
-        >>> m = ops.Measurement(
-        ...     targets=(program.quantum_registers[0][0],), outputs=(program.classical_registers[0][0],)
-        ... )
-        >>> m.targets
-        (RegisterRef(register=QuantumRegister(size=1, name='q', metadata={}, dim=2), index=0),)
+        >>> program.measure(0, 0)
     """
 
     targets: tuple[RegisterRef, ...]

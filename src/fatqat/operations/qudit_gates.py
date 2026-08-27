@@ -23,31 +23,24 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from ..parameters import Parameter
+from ..registers import RegisterRef
 from .base import Operation
 
 
 @dataclass(frozen=True)
 class Shift(Operation):
-    """Generalized-Pauli cyclic shift: ``|k> -> |(k + power) mod d>``.
+    """Cyclically shift one subsystem's computational-basis level.
 
-    Dimension-free: applies to a subsystem of any dimension; its matrix is
-    built from the target dimension at backend lowering. Reduces to X at
-    ``dim=2, power=1``.
+    On a target of dimension ``d``, ``|k>`` maps to
+    ``|(k + power) mod d>``. The backend reads ``d`` from the target and
+    reduces ``power`` modulo ``d`` when it builds the matrix, so negative and
+    oversized integer powers are valid. ``Shift(1)`` on a qubit is X.
 
-    .. math::
-
-        \\mathrm{Shift}(d, p) : |k\\rangle \\mapsto |(k + p) \\bmod d\\rangle
-
-    For example, at :math:`d = 3, p = 1`:
-
-    .. math::
-
-        \\mathrm{Shift}(3, 1) = \\begin{pmatrix}
-        0&0&1\\\\ 1&0&0\\\\ 0&1&0
-        \\end{pmatrix}
-
-    Attributes:
-        power: Shift amount (reduced modulo the target dimension at lowering).
+    Args:
+        power: Integer cyclic shift amount, stored unchanged until lowering.
+            The constructor does not validate its type; non-integer values and
+            ``Parameter`` placeholders are outside the supported contract and
+            can fail during matrix lowering.
     """
 
     power: int
@@ -57,25 +50,18 @@ class Shift(Operation):
 
 @dataclass(frozen=True)
 class Clock(Operation):
-    """Generalized-Pauli phase: ``|k> -> omega^(k*power) |k>``, omega=e^{2πi/d}.
+    """Apply a dimension-dependent phase to each basis level.
 
-    Reduces to Z at ``dim=2, power=1``.
+    On a target of dimension ``d``, ``|k>`` gains phase
+    ``omega**(k*power)``, where ``omega = exp(2*pi*i/d)``. The backend reduces
+    ``power`` modulo ``d`` at lowering, so negative and oversized integer
+    powers are valid. ``Clock(1)`` on a qubit is Z.
 
-    .. math::
-
-        \\mathrm{Clock}(d, p) : |k\\rangle \\mapsto \\omega^{kp} |k\\rangle,
-        \\quad \\omega = e^{2\\pi i/d}
-
-    For example, at :math:`d = 3, p = 1`:
-
-    .. math::
-
-        \\mathrm{Clock}(3, 1) = \\begin{pmatrix}
-        1&0&0\\\\ 0&\\omega&0\\\\ 0&0&\\omega^2
-        \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
-
-    Attributes:
-        power: Phase power (reduced modulo the target dimension at lowering).
+    Args:
+        power: Integer phase power, stored unchanged until lowering. The
+            constructor does not validate its type; non-integer values and
+            ``Parameter`` placeholders are outside the supported contract and
+            may produce undocumented fractional phases.
     """
 
     power: int
@@ -85,46 +71,17 @@ class Clock(Operation):
 
 @dataclass(frozen=True)
 class SumGate(Operation):
-    """Generalized controlled add: ``|i, j> -> |i, (i + j) mod d>``.
+    """Add a control level into a target level modulo their shared dimension.
 
-    ``targets = (control, target)``; operand 0 is the control. The default
-    implementation requires equal target dimensions.
+    Targets are ``(control, target)``. For equal dimension ``d``, ``|i, j>``
+    maps to ``|i, (i + j) mod d>``; for example, two qutrits map ``|2, 2>``
+    to ``|2, 1>``. On qubits this is CX.
 
-    .. math::
-
-        \\mathrm{Sum} : |i, j\\rangle \\mapsto |i, (i + j) \\bmod d\\rangle
-
-    For example, on two qutrits (:math:`d = 3`), the sum wraps modulo 3:
-
-    .. math::
-
-        \\mathrm{Sum} |2, 2\\rangle = |2, (2 + 2) \\bmod 3\\rangle = |2, 1\\rangle
-
-    In matrix form, ``targets = (control, target)`` puts the control on the
-    local most-significant digit, so the :math:`d = 3` matrix is block
-    diagonal, one :math:`3 \\times 3` block per control value:
-
-    .. math::
-
-        \\mathrm{Sum}\\big|_{d=3} = \\begin{pmatrix}
-        I_3 & 0 & 0 \\\\ 0 & P_1 & 0 \\\\ 0 & 0 & P_2
-        \\end{pmatrix}
-
-    where :math:`P_k` is the permutation matrix that cyclically shifts the
-    target level by :math:`k \\bmod 3`:
-
-    .. math::
-
-        P_1 = \\begin{pmatrix} 0&0&1\\\\ 1&0&0\\\\ 0&1&0 \\end{pmatrix}
-        \\qquad
-        P_2 = \\begin{pmatrix} 0&1&0\\\\ 0&0&1\\\\ 1&0&0 \\end{pmatrix}
-
-    At its smallest dimension, :math:`d = 2`, this reduces to exactly
-    :class:`CXGate`.
-
-    The class itself is not part of the ``fatqat.operations`` public surface (not in
-    ``__all__``) but stays attribute-accessible for ``isinstance`` checks;
-    ``Sum`` (the singleton) is the one users add to a program.
+    The default matrix implementation requires both target dimensions to be
+    equal. ``Program.add`` does not check that backend-dependent constraint;
+    the default matrix simulator reports a ``MatrixImplementationError`` while
+    lowering mismatched targets. Add the singleton ``ops.Sum`` without
+    parentheses; this implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "Sum"
@@ -138,30 +95,24 @@ Sum = SumGate()
 
 @dataclass(frozen=True)
 class SwapLevels(Operation):
-    """Level-transposition gate: swaps basis levels ``j`` and ``k``, identity
-    on every other level. Dimension-free: its matrix is built from the target
-    dimension at backend lowering. Reduces to X at ``dim=2, (j,k)=(0,1)``.
-    Hermitian and self-inverse (no ``dg`` variant).
+    """Exchange two basis levels and leave every other level unchanged.
 
-    Known in the qutrit literature as X01/X02/X12 (the Muthukrishnan-Stroud
-    gates) at dim=3.
+    The gate is Hermitian and self-inverse. On a qubit,
+    ``SwapLevels(0, 1)`` is X. For qutrits, the three choices are often named
+    X01, X02, and X12 (Muthukrishnan-Stroud gates).
 
-    .. math::
+    Integer level indices are the supported contract. Construction checks
+    equality and negativity but does not validate their types; non-integral
+    values are unsupported and can fail during matrix lowering.
 
-        \\mathrm{SwapLevels}(j, k) : |j\\rangle \\leftrightarrow |k\\rangle,
-        \\quad |m\\rangle \\mapsto |m\\rangle \\ (m \\neq j, k)
+    Args:
+        j: First non-negative level index.
+        k: Distinct second non-negative level index.
 
-    For example, at :math:`d = 3, (j, k) = (0, 1)` (the X01 gate):
-
-    .. math::
-
-        \\mathrm{SwapLevels}(0, 1) = \\begin{pmatrix}
-        0&1&0\\\\ 1&0&0\\\\ 0&0&1
-        \\end{pmatrix}
-
-    Attributes:
-        j: First level index (distinct from k, non-negative).
-        k: Second level index (distinct from j, non-negative).
+    Raises:
+        ValueError: At construction if the indices are equal or negative, or
+            from ``Program.add`` if either index is outside the target's
+            ``0 <= index < dim`` range.
     """
 
     j: int
@@ -177,7 +128,16 @@ class SwapLevels(Operation):
                 f"SwapLevels level indices must be non-negative, got ({self.j}, {self.k})"
             )
 
-    def validate_targets(self, targets) -> None:
+    def validate_targets(self, targets: tuple[RegisterRef, ...]) -> None:
+        """Validate both selected levels against the resolved target.
+
+        Args:
+            targets: One resolved scalar quantum reference.
+
+        Raises:
+            ValueError: If ``j`` or ``k`` is not less than the target's local
+                dimension.
+        """
         dim = targets[0].register.dim
         if self.j >= dim or self.k >= dim:
             raise ValueError(
@@ -188,29 +148,13 @@ class SwapLevels(Operation):
 
 @dataclass(frozen=True)
 class FourierGate(Operation):
-    """Single-qudit discrete Fourier transform (Chrestenson gate): the H
-    analogue for any dimension. Dimension-free; matrix built from the target
-    dimension at backend lowering. Reduces to H at dim=2.
+    """Apply the positive-exponent discrete Fourier transform to one qudit.
 
-    Known in the qutrit literature as THadamard at dim=3.
-
-    .. math::
-
-        \\mathrm{Fourier} : |j\\rangle \\mapsto \\frac{1}{\\sqrt{d}}
-        \\sum_{k=0}^{d-1} \\omega^{jk} |k\\rangle, \\quad \\omega = e^{2\\pi i/d}
-
-    For example, at :math:`d = 3`:
-
-    .. math::
-
-        \\mathrm{Fourier}\\big|_{d=3} = \\frac{1}{\\sqrt{3}}\\begin{pmatrix}
-        1&1&1\\\\ 1&\\omega&\\omega^2\\\\ 1&\\omega^2&\\omega
-        \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
-
-    Internal only: unlike `SumGate` (attribute-accessible via `ops.SumGate`
-    though excluded from `__all__`), this class is not imported into
-    `operations/__init__.py` at all, so it is not reachable as `ops.
-    FourierGate`. `Fourier` (the singleton) is the only public surface.
+    For dimension ``d``, ``|j>`` maps to
+    ``sum(exp(2*pi*i*j*k/d) * |k>) / sqrt(d)``. This is the Chrestenson gate,
+    reduces to H for ``d=2``, and is often called THadamard for qutrits. Add
+    the singleton ``ops.Fourier`` without parentheses; this implementation
+    class is private.
     """
 
     name: ClassVar[str] = "Fourier"
@@ -219,23 +163,12 @@ class FourierGate(Operation):
 
 @dataclass(frozen=True)
 class FourierdgGate(Operation):
-    """Inverse of FourierGate (conjugate transpose). Coincides with Fourier
-    at dim=2 (H is self-adjoint) but differs for d > 2.
+    """Apply the inverse discrete Fourier transform to one qudit.
 
-    .. math::
-
-        \\mathrm{Fourier}^\\dagger : |j\\rangle \\mapsto \\frac{1}{\\sqrt{d}}
-        \\sum_{k=0}^{d-1} \\omega^{-jk} |k\\rangle, \\quad \\omega = e^{2\\pi i/d}
-
-    For example, at :math:`d = 3`:
-
-    .. math::
-
-        \\mathrm{Fourier}^\\dagger\\big|_{d=3} = \\frac{1}{\\sqrt{3}}\\begin{pmatrix}
-        1&1&1\\\\ 1&\\omega^2&\\omega\\\\ 1&\\omega&\\omega^2
-        \\end{pmatrix}, \\quad \\omega = e^{2\\pi i/3}
-
-    The public singleton is :data:`~fatqat.operations.InverseFourier`.
+    This is the conjugate transpose of ``Fourier``: its exponent is negative.
+    It coincides with H in dimension two but differs from ``Fourier`` for
+    higher dimensions. Add the singleton ``ops.InverseFourier`` without
+    parentheses; this implementation class is private.
     """
 
     name: ClassVar[str] = "InverseFourier"
@@ -251,33 +184,24 @@ InverseFourier = FourierdgGate()
 
 @dataclass(frozen=True)
 class SubspaceRX(Operation):
-    """Rotation around X embedded in a 2-level subspace of a d-level qudit,
-    identity on the complementary levels. subspace[0] plays the ``|0>`` role,
-    subspace[1] the ``|1>`` role. Reduces to RX(theta) at dim=2, subspace=(0,1).
+    """Apply RX inside two selected levels and leave other levels unchanged.
 
-    .. math::
+    ``subspace[0]`` plays RX's ``|0>`` role and ``subspace[1]`` its ``|1>``
+    role. ``SubspaceRX(theta, (0, 1))`` on a qubit is ``RX(theta)``.
 
-        \\mathrm{SubspaceRX}(\\theta, (j, k)) : \\begin{cases}
-        |j\\rangle \\mapsto \\cos\\frac{\\theta}{2}|j\\rangle
-            - i\\sin\\frac{\\theta}{2}|k\\rangle \\\\
-        |k\\rangle \\mapsto -i\\sin\\frac{\\theta}{2}|j\\rangle
-            + \\cos\\frac{\\theta}{2}|k\\rangle \\\\
-        |m\\rangle \\mapsto |m\\rangle & (m \\neq j, k)
-        \\end{cases}
+    Args:
+        theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
+            before execution. The value is stored unchanged.
+        subspace: Tuple of exactly two distinct, non-negative integer level
+            indices. Construction unpacks but does not copy or type-check the
+            input; another two-item container is unsupported, remains retained,
+            and may be mutable or fail during later validation.
 
-    For example, at :math:`d = 3, (j, k) = (0, 1)`:
-
-    .. math::
-
-        \\mathrm{SubspaceRX}(\\theta, (0, 1))\\big|_{d=3} = \\begin{pmatrix}
-        \\cos\\frac{\\theta}{2} & -i\\sin\\frac{\\theta}{2} & 0 \\\\
-        -i\\sin\\frac{\\theta}{2} & \\cos\\frac{\\theta}{2} & 0 \\\\
-        0 & 0 & 1
-        \\end{pmatrix}
-
-    Attributes:
-        theta: Rotation angle in radians.
-        subspace: Pair of distinct, non-negative level indices (j, k).
+    Raises:
+        TypeError: If ``subspace`` cannot be unpacked as an iterable.
+        ValueError: At construction if it does not contain exactly two values,
+            its indices are equal, or an index is negative; or from
+            ``Program.add`` if an index is outside the target dimension.
     """
 
     theta: float | Parameter
@@ -296,7 +220,16 @@ class SubspaceRX(Operation):
                 f"SubspaceRX subspace levels must be non-negative, got ({j}, {k})"
             )
 
-    def validate_targets(self, targets) -> None:
+    def validate_targets(self, targets: tuple[RegisterRef, ...]) -> None:
+        """Validate the selected subspace against the resolved target.
+
+        Args:
+            targets: One resolved scalar quantum reference.
+
+        Raises:
+            ValueError: If either subspace index is not less than the target's
+                local dimension.
+        """
         dim = targets[0].register.dim
         j, k = self.subspace
         if j >= dim or k >= dim:
@@ -308,33 +241,25 @@ class SubspaceRX(Operation):
 
 @dataclass(frozen=True)
 class SubspaceRY(Operation):
-    """Rotation around Y embedded in a 2-level subspace of a d-level qudit,
-    identity on the complementary levels. subspace[0] plays the ``|0>`` role,
-    subspace[1] the ``|1>`` role. Reduces to RY(theta) at dim=2, subspace=(0,1).
+    """Apply RY inside two selected levels and leave other levels unchanged.
 
-    .. math::
+    ``subspace[0]`` plays RY's ``|0>`` role and ``subspace[1]`` its ``|1>``
+    role, so reversing the pair reverses the rotation direction.
+    ``SubspaceRY(theta, (0, 1))`` on a qubit is ``RY(theta)``.
 
-        \\mathrm{SubspaceRY}(\\theta, (j, k)) : \\begin{cases}
-        |j\\rangle \\mapsto \\cos\\frac{\\theta}{2}|j\\rangle
-            + \\sin\\frac{\\theta}{2}|k\\rangle \\\\
-        |k\\rangle \\mapsto -\\sin\\frac{\\theta}{2}|j\\rangle
-            + \\cos\\frac{\\theta}{2}|k\\rangle \\\\
-        |m\\rangle \\mapsto |m\\rangle & (m \\neq j, k)
-        \\end{cases}
+    Args:
+        theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
+            before execution. The value is stored unchanged.
+        subspace: Tuple of exactly two distinct, non-negative integer level
+            indices. Construction unpacks but does not copy or type-check the
+            input; another two-item container is unsupported, remains retained,
+            and may be mutable or fail during later validation.
 
-    For example, at :math:`d = 3, (j, k) = (0, 1)`:
-
-    .. math::
-
-        \\mathrm{SubspaceRY}(\\theta, (0, 1))\\big|_{d=3} = \\begin{pmatrix}
-        \\cos\\frac{\\theta}{2} & -\\sin\\frac{\\theta}{2} & 0 \\\\
-        \\sin\\frac{\\theta}{2} & \\cos\\frac{\\theta}{2} & 0 \\\\
-        0 & 0 & 1
-        \\end{pmatrix}
-
-    Attributes:
-        theta: Rotation angle in radians.
-        subspace: Pair of distinct, non-negative level indices (j, k).
+    Raises:
+        TypeError: If ``subspace`` cannot be unpacked as an iterable.
+        ValueError: At construction if it does not contain exactly two values,
+            its indices are equal, or an index is negative; or from
+            ``Program.add`` if an index is outside the target dimension.
     """
 
     theta: float | Parameter
@@ -353,7 +278,16 @@ class SubspaceRY(Operation):
                 f"SubspaceRY subspace levels must be non-negative, got ({j}, {k})"
             )
 
-    def validate_targets(self, targets) -> None:
+    def validate_targets(self, targets: tuple[RegisterRef, ...]) -> None:
+        """Validate the selected subspace against the resolved target.
+
+        Args:
+            targets: One resolved scalar quantum reference.
+
+        Raises:
+            ValueError: If either subspace index is not less than the target's
+                local dimension.
+        """
         dim = targets[0].register.dim
         j, k = self.subspace
         if j >= dim or k >= dim:
@@ -365,31 +299,25 @@ class SubspaceRY(Operation):
 
 @dataclass(frozen=True)
 class SubspaceRZ(Operation):
-    """Rotation around Z embedded in a 2-level subspace of a d-level qudit,
-    identity on the complementary levels. subspace[0] plays the ``|0>`` role,
-    subspace[1] the ``|1>`` role. Reduces to RZ(theta) at dim=2, subspace=(0,1).
+    """Apply RZ inside two selected levels and leave other levels unchanged.
 
-    .. math::
+    ``subspace[0]`` gains phase ``exp(-i*theta/2)`` and ``subspace[1]`` gains
+    ``exp(i*theta/2)``, so reversing the pair reverses the rotation direction.
+    ``SubspaceRZ(theta, (0, 1))`` on a qubit is ``RZ(theta)``.
 
-        \\mathrm{SubspaceRZ}(\\theta, (j, k)) : \\begin{cases}
-        |j\\rangle \\mapsto e^{-i\\theta/2}|j\\rangle \\\\
-        |k\\rangle \\mapsto e^{i\\theta/2}|k\\rangle \\\\
-        |m\\rangle \\mapsto |m\\rangle & (m \\neq j, k)
-        \\end{cases}
+    Args:
+        theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
+            before execution. The value is stored unchanged.
+        subspace: Tuple of exactly two distinct, non-negative integer level
+            indices. Construction unpacks but does not copy or type-check the
+            input; another two-item container is unsupported, remains retained,
+            and may be mutable or fail during later validation.
 
-    For example, at :math:`d = 3, (j, k) = (0, 1)`:
-
-    .. math::
-
-        \\mathrm{SubspaceRZ}(\\theta, (0, 1))\\big|_{d=3} = \\begin{pmatrix}
-        e^{-i\\theta/2} & 0 & 0 \\\\
-        0 & e^{i\\theta/2} & 0 \\\\
-        0 & 0 & 1
-        \\end{pmatrix}
-
-    Attributes:
-        theta: Rotation angle in radians.
-        subspace: Pair of distinct, non-negative level indices (j, k).
+    Raises:
+        TypeError: If ``subspace`` cannot be unpacked as an iterable.
+        ValueError: At construction if it does not contain exactly two values,
+            its indices are equal, or an index is negative; or from
+            ``Program.add`` if an index is outside the target dimension.
     """
 
     theta: float | Parameter
@@ -408,7 +336,16 @@ class SubspaceRZ(Operation):
                 f"SubspaceRZ subspace levels must be non-negative, got ({j}, {k})"
             )
 
-    def validate_targets(self, targets) -> None:
+    def validate_targets(self, targets: tuple[RegisterRef, ...]) -> None:
+        """Validate the selected subspace against the resolved target.
+
+        Args:
+            targets: One resolved scalar quantum reference.
+
+        Raises:
+            ValueError: If either subspace index is not less than the target's
+                local dimension.
+        """
         dim = targets[0].register.dim
         j, k = self.subspace
         if j >= dim or k >= dim:
@@ -420,28 +357,20 @@ class SubspaceRZ(Operation):
 
 @dataclass(frozen=True)
 class CClock(Operation):
-    """Generalized controlled-phase: applies Clock(i*power) to the target
-    when the control is ``|i>``. targets = (control, target); operand 0 is the
-    control. Unlike Sum, does not require equal control/target dimensions.
-    power is reduced modulo the target dimension at lowering (a cyclic
-    count, like Clock's power). Reduces to CZ at dim=2, power=1.
+    """Apply a control-level-dependent Clock phase to a target qudit.
 
-    .. math::
+    Targets are ``(control, target)``. On basis state ``|i, j>``, the phase is
+    ``omega**(i*j*power)``, where
+    ``omega = exp(2*pi*i/target_dimension)``. Control and target dimensions
+    may differ. The backend reduces ``power`` modulo the target dimension at
+    lowering, so negative and oversized integer powers are valid. On two
+    qubits, ``CClock(1)`` is CZ.
 
-        C\\text{-}\\mathrm{Clock}(p) : |i, j\\rangle \\mapsto
-        \\omega^{ipj} |i, j\\rangle, \\quad \\omega = e^{2\\pi i/d_t}
-
-    where :math:`d_t` is the target dimension. At its smallest dimension,
-    :math:`d_c = d_t = 2, p = 1`, this reduces to exactly :class:`CZGate`:
-
-    .. math::
-
-        C\\text{-}\\mathrm{Clock}(1)\\big|_{d=2} = \\begin{pmatrix}
-        1&0&0&0\\\\ 0&1&0&0\\\\ 0&0&1&0\\\\ 0&0&0&-1
-        \\end{pmatrix}
-
-    Attributes:
-        power: Phase power (reduced modulo the target dimension at lowering).
+    Args:
+        power: Integer phase power, stored unchanged until lowering. The
+            constructor does not validate its type; non-integer values and
+            ``Parameter`` placeholders are outside the supported contract and
+            may produce undocumented fractional phases.
     """
 
     power: int

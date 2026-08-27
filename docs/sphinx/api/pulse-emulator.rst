@@ -452,8 +452,13 @@ Direct controls
 ~~~~~~~~~~~~~~~
 
 The same model control addresses can be used without a gate-realization
-callback. A direct operation carries no ordinary program targets because its
-controls already contain their physical addresses:
+callback. A direct operation does not take a separate ``targets`` argument;
+each control's channel identifies the physical resource or resources it
+drives. The selected emulator binds those addresses against the model during
+program preparation rather than remapping them through ``ResourceLayout``.
+A drive or detuning channel resolves one transmon. An exchange channel resolves
+two transmons and their declared coupling, from which lowering obtains its
+scheduling claims and engine indices:
 
 .. code-block:: python
 
@@ -467,7 +472,8 @@ controls already contain their physical addresses:
        fq.emulator.SampledWaveform((0.0, duration), (0.01, 0.01)),
    )
    program = fq.Program(2)
-   program.add(ops.PulseOperation(duration, (drive, exchange)))
+   operation = ops.PulseOperation(duration, (drive, exchange))
+   program.add(operation)
 
 Complex drive values encode the model's two quadratures. ``iSwap`` is a gate
 whose built-in realization uses the ``exchange`` mechanism; ``iSwap`` is not

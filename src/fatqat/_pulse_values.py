@@ -13,22 +13,38 @@ TIME_EPSILON = 1e-12
 
 
 class ControlChannel:
-    """Nominal base for immutable, model-family-specific control addresses."""
+    """Nominal base for immutable model-family control-channel addresses.
+
+    Obtain concrete addresses from a model's ``control`` selectors. Each
+    address identifies the physical resource or resources driven by a
+    ``PulseControl``. The selected emulator resolves that address against its
+    physical model during program preparation; ``ResourceLayout`` does not
+    remap it.
+    """
 
     __slots__ = ()
 
 
 @dataclass(frozen=True)
 class PulseControl:
-    """Bind one symbolic control channel to an immutable waveform.
+    """Bind one physical control-channel address to an immutable waveform.
 
-    The channel is a target-independent structural control address; the
-    waveform contains no model or target information. The bound target resolves
-    the address during program preparation. ``start_offset`` is measured from
-    the enclosing pulse operation's local origin.
+    ``channel`` identifies the physical resource or resources this control
+    drives. It is a structural model-family address rather than a logical
+    ``RegisterRef`` operand, so ``ResourceLayout`` does not remap it. The
+    selected emulator resolves the address against its physical model during
+    program preparation and then validates model-family compatibility, resource
+    names, and waveform constraints. ``PulseControl`` construction performs
+    only model-neutral type and timing validation.
+
+    The channel address and control are reusable immutable values, not handles
+    owned by one model instance. The waveform carries no resource identity.
+    ``start_offset`` is measured from the enclosing pulse operation's local
+    origin.
 
     Args:
-        channel: Structural control address returned by a model factory.
+        channel: Structural address returned by a model's ``control`` selector;
+            identifies the physical resource or resources to drive.
         waveform: Backend-independent immutable waveform to bind.
         start_offset: Non-negative local offset from the enclosing operation's
             origin, in the model's native time unit.

@@ -30,11 +30,11 @@ from .base import Operation
 
 @dataclass(frozen=True)
 class HGate(Operation):
-    """Hadamard gate operation.
+    """Put one qubit into or out of an equal superposition.
 
-    .. math::
-
-        H = \\frac{1}{\\sqrt{2}}\\begin{pmatrix} 1 & 1 \\\\ 1 & -1 \\end{pmatrix}
+    In ``|0>, |1>`` basis order, the matrix is
+    ``[[1, 1], [1, -1]] / sqrt(2)``. Add the singleton ``ops.H`` to a
+    program; this implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "H"
@@ -43,11 +43,10 @@ class HGate(Operation):
 
 @dataclass(frozen=True)
 class IGate(Operation):
-    """Identity gate operation.
+    """Leave one qubit unchanged.
 
-    .. math::
-
-        I = \\begin{pmatrix} 1 & 0 \\\\ 0 & 1 \\end{pmatrix}
+    The matrix is ``[[1, 0], [0, 1]]``. Add the singleton ``ops.I`` to a
+    program; this implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "I"
@@ -56,11 +55,10 @@ class IGate(Operation):
 
 @dataclass(frozen=True)
 class SGate(Operation):
-    """S phase gate operation (square root of Z).
+    """Apply the S phase gate, the square root of Z, to one qubit.
 
-    .. math::
-
-        S = \\begin{pmatrix} 1 & 0 \\\\ 0 & i \\end{pmatrix}
+    The matrix is ``diag(1, i)``. Add the singleton ``ops.S`` to a program;
+    this implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "S"
@@ -69,11 +67,10 @@ class SGate(Operation):
 
 @dataclass(frozen=True)
 class SdgGate(Operation):
-    """Inverse S phase gate operation.
+    """Apply the inverse S phase gate to one qubit.
 
-    .. math::
-
-        S^\\dagger = \\begin{pmatrix} 1 & 0 \\\\ 0 & -i \\end{pmatrix}
+    The matrix is ``diag(1, -i)``. Add the singleton ``ops.Sdg`` to a
+    program; this implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "Sdg"
@@ -82,11 +79,11 @@ class SdgGate(Operation):
 
 @dataclass(frozen=True)
 class SXGate(Operation):
-    """Square-root-X gate operation.
+    """Apply the principal square root of X to one qubit.
 
-    .. math::
-
-        SX = \\frac{1}{2}\\begin{pmatrix} 1+i & 1-i \\\\ 1-i & 1+i \\end{pmatrix}
+    The matrix is ``[[1+i, 1-i], [1-i, 1+i]] / 2``. Add the singleton
+    ``ops.SX`` to a program; this implementation class is not the
+    construction API.
     """
 
     name: ClassVar[str] = "SX"
@@ -95,11 +92,10 @@ class SXGate(Operation):
 
 @dataclass(frozen=True)
 class TGate(Operation):
-    """T phase gate operation.
+    """Apply a pi/4 phase to the ``|1>`` amplitude of one qubit.
 
-    .. math::
-
-        T = \\begin{pmatrix} 1 & 0 \\\\ 0 & e^{i\\pi/4} \\end{pmatrix}
+    The matrix is ``diag(1, exp(i*pi/4))``. Add the singleton ``ops.T`` to a
+    program; this implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "T"
@@ -108,11 +104,10 @@ class TGate(Operation):
 
 @dataclass(frozen=True)
 class TdgGate(Operation):
-    """Inverse T phase gate operation.
+    """Apply a -pi/4 phase to the ``|1>`` amplitude of one qubit.
 
-    .. math::
-
-        T^\\dagger = \\begin{pmatrix} 1 & 0 \\\\ 0 & e^{-i\\pi/4} \\end{pmatrix}
+    The matrix is ``diag(1, exp(-i*pi/4))``. Add the singleton ``ops.Tdg`` to
+    a program; this implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "Tdg"
@@ -121,11 +116,10 @@ class TdgGate(Operation):
 
 @dataclass(frozen=True)
 class XGate(Operation):
-    """Pauli-X gate operation.
+    """Exchange ``|0>`` and ``|1>`` on one qubit.
 
-    .. math::
-
-        X = \\begin{pmatrix} 0 & 1 \\\\ 1 & 0 \\end{pmatrix}
+    The Pauli-X matrix is ``[[0, 1], [1, 0]]``. Add the singleton ``ops.X``
+    to a program; this implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "X"
@@ -134,11 +128,10 @@ class XGate(Operation):
 
 @dataclass(frozen=True)
 class YGate(Operation):
-    """Pauli-Y gate operation.
+    """Apply the Pauli-Y bit-and-phase flip to one qubit.
 
-    .. math::
-
-        Y = \\begin{pmatrix} 0 & -i \\\\ i & 0 \\end{pmatrix}
+    The matrix is ``[[0, -i], [i, 0]]``. Add the singleton ``ops.Y`` to a
+    program; this implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "Y"
@@ -147,11 +140,10 @@ class YGate(Operation):
 
 @dataclass(frozen=True)
 class ZGate(Operation):
-    """Pauli-Z gate operation.
+    """Negate the ``|1>`` amplitude of one qubit.
 
-    .. math::
-
-        Z = \\begin{pmatrix} 1 & 0 \\\\ 0 & -1 \\end{pmatrix}
+    The Pauli-Z matrix is ``diag(1, -1)``. Add the singleton ``ops.Z`` to a
+    program; this implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "Z"
@@ -165,16 +157,12 @@ class ZGate(Operation):
 
 @dataclass(frozen=True)
 class CXGate(Operation):
-    """Controlled-X gate operation.
+    """Flip a target qubit when its control is ``|1>``.
 
-    ``targets = (control, target)``; operand 0 is the control. Basis order
-    :math:`|00\\rangle, |01\\rangle, |10\\rangle, |11\\rangle`.
-
-    .. math::
-
-        CX = \\begin{pmatrix}
-        1&0&0&0\\\\ 0&1&0&0\\\\ 0&0&0&1\\\\ 0&0&1&0
-        \\end{pmatrix}
+    Targets are ``(control, target)``. ``CX`` also accepts a compatible pair
+    of ``RegisterView`` values and applies the gate member by member. Add the
+    singleton ``ops.CX``; this implementation class is not the construction
+    API.
     """
 
     name: ClassVar[str] = "CX"
@@ -184,16 +172,12 @@ class CXGate(Operation):
 
 @dataclass(frozen=True)
 class CZGate(Operation):
-    """Controlled-Z gate operation.
+    """Negate ``|11>`` and leave the other two-qubit basis states unchanged.
 
-    ``targets = (control, target)``; operand 0 is the control. Basis order
-    :math:`|00\\rangle, |01\\rangle, |10\\rangle, |11\\rangle`.
-
-    .. math::
-
-        CZ = \\begin{pmatrix}
-        1&0&0&0\\\\ 0&1&0&0\\\\ 0&0&1&0\\\\ 0&0&0&-1
-        \\end{pmatrix}
+    Targets are ``(control, target)``. ``CZ`` also accepts a compatible pair
+    of ``RegisterView`` values and applies the gate member by member. Add the
+    singleton ``ops.CZ``; this implementation class is not the construction
+    API.
     """
 
     name: ClassVar[str] = "CZ"
@@ -203,15 +187,10 @@ class CZGate(Operation):
 
 @dataclass(frozen=True)
 class SwapGate(Operation):
-    """Swap gate operation: exchanges the state of its two targets.
+    """Exchange the states of two qubits.
 
-    Basis order :math:`|00\\rangle, |01\\rangle, |10\\rangle, |11\\rangle`.
-
-    .. math::
-
-        \\mathrm{Swap} = \\begin{pmatrix}
-        1&0&0&0\\\\ 0&0&1&0\\\\ 0&1&0&0\\\\ 0&0&0&1
-        \\end{pmatrix}
+    Add the singleton ``ops.Swap`` to two scalar targets; this implementation
+    class is not the construction API.
     """
 
     name: ClassVar[str] = "Swap"
@@ -220,16 +199,10 @@ class SwapGate(Operation):
 
 @dataclass(frozen=True)
 class CYGate(Operation):
-    """Controlled-Y gate operation.
+    """Apply Pauli-Y to a target qubit when its control is ``|1>``.
 
-    ``targets = (control, target)``; operand 0 is the control. Basis order
-    :math:`|00\\rangle, |01\\rangle, |10\\rangle, |11\\rangle`.
-
-    .. math::
-
-        CY = \\begin{pmatrix}
-        1&0&0&0\\\\ 0&1&0&0\\\\ 0&0&0&-i\\\\ 0&0&i&0
-        \\end{pmatrix}
+    Targets are ``(control, target)``. Add the singleton ``ops.CY``; this
+    implementation class is not the construction API.
     """
 
     name: ClassVar[str] = "CY"
@@ -238,16 +211,11 @@ class CYGate(Operation):
 
 @dataclass(frozen=True)
 class CSGate(Operation):
-    """Controlled-S gate operation.
+    """Apply S to a target qubit when its control is ``|1>``.
 
-    ``targets = (control, target)``; operand 0 is the control. Basis order
-    :math:`|00\\rangle, |01\\rangle, |10\\rangle, |11\\rangle`.
-
-    .. math::
-
-        CS = \\begin{pmatrix}
-        1&0&0&0\\\\ 0&1&0&0\\\\ 0&0&1&0\\\\ 0&0&0&i
-        \\end{pmatrix}
+    Targets are ``(control, target)`` and the matrix is ``diag(1, 1, 1, i)``.
+    Add the singleton ``ops.CS``; this implementation class is not the
+    construction API.
     """
 
     name: ClassVar[str] = "CS"
@@ -256,16 +224,10 @@ class CSGate(Operation):
 
 @dataclass(frozen=True)
 class iSwapGate(Operation):
-    """iSWAP gate operation: swaps its two targets, applying an i phase to
-    the swapped amplitudes.
+    """Swap ``|01>`` and ``|10>`` while multiplying each by ``i``.
 
-    Basis order :math:`|00\\rangle, |01\\rangle, |10\\rangle, |11\\rangle`.
-
-    .. math::
-
-        i\\mathrm{Swap} = \\begin{pmatrix}
-        1&0&0&0\\\\ 0&0&i&0\\\\ 0&i&0&0\\\\ 0&0&0&1
-        \\end{pmatrix}
+    Add the singleton ``ops.iSwap`` to two scalar targets; this implementation
+    class is not the construction API.
     """
 
     name: ClassVar[str] = "iSwap"
@@ -274,24 +236,11 @@ class iSwapGate(Operation):
 
 @dataclass(frozen=True)
 class CCXGate(Operation):
-    """Doubly-controlled-X (Toffoli) gate operation.
+    """Flip a target qubit when both controls are ``|1>``.
 
-    ``targets = (control0, control1, target)``; operands 0 and 1 are the
-    controls. Basis order :math:`|000\\rangle, \\dots, |111\\rangle`; flips
-    the target iff both controls are :math:`|1\\rangle`.
-
-    .. math::
-
-        CCX = \\begin{pmatrix}
-        1&0&0&0&0&0&0&0\\\\
-        0&1&0&0&0&0&0&0\\\\
-        0&0&1&0&0&0&0&0\\\\
-        0&0&0&1&0&0&0&0\\\\
-        0&0&0&0&1&0&0&0\\\\
-        0&0&0&0&0&1&0&0\\\\
-        0&0&0&0&0&0&0&1\\\\
-        0&0&0&0&0&0&1&0
-        \\end{pmatrix}
+    The Toffoli target order is ``(control0, control1, target)``. Add the
+    singleton ``ops.CCX``; this implementation class is not the construction
+    API.
     """
 
     name: ClassVar[str] = "CCX"
@@ -300,24 +249,11 @@ class CCXGate(Operation):
 
 @dataclass(frozen=True)
 class CSwapGate(Operation):
-    """Controlled-swap (Fredkin) gate operation.
+    """Exchange two target qubits when the control is ``|1>``.
 
-    ``targets = (control, target0, target1)``; operand 0 is the control.
-    Basis order :math:`|000\\rangle, \\dots, |111\\rangle`; exchanges the
-    two targets iff the control is :math:`|1\\rangle`.
-
-    .. math::
-
-        CSwap = \\begin{pmatrix}
-        1&0&0&0&0&0&0&0\\\\
-        0&1&0&0&0&0&0&0\\\\
-        0&0&1&0&0&0&0&0\\\\
-        0&0&0&1&0&0&0&0\\\\
-        0&0&0&0&1&0&0&0\\\\
-        0&0&0&0&0&0&1&0\\\\
-        0&0&0&0&0&1&0&0\\\\
-        0&0&0&0&0&0&0&1
-        \\end{pmatrix}
+    The Fredkin target order is ``(control, target0, target1)``. Add the
+    singleton ``ops.CSwap``; this implementation class is not the construction
+    API.
     """
 
     name: ClassVar[str] = "CSwap"

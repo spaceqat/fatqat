@@ -164,12 +164,14 @@ Two-level atom emulator
 -----------------------
 
 :py:class:`~fatqat.emulator.Atom2LevelEmulator` requires a strict
-geometry-free two-level model and arrangement. It accepts zero-target
-:py:class:`~fatqat.operations.PulseOperation` values containing global drive
-and detuning addresses returned by the model, followed by an optional terminal
-measurement suffix. Barriers are structural no-ops. Its built-in gate map is
-empty, so ordinary gates reject by default; a supplied map can define them.
-Reset, conditions, local direct targets, and a pulse after measurement remain
+geometry-free two-level model and arrangement. It accepts
+:py:class:`~fatqat.operations.PulseOperation` values, added without a separate
+``targets`` argument, containing global drive and detuning addresses returned
+by the model. The emulator resolves those addresses across the arrangement
+during program preparation. An optional terminal measurement suffix may
+follow. Barriers are structural no-ops. Its built-in gate map is empty, so
+ordinary gates reject by default; a supplied map can define them. Reset,
+conditions, site-specific direct controls, and a pulse after measurement remain
 rejected.
 
 Construction and execution

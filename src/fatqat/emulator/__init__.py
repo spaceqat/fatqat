@@ -1,9 +1,10 @@
 """Pulse-level emulation for superconducting and neutral-atom models.
 
 All three public emulators are direct concrete backends. They translate
-ordinary gates through a :class:`PulseImplementationMap`, accept direct
-``PulseOperation`` controls, and integrate the resulting physical dynamics;
-:mod:`fatqat.simulator` is their matrix-backend sibling.
+ordinary gates through a :class:`PulseImplementationMap`, accept
+channel-addressed direct controls through ``PulseOperation``, and integrate
+the resulting physical dynamics; :mod:`fatqat.simulator` is their
+matrix-backend sibling.
 
 The common workflow lets each gate-capable emulator compile its package
 default internally::
