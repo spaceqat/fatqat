@@ -45,27 +45,6 @@ single-qubit matrices use ``|0>, |1>`` basis order.
    * - :py:data:`Tdg`
      - Maps :math:`|1\rangle` to :math:`e^{-i\pi/4}|1\rangle`.
 
-.. autodata:: fatqat.operations.I
-   :no-value:
-.. autodata:: fatqat.operations.H
-   :no-value:
-.. autodata:: fatqat.operations.X
-   :no-value:
-.. autodata:: fatqat.operations.Y
-   :no-value:
-.. autodata:: fatqat.operations.Z
-   :no-value:
-.. autodata:: fatqat.operations.S
-   :no-value:
-.. autodata:: fatqat.operations.Sdg
-   :no-value:
-.. autodata:: fatqat.operations.SX
-   :no-value:
-.. autodata:: fatqat.operations.T
-   :no-value:
-.. autodata:: fatqat.operations.Tdg
-   :no-value:
-
 For the multi-qubit values below, targets are ordered exactly as shown.
 
 .. list-table:: Fixed multi-qubit gates
@@ -220,23 +199,6 @@ the most-significant bit:
    0&0&0&0&0&0&0&1
    \end{pmatrix}
 
-.. autodata:: fatqat.operations.CX
-   :no-value:
-.. autodata:: fatqat.operations.CY
-   :no-value:
-.. autodata:: fatqat.operations.CZ
-   :no-value:
-.. autodata:: fatqat.operations.CS
-   :no-value:
-.. autodata:: fatqat.operations.Swap
-   :no-value:
-.. autodata:: fatqat.operations.iSwap
-   :no-value:
-.. autodata:: fatqat.operations.CCX
-   :no-value:
-.. autodata:: fatqat.operations.CSwap
-   :no-value:
-
 Parameterized gates
 -------------------
 
@@ -357,9 +319,56 @@ control as the local most-significant bit:
    0&0&0&e^{i\theta}
    \end{pmatrix}
 
-Each class below shows its own constructor fields. Common operation properties
-and validation hooks are documented on the :doc:`Operations overview
-<../operations>`.
+API reference
+-------------
+
+Common operation properties and validation hooks are documented on the
+:doc:`Operations overview <../operations>`.
+
+Fixed values
+~~~~~~~~~~~~
+
+.. autodata:: fatqat.operations.I
+   :no-value:
+.. autodata:: fatqat.operations.H
+   :no-value:
+.. autodata:: fatqat.operations.X
+   :no-value:
+.. autodata:: fatqat.operations.Y
+   :no-value:
+.. autodata:: fatqat.operations.Z
+   :no-value:
+.. autodata:: fatqat.operations.S
+   :no-value:
+.. autodata:: fatqat.operations.Sdg
+   :no-value:
+.. autodata:: fatqat.operations.SX
+   :no-value:
+.. autodata:: fatqat.operations.T
+   :no-value:
+.. autodata:: fatqat.operations.Tdg
+   :no-value:
+.. autodata:: fatqat.operations.CX
+   :no-value:
+.. autodata:: fatqat.operations.CY
+   :no-value:
+.. autodata:: fatqat.operations.CZ
+   :no-value:
+.. autodata:: fatqat.operations.CS
+   :no-value:
+.. autodata:: fatqat.operations.Swap
+   :no-value:
+.. autodata:: fatqat.operations.iSwap
+   :no-value:
+.. autodata:: fatqat.operations.CCX
+   :no-value:
+.. autodata:: fatqat.operations.CSwap
+   :no-value:
+
+Parameterized classes
+~~~~~~~~~~~~~~~~~~~~~
+
+Each class below shows its constructor fields.
 
 .. autoclass:: fatqat.operations.RX
    :members:
