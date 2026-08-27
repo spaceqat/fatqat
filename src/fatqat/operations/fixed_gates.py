@@ -159,8 +159,8 @@ class CXGate(Operation):
     """Flip a target qubit when its control is ``|1>``.
 
     Targets are ``(control, target)``. ``CX`` also accepts a compatible pair
-    of ``RegisterView`` values and applies the gate member by member. Use the
-    singleton ``ops.CX`` without parentheses.
+    of :class:`~fatqat.RegisterView` values and applies the gate member by
+    member. Use the singleton ``ops.CX`` without parentheses.
     """
 
     name: ClassVar[str] = "CX"
@@ -173,8 +173,8 @@ class CZGate(Operation):
     """Negate ``|11>`` and leave the other two-qubit basis states unchanged.
 
     Targets are ``(control, target)``. ``CZ`` also accepts a compatible pair
-    of ``RegisterView`` values and applies the gate member by member. Use the
-    singleton ``ops.CZ`` without parentheses.
+    of :class:`~fatqat.RegisterView` values and applies the gate member by
+    member. Use the singleton ``ops.CZ`` without parentheses.
     """
 
     name: ClassVar[str] = "CZ"

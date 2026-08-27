@@ -70,11 +70,10 @@ class SumGate(Operation):
     maps to ``|i, (i + j) mod d>``; for example, two qutrits map ``|2, 2>``
     to ``|2, 1>``. On qubits this is CX.
 
-    The default matrix implementation requires both target dimensions to be
-    equal. ``Program.add`` does not check that backend-dependent constraint;
-    the default matrix simulator reports ``MatrixImplementationError`` during
-    program preparation for mismatched targets. Use the singleton ``ops.Sum``
-    without parentheses.
+    The operation is defined for equal-dimension targets.
+    :meth:`~fatqat.Program.add` records mismatched targets; the selected
+    compiler or backend must reject them during program preparation. Use the
+    singleton ``ops.Sum`` without parentheses.
     """
 
     name: ClassVar[str] = "Sum"
@@ -100,8 +99,8 @@ class SwapLevels(Operation):
 
     Raises:
         ValueError: At construction if the indices are equal or negative, or
-            from ``Program.add`` if either index is outside the target's
-            ``0 <= index < dim`` range.
+            from :meth:`~fatqat.Program.add` if either index is outside the
+            target's ``0 <= index < dim`` range.
     """
 
     j: int
@@ -153,9 +152,10 @@ class FourierGate(Operation):
 class FourierdgGate(Operation):
     """Apply the inverse discrete Fourier transform to one qudit.
 
-    This is the conjugate transpose of ``Fourier``: its exponent is negative.
-    It coincides with H in dimension two but differs from ``Fourier`` for
-    higher dimensions. Use the singleton ``ops.InverseFourier`` without
+    This is the conjugate transpose of
+    :data:`~fatqat.operations.Fourier`: its exponent is negative. It coincides
+    with H in dimension two but differs from :data:`~fatqat.operations.Fourier`
+    for higher dimensions. Use the singleton ``ops.InverseFourier`` without
     parentheses.
     """
 
@@ -175,10 +175,11 @@ class SubspaceRX(Operation):
     """Apply RX inside two selected levels and leave other levels unchanged.
 
     ``subspace[0]`` plays RX's ``|0>`` role and ``subspace[1]`` its ``|1>``
-    role. ``SubspaceRX(theta, (0, 1))`` on a qubit is ``RX(theta)``.
+    role. ``SubspaceRX(theta, (0, 1))`` on a qubit is
+    :class:`~fatqat.operations.RX` with the same ``theta``.
 
     Args:
-        theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
+        theta: Numeric angle in radians, or a :class:`~fatqat.Parameter` to bind
             before execution.
         subspace: Tuple of exactly two distinct, non-negative integer level
             indices in ``(|0>, |1>)`` role order.
@@ -186,7 +187,8 @@ class SubspaceRX(Operation):
     Raises:
         ValueError: At construction if it does not contain exactly two values,
             its indices are equal, or an index is negative; or from
-            ``Program.add`` if an index is outside the target dimension.
+            :meth:`~fatqat.Program.add` if an index is outside the target
+            dimension.
     """
 
     theta: float | Parameter
@@ -230,10 +232,11 @@ class SubspaceRY(Operation):
 
     ``subspace[0]`` plays RY's ``|0>`` role and ``subspace[1]`` its ``|1>``
     role, so reversing the pair reverses the rotation direction.
-    ``SubspaceRY(theta, (0, 1))`` on a qubit is ``RY(theta)``.
+    ``SubspaceRY(theta, (0, 1))`` on a qubit is
+    :class:`~fatqat.operations.RY` with the same ``theta``.
 
     Args:
-        theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
+        theta: Numeric angle in radians, or a :class:`~fatqat.Parameter` to bind
             before execution.
         subspace: Tuple of exactly two distinct, non-negative integer level
             indices in ``(|0>, |1>)`` role order.
@@ -241,7 +244,8 @@ class SubspaceRY(Operation):
     Raises:
         ValueError: At construction if it does not contain exactly two values,
             its indices are equal, or an index is negative; or from
-            ``Program.add`` if an index is outside the target dimension.
+            :meth:`~fatqat.Program.add` if an index is outside the target
+            dimension.
     """
 
     theta: float | Parameter
@@ -285,10 +289,11 @@ class SubspaceRZ(Operation):
 
     ``subspace[0]`` gains phase ``exp(-i*theta/2)`` and ``subspace[1]`` gains
     ``exp(i*theta/2)``, so reversing the pair reverses the rotation direction.
-    ``SubspaceRZ(theta, (0, 1))`` on a qubit is ``RZ(theta)``.
+    ``SubspaceRZ(theta, (0, 1))`` on a qubit is
+    :class:`~fatqat.operations.RZ` with the same ``theta``.
 
     Args:
-        theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
+        theta: Numeric angle in radians, or a :class:`~fatqat.Parameter` to bind
             before execution.
         subspace: Tuple of exactly two distinct, non-negative integer level
             indices in ``(|0>, |1>)`` role order.
@@ -296,7 +301,8 @@ class SubspaceRZ(Operation):
     Raises:
         ValueError: At construction if it does not contain exactly two values,
             its indices are equal, or an index is negative; or from
-            ``Program.add`` if an index is outside the target dimension.
+            :meth:`~fatqat.Program.add` if an index is outside the target
+            dimension.
     """
 
     theta: float | Parameter

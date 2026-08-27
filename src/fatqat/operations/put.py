@@ -12,22 +12,25 @@ from .base import Operation
 class PutGate(Operation):
     """Load a fresh ``|0>`` atom into each empty target site.
 
-    ``Put`` is implemented by ``AtomArraySimulator`` only. If a program uses
-    any ``Put``, every declared site starts empty for each shot and must be
+    ``Put`` is implemented by
+    :class:`~fatqat.simulator.AtomArraySimulator` only. If a program uses any
+    ``Put``, every declared site starts empty for each shot and must be
     populated explicitly. A target that is already occupied is left in its
     current quantum state. A later ``Put`` can reload a lost atom in ``|0>``.
     Other built-in matrix and pulse backends report the operation as
     unsupported.
 
-    Loading efficiency is modeled by attaching ``fatqat.noise.Loss`` to
-    ``Put``; no other noise declaration may use this boundary. The loss is
-    evaluated after every matching ``Put`` occurrence whose condition passes,
-    including one whose target was already occupied. It shares the ``Put``
-    condition. ``Put`` itself has no success-rate argument.
+    Loading efficiency is modeled by attaching
+    :class:`~fatqat.noise.Loss` to ``Put``; no other noise declaration may use
+    this boundary. The loss is evaluated after every matching ``Put``
+    occurrence whose condition passes, including one whose target was already
+    occupied. It shares the ``Put`` condition. ``Put`` itself has no
+    success-rate argument.
 
     Add the singleton ``ops.Put`` without parentheses. It accepts one or more
-    distinct scalar targets and supports ``Program.add(condition=...)``;
-    ``RegisterView`` and an empty target tuple are rejected.
+    distinct scalar targets and supports
+    :meth:`~fatqat.Program.add` with ``condition=...``;
+    :class:`~fatqat.RegisterView` and an empty target tuple are rejected.
 
     Examples:
         >>> import fatqat as fq

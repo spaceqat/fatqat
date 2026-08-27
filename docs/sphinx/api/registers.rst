@@ -103,11 +103,14 @@ For a ``GridRegister(2, 3)``, the helpers select these flat indices:
      - ``(1, 2, 4, 5)``
 
 Pass views to :meth:`~fatqat.Program.add`. The built-in view-capable operations
-are ``RX``, ``RY``, ``RZ``, ``CX``, and ``CZ``. A unary operation is applied
-independently to every selected member. For ``CX`` or ``CZ``, FATQAT pairs the
-first and second views in their documented order. Both views must use the same
-selector kind and cardinality. Views over one register must not overlap;
-views over different grid registers still require equal cardinality.
+are :class:`~fatqat.operations.RX`, :class:`~fatqat.operations.RY`,
+:class:`~fatqat.operations.RZ`, :data:`~fatqat.operations.CX`, and
+:data:`~fatqat.operations.CZ`. A unary operation is applied independently to
+every selected member. For :data:`~fatqat.operations.CX` or
+:data:`~fatqat.operations.CZ`, FATQAT pairs the first and second views in their
+documented order. Both views must use the same selector kind and cardinality.
+Views over one register must not overlap; views over different grid registers
+still require equal cardinality.
 
 Views are operation target expressions. Measurements require scalar targets,
 and QASM export does not currently support a program containing a view.
@@ -122,10 +125,16 @@ backend. See :doc:`../guide/gates` for a paired-row example.
    :canonical: fatqat.registers.RegisterView
 
    Immutable, hashable target value returned by the grid selection helpers
-   above. Its ``register`` attribute identifies the owning grid, and equality
-   combines that register's identity with the selection. Construct views with
-   the grid helpers; the selector representation is not a public construction
-   contract.
+   above. Its :py:attr:`~fatqat.RegisterView.register` attribute identifies the
+   owning grid, and equality combines that register's identity with the
+   selection. Construct views with the grid helpers; the selector
+   representation is not a public construction contract.
+
+   .. py:attribute:: register
+      :canonical: fatqat.registers.RegisterView.register
+      :type: fatqat.GridRegister
+
+      Grid register that owns the selected members.
 
 Resource layouts
 ----------------

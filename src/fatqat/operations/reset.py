@@ -13,13 +13,15 @@ class ResetGate(Operation):
     """Reprepare one or more target subsystems in ``|0>``.
 
     Reset is a non-unitary instruction with no matrix or attachable noise
-    boundary. It can be conditioned through ``Program.add``. Statevector
-    execution samples the reset branch when the target is entangled; density
-    matrix execution applies the corresponding deterministic channel.
+    boundary. It can be conditioned through :meth:`~fatqat.Program.add`.
+    Statevector execution samples the reset branch when the target is
+    entangled; density matrix execution applies the corresponding
+    deterministic channel.
 
     Add the singleton ``ops.Reset`` without parentheses. It accepts one or
-    more distinct scalar targets of any local dimension; ``RegisterView`` and
-    an empty target tuple are rejected by ``Program.add``.
+    more distinct scalar targets of any local dimension;
+    :class:`~fatqat.RegisterView` and an empty target tuple are rejected by
+    :meth:`~fatqat.Program.add`.
 
     Examples:
         >>> import fatqat as fq

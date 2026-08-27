@@ -29,6 +29,9 @@ The default implementation map covers FATQAT's built-in matrix gates. State
 methods also support measurement, reset, and classical feedforward; a
 ``Barrier`` remains in the program but has no numerical effect. The simulator
 executes the program as written and does not perform transpilation or routing.
+The built-in :py:data:`~fatqat.operations.Sum` implementation requires equal
+control and target dimensions; mismatched targets raise
+:py:exc:`~fatqat.errors.MatrixImplementationError` during program preparation.
 
 Choose a method
 ---------------

@@ -38,10 +38,10 @@ class ResourceLayout:
         """Create a resource layout from explicit ref-to-label pairs.
 
         Args:
-            labels: Mapping from quantum ``RegisterRef`` objects to opaque,
-                hashable device labels defined by the backend. FATQAT defines
-                no universal label type or reserved value. The mapping is
-                shallow-copied.
+            labels: Mapping from quantum :class:`~fatqat.RegisterRef` objects
+                to opaque, hashable device labels defined by the backend.
+                FATQAT defines no universal label type or reserved value. The
+                mapping is shallow-copied.
 
         Raises:
             TypeError: If ``labels`` cannot be copied into a dictionary or a
@@ -78,7 +78,7 @@ class ResourceLayout:
 
     @property
     def refs(self) -> frozenset[RegisterRef]:
-        """Return every mapped ``RegisterRef`` as an immutable set."""
+        """Return every mapped :class:`~fatqat.RegisterRef` as an immutable set."""
         return frozenset(self._labels)
 
     def device_labels_for(

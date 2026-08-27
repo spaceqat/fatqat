@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from numbers import Real
 
-from ._waveforms import Waveform
+from ._waveforms import SampledWaveform, Waveform
 
 TIME_EPSILON = 1e-12
 """Absolute tolerance for comparisons on a model's native time axis."""
@@ -17,9 +17,9 @@ class ControlChannel:
 
     Obtain concrete addresses from a model's ``control`` selectors. Each
     address identifies the physical resource or resources driven by a
-    ``PulseControl``. The selected emulator resolves that address against its
-    physical model during program preparation; ``ResourceLayout`` does not
-    remap it.
+    :class:`~fatqat.emulator.PulseControl`. The selected emulator resolves that
+    address against its physical model during program preparation;
+    :class:`~fatqat.ResourceLayout` does not remap it.
     """
 
     __slots__ = ()
@@ -31,9 +31,9 @@ class PulseControl:
 
     Obtain ``channel`` from a model's ``control`` selectors. The selected
     emulator resolves it against the physical model during preparation;
-    ``ResourceLayout`` does not remap it. Controls are immutable and reusable
-    with compatible models. ``start_offset`` is measured from the enclosing
-    pulse operation's local origin.
+    :class:`~fatqat.ResourceLayout` does not remap it. Controls are immutable
+    and reusable with compatible models. ``start_offset`` is measured from the
+    enclosing pulse operation's local origin.
 
     Args:
         channel: Structural address returned by a model's ``control`` selector;
@@ -49,7 +49,7 @@ class PulseControl:
     """
 
     channel: ControlChannel
-    waveform: Waveform
+    waveform: SampledWaveform
     start_offset: float = 0.0
 
     def __post_init__(self) -> None:

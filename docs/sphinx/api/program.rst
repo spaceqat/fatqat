@@ -75,16 +75,21 @@ constructed register is not interchangeable with one from the program.
      - Accepted by
      - Rule
    * - Integer
-     - ``add()``, ``measure()``, and conditions
+     - :py:meth:`~fatqat.Program.add`, :py:meth:`~fatqat.Program.measure`, and
+       conditions
      - Requires exactly one register of the relevant kind and must be within
        its zero-based bounds.
    * - :py:class:`~fatqat.RegisterRef`
-     - ``add()``, ``measure()``, and conditions
+     - :py:meth:`~fatqat.Program.add`, :py:meth:`~fatqat.Program.measure`, and
+       conditions
      - Must have the required register kind and belong to this program.
    * - :py:class:`~fatqat.RegisterView`
-     - ``add()`` only
-     - ``RX``, ``RY``, and ``RZ`` accept one view. ``CX`` and ``CZ`` accept two
-       compatible views. Measurement does not accept views.
+     - :py:meth:`~fatqat.Program.add` only
+     - :py:class:`~fatqat.operations.RX`,
+       :py:class:`~fatqat.operations.RY`, and
+       :py:class:`~fatqat.operations.RZ` accept one view.
+       :py:data:`~fatqat.operations.CX` and :py:data:`~fatqat.operations.CZ`
+       accept two compatible views. Measurement does not accept views.
 
 A :py:class:`~fatqat.operations.PulseOperation` uses a direct-control contract
 instead of the target forms above. It does not take a separate ``targets``
@@ -164,8 +169,10 @@ binding, sweep shapes, and execution behavior.
 :py:meth:`~fatqat.Program.copy` also returns a new mutable branch. Both methods
 retain the same register objects and copy the top-level metadata dictionary;
 nested metadata values remain shared. Later instruction additions and
-top-level metadata edits are independent. Calls to ``add()``, ``measure()``,
-and ``measure_all()`` instead mutate the current program and return ``None``.
+top-level metadata edits are independent. Calls to
+:py:meth:`~fatqat.Program.add`, :py:meth:`~fatqat.Program.measure`, and
+:py:meth:`~fatqat.Program.measure_all` instead mutate the current program and
+return ``None``.
 
 Draw
 ----
@@ -190,8 +197,8 @@ Draw
 
 Circuit drawings use one wire per slot but do not depict register dimension.
 Unknown or custom operations appear as labeled boxes. A direct
-``PulseOperation`` cannot be represented and raises
-:py:class:`~fatqat.errors.UnsupportedOperationError`.
+:py:class:`~fatqat.operations.PulseOperation` cannot be represented and raises
+:py:exc:`~fatqat.errors.UnsupportedOperationError`.
 
 Container reference
 -------------------

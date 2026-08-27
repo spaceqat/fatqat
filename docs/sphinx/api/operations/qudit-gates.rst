@@ -3,11 +3,14 @@ Qudit gates
 
 .. currentmodule:: fatqat.operations
 
-The default matrix implementation derives these gates from the target register
-dimensions and works for every local dimension ``d >= 2`` unless a row below
-says otherwise. Device-specific and pulse backends may support a smaller set or
-none. ``power`` must be an integer; negative and oversized powers are valid and
-are equivalent modulo the relevant target dimension.
+The gates on this page are defined for finite-dimensional subsystems (qudits)
+with local dimension ``d >= 2``. :py:meth:`~fatqat.Program.add` records the
+operation but does not determine whether a selected compiler or backend
+supports it for a particular device. Operation-level dimension constraints are
+listed below; consult that compiler or backend's capability documentation for
+supported operations and device constraints. ``power`` must be an integer;
+negative and oversized powers are valid and are equivalent modulo the relevant
+target dimension.
 
 .. list-table:: Qudit gates
    :header-rows: 1
@@ -17,24 +20,24 @@ are equivalent modulo the relevant target dimension.
      - Targets and constraints
      - Basis action
    * - :py:class:`Shift` ``(power)``
-     - One scalar; any dimension
+     - One scalar; any ``d >= 2``
      - ``|k> -> |(k + power) mod d>``. ``Shift(1)`` is X for ``d=2``.
    * - :py:class:`Clock` ``(power)``
-     - One scalar; any dimension
+     - One scalar; any ``d >= 2``
      - ``|k> -> omega**(k*power)|k>``, ``omega=exp(2*pi*i/d)``.
        ``Clock(1)`` is Z for ``d=2``.
    * - :py:data:`Sum`
-     - ``(control, target)`` with equal dimensions in the default matrix map
+     - ``(control, target)`` with equal dimensions
      - ``|i,j> -> |i,(i+j) mod d>``. It is CX for ``d=2``.
    * - :py:class:`SwapLevels` ``(j, k)``
      - One scalar; ``0 <= j,k < d`` and ``j != k``
      - Exchanges ``|j>`` and ``|k>`` and fixes every other level.
    * - :py:data:`Fourier`
-     - One scalar; any dimension
+     - One scalar; any ``d >= 2``
      - ``|j> -> sum(exp(2*pi*i*j*k/d)|k>) / sqrt(d)``. It is H for
        ``d=2``.
    * - :py:data:`InverseFourier`
-     - One scalar; any dimension
+     - One scalar; any ``d >= 2``
      - Conjugate transpose of ``Fourier``; uses the negative exponent.
    * - :py:class:`SubspaceRX` ``(theta, (j, k))``
      - One scalar; two distinct in-range levels
@@ -54,14 +57,13 @@ are equivalent modulo the relevant target dimension.
        ``omega=exp(2*pi*i/d_target)``. It is CZ for two qubits and power 1.
 
 ``SwapLevels`` and the subspace rotations require integer level indices. They
-reject equal or negative indices at construction, and ``Program.add`` rejects
-indices outside the resolved scalar target dimension.
+reject equal or negative indices at construction, and
+:py:meth:`~fatqat.Program.add` rejects indices outside the resolved scalar
+target dimension.
 
-``Sum`` is different: the default matrix backend requires equal dimensions,
-but ``Program.add`` does not enforce that backend-specific constraint.
-Mismatched dimensions raise
-:py:exc:`~fatqat.errors.MatrixImplementationError` when the matrix backend
-prepares the program.
+``Sum`` is defined for a control and target with equal local dimensions.
+:py:meth:`~fatqat.Program.add` records mismatched targets; the selected
+compiler or backend must reject them during program preparation.
 
 Matrix definitions
 ------------------

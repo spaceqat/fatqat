@@ -5,7 +5,8 @@ Direct pulse control
 
 :py:class:`PulseOperation` groups concurrent physical controls for one
 duration. It does not take a separate ``targets`` argument; construct the
-operation and add it with ``program.add(operation)``. Each
+operation and add it with :py:meth:`~fatqat.Program.add` as
+``program.add(operation)``. Each
 :py:attr:`~fatqat.emulator.PulseControl.channel` identifies the physical
 resource or resources it drives, and the selected emulator resolves those
 channel addresses while preparing the program.
@@ -30,11 +31,11 @@ with another compatible model and arrangement. The matrix
 cannot be attached to them; :py:meth:`fatqat.NoiseModel.add` raises
 :py:exc:`ValueError` for that selector.
 
-``Program.add(condition=...)`` may guard a direct pulse operation. When the
-condition is false, the controls are disabled but the full duration still
-elapses: model drift and background Lindblad sources continue over that
-interval. As with other conditions, support depends on the backend and
-execution method.
+:py:meth:`~fatqat.Program.add` with ``condition=...`` may guard a direct pulse
+operation. When the condition is false, the controls are disabled but the full
+duration still elapses: model drift and background Lindblad sources continue
+over that interval. As with other conditions, support depends on the backend
+and execution method.
 
 See :doc:`../pulse-emulator` for the owning
 :py:class:`~fatqat.emulator.PulseControl` and

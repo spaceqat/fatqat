@@ -36,11 +36,11 @@ class RX(Operation):
 
     In ``|0>, |1>`` basis order, the matrix is
     ``[[c, -i*s], [-i*s, c]]``, where ``c = cos(theta/2)`` and
-    ``s = sin(theta/2)``. A ``RegisterView`` applies the same rotation to each
-    selected member.
+    ``s = sin(theta/2)``. A :class:`~fatqat.RegisterView` applies the same
+    rotation to each selected member.
 
     Args:
-        theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
+        theta: Numeric angle in radians, or a :class:`~fatqat.Parameter` to bind
             before execution.
     """
 
@@ -55,11 +55,12 @@ class RY(Operation):
     """Rotate a qubit about the Y axis by ``theta`` radians.
 
     In ``|0>, |1>`` basis order, the matrix is ``[[c, -s], [s, c]]``, where
-    ``c = cos(theta/2)`` and ``s = sin(theta/2)``. A ``RegisterView`` applies
-    the same rotation to each selected member.
+    ``c = cos(theta/2)`` and ``s = sin(theta/2)``. A
+    :class:`~fatqat.RegisterView` applies the same rotation to each selected
+    member.
 
     Args:
-        theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
+        theta: Numeric angle in radians, or a :class:`~fatqat.Parameter` to bind
             before execution.
     """
 
@@ -74,11 +75,12 @@ class RZ(Operation):
     """Rotate a qubit about the Z axis by ``theta`` radians.
 
     The matrix is ``diag(exp(-i*theta/2), exp(i*theta/2))``. It differs from
-    ``Phase(theta)`` only by the global phase ``exp(-i*theta/2)``. A
-    ``RegisterView`` applies the same rotation to each selected member.
+    :class:`~fatqat.operations.Phase` with the same ``theta`` only by the
+    global phase ``exp(-i*theta/2)``. A :class:`~fatqat.RegisterView` applies
+    the same rotation to each selected member.
 
     Args:
-        theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
+        theta: Numeric angle in radians, or a :class:`~fatqat.Parameter` to bind
             before execution.
     """
 
@@ -92,11 +94,12 @@ class RZ(Operation):
 class Phase(Operation):
     """Multiply a qubit's ``|1>`` amplitude by ``exp(i*theta)``.
 
-    The matrix is ``diag(1, exp(i*theta))``. It differs from ``RZ(theta)``
-    only by a global phase.
+    The matrix is ``diag(1, exp(i*theta))``. It differs from
+    :class:`~fatqat.operations.RZ` with the same ``theta`` only by a global
+    phase.
 
     Args:
-        theta: Numeric phase angle in radians, or a ``fatqat.Parameter`` to
+        theta: Numeric phase angle in radians, or a :class:`~fatqat.Parameter` to
             bind before execution.
     """
 
@@ -119,11 +122,11 @@ class U(Operation):
     ``c = cos(theta/2)`` and ``s = sin(theta/2)``.
 
     Args:
-        theta: Polar rotation angle in radians, or a ``fatqat.Parameter`` to
+        theta: Polar rotation angle in radians, or a :class:`~fatqat.Parameter` to
             bind before execution.
-        phi: Phase angle in radians, or a ``fatqat.Parameter`` to bind before
+        phi: Phase angle in radians, or a :class:`~fatqat.Parameter` to bind before
             execution.
-        lam: Second phase angle in radians, or a ``fatqat.Parameter`` to bind
+        lam: Second phase angle in radians, or a :class:`~fatqat.Parameter` to bind
             before execution. The parameter order is exactly
             ``(theta, phi, lam)``, matching Qiskit's ``UGate``.
     """
@@ -140,10 +143,10 @@ class U1(Operation):
     """Apply the legacy Qiskit U1 phase gate.
 
     ``U1(lam)`` has matrix ``diag(1, exp(i*lam))`` and is equivalent to
-    ``Phase(lam)``.
+    :class:`~fatqat.operations.Phase` with ``theta=lam``.
 
     Args:
-        lam: Phase angle in radians, or a ``fatqat.Parameter`` to bind before
+        lam: Phase angle in radians, or a :class:`~fatqat.Parameter` to bind before
             execution.
     """
 
@@ -156,12 +159,13 @@ class U1(Operation):
 class U2(Operation):
     """Apply the legacy Qiskit U2 gate.
 
-    ``U2(phi, lam)`` is equivalent to ``U(pi/2, phi, lam)``.
+    ``U2(phi, lam)`` is equivalent to :class:`~fatqat.operations.U` with
+    ``theta=pi/2`` and the same ``phi`` and ``lam``.
 
     Args:
-        phi: Phase angle in radians, or a ``fatqat.Parameter`` to bind before
+        phi: Phase angle in radians, or a :class:`~fatqat.Parameter` to bind before
             execution.
-        lam: Second phase angle in radians, or a ``fatqat.Parameter`` to bind
+        lam: Second phase angle in radians, or a :class:`~fatqat.Parameter` to bind
             before execution.
     """
 
@@ -176,15 +180,15 @@ class U3(Operation):
     """Apply the legacy Qiskit U3 gate.
 
     ``U3(theta, phi, lam)`` is numerically identical to
-    ``U(theta, phi, lam)`` and retains the legacy operation name for
-    conversion compatibility.
+    :class:`~fatqat.operations.U` with the same arguments and retains the
+    legacy operation name for conversion compatibility.
 
     Args:
-        theta: Polar rotation angle in radians, or a ``fatqat.Parameter`` to
+        theta: Polar rotation angle in radians, or a :class:`~fatqat.Parameter` to
             bind before execution.
-        phi: Phase angle in radians, or a ``fatqat.Parameter`` to bind before
+        phi: Phase angle in radians, or a :class:`~fatqat.Parameter` to bind before
             execution.
-        lam: Second phase angle in radians, or a ``fatqat.Parameter`` to bind
+        lam: Second phase angle in radians, or a :class:`~fatqat.Parameter` to bind
             before execution.
     """
 
@@ -203,7 +207,7 @@ class CPhase(Operation):
     is ``diag(1, 1, 1, exp(i*theta))``.
 
     Args:
-        theta: Numeric phase angle in radians, or a ``fatqat.Parameter`` to
+        theta: Numeric phase angle in radians, or a :class:`~fatqat.Parameter` to
             bind before execution.
     """
 

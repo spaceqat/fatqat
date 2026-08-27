@@ -17,10 +17,10 @@ Import this namespace as ``ops`` and append operation values with
    program.add(ops.CX, (0, 1))      # ordered multi-target value
 
 Fixed gates and parameter-free structural operations are immutable singleton
-values and must not be called. Parameterized gates and ``PulseOperation`` are
-classes that construct immutable values. These values can be reused across
-instructions and programs. Create measurements through ``Program`` rather
-than adding them directly.
+values and must not be called. Parameterized gates and
+:py:class:`PulseOperation` are classes that construct immutable values. These
+values can be reused across instructions and programs. Create measurements
+through :py:class:`~fatqat.Program` rather than adding them directly.
 
 Reference pages
 ---------------
@@ -42,8 +42,8 @@ Reference pages
    * - :doc:`operations/atom-gates`
      - Neutral-atom occupancy, pairing, and attached-noise constraints.
    * - :doc:`operations/direct-control`
-     - Channel-addressed ``PulseOperation`` values, validation, and model
-       binding.
+     - Channel-addressed :py:class:`PulseOperation` values, validation, and
+       model binding.
 
 .. toctree::
    :maxdepth: 1
@@ -57,13 +57,13 @@ Reference pages
 Construction
 ------------
 
-For ordinary operations, ``Program.add`` resolves target references, enforces
-target count, and rejects repeated scalar targets. It does not decide whether
-the selected backend implements an operation or whether a device supports the
-requested targets. An unsupported family raises
+For ordinary operations, :py:meth:`~fatqat.Program.add` resolves target
+references, enforces target count, and rejects repeated scalar targets. It
+does not decide whether the selected backend implements an operation or
+whether a device supports the requested targets. An unsupported family raises
 :py:exc:`~fatqat.errors.UnsupportedOperationError` when the backend prepares
-the program. A direct ``PulseOperation`` instead follows the channel-addressed
-contract on :doc:`operations/direct-control`.
+the program. A direct :py:class:`PulseOperation` instead follows the
+channel-addressed contract on :doc:`operations/direct-control`.
 
 Most operations require scalar exact built-in ``int`` or
 :py:class:`~fatqat.RegisterRef` targets. A bare integer is valid only when the
@@ -81,9 +81,9 @@ construction workflow.
 Operation base
 --------------
 
-Subclassing ``Operation`` defines a new program-level value; it does not
-register a matrix or pulse realization. See :doc:`../guide/advanced` for the
-custom matrix workflow.
+Subclassing :py:class:`Operation` defines a new program-level value; it does
+not register a matrix or pulse realization. See :doc:`../guide/advanced` for
+the custom matrix workflow.
 
 .. autoclass:: fatqat.operations.Operation
    :members: name, num_subsystems, min_targets, accepts_views, validate_targets

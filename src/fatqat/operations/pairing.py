@@ -12,21 +12,23 @@ from .base import Operation
 class PairGate(Operation):
     """Add one undirected edge to the atom-array connectivity graph.
 
-    ``Pair`` is implemented by ``AtomArraySimulator`` only. Targets are the
-    two distinct atoms ``(a, b)``; their order does not affect connectivity.
+    ``Pair`` is implemented by :class:`~fatqat.simulator.AtomArraySimulator`
+    only. Targets are the two distinct atoms ``(a, b)``; their order does not
+    affect connectivity.
     Pairing an already connected pair is a connectivity no-op. The instruction
     changes no quantum state and does not make an otherwise unsupported gate
     available: it only satisfies the connectivity prerequisite for a supported
     two-atom gate such as the backend's native CZ.
 
-    ``Pair`` must be unconditional. ``Program.add`` accepts a condition
-    syntactically, but ``AtomArraySimulator`` raises ``BackendValidationError``
-    during program preparation. Noise attached to ``Pair`` acts on its targets
-    and can model movement loss or decoherence even though ``Pair`` does not
-    change the quantum state.
+    ``Pair`` must be unconditional. :meth:`~fatqat.Program.add` accepts a
+    condition syntactically, but
+    :class:`~fatqat.simulator.AtomArraySimulator` raises
+    :exc:`~fatqat.errors.BackendValidationError` during program preparation.
+    Noise attached to ``Pair`` acts on its targets and can model movement loss
+    or decoherence even though ``Pair`` does not change the quantum state.
 
     Add the singleton ``ops.Pair`` without parentheses. It requires exactly two
-    distinct scalar targets and rejects ``RegisterView``.
+    distinct scalar targets and rejects :class:`~fatqat.RegisterView`.
 
     Examples:
         >>> import fatqat as fq
@@ -43,19 +45,22 @@ class PairGate(Operation):
 class UnpairGate(Operation):
     """Remove one undirected edge from the atom-array connectivity graph.
 
-    ``Unpair`` is implemented by ``AtomArraySimulator`` only. Targets are the
-    two distinct atoms ``(a, b)``; their order does not affect connectivity.
+    ``Unpair`` is implemented by
+    :class:`~fatqat.simulator.AtomArraySimulator` only. Targets are the two
+    distinct atoms ``(a, b)``; their order does not affect connectivity.
     Removing an absent edge is a connectivity no-op. The instruction changes
     no quantum state, but attached movement-cost noise is still applied to its
     targets.
 
-    ``Unpair`` must be unconditional. ``Program.add`` accepts a condition
-    syntactically, but ``AtomArraySimulator`` raises ``BackendValidationError``
-    during program preparation. After unpairing, a supported two-atom gate on
-    that pair again fails its connectivity check until another ``Pair``.
+    ``Unpair`` must be unconditional. :meth:`~fatqat.Program.add` accepts a
+    condition syntactically, but
+    :class:`~fatqat.simulator.AtomArraySimulator` raises
+    :exc:`~fatqat.errors.BackendValidationError` during program preparation.
+    After unpairing, a supported two-atom gate on that pair again fails its
+    connectivity check until another ``Pair``.
 
     Add the singleton ``ops.Unpair`` without parentheses. It requires exactly
-    two distinct scalar targets and rejects ``RegisterView``.
+    two distinct scalar targets and rejects :class:`~fatqat.RegisterView`.
 
     Examples:
         >>> import fatqat as fq

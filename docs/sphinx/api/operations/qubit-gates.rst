@@ -3,11 +3,12 @@ Qubit gates
 
 .. currentmodule:: fatqat.operations
 
-The default matrix backend supports the gates on this page on dimension-2
-targets. ``Program.add`` does not enforce that backend-specific constraint; the
-matrix backend raises :py:exc:`~fatqat.errors.BackendValidationError` during
-program preparation for a higher-dimensional target. Hardware-profile and
-pulse backends may support only a subset; consult the selected backend page.
+The gates on this page are defined for dimension-2 subsystems (qubits).
+:py:meth:`~fatqat.Program.add` records the operation without validating that
+dimension requirement or determining whether a selected compiler or backend
+supports it for a particular device. The compiler or backend must validate the
+dimension during program preparation and may impose additional device
+constraints; consult its capability documentation for details.
 
 Fixed gates
 -----------

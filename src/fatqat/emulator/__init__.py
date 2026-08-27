@@ -2,9 +2,9 @@
 
 All three public emulators are direct concrete backends. They translate
 ordinary gates through a :class:`PulseImplementationMap`, accept
-channel-addressed direct controls through ``PulseOperation``, and integrate
-the resulting physical dynamics; :mod:`fatqat.simulator` is their
-matrix-backend sibling.
+channel-addressed direct controls through
+:class:`~fatqat.operations.PulseOperation`, and integrate the resulting
+physical dynamics; :mod:`fatqat.simulator` is their matrix-backend sibling.
 
 The common workflow lets each gate-capable emulator compile its package
 default internally::
@@ -13,11 +13,11 @@ default internally::
     result = TransmonEmulator(model).run(program).result()
 
 Calibration documents are portable inputs to the standard map builders, not
-emulator state. ``PulseDefinition`` and ``PulseImplementationMap`` form the
-shared gate-authoring surface. Every emulator accepts replacement gate and
-Lindblad maps; a family may choose an empty built-in default. Models create
-portable structural control and frame addresses. Public values never expose
-QuTiP.
+emulator state. :class:`PulseDefinition` and :class:`PulseImplementationMap`
+form the shared gate-authoring surface. Every emulator accepts replacement
+gate and Lindblad maps; a family may choose an empty built-in default. Models
+create portable structural control and frame addresses. Public values never
+expose QuTiP.
 """
 
 from __future__ import annotations

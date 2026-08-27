@@ -23,8 +23,8 @@ class Parameter:
     object identity, so two parameters with the same name remain distinct
     mapping keys. Reuse the same object directly as an operation argument when
     one value should be shared, then pass that object to
-    ``Program.assign_parameters()`` or a sweep API. Parameters nested inside
-    another container are not discovered for binding.
+    :meth:`~fatqat.Program.assign_parameters` or a sweep API. Parameters
+    nested inside another container are not discovered for binding.
 
     Args:
         name: Non-empty string shown in diagnostics and representations. It is
@@ -60,21 +60,21 @@ class Parameter:
 
 @dataclass(frozen=True, eq=False, slots=True)
 class ParameterVector:
-    """Create an immutable ordered group of distinct ``Parameter`` objects.
+    """Create an immutable ordered group of distinct :class:`Parameter` objects.
 
     The vector and all of its elements use identity-based equality. Indexing
     the same vector repeatedly returns the same element object, including for
     Python-style negative indices. Iteration follows increasing index order.
     Slices and non-integer indices are not accepted.
 
-    A non-empty vector can be one key in ``Program.assign_parameters()`` when
-    every element is used directly as an operation argument. Its value must be
-    a matching-length, one-dimensional NumPy array or a non-string, non-bytes,
-    non-mapping iterable, consumed once in iteration order. Individual
-    elements are ordinary ``Parameter`` keys and support partial binding. A
-    zero-length vector can be used as an empty container but not as a binding
-    key. Parameters nested inside another container are not discovered for
-    binding.
+    A non-empty vector can be one key in
+    :meth:`~fatqat.Program.assign_parameters` when every element is used
+    directly as an operation argument. Its value must be a matching-length,
+    one-dimensional NumPy array or a non-string, non-bytes, non-mapping
+    iterable, consumed once in iteration order. Individual elements are
+    ordinary :class:`Parameter` keys and support partial binding. A zero-length
+    vector can be used as an empty container but not as a binding key.
+    Parameters nested inside another container are not discovered for binding.
 
     Args:
         name: Non-empty base label. Element labels use ``name[index]``.
@@ -134,7 +134,7 @@ class ParameterVector:
                 accepted.
 
         Returns:
-            The stable ``Parameter`` object stored at that index.
+            The stable :class:`Parameter` object stored at that index.
 
         Raises:
             TypeError: If ``index`` is not an exact integer.

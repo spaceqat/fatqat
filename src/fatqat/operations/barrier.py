@@ -14,12 +14,12 @@ class BarrierGate(Operation):
 
     A barrier has no matrix, measurement result, or noise boundary. Built-in
     simulators treat it as a no-op, so it has no effect on states or counts.
-    ``Program.add`` accepts a condition, but built-in simulators do not
-    evaluate it.
+    :meth:`~fatqat.Program.add` accepts a condition, but built-in simulators
+    do not evaluate it.
 
     Add the singleton ``ops.Barrier`` without parentheses. It accepts one or
-    more distinct scalar targets; ``RegisterView`` and an empty target tuple
-    are rejected by ``Program.add``.
+    more distinct scalar targets; :class:`~fatqat.RegisterView` and an empty
+    target tuple are rejected by :meth:`~fatqat.Program.add`.
 
     Examples:
         >>> import fatqat as fq

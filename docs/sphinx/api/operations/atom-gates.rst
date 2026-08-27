@@ -22,28 +22,29 @@ backends raise :py:exc:`~fatqat.errors.UnsupportedOperationError`.
      - One or more
      - Loads ``|0>`` into each empty site; leaves occupied sites unchanged.
      - Supported.
-     - ``Loss`` only, after each enabled occurrence.
+     - :py:class:`~fatqat.noise.Loss` only, after each enabled occurrence.
    * - :py:data:`Pair`
      - Exactly two
      - Adds their undirected connectivity edge; repeated pairing is a no-op.
      - Rejected by the atom backend.
-     - ``Loss`` or a supported finite channel.
+     - :py:class:`~fatqat.noise.Loss` or a supported finite channel.
    * - :py:data:`Unpair`
      - Exactly two
      - Removes their edge; removing an absent edge is a no-op.
      - Rejected by the atom backend.
-     - ``Loss`` or a supported finite channel.
+     - :py:class:`~fatqat.noise.Loss` or a supported finite channel.
 
 If a program contains ``Put``, every declared site starts empty for every shot.
 Sites are populated only by their ``Put`` occurrences, and a later occurrence
-can reload a lost atom. A ``Loss`` declaration attached to ``Put`` shares the
-operation's condition and runs after every matching occurrence whose condition
-passes, even when the site was already occupied and the ``Put`` itself did
-nothing.
+can reload a lost atom. A :py:class:`~fatqat.noise.Loss` declaration attached
+to ``Put`` shares the operation's condition and runs after every matching
+occurrence whose condition passes, even when the site was already occupied and
+the ``Put`` itself did nothing.
 
 ``Pair`` and ``Unpair`` update the connectivity used by later supported gates;
 they do not change the quantum state or make an unsupported gate available. In
-the built-in atom-array profile, CZ is native and requires a current pairing.
+the built-in atom-array profile, :py:data:`CZ` is native and requires a current
+pairing.
 The atom backend rejects a condition on either connectivity instruction with
 :py:exc:`~fatqat.errors.BackendValidationError` during program preparation.
 

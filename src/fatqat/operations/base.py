@@ -10,7 +10,7 @@ from ..registers import RegisterRef
 
 @dataclass(frozen=True)
 class Operation:
-    """Base value for operations accepted by ``Program.add``.
+    """Base value for operations accepted by :meth:`~fatqat.Program.add`.
 
     Built-in operations are immutable and reusable. Parameter-free gates and
     structural operations are singleton values such as ``ops.H`` and
@@ -94,12 +94,15 @@ class Operation:
 
     @property
     def accepts_views(self) -> bool:
-        """Return whether ``Program.add`` accepts ``RegisterView`` targets.
+        """Return whether :meth:`~fatqat.Program.add` accepts
+        :class:`~fatqat.RegisterView` targets.
 
-        The built-in view-capable operations are ``RX``, ``RY``, ``RZ``,
-        ``CX``, and ``CZ``. All other built-ins require scalar targets. A
-        custom unary or two-target subclass may override this property to opt
-        into memberwise view application.
+        The built-in view-capable operations are
+        :class:`~fatqat.operations.RX`, :class:`~fatqat.operations.RY`,
+        :class:`~fatqat.operations.RZ`, :data:`~fatqat.operations.CX`, and
+        :data:`~fatqat.operations.CZ`. All other built-ins require scalar
+        targets. A custom unary or two-target subclass may override this
+        property to opt into memberwise view application.
         """
         return type(self)._accepts_views
 
@@ -108,9 +111,10 @@ class Operation:
 
         The base implementation accepts every target tuple. Override this hook
         when an operation parameter depends on a target property such as local
-        dimension. Scalar-target errors arise from ``Program.add``; for a
-        ``RegisterView``, the hook is applied to each selected member when the
-        backend prepares the program.
+        dimension. Scalar-target errors arise from
+        :meth:`~fatqat.Program.add`; for a :class:`~fatqat.RegisterView`, the
+        hook is applied to each selected member when the backend prepares the
+        program.
 
         Args:
             targets: Resolved scalar quantum references in operand order.
