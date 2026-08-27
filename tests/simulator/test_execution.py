@@ -201,6 +201,33 @@ def test_custom_operation_runs_end_to_end_via_bare_callable():
     assert np.allclose(statevector, [0, 1])
 
 
+def test_custom_matrix_uses_first_target_as_local_most_significant_subsystem():
+    class RotateLastTarget(ops.Operation):
+        name = "RotateLastTarget"
+        num_subsystems = 2
+
+    matrix = np.eye(4, dtype=complex)
+    matrix[0, 0] = matrix[1, 1] = 0.0
+    matrix[0, 1] = matrix[1, 0] = -1j
+    implementation_map = MatrixImplementationMap()
+    implementation_map.add(RotateLastTarget, matrix)
+
+    for targets, expected_index in [((0, 1), 2), ((1, 0), 1)]:
+        program = Program(2)
+        program.add(RotateLastTarget(), targets)
+        statevector = (
+            Simulator("SV", runtime="numpy", implementation_map=implementation_map)
+            .run(program, result_config={"counts": False, "final_state": True})
+            .result()
+            .get_statevector()
+        )
+
+        # Local index |01> changes the last member of the ordered target tuple.
+        expected = np.zeros(4, dtype=complex)
+        expected[expected_index] = -1j
+        assert np.allclose(statevector, expected)
+
+
 def test_unregistered_gate_raises_after_remove():
     m = default_matrix_implementation_map()
     m.remove(ops.T)

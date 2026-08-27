@@ -37,6 +37,14 @@ A backend can support either or both:
      - Yes, global
      - Public optional ``gate_implementation_map=``; empty built-in default
 
+All three physics-emulator ``run()`` methods construct the model family's
+fixed product initial state and do not accept ``initial_state``. Transmon and
+three-level atom runs start in ``|0>`` on every subsystem; the two-level atom
+run starts in ``|g>`` at every site. By contrast,
+:py:meth:`~fatqat.simulator.Simulator.run` accepts ``initial_state`` for its
+statevector and density-matrix methods. Each emulator class page documents its
+complete run and coherent-propagator constraints.
+
 ``PulseImplementationMap`` is the public map value type for all three
 families. Their constructors name the capability
 ``gate_implementation_map`` because direct ``PulseOperation`` controls bypass

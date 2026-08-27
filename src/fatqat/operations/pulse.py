@@ -21,6 +21,9 @@ class PulseOperation(Operation):
     validates the waveform representation before constructing its private
     execution block.
 
+    Every direct-control block has positive duration and at least one control.
+    Omit the operation when no time should elapse.
+
     Args:
         duration: Positive finite block duration in the selected model's
             native time unit.

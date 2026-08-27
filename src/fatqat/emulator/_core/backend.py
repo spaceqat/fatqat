@@ -270,6 +270,11 @@ class _PulseBackend(ABC):
         statevector or density matrix. A measured final state is one sampled
         posterior and therefore requires ``shots == 1``.
 
+        Each pulse emulator constructs its model family's fixed product
+        initial state for every run. TransmonEmulator and Atom3LevelEmulator
+        use local level 0; Atom2LevelEmulator uses its ground level. This
+        method has no initial_state argument.
+
         Args:
             program: Program to bind, lower, and execute.
             shots: Number of repetitions used when counts are requested.
@@ -338,6 +343,11 @@ class _PulseBackend(ABC):
         resource_layout: ResourceLayout | None = None,
     ) -> np.ndarray:
         """Return the coherent full-model propagator for ``program``.
+
+        For Hilbert-space dimension D, the result contains D * D complex
+        entries. Time-dependent propagation evolves the full operator, so use
+        this method for small models or occasional operator construction, not
+        repeated large-system time-series sweeps.
 
         Intermediate virtual-frame updates always rotate later phase-sensitive
         controls. By default the remaining terminal frame transformation is

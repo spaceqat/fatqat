@@ -265,6 +265,14 @@ class MatrixImplementationMap:
     ) -> None:
         """Add an unconstrained or device-specific implementation.
 
+        Matrix rows and columns use the ordered targets as their local factor
+        order: targets[0] is most significant and targets[-1] is least
+        significant. For local basis digits (b0, ..., bk) with dimensions
+        (d0, ..., dk), the flat index is b0 * (d1 * ... * dk) +
+        b1 * (d2 * ... * dk) + ... + bk, so the last target changes fastest.
+        This local convention is independent of the simulator's full-system
+        little-endian basis order.
+
         Args:
             op: An :py:class:`~fatqat.operations.Operation` instance (e.g. `ops.X`) or subclass (e.g. a
                 custom gate class). Normalized to the operation's class for

@@ -86,6 +86,10 @@ transmons in a larger model. The layout contains public device identities; it
 must cover every declared quantum reference and does not expose or choose the
 numerical tensor axes owned by the backend.
 
+Execution options and supported program features are backend-specific. Use
+the {doc}`../api/index` capability comparison and the selected backend's API
+page for its complete ``run()`` contract.
+
 ## Optional grid registers
 
 {py:class}`~fatqat.GridRegister` is useful when your program’s qubits have a rectangular

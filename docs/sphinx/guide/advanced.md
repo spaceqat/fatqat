@@ -90,6 +90,13 @@ statevector = (
 print(statevector)   # [0, 1]
 ```
 
+For a multi-subsystem custom operation, preserve the ordered target tuple when
+defining matrix factors. For two qubit targets `(t0, t1)`, the local basis is
+`|00>, |01>, |10>, |11>`: the last target changes fastest. See
+{py:meth}`~fatqat.implementation.MatrixImplementationMap.add` for the exact
+mixed-radix contract and [Running and results](running-and-results.md) for the
+full-system basis order.
+
 A few things worth noting about the shape of this API:
 
 - `add()` accepts a bare `np.ndarray` too — it auto-wraps into
