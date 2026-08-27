@@ -1,13 +1,9 @@
-"""Gate-level simulation: the `Simulator` backend and its device specializations.
+"""Gate-level simulators.
 
-`Simulator` is the matrix-family entry point - ``Simulator(method="statevector")``
-or ``Simulator(method="density_matrix")`` selects the state representation. The
-`AtomArraySimulator` and `SCQubit*Simulator` classes specialize it with a fixed
-device topology and native gate set.
-
-The numerical execution layer lives in :mod:`fatqat.simulator._engine`
-(`MatrixEngine` and its NumPy/Numba implementations); a `Simulator` owns one
-engine instance and drives it. Pulse-level emulation is the sibling package
+:class:`Simulator` is the general matrix backend for statevector,
+density-matrix, unitary, and super-operator methods. The superconducting
+subclasses add fixed grid gate sets; :class:`AtomArraySimulator` adds a native
+gate set, dynamic pairing, occupancy, and loss. Pulse-resolved models live in
 :mod:`fatqat.emulator`.
 """
 

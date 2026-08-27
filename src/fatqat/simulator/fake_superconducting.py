@@ -136,15 +136,12 @@ class _SCQubitSimulator(Simulator):
 
     @property
     def implementation_map(self) -> MatrixImplementationMap:
-        """Return a copy of the compiler-facing device-aware implementation map.
+        """Copy of the compiler-facing native implementation map.
 
-        A compiler targeting this device introspects the map rather than
-        hardcoding the native gate set: `supported_operations()` lists which
-        operation families have any implementation, and
-        `device_operands_for(op)` lists the legal device-operand tuples for
-        an operation constrained to specific qubits (empty for an operation
-        registered uniformly, meaning "legal on any target of the right
-        arity").
+        ``supported_operations()`` lists native operation families.
+        ``device_operands_for(operation)`` lists ordered device tuples for a
+        connectivity-limited gate and is empty for a uniformly available gate.
+        Mutating the returned map does not change this backend.
         """
         return self._impl_map.copy()
 
@@ -252,19 +249,21 @@ def fake_superconducting_ibm_implementation_map(
 
 
 class SCQubitIBMSimulator(_SCQubitSimulator):
-    """Statevector backend constrained to a fake IBM-style superconducting target.
+    """Simulate an IBM-style superconducting hardware profile.
 
-    A thin statevector-method :py:class:`~fatqat.simulator.Simulator`
-    specialization: same execution engine, same
-    :py:class:`~fatqat.Result`/:py:class:`~fatqat.Job` semantics. The
-    differences are a configurable grid device, a fixed native gate set
-    (:py:data:`~fatqat.operations.X`,
-    :py:data:`~fatqat.operations.SX`, :py:class:`~fatqat.operations.RZ`, and
-    nearest-neighbor :py:data:`~fatqat.operations.CZ`), rejecting programs
-    that do not fit that device shape (too many qubits, or any non-qubit-dimension
-    register), and grid-aware resource mapping (see
-    `_resolve_resource_layout`). Qubits here are always "on" - there is no
-    atom-loading concept, unlike :py:class:`~fatqat.simulator.AtomArraySimulator`.
+    Hardware profile:
+
+    - Native gates: ``X``, ``SX``, and ``RZ`` on every qubit; ``CZ`` on
+      horizontal or vertical neighbours, in either operand order.
+    - Layout: a row-major rectangular grid containing qubits only. A sole
+      ``GridRegister`` keeps its coordinates and is placed at the top left.
+    - Methods: ``statevector``, ``density_matrix``, ``unitary``, and ``superop``
+      are selectable, subject to their usual program restrictions.
+    - Noise: ideal unless a model is supplied. ``default_noise_model()``
+      creates the optional built-in profile.
+
+    The simulator validates the program as written; it does not decompose,
+    route, or schedule operations.
     """
 
     def __init__(
@@ -275,26 +274,26 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         runtime: str = "numba",
         noise: NoiseModel | None = None,
     ) -> None:
-        """Create a fake IBM-style superconducting backend.
+        """Create an IBM-style constrained simulator.
 
         Args:
             grid_size: Device shape as ``(rows, columns)``. Both values must
                 be positive integers.
-            method: State representation, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`.
-            runtime: Numeric execution runtime, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`.
-            noise: Optional :py:class:`~fatqat.NoiseModel`, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`. ``None`` (the
-                default) keeps the backend ideal; pass
-                ``self.default_noise_model()`` for the device's
-                calibration-derived profile.
+            method: ``"statevector"`` (or ``"SV"``), ``"density_matrix"``
+                (or ``"DM"``), ``"unitary"``, or ``"superop"``. Names are
+                case-insensitive.
+            runtime: ``"numba"`` (default, lazy JIT) or ``"numpy"`` (direct
+                execution). See ``Simulator`` for runtime-specific
+                execution controls.
+            noise: Optional ``NoiseModel``. ``None`` keeps the backend ideal;
+                pass ``default_noise_model()`` explicitly to use the built-in
+                profile. The model is copied at construction.
 
         Raises:
-            TypeError: If ``grid_size`` is not a two-item tuple of integers
-                (bools rejected).
-            ValueError: If ``grid_size`` does not contain exactly two values
-                or either value is not positive.
+            TypeError: If ``grid_size`` is not a tuple, or either item is not
+                an integer (bools rejected).
+            ValueError: If the tuple does not contain exactly two items or
+                either item is not positive.
         """
         rows, cols = _validate_grid_size(grid_size)
         super().__init__(
@@ -308,42 +307,21 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
 
     @classmethod
     def default_noise_model(cls) -> NoiseModel:
-        """Build this device's calibration-derived noise model.
+        """Return a fresh calibration-derived noise model.
 
-        The from-backend workflow: the *backend* authors the model from its
-        own device facts, before any user program (or register) exists.
-        ``X`` and ``SX`` each carry thermal relaxation converted from the
-        device ``T1``/``T2`` and the gate duration (both are physical
-        single-qubit pulses here), readout gets an asymmetric confusion
-        matrix, and ``CZ`` carries a joint depolarizing channel plus gate-time
-        relaxation on each participating qubit. ``RZ`` is
-        virtual (zero duration), so it stays noise-free.
+        Profile:
 
-        The returned model is a fresh, ordinary
-        :py:class:`~fatqat.NoiseModel`: inspect it, extend it with your own
-        channels, and pass it back via ``noise=``.
+        - Coherence: ``T1 = 60 us`` and ``T2 = 48 us``.
+        - ``X`` and ``SX``: 20 ns relaxation.
+        - ``RZ``: virtual and noiseless.
+        - ``CZ``: 50 ns relaxation on each qubit, followed by joint
+          depolarizing noise with ``p = 0.001``.
+        - Readout: ``P(report 1 | true 0) = 0.02`` and
+          ``P(report 0 | true 1) = 0.04``.
 
-        Examples:
-            >>> import fatqat as fq
-            >>> import fatqat.operations as ops
-            >>> Sim = fq.simulator.SCQubitIBMSimulator
-            >>> backend = Sim(method="statevector", runtime="numpy",
-            ...               noise=Sim.default_noise_model())
-            >>> program = fq.Program(1, 1)
-            >>> program.add(ops.SX, 0)
-            >>> program.add(ops.SX, 0)  # SX SX = X, up to a phase
-            >>> program.measure(0, 0)
-            >>> counts = backend.run(
-            ...     program,
-            ...     shots=2000,
-            ...     simulation_config={
-            ...         "seed": 1,
-            ...         "shot_parallelism": "serial",
-            ...         "kernel_parallelism": "serial",
-            ...     },
-            ... ).result().get_counts()
-            >>> counts["1"] > 1800  # mostly 1, but noise leaks some 0s
-            True
+        The model is not enabled automatically. Each call returns an ordinary,
+        independent ``NoiseModel`` that may be extended before it is passed to
+        ``noise=``.
         """
         noise = NoiseModel()
         damping, dephasing = _THERMAL_RELAXATION.as_channels(_SX_DURATION)
@@ -401,20 +379,21 @@ def fake_superconducting_google_implementation_map(
 
 
 class SCQubitGoogleSimulator(_SCQubitSimulator):
-    """Statevector backend constrained to a fake Google-style superconducting target.
+    """Simulate a Google-style superconducting hardware profile.
 
-    A thin statevector-method :py:class:`~fatqat.simulator.Simulator`
-    specialization: same execution engine, same
-    :py:class:`~fatqat.Result`/:py:class:`~fatqat.Job` semantics. The
-    differences are a configurable grid device, a fixed native gate set
-    (:py:class:`~fatqat.operations.RX`,
-    :py:class:`~fatqat.operations.RY`, :py:class:`~fatqat.operations.RZ`, and
-    nearest-neighbor :py:data:`~fatqat.operations.iSwap` and
-    :py:data:`~fatqat.operations.CZ`), rejecting programs that do not fit
-    that device shape (too many qubits, or any non-qubit-dimension
-    register), and grid-aware resource mapping (see
-    `_resolve_resource_layout`). Qubits here are always "on" - there is no
-    atom-loading concept, unlike :py:class:`~fatqat.simulator.AtomArraySimulator`.
+    Hardware profile:
+
+    - Native gates: ``RX``, ``RY``, and ``RZ`` on every qubit; ``iSwap`` and
+      ``CZ`` on horizontal or vertical neighbours, in either operand order.
+    - Layout: a row-major rectangular grid containing qubits only. A sole
+      ``GridRegister`` keeps its coordinates and is placed at the top left.
+    - Methods: ``statevector``, ``density_matrix``, ``unitary``, and ``superop``
+      are selectable, subject to their usual program restrictions.
+    - Noise: ideal unless a model is supplied. ``default_noise_model()``
+      creates the optional built-in profile.
+
+    The simulator validates the program as written; it does not decompose,
+    route, or schedule operations.
     """
 
     def __init__(
@@ -425,26 +404,26 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         runtime: str = "numba",
         noise: NoiseModel | None = None,
     ) -> None:
-        """Create a fake Google-style superconducting backend.
+        """Create a Google-style constrained simulator.
 
         Args:
             grid_size: Device shape as ``(rows, columns)``. Both values must
                 be positive integers.
-            method: State representation, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`.
-            runtime: Numeric execution runtime, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`.
-            noise: Optional :py:class:`~fatqat.NoiseModel`, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`. ``None`` (the
-                default) keeps the backend ideal; pass
-                ``self.default_noise_model()`` for the device's
-                calibration-derived profile.
+            method: ``"statevector"`` (or ``"SV"``), ``"density_matrix"``
+                (or ``"DM"``), ``"unitary"``, or ``"superop"``. Names are
+                case-insensitive.
+            runtime: ``"numba"`` (default, lazy JIT) or ``"numpy"`` (direct
+                execution). See ``Simulator`` for runtime-specific
+                execution controls.
+            noise: Optional ``NoiseModel``. ``None`` keeps the backend ideal;
+                pass ``default_noise_model()`` explicitly to use the built-in
+                profile. The model is copied at construction.
 
         Raises:
-            TypeError: If ``grid_size`` is not a two-item tuple of integers
-                (bools rejected).
-            ValueError: If ``grid_size`` does not contain exactly two values
-                or either value is not positive.
+            TypeError: If ``grid_size`` is not a tuple, or either item is not
+                an integer (bools rejected).
+            ValueError: If the tuple does not contain exactly two items or
+                either item is not positive.
         """
         rows, cols = _validate_grid_size(grid_size)
         super().__init__(
@@ -460,42 +439,22 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
 
     @classmethod
     def default_noise_model(cls) -> NoiseModel:
-        """Build this device's calibration-derived noise model.
+        """Return a fresh calibration-derived noise model.
 
-        The from-backend workflow: the *backend* authors the model from its
-        own device facts, before any user program (or register) exists.
-        ``RX``, ``RY``, and ``RZ`` each carry thermal relaxation converted
-        from the device ``T1``/``T2`` and the gate duration. Readout gets an
-        asymmetric confusion matrix, and ``iSwap`` and ``CZ`` each carry
-        their own joint depolarizing channel plus gate-time relaxation on
-        each participating qubit. Unlike the IBM-style backend, ``RZ`` is a
-        physical 20 ns rotation here rather than a virtual noiseless gate.
+        Profile:
 
-        The returned model is a fresh, ordinary
-        :py:class:`~fatqat.NoiseModel`: inspect it, extend it with your own
-        channels, and pass it back via ``noise=``.
+        - Coherence: ``T1 = 60 us`` and ``T2 = 48 us``.
+        - ``RX``, ``RY``, and ``RZ``: 20 ns relaxation.
+        - ``iSwap``: 30 ns relaxation on each qubit, followed by joint
+          depolarizing noise with ``p = 0.001``.
+        - ``CZ``: 50 ns relaxation on each qubit, followed by joint
+          depolarizing noise with ``p = 0.001``.
+        - Readout: ``P(report 1 | true 0) = 0.02`` and
+          ``P(report 0 | true 1) = 0.04``.
 
-        Examples:
-            >>> import numpy as np
-            >>> import fatqat as fq
-            >>> import fatqat.operations as ops
-            >>> Sim = fq.simulator.SCQubitGoogleSimulator
-            >>> backend = Sim(method="statevector", runtime="numpy",
-            ...               noise=Sim.default_noise_model())
-            >>> program = fq.Program(1, 1)
-            >>> program.add(ops.RX(np.pi), 0)  # RX(pi) = X, up to a phase
-            >>> program.measure(0, 0)
-            >>> counts = backend.run(
-            ...     program,
-            ...     shots=2000,
-            ...     simulation_config={
-            ...         "seed": 1,
-            ...         "shot_parallelism": "serial",
-            ...         "kernel_parallelism": "serial",
-            ...     },
-            ... ).result().get_counts()
-            >>> counts["1"] > 1800  # mostly 1, but noise leaks some 0s
-            True
+        The model is not enabled automatically. Each call returns an ordinary,
+        independent ``NoiseModel`` that may be extended before it is passed to
+        ``noise=``.
         """
         noise = NoiseModel()
         damping, dephasing = _THERMAL_RELAXATION.as_channels(_ROTATION_DURATION)

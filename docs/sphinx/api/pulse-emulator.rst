@@ -207,6 +207,8 @@ Construction and identity reference
 .. autofunction:: fatqat.emulator.load_model_document
 
 .. autoclass:: fatqat.emulator.TransmonModel
+   :no-members:
+   :no-inherited-members:
 
 .. autoclass:: fatqat.emulator.TransmonCalibration
 
@@ -486,7 +488,6 @@ operators are not expanded through this local payload.
 
 .. autoclass:: fatqat.noise.LindbladImplementationMap
    :members:
-   :inherited-members:
 
 .. autofunction:: fatqat.noise.default_lindblad_implementation_map
 

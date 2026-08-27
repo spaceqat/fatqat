@@ -117,3 +117,13 @@ Finite-channel rules and pulse-generator rules are intentionally separate.
 
 Pulse-generator map signatures and defaults are documented in
 :doc:`pulse-emulator`.
+
+Support reports
+---------------
+
+:meth:`fatqat.simulator.Simulator.check_noise_support` and the physical
+emulators return a source-level compatibility report before execution. The
+report is advisory: a particular method, program, selector, or resolved rule
+can still impose a more specific constraint.
+
+.. autoclass:: fatqat.noise.NoiseSupportReport

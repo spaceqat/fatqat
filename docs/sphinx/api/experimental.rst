@@ -66,7 +66,7 @@ example supplies a matrix for ``H`` and then runs a one-operation program:
    result = backend.run(
        program,
        shots=1,
-       result_config={"counts": False, "statevector": True},
+       result_config={"counts": False, "final_state": True},
    ).result()
 
 To retain the normal catalog and change just one rule, start from

@@ -1,44 +1,9 @@
-"""Unified gate-level simulator backend with Qiskit-style method selection.
+"""Matrix-based gate-level simulation.
 
-`Simulator` is the single entry point for matrix-family simulation:
-``Simulator(method=...)`` selects the representation - ``"statevector"`` /
-``"density_matrix"`` (aliases ``"SV"`` / ``"DM"``) for a *state*, or
-``"unitary"`` / ``"superop"`` for the program's *map* - exactly like Qiskit
-Aer's ``AerSimulator(method=...)``. Names are case-insensitive. It is the only
-gate-level backend: per-representation backend classes do not exist.
-Pulse-level emulation is the sibling package :mod:`fatqat.emulator`.
-
-Everything method-independent lives here once: per-run simulation/result-config
-normalization, lowering (including the compiler-facing `Barrier` skip),
-validation, execution orchestration, and public `Result` assembly. The
-method-dependent facts come from one `_MethodSpec` table entry, bound as
-instance attributes in ``__init__`` - the backend never branches on method
-afterwards:
-
-- ``_state_field``: the native result field name, which is the canonical
-  method name itself. Drives the result-config flag read, the `Result`
-  keyword, the availability name, the metadata echo, and validation wording.
-- ``_engine_cls``: the `MatrixEngine` subclass the (method, runtime) pair
-  drives (`NumpySVEngine`, `NumpyDMEngine`, `NumpyUnitaryEngine`,
-  `NumpySuperopEngine`, or their Numba twins); one instance is bound
-  to ``_engine`` and reused across runs.
-- ``_request_cls``: the method's engine-request value object. The public
-  ``final_state`` result request is translated to that representation's
-  native state field immediately before execution.
-- ``_nonunitary_is_stochastic``: whether non-unitary maps (reset, channel
-  noise) make the final state stochastic. Statevector samples one branch;
-  unitary keeps the defensive `True` fact but rejects non-unitary maps through
-  ``_executes_nonunitary``; density-matrix and superoperator methods apply
-  deterministic channels and use `False`.
-- ``_is_operator`` / ``_executes_nonunitary``: what the representation can
-  execute at all, checked in `_validate_method_support` before any run.
-
-The backend/engine seam: this class constructs the method's `MatrixEngine`
-subclass once. Each run analyzes one frozen plan, resolves static engine
-capabilities and public controls into one private policy, then copies only the
-runtime semantic shape into a slim execution context. The engine materializes
-its numeric payload once and performs local numeric execution; this module owns
-process dispatch and public result assembly.
+The public :class:`Simulator` selects a state or operator method and a NumPy or
+Numba runtime. It owns validation, lowering, execution policy, and public
+result assembly; numerical engines remain private implementation details.
+Pulse-resolved physical simulation lives in :mod:`fatqat.emulator`.
 """
 
 from __future__ import annotations
@@ -234,79 +199,26 @@ _METHOD_SPECS: dict[str, _MethodSpec] = {
 
 
 class Simulator:
-    """Matrix-family simulator backend for ``fatqat.Program`` execution.
+    """Simulate a :class:`~fatqat.Program` with matrices and finite channels.
 
-    The simulation method selects the representation and its semantics;
-    everything else (supported operations, grouped measurement, feedforward
-    conditions, reset, execution strategies, result handling) is
-    method-independent.
+    ``statevector`` (``SV``) and ``density_matrix`` (``DM``) evolve a state.
+    Statevector simulation samples reset and channel branches; density-matrix
+    simulation applies them exactly. ``unitary`` and ``superop`` compute the
+    program's map instead. Operator methods reject measurement, feedforward,
+    counts, and an initial state; ``unitary`` also rejects reset and channels.
 
-    Two methods simulate a **state** the program prepares:
+    Public ``superop`` results are ``(D**2, D**2)`` matrices using
+    column-stacking vectorization (``rho.reshape(-1, order="F")``). This is a
+    mathematical convention, not the NumPy memory layout of the returned
+    matrix.
 
-    - ``method="statevector"`` (alias ``"SV"``): pure-state simulation. The
-      native result field is ``statevector``. Reset samples a branch, so any
-      reset makes execution stochastic and forces per-shot replay.
-    - ``method="density_matrix"`` (alias ``"DM"``): exact mixed-state
-      simulation. The native result field is ``density_matrix``. Reset is
-      the deterministic partial-trace channel, so reset alone neither makes
-      a program stochastic nor forces per-shot execution.
+    The generic simulator accepts qubits, qudits, and mixed local dimensions.
+    Hardware-profile subclasses narrow the native gate set and resource layout
+    while preserving the same run and result contract.
 
-    Two methods compute the program's **map** instead, in one deterministic
-    pass with no shots and no sampling. Both reject measurement, feedforward
-    conditions, and a ``counts`` request, since an operator has no classical
-    register and no outcomes to sample:
-
-    - ``method="unitary"``: the program's ``(D, D)`` unitary, where ``D`` is
-      the product of the subsystem dimensions. Native result field
-      ``unitary``. Reset and channel noise are rejected - a unitary cannot
-      represent a non-unitary map.
-    - ``method="superop"``: the program's ``(D**2, D**2)`` super-operator using
-      column-stacking vectorization of density matrices
-      (``rho.reshape(-1, order="F")``). This describes the mathematical
-      vectorization, not the NumPy memory layout of the returned matrix. Native
-      result field ``superop``. Reset and channel noise are accepted; both are
-      exact channels, as under density-matrix semantics. Memory grows as
-      ``16**n`` for ``n`` qubits, so this method is for small circuits.
-
-    A state run is classified into a fast path (evolve once, sample requested
-    counts from the terminal measurement distribution) or a dynamic path
-    (per-shot replay with an explicit classical register) when the program
-    contains classical conditions, reuse of measured subsystems, or - under
-    statevector semantics - reset or channel noise.
-
-    Channel noise: a :py:class:`~fatqat.NoiseModel` passed via ``noise=``
-    attaches Kraus channels to gate occurrences; each is resolved at lowering
-    and applied right after its gate. Under density-matrix semantics a
-    channel is the exact Kraus sum (deterministic, fast-path compatible);
-    under statevector semantics each occurrence samples one trajectory
-    branch, which makes execution stochastic and forces per-shot replay.
-
-    Per-run ``simulation_config`` accepts ``seed``, ``shot_parallelism``,
-    ``kernel_parallelism``, ``max_workers``, and ``fusion``. Shot parallelism
-    controls independent trajectories; kernel parallelism controls numerical
-    work inside one evolution and never executes program operations out of
-    order. Both axes default to ``"auto"`` and FATQAT resolves at most one
-    parallel axis. ``max_workers`` is a shared concurrency ceiling, not a
-    promise that every worker receives useful work. ``fusion`` is independent
-    of concurrency and defaults off.
-    ``result_config`` controls the execution record: ``counts`` and
-    ``final_state``. ``shots`` is an explicit ``run()`` argument, matching a
-    hardware job's repetition count.
-
-    The ``runtime`` argument selects the execution technology for the chosen
-    representation - ``"numba"`` (default) or ``"numpy"``. The runtime keeps
-    the same simulation and numerical-tolerance contract while changing how
-    the work is executed;
-    dynamic-shot worker processes use the selected runtime as well. The Numba
-    runtime selects one internal thread axis appropriate to the
-    chosen axis; process workers are confined to one Numba thread so process
-    and thread parallelism never nest. A caller that needs predictable latency
-    for a small one-off run may select NumPy with both parallelism axes set to
-    ``"serial"``.
-
-    A backend instance reuses one simulator across runs, so it is efficient for
-    repeated calls from one caller but is not safe for concurrent ``run()``
-    calls.
+    A backend may be reused for sequential runs. It keeps numerical caches but
+    resets evolving state for every run. One instance is not safe for
+    concurrent calls to :meth:`run`.
 
     Examples:
         Density-matrix simulation, Qiskit style:
@@ -350,32 +262,29 @@ class Simulator:
         noise: NoiseModel | None = None,
         channel_implementation_map: ChannelImplementationMap | None = None,
     ) -> None:
-        """Create a simulator backend for the given method and runtime.
+        """Create a gate-level simulator.
 
         Args:
-            method: Simulation method: ``"statevector"`` or
-                ``"density_matrix"`` (case-insensitive short aliases ``"SV"``
-                / ``"DM"``) for a state, or ``"unitary"`` / ``"superop"`` for
-                the program's map.
+            method: ``"statevector"``, ``"density_matrix"``, ``"unitary"``, or
+                ``"superop"``. Names are case-insensitive; ``"SV"`` and
+                ``"DM"`` are accepted aliases.
+            runtime: Numerical engine, case-insensitive. ``"numba"`` (the
+                default) lazily JIT-compiles its kernels and provides the
+                runtime's threaded and fusion paths. ``"numpy"`` executes the
+                reference kernels directly without JIT warm-up. Both support
+                every method, but are not promised to be bit-identical.
             implementation_map: Optional matrix implementation map controlling
-                which operations this backend supports and how their matrices
-                are built. ``None`` (the default) uses
-                ``default_matrix_implementation_map()``. The backend copies
-                whatever map it receives, so mutating the caller's map object
-                after construction does not change this backend's behavior.
-            runtime: Execution technology: ``"numba"`` (the default) or
-                ``"numpy"``, case-insensitive. The runtime selects *how* the
-                chosen state representation is computed, never its semantics:
-                results are identical up to the documented per-simulator RNG
-                reproducibility contract. Both runtimes support every method.
+                supported operations and their matrix builders. ``None`` uses
+                :func:`~fatqat.implementation.default_matrix_implementation_map`.
             noise: Optional :py:class:`~fatqat.NoiseModel` applied to every
-                run. ``None`` means noise-free execution. The backend captures
-                the model's registrations once at construction.
+                run. ``None`` means ideal execution.
             channel_implementation_map: Optional map controlling which
-                `Channel` descriptor types this backend can resolve and how
-                their Kraus operators are built. ``None`` (the default) uses
-                ``default_channel_implementation_map()``. Copied, like
-                ``implementation_map``.
+                channel descriptors can be resolved to Kraus operators.
+                ``None`` uses the default channel map.
+
+        Their registrations are copied at construction, so later additions or
+        removals on the supplied registries do not change this backend. Custom
+        rule and declaration objects should be treated as immutable.
 
         Raises:
             BackendValidationError: If ``method`` or ``runtime`` is not one
@@ -437,18 +346,11 @@ class Simulator:
 
     @property
     def method(self) -> str:
-        """Canonical name of the state representation this backend runs.
+        """Canonical simulation method selected at construction.
 
-        One of ``"statevector"``, ``"density_matrix"``, ``"unitary"`` or
-        ``"superop"`` - the canonical name, not whatever alias was passed in,
-        so ``method="SV"`` reports ``"statevector"``. This is the same string
-        that appears as ``result.metadata["method"]`` and as the result's
-        native state field, so a caller can match on one value everywhere.
-
-        Reading it does not run anything: the method is fixed at construction.
-        That is what makes it usable as a precondition - a tool that only
-        supports some representations can say so before paying for an
-        evolution, instead of failing on a missing result field afterwards.
+        The value is ``"statevector"``, ``"density_matrix"``, ``"unitary"``,
+        or ``"superop"`` regardless of the alias originally supplied. It also
+        appears in result metadata and names the method-native result field.
 
         Examples:
             >>> import fatqat as fq
@@ -624,53 +526,67 @@ class Simulator:
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
     ) -> Job[Result]:
-        """Validate, execute, and package one program run.
+        """Validate and execute one program.
 
-        Resolves the program's effective resource layout and private engine
-        index allocation, chooses an execution strategy, runs the circuit, and
-        returns an eager ``Job`` whose ``result()`` yields a ``Result``.
-
-        ``simulation_config`` accepts ``seed``, ``shot_parallelism``
-        (``"auto"``, ``"serial"``, ``"threads"``, or ``"processes"``),
-        ``kernel_parallelism`` (``"auto"``, ``"serial"``, or ``"threads"``),
-        ``max_workers``, and ``fusion``. Kernel parallelism is numerical work
-        inside one evolution; it never executes program operations out of
-        order. FATQAT never nests the two parallel axes. Fusion defaults off
-        and can be enabled only for the Numba density-matrix, unitary, and
-        superoperator methods. ``result_config`` describes the
-        requested result artifacts: ``counts`` and ``final_state``. The
-        latter asks a simulator to return its terminal state in the
-        representation selected by this backend's ``method``.
+        The returned job is eager and already terminal. Validation and
+        lowering failures raise directly from this method; numerical or result
+        assembly failures produce a failed job whose :meth:`~fatqat.Job.result`
+        method re-raises the original error.
 
         Args:
             program: Program to execute.
-            shots: Number of circuit repetitions. Counts and a stochastic
-                final-state request require a positive integer; a
-                non-stochastic final-state-only request ignores it.
-            resource_layout: Optional public mapping from program quantum
-                refs to backend device operands. A supplied layout must cover
-                every declared quantum ref. The backend supplies its default
-                mapping when omitted.
+            shots: Circuit repetitions. Counts require a positive integer. An
+                explicitly requested stochastic final state requires exactly
+                one shot; deterministic state-only runs ignore this value.
+            resource_layout: Optional mapping from every program quantum
+                reference to a backend device operand. The backend's default
+                mapping is used when omitted.
             initial_state: Optional state to start every shot from instead of
                 the all-zero computational state. A statevector run takes a
                 ``(D,)`` vector; a density-matrix run takes ``(D, D)``, or a
-                ``(D,)`` vector read as the pure state it describes. ``D`` is
-                the product of the program's subsystem dimensions, so qudits
-                work without a separate form. Only the shape is checked - see
-                :py:meth:`_validate_initial_state`.
-            simulation_config: Optional simulator-only dictionary. Unknown or
-                incompatible entries raise an error.
-            result_config: Optional result-request dictionary. Unknown or
-                incompatible entries raise an error.
+                ``(D,)`` ket interpreted as a pure state. Only shape is
+                validated. Operator methods reject an initial state.
+            simulation_config: Optional per-run execution controls. String
+                choices are case-sensitive. Accepted keys are:
+
+                - ``"seed"`` (``int | None``, default ``None``): Non-negative
+                  seed for stochastic sampling; booleans are rejected.
+                  ``None`` uses fresh entropy.
+                - ``"shot_parallelism"`` (``str``, default ``"auto"``): How
+                  independent per-shot evolutions run. ``"auto"`` chooses a
+                  mode, ``"serial"`` uses the caller, ``"threads"`` uses
+                  worker threads, and ``"processes"`` uses worker processes.
+                - ``"kernel_parallelism"`` (``str``, default ``"auto"``):
+                  How numerical work within one evolution runs. ``"auto"``
+                  chooses a mode, ``"serial"`` uses serial kernels, and
+                  ``"threads"`` uses Numba's threaded kernels.
+                - ``"max_workers"`` (``int | None``, default ``None``):
+                  Concurrency ceiling for the selected parallel axis.
+                - ``"fusion"`` (``bool``, default ``False``): Combine
+                  compatible adjacent operations when the selected Numba
+                  method supports it.
+
+                Unknown or incompatible entries are rejected.
+            result_config: Optional output requests. Accepted keys are:
+
+                - ``"counts"`` (``bool | None``, default ``None``): Histogram
+                  of the final classical register. ``True`` requests it,
+                  ``False`` suppresses it, and ``None`` enables it when the
+                  program measures.
+                - ``"final_state"`` (``bool | None``, default ``None``):
+                  Method-native state or map. ``True`` requests it, ``False``
+                  suppresses it, and ``None`` enables it when that artifact is
+                  deterministic.
 
         Returns:
-            A completed ``Job``. Validation failures raise directly from
-            ``run()``; execution-stage failures are captured in a failed job
-            whose ``result()`` re-raises the underlying exception.
+            A completed :class:`~fatqat.Job` whose result is a
+            :class:`~fatqat.Result`.
 
         Raises:
-            BackendValidationError: If requested outputs are incompatible with
-                the program shape or ``shots``.
+            BackendValidationError: If the program, resource layout, noise
+                selectors, or requested configuration is invalid.
+            TypeError: If ``simulation_config`` or ``result_config`` is not a
+                dictionary or ``None``.
             UnsupportedOperationError: If the program contains an operation
                 without a backend implementation, or one whose target key is
                 illegal for this backend.
@@ -798,11 +714,13 @@ class Simulator:
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
     ) -> Job[list[Result]]:
-        """Bind and execute every row of one complete parameter batch.
+        """Bind and run every row of a complete parameter batch.
 
-        Single parameters accept shape ``(N,)`` and vectors accept shape
-        ``(N, M)``. The returned eager job contains one ordinary ``Result`` per
-        row, in input order. Version 1 delegates to :meth:`run` once per row.
+        Single parameters accept shape ``(N,)`` and parameter vectors accept
+        shape ``(N, M)``. Rows run in input order through :meth:`run` and share
+        the forwarded configuration. In particular, one explicit seed is
+        reused for every row, so sampled row errors are correlated. The full
+        batch is normalized before the first row executes.
 
         Args:
             program: Parameterized template program.
@@ -810,15 +728,34 @@ class Simulator:
             shots: Number of repetitions forwarded to every row.
             resource_layout: Optional layout forwarded unchanged to every row.
             initial_state: Optional starting state forwarded unchanged to every row.
-            simulation_config: Simulator options forwarded unchanged. An
-                explicit seed is reused for every row, so sampled row errors
-                are correlated; see :doc:`../guide/parameters-and-sweeps`.
-            result_config: Result request forwarded unchanged.
+            simulation_config: Per-run controls forwarded unchanged. Accepted
+                keys are:
+
+                - ``"seed"`` (``int | None``, default ``None``): Sampling
+                  seed.
+                - ``"shot_parallelism"`` (``str``, default ``"auto"``):
+                  ``"auto"``, ``"serial"``, ``"threads"``, or ``"processes"``.
+                - ``"kernel_parallelism"`` (``str``, default ``"auto"``):
+                  ``"auto"``, ``"serial"``, or ``"threads"``.
+                - ``"max_workers"`` (``int | None``, default ``None``):
+                  Concurrency ceiling.
+                - ``"fusion"`` (``bool``, default ``False``): Compatible
+                  operation fusion.
+
+            result_config: Output requests forwarded unchanged. Accepted keys
+                are:
+
+                - ``"counts"`` (``bool | None``, default ``None``): Histogram
+                  of the final classical register.
+                - ``"final_state"`` (``bool | None``, default ``None``):
+                  Method-native state or map.
+
+                ``True`` requests a field, ``False`` suppresses it, and
+                ``None`` uses the normal per-field default.
 
         Returns:
-            An eager job carrying an ordered list of row results. If a point
-            job fails, ``result()`` re-raises that error and no partial result
-            list is exposed.
+            An eager job carrying an ordered list of row results. If any row
+            fails, no partial list is exposed.
 
         Raises:
             TypeError: If ``bindings`` is not an object-keyed mapping or a
@@ -1292,25 +1229,20 @@ class Simulator:
         )
 
     def check_noise_support(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        """Report which parts of a noise model this backend can execute.
+        """Report whether this backend can execute a noise model.
 
-        A channel descriptor type is supported exactly when the backend's
-        channel implementation map has a rule for it - the map's coverage is
-        the capability declaration. A descriptor that distinguishes
-        probability and rate parameterization (`AmplitudeDamping`,
-        `PhaseDamping`, and `Depolarizing`) is
-        reported under a mode-qualified label such as ``"AmplitudeDamping(p)"``
-        rather than its bare class name: this matrix family never resolves a
-        rate without a duration, so a rate-mode instance is unsupported even
-        when the class itself has a registered rule. That lets a model
-        mixing both modes of the same class appear in both
-        `accepted_sources` and `rejected_sources` without ambiguity. Labels
-        are display identities only, never registry keys, and are
-        deduplicated while preserving first registration order.
+        Matrix simulators accept operation-bound finite channels for descriptor
+        types present in their channel implementation map. They reject
+        background sources, built-in damping descriptors in rate mode, and
+        :class:`~fatqat.noise.ThermalRelaxation` declarations; convert thermal
+        relaxation with ``as_channels(duration)`` first. Carrier loss is
+        accepted only by :class:`~fatqat.simulator.AtomArraySimulator`.
 
-        Background registrations are rejected because this backend has no
-        continuous-time evolution model. Reset-bound noise cannot pass model
-        admission.
+        The returned report lists accepted and rejected source-form labels in
+        first registration order, deduplicated across matching registrations.
+        It does not validate selectors against a program, invoke rules for
+        concrete target dimensions, apply method-specific restrictions, or
+        mutate the model.
 
         Args:
             noise_model: The noise model to check; it is not executed.

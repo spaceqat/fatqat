@@ -143,13 +143,18 @@ class ChannelImplementationMap(_ChannelImplementationRegistry):
 
 @dataclass(frozen=True)
 class NoiseSupportReport:
-    """Backend verdict on a `NoiseModel`, per noise source.
+    """Source-level compatibility report for a :class:`~fatqat.NoiseModel`.
+
+    Source-form labels are deduplicated, so several registrations of the same
+    descriptor and parameterization appear once. ``warnings`` contains
+    explanatory strings for rejected labels; constructing a report does not
+    emit Python warnings.
 
     Attributes:
         supported: ``True`` when every source in the model is executable.
-        accepted_sources: Names of sources the backend can execute.
-        rejected_sources: Names of sources the backend cannot execute.
-        warnings: Human-readable notes accompanying the rejections.
+        accepted_sources: Source-form labels the backend accepts.
+        rejected_sources: Source-form labels the backend rejects.
+        warnings: Explanations corresponding to rejected labels.
     """
 
     supported: bool

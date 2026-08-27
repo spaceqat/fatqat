@@ -49,6 +49,18 @@ napoleon_numpy_docstring = False
 
 autodoc_member_order = "bysource"
 autodoc_typehints = "signature"
+# A class reference describes the public API available on that class,
+# including methods supplied by its base classes. A page that places member
+# documentation manually can opt out with ``:no-members:``.
+autodoc_default_options = {
+    "members": True,
+    "inherited-members": True,
+}
+
+# API pages already establish the owning class in their title. Keep complete
+# object signatures and link targets, but omit that repeated class name from
+# the right-hand page contents.
+toc_object_entries_show_parents = "hide"
 
 intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
@@ -84,7 +96,7 @@ sphinx_gallery_conf = {
 html_theme = "pydata_sphinx_theme"
 html_static_path: list[str] = []
 html_theme_options = {
-    "navigation_depth": 2,
+    "navigation_depth": 3,
     "show_toc_level": 2,
     "navigation_with_keys": False,
     "icon_links": [],

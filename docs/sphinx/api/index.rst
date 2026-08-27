@@ -51,12 +51,12 @@ Each page begins with a short task-oriented overview, followed by the
 generated signatures, attributes, and methods for that supported surface.
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
 
    program
    registers
    operations
-   simulator
+   simulators/index
    pulse-emulator
    atom-emulators
    noise

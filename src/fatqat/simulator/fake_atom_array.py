@@ -1,38 +1,13 @@
-"""Fake neutral-atom backend for compiler prototyping (connectivity model).
+"""Neutral-atom hardware-profile simulator with occupancy and dynamic pairing.
 
-A configurable-capacity statevector target for the neutral-atom model. The
-device holds ``num_sites`` trap sites (an optional capacity, unbounded by
-default), each holding at most one atom; it carries no fixed topology and no
-coordinates. This
-is a prototype execution target, not a realistic device model: no routing, no
-timing, no transport, and ideal by default.
+The backend has a fixed native gate set but no fixed geometry. Programs with
+neither ``Put`` nor a matching, lowered atom-loss source start with every
+declared site occupied for compatibility with ordinary gate programs. Once
+either lifecycle feature is active, every site starts empty and ``Put`` loads
+atoms explicitly.
 
-Native gate set is exactly `~fatqat.operations.RX`, `~fatqat.operations.RY`,
-`~fatqat.operations.RZ` (single-qubit, any atom) and
-`~fatqat.operations.CZ`. Two-qubit-gate legality is
-dynamic: a ``CZ`` is legal only on a pair that is currently *paired* in the
-program's connectivity graph, which `~fatqat.operations.Pair` and
-`~fatqat.operations.Unpair` mutate mid-circuit.
-A ``CZ`` on a pair that is not currently paired raises
-`~fatqat.errors.BackendValidationError`: because the connectivity graph is
-fixed at compile time, an unpaired ``CZ`` can never take effect and is treated
-as a program error (a missing ``Pair``). That is distinct from a ``CZ`` an
-atom loss prevents at run time, which is dropped silently per shot.
-
-Atom occupancy is separate from the quantum state. Every site starts empty;
-`~fatqat.operations.Put` loads a fresh ``|0>`` atom into its targets (``Put``
-may appear any number of times). A gate
-whose target is never named in any ``Put`` can never hold an atom and is
-statically dropped; a program that uses neither ``Put`` nor atom loss keeps
-every declared qubit present, behaving like a plain statevector backend.
-`~fatqat.noise.Loss` attached to a gate (or to ``Put``, for imperfect
-loading) ejects atoms per shot; a lost or empty site measures the erasure
-digit ``2``, distinct from a real ``|0>``.
-
-Binding carries no coordinates: quantum registers map to device labels in
-declaration order (a `~fatqat.GridRegister`, if passed, is treated as a plain
-flat register). Connectivity, occupancy, and loss are the only atom-specific
-lifecycle; see :py:meth:`AtomArraySimulator._lower`.
+This simulator is intended for program and compiler testing. It does not model
+pulse timing, transport, or Hamiltonian dynamics.
 """
 
 from __future__ import annotations
@@ -78,7 +53,7 @@ class _AtomArrayPlanFacts:
 
 
 def fake_atom_array_implementation_map() -> MatrixImplementationMap:
-    """Native gate map: RX/RY/RZ and CZ, all legal on any target.
+    """Native gate map: RX/RY/RZ and CZ without fixed operand restrictions.
 
     CZ is registered as a single universal rule; two-qubit-gate *legality* is
     decided at lowering against the program's dynamic pairing graph (see
@@ -99,100 +74,23 @@ def fake_atom_array_implementation_map() -> MatrixImplementationMap:
 
 
 class AtomArraySimulator(Simulator):
-    """Statevector backend for the neutral-atom connectivity model.
+    """Simulate a neutral-atom connectivity and occupancy hardware profile.
 
-    A thin statevector-method `~fatqat.simulator.Simulator` specialization:
-    same execution engine, same `~fatqat.Result`/`~fatqat.Job` semantics. The
-    differences are an optional capacity (``num_sites`` trap sites,
-    unbounded by default, with no fixed topology), a fixed native gate
-    set (:py:class:`~fatqat.operations.RX`, :py:class:`~fatqat.operations.RY`,
-    :py:class:`~fatqat.operations.RZ`, and :py:data:`~fatqat.operations.CZ`),
-    coordinate-free resource mapping (declaration-order device labels; a
-    :py:class:`~fatqat.GridRegister`, if passed, is treated as a plain flat
-    register), and an atom lifecycle of connectivity, occupancy, and loss - see
-    :py:meth:`_lower`.
+    Hardware profile:
 
-    Connectivity:
-        Two-qubit-gate legality is dynamic. Use
-        :py:data:`~fatqat.operations.Pair` to connect two atoms and
-        :py:data:`~fatqat.operations.Unpair` to disconnect them; a
-        :py:data:`~fatqat.operations.CZ` is legal only while its pair is
-        currently paired, and raises
-        :py:class:`~fatqat.errors.BackendValidationError` otherwise - an
-        unpaired ``CZ`` is a program error (a missing ``Pair``), unlike a
-        ``CZ`` an atom loss prevents at run time, which is dropped silently per
-        shot. Pair/Unpair change no quantum state and emit no execution
-        step, but may carry movement-cost channel noise (e.g.
-        :py:class:`~fatqat.noise.Loss` or a decoherence channel).
+    - Native gates: ``RX``, ``RY``, ``RZ``, and ``CZ``.
+    - Connectivity: ``Pair`` and ``Unpair`` update the pairing graph; ``CZ``
+      is legal only while its atoms are paired. There is no fixed geometry.
+    - Layout: registers map to flat labels in declaration order. ``num_sites``
+      optionally limits capacity.
+    - Occupancy: programs using ``Put`` or matched atom loss start empty;
+      otherwise every declared site starts occupied. Empty or lost sites
+      measure as the erasure digit ``2``.
+    - Methods: all four methods are selectable without an atom lifecycle;
+      ``Put`` and loss require ``statevector`` or ``density_matrix``.
 
-    Atom lifecycle:
-        Every site starts empty. :py:data:`~fatqat.operations.Put` loads a
-        fresh ``|0>`` atom into its targets; a target never named in any
-        ``Put`` can never hold an atom and
-        its gates are statically dropped. Attach
-        :py:class:`~fatqat.noise.Loss` to a gate to eject atoms per
-        shot, or to ``Put`` to model imperfect loading; a lost or empty site
-        measures the erasure digit ``2``, distinct from a real ``|0>``. A
-        program that uses neither ``Put`` nor loss keeps every declared qubit
-        present, behaving like a plain statevector backend. Only this backend
-        models atom loss; a generic backend rejects ``Loss`` via
-        :py:meth:`check_noise_support` rather than ignoring it.
-
-        .. doctest:: atom_array_loss
-
-           >>> import numpy as np
-           >>> import fatqat as fq
-           >>> import fatqat.operations as ops
-           >>> noise = fq.NoiseModel()
-           >>> noise.add(fq.noise.Loss(p=1.0), operation=ops.RX)
-           >>> program = fq.Program(1, 1)
-           >>> program.add(ops.Put, 0)             # load an atom into site 0
-           >>> program.add(ops.RX(np.pi), 0)       # applies, then the atom is lost
-           >>> program.measure(0, 0)
-           >>> backend = fq.simulator.AtomArraySimulator(num_sites=1, noise=noise)
-           >>> backend.run(
-           ...     program, shots=10, simulation_config={"seed": 0}
-           ... ).result().get_counts()
-           {'2': 10}
-
-    Example:
-        A Bell pair built as ``CX(0 -> 1)`` on two atoms. ``CX`` is not native
-        (it lowers to ``H(target)``, ``CZ``, ``H(target)``, with ``H`` emitted
-        as ``RZ(pi)`` then ``RY(pi / 2)`` up to global phase), and the ``CZ``
-        only takes effect because ``ops.Pair`` connects the two atoms first;
-        without the pairing the ``CZ`` would raise a
-        ``BackendValidationError``.
-
-        .. doctest:: atom_array_cx
-
-           >>> import numpy as np
-           >>> import fatqat as fq
-           >>> import fatqat.operations as ops
-           >>> atoms = fq.QuantumRegister(2, name="atoms")
-           >>> program = fq.Program([atoms], 2)
-           >>> program.add(ops.Put, (0, 1))            # load both atoms
-           >>> program.add(ops.Pair, (0, 1))           # connect them so CZ is legal
-           >>> def native_h(target):
-           ...     program.add(ops.RZ(np.pi), target)
-           ...     program.add(ops.RY(np.pi / 2), target)
-           >>> native_h(0)                            # superpose the control
-           >>> native_h(1)                            # H on the target ...
-           >>> program.add(ops.CZ, (0, 1))
-           >>> native_h(1)                            # ... completes CX(0 -> 1)
-           >>> program.measure_all()
-
-           >>> backend = fq.simulator.AtomArraySimulator()  # unbounded capacity
-           >>> counts = backend.run(
-           ...     program,
-           ...     shots=1000,
-           ...     simulation_config={
-           ...         "seed": 1,
-           ...         "shot_parallelism": "serial",
-           ...         "kernel_parallelism": "serial",
-           ...     },
-           ... ).result().get_counts()
-           >>> all(bits[0] == bits[1] for bits in counts)  # only 00 and 11 occur
-           True
+    The simulator validates the program as written; it does not transport,
+    pair, route, or transpile atoms automatically.
     """
 
     _supports_loss = True
@@ -205,20 +103,22 @@ class AtomArraySimulator(Simulator):
         runtime: str = "numpy",
         noise: NoiseModel | None = None,
     ) -> None:
-        """Create a fake atom-array backend with the given number of sites.
+        """Create a constrained neutral-atom simulator.
 
         Args:
             num_sites: Number of trap sites the device holds (its atom
                 capacity). ``None`` (the default) imposes no capacity limit,
                 so a program of any size binds; if given, must be a positive
                 integer.
-            method: State representation, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`.
-            runtime: Numeric execution runtime, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`.
-            noise: Optional `~fatqat.NoiseModel`, exactly as on
-                `~fatqat.simulator.Simulator`. `None` (the default)
-                keeps the backend ideal.
+            method: ``"statevector"`` (or ``"SV"``), ``"density_matrix"``
+                (or ``"DM"``), ``"unitary"``, or ``"superop"``. Names are
+                case-insensitive.
+            runtime: ``"numpy"`` (default, direct execution) or ``"numba"``
+                (lazy JIT). See ``Simulator`` for runtime-specific
+                execution controls.
+            noise: Optional ``NoiseModel``. ``None`` keeps the backend ideal;
+                no calibration-derived model is provided. The model is copied
+                at construction.
 
         Raises:
             TypeError: If ``num_sites`` is neither ``None`` nor an int (bools
@@ -242,17 +142,11 @@ class AtomArraySimulator(Simulator):
 
     @property
     def implementation_map(self) -> MatrixImplementationMap:
-        """Return a copy of the compiler-facing device-aware implementation map.
+        """Copy of the compiler-facing native implementation map.
 
-        Examples:
-            >>> import fatqat as fq
-            >>> import fatqat.operations as ops
-            >>> backend = fq.simulator.AtomArraySimulator()
-            >>> impl_map = backend.implementation_map
-            >>> sorted(operation.name for operation in impl_map.supported_operations())
-            ['CZ', 'RX', 'RY', 'RZ']
-            >>> impl_map.supports(ops.CCX)
-            False
+        The map contains ``RX``, ``RY``, ``RZ``, and ``CZ``. Pairing legality
+        is checked separately while lowering the program. Mutating the returned
+        map does not change this backend.
         """
         return self._impl_map.copy()
 
@@ -290,12 +184,13 @@ class AtomArraySimulator(Simulator):
     ) -> list[ResolvedStep]:
         """Apply this program's atom lifecycle, then lower normally.
 
-        Every site starts empty; `~fatqat.operations.Put` loads a fresh ``|0>``
-        atom into its targets. A target that can never hold an atom (never
-        named in any ``Put``) has its gates statically dropped; ``Put``,
-        ``Pair``, and ``Unpair`` are themselves never dropped this way. When a
-        program uses no ``Put`` (and no atom loss), no occupancy is imposed and
-        every declared qubit is present, exactly like the plain backend.
+        When the program contains ``Put`` or atom loss, every site starts empty
+        and `~fatqat.operations.Put` loads a fresh ``|0>`` atom into its
+        targets. A target that can never hold an atom (never named in any
+        ``Put``) has its gates statically dropped; ``Put``, ``Pair``, and
+        ``Unpair`` are themselves never dropped this way. Without ``Put`` or
+        loss, no occupancy is imposed and every declared qubit is present,
+        exactly like the plain backend.
 
         Two-qubit-gate legality follows the connectivity graph, not a fixed
         topology. Connectivity starts empty and evolves at each

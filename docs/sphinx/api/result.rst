@@ -21,8 +21,8 @@ Read result data
   :py:class:`~fatqat.Estimator` rather than from a backend run; see
   :doc:`estimator`.
 
-:py:attr:`~fatqat.Result.available_data` lists the fields actually produced.
-:py:attr:`~fatqat.Result.metadata` records run context, including the effective result
+``Result.available_data`` lists the fields actually produced, and
+``Result.metadata`` records run context, including the effective result
 configuration.
 
 An accessor raises :py:class:`~fatqat.errors.ResultFieldUnavailableError` when its field was not

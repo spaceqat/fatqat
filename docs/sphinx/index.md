@@ -71,7 +71,7 @@ Look up the application-facing objects used in the guide.
 ::::
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 3
 :hidden:
 
 guide/index

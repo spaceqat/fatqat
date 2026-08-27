@@ -48,7 +48,7 @@ omitted for the backend default:
   Its concrete representation follows the backend's `method`: a statevector,
   density matrix, unitary, or super-operator.
 - Requesting `final_state=True` for a stochastic program is only valid for
-  `shots == 1`, since only one shot's post-measurement state is returned.
+  `shots == 1`, since the result contains one trajectory's final state.
 
 The program above is stochastic, so asking it for a final state needs
 `shots=1`. Dropping its measurements makes it deterministic instead:
@@ -142,10 +142,9 @@ Calling an accessor for a field that wasn't produced raises
 {py:exc}`~fatqat.errors.ResultFieldUnavailableError` rather than returning
 `None`; check `available_data` first if a field is optional in your workflow.
 
-If you request counts on a program where some declared clbit was never
-written by a measurement, the backend still returns zero-filled counts for
-that bit but emits a standard `UserWarning` — usually a sign a measurement
-was forgotten.
+If a counts-only run contains a declared clbit that was never written by a
+measurement, the backend still returns zero-filled counts for that bit but
+emits a standard `UserWarning` — usually a sign a measurement was forgotten.
 
 For qudits, custom matrix implementations, and execution strategies, see
 [Advanced](advanced.md).
