@@ -16,15 +16,11 @@ Import this namespace as ``ops`` and append operation values with
    program.add(ops.RX(0.2), 1)      # constructed parameterized value
    program.add(ops.CX, (0, 1))      # ordered multi-target value
 
-Names exported through ``fatqat.operations.__all__`` are the supported public
-surface. Fixed gates and parameter-free structural operations are immutable
-singleton values and must not be called. Parameterized gates and
-``PulseOperation`` are classes that construct values with frozen fields; their
-constructor arguments and any retained-container caveats are shown on the
-family pages. ``Measurement`` records are created by ``Program`` rather than
-added directly. ``Program.add`` retains an operation value rather than copying
-it, so values built with the documented immutable inputs can safely be reused
-across instructions and programs.
+Fixed gates and parameter-free structural operations are immutable singleton
+values and must not be called. Parameterized gates and ``PulseOperation`` are
+classes that construct immutable values. These values can be reused across
+instructions and programs. Create measurements through ``Program`` rather
+than adding them directly.
 
 Reference pages
 ---------------
@@ -46,8 +42,8 @@ Reference pages
    * - :doc:`operations/atom-gates`
      - Neutral-atom occupancy, pairing, and attached-noise constraints.
    * - :doc:`operations/direct-control`
-     - Channel-addressed ``PulseOperation`` values and the boundary between
-       construction and model-owned validation and binding.
+     - Channel-addressed ``PulseOperation`` values, validation, and model
+       binding.
 
 .. toctree::
    :maxdepth: 1
@@ -61,17 +57,13 @@ Reference pages
 Construction
 ------------
 
-For ordinary operations, ``Program.add`` checks that an operation value was
-supplied, resolves target references, enforces target count, and rejects
-repeated scalar targets. For a scalar instruction it also calls the
-operation's target validator. For a view instruction, it checks the
-grouped-view shape immediately; each expanded scalar member or pair reaches
-the target validator during built-in backend preparation. A direct
-``PulseOperation`` instead uses the channel-addressed contract on
-:doc:`operations/direct-control`. The frontend does not decide whether the
-selected backend implements an operation. An unsupported family raises
+For ordinary operations, ``Program.add`` resolves target references, enforces
+target count, and rejects repeated scalar targets. It does not decide whether
+the selected backend implements an operation or whether a device supports the
+requested targets. An unsupported family raises
 :py:exc:`~fatqat.errors.UnsupportedOperationError` when the backend prepares
-the program.
+the program. A direct ``PulseOperation`` instead follows the channel-addressed
+contract on :doc:`operations/direct-control`.
 
 Most operations require scalar exact built-in ``int`` or
 :py:class:`~fatqat.RegisterRef` targets. A bare integer is valid only when the
@@ -80,28 +72,18 @@ subclasses are rejected. Controlled gates use control-first order, and the
 first local operand is the most-significant digit in the matrices and basis
 actions on the family pages.
 
-The built-in :py:class:`RX`, :py:class:`RY`, and :py:class:`RZ` operations and
-:py:data:`CX` and :py:data:`CZ` values accept
-:py:class:`~fatqat.RegisterView` targets:
-
-* A rotation on one view expands to one operation per selected member.
-* ``CX`` or ``CZ`` on two views pairs their members in view order.
-* A two-view pair must use the same selector kind and equal cardinality. Two
-  views of the same register must not overlap. Mixing a scalar with a view is
-  invalid.
-
-Those view constraints are checked when the instruction is added. Device
-topology and operation support remain backend checks. A custom ``Operation``
-subclass can override ``accepts_views`` to opt into the shared unary or
-two-target expansion path. See :doc:`../guide/gates` for the ordinary
-construction workflow and :doc:`registers` for target and view types.
+:py:class:`RX`, :py:class:`RY`, and :py:class:`RZ` accept one
+:py:class:`~fatqat.RegisterView`; :py:data:`CX` and :py:data:`CZ` accept two
+compatible views and pair their members in order. See :doc:`registers` for the
+view compatibility rules and :doc:`../guide/gates` for the ordinary
+construction workflow.
 
 Operation base
 --------------
 
-Subclassing ``Operation`` defines a new frontend value; it does not register a
-matrix or pulse realization. See :doc:`../guide/advanced` for the custom matrix
-workflow.
+Subclassing ``Operation`` defines a new program-level value; it does not
+register a matrix or pulse realization. See :doc:`../guide/advanced` for the
+custom matrix workflow.
 
 .. autoclass:: fatqat.operations.Operation
    :members: name, num_subsystems, min_targets, accepts_views, validate_targets

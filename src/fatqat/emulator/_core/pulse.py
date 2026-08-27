@@ -390,14 +390,10 @@ class PulseImplementationMap:
     when it has no standard gate realizations, while the same general map path
     remains available for user-supplied rules.
 
-    Structurally identical to :class:`~fatqat.implementation.MatrixImplementationMap`
-    - same instance/class
-    normalization, same mutually exclusive unconstrained-versus-device-
-    specific registration policy, same copy semantics - composing the same
-    shared `_OperationRuleRegistry` mechanics. It differs only in what a rule
-    returns (:class:`PulseDefinition` instead of a matrix) and in how a selected
-    rule's failures are reported (see `_invoke_pulse_rule` and
-    `PulseImplementationError`).
+    It follows the registration and copy rules of
+    :class:`~fatqat.implementation.MatrixImplementationMap`, but its rules
+    return :class:`PulseDefinition` values. Invalid results and unexpected
+    rule failures raise :class:`~fatqat.errors.PulseImplementationError`.
 
     An operand-aware rule has the signature
     ``rule(operation, *, device_operands) -> PulseDefinition``. The tuple is

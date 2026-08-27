@@ -37,6 +37,7 @@ so using it as the ``operation=`` selector in
 :py:meth:`fatqat.NoiseModel.add` raises :py:exc:`ValueError`.
 
 .. autodata:: fatqat.operations.Reset
+   :no-value:
 
 Compiler barrier
 ----------------
@@ -46,11 +47,10 @@ operation or noise boundary. Add it with :py:meth:`fatqat.Program.add` and one
 or more distinct scalar targets. It rejects an empty target tuple, duplicate
 targets, and ``RegisterView``.
 
-The program preserves a barrier until lowering, where built-in simulators
-discard it without changing states or counts. ``Program.add`` accepts a
-condition, but built-in lowering discards the condition with the barrier and
-never evaluates it. A barrier cannot be bound to noise: using it as the
-``operation=`` selector in :py:meth:`fatqat.NoiseModel.add` raises
-:py:exc:`ValueError`.
+Built-in simulators treat a barrier as a no-op, so it does not change states or
+counts. ``Program.add`` accepts a condition, but built-in simulators do not
+evaluate it. A barrier cannot be bound to noise: using it as the ``operation=``
+selector in :py:meth:`fatqat.NoiseModel.add` raises :py:exc:`ValueError`.
 
 .. autodata:: fatqat.operations.Barrier
+   :no-value:

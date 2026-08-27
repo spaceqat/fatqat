@@ -457,8 +457,7 @@ each control's channel identifies the physical resource or resources it
 drives. The selected emulator binds those addresses against the model during
 program preparation rather than remapping them through ``ResourceLayout``.
 A drive or detuning channel resolves one transmon. An exchange channel resolves
-two transmons and their declared coupling, from which lowering obtains its
-scheduling claims and engine indices:
+two transmons and their declared coupling:
 
 .. code-block:: python
 

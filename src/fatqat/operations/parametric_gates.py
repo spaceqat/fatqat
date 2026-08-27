@@ -41,7 +41,7 @@ class RX(Operation):
 
     Args:
         theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
-            before execution. The value is stored unchanged.
+            before execution.
     """
 
     theta: float | Parameter
@@ -60,7 +60,7 @@ class RY(Operation):
 
     Args:
         theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
-            before execution. The value is stored unchanged.
+            before execution.
     """
 
     theta: float | Parameter
@@ -79,7 +79,7 @@ class RZ(Operation):
 
     Args:
         theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
-            before execution. The value is stored unchanged.
+            before execution.
     """
 
     theta: float | Parameter
@@ -97,7 +97,7 @@ class Phase(Operation):
 
     Args:
         theta: Numeric phase angle in radians, or a ``fatqat.Parameter`` to
-            bind before execution. The value is stored unchanged.
+            bind before execution.
     """
 
     theta: float | Parameter
@@ -204,7 +204,7 @@ class CPhase(Operation):
 
     Args:
         theta: Numeric phase angle in radians, or a ``fatqat.Parameter`` to
-            bind before execution. The value is stored unchanged.
+            bind before execution.
     """
 
     theta: float | Parameter

@@ -17,26 +17,24 @@ physical model and are not remapped by ``ResourceLayout``. A direct control
 may therefore address a modeled subsystem that no ordinary operation uses.
 For the transmon model, a drive or detuning channel resolves one subsystem;
 an exchange channel resolves two subsystems and their declared coupling.
-Lowering obtains scheduling resource claims and execution engine indices from
-these channel bindings.
 
-The operation constructor checks common structure and containment. The chosen
-pulse emulator later checks whether channel addresses are compatible with its
-model family and name valid resources, whether values obey that channel's
-real/complex and amplitude limits, whether the duration is supported, and
-whether concurrent controls can share physical resources. Addresses and
-controls are structural immutable values rather than handles owned by one
-model instance, so an operation can be reused with another compatible model
-and arrangement. The matrix :py:class:`~fatqat.simulator.Simulator` rejects
-direct pulse operations, and operation-scoped noise cannot be attached to
-them.
+Construction requires a positive finite duration, at least one control, unique
+channels, and controls that end within the block. The chosen pulse emulator
+then checks that channel addresses name compatible model resources, values obey
+the channel's real/complex and amplitude limits, the duration is supported,
+and concurrent controls can share physical resources. These late checks raise
+:py:exc:`~fatqat.errors.BackendValidationError`. An operation can be reused
+with another compatible model and arrangement. The matrix
+:py:class:`~fatqat.simulator.Simulator` rejects direct pulse operations with
+:py:exc:`~fatqat.errors.UnsupportedOperationError`. Operation-scoped noise
+cannot be attached to them; :py:meth:`fatqat.NoiseModel.add` raises
+:py:exc:`ValueError` for that selector.
 
-``Program.add(condition=...)`` may guard a direct pulse operation. Pulse
-lowering preserves the resolved condition. When it is false, the block's
-controls and condition-scoped generators are disabled, but the scheduled
-duration still elapses: model drift and background Lindblad sources continue
-over that interval. As with other conditions, the frontend does not promise
-support from every backend or execution method.
+``Program.add(condition=...)`` may guard a direct pulse operation. When the
+condition is false, the controls are disabled but the full duration still
+elapses: model drift and background Lindblad sources continue over that
+interval. As with other conditions, support depends on the backend and
+execution method.
 
 See :doc:`../pulse-emulator` for the owning
 :py:class:`~fatqat.emulator.PulseControl` and

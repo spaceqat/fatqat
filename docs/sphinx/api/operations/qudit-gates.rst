@@ -6,17 +6,8 @@ Qudit gates
 The default matrix implementation derives these gates from the target register
 dimensions and works for every local dimension ``d >= 2`` unless a row below
 says otherwise. Device-specific and pulse backends may support a smaller set or
-none. Power arguments are integers and are reduced modulo the relevant target
-dimension at matrix lowering; the operation value retains the original
-integer. The matrix simulator performs dimension-dependent realization when it
-prepares the program.
-
-The supported ``power`` inputs are integers. ``Shift``, ``Clock``, and
-``CClock`` retain the supplied value without eager type validation, so a
-non-integer or ``Parameter`` can survive construction; those forms are outside
-the supported contract and may fail during matrix lowering or produce an
-undocumented fractional phase. Parameter binding does not override an
-operation field's declared type contract.
+none. ``power`` must be an integer; negative and oversized powers are valid and
+are equivalent modulo the relevant target dimension.
 
 .. list-table:: Qudit gates
    :header-rows: 1
@@ -62,17 +53,15 @@ operation field's declared type contract.
      - ``|i,j>`` gains ``omega**(i*j*power)`` using the target's
        ``omega=exp(2*pi*i/d_target)``. It is CZ for two qubits and power 1.
 
-The supported level inputs are integers. ``SwapLevels`` and the subspace
-rotations reject equal or negative values at construction, and ``Program.add``
-then rejects values outside the resolved scalar target dimension. They do not
-eagerly verify the index type. The subspace constructors also retain rather
-than copy their two-item input; pass the documented tuple, because a mutable
-container remains mutable and can make the frozen operation unhashable.
-Non-integral values are unsupported and can fail during matrix lowering.
+``SwapLevels`` and the subspace rotations require integer level indices. They
+reject equal or negative indices at construction, and ``Program.add`` rejects
+indices outside the resolved scalar target dimension.
 
-``Sum`` is different: equal dimensions are a constraint of the default
-implementation rather than the frontend, so mismatched dimensions raise
-:py:exc:`~fatqat.errors.MatrixImplementationError` during matrix lowering.
+``Sum`` is different: the default matrix backend requires equal dimensions,
+but ``Program.add`` does not enforce that backend-specific constraint.
+Mismatched dimensions raise
+:py:exc:`~fatqat.errors.MatrixImplementationError` when the matrix backend
+prepares the program.
 
 Matrix definitions
 ------------------
@@ -120,9 +109,7 @@ Sum
 ~~~
 
 ``Sum`` takes operands as ``(control, target)``. For equal dimension ``d``,
-the control is the local most-significant factor. This gate-local operand
-convention is independent of the simulator's global state-vector index
-ordering:
+the control is the local most-significant factor:
 
 .. math::
 
@@ -300,6 +287,7 @@ operation properties are documented on the :doc:`Operations overview
    :show-inheritance:
 
 .. autodata:: fatqat.operations.Sum
+   :no-value:
 
 .. autoclass:: fatqat.operations.SwapLevels
    :members:
@@ -308,7 +296,9 @@ operation properties are documented on the :doc:`Operations overview
    :show-inheritance:
 
 .. autodata:: fatqat.operations.Fourier
+   :no-value:
 .. autodata:: fatqat.operations.InverseFourier
+   :no-value:
 
 .. autoclass:: fatqat.operations.SubspaceRX
    :members:

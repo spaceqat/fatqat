@@ -33,8 +33,8 @@ class HGate(Operation):
     """Put one qubit into or out of an equal superposition.
 
     In ``|0>, |1>`` basis order, the matrix is
-    ``[[1, 1], [1, -1]] / sqrt(2)``. Add the singleton ``ops.H`` to a
-    program; this implementation class is not the construction API.
+    ``[[1, 1], [1, -1]] / sqrt(2)``. Use the singleton ``ops.H`` without
+    parentheses.
     """
 
     name: ClassVar[str] = "H"
@@ -45,8 +45,8 @@ class HGate(Operation):
 class IGate(Operation):
     """Leave one qubit unchanged.
 
-    The matrix is ``[[1, 0], [0, 1]]``. Add the singleton ``ops.I`` to a
-    program; this implementation class is not the construction API.
+    The matrix is ``[[1, 0], [0, 1]]``. Use the singleton ``ops.I`` without
+    parentheses.
     """
 
     name: ClassVar[str] = "I"
@@ -57,8 +57,8 @@ class IGate(Operation):
 class SGate(Operation):
     """Apply the S phase gate, the square root of Z, to one qubit.
 
-    The matrix is ``diag(1, i)``. Add the singleton ``ops.S`` to a program;
-    this implementation class is not the construction API.
+    The matrix is ``diag(1, i)``. Use the singleton ``ops.S`` without
+    parentheses.
     """
 
     name: ClassVar[str] = "S"
@@ -69,8 +69,8 @@ class SGate(Operation):
 class SdgGate(Operation):
     """Apply the inverse S phase gate to one qubit.
 
-    The matrix is ``diag(1, -i)``. Add the singleton ``ops.Sdg`` to a
-    program; this implementation class is not the construction API.
+    The matrix is ``diag(1, -i)``. Use the singleton ``ops.Sdg`` without
+    parentheses.
     """
 
     name: ClassVar[str] = "Sdg"
@@ -81,9 +81,8 @@ class SdgGate(Operation):
 class SXGate(Operation):
     """Apply the principal square root of X to one qubit.
 
-    The matrix is ``[[1+i, 1-i], [1-i, 1+i]] / 2``. Add the singleton
-    ``ops.SX`` to a program; this implementation class is not the
-    construction API.
+    The matrix is ``[[1+i, 1-i], [1-i, 1+i]] / 2``. Use the singleton
+    ``ops.SX`` without parentheses.
     """
 
     name: ClassVar[str] = "SX"
@@ -94,8 +93,8 @@ class SXGate(Operation):
 class TGate(Operation):
     """Apply a pi/4 phase to the ``|1>`` amplitude of one qubit.
 
-    The matrix is ``diag(1, exp(i*pi/4))``. Add the singleton ``ops.T`` to a
-    program; this implementation class is not the construction API.
+    The matrix is ``diag(1, exp(i*pi/4))``. Use the singleton ``ops.T``
+    without parentheses.
     """
 
     name: ClassVar[str] = "T"
@@ -106,8 +105,8 @@ class TGate(Operation):
 class TdgGate(Operation):
     """Apply a -pi/4 phase to the ``|1>`` amplitude of one qubit.
 
-    The matrix is ``diag(1, exp(-i*pi/4))``. Add the singleton ``ops.Tdg`` to
-    a program; this implementation class is not the construction API.
+    The matrix is ``diag(1, exp(-i*pi/4))``. Use the singleton ``ops.Tdg``
+    without parentheses.
     """
 
     name: ClassVar[str] = "Tdg"
@@ -118,8 +117,8 @@ class TdgGate(Operation):
 class XGate(Operation):
     """Exchange ``|0>`` and ``|1>`` on one qubit.
 
-    The Pauli-X matrix is ``[[0, 1], [1, 0]]``. Add the singleton ``ops.X``
-    to a program; this implementation class is not the construction API.
+    The Pauli-X matrix is ``[[0, 1], [1, 0]]``. Use the singleton ``ops.X``
+    without parentheses.
     """
 
     name: ClassVar[str] = "X"
@@ -130,8 +129,8 @@ class XGate(Operation):
 class YGate(Operation):
     """Apply the Pauli-Y bit-and-phase flip to one qubit.
 
-    The matrix is ``[[0, -i], [i, 0]]``. Add the singleton ``ops.Y`` to a
-    program; this implementation class is not the construction API.
+    The matrix is ``[[0, -i], [i, 0]]``. Use the singleton ``ops.Y`` without
+    parentheses.
     """
 
     name: ClassVar[str] = "Y"
@@ -142,8 +141,8 @@ class YGate(Operation):
 class ZGate(Operation):
     """Negate the ``|1>`` amplitude of one qubit.
 
-    The Pauli-Z matrix is ``diag(1, -1)``. Add the singleton ``ops.Z`` to a
-    program; this implementation class is not the construction API.
+    The Pauli-Z matrix is ``diag(1, -1)``. Use the singleton ``ops.Z`` without
+    parentheses.
     """
 
     name: ClassVar[str] = "Z"
@@ -160,9 +159,8 @@ class CXGate(Operation):
     """Flip a target qubit when its control is ``|1>``.
 
     Targets are ``(control, target)``. ``CX`` also accepts a compatible pair
-    of ``RegisterView`` values and applies the gate member by member. Add the
-    singleton ``ops.CX``; this implementation class is not the construction
-    API.
+    of ``RegisterView`` values and applies the gate member by member. Use the
+    singleton ``ops.CX`` without parentheses.
     """
 
     name: ClassVar[str] = "CX"
@@ -175,9 +173,8 @@ class CZGate(Operation):
     """Negate ``|11>`` and leave the other two-qubit basis states unchanged.
 
     Targets are ``(control, target)``. ``CZ`` also accepts a compatible pair
-    of ``RegisterView`` values and applies the gate member by member. Add the
-    singleton ``ops.CZ``; this implementation class is not the construction
-    API.
+    of ``RegisterView`` values and applies the gate member by member. Use the
+    singleton ``ops.CZ`` without parentheses.
     """
 
     name: ClassVar[str] = "CZ"
@@ -189,8 +186,7 @@ class CZGate(Operation):
 class SwapGate(Operation):
     """Exchange the states of two qubits.
 
-    Add the singleton ``ops.Swap`` to two scalar targets; this implementation
-    class is not the construction API.
+    Use the singleton ``ops.Swap`` without parentheses on two scalar targets.
     """
 
     name: ClassVar[str] = "Swap"
@@ -201,8 +197,8 @@ class SwapGate(Operation):
 class CYGate(Operation):
     """Apply Pauli-Y to a target qubit when its control is ``|1>``.
 
-    Targets are ``(control, target)``. Add the singleton ``ops.CY``; this
-    implementation class is not the construction API.
+    Targets are ``(control, target)``. Use the singleton ``ops.CY`` without
+    parentheses.
     """
 
     name: ClassVar[str] = "CY"
@@ -214,8 +210,7 @@ class CSGate(Operation):
     """Apply S to a target qubit when its control is ``|1>``.
 
     Targets are ``(control, target)`` and the matrix is ``diag(1, 1, 1, i)``.
-    Add the singleton ``ops.CS``; this implementation class is not the
-    construction API.
+    Use the singleton ``ops.CS`` without parentheses.
     """
 
     name: ClassVar[str] = "CS"
@@ -226,8 +221,7 @@ class CSGate(Operation):
 class iSwapGate(Operation):
     """Swap ``|01>`` and ``|10>`` while multiplying each by ``i``.
 
-    Add the singleton ``ops.iSwap`` to two scalar targets; this implementation
-    class is not the construction API.
+    Use the singleton ``ops.iSwap`` without parentheses on two scalar targets.
     """
 
     name: ClassVar[str] = "iSwap"
@@ -238,9 +232,8 @@ class iSwapGate(Operation):
 class CCXGate(Operation):
     """Flip a target qubit when both controls are ``|1>``.
 
-    The Toffoli target order is ``(control0, control1, target)``. Add the
-    singleton ``ops.CCX``; this implementation class is not the construction
-    API.
+    The Toffoli target order is ``(control0, control1, target)``. Use the
+    singleton ``ops.CCX`` without parentheses.
     """
 
     name: ClassVar[str] = "CCX"
@@ -251,9 +244,8 @@ class CCXGate(Operation):
 class CSwapGate(Operation):
     """Exchange two target qubits when the control is ``|1>``.
 
-    The Fredkin target order is ``(control, target0, target1)``. Add the
-    singleton ``ops.CSwap``; this implementation class is not the construction
-    API.
+    The Fredkin target order is ``(control, target0, target1)``. Use the
+    singleton ``ops.CSwap`` without parentheses.
     """
 
     name: ClassVar[str] = "CSwap"

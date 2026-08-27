@@ -32,15 +32,11 @@ class Shift(Operation):
     """Cyclically shift one subsystem's computational-basis level.
 
     On a target of dimension ``d``, ``|k>`` maps to
-    ``|(k + power) mod d>``. The backend reads ``d`` from the target and
-    reduces ``power`` modulo ``d`` when it builds the matrix, so negative and
-    oversized integer powers are valid. ``Shift(1)`` on a qubit is X.
+    ``|(k + power) mod d>``. Negative and oversized integer powers are valid
+    and equivalent modulo ``d``. ``Shift(1)`` on a qubit is X.
 
     Args:
-        power: Integer cyclic shift amount, stored unchanged until lowering.
-            The constructor does not validate its type; non-integer values and
-            ``Parameter`` placeholders are outside the supported contract and
-            can fail during matrix lowering.
+        power: Integer cyclic shift amount.
     """
 
     power: int
@@ -53,15 +49,12 @@ class Clock(Operation):
     """Apply a dimension-dependent phase to each basis level.
 
     On a target of dimension ``d``, ``|k>`` gains phase
-    ``omega**(k*power)``, where ``omega = exp(2*pi*i/d)``. The backend reduces
-    ``power`` modulo ``d`` at lowering, so negative and oversized integer
-    powers are valid. ``Clock(1)`` on a qubit is Z.
+    ``omega**(k*power)``, where ``omega = exp(2*pi*i/d)``. Negative and
+    oversized integer powers are valid and equivalent modulo ``d``.
+    ``Clock(1)`` on a qubit is Z.
 
     Args:
-        power: Integer phase power, stored unchanged until lowering. The
-            constructor does not validate its type; non-integer values and
-            ``Parameter`` placeholders are outside the supported contract and
-            may produce undocumented fractional phases.
+        power: Integer phase power.
     """
 
     power: int
@@ -79,9 +72,9 @@ class SumGate(Operation):
 
     The default matrix implementation requires both target dimensions to be
     equal. ``Program.add`` does not check that backend-dependent constraint;
-    the default matrix simulator reports a ``MatrixImplementationError`` while
-    lowering mismatched targets. Add the singleton ``ops.Sum`` without
-    parentheses; this implementation class is not the construction API.
+    the default matrix simulator reports ``MatrixImplementationError`` during
+    program preparation for mismatched targets. Use the singleton ``ops.Sum``
+    without parentheses.
     """
 
     name: ClassVar[str] = "Sum"
@@ -100,10 +93,6 @@ class SwapLevels(Operation):
     The gate is Hermitian and self-inverse. On a qubit,
     ``SwapLevels(0, 1)`` is X. For qutrits, the three choices are often named
     X01, X02, and X12 (Muthukrishnan-Stroud gates).
-
-    Integer level indices are the supported contract. Construction checks
-    equality and negativity but does not validate their types; non-integral
-    values are unsupported and can fail during matrix lowering.
 
     Args:
         j: First non-negative level index.
@@ -152,9 +141,8 @@ class FourierGate(Operation):
 
     For dimension ``d``, ``|j>`` maps to
     ``sum(exp(2*pi*i*j*k/d) * |k>) / sqrt(d)``. This is the Chrestenson gate,
-    reduces to H for ``d=2``, and is often called THadamard for qutrits. Add
-    the singleton ``ops.Fourier`` without parentheses; this implementation
-    class is private.
+    reduces to H for ``d=2``, and is often called THadamard for qutrits. Use
+    the singleton ``ops.Fourier`` without parentheses.
     """
 
     name: ClassVar[str] = "Fourier"
@@ -167,8 +155,8 @@ class FourierdgGate(Operation):
 
     This is the conjugate transpose of ``Fourier``: its exponent is negative.
     It coincides with H in dimension two but differs from ``Fourier`` for
-    higher dimensions. Add the singleton ``ops.InverseFourier`` without
-    parentheses; this implementation class is private.
+    higher dimensions. Use the singleton ``ops.InverseFourier`` without
+    parentheses.
     """
 
     name: ClassVar[str] = "InverseFourier"
@@ -191,14 +179,11 @@ class SubspaceRX(Operation):
 
     Args:
         theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
-            before execution. The value is stored unchanged.
+            before execution.
         subspace: Tuple of exactly two distinct, non-negative integer level
-            indices. Construction unpacks but does not copy or type-check the
-            input; another two-item container is unsupported, remains retained,
-            and may be mutable or fail during later validation.
+            indices in ``(|0>, |1>)`` role order.
 
     Raises:
-        TypeError: If ``subspace`` cannot be unpacked as an iterable.
         ValueError: At construction if it does not contain exactly two values,
             its indices are equal, or an index is negative; or from
             ``Program.add`` if an index is outside the target dimension.
@@ -249,14 +234,11 @@ class SubspaceRY(Operation):
 
     Args:
         theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
-            before execution. The value is stored unchanged.
+            before execution.
         subspace: Tuple of exactly two distinct, non-negative integer level
-            indices. Construction unpacks but does not copy or type-check the
-            input; another two-item container is unsupported, remains retained,
-            and may be mutable or fail during later validation.
+            indices in ``(|0>, |1>)`` role order.
 
     Raises:
-        TypeError: If ``subspace`` cannot be unpacked as an iterable.
         ValueError: At construction if it does not contain exactly two values,
             its indices are equal, or an index is negative; or from
             ``Program.add`` if an index is outside the target dimension.
@@ -307,14 +289,11 @@ class SubspaceRZ(Operation):
 
     Args:
         theta: Numeric angle in radians, or a ``fatqat.Parameter`` to bind
-            before execution. The value is stored unchanged.
+            before execution.
         subspace: Tuple of exactly two distinct, non-negative integer level
-            indices. Construction unpacks but does not copy or type-check the
-            input; another two-item container is unsupported, remains retained,
-            and may be mutable or fail during later validation.
+            indices in ``(|0>, |1>)`` role order.
 
     Raises:
-        TypeError: If ``subspace`` cannot be unpacked as an iterable.
         ValueError: At construction if it does not contain exactly two values,
             its indices are equal, or an index is negative; or from
             ``Program.add`` if an index is outside the target dimension.
@@ -362,15 +341,11 @@ class CClock(Operation):
     Targets are ``(control, target)``. On basis state ``|i, j>``, the phase is
     ``omega**(i*j*power)``, where
     ``omega = exp(2*pi*i/target_dimension)``. Control and target dimensions
-    may differ. The backend reduces ``power`` modulo the target dimension at
-    lowering, so negative and oversized integer powers are valid. On two
-    qubits, ``CClock(1)`` is CZ.
+    may differ. Negative and oversized integer powers are valid and equivalent
+    modulo the target dimension. On two qubits, ``CClock(1)`` is CZ.
 
     Args:
-        power: Integer phase power, stored unchanged until lowering. The
-            constructor does not validate its type; non-integer values and
-            ``Parameter`` placeholders are outside the supported contract and
-            may produce undocumented fractional phases.
+        power: Integer phase power.
     """
 
     power: int

@@ -1,4 +1,4 @@
-"""Barrier: compiler-facing no-op frontend operation."""
+"""Compiler barrier operation."""
 
 from __future__ import annotations
 
@@ -12,16 +12,14 @@ from .base import Operation
 class BarrierGate(Operation):
     """Mark a compiler boundary without changing the quantum state.
 
-    A barrier has no matrix, measurement result, or noise boundary. It remains
-    in the program until lowering, when the built-in simulators discard it. It
-    therefore has no effect on simulated states or counts. ``Program.add``
-    accepts a condition, but built-in lowering discards that condition with the
-    barrier and never evaluates it.
+    A barrier has no matrix, measurement result, or noise boundary. Built-in
+    simulators treat it as a no-op, so it has no effect on states or counts.
+    ``Program.add`` accepts a condition, but built-in simulators do not
+    evaluate it.
 
     Add the singleton ``ops.Barrier`` without parentheses. It accepts one or
     more distinct scalar targets; ``RegisterView`` and an empty target tuple
-    are rejected by ``Program.add``. This implementation class is not exported
-    through ``fatqat.operations.__all__``.
+    are rejected by ``Program.add``.
 
     Examples:
         >>> import fatqat as fq

@@ -21,13 +21,12 @@ class PairGate(Operation):
 
     ``Pair`` must be unconditional. ``Program.add`` accepts a condition
     syntactically, but ``AtomArraySimulator`` raises ``BackendValidationError``
-    while lowering it. Noise attached to ``Pair`` is emitted on its targets and
-    can model movement loss or decoherence even though ``Pair`` itself has no
-    execution matrix.
+    during program preparation. Noise attached to ``Pair`` acts on its targets
+    and can model movement loss or decoherence even though ``Pair`` does not
+    change the quantum state.
 
     Add the singleton ``ops.Pair`` without parentheses. It requires exactly two
-    distinct scalar targets and rejects ``RegisterView``. This implementation
-    class is not exported through ``fatqat.operations.__all__``.
+    distinct scalar targets and rejects ``RegisterView``.
 
     Examples:
         >>> import fatqat as fq
@@ -47,18 +46,16 @@ class UnpairGate(Operation):
     ``Unpair`` is implemented by ``AtomArraySimulator`` only. Targets are the
     two distinct atoms ``(a, b)``; their order does not affect connectivity.
     Removing an absent edge is a connectivity no-op. The instruction changes
-    no quantum state, but attached movement-cost noise is still emitted on its
+    no quantum state, but attached movement-cost noise is still applied to its
     targets.
 
     ``Unpair`` must be unconditional. ``Program.add`` accepts a condition
     syntactically, but ``AtomArraySimulator`` raises ``BackendValidationError``
-    while lowering it. After unpairing, a supported two-atom gate on that pair
-    again fails its connectivity check until another ``Pair``.
+    during program preparation. After unpairing, a supported two-atom gate on
+    that pair again fails its connectivity check until another ``Pair``.
 
     Add the singleton ``ops.Unpair`` without parentheses. It requires exactly
-    two distinct scalar targets and rejects ``RegisterView``. This
-    implementation class is not exported through
-    ``fatqat.operations.__all__``.
+    two distinct scalar targets and rejects ``RegisterView``.
 
     Examples:
         >>> import fatqat as fq

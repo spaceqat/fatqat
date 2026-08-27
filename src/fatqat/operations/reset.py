@@ -1,4 +1,4 @@
-"""Reset: non-unitary frontend operation."""
+"""Non-unitary reset operation."""
 
 from __future__ import annotations
 
@@ -19,8 +19,7 @@ class ResetGate(Operation):
 
     Add the singleton ``ops.Reset`` without parentheses. It accepts one or
     more distinct scalar targets of any local dimension; ``RegisterView`` and
-    an empty target tuple are rejected by ``Program.add``. This implementation
-    class is not exported through ``fatqat.operations.__all__``.
+    an empty target tuple are rejected by ``Program.add``.
 
     Examples:
         >>> import fatqat as fq

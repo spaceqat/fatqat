@@ -3,12 +3,11 @@ Qubit gates
 
 .. currentmodule:: fatqat.operations
 
-The default matrix implementation defines the gates on this page for
-dimension-2 targets. The frontend deliberately allows one to be added to a
-higher-dimensional target, but the default matrix backend then raises
-:py:exc:`~fatqat.errors.BackendValidationError` during preparation because the
-matrix shape does not match the target dimension. Hardware-profile and pulse
-backends may support only a subset; consult the selected backend page.
+The default matrix backend supports the gates on this page on dimension-2
+targets. ``Program.add`` does not enforce that backend-specific constraint; the
+matrix backend raises :py:exc:`~fatqat.errors.BackendValidationError` during
+program preparation for a higher-dimensional target. Hardware-profile and
+pulse backends may support only a subset; consult the selected backend page.
 
 Fixed gates
 -----------
@@ -18,55 +17,54 @@ single-qubit matrices use ``|0>, |1>`` basis order.
 
 .. list-table:: Fixed single-qubit gates
    :header-rows: 1
-   :widths: 14 31 55
+   :widths: 18 82
 
    * - Value
      - Basis action
-     - Meaning
    * - :py:data:`I`
      - Leaves :math:`|0\rangle` and :math:`|1\rangle` unchanged.
-     - Identity.
    * - :py:data:`H`
      - Maps :math:`|0\rangle` to :math:`(|0\rangle+|1\rangle)/\sqrt{2}`
        and :math:`|1\rangle` to
        :math:`(|0\rangle-|1\rangle)/\sqrt{2}`.
-     - Hadamard superposition transform.
    * - :py:data:`X`
      - Exchanges :math:`|0\rangle` and :math:`|1\rangle`.
-     - Exchanges ``|0>`` and ``|1>``.
    * - :py:data:`Y`
      - Maps :math:`|0\rangle` to :math:`i|1\rangle` and
        :math:`|1\rangle` to :math:`-i|0\rangle`.
-     - Pauli-Y bit-and-phase flip.
    * - :py:data:`Z`
      - Maps :math:`|1\rangle` to :math:`-|1\rangle`.
-     - Negates the ``|1>`` amplitude.
    * - :py:data:`S`
      - Maps :math:`|1\rangle` to :math:`i|1\rangle`.
-     - Square root of Z.
    * - :py:data:`Sdg`
      - Maps :math:`|1\rangle` to :math:`-i|1\rangle`.
-     - Inverse of S.
    * - :py:data:`SX`
      - Two applications have the same action as X.
-     - Principal square root of X.
    * - :py:data:`T`
      - Maps :math:`|1\rangle` to :math:`e^{i\pi/4}|1\rangle`.
-     - Applies a ``pi/4`` phase to ``|1>``.
    * - :py:data:`Tdg`
      - Maps :math:`|1\rangle` to :math:`e^{-i\pi/4}|1\rangle`.
-     - Inverse of T.
 
 .. autodata:: fatqat.operations.I
+   :no-value:
 .. autodata:: fatqat.operations.H
+   :no-value:
 .. autodata:: fatqat.operations.X
+   :no-value:
 .. autodata:: fatqat.operations.Y
+   :no-value:
 .. autodata:: fatqat.operations.Z
+   :no-value:
 .. autodata:: fatqat.operations.S
+   :no-value:
 .. autodata:: fatqat.operations.Sdg
+   :no-value:
 .. autodata:: fatqat.operations.SX
+   :no-value:
 .. autodata:: fatqat.operations.T
+   :no-value:
 .. autodata:: fatqat.operations.Tdg
+   :no-value:
 
 For the multi-qubit values below, targets are ordered exactly as shown.
 
@@ -128,9 +126,7 @@ For each two-qubit matrix, the targets are :math:`(q_0,q_1)` and rows and
 columns use basis order
 :math:`(|00\rangle,|01\rangle,|10\rangle,|11\rangle)`. The first operand
 :math:`q_0` is the local most-significant bit. It is the control for ``CX``,
-``CY``, ``CZ``, and ``CS``; :math:`q_1` is the target. This is the gate-local
-operand convention, independent of the simulator's global state-vector index
-ordering.
+``CY``, ``CZ``, and ``CS``; :math:`q_1` is the target.
 
 .. math::
 
@@ -225,22 +221,28 @@ the most-significant bit:
    \end{pmatrix}
 
 .. autodata:: fatqat.operations.CX
+   :no-value:
 .. autodata:: fatqat.operations.CY
+   :no-value:
 .. autodata:: fatqat.operations.CZ
+   :no-value:
 .. autodata:: fatqat.operations.CS
+   :no-value:
 .. autodata:: fatqat.operations.Swap
+   :no-value:
 .. autodata:: fatqat.operations.iSwap
+   :no-value:
 .. autodata:: fatqat.operations.CCX
+   :no-value:
 .. autodata:: fatqat.operations.CSwap
+   :no-value:
 
 Parameterized gates
 -------------------
 
-All angles are in radians. These constructors store their arguments unchanged;
-they do not normalize angles. Every angle field accepts a
-:py:class:`~fatqat.Parameter` for later binding. Every backend and exporter
-rejects an unbound program with
-:py:exc:`~fatqat.errors.BackendValidationError` before numeric realization.
+All angles are in radians and are not normalized. Every angle field accepts a
+:py:class:`~fatqat.Parameter` for later binding through
+:py:meth:`fatqat.Program.assign_parameters`.
 
 Let ``c = cos(theta/2)`` and ``s = sin(theta/2)``. The following definitions
 use ``|0>, |1>`` basis order.

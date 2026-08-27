@@ -11,20 +11,13 @@ from ..registers import RegisterRef
 class Measurement:
     """Record a computational-basis measurement into classical slots.
 
-    Measurements are instruction records with frozen fields and retain
-    insertion order alongside operations. Each quantum target is paired with
-    the classical output at the same tuple position. Their local dimensions
-    must match, so a qudit outcome is written to a classical slot of the same
-    dimension.
-
-    Prefer ``Program.measure`` or ``Program.measure_all`` to construct these
-    values. Those methods resolve integers, verify register kind and ownership,
-    and pass tuples here. The direct constructor stores ``targets`` and
-    ``outputs`` exactly as supplied: it does not copy them or validate that
-    they are tuples of the correct ``RegisterRef`` kind. It only checks the
-    structural invariants described below, so malformed direct input may fail
-    later during backend preparation. A mutable container therefore remains
-    mutable and can make the record unhashable despite its frozen fields.
+    Each quantum target is paired with the classical output at the same tuple
+    position. Their local dimensions must match, so a qudit outcome is written
+    to a classical slot of the same dimension. Create measurements with
+    ``Program.measure`` or ``Program.measure_all`` so target references,
+    register kinds, and ownership are validated. Direct construction expects
+    already-resolved ``RegisterRef`` tuples and checks only the pairing
+    constraints below.
 
     Repeated targets and outputs are accepted. Built-in backends report every
     target/output pair in tuple order; a repeated target repeats its collapsed

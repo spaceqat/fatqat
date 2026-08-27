@@ -27,8 +27,7 @@ class PutGate(Operation):
 
     Add the singleton ``ops.Put`` without parentheses. It accepts one or more
     distinct scalar targets and supports ``Program.add(condition=...)``;
-    ``RegisterView`` and an empty target tuple are rejected. This implementation
-    class is not exported through ``fatqat.operations.__all__``.
+    ``RegisterView`` and an empty target tuple are rejected.
 
     Examples:
         >>> import fatqat as fq

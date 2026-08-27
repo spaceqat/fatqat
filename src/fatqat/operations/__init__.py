@@ -1,8 +1,6 @@
 """Built-in gates, measurements, and structural operations.
 
-Applications should use ``import fatqat.operations as ops``. Names in
-``__all__`` are the supported public surface. Gate-suffixed
-implementation attributes, where present, are outside that surface.
+Applications should use ``import fatqat.operations as ops``.
 """
 
 from __future__ import annotations

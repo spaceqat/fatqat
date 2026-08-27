@@ -12,23 +12,17 @@ from ..registers import RegisterRef
 class Operation:
     """Base value for operations accepted by ``Program.add``.
 
-    Built-in operation fields are frozen. Values built with their documented
-    immutable argument forms are reusable; a constructor that retains a
-    caller-supplied container documents that ownership explicitly.
-    Parameter-free gates and structural instructions are ready-made singleton
-    values such as ``ops.H`` and ``ops.Reset``; do not call them. Parameterized
-    gates are classes, so construct values such as ``ops.RX(0.2)`` before
-    adding them. ``Program.add`` stores the operation value itself rather than
-    copying it.
+    Built-in operations are immutable and reusable. Parameter-free gates and
+    structural operations are singleton values such as ``ops.H`` and
+    ``ops.Reset``; do not call them. Construct parameterized values such as
+    ``ops.RX(0.2)`` before adding them.
 
     ``Operation`` is also the extension base for custom operations. An
     ordinary subclass declares a public ``name`` and ``num_subsystems``. A
     positive integer gives the exact number of separate logical target
     expressions; ``None`` gives variable arity with a minimum of one target.
-    Channel-addressed direct control uses separate internal arity plumbing and
-    is not a custom-operation pattern. A custom operation also needs a
-    compatible backend implementation; subclassing alone does not make it
-    executable.
+    A custom operation also needs a compatible backend implementation;
+    subclassing alone does not make it executable.
 
     Attributes:
         name: Stable name used in diagnostics and user-facing displays.
@@ -37,10 +31,8 @@ class Operation:
             not a count of physical resources affected during execution.
 
     Raises:
-        TypeError: At subclass definition if the retired ``num_targets`` or
-            ``_num_subsystems`` declaration is used.
-        ValueError: At subclass definition if the declared target count is
-            negative, boolean, or not an integer (and not ``None``).
+        ValueError: At subclass definition if ``num_subsystems`` is negative,
+            boolean, or not an integer or ``None``.
 
     Examples:
         >>> import fatqat.operations as ops
@@ -106,24 +98,19 @@ class Operation:
 
         The built-in view-capable operations are ``RX``, ``RY``, ``RZ``,
         ``CX``, and ``CZ``. All other built-ins require scalar targets. A
-        custom subclass may override this property to return ``True``; shared
-        backend expansion supports unary and two-target operations.
+        custom unary or two-target subclass may override this property to opt
+        into memberwise view application.
         """
         return type(self)._accepts_views
 
     def validate_targets(self, targets: tuple[RegisterRef, ...]) -> None:
-        """Validate parameters that depend on resolved scalar targets.
+        """Validate parameters against resolved scalar targets.
 
-        For a scalar instruction, ``Program.add`` calls this hook after
-        resolving references and checking arity and duplicate targets. The
-        base implementation accepts every resolved tuple. Override it when an
-        operation parameter depends on a target property such as local
-        dimension.
-
-        For an instruction containing a ``RegisterView``, the frontend checks
-        the grouped view but defers this hook. Shared built-in backend
-        preparation expands the view and constructs one scalar instruction per
-        member or pair, which calls the hook for each emitted target tuple.
+        The base implementation accepts every target tuple. Override this hook
+        when an operation parameter depends on a target property such as local
+        dimension. Scalar-target errors arise from ``Program.add``; for a
+        ``RegisterView``, the hook is applied to each selected member when the
+        backend prepares the program.
 
         Args:
             targets: Resolved scalar quantum references in operand order.
