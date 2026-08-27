@@ -113,7 +113,12 @@ class _AppliedOperation:
 
 
 class Program:
-    """Build an ordered quantum program.
+    """Represent FATQAT's central device-independent quantum program.
+
+    A program owns register declarations, user metadata, and an ordered stream
+    of operation and measurement instructions. It records the requested
+    computation without selecting a device implementation or establishing
+    that a particular compiler or backend can realize every operation.
 
     ``add()``, ``measure()``, and ``measure_all()`` append instructions in
     place. Register collections are stored as tuples and should be treated as

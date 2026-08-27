@@ -1,11 +1,22 @@
 Program
 =======
 
-:py:class:`~fatqat.Program` stores registers and an ordered sequence of
-operations and measurements. Build the complete instruction sequence, then
-pass the program to a backend. Program construction checks register ownership,
-target shape, measurement pairing, and conditions; backend-specific operation
-and device support is checked when the program is run.
+:py:class:`~fatqat.Program` is FATQAT's central object: a device-independent
+representation of a quantum workload. It owns the quantum and classical
+register declarations, user metadata, and ordered instruction stream of
+operations, measurements, and classical conditions. A program records the
+requested computation without selecting a device instruction set or promising
+that every operation has an implementation on the eventual target.
+
+Construction validates representation-level invariants such as register kind
+and ownership, operation arity and generic target constraints, measurement
+pairing, and condition shape. It does not decide whether a gate is native,
+supported by a selected backend, compatible with a device topology, or
+realizable for that device's subsystem dimensions. Those capability checks and
+the concrete lowering belong to the selected compiler and backend during
+program preparation or execution. The same well-formed program can therefore
+be offered to different backends, which may accept or reject different parts
+of its instruction stream.
 
 Operation examples use ``import fatqat.operations as ops``.
 

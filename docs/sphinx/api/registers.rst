@@ -40,8 +40,7 @@ or ``None`` for a name; its type is not checked at runtime. A
 register objects while copying the outer collection into a tuple.
 
 Indexing with ``register[index]`` creates an immutable
-:class:`~fatqat.RegisterRef`. Indices are zero-based; negative indices and
-``bool`` values are rejected. In a program with multiple registers, pass the
+:class:`~fatqat.RegisterRef`. In a program with multiple registers, pass the
 explicit ref rather than an ambiguous integer:
 
 .. code-block:: python
