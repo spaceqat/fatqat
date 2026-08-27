@@ -21,37 +21,40 @@ single-qubit matrices use ``|0>, |1>`` basis order.
    :widths: 14 31 55
 
    * - Value
-     - Matrix or basis action
+     - Basis action
      - Meaning
    * - :py:data:`I`
-     - ``[[1, 0], [0, 1]]``
+     - Leaves :math:`|0\rangle` and :math:`|1\rangle` unchanged.
      - Identity.
    * - :py:data:`H`
-     - ``[[1, 1], [1, -1]] / sqrt(2)``
+     - Maps :math:`|0\rangle` to :math:`(|0\rangle+|1\rangle)/\sqrt{2}`
+       and :math:`|1\rangle` to
+       :math:`(|0\rangle-|1\rangle)/\sqrt{2}`.
      - Hadamard superposition transform.
    * - :py:data:`X`
-     - ``[[0, 1], [1, 0]]``
+     - Exchanges :math:`|0\rangle` and :math:`|1\rangle`.
      - Exchanges ``|0>`` and ``|1>``.
    * - :py:data:`Y`
-     - ``[[0, -i], [i, 0]]``
+     - Maps :math:`|0\rangle` to :math:`i|1\rangle` and
+       :math:`|1\rangle` to :math:`-i|0\rangle`.
      - Pauli-Y bit-and-phase flip.
    * - :py:data:`Z`
-     - ``diag(1, -1)``
+     - Maps :math:`|1\rangle` to :math:`-|1\rangle`.
      - Negates the ``|1>`` amplitude.
    * - :py:data:`S`
-     - ``diag(1, i)``
+     - Maps :math:`|1\rangle` to :math:`i|1\rangle`.
      - Square root of Z.
    * - :py:data:`Sdg`
-     - ``diag(1, -i)``
+     - Maps :math:`|1\rangle` to :math:`-i|1\rangle`.
      - Inverse of S.
    * - :py:data:`SX`
-     - ``[[1+i, 1-i], [1-i, 1+i]] / 2``
+     - Two applications have the same action as X.
      - Principal square root of X.
    * - :py:data:`T`
-     - ``diag(1, exp(i*pi/4))``
+     - Maps :math:`|1\rangle` to :math:`e^{i\pi/4}|1\rangle`.
      - Applies a ``pi/4`` phase to ``|1>``.
    * - :py:data:`Tdg`
-     - ``diag(1, exp(-i*pi/4))``
+     - Maps :math:`|1\rangle` to :math:`e^{-i\pi/4}|1\rangle`.
      - Inverse of T.
 
 .. autodata:: fatqat.operations.I
@@ -85,8 +88,7 @@ For the multi-qubit values below, targets are ordered exactly as shown.
      - Negates ``|11>``.
    * - :py:data:`CS`
      - ``(control, target)``
-     - Applies S to the target when the control is ``|1>``;
-       ``diag(1, 1, 1, i)``.
+     - Applies S to the target when the control is ``|1>``.
    * - :py:data:`Swap`
      - ``(target0, target1)``
      - Exchanges the two target states.
@@ -99,6 +101,128 @@ For the multi-qubit values below, targets are ordered exactly as shown.
    * - :py:data:`CSwap`
      - ``(control, target0, target1)``
      - Fredkin: exchanges the two targets when the control is ``|1>``.
+
+Matrix definitions
+~~~~~~~~~~~~~~~~~~
+
+These matrices act on column state vectors. For the single-qubit gates, rows
+and columns use basis order
+:math:`(|0\rangle,|1\rangle)`:
+
+.. math::
+
+   \begin{aligned}
+   I &= \begin{pmatrix}1&0\\0&1\end{pmatrix},
+   & H &= \frac{1}{\sqrt{2}}\begin{pmatrix}1&1\\1&-1\end{pmatrix},\\[0.5em]
+   X &= \begin{pmatrix}0&1\\1&0\end{pmatrix},
+   & Y &= \begin{pmatrix}0&-i\\i&0\end{pmatrix},\\[0.5em]
+   Z &= \begin{pmatrix}1&0\\0&-1\end{pmatrix},
+   & S &= \begin{pmatrix}1&0\\0&i\end{pmatrix},\\[0.5em]
+   \mathrm{Sdg} &= \begin{pmatrix}1&0\\0&-i\end{pmatrix},
+   & \mathrm{SX} &= \frac{1}{2}\begin{pmatrix}1+i&1-i\\1-i&1+i\end{pmatrix},\\[0.5em]
+   T &= \begin{pmatrix}1&0\\0&e^{i\pi/4}\end{pmatrix},
+   & \mathrm{Tdg} &= \begin{pmatrix}1&0\\0&e^{-i\pi/4}\end{pmatrix}.
+   \end{aligned}
+
+For each two-qubit matrix, the targets are :math:`(q_0,q_1)` and rows and
+columns use basis order
+:math:`(|00\rangle,|01\rangle,|10\rangle,|11\rangle)`. The first operand
+:math:`q_0` is the local most-significant bit. It is the control for ``CX``,
+``CY``, ``CZ``, and ``CS``; :math:`q_1` is the target. This is the gate-local
+operand convention, independent of the simulator's global state-vector index
+ordering.
+
+.. math::
+
+   CX = \begin{pmatrix}
+   1&0&0&0\\
+   0&1&0&0\\
+   0&0&0&1\\
+   0&0&1&0
+   \end{pmatrix}
+
+.. math::
+
+   CY = \begin{pmatrix}
+   1&0&0&0\\
+   0&1&0&0\\
+   0&0&0&-i\\
+   0&0&i&0
+   \end{pmatrix}
+
+.. math::
+
+   CZ = \begin{pmatrix}
+   1&0&0&0\\
+   0&1&0&0\\
+   0&0&1&0\\
+   0&0&0&-1
+   \end{pmatrix}
+
+.. math::
+
+   CS = \begin{pmatrix}
+   1&0&0&0\\
+   0&1&0&0\\
+   0&0&1&0\\
+   0&0&0&i
+   \end{pmatrix}
+
+For ``Swap`` and ``iSwap``, the same basis order applies with operand order
+``(target0, target1)``.
+
+.. math::
+
+   \mathrm{Swap} = \begin{pmatrix}
+   1&0&0&0\\
+   0&0&1&0\\
+   0&1&0&0\\
+   0&0&0&1
+   \end{pmatrix}
+
+.. math::
+
+   i\mathrm{Swap} = \begin{pmatrix}
+   1&0&0&0\\
+   0&0&i&0\\
+   0&i&0&0\\
+   0&0&0&1
+   \end{pmatrix}
+
+For ``CCX``, operand order is ``(control0, control1, target)``. Rows and
+columns use basis order :math:`(|000\rangle,|001\rangle,|010\rangle,
+|011\rangle,|100\rangle,|101\rangle,|110\rangle,|111\rangle)`, with the
+first operand as the most-significant bit:
+
+.. math::
+
+   CCX = \begin{pmatrix}
+   1&0&0&0&0&0&0&0\\
+   0&1&0&0&0&0&0&0\\
+   0&0&1&0&0&0&0&0\\
+   0&0&0&1&0&0&0&0\\
+   0&0&0&0&1&0&0&0\\
+   0&0&0&0&0&1&0&0\\
+   0&0&0&0&0&0&0&1\\
+   0&0&0&0&0&0&1&0
+   \end{pmatrix}
+
+For ``CSwap``, operand order is ``(control, target0, target1)``. Rows and
+columns use the same three-bit basis order, again with the first operand as
+the most-significant bit:
+
+.. math::
+
+   \mathrm{CSwap} = \begin{pmatrix}
+   1&0&0&0&0&0&0&0\\
+   0&1&0&0&0&0&0&0\\
+   0&0&1&0&0&0&0&0\\
+   0&0&0&1&0&0&0&0\\
+   0&0&0&0&1&0&0&0\\
+   0&0&0&0&0&0&1&0\\
+   0&0&0&0&0&1&0&0\\
+   0&0&0&0&0&0&0&1
+   \end{pmatrix}
 
 .. autodata:: fatqat.operations.CX
 .. autodata:: fatqat.operations.CY
@@ -127,23 +251,22 @@ use ``|0>, |1>`` basis order.
 
    * - Constructor
      - Targets
-     - Matrix or equivalence
+     - Definition
    * - :py:class:`RX` ``(theta)``
      - One scalar or one view
-     - ``[[c, -i*s], [-i*s, c]]``.
+     - Rotation about the X axis by ``theta``.
    * - :py:class:`RY` ``(theta)``
      - One scalar or one view
-     - ``[[c, -s], [s, c]]``.
+     - Rotation about the Y axis by ``theta``.
    * - :py:class:`RZ` ``(theta)``
      - One scalar or one view
-     - ``diag(exp(-i*theta/2), exp(i*theta/2))``.
+     - Rotation about the Z axis by ``theta``.
    * - :py:class:`Phase` ``(theta)``
      - One scalar
-     - ``diag(1, exp(i*theta))``; differs from RZ only by global phase.
+     - Differs from RZ only by global phase.
    * - :py:class:`U` ``(theta, phi, lam)``
      - One scalar
-     - ``[[c, -exp(i*lam)*s], [exp(i*phi)*s,
-       exp(i*(phi+lam))*c]]``.
+     - General Qiskit-compatible single-qubit gate.
    * - :py:class:`U1` ``(lam)``
      - One scalar
      - Equivalent to ``Phase(lam)``.
@@ -155,7 +278,82 @@ use ``|0>, |1>`` basis order.
      - Numerically identical to ``U(theta, phi, lam)``; legacy Qiskit name.
    * - :py:class:`CPhase` ``(theta)``
      - ``(control, target)`` scalars
-     - ``diag(1, 1, 1, exp(i*theta))``.
+     - Multiplies :math:`|11\rangle` by :math:`e^{i\theta}`.
+
+Matrix definitions
+~~~~~~~~~~~~~~~~~~
+
+These matrices act on column state vectors. The single-qubit matrices below
+use row and column basis order
+:math:`(|0\rangle,|1\rangle)`. Let
+:math:`c=\cos(\theta/2)` and :math:`s=\sin(\theta/2)`:
+
+.. math::
+
+   RX(\theta) = \begin{pmatrix}
+   c&-is\\
+   -is&c
+   \end{pmatrix},
+   \qquad
+   RY(\theta) = \begin{pmatrix}
+   c&-s\\
+   s&c
+   \end{pmatrix}
+
+.. math::
+
+   RZ(\theta) = \begin{pmatrix}
+   e^{-i\theta/2}&0\\
+   0&e^{i\theta/2}
+   \end{pmatrix},
+   \qquad
+   \mathrm{Phase}(\theta) = \begin{pmatrix}
+   1&0\\
+   0&e^{i\theta}
+   \end{pmatrix}
+
+For ``U``, ``U1``, ``U2``, and ``U3``, operands still use the single-qubit
+basis above and the parameter order is the constructor order shown in the
+table:
+
+.. math::
+
+   U(\theta,\phi,\lambda) = \begin{pmatrix}
+   \cos(\theta/2)&-e^{i\lambda}\sin(\theta/2)\\
+   e^{i\phi}\sin(\theta/2)&e^{i(\phi+\lambda)}\cos(\theta/2)
+   \end{pmatrix}
+
+.. math::
+
+   U1(\lambda) = \begin{pmatrix}
+   1&0\\
+   0&e^{i\lambda}
+   \end{pmatrix},
+   \qquad
+   U2(\phi,\lambda) = \frac{1}{\sqrt{2}}\begin{pmatrix}
+   1&-e^{i\lambda}\\
+   e^{i\phi}&e^{i(\phi+\lambda)}
+   \end{pmatrix}
+
+.. math::
+
+   U3(\theta,\phi,\lambda) = \begin{pmatrix}
+   \cos(\theta/2)&-e^{i\lambda}\sin(\theta/2)\\
+   e^{i\phi}\sin(\theta/2)&e^{i(\phi+\lambda)}\cos(\theta/2)
+   \end{pmatrix}
+
+For ``CPhase``, operand order is ``(control, target)``. Rows and columns use
+basis order :math:`(|00\rangle,|01\rangle,|10\rangle,|11\rangle)`, with the
+control as the local most-significant bit:
+
+.. math::
+
+   \mathrm{CPhase}(\theta) = \begin{pmatrix}
+   1&0&0&0\\
+   0&1&0&0\\
+   0&0&1&0\\
+   0&0&0&e^{i\theta}
+   \end{pmatrix}
 
 Each class below shows its own constructor fields. Common operation properties
 and validation hooks are documented on the :doc:`Operations overview
