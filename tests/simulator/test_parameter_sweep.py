@@ -246,7 +246,7 @@ def test_direct_inner_run_failure_propagates_without_returning_job(monkeypatch):
     backend = Simulator()
 
     def fail_on_second(bound, **_kwargs):
-        if bound.operations[0].operation.theta == 0.2:
+        if bound._instructions[0].operation.theta == 0.2:
             raise RuntimeError("direct row failure")
         return Job(status="DONE", result=Result(metadata={"row": "first"}))
 
@@ -263,7 +263,7 @@ def test_failed_point_job_produces_failed_outer_job_without_partial_list(monkeyp
     error = KeyboardInterrupt("point failed")
 
     def fail_on_second(bound, **_kwargs):
-        if bound.operations[0].operation.theta == 0.2:
+        if bound._instructions[0].operation.theta == 0.2:
             return Job(status="ERROR", error=error)
         return Job(status="DONE", result=Result(metadata={"row": "first"}))
 

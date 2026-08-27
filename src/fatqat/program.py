@@ -1,4 +1,4 @@
-"""Program container plus the AppliedOperation value object."""
+"""Program container and its private instruction records."""
 
 from __future__ import annotations
 
@@ -19,41 +19,37 @@ from .registers import (
     _validate_view_pair,
 )
 
+__all__ = ["Program"]
+
 ConditionTerm = tuple[RegisterRef, int]
 Condition = tuple[ConditionTerm, ...] | None
+ConditionOperand = tuple[int | RegisterRef, int]
+ConditionInput = (
+    ConditionOperand | tuple[ConditionOperand, ...] | list[ConditionOperand] | None
+)
 RegisterT = TypeVar("RegisterT", QuantumRegister, ClassicalRegister)
 
 # A frontend target expression: either a resolved scalar reference, or (for
 # the view-capable operations named on `Operation._accepts_views`) a
 # structured `RegisterView` selecting multiple members of one `GridRegister`.
-# See `AppliedOperation.targets` and `Program.add`.
+# See `_AppliedOperation.targets` and `Program.add`.
 QuantumTarget = RegisterRef | RegisterView
 
 
 @dataclass(frozen=True)
-class AppliedOperation:
-    """An operation bound to resolved quantum register references.
+class _AppliedOperation:
+    """Store one normalized operation instruction for internal lowering.
 
-    ``Program.add`` creates these objects after validating the operation and
-    resolving integer operands or explicit ``RegisterRef`` objects.
+    ``Program.add()`` is the supported construction boundary. It resolves
+    targets, verifies register kind and ownership, normalizes the condition,
+    and supplies immutable containers. Grouped-view expansion is the only
+    other internal construction path and preserves those invariants.
 
-    ``__post_init__`` intentionally does not re-validate ``targets``' element
-    types or tuple-ness: ``Program.add()`` already guarantees well-formed
-    ``RegisterRef`` tuples via ``_resolve_quantum_ref``, and duplicating that check
-    here would just be the same validation twice for the path essentially all
-    callers use. Constructing this class directly (bypassing ``Program``)
-    skips that guarantee - malformed input (wrong register kind, a list
-    instead of a tuple) will not raise here, and will instead surface later
-    as a less specific error during backend lowering, or make the instance
-    unhashable. This is a deliberate no-duplicate-validation tradeoff, not an
-    oversight.
-
-    Attributes:
-        operation: Operation instance to execute.
-        targets: Quantum target expressions consumed by the operation -- each
-            either a resolved scalar ``RegisterRef``, or (for view-capable
-            operations only) a structured ``RegisterView``.
-        condition: Optional AND tuple of classical references and literal values.
+    This record checks operation arity, duplicate scalar targets,
+    operation-specific scalar constraints, and grouped-view pairing. It trusts
+    its callers for target element types, register ownership, container shape,
+    and condition normalization. Per-member validation of a grouped view is
+    deferred until expansion produces scalar instructions.
     """
 
     operation: Operation
@@ -117,15 +113,27 @@ class AppliedOperation:
 
 
 class Program:
-    """User-facing quantum program container.
+    """Build an ordered quantum program.
 
-    A program owns read-only public quantum/classical register tuples plus an
-    ordered read-only view of applied operations and measurements. Public
-    mutation goes through ``add()`` and ``measure()``, which keep the
-    internal instruction list well formed. Operations are executed in
-    insertion order. Integer operands are accepted only when there is exactly
-    one register of the relevant kind; otherwise users must pass explicit
-    ``RegisterRef`` objects such as ``program.quantum_registers[0][1]``.
+    ``add()``, ``measure()``, and ``measure_all()`` append instructions in
+    place. Register collections are stored as tuples and should be treated as
+    construction-time state; replacing those public attributes is unsupported.
+    ``metadata`` remains a mutable dictionary for user annotations. Calls that
+    mutate one program are not synchronized; use ``copy()`` when separate
+    builders need to branch from the same prefix.
+
+    Program construction validates frontend structure, not backend support.
+    A selected backend may reject an otherwise well-formed operation,
+    condition, register dimension, or instruction sequence when the program
+    is run.
+
+    Attributes:
+        quantum_registers: Tuple of the supplied quantum register objects.
+            Replacing the attribute after construction is unsupported.
+        classical_registers: Tuple of the supplied classical register objects.
+            Replacing the attribute after construction is unsupported.
+        metadata: Mutable, shallow-copied dictionary of user metadata. FATQAT
+            does not define or interpret its keys.
 
     Examples:
         Build a two-qubit program, add gates, then measure both qubits:
@@ -137,31 +145,43 @@ class Program:
         >>> program.add(ops.CZ, (0, 1))
         >>> program.measure(0, 0)
         >>> program.measure(1, 1)
-        >>> len(program.operations)
-        4
     """
 
     def __init__(
         self,
-        quantum_registers: int | list[QuantumRegister],
-        classical_registers: int | list[ClassicalRegister] = 0,
+        quantum_registers: int | list[QuantumRegister] | tuple[QuantumRegister, ...],
+        classical_registers: (
+            int | list[ClassicalRegister] | tuple[ClassicalRegister, ...]
+        ) = 0,
         *,
         metadata: Mapping[str, Any] | None = None,
     ) -> None:
-        """Create a program from register counts or explicit register lists.
+        """Create a program from register counts or explicit register collections.
 
         Args:
-            quantum_registers: Number of default quantum bits, or explicit quantum registers.
-                Stored publicly as a read-only tuple.
-            classical_registers: Number of default classical bits, or explicit classical
-                registers. A value of `0` creates no classical register. Stored
-                publicly as a read-only tuple.
-            metadata: Optional user metadata copied into the program.
+            quantum_registers: Non-negative exact integer subsystem count, or
+                a list or tuple of ``QuantumRegister`` objects. A positive
+                count creates one dimension-2 register named ``"q"``; zero
+                creates no quantum register. The outer collection is copied,
+                but the register objects are retained.
+            classical_registers: Non-negative exact integer slot count, or a
+                list or tuple of ``ClassicalRegister`` objects. A positive
+                count creates one dimension-2 register named ``"c"``. The
+                default ``0`` creates no classical register. The outer
+                collection is copied, but the register objects are retained.
+            metadata: Optional mapping of user-defined string keys to arbitrary
+                values. There are no predefined keys or per-key defaults, and
+                key types are not checked at runtime. The top-level mapping is
+                shallow-copied into a mutable dictionary; nested values are not
+                copied. ``None`` creates an empty dictionary.
 
         Raises:
-            TypeError: If register specs are neither integer counts nor lists of
-                the expected register type.
-            ValueError: If an integer register count is negative.
+            TypeError: If a count is not an exact integer (booleans are not
+                counts), if a register specification is not an integer or
+                list, if a list contains the wrong register type, or if a
+                truthy ``metadata`` value cannot be converted to a dictionary.
+            ValueError: If an integer register count is negative or a truthy
+                ``metadata`` iterable cannot be converted to dictionary pairs.
         """
         self.quantum_registers: tuple[QuantumRegister, ...] = tuple(
             self._coerce_registers(quantum_registers, QuantumRegister, "q")
@@ -169,13 +189,16 @@ class Program:
         self.classical_registers: tuple[ClassicalRegister, ...] = tuple(
             self._coerce_registers(classical_registers, ClassicalRegister, "c")
         )
-        self._operations: list[AppliedOperation | Measurement] = []
-        self._operations_view: tuple[AppliedOperation | Measurement, ...] | None = ()
+        self._operations: list[_AppliedOperation | Measurement] = []
+        self._operations_view: tuple[_AppliedOperation | Measurement, ...] | None = ()
         self.metadata: dict[str, Any] = dict(metadata) if metadata else {}
 
     @property
-    def operations(self) -> tuple[AppliedOperation | Measurement, ...]:
-        """Ordered operation and measurement steps as a cached read-only tuple view."""
+    def _instructions(self) -> tuple[_AppliedOperation | Measurement, ...]:
+        """Return the cached instruction snapshot in insertion order.
+
+        A previously returned tuple remains unchanged after later mutation.
+        """
         if self._operations_view is None:
             self._operations_view = tuple(self._operations)
         return self._operations_view
@@ -183,9 +206,27 @@ class Program:
     def draw(self, renderer: str = "matplotlib", **kwargs: Any) -> Any:
         """Render this program as a circuit diagram.
 
-        ``renderer="matplotlib"`` returns a matplotlib ``Figure`` and
-        ``renderer="text"`` returns a terminal diagram string. Other renderer
-        names are forwarded to QuTiP-QIP.
+        Drawing uses one wire per quantum or classical slot. Register
+        dimensions are not depicted. Built-in gates use native QuTiP-QIP
+        symbols where available; other operations are labeled boxes. Direct
+        ``PulseOperation`` controls cannot be represented by the circuit
+        renderer.
+
+        Args:
+            renderer: ``"matplotlib"`` (default) for a matplotlib ``Figure``,
+                ``"text"`` for a returned terminal-diagram string, or another
+                renderer name supported by QuTiP-QIP.
+            **kwargs: Renderer options forwarded to QuTiP-QIP. Matplotlib also
+                accepts ``ax`` to draw on an existing axis.
+
+        Returns:
+            A matplotlib ``Figure`` for ``"matplotlib"``, a string for
+            ``"text"``, or the selected QuTiP-QIP renderer's return value.
+
+        Raises:
+            ImportError: If QuTiP-QIP is unavailable.
+            UnsupportedOperationError: If the program contains a
+                ``PulseOperation``.
         """
         from .draw import _draw_program
 
@@ -197,20 +238,21 @@ class Program:
         cls: type[RegisterT],
         default_name: str,
     ) -> list[RegisterT]:
-        """Normalize an integer count or explicit register list to a list."""
+        """Normalize an integer count or explicit register collection to a list."""
         if type(spec) is int:
             if spec < 0:
                 raise ValueError(f"register count must be >= 0, got {spec}")
             return [cls(spec, name=default_name)] if spec > 0 else []
         if not isinstance(spec, (list, tuple)):
             raise TypeError(
-                f"registers must be an int count or a list of {cls.__name__}, "
+                f"registers must be an int count or a list or tuple of "
+                f"{cls.__name__}, "
                 f"got {type(spec).__name__!r}"
             )
         for r in spec:
             if not isinstance(r, cls):
                 raise TypeError(
-                    f"register list must contain {cls.__name__} instances, "
+                    f"register collection must contain {cls.__name__} instances, "
                     f"got {type(r).__name__!r}"
                 )
         return list(spec)
@@ -285,30 +327,59 @@ class Program:
             | tuple[int | RegisterRef | RegisterView, ...]
         ) = (),
         *,
-        condition=None,
+        condition: ConditionInput = None,
     ) -> None:
-        """Append an operation to the program in place.
+        """Validate and append one operation in place.
+
+        The appended instruction retains ``op`` and the resolved target
+        objects. This method checks program-level structure immediately;
+        device and backend capability checks occur when the program is run.
+        For a ``PulseOperation``, omit ``targets``: its ``PulseControl``
+        channels address physical resources directly, and the selected pulse
+        emulator resolves and validates those addresses during program
+        preparation.
 
         Args:
             op: Operation instance to append. Fixed gates are available as
                 singleton values such as ``ops.X``; parametric gates should be
                 instantiated, such as ``ops.RX(0.2)``.
-            targets: Target subsystem operand, or tuple of target operands for
-                multi-subsystem gates (e.g. ``(0, 1)`` for ``CZ``). Each operand
-                may be an integer when unambiguous, an explicit ``RegisterRef``,
-                or (only for view-capable operations -- currently RX, RY, RZ,
-                CX, CZ) a ``RegisterView`` such as ``atoms.row(0)``. Defaults to
-                ``()``, for zero-arity operations that take no quantum targets.
-            condition: Optional single condition ``(clbit, value)`` or
-                sequence of conditions. Conditions are normalized to an AND
-                tuple.
+            targets: One target expression, or a tuple in operation-operand
+                order. A bare target must be an exact built-in ``int`` (not a
+                boolean, NumPy integer, or integer subclass) and is accepted
+                only when the program has exactly one quantum register. An
+                explicit ``RegisterRef`` must
+                belong to this program's quantum registers. ``RX``, ``RY``,
+                and ``RZ`` also accept one ``RegisterView``; ``CX`` and ``CZ``
+                accept a pair of compatible views. Two-target view application
+                cannot mix a scalar with a view, and its views must use the
+                same selector kind and cardinality without overlapping on one
+                register. Omit this argument when adding a ``PulseOperation``;
+                each control's channel identifies the physical resource or
+                resources it drives.
+            condition: ``None`` (default) for an unconditional operation,
+                one ``(classical_slot, literal)`` pair, or a non-empty tuple or
+                list of such pairs. Every pair is required (logical AND). A
+                slot may be an exact built-in ``int`` only when exactly one
+                classical register exists, or an explicit classical
+                ``RegisterRef`` owned by the program. A literal must be a
+                Python ``int`` in ``[0, slot_dimension)``; booleans and integer
+                subclasses are accepted and normalized with ``int()``, while
+                NumPy integer scalars are rejected.
+
+        Returns:
+            ``None``.
 
         Raises:
-            TypeError: If ``op`` is not an ``Operation``, if operands have the
-                wrong register kind, or if integer operands are ambiguous.
+            TypeError: If ``op`` is not an ``Operation``, if a target or
+                condition has an unsupported type or register kind, if an
+                integer operand is ambiguous, or if a condition literal is not
+                an integer.
             ValueError: If target arity is wrong, a target is repeated, a ref
                 or view is foreign to the program, ``op`` does not accept a
-                ``RegisterView`` target, or ``condition`` is empty.
+                ``RegisterView`` target, a view pair is incompatible, an
+                operation-specific target constraint fails, a condition is
+                empty or a term does not contain exactly two items, or a
+                condition literal is out of range.
             IndexError: If an integer operand is outside the relevant register.
 
         Examples:
@@ -330,7 +401,7 @@ class Program:
         target_refs = tuple(self._resolve_quantum_target(o) for o in operands)
         normalized = self._normalize_condition(condition)
         self._operations.append(
-            AppliedOperation(operation=op, targets=target_refs, condition=normalized)
+            _AppliedOperation(operation=op, targets=target_refs, condition=normalized)
         )
         self._operations_view = None
 
@@ -369,21 +440,35 @@ class Program:
         targets: int | RegisterRef | tuple[int | RegisterRef, ...],
         outputs: int | RegisterRef | tuple[int | RegisterRef, ...],
     ) -> None:
-        """Append a measurement of one or more subsystems into classical slots.
+        """Append a computational-basis measurement in place.
+
+        A grouped call creates one ``Measurement`` record. Targets and outputs
+        are paired positionally, and each pair must have the same register
+        dimension. Repeated targets and outputs are accepted; built-in
+        backends process pairs in order, so a repeated output keeps the later
+        pair's reported value. Measurement does not accept ``RegisterView``
+        objects.
 
         Args:
-            targets: Quantum operand(s) to measure, as an integer, explicit
-                ``RegisterRef``, or tuple of operands for a grouped
-                measurement.
-            outputs: Classical operand(s) to write, as an integer, explicit
-                ``RegisterRef``, or tuple of operands matching ``targets`` in
-                count.
+            targets: Quantum operand(s) to measure, as an exact built-in
+                ``int``, explicit ``RegisterRef``, or non-empty tuple of those
+                operands. Booleans, NumPy integers, and integer subclasses are
+                not integer operands. Bare integers require exactly one
+                quantum register.
+            outputs: Classical operand(s) to write, in the same forms, with a
+                non-empty tuple matching ``targets`` in count. Bare integers
+                require exactly one classical register.
+
+        Returns:
+            ``None``.
 
         Raises:
             TypeError: If operands have the wrong register kind or integer
-                operands are ambiguous.
+                operands are ambiguous, or if a view or unsupported container
+                is passed.
             ValueError: If ``targets``/``outputs`` have mismatched or zero
-                length, or an explicit ref is foreign to the program.
+                length, an explicit ref is foreign to the program, or a
+                quantum/classical pair has different dimensions.
             IndexError: If an integer operand is outside the relevant register.
 
         Examples:
@@ -412,12 +497,18 @@ class Program:
         self._operations_view = None
 
     def measure_all(self) -> None:
-        """Measure every subsystem into every classical slot in declaration order.
+        """Append one measurement pairing all quantum and classical slots.
+
+        Registers and their members are flattened in declaration order. The
+        method appends one grouped ``Measurement``; it does not replace earlier
+        measurements.
+
+        Returns:
+            ``None``.
 
         Raises:
-            ValueError: If the program has a different number of quantum
-                subsystems than classical slots, or has no registers of either
-                kind.
+            ValueError: If either flattened side is empty, their counts differ,
+                or any position pairs registers with different dimensions.
         """
         targets = tuple(
             ref
@@ -434,14 +525,24 @@ class Program:
         self.measure(targets, outputs)
 
     def copy(self) -> "Program":
-        """Return an independent copy with private operation storage and copied metadata."""
+        """Return a shallow structural copy for independent program mutation.
+
+        The copy shares register objects and existing instruction record
+        objects with the original. It owns a new instruction list and a new
+        top-level metadata dictionary, so later ``add()``/``measure()`` calls
+        and top-level metadata changes are independent. Values nested inside
+        metadata remain shared.
+
+        Returns:
+            An independently mutable program branch.
+        """
         return self._copy_with_operations(self._operations)
 
     def _copy_with_operations(
         self,
         operations: (
-            tuple[AppliedOperation | Measurement, ...]
-            | list[AppliedOperation | Measurement]
+            tuple[_AppliedOperation | Measurement, ...]
+            | list[_AppliedOperation | Measurement]
         ),
     ) -> "Program":
         """Copy program structure and metadata around trusted instructions.
@@ -462,23 +563,49 @@ class Program:
         self,
         values: Mapping[Parameter | ParameterVector, object],
     ) -> "Program":
-        """Return a copy with the supplied parameter identities replaced.
+        """Return a copy with selected parameter objects replaced by numbers.
 
-        Binding is partial and never mutates the template program. Vector keys
-        expand in their explicit declaration order.
+        Matching is by object identity, not by name. Binding may be partial or
+        empty and never mutates the template. Only ``Parameter`` values stored
+        directly in dataclass operation fields are discovered; a parameter
+        nested inside another container is not a binding target. Any remaining
+        parameters stay in the returned program and are rejected later by
+        numeric execution or export APIs. Structural discovery does not widen
+        an operation field's declared value contract: reconstruction or
+        backend lowering may reject a bound value that is invalid for that
+        field.
 
         Args:
-            values: Object-keyed scalar or vector assignments. String keys and
-                positional values are not accepted.
+            values: Mapping with these accepted key/value forms:
+
+                - ``Parameter`` key (built-in ``int`` or ``float``, or NumPy
+                  integer or floating scalar): Replaces every direct occurrence
+                  of that same object. Booleans, strings, complex numbers, and
+                  other numeric classes are not accepted.
+                - ``ParameterVector`` key (one-dimensional NumPy array or a
+                  non-string, non-bytes, non-mapping iterable of the scalar
+                  types above): The iterable is consumed once in its own
+                  iteration order and paired with vector index order. Its
+                  length must match the vector, and every vector element must
+                  occur in a direct operation field. Bind individual elements
+                  instead when only part of a vector is present.
+
+                String keys and positional assignments are not accepted. A
+                vector and one of its elements cannot both be assigned.
 
         Returns:
-            An independent program containing the selected numeric values.
+            A shallow structural copy containing the selected numeric values.
+            It has independent instruction storage and a copied top-level
+            metadata dictionary, while retaining the original registers.
 
         Raises:
             TypeError: If the mapping, a key, a value container, or a scalar
                 has the wrong type.
-            ValueError: If a key is absent, duplicated after vector expansion,
-                or has an incompatible vector shape.
+            ValueError: If a parameter identity is absent, a vector is empty or
+                not fully present, an element is assigned twice, or a vector
+                value has the wrong rank or length. Errors raised while
+                reconstructing a custom dataclass operation propagate
+                unchanged.
 
         Examples:
             Bind a vector at once while leaving the template unchanged:
@@ -490,13 +617,11 @@ class Program:
             >>> program.add(ops.RX(angles[0]), 0)
             >>> program.add(ops.RY(angles[1]), 1)
             >>> bound = program.assign_parameters({angles: [0.1, 0.2]})
-            >>> [instruction.operation.theta for instruction in bound.operations]
-            [0.1, 0.2]
-            >>> program.operations[0].operation.theta is angles[0]
-            True
+            >>> bound is program
+            False
         """
-        normalized = _normalize_parameter_mapping(self.operations, values)
-        operations = _replace_parameterized_instructions(self.operations, normalized)
+        normalized = _normalize_parameter_mapping(self._instructions, values)
+        operations = _replace_parameterized_instructions(self._instructions, normalized)
         return self._copy_with_operations(operations)
 
     def _assign_normalized_parameters(
@@ -509,5 +634,5 @@ class Program:
         scalar rows before this method is called. Keeping this seam separate
         prevents every sweep point from rechecking the same batch contract.
         """
-        operations = _replace_parameterized_instructions(self.operations, values)
+        operations = _replace_parameterized_instructions(self._instructions, values)
         return self._copy_with_operations(operations)

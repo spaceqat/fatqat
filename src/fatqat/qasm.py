@@ -32,7 +32,7 @@ from typing import Any
 
 from . import operations as ops
 from ._parameter_binding import _raise_for_unbound_parameters
-from .program import AppliedOperation, Program
+from .program import Program, _AppliedOperation
 from .registers import (
     ClassicalRegister,
     QuantumRegister,
@@ -1137,12 +1137,12 @@ def to_qasm(program: Program, version: int = 3) -> str:
     if version not in (2, 3):
         raise ValueError(f"version must be 2 or 3, got {version!r}")
 
-    _raise_for_unbound_parameters(program.operations)
+    _raise_for_unbound_parameters(program._instructions)
     layout = _Layout(program)
     body: list[str] = []
     uses_iswap = False
 
-    for step in program.operations:
+    for step in program._instructions:
         if isinstance(step, ops.Measurement):
             for qref, cref in zip(step.targets, step.outputs):
                 if version == 3:
@@ -1151,7 +1151,7 @@ def to_qasm(program: Program, version: int = 3) -> str:
                     body.append(f"measure {layout.qref(qref)} -> {layout.cref(cref)};")
             continue
 
-        assert isinstance(step, AppliedOperation)
+        assert isinstance(step, _AppliedOperation)
         op = step.operation
 
         if isinstance(op, ops.PulseOperation):

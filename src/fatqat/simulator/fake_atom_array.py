@@ -22,7 +22,7 @@ from ..implementation import (
     default_matrix_implementation_map,
 )
 from ..noise import NoiseModel
-from ..program import AppliedOperation, Program
+from ..program import Program, _AppliedOperation
 from ..resource_layout import ResourceLayout
 from .._backends.steps import (
     LossStep,
@@ -223,7 +223,7 @@ class AtomArraySimulator(Simulator):
         put_targets = {
             t
             for step in operations
-            if isinstance(step, AppliedOperation)
+            if isinstance(step, _AppliedOperation)
             and isinstance(step.operation, ops.PutGate)
             for t in step.targets
         }
@@ -232,7 +232,7 @@ class AtomArraySimulator(Simulator):
         for step in operations:
             if (
                 put_targets
-                and isinstance(step, AppliedOperation)
+                and isinstance(step, _AppliedOperation)
                 and not isinstance(
                     step.operation, (ops.PutGate, ops.PairGate, ops.UnpairGate)
                 )
@@ -245,7 +245,7 @@ class AtomArraySimulator(Simulator):
         plan: list[ResolvedStep] = []
         segment: list[ProgramInstruction] = []
         for step in realized:
-            if isinstance(step, AppliedOperation) and isinstance(
+            if isinstance(step, _AppliedOperation) and isinstance(
                 step.operation, (ops.PairGate, ops.UnpairGate)
             ):
                 plan.extend(self._lower_segment(segment, connectivity, context))
@@ -307,7 +307,7 @@ class AtomArraySimulator(Simulator):
                 ordinary.clear()
 
         for step in segment:
-            if isinstance(step, AppliedOperation) and isinstance(
+            if isinstance(step, _AppliedOperation) and isinstance(
                 step.operation, ops.PutGate
             ):
                 flush_ordinary()
@@ -330,8 +330,8 @@ class AtomArraySimulator(Simulator):
     ) -> None:
         """Reject a two-qubit gate whose atoms are not currently paired.
 
-        Only entangling two-qubit gates need a pairing. ``Measurement`` (not an
-        ``AppliedOperation``) and the boundary/lifecycle ops
+        Only entangling two-qubit gates need a pairing. Measurements and the
+        boundary/lifecycle operations
         ``Put``/``Pair``/``Unpair``/``Reset``/``Barrier`` never need one;
         single-qubit gates never need one either.
 
@@ -346,7 +346,7 @@ class AtomArraySimulator(Simulator):
             BackendValidationError: If ``step`` is a two-qubit gate whose two
                 atoms are not currently paired.
         """
-        if not isinstance(step, AppliedOperation):
+        if not isinstance(step, _AppliedOperation):
             return
         if isinstance(
             step.operation,
@@ -432,7 +432,7 @@ class AtomArraySimulator(Simulator):
             )
 
     def _apply_pairing(
-        self, connectivity: _AtomConnectivity, applied: AppliedOperation
+        self, connectivity: _AtomConnectivity, applied: _AppliedOperation
     ) -> _AtomConnectivity:
         """Return the connectivity after this Pair/Unpair (must be unconditional)."""
         if applied.condition is not None:

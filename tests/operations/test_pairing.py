@@ -4,7 +4,7 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.program import AppliedOperation, Program
+from fatqat.program import _AppliedOperation, Program
 
 
 @pytest.mark.parametrize(
@@ -22,8 +22,8 @@ def test_singleton_shape(singleton, cls, name):
 def test_added_to_program_with_two_targets(op):
     p = Program(2)
     p.add(op, (0, 1))
-    (step,) = p.operations
-    assert isinstance(step, AppliedOperation)
+    (step,) = p._instructions
+    assert isinstance(step, _AppliedOperation)
     assert step.operation is op
     assert step.targets == (p.quantum_registers[0][0], p.quantum_registers[0][1])
 

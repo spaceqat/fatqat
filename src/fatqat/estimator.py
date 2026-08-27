@@ -132,7 +132,7 @@ class Estimator:
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
         _validate_program(program, observable_list)
-        _raise_for_unbound_parameters(program.operations)
+        _raise_for_unbound_parameters(program._instructions)
 
         try:
             values, deviations = self._evaluate(
@@ -221,7 +221,7 @@ class Estimator:
             >>> [round(result.get_expectation(), 6) for result in results]
             [1.0, 0.540302]
         """
-        rows = _normalize_parameter_batch(program.operations, bindings)
+        rows = _normalize_parameter_batch(program._instructions, bindings)
         results: list[Result] = []
         for row in rows:
             bound = program._assign_normalized_parameters(row)
@@ -432,7 +432,7 @@ def _validate_program(
                 f"{register.name!r} has dim={register.dim}"
             )
 
-    if any(isinstance(step, Measurement) for step in program.operations):
+    if any(isinstance(step, Measurement) for step in program._instructions):
         raise BackendValidationError(
             "a program with a measurement has no well-defined expectation "
             "value: the measurement collapses the state. Remove the "

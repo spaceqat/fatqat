@@ -15,7 +15,7 @@ from fatqat.emulator.atom_3level.realization import (
 from fatqat.emulator.atom_3level.target import _Atom3LevelTarget
 from fatqat.emulator._core.scheduling import schedule_pulse_run
 from fatqat.noise import LindbladImplementationMap, NoiseModel
-from fatqat.program import AppliedOperation, Program
+from fatqat.program import _AppliedOperation, Program
 from fatqat.resource_layout import ResourceLayout
 
 
@@ -41,7 +41,7 @@ class ExplicitAtom3LevelAssembly:
     context: _PulseLoweringContext
 
     def lower(self, operation, target_sites):
-        step = AppliedOperation(
+        step = _AppliedOperation(
             operation,
             tuple(self.program.quantum_registers[0][site] for site in target_sites),
         )

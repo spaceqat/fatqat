@@ -7,8 +7,8 @@ The backend pairs that matrix with layout-resolved target indices to build an
 statevector engine reads directly.
 
 Local matrix convention (binding for every entry in this package):
-    - ``AppliedOperation.targets`` operand order defines the local
-      tensor-factor order; ``targets[0]`` is the local most-significant bit
+    - Program target operand order defines the local tensor-factor order;
+      ``targets[0]`` is the local most-significant bit
       (MSB), ``targets[-1]`` the local least-significant bit (LSB). See
       ``engine._apply_matrix`` for the little-endian contraction this feeds.
     - For every controlled gate (``CX``, ``CZ``, ``CY``, and the controlled
@@ -19,9 +19,9 @@ Local matrix convention (binding for every entry in this package):
 
 A matrix implementation rule receives the bare :py:class:`~fatqat.operations.Operation` instance that was
 applied (e.g. `RX(0.3)`) plus the `targets: tuple[RegisterRef, ...]` operand
-tuple by keyword, and returns the local matrix, never the surrounding
-`AppliedOperation`, and never a feedforward `condition`: condition resolution
-happens separately, in the backend. `targets` lets a rule read
+tuple by keyword, and returns the local matrix, never the surrounding program
+instruction or a feedforward `condition`: condition resolution happens
+separately, in the backend. `targets` lets a rule read
 `targets[0].register.dim` to build a dimension-dependent matrix (e.g. a
 qudit `Shift`/`Clock`/`Sum` gate); a rule whose matrix never depends on
 target dimension (every fixed qubit gate) simply ignores the argument.

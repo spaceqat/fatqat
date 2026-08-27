@@ -84,7 +84,7 @@ def matrix_program_unitary(program):
         for index in range(register.size)
     )
     result = np.eye(2 ** len(references), dtype=complex)
-    for applied in program.operations:
+    for applied in program._instructions:
         rule = implementation_map.implementation_for(applied.operation)
         assert rule is not None
         local = rule(applied.operation, targets=applied.targets)

@@ -40,7 +40,7 @@ from ..noise import (
 )
 from ..operations import BarrierGate, Measurement, ResetGate
 from ..parameters import Parameter, ParameterVector
-from ..program import AppliedOperation, Program
+from ..program import Program, _AppliedOperation
 from ..registers import RegisterRef
 from ..resource_layout import DeviceOperand, ResourceLayout
 from ..result import (
@@ -511,7 +511,7 @@ class Simulator:
                 ),
                 classical_allocation=_ClassicalAllocation.from_program(program),
             )
-        operations = _break_grouped_operations(program.operations)
+        operations = _break_grouped_operations(program._instructions)
         plan = tuple(self._lower(operations, context))
         facts, initial_occupied = self._analyze_lowered_plan(plan)
         return plan, facts, initial_occupied
@@ -591,7 +591,7 @@ class Simulator:
                 without a backend implementation, or one whose target key is
                 illegal for this backend.
         """
-        _raise_for_unbound_parameters(program.operations)
+        _raise_for_unbound_parameters(program._instructions)
         simulation = _normalize_config(
             simulation_config,
             self._simulation_config_cls,
@@ -786,7 +786,7 @@ class Simulator:
             >>> ["statevector" in result.available_data for result in results]
             [True, True]
         """
-        rows = _normalize_parameter_batch(program.operations, bindings)
+        rows = _normalize_parameter_batch(program._instructions, bindings)
         results: list[Result] = []
         for row in rows:
             bound = program._assign_normalized_parameters(row)
@@ -1112,7 +1112,7 @@ class Simulator:
                         self._noise_model,
                     )
                 )
-            elif isinstance(step, AppliedOperation):
+            elif isinstance(step, _AppliedOperation):
                 if isinstance(step.operation, BarrierGate):
                     continue
                 if isinstance(step.operation, ResetGate):

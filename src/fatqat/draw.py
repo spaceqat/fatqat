@@ -437,8 +437,8 @@ def to_qubit_circuit(program: Program):
     qubit_index, clbit_index = _wire_maps(program)
     circuit = qubit_circuit_cls(len(qubit_index), num_cbits=len(clbit_index))
 
-    for step in program.operations:
-        # Measurement is a distinct instruction type (not an AppliedOperation);
+    for step in program._instructions:
+        # Measurement is distinct from the private applied-operation record;
         # emit one QuTiP measurement per (qubit -> clbit) pair.
         if isinstance(step, Measurement):
             for target, output in zip(step.targets, step.outputs):

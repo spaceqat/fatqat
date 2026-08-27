@@ -10,7 +10,7 @@ def test_int_construction_creates_default_registers():
     p = Program(2, 2)
     assert len(p.quantum_registers) == 1 and p.quantum_registers[0].size == 2
     assert len(p.classical_registers) == 1 and p.classical_registers[0].size == 2
-    assert p.operations == ()
+    assert p._instructions == ()
 
 
 def test_long_register_names_are_canonical():
@@ -19,24 +19,24 @@ def test_long_register_names_are_canonical():
     assert len(p.classical_registers) == 1
 
 
-def test_operations_is_read_only_tuple_view():
+def test_instructions_is_read_only_tuple_view():
     p = Program(1)
-    assert isinstance(p.operations, tuple)
+    assert isinstance(p._instructions, tuple)
     with pytest.raises(AttributeError):
-        p.operations.append("bad")
+        p._instructions.append("bad")
 
 
-def test_operations_tuple_view_is_cached_until_mutation():
+def test_instructions_tuple_view_is_cached_until_mutation():
     p = Program(2)
-    before = p.operations
-    assert p.operations is before
+    before = p._instructions
+    assert p._instructions is before
 
     import fatqat.operations as ops
 
     p.add(ops.H, 0)
-    after = p.operations
+    after = p._instructions
     assert after is not before
-    assert p.operations is after
+    assert p._instructions is after
 
 
 def test_zero_classical_means_no_classical_register():
@@ -49,6 +49,14 @@ def test_list_construction_with_explicit_registers():
     qr = QuantumRegister(3, name="data")
     cr = ClassicalRegister(2, name="ro")
     p = Program([qr], [cr])
+    assert p.quantum_registers == (qr,)
+    assert p.classical_registers == (cr,)
+
+
+def test_tuple_construction_with_explicit_registers():
+    qr = QuantumRegister(3, name="data")
+    cr = ClassicalRegister(2, name="ro")
+    p = Program((qr,), (cr,))
     assert p.quantum_registers == (qr,)
     assert p.classical_registers == (cr,)
 

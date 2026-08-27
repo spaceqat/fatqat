@@ -2,7 +2,7 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.program import AppliedOperation, Program
+from fatqat.program import _AppliedOperation, Program
 
 
 def test_reset_is_a_non_callable_singleton():
@@ -17,8 +17,8 @@ def test_reset_is_a_non_callable_singleton():
 def test_reset_added_to_program_as_applied_operation():
     p = Program(1)
     p.add(ops.Reset, 0)
-    (step,) = p.operations
-    assert isinstance(step, AppliedOperation)
+    (step,) = p._instructions
+    assert isinstance(step, _AppliedOperation)
     assert isinstance(step.operation, ops.ResetGate)
     assert len(step.targets) == 1
 
@@ -28,8 +28,8 @@ def test_reset_accepts_one_or_many_targets():
     p.add(ops.Reset, 0)
     p.add(ops.Reset, (0, 1, 2))
 
-    assert p.operations[0].targets == (p.quantum_registers[0][0],)
-    assert p.operations[1].targets == (
+    assert p._instructions[0].targets == (p.quantum_registers[0][0],)
+    assert p._instructions[1].targets == (
         p.quantum_registers[0][0],
         p.quantum_registers[0][1],
         p.quantum_registers[0][2],

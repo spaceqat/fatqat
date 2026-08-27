@@ -10,27 +10,27 @@ from fatqat.registers import QuantumRegister, ClassicalRegister
 def test_single_condition_normalized_to_and_list():
     p = Program(2, 2)
     p.add(ops.X, 0, condition=(0, 1))
-    cond = p.operations[0].condition
+    cond = p._instructions[0].condition
     assert cond == ((p.classical_registers[0][0], 1),)
 
 
 def test_single_condition_with_ref():
     p = Program(2, 2)
     p.add(ops.X, 0, condition=(p.classical_registers[0][1], 0))
-    assert p.operations[0].condition == ((p.classical_registers[0][1], 0),)
+    assert p._instructions[0].condition == ((p.classical_registers[0][1], 0),)
 
 
 def test_multiple_conditions_are_conjunction():
     p = Program(2, 2)
     p.add(ops.X, 0, condition=((0, 1), (1, 0)))
-    cond = p.operations[0].condition
+    cond = p._instructions[0].condition
     assert cond == ((p.classical_registers[0][0], 1), (p.classical_registers[0][1], 0))
 
 
 def test_no_condition_is_none():
     p = Program(2, 2)
     p.add(ops.X, 0)
-    assert p.operations[0].condition is None
+    assert p._instructions[0].condition is None
 
 
 def test_condition_rejects_quantum_ref_slot():
@@ -57,7 +57,7 @@ def test_condition_explicit_slot_refs_work_across_multiple_classical_registers()
 
     p.add(ops.X, 0, condition=(p.classical_registers[1][0], 1))
 
-    assert p.operations[0].condition == ((p.classical_registers[1][0], 1),)
+    assert p._instructions[0].condition == ((p.classical_registers[1][0], 1),)
 
 
 def test_empty_condition_raises_valueerror():
@@ -93,7 +93,7 @@ def test_condition_literal_accepts_bool_as_int():
     # int-only fields elsewhere (register size, dim, index).
     p = Program(2, 2)
     p.add(ops.X, 0, condition=(0, True))
-    assert p.operations[0].condition == ((p.classical_registers[0][0], 1),)
+    assert p._instructions[0].condition == ((p.classical_registers[0][0], 1),)
 
 
 def test_condition_literal_rejects_non_int():

@@ -21,7 +21,7 @@ from fatqat._backends.backend_utils import (
 from fatqat._backends.steps import ResetStep
 from fatqat.errors import BackendValidationError
 from fatqat.noise import NoiseModel, ReadoutConfusion
-from fatqat.program import AppliedOperation
+from fatqat.program import _AppliedOperation
 from fatqat.resource_layout import ResourceLayout
 from fatqat.result import _ResultConfig
 
@@ -151,8 +151,8 @@ def test_reset_boundary_resolves_all_targets_and_condition():
     program.add(ops.Reset, (0, 2), condition=(0, 1))
     step = next(
         instruction
-        for instruction in program.operations
-        if isinstance(instruction, AppliedOperation)
+        for instruction in program._instructions
+        if isinstance(instruction, _AppliedOperation)
     )
     layout = ResourceLayout({program.quantum_registers[0][i]: i for i in range(3)})
     engine_allocation = _EngineAllocation((0, 1, 2), (2, 2, 2))
@@ -173,7 +173,7 @@ def _one_qubit_measurement_setup(confusion, *, reported_digit_map):
     program = fq.Program(1, 1)
     program.measure(0, 0)
     (step,) = [
-        instr for instr in program.operations if isinstance(instr, ops.Measurement)
+        instr for instr in program._instructions if isinstance(instr, ops.Measurement)
     ]
     q0 = program.quantum_registers[0][0]
     resource_layout = ResourceLayout({q0: 0})

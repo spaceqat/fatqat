@@ -11,7 +11,7 @@ from .noise import NoiseModel
 from .observable import Observable
 from .operations import Measurement
 from .parameters import Parameter, ParameterVector
-from .program import AppliedOperation, Program
+from .program import Program
 from .registers import (
     ClassicalRegister,
     GridRegister,
@@ -35,7 +35,6 @@ __all__ = [
     "NoiseModel",
     "Observable",
     "Program",
-    "AppliedOperation",
     "Measurement",
     "Parameter",
     "ParameterVector",

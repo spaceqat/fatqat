@@ -20,8 +20,8 @@ def test_binds_one_parameter_without_mutating_template():
 
     bound = program.assign_parameters({theta: 0.25})
 
-    assert program.operations[0].operation.theta is theta
-    assert bound.operations[0].operation.theta == 0.25
+    assert program._instructions[0].operation.theta is theta
+    assert bound._instructions[0].operation.theta == 0.25
     assert bound is not program
 
 
@@ -34,8 +34,8 @@ def test_binds_shared_parameter_in_every_direct_field(value):
 
     bound = program.assign_parameters({theta: value})
 
-    assert bound.operations[0].operation.theta == value
-    assert bound.operations[1].operation.theta == value
+    assert bound._instructions[0].operation.theta == value
+    assert bound._instructions[1].operation.theta == value
 
 
 def test_binds_complete_vector_and_mixed_individual_parameter():
@@ -48,7 +48,7 @@ def test_binds_complete_vector_and_mixed_individual_parameter():
 
     bound = program.assign_parameters({bias: 0.3, angles: [0.1, 0.2]})
 
-    assert [instruction.operation.theta for instruction in bound.operations] == [
+    assert [instruction.operation.theta for instruction in bound._instructions] == [
         0.1,
         0.2,
         0.3,
@@ -64,8 +64,8 @@ def test_partial_binding_leaves_other_parameters_intact():
 
     bound = program.assign_parameters({first: 0.1})
 
-    assert bound.operations[0].operation.theta == 0.1
-    assert bound.operations[1].operation.theta is second
+    assert bound._instructions[0].operation.theta == 0.1
+    assert bound._instructions[1].operation.theta is second
 
 
 def test_empty_binding_returns_independent_program_and_metadata():
@@ -76,8 +76,8 @@ def test_empty_binding_returns_independent_program_and_metadata():
     bound.metadata["owner"] = "bound"
 
     assert bound is not program
-    assert bound.operations == program.operations
-    assert bound.operations[0] is program.operations[0]
+    assert bound._instructions == program._instructions
+    assert bound._instructions[0] is program._instructions[0]
     assert program.metadata == {"owner": "template"}
 
 
@@ -91,8 +91,8 @@ def test_binding_preserves_program_structure_and_view_targets():
 
     bound = program.assign_parameters({theta: 0.4})
 
-    original_gate, original_measurement = program.operations
-    bound_gate, bound_measurement = bound.operations
+    original_gate, original_measurement = program._instructions
+    bound_gate, bound_measurement = bound._instructions
     assert bound.quantum_registers[0] is atoms
     assert bound.classical_registers[0] is classical
     assert bound_gate is not original_gate
@@ -116,7 +116,7 @@ def test_generic_dataclass_operation_binding_preserves_other_fields():
 
     bound = program.assign_parameters({theta: 0.75})
 
-    assert bound.operations[0].operation == CustomRotation(0.75, "kept")
+    assert bound._instructions[0].operation == CustomRotation(0.75, "kept")
 
 
 def test_custom_operation_post_init_error_propagates_unchanged():
@@ -255,4 +255,4 @@ def test_unbound_diagnostic_uses_stable_order_and_deduplicates_identity():
         fq.errors.BackendValidationError,
         match=r"^program has unbound parameters: shared, theta#1, theta#2$",
     ):
-        _raise_for_unbound_parameters(program.operations)
+        _raise_for_unbound_parameters(program._instructions)

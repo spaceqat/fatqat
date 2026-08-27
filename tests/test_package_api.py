@@ -67,15 +67,15 @@ def test_atom_2level_model_values_are_exported_only_from_emulator_namespaces():
 
 def test_top_level_frontend_surface():
     program = fq.Program(2, 2)
-    program.add(ops.H, 0)
-    program.add(ops.CZ, (0, 1))
-    program.add(ops.RX(0.1), 0)
-    program.measure(0, 0)
-    program.measure(1, 1)
+    assert program.add(ops.H, 0) is None
+    assert program.add(ops.CZ, (0, 1)) is None
+    assert program.add(ops.RX(0.1), 0) is None
+    assert program.measure(0, 0) is None
+    assert program.measure(1, 1) is None
 
-    assert len(program.operations) == 5
-    assert program.operations[0].operation.name == "H"
-    assert isinstance(program.operations[3], fq.Measurement)
+    assert not hasattr(program, "operations")
+    assert not hasattr(fq, "AppliedOperation")
+    assert "AppliedOperation" not in fq.__all__
 
 
 def test_register_types_exposed():
@@ -151,6 +151,4 @@ def test_error_classes_only_under_errors_namespace():
 
 def test_program_measure_all_is_public_instance_method():
     program = fq.Program(1, 1)
-    program.measure_all()
-
-    assert len(program.operations) == 1
+    assert program.measure_all() is None
