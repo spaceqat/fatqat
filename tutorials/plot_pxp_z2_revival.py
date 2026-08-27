@@ -194,7 +194,7 @@ class PXPBulk(Operation):
     """Three-site PXP exponential: X on the middle site guarded by two P's."""
 
     name: ClassVar[str] = "PXPBulk"
-    _num_subsystems: ClassVar[int] = 3
+    num_subsystems: ClassVar[int] = 3
 
 
 @dataclass(frozen=True)
@@ -202,7 +202,7 @@ class PXPEdgeLeft(Operation):
     """Left boundary term X_0 P_1."""
 
     name: ClassVar[str] = "PXPEdgeLeft"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
 
 
 @dataclass(frozen=True)
@@ -210,7 +210,7 @@ class PXPEdgeRight(Operation):
     """Right boundary term P_{L-2} X_{L-1}."""
 
     name: ClassVar[str] = "PXPEdgeRight"
-    _num_subsystems: ClassVar[int] = 2
+    num_subsystems: ClassVar[int] = 2
 
 
 def _rotation_matrix(dimension: int, pair: tuple[int, int], angle: float) -> np.ndarray:

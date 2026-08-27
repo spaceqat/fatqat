@@ -113,6 +113,13 @@ def _depolarizing_noise() -> fq.NoiseModel:
     return noise
 
 
+def _random_density_matrix(dim: int, seed: int) -> np.ndarray:
+    generator = np.random.default_rng(seed)
+    root = generator.normal(size=(dim, dim)) + 1j * generator.normal(size=(dim, dim))
+    rho = root @ root.conj().T
+    return rho / np.trace(rho).real
+
+
 def _unitary_of(program, runtime="numpy", **kwargs):
     return Simulator("unitary", runtime=runtime, **kwargs).run(program).result()
 
@@ -198,12 +205,17 @@ def test_unitary_skips_barriers(runtime):
 # --- superop: the vectorization contract and the density-matrix cross-check ---
 
 
-def test_superop_of_a_unitary_program_is_kron_u_conj_u(runtime):
-    program = _mixed_program()
+def test_superop_of_a_complex_asymmetric_unitary_uses_column_stacking(runtime):
+    program = Program(1)
+    program.add(ops.U(0.7, -0.2, 1.1), 0)
     unitary = _unitary_of(program, runtime).get_unitary()
     superop = _superop_of(program, runtime).get_superop()
-    assert superop.shape == (64, 64)
-    assert np.allclose(superop, np.kron(unitary, unitary.conj()), atol=_ATOL)
+    expected = np.kron(unitary.conj(), unitary)
+    legacy_row_stacked = np.kron(unitary, unitary.conj())
+
+    assert superop.shape == (4, 4)
+    assert not np.allclose(expected, legacy_row_stacked, atol=_ATOL)
+    assert np.allclose(superop, expected, atol=_ATOL)
 
 
 @pytest.mark.parametrize("with_reset", [False, True])
@@ -221,29 +233,39 @@ def test_superop_reproduces_the_density_matrix_run(runtime, with_reset):
     )
     rho_zero = np.zeros((4, 4), dtype=complex)
     rho_zero[0, 0] = 1.0
-    evolved = (superop @ rho_zero.reshape(-1)).reshape(4, 4)
+    evolved = (superop @ rho_zero.reshape(-1, order="F")).reshape(
+        rho_zero.shape, order="F"
+    )
     assert np.allclose(evolved, density_matrix, atol=_ATOL)
 
 
 def test_superop_acts_correctly_on_an_arbitrary_input_state(runtime):
     """The super-operator is the whole map, not just its action on |0..0>."""
-    program = _noisy_program()
+    program = Program(2)
+    program.add(ops.U(0.7, -0.2, 1.1), 0)
+    program.add(ops.CX, (0, 1))
     program.add(ops.Reset, 1)
-    superop = _superop_of(program, runtime, noise=_depolarizing_noise()).get_superop()
+    noise = fq.NoiseModel()
+    noise.add(fq.noise.AmplitudeDamping(p=0.15), operation=ops.U)
+    superop = _superop_of(program, runtime, noise=noise).get_superop()
 
-    generator = np.random.default_rng(11)
-    root = generator.normal(size=(4, 4)) + 1j * generator.normal(size=(4, 4))
-    rho = root @ root.conj().T
-    rho /= np.trace(rho).real
-    evolved = (superop @ rho.reshape(-1)).reshape(4, 4)
+    rho = _random_density_matrix(4, seed=11)
+    evolved = (superop @ rho.reshape(-1, order="F")).reshape(rho.shape, order="F")
+    density_matrix = (
+        Simulator("DM", runtime=runtime, noise=noise)
+        .run(program, initial_state=rho, result_config={"final_state": True})
+        .result()
+        .get_density_matrix()
+    )
 
+    assert np.allclose(evolved, density_matrix, atol=_ATOL)
     assert np.allclose(evolved, evolved.conj().T, atol=_ATOL)  # still Hermitian
     assert np.isclose(np.trace(evolved).real, 1.0, atol=_ATOL)  # still a state
     assert np.min(np.linalg.eigvalsh(evolved)) > -_ATOL  # still positive
     # Linearity pins the value: rho decomposes over the basis matrices whose
     # images are the super-operator's own columns.
     columns = sum(
-        rho[i, j] * superop[:, i * 4 + j].reshape(4, 4)
+        rho[i, j] * superop[:, i + 4 * j].reshape(rho.shape, order="F")
         for i in range(4)
         for j in range(4)
     )
@@ -255,11 +277,8 @@ def test_superop_reset_is_the_partial_trace_channel(runtime):
     program.add(ops.Reset, 0)
     superop = _superop_of(program, runtime).get_superop()
 
-    generator = np.random.default_rng(5)
-    root = generator.normal(size=(4, 4)) + 1j * generator.normal(size=(4, 4))
-    rho = root @ root.conj().T
-    rho /= np.trace(rho).real
-    evolved = (superop @ rho.reshape(-1)).reshape(4, 4)
+    rho = _random_density_matrix(4, seed=5)
+    evolved = (superop @ rho.reshape(-1, order="F")).reshape(rho.shape, order="F")
 
     # Subsystem 0 is the least-significant digit, so tracing it out leaves the
     # 2x2 block indexed by subsystem 1, re-prepared in |0>.
@@ -274,7 +293,11 @@ def test_superop_handles_qutrit_registers(runtime):
     superop = _superop_of(program, runtime).get_superop()
     unitary = _unitary_of(program, runtime).get_unitary()
     assert superop.shape == (81, 81)
-    assert np.allclose(superop, np.kron(unitary, unitary.conj()), atol=_ATOL)
+    assert np.allclose(superop, np.kron(unitary.conj(), unitary), atol=_ATOL)
+
+    rho = _random_density_matrix(9, seed=17)
+    evolved = (superop @ rho.reshape(-1, order="F")).reshape(rho.shape, order="F")
+    assert np.allclose(evolved, unitary @ rho @ unitary.conj().T, atol=_ATOL)
 
 
 # --- runtime parity ---
@@ -342,7 +365,7 @@ def test_column_kernel_matches_the_per_gate_kernels_bit_for_bit(method, no_fusio
         else:
             engine.reset_subsystems(step.reset_indices, generator)
 
-    assert np.array_equal(fused, engine.state)
+    assert np.array_equal(fused, engine.export_state())
 
 
 # --- gate fusion ---

@@ -357,12 +357,18 @@ class Result:
     def get_superop(self) -> np.ndarray:
         """Return the program's super-operator matrix.
 
-        The vectorization is row-major (``vec(rho) = rho.reshape(-1)``), the
-        same convention :meth:`get_density_matrix` output flattens into, so
-        ``superop @ rho.reshape(-1)`` reshaped back to ``(D, D)`` is the
-        program applied to ``rho``. A unitary program's super-operator is
-        ``numpy.kron(U, U.conj())``. Note that Qiskit's ``SuperOp`` uses the
-        column-major convention instead, which transposes the index pairs.
+        The public matrix uses column-stacking vectorization:
+
+        .. code-block:: python
+
+            rho_out = (
+                superop @ rho_in.reshape(-1, order="F")
+            ).reshape(rho_in.shape, order="F")
+
+        Column-stacking describes the mathematical vectorization of the
+        density matrix, not the NumPy memory layout of the returned
+        two-dimensional array. A unitary program's super-operator is
+        ``numpy.kron(U.conj(), U)``.
 
         Returns:
             A ``(D**2, D**2)`` array, where ``D`` is the product of the

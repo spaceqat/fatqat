@@ -6,14 +6,12 @@ matrices exactly (``atol=1e-12``, no relative slack): statevectors under
 ``method="SV"``, density matrices under ``method="DM"``, and the program's
 map under ``method="unitary"`` / ``method="superop"`` (against
 `qiskit.quantum_info`'s `Operator` / `SuperOp` and Aer's ``method="superop"``
-for the noisy case). fatqat vectorizes ``rho`` row-major and Qiskit
-column-major, so super-operator comparisons pass through `_to_row_major`;
-`test_qiskit_superop_conversion_is_not_a_no_op` pins that the conversion is
-real work and not an accidental identity. Every
-case runs on both fatqat runtimes (the ``runtime`` fixture): ``numpy``, and
-``numba`` using the package dependency. The internal parity tests
-pin numba against numpy shot-for-shot; this axis pins both against a
-reference that cannot share a bug with either. Ideal
+for the noisy case). FATQAT and Qiskit both use column-stacking vectorization,
+so their public super-operator matrices compare directly. Every case runs on
+both FATQAT runtimes (the ``runtime`` fixture): ``numpy``, and ``numba`` using
+the package dependency. The internal parity tests pin numba against numpy
+shot-for-shot; this axis pins both against a reference that cannot share a bug
+with either. Ideal
 circuits compare against ``qiskit.quantum_info`` exact evolution (Qiskit's
 canonical reference, no transpiler in the loop); noisy circuits compare
 against Aer's density-matrix simulator with native error constructors. Both
@@ -110,21 +108,6 @@ def _qiskit_state(circuit: QuantumCircuit) -> np.ndarray:
 
 def _qiskit_rho(circuit: QuantumCircuit) -> np.ndarray:
     return np.asarray(DensityMatrix(circuit))
-
-
-def _to_row_major(superop: np.ndarray) -> np.ndarray:
-    """Convert a Qiskit super-operator to fatqat's row-major vectorization.
-
-    Qiskit indexes ``S[(j, i), (l, k)]`` (column-major ``vec``) where fatqat
-    indexes ``S[(i, j), (k, l)]``, so the two differ by swapping each index pair.
-    """
-    dim = int(np.sqrt(superop.shape[0]))
-    tensor = superop.reshape(dim, dim, dim, dim)
-    return np.transpose(tensor, (1, 0, 3, 2)).reshape(dim * dim, dim * dim)
-
-
-def _row_major_superop(circuit: QuantumCircuit) -> np.ndarray:
-    return _to_row_major(np.asarray(SuperOp(circuit)))
 
 
 def _aer_rho(
@@ -315,7 +298,7 @@ def test_superop_matches_qiskit(build, runtime):
         .result()
         .get_superop()
     )
-    _assert_close(ours, _row_major_superop(circuit))
+    _assert_close(ours, np.asarray(SuperOp(circuit)))
 
 
 def test_noisy_superop_matches_aer(runtime):
@@ -336,20 +319,14 @@ def test_noisy_superop_matches_aer(runtime):
     run = circuit.copy()
     run.save_superop()
     theirs = np.asarray(simulator.run(run).result().data()["superop"])
-    _assert_close(ours, _to_row_major(theirs))
+    _assert_close(ours, theirs)
 
 
-def test_qiskit_superop_conversion_is_not_a_no_op(runtime):
-    # A real unitary's super-operator is symmetric under the index-pair swap,
-    # so the conversion needs a genuinely complex one to be observable.
+def test_complex_superop_matches_qiskit_directly(runtime):
     program = fq.Program(1)
-    program.add(ops.S, 0)
+    program.add(ops.U(0.7, -0.2, 1.1), 0)
     circuit = QuantumCircuit(1)
-    circuit.s(0)
-
-    theirs = np.asarray(SuperOp(circuit))
-    converted = _to_row_major(theirs)
-    assert not np.allclose(theirs, converted, rtol=0, atol=_ATOL)
+    circuit.u(0.7, -0.2, 1.1, 0)
 
     ours = (
         fq.simulator.Simulator(method="superop", runtime=runtime)
@@ -357,7 +334,7 @@ def test_qiskit_superop_conversion_is_not_a_no_op(runtime):
         .result()
         .get_superop()
     )
-    _assert_close(ours, converted)
+    _assert_close(ours, np.asarray(SuperOp(circuit)))
 
 
 # --- noisy circuits (density matrices; Aer native error constructors) --------

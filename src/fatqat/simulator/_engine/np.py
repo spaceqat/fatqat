@@ -885,10 +885,11 @@ class NumpyUnitaryEngine(_NumpyOperatorEngine, NumpySVEngine):
 class NumpySuperopEngine(_NumpyOperatorEngine, NumpyDMEngine):
     """Super-operator engine: evolves ``S`` as a ``(size**2, size**2)`` matrix.
 
-    Column ``b`` of ``S`` is the vectorized image of basis matrix ``E_b``, so
-    the whole channel is the density-matrix kernel run on ``size**2`` columns at
-    once, in the row-major vectorization the density matrix already uses
-    (``vec(rho) = rho.reshape(-1)``, i.e. ``S = kron(M, conj(M))``).
+    Internally, column ``b`` of ``S`` is the row-stacked image of basis matrix
+    ``E_b``, so the whole channel is the density-matrix kernel run on
+    ``size**2`` columns at once (``S = kron(M, conj(M))``). :meth:`export_state`
+    converts the completed matrix once to the public column-stacking
+    convention.
     """
 
     _state_field = "superop"
@@ -901,6 +902,14 @@ class NumpySuperopEngine(_NumpyOperatorEngine, NumpyDMEngine):
     def _allocate(self, size: int, initial_state: np.ndarray | None) -> np.ndarray:
         assert initial_state is None, "operator execution has no initial state"
         return np.eye(size * size, dtype=complex)
+
+    def export_state(self) -> np.ndarray:
+        """Export the super-operator in the public column-stacking convention."""
+        size = prod(self._dims) if self._dims else 1
+        internal = self.state.reshape((size,) * 4)
+        exported = np.empty_like(self.state, order="C")
+        exported.reshape((size,) * 4)[...] = internal.transpose(1, 0, 3, 2)
+        return exported
 
     def _apply_local_sandwich(
         self, rho: np.ndarray, matrix: np.ndarray, targets: Sequence[int]

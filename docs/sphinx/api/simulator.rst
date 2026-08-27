@@ -47,12 +47,18 @@ is ignored.
    unitary = fq.simulator.Simulator("unitary").run(bell).result().get_unitary()
    superop = fq.simulator.Simulator("superop").run(bell).result().get_superop()
 
-``unitary[:, 0]`` is the statevector the same program prepares. The
-super-operator is row-major vectorized, matching what
-:py:meth:`~fatqat.Result.get_density_matrix` output flattens into:
-``superop @ rho.reshape(-1)`` reshaped back to ``(D, D)`` is the program
-applied to ``rho``. For a noise-free program it equals
-``numpy.kron(unitary, unitary.conj())``.
+``unitary[:, 0]`` is the statevector the same program prepares. The public
+super-operator uses column-stacking vectorization of density matrices:
+
+.. code-block:: python
+
+   rho_out = (
+       superop @ rho_in.reshape(-1, order="F")
+   ).reshape(rho_in.shape, order="F")
+
+Here, column-stacking describes the mathematical vectorization of ``rho_in``,
+not the NumPy memory layout of the returned matrix. For a noise-free program,
+``superop`` equals ``numpy.kron(unitary.conj(), unitary)``.
 
 .. list-table:: What each operator method accepts
    :header-rows: 1

@@ -76,12 +76,23 @@ unitary = fq.simulator.Simulator("unitary").run(bell).result().get_unitary()
 superop = fq.simulator.Simulator("superop").run(bell).result().get_superop()
 ```
 
-`unitary[:, 0]` is the statevector the same program prepares, and for a
-noise-free program `superop` equals `numpy.kron(unitary, unitary.conj())`.
-The super-operator is row-major vectorized: `superop @ rho.reshape(-1)`
-reshaped back to `(D, D)` is the program applied to `rho`. (Qiskit's
-`SuperOp` uses the column-major convention instead, which swaps the two
-index pairs.)
+`unitary[:, 0]` is the statevector the same program prepares. The public
+super-operator uses column-stacking vectorization of density matrices:
+
+```python
+rho_out = (
+    superop @ rho_in.reshape(-1, order="F")
+).reshape(rho_in.shape, order="F")
+```
+
+Here, column-stacking describes the mathematical vectorization of `rho_in`,
+not the NumPy memory layout of the returned matrix. For a noise-free program,
+`superop` equals `numpy.kron(unitary.conj(), unitary)`.
+
+**Migration note.** FATQAT previously returned row-stacked public
+super-operator matrices. Raw matrices therefore change numerically for the
+same channel; code that flattens or reshapes density matrices must now use
+`order="F"`. The represented channel itself is unchanged.
 
 Both methods reject anything an operator cannot express, before running:
 measurement, feedforward conditions, and a `counts` request on either;

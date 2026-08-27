@@ -260,11 +260,13 @@ class Simulator:
       the product of the subsystem dimensions. Native result field
       ``unitary``. Reset and channel noise are rejected - a unitary cannot
       represent a non-unitary map.
-    - ``method="superop"``: the program's ``(D**2, D**2)`` super-operator on
-      the row-major vectorized density matrix. Native result field
-      ``superop``. Reset and channel noise are accepted; both are exact
-      channels, as under density-matrix semantics. Memory grows as ``16**n``
-      for ``n`` qubits, so this method is for small circuits.
+    - ``method="superop"``: the program's ``(D**2, D**2)`` super-operator using
+      column-stacking vectorization of density matrices
+      (``rho.reshape(-1, order="F")``). This describes the mathematical
+      vectorization, not the NumPy memory layout of the returned matrix. Native
+      result field ``superop``. Reset and channel noise are accepted; both are
+      exact channels, as under density-matrix semantics. Memory grows as
+      ``16**n`` for ``n`` qubits, so this method is for small circuits.
 
     A state run is classified into a fast path (evolve once, sample requested
     counts from the terminal measurement distribution) or a dynamic path
