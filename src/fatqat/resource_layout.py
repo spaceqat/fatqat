@@ -14,25 +14,17 @@ class ResourceLayout:
 
     Device labels are opaque hashable values defined by a backend, such as a
     site number, coordinate, or string identifier. They are not simulator
-    tensor-axis indices. The mapping is intentionally one-way: public methods
-    look up labels from refs but do not reverse-map a label to a ref.
+    tensor-axis indices. Public lookups map register refs to device labels.
 
-    Construction shallow-copies the input mapping. Later additions or
-    replacements in that mapping are not observed; the ``RegisterRef`` keys
-    and label objects themselves are retained. Label equality and hashes must
-    remain stable for the layout's lifetime, so immutable labels are strongly
-    preferred. Refs distinguish their owning registers by identity, so a ref
-    from a separately constructed lookalike register is not present. The
-    layout object itself also compares by identity and does not implement the
-    general ``Mapping`` interface. Backend calls do not mutate it, so it may be
+    Construction shallow-copies the input mapping, so later top-level changes
+    to that mapping are not observed. The ref keys and label objects are
+    retained. Use immutable labels whose equality and hashes remain stable for
+    the layout's lifetime. Backend calls do not mutate a layout, so it can be
     reused with the same register objects and a compatible backend.
 
-    A standalone layout may be partial, include foreign or non-quantum keys, or
-    assign one label to more than one ref because key types and ownership are
-    not checked by the constructor. Current backends require complete coverage
-    and distinct exclusive labels. Other label, program-dimension, placement,
-    and connectivity checks are backend-specific and can occur during binding,
-    preparation, or lowering.
+    The selected backend validates program coverage, label uniqueness and
+    type, subsystem dimensions, placement, and connectivity when the layout is
+    used.
 
     Examples:
         >>> import fatqat as fq
@@ -46,16 +38,14 @@ class ResourceLayout:
         """Create a resource layout from explicit ref-to-label pairs.
 
         Args:
-            labels: Mapping from each covered quantum ``RegisterRef`` to an
-                opaque hashable device label. This is the supported typed
-                contract; the constructor copies with ``dict()`` and does not
-                enforce the input container or key type. FATQAT defines no
-                fixed label type or reserved values.
+            labels: Mapping from quantum ``RegisterRef`` objects to opaque,
+                hashable device labels defined by the backend. FATQAT defines
+                no universal label type or reserved value. The mapping is
+                shallow-copied.
 
         Raises:
             TypeError: If ``labels`` cannot be copied into a dictionary or a
                 device label is not hashable.
-            ValueError: If an iterable cannot be converted to key/value pairs.
         """
         self._labels: dict[RegisterRef, DeviceOperand] = dict(labels)
         self._refs_by_label: dict[DeviceOperand, RegisterRef | None] = {}
@@ -83,12 +73,7 @@ class ResourceLayout:
 
     @property
     def device_labels(self) -> frozenset[DeviceOperand]:
-        """Return the unique device labels as an immutable set.
-
-        Repeated values collapse to one set member. Such repeats are accepted
-        by this value object but rejected by current backends when the layout
-        is used for a run.
-        """
+        """Return the device labels as an immutable set."""
         return frozenset(self._labels.values())
 
     @property
@@ -102,11 +87,10 @@ class ResourceLayout:
         """Return the device resource labels for ``refs``, in operand order.
 
         Args:
-            refs: Tuple of scalar quantum refs. Runtime lookup iterates any
-                supplied iterable; an empty iterable is accepted.
+            refs: Tuple of scalar quantum refs.
 
         Returns:
-            Device labels in the same order, including repeated input refs.
+            Device labels in the same order.
 
         Raises:
             KeyError: If any ref in ``refs`` is not part of this layout.

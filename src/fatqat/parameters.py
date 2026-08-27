@@ -21,8 +21,8 @@ class Parameter:
 
     ``name`` is only a display and diagnostic label. Equality and hashing use
     object identity, so two parameters with the same name remain distinct
-    mapping keys. Reuse the same object in direct dataclass fields of operations
-    when one value should be shared, then pass that object to
+    mapping keys. Reuse the same object directly as an operation argument when
+    one value should be shared, then pass that object to
     ``Program.assign_parameters()`` or a sweep API. Parameters nested inside
     another container are not discovered for binding.
 
@@ -68,13 +68,13 @@ class ParameterVector:
     Slices and non-integer indices are not accepted.
 
     A non-empty vector can be one key in ``Program.assign_parameters()`` when
-    every element occurs directly in a dataclass operation field. Its value
-    must be a matching-length, one-dimensional NumPy array or a non-string,
-    non-bytes, non-mapping iterable, consumed once in iteration order.
-    Individual elements are ordinary ``Parameter`` keys and support partial
-    binding. A zero-length vector can be used as an empty container but not as
-    a binding key. Parameters nested inside another container are not
-    discovered for binding.
+    every element is used directly as an operation argument. Its value must be
+    a matching-length, one-dimensional NumPy array or a non-string, non-bytes,
+    non-mapping iterable, consumed once in iteration order. Individual
+    elements are ordinary ``Parameter`` keys and support partial binding. A
+    zero-length vector can be used as an empty container but not as a binding
+    key. Parameters nested inside another container are not discovered for
+    binding.
 
     Args:
         name: Non-empty base label. Element labels use ``name[index]``.

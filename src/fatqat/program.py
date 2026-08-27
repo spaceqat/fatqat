@@ -1,4 +1,4 @@
-"""Program container and its private instruction records."""
+"""Device-independent quantum program construction."""
 
 from __future__ import annotations
 
@@ -123,9 +123,8 @@ class Program:
     ``add()``, ``measure()``, and ``measure_all()`` append instructions in
     place. Register collections are stored as tuples and should be treated as
     construction-time state; replacing those public attributes is unsupported.
-    ``metadata`` remains a mutable dictionary for user annotations. Calls that
-    mutate one program are not synchronized; use ``copy()`` when separate
-    builders need to branch from the same prefix.
+    ``metadata`` remains a mutable dictionary for user annotations. Use
+    ``copy()`` to branch from a shared program prefix.
 
     Program construction validates frontend structure, not backend support.
     A selected backend may reject an otherwise well-formed operation,
@@ -175,18 +174,17 @@ class Program:
                 default ``0`` creates no classical register. The outer
                 collection is copied, but the register objects are retained.
             metadata: Optional mapping of user-defined string keys to arbitrary
-                values. There are no predefined keys or per-key defaults, and
-                key types are not checked at runtime. The top-level mapping is
-                shallow-copied into a mutable dictionary; nested values are not
-                copied. ``None`` creates an empty dictionary.
+                values. There are no predefined keys or per-key defaults. The
+                top-level mapping is shallow-copied into a mutable dictionary;
+                nested values are not copied. ``None`` creates an empty
+                dictionary.
 
         Raises:
             TypeError: If a count is not an exact integer (booleans are not
-                counts), if a register specification is not an integer or
-                list, if a list contains the wrong register type, or if a
-                truthy ``metadata`` value cannot be converted to a dictionary.
-            ValueError: If an integer register count is negative or a truthy
-                ``metadata`` iterable cannot be converted to dictionary pairs.
+                counts), if a register specification is not an integer, list,
+                or tuple, if a collection contains the wrong register type, or
+                if ``metadata`` cannot be copied into a dictionary.
+            ValueError: If an integer register count is negative.
         """
         self.quantum_registers: tuple[QuantumRegister, ...] = tuple(
             self._coerce_registers(quantum_registers, QuantumRegister, "q")
@@ -336,30 +334,26 @@ class Program:
     ) -> None:
         """Validate and append one operation in place.
 
-        The appended instruction retains ``op`` and the resolved target
-        objects. This method checks program-level structure immediately;
-        device and backend capability checks occur when the program is run.
-        For a ``PulseOperation``, omit ``targets``: its ``PulseControl``
-        channels address physical resources directly, and the selected pulse
-        emulator resolves and validates those addresses during program
-        preparation.
+        This method checks program-level structure immediately; device and
+        backend capability checks occur when the program is run. For a
+        ``PulseOperation``, omit ``targets``: its ``PulseControl`` channels
+        address physical resources directly, and the selected pulse emulator
+        resolves and validates those addresses during program preparation.
 
         Args:
             op: Operation instance to append. Fixed gates are available as
                 singleton values such as ``ops.X``; parametric gates should be
                 instantiated, such as ``ops.RX(0.2)``.
             targets: One target expression, or a tuple in operation-operand
-                order. A bare target must be an exact built-in ``int`` (not a
-                boolean, NumPy integer, or integer subclass) and is accepted
+                order. A bare target must be a built-in ``int`` and is accepted
                 only when the program has exactly one quantum register. An
-                explicit ``RegisterRef`` must
-                belong to this program's quantum registers. ``RX``, ``RY``,
-                and ``RZ`` also accept one ``RegisterView``; ``CX`` and ``CZ``
-                accept a pair of compatible views. Two-target view application
-                cannot mix a scalar with a view, and its views must use the
-                same selector kind and cardinality without overlapping on one
-                register. Omit this argument when adding a ``PulseOperation``;
-                each control's channel identifies the physical resource or
+                explicit ``RegisterRef`` must belong to this program's quantum
+                registers. ``RX``, ``RY``, and ``RZ`` also accept one
+                ``RegisterView``; ``CX`` and ``CZ`` accept a pair with the same
+                selector kind and length. Views over one grid must not overlap,
+                and a two-target application cannot mix a scalar with a view.
+                Omit this argument when adding a ``PulseOperation``; each
+                control's channel identifies the physical resource or
                 resources it drives.
             condition: ``None`` (default) for an unconditional operation,
                 one ``(classical_slot, literal)`` pair, or a non-empty tuple or
@@ -367,9 +361,8 @@ class Program:
                 slot may be an exact built-in ``int`` only when exactly one
                 classical register exists, or an explicit classical
                 ``RegisterRef`` owned by the program. A literal must be a
-                Python ``int`` in ``[0, slot_dimension)``; booleans and integer
-                subclasses are accepted and normalized with ``int()``, while
-                NumPy integer scalars are rejected.
+                Python ``int`` in ``[0, slot_dimension)``; booleans are also
+                accepted.
 
         Returns:
             ``None``.
@@ -387,15 +380,6 @@ class Program:
                 condition literal is out of range.
             IndexError: If an integer operand is outside the relevant register.
 
-        Examples:
-            Add fixed and parametric gates:
-
-            >>> import fatqat as fq
-            >>> import fatqat.operations as ops
-            >>> program = fq.Program(2)
-            >>> program.add(ops.H, 0)
-            >>> program.add(ops.CZ, (0, 1))
-            >>> program.add(ops.RX(0.2), 0)
         """
         if not isinstance(op, Operation):
             raise TypeError(
@@ -447,19 +431,15 @@ class Program:
     ) -> None:
         """Append a computational-basis measurement in place.
 
-        A grouped call creates one ``Measurement`` record. Targets and outputs
-        are paired positionally, and each pair must have the same register
-        dimension. Repeated targets and outputs are accepted; built-in
-        backends process pairs in order, so a repeated output keeps the later
-        pair's reported value. Measurement does not accept ``RegisterView``
-        objects.
+        Targets and outputs are paired positionally, and each pair must have
+        the same register dimension. Repeated operands are accepted and
+        processed in pair order, so a repeated output keeps the later value.
+        Measurement does not accept ``RegisterView`` objects.
 
         Args:
-            targets: Quantum operand(s) to measure, as an exact built-in
-                ``int``, explicit ``RegisterRef``, or non-empty tuple of those
-                operands. Booleans, NumPy integers, and integer subclasses are
-                not integer operands. Bare integers require exactly one
-                quantum register.
+            targets: Quantum operand(s) to measure, as a built-in ``int``,
+                explicit ``RegisterRef``, or non-empty tuple of those operands.
+                Bare integers require exactly one quantum register.
             outputs: Classical operand(s) to write, in the same forms, with a
                 non-empty tuple matching ``targets`` in count. Bare integers
                 require exactly one classical register.
@@ -477,20 +457,14 @@ class Program:
             IndexError: If an integer operand is outside the relevant register.
 
         Examples:
-            Add a terminal measurement:
+            Add a grouped terminal measurement:
 
             >>> import fatqat as fq
             >>> import fatqat.operations as ops
-            >>> program = fq.Program(1, 1)
-            >>> program.add(ops.X, 0)
-            >>> program.measure(0, 0)
-
-            Add a grouped measurement:
-
-            >>> program2 = fq.Program(2, 2)
-            >>> program2.add(ops.H, 0)
-            >>> program2.add(ops.CZ, (0, 1))
-            >>> program2.measure((0, 1), (0, 1))
+            >>> program = fq.Program(2, 2)
+            >>> program.add(ops.H, 0)
+            >>> program.add(ops.CZ, (0, 1))
+            >>> program.measure((0, 1), (0, 1))
         """
         q_operands = targets if isinstance(targets, tuple) else (targets,)
         c_operands = outputs if isinstance(outputs, tuple) else (outputs,)
@@ -505,8 +479,7 @@ class Program:
         """Append one measurement pairing all quantum and classical slots.
 
         Registers and their members are flattened in declaration order. The
-        method appends one grouped ``Measurement``; it does not replace earlier
-        measurements.
+        new measurement does not replace earlier measurements.
 
         Returns:
             ``None``.
@@ -532,10 +505,9 @@ class Program:
     def copy(self) -> "Program":
         """Return a shallow structural copy for independent program mutation.
 
-        The copy shares register objects and existing instruction record
-        objects with the original. It owns a new instruction list and a new
-        top-level metadata dictionary, so later ``add()``/``measure()`` calls
-        and top-level metadata changes are independent. Values nested inside
+        The copy retains the original register objects and shallow-copies the
+        metadata dictionary. Later ``add()`` and ``measure()`` calls and
+        top-level metadata changes are independent; values nested inside
         metadata remain shared.
 
         Returns:
@@ -571,46 +543,43 @@ class Program:
         """Return a copy with selected parameter objects replaced by numbers.
 
         Matching is by object identity, not by name. Binding may be partial or
-        empty and never mutates the template. Only ``Parameter`` values stored
-        directly in dataclass operation fields are discovered; a parameter
-        nested inside another container is not a binding target. Any remaining
+        empty and never mutates the template. Only ``Parameter`` values used
+        directly as operation arguments are discovered; a parameter nested
+        inside another container is not a binding target. Any remaining
         parameters stay in the returned program and are rejected later by
-        numeric execution or export APIs. Structural discovery does not widen
-        an operation field's declared value contract: reconstruction or
-        backend lowering may reject a bound value that is invalid for that
-        field.
+        numeric execution or export APIs. Binding does not bypass an
+        operation's value constraints, so an invalid replacement may still be
+        rejected.
 
         Args:
             values: Mapping with these accepted key/value forms:
 
                 - ``Parameter`` key (built-in ``int`` or ``float``, or NumPy
-                  integer or floating scalar): Replaces every direct occurrence
-                  of that same object. Booleans, strings, complex numbers, and
+                  integer or floating scalar): Replaces every direct use of
+                  that same object. Booleans, strings, complex numbers, and
                   other numeric classes are not accepted.
                 - ``ParameterVector`` key (one-dimensional NumPy array or a
                   non-string, non-bytes, non-mapping iterable of the scalar
                   types above): The iterable is consumed once in its own
                   iteration order and paired with vector index order. Its
                   length must match the vector, and every vector element must
-                  occur in a direct operation field. Bind individual elements
+                  be used directly by an operation. Bind individual elements
                   instead when only part of a vector is present.
 
                 String keys and positional assignments are not accepted. A
                 vector and one of its elements cannot both be assigned.
 
         Returns:
-            A shallow structural copy containing the selected numeric values.
-            It has independent instruction storage and a copied top-level
-            metadata dictionary, while retaining the original registers.
+            A new program containing the selected numeric values. It retains
+            the original registers and shallow-copies the metadata dictionary.
 
         Raises:
             TypeError: If the mapping, a key, a value container, or a scalar
                 has the wrong type.
             ValueError: If a parameter identity is absent, a vector is empty or
                 not fully present, an element is assigned twice, or a vector
-                value has the wrong rank or length. Errors raised while
-                reconstructing a custom dataclass operation propagate
-                unchanged.
+                value has the wrong rank or length. Operation-specific
+                validation errors propagate unchanged.
 
         Examples:
             Bind a vector at once while leaving the template unchanged:

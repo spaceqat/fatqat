@@ -31,13 +31,14 @@ Register types
      - Quantum targets with rectangular selection helpers
      - Derived as ``rows * cols``
 
-Register fields are frozen and use object identity for equality and hashing,
-with one deliberate shallow-immutability exception: the stored ``metadata``
-dictionary remains mutable. Names are display labels, need not be unique, and
-do not make two separately constructed registers interchangeable. Use ``str``
-or ``None`` for a name; its type is not checked at runtime. A
+Register fields are frozen and use object identity for equality and hashing.
+Names are display labels, need not be unique, and do not make two separately
+constructed registers interchangeable. The stored ``metadata`` dictionary
+defaults to empty and is the deliberate mutability exception: FATQAT reserves
+no keys and shallow-copies its string-keyed entries, so later top-level changes
+to the input are not observed while nested values remain shared. A
 :class:`~fatqat.Program` given an explicit register list or tuple retains those
-register objects while copying the outer collection into a tuple.
+register objects while copying the outer collection.
 
 Indexing with ``register[index]`` creates an immutable
 :class:`~fatqat.RegisterRef`. In a program with multiple registers, pass the
@@ -59,13 +60,6 @@ measurement pair must match. Register construction accepts every integer
 dimension of at least two, but individual operations and backends may support
 only some dimensions. See :doc:`../guide/advanced` for a qutrit example.
 
-Each register's ``metadata`` argument defaults to an empty mapping. Its
-supported keys are strings, its values may have any type, and FATQAT assigns
-no predefined meaning or per-key default. Construction shallow-copies the
-top-level entries with ``dict()``; nested values remain shared. Runtime
-conversion also retains non-string keys and accepts dictionary-compatible pair
-iterables. An invalid input raises ``TypeError`` or ``ValueError``.
-
 .. autoclass:: fatqat.Register
    :members:
    :special-members: __getitem__
@@ -73,12 +67,10 @@ iterables. An invalid input raises ``TypeError`` or ``ValueError``.
 
 .. autoclass:: fatqat.QuantumRegister
    :members:
-   :special-members: __getitem__
    :show-inheritance:
 
 .. autoclass:: fatqat.ClassicalRegister
    :members:
-   :special-members: __getitem__
    :show-inheritance:
 
 .. autoclass:: fatqat.RegisterRef
@@ -111,46 +103,46 @@ For a ``GridRegister(2, 3)``, the helpers select these flat indices:
      - ``(1, 2, 4, 5)``
 
 Pass views to :meth:`~fatqat.Program.add`. The built-in view-capable operations
-are ``RX``, ``RY``, ``RZ``, ``CX``, and ``CZ``; a custom ``Operation`` subclass
-can also opt in. A unary operation is applied independently to every selected
-member. For ``CX`` or ``CZ``, FATQAT zips the first and second views in their
-documented order. Both targets must be views of the same selector kind and
-cardinality. Two views over the same register must not overlap; views over
-different grid registers still require equal cardinality.
+are ``RX``, ``RY``, ``RZ``, ``CX``, and ``CZ``. A unary operation is applied
+independently to every selected member. For ``CX`` or ``CZ``, FATQAT pairs the
+first and second views in their documented order. Both views must use the same
+selector kind and cardinality. Views over one register must not overlap;
+views over different grid registers still require equal cardinality.
 
-Views are only operation target expressions. Measurements accept bare integers
-or scalar quantum refs, never views. Noise selectors accept scalar quantum refs
-or physical device labels, never views. QASM export does not currently support
-a program that contains a view. Device-specific placement and connectivity are
-validated by the selected backend. See :doc:`../guide/gates` for a paired-row
-example.
+Views are operation target expressions. Measurements require scalar targets,
+and QASM export does not currently support a program containing a view.
+Device-specific placement and connectivity are validated by the selected
+backend. See :doc:`../guide/gates` for a paired-row example.
 
 .. autoclass:: fatqat.GridRegister
    :members:
-   :special-members: __getitem__
    :show-inheritance:
 
-.. autoclass:: fatqat.RegisterView
-   :members:
-   :show-inheritance:
+.. py:class:: fatqat.RegisterView
+   :canonical: fatqat.registers.RegisterView
+
+   Immutable, hashable target value returned by the grid selection helpers
+   above. Its ``register`` attribute identifies the owning grid, and equality
+   combines that register's identity with the selection. Construct views with
+   the grid helpers; the selector representation is not a public construction
+   contract.
 
 Resource layouts
 ----------------
 
-A :class:`~fatqat.ResourceLayout` is a read-only lookup object from scalar
-quantum refs to opaque, hashable :obj:`~fatqat.DeviceOperand` labels for a
-program-to-device binding. It does not implement the general ``Mapping``
-interface and layout objects compare by identity. Most applications should let
-the backend create its default layout. Supply one through ``resource_layout=``
-only to request a specific placement supported by that backend. Labels
-identify public device resources; they are not private simulator tensor-axis
-indices. A layout maps the logical :class:`~fatqat.RegisterRef` operands of
-ordinary operations. Direct :class:`~fatqat.operations.PulseOperation`
-channels bind against the emulator's physical model and are not remapped by
-the layout. Backend calls do not mutate a layout, so it can be reused with the
-same register objects and a compatible backend. Label equality and hashes
-must remain stable for that lifetime; immutable labels are strongly
-preferred.
+A :class:`~fatqat.ResourceLayout` is a read-only lookup from scalar quantum
+refs to opaque, hashable :obj:`~fatqat.DeviceOperand` labels. Most applications
+should let the backend create its default layout. Supply one through
+``resource_layout=`` only to request a placement supported by that backend.
+Labels identify public device resources; they are not private simulator
+tensor-axis indices.
+
+A layout maps the logical :class:`~fatqat.RegisterRef` operands of ordinary
+operations. Direct :class:`~fatqat.operations.PulseOperation` channels bind
+against the emulator's physical model and are not remapped by the layout.
+Backend calls do not mutate a layout, so it can be reused with the same
+register objects and a compatible backend. Use immutable labels whose equality
+and hashes remain stable for that lifetime.
 
 The constructor and backend perform different validation:
 
@@ -161,33 +153,16 @@ The constructor and backend perform different validation:
    * - Stage
      - Contract
    * - Construction
-     - Shallow-copies with ``dict()`` and requires hashable labels. The
-       supported keys are scalar quantum refs, but key type and ownership are
-       not checked; partial coverage, foreign keys, and repeated labels remain.
+     - Shallow-copies the mapping and requires hashable labels.
    * - Backend use
-     - Current backends require complete program coverage and distinct,
-       exclusive labels. Label type, accepted program dimensions, placement,
-       and connectivity are backend-specific checks that can occur during
-       binding, preparation, or lowering.
-
-The supported ``labels`` argument is a mapping whose keys are quantum
-``RegisterRef`` objects and whose values are hashable ``DeviceOperand`` values;
-there are no universal label choices or defaults. Runtime construction accepts
-any ``dict()``-compatible iterable and does not validate key types. Invalid
-dictionary input raises ``TypeError`` or ``ValueError``. The input mapping can
-be changed after construction without affecting the layout. Ref keys and label
-objects themselves are not copied. Refs use their register's identity, so a ref
-from a separately reconstructed lookalike register is absent. The public lookup
-direction is ref to label:
-:meth:`~fatqat.ResourceLayout.device_label` looks up one ref and
-:meth:`~fatqat.ResourceLayout.device_labels_for` preserves the order of a ref
-tuple. The :attr:`~fatqat.ResourceLayout.refs` and
-:attr:`~fatqat.ResourceLayout.device_labels` properties return immutable
-sets; repeated labels therefore collapse in ``device_labels`` even though the
-constructor retains their per-ref mappings.
+     - Validates complete program coverage, distinct labels, accepted label
+       types, subsystem dimensions, placement, and connectivity as required by
+       the selected backend.
 
 .. autoclass:: fatqat.ResourceLayout
    :members:
    :show-inheritance:
 
-.. autodata:: fatqat.DeviceOperand
+.. py:type:: fatqat.DeviceOperand
+
+   Backend-defined opaque, hashable label for one device resource.
