@@ -253,19 +253,6 @@ def test_a_mixed_plan_routes_each_channel_independently(runtime):
     assert _total_variation(sampled, exact, shots) < 0.02
 
 
-# --- integration with the rest of the noise surface ---
-
-
-def test_pauli_channel_is_an_accepted_backend_capability():
-    noise = NoiseModel()
-    noise.add(PauliChannel({"X": 0.1}), operation=ops.X)
-
-    report = Simulator().check_noise_support(noise)
-
-    assert report.supported is True
-    assert report.accepted_sources == ("PauliChannel",)
-
-
 def test_a_custom_non_unitary_channel_rule_still_runs():
     # Nothing about the routing is descriptor-keyed, so a user rule that
     # happens to produce non-unitary operators simply takes the jump path.

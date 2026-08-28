@@ -119,7 +119,7 @@ API
 
 :attr:`Simulator.method`, :attr:`AtomArraySimulator.implementation_map`,
 :meth:`Simulator.run`, :meth:`Simulator.run_sweep`, and
-:meth:`Simulator.check_noise_support` follow the general Simulator API and are
+:meth:`Simulator.validate_noise_model` follow the general Simulator API and are
 included below for a complete class reference.
 
 .. autoclass:: AtomArraySimulator

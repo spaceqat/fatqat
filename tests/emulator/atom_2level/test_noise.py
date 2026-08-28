@@ -138,11 +138,7 @@ def _single_site_x_map(model):
 )
 def test_support_accepts_builtin_background_generators(model, channel):
     backend = _backend(model)
-    report = backend.check_noise_support(_noise(channel))
-    assert report.supported
-    mode = "rate, " if hasattr(channel, "rate") else ""
-    assert report.accepted_sources == (f"{type(channel).__name__}({mode}background)",)
-    assert _backend(model, _noise(channel)).model is model
+    assert backend.validate_noise_model(_noise(channel)) is None
 
 
 @pytest.mark.parametrize(
@@ -159,31 +155,32 @@ def test_support_accepts_builtin_background_generators(model, channel):
 def test_support_rejects_probability_unsupported_scoped_and_wrong_arity_noise(
     model, noise
 ):
-    report = _backend(model).check_noise_support(noise)
-    assert not report.supported
-    assert report.rejected_sources
     with pytest.raises(BackendValidationError, match="not supported"):
-        _backend(model, noise)
+        _backend(model).validate_noise_model(noise)
 
 
 def test_support_accepts_binary_and_rejects_nonbinary_readout_confusion(model):
     noise = fq.NoiseModel()
     noise.add(ReadoutConfusion(np.eye(2)))
-    report = _backend(model).check_noise_support(noise)
-    assert report.supported
-    assert report.accepted_sources == ("ReadoutConfusion",)
+    assert _backend(model).validate_noise_model(noise) is None
 
     invalid = fq.NoiseModel()
     invalid.add(ReadoutConfusion(np.eye(3)))
-    invalid_report = _backend(model).check_noise_support(invalid)
-    assert not invalid_report.supported
-    assert invalid_report.rejected_sources == ("ReadoutConfusion",)
+    with pytest.raises(
+        BackendValidationError,
+        match="ReadoutConfusion.*2 x 2",
+    ):
+        _backend(model).validate_noise_model(invalid)
 
 
 def test_explicit_equivalent_map_enables_rate_operation_scope(model):
     channel = AmplitudeDamping(rate=0.2)
     noise = _noise(channel, operation=ops.X)
-    assert not _backend(model).check_noise_support(noise).supported
+    with pytest.raises(
+        BackendValidationError,
+        match="built-in defaults accept only background generators",
+    ):
+        _backend(model).validate_noise_model(noise)
 
     explicit = _backend(
         model,
@@ -217,34 +214,22 @@ def test_explicit_map_rejects_wrong_probability_and_rate_arity(model, channel):
         lindblad_map=_explicit_damping_map(),
     )
 
-    report = backend.check_noise_support(noise)
-
-    assert not report.supported
     expected_label = (
         "AmplitudeDamping(p)"
         if channel.p is not None
         else "AmplitudeDamping(rate-arity-2)"
     )
-    assert report.rejected_sources == (expected_label,)
-    with pytest.raises(BackendValidationError, match="not supported"):
-        _backend(
-            model,
-            noise,
-            gate_map=_single_site_x_map(model),
-            lindblad_map=_explicit_damping_map(),
-        )
+    with pytest.raises(BackendValidationError) as caught:
+        backend.validate_noise_model(noise)
+    assert expected_label in str(caught.value)
 
 
 def test_explicit_map_keeps_background_rate_and_rejects_probability(model):
     implementations = _explicit_damping_map()
-    assert (
-        _backend(
-            model,
-            _noise(PhaseDamping(rate=0.2)),
-            lindblad_map=implementations,
-        )
-        .check_noise_support(_noise(PhaseDamping(rate=0.2)))
-        .supported
+    _backend(
+        model,
+        _noise(PhaseDamping(rate=0.2)),
+        lindblad_map=implementations,
     )
     with pytest.raises(BackendValidationError, match="not supported"):
         _backend(

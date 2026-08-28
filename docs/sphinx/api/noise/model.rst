@@ -250,26 +250,22 @@ A valid selector with no matching operation or measurement is a no-op, not an
 error. Some checks require a concrete program, resource layout, and execution
 method.
 
-Check backend support
----------------------
+Validate backend support
+------------------------
 
-Use :meth:`~fatqat.simulator.Simulator.check_noise_support` for a simulator or
-:meth:`~fatqat.emulator.TransmonEmulator.check_noise_support` for a pulse
-emulator when you need to inspect a candidate model. The returned report lists
-each equivalent noise form once. Its ``supported`` flag summarizes the result;
-``accepted_sources`` and ``rejected_sources`` contain the source labels, and
-``warnings`` explains each rejection without emitting Python warnings.
+Use :meth:`~fatqat.simulator.Simulator.validate_noise_model` for a simulator or
+:meth:`~fatqat.emulator.TransmonEmulator.validate_noise_model` for a pulse
+emulator to validate a candidate model. The method returns ``None`` when the
+configured backend accepts the model. Otherwise, it raises
+:class:`~fatqat.errors.BackendValidationError` whose message includes every
+model-level rejection reason.
 
 .. code-block:: python
 
    probe = fq.simulator.Simulator(method="DM")
-   report = probe.check_noise_support(noise)
-   if not report.supported:
-       raise ValueError("; ".join(report.warnings))
+   probe.validate_noise_model(noise)
 
-This check does not have a program or layout. FATQAT validates references,
-device labels, target and readout dimensions, method restrictions, and actual
-operation matches later.
+Program- and layout-dependent checks still happen when the model is used.
 
 API
 ---

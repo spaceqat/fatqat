@@ -166,7 +166,7 @@ Reference
 ---------
 
 .. autoclass:: fatqat.emulator.TransmonEmulator
-   :members: run, propagator, check_noise_support
+   :members: run, propagator, validate_noise_model
 
 Physics model and calibration
 -----------------------------
@@ -353,9 +353,9 @@ is registered. See :ref:`pulse-probability-noise`. A rate-form
 ``Depolarizing`` declaration also requires a Lindblad map that registers it;
 the transmon default map does not.
 
-Call :py:meth:`~fatqat.emulator.TransmonEmulator.check_noise_support` to see
-which noise declarations this emulator supports. Program-specific selectors
-are checked when you run the program.
+Call :py:meth:`~fatqat.emulator.TransmonEmulator.validate_noise_model` before
+running a program to validate its noise model. Program-specific selectors are
+checked at run time.
 
 Neutral-atom pulse emulators
 ----------------------------

@@ -554,17 +554,14 @@ def test_atom_loss_ejects_the_atom():
 def test_atom_loss_rejected_by_a_non_atom_backend():
     noise = NoiseModel()
     noise.add(Loss(p=0.1), operation=ops.RX)
-    report = Simulator().check_noise_support(noise)
-    assert not report.supported
-    assert "Loss" in report.rejected_sources
+    with pytest.raises(BackendValidationError, match="Loss.*carrier loss"):
+        Simulator().validate_noise_model(noise)
 
 
 def test_atom_loss_accepted_by_atom_backend():
     noise = NoiseModel()
     noise.add(Loss(p=0.1), operation=ops.RX)
-    report = AtomArraySimulator().check_noise_support(noise)
-    assert report.supported
-    assert "Loss" in report.accepted_sources
+    assert AtomArraySimulator().validate_noise_model(noise) is None
 
 
 def test_atom_loss_run_rejected_by_plain_simulator():

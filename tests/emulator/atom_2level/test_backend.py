@@ -235,7 +235,7 @@ def test_invalid_attached_noise_rejects_before_target_construction(model, monkey
     noise.add(Depolarizing(p=0.1), operation=ops.X)
 
     def target_must_not_be_built(*_args, **_kwargs):
-        raise AssertionError("target was built before capability classification")
+        raise AssertionError("target was built before noise validation")
 
     monkeypatch.setattr(
         "fatqat.emulator.atom_2level.backend._Atom2LevelTarget",
@@ -243,25 +243,6 @@ def test_invalid_attached_noise_rejects_before_target_construction(model, monkey
     )
     with pytest.raises(BackendValidationError, match="not supported"):
         Atom2LevelEmulator(model, arrangement=arrangement, noise=noise)
-
-
-def test_constructor_classifies_attached_noise_exactly_once(model, monkeypatch):
-    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
-    noise = fq.NoiseModel()
-    noise.add(AmplitudeDamping(rate=0.2), targets=0)
-    calls = 0
-    classify = Atom2LevelEmulator._classify_noise
-
-    def counted_classify(self, attached_noise):
-        nonlocal calls
-        calls += 1
-        return classify(self, attached_noise)
-
-    monkeypatch.setattr(Atom2LevelEmulator, "_classify_noise", counted_classify)
-
-    Atom2LevelEmulator(model, arrangement=arrangement, noise=noise)
-
-    assert calls == 1
 
 
 def test_custom_global_gate_requires_and_executes_a_whole_arrangement_occurrence(

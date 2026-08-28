@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Callable, ClassVar, Self
 
 import numpy as np
@@ -160,30 +159,6 @@ class ChannelImplementationMap(_ChannelImplementationRegistry):
     may still reject the channel's parameter form, scope, target dimensions,
     or execution method.
     """
-
-
-@dataclass(frozen=True)
-class NoiseSupportReport:
-    """Result returned by a backend's ``check_noise_support()`` method.
-
-    Equivalent registrations of the same noise type and parameter form
-    appear once. Users normally receive this value from a backend rather than
-    construct it directly. This is a model-level report: program references,
-    device labels, target dimensions, and the selected execution method can
-    impose additional constraints when a program is prepared. ``warnings`` is
-    report data; creating the value does not emit Python warnings.
-
-    Attributes:
-        supported: Whether every noise source in the model is accepted.
-        accepted_sources: Deduplicated labels for accepted sources.
-        rejected_sources: Deduplicated labels for rejected sources.
-        warnings: Explanations in the same order as ``rejected_sources``.
-    """
-
-    supported: bool
-    accepted_sources: tuple[str, ...] = ()
-    rejected_sources: tuple[str, ...] = ()
-    warnings: tuple[str, ...] = ()
 
 
 # Round-off slack when testing ``K^H K`` for a multiple of the identity.

@@ -281,15 +281,7 @@ def test_backend_is_ideal_by_default():
 
 def test_default_noise_model_is_fully_supported():
     model = SCQubitGoogleSimulator.default_noise_model()
-    report = SCQubitGoogleSimulator().check_noise_support(model)
-
-    assert report.supported is True
-    assert set(report.accepted_sources) == {
-        "AmplitudeDamping(p)",
-        "Depolarizing(p)",
-        "PhaseDamping(p)",
-        "ReadoutConfusion",
-    }
+    assert SCQubitGoogleSimulator().validate_noise_model(model) is None
     assert {type(source) for source, _operation in model._noise_sources()} == {
         AmplitudeDamping,
         Depolarizing,

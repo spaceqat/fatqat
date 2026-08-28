@@ -13,7 +13,7 @@ from fatqat.emulator._core.backend import _PulseBackend
 from fatqat.emulator._core.engine import PulseEngine
 from fatqat.emulator._core.lindblad import (
     ResolvedLindbladTerm,
-    _classify_lindblad_noise,
+    _lindblad_noise_rejection_reasons,
 )
 from fatqat.emulator._core.outcome import (
     _PulseExecutionSummary,
@@ -235,7 +235,6 @@ class _TemplateBackend(_PulseBackend):
     def __init__(self, target, *, noise=None, gate_map=None, lindblad_map=None):
         self._local_dimension = target.local_dimension
         self.source_validations = 0
-        self.classifications = 0
         self.runner_calls = 0
         self.execution_mode_calls = 0
         self.last_runner = None
@@ -250,16 +249,15 @@ class _TemplateBackend(_PulseBackend):
                 LindbladImplementationMap() if lindblad_map is None else lindblad_map
             ),
         )
-        self._require_captured_noise_support()
+        self.validate_noise_model(self._noise_model)
         self._set_target(target)
 
     def _validate_source_program(self, program):
         self.source_validations += 1
         assert isinstance(program, fq.Program)
 
-    def _classify_noise(self, noise_model):
-        self.classifications += 1
-        return _classify_lindblad_noise(
+    def _noise_model_rejection_reasons(self, noise_model):
+        return _lindblad_noise_rejection_reasons(
             noise_model,
             self._lindblad_implementation_map,
             local_dimension=self._local_dimension,
@@ -369,7 +367,6 @@ def test_preparation_builds_one_complete_immutable_value_exactly_once():
     assert captured_noise.operation_selections == 1
     assert captured_noise.background_selections == 3
     assert backend.source_validations == 1
-    assert backend.classifications == 1
     with pytest.raises(FrozenInstanceError):
         prepared.plan = ()
 
@@ -548,17 +545,16 @@ def test_pauli_channel_policy_is_explicit_even_with_a_registered_rule():
         lambda channel, *, physical_dimension: (np.eye(physical_dimension),),
     )
 
-    report = _classify_lindblad_noise(
-        noise,
-        implementation_map,
-        local_dimension=2,
-        backend_name="TemplateBackend",
-        supports_readout_confusion=True,
+    backend = _TemplateBackend(
+        _CountingTarget(),
+        lindblad_map=implementation_map,
     )
+    with pytest.raises(BackendValidationError) as caught:
+        backend.validate_noise_model(noise)
 
-    assert not report.supported
-    assert "pulse-family policy" in report.warnings[0]
-    assert "registered Lindblad implementation" in report.warnings[0]
+    message = str(caught.value)
+    assert "pulse-family policy" in message
+    assert "registered Lindblad implementation" in message
 
 
 def test_invalid_local_operator_shape_rejects_at_shared_resolution_boundary():
@@ -600,7 +596,6 @@ def test_invalid_shots_raise_directly_after_preparation_without_a_runner():
     with pytest.raises(BackendValidationError, match="shots"):
         backend.run(program, shots=0)
     assert backend.runner_calls == 0
-    assert backend.classifications == 1
 
 
 def test_constructor_copies_maps_and_captures_noise_registrations():
@@ -629,7 +624,7 @@ def test_constructor_copies_maps_and_captures_noise_registrations():
     noise.add(AmplitudeDamping(rate=0.2), targets="q0")
     prepared = backend._prepare_program(fq.Program(1))
     assert prepared.background_noise == ()
-    assert backend.check_noise_support(noise).supported
+    assert backend.validate_noise_model(noise) is None
 
 
 def test_explicit_empty_maps_remain_empty_and_constructor_types_are_checked():
@@ -668,21 +663,18 @@ def test_explicit_empty_maps_remain_empty_and_constructor_types_are_checked():
         )
 
 
-def test_public_noise_validation_checks_type_then_calls_classifier_once():
+def test_public_noise_validation_checks_type_and_accepts_an_empty_model():
     backend = _TemplateBackend(_CountingTarget())
     with pytest.raises(BackendValidationError, match="noise_model"):
-        backend.check_noise_support(object())
-    assert backend.classifications == 1
+        backend.validate_noise_model(object())
 
-    report = backend.check_noise_support(NoiseModel())
-    assert report.supported
-    assert backend.classifications == 2
+    assert backend.validate_noise_model(NoiseModel()) is None
 
 
 def test_shared_workflows_are_final_and_only_four_family_hooks_remain():
     expected_hooks = {
         "_validate_source_program",
-        "_classify_noise",
+        "_noise_model_rejection_reasons",
         "_resolve_execution_mode",
         "_create_runner",
     }
@@ -700,7 +692,7 @@ def test_shared_workflows_are_final_and_only_four_family_hooks_remain():
         "_prepare_program",
         "_execute",
         "_assemble_result",
-        "check_noise_support",
+        "validate_noise_model",
     ):
         assert getattr(getattr(_PulseBackend, name), "__final__", False)
     assert not hasattr(_PulseBackend, "_create_runner_from_bindings")

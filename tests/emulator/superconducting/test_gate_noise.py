@@ -143,19 +143,21 @@ def _evolve(adapter, blocks, context, *, boundary=0.0):
     return context
 
 
-# --- check_noise_support / capability reporting ----------------------------
+# --- validate_noise_model --------------------------------------------------
 
 
 def test_pulse_backend_accepts_gate_keyed_rate_and_rejects_probability(make_backend):
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(p=(0.01, 0.02)), operation=ops.RX)
     noise.add(PhaseDamping(rate=0.001), operation=ops.RX)
-    report = make_backend().check_noise_support(noise)
+    noise.add(AmplitudeDamping(p=(0.01, 0.02)), operation=ops.RX)
+    noise.add(PauliChannel({"X": 0.1}), operation=ops.RX)
 
-    assert report.supported is False
-    assert report.accepted_sources == ("PhaseDamping(rate)",)
-    assert report.rejected_sources == ("AmplitudeDamping(p)",)
-    assert "finite probability mode" in report.warnings[0]
+    with pytest.raises(BackendValidationError) as caught:
+        make_backend().validate_noise_model(noise)
+
+    message = str(caught.value)
+    assert "AmplitudeDamping(p)" in message
+    assert "PauliChannel" in message
 
 
 def test_pulse_backend_rejects_qutrit_amplitude_damping_with_wrong_arity(
@@ -163,26 +165,25 @@ def test_pulse_backend_rejects_qutrit_amplitude_damping_with_wrong_arity(
 ):
     invalid = NoiseModel()
     invalid.add(AmplitudeDamping(rate=(0.1,)), operation=ops.RX)
-    report = make_backend().check_noise_support(invalid)
-    assert not report.supported
-    assert "arity-1" in report.rejected_sources[0]
-    assert "requires 2 damping values" in report.warnings[0]
+    with pytest.raises(BackendValidationError) as caught:
+        make_backend().validate_noise_model(invalid)
+    assert "AmplitudeDamping(rate-arity-1)" in str(caught.value)
+    assert "requires 2 damping values" in str(caught.value)
 
     valid = NoiseModel()
     valid.add(AmplitudeDamping(rate=(0.1, 0.2)), operation=ops.RX)
-    assert make_backend().check_noise_support(valid).supported
+    assert make_backend().validate_noise_model(valid) is None
 
 
 def test_pulse_backend_accepts_background_rate_and_rejects_probability(make_backend):
     noise = NoiseModel()
     noise.add(PhaseDamping(rate=0.001), targets="q0")
     noise.add(AmplitudeDamping(p=(0.01, 0.02)), targets="q1")
-
-    report = make_backend().check_noise_support(noise)
-
-    assert report.accepted_sources == ("PhaseDamping(rate, background)",)
-    assert report.rejected_sources == ("AmplitudeDamping(p, background)",)
-    assert "finite probability mode" in report.warnings[0]
+    with pytest.raises(
+        BackendValidationError,
+        match=r"AmplitudeDamping\(p, background\).*finite probability mode",
+    ):
+        make_backend().validate_noise_model(noise)
 
 
 def test_background_rate_lowers_to_the_same_lindblad_term(make_backend):
@@ -204,24 +205,11 @@ def test_pulse_backend_still_rejects_channel_types_without_a_pulse_implementatio
     noise.add(Depolarizing(p=0.1), operation=ops.RX)
     backend = make_backend()
 
-    report = backend.check_noise_support(noise)
-    assert report.supported is False
-    assert report.rejected_sources == ("Depolarizing(p)",)
-
-    with pytest.raises(BackendValidationError, match="Depolarizing"):
-        make_backend(noise)
-
-
-def test_pulse_backend_rejects_finite_pauli_channel_without_inferred_generator(
-    make_backend,
-):
-    noise = NoiseModel()
-    noise.add(PauliChannel({"X": 0.1}), operation=ops.RX)
-
-    report = make_backend().check_noise_support(noise)
-
-    assert report.rejected_sources == ("PauliChannel",)
-    assert "finite-only" in report.warnings[0]
+    with pytest.raises(
+        BackendValidationError,
+        match=r"Depolarizing\(p\).*finite probability mode",
+    ):
+        backend.validate_noise_model(noise)
 
 
 def test_custom_generator_fields_are_interpreted_only_by_the_registered_rule(
@@ -239,11 +227,9 @@ def test_custom_generator_fields_are_interpreted_only_by_the_registered_rule(
     program = fq.Program(1)
     program.add(ops.RX(0.2), 0)
 
-    report = backend.check_noise_support(noise)
     plan = backend._prepare_program(program).plan
     (block,) = [step for step in plan if isinstance(step, PulseBlock)]
 
-    assert report.supported
     assert np.allclose(
         block.noise[0].local_operator,
         _broadening_rule(
@@ -263,10 +249,11 @@ def test_known_two_body_generator_is_rejected_during_capability_validation(model
         lindblad_implementation_map=implementations,
     )
 
-    report = backend.check_noise_support(noise)
-
-    assert report.rejected_sources == ("_TwoBodyGenerator",)
-    assert "single-subsystem" in report.warnings[0]
+    with pytest.raises(
+        BackendValidationError,
+        match="_TwoBodyGenerator.*single-subsystem",
+    ):
+        backend.validate_noise_model(noise)
 
 
 def test_variable_width_generator_rejects_a_nonlocal_occurrence_at_lowering(model):
@@ -282,7 +269,7 @@ def test_variable_width_generator_rejects_a_nonlocal_occurrence_at_lowering(mode
     program = fq.Program(2)
     program.add(ops.CZ, (0, 1))
 
-    assert backend.check_noise_support(noise).supported
+    assert backend.validate_noise_model(noise) is None
     with pytest.raises(BackendValidationError, match="local to one subsystem"):
         backend._prepare_program(program)
 
@@ -299,14 +286,18 @@ def test_lindblad_implementation_map_declares_pulse_noise_capability(
         lindblad_implementation_map=implementations,
     )
 
-    assert backend.check_noise_support(noise).rejected_sources == (
-        "AmplitudeDamping(rate)",
-    )
+    with pytest.raises(
+        BackendValidationError,
+        match=r"AmplitudeDamping\(rate\).*no registered Lindblad implementation",
+    ):
+        backend.validate_noise_model(noise)
 
     implementations.add(AmplitudeDamping, phase_damping_lindblad_rule)
-    assert backend.check_noise_support(noise).rejected_sources == (
-        "AmplitudeDamping(rate)",
-    )
+    with pytest.raises(
+        BackendValidationError,
+        match=r"AmplitudeDamping\(rate\).*no registered Lindblad implementation",
+    ):
+        backend.validate_noise_model(noise)
 
 
 # --- lowering: rate resolution ----------------------------------------------

@@ -97,6 +97,13 @@ def test_simulator_only_under_simulator_namespace():
     assert not hasattr(fq, "Simulator")
 
 
+def test_old_noise_support_api_is_not_public():
+    from fatqat.simulator import Simulator
+
+    assert not hasattr(Simulator, "check_noise_support")
+    assert not hasattr(fq.noise, "NoiseSupportReport")
+
+
 def test_constrained_targets_exported_under_simulator_namespace():
     from fatqat.simulator import SCQubitGoogleSimulator, SCQubitIBMSimulator
 

@@ -1,4 +1,4 @@
-"""Classify pulse noise and bind resolved Lindblad operators."""
+"""Validate pulse noise and bind resolved Lindblad operators."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from ...noise import (
     Loss,
     LindbladImplementationMap,
     NoiseModel,
-    NoiseSupportReport,
     PauliChannel,
     PhaseDamping,
 )
@@ -66,7 +65,7 @@ def bind_lindblad_operators(
     )
 
 
-def _classify_lindblad_noise(
+def _lindblad_noise_rejection_reasons(
     noise_model: NoiseModel,
     implementation_map: LindbladImplementationMap,
     *,
@@ -75,12 +74,9 @@ def _classify_lindblad_noise(
     allow_operation_scoped: bool = True,
     supports_readout_confusion: bool,
     readout_confusion_shape: tuple[int, int] | None = None,
-) -> NoiseSupportReport:
-    """Classify shared pulse-noise rules plus narrow family policy knobs."""
-    accepted: list[str] = []
-    rejected: list[str] = []
-    warnings: list[str] = []
-    seen: set[str] = set()
+) -> tuple[str, ...]:
+    """Return rejections from shared pulse-noise rules and family policy."""
+    rejection_reasons: list[str] = []
 
     for channel, operation in noise_model._noise_sources():
         background = operation is None
@@ -109,9 +105,6 @@ def _classify_lindblad_noise(
         label = channel_type.__name__
         if qualifiers:
             label += f"({', '.join(qualifiers)})"
-        if label in seen:
-            continue
-        seen.add(label)
 
         reason = None
         authored_arity = None if isinstance(channel, Loss) else channel.num_subsystems
@@ -136,11 +129,10 @@ def _classify_lindblad_noise(
         elif implementation_map.get(channel_type) is None:
             reason = "no registered Lindblad implementation"
 
-        if reason is None:
-            accepted.append(label)
-        else:
-            rejected.append(label)
-            warnings.append(f"{label} is not supported by {backend_name}: {reason}")
+        if reason is not None:
+            rejection_reasons.append(
+                f"{label} is not supported by {backend_name}: {reason}"
+            )
 
     readout_confusions = noise_model._readout_confusions()
     if readout_confusions:
@@ -153,17 +145,9 @@ def _classify_lindblad_noise(
         ):
             shape = " x ".join(str(dimension) for dimension in readout_confusion_shape)
             reason = f"readout confusion must be a {shape} matrix"
-        if reason is None:
-            accepted.append("ReadoutConfusion")
-        else:
-            rejected.append("ReadoutConfusion")
-            warnings.append(
+        if reason is not None:
+            rejection_reasons.append(
                 f"ReadoutConfusion is not supported by {backend_name}: {reason}"
             )
 
-    return NoiseSupportReport(
-        supported=not rejected,
-        accepted_sources=tuple(accepted),
-        rejected_sources=tuple(rejected),
-        warnings=tuple(warnings),
-    )
+    return tuple(dict.fromkeys(rejection_reasons))

@@ -81,40 +81,34 @@ def test_lindblad_constructor_surface_defaults_types_and_copy_isolation(
     assert not explicit_empty._lindblad_implementation_map.supported_channels()
 
 
-def test_default_rejects_physical_channels_but_custom_map_classifies_them(
+def test_default_rejects_physical_channels_but_custom_map_accepts_them(
     atom_3level_model,
 ):
     operation_noise = _noise(PhaseDamping(rate=0.2), operation=ops.RX)
+    default = _backend(atom_3level_model)
     with pytest.raises(BackendValidationError, match="PhaseDamping"):
-        _backend(atom_3level_model, noise=operation_noise)
+        default.validate_noise_model(operation_noise)
 
     custom = _backend(
         atom_3level_model,
-        noise=operation_noise,
         lindblad_map=_lindblad_map(),
     )
-    assert custom.check_noise_support(operation_noise).supported
+    assert custom.validate_noise_model(operation_noise) is None
 
     background = _noise(PhaseDamping(rate=0.3))
-    assert (
-        _backend(
-            atom_3level_model,
-            noise=background,
-            lindblad_map=_lindblad_map(),
-        )
-        .check_noise_support(background)
-        .supported
+    background_backend = _backend(
+        atom_3level_model,
+        lindblad_map=_lindblad_map(),
     )
+    assert background_backend.validate_noise_model(background) is None
 
     probability_background = _noise(PhaseDamping(p=0.2))
-    classifier = _backend(atom_3level_model, lindblad_map=_lindblad_map())
-    assert not classifier.check_noise_support(probability_background).supported
-    with pytest.raises(BackendValidationError, match="PhaseDamping"):
-        _backend(
-            atom_3level_model,
-            noise=probability_background,
-            lindblad_map=_lindblad_map(),
-        )
+    backend = _backend(atom_3level_model, lindblad_map=_lindblad_map())
+    with pytest.raises(
+        BackendValidationError,
+        match=r"PhaseDamping\(p, background\).*finite probability mode",
+    ):
+        backend.validate_noise_model(probability_background)
 
 
 def test_custom_map_rejects_qutrit_amplitude_damping_with_wrong_arity(
@@ -124,26 +118,26 @@ def test_custom_map_rejects_qutrit_amplitude_damping_with_wrong_arity(
     implementations.add(AmplitudeDamping, amplitude_damping_lindblad_rule)
     backend = _backend(atom_3level_model, lindblad_map=implementations)
     invalid = _noise(AmplitudeDamping(rate=(0.1,)), operation=ops.RX)
-    report = backend.check_noise_support(invalid)
-    assert not report.supported
-    assert report.rejected_sources == ("AmplitudeDamping(rate-arity-1)",)
-    assert "requires 2 damping values" in report.warnings[0]
+    with pytest.raises(BackendValidationError) as caught:
+        backend.validate_noise_model(invalid)
+    assert "AmplitudeDamping(rate-arity-1)" in str(caught.value)
+    assert "requires 2 damping values" in str(caught.value)
 
     valid = _noise(
         AmplitudeDamping(rate=(0.1, 0.2)),
         operation=ops.RX,
     )
-    assert backend.check_noise_support(valid).supported
+    assert backend.validate_noise_model(valid) is None
 
 
-def test_attached_noise_is_classified_once_before_target_construction(
+def test_invalid_attached_noise_is_rejected_before_target_construction(
     atom_3level_model, monkeypatch
 ):
     arrangement = fq.emulator.AtomArrangement.rectangular(1, 1, 2.0)
     invalid = _noise(PhaseDamping(rate=0.2))
 
     def target_must_not_be_built(*_args, **_kwargs):
-        raise AssertionError("target was built before capability classification")
+        raise AssertionError("target was built before noise validation")
 
     monkeypatch.setattr(
         "fatqat.emulator.atom_3level.backend._Atom3LevelTarget",
@@ -156,51 +150,22 @@ def test_attached_noise_is_classified_once_before_target_construction(
             noise=invalid,
         )
 
-    monkeypatch.undo()
-    calls = 0
-    classify = fq.emulator.Atom3LevelEmulator._classify_noise
-
-    def counted_classify(self, noise_model):
-        nonlocal calls
-        calls += 1
-        return classify(self, noise_model)
-
-    monkeypatch.setattr(
-        fq.emulator.Atom3LevelEmulator,
-        "_classify_noise",
-        counted_classify,
-    )
-    _backend(
-        atom_3level_model,
-        noise=_noise(PhaseDamping(rate=0.2)),
-        lindblad_map=_lindblad_map(),
-    )
-    assert calls == 1
-
 
 def test_readout_shape_rule_is_independent_of_custom_lindblad_map(
     atom_3level_model,
 ):
     valid = NoiseModel()
     valid.add(fq.noise.ReadoutConfusion(np.eye(2)))
-    assert (
-        _backend(
-            atom_3level_model,
-            noise=valid,
-            lindblad_map=_lindblad_map(),
-        )
-        .check_noise_support(valid)
-        .supported
+    backend = _backend(
+        atom_3level_model,
+        lindblad_map=_lindblad_map(),
     )
+    assert backend.validate_noise_model(valid) is None
 
     invalid = NoiseModel()
     invalid.add(fq.noise.ReadoutConfusion(np.eye(3)))
     with pytest.raises(BackendValidationError, match="2 x 2"):
-        _backend(
-            atom_3level_model,
-            noise=invalid,
-            lindblad_map=_lindblad_map(),
-        )
+        backend.validate_noise_model(invalid)
 
 
 def test_custom_rule_must_return_local_three_by_three_operators(

@@ -31,7 +31,6 @@ from ..noise import (
     Depolarizing,
     PhaseDamping,
     NoiseModel,
-    NoiseSupportReport,
     Loss,
     ThermalRelaxation,
     default_channel_implementation_map,
@@ -241,7 +240,7 @@ class Simulator:
 
     # Whether this backend implements the per-shot atom-occupancy lifecycle
     # Loss needs (loading, per-shot loss, refill). False on the generic
-    # matrix backends, which reject Loss via check_noise_support rather than
+    # matrix backends, which reject Loss via validate_noise_model rather than
     # silently ignoring it; AtomArraySimulator sets it True.
     _supports_loss: bool = False
 
@@ -323,9 +322,7 @@ class Simulator:
         if channel_implementation_map is None:
             channel_implementation_map = default_channel_implementation_map()
         self._channel_map = channel_implementation_map.copy()
-        report = self.check_noise_support(self._noise_model)
-        if not report.supported:
-            raise BackendValidationError("; ".join(report.warnings))
+        self.validate_noise_model(self._noise_model)
         # The engine object and its dimension-dependent numeric caches are
         # reused, while every execution allocates or resets evolving state.
         # A backend instance is not safe for concurrent run() calls.
@@ -1243,8 +1240,8 @@ class Simulator:
             has_condition=has_condition,
         )
 
-    def check_noise_support(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        """Check whether this simulator can use a noise model.
+    def validate_noise_model(self, noise_model: NoiseModel) -> None:
+        """Raise if this simulator cannot use a noise model.
 
         Matrix simulators accept operation-bound probability forms for
         supported built-in descriptors. Custom descriptors need a matching
@@ -1253,35 +1250,28 @@ class Simulator:
         relaxation with ``as_channels(duration)`` first. Only
         ``AtomArraySimulator`` accepts ``Loss``.
 
-        This checks the model as a whole, not its selectors against a program,
-        concrete target dimensions, or method-specific restrictions.
+        This validates the model as a whole, not its selectors against a
+        program, concrete target dimensions, or method-specific restrictions.
 
         Args:
-            noise_model: The noise model to check; it is not executed.
-
-        Returns:
-            A report whose ``supported`` flag summarizes the model.
-            ``accepted_sources`` and ``rejected_sources`` contain deduplicated
-            labels; ``warnings`` explains each rejected source in the same
-            order as ``rejected_sources``.
+            noise_model: The noise model to validate; it is not executed.
 
         Raises:
-            BackendValidationError: If ``noise_model`` is not a ``NoiseModel``.
+            BackendValidationError: If ``noise_model`` is not a ``NoiseModel``
+                or contains unsupported declarations. The message lists every
+                problem found.
         """
         if not isinstance(noise_model, NoiseModel):
             raise BackendValidationError("noise_model must be a NoiseModel")
-        accepted: list[str] = []
-        rejected: list[str] = []
-        warnings_: list[str] = []
-        seen: set[str] = set()
+        rejection_reasons = self._noise_model_rejection_reasons(noise_model)
+        if rejection_reasons:
+            raise BackendValidationError("; ".join(rejection_reasons))
 
-        def _record(label: str, supported: bool, warning: str) -> None:
-            if label in seen:
-                return
-            seen.add(label)
-            (accepted if supported else rejected).append(label)
-            if not supported:
-                warnings_.append(warning)
+    def _noise_model_rejection_reasons(
+        self, noise_model: NoiseModel
+    ) -> tuple[str, ...]:
+        """Return model-level rejection reasons for an already typed model."""
+        rejection_reasons: list[str] = []
 
         for channel, operation in noise_model._noise_sources():
             channel_type = type(channel)
@@ -1301,51 +1291,30 @@ class Simulator:
             if qualifiers:
                 label += f"({', '.join(qualifiers)})"
             if isinstance(channel, Loss):
-                if self._supports_loss:
-                    _record(label, True, "")
-                else:
-                    _record(
-                        label,
-                        False,
+                if not self._supports_loss:
+                    rejection_reasons.append(
                         f"{label} is not supported: this backend does not model "
                         "carrier loss (use AtomArraySimulator)",
                     )
             elif background:
-                _record(
-                    label,
-                    False,
+                rejection_reasons.append(
                     f"{label} is not supported: this matrix backend has no "
                     "continuous-time evolution model",
                 )
             elif channel_type is ThermalRelaxation:
-                _record(
-                    label,
-                    False,
+                rejection_reasons.append(
                     f"{label} is rejected by matrix-family policy because it "
                     "is a generator/time declaration; a registered channel "
                     "implementation does not override that policy. Explicitly "
                     "convert it with as_channels(duration)",
                 )
             elif self._channel_map.get(channel_type) is None:
-                _record(
-                    label,
-                    False,
+                rejection_reasons.append(
                     f"{label} has no channel implementation on this backend",
                 )
             elif rate_mode:
-                _record(
-                    label,
-                    False,
+                rejection_reasons.append(
                     f"{label} is not supported: rate mode has no matrix-backend "
                     "Kraus implementation on this backend",
                 )
-            else:
-                _record(label, True, "")
-        if noise_model._readout_confusions():
-            accepted.append("ReadoutConfusion")
-        return NoiseSupportReport(
-            supported=not rejected,
-            accepted_sources=tuple(accepted),
-            rejected_sources=tuple(rejected),
-            warnings=tuple(warnings_),
-        )
+        return tuple(dict.fromkeys(rejection_reasons))

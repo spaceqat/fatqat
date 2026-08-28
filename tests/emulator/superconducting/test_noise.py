@@ -6,14 +6,12 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat._index_allocation import _EngineAllocation
-from fatqat.simulator import Simulator
 from fatqat.emulator.superconducting.backend import TransmonEmulator
 from fatqat.emulator.superconducting.qutip_adapter import _TransmonQutipAdapter
 from fatqat.emulator.superconducting.target import _TransmonTarget
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     Channel,
-    Depolarizing,
     NoiseModel,
     ThermalRelaxation,
 )
@@ -64,28 +62,14 @@ class _UnsupportedAlwaysOn(Channel):
     num_subsystems = 1
 
 
-def test_support_reports_reject_unknown_background_sources(model, calibration):
+def test_noise_validation_rejects_unknown_background_sources(model, calibration):
     noise = NoiseModel()
     noise.add(_UnsupportedAlwaysOn(), targets="q0")
-    report = TransmonEmulator(model).check_noise_support(noise)
-    assert report.rejected_sources == ("_UnsupportedAlwaysOn(background)",)
-    assert not report.supported
-
-
-def test_matrix_backend_keeps_gate_channels_and_rejects_background_noise():
-    noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=ops.X)
-    noise.add(ThermalRelaxation(t1=100, t2=150), targets=0)
-    report = Simulator().check_noise_support(noise)
-    assert "Depolarizing(p)" in report.accepted_sources
-    assert "ThermalRelaxation(background)" in report.rejected_sources
-
-
-def test_pulse_backend_names_each_rejected_gate_channel_source(model, calibration):
-    noise = NoiseModel()
-    noise.add(Depolarizing(p=0.1), operation=ops.X)
-    report = TransmonEmulator(model).check_noise_support(noise)
-    assert report.rejected_sources == ("Depolarizing(p)",)
+    with pytest.raises(
+        BackendValidationError,
+        match="_UnsupportedAlwaysOn.*no registered Lindblad implementation",
+    ):
+        TransmonEmulator(model).validate_noise_model(noise)
 
 
 def test_qutrit_collapse_coefficients_and_t2_limit_are_exact(model, calibration):
@@ -120,9 +104,6 @@ def test_pulse_backend_accepts_and_executes_thermal_relaxation(model, calibratio
     noise = NoiseModel()
     noise.add(ThermalRelaxation(t1=100, t2=150), targets="q0")
     backend = TransmonEmulator(model, noise=noise)
-    report = backend.check_noise_support(noise)
-    assert report.supported
-    assert report.accepted_sources == ("ThermalRelaxation(background)",)
 
     program = fq.Program(1)
     program.add(ops.RX(0.3), 0)

@@ -14,7 +14,6 @@ from .base import (
     Channel,
     ChannelImplementation,
     ChannelImplementationMap,
-    NoiseSupportReport,
 )
 from .catalog import (
     AmplitudeDamping,
@@ -38,7 +37,6 @@ __all__ = [
     "ChannelImplementationMap",
     "LindbladImplementationMap",
     "ThermalRelaxation",
-    "NoiseSupportReport",
     "Depolarizing",
     "AmplitudeDamping",
     "PhaseDamping",

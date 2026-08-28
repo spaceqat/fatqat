@@ -278,14 +278,9 @@ def test_atom_3level_noise_is_retained_validated_and_binary(
     backend = _backend(atom_3level_model, atom_3level_calibration, noise=empty)
     assert backend._noise_model is not empty
     assert backend._noise_model._noise_sources() == ()
-    assert backend.check_noise_support(empty).supported
+    assert backend.validate_noise_model(empty) is None
     readout = _readout(np.array([[0.9, 0.1], [0.1, 0.9]]))
-    assert backend.check_noise_support(readout).supported
-    assert (
-        _backend(atom_3level_model, atom_3level_calibration, noise=readout)
-        .check_noise_support(readout)
-        .supported
-    )
+    assert backend.validate_noise_model(readout) is None
 
     for channel in (
         ThermalRelaxation(t1=5.0, t2=4.0),
@@ -295,12 +290,12 @@ def test_atom_3level_noise_is_retained_validated_and_binary(
     ):
         rejected = NoiseModel()
         rejected.add(channel, operation=ops.X)
-        assert not backend.check_noise_support(rejected).supported
         with pytest.raises(BackendValidationError, match=type(channel).__name__):
             _backend(atom_3level_model, atom_3level_calibration, noise=rejected)
 
     empty.add(PhaseDamping(rate=0.1), operation=ops.X)
-    assert not backend.check_noise_support(empty).supported
+    with pytest.raises(BackendValidationError, match="PhaseDamping"):
+        backend.validate_noise_model(empty)
     driven = fq.Program(2)
     driven.add(ops.RX(0.1), 0)
     backend.run(driven).result()

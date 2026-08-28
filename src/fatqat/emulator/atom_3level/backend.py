@@ -9,10 +9,9 @@ from ...errors import BackendValidationError
 from ...noise import (
     LindbladImplementationMap,
     NoiseModel,
-    NoiseSupportReport,
 )
 from .._core.backend import _PulseBackend
-from .._core.lindblad import _classify_lindblad_noise
+from .._core.lindblad import _lindblad_noise_rejection_reasons
 from .._core.outcome import ExecutionMode
 from .._core.planning import PulsePlanFacts, _PreparedPulseProgram
 from .._core.pulse import PulseImplementationMap
@@ -93,7 +92,7 @@ class Atom3LevelEmulator(_PulseBackend):
             gate_implementation_map=effective_gate_map,
             lindblad_implementation_map=effective_lindblad_map,
         )
-        self._require_captured_noise_support()
+        self.validate_noise_model(self._noise_model)
         self._set_target(_Atom3LevelTarget(model, arrangement))
 
     @property
@@ -102,8 +101,10 @@ class Atom3LevelEmulator(_PulseBackend):
 
         return self._arrangement
 
-    def _classify_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        return _classify_lindblad_noise(
+    def _noise_model_rejection_reasons(
+        self, noise_model: NoiseModel
+    ) -> tuple[str, ...]:
+        return _lindblad_noise_rejection_reasons(
             noise_model,
             self._lindblad_implementation_map,
             local_dimension=self.model.local_dimension,

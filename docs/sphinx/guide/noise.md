@@ -185,14 +185,15 @@ Loss is sampled independently for each selected carrier after a matching
 operation. An empty-site erasure bypasses readout confusion because no
 physical digit was measured.
 
-## Check backend support
+## Validate backend support
 
 Use
-{py:meth}`~fatqat.simulator.Simulator.check_noise_support` for a simulator or
-{py:meth}`~fatqat.emulator.TransmonEmulator.check_noise_support` for a pulse
-emulator to inspect a model before running a program. The result lists accepted
-and rejected sources and explains each rejection. Checks that need a program,
-layout, dimensions, or execution method happen when you run the program.
+{py:meth}`~fatqat.simulator.Simulator.validate_noise_model` for a simulator or
+{py:meth}`~fatqat.emulator.TransmonEmulator.validate_noise_model` for a pulse
+emulator to validate a model before running a program. Each method returns
+`None` for an accepted model or raises
+{py:exc}`~fatqat.errors.BackendValidationError`, listing every model-level
+problem it finds. Checks that need a program or layout happen at run time.
 
 If you are implementing a backend or custom noise type, see
 {doc}`../api/noise/custom-implementations` for the extension API. Ordinary

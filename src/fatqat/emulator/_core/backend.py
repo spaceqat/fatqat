@@ -29,7 +29,7 @@ from ...errors import (
     BackendValidationError,
 )
 from ...job import Job
-from ...noise import LindbladImplementationMap, NoiseModel, NoiseSupportReport
+from ...noise import LindbladImplementationMap, NoiseModel
 from ...operations import BarrierGate, Measurement, PulseOperation, ResetGate
 from ...program import Program, _AppliedOperation
 from ...resource_layout import ResourceLayout
@@ -63,8 +63,8 @@ class _PulseBackend(ABC):
 
     This layer owns preparation, lowering, execution, propagation, error
     boundaries, and result assembly. A concrete family supplies only source
-    validation, capability classification, execution-mode selection, runner
-    creation, and optional metadata. Its bound target answers physical binding
+    and noise-model validation, execution-mode selection, runner creation, and
+    optional metadata. Its bound target answers physical binding
     questions without adding backend hooks.
     """
 
@@ -111,13 +111,6 @@ class _PulseBackend(ABC):
                 "pulse backend target must retain the exact backend model"
             )
         self._target = target
-
-    @final
-    def _require_captured_noise_support(self) -> None:
-        """Reject an unsupported captured model before target construction."""
-        report = self.check_noise_support(self._noise_model)
-        if not report.supported:
-            raise BackendValidationError("; ".join(report.warnings))
 
     @final
     def _prepare_program(
@@ -607,8 +600,10 @@ class _PulseBackend(ABC):
         del program
 
     @abstractmethod
-    def _classify_noise(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        """Report the family capability for one already typed noise model."""
+    def _noise_model_rejection_reasons(
+        self, noise_model: NoiseModel
+    ) -> tuple[str, ...]:
+        """Return family rejection reasons for an already typed noise model."""
         raise NotImplementedError
 
     @abstractmethod
@@ -624,23 +619,23 @@ class _PulseBackend(ABC):
         raise NotImplementedError
 
     @final
-    def check_noise_support(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        """Report which declarations in a noise model this emulator supports.
+    def validate_noise_model(self, noise_model: NoiseModel) -> None:
+        """Raise if this emulator cannot use a noise model.
 
-        This check does not inspect a particular program or resource layout.
-        Program references and physical selectors are checked when you call
-        ``run()`` or ``propagator()``.
+        This validation does not inspect a particular program or resource
+        layout. Program references and physical selectors are checked when you
+        call ``run()`` or ``propagator()``.
 
         Args:
-            noise_model: Noise model to inspect without executing a program.
-
-        Returns:
-            A report naming accepted and rejected sources.
+            noise_model: Noise model to validate without executing a program.
 
         Raises:
             BackendValidationError: If ``noise_model`` is not a
-                ``fatqat.NoiseModel``.
+                ``fatqat.NoiseModel`` or contains unsupported declarations.
+                The message lists every problem found.
         """
         if not isinstance(noise_model, NoiseModel):
             raise BackendValidationError("noise_model must be a NoiseModel")
-        return self._classify_noise(noise_model)
+        rejection_reasons = self._noise_model_rejection_reasons(noise_model)
+        if rejection_reasons:
+            raise BackendValidationError("; ".join(rejection_reasons))

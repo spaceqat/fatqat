@@ -9,9 +9,9 @@ you must provide an implementation map for that exact noise type.
 **Unsupported** means a custom map cannot enable it for that backend family.
 
 For one configured backend, use
-:meth:`~fatqat.simulator.Simulator.check_noise_support` on a simulator or
-:meth:`~fatqat.emulator.TransmonEmulator.check_noise_support` on a pulse
-emulator. These methods check a model without a program. FATQAT checks
+:meth:`~fatqat.simulator.Simulator.validate_noise_model` on a simulator or
+:meth:`~fatqat.emulator.TransmonEmulator.validate_noise_model` on a pulse
+emulator. These methods validate a model without a program. FATQAT checks
 references, device labels, operation matches, dimensions, and execution-method
 limits when it runs a concrete program.
 
@@ -98,8 +98,8 @@ remain unsupported even when a custom Lindblad map registers their types.
      - :class:`~fatqat.noise.Depolarizing` ``(rate)`` is **custom only** in
        background or operation scope. Readout confusion is built in and
        binary. A run requires a ``2 x 2`` matrix, although
-       :meth:`~fatqat.emulator.TransmonEmulator.check_noise_support` alone may
-       not detect a larger square matrix.
+       :meth:`~fatqat.emulator.TransmonEmulator.validate_noise_model` alone may
+       not reject a larger square matrix.
    * - :class:`~fatqat.emulator.Atom2LevelEmulator`
      - Background scope:
        :class:`~fatqat.noise.Depolarizing` ``(rate)``,

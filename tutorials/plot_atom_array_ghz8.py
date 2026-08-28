@@ -282,9 +282,7 @@ np.testing.assert_allclose(np.asarray(values), 1.0, atol=1e-9)
 # atom from its trap. We model that by attaching :class:`~fatqat.noise.Loss` to
 # the ``Pair`` and ``Unpair`` operations, which ejects an atom with some
 # probability whenever it is moved. Only this neutral-atom backend models atom
-# loss; a generic simulator rejects a ``Loss`` channel through
-# :meth:`~fatqat.simulator.Simulator.check_noise_support` rather than ignoring
-# it.
+# loss; a generic simulator rejects the same noise model.
 #
 # A lost atom is not a ``|0>`` and not a ``|1>``: it is *gone*, and reads out as
 # the erasure digit ``2``, distinct from either computational outcome. Any shot

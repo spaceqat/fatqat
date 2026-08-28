@@ -209,7 +209,7 @@ relaxation with ``as_channels(duration)`` first. Custom descriptors require a
 matching channel rule. :class:`AtomArraySimulator` additionally supports atom
 loss.
 
-:meth:`Simulator.check_noise_support` checks a model without running a
+:meth:`Simulator.validate_noise_model` validates a model without running a
 program. A method can still impose a stricter rule: for example, ``unitary``
 rejects a finite channel that the backend otherwise recognizes when that
 channel matches the program. See :doc:`noise` for selectors and the support
