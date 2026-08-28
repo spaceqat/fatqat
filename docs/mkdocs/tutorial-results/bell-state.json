@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "source": "plot_bell_state.py",
+  "source_sha256": "9659d0ab32e03ad633cabff8aa18bb5fb0972698d7c156df78b2d670117b3509",
+  "code_cells": 7,
+  "cells": {
+    "3": {
+      "stdout": "Statevector:\n[0.707+0.j 0.   +0.j 0.   +0.j 0.707+0.j]\nTotal probability: 1.000000000000",
+      "figures": []
+    },
+    "4": {
+      "stdout": "Exact basis probabilities: [0.5 0.  0.  0.5]",
+      "figures": []
+    },
+    "6": {
+      "stdout": "Seeded counts: {'00': 502, '11': 498}\nAvailable result data: ['counts']",
+      "figures": []
+    },
+    "7": {
+      "stdout": "Observed frequencies: {'00': 0.502, '01': 0.0, '10': 0.0, '11': 0.498}",
+      "figures": [
+        {
+          "name": "bell-state-01.png",
+          "sha256": "de349135f1ef0c6ca05ec9ec17500fd537ee449c195e3d9087e202b98ce02fd7"
+        }
+      ]
+    }
+  }
+}

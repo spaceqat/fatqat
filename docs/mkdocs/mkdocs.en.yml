@@ -1,0 +1,111 @@
+INHERIT: mkdocs.base.yml
+
+site_url: !ENV [FATQAT_MKDOCS_EN_SITE_URL, "http://127.0.0.1:8000/en/"]
+edit_uri: edit/main/docs/mkdocs/en/
+docs_dir: en
+site_dir: site/en
+
+theme:
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  search:
+    lang: en
+  mkdocstrings:
+    locale: en
+
+nav:
+  - Home: index.md
+  - User guide:
+      - guide/index.md
+      - Start with one program:
+          - Quickstart: guide/quickstart.md
+          - Programs and registers: guide/program.md
+          - Execution models: guide/execution-models.md
+      - Study algorithm behavior:
+          - Simulation: guide/simulation.md
+          - Interpret results: guide/interpret-results.md
+          - Ideal and noisy runs: guide/ideal-and-noisy.md
+          - Performance: guide/performance.md
+      - Model hardware and physics:
+          - Hardware-profile simulation: guide/hardware-profile-simulation.md
+          - Hamiltonian emulation: guide/hamiltonian-emulation.md
+          - Transmon emulation: guide/transmon-emulation.md
+          - Neutral-atom emulation: guide/neutral-atom-emulation.md
+      - Interoperability: guide/interoperability.md
+      - Troubleshooting: guide/troubleshooting.md
+  - Tutorials:
+      - tutorials/index.md
+      - Bell state: tutorials/bell-state.md
+      - VQE for H2: tutorials/vqe-h2.md
+      - QNN digit classification: tutorials/qnn-digits.md
+      - GHZ state on an atom array: tutorials/atom-array-ghz8.md
+      - Antiferromagnetic atom chain: tutorials/antiferromagnetic-chain.md
+      - PXP Z2 revival: tutorials/pxp-z2-revival.md
+  - API reference:
+      - api/index.md
+      - Build programs:
+          - Program: api/program.md
+          - Registers: api/registers.md
+          - Operations:
+              - api/operations.md
+              - Qubit gates: api/operations/qubit-gates.md
+              - Qudit gates: api/operations/qudit-gates.md
+              - Atom gates: api/operations/atom-gates.md
+              - Structural operations: api/operations/structural.md
+          - Pulse control:
+              - api/pulse-control/index.md
+              - Pulse operation: api/pulse-control/pulse-operation.md
+              - Pulse control: api/pulse-control/pulse-control.md
+              - Sampled waveform: api/pulse-control/sampled-waveform.md
+              - Gate realization: api/pulse-control/gate-realization.md
+      - Run and inspect:
+          - Simulators:
+              - api/simulators/index.md
+              - General simulator: api/simulator.md
+              - IBM superconducting profile: api/simulators/sc-qubit-ibm.md
+              - Google superconducting profile: api/simulators/sc-qubit-google.md
+              - Atom-array profile: api/simulators/atom-array.md
+          - Emulators:
+              - api/emulators/index.md
+              - Transmon emulator: api/pulse-emulator.md
+              - Neutral-atom emulators: api/atom-emulators.md
+          - Noise:
+              - api/noise.md
+              - Noise model: api/noise/model.md
+              - Backend support: api/noise/backend-support.md
+              - Depolarizing: api/noise/depolarizing.md
+              - Pauli channel: api/noise/pauli-channel.md
+              - Amplitude damping: api/noise/amplitude-damping.md
+              - Phase damping: api/noise/phase-damping.md
+              - Thermal relaxation: api/noise/thermal-relaxation.md
+              - Loss: api/noise/loss.md
+              - Readout confusion: api/noise/readout-confusion.md
+              - Custom implementations: api/noise/custom-implementations.md
+          - Estimator: api/estimator.md
+          - Job: api/job.md
+          - Result: api/result.md
+      - Integrate and extend:
+          - Interoperability:
+              - api/interoperability/index.md
+              - OpenQASM: api/interoperability/openqasm.md
+              - Qiskit: api/interoperability/qiskit.md
+          - Implementation maps: api/implementation.md
+      - Errors and stability:
+          - Exceptions: api/exceptions.md
+          - Experimental APIs: api/experimental.md

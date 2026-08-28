@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "source": "plot_atom_array_ghz8.py",
+  "source_sha256": "a32db2a2653ce2ba586ef80bfabda9b79123aba82faa2a0889ac90809215a28e",
+  "code_cells": 8,
+  "cells": {
+    "3": {
+      "stdout": "layer 1: CX(0, 4)\nlayer 2: CX(0, 2) || CX(4, 6)\nlayer 3: CX(0, 1) || CX(2, 3) || CX(4, 5) || CX(6, 7)",
+      "figures": []
+    },
+    "5": {
+      "stdout": "Counts: {'00000000': 1017, '11111111': 983}",
+      "figures": []
+    },
+    "6": {
+      "stdout": "",
+      "figures": [
+        {
+          "name": "atom-array-ghz8-01.png",
+          "sha256": "6448b4adf1f040f0e224cffc88ec77b5d88c8a17dcd6dba0992c5333068696ca"
+        }
+      ]
+    },
+    "7": {
+      "stdout": "<Z0Z1> = +1.000000\n<Z1Z2> = +1.000000\n<Z2Z3> = +1.000000\n<Z3Z4> = +1.000000\n<Z4Z5> = +1.000000\n<Z5Z6> = +1.000000\n<Z6Z7> = +1.000000\n<XXXXXXXX> = +1.000000",
+      "figures": []
+    },
+    "8": {
+      "stdout": "469/2000 shots lost at least one atom (a '2' in the readout)\nMost frequent outcomes under 1% loss per move:\n  11111111: 799\n  00000000: 732\n  00020000: 48\n  00000002: 48\n  00000200: 30\n  02000000: 29",
+      "figures": []
+    }
+  }
+}

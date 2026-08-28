@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "source": "plot_pxp_z2_revival.py",
+  "source_sha256": "266e53146b7f574528545d63193be298b589ddc4ff9cf60f38fcc17f7767f175",
+  "code_cells": 7,
+  "cells": {
+    "1": {
+      "stdout": "Z2 branch |r g r g ...> sits at statevector index 341\ntwin branch |g r g r ...> sits at statevector index 682",
+      "figures": []
+    },
+    "2": {
+      "stdout": "bulk term matrix is unitary (8x8)\nleft edge term matrix is unitary (4x4)\nright edge term matrix is unitary (4x4)",
+      "figures": []
+    },
+    "5": {
+      "stdout": "Largest fidelity gap between Trotter and oracle: 0.00059",
+      "figures": []
+    },
+    "6": {
+      "stdout": "\nRevivals of the |Z2> quench (fatqat Trotter):\n time (us)    F(Z2)   F(alt)     S(t)\n      1.50    0.768    0.000    0.278\n      2.95    0.618    0.000    0.496\n      4.45    0.482    0.007    0.753\n      5.90    0.359    0.005    0.918\nEntropy maximum: 0.938",
+      "figures": []
+    },
+    "7": {
+      "stdout": "",
+      "figures": [
+        {
+          "name": "pxp-z2-revival-01.png",
+          "sha256": "e3ea15dbdfba1c1b9aaaf66955a9b3379c3531703cfd6ddb603f434f11c430a6"
+        }
+      ]
+    }
+  }
+}

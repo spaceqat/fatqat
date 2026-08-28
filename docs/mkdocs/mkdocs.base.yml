@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=https://squidfunk.github.io/mkdocs-material/schema.json
+
+site_name: FatQat
+site_description: Model quantum programs from logical circuits to physical dynamics
+site_author: FatQat contributors
+copyright: Copyright &copy; 2026 FatQat contributors
+
+repo_name: BoxiLi/fatqat
+repo_url: https://github.com/BoxiLi/fatqat
+
+use_directory_urls: true
+
+# Material renders alternate links literally. This hook appends the current
+# page URL so switching languages keeps readers on the matching translated
+# page (the content validator guarantees that the path exists in both trees).
+hooks:
+  - hooks/page_alternates.py
+
+theme:
+  name: material
+  custom_dir: overrides
+  font: false
+  icon:
+    logo: material/atom-variant
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+
+# Mapping form is intentional: MkDocs can deep-merge it when the localized
+# configurations use INHERIT. Keep autorefs before mkdocstrings.
+plugins:
+  search: {}
+  autorefs: {}
+  mkdocstrings:
+    default_handler: python
+    handlers:
+      python:
+        # Paths are relative to mkdocs.en.yml / mkdocs.zh.yml. Both localized
+        # configs live beside this base file, so ../../src is stable with -f.
+        paths:
+          - ../../src
+        options:
+          docstring_style: google
+          docstring_options:
+            warn_missing_types: false
+          filters: public
+          inherited_members: true
+          members_order: source
+          merge_init_into_class: true
+          separate_signature: true
+          show_root_full_path: false
+          show_root_heading: true
+          show_signature_annotations: true
+          show_source: true
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          signature_crossrefs: true
+          unwrap_annotated: true
+
+# Mapping form also lets the child configs retain the complete extension set.
+markdown_extensions:
+  abbr: {}
+  admonition: {}
+  attr_list: {}
+  def_list: {}
+  footnotes: {}
+  md_in_html: {}
+  toc:
+    permalink: true
+    slugify: !!python/object/apply:pymdownx.slugs.slugify
+      kwds:
+        case: lower
+  pymdownx.arithmatex:
+    generic: true
+  pymdownx.details: {}
+  pymdownx.emoji:
+    emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    emoji_index: !!python/name:material.extensions.emoji.twemoji
+  pymdownx.highlight:
+    anchor_linenums: true
+    line_spans: __span
+    pygments_lang_class: true
+  pymdownx.inlinehilite: {}
+  pymdownx.snippets: {}
+  pymdownx.superfences: {}
+  pymdownx.tabbed:
+    alternate_style: true
+    slugify: !!python/object/apply:pymdownx.slugs.slugify
+      kwds:
+        case: lower
+
+extra:
+  alternate:
+    - name: English
+      link: !ENV [FATQAT_MKDOCS_EN_LINK, /en/]
+      lang: en
+    - name: 简体中文
+      link: !ENV [FATQAT_MKDOCS_ZH_LINK, /zh/]
+      lang: zh
+
+# Both primary configuration files are co-located, so this inherited path is
+# resolved identically for English and Chinese live-preview builds.
+watch:
+  - ../../src/fatqat

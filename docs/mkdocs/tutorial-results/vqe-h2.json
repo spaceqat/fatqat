@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "source": "plot_vqe_h2.py",
+  "source_sha256": "bb607cb00258fc481f8a2f035c2e1fa5470d3aaa043e907a4641925c02f0ece7",
+  "code_cells": 14,
+  "cells": {
+    "1": {
+      "stdout": "exact spectrum: [-1.857 -1.245 -0.883 -0.225]\nground-state energy E0 = -1.85728 Ha",
+      "figures": []
+    },
+    "7": {
+      "stdout": "eval   25  energy -1.84524\neval   50  energy -1.85557\neval   75  energy -1.85627\neval  100  energy -1.85675\neval  125  energy -1.85698\neval  150  energy -1.85709\neval  175  energy -1.85720\neval  200  energy -1.85722\nexact VQE minimum -1.85722 Ha (error +0.00006 Ha)",
+      "figures": []
+    },
+    "8": {
+      "stdout": "",
+      "figures": [
+        {
+          "name": "vqe-h2-01.png",
+          "sha256": "468dc77b306792a54a0e128f8beac18544d289d278688dd60067d860a8a63c77"
+        }
+      ]
+    },
+    "10": {
+      "stdout": "eval   25  energy -1.86072\neval   50  energy -1.86258\nfinite-shot VQE stopped at -1.86258 ± 0.00676 Ha\nexact energy at that point: -1.85536 Ha (error +0.00191 Ha)",
+      "figures": []
+    },
+    "11": {
+      "stdout": "",
+      "figures": [
+        {
+          "name": "vqe-h2-02.png",
+          "sha256": "b94171b74f70ee26084fcfdca04819a8ff2f270ef66957b3edade4a52369c3a2"
+        }
+      ]
+    },
+    "13": {
+      "stdout": "noiseless minimum under noise: -1.75766 Ha (shift +0.09955 Ha)\neval   25  energy -1.74691\neval   50  energy -1.75500\neval   75  energy -1.75601\neval  100  energy -1.75696\neval  125  energy -1.75709\neval  150  energy -1.75716\neval  175  energy -1.75719\neval  200  energy -1.75721\nnoisy VQE minimum -1.75721 Ha (error vs. E0 +0.10006 Ha)",
+      "figures": []
+    },
+    "14": {
+      "stdout": "",
+      "figures": [
+        {
+          "name": "vqe-h2-03.png",
+          "sha256": "016e13c07d2163a8e42dfa636042ccecc0c478c4a105006d300416370352ea91"
+        }
+      ]
+    }
+  }
+}

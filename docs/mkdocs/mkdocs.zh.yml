@@ -1,0 +1,112 @@
+INHERIT: mkdocs.base.yml
+
+site_description: 从逻辑量子线路到物理动力学，对量子程序进行建模
+site_url: !ENV [FATQAT_MKDOCS_ZH_SITE_URL, "http://127.0.0.1:8000/zh/"]
+edit_uri: edit/main/docs/mkdocs/zh/
+docs_dir: zh
+site_dir: site/zh
+
+theme:
+  language: zh
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: 切换至深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: 切换至浅色模式
+
+plugins:
+  search:
+    lang: zh
+  mkdocstrings:
+    locale: zh
+
+nav:
+  - 首页: index.md
+  - 用户指南:
+      - guide/index.md
+      - 从一个程序开始:
+          - 快速上手: guide/quickstart.md
+          - 程序与寄存器: guide/program.md
+          - 执行模型: guide/execution-models.md
+      - 研究算法行为:
+          - 模拟: guide/simulation.md
+          - 解读结果: guide/interpret-results.md
+          - 理想与含噪运行: guide/ideal-and-noisy.md
+          - 性能: guide/performance.md
+      - 建模硬件与物理过程:
+          - 硬件配置模拟: guide/hardware-profile-simulation.md
+          - 哈密顿量仿真: guide/hamiltonian-emulation.md
+          - Transmon 仿真: guide/transmon-emulation.md
+          - 中性原子仿真: guide/neutral-atom-emulation.md
+      - 互操作: guide/interoperability.md
+      - 故障排查: guide/troubleshooting.md
+  - 教程:
+      - tutorials/index.md
+      - 贝尔态: tutorials/bell-state.md
+      - H2 分子的 VQE: tutorials/vqe-h2.md
+      - QNN 数字分类: tutorials/qnn-digits.md
+      - 原子阵列上的 GHZ 态: tutorials/atom-array-ghz8.md
+      - 反铁磁原子链: tutorials/antiferromagnetic-chain.md
+      - PXP Z2 复苏: tutorials/pxp-z2-revival.md
+  - API 参考:
+      - api/index.md
+      - 构建程序:
+          - 程序: api/program.md
+          - 寄存器: api/registers.md
+          - 操作:
+              - api/operations.md
+              - 量子比特门: api/operations/qubit-gates.md
+              - 量子多能级门: api/operations/qudit-gates.md
+              - 原子门: api/operations/atom-gates.md
+              - 结构操作: api/operations/structural.md
+          - 脉冲控制:
+              - api/pulse-control/index.md
+              - 脉冲操作: api/pulse-control/pulse-operation.md
+              - 脉冲控制: api/pulse-control/pulse-control.md
+              - 采样波形: api/pulse-control/sampled-waveform.md
+              - 门实现: api/pulse-control/gate-realization.md
+      - 运行与检查:
+          - 模拟器:
+              - api/simulators/index.md
+              - 通用模拟器: api/simulator.md
+              - IBM 超导量子比特配置: api/simulators/sc-qubit-ibm.md
+              - Google 超导量子比特配置: api/simulators/sc-qubit-google.md
+              - 原子阵列配置: api/simulators/atom-array.md
+          - 仿真器:
+              - api/emulators/index.md
+              - Transmon 仿真器: api/pulse-emulator.md
+              - 中性原子仿真器: api/atom-emulators.md
+          - 噪声:
+              - api/noise.md
+              - 噪声模型: api/noise/model.md
+              - 后端支持: api/noise/backend-support.md
+              - 去极化: api/noise/depolarizing.md
+              - 泡利通道: api/noise/pauli-channel.md
+              - 振幅阻尼: api/noise/amplitude-damping.md
+              - 相位阻尼: api/noise/phase-damping.md
+              - 热弛豫: api/noise/thermal-relaxation.md
+              - 损失: api/noise/loss.md
+              - 读出混淆: api/noise/readout-confusion.md
+              - 自定义实现: api/noise/custom-implementations.md
+          - 估计器: api/estimator.md
+          - 作业: api/job.md
+          - 结果: api/result.md
+      - 集成与扩展:
+          - 互操作:
+              - api/interoperability/index.md
+              - OpenQASM: api/interoperability/openqasm.md
+              - Qiskit: api/interoperability/qiskit.md
+          - 实现映射: api/implementation.md
+      - 错误与稳定性:
+          - 异常: api/exceptions.md
+          - 实验性 API: api/experimental.md
