@@ -1,68 +1,171 @@
-# Quickstart
+# Build, draw, and run one Program
 
-This page uses the currently supported source-checkout installation route.
-Run the commands from the repository root.
+In about ten minutes, you will create a Bell pair, draw its circuit, run 1,000
+shots, and see why only `00` and `11` appear. The computation will live in a
+{py:class}`~fatqat.Program` from start to finish.
 
-## Install
+## Install FatQat from source
 
-Creating a virtual environment keeps the project dependencies separate from
-other Python projects:
+FatQat is not yet published on PyPI. Clone the repository, create an isolated
+environment, and install the checkout:
 
 ```bash
+git clone https://github.com/BoxiLi/fatqat.git
+cd fatqat
 python -m venv .venv
-# Activate .venv with the normal command for your platform.
+```
+
+Activate the environment with the command for your platform:
+
+```bash
+# macOS or Linux
+source .venv/bin/activate
+
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+```
+
+Then install FatQat:
+
+```bash
 python -m pip install --upgrade pip
-python -m pip install -e .
+python -m pip install .
 ```
 
-## Build and run a Bell-state program
+## Write a Bell-state Program
 
-Copy this complete example into a Python file or interpreter:
+A `Program` records the logical resources and instructions in execution
+order. This one prepares two qubits in a Bell state and measures both of them:
 
-```python
-import fatqat as fq
-import fatqat.operations as ops
-
-program = fq.Program(2, 2)
-program.add(ops.H, 0)
-program.add(ops.CX, (0, 1))
-program.measure((0, 1), (0, 1))
-
-backend = fq.simulator.Simulator()
-job = backend.run(program, shots=1000)
-result = job.result()
-print(result.get_counts())
+```{doctest}
+>>> import fatqat as fq
+>>> import fatqat.operations as ops
+>>> program = fq.Program(2, 2)
+>>> program.add(ops.H, 0)
+>>> program.add(ops.CX, (0, 1))
+>>> program.measure_all()
 ```
 
-{py:data}`~fatqat.operations.H` puts qubit 0 into a superposition. {py:data}`~fatqat.operations.CX` entangles qubit 1 with it,
-so measuring the pair produces either `00` or `11`. A typical result is
-`{"00": 512, "11": 488}`; the two numbers naturally vary because
-measurement is sampled 1,000 times.
+`Program(2, 2)` creates two qubits and two classical bits. `H` puts qubit 0
+into a superposition, and `CX` uses qubit 0 as its control and qubit 1 as its
+target. The final instruction writes both quantum outcomes to the classical
+bits.
 
-## What each line does
+The Program describes *what* should happen. It has not selected a simulator
+or performed any evolution yet.
 
-| Part | Meaning |
-| --- | --- |
-| {py:class}`~fatqat.Program` (``Program(2, 2)``) | Create two quantum slots and two classical slots. |
-| `program.add(...)` | Append a gate in execution order. Fixed gates such as `H` and `CX` are values, so they do not have parentheses. |
-| `measure(...)` | Copy each quantum outcome into the matching classical slot. |
-| {py:class}`~fatqat.simulator.Simulator` (``Simulator()``) | Use the general-purpose simulator. You do not construct or call an engine directly. |
-| `shots=1000` | Repeat the measured program 1,000 times to collect counts. |
-| `backend.run(...)` | Submit the program and receive a `Job`. |
-| ``job.result()`` | Obtain the completed {py:class}`~fatqat.Result`, then use an accessor such as ``get_counts()``. |
+## Inspect the Program
 
-For ordinary use, a `Job` is the hand-off between execution and results:
-call `result()` and work with the returned `Result`. Its lifecycle/status
-methods are separately documented as an experimental API.
+Drawing is a native Program capability built on QuTiP-QIP's circuit drawing
+tools. FatQat translates the Program's instructions for that renderer. The
+default renderer returns a Matplotlib figure that you can display or save:
 
-The displayed count strings put classical bit 0 at the right. The
-[results guide](running-and-results.md) gives a two-bit example and explains
-how to request state data.
+```{doctest}
+>>> figure = program.draw()
+>>> len(figure.axes)
+1
+```
 
-## Next steps
+```{eval-rst}
+.. plot::
+   :alt: Bell-state Program with H, controlled-X, and two measurements
+   :filename-prefix: quickstart-circuit
+   :include-source: false
 
-- Learn fixed versus parametric gates in [Gates](gates.md).
-- Add mid-program measurement, reset, or classical conditions in
-  [Measurement and conditions](measurement-and-conditions.md).
-- Choose counts, a statevector, or a density matrix in
-  [Running and results](running-and-results.md).
+   import matplotlib.pyplot as plt
+   import fatqat as fq
+   import fatqat.operations as ops
+
+   program = fq.Program(2, 2)
+   program.add(ops.H, 0)
+   program.add(ops.CX, (0, 1))
+   program.measure_all()
+   fig, ax = plt.subplots(figsize=(8, 3))
+   program.draw(ax=ax)
+   fig.tight_layout()
+```
+
+For a terminal-friendly version, `program.draw("text")` returns a string
+instead of printing it. Drawing is a view of the recorded instruction
+structure; it does not run the Program.
+
+## Run it
+
+The general-purpose simulator follows the Program's logical circuit
+evolution. `run()` submits the Program and returns a
+{py:class}`job <fatqat.Job>`. Calling `job.result()` waits for completion and
+gives you a {py:class}`Result <fatqat.Result>` containing the requested
+outputs:
+
+```{doctest}
+>>> backend = fq.simulator.Simulator()
+>>> job = backend.run(
+...     program,
+...     shots=1000,
+...     simulation_config={"seed": 7},
+... )
+>>> result = job.result()
+>>> counts = result.get_counts()
+>>> sorted(counts)
+['00', '11']
+>>> sum(counts.values())
+1000
+```
+
+Each shot ends as either `00` or `11`: the two measured bits agree because
+the qubits are entangled. Their counts are close rather than exactly equal
+because measurement samples the state. The fixed seed makes this particular
+run reproducible.
+
+```{eval-rst}
+.. plot::
+   :alt: Bar chart containing only 00 and 11 Bell-state outcomes
+   :filename-prefix: quickstart-counts
+   :include-source: false
+
+   import matplotlib.pyplot as plt
+   import fatqat as fq
+   import fatqat.operations as ops
+
+   program = fq.Program(2, 2)
+   program.add(ops.H, 0)
+   program.add(ops.CX, (0, 1))
+   program.measure_all()
+
+   counts = (
+       fq.simulator.Simulator()
+       .run(program, shots=1000, simulation_config={"seed": 7})
+       .result()
+       .get_counts()
+   )
+   assert sorted(counts) == ["00", "11"]
+   assert sum(counts.values()) == 1000
+
+   outcomes = sorted(counts)
+   fig, ax = plt.subplots(figsize=(5.2, 3.2))
+   bars = ax.bar(
+       outcomes,
+       [counts[outcome] for outcome in outcomes],
+       color="#4c78a8",
+   )
+   ax.bar_label(bars, padding=3)
+   ax.set(
+       xlabel="measured bit string",
+       ylabel="shots",
+       title="Bell-state outcomes",
+   )
+   ax.set_ylim(0, max(counts.values()) * 1.15)
+   fig.tight_layout()
+```
+
+Keep this `Program`: the next chapters change the backend to explore logical
+behavior, hardware constraints, and physical dynamics.
+
+## Continue
+
+- [Write quantum computations with Program](program.md) to use explicit
+  registers, measurements, conditions, parameters, and qudits.
+- [Choose how much physics to model](execution-models.md) to compare FatQat's
+  execution paths.
+- [Bring Programs to and from OpenQASM and Qiskit](interoperability.md) to
+  connect an existing circuit workflow.

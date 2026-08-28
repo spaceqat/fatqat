@@ -1,71 +1,82 @@
-# fatqat
+# FatQat
 
-fatqat is a Python quantum simulator. Build a `Program` from registers,
-gates, and measurements; run that program on a backend; then read the
-requested data from a `Result`.
+FatQat lets you write a quantum computation once, as a `Program`, and study it
+at the level your question needs: logical circuit behavior, hardware-profile
+constraints, or time-dependent physical dynamics.
 
-The normal workflow stays at that level. You build programs and use
-backends; the simulator engine and its execution machinery stay behind the
-backend boundary.
-
-## Your first program
+Here is the complete circuit-level workflow:
 
 ```python
 import fatqat as fq
 import fatqat.operations as ops
 
-program = fq.Program(2, 2)  # two qubits and two classical bits
+program = fq.Program(2, 2)
 program.add(ops.H, 0)
 program.add(ops.CX, (0, 1))
 program.measure((0, 1), (0, 1))
 
-backend = fq.simulator.Simulator()
-job = backend.run(program, shots=1000)
-result = job.result()
+result = fq.simulator.Simulator().run(
+    program,
+    shots=1000,
+    simulation_config={"seed": 7},
+).result()
+
 print(result.get_counts())
 ```
 
-This prepares an entangled Bell state. The exact counts vary from run to
-run, but only `"00"` and `"11"` should occur.
+This prepares a Bell state. The sample changes with the seed, but the only
+possible outcomes are `"00"` and `"11"`. The same `Program` abstraction also
+carries parameters, qudits, classical conditions, and direct physical
+controls.
 
-::::{grid} 1 1 2 2
+::::{grid} 1 2 3 3
 :gutter: 3
 
-:::{grid-item-card} {octicon}`play` Get started
+:::{grid-item-card} {octicon}`play` Run your first Program
 :link: guide/quickstart
 :link-type: doc
 
-Install fatqat from a checkout and run the complete example above.
+Build and draw the Bell circuit, run it, and turn its counts into a figure.
 :::
 
-:::{grid-item-card} {octicon}`book` Learn the model
-:link: guide/concepts
+:::{grid-item-card} {octicon}`workflow` Learn the Program
+:link: guide/program
 :link-type: doc
 
-Understand programs, registers, operations, backends, and results before
-moving to optional features.
+Add registers, measurements, conditions, parameters, qudits, and mixed local
+dimensions without changing authoring models.
+:::
+
+:::{grid-item-card} {octicon}`git-branch` Choose the modeling level
+:link: guide/execution-models
+:link-type: doc
+
+See one Program run through general simulation, a hardware profile, and a
+Hamiltonian-level emulator.
+:::
+
+:::{grid-item-card} {octicon}`pulse` Study hardware behavior
+:link: guide/hardware-profile-simulation
+:link-type: doc
+
+Work with native gates, layouts, connectivity, pulse controls, leakage, and
+physical models.
 :::
 
 :::{grid-item-card} {octicon}`beaker` Work through tutorials
 :link: tutorials/index
 :link-type: doc
 
-Run narrative examples with their printed results and figures, or download
-an automatically generated Jupyter notebook.
+Continue into systematic algorithm and physics case studies, with downloadable
+notebooks.
 :::
 
-:::{grid-item-card} {octicon}`graph` Read results
-:link: guide/running-and-results
-:link-type: doc
-
-Choose counts, a statevector, or a density matrix and interpret bit order.
-:::
-
-:::{grid-item-card} {octicon}`list-unordered` Supported API
+:::{grid-item-card} {octicon}`list-unordered` Look up the API
 :link: api/index
 :link-type: doc
 
-Look up the application-facing objects used in the guide.
+Find exact signatures, supported operations, shapes, units, and validation
+rules.
 :::
 
 ::::

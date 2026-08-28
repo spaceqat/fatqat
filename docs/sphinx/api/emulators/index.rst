@@ -1,10 +1,11 @@
 Emulators
 =========
 
-FATQAT provides :doc:`transmon <../pulse-emulator>` and
+FatQat provides :doc:`transmon <../pulse-emulator>` and
 :doc:`neutral-atom <../atom-emulators>` pulse emulators. See
 :doc:`Pulse control <../pulse-control/index>` for shared control values, or
 :doc:`Simulators <../simulators/index>` for gate-level simulation.
+The guided path begins with :doc:`../../guide/hamiltonian-emulation`.
 
 .. toctree::
    :maxdepth: 1

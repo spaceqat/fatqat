@@ -13,6 +13,7 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.intersphinx",
     "sphinx.ext.doctest",
+    "matplotlib.sphinxext.plot_directive",
     "myst_parser",
     "sphinx_design",
     "sphinx_copybutton",
@@ -31,6 +32,11 @@ source_suffix = {
 default_role = "py:obj"
 
 myst_enable_extensions = ["colon_fence", "dollarmath", "amsmath"]
+
+# Console examples use doctest prompts so Sphinx can execute them. Strip those
+# prompts—and the displayed output—when a reader uses the copy button.
+copybutton_prompt_text = r">>> |\.\.\. "
+copybutton_prompt_is_regexp = True
 
 templates_path: list[str] = []
 exclude_patterns: list[str] = [
@@ -90,10 +96,19 @@ sphinx_gallery_conf = {
 }
 
 html_theme = "pydata_sphinx_theme"
-html_static_path: list[str] = []
+html_static_path = ["_static"]
+html_css_files = ["fatqat.css"]
 html_theme_options = {
     "navigation_depth": 3,
     "show_toc_level": 2,
     "navigation_with_keys": False,
     "icon_links": [],
 }
+
+# Guide plots are small executable examples, not committed screenshots. Each
+# plot directive can hide its source when the figure is only explanatory, but
+# examples show their code by default so readers can reproduce what they see.
+plot_include_source = True
+plot_html_show_source_link = False
+plot_html_show_formats = False
+plot_formats = [("png", 140)]

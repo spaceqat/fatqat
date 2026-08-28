@@ -119,8 +119,23 @@ values are case-sensitive.
        supported by Numba for ``density_matrix``, ``unitary``, and ``superop``.
 
 Automatic selection uses at most one parallel axis. An explicit unsupported
-choice raises an error instead of falling back. See :doc:`../guide/advanced`
-for the full eligibility rules and reproducibility boundary.
+choice raises an error instead of falling back. A run is eligible for explicit
+shot parallelism only when it requests counts and must evolve shots
+independently—for example, because it contains mid-circuit measurement, reset,
+conditions, or stochastic channels. A circuit that evolves once and samples
+only terminal measurements is not eligible. Threaded shots require a Numba
+statevector run and do not support the atom-occupancy lifecycle; processes are
+the alternative for other eligible workloads.
+
+A fixed non-negative ``seed`` reproduces sampled results only when the Program,
+complete configuration, FatQat version, and execution environment are also the
+same. Changing the runtime or parallel execution mode can change random-number
+consumption. Deterministic results do not depend on the seed and follow normal
+floating-point tolerances.
+
+See
+:doc:`../guide/performance` for a practical benchmarking workflow; the table
+above is the canonical configuration contract.
 
 Customize the backend
 ---------------------
@@ -195,8 +210,8 @@ reading a field that may not have been requested.
 ``run()`` returns an eager :class:`~fatqat.Job`. Program and option validation
 errors normally raise directly. Errors during execution or result assembly are
 stored on the job and re-raised by :meth:`fatqat.Job.result`. See
-:doc:`../guide/running-and-results` for result accessors, count ordering, and
-state-axis metadata.
+:doc:`../guide/interpret-results` for result accessors and count-order
+intuition. Exact state-axis metadata is specified in :doc:`result`.
 
 Noise
 -----
@@ -223,7 +238,8 @@ parameter batch and returns one eager job containing an ordered
 ``list[Result]``. Batch and row validation errors raise directly; an execution
 failure produces a failed sweep job, and no partial result list is returned.
 It reuses a supplied seed for every row, so sampled errors can be correlated.
-See :doc:`../guide/parameters-and-sweeps` for accepted batch shapes.
+See :doc:`../guide/simulation` for a guided sweep. Accepted batch shapes are
+specified above.
 
 API
 ---

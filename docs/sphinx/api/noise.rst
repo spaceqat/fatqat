@@ -1,10 +1,14 @@
 Noise
 =====
 
-FATQAT keeps noise separate from :class:`~fatqat.Program`. Add the noise
+FatQat keeps noise separate from :class:`~fatqat.Program`. Add the noise
 sources you need to a :class:`~fatqat.NoiseModel`, then pass that model to a
 compatible simulator or emulator with ``noise=...``. You can reuse the same
 program for ideal and noisy runs.
+
+See :doc:`../guide/ideal-and-noisy` for a controlled ideal-versus-noisy
+comparison. This section is the reference for selectors, support, units, and
+validation.
 
 Noise types live in ``fatqat.noise``. ``NoiseModel`` is also available as
 ``fatqat.NoiseModel``.
