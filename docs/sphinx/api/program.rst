@@ -133,8 +133,8 @@ measurement and feedforward workflows.
 
 .. _program-templates:
 
-Templates
----------
+Parameter binding
+-----------------
 
 Parameters are immutable identity objects. Names are labels only: two
 ``Parameter("theta")`` objects are different binding keys. Reuse one object
