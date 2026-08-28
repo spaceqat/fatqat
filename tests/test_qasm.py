@@ -406,7 +406,12 @@ def test_from_qasm_custom_gate_with_parameter_expression():
         my_crz(pi/2) q[0], q[1];
         """)
 
-    assert [op.operation.name for op in program._instructions] == ["RZ", "CX", "RZ", "CX"]
+    assert [op.operation.name for op in program._instructions] == [
+        "RZ",
+        "CX",
+        "RZ",
+        "CX",
+    ]
     assert math.isclose(program._instructions[0].operation.theta, math.pi / 4)
     assert math.isclose(program._instructions[2].operation.theta, -math.pi / 4)
 
