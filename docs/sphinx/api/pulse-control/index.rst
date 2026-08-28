@@ -1,6 +1,10 @@
 Pulse control
 =============
 
+Read :doc:`../../guide/hamiltonian-emulation` first for the gate-calibration,
+direct-control, and scheduling workflow. This section defines the exact pulse
+objects and validation rules.
+
 A direct pulse block is built from three values:
 
 * :doc:`sampled-waveform` holds the samples for one signal.
@@ -21,7 +25,7 @@ To implement an ordinary gate with pulses, register a
 Validation
 ----------
 
-FATQAT checks sample structure and timing when you construct these values. It
+FatQat checks sample structure and timing when you construct these values. It
 rejects invalid offsets, non-positive block durations, repeated channels, and
 controls that extend past the block. A model's channel factory checks its
 address arguments when you create a channel.

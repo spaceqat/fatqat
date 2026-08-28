@@ -53,8 +53,25 @@ classical slot 0 at tuple position 0.
 
 Most other accessors return the value stored in the result. Copy arrays or
 dictionaries before changing them if you need to preserve the original.
-Metadata contents depend on the backend or estimator that produced the result.
-See :doc:`../guide/running-and-results` for state and operator basis ordering.
+Metadata records the normalized ``simulation_config`` and ``result_config``.
+Backend extensions may add fields; pulse-emulator results also include common
+solver settings. Keep the model, arrangement, controls, and application
+metadata alongside a result when they are needed to reproduce a physical run.
+
+For every complete state or operator, ``metadata["state_axes"]`` lists the
+physical subsystems from least to most significant. Each entry contains a
+``device_operand`` and its program ``register_ref``; ``register_ref`` is
+``None`` when a physical model contains a subsystem the Program did not
+address. Position 0 is the least-significant subsystem of a flat basis index.
+For local dimensions ``dims``, position ``q`` has place value
+``prod(dims[:q])``. Density-matrix rows and columns use the same basis order.
+
+A counts-only run zero-fills every declared classical slot that was never
+written by measurement and emits a standard ``UserWarning``. This usually
+indicates a missing measurement.
+
+See :doc:`../guide/interpret-results` for the guided interpretation workflow;
+the conventions above are the canonical state-axis and count-order contract.
 
 Detailed reference
 ------------------

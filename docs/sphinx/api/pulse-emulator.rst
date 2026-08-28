@@ -6,6 +6,9 @@ The :py:class:`~fatqat.emulator.TransmonEmulator` runs a
 sampled controls over the full physical model, and ``run()`` returns an eager
 :py:class:`~fatqat.Job`.
 
+See :doc:`../guide/transmon-emulation` for a calibrated-gate and direct-drive
+walkthrough.
+
 Ordinary gates use ``gate_implementation_map``. A
 :py:class:`~fatqat.operations.PulseOperation` contains its own physical
 channels and does not use that map. See :doc:`pulse-control/index` for direct
@@ -366,4 +369,4 @@ Lindblad implementation maps.
 controls. ``Atom2LevelEmulator`` has an empty built-in gate map and global
 direct controls; user-supplied maps can add gate rules.
 See :doc:`atom-emulators` for their API and
-:doc:`../guide/neutral-atoms` for help choosing between them.
+:doc:`../guide/neutral-atom-emulation` for help choosing between them.

@@ -15,8 +15,6 @@ another map or a later call. Construct
 :py:class:`~fatqat.implementation.MatrixImplementationMap` directly when the
 backend should support only rules you add.
 
-See :doc:`../guide/advanced` for a complete custom-gate example.
-
 Choose a rule
 -------------
 

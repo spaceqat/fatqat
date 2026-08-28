@@ -54,7 +54,8 @@ explicit ref rather than an ambiguous integer:
 d-ary classical digits; the quantum and classical dimensions of each
 measurement pair must match. Register construction accepts every integer
 dimension of at least two, but individual operations and backends may support
-only some dimensions. See :doc:`../guide/advanced` for a qutrit example.
+only some dimensions. See :doc:`../guide/program` for a mixed qubit-qutrit
+example.
 
 .. autoclass:: fatqat.Register
    :members:
@@ -107,8 +108,8 @@ selected member; :data:`~fatqat.operations.CX` and
 pair must use the same kind of grid selection and the same cardinality, and
 selections on the same grid cannot overlap. Measurements and QASM export
 require scalar targets. The backend validates physical placement and
-connectivity. See
-:doc:`../guide/gates` for a paired-row example.
+connectivity. See :doc:`../guide/program` for the ordinary Program workflow
+and :doc:`../guide/hardware-profile-simulation` for physical placement.
 
 .. autoclass:: fatqat.GridRegister
    :members:

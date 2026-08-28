@@ -11,10 +11,8 @@ pulse-resolved physical emulators rather than modes of
 Use :py:class:`~fatqat.emulator.Atom3LevelEmulator` for calibrated gates or
 selected-site direct controls in the physical ``|0>, |1>, |r>`` model. Use
 :py:class:`~fatqat.emulator.Atom2LevelEmulator` for directly authored global
-controls in the ``|g>, |r>`` model. The comparison and complete executable
-workflows are in :doc:`../guide/neutral-atoms`,
-:doc:`../guide/atom-3level`, and
-:doc:`../guide/atom-2level`.
+controls in the ``|g>, |r>`` model. The comparison and executable workflows
+are in :doc:`../guide/neutral-atom-emulation`.
 
 Arrangements and program resources
 ----------------------------------
@@ -289,4 +287,4 @@ zero-time measured program samples the initial state without time evolution.
 Even a zero-rate Lindblad declaration selects the noisy result type.
 
 See :doc:`pulse-control/index` for direct pulse authoring and
-:doc:`../guide/atom-2level` for the complete two-level workflow.
+:doc:`../guide/neutral-atom-emulation` for the complete two-level workflow.

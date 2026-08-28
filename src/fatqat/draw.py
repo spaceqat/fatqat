@@ -104,6 +104,8 @@ def _require_qutip():
 # picked up automatically.
 _API_STRING = "string"  # released QuTiP-QIP: gates named by string
 _API_CLASS = "class"  # master QuTiP-QIP: gates given as classes/instances
+_BARRIER_RENDER_LABEL = "__fatqat_barrier__"
+_BARRIER_STYLE_KEY = "_fatqat_barrier"
 
 
 @functools.lru_cache(maxsize=1)
@@ -195,6 +197,7 @@ def _add_box(
     *,
     arg_label: str | None = None,
     classical_control_value: int | None = None,
+    style: dict[str, Any] | None = None,
 ) -> None:
     """Add a labeled box spanning ``wires``, on either API."""
     if _gate_api() == _API_STRING:
@@ -210,6 +213,7 @@ def _add_box(
             targets=wires,
             arg_label=arg_label,
             classical_control_value=classical_control_value,
+            style=style,
             **_optional(classical_controls=classical_controls),
         )
         circuit.add_gate(gate)
@@ -221,6 +225,8 @@ def _add_box(
     optional = _optional(classical_controls=classical_controls)
     if classical_control_value is not None:
         optional["classical_control_value"] = classical_control_value
+    if style is not None:
+        optional["style"] = style
     circuit.add_gate(
         gate,
         targets=wires,
@@ -284,6 +290,20 @@ def _mat_renderer_cls():
     return MatRenderer
 
 
+def _text_renderer_cls():
+    """Import ``TextRenderer`` from whichever module path this version uses."""
+    try:
+        from qutip_qip.circuit.draw.text_renderer import TextRenderer  # master
+    except ImportError:
+        from qutip_qip.circuit.text_renderer import TextRenderer  # released
+    return TextRenderer
+
+
+def _is_barrier_marker(gate) -> bool:
+    """Return whether a QuTiP drawing box represents fatqat's Barrier."""
+    return bool((getattr(gate, "style", None) or {}).get(_BARRIER_STYLE_KEY))
+
+
 def _adapt_legacy_condition_controls(circuit) -> None:
     """Expose 0.4 classical controls to renderers as drawing-only controls.
 
@@ -314,6 +334,7 @@ def _adapt_legacy_condition_controls(circuit) -> None:
 def _render_matplotlib(circuit, **kwargs):
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
+    from matplotlib.lines import Line2D
 
     axis = kwargs.pop("ax", None)
     owns_figure = axis is None
@@ -324,7 +345,51 @@ def _render_matplotlib(circuit, **kwargs):
     else:
         figure = axis.get_figure()
 
-    renderer = _mat_renderer_cls()(circuit, ax=axis, **kwargs)
+    renderer_base = _mat_renderer_cls()
+
+    class _FatqatMatRenderer(renderer_base):
+        """Render fatqat barriers without exposing a QuTiP box primitive."""
+
+        def _draw_barrier(self, gate, layer):
+            targets = sorted(gate.targets)
+            wires = list(range(targets[0], targets[-1] + 1))
+            xskip = self._get_xskip(wires, layer)
+            width = max(2 * self.style.gate_pad, self._min_gate_width / 2)
+            center = xskip + self.style.gate_margin + width / 2
+            extension = self.style.wire_sep / 4
+            barrier = Line2D(
+                [center, center],
+                [
+                    (targets[0] + self._cwires) * self.style.wire_sep - extension,
+                    (targets[-1] + self._cwires) * self.style.wire_sep + extension,
+                ],
+                color=self.style.wire_color,
+                linestyle="--",
+                linewidth=1,
+                zorder=self._zorder["gate"],
+            )
+            self._ax.add_line(barrier)
+            self._manage_layers(width, wires, layer, xskip)
+
+        def _draw_singleq_gate(self, gate, layer):
+            if _is_barrier_marker(gate):
+                self._draw_barrier(gate, layer)
+                return
+            super()._draw_singleq_gate(gate, layer)
+
+        def _draw_multiq_gate(self, gate, layer):
+            if _is_barrier_marker(gate):
+                self._draw_barrier(gate, layer)
+                return
+            super()._draw_multiq_gate(gate, layer)
+
+    renderer = _FatqatMatRenderer(circuit, ax=axis, **kwargs)
+    if "end_wire_ext" not in kwargs:
+        # QuTiP measures the trailing extension in multiples of layer_sep but
+        # uses an absolute start pad. Match those physical lengths so the idle
+        # wire around the first and last gates is visually symmetric. Keep an
+        # explicit end_wire_ext override available to callers.
+        renderer.style.end_wire_ext = renderer._start_pad / renderer.style.layer_sep
     if _gate_api() == _API_STRING:
         renderer._layer_list.update(
             {
@@ -349,6 +414,48 @@ def _render_matplotlib(circuit, **kwargs):
         plt.tight_layout = original_tight_layout
         plt.show = original_show
     return renderer.fig
+
+
+def _render_text(circuit, **kwargs) -> str:
+    renderer_base = _text_renderer_cls()
+
+    class _FatqatTextRenderer(renderer_base):
+        """Render a compact vertical dashed separator for fatqat barriers."""
+
+        _barrier_parts = (" ┊ ", "─┊─", " ┊ ")
+        _barrier_width = len(_barrier_parts[0])
+
+        def _draw_singleq_gate(self, gate_name):
+            if gate_name == _BARRIER_RENDER_LABEL:
+                return self._barrier_parts, self._barrier_width
+            return super()._draw_singleq_gate(gate_name)
+
+        def _draw_multiq_gate(self, gate, gate_text):
+            if _is_barrier_marker(gate):
+                top, middle, bottom = self._barrier_parts
+                return (
+                    top,
+                    middle,
+                    middle,
+                    middle,
+                    bottom,
+                ), self._barrier_width
+            return super()._draw_multiq_gate(gate, gate_text)
+
+        def _update_target_multiq(self, gate, wire_list, parts):
+            if not _is_barrier_marker(gate):
+                super()._update_target_multiq(gate, wire_list, parts)
+                return
+            top, middle, bottom = self._barrier_parts
+            for wire in wire_list:
+                self._render_strs["top_frame"][wire] += top
+                self._render_strs["mid_frame"][wire] += middle
+                self._render_strs["bot_frame"][wire] += bottom
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        _FatqatTextRenderer(circuit, **kwargs).layout()
+    return buffer.getvalue()
 
 
 def _wire_maps(program: Program) -> tuple[dict, dict]:
@@ -483,12 +590,18 @@ def _add_operation(circuit, step, operands, qubit_index, clbit_index):
         predicate = " & ".join(f"c{wire}={value}" for wire, value in condition_terms)
         return f"{label} if {predicate}"
 
-    # Barrier: QuTiP-QIP has no barrier primitive, so draw it as a labeled box
-    # spanning its wires. (A dashed separator would require reaching into
-    # QuTiP's private layout and has no text-renderer equivalent, so a box is
-    # used for a uniform result across both renderers.)
+    # QuTiP-QIP has no barrier primitive. Add a drawing-only box carrying a
+    # private style marker; fatqat's renderer adapters replace it with a dashed
+    # vertical separator while retaining its position in QuTiP's layer layout.
     if isinstance(operation, BarrierGate):
-        _add_box(circuit, "barrier", wires, None)
+        _add_box(
+            circuit,
+            "barrier",
+            wires,
+            None,
+            arg_label=_BARRIER_RENDER_LABEL,
+            style={_BARRIER_STYLE_KEY: True},
+        )
         return
 
     # Reset: also no native primitive; draw a small ``|0>`` box per target.
@@ -507,6 +620,14 @@ def _add_operation(circuit, step, operands, qubit_index, clbit_index):
     native = _NATIVE_GATES.get(type(operation))
     if native is not None:
         qutip_name, n_controls, param_attr = native
+        arg_label = conditioned_label(operation.name)
+        # QuTiP-QIP 0.4 requires the legacy semantic name ``SNOT`` for a
+        # Hadamard gate and otherwise exposes that spelling in its renderers.
+        # Keep the compatible gate name while presenting the conventional H.
+        # Remove this override once fatqat requires QuTiP-QIP 0.5 or later,
+        # whose class-based gate API names and renders the gate as H directly.
+        if arg_label is None and qutip_name == "SNOT":
+            arg_label = "H"
         _add_native(
             circuit,
             qutip_name,
@@ -514,7 +635,7 @@ def _add_operation(circuit, step, operands, qubit_index, clbit_index):
             targets=wires[n_controls:],
             arg_value=getattr(operation, param_attr) if param_attr else None,
             classical_controls=classical_controls,
-            arg_label=conditioned_label(operation.name),
+            arg_label=arg_label,
             classical_control_value=classical_control_value,
         )
         return
@@ -554,10 +675,7 @@ def _draw_program(program: Program, renderer: str = "matplotlib", **kwargs: Any)
     if renderer == "text":
         if _gate_api() == _API_STRING:
             _adapt_legacy_condition_controls(circuit)
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer):
-            circuit.draw("text", **kwargs)
-        return buffer.getvalue()
+        return _render_text(circuit, **kwargs)
 
     if renderer == "matplotlib":
         if _gate_api() == _API_STRING:

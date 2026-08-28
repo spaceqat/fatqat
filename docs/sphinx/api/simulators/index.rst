@@ -3,10 +3,13 @@ Simulators
 
 .. currentmodule:: fatqat.simulator
 
-FATQAT provides a general matrix simulator and three hardware profiles. They
+FatQat provides a general circuit simulator and three hardware profiles. They
 use the same run and result API. Choose :class:`Simulator` for unrestricted
 gate-level work, or a profile when the program must obey a native gate set,
 layout, or connectivity rule.
+
+Start with :doc:`../../guide/execution-models` to choose an execution level, or
+follow :doc:`../../guide/hardware-profile-simulation` for the profile workflow.
 
 The superconducting profiles use a fixed rectangular grid.
 :class:`SCQubitIBMSimulator` accepts IBM-style native gates and

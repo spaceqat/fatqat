@@ -317,8 +317,8 @@ fig.tight_layout()
 # (:math:`p = 0.05`) — and the same template runs on a density-matrix
 # simulator constructed with that model. A density-matrix Estimator in
 # ``shots=0`` mode returns the noise-averaged expectation exactly: no
-# sampling is needed to *see* the noise. See :doc:`/guide/noise` for the
-# full vocabulary.
+# sampling is needed to *see* the noise. See
+# :doc:`/guide/ideal-and-noisy` for the full workflow.
 
 noise = fq.NoiseModel()
 noise.add(fq.noise.Depolarizing(p=0.01), operation=op.RY)

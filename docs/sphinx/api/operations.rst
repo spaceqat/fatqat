@@ -71,15 +71,16 @@ actions on the family pages.
 :py:class:`RX`, :py:class:`RY`, and :py:class:`RZ` accept one
 :py:class:`~fatqat.RegisterView`; :py:data:`CX` and :py:data:`CZ` accept two
 compatible views and pair their members in order. See :doc:`registers` for the
-view compatibility rules and :doc:`../guide/gates` for the ordinary
+view compatibility rules and :doc:`../guide/program` for the ordinary
 construction workflow.
 
 Operation base
 --------------
 
 Subclassing :py:class:`Operation` defines a new program-level value; it does
-not register a matrix or pulse realization. See :doc:`../guide/advanced` for
-the custom matrix workflow.
+not register a matrix or pulse realization. See :doc:`implementation` for the
+custom matrix contract and :doc:`pulse-control/gate-realization` for pulse
+realizations.
 
 .. autoclass:: fatqat.operations.Operation
    :members: name, num_subsystems, min_targets, accepts_views, validate_targets

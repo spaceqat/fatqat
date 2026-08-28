@@ -160,7 +160,7 @@ figure.set_size_inches(16, 4)
 # interface, which is also where fused batched execution will land. For
 # observable-centric workflows, :py:class:`fatqat.Estimator` offers the
 # same batching as ``Estimator.run_sweep``; see
-# :doc:`/guide/parameters-and-sweeps`.)
+# :doc:`/guide/simulation`.)
 
 backend = fq.simulator.Simulator(method="SV")
 
@@ -288,8 +288,9 @@ fig.tight_layout(h_pad=2.5)
 # Where to go from here
 # ---------------------
 #
-# * :doc:`/guide/parameters-and-sweeps` covers binding semantics in
-#   detail; :doc:`/guide/estimator` covers exact and sampled expectation
+# * :doc:`/guide/program` introduces parameter binding;
+#   :doc:`/guide/simulation` covers sweeps, and
+#   :doc:`/guide/interpret-results` covers exact and sampled expectation
 #   values.
 # * Natural extensions: more rounds or qubits, a noise model passed to the
 #   simulator, or sampled (``shots > 0``) expectations to study shot noise

@@ -23,7 +23,7 @@ Estimate an observable
    result = estimator.run(program, observable).result()
    expectation = result.get_expectation()
 
-For a guided workflow, see :doc:`../guide/estimator`.
+For a guided workflow, see :doc:`../guide/interpret-results`.
 
 Construct an observable
 -----------------------
@@ -77,7 +77,8 @@ Parameter sweeps
 :meth:`~fatqat.Estimator.run_sweep` evaluates binding rows in input order.
 Validation errors raise directly; other row failures are raised by
 :meth:`~fatqat.Job.result`. No partial result list is returned. See
-:doc:`../guide/parameters-and-sweeps` for binding shapes and seed reuse.
+:doc:`../guide/simulation` for a guided parameter sweep; accepted binding
+shapes and seed behavior are specified here.
 
 Detailed reference
 ------------------

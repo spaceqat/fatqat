@@ -81,7 +81,7 @@ See :doc:`pulse-control/pulse-operation` for details.
 
 For other operations, ``targets`` is one tuple in operand order. Controlled
 gates list controls before targets. See :doc:`registers` for view selection and
-pairing, and :doc:`../guide/gates` for gate target order.
+pairing, and :doc:`../guide/program` for the ordinary construction workflow.
 
 Conditions
 ----------
@@ -107,8 +107,8 @@ in pair order; see :doc:`operations/structural` for measurement behavior.
 :py:meth:`~fatqat.Program.measure_all` flattens all registers and their members
 in declaration order and appends one grouped measurement. It requires equal,
 non-zero quantum and classical counts and matching dimensions at every
-position. Read :doc:`../guide/measurement-and-conditions` for mid-program
-measurement and feedforward workflows.
+position. Read :doc:`../guide/program` for a mid-program measurement and
+feedforward workflow.
 
 .. _program-templates:
 
@@ -142,9 +142,9 @@ objects used directly as operation arguments. Unbound parameters remain
 symbolic and are rejected by numeric execution and export. String keys,
 positional assignments, boolean or complex values, and assigning both a vector
 and one of its elements are rejected. Replacement values still undergo the
-operation's normal validation. Read
-:doc:`../guide/parameters-and-sweeps` for nested-value limitations, partial
-binding, sweep shapes, and execution behavior.
+operation's normal validation. Read :doc:`../guide/program` for the authoring
+workflow and :doc:`../guide/simulation` for a parameter sweep. The complete
+binding and execution contracts are specified here and in :doc:`simulator`.
 
 :py:meth:`~fatqat.Program.copy` and
 :py:meth:`~fatqat.Program.assign_parameters` return new programs.
@@ -154,6 +154,10 @@ binding, sweep shapes, and execution behavior.
 
 Draw
 ----
+
+FatQat's circuit drawing is based on QuTiP-QIP's circuit drawing tools.
+``Program.draw()`` translates the Program's instructions to a rendering
+adapter before invoking the selected QuTiP-QIP renderer.
 
 .. list-table:: Renderers
    :header-rows: 1
@@ -177,6 +181,12 @@ Circuit drawings use one wire per slot but do not depict register dimension.
 Unknown or custom operations appear as labeled boxes. A direct
 :py:class:`~fatqat.operations.PulseOperation` cannot be represented and raises
 :py:exc:`~fatqat.errors.UnsupportedOperationError`.
+
+Use :func:`fatqat.draw.to_qubit_circuit` only for low-level integration with
+QuTiP-QIP's drawing tools. The returned circuit is a rendering adapter, not an
+execution object.
+
+.. autofunction:: fatqat.draw.to_qubit_circuit
 
 Reference
 ---------
