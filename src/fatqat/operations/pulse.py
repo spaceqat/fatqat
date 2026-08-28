@@ -21,6 +21,9 @@ class PulseOperation(Operation):
     :meth:`~fatqat.Program.add` as ``program.add(operation)`` and do not pass a
     ``targets`` value.
 
+    Every direct-control block has positive duration and at least one control.
+    Omit the operation when no time should elapse.
+
     During program preparation, the selected pulse emulator resolves every
     channel address against its physical model. For a
     :class:`~fatqat.emulator.TransmonModel`, drive and detuning channels bind
@@ -47,9 +50,6 @@ class PulseOperation(Operation):
     block ends. Each must finish no later than ``duration``. Controls in one
     block are concurrent, and the same channel may occur only once. Sum
     same-channel samples before creating the operation.
-
-    Every direct-control block has positive duration and at least one control.
-    Omit the operation when no time should elapse.
 
     Args:
         duration: Positive finite real block duration in the selected model's

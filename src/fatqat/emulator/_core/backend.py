@@ -271,9 +271,11 @@ class _PulseBackend(ABC):
         posterior and therefore requires ``shots == 1``.
 
         Each pulse emulator constructs its model family's fixed product
-        initial state for every run. TransmonEmulator and Atom3LevelEmulator
-        use local level 0; Atom2LevelEmulator uses its ground level. This
-        method has no initial_state argument.
+        initial state for every run.
+        :class:`~fatqat.emulator.TransmonEmulator` and
+        :class:`~fatqat.emulator.Atom3LevelEmulator` use local level 0;
+        :class:`~fatqat.emulator.Atom2LevelEmulator` uses its ground level.
+        This method has no ``initial_state`` argument.
 
         Args:
             program: Program to bind, lower, and execute.
@@ -289,7 +291,7 @@ class _PulseBackend(ABC):
             An eager terminal :class:`~fatqat.Job`. Validation and lowering
             failures raise directly. Solver-stage failures produce a failed
             job whose :meth:`~fatqat.Job.result` raises
-            :class:`~fatqat.errors.BackendExecutionError`.
+            :exc:`~fatqat.errors.BackendExecutionError`.
 
         Raises:
             BackendValidationError: If the target cannot bind the program,
