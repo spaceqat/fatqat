@@ -200,8 +200,8 @@ Unknown or custom operations appear as labeled boxes. A direct
 :py:class:`~fatqat.operations.PulseOperation` cannot be represented and raises
 :py:exc:`~fatqat.errors.UnsupportedOperationError`.
 
-Container reference
--------------------
+API
+---
 
 .. autoclass:: fatqat.Program(quantum_registers, classical_registers=0, *, metadata=None)
    :exclude-members: add, measure, measure_all, draw, copy, assign_parameters
