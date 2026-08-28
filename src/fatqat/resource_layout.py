@@ -1,12 +1,4 @@
-"""ResourceLayout: the public mapping from program resources to device labels.
-
-`ResourceLayout` maps a program's scalar `RegisterRef`s to opaque, backend-
-defined device resource labels (a physical site, coordinate, or any other
-hashable backend identity). It carries no dimensions, no classical-slot
-positions, and no engine subsystem indices - those belong to the private
-engine allocation in `fatqat._index_allocation`. See
-docs/superpowers/specs/2026-07-22-fatqat-resource-layout-and-noise-selector-design.md.
-"""
+"""Public mapping from program quantum references to backend device labels."""
 
 from __future__ import annotations
 
@@ -18,19 +10,42 @@ type DeviceOperand = Hashable
 
 
 class ResourceLayout:
-    """Map scalar ``RegisterRef`` objects to opaque device resource labels.
+    """Read-only program-reference to device-label lookup object.
 
-    Refs key this mapping by identity, not by field values: a register is an
-    entity, so a lookalike built with the same size and name is a different
-    register and is deliberately not found here.
+    Device labels are opaque hashable values defined by a backend, such as a
+    site number, coordinate, or string identifier. They are not simulator
+    tensor-axis indices. Public lookups map register refs to device labels.
+
+    Construction shallow-copies the input mapping, so later top-level changes
+    to that mapping are not observed. The ref keys and label objects are
+    retained. Use immutable labels whose equality and hashes remain stable for
+    the layout's lifetime. Backend calls do not mutate a layout, so it can be
+    reused with the same register objects and a compatible backend.
+
+    The selected backend validates program coverage, label uniqueness and
+    type, subsystem dimensions, placement, and connectivity when the layout is
+    used.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> qubits = fq.QuantumRegister(2, name="q")
+        >>> layout = fq.ResourceLayout({qubits[0]: "left", qubits[1]: "right"})
+        >>> layout.device_labels_for((qubits[1], qubits[0]))
+        ('right', 'left')
     """
 
     def __init__(self, labels: Mapping[RegisterRef, DeviceOperand]) -> None:
         """Create a resource layout from explicit ref-to-label pairs.
 
         Args:
-            labels: Mapping from each covered `RegisterRef` to its device
-                resource label.
+            labels: Mapping from quantum :class:`~fatqat.RegisterRef` objects
+                to opaque, hashable device labels defined by the backend.
+                FATQAT defines no universal label type or reserved value. The
+                mapping is shallow-copied.
+
+        Raises:
+            TypeError: If ``labels`` cannot be copied into a dictionary or a
+                device label is not hashable.
         """
         self._labels: dict[RegisterRef, DeviceOperand] = dict(labels)
         self._refs_by_label: dict[DeviceOperand, RegisterRef | None] = {}
@@ -39,6 +54,14 @@ class ResourceLayout:
 
     def device_label(self, ref: RegisterRef) -> DeviceOperand:
         """Return the device resource label mapped to ``ref``.
+
+        Args:
+            ref: Stored mapping key to look up. Under the supported contract,
+                this is a scalar quantum register reference whose register
+                identity matches the original key.
+
+        Returns:
+            The mapped backend-defined device label.
 
         Raises:
             KeyError: If ``ref`` is not part of this layout.
@@ -50,18 +73,24 @@ class ResourceLayout:
 
     @property
     def device_labels(self) -> frozenset[DeviceOperand]:
-        """Return the set of every device resource label in this layout."""
+        """Return the device labels as an immutable set."""
         return frozenset(self._labels.values())
 
     @property
     def refs(self) -> frozenset[RegisterRef]:
-        """Return the set of every RegisterRef in this layout."""
+        """Return every mapped :class:`~fatqat.RegisterRef` as an immutable set."""
         return frozenset(self._labels)
 
     def device_labels_for(
         self, refs: tuple[RegisterRef, ...]
     ) -> tuple[DeviceOperand, ...]:
         """Return the device resource labels for ``refs``, in operand order.
+
+        Args:
+            refs: Tuple of scalar quantum refs.
+
+        Returns:
+            Device labels in the same order.
 
         Raises:
             KeyError: If any ref in ``refs`` is not part of this layout.

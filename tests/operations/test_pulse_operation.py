@@ -68,7 +68,7 @@ def test_program_accepts_only_zero_target_pulse_operation():
     pulse = PulseOperation(1, (_control(),))
 
     program.add(pulse)
-    assert program.operations[0].targets == ()
+    assert program._instructions[0].targets == ()
     with pytest.raises(ValueError, match="expects 0"):
         program.add(pulse, 0)
 

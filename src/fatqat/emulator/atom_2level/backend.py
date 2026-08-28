@@ -24,7 +24,7 @@ from ...noise.lindblad import (
     thermal_relaxation_lindblad_rule,
 )
 from ...operations import BarrierGate, Measurement, PulseOperation, ResetGate
-from ...program import AppliedOperation, Program
+from ...program import Program, _AppliedOperation
 from .._core.backend import _PulseBackend
 from .._core.lindblad import _classify_lindblad_noise
 from .._core.outcome import ExecutionMode
@@ -160,11 +160,11 @@ class Atom2LevelEmulator(_PulseBackend):
 
     def _validate_source_program(self, program: Program) -> None:
         measurement_suffix = False
-        for instruction in program.operations:
+        for instruction in program._instructions:
             if isinstance(instruction, Measurement):
                 measurement_suffix = True
                 continue
-            if not isinstance(instruction, AppliedOperation):
+            if not isinstance(instruction, _AppliedOperation):
                 raise BackendValidationError(
                     "two-level atom program contains an unknown source instruction"
                 )

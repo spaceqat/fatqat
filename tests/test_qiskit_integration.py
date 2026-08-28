@@ -20,6 +20,7 @@ from qiskit.primitives import BackendSamplerV2
 
 import fatqat as fq
 import fatqat.operations as ops
+from fatqat.program import _AppliedOperation
 from fatqat.qiskit import (
     FatqatBackend,
     QiskitBackendError,
@@ -33,10 +34,10 @@ def _print_program(program: fq.Program, *, title: str) -> None:
     print(f"\n=== {title} ===")
     print(f"quantum registers: {[r.size for r in program.quantum_registers]}")
     print(f"classical registers: {[r.size for r in program.classical_registers]}")
-    for index, step in enumerate(program.operations):
+    for index, step in enumerate(program._instructions):
         if isinstance(step, fq.Measurement):
             print(f"  [{index}] measure q={step.targets} -> c={step.outputs}")
-        elif isinstance(step, fq.AppliedOperation):
+        elif isinstance(step, _AppliedOperation):
             print(f"  [{index}] {step.operation.name} on {step.targets}")
         else:
             print(f"  [{index}] {step!r}")
@@ -53,11 +54,11 @@ def test_converter_bell_circuit():
 
     assert len(program.quantum_registers) == 1
     assert program.quantum_registers[0].size == 2
-    assert len(program.operations) == 4
-    assert program.operations[0].operation.name == "H"
-    assert program.operations[1].operation.name == "CX"
-    assert isinstance(program.operations[2], fq.Measurement)
-    assert isinstance(program.operations[3], fq.Measurement)
+    assert len(program._instructions) == 4
+    assert program._instructions[0].operation.name == "H"
+    assert program._instructions[1].operation.name == "CX"
+    assert isinstance(program._instructions[2], fq.Measurement)
+    assert isinstance(program._instructions[3], fq.Measurement)
 
 
 def test_converter_u_gate_maps_to_fatqat_u():
@@ -65,11 +66,11 @@ def test_converter_u_gate_maps_to_fatqat_u():
     circuit.append(UGate(0.2, 0.3, 0.4), [0])
 
     program = circuit_to_program(circuit)
-    step = program.operations[0]
+    step = program._instructions[0]
     print("\n=== U gate conversion ===")
     print(f"fatqat operation: {step.operation!r}")
 
-    assert isinstance(step, fq.AppliedOperation)
+    assert isinstance(step, _AppliedOperation)
     assert isinstance(step.operation, ops.U)
     assert step.operation.theta == pytest.approx(0.2)
     assert step.operation.phi == pytest.approx(0.3)
@@ -96,8 +97,8 @@ def test_converter_barrier_is_noop():
     program = circuit_to_program(circuit)
     gate_names = [
         step.operation.name
-        for step in program.operations
-        if isinstance(step, fq.AppliedOperation)
+        for step in program._instructions
+        if isinstance(step, _AppliedOperation)
     ]
     print("\n=== barrier no-op conversion ===")
     print(f"gate sequence: {gate_names}")
@@ -110,11 +111,11 @@ def test_converter_reset():
     circuit.reset(0)
 
     program = circuit_to_program(circuit)
-    step = program.operations[0]
+    step = program._instructions[0]
     print("\n=== reset conversion ===")
     print(f"operation: {step.operation.name}")
 
-    assert isinstance(step, fq.AppliedOperation)
+    assert isinstance(step, _AppliedOperation)
     assert step.operation.name == "Reset"
 
 

@@ -6,7 +6,7 @@ mapping policy of its own (that lives in `ResourceLayout`/`_EngineAllocation`
 and the private `_LoweringContext` that pairs them for one run's lowering).
 
 Pairing legality (matching selector kind, equal cardinality, no same-register
-overlap) is validated at `Program.add()`/`AppliedOperation` construction time
+overlap) is validated at `Program.add()`/`_AppliedOperation` construction time
 (see tests/program/test_add.py and tests/program/test_applied_operation.py),
 not here - by the time a step reaches expansion, its targets are already
 guaranteed legal.
@@ -38,9 +38,9 @@ def test_scalar_only_and_measurement_instructions_pass_through_unchanged():
     program.add(ops.RX(0.3), 1)
     program.add(ops.CZ, (0, 1))
     program.measure(0, 0)
-    broken = _break_grouped_operations(program.operations)
-    assert broken == program.operations
-    assert all(left is right for left, right in zip(broken, program.operations))
+    broken = _break_grouped_operations(program._instructions)
+    assert broken == program._instructions
+    assert all(left is right for left, right in zip(broken, program._instructions))
 
 
 @pytest.mark.parametrize(
@@ -54,19 +54,19 @@ def test_grouped_rotation_expands_in_view_order_and_preserves_operation_data(
     program = Program([qubits], 1)
     operation = ops.RX(0.3)
     program.add(operation, getattr(qubits, selector_name)(0), condition=(0, 1))
-    broken = _break_grouped_operations(program.operations)
+    broken = _break_grouped_operations(program._instructions)
     assert [step.targets for step in broken] == [
         (qubits[index],) for index in expected_indices
     ]
     assert all(step.operation is operation for step in broken)
-    assert all(step.condition == program.operations[0].condition for step in broken)
+    assert all(step.condition == program._instructions[0].condition for step in broken)
 
 
 def test_grouped_two_target_operation_zips_views_in_order():
     qubits = GridRegister(2, 2, name="qubits")
     program = Program([qubits])
     program.add(ops.CX, (qubits.row(0), qubits.row(1)))
-    broken = _break_grouped_operations(program.operations)
+    broken = _break_grouped_operations(program._instructions)
     assert [step.targets for step in broken] == [
         (qubits[0], qubits[2]),
         (qubits[1], qubits[3]),
@@ -77,10 +77,10 @@ def test_grouped_operation_does_not_mutate_program():
     qubits = GridRegister(2, 2, name="qubits")
     program = Program([qubits])
     program.add(ops.RX(0.3), qubits.row(0))
-    before = program.operations
-    broken = _break_grouped_operations(program.operations)
-    assert program.operations is before
-    assert list(program.operations) != list(broken)
+    before = program._instructions
+    broken = _break_grouped_operations(program._instructions)
+    assert program._instructions is before
+    assert list(program._instructions) != list(broken)
 
 
 def test_base_backend_executes_grouped_views_with_identity_mapping():
@@ -126,7 +126,7 @@ def test_lower_uses_resource_layout_device_labels_for_lookup_and_engine_indices_
         engine_allocation=engine_allocation,
         classical_allocation=_ClassicalAllocation.from_program(program),
     )
-    operations = _break_grouped_operations(program.operations)
+    operations = _break_grouped_operations(program._instructions)
     plan = backend._lower(operations, context)
     assert _matrix_steps(plan)[0].target_indices == (0, 1)
 

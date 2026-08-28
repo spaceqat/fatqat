@@ -9,7 +9,7 @@ from .._index_allocation import _ClassicalAllocation, _EngineAllocation
 from ..errors import BackendValidationError
 from ..noise import NoiseModel
 from ..operations.measurement import Measurement
-from ..program import AppliedOperation
+from ..program import _AppliedOperation
 from ..registers import RegisterRef
 from ..resource_layout import ResourceLayout
 from .steps import ResetStep
@@ -143,7 +143,7 @@ def _resolve_condition(
 
 
 def _lower_reset_boundary(
-    step: AppliedOperation,
+    step: _AppliedOperation,
     resource_layout: ResourceLayout,
     engine_allocation: _EngineAllocation,
     classical_allocation: _ClassicalAllocation,

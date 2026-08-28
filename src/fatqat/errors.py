@@ -12,7 +12,7 @@ class BackendValidationError(FatqatError):
 
 
 class BackendExecutionError(FatqatError):
-    """Raised by ``Job.result()`` when a backend's private execution fails."""
+    """Raised by :meth:`~fatqat.Job.result` when backend execution fails."""
 
 
 class UnsupportedOperationError(BackendValidationError):
@@ -26,9 +26,10 @@ class MatrixImplementationError(FatqatError):
 
 class PulseImplementationError(FatqatError):
     """Raised when a registered pulse implementation rule fails, or returns
-    something other than a ``PulseDefinition``, while lowering a pulse
-    program occurrence. A rule's own ``BackendValidationError`` (including
-    ``UnsupportedOperationError``) propagates unchanged instead - that is
+    something other than a :class:`~fatqat.emulator.PulseDefinition`, while
+    lowering a pulse program occurrence. A rule's own
+    :exc:`BackendValidationError` (including
+    :exc:`UnsupportedOperationError`) propagates unchanged instead - that is
     the rule's deliberate validation, not an implementation defect."""
 
 

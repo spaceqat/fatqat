@@ -266,8 +266,8 @@ def test_from_qasm_builds_bell_program():
         measure q -> c;
         """)
 
-    assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
-    measurement = program.operations[2]
+    assert [op.operation.name for op in program._instructions[:2]] == ["H", "CX"]
+    measurement = program._instructions[2]
     assert isinstance(measurement, Measurement)
     assert measurement.targets == (
         program.quantum_registers[0][0],
@@ -290,7 +290,7 @@ def test_from_qasm_preserves_multiple_register_names():
         """)
 
     assert [reg.name for reg in program.quantum_registers] == ["qa", "qb"]
-    assert program.operations[0].targets == (program.quantum_registers[1][0],)
+    assert program._instructions[0].targets == (program.quantum_registers[1][0],)
 
 
 def test_from_qasm_expands_whole_register_single_qubit_gate():
@@ -300,8 +300,8 @@ def test_from_qasm_expands_whole_register_single_qubit_gate():
         x q;
         """)
 
-    assert [op.operation.name for op in program.operations] == ["X", "X", "X"]
-    assert [op.targets[0].index for op in program.operations] == [0, 1, 2]
+    assert [op.operation.name for op in program._instructions] == ["X", "X", "X"]
+    assert [op.targets[0].index for op in program._instructions] == [0, 1, 2]
 
 
 def test_from_qasm_parses_parameter_expressions():
@@ -312,9 +312,9 @@ def test_from_qasm_parses_parameter_expressions():
         u2(0, pi) q[0];
         """)
 
-    assert math.isclose(program.operations[0].operation.theta, math.pi / 2)
-    assert [op.operation.name for op in program.operations[1:]] == ["RZ", "RY", "RZ"]
-    assert math.isclose(program.operations[2].operation.theta, math.pi / 2)
+    assert math.isclose(program._instructions[0].operation.theta, math.pi / 2)
+    assert [op.operation.name for op in program._instructions[1:]] == ["RZ", "RY", "RZ"]
+    assert math.isclose(program._instructions[2].operation.theta, math.pi / 2)
 
 
 def test_from_qasm_supports_classical_conditions():
@@ -325,7 +325,7 @@ def test_from_qasm_supports_classical_conditions():
         if(c==2) x q[0];
         """)
 
-    assert program.operations[0].condition == (
+    assert program._instructions[0].condition == (
         (program.classical_registers[0][0], 0),
         (program.classical_registers[0][1], 1),
     )
@@ -348,8 +348,8 @@ def test_from_qasm_expands_custom_gate_definition():
         myx q[0];
         """)
 
-    assert [op.operation.name for op in program.operations] == ["X"]
-    assert program.operations[0].targets == (program.quantum_registers[0][0],)
+    assert [op.operation.name for op in program._instructions] == ["X"]
+    assert program._instructions[0].targets == (program.quantum_registers[0][0],)
 
 
 def test_from_qasm_expands_iswap_custom_gate_matching_forward_tool_output():
@@ -373,7 +373,7 @@ def test_from_qasm_expands_iswap_custom_gate_matching_forward_tool_output():
         iswap q[0], q[1];
         """)
 
-    assert [op.operation.name for op in program.operations] == [
+    assert [op.operation.name for op in program._instructions] == [
         "S",
         "S",
         "H",
@@ -382,7 +382,7 @@ def test_from_qasm_expands_iswap_custom_gate_matching_forward_tool_output():
         "H",
     ]
     # cx a,b then cx b,a -- control/target must swap between the two CX calls.
-    cx_ops = [op for op in program.operations if op.operation.name == "CX"]
+    cx_ops = [op for op in program._instructions if op.operation.name == "CX"]
     assert cx_ops[0].targets == (
         program.quantum_registers[0][0],
         program.quantum_registers[0][1],
@@ -406,9 +406,14 @@ def test_from_qasm_custom_gate_with_parameter_expression():
         my_crz(pi/2) q[0], q[1];
         """)
 
-    assert [op.operation.name for op in program.operations] == ["RZ", "CX", "RZ", "CX"]
-    assert math.isclose(program.operations[0].operation.theta, math.pi / 4)
-    assert math.isclose(program.operations[2].operation.theta, -math.pi / 4)
+    assert [op.operation.name for op in program._instructions] == [
+        "RZ",
+        "CX",
+        "RZ",
+        "CX",
+    ]
+    assert math.isclose(program._instructions[0].operation.theta, math.pi / 4)
+    assert math.isclose(program._instructions[2].operation.theta, -math.pi / 4)
 
 
 def test_from_qasm_rejects_opaque_declaration():
@@ -430,8 +435,8 @@ def test_from_qasm3_bit_level_and_conditions():
         if (c[0] == 1 && c[2] == 0) { x q[1]; }
         """)
 
-    assert program.operations[0].operation.name == "X"
-    assert program.operations[0].condition == (
+    assert program._instructions[0].operation.name == "X"
+    assert program._instructions[0].condition == (
         (program.classical_registers[0][0], 1),
         (program.classical_registers[0][2], 0),
     )
@@ -481,13 +486,13 @@ def test_from_qasm_maps_supported_gate_names():
         barrier q;
         """)
 
-    assert [op.operation.name for op in program.operations] == [
+    assert [op.operation.name for op in program._instructions] == [
         "H",
         "CCX",
         "CPhase",
         "Reset",
     ]
-    assert isinstance(program.operations[0].operation, type(ops.H))
+    assert isinstance(program._instructions[0].operation, type(ops.H))
 
 
 def test_from_qasm3_builds_bell_program():
@@ -502,8 +507,8 @@ def test_from_qasm3_builds_bell_program():
         """)
 
     assert program.metadata["source"] == "openqasm3.0"
-    assert [op.operation.name for op in program.operations[:2]] == ["H", "CX"]
-    measurement = program.operations[2]
+    assert [op.operation.name for op in program._instructions[:2]] == ["H", "CX"]
+    measurement = program._instructions[2]
     assert isinstance(measurement, Measurement)
     assert measurement.targets == (
         program.quantum_registers[0][0],
@@ -526,7 +531,7 @@ def test_from_qasm3_single_qubit_and_bit_declarations():
 
     assert program.quantum_registers[0].size == 1
     assert program.classical_registers[0].size == 1
-    assert [op.operation.name for op in program.operations[:1]] == ["X"]
+    assert [op.operation.name for op in program._instructions[:1]] == ["X"]
 
 
 def test_from_qasm3_if_block_and_gate_aliases():
@@ -537,8 +542,8 @@ def test_from_qasm3_if_block_and_gate_aliases():
         if (c == 1) { toffoli q[0], q[1], q[2]; }
         """)
 
-    assert program.operations[0].operation.name == "CCX"
-    assert program.operations[0].condition == (
+    assert program._instructions[0].operation.name == "CCX"
+    assert program._instructions[0].condition == (
         (program.classical_registers[0][0], 1),
         (program.classical_registers[0][1], 0),
     )

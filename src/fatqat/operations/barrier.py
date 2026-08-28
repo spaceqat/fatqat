@@ -1,4 +1,4 @@
-"""Barrier: compiler-facing no-op frontend operation."""
+"""Compiler barrier operation."""
 
 from __future__ import annotations
 
@@ -10,33 +10,22 @@ from .base import Operation
 
 @dataclass(frozen=True)
 class BarrierGate(Operation):
-    """Barrier marker: no simulation semantics, preserved for compiler passes.
+    """Mark a compiler boundary without changing the quantum state.
 
-    Has no matrix and no effect on any simulated state or on counts; the
-    matrix-family backend recognizes it by operation type during lowering and
-    skips it entirely. The frontend keeps it verbatim in
-    ``Program.operations``, so compiler passes can read barrier boundaries
-    from the un-lowered program.
+    A barrier has no matrix, measurement result, or noise boundary. Built-in
+    simulators treat it as a no-op, so it has no effect on states or counts.
+    :meth:`~fatqat.Program.add` accepts a condition, but built-in simulators
+    do not evaluate it.
 
-    The class itself is not part of the ``fatqat.operations`` public surface (not in
-    ``__all__``) but stays attribute-accessible for ``isinstance`` checks;
-    ``Barrier`` (the singleton) is the one users construct programs with. A
-    barrier may span any number of subsystems.
+    Add the singleton ``ops.Barrier`` without parentheses. It accepts one or
+    more distinct scalar targets; :class:`~fatqat.RegisterView` and an empty
+    target tuple are rejected by :meth:`~fatqat.Program.add`.
 
     Examples:
-        A barrier between preparation and measurement changes nothing:
-
         >>> import fatqat as fq
         >>> import fatqat.operations as ops
-        >>> program = fq.Program(2, 2)
-        >>> program.add(ops.X, 0)
+        >>> program = fq.Program(2)
         >>> program.add(ops.Barrier, (0, 1))
-        >>> program.measure((0, 1), (0, 1))
-        >>> result = fq.simulator.Simulator().run(
-        ...     program, shots=5, simulation_config={"seed": 0}
-        ... ).result()
-        >>> result.get_counts()
-        {'01': 5}
     """
 
     name: ClassVar[str] = "Barrier"

@@ -1,200 +1,90 @@
-Operations (``op``)
-=======================
+Operations
+==========
 
-Add all normal operations through :py:meth:`~fatqat.Program.add`. The
-exported operation values and classes documented below are the supported gate
-surface. Internal implementation classes whose names end in ``Gate`` are not
-the construction surface for application code.
+.. currentmodule:: fatqat.operations
 
-Examples use ``import fatqat.operations as ops``.
+Import this namespace as ``ops`` and append operation values with
+:py:meth:`fatqat.Program.add`:
 
-The entries below retain their generated constructors and public members
-for exact interface details.
+.. code-block:: python
 
-.. autoclass:: fatqat.operations.Operation
-   :members: name, num_subsystems, accepts_views, validate_targets
-   :show-inheritance:
+   import fatqat as fq
+   import fatqat.operations as ops
 
-Fixed single-qubit gates
-------------------------
+   program = fq.Program(2)
+   program.add(ops.H, 0)            # parameter-free singleton
+   program.add(ops.RX(0.2), 1)      # constructed parameterized value
+   program.add(ops.CX, (0, 1))      # ordered multi-target value
 
-:py:obj:`~fatqat.operations.I`, :py:obj:`~fatqat.operations.H`,
-:py:obj:`~fatqat.operations.S`, :py:obj:`~fatqat.operations.Sdg`,
-:py:obj:`~fatqat.operations.SX`,
-:py:obj:`~fatqat.operations.T`, :py:obj:`~fatqat.operations.Tdg`,
-:py:obj:`~fatqat.operations.X`, :py:obj:`~fatqat.operations.Y`, and
-:py:obj:`~fatqat.operations.Z` are ready-to-use values. For example:
-``program.add(ops.H, 0)``.
+Fixed gates and parameter-free structural operations are immutable singleton
+values and must not be called. Parameterized gates and
+:py:class:`PulseOperation` are classes that construct immutable values. These
+values can be reused across instructions and programs. Create measurements
+through :py:class:`~fatqat.Program` rather than adding them directly.
 
-.. autodata:: fatqat.operations.I
-.. autodata:: fatqat.operations.H
-.. autodata:: fatqat.operations.S
-.. autodata:: fatqat.operations.Sdg
-.. autodata:: fatqat.operations.SX
-.. autodata:: fatqat.operations.T
-.. autodata:: fatqat.operations.Tdg
-.. autodata:: fatqat.operations.X
-.. autodata:: fatqat.operations.Y
-.. autodata:: fatqat.operations.Z
+Reference pages
+---------------
 
-Atom lifecycle
+.. list-table:: Operation families
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Page
+     - Contents
+   * - :doc:`operations/qubit-gates`
+     - Fixed and parameterized qubit gates, exact target order, matrices, and
+       constructor reference.
+   * - :doc:`operations/qudit-gates`
+     - Dimension-derived gates, level constraints, and basis actions.
+   * - :doc:`operations/structural`
+     - Measurement and reset state transitions, and compiler barrier
+       semantics.
+   * - :doc:`operations/atom-gates`
+     - Neutral-atom occupancy, pairing, and attached-noise constraints.
+   * - :doc:`operations/direct-control`
+     - Channel-addressed :py:class:`PulseOperation` values, validation, and
+       model binding.
+
+.. toctree::
+   :maxdepth: 1
+
+   operations/qubit-gates
+   operations/qudit-gates
+   operations/structural
+   operations/atom-gates
+   operations/direct-control
+
+Construction
+------------
+
+For ordinary operations, :py:meth:`~fatqat.Program.add` resolves target
+references, enforces target count, and rejects repeated scalar targets. It
+does not decide whether the selected backend implements an operation or
+whether a device supports the requested targets. An unsupported family raises
+:py:exc:`~fatqat.errors.UnsupportedOperationError` when the backend prepares
+the program. A direct :py:class:`PulseOperation` instead follows the
+channel-addressed contract on :doc:`operations/direct-control`.
+
+Most operations require scalar exact built-in ``int`` or
+:py:class:`~fatqat.RegisterRef` targets. A bare integer is valid only when the
+program has exactly one quantum register; booleans, NumPy integers, and integer
+subclasses are rejected. Controlled gates use control-first order, and the
+first local operand is the most-significant digit in the matrices and basis
+actions on the family pages.
+
+:py:class:`RX`, :py:class:`RY`, and :py:class:`RZ` accept one
+:py:class:`~fatqat.RegisterView`; :py:data:`CX` and :py:data:`CZ` accept two
+compatible views and pair their members in order. See :doc:`registers` for the
+view compatibility rules and :doc:`../guide/gates` for the ordinary
+construction workflow.
+
+Operation base
 --------------
 
-:py:data:`~fatqat.operations.Put` loads a fresh ``|0⟩`` atom into empty target
-sites: ``program.add(ops.Put, (0, 1))``.
-:py:data:`~fatqat.operations.Pair` connects two atoms so a two-qubit gate is
-legal on the pair, and :py:data:`~fatqat.operations.Unpair` disconnects them:
-``program.add(ops.Pair, (0, 1))``. These are interpreted by
-:py:class:`~fatqat.simulator.AtomArraySimulator`; see its documentation for the
-connectivity and occupancy model.
+Subclassing :py:class:`Operation` defines a new program-level value; it does
+not register a matrix or pulse realization. See :doc:`../guide/advanced` for
+the custom matrix workflow.
 
-.. autodata:: fatqat.operations.Put
-.. autodata:: fatqat.operations.Pair
-.. autodata:: fatqat.operations.Unpair
-
-Pulse operations and waveforms
-------------------------------
-
-:py:class:`~fatqat.operations.PulseOperation` is a backend-independent
-time block containing one or more :py:class:`~fatqat.emulator.PulseControl`
-bindings. Obtain structural control addresses from the selected physics model,
-construct immutable waveforms under ``fatqat.emulator``, and bind them with
-``PulseControl(channel, waveform, start_offset=...)``. The emulator validates
-the waveform shape and structural control addresses when lowering the
-operation, then derives target-owned scheduling claims for its private
-execution block.
-
-A :py:class:`~fatqat.emulator.SampledWaveform` supplies a finite nonuniform,
-strictly increasing time grid starting at zero. Its final time is the waveform
-duration; a control's offset plus that duration must fit inside the enclosing
-operation duration. Function and symbolic waveforms remain future work.
-
-.. autoclass:: fatqat.operations.PulseOperation
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.emulator.SampledWaveform
-   :members:
-
-.. autoclass:: fatqat.emulator.PulseControl
-   :members:
-
-Parametric gates
------------------
-
-:py:obj:`~fatqat.operations.RX` (``theta``),
-:py:obj:`~fatqat.operations.RY` (``theta``),
-:py:obj:`~fatqat.operations.RZ` (``theta``),
-:py:obj:`~fatqat.operations.Phase` (``theta``), and
-:py:obj:`~fatqat.operations.CPhase` (``theta``) take angles in radians.
-:py:obj:`~fatqat.operations.CPhase` uses ``(control, target)`` target
-order.
-
-.. autoclass:: fatqat.operations.RX
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.RY
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.RZ
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.Phase
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.CPhase
-   :members:
-   :show-inheritance:
-
-Fixed multi-qubit gates
-------------------------
-
-:py:obj:`~fatqat.operations.CX`, :py:obj:`~fatqat.operations.CZ`,
-:py:obj:`~fatqat.operations.Swap`, :py:obj:`~fatqat.operations.CY`,
-:py:obj:`~fatqat.operations.CS`, :py:obj:`~fatqat.operations.iSwap`,
-:py:obj:`~fatqat.operations.CCX`, and :py:obj:`~fatqat.operations.CSwap`
-are ready-to-use values. For controlled operations, controls come before
-targets: ``program.add(ops.CX, (control, target))``.
-
-.. autodata:: fatqat.operations.CX
-.. autodata:: fatqat.operations.CZ
-.. autodata:: fatqat.operations.Swap
-.. autodata:: fatqat.operations.CY
-.. autodata:: fatqat.operations.CS
-.. autodata:: fatqat.operations.iSwap
-.. autodata:: fatqat.operations.CCX
-.. autodata:: fatqat.operations.CSwap
-
-Reset
------
-
-:py:data:`~fatqat.operations.Reset` prepares one or more targets in ``|0⟩``:
-``program.add(ops.Reset, 0)``. See
-:doc:`../guide/measurement-and-conditions` for reset and conditions.
-
-.. autodata:: fatqat.operations.Reset
-
-Barrier
--------
-
-:py:data:`~fatqat.operations.Barrier` marks a compiler boundary across one or
-more targets. It remains visible in :py:attr:`~fatqat.Program.operations` but
-has no numerical effect in a simulator:
-``program.add(ops.Barrier, (0, 1))``.
-
-.. autodata:: fatqat.operations.Barrier
-
-Qudit gates
------------
-
-:py:obj:`~fatqat.operations.Shift` (``power``),
-:py:obj:`~fatqat.operations.Clock` (``power``),
-:py:obj:`~fatqat.operations.Sum`,
-:py:obj:`~fatqat.operations.SwapLevels` (``j, k``),
-:py:obj:`~fatqat.operations.Fourier`,
-:py:obj:`~fatqat.operations.InverseFourier`,
-:py:obj:`~fatqat.operations.SubspaceRX` (``theta, subspace``),
-:py:obj:`~fatqat.operations.SubspaceRY` (``theta, subspace``),
-:py:obj:`~fatqat.operations.SubspaceRZ` (``theta, subspace``), and
-:py:obj:`~fatqat.operations.CClock` (``power``) works with
-higher-dimensional registers. Read
-:doc:`../guide/advanced` for the qutrit workflow.
-The :doc:`../guide/gates` guide explains singleton versus parametric gate
-syntax, target order, and grid selections.
-
-.. autoclass:: fatqat.operations.Shift
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.Clock
-   :members:
-   :show-inheritance:
-
-.. autodata:: fatqat.operations.Sum
-
-.. autoclass:: fatqat.operations.SwapLevels
-   :members:
-   :show-inheritance:
-
-.. autodata:: fatqat.operations.Fourier
-.. autodata:: fatqat.operations.InverseFourier
-
-.. autoclass:: fatqat.operations.SubspaceRX
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.SubspaceRY
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.SubspaceRZ
-   :members:
-   :show-inheritance:
-
-.. autoclass:: fatqat.operations.CClock
-   :members:
+.. autoclass:: fatqat.operations.Operation
+   :members: name, num_subsystems, min_targets, accepts_views, validate_targets
    :show-inheritance:

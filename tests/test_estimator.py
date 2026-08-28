@@ -150,7 +150,7 @@ def test_estimator_sweep_direct_inner_failure_propagates(monkeypatch):
     estimator = _estimator()
 
     def fail_on_second(bound, _observables, **_kwargs):
-        if bound.operations[0].operation.theta == 0.2:
+        if bound._instructions[0].operation.theta == 0.2:
             raise BackendValidationError("direct point failure")
         return Job(status="DONE", result=Result(data={"expectation": 1.0, "std": 0.0}))
 
@@ -168,7 +168,7 @@ def test_estimator_sweep_failed_point_job_fails_outer_job(monkeypatch):
     error = KeyboardInterrupt("stored point failure")
 
     def fail_on_second(bound, _observables, **_kwargs):
-        if bound.operations[0].operation.theta == 0.2:
+        if bound._instructions[0].operation.theta == 0.2:
             return Job(status="ERROR", error=error)
         return Job(status="DONE", result=Result(data={"expectation": 1.0, "std": 0.0}))
 

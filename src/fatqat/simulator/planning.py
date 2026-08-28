@@ -17,7 +17,7 @@ from ..noise import ChannelImplementationMap, NoiseModel
 from ..noise.base import _validate_kraus_shapes
 from ..operations import Measurement, PulseOperation
 from ..noise.loss import Loss
-from ..program import AppliedOperation
+from ..program import _AppliedOperation
 from ..resource_layout import ResourceLayout
 from .._backends.backend_utils import (
     _lower_measurement_boundary,
@@ -74,7 +74,7 @@ def _lower_measurement(
 
 
 def _lower_reset(
-    step: AppliedOperation,
+    step: _AppliedOperation,
     resource_layout: ResourceLayout,
     engine_allocation: _EngineAllocation,
     classical_allocation: _ClassicalAllocation,
@@ -89,7 +89,7 @@ def _lower_reset(
 
 
 def _lower_put(
-    step: AppliedOperation,
+    step: _AppliedOperation,
     resource_layout: ResourceLayout,
     engine_allocation: _EngineAllocation,
     classical_allocation: _ClassicalAllocation,
@@ -185,7 +185,7 @@ def _lower_channels(
 
 
 def _lower_gate(
-    step: AppliedOperation,
+    step: _AppliedOperation,
     resource_layout: ResourceLayout,
     engine_allocation: _EngineAllocation,
     classical_allocation: _ClassicalAllocation,

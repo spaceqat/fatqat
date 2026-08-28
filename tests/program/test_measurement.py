@@ -12,22 +12,22 @@ def test_measure_appends_measurement():
     p = Program(2, 2)
     result = p.measure(0, 0)
     assert result is None
-    assert len(p.operations) == 1
-    m = p.operations[0]
+    assert len(p._instructions) == 1
+    m = p._instructions[0]
     assert isinstance(m, Measurement)
     assert m.targets == (p.quantum_registers[0][0],)
     assert m.outputs == (p.classical_registers[0][0],)
 
 
-def test_operations_preserve_order_and_type_mix():
+def test_instructions_preserve_order_and_type_mix():
     p = Program(2, 2)
     p.add(ops.H, 0)
     p.add(ops.CZ, (0, 1))
     p.measure(0, 0)
     p.measure(1, 1)
-    assert len(p.operations) == 4
-    assert p.operations[0].operation.name == "H"
-    assert isinstance(p.operations[2], Measurement)
+    assert len(p._instructions) == 4
+    assert p._instructions[0].operation.name == "H"
+    assert isinstance(p._instructions[2], Measurement)
 
 
 def test_measure_rejects_quantum_ref_as_output():
@@ -54,8 +54,8 @@ def test_measure_explicit_output_ref_works_with_multiple_classical_registers():
 
     p.measure(1, p.classical_registers[1][0])
 
-    assert p.operations[0].targets == (p.quantum_registers[0][1],)
-    assert p.operations[0].outputs == (p.classical_registers[1][0],)
+    assert p._instructions[0].targets == (p.quantum_registers[0][1],)
+    assert p._instructions[0].outputs == (p.classical_registers[1][0],)
 
 
 def test_measure_rejects_metadata_argument():
@@ -69,7 +69,7 @@ def test_measure_stores_single_as_one_tuples():
     p = Program(2, 2)
     p.measure(0, 1)
 
-    m = p.operations[0]
+    m = p._instructions[0]
     assert isinstance(m, Measurement)
     assert m.targets == (p.quantum_registers[0][0],)
     assert m.outputs == (p.classical_registers[0][1],)
@@ -79,7 +79,7 @@ def test_measure_accepts_grouped_operands():
     p = Program(3, 3)
     p.measure((0, 2), (1, 0))
 
-    m = p.operations[0]
+    m = p._instructions[0]
     assert isinstance(m, Measurement)
     assert m.targets == (p.quantum_registers[0][0], p.quantum_registers[0][2])
     assert m.outputs == (p.classical_registers[0][1], p.classical_registers[0][0])
@@ -106,8 +106,8 @@ def test_measure_all_appends_one_grouped_instruction_in_flat_order():
     result = p.measure_all()
 
     assert result is None
-    assert len(p.operations) == 1
-    m = p.operations[0]
+    assert len(p._instructions) == 1
+    m = p._instructions[0]
     assert isinstance(m, Measurement)
     assert m.targets == (
         p.quantum_registers[0][0],

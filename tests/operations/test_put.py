@@ -4,7 +4,7 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.program import AppliedOperation, Program
+from fatqat.program import _AppliedOperation, Program
 
 
 def test_singleton_shape():
@@ -17,8 +17,8 @@ def test_singleton_shape():
 def test_put_added_with_multiple_targets():
     p = Program(3)
     p.add(ops.Put, (0, 1, 2))
-    (step,) = p.operations
-    assert isinstance(step, AppliedOperation)
+    (step,) = p._instructions
+    assert isinstance(step, _AppliedOperation)
     assert step.operation is ops.Put
     assert len(step.targets) == 3
 
@@ -26,7 +26,7 @@ def test_put_added_with_multiple_targets():
 def test_put_added_with_single_target():
     p = Program(2)
     p.add(ops.Put, 0)
-    (step,) = p.operations
+    (step,) = p._instructions
     assert step.operation is ops.Put
     assert step.targets == (p.quantum_registers[0][0],)
 

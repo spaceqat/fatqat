@@ -2,8 +2,7 @@ Exceptions
 ==========
 
 These are the application-facing exceptions most likely to help a caller
-correct a program or requested result. Implementation and extension errors
-are intentionally omitted from this reference.
+correct a program, requested result, or custom implementation rule.
 
 .. autoexception:: fatqat.errors.BackendValidationError
    :no-members:
@@ -14,6 +13,14 @@ are intentionally omitted from this reference.
    :no-inherited-members:
 
 .. autoexception:: fatqat.errors.UnsupportedOperationError
+   :no-members:
+   :no-inherited-members:
+
+.. autoexception:: fatqat.errors.MatrixImplementationError
+   :no-members:
+   :no-inherited-members:
+
+.. autoexception:: fatqat.errors.PulseImplementationError
    :no-members:
    :no-inherited-members:
 

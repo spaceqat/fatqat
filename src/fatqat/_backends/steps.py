@@ -250,9 +250,9 @@ class MeasurementStep:
 class ResetStep:
     """Resolved reset of one or more flat subsystems to |0>, with optional condition.
 
-    `Reset` is an `AppliedOperation`, so it can carry a feedforward `condition`
-    just like a gate. The lowered form stores it as ``(clbit_index, value)``
-    AND-terms; the per-shot loop skips the reset when the guard fails.
+    A source-level `Reset` can carry a feedforward `condition` just like a
+    gate. The lowered form stores it as ``(clbit_index, value)`` AND-terms; the
+    per-shot loop skips the reset when the guard fails.
     """
 
     reset_indices: tuple[int, ...]

@@ -60,7 +60,6 @@ from scipy.optimize import minimize
 
 import fatqat as fq
 import fatqat.operations as op
-from fatqat.draw import draw
 
 H2_TERMS = [
     # (Pauli string, coefficient); leftmost character acts on qubit 0.
@@ -154,7 +153,7 @@ template = build_template()
 # The template draws like any other program: two layers of
 # parameter-bearing ``RY`` rotations, each closed by the entangler.
 
-figure = draw(build_template(), "matplotlib")
+figure = template.draw("matplotlib")
 figure.set_size_inches(10, 3)
 
 # %%

@@ -1,6 +1,6 @@
 # Gates
 
-Import ``fatqat.operations`` as ``op`` and use it with {py:meth}`~fatqat.Program.add`.
+Import ``fatqat.operations`` as ``ops`` and use it with {py:meth}`~fatqat.Program.add`.
 The
 {doc}`operations API reference <../api/operations>` contains exact
 signatures and matrices; this page focuses on the everyday calling pattern.
@@ -51,8 +51,8 @@ reference such as `program.quantum_registers[1][0]`.
 
 | Family | Operations |
 | --- | --- |
-| fixed single-qubit | {py:data}`~fatqat.operations.I`, {py:data}`~fatqat.operations.H`, {py:data}`~fatqat.operations.S`, {py:data}`~fatqat.operations.Sdg`, {py:data}`~fatqat.operations.T`, {py:data}`~fatqat.operations.Tdg`, {py:data}`~fatqat.operations.X`, {py:data}`~fatqat.operations.Y`, {py:data}`~fatqat.operations.Z` |
-| parametric | {py:class}`~fatqat.operations.RX`, {py:class}`~fatqat.operations.RY`, {py:class}`~fatqat.operations.RZ`, {py:class}`~fatqat.operations.Phase`, {py:class}`~fatqat.operations.CPhase` |
+| fixed single-qubit | {py:data}`~fatqat.operations.I`, {py:data}`~fatqat.operations.H`, {py:data}`~fatqat.operations.S`, {py:data}`~fatqat.operations.Sdg`, {py:data}`~fatqat.operations.SX`, {py:data}`~fatqat.operations.T`, {py:data}`~fatqat.operations.Tdg`, {py:data}`~fatqat.operations.X`, {py:data}`~fatqat.operations.Y`, {py:data}`~fatqat.operations.Z` |
+| parametric | {py:class}`~fatqat.operations.RX`, {py:class}`~fatqat.operations.RY`, {py:class}`~fatqat.operations.RZ`, {py:class}`~fatqat.operations.Phase`, {py:class}`~fatqat.operations.U`, {py:class}`~fatqat.operations.U1`, {py:class}`~fatqat.operations.U2`, {py:class}`~fatqat.operations.U3`, {py:class}`~fatqat.operations.CPhase` |
 | fixed multi-qubit | {py:data}`~fatqat.operations.CX`, {py:data}`~fatqat.operations.CZ`, {py:data}`~fatqat.operations.Swap`, {py:data}`~fatqat.operations.CY`, {py:data}`~fatqat.operations.CS`, {py:data}`~fatqat.operations.iSwap`, {py:data}`~fatqat.operations.CCX`, {py:data}`~fatqat.operations.CSwap` |
 | reset | {py:data}`~fatqat.operations.Reset`; see [Measurement and conditions](measurement-and-conditions.md) |
 | qudit | {py:class}`~fatqat.operations.Shift`, {py:class}`~fatqat.operations.Clock`, {py:data}`~fatqat.operations.Sum`, {py:class}`~fatqat.operations.SwapLevels`, {py:data}`~fatqat.operations.Fourier`, {py:data}`~fatqat.operations.InverseFourier`, {py:class}`~fatqat.operations.SubspaceRX`, {py:class}`~fatqat.operations.SubspaceRY`, {py:class}`~fatqat.operations.SubspaceRZ`, {py:class}`~fatqat.operations.CClock` |
@@ -72,10 +72,10 @@ program.add(ops.RX(0.2), qubits.row(1))
 program.add(ops.CX, (qubits.row(0), qubits.row(1)))
 ```
 
-The two views in the `CX` example are paired in order: the first entry in
-row 0 controls the first entry in row 1, and so on. The views must have the
-same length. The backend validates any device-specific constraints when the
-program runs.
+The two views in the `CX` example are paired in order: the first entry in row
+0 controls the first entry in row 1, and so on. Both views must use the same
+selector kind and have the same length. Views on one grid must not overlap.
+The backend validates any device-specific constraints when the program runs.
 
 ## Qudit gates
 

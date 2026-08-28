@@ -13,58 +13,60 @@ from .base import Operation
 
 @dataclass(frozen=True)
 class PulseOperation(Operation):
-    """One concurrent, model-neutral direct-control time block.
+    """Run concurrent channel-addressed direct controls for one time block.
 
-    Each model-defined structural control address identifies its physical
-    target, so this operation always has zero ordinary program targets. The
-    selected backend resolves the addresses, derives resource claims, and
-    validates the waveform representation before constructing its private
-    execution block.
+    ``PulseOperation`` does not take a separate ``targets`` argument. Each
+    :class:`~fatqat.emulator.PulseControl` channel identifies the physical
+    resource or resources it drives. Add the block with
+    :meth:`~fatqat.Program.add` as ``program.add(operation)`` and do not pass a
+    ``targets`` value.
 
     Every direct-control block has positive duration and at least one control.
     Omit the operation when no time should elapse.
 
-    Args:
-        duration: Positive finite block duration in the selected model's
-            native time unit.
-        controls: Non-empty iterable of concurrent
-            :class:`~fatqat.emulator.PulseControl` bindings. A channel may
-            appear only once; sum same-channel samples before construction.
+    During program preparation, the selected pulse emulator resolves every
+    channel address against its physical model. For a
+    :class:`~fatqat.emulator.TransmonModel`, drive and detuning channels bind
+    one declared subsystem; an exchange channel binds two subsystems and their
+    declared coupling. The emulator also validates model-family compatibility,
+    resource names, duration, waveform, amplitude, and concurrency constraints
+    at this stage.
 
-    Attributes:
-        duration: Normalized floating-point block duration.
-        controls: Immutable tuple of concurrent control bindings.
+    Ordinary operations receive logical :class:`~fatqat.RegisterRef` operands,
+    which :class:`~fatqat.ResourceLayout` maps to device resources. Direct
+    channel addresses bind against the emulator's physical model and are not
+    remapped by the layout. A control may therefore address an otherwise
+    unreferenced modeled resource. A direct operation can be reused with
+    another compatible model. The matrix
+    :class:`~fatqat.simulator.Simulator` does not support direct pulse
+    operations.
+
+    :meth:`~fatqat.Program.add` with ``condition=...`` may guard the block. A
+    false condition disables its controls, but the full block duration still
+    elapses under model drift and background Lindblad sources.
+    Operation-scoped noise cannot be attached to a direct pulse operation.
+
+    Controls begin at their own ``start_offset`` and may finish before the
+    block ends. Each must finish no later than ``duration``. Controls in one
+    block are concurrent, and the same channel may occur only once. Sum
+    same-channel samples before creating the operation.
+
+    Args:
+        duration: Positive finite real block duration in the selected model's
+            native time unit. Booleans are rejected.
+        controls: Non-empty iterable of
+            :class:`~fatqat.emulator.PulseControl`
+            values with distinct channels. The iterable is consumed once into
+            a tuple, so later mutation of the caller's outer container is not
+            observed.
 
     Raises:
-        TypeError: If ``duration`` is not real or a control is not a
+        TypeError: If ``duration`` is not a real number, ``controls`` is not
+            iterable, or an element is not a
             :class:`~fatqat.emulator.PulseControl`.
-        ValueError: If duration is non-positive/non-finite, controls are
-            empty or duplicate a channel, or a control extends past the block.
-
-    Examples:
-        >>> import fatqat.operations as ops
-        >>> from fatqat.emulator import PulseControl, TransmonModel
-        >>> from fatqat.emulator import SampledWaveform
-        >>> model = TransmonModel.from_document({
-        ...     "format": {"id": "sc.transmon_exchange", "version": 1},
-        ...     "model": {"id": "doc-example", "revision": "1"},
-        ...     "system": {
-        ...         "subsystem_type": "transmon",
-        ...         "subsystems": ["q0"],
-        ...         "control_edges": [],
-        ...     },
-        ...     "units": {"frequency": "GHz", "anharmonicity": "GHz"},
-        ...     "parameters": {"subsystems": {
-        ...         "q0": {"frequency": 5.0, "anharmonicity": -0.2},
-        ...     }},
-        ... })
-        >>> control = PulseControl(
-        ...     model.control.drive("q0"),
-        ...     SampledWaveform((0.0, 1.0), (0.0, 0.2j)),
-        ... )
-        >>> operation = ops.PulseOperation(1.0, (control,))
-        >>> operation.num_subsystems
-        0
+        ValueError: If ``duration`` is non-finite or not positive, ``controls``
+            is empty, a channel occurs more than once, or a control ends after
+            the block duration.
     """
 
     duration: float

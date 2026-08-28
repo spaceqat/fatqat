@@ -10,29 +10,36 @@ from ..registers import RegisterRef
 
 @dataclass(frozen=True)
 class Operation:
-    """Base class for immutable operation objects.
+    """Base value for operations accepted by :meth:`~fatqat.Program.add`.
 
-    Fixed gates are exposed as pre-built singleton values in
-    ``fatqat.operations`` (normally imported as ``op``).
-    Parametric gates are exposed as classes and should be instantiated, such as
-    ``RX(theta)``.
+    Built-in operations are immutable and reusable. Parameter-free gates and
+    structural operations are singleton values such as ``ops.H`` and
+    ``ops.Reset``; do not call them. Construct parameterized values such as
+    ``ops.RX(0.2)`` before adding them.
+
+    ``Operation`` is also the extension base for custom operations. An
+    ordinary subclass declares a public ``name`` and ``num_subsystems``. A
+    positive integer gives the exact number of separate logical target
+    expressions; ``None`` gives variable arity with a minimum of one target.
+    A custom operation also needs a compatible backend implementation;
+    subclassing alone does not make it executable.
 
     Attributes:
-        name: Public operation name.
-        num_subsystems: Number of quantum operands required by the operation, or
-            None for variable arity governed by ``min_targets``. A minimum of
-            zero supports global operations whose target set is implicit.
+        name: Stable name used in diagnostics and user-facing displays.
+        num_subsystems: Exact positive number of logical target expressions
+            for an ordinary operation, or ``None`` for variable arity. This is
+            not a count of physical resources affected during execution.
+
+    Raises:
+        ValueError: At subclass definition if ``num_subsystems`` is negative,
+            boolean, or not an integer or ``None``.
 
     Examples:
         >>> import fatqat.operations as ops
-        >>> ops.H.name
-        'H'
-        >>> ops.H.num_subsystems
-        1
-        >>> ops.CX.num_subsystems
-        2
-        >>> ops.RX(0.2).num_subsystems
-        1
+        >>> (ops.H.num_subsystems, ops.CX.num_subsystems)
+        (1, 2)
+        >>> ops.RX(0.2).name
+        'RX'
     """
 
     name: ClassVar[str] = "OP"
@@ -42,15 +49,15 @@ class Operation:
     """Whether this operation accepts a ``RegisterView`` target expression in
     addition to scalar ``RegisterRef`` targets. Only RX, RY, RZ, CX, and CZ
     opt in (set ``True``); every other operation stays scalar-only. This is
-    the single, centralized capability flag consulted by
-    ``AppliedOperation.__post_init__`` -- new code should read
-    ``accepts_views`` rather than checking operation identity or name.
+    the single, centralized capability flag consulted during instruction
+    validation. New code should read ``accepts_views`` rather than checking
+    operation identity or name.
     """
     _is_direct_control: ClassVar[bool] = False
     """Whether the operation is a direct physical-control block.
 
-    Direct controls have zero ordinary target arity but must not be registered
-    as calibrated gates or operation-scoped gate-noise selectors.
+    Direct controls take no separate logical operands. This internal flag also
+    keeps them out of calibrated-gate and operation-scoped gate-noise paths.
     """
 
     def __init_subclass__(cls, **kwargs) -> None:
@@ -77,20 +84,43 @@ class Operation:
 
     @property
     def min_targets(self) -> int:
-        """Minimum accepted targets, or the exact arity for a fixed operation."""
+        """Return the minimum accepted target count.
+
+        This is the exact count for fixed-arity operations. Public built-in
+        variable-arity operations require at least one target.
+        """
         fixed = self.num_subsystems
         return type(self)._min_subsystems if fixed is None else fixed
 
     @property
     def accepts_views(self) -> bool:
-        """Whether this operation accepts a ``RegisterView`` target expression."""
+        """Return whether :meth:`~fatqat.Program.add` accepts
+        :class:`~fatqat.RegisterView` targets.
+
+        The built-in view-capable operations are
+        :class:`~fatqat.operations.RX`, :class:`~fatqat.operations.RY`,
+        :class:`~fatqat.operations.RZ`, :data:`~fatqat.operations.CX`, and
+        :data:`~fatqat.operations.CZ`. All other built-ins require scalar
+        targets. A custom unary or two-target subclass may override this
+        property to opt into memberwise view application.
+        """
         return type(self)._accepts_views
 
     def validate_targets(self, targets: tuple[RegisterRef, ...]) -> None:
-        """Raise ValueError if this operation's parameters are invalid for the
-        resolved target references. Default no-op; override for gates whose
-        parameters name basis levels (or otherwise depend on target identity
-        or dimension). Reads dimension as targets[i].register.dim, consistent
-        with the matrix-rule contract.
+        """Validate parameters against resolved scalar targets.
+
+        The base implementation accepts every target tuple. Override this hook
+        when an operation parameter depends on a target property such as local
+        dimension. Scalar-target errors arise from
+        :meth:`~fatqat.Program.add`; for a :class:`~fatqat.RegisterView`, the
+        hook is applied to each selected member when the backend prepares the
+        program.
+
+        Args:
+            targets: Resolved scalar quantum references in operand order.
+
+        Raises:
+            ValueError: If the operation's parameters are incompatible with
+                the targets.
         """
         return

@@ -1,4 +1,4 @@
-"""Reset: non-unitary frontend operation."""
+"""Non-unitary reset operation."""
 
 from __future__ import annotations
 
@@ -10,26 +10,27 @@ from .base import Operation
 
 @dataclass(frozen=True)
 class ResetGate(Operation):
-    """Reset operation: repreparation of one or more target subsystems in ``|0>``.
+    """Reprepare one or more target subsystems in ``|0>``.
 
-    Has no matrix; the matrix-family backend resolves it to a boundary reset
-    step by operation type. The class itself is not part of the
-    ``fatqat.operations``
-    public surface (not in ``__all__``) but stays attribute-accessible for
-    ``isinstance`` checks against ``Reset`` steps; ``Reset`` (the singleton)
-    is the one users construct programs with.
+    Reset is a non-unitary instruction with no matrix or attachable noise
+    boundary. It can be conditioned through :meth:`~fatqat.Program.add`.
+    Statevector execution samples the reset branch when the target is
+    entangled; density matrix execution applies the corresponding
+    deterministic channel.
+
+    Add the singleton ``ops.Reset`` without parentheses. It accepts one or
+    more distinct scalar targets of any local dimension;
+    :class:`~fatqat.RegisterView` and an empty target tuple are rejected by
+    :meth:`~fatqat.Program.add`.
 
     Examples:
-        Flip a qubit to ``|1>`` then reset it back to ``|0>``:
-
         >>> import fatqat as fq
         >>> import fatqat.operations as ops
         >>> program = fq.Program(1)
         >>> program.add(ops.X, 0)
         >>> program.add(ops.Reset, 0)
         >>> result = fq.simulator.Simulator("SV").run(
-        ...     program,
-        ...     shots=1,
+        ...     program, shots=1,
         ...     result_config={"counts": False, "final_state": True},
         ... ).result()
         >>> result.get_statevector()

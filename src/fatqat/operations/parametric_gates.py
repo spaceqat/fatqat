@@ -32,17 +32,16 @@ from .base import Operation
 
 @dataclass(frozen=True)
 class RX(Operation):
-    """Rotation around the X axis.
+    """Rotate a qubit about the X axis by ``theta`` radians.
 
-    .. math::
+    In ``|0>, |1>`` basis order, the matrix is
+    ``[[c, -i*s], [-i*s, c]]``, where ``c = cos(theta/2)`` and
+    ``s = sin(theta/2)``. A :class:`~fatqat.RegisterView` applies the same
+    rotation to each selected member.
 
-        R_X(\\theta) = \\begin{pmatrix}
-        \\cos\\frac{\\theta}{2} & -i\\sin\\frac{\\theta}{2} \\\\
-        -i\\sin\\frac{\\theta}{2} & \\cos\\frac{\\theta}{2}
-        \\end{pmatrix}
-
-    Attributes:
-        theta: Rotation angle in radians.
+    Args:
+        theta: Numeric angle in radians, or a :class:`~fatqat.Parameter` to bind
+            before execution.
     """
 
     theta: float | Parameter
@@ -53,17 +52,16 @@ class RX(Operation):
 
 @dataclass(frozen=True)
 class RY(Operation):
-    """Rotation around the Y axis.
+    """Rotate a qubit about the Y axis by ``theta`` radians.
 
-    .. math::
+    In ``|0>, |1>`` basis order, the matrix is ``[[c, -s], [s, c]]``, where
+    ``c = cos(theta/2)`` and ``s = sin(theta/2)``. A
+    :class:`~fatqat.RegisterView` applies the same rotation to each selected
+    member.
 
-        R_Y(\\theta) = \\begin{pmatrix}
-        \\cos\\frac{\\theta}{2} & -\\sin\\frac{\\theta}{2} \\\\
-        \\sin\\frac{\\theta}{2} & \\cos\\frac{\\theta}{2}
-        \\end{pmatrix}
-
-    Attributes:
-        theta: Rotation angle in radians.
+    Args:
+        theta: Numeric angle in radians, or a :class:`~fatqat.Parameter` to bind
+            before execution.
     """
 
     theta: float | Parameter
@@ -74,19 +72,16 @@ class RY(Operation):
 
 @dataclass(frozen=True)
 class RZ(Operation):
-    """Rotation around the Z axis.
+    """Rotate a qubit about the Z axis by ``theta`` radians.
 
-    .. math::
+    The matrix is ``diag(exp(-i*theta/2), exp(i*theta/2))``. It differs from
+    :class:`~fatqat.operations.Phase` with the same ``theta`` only by the
+    global phase ``exp(-i*theta/2)``. A :class:`~fatqat.RegisterView` applies
+    the same rotation to each selected member.
 
-        R_Z(\\theta) = \\begin{pmatrix}
-        e^{-i\\theta/2} & 0 \\\\ 0 & e^{i\\theta/2}
-        \\end{pmatrix}
-
-    Note this differs from :class:`Phase` by the global phase
-    :math:`e^{-i\\theta/2}`.
-
-    Attributes:
-        theta: Rotation angle in radians.
+    Args:
+        theta: Numeric angle in radians, or a :class:`~fatqat.Parameter` to bind
+            before execution.
     """
 
     theta: float | Parameter
@@ -97,14 +92,15 @@ class RZ(Operation):
 
 @dataclass(frozen=True)
 class Phase(Operation):
-    """General single-qubit phase gate: ``diag(1, e^{i theta})``.
+    """Multiply a qubit's ``|1>`` amplitude by ``exp(i*theta)``.
 
-    .. math::
+    The matrix is ``diag(1, exp(i*theta))``. It differs from
+    :class:`~fatqat.operations.RZ` with the same ``theta`` only by a global
+    phase.
 
-        \\mathrm{Phase}(\\theta) = \\begin{pmatrix} 1 & 0 \\\\ 0 & e^{i\\theta} \\end{pmatrix}
-
-    Attributes:
-        theta: Phase angle in radians.
+    Args:
+        theta: Numeric phase angle in radians, or a :class:`~fatqat.Parameter` to
+            bind before execution.
     """
 
     theta: float | Parameter
@@ -119,64 +115,100 @@ class Phase(Operation):
 
 @dataclass(frozen=True)
 class U(Operation):
-    """General single-qubit unitary (Qiskit ``UGate`` compatibility).
+    """Apply the Qiskit-compatible general single-qubit U gate.
 
-    Matches Qiskit ``U(theta, phi, lam)`` parameter order.
+    In ``|0>, |1>`` basis order, the matrix is
+    ``[[c, -exp(i*lam)*s], [exp(i*phi)*s, exp(i*(phi+lam))*c]]``, where
+    ``c = cos(theta/2)`` and ``s = sin(theta/2)``.
+
+    Args:
+        theta: Polar rotation angle in radians, or a :class:`~fatqat.Parameter` to
+            bind before execution.
+        phi: Phase angle in radians, or a :class:`~fatqat.Parameter` to bind before
+            execution.
+        lam: Second phase angle in radians, or a :class:`~fatqat.Parameter` to bind
+            before execution. The parameter order is exactly
+            ``(theta, phi, lam)``, matching Qiskit's ``UGate``.
     """
 
-    theta: float
-    phi: float
-    lam: float
+    theta: float | Parameter
+    phi: float | Parameter
+    lam: float | Parameter
     name: ClassVar[str] = "U"
     num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
 class U1(Operation):
-    """Single-qubit phase gate (Qiskit ``U1Gate`` / legacy ``u1`` compatibility)."""
+    """Apply the legacy Qiskit U1 phase gate.
 
-    lam: float
+    ``U1(lam)`` has matrix ``diag(1, exp(i*lam))`` and is equivalent to
+    :class:`~fatqat.operations.Phase` with ``theta=lam``.
+
+    Args:
+        lam: Phase angle in radians, or a :class:`~fatqat.Parameter` to bind before
+            execution.
+    """
+
+    lam: float | Parameter
     name: ClassVar[str] = "U1"
     num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
 class U2(Operation):
-    """Single-qubit U2 gate (Qiskit ``U2Gate`` compatibility)."""
+    """Apply the legacy Qiskit U2 gate.
 
-    phi: float
-    lam: float
+    ``U2(phi, lam)`` is equivalent to :class:`~fatqat.operations.U` with
+    ``theta=pi/2`` and the same ``phi`` and ``lam``.
+
+    Args:
+        phi: Phase angle in radians, or a :class:`~fatqat.Parameter` to bind before
+            execution.
+        lam: Second phase angle in radians, or a :class:`~fatqat.Parameter` to bind
+            before execution.
+    """
+
+    phi: float | Parameter
+    lam: float | Parameter
     name: ClassVar[str] = "U2"
     num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
 class U3(Operation):
-    """Single-qubit U3 gate (Qiskit ``U3Gate`` / legacy ``u3`` compatibility)."""
+    """Apply the legacy Qiskit U3 gate.
 
-    theta: float
-    phi: float
-    lam: float
+    ``U3(theta, phi, lam)`` is numerically identical to
+    :class:`~fatqat.operations.U` with the same arguments and retains the
+    legacy operation name for conversion compatibility.
+
+    Args:
+        theta: Polar rotation angle in radians, or a :class:`~fatqat.Parameter` to
+            bind before execution.
+        phi: Phase angle in radians, or a :class:`~fatqat.Parameter` to bind before
+            execution.
+        lam: Second phase angle in radians, or a :class:`~fatqat.Parameter` to bind
+            before execution.
+    """
+
+    theta: float | Parameter
+    phi: float | Parameter
+    lam: float | Parameter
     name: ClassVar[str] = "U3"
     num_subsystems: ClassVar[int] = 1
 
 
 @dataclass(frozen=True)
 class CPhase(Operation):
-    """Controlled phase gate: applies ``diag(1, e^{i theta})`` to the target
-    when the control is ``|1>``.
+    """Multiply ``|11>`` by ``exp(i*theta)``.
 
-    ``targets = (control, target)``; operand 0 is the control. Basis order
-    :math:`|00\\rangle, |01\\rangle, |10\\rangle, |11\\rangle`.
+    Targets are ``(control, target)`` and the matrix in that local basis order
+    is ``diag(1, 1, 1, exp(i*theta))``.
 
-    .. math::
-
-        \\mathrm{CPhase}(\\theta) = \\begin{pmatrix}
-        1&0&0&0\\\\ 0&1&0&0\\\\ 0&0&1&0\\\\ 0&0&0&e^{i\\theta}
-        \\end{pmatrix}
-
-    Attributes:
-        theta: Phase angle in radians.
+    Args:
+        theta: Numeric phase angle in radians, or a :class:`~fatqat.Parameter` to
+            bind before execution.
     """
 
     theta: float | Parameter

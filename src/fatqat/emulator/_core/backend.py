@@ -31,7 +31,7 @@ from ...errors import (
 from ...job import Job
 from ...noise import LindbladImplementationMap, NoiseModel, NoiseSupportReport
 from ...operations import BarrierGate, Measurement, PulseOperation, ResetGate
-from ...program import AppliedOperation, Program
+from ...program import Program, _AppliedOperation
 from ...resource_layout import ResourceLayout
 from ...result import (
     Result,
@@ -148,7 +148,7 @@ class _PulseBackend(ABC):
             engine_allocation=engine_allocation,
             classical_allocation=classical_allocation,
         )
-        operations = _break_grouped_operations(program.operations)
+        operations = _break_grouped_operations(program._instructions)
         plan = tuple(self._lower(operations, context))
         background_noise = planning._resolve_background_noise(
             target=self._target,
@@ -205,7 +205,7 @@ class _PulseBackend(ABC):
                         self._noise_model,
                     )
                 )
-            elif isinstance(step, AppliedOperation):
+            elif isinstance(step, _AppliedOperation):
                 if isinstance(step.operation, BarrierGate):
                     continue
                 if isinstance(step.operation, ResetGate):
@@ -271,9 +271,11 @@ class _PulseBackend(ABC):
         posterior and therefore requires ``shots == 1``.
 
         Each pulse emulator constructs its model family's fixed product
-        initial state for every run. TransmonEmulator and Atom3LevelEmulator
-        use local level 0; Atom2LevelEmulator uses its ground level. This
-        method has no initial_state argument.
+        initial state for every run.
+        :class:`~fatqat.emulator.TransmonEmulator` and
+        :class:`~fatqat.emulator.Atom3LevelEmulator` use local level 0;
+        :class:`~fatqat.emulator.Atom2LevelEmulator` uses its ground level.
+        This method has no ``initial_state`` argument.
 
         Args:
             program: Program to bind, lower, and execute.
@@ -289,7 +291,7 @@ class _PulseBackend(ABC):
             An eager terminal :class:`~fatqat.Job`. Validation and lowering
             failures raise directly. Solver-stage failures produce a failed
             job whose :meth:`~fatqat.Job.result` raises
-            :class:`~fatqat.errors.BackendExecutionError`.
+            :exc:`~fatqat.errors.BackendExecutionError`.
 
         Raises:
             BackendValidationError: If the target cannot bind the program,
@@ -312,7 +314,7 @@ class _PulseBackend(ABC):
             "result_config",
             backend_name=self._backend_name(),
         )
-        _raise_for_unbound_parameters(program.operations)
+        _raise_for_unbound_parameters(program._instructions)
         prepared = self._prepare_program(program, resource_layout)
         request = self._validate(
             result,
@@ -378,7 +380,7 @@ class _PulseBackend(ABC):
         if type(apply_final_frame) is not bool:
             raise BackendValidationError("apply_final_frame must be a bool")
         schedule_mode = _validate_schedule_mode(schedule_mode)
-        _raise_for_unbound_parameters(program.operations)
+        _raise_for_unbound_parameters(program._instructions)
         prepared = self._prepare_program(program, resource_layout)
 
         if not prepared.plan:

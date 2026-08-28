@@ -6,70 +6,50 @@ import math
 from dataclasses import dataclass
 from numbers import Real
 
-from ._waveforms import Waveform
+from ._waveforms import SampledWaveform, Waveform
 
 TIME_EPSILON = 1e-12
 """Absolute tolerance for comparisons on a model's native time axis."""
 
 
 class ControlChannel:
-    """Nominal base for immutable, model-family-specific control addresses."""
+    """Nominal base for immutable model-family control-channel addresses.
+
+    Obtain concrete addresses from a model's ``control`` selectors. Each
+    address identifies the physical resource or resources driven by a
+    :class:`~fatqat.emulator.PulseControl`. The selected emulator resolves that
+    address against its physical model during program preparation;
+    :class:`~fatqat.ResourceLayout` does not remap it.
+    """
 
     __slots__ = ()
 
 
 @dataclass(frozen=True)
 class PulseControl:
-    """Bind one symbolic control channel to an immutable waveform.
+    """Bind one physical control-channel address to an immutable waveform.
 
-    The channel is a target-independent structural control address; the
-    waveform contains no model or target information. The bound target resolves
-    the address during program preparation. ``start_offset`` is measured from
-    the enclosing pulse operation's local origin.
+    Obtain ``channel`` from a model's ``control`` selectors. The selected
+    emulator resolves it against the physical model during preparation;
+    :class:`~fatqat.ResourceLayout` does not remap it. Controls are immutable
+    and reusable with compatible models. ``start_offset`` is measured from the
+    enclosing pulse operation's local origin.
 
     Args:
-        channel: Structural control address returned by a model factory.
+        channel: Structural address returned by a model's ``control`` selector;
+            identifies the physical resource or resources to drive.
         waveform: Backend-independent immutable waveform to bind.
         start_offset: Non-negative local offset from the enclosing operation's
             origin, in the model's native time unit.
-
-    Attributes:
-        channel: Original model-family control address.
-        waveform: Original immutable waveform; samples are not copied here.
-        start_offset: Normalized floating-point local offset.
 
     Raises:
         TypeError: If ``channel`` or ``waveform`` has the wrong nominal type,
             or ``start_offset`` is not a real number.
         ValueError: If ``start_offset`` is negative or non-finite.
-
-    Examples:
-        >>> from fatqat.emulator import PulseControl, TransmonModel
-        >>> from fatqat.emulator import SampledWaveform
-        >>> model = TransmonModel.from_document({
-        ...     "format": {"id": "sc.transmon_exchange", "version": 1},
-        ...     "model": {"id": "doc-example", "revision": "1"},
-        ...     "system": {
-        ...         "subsystem_type": "transmon",
-        ...         "subsystems": ["q0"],
-        ...         "control_edges": [],
-        ...     },
-        ...     "units": {"frequency": "GHz", "anharmonicity": "GHz"},
-        ...     "parameters": {"subsystems": {
-        ...         "q0": {"frequency": 5.0, "anharmonicity": -0.2},
-        ...     }},
-        ... })
-        >>> binding = PulseControl(
-        ...     model.control.drive("q0"),
-        ...     SampledWaveform((0.0, 0.5), (0.0, 1.0j)),
-        ...     start_offset=0.25,
-        ... )
-        >>> binding.start_offset
-        0.25
     """
 
     channel: ControlChannel
-    waveform: Waveform
+    waveform: SampledWaveform
     start_offset: float = 0.0
 
     def __post_init__(self) -> None:

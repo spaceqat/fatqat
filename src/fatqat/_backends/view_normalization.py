@@ -6,15 +6,15 @@ from collections.abc import Iterable
 
 from ..errors import BackendValidationError
 from ..operations import Measurement
-from ..program import AppliedOperation
+from ..program import _AppliedOperation
 from ..registers import RegisterView, _view_members
 
-ProgramInstruction = AppliedOperation | Measurement
+ProgramInstruction = _AppliedOperation | Measurement
 
 
 def _expand_grouped_operation(
-    step: AppliedOperation,
-) -> tuple[AppliedOperation, ...]:
+    step: _AppliedOperation,
+) -> tuple[_AppliedOperation, ...]:
     """Expand one view-bearing operation into scalar applied operations."""
     target_members = tuple(
         _view_members(target) if isinstance(target, RegisterView) else (target,)
@@ -35,7 +35,7 @@ def _expand_grouped_operation(
         )
 
     return tuple(
-        AppliedOperation(
+        _AppliedOperation(
             operation=step.operation,
             targets=tuple(targets),
             condition=step.condition,
@@ -50,7 +50,7 @@ def _break_grouped_operations(
     """Return a scalar-only instruction stream without mutating the program."""
     broken: list[ProgramInstruction] = []
     for step in operations:
-        if isinstance(step, AppliedOperation) and any(
+        if isinstance(step, _AppliedOperation) and any(
             isinstance(target, RegisterView) for target in step.targets
         ):
             broken.extend(_expand_grouped_operation(step))

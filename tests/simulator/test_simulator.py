@@ -131,12 +131,12 @@ def test_barrier_does_not_change_state():
     assert np.allclose(sv, np.array([1, 0, 0, 1]) / np.sqrt(2))
 
 
-def test_barrier_is_preserved_in_program_operations():
+def test_barrier_is_preserved_in_program_instructions():
     # The compiler-facing contract: the frontend keeps barriers verbatim.
     p = _bell(with_barriers=True)
     barriers = [
         step
-        for step in p.operations
+        for step in p._instructions
         if hasattr(step, "operation") and isinstance(step.operation, ops.BarrierGate)
     ]
     assert len(barriers) == 2

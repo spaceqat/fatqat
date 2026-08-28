@@ -1,4 +1,4 @@
-"""Tests AppliedOperation and Measurement value object validation."""
+"""Tests _AppliedOperation and Measurement value object validation."""
 
 from dataclasses import dataclass
 from typing import ClassVar
@@ -8,12 +8,12 @@ import pytest
 from fatqat.registers import GridRegister, QuantumRegister, ClassicalRegister
 import fatqat.operations as ops
 from fatqat.operations import Measurement
-from fatqat.program import AppliedOperation
+from fatqat.program import _AppliedOperation
 
 
 def test_applied_operation_accepts_correct_arity():
     qr = QuantumRegister(2)
-    ao = AppliedOperation(operation=ops.CX, targets=(qr[0], qr[1]))
+    ao = _AppliedOperation(operation=ops.CX, targets=(qr[0], qr[1]))
     assert ao.operation is ops.CX
     assert ao.targets == (qr[0], qr[1])
     assert ao.condition is None
@@ -22,15 +22,15 @@ def test_applied_operation_accepts_correct_arity():
 def test_applied_operation_wrong_arity_raises():
     qr = QuantumRegister(2)
     with pytest.raises(ValueError):
-        AppliedOperation(operation=ops.X, targets=(qr[0], qr[1]))  # X is 1-qubit
+        _AppliedOperation(operation=ops.X, targets=(qr[0], qr[1]))  # X is 1-qubit
     with pytest.raises(ValueError):
-        AppliedOperation(operation=ops.CX, targets=(qr[0],))  # CX is 2-qubit
+        _AppliedOperation(operation=ops.CX, targets=(qr[0],))  # CX is 2-qubit
 
 
 def test_applied_operation_rejects_duplicate_targets():
     qr = QuantumRegister(1)
     with pytest.raises(ValueError, match="appears more than once"):
-        AppliedOperation(operation=ops.CX, targets=(qr[0], qr[0]))
+        _AppliedOperation(operation=ops.CX, targets=(qr[0], qr[0]))
 
 
 def test_measurement_fields():
@@ -43,7 +43,7 @@ def test_measurement_fields():
 
 def test_validate_targets_default_is_noop():
     qr = QuantumRegister(2)
-    ao = AppliedOperation(operation=ops.CX, targets=(qr[0], qr[1]))
+    ao = _AppliedOperation(operation=ops.CX, targets=(qr[0], qr[1]))
     assert ao.operation is ops.CX  # constructing did not raise
 
 
@@ -58,7 +58,7 @@ def test_validate_targets_hook_is_called_with_resolved_targets():
 
     qr = QuantumRegister(1, dim=3)
     with pytest.raises(ValueError, match="probe saw dim 3"):
-        AppliedOperation(operation=_Probe(), targets=(qr[0],))
+        _AppliedOperation(operation=_Probe(), targets=(qr[0],))
 
 
 # ---------------------------------------------------------------------------
@@ -68,14 +68,14 @@ def test_validate_targets_hook_is_called_with_resolved_targets():
 
 def test_applied_operation_accepts_view_for_view_capable_operation():
     qubits = GridRegister(2, 2, name="qubits")
-    ao = AppliedOperation(operation=ops.RX(0.1), targets=(qubits.row(0),))
+    ao = _AppliedOperation(operation=ops.RX(0.1), targets=(qubits.row(0),))
     assert ao.targets == (qubits.row(0),)
 
 
 def test_applied_operation_rejects_view_for_scalar_only_operation():
     qubits = GridRegister(2, 2, name="qubits")
     with pytest.raises(ValueError):
-        AppliedOperation(operation=ops.H, targets=(qubits.row(0),))
+        _AppliedOperation(operation=ops.H, targets=(qubits.row(0),))
 
 
 def test_applied_operation_view_arity_checked_before_scalar_validation():
@@ -83,7 +83,7 @@ def test_applied_operation_view_arity_checked_before_scalar_validation():
     # expression regardless of how many members it selects.
     qubits = GridRegister(2, 2, name="qubits")
     with pytest.raises(ValueError):
-        AppliedOperation(operation=ops.CX, targets=(qubits.row(0),))
+        _AppliedOperation(operation=ops.CX, targets=(qubits.row(0),))
 
 
 def test_applied_operation_view_bearing_skips_validate_hook():
@@ -105,7 +105,7 @@ def test_applied_operation_view_bearing_skips_validate_hook():
     # Non-overlapping views (distinct rows): legal pairing, so only the
     # per-operation validate_targets() hook is at stake here - it must not
     # run for view-bearing targets, unlike the scalar path.
-    ao = AppliedOperation(operation=_Probe(), targets=(qubits.row(0), qubits.row(1)))
+    ao = _AppliedOperation(operation=_Probe(), targets=(qubits.row(0), qubits.row(1)))
     assert ao.targets == (qubits.row(0), qubits.row(1))
     assert calls == []
 
@@ -120,7 +120,7 @@ def test_applied_operation_view_bearing_skips_validate_hook():
 def test_applied_operation_rejects_same_view_repeated():
     qubits = GridRegister(2, 2, name="qubits")
     with pytest.raises(ValueError, match="overlapping"):
-        AppliedOperation(operation=ops.CX, targets=(qubits.row(0), qubits.row(0)))
+        _AppliedOperation(operation=ops.CX, targets=(qubits.row(0), qubits.row(0)))
 
 
 def test_applied_operation_rejects_cross_selector_type_pairing():
@@ -128,19 +128,19 @@ def test_applied_operation_rejects_cross_selector_type_pairing():
     # Equal cardinality (3 vs 3), but a row and a column are different
     # selector kinds - forbidden regardless of size match.
     with pytest.raises(ValueError, match="selector kind"):
-        AppliedOperation(operation=ops.CX, targets=(qubits.row(0), qubits.column(0)))
+        _AppliedOperation(operation=ops.CX, targets=(qubits.row(0), qubits.column(0)))
 
 
 def test_applied_operation_rejects_unequal_cardinality_across_registers():
     small = GridRegister(2, 3, name="small")
     large = GridRegister(2, 5, name="large")
     with pytest.raises(ValueError, match="cardinality"):
-        AppliedOperation(operation=ops.CX, targets=(small.row(0), large.row(0)))
+        _AppliedOperation(operation=ops.CX, targets=(small.row(0), large.row(0)))
 
 
 def test_applied_operation_accepts_disjoint_rows_same_register():
     qubits = GridRegister(2, 2, name="qubits")
-    ao = AppliedOperation(operation=ops.CX, targets=(qubits.row(0), qubits.row(1)))
+    ao = _AppliedOperation(operation=ops.CX, targets=(qubits.row(0), qubits.row(1)))
     assert ao.targets == (qubits.row(0), qubits.row(1))
 
 
@@ -149,21 +149,21 @@ def test_applied_operation_rejects_overlapping_blocks():
     first = qubits.block(rows=(0, 2), cols=(0, 2))
     second = qubits.block(rows=(0, 2), cols=(1, 3))  # shares column 1
     with pytest.raises(ValueError, match="overlapping"):
-        AppliedOperation(operation=ops.CX, targets=(first, second))
+        _AppliedOperation(operation=ops.CX, targets=(first, second))
 
 
 def test_applied_operation_accepts_non_overlapping_equal_size_blocks():
     qubits = GridRegister(2, 4, name="qubits")
     first = qubits.block(rows=(0, 2), cols=(0, 2))
     second = qubits.block(rows=(0, 2), cols=(2, 4))
-    ao = AppliedOperation(operation=ops.CX, targets=(first, second))
+    ao = _AppliedOperation(operation=ops.CX, targets=(first, second))
     assert ao.targets == (first, second)
 
 
 def test_applied_operation_rejects_all_paired_with_all():
     qubits = GridRegister(2, 2, name="qubits")
     with pytest.raises(ValueError, match="overlapping"):
-        AppliedOperation(operation=ops.CX, targets=(qubits.all(), qubits.all()))
+        _AppliedOperation(operation=ops.CX, targets=(qubits.all(), qubits.all()))
 
 
 def test_zero_arity_operation_class_is_legal():
@@ -172,7 +172,7 @@ def test_zero_arity_operation_class_is_legal():
         name: ClassVar[str] = "ZeroArityProbe"
         num_subsystems: ClassVar[int] = 0
 
-    ao = AppliedOperation(operation=_ZeroArityProbe(), targets=())
+    ao = _AppliedOperation(operation=_ZeroArityProbe(), targets=())
     assert ao.targets == ()
 
 
@@ -184,7 +184,7 @@ def test_zero_arity_operation_rejects_any_target():
 
     qr = QuantumRegister(1)
     with pytest.raises(ValueError, match="expects 0 target"):
-        AppliedOperation(operation=_ZeroArityProbe2(), targets=(qr[0],))
+        _AppliedOperation(operation=_ZeroArityProbe2(), targets=(qr[0],))
 
 
 def test_negative_arity_operation_class_rejected():

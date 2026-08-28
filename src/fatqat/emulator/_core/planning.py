@@ -16,7 +16,7 @@ from ...implementation._operation_registry import _select_implementation
 from ...noise import LindbladImplementationMap, NoiseModel
 from ...noise.lindblad import resolve_lindblad_operators
 from ...operations.measurement import Measurement
-from ...program import AppliedOperation
+from ...program import _AppliedOperation
 from ...resource_layout import ResourceLayout
 from .engine import PulsePlanStep
 from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
@@ -103,7 +103,7 @@ def _lower_measurement(
 
 
 def _lower_reset(
-    step: AppliedOperation,
+    step: _AppliedOperation,
     resource_layout: ResourceLayout,
     engine_allocation: _EngineAllocation,
     classical_allocation: _ClassicalAllocation,
@@ -182,7 +182,7 @@ def _prepare_control_bindings(
 
 
 def _resolve_operation_noise(
-    step: AppliedOperation,
+    step: _AppliedOperation,
     *,
     target: _PulseTarget,
     context: _PulseLoweringContext,
@@ -222,7 +222,7 @@ def _resolve_operation_noise(
 
 
 def _lower_gate(
-    step: AppliedOperation,
+    step: _AppliedOperation,
     *,
     target: _PulseTarget,
     context: _PulseLoweringContext,
@@ -282,7 +282,7 @@ def _lower_gate(
 
 
 def _lower_direct(
-    step: AppliedOperation,
+    step: _AppliedOperation,
     *,
     target: _PulseTarget,
     context: _PulseLoweringContext,

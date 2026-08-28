@@ -145,13 +145,14 @@ def _validate_post_actions_shape(
 class PulseDefinition:
     """One reusable physical pulse recipe, independent of any occurrence.
 
-    Returned by a pulse implementation rule (see the pulse implementation
-    map). Contains only the physical realization: duration, sampled
+    Returned by a pulse implementation rule registered with
+    :class:`~fatqat.emulator.PulseImplementationMap`. Contains only the
+    physical realization: duration, sampled
     controls and any post-block frame actions. It carries no target-owned
     resource claims, classical condition, resolved noise, engine
     index, or schedule position - those are one lowered program occurrence's
     facts, attached by ``emulator._core.planning._lower_gate`` when it converts a
-    definition into a target-bound `PulseBlock`.
+    definition into a target-bound ``PulseBlock``.
 
     ``duration``, every :class:`~fatqat.emulator.SampledWaveform` time grid,
     and every :class:`~fatqat.emulator.PulseControl` ``start_offset`` use the
@@ -384,19 +385,17 @@ class PulseImplementationMap:
     """Resolve operation families and device operands to pulse implementations.
 
     This value maps ordinary gate operations to reusable pulse definitions.
-    Direct :class:`~fatqat.operations.PulseOperation` controls bypass it and
-    lower through the shared direct-control path. A family may provide an
-    empty built-in map when it has no standard gate realizations, while the
-    same general map path remains available for user-supplied rules.
+    Channel-addressed :class:`~fatqat.operations.PulseOperation` values bypass
+    it: the selected emulator resolves each
+    :attr:`~fatqat.emulator.PulseControl.channel` directly against its physical
+    model. A family may provide an empty built-in map when it has no standard
+    gate realizations, while the same general map path remains available for
+    user-supplied rules.
 
-    Structurally identical to :class:`~fatqat.implementation.MatrixImplementationMap`
-    - same instance/class
-    normalization, same mutually exclusive unconstrained-versus-device-
-    specific registration policy, same copy semantics - composing the same
-    shared `_OperationRuleRegistry` mechanics. It differs only in what a rule
-    returns (:class:`PulseDefinition` instead of a matrix) and in how a selected
-    rule's failures are reported (see `_invoke_pulse_rule` and
-    `PulseImplementationError`).
+    It follows the registration and copy rules of
+    :class:`~fatqat.implementation.MatrixImplementationMap`, but its rules
+    return :class:`PulseDefinition` values. Invalid results and unexpected
+    rule failures raise :exc:`~fatqat.errors.PulseImplementationError`.
 
     An operand-aware rule has the signature
     ``rule(operation, *, device_operands) -> PulseDefinition``. The tuple is
@@ -429,7 +428,7 @@ class PulseImplementationMap:
     def add(
         self,
         op: Operation | type[Operation],
-        implementation: "_PulseImplementation | Callable | PulseDefinition",
+        implementation: Callable[..., PulseDefinition] | PulseDefinition,
         *,
         device_operands: DeviceOperands | None = None,
     ) -> None:
@@ -437,26 +436,26 @@ class PulseImplementationMap:
 
         Args:
             op: An :py:class:`~fatqat.operations.Operation` instance (e.g.
-                `ops.CZ`) or subclass. Normalized to the operation's class for
+                ``ops.CZ``) or subclass. Normalized to the operation's class for
                 the registry key.
-            implementation: A concrete `PulseDefinition`, a callable accepting
-                `operation` and optionally an explicit keyword
-                `device_operands`, or a callable implementation object.
+            implementation: A concrete :class:`PulseDefinition`, a callable
+                accepting ``operation`` and optionally an explicit keyword
+                ``device_operands``, or a callable implementation object.
             device_operands: An ordered hashable tuple identifying the
                 device-level target this rule is restricted to. Omit for an
                 unconstrained rule that applies to every legal target of the
                 operation's arity.
 
         Raises:
-            TypeError: If `op` is neither an :py:class:`~fatqat.operations.Operation`
+            TypeError: If ``op`` is neither an :py:class:`~fatqat.operations.Operation`
                 instance nor subclass, if its operation class has variable
-                arity, or if `implementation` is not callable.
-            ValueError: If `device_operands`' length does not match the
+                arity, or if ``implementation`` is not callable.
+            ValueError: If ``device_operands``' length does not match the
                 operation's arity, if an operand-unaware implementation is
-                registered without explicit `device_operands`, or if `op`
+                registered without explicit ``device_operands``, or if ``op``
                 already has a registration in the other mode; see
-                `MatrixImplementationMap.add` for why the two modes are mutually
-                exclusive.
+                :meth:`~fatqat.implementation.MatrixImplementationMap.add` for
+                why the two modes are mutually exclusive.
         """
         if device_operands is not None:
             self._registry.add_device_operands(
@@ -485,7 +484,8 @@ class PulseImplementationMap:
     ) -> bool:
         """Return whether this map has any rule for the operation family.
 
-        Same semantics as `MatrixImplementationMap.supports`.
+        Same semantics as
+        :meth:`~fatqat.implementation.MatrixImplementationMap.supports`.
         """
         if device_operands is not None:
             return (
@@ -498,14 +498,15 @@ class PulseImplementationMap:
         op: Operation | type[Operation],
         *,
         device_operands: DeviceOperands | None = None,
-    ) -> _PulseImplementation | None:
+    ) -> Callable[..., PulseDefinition] | None:
         """Return the pulse implementation selected for an operation.
 
-        Same lookup semantics as `MatrixImplementationMap.implementation_for`: with
-        `device_operands` omitted, only the unconstrained rule is consulted;
-        with `device_operands` given, a family with device-specific rules
-        consults only those, while a family with only an unconstrained rule
-        returns it for every device operands.
+        Same lookup semantics as
+        :meth:`~fatqat.implementation.MatrixImplementationMap.implementation_for`:
+        with ``device_operands`` omitted, only the unconstrained rule is
+        consulted; with ``device_operands`` given, a family with
+        device-specific rules consults only those, while a family with only an
+        unconstrained rule returns it for every device operands.
         """
         return self._registry.get(op, device_operands=device_operands)
 
@@ -518,7 +519,8 @@ class PulseImplementationMap:
     ) -> frozenset[DeviceOperands]:
         """Return the finite set of device operands selected for an operation.
 
-        Same semantics as `MatrixImplementationMap.device_operands_for`.
+        Same semantics as
+        :meth:`~fatqat.implementation.MatrixImplementationMap.device_operands_for`.
         """
         return self._registry.device_operands_for(op)
 
@@ -532,9 +534,10 @@ class PulseImplementationMap:
     def copy(self) -> "PulseImplementationMap":
         """Return a new map with an independent copy of this map's registrations.
 
-        Rule objects are shared (not deep-copied) between the original and
-        the copy, matching `MatrixImplementationMap.copy`. Later mutations of
-        either map's registrations never affect the other.
+        Rule objects are shared (not deep-copied) between the original and the
+        copy, matching
+        :meth:`~fatqat.implementation.MatrixImplementationMap.copy`. Later
+        mutations of either map's registrations never affect the other.
         """
         clone = PulseImplementationMap()
         clone._registry = self._registry.copy()

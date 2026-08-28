@@ -1,4 +1,4 @@
-"""Operation base class and built-in gates.
+"""Built-in gates, measurements, and structural operations.
 
 Applications should use ``import fatqat.operations as ops``.
 """

@@ -5,7 +5,7 @@ from typing import ClassVar
 
 import pytest
 
-from fatqat.program import Program, AppliedOperation
+from fatqat.program import Program, _AppliedOperation
 import fatqat.operations as ops
 from fatqat.registers import GridRegister, QuantumRegister, RegisterView
 
@@ -14,9 +14,9 @@ def test_add_single_operand_int():
     p = Program(2)
     result = p.add(ops.H, 0)
     assert result is None
-    assert len(p.operations) == 1
-    ao = p.operations[0]
-    assert isinstance(ao, AppliedOperation)
+    assert len(p._instructions) == 1
+    ao = p._instructions[0]
+    assert isinstance(ao, _AppliedOperation)
     assert ao.operation is ops.H
     assert ao.targets == (p.quantum_registers[0][0],)
 
@@ -24,14 +24,14 @@ def test_add_single_operand_int():
 def test_add_multi_operand_tuple():
     p = Program(2)
     p.add(ops.CZ, (0, 1))
-    ao = p.operations[0]
+    ao = p._instructions[0]
     assert ao.targets == (p.quantum_registers[0][0], p.quantum_registers[0][1])
 
 
 def test_add_parametric_gate():
     p = Program(1)
     p.add(ops.RX(0.2), 0)
-    assert p.operations[0].operation.theta == 0.2
+    assert p._instructions[0].operation.theta == 0.2
 
 
 def test_add_rejects_variadic_positional():
@@ -75,8 +75,8 @@ def test_add_accepts_explicit_refs_across_multiple_quantum_registers():
     p.add(ops.X, qr0[0])
     p.add(ops.X, qr1[0])
 
-    assert p.operations[0].targets == (qr0[0],)
-    assert p.operations[1].targets == (qr1[0],)
+    assert p._instructions[0].targets == (qr0[0],)
+    assert p._instructions[1].targets == (qr1[0],)
 
 
 def test_add_swap_levels_out_of_range_raises():
@@ -90,7 +90,7 @@ def test_add_swap_levels_in_range_succeeds():
     qr = QuantumRegister(1, dim=3)
     p = Program([qr])
     p.add(ops.SwapLevels(0, 2), 0)
-    assert p.operations[0].operation.j == 0
+    assert p._instructions[0].operation.j == 0
 
 
 @pytest.mark.parametrize("op_cls", [ops.SubspaceRX, ops.SubspaceRY, ops.SubspaceRZ])
@@ -106,7 +106,7 @@ def test_add_subspace_rotation_in_range_succeeds(op_cls):
     qr = QuantumRegister(1, dim=3)
     p = Program([qr])
     p.add(op_cls(0.3, (1, 2)), 0)
-    assert p.operations[0].operation.subspace == (1, 2)
+    assert p._instructions[0].operation.subspace == (1, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ def test_add_accepts_view_for_rotation_gates(make_op):
     qubits = GridRegister(2, 2, name="qubits")
     p = Program([qubits])
     p.add(make_op(), qubits.row(0))
-    ao = p.operations[0]
+    ao = p._instructions[0]
     assert ao.targets == (qubits.row(0),)
 
 
@@ -130,7 +130,7 @@ def test_add_accepts_view_pair_for_cx_cz(op):
     qubits = GridRegister(2, 2, name="qubits")
     p = Program([qubits])
     p.add(op, (qubits.row(0), qubits.row(1)))
-    ao = p.operations[0]
+    ao = p._instructions[0]
     assert ao.targets == (qubits.row(0), qubits.row(1))
 
 
@@ -178,7 +178,7 @@ def test_add_view_target_is_not_treated_as_scalar_ref():
     qubits = GridRegister(1, 2, name="qubits")
     p = Program([qubits])
     p.add(ops.RX(0.1), qubits.row(0))
-    ao = p.operations[0]
+    ao = p._instructions[0]
     assert isinstance(ao.targets[0], RegisterView)
 
 
@@ -197,4 +197,4 @@ def test_add_targets_optional_for_zero_arity_operation():
 
     p = Program(1)
     p.add(_ZeroArityProbe())
-    assert p.operations[0].targets == ()
+    assert p._instructions[0].targets == ()
