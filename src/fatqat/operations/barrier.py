@@ -17,6 +17,9 @@ class BarrierGate(Operation):
     on states or counts. Selecting ``ops.Barrier`` in `fatqat.NoiseModel.add`
     raises `ValueError`.
 
+    `fatqat.Program.draw` shows a barrier as a dashed vertical separator across
+    its targets rather than as an executable gate box.
+
     ``Barrier`` accepts one or more distinct scalar targets.
     `fatqat.Program.add` rejects `fatqat.RegisterView` and an empty target
     tuple.

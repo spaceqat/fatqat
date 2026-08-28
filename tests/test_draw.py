@@ -135,6 +135,26 @@ def test_measurement_reset_barrier_and_condition_translate():
     assert elements[3][1] == [0, 1]  # barrier spans its operands
 
 
+def test_barrier_renderers_draw_a_dashed_separator_instead_of_a_box():
+    program = fq.Program(2)
+    program.add(ops.H, 0)
+    program.add(ops.Barrier, (0, 1))
+    program.add(ops.CX, (0, 1))
+
+    text = program.draw("text")
+    figure = program.draw("matplotlib")
+    figure.canvas.draw()
+
+    assert "┊" in text
+    non_wire_lines = [
+        line for index, line in enumerate(text.splitlines()) if index % 3 != 1
+    ]
+    assert all("─┊─" not in line for line in non_wire_lines)
+    assert "barrier" not in text.lower()
+    assert any(line.get_linestyle() == "--" for line in figure.axes[0].lines)
+    assert "barrier" not in {label.get_text().lower() for label in figure.axes[0].texts}
+
+
 def test_qudit_program_draws_as_plain_wires():
     # A diagram does not depict dimension: a qutrit register is one wire per
     # subsystem, and its qudit-only gates fall through to labeled boxes.
@@ -166,6 +186,19 @@ def test_text_renderer_returns_the_terminal_diagram():
     assert "MyG" in text  # a label fatqat controls on both QuTiP versions
 
 
+def test_hadamard_renderers_use_conventional_h_label():
+    program = fq.Program(1)
+    program.add(ops.H, 0)
+
+    text = program.draw("text")
+    figure = program.draw("matplotlib")
+    figure.canvas.draw()
+
+    assert "H" in text
+    assert "SNOT" not in text
+    assert "H" in {label.get_text() for label in figure.axes[0].texts}
+
+
 def test_text_renderer_draws_feedforward_condition():
     program = fq.Program(2, 1)
     program.measure(0, 0)
@@ -183,6 +216,27 @@ def test_text_renderer_draws_feedforward_condition():
 def test_matplotlib_renderer_returns_a_savable_figure():
     figure = _bell().draw()
     assert isinstance(figure, matplotlib.figure.Figure)
+
+
+def test_matplotlib_renderer_balances_wire_around_outer_gates():
+    program = fq.Program(1)
+    program.add(ops.H, 0)
+    program.add(ops.X, 0)
+
+    figure = program.draw("matplotlib")
+    axis = figure.axes[0]
+    wire = next(
+        line
+        for line in axis.lines
+        if len(line.get_xdata()) == 2 and line.get_ydata()[0] == line.get_ydata()[1]
+    )
+    left_gate = min(axis.patches, key=lambda patch: patch.get_x())
+    right_gate = max(axis.patches, key=lambda patch: patch.get_x())
+
+    left_idle = left_gate.get_x() - min(wire.get_xdata())
+    right_idle = max(wire.get_xdata()) - (right_gate.get_x() + right_gate.get_width())
+
+    assert right_idle == pytest.approx(left_idle)
 
 
 def test_matplotlib_renderer_draws_feedforward_condition():
