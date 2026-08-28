@@ -4,9 +4,9 @@ AtomArraySimulator
 .. currentmodule:: fatqat.simulator
 
 :class:`AtomArraySimulator` adds neutral-atom occupancy, loss, and dynamic
-pairing to the :class:`Simulator` execution model. It is useful for testing
-programs and compiler passes against these constraints. It is not a
-Hamiltonian or transport model; use the :doc:`neutral-atom emulators
+pairing to the :class:`Simulator` execution model. Use it to check a program
+against those constraints. It is not a Hamiltonian or transport model; use
+the :doc:`neutral-atom emulators
 <../atom-emulators>` when pulse timing and physical interactions matter.
 
 .. list-table:: Hardware profile
@@ -30,7 +30,7 @@ Hamiltonian or transport model; use the :doc:`neutral-atom emulators
    * - Runtime
      - ``numpy`` by default; ``numba`` is also supported
    * - Noise
-     - Ideal by default; no calibration-derived model
+     - Ideal by default; no built-in reference model
 
 Capacity, mapping, and native operations
 ----------------------------------------
@@ -40,19 +40,18 @@ that declare more quantum subsystems than available sites. Registers map to
 integer device labels in declaration order; a :class:`~fatqat.GridRegister`
 is flattened and its coordinates have no physical meaning on this backend.
 
-The implementation map contains ``RX``, ``RY``, ``RZ``, and ``CZ``. It does
-not decompose other gates, so a program containing ``CX`` is rejected even if
-the atoms are paired. A compiler can inspect the fixed map through
-:attr:`AtomArraySimulator.implementation_map`. The map reports ``CZ`` as
-uniformly available because it cannot express a pairing graph that changes
-during the program; pairing legality is enforced separately.
+The native operations are ``RX``, ``RY``, ``RZ``, and ``CZ``. The simulator
+does not decompose other gates, so ``CX`` is rejected even when the atoms are
+paired. :attr:`AtomArraySimulator.implementation_map` lists the native gate
+set; the program's current ``Pair`` state determines whether a particular
+``CZ`` is allowed.
 
-Pairing is program state, not a static device edge. An unconditional
+Pairing changes as the program runs. An unconditional
 :data:`fatqat.operations.Pair` connects two sites and
 :data:`fatqat.operations.Unpair` disconnects them. A ``CZ`` on an unpaired
-pair is a validation error. Pairing operations do not change the quantum
-state, but noise attached to them is still applied; conditional ``Pair`` and
-``Unpair`` operations are rejected.
+pair is rejected. Pairing operations do not change the quantum state, though
+noise attached to them still applies. Conditional ``Pair`` and ``Unpair`` are
+not supported.
 
 Occupancy and loss
 ------------------
@@ -69,24 +68,22 @@ whether the program uses the atom lifecycle:
    * - No ``Put`` and no matching :class:`fatqat.noise.Loss` source
      - Every declared site is present. The program behaves like the general
        simulator, apart from the native gate and pairing rules.
-   * - Contains ``Put`` or lowers a matching atom-loss source
+   * - Contains ``Put``, or an operation matches a
+       :class:`fatqat.noise.Loss` source, even when ``p=0``
      - Every site starts empty. :data:`fatqat.operations.Put` loads a fresh
        ``|0>`` atom at its targets.
 
-``Put`` on an occupied site is a no-op. A gate on an empty or previously lost
-site is also a no-op for that shot. If a program contains ``Put``, gates and
-reset on a site that is never the target of any ``Put`` are omitted because
-that site can never become occupied. Measurement remains so it can report an
-erasure, and pairing operations still update connectivity. A later ``Put`` can
-refill a lost site.
+``Put`` on an occupied site has no effect. A gate or reset on an empty or
+previously lost site likewise has no effect for that shot. Measurement still
+reports an erasure, pairing still changes connectivity, and a later ``Put``
+can refill a lost site.
 
-:class:`fatqat.noise.Loss` can be attached to gates to eject their targets,
-to ``Put`` to model failed loading, or to ``Pair``/``Unpair`` to model movement
-loss. A registered loss source changes initial occupancy only when its selector
-matches an operation and the source is lowered into the execution plan. This
-is the only gate-level simulator that accepts ``Loss``. A missing atom at an
-otherwise valid paired ``CZ`` makes that gate a per-shot no-op; it is not the
-same as the compile-time error for an unpaired ``CZ``.
+:class:`fatqat.noise.Loss` can eject gate targets, make ``Put`` fail, or model
+loss during ``Pair`` and ``Unpair``. It affects a run only when its selector
+matches an operation; a matching source with ``p=0`` still activates explicit
+occupancy. This is the only gate-level simulator that accepts ``Loss``. A
+missing atom makes an otherwise valid paired ``CZ`` do nothing for that shot;
+an unpaired ``CZ`` is rejected before execution.
 
 Measurement of an empty site reports the erasure digit ``2``. Erasure bypasses
 readout-confusion noise because there is no occupied qubit to read. Atom loss
@@ -120,9 +117,10 @@ does not create occupancy state.
 API
 ---
 
-The inherited :meth:`Simulator.run`, :meth:`Simulator.run_sweep`, and
-:meth:`Simulator.check_noise_support` methods have the same arguments and
-result rules as the general simulator.
+:attr:`Simulator.method`, :attr:`AtomArraySimulator.implementation_map`,
+:meth:`Simulator.run`, :meth:`Simulator.run_sweep`, and
+:meth:`Simulator.check_noise_support` follow the general Simulator API and are
+included below for a complete class reference.
 
 .. autoclass:: AtomArraySimulator
    :class-doc-from: both

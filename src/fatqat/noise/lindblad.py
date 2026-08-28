@@ -1,4 +1,4 @@
-"""Continuous-noise implementations shared by Lindblad-capable simulators."""
+"""Lindblad-operator implementations shared by pulse emulators."""
 
 from __future__ import annotations
 
@@ -7,14 +7,27 @@ from math import sqrt
 import numpy as np
 
 from ..errors import BackendValidationError, UnsupportedOperationError
-from .base import Channel, _ChannelImplementationRegistry
 from ..implementation.matrices import clock_matrix, shift_matrix
+from .base import Channel, _ChannelImplementationRegistry
 from .catalog import AmplitudeDamping, Depolarizing, PhaseDamping
 from .relaxation import ThermalRelaxation
 
 
 class LindbladImplementationMap(_ChannelImplementationRegistry):
-    """Resolve channel descriptors to local Lindblad-operator matrices."""
+    """Map exact channel types to local Lindblad rules.
+
+    A registered rule has the call shape
+    ``rule(channel, *, physical_dimension=dimension)`` and returns a nonempty
+    tuple of local Lindblad-operator matrices. Every result must be a NumPy
+    array of shape ``(dimension, dimension)``. Rules receive neither a target
+    identity nor a duration: the channel supplies the rate or time
+    parameters, and the pulse emulator controls how long the resolved
+    Lindblad-operator noise acts.
+
+    FATQAT validates only the returned count, array types, and shapes. A custom
+    rule is responsible for the physical meaning and units of its operators.
+    Lookup is by exact channel type.
+    """
 
 
 def _amplitude_lindblad_operator(
@@ -60,20 +73,20 @@ def phase_damping_lindblad_rule(
 def depolarizing_lindblad_rule(
     channel: Channel, *, physical_dimension: int
 ) -> tuple[np.ndarray, ...]:
-    """Resolve continuous depolarization to nonidentity Weyl operators.
+    """Resolve rate-form depolarization to nonidentity Weyl operators.
 
-    The ``sqrt(rate) / d`` scaling yields the local generator
+    The ``sqrt(rate) / d`` scaling makes the returned operators produce
     ``rate * (trace(rho) * I / d - rho)`` in every finite dimension.
 
     Args:
-        channel: A depolarizing declaration authored in continuous-rate mode.
+        channel: A depolarizing noise object in rate mode.
         physical_dimension: Local Hilbert-space dimension of the target site.
 
     Returns:
         The ``d**2 - 1`` scaled nonidentity Weyl jump operators.
 
     Raises:
-        BackendValidationError: If the declaration is in probability mode.
+        BackendValidationError: If the channel is in probability mode.
     """
     assert isinstance(channel, Depolarizing)
     if channel.rate is None:
@@ -109,7 +122,19 @@ def thermal_relaxation_lindblad_rule(
 
 
 def default_lindblad_implementation_map() -> LindbladImplementationMap:
-    """Return the standard continuous-noise implementations."""
+    """Return a fresh standard map for transmon Lindblad simulation.
+
+    The map registers `AmplitudeDamping`, `PhaseDamping`, and
+    `ThermalRelaxation`. These objects must use the rate/time forms
+    accepted by the pulse backend. `Depolarizing` and `PauliChannel` are not
+    registered by this factory.
+
+    Each call returns an independent registration container. Individual
+    emulator families may select a different built-in map.
+
+    Returns:
+        A new map containing the three standard rule registrations.
+    """
     implementations = LindbladImplementationMap()
     implementations.add(AmplitudeDamping, amplitude_damping_lindblad_rule)
     implementations.add(PhaseDamping, phase_damping_lindblad_rule)

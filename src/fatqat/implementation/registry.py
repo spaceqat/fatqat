@@ -1,12 +1,4 @@
-"""Default matrix implementation map: wires built-in gates to their matrices.
-
-Every default registration is wrapped in `_KeyedImplementation`, attaching the
-gate's `BuiltinKernelKey` so engines can dispatch specialized kernels by
-declared identity instead of inspecting matrices (see ``_backends.steps``).
-This is the *only* place keys are attached: custom rules, arrays, and
-device-specific overrides registered by users or device backends stay
-``None``-keyed by construction.
-"""
+"""Factory for FATQAT's built-in gate-matrix rules."""
 
 from __future__ import annotations
 
@@ -103,15 +95,14 @@ _DEFAULT_RULES = (
 
 
 def default_matrix_implementation_map() -> MatrixImplementationMap:
-    """Build the default matrix implementation map.
+    """Return a new map containing FATQAT's built-in matrix gate rules.
 
-    Registers against the public singleton instances (e.g. `ops.X`), not the
-    underlying `*Gate` classes: `add()` resolves either to the same
-    class key, and the fixed-gate classes are not part of the
-    `fatqat.operations` public
-    surface (see `operations.fixed_gates`). Each rule is normalized (bare
-    callables wrapped, exactly as `add()` would) and then keyed with its
-    gate's canonical `BuiltinKernelKey`.
+    Each call returns an independent map. Add, replace, or remove rules on the
+    returned value without changing later calls or another backend's map.
+
+    Returns:
+        A matrix implementation map covering the built-in matrix operations
+        exported by `fatqat.operations`.
     """
     m = MatrixImplementationMap()
     for op, rule, key in _DEFAULT_RULES:

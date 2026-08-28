@@ -3,13 +3,13 @@ Simulator
 
 .. currentmodule:: fatqat.simulator
 
-:class:`Simulator` is FATQAT's general-purpose gate-level backend. It applies
-operations as matrices or finite channels and can return a simulated state,
-sampled counts, or the map represented by a program. It supports qubits,
-qudits, mixed register dimensions, and custom implementation maps.
+:class:`Simulator` runs gate-level programs with matrix operations and finite
+noise channels. It supports qubits, qudits, mixed register dimensions, and
+custom implementation maps. It runs the program as written; it does not
+transpile or route it.
 
-Basic use
----------
+Quick start
+-----------
 
 .. code-block:: python
 
@@ -22,51 +22,45 @@ Basic use
    bell.measure_all()
 
    backend = fq.simulator.Simulator(method="statevector")
-   result = backend.run(bell, shots=1000).result()
-   counts = result.get_counts()
+   counts = backend.run(bell, shots=1000).result().get_counts()
 
-The default implementation map covers FATQAT's built-in matrix gates. State
-methods also support measurement, reset, and classical feedforward; a
-``Barrier`` remains in the program but has no numerical effect. The simulator
-executes the program as written and does not perform transpilation or routing.
-The built-in :py:data:`~fatqat.operations.Sum` implementation requires equal
-control and target dimensions; mismatched targets raise
-:py:exc:`~fatqat.errors.MatrixImplementationError` during program preparation.
+The default implementation map covers FATQAT's built-in matrix gates.
+State methods also support measurement, reset, and classical conditions.
+``Barrier`` has no numerical effect.
 
-Choose a method
----------------
+Methods
+-------
 
-``method`` is case-insensitive. ``SV`` and ``DM`` are short aliases; the
-read-only :attr:`Simulator.method` property always returns the canonical name.
-For a system with total Hilbert-space dimension ``D``:
+Method names are case-insensitive. ``SV`` and ``DM`` are aliases; the
+read-only :attr:`Simulator.method` property returns the full name. If the
+program's Hilbert-space dimension is ``D``:
 
 .. list-table:: Simulation methods
    :header-rows: 1
-   :widths: 18 23 32 27
+   :widths: 18 26 30 26
 
    * - Method
-     - Native result and shape
-     - Non-unitary operations
-     - Important limits
+     - Result
+     - Reset and finite channels
+     - Restrictions
    * - ``statevector`` / ``SV``
      - ``statevector``, shape ``(D,)``
-     - Reset and finite channels sample a trajectory
+     - Samples one trajectory
      - A stochastic final state represents one shot
    * - ``density_matrix`` / ``DM``
      - ``density_matrix``, shape ``(D, D)``
-     - Reset and finite channels are applied exactly
-     - Uses quadratically more state storage than ``statevector``
+     - Applies them exactly
+     - Uses more memory than ``statevector``
    * - ``unitary``
      - ``unitary``, shape ``(D, D)``
      - Rejected
      - Rejects measurement, conditions, counts, and ``initial_state``
    * - ``superop``
      - ``superop``, shape ``(D**2, D**2)``
-     - Reset and finite channels are applied exactly
+     - Applies them exactly
      - Rejects measurement, conditions, counts, and ``initial_state``
 
-The public super-operator uses column-stacking vectorization of density
-matrices:
+Super-operators use column-stacking vectorization:
 
 .. code-block:: python
 
@@ -74,51 +68,23 @@ matrices:
        superop @ rho_in.reshape(-1, order="F")
    ).reshape(rho_in.shape, order="F")
 
-Column-stacking describes the mathematical vectorization of ``rho_in``, not
-the NumPy memory layout of the returned matrix. For a noise-free program,
-``superop`` equals ``numpy.kron(unitary.conj(), unitary)``. A unitary contains
-``4**n`` complex entries for ``n`` qubits; a super-operator contains ``16**n``,
-so operator methods are practical only for small programs.
+For a noise-free program, ``superop`` equals
+``numpy.kron(unitary.conj(), unitary)``. A unitary contains ``4**n`` complex
+entries for ``n`` qubits, while a super-operator contains ``16**n``; use the
+operator methods only for programs small enough to hold the result.
 
-Runtime and execution controls
-------------------------------
+Runtime and execution
+---------------------
 
-``runtime`` selects the numerical engine when the backend is constructed and
-is fixed for its lifetime. Runtime names are case-insensitive. Both runtimes
-support all four methods with the same simulation semantics and
-numerical-tolerance contract, but floating-point results and seeded samples are
-not guaranteed to be bit-identical across runtimes.
+``runtime`` is chosen when the backend is created. ``"numba"`` is the default
+for :class:`Simulator` and the superconducting profiles; it compiles kernels
+on first use and supports threaded kernels. ``"numpy"`` runs directly without
+compilation and is the default for :class:`AtomArraySimulator`. Both runtimes
+support all four methods, but need not produce bit-identical floating-point or
+sampled results.
 
-The general and superconducting simulators default to ``"numba"``;
-:class:`AtomArraySimulator` defaults to ``"numpy"``.
-
-.. list-table:: Runtime comparison
-   :header-rows: 1
-   :widths: 26 37 37
-
-   * - Feature
-     - ``runtime="numpy"``
-     - ``runtime="numba"``
-   * - Execution
-     - Runs the NumPy kernels directly, with no JIT warm-up
-     - Lazily JIT-compiles numerical kernels; a first run can include
-       compilation work
-   * - Methods
-     - ``statevector``, ``density_matrix``, ``unitary``, and ``superop``
-     - The same four methods
-   * - Kernel threads
-     - Not available
-     - Available for every method
-   * - Shot parallelism
-     - Eligible counts-only per-shot runs can use worker processes
-     - The same process path, plus threads for compatible statevector
-       counts-only plans
-   * - Fusion
-     - Not available
-     - Available for ``density_matrix``, ``unitary``, and ``superop``
-
-``simulation_config`` changes execution for one call to ``run()``. String
-values in this dictionary are case-sensitive.
+``simulation_config`` changes one call to :meth:`Simulator.run`. Its string
+values are case-sensitive.
 
 .. list-table:: Simulation controls
    :header-rows: 1
@@ -129,72 +95,56 @@ values in this dictionary are case-sensitive.
      - Accepted values and effect
    * - ``seed``
      - ``None``
-     - ``None`` or a non-negative ``int``; booleans are rejected. Seeds
-       measurement, reset, channel, loss, and readout sampling for this run.
+     - Use a non-negative ``int`` or ``None``; booleans are rejected. It
+       controls measurement, reset, channel, loss, and readout sampling. A
+       negative value is rejected when execution starts, so
+       :meth:`fatqat.Job.result` raises ``ValueError``.
    * - ``shot_parallelism``
      - ``"auto"``
-     - ``"auto"``, ``"serial"``, ``"threads"``, or ``"processes"``. Controls
-       independent per-shot evolutions; it does not control terminal sampling
-       from one shared final state.
+     - ``"auto"``, ``"serial"``, ``"threads"``, or ``"processes"``.
+       Explicit parallel modes require an eligible counts-only, per-shot run
+       with at least two shots and workers. Threads require a compatible Numba
+       statevector run.
    * - ``kernel_parallelism``
      - ``"auto"``
-     - ``"auto"``, ``"serial"``, or ``"threads"``. Controls numerical work
-       inside one evolution without reordering program operations. Threads
-       require Numba.
+     - ``"auto"``, ``"serial"``, or ``"threads"``. Threads require Numba
+       and cannot be requested together with parallel shots.
    * - ``max_workers``
      - ``None``
-     - ``None`` or a positive integer. Caps whichever parallel axis is chosen;
-       it does not make an otherwise ineligible run parallel.
+     - ``None`` or a positive ``int``. It caps the selected parallel mode;
+       ``1`` conflicts with an explicitly parallel request.
    * - ``fusion``
      - ``False``
-     - A boolean that allows compatible adjacent operations to be combined.
-       It is independent of parallelism and has the runtime support shown
-       above.
+     - A ``bool``. ``True`` combines compatible adjacent operations and is
+       supported by Numba for ``density_matrix``, ``unitary``, and ``superop``.
 
-FATQAT uses at most one parallel axis. Explicit shot threads or processes need
-a shardable counts-only per-shot run, at least two shots, and at least two
-workers; ordinary terminal sampling after one static evolution is not
-eligible. An explicit mode raises an error when the runtime or program cannot
-honor it rather than silently falling back. ``max_workers=1`` keeps automatic
-selection serial but contradicts an explicit parallel request. See
-:doc:`../guide/advanced` for the complete decision table and reproducibility
-boundary.
+Automatic selection uses at most one parallel axis. An explicit unsupported
+choice raises an error instead of falling back. See :doc:`../guide/advanced`
+for the full eligibility rules and reproducibility boundary.
 
-Backend customization and lifetime
-----------------------------------
+Customize the backend
+---------------------
 
-The remaining constructor arguments customize the operations and noise known
-to the backend:
+The constructor also accepts:
 
-.. list-table:: Backend customization
+.. list-table:: Backend options
    :header-rows: 1
    :widths: 30 70
 
    * - Argument
      - Meaning
    * - ``implementation_map``
-     - Maps operation families to matrix builders. ``None`` uses FATQAT's
-       built-in matrix gate set.
+     - Matrix rules for operations. ``None`` uses FATQAT's built-in gate set.
    * - ``noise``
-     - A :class:`~fatqat.NoiseModel` used by every run. ``None`` means ideal
-       execution.
+     - A :class:`~fatqat.NoiseModel` used by every run. ``None`` is ideal.
    * - ``channel_implementation_map``
-     - Maps finite-channel descriptors to their numerical implementations.
-
-The simulator copies the registration containers at construction, so later
-additions or removals on the supplied objects do not alter the backend. Rule
-and declaration objects are not deep-copied; treat them as immutable after
-constructing the backend.
-
-Reuse one backend for sequential runs and to retain its numerical caches. Do
-not call ``run()`` concurrently on the same instance; create one backend per
-concurrent caller.
+     - Rules that turn supported channel descriptors into finite channels.
+       ``None`` uses FATQAT's built-in rules.
 
 Run inputs and results
 ----------------------
 
-In addition to the program and ``simulation_config``, ``run()`` accepts these
-principal inputs:
+Besides ``simulation_config``, :meth:`Simulator.run` accepts:
 
 .. list-table:: Run inputs
    :header-rows: 1
@@ -205,94 +155,75 @@ principal inputs:
      - Meaning
    * - ``shots``
      - ``1024``
-     - Number of samples when counts or a stochastic final state is requested.
-       Deterministic final-state-only and operator runs do not use it.
+     - Samples used for counts or a stochastic final state. A deterministic
+       state-only or operator result does not use this value.
    * - ``resource_layout``
      - ``None``
-     - Maps every program quantum reference to a device label. On
-       :class:`Simulator`, the default assigns integer labels in declaration
-       order. An explicit layout must be complete, one-to-one, and
-       dimension-compatible.
+     - Assigns every program quantum reference to a device label. The generic
+       simulator uses integer labels in declaration order. A supplied layout
+       must be complete, one-to-one, and compatible with the backend.
    * - ``initial_state``
      - ``None``
-     - Starts every shot from a supplied state instead of the all-zero state.
-       Statevector accepts shape ``(D,)``; density matrix accepts ``(D,)`` or
-       ``(D, D)``. Operator methods reject it.
+     - Starts every shot from this state rather than the all-zero state.
+       ``statevector`` accepts shape ``(D,)``; ``density_matrix`` accepts
+       ``(D,)`` or ``(D, D)``. Operator methods reject it.
 
-Only the initial state's shape is validated. The caller is responsible for
-normalization and, for density matrices, Hermiticity and positivity. Sampling
-normalizes a distribution with positive probability mass but cannot sample a
-state with none.
+Only the initial state's shape is checked. You are responsible for
+normalization and, for density matrices, Hermiticity and positivity.
 
-``result_config`` selects returned artifacts with two keys. Each value is
-``True``, ``False``, or ``None``; omitted and ``None`` values use the defaults
-below.
+``result_config`` has two keys. Each accepts ``True``, ``False``, or ``None``;
+an omitted or ``None`` value uses the default shown below.
 
 .. list-table:: Result fields
    :header-rows: 1
-   :widths: 20 34 46
+   :widths: 20 42 38
 
    * - Key
-     - Default and meaning
+     - Default
      - Constraint
    * - ``counts``
-     - Histogram of the final classical register; enabled when the program
-       measures
+     - Enabled when the program measures
      - Requires an integer ``shots > 0``
    * - ``final_state``
-     - Method-native state or map; enabled when that artifact is deterministic
-     - An explicitly requested stochastic final state requires ``shots == 1``
+     - Enabled when the method-native state or map is deterministic
+     - A requested stochastic final state requires ``shots == 1``
 
-.. list-table:: Common defaults
-   :header-rows: 1
-   :widths: 55 45
+The concrete final-state field is named ``statevector``, ``density_matrix``,
+``unitary``, or ``superop``. Check :attr:`fatqat.Result.available_data` before
+reading a field that may not have been requested.
 
-   * - Run
-     - Available data by default
-   * - Measured state run
-     - ``counts``
-   * - Unmeasured deterministic state run
-     - ``statevector`` or ``density_matrix``
-   * - Unmeasured stochastic state run
-     - No artifacts
-   * - ``unitary`` or ``superop`` run
-     - The computed map
+``run()`` returns an eager :class:`~fatqat.Job`. Program and option validation
+errors normally raise directly. Errors during execution or result assembly are
+stored on the job and re-raised by :meth:`fatqat.Job.result`. See
+:doc:`../guide/running-and-results` for result accessors, count ordering, and
+state-axis metadata.
 
-For statevector simulation, reset and finite channels make the final state a
-sampled trajectory. Atom loss makes both state methods stochastic. By
-contrast, density-matrix reset and finite channels remain exact, so their
-unmeasured result is deterministic. A result with both requested fields set to
-``False`` is valid and contains no artifacts.
+Noise
+-----
 
-``final_state`` is a request name. The returned field is ``statevector``,
-``density_matrix``, ``unitary``, or ``superop`` according to the selected
-method. Inspect ``Result.available_data`` before reading optional fields.
+Matrix simulation has no physical timeline. Built-in damping and depolarizing
+descriptors therefore use their probability form and apply at operation
+boundaries. Rate forms, background sources, and
+:class:`~fatqat.noise.ThermalRelaxation` are rejected; convert thermal
+relaxation with ``as_channels(duration)`` first. Custom descriptors require a
+matching channel rule. :class:`AtomArraySimulator` additionally supports atom
+loss.
 
-``run()`` validates and lowers the program before returning an eager
-:class:`~fatqat.Job`. Validation errors are raised directly. An error during
-numerical execution or result assembly is stored on the job and re-raised by
-:meth:`~fatqat.Job.result`. See :doc:`../guide/running-and-results` for result
-accessors, count ordering, and state-axis metadata.
+:meth:`Simulator.check_noise_support` checks a model without running a
+program. A method can still impose a stricter rule: for example, ``unitary``
+rejects a finite channel that the backend otherwise recognizes when that
+channel matches the program. See :doc:`noise` for selectors and the support
+table.
 
-Noise models and parameter sweeps
----------------------------------
+Sweeps
+------
 
-Matrix simulation has no physical timeline. It accepts operation-bound finite
-channels and readout confusion, but rejects continuous background sources,
-built-in damping descriptors in rate mode, and ``ThermalRelaxation`` until it
-is converted with ``as_channels(duration)``.
-:meth:`Simulator.check_noise_support` checks those source forms and the channel
-map without executing a program. A method can impose a further restriction at
-run time: ``unitary``, for example, rejects a finite channel even when the
-backend knows how to build it. Statevector simulation samples channel branches;
-density-matrix and super-operator simulation apply the exact channel. See
-:doc:`noise` for supported descriptors and selector semantics.
-
-:meth:`Simulator.run_sweep` binds every row of a complete object-keyed
-parameter batch, calls ``run()`` for each row, and returns one eager job whose
-result is an ordered ``list[Result]``. A supplied seed is reused for every row,
-so sampled errors across rows are correlated. See
-:doc:`../guide/parameters-and-sweeps` for accepted batch shapes.
+:meth:`Simulator.run_sweep` binds each row of a complete object-keyed
+parameter batch and returns one eager job containing an ordered
+``list[Result]``. Batch and row validation errors raise directly; an execution
+failure produces a failed sweep job, and no partial result list is returned.
+It reuses a supplied seed for every row, so sampled errors can be correlated.
+See :doc:`../guide/parameters-and-sweeps` for accepted batch shapes.
 
 API
 ---

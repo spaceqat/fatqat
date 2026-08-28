@@ -1,32 +1,12 @@
-"""Render a fatqat :py:class:`~fatqat.Program` as a circuit diagram via QuTiP-QIP.
+"""Draw FATQAT programs through QuTiP-QIP.
 
-QuTiP-QIP is imported lazily inside the functions that need it, keeping the
-base :mod:`fatqat` import lightweight even though drawing support is included
-in every installation.
+:meth:`fatqat.Program.draw` is the normal entry point. Use
+:func:`to_qubit_circuit` when you need the intermediate QuTiP-QIP circuit and
+its renderer options. Conversion is one-way and intended only for drawing;
+custom-operation placeholders in the returned circuit are not executable.
 
-The public entry points are:
-
-- :py:func:`to_qubit_circuit` translates a program into a
-  ``qutip_qip.circuit.QubitCircuit`` (the reusable seam - call QuTiP's own
-  ``.draw(...)`` on the result if you want its full set of options).
-- :py:meth:`fatqat.Program.draw` renders the circuit as a matplotlib ``Figure``
-  or as a text-diagram ``str`` for the terminal.
-
-Translation is one-directional (fatqat -> QuTiP) and for drawing only: the
-resulting circuit is never executed, so an operation that QuTiP cannot
-simulate is still fine to *draw*. Any gate without a native QuTiP equivalent -
-including user-defined custom operations - is drawn as a labeled box carrying
-the operation's own ``name``.
-
-A circuit diagram is dimension-agnostic: a wire is a wire, and a qudit gate
-draws as a labeled box like any other. Qudit (``dim != 2``) registers are
-therefore drawn too, one wire per subsystem; the dimension itself is simply
-not depicted (a ``dim=3`` wire looks like a qubit wire).
-
-Two QuTiP-QIP gate APIs are supported, detected at runtime (see `_gate_api`):
-the released string-based one and the class-based one on QuTiP-QIP's master
-branch, where passing gate names as strings is deprecated and *unknown* names
-are rejected outright.
+QuTiP-QIP is imported only when a drawing function is called, so importing
+FATQAT does not load the rendering stack.
 """
 
 from __future__ import annotations
@@ -420,18 +400,29 @@ def _expand_targets(targets: tuple) -> tuple[tuple[RegisterRef, ...], ...]:
 
 
 def to_qubit_circuit(program: Program):
-    """Translate a program into a QuTiP-QIP ``QubitCircuit`` for drawing.
+    """Convert a program to a QuTiP-QIP circuit for drawing.
+
+    Quantum and classical slots become wires in register declaration order.
+    Native gates use QuTiP-QIP symbols; gates it cannot draw natively,
+    including custom and qudit operations, become boxes labeled with the
+    operation name. Measurements, reset, barriers, and classical conditions
+    are retained. Register dimensions are not shown.
+
+    Use the returned circuit for drawing only. Placeholder gates for non-native
+    operations cannot be simulated with QuTiP-QIP.
 
     Args:
-        program: The program to translate. Qudit registers are accepted and
-            drawn as ordinary wires; a diagram does not depict dimension.
+        program: Program to translate. Qudit registers are accepted, but their
+            dimensions are not visible in the diagram.
 
     Returns:
-        A ``qutip_qip.circuit.QubitCircuit`` mirroring the program's gates,
-        measurements, resets, barriers, and feedforward conditions.
+        A ``qutip_qip.circuit.QubitCircuit`` ready for QuTiP-QIP's drawing
+        methods.
 
     Raises:
-        ImportError: If ``qutip-qip`` is not installed.
+        ImportError: If QuTiP-QIP is unavailable.
+        UnsupportedOperationError: If ``program`` contains a
+            :class:`~fatqat.operations.PulseOperation`.
     """
     qubit_circuit_cls = _require_qutip()
     qubit_index, clbit_index = _wire_maps(program)

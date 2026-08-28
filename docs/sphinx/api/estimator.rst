@@ -1,74 +1,83 @@
-Observable and Estimator
-========================
+Observables and estimation
+===========================
 
-An :py:class:`~fatqat.Observable` is a Hermitian sum of weighted terms, each a
-product of single-qubit letters. An :py:class:`~fatqat.Estimator` wraps a
-constructed backend and reports that observable's expectation value on a
-program's final state.
+Use :class:`~fatqat.Estimator` to evaluate one or more
+:class:`~fatqat.Observable` values from a backend's final state. The program
+must be unmeasured, fully bound, and qubit-only; the backend must return a
+statevector or density matrix.
 
-The two are separate from the counts path: build the backend as usual, then
-wrap it. The backend owns the method, runtime, and noise model; the estimator
-adds only the observable step. See :doc:`../guide/estimator` for a worked
-introduction.
+Estimate an observable
+----------------------
 
-Build an observable
--------------------
+.. code-block:: python
 
-Three constructors produce the same internal form:
+   import fatqat as fq
+   import fatqat.operations as ops
 
-- ``fq.Observable([(label, coefficient), ...])`` — dense little-endian labels
-  over ``I``/``X``/``Y``/``Z``, e.g. ``fq.Observable([("ZZ", 1.5)])``.
-- ``fq.Observable(labels, coeffs=[...])`` — the same, with labels and
-  coefficients given separately.
-- :py:meth:`Observable.from_sparse <fatqat.Observable.from_sparse>`
-  (``data, *, num_qubits``) — name only the non-identity factors, e.g.
-  ``[("XY", (3, 7), 1.5)]``. This is the practical constructor for wide
-  registers and the only way to reach the ``ZERO``/``ONE`` projectors, whose
-  names do not fit a single-character dense label.
+   program = fq.Program(2)
+   program.add(ops.H, 0)
+   program.add(ops.CX, (0, 1))
 
-Coefficients must be real: every letter is Hermitian, so the observable is
-Hermitian exactly when its coefficients are. The ``2**n x 2**n`` matrix is
-never built.
+   estimator = fq.Estimator(fq.simulator.Simulator("SV"))
+   observable = fq.Observable([("ZZ", 1.0)])
+   result = estimator.run(program, observable).result()
+   expectation = result.get_expectation()
 
-Run an estimator
+For a guided workflow, see :doc:`../guide/estimator`.
+
+Construct an observable
+-----------------------
+
+Dense labels put qubit 0 at the right and accept ``I``, ``X``, ``Y``, and
+``Z``. These forms are equivalent:
+
+.. code-block:: python
+
+   fq.Observable([("ZZ", 1.5)])
+   fq.Observable(["ZZ"], coeffs=[1.5])
+
+:meth:`~fatqat.Observable.from_sparse` names each non-identity factor and its
+qubit explicitly. It also supports ``ZERO`` and ``ONE`` projectors:
+
+.. code-block:: python
+
+   fq.Observable.from_sparse(
+       [(["ONE", "Z"], (5, 3), 1.5)],
+       num_qubits=6,
+   )
+
+Coefficients must be real.
+
+Exact and sampled results
+-------------------------
+
+Pass one observable to receive scalar expectation and standard-error values,
+or a list or tuple to receive arrays in the same order.
+
+``shots=0`` computes an exact value. A positive ``shots`` value samples each
+observable term, and :meth:`~fatqat.Result.get_std` reports the resulting
+standard error. Set ``simulation_config["seed"]`` to reproduce a sampled run.
+
+Configure the simulation method, runtime, and noise on the backend. Invalid
+programs, observable widths, and shot values raise
+:class:`~fatqat.errors.BackendValidationError` before a job is returned;
+unsupported observable types raise ``TypeError``. Later failures are raised by
+:meth:`~fatqat.Job.result`.
+
+Use a density-matrix backend when the program resets qubits or channel noise
+applies.
+
+Read estimator results with :meth:`~fatqat.Result.get_expectation` and
+:meth:`~fatqat.Result.get_std`. Run the backend separately if you also need its
+final state.
+
+Parameter sweeps
 ----------------
 
-:py:class:`~fatqat.Estimator` (``backend``) takes a constructed backend, e.g.
-``fq.Estimator(fq.simulator.Simulator(method="DM", noise=noise))``.
-
-:py:meth:`Estimator.run <fatqat.Estimator.run>`
-(``program, observables, *, shots=0, simulation_config=None``) returns a
-completed :py:class:`~fatqat.Job`. ``observables`` is a single observable or a
-sequence of them; all are evaluated against one evolution, and the result shape
-mirrors the input shape.
-
-``shots=0`` computes the value exactly from the final state. Note this differs
-from :py:meth:`Simulator.run <fatqat.simulator.Simulator.run>`, whose ``shots``
-defaults to 1024. A positive ``shots`` samples, reproducing the statistical
-error of a finite-shot experiment.
-
-:py:meth:`Estimator.run_sweep <fatqat.Estimator.run_sweep>` adds a required
-object-keyed binding batch after ``observables``. It returns one ordered
-``list[Result]`` while preserving the ordinary scalar or array result shape
-inside each element. See :doc:`../guide/parameters-and-sweeps`.
-
-Read the result
----------------
-
-- :py:meth:`~fatqat.Result.get_expectation` returns the value — a float for a
-  single observable, an array for a sequence.
-- :py:meth:`~fatqat.Result.get_std` returns the matching standard error, which
-  is ``0`` for an exact run.
-
-Both raise :py:class:`~fatqat.errors.ResultFieldUnavailableError` on a result
-that did not come from an estimator run.
-
-:py:class:`~fatqat.errors.BackendValidationError` is raised when the
-expectation value would be ill-defined: a program that measures, a statevector
-run carrying channel noise or ``Reset``, an observable whose width disagrees
-with the program, or a non-qubit register. See
-:doc:`../guide/estimator` for why each case is rejected and what to use
-instead.
+:meth:`~fatqat.Estimator.run_sweep` evaluates binding rows in input order.
+Validation errors raise directly; other row failures are raised by
+:meth:`~fatqat.Job.result`. No partial result list is returned. See
+:doc:`../guide/parameters-and-sweeps` for binding shapes and seed reuse.
 
 Detailed reference
 ------------------

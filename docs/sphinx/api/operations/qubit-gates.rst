@@ -3,18 +3,16 @@ Qubit gates
 
 .. currentmodule:: fatqat.operations
 
-The gates on this page are defined for dimension-2 subsystems (qubits).
-:py:meth:`~fatqat.Program.add` records the operation without validating that
-dimension requirement or determining whether a selected compiler or backend
-supports it for a particular device. The compiler or backend must validate the
-dimension during program preparation and may impose additional device
-constraints; consult its capability documentation for details.
+Every gate on this page is defined for dimension-2 targets (qubits).
+:py:meth:`~fatqat.Program.add` records the operation without checking target
+dimensions. The backend checks that requirement and any device-specific limits
+when the program runs.
 
 Fixed gates
 -----------
 
-Fixed gates are immutable singleton values and must not be called. The
-single-qubit matrices use ``|0>, |1>`` basis order.
+Fixed gates are ready-to-use values and must not be called. The single-qubit
+matrices use ``|0>, |1>`` basis order.
 
 .. list-table:: Fixed single-qubit gates
    :header-rows: 1
@@ -207,9 +205,6 @@ All angles are in radians and are not normalized. Every angle field accepts a
 :py:class:`~fatqat.Parameter` for later binding through
 :py:meth:`fatqat.Program.assign_parameters`.
 
-Let ``c = cos(theta/2)`` and ``s = sin(theta/2)``. The following definitions
-use ``|0>, |1>`` basis order.
-
 .. list-table:: Parameterized qubit gates
    :header-rows: 1
    :widths: 22 28 50
@@ -231,7 +226,7 @@ use ``|0>, |1>`` basis order.
      - Differs from RZ only by global phase.
    * - :py:class:`U` ``(theta, phi, lam)``
      - One scalar
-     - General Qiskit-compatible single-qubit gate.
+     - General single-qubit gate using Qiskit's parameter convention.
    * - :py:class:`U1` ``(lam)``
      - One scalar
      - Equivalent to ``Phase(lam)``.
@@ -240,7 +235,8 @@ use ``|0>, |1>`` basis order.
      - Equivalent to ``U(pi/2, phi, lam)``.
    * - :py:class:`U3` ``(theta, phi, lam)``
      - One scalar
-     - Numerically identical to ``U(theta, phi, lam)``; legacy Qiskit name.
+     - Same matrix as ``U(theta, phi, lam)``; retained for Qiskit
+       compatibility.
    * - :py:class:`CPhase` ``(theta)``
      - ``(control, target)`` scalars
      - Multiplies :math:`|11\rangle` by :math:`e^{i\theta}`.
@@ -323,8 +319,8 @@ control as the local most-significant bit:
 API reference
 -------------
 
-Common operation properties and validation hooks are documented on the
-:doc:`Operations overview <../operations>`.
+Common operation properties are documented on the :doc:`Operations overview
+<../operations>`.
 
 Fixed values
 ~~~~~~~~~~~~
@@ -368,8 +364,6 @@ Fixed values
 
 Parameterized classes
 ~~~~~~~~~~~~~~~~~~~~~
-
-Each class below shows its constructor fields.
 
 .. autoclass:: fatqat.operations.RX
    :members:

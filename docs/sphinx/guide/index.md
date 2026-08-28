@@ -1,10 +1,10 @@
 # User guide
 
 Start with [Quickstart](quickstart.md), then read [Core concepts](concepts.md)
-for the small set of ideas used by every program. The remaining pages are
-organized around tasks rather than internal package layers.
+for the small set of ideas used by every program. The remaining pages follow
+the tasks you are likely to perform.
 
-Complete examples import `fatqat` as `fq` and `fatqat.operations` as `op`.
+Complete examples import `fatqat` as `fq` and `fatqat.operations` as `ops`.
 Short follow-on snippets state when they assume an existing `program` or import.
 
 ## Suggested path
@@ -20,10 +20,8 @@ Short follow-on snippets state when they assume an existing `program` or import.
    template or execute an ordered parameter batch.
 5. [Noise](noise.md) and [advanced user topics](advanced.md) — opt into
    optional simulation features.
-
 6. [Expectation values](estimator.md) — read observables off a state instead
    of going through counts.
-
 7. [Superconducting transmon emulation](superconducting-pulse.md) covers both
    calibrated gates and direct controls in a three-level transmon model.
 8. [Neutral-atom emulation](neutral-atoms.md) compares the three-level and

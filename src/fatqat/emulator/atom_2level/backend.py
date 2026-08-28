@@ -83,18 +83,39 @@ def _default_lindblad_map() -> LindbladImplementationMap:
 class Atom2LevelEmulator(_PulseBackend):
     """Emulate global two-level Rydberg controls on a fixed arrangement.
 
+    Every run starts with each site in ``|g>``. The built-in gate map is empty,
+    so programs normally use channel-addressed ``PulseOperation`` values.
+
     Args:
-        model: Validated two-level atom physics model.
-        arrangement: Exact physical site geometry for the pulse program.
+        model: Two-level atom model created with
+            ``Atom2LevelModel.from_document``.
+        arrangement: Fixed site coordinates for the program. The program must
+            contain one dimension-two resource per site.
         interaction_cutoff: Maximum interacting-pair separation in the
-            model's distance unit. ``None`` retains every unordered pair and
-            ``0.0`` disables pair interactions.
-        noise: Optional authored noise model.
-        gate_implementation_map: Optional gate-to-pulse implementations.
-        lindblad_implementation_map: Optional continuous-noise rules.
+            model's distance unit. ``None`` keeps every pair; ``0.0`` disables
+            pair interactions.
+        noise: Noise applied by this emulator. The default is no noise.
+        gate_implementation_map: Gate-to-pulse rules. ``None`` uses an empty
+            map.
+        lindblad_implementation_map: Continuous-noise rules. ``None`` uses the
+            built-in rate-form damping, relaxation, and depolarizing rules. An
+            explicit map replaces those defaults.
 
     Raises:
-        BackendValidationError: If an input is invalid or unsupported.
+        BackendValidationError: If an argument is invalid or ``noise``
+            contains a declaration unsupported by the selected rules.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> model = fq.emulator.Atom2LevelModel.from_document(
+        ...     fq.emulator.load_model_document("atom2level.reference")
+        ... )
+        >>> arrangement = fq.emulator.AtomArrangement.chain(2, spacing=6.0)
+        >>> backend = fq.emulator.Atom2LevelEmulator(
+        ...     model, arrangement=arrangement
+        ... )
+        >>> backend.interaction_cutoff is None
+        True
     """
 
     _coherent_execution_mode: ExecutionMode = "statevector"
@@ -142,7 +163,7 @@ class Atom2LevelEmulator(_PulseBackend):
         """Return the exact physical site geometry bound to this emulator.
 
         Returns:
-            The immutable arrangement supplied at construction.
+            The arrangement supplied at construction.
         """
 
         return self._arrangement

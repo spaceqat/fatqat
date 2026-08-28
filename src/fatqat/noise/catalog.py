@@ -13,10 +13,10 @@ Arity usually belongs to the descriptor class. Probability-form
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
 from math import expm1, isfinite, log1p, prod
-from typing import ClassVar
+from typing import ClassVar, cast
 
 import numpy as np
 
@@ -78,10 +78,10 @@ def _normalize_damping_values(value: object, label: str) -> tuple[float, ...]:
 
 
 def _p_to_rate(p: float, duration: float) -> float:
-    """Convert one finite-channel probability to a rate over ``duration``.
+    """Convert one simulator-channel probability to a rate over ``duration``.
 
     Uses the numerically stable ``log1p`` form of ``rate = -log(1 - p) / t``,
-    accurate when ``p`` is small (the common case for one gate occurrence).
+    accurate when ``p`` is small (the common case for one gate application).
     """
     _require_duration(duration)
     if p >= 1.0:
@@ -98,7 +98,7 @@ def _p_to_rate(p: float, duration: float) -> float:
 
 
 def _rate_to_p(rate: float, duration: float) -> float:
-    """Convert one rate to a finite-channel probability over ``duration``.
+    """Convert one rate to a simulator-channel probability over ``duration``.
 
     Uses the numerically stable ``expm1`` form of ``p = 1 - exp(-rate * t)``,
     accurate when ``rate * t`` is small.
@@ -111,17 +111,33 @@ def _rate_to_p(rate: float, duration: float) -> float:
 
 @dataclass(frozen=True, kw_only=True)
 class Depolarizing(Channel):
-    """Uniform depolarization in finite-probability or continuous-rate mode.
+    """Uniform depolarizing noise for simulators or emulators.
 
-    Exactly one of ``p`` and ``rate`` must be supplied. Matrix backends consume
-    probability mode over an operation occurrence. Pulse emulators consume
-    rate mode as a local continuous generator; backends do not convert modes
-    implicitly.
+    Pass exactly one of p and rate, by keyword. With p, a simulator applies
+    ``rho -> (1 - p) rho + p I / d`` jointly to the selected operands, whose
+    combined dimension is d. With rate, an emulator uses local Lindblad
+    operators with evolution
+    ``rate * (trace(rho) I / d - rho)`` on one subsystem.
+
+    Backends do not convert between the two forms. Matrix simulators require p
+    on an operation; a pulse emulator accepts rate only when its Lindblad map
+    supports this noise type.
+
+    Args:
+        p: Probability of complete depolarization in one simulator
+            application. Must be a finite ``int`` or ``float`` other than
+            ``bool`` in ``[0, 1]``.
+        rate: Depolarization rate for emulator Lindblad operators. Must be a
+            finite nonnegative ``int`` or ``float`` other than ``bool``, in the
+            inverse of the backend's time unit.
+
+    Raises:
+        ValueError: If both arguments or neither argument is supplied, or if a
+            supplied value is outside its accepted range.
 
     Attributes:
-        p: Probability of full depolarization for one finite channel
-            application, in ``[0, 1]``.
-        rate: Depolarization rate in the pulse backend's inverse time unit.
+        p: Provided simulator probability, or ``None`` in rate mode.
+        rate: Provided emulator rate, or ``None`` in probability mode.
 
     Examples:
         >>> import fatqat as fq
@@ -144,25 +160,31 @@ class Depolarizing(Channel):
 
     @property
     def num_subsystems(self) -> int | None:
-        """Return the declaration arity implied by the authored mode.
+        """Return how many subsystems this form acts on.
 
         Returns:
-            ``1`` for local continuous-rate mode, or ``None`` for
-            width-agnostic finite-probability mode.
+            ``1`` for local emulator rate mode, or ``None`` for
+            width-agnostic simulator probability mode.
         """
         return 1 if self.rate is not None else None
 
     def as_probability(self, duration: float) -> float:
-        """Return this declaration's probability over a duration.
+        """Return the equivalent probability for an explicit duration.
+
+        In probability mode, this returns the provided p unchanged after
+        validating duration. In rate mode, it returns
+        ``1 - exp(-rate * duration)``. No backend calls this conversion
+        implicitly.
 
         Args:
-            duration: Finite nonnegative elapsed time in the backend's unit.
+            duration: Finite nonnegative ``int`` or ``float`` other than
+                ``bool``, in the same time unit whose inverse is used by rate.
 
         Returns:
-            Authored ``p`` unchanged, or ``1 - exp(-rate * duration)``.
+            The provided probability or the converted rate-mode probability.
 
         Raises:
-            ValueError: If ``duration`` is invalid.
+            ValueError: If duration is not a finite nonnegative real number.
         """
         if self.p is not None:
             _require_duration(duration)
@@ -170,17 +192,23 @@ class Depolarizing(Channel):
         return _rate_to_p(self.rate, duration)
 
     def as_rate(self, duration: float) -> float:
-        """Return this declaration's continuous rate over a duration.
+        """Return the equivalent emulator rate for an explicit duration.
+
+        In rate mode, this returns the provided rate unchanged after validating
+        duration. In probability mode, it returns
+        ``-log(1 - p) / duration``. No backend calls this conversion
+        implicitly.
 
         Args:
-            duration: Finite nonnegative elapsed time in the backend's unit.
+            duration: Finite nonnegative ``int`` or ``float`` other than
+                ``bool``, in the time unit for the returned rate.
 
         Returns:
-            Authored ``rate`` unchanged, or ``-log(1 - p) / duration``.
+            The provided rate or the converted probability-mode rate.
 
         Raises:
-            ValueError: If ``duration`` is invalid or the finite probability
-                has no finite rate for that duration.
+            ValueError: If duration is invalid, if p is 1, or if a nonzero p
+                is converted at zero duration.
         """
         if self.rate is not None:
             _require_duration(duration)
@@ -237,7 +265,7 @@ def _pauli_string_matrix(string: str) -> np.ndarray:
 
 
 def _normalize_pauli_terms(
-    terms: Mapping[str, float] | Sequence[tuple[str, float]],
+    terms: Mapping[str, float] | Iterable[tuple[str, float]],
 ) -> tuple[tuple[str, float], ...]:
     """Normalize a Pauli-term mapping or pair sequence into canonical form.
 
@@ -296,23 +324,43 @@ def _normalize_pauli_terms(
 
 @dataclass(frozen=True)
 class PauliChannel(Channel):
-    """A stochastic Pauli channel: ``rho -> sum_i p_i P_i rho P_i``.
+    """A stochastic mixture of Pauli errors.
 
-    Each term names a Pauli string over the subsystems the channel is attached
-    to and the probability that error occurs.
+    The channel acts as ``rho -> sum_i p_i P_i rho P_i``. Construct it from a
+    mapping from Pauli strings to probabilities or from an iterable of
+    ``(string, probability)`` pairs. Every string must be nonempty, use only
+    the uppercase letters ``I``, ``X``, ``Y``, and ``Z``, and have the same
+    width. The width sets the number of qubit targets.
 
-    Qubits only (``dim == 2``), checked at resolution time; use `Depolarizing`
-    for the dimension-generic uniform channel.
+    Strings follow target order: the first character describes the first
+    target and is the most-significant factor in the local matrix. This is the
+    reverse of Qiskit's displayed Pauli-string convention.
+
+    Each probability must be a finite ``int`` or ``float`` other than ``bool``
+    in ``[0, 1]``. Error terms may sum to less than 1; the unassigned weight
+    becomes the all-identity probability. An explicit all-identity term is
+    accepted only when it agrees with that implied value. Duplicate strings
+    and a total error probability greater than 1 are rejected. Sum and
+    identity comparisons allow ordinary floating-point round-off.
+
+    FATQAT consumes the input and stores an immutable tuple with the
+    all-identity term first, followed by nonidentity terms in input order.
+    Changing an input mapping or sequence later has no effect. The channel
+    requires one qubit target per character and works with simulators only.
+
+    Args:
+        terms: Pauli probabilities as a mapping or iterable of pairs.
+
+    Raises:
+        TypeError: If terms is not a mapping or iterable, or an iterable entry
+            does not support the required two-element pair shape.
+        ValueError: If terms is empty, malformed, duplicated, uses invalid or
+            unequal-width strings, contains an invalid probability, assigns
+            too much error probability, or contradicts the implied identity
+            probability.
 
     Attributes:
-        terms: ``(pauli_string, probability)`` pairs, the all-identity term
-            first. Accepts a mapping or a sequence of pairs; the width of the
-            strings sets the channel's arity, ``string[0]`` describing the
-            first target.
-
-    Probabilities need not sum to 1: whatever the error terms leave unassigned
-    becomes the probability of the all-identity (no-error) term. Stating that
-    term explicitly is allowed, but only with the value the others imply.
+        terms: Normalized ``(string, probability)`` pairs with identity first.
 
     Examples:
         A biased single-qubit channel, 1% X and 2% Z:
@@ -327,15 +375,16 @@ class PauliChannel(Channel):
         2
     """
 
-    terms: tuple[tuple[str, float], ...]
+    terms: Mapping[str, float] | Iterable[tuple[str, float]]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "terms", _normalize_pauli_terms(self.terms))
 
     @property
     def num_subsystems(self) -> int:
-        """Number of qubits the channel acts on: the width of its Pauli strings."""
-        return len(self.terms[0][0])
+        """Return the number of qubits named by each Pauli string."""
+        terms = cast(tuple[tuple[str, float], ...], self.terms)
+        return len(terms[0][0])
 
 
 def pauli_channel_rule(
@@ -358,36 +407,55 @@ def pauli_channel_rule(
                 f"dimension {ref.register.dim}; use Depolarizing or PhaseDamping "
                 "for a dimension-generic channel"
             )
-    return tuple(
-        np.sqrt(p) * _pauli_string_matrix(string) for string, p in channel.terms
-    )
+    terms = cast(tuple[tuple[str, float], ...], channel.terms)
+    return tuple(np.sqrt(p) * _pauli_string_matrix(string) for string, p in terms)
 
 
 @dataclass(frozen=True, kw_only=True)
 class AmplitudeDamping(Channel):
-    """Amplitude damping: sequential (ladder) decay toward the ground state.
+    """Relaxation between adjacent energy levels toward the ground state.
 
-    Level ``k`` decays only to level ``k - 1`` with its own probability or
-    rate - the standard model for cascaded atomic relaxation and
-    single-photon loss. Single-subsystem.
+    Pass exactly one of p and rate, by keyword. Each may be one real number or
+    a nonempty iterable. For a d-level target, pass ``d - 1`` values ordered as
+    1 -> 0, 2 -> 1, and so on. A scalar therefore works only for a two-level
+    target. FATQAT stores the values as a tuple and checks the length when it
+    knows the target dimension.
 
-    Exactly one of ``p`` and ``rate`` must be given, keyword-only, each as a
-    scalar (one adjacent-level transition) or a tuple (one value per
-    transition; ``value[k - 1]`` describes the level ``k`` to ``k - 1``
-    transition). Dimension ``d`` requires ``d - 1`` values, checked at
-    resolution time, where the target dimension is known.
+    A simulator uses p for one channel application; each value must be an
+    ``int`` or ``float`` other than ``bool`` in ``[0, 1]``. An emulator uses
+    rate in a local ladder-transition Lindblad operator; each value must have
+    the same numeric type, be finite and nonnegative, and use the inverse of
+    the backend's time unit. Backends do not convert between forms. The noise
+    acts on one subsystem.
+
+    The conversion methods convert each transition independently. For more
+    than two levels, that elementwise conversion is not the exact result of
+    multilevel Lindblad-operator evolution, which can undergo more than one
+    adjacent decay during an interval.
+
+    Args:
+        p: One simulator decay probability or an iterable of probabilities.
+        rate: One emulator Lindblad-operator rate or an iterable of rates.
+
+    Raises:
+        ValueError: If both arguments or neither argument is supplied, an
+            iterable is empty, or a value is not in its accepted range.
 
     Attributes:
-        p: Decay probability per transition for one finite channel
-            application, each in ``[0, 1]``.
-        rate: Decay rate per transition, in the inverse of the target
-            backend's declared time unit. Convert with
-            :py:meth:`as_probability`.
+        p: Normalized probability tuple, or ``None`` in rate mode.
+        rate: Normalized rate tuple, or ``None`` in probability mode.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> fq.noise.AmplitudeDamping(p=0.01).p
+        (0.01,)
+        >>> fq.noise.AmplitudeDamping(rate=(0.001, 0.002)).rate
+        (0.001, 0.002)
     """
 
     num_subsystems: ClassVar[int | None] = 1
-    p: tuple[float, ...] | None = None
-    rate: tuple[float, ...] | None = None
+    p: float | Iterable[float] | None = None
+    rate: float | Iterable[float] | None = None
 
     def __post_init__(self) -> None:
         if (self.p is None) == (self.rate is None):
@@ -404,26 +472,55 @@ class AmplitudeDamping(Channel):
             object.__setattr__(self, "rate", values)
 
     def as_probability(self, duration: float) -> tuple[float, ...]:
-        """Return this channel's per-transition probabilities over ``duration``.
+        """Return per-transition probabilities for an explicit duration.
 
-        Returns ``p`` unchanged if already in probability mode (``duration``
-        is still validated); otherwise converts each rate.
+        Probability mode returns the normalized p tuple unchanged after
+        validating duration. Rate mode converts each entry with
+        ``1 - exp(-rate * duration)``. The conversion is exact for a two-level
+        channel; for a multilevel channel it is an elementwise utility, not the
+        exact result of evolution under the full ladder-transition Lindblad
+        operator.
+
+        Args:
+            duration: Finite nonnegative ``int`` or ``float`` other than
+                ``bool``, in the same time unit whose inverse is used by rate.
+
+        Returns:
+            One probability per adjacent-level transition.
+
+        Raises:
+            ValueError: If duration is not a finite nonnegative real number.
         """
         if self.p is not None:
             _require_duration(duration)
-            return self.p
-        return tuple(_rate_to_p(rate, duration) for rate in self.rate)
+            return cast(tuple[float, ...], self.p)
+        rates = cast(tuple[float, ...], self.rate)
+        return tuple(_rate_to_p(rate, duration) for rate in rates)
 
     def as_rate(self, duration: float) -> tuple[float, ...]:
-        """Return this channel's per-transition rates over ``duration``.
+        """Return per-transition rates for an explicit duration.
 
-        Returns ``rate`` unchanged if already in rate mode (``duration`` is
-        still validated); otherwise converts each probability.
+        Rate mode returns the normalized rate tuple unchanged after validating
+        duration. Probability mode converts each entry with
+        ``-log(1 - p) / duration``. The conversion is exact for a two-level
+        channel; for a multilevel channel it is an elementwise utility.
+
+        Args:
+            duration: Finite nonnegative ``int`` or ``float`` other than
+                ``bool``, in the time unit for the returned rates.
+
+        Returns:
+            One emulator rate per adjacent-level transition.
+
+        Raises:
+            ValueError: If duration is invalid, any p is 1, or a nonzero p is
+                converted at zero duration.
         """
         if self.rate is not None:
             _require_duration(duration)
-            return self.rate
-        return tuple(_p_to_rate(p, duration) for p in self.p)
+            return cast(tuple[float, ...], self.rate)
+        probabilities = cast(tuple[float, ...], self.p)
+        return tuple(_p_to_rate(p, duration) for p in probabilities)
 
 
 def amplitude_damping_rule(
@@ -448,7 +545,7 @@ def amplitude_damping_rule(
             "implementation; use probability mode or a duration-aware backend"
         )
     dim = targets[0].register.dim
-    ps = channel.p
+    ps = cast(tuple[float, ...], channel.p)
     if len(ps) != dim - 1:
         raise BackendValidationError(
             f"AmplitudeDamping needs {dim - 1} p value(s) for dimension "
@@ -463,21 +560,47 @@ def amplitude_damping_rule(
 
 @dataclass(frozen=True, kw_only=True)
 class PhaseDamping(Channel):
-    """Phase damping (dephasing): coherence decay with no population transfer.
+    """Dephasing without population transfer.
 
-    Single-subsystem, scalar-valued. Every diagonal entry of ``rho`` is
-    preserved exactly; at ``d=2`` off-diagonal coherence survives at factor
-    ``1 - p``.
+    Supply exactly one of p, rate, and t_phi, by keyword. Simulators use p for
+    a dimension-generic channel: it preserves every population and
+    multiplies every off-diagonal matrix element by ``1 - p``. The probability
+    must be a finite ``int`` or ``float`` other than ``bool`` in ``[0, 1]``.
 
-    Exactly one of ``p``, ``rate``, and ``t_phi`` must be given,
-    keyword-only. ``t_phi`` is normalized immediately to
-    ``rate = 1 / t_phi``.
+    An emulator uses rate for a local Lindblad operator. The rate is a finite,
+    nonnegative ``int`` or ``float`` other than ``bool``, in the inverse of the
+    backend's time unit. In dimension d its Lindblad operator is
+    ``sqrt(2 * rate) * diag(0, 1, ..., d - 1)``. Coherence between levels j and
+    k therefore decays at ``rate * (j - k)**2``. A finite positive ``t_phi``
+    value of the same numeric types is shorthand for ``rate = 1 / t_phi``;
+    the object stores the resulting rate.
+
+    Backends do not convert between simulator and emulator forms. The scalar
+    conversion methods match the two-level channel and adjacent-level
+    coherence. For more than two levels, the simulator form damps all
+    coherences uniformly while the emulator form depends on level separation,
+    so the forms are not generally equivalent. This noise acts on one
+    subsystem.
+
+    Args:
+        p: Simulator full-dephasing probability.
+        rate: Emulator Lindblad-operator rate.
+        t_phi: Pure-dephasing time in the backend's time unit.
+
+    Raises:
+        ValueError: If not exactly one argument is supplied, p or rate is
+            outside its accepted range, or t_phi is not finite and positive.
 
     Attributes:
-        p: Probability of full dephasing for one finite channel application,
-            in ``[0, 1]``.
-        rate: Dephasing rate, in the inverse of the target backend's declared
-            time unit. Convert with :py:meth:`as_probability`.
+        p: Provided probability, or ``None`` in emulator mode.
+        rate: Provided or t_phi-derived rate, or ``None`` in probability mode.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> fq.noise.PhaseDamping(p=0.015).p
+        0.015
+        >>> fq.noise.PhaseDamping(t_phi=500.0).rate
+        0.002
     """
 
     num_subsystems: ClassVar[int | None] = 1
@@ -506,10 +629,23 @@ class PhaseDamping(Channel):
             object.__setattr__(self, "rate", 1.0 / t_phi)
 
     def as_probability(self, duration: float) -> float:
-        """Return this channel's probability over ``duration``.
+        """Return the scalar dephasing probability for a duration.
 
-        Returns ``p`` unchanged if already in probability mode (``duration``
-        is still validated); otherwise converts the rate.
+        Probability mode returns p unchanged after validating duration. Rate
+        mode returns ``1 - exp(-rate * duration)``. This gives the equivalent
+        two-level channel and adjacent-level coherence decay. It does not make
+        the simulator and emulator multilevel conventions generally equivalent.
+
+        Args:
+            duration: Finite nonnegative ``int`` or ``float`` other than
+                ``bool``, in the same time unit whose inverse is used by rate.
+
+        Returns:
+            The provided probability or the probability converted from the
+            emulator rate.
+
+        Raises:
+            ValueError: If duration is not a finite nonnegative real number.
         """
         if self.p is not None:
             _require_duration(duration)
@@ -517,10 +653,24 @@ class PhaseDamping(Channel):
         return _rate_to_p(self.rate, duration)
 
     def as_rate(self, duration: float) -> float:
-        """Return this channel's rate over ``duration``.
+        """Return the scalar dephasing rate for a duration.
 
-        Returns ``rate`` unchanged if already in rate mode (``duration`` is
-        still validated); otherwise converts the probability.
+        Rate mode returns rate unchanged after validating duration.
+        Probability mode returns ``-log(1 - p) / duration``. This is the
+        equivalent two-level or adjacent-coherence rate, not a general
+        multilevel channel equivalence.
+
+        Args:
+            duration: Finite nonnegative ``int`` or ``float`` other than
+                ``bool``, in the time unit for the returned rate.
+
+        Returns:
+            The provided rate or the rate converted from the simulator
+            probability.
+
+        Raises:
+            ValueError: If duration is invalid, p is 1, or a nonzero p is
+                converted at zero duration.
         """
         if self.rate is not None:
             _require_duration(duration)

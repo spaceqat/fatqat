@@ -6,8 +6,8 @@ from ..errors import FatqatError
 
 
 class QiskitConversionError(FatqatError):
-    """Raised when a Qiskit circuit cannot be converted to a fatqat Program."""
+    """A Qiskit circuit cannot be converted to a FATQAT program."""
 
 
 class QiskitBackendError(FatqatError):
-    """Raised when the Qiskit backend rejects a run request."""
+    """The FATQAT Qiskit backend rejected a run request before execution."""

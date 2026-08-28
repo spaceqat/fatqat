@@ -23,14 +23,38 @@ from .target import _Atom3LevelTarget
 
 
 class Atom3LevelEmulator(_PulseBackend):
-    """Calibrated three-level neutral-atom emulator in ``|0>, |1>, |r>``.
+    """Run calibrated gates and local controls in ``|0>, |1>, |r>``.
 
-    Program resources remain dimension two, while physical evolution and
-    returned density matrices retain all three local levels. The built-in
-    gate map realizes ``RX``, ``RY``, ``RZ``, and ``CZ``. A supplied gate map
-    replaces that default, and a supplied Lindblad map enables the registered
-    physical channel descriptors. No physical channels are registered by
-    default; binary classical readout confusion remains supported.
+    Programs use dimension-two resources, while evolution and returned density
+    matrices retain all three physical levels. Every run starts with each atom
+    in ``|0>``.
+
+    Args:
+        model: Three-level atom model created with
+            ``Atom3LevelModel.from_document``.
+        arrangement: Fixed site coordinates for the program. The program must
+            contain one dimension-two resource per site.
+        noise: Noise applied by this emulator. The default is no noise.
+        gate_implementation_map: Gate-to-pulse rules. ``None`` uses the
+            built-in ``RX``, ``RY``, ``RZ``, and ``CZ`` rules.
+        lindblad_implementation_map: Continuous-noise rules. ``None`` uses an
+            empty map; pass an explicit map to enable Lindblad declarations.
+
+    Raises:
+        BackendValidationError: If an argument has the wrong type or ``noise``
+            contains a declaration unsupported by the selected rules.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> model = fq.emulator.Atom3LevelModel.from_document(
+        ...     fq.emulator.load_model_document("atom3level.reference")
+        ... )
+        >>> arrangement = fq.emulator.AtomArrangement.chain(2, spacing=6.0)
+        >>> backend = fq.emulator.Atom3LevelEmulator(
+        ...     model, arrangement=arrangement
+        ... )
+        >>> backend.arrangement.num_sites
+        2
     """
 
     _coherent_execution_mode: ExecutionMode = "density_matrix"

@@ -2,8 +2,8 @@
 
 fatqat provides two pulse-resolved neutral-atom emulators. They share the
 ordinary `Program -> run() -> Job -> Result` workflow, rectangular atom
-arrangements, and geometry-derived Rydberg interactions. They differ in the
-physical model and control surface:
+arrangements, and geometry-derived Rydberg interactions. They differ in their
+physical model and available controls:
 
 - {py:class}`~fatqat.emulator.Atom3LevelEmulator` integrates the physical
   `|0>, |1>, |r>` model. It accepts calibrated gates and selected-site direct
@@ -17,17 +17,9 @@ built-in gate map but accepts user-supplied gate rules through the same path.
 
 Neither class is a mode of {py:class}`~fatqat.simulator.AtomArraySimulator`.
 That simulator is a fast, constrained gate-level target: it applies finite
-qubit matrices and enforces a dynamic connectivity graph. The emulators integrate
-time-dependent physical Hamiltonians and retain their model's complete
-Hilbert space.
-
-The gate-level AtomArray prototype keeps a fixed private carrier slot and
-Hilbert-space dimension for every declared resource during a run.
-``Pair`` and ``Unpair`` edit a separate connectivity graph that decides
-two-qubit-gate legality, leaving the quantum state and tensor-axis order
-unchanged. Loss and ``Put`` update separate occupancy metadata on those fixed
-slots. This is an AtomArray-specific invariant: connectivity and occupancy are
-tracked outside the quantum state, with no coordinates or transport API.
+qubit matrices and enforces a changing connectivity graph. The emulators
+integrate time-dependent physical Hamiltonians and retain their model's
+complete Hilbert space.
 
 ## Choose an emulator
 
@@ -41,7 +33,7 @@ tracked outside the quantum state, with no coordinates or transport API.
 | Backend inputs | physics model, arrangement, optional maps | physics model, arrangement, optional interaction cutoff and maps |
 | Interaction pairs | signed `C6/R^6` over every declared-site pair | coordinate-derived, all pairs by default; optional distance cutoff |
 | Ideal final state | full-qutrit density matrix | full two-level statevector |
-| Measurement during a program | measurement, reset, and classical conditions use the shared pulse engine | terminal measurement suffix only |
+| Measurement during a program | measurement, reset, and classical conditions are supported | terminal measurement suffix only |
 | Default noise behavior | binary readout confusion; no Lindblad descriptors | rate-form amplitude/phase damping, thermal relaxation, depolarization, and binary readout confusion |
 | Typical use | calibrated gates, coherent leakage, or selected-site drives | global Rydberg dynamics and shaped drive/detuning controls |
 
@@ -51,23 +43,16 @@ emulator for global drive/detuning dynamics. If only gate connectivity and
 ideal qubit behavior matter, use
 {py:class}`~fatqat.simulator.AtomArraySimulator` instead.
 
-## Shared construction model
+## Set up the model and sites
 
-Both emulators keep three kinds of information separate:
+Load the emulator's physics model, create an
+{py:class}`~fatqat.emulator.AtomArrangement`, and declare one dimension-two
+program resource per site. Program resources bind to the arrangement's
+row-major site order.
 
-1. A versioned physics-model document defines species, levels, units, and the
-   signed `C6` coefficient.
-2. An {py:class}`~fatqat.emulator.AtomArrangement` defines regular physical-site
-   coordinates in row-major order.
-3. The `Program` declares one dimension-two quantum resource per arrangement
-   site. Resources bind to sites in declaration order.
-
-The three-level emulator compiles a nominal gate map internally or accepts a
-supplied replacement. Calibration is an input to that map builder, not
-emulator state. Its direct Raman/Rydberg controls bypass gate realization. The
-two-level emulator has no calibration and uses an empty built-in gate map; a
-supplied map can add ordinary gates. Its model supplies global drive and
-detuning addresses, and direct programs supply their sampled waveforms.
+The three-level emulator supplies calibrated gates and selected-site
+Raman/Rydberg channels. The two-level emulator supplies global drive and
+detuning channels and has no built-in gates.
 
 ```python
 arrangement = fq.emulator.AtomArrangement.rectangular(
@@ -77,9 +62,8 @@ arrangement = fq.emulator.AtomArrangement.rectangular(
 )
 ```
 
-The arrangement is immutable geometry; it does not represent dynamic atom
-occupancy. Arbitrary coordinates, transport, loading, loss, and refill are
-outside the current pulse-emulator contracts.
+The arrangement describes fixed geometry. Arbitrary coordinates, transport,
+loading, loss, and refill are not part of these pulse emulators.
 
 `arrangement.num_sites` is the exact number of declared coordinates and equals
 `len(arrangement)`; a pulse program must have exactly that many resources.
@@ -87,7 +71,7 @@ This differs from `AtomArraySimulator(num_sites=6)`, where `num_sites` is a
 maximum capacity and smaller programs are valid. `AtomArraySimulator()` is
 unbounded.
 
-## Shared run and result workflow
+## Run a program
 
 Both classes return an eager {py:class}`~fatqat.Job`:
 
@@ -100,13 +84,10 @@ result = backend.run(
 ).result()
 ```
 
-The result request follows the same defaults as the other pulse emulator:
-measurement requests counts by default, while an unmeasured program requests
-the backend's natural final-state representation. A sampled posterior final
-state can be returned only for `shots == 1`. The concrete state artifact is
-backend- and execution-mode-specific, so use `result.available_data` or the
-appropriate accessor rather than assuming every emulator returns a
-statevector.
+Measurement requests counts by default, while an unmeasured program requests
+the backend's natural final state. A sampled posterior state can be returned
+only for `shots == 1`. Use `result.available_data` when code must handle both
+statevectors and density matrices.
 
 Both classes also provide `propagator()` for coherent, measurement-free
 programs. Its matrix covers the full physical Hilbert space: `(3**N, 3**N)`

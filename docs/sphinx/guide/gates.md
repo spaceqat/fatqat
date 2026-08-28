@@ -1,11 +1,11 @@
 # Gates
 
-Import ``fatqat.operations`` as ``ops`` and use it with {py:meth}`~fatqat.Program.add`.
-The
-{doc}`operations API reference <../api/operations>` contains exact
-signatures and matrices; this page focuses on the everyday calling pattern.
+Import ``fatqat.operations`` as ``ops`` and pass operations to
+{py:meth}`~fatqat.Program.add`. The
+{doc}`operations API reference <../api/operations>` gives exact signatures and
+matrices; this page shows the usual calling patterns.
 
-## Fixed gates and parametric gates
+## Fixed and parameterized gates
 
 Fixed gates are ready-to-use values. Do not add parentheses:
 
@@ -19,7 +19,7 @@ program.add(ops.X, 1)
 program.add(ops.CX, (0, 1))
 ```
 
-Parametric gates are classes. Create one with its parameter before adding
+Parameterized gates are classes. Create one with its parameter before adding
 it. Rotation and phase angles are in radians:
 
 ```python
@@ -28,24 +28,22 @@ program.add(ops.RZ(1.5), 1)
 program.add(ops.CPhase(0.4), (0, 1))
 ```
 
-Passing `ops.RX` rather than `ops.RX(0.2)` is a common mistake. The
-former is the gate class; the latter is the operation you add.
-
 ## Targets and target order
 
 A one-qubit gate takes one target. A multi-qubit gate takes one tuple of
 targets:
 
 ```python
-program.add(ops.H, 0)
-program.add(ops.CX, (0, 1))
-program.add(ops.CCX, (0, 1, 2))
+three_qubit_program = fq.Program(3)
+three_qubit_program.add(ops.H, 0)
+three_qubit_program.add(ops.CX, (0, 1))
+three_qubit_program.add(ops.CCX, (0, 1, 2))
 ```
 
 For controlled gates, controls come first and the final target comes last.
-For example, `CX(0, 1)` uses qubit 0 as the control and qubit 1 as the
-target. When multiple registers make an integer ambiguous, use a register
-reference such as `program.quantum_registers[1][0]`.
+For example, `program.add(ops.CX, (0, 1))` uses qubit 0 as the control and
+qubit 1 as the target. When multiple registers make an integer ambiguous,
+index the intended register, such as `right[0]`.
 
 ## Gate families
 
@@ -59,8 +57,8 @@ reference such as `program.quantum_registers[1][0]`.
 
 ## Optional grid selections
 
-A {py:class}`~fatqat.GridRegister` can name a row, column, block, or all of its qubits. The
-view-capable operations are `RX`, `RY`, `RZ`, `CX`, and `CZ`.
+A {py:class}`~fatqat.GridRegister` can name a row, column, block, or all of its
+qubits. The view-capable operations are `RX`, `RY`, `RZ`, `CX`, and `CZ`.
 
 ```python
 import fatqat as fq
@@ -74,12 +72,13 @@ program.add(ops.CX, (qubits.row(0), qubits.row(1)))
 
 The two views in the `CX` example are paired in order: the first entry in row
 0 controls the first entry in row 1, and so on. Both views must use the same
-selector kind and have the same length. Views on one grid must not overlap.
+kind of grid selection and have the same length. Views on one grid must not
+overlap.
 The backend validates any device-specific constraints when the program runs.
 
 ## Qudit gates
 
-Qudit gates work with registers whose `dim` is greater than 2. `Shift` and
-`Clock` generalize `X` and `Z`; `Sum` generalizes `CX`; and `Fourier`
-generalizes `H`. See [Advanced user topics](advanced.md) for a complete
-qutrit example.
+Dimension-generic gates are mainly useful for registers with `dim > 2`, but
+they are defined for every `dim >= 2`. `Shift` and `Clock` generalize `X` and
+`Z`; `Sum` generalizes `CX`; and `Fourier` generalizes `H`. See
+[Advanced](advanced.md) for a complete qutrit example.

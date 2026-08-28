@@ -1,8 +1,11 @@
 # Noise
 
-Noise is authored as physical declarations in a {py:class}`~fatqat.NoiseModel`
-and passed to a backend at construction. It is separate from the program, so
-the same program can run ideally or with different device models.
+FATQAT models noise separately from the program. A
+{py:class}`~fatqat.NoiseModel` says which physical and classical errors to use
+and where they apply. The backend decides which ones it supports.
+
+This makes comparisons straightforward: keep one program and run it ideally,
+with a reference device profile, or with several noise models.
 
 ```python
 import numpy as np
@@ -12,7 +15,7 @@ import fatqat.operations as ops
 program = fq.Program(2, 2)
 program.add(ops.H, 0)
 program.add(ops.CX, (0, 1))
-program.measure((0, 1), (0, 1))
+program.measure_all()
 
 noise = fq.NoiseModel()
 noise.add(fq.noise.Depolarizing(p=0.05), operation=ops.CX)
@@ -22,176 +25,103 @@ noise.add(
     )
 )
 
-backend = fq.simulator.Simulator(method="DM", noise=noise)
-result = backend.run(
+backend = fq.simulator.Simulator(method="density_matrix", noise=noise)
+counts = backend.run(
     program,
     shots=1000,
     simulation_config={"seed": 7},
-).result()
-print(result.get_counts())
+).result().get_counts()
 ```
 
-{py:meth}`~fatqat.NoiseModel.add` is the single authoring entry point. The
-declaration says *what physical source exists*; `operation`, `targets`, and
-`target_positions` say *where it is active*. The backend decides whether it
-can realize that declaration as a finite channel, a Lindblad generator,
-carrier loss, or classical measurement confusion.
+## Noise on operations
 
-## Built-in declarations
-
-- {py:class}`~fatqat.noise.Depolarizing` accepts exactly one of finite joint
-  probability `p` or local continuous `rate`.
-- {py:class}`~fatqat.noise.PauliChannel` `(terms)` is a finite qubit channel.
-  The Pauli-string width sets its arity, and the string order follows the
-  ordered occurrence targets (`string[0]` describes the first target).
-- {py:class}`~fatqat.noise.AmplitudeDamping` accepts exactly one of finite
-  probability `p` or generator `rate`, with one value per adjacent-level
-  transition.
-- {py:class}`~fatqat.noise.PhaseDamping` accepts exactly one of finite `p`,
-  generator `rate`, or pure-dephasing time `t_phi` (`rate = 1 / t_phi`).
-- {py:class}`~fatqat.noise.ThermalRelaxation` `(t1, t2)` describes total
-  transverse coherence with `t2 <= 2*t1` and derives the residual pure
-  dephasing rate without double-counting T1 relaxation.
-- {py:class}`~fatqat.noise.Loss` `(p)` removes physical carriers on
-  occupancy-aware backends.
-- {py:class}`~fatqat.noise.ReadoutConfusion` stores a classical
-  column-stochastic report matrix.
-
-`PauliChannel` uses the ordinary finite-channel path; it is not a separate
-registration category:
+Pass `operation` to associate noise with every matching operation. A class and
+an instance select the same operation type; parameters on an instance do not
+narrow the match.
 
 ```python
+noise = fq.NoiseModel()
+
+# Joint depolarization for every CX.
+noise.add(fq.noise.Depolarizing(p=0.02), operation=ops.CX)
+
+# Phase damping for every H on logical qubit 0.
+q0 = program.quantum_registers[0][0]
 noise.add(
-    fq.noise.PauliChannel({"X": 0.008, "Z": 0.012}),
-    operation=ops.RZ,
+    fq.noise.PhaseDamping(p=0.01),
+    operation=ops.H,
+    targets=q0,
 )
+```
+
+Operation `targets` are exact and ordered. For a two-target operation,
+`(q0, q1)` matches only that target order; it does not match the same operation
+on `(q1, q0)`. A scalar selects a one-target operation. A tuple names the
+complete operation, not just the operands that receive the noise.
+
+Use `target_positions` to put a local source on selected operands of a
+multi-target operation:
+
+```python
+noise = fq.NoiseModel()
 noise.add(
-    fq.noise.PauliChannel({"XI": 0.006, "ZZ": 0.004}),
-    operation=ops.CX,
-)
-```
-
-## Activation scope
-
-The presence of `operation` has one structural meaning, independent of the
-descriptor parameters:
-
-- `operation=ops.X` means occurrence-bound noise. It is considered only when
-  an `X` occurs.
-- omitting `operation` means local background noise. It requires exactly one
-  target and is meaningful only on a backend with a physical timeline.
-- `targets` restricts operands. It never changes when noise is active and is
-  not shorthand for “every gate.”
-
-Matrix simulators have operation occurrences but no physical timeline. Their
-finite-channel forms are:
-
-```python
-# Every X occurrence.
-wide_noise = fq.NoiseModel()
-wide_noise.add(fq.noise.PhaseDamping(p=0.01), operation=ops.X)
-
-# Only the exact ordered X occurrence on q0.
-targeted_noise = fq.NoiseModel()
-targeted_noise.add(
-    fq.noise.PhaseDamping(p=0.02),
-    operation=ops.X,
-    targets=program.quantum_registers[0][0],
-)
-```
-
-Pulse emulators support operation windows and continuous background evolution:
-
-```python
-# Active only during matching X blocks.
-pulse_noise = fq.NoiseModel()
-pulse_noise.add(fq.noise.PhaseDamping(rate=0.002), operation=ops.X)
-
-# Active throughout elapsed pulse time on physical operand q0.
-pulse_noise.add(fq.noise.PhaseDamping(t_phi=500.0), targets="q0")
-```
-
-`Barrier`, direct `PulseOperation`, and `Reset` have no attached
-noise boundary and are rejected by `NoiseModel.add`. `Put` is the narrow
-exception on an occupancy backend: it accepts only {py:class}`~fatqat.noise.Loss`,
-which is applied after refill and therefore models loading failure or immediate
-post-load loss.
-
-## Target selectors and target positions
-
-Occurrence `targets` are an exact ordered selector. They may be all program
-{py:class}`~fatqat.RegisterRef` values or all physical device labels. A scalar
-is shorthand for a one-element selector. For a two-target operation, `(q0,
-q1)` and `(q1, q0)` are different occurrences.
-
-Omitting `targets` makes the registration operation-wide. Use
-`target_positions` to attach a local source to selected operands of a
-multi-operand occurrence:
-
-```python
-matrix_noise = fq.NoiseModel()
-matrix_noise.add(
     fq.noise.AmplitudeDamping(p=0.002),
     operation=ops.CZ,
     target_positions=0,
 )
-matrix_noise.add(
+noise.add(
     fq.noise.AmplitudeDamping(p=0.003),
     operation=ops.CZ,
     target_positions=1,
 )
 ```
 
-Background dynamical noise is local in the current API: its selector is one
-program reference or one physical device label, and `target_positions` is not
-accepted. Correlated background generators are not silently expanded into
-independent local terms.
+Positions follow the operation's target order. Targets may be program
+{py:class}`~fatqat.RegisterRef` values or device labels from a
+{py:class}`~fatqat.ResourceLayout`. See {doc}`../api/noise/model` for the
+complete selector, composition, and validation rules.
 
-Logical and physical selectors are separate identity spaces. They may both be
-authored before a layout is known. If they later resolve to the same source,
-scope, and overlapping extent, the backend rejects the actual matching event;
-an alias that never matches an operation occurrence, background target, or
-measurement remains a valid no-op.
+## Background noise
 
-## Accumulation and conflicts
+Omitting `operation` means background evolution, not “after every gate.”
+Background noise must be local and target exactly one logical reference or
+device label.
 
-Different physical source types accumulate in registration order:
+This example uses the reference transmon labels `"q0"` and `"q1"`:
 
 ```python
-matrix_noise = fq.NoiseModel()
-matrix_noise.add(fq.noise.AmplitudeDamping(p=0.01), operation=ops.H)
-matrix_noise.add(fq.noise.PhaseDamping(p=0.02), operation=ops.H)
+pulse_noise = fq.NoiseModel()
+pulse_noise.add(
+    fq.noise.ThermalRelaxation(t1=60_000.0, t2=80_000.0),
+    targets="q0",
+)
+pulse_noise.add(
+    fq.noise.PhaseDamping(t_phi=500_000.0),
+    targets="q1",
+)
 ```
 
-Background and operation-specific registrations also coexist, even for the
-same source type, because they describe different activation scopes. This is
-the natural pulse-model spelling for baseline damping plus extra damping
-during one gate family.
+Background Lindblad operators remain active throughout elapsed pulse time,
+including idle intervals. Add one rule per site when the same source exists at
+several sites.
 
-FATQAT does not implement replacement or “most specific wins.” Repeated or
-overlapping registrations of the same concrete declaration type in the same
-operation/background scope are errors. For example, an operation-wide
-`PhaseDamping` and a target-specific `PhaseDamping` cannot both match the same
-`X` occurrence. Enumerate exact selectors for heterogeneous calibration, or
-use disjoint `target_positions` as shown above.
+Rates use the inverse of the backend model's `time_unit`; `t1`, `t2`, and
+`t_phi` use that time unit directly. Check the model rather than inferring the
+unit from a value's magnitude.
 
-## Finite channels versus generators
+Calls to `add()` accumulate. Different noise types can act on the same
+operation, and background noise can coexist with operation noise. FATQAT
+rejects overlapping rules of the same type.
 
-FATQAT performs no implicit conversion between finite probability and
-continuous rate:
+## Choose the backend form
 
-- matrix simulators accept backend-supported occurrence-bound finite channels
-  and reject `rate`, `t_phi`, `t1`, and `t2` generator/time forms;
-- pulse emulators accept backend-supported local generator/time forms and
-  reject built-in finite `p` forms, even when an operation has a duration.
+Simulators apply probability-form channels after operations. Pulse emulators
+apply rate- or time-based noise over elapsed time. FATQAT does not guess a gate
+duration to convert between the two. Built-in coverage is listed in
+{ref}`noise-simulator-support` and {ref}`noise-emulator-support` under the
+combined {ref}`noise-backend-support` reference.
 
-For example, `Depolarizing(p=0.01)` is matrix-channel mode, while
-`Depolarizing(rate=0.002)` is pulse-generator mode. The explicit
-`as_probability(duration)` and `as_rate(duration)` utilities are available
-when application code owns the reference duration.
-
-This keeps authored physics explicit. Use descriptor utilities when *you* own
-the reference duration:
+When you know the duration, convert explicitly:
 
 ```python
 relaxation = fq.noise.ThermalRelaxation(t1=60e-6, t2=80e-6)
@@ -202,123 +132,68 @@ matrix_noise.add(damping, operation=ops.H)
 matrix_noise.add(dephasing, operation=ops.H)
 ```
 
-For pulse simulation, register the timescale declaration directly on one
-target or one operation window:
+{py:meth}`~fatqat.noise.ThermalRelaxation.as_channels` returns two channels
+that reproduce qubit `T1`/`T2` evolution over that duration. The damping
+types also provide explicit probability/rate conversions; their API pages
+describe the multilevel limits.
 
-```python
-pulse_noise = fq.NoiseModel()
-pulse_noise.add(relaxation, targets="q0")
-pulse_noise.add(relaxation, operation=ops.X, targets="q1")
-```
+## Readout errors
 
-The backend uses the authored generator unchanged while the pulse-block
-duration determines how long it evolves. A conditionally disabled block also
-disables its block-local noise; background noise remains active over elapsed
-scheduled time.
+{py:class}`~fatqat.noise.ReadoutConfusion` models classical reporting errors,
+not quantum evolution. Each column of its matrix is a probability distribution
+under the convention
 
-## Readout confusion
-
-{py:class}`~fatqat.noise.ReadoutConfusion` is intrinsically
-measurement-bound, so `operation` and `target_positions` are forbidden:
+$$
+C[\mathrm{reported},\mathrm{true}]
+= P(\mathrm{reported}\mid\mathrm{true}).
+$$
 
 ```python
 confusion = fq.noise.ReadoutConfusion(
     np.array([[0.98, 0.05], [0.02, 0.95]])
 )
+
 readout_noise = fq.NoiseModel()
 readout_noise.add(confusion)                 # every measured subsystem
-# or: readout_noise.add(confusion, targets="q0")
+# Or pass one logical reference or device label:
+# readout_noise.add(confusion, targets=q0)
 ```
 
-The matrix convention is `C[reported, true] = P(reported | true)`. Physical
-collapse keeps the true outcome; only the reported classical digit is
-resampled. Feedforward therefore sees the reported digit, while a reused
-quantum subsystem evolves from the true post-measurement state.
+Physical collapse follows the true outcome. Only the digit written to the
+classical register is resampled, so feedforward and counts see the reported
+digit while later quantum evolution starts from the true post-measurement
+state. The matrix size must match the backend's reported digit dimension; a
+three-level pulse model can still have binary reporting.
 
-Universal and targeted confusion registrations cannot coexist. Repeated
-registration for the same operand is also an error. Correlated multi-operand
-readout is not supported; `targets` is scalar.
-
-## Carrier loss
+## Carrier loss and occupancy
 
 {py:class}`~fatqat.noise.Loss` is not amplitude damping. On an
-occupancy-aware backend, `p` is sampled independently for each selected,
-currently present carrier after the matched occurrence. A hit removes the
-carrier and its correlations; absence persists until `Put`. Later
-operations requiring an absent carrier are skipped, and measurement reports
-the backend's absence/erasure outcome.
+occupancy-aware simulator, a hit removes a present carrier. The site stays
+empty until `Put`; gates that need the carrier are skipped, and measurement
+reports erasure digit `2`. The built-in backend and method restrictions are
+listed in {ref}`noise-simulator-support`.
 
 ```python
-noise.add(fq.noise.Loss(p=0.001), operation=ops.RX)
-```
-
-Backends without occupancy/removal semantics reject `Loss` rather than
-approximating it as a quantum channel.
-
-## Backend lifecycle and capability checks
-
-A backend defensively captures a noise model when constructed:
-
-```python
-noise = fq.NoiseModel()
-noise.add(fq.noise.PhaseDamping(p=0.01), operation=ops.X)
-backend = fq.simulator.Simulator(method="DM", noise=noise)
-
-# This affects a future backend, not `backend`.
-noise.add(fq.noise.Depolarizing(p=0.02), operation=ops.H)
-```
-
-Built-in declarations are immutable. Treat custom declarations as immutable
-after registration. Construction rejects a captured model containing an
-unsupported source. To inspect another model without constructing a new
-backend, {py:meth}`~fatqat.simulator.Simulator.check_noise_support` and the
-corresponding emulator methods return an advisory capability report. Program
-selectors and physical labels are validated only when a concrete program and
-layout are prepared.
-
-## Execution method
-
-For matrix simulation, `method="DM"` applies the exact Kraus sum. A
-statevector cannot retain a mixed ensemble, so `method="SV"` samples a Kraus
-branch per noisy occurrence and replays stochastic shots. Both implement the
-same channel and converge to the same distribution. Density matrices are
-usually preferable while their quadratic memory cost is affordable.
-
-## Custom implementations
-
-A custom finite channel subclasses {py:class}`~fatqat.noise.Channel` and has
-an exact-type rule in {py:class}`~fatqat.noise.ChannelImplementationMap`:
-
-```python
-class BitFlip(fq.noise.Channel):
-    num_subsystems = 1
-
-    def __init__(self, p):
-        self.p = p
-
-
-def bit_flip_rule(channel, *, targets):
-    x = np.array([[0, 1], [1, 0]], dtype=complex)
-    return (
-        np.sqrt(1 - channel.p) * np.eye(2, dtype=complex),
-        np.sqrt(channel.p) * x,
-    )
-
-
-channel_map = fq.noise.default_channel_implementation_map()
-channel_map.add(BitFlip, bit_flip_rule)
-
-noise = fq.NoiseModel()
-noise.add(BitFlip(p=0.05), operation=ops.X)
-backend = fq.simulator.Simulator(
-    method="DM",
-    noise=noise,
-    channel_implementation_map=channel_map,
+loss_noise = fq.NoiseModel()
+loss_noise.add(
+    fq.noise.Loss(p=0.01),
+    operation=ops.Put,  # Model unsuccessful loading after Put.
 )
 ```
 
-A custom pulse generator uses the separate
-{py:class}`~fatqat.noise.LindbladImplementationMap`. Its rule receives
-`(declaration, *, physical_dimension)` and returns local square collapse
-operators. Custom physical fields are interpreted by that rule; FATQAT does
-not require every generator descriptor to expose a generic `rate` property.
+Loss is sampled independently for each selected carrier after a matching
+operation. An empty-site erasure bypasses readout confusion because no
+physical digit was measured.
+
+## Check backend support
+
+Use
+{py:meth}`~fatqat.simulator.Simulator.check_noise_support` for a simulator or
+{py:meth}`~fatqat.emulator.TransmonEmulator.check_noise_support` for a pulse
+emulator to inspect a model before running a program. The result lists accepted
+and rejected sources and explains each rejection. Checks that need a program,
+layout, dimensions, or execution method happen when you run the program.
+
+If you are implementing a backend or custom noise type, see
+{doc}`../api/noise/custom-implementations` for the extension API. Ordinary
+noise-model users do not need an implementation map.

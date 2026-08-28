@@ -1,4 +1,4 @@
-"""Compile standard three-level-atom gates into portable pulse maps."""
+"""Build standard three-level-atom gate-to-pulse maps."""
 
 from __future__ import annotations
 
@@ -44,11 +44,21 @@ def _theta(operation: Operation) -> float:
 def default_atom_3level_gate_implementation_map(
     *, model: Atom3LevelModel, calibration: Atom3LevelCalibration
 ) -> PulseImplementationMap:
-    """Compile a fresh arrangement-independent standard atom pulse map.
+    """Build the standard three-level atom gate-to-pulse map.
 
-    ``model`` is a required source-model seam for later pulse-design work. The
-    first version intentionally does not inspect or retain it: C6 and geometry
-    remain target-evolution facts rather than inputs to the fixed pulse recipe.
+    The returned ``RX``, ``RY``, ``RZ``, and ``CZ`` rules use channels and
+    frames from ``model`` and pulse values from ``calibration``. Geometry and
+    C6 affect later physical evolution; they do not retune these fixed recipes.
+
+    Args:
+        model: Model whose channel and frame addresses the rules use.
+        calibration: Gate recipe values.
+
+    Returns:
+        A new pulse implementation map with the standard gate rules.
+
+    Raises:
+        BackendValidationError: If either argument has the wrong type.
     """
     if not isinstance(model, Atom3LevelModel):
         raise BackendValidationError("model must be an Atom3LevelModel")

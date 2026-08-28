@@ -23,7 +23,34 @@ from .target import _TransmonTarget
 
 
 class TransmonEmulator(_PulseBackend):
-    """Simulate calibrated controls on a fixed three-level transmon model."""
+    """Run gates and direct controls on a three-level transmon model.
+
+    Every run starts with all model transmons in physical ``|0>``. Ordinary
+    gates use a pulse implementation map; ``PulseOperation`` values use their
+    channels directly.
+
+    Args:
+        model: Transmon model created with ``TransmonModel.from_document``.
+        noise: Noise applied by this emulator. The default is no noise.
+        lindblad_implementation_map: Continuous-noise rules. ``None`` uses the
+            built-in amplitude-damping, phase-damping, and thermal-relaxation
+            rules. An explicit map replaces those defaults.
+        gate_implementation_map: Gate-to-pulse rules. ``None`` uses the
+            built-in transmon gate map and packaged calibration.
+
+    Raises:
+        BackendValidationError: If an argument has the wrong type or ``noise``
+            contains a declaration unsupported by the selected rules.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> model = fq.emulator.TransmonModel.from_document(
+        ...     fq.emulator.load_model_document("transmon.reference")
+        ... )
+        >>> backend = fq.emulator.TransmonEmulator(model)
+        >>> backend.model is model
+        True
+    """
 
     _coherent_execution_mode: ExecutionMode = "density_matrix"
 

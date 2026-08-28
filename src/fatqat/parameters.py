@@ -19,17 +19,16 @@ def _validate_parameter_name(name: object) -> str:
 class Parameter:
     """Create an immutable, identity-based scalar program parameter.
 
-    ``name`` is only a display and diagnostic label. Equality and hashing use
-    object identity, so two parameters with the same name remain distinct
-    mapping keys. Reuse the same object directly as an operation argument when
-    one value should be shared, then pass that object to
-    :meth:`~fatqat.Program.assign_parameters` or a sweep API. Parameters
-    nested inside another container are not discovered for binding.
+    ``name`` is a display and diagnostic label, not the parameter's identity.
+    Equality and hashing use object identity, so two parameters with the same
+    name remain distinct. Reuse one object when several operation arguments
+    should share a value, then bind that object with
+    `Program.assign_parameters` or a sweep API. Parameters nested inside
+    another container are not discovered for binding.
 
     Args:
-        name: Non-empty string shown in diagnostics and representations. It is
-            not accepted as a substitute for the parameter object when
-            binding.
+        name: Non-empty display label. Bindings use the parameter object, not
+            this name.
 
     Attributes:
         name: Immutable display label supplied at construction.
@@ -60,21 +59,21 @@ class Parameter:
 
 @dataclass(frozen=True, eq=False, slots=True)
 class ParameterVector:
-    """Create an immutable ordered group of distinct :class:`Parameter` objects.
+    """Create an immutable ordered group of distinct `Parameter` objects.
 
-    The vector and all of its elements use identity-based equality. Indexing
-    the same vector repeatedly returns the same element object, including for
-    Python-style negative indices. Iteration follows increasing index order.
-    Slices and non-integer indices are not accepted.
+    The vector and its elements use identity-based equality. Repeated indexing
+    returns the same element object. Integer indexing supports normal negative
+    indices, and iteration follows increasing index order; slices and other
+    index types are not accepted.
 
-    A non-empty vector can be one key in
-    :meth:`~fatqat.Program.assign_parameters` when every element is used
-    directly as an operation argument. Its value must be a matching-length,
-    one-dimensional NumPy array or a non-string, non-bytes, non-mapping
-    iterable, consumed once in iteration order. Individual elements are
-    ordinary :class:`Parameter` keys and support partial binding. A zero-length
-    vector can be used as an empty container but not as a binding key.
-    Parameters nested inside another container are not discovered for binding.
+    Bind a non-empty vector with `Program.assign_parameters` when every element
+    is used directly as an operation argument. The value must be a
+    matching-length, one-dimensional NumPy array or another non-string,
+    non-bytes, non-mapping iterable. Values are consumed once and paired with
+    elements in index order. Individual elements are ordinary `Parameter` keys
+    and support partial binding. A zero-length vector is valid as an empty
+    container but not as a binding key. Parameters nested inside another
+    container are not discovered for binding.
 
     Args:
         name: Non-empty base label. Element labels use ``name[index]``.
@@ -134,7 +133,7 @@ class ParameterVector:
                 accepted.
 
         Returns:
-            The stable :class:`Parameter` object stored at that index.
+            The stable `Parameter` object stored at that index.
 
         Raises:
             TypeError: If ``index`` is not an exact integer.

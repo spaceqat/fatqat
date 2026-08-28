@@ -1,11 +1,11 @@
 Neutral-atom emulators
 ======================
 
-The two neutral-atom emulators share the application-facing lifecycle of
-:py:class:`~fatqat.simulator.Simulator`: construct a backend, pass it a
-:py:class:`~fatqat.Program`, receive an eager :py:class:`~fatqat.Job`, and read
-the requested fields from :py:class:`~fatqat.Result`. They are pulse-resolved
-physical emulators rather than modes of
+Both neutral-atom emulators follow the standard
+:py:class:`~fatqat.simulator.Simulator` workflow. Pass a
+:py:class:`~fatqat.Program` to ``run()``, then call ``job.result()`` on the
+eager :py:class:`~fatqat.Job` to get a :py:class:`~fatqat.Result`. They are
+pulse-resolved physical emulators rather than modes of
 :py:class:`~fatqat.simulator.AtomArraySimulator`.
 
 Use :py:class:`~fatqat.emulator.Atom3LevelEmulator` for calibrated gates or
@@ -16,17 +16,18 @@ workflows are in :doc:`../guide/neutral-atoms`,
 :doc:`../guide/atom-3level`, and
 :doc:`../guide/atom-2level`.
 
-Common arrangement and binding
-------------------------------
+Arrangements and program resources
+----------------------------------
 
-Both backends require an immutable regular
+Both backends require a regular
 :py:class:`~fatqat.emulator.AtomArrangement`. Coordinates are row-major,
 ``(column * spacing, row * spacing, 0)``, and the current atom models interpret
 spacing in micrometres. A program must declare exactly one dimension-two
 quantum resource per site; declaration order binds resources to coordinates.
-The arrangement declares geometry, not dynamic atom occupancy.
-``arrangement.num_sites`` is the exact coordinate count, ``len(arrangement)``
-is its concise equivalent, and a pulse program must match that count exactly.
+The arrangement describes fixed geometry; it does not track atom loading or
+loss.
+``arrangement.num_sites`` and ``len(arrangement)`` both return the coordinate
+count, which a pulse program must match exactly.
 By contrast, ``AtomArraySimulator(num_sites=6)`` declares a maximum gate-level
 device capacity and accepts programs with at most six resources; omitting its
 ``num_sites`` argument leaves that simulator unbounded.
@@ -34,8 +35,8 @@ device capacity and accepts programs with at most six resources; omitting its
 .. autoclass:: fatqat.emulator.AtomArrangement
    :members: chain, rectangular, num_sites
 
-Run and result contract
------------------------
+Run configuration and results
+-----------------------------
 
 Both ``run()`` methods have the signature ``(program, *, shots=1024,
 resource_layout=None, simulation_config=None, result_config=None)``. The
@@ -49,25 +50,53 @@ starts is represented by a failed job, and ``job.result()`` raises
 
 .. list-table:: Simulation configuration
    :header-rows: 1
-   :widths: 24 20 56
+   :widths: 18 24 16 42
 
    * - Key
+     - Type
      - Default
-     - Meaning
+     - Effect and constraints
    * - ``seed``
+     - ``int`` or ``None``; not ``bool``
      - ``None``
-     - Integer seed for physical measurement, readout, and trajectory
-       sampling, as applicable.
+     - Random seed for measurement, readout, and trajectory sampling. Integers
+       must be non-negative; ``None`` chooses a fresh seed.
    * - ``schedule_mode``
+     - ``"ASAP"`` or ``"ALAP"``
      - ``"ASAP"``
-     - ``"ASAP"`` or ``"ALAP"`` placement within each continuous region.
+     - Place operations as early or as late as their dependencies allow.
 
-``result_config`` accepts only ``counts`` and ``final_state``. Counts default
-on when measurement exists; the natural final state defaults on when it does
-not. Counts require a positive integer ``shots``. A sampled physical
-measurement can return one posterior final state only when ``shots == 1``.
+``result_config`` accepts only these keys:
 
-The concrete final-state field differs by backend and two-level execution mode:
+.. list-table:: Result configuration
+   :header-rows: 1
+   :widths: 18 24 16 42
+
+   * - Key
+     - Type
+     - Default
+     - Effect and constraints
+   * - ``counts``
+     - ``bool`` or ``None``
+     - ``None``
+     - ``True`` requests classical counts, ``False`` suppresses them, and
+       ``None`` enables them when measurement exists. Counts require a
+       positive integer ``shots`` value.
+   * - ``final_state``
+     - ``bool`` or ``None``
+     - ``None``
+     - ``True`` requests the model- and mode-specific terminal state,
+       ``False`` suppresses it, and ``None`` enables it when measurement is
+       absent. With physical measurement, it requires ``shots == 1``.
+
+Both configuration arguments must be a ``dict`` or ``None``; unknown keys
+are rejected.
+
+Each run starts from a fixed product state: ``|0>`` on the three-level backend
+and ``|g>`` on the two-level backend. Neither constructor accepts an
+``initial_state`` argument.
+
+The available final-state result depends on the backend and execution mode:
 
 .. list-table:: Final-state representations
    :header-rows: 1
@@ -77,37 +106,41 @@ The concrete final-state field differs by backend and two-level execution mode:
      - Result accessor
      - Shape for ``N`` sites
      - Interpretation
-   * - Three-level atom
+   * - Three-level, no measurement
      - :py:meth:`~fatqat.Result.get_density_matrix`
      - ``(3**N, 3**N)``
-     - ``exact_density_matrix``
-   * - Two-level ideal
+     - Exact ensemble state.
+   * - Three-level, measured
+     - :py:meth:`~fatqat.Result.get_density_matrix` when requested
+     - ``(3**N, 3**N)``
+     - One sampled posterior state; requires ``shots == 1``.
+   * - Two-level, no Lindblad evolution
      - :py:meth:`~fatqat.Result.get_statevector`
      - ``(2**N,)``
-     - ``pure_state``
+     - Pure state, or one sampled posterior state after measurement.
    * - Two-level unmeasured Lindblad
      - :py:meth:`~fatqat.Result.get_density_matrix`
      - ``(2**N, 2**N)``
-     - ``exact_density_matrix``
+     - Exact ensemble state.
    * - Two-level measured Lindblad
      - :py:meth:`~fatqat.Result.get_statevector` when requested
      - ``(2**N,)``
-     - ``sampled_quantum_trajectory``
+     - One sampled trajectory and posterior state; requires ``shots == 1``.
 
 Use ``result.available_data`` when code must handle more than one execution
 mode. Neither backend exposes QuTiP values.
 
-Family metadata records target model ``format`` and model kind/ID/revision.
+Result metadata identifies the model format, kind, ID, and revision.
 
 Three-level atom emulator
 -------------------------
 
-:py:class:`~fatqat.emulator.Atom3LevelEmulator` requires a strict geometry-free
-physics model and an arrangement. Its nominal map is compiled internally; its native gates
-are :py:class:`~fatqat.operations.RX`,
+:py:class:`~fatqat.emulator.Atom3LevelEmulator` takes a physical model and an
+arrangement. Its default gate map supports
+:py:class:`~fatqat.operations.RX`,
 :py:class:`~fatqat.operations.RY`, :py:class:`~fatqat.operations.RZ`, and
-:py:data:`~fatqat.operations.CZ`. Measurement, reset, barriers, and classical
-conditions follow the shared pulse-program execution contract.
+:py:data:`~fatqat.operations.CZ`. It also supports measurement, reset,
+barriers, and classical conditions.
 
 The local physical basis is ``|0>, |1>, |r>``. Measurement maps those levels
 to ``0, 1, 1`` before binary readout confusion. The complete qutrit state is
@@ -116,7 +149,12 @@ retained; ``|r>`` is coherent leakage and is not physical atom loss.
 The signed ``C6/R^6`` drift includes every occupied pair. The calibrated CZ
 pulse is fixed and is not retuned when spacing or ``C6`` changes. Binary
 ``2 x 2`` classical readout confusion is built in. The default Lindblad map is
-empty; a supplied map enables registered qutrit channel descriptors.
+empty; pass a map to add compatible qutrit rate- or time-based noise. Qutrit
+amplitude damping requires two adjacent-level rates. Rates use inverse
+microseconds, while ``t1``, ``t2``, and ``t_phi`` use microseconds. Background
+and ordinary-operation-scoped noise are accepted. See
+:ref:`noise-emulator-support` for the supported forms and
+:ref:`pulse-probability-noise` for why pulse emulators require rates.
 
 Construction and execution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -126,23 +164,34 @@ Construction and execution
 
 ``propagator()`` returns the coherent full-qutrit ``(3**N, 3**N)`` operator.
 It rejects measurement, reset, and conditions. ``apply_final_frame=True``
-includes the terminal virtual-frame ledger; ``False`` exposes the raw physical
-propagator before that final composition. Readout-only noise is inert.
+includes the final virtual-frame transformation; ``False`` omits that final
+transformation. Readout-only noise does not affect the propagator.
 
 Model and calibration values
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``Atom3LevelModel.from_document(...)`` accepts an exact-schema decoded mapping
-and returns a semantically comparable, unhashable immutable model. Use
-``load_model_document("atom3level.reference")`` for the packaged reference;
-application code owns file I/O for custom documents. The calibration class
-separately accepts its decoded calibration mapping. The model owns species,
-explicit basis and transition facts, top-level quantity-kind units, mass, and
-signed ``C6``. The calibration owns portable Raman and CZ control recipes and
-contains no model identity.
+``Atom3LevelModel.from_document(...)`` parses a decoded mapping that matches
+the model schema exactly. Use ``load_model_document("atom3level.reference")``
+for the packaged reference; load and decode custom files before passing the
+mapping. The calibration class accepts its own decoded calibration mapping.
+The model defines species, basis and transitions, quantity units, mass, and
+signed ``C6``. The calibration supplies the Raman and CZ recipe values.
 
-.. autoclass:: fatqat.emulator.Atom3LevelModel
-   :members:
+.. py:class:: fatqat.emulator.Atom3LevelModel
+
+   Create instances with
+   :py:meth:`~fatqat.emulator.Atom3LevelModel.from_document`; direct
+   construction is not supported.
+
+.. automethod:: fatqat.emulator.Atom3LevelModel.from_document
+
+.. autoattribute:: fatqat.emulator.Atom3LevelModel.control
+
+.. autoattribute:: fatqat.emulator.Atom3LevelModel.available_controls
+
+.. automethod:: fatqat.emulator.Atom3LevelModel.frame
+
+.. autoattribute:: fatqat.emulator.Atom3LevelModel.time_unit
 
 .. autoclass:: fatqat.emulator.Atom3LevelCalibration
    :members:
@@ -152,27 +201,20 @@ contains no model identity.
 .. autofunction:: fatqat.emulator.default_atom_3level_gate_implementation_map
 
 The standard builder requires ``model=`` and ``calibration=`` and returns a
-fresh portable :py:class:`~fatqat.emulator.PulseImplementationMap`. The v1
-atom recipes deliberately do not inspect or retain source C6 or geometry.
-``Atom3LevelEmulator`` copies a supplied map; direct controls bypass it.
-Its optional ``lindblad_implementation_map`` is also copied. Registered
-operation-scoped or target-local background generators then use shared
-pulse-noise resolution, with ``3 x 3`` local operators and two rates for
-qutrit amplitude damping. Finite channel probabilities are not converted.
+new :py:class:`~fatqat.emulator.PulseImplementationMap`. Its rules use that
+model's channels and frames. Geometry and C6 affect physical evolution but do
+not retune the built-in pulse shapes.
 
 Two-level atom emulator
 -----------------------
 
-:py:class:`~fatqat.emulator.Atom2LevelEmulator` requires a strict
-geometry-free two-level model and arrangement. It accepts
-:py:class:`~fatqat.operations.PulseOperation` values, added without a separate
-``targets`` argument, containing global drive and detuning addresses returned
-by the model. The emulator resolves those addresses across the arrangement
-during program preparation. An optional terminal measurement suffix may
-follow. Barriers are structural no-ops. Its built-in gate map is empty, so
-ordinary gates reject by default; a supplied map can define them. Reset,
-conditions, site-specific direct controls, and a pulse after measurement remain
-rejected.
+:py:class:`~fatqat.emulator.Atom2LevelEmulator` requires an
+``Atom2LevelModel`` and an arrangement. Its global drive and detuning channels
+act on every site; see :doc:`pulse-control/pulse-operation` for how to add a
+direct pulse block. A terminal measurement may follow the pulse program, and
+barriers are ignored. The built-in gate map is empty, so ordinary gates
+require a custom map. Reset, conditions, per-site controls, mid-circuit
+measurement, and pulses after measurement are not supported.
 
 Construction and execution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -181,8 +223,9 @@ Construction and execution
    :members: model, arrangement, interaction_cutoff, run, propagator, check_noise_support
 
 ``propagator()`` returns a coherent ``(2**N, 2**N)`` operator. It rejects
-measurement and any nonempty elapsed plan with accepted Lindblad noise. An
-empty plan returns identity even with such noise because no time elapses.
+measurement, and rejects Lindblad noise when the program has nonzero duration.
+A zero-duration program returns identity even with such noise because no time
+elapses.
 
 Model and controls
 ~~~~~~~~~~~~~~~~~~
@@ -191,8 +234,21 @@ The model fixes basis order ``("g", "r")``, unit spellings, signed ``C6``,
 the ``C6/R^6`` interaction law, and optional channel bounds. It contains no
 geometry or calibration.
 
-.. autoclass:: fatqat.emulator.Atom2LevelModel
-   :members: angular_frequency_unit, control, available_controls
+.. py:class:: fatqat.emulator.Atom2LevelModel
+
+   Create instances with
+   :py:meth:`~fatqat.emulator.Atom2LevelModel.from_document`; direct
+   construction is not supported.
+
+.. automethod:: fatqat.emulator.Atom2LevelModel.from_document
+
+.. autoattribute:: fatqat.emulator.Atom2LevelModel.control
+
+.. autoattribute:: fatqat.emulator.Atom2LevelModel.available_controls
+
+.. autoattribute:: fatqat.emulator.Atom2LevelModel.angular_frequency_unit
+
+.. autoattribute:: fatqat.emulator.Atom2LevelModel.time_unit
 
 The global drive accepts a complex :py:class:`~fatqat.emulator.SampledWaveform`;
 its complex values encode amplitude and phase together. The global detuning
@@ -201,41 +257,36 @@ accepts real samples. Both use ``rad/us`` and apply to every arrangement site.
 Interaction cutoff
 ~~~~~~~~~~~~~~~~~~
 
-Interaction pairs are derived privately from Euclidean coordinate distances.
-The default ``interaction_cutoff=None`` keeps every unordered pair and
-preserves the complete ``C6/R^6`` Hamiltonian. A finite nonnegative cutoff
-is a hard numerical truncation in the model distance unit (currently
-micrometres): it keeps pairs whose distance is inclusively at or below the
-cutoff, while ``0.0`` disables pair interactions. The implementation uses a
-fixed eight-machine-epsilon representation allowance at that inclusive
-boundary so decimal rectangular spacings behave consistently; it is not a
-user-adjustable physical tolerance. For a rectangular arrangement,
-``interaction_cutoff=arrangement.spacing`` keeps only horizontal and vertical
-nearest pairs. This parameter deletes Hamiltonian terms and is not a physical
-blockade radius.
+The default ``interaction_cutoff=None`` keeps every pair and preserves the
+complete ``C6/R^6`` Hamiltonian. A finite nonnegative cutoff keeps pairs whose
+Euclidean distance is at or below that value in the model distance unit
+(currently micrometres); ``0.0`` disables pair interactions. For a rectangular
+arrangement, ``interaction_cutoff=arrangement.spacing`` keeps only horizontal
+and vertical nearest pairs. This is a numerical Hamiltonian truncation, not a
+physical blockade radius.
 
-Lindblad capability and mode selection
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Lindblad noise and result types
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The two-level emulator accepts local background, rate-form
-:py:class:`~fatqat.noise.AmplitudeDamping` and
-:py:class:`~fatqat.noise.PhaseDamping`,
-:py:class:`~fatqat.noise.ThermalRelaxation`, and rate-form
-:py:class:`~fatqat.noise.Depolarizing`. Each background registration names one
-site; enumerate sites explicitly when the same generator is present on
-several. Rates use inverse microseconds and relaxation times use microseconds.
-Finite ``p`` forms are rejected rather than converted with a pulse duration.
+The built-in forms are listed at :ref:`noise-emulator-support`. Each background
+registration names one site; enumerate sites explicitly to apply the same noise
+at several sites. Rates use inverse microseconds and relaxation times use
+microseconds. Finite ``p`` forms are not converted with a pulse duration.
 Binary :py:class:`~fatqat.noise.ReadoutConfusion` is a classical report channel
 applied only to the reported digit after physical collapse, not a Lindblad
-operator. ``Loss`` and ``IncoherentTransitions`` remain unsupported.
+operator.
 
-With no Lindblad registration, the two-level backend uses a ket-preserving solve.
-An unmeasured noisy program uses an exact ensemble density-matrix solve. A
-noisy program with terminal measurement uses one seeded trajectory batch. A
-zero-time measured program samples the initial ket without a dynamical solver.
-Mode selection is presence-based, so an accepted zero-rate channel still
-selects the noisy representation.
+When ``lindblad_implementation_map`` is omitted, the backend uses built-in
+rules for amplitude damping, phase damping, thermal relaxation, and
+depolarizing noise. Those defaults accept background declarations only. An
+explicit map replaces those rules and can enable operation-scoped rate
+declarations for its registered channel types.
 
-Public pulse authoring values are documented with the other operations in
-:doc:`operations`; interpolation and metadata semantics are explained in
-:doc:`../guide/atom-2level`.
+With no Lindblad registration, the two-level backend uses pure-state
+evolution. An unmeasured noisy program returns an exact ensemble density
+matrix. A noisy program with terminal measurement uses seeded trajectories. A
+zero-time measured program samples the initial state without time evolution.
+Even a zero-rate Lindblad declaration selects the noisy result type.
+
+See :doc:`pulse-control/index` for direct pulse authoring and
+:doc:`../guide/atom-2level` for the complete two-level workflow.

@@ -14,15 +14,13 @@ class Measurement:
     Each quantum target is paired with the classical output at the same tuple
     position. Their local dimensions must match, so a qudit outcome is written
     to a classical slot of the same dimension. Create measurements with
-    :meth:`~fatqat.Program.measure` or :meth:`~fatqat.Program.measure_all` so
-    target references, register kinds, and ownership are validated. Direct
-    construction expects already-resolved :class:`~fatqat.RegisterRef` tuples
-    and checks only the pairing constraints below.
+    `fatqat.Program.measure` or `fatqat.Program.measure_all`, not
+    `fatqat.Program.add`. Measurements cannot carry a ``condition=`` argument.
 
-    Repeated targets and outputs are accepted. Built-in backends report every
-    target/output pair in tuple order; a repeated target repeats its collapsed
-    physical outcome (with reporting noise resolved per pair), and a repeated
-    classical output retains the later pair's reported value.
+    Repeated targets and outputs are accepted and processed in tuple order. A
+    repeated target reports its already-collapsed outcome, with reporting noise
+    applied independently to each pair. For a repeated classical output, the
+    last write wins.
 
     Args:
         targets: Non-empty tuple of quantum references to measure.

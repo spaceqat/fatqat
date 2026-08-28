@@ -1,26 +1,4 @@
-"""Pulse-plan values: the public authoring surface a pulse implementation
-rule returns (``PulseDefinition`` and its building blocks) and registers
-under (``PulseImplementationMap``), plus the internal, target-bound
-``PulseBlock`` that lowering builds from a definition by attaching one
-program occurrence's condition, resolved noise, engine indices, and schedule
-position.
-
-``PulseDefinition`` owns model-independent authoring shape. Lowering binds it
-once to a gate-capable target, derives target-owned claims, and then constructs
-``PulseBlock``. The block is a private already-bound execution value; it
-normalizes occurrence fields without repeating definition or target checks.
-
-``PulseImplementationMap`` composes the same private
-``implementation._operation_registry`` mechanics ``MatrixImplementationMap`` does,
-so pulse and matrix authoring share registration semantics while keeping
-distinct rule and result types. ``_invoke_pulse_rule`` is the locked implementation-error
-policy: a rule's own ``BackendValidationError`` propagates unchanged, while
-any other failure becomes ``PulseImplementationError``.
-
-Nothing here imports a concrete physics model. Lowering asks the bound pulse
-target which resources a control implicates and whether its waveform is legal,
-then carries those resolved facts into execution.
-"""
+"""Pulse definitions, implementation maps, and internal plan values."""
 
 from __future__ import annotations
 
@@ -42,11 +20,18 @@ from .target import Frame, ResourceClaim, _PreparedControlBinding
 
 @dataclass(frozen=True)
 class PhaseShift:
-    """Add an angle to one virtual-frame ledger after a pulse block.
+    """Shift one virtual frame after an ordinary gate's pulse interval.
+
+    Obtain the frame from a compatible emulator model. The named resource must
+    exist in the model used to run the program.
 
     Attributes:
-        frame: Structural frame address returned by ``model.frame(...)``.
+        frame: Frame returned by ``model.frame(...)``.
         angle_rad: Finite phase increment in radians.
+
+    Raises:
+        BackendValidationError: If ``angle_rad`` is not a finite ``int`` or
+            ``float``, excluding booleans.
     """
 
     frame: Frame
@@ -60,14 +45,14 @@ class PhaseShift:
 
 @dataclass(frozen=True)
 class PhaseSwap:
-    """Exchange two virtual-drive frame ledgers after a pulse block.
+    """Exchange two virtual frames after an ordinary gate's pulse interval.
 
-    This is used by the built-in iSWAP realization so later drive phases stay
-    associated with the exchanged excitations.
+    Obtain both frames from a compatible emulator model. Exchanging them keeps
+    later drive phases associated with the exchanged excitations.
 
     Attributes:
-        first: First structural frame address.
-        second: Distinct second structural frame address.
+        first: First frame returned by ``model.frame(...)``.
+        second: Distinct second frame.
 
     Raises:
         BackendValidationError: If both addresses identify the same frame.
@@ -143,37 +128,25 @@ def _validate_post_actions_shape(
 
 @dataclass(frozen=True)
 class PulseDefinition:
-    """One reusable physical pulse recipe, independent of any occurrence.
+    """Describe the pulses used to implement an ordinary gate.
 
-    Returned by a pulse implementation rule registered with
-    :class:`~fatqat.emulator.PulseImplementationMap`. Contains only the
-    physical realization: duration, sampled
-    controls and any post-block frame actions. It carries no target-owned
-    resource claims, classical condition, resolved noise, engine
-    index, or schedule position - those are one lowered program occurrence's
-    facts, attached by ``emulator._core.planning._lower_gate`` when it converts a
-    definition into a target-bound ``PulseBlock``.
+    A ``PulseImplementationMap`` rule returns a definition containing the
+    duration, controls, and optional frame actions for an ordinary operation.
 
-    ``duration``, every :class:`~fatqat.emulator.SampledWaveform` time grid,
-    and every :class:`~fatqat.emulator.PulseControl` ``start_offset`` use the
-    owning model's native time coordinate; this type does not claim
-    nanoseconds or any other unit.
+    All times use the model's time unit. A zero-duration definition may contain
+    frame actions but no controls. A positive-duration definition needs at
+    least one control. Channels must be unique, and every shifted waveform must
+    fit within ``duration``. The emulator checks channel and model constraints
+    when the definition is used.
 
-    A zero-duration definition represents a virtual operation and must not
-    contain controls. A positive-duration definition must contain at least one
-    control. Every driven channel must fit inside ``duration``. Target-owned
-    scheduling claims are derived later when an occurrence binds to a target.
-
-    Attributes:
-        duration: Non-negative block duration in ``model.time_unit``.
-        controls: Sampled physical controls. Duplicate channels are rejected;
-            explicitly sum contributions before constructing the definition.
-        post_actions: Virtual :class:`PhaseShift` or :class:`PhaseSwap`
-            actions applied after the physical interval.
+    Args:
+        duration: Finite non-negative duration in the model's time unit.
+        controls: Controls for the physical interval.
+        post_actions: Frame actions applied after the interval.
 
     Raises:
         BackendValidationError: If the duration, controls, or frame actions
-            are structurally inconsistent.
+            are invalid or inconsistent.
     """
 
     duration: float
@@ -344,8 +317,8 @@ def _wrap_pulse_rule(
         return _FixedPulseImplementation(rule)
     if not callable(rule):
         raise TypeError(
-            f"rule for {op_cls.__name__} must be a PulseDefinition, pulse "
-            f"implementation object, or callable, got {rule!r}"
+            f"rule for {op_cls.__name__} must be a PulseDefinition or callable, "
+            f"got {rule!r}"
         )
     return _CallablePulseImplementation(rule, _callable_wants_device_operands(rule))
 
@@ -382,42 +355,41 @@ def _invoke_pulse_rule(
 
 
 class PulseImplementationMap:
-    """Resolve operation families and device operands to pulse implementations.
+    """Map ordinary gates to pulse definitions.
 
-    This value maps ordinary gate operations to reusable pulse definitions.
-    Channel-addressed :class:`~fatqat.operations.PulseOperation` values bypass
-    it: the selected emulator resolves each
-    :attr:`~fatqat.emulator.PulseControl.channel` directly against its physical
-    model. A family may provide an empty built-in map when it has no standard
-    gate realizations, while the same general map path remains available for
-    user-supplied rules.
+    Direct ``PulseOperation`` values bypass this map because their controls
+    already name physical channels.
 
-    It follows the registration and copy rules of
-    :class:`~fatqat.implementation.MatrixImplementationMap`, but its rules
-    return :class:`PulseDefinition` values. Invalid results and unexpected
-    rule failures raise :exc:`~fatqat.errors.PulseImplementationError`.
+    A device-specific rule applies to one exact ``device_operands`` tuple; a
+    general rule applies to every tuple. These are ordered physical labels,
+    not program register references. See ``add()`` for the accepted rule
+    forms.
 
-    An operand-aware rule has the signature
-    ``rule(operation, *, device_operands) -> PulseDefinition``. The tuple is
-    the exact ordered physical address used for map selection. Fixed
-    definitions and operand-unaware callables require an explicit
-    ``device_operands=`` registration.
-
-    Use :func:`~fatqat.emulator.default_transmon_gate_implementation_map`
-    as the starting point when replacing one built-in realization. A
-    :class:`~fatqat.emulator.TransmonEmulator` copies the map passed to its
-    constructor, so later registration changes do not alter that backend.
+    When a rule is used, its ``BackendValidationError`` is reported unchanged.
+    Other exceptions and return values other than ``PulseDefinition`` are
+    reported as ``PulseImplementationError``.
 
     Examples:
-        Replace one unconstrained implementation while retaining the other
-        defaults::
+        Register a fixed definition for one physical operand:
 
-            implementations = default_transmon_gate_implementation_map(
-                model=model,
-                calibration=calibration,
-            )
-            implementations.remove(ops.CZ)
-            implementations.add(ops.CZ, custom_cz)
+        >>> import fatqat as fq
+        >>> import fatqat.operations as ops
+        >>> model = fq.emulator.TransmonModel.from_document(
+        ...     fq.emulator.load_model_document("transmon.reference")
+        ... )
+        >>> waveform = fq.emulator.SampledWaveform(
+        ...     (0.0, 10.0, 20.0), (0.0, 0.02, 0.0)
+        ... )
+        >>> control = fq.emulator.PulseControl(
+        ...     model.control.drive("q0"), waveform
+        ... )
+        >>> definition = fq.emulator.PulseDefinition(20.0, (control,))
+        >>> implementations = fq.emulator.PulseImplementationMap()
+        >>> implementations.add(
+        ...     ops.X, definition, device_operands=("q0",)
+        ... )
+        >>> implementations.supports(ops.X, device_operands=("q0",))
+        True
     """
 
     def __init__(self) -> None:
@@ -432,30 +404,36 @@ class PulseImplementationMap:
         *,
         device_operands: DeviceOperands | None = None,
     ) -> None:
-        """Add an unconstrained or device-specific pulse implementation.
+        """Add a general or device-specific pulse implementation.
+
+        With explicit ``device_operands``, use a fixed ``PulseDefinition`` or
+        a callable that accepts the operation and may also accept
+        ``device_operands`` by keyword. Without explicit operands, the callable
+        must accept ``device_operands`` by keyword.
+        An operation family cannot mix general and device-specific rules;
+        remove it before switching forms. Adding the same family or operand
+        tuple again replaces its previous rule.
 
         Args:
-            op: An :py:class:`~fatqat.operations.Operation` instance (e.g.
-                ``ops.CZ``) or subclass. Normalized to the operation's class for
-                the registry key.
-            implementation: A concrete :class:`PulseDefinition`, a callable
-                accepting ``operation`` and optionally an explicit keyword
-                ``device_operands``, or a callable implementation object.
-            device_operands: An ordered hashable tuple identifying the
-                device-level target this rule is restricted to. Omit for an
-                unconstrained rule that applies to every legal target of the
-                operation's arity.
+            op: Operation instance or class to implement.
+            implementation: A ``PulseDefinition`` or a callable that returns
+                one. When ``device_operands`` is omitted, the callable must
+                explicitly accept that keyword.
+            device_operands: Ordered physical labels for a device-specific
+                rule. The tuple length must match the operation's arity. Omit
+                this argument for a rule that applies to every tuple.
 
         Raises:
-            TypeError: If ``op`` is neither an :py:class:`~fatqat.operations.Operation`
-                instance nor subclass, if its operation class has variable
-                arity, or if ``implementation`` is not callable.
-            ValueError: If ``device_operands``' length does not match the
-                operation's arity, if an operand-unaware implementation is
-                registered without explicit ``device_operands``, or if ``op``
-                already has a registration in the other mode; see
-                :meth:`~fatqat.implementation.MatrixImplementationMap.add` for
-                why the two modes are mutually exclusive.
+            TypeError: If ``op`` is neither an ``Operation`` instance nor
+                subclass; if its operation class has variable arity or is a
+                ``PulseOperation``; if explicit operands are invalid; or if
+                ``implementation`` is neither a ``PulseDefinition`` nor
+                callable.
+            ValueError: If ``device_operands`` length does not match the
+                operation's arity; if operands are omitted for a fixed
+                definition or callable that does not explicitly accept
+                ``device_operands``; or if ``op`` already uses the other
+                registration form.
         """
         if device_operands is not None:
             self._registry.add_device_operands(
@@ -482,10 +460,17 @@ class PulseImplementationMap:
         *,
         device_operands: DeviceOperands | None = None,
     ) -> bool:
-        """Return whether this map has any rule for the operation family.
+        """Return whether this map has a matching rule.
 
-        Same semantics as
-        :meth:`~fatqat.implementation.MatrixImplementationMap.supports`.
+        Without ``device_operands``, this reports whether the family has any
+        rule. With operands, it checks the exact tuple or a general rule.
+
+        Args:
+            op: Operation instance or class to query.
+            device_operands: Optional ordered tuple of physical labels.
+
+        Raises:
+            TypeError: If ``op`` or explicit operands are invalid.
         """
         if device_operands is not None:
             return (
@@ -499,28 +484,41 @@ class PulseImplementationMap:
         *,
         device_operands: DeviceOperands | None = None,
     ) -> Callable[..., PulseDefinition] | None:
-        """Return the pulse implementation selected for an operation.
+        """Return the pulse implementation for an operation.
 
-        Same lookup semantics as
-        :meth:`~fatqat.implementation.MatrixImplementationMap.implementation_for`:
-        with ``device_operands`` omitted, only the unconstrained rule is
-        consulted; with ``device_operands`` given, a family with
-        device-specific rules consults only those, while a family with only an
-        unconstrained rule returns it for every device operands.
+        Without ``device_operands``, this returns only a general rule. With
+        operands, it returns the rule for that tuple or a general rule.
+
+        Args:
+            op: Operation instance or class to query.
+            device_operands: Optional ordered tuple of physical labels.
+
+        Returns:
+            The matching callable, or ``None``.
+
+        Raises:
+            TypeError: If ``op`` or explicit operands are invalid.
         """
         return self._registry.get(op, device_operands=device_operands)
 
     def supported_operations(self) -> frozenset[type[Operation]]:
-        """Return every operation family with at least one implementation."""
+        """Return the operation classes with at least one implementation."""
         return self._registry.supported_operations()
 
     def device_operands_for(
         self, op: Operation | type[Operation]
     ) -> frozenset[DeviceOperands]:
-        """Return the finite set of device operands selected for an operation.
+        """Return the device-specific operand tuples for an operation.
 
-        Same semantics as
-        :meth:`~fatqat.implementation.MatrixImplementationMap.device_operands_for`.
+        The empty set means either that the family is unregistered or that it
+        has one general rule. Use ``supports(op)`` to distinguish those
+        cases.
+
+        Args:
+            op: Operation instance or class to query.
+
+        Raises:
+            TypeError: If ``op`` is not an operation instance or subclass.
         """
         return self._registry.device_operands_for(op)
 
@@ -528,17 +526,18 @@ class PulseImplementationMap:
         """Remove a registered pulse implementation, if present.
 
         Removing an operation that was never registered is a no-op.
+
+        Args:
+            op: Operation instance or subclass whose entire family
+                registration is removed.
+
+        Raises:
+            TypeError: If ``op`` is not an operation instance or subclass.
         """
         self._registry.remove(op)
 
     def copy(self) -> "PulseImplementationMap":
-        """Return a new map with an independent copy of this map's registrations.
-
-        Rule objects are shared (not deep-copied) between the original and the
-        copy, matching
-        :meth:`~fatqat.implementation.MatrixImplementationMap.copy`. Later
-        mutations of either map's registrations never affect the other.
-        """
+        """Return a copy whose registrations can be changed independently."""
         clone = PulseImplementationMap()
         clone._registry = self._registry.copy()
         return clone

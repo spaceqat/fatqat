@@ -1,32 +1,45 @@
-"""Immutable classical readout-confusion declarations."""
+"""Classical readout-confusion noise."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 
 @dataclass(frozen=True, init=False, eq=False)
 class ReadoutConfusion:
-    """Classical report confusion applied after physical measurement.
+    """Classical confusion between true and reported measurement digits.
 
-    ``matrix[reported, true]`` is the conditional probability of reporting a
-    digit given the physical measurement outcome. Each column must therefore
-    sum to one. Readout confusion changes the reported classical digit, not the
-    physical post-measurement state.
+    Entry ``matrix[reported, true]`` is the conditional probability of
+    reporting one digit given the true physical outcome. The matrix must be
+    square with side length at least 2, contain only finite values in
+    ``[0, 1]``, and be column-stochastic: each fixed-true column must sum to 1
+    within NumPy's default numerical tolerance.
+
+    FATQAT converts the input to float and stores its own read-only copy.
+    Changing the input array later has no effect. Instances compare and hash
+    by their stored matrix content.
+
+    Confusion is applied after physical measurement. It changes the classical
+    digit used for counts and feedforward, but not the true collapse outcome or
+    post-measurement quantum state. A backend checks the side length against
+    its reported classical digit dimension when a concrete measurement is
+    prepared. In NoiseModel, readout confusion always applies at measurement.
 
     Args:
-        matrix: Square column-stochastic matrix with entries in ``[0, 1]``.
-            Its side length must match the measured digit dimension supported
-            by the selected backend.
+        matrix: Float-convertible array-like value containing the square
+            column-stochastic confusion matrix.
 
     Raises:
-        ValueError: If ``matrix`` is not finite, square, at least ``2 x 2``,
-            bounded by ``[0, 1]``, and column-stochastic.
+        TypeError: If matrix cannot be converted to a numeric array.
+        ValueError: If conversion fails or the resulting matrix is not finite,
+            square, at least ``2 x 2``, bounded by ``[0, 1]``, and
+            column-stochastic.
 
     Examples:
-        Register asymmetric qubit readout confusion for one device operand:
+        Register asymmetric qubit readout confusion for every measurement:
 
         >>> import numpy as np
         >>> import fatqat as fq
@@ -34,15 +47,15 @@ class ReadoutConfusion:
         ...     np.array([[0.98, 0.04], [0.02, 0.96]])
         ... )
         >>> noise = fq.NoiseModel()
-        >>> noise.add(confusion, targets="q0")
+        >>> noise.add(confusion)
 
     Attributes:
-        matrix: Read-only copy of the normalized input matrix.
+        matrix: Read-only float copy of the input matrix.
     """
 
     matrix: np.ndarray
 
-    def __init__(self, matrix: np.ndarray) -> None:
+    def __init__(self, matrix: ArrayLike) -> None:
         value = np.array(matrix, dtype=float, copy=True)
         if value.ndim != 2 or value.shape[0] != value.shape[1]:
             raise ValueError(

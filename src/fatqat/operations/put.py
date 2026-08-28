@@ -12,25 +12,21 @@ from .base import Operation
 class PutGate(Operation):
     """Load a fresh ``|0>`` atom into each empty target site.
 
-    ``Put`` is implemented by
-    :class:`~fatqat.simulator.AtomArraySimulator` only. If a program uses any
-    ``Put``, every declared site starts empty for each shot and must be
-    populated explicitly. A target that is already occupied is left in its
-    current quantum state. A later ``Put`` can reload a lost atom in ``|0>``.
-    Other built-in matrix and pulse backends report the operation as
-    unsupported.
+    ``Put`` is implemented only by `fatqat.simulator.AtomArraySimulator`. If a
+    program uses it, every site starts empty on each shot and only ``Put``
+    loads it. An occupied target is unchanged, and a later ``Put`` can reload a
+    lost atom in ``|0>``. Other built-in backends raise
+    `fatqat.errors.UnsupportedOperationError`.
 
-    Loading efficiency is modeled by attaching
-    :class:`~fatqat.noise.Loss` to ``Put``; no other noise declaration may use
-    this boundary. The loss is evaluated after every matching ``Put``
-    occurrence whose condition passes, including one whose target was already
-    occupied. It shares the ``Put`` condition. ``Put`` itself has no
-    success-rate argument.
+    Model loading efficiency by attaching `fatqat.noise.Loss` to `Put`.
+    `fatqat.NoiseModel.add` raises `ValueError` for any other noise declaration.
+    Loss is evaluated after every matching `Put` operation whose condition
+    passes, even when its target was already occupied. It shares the `Put`
+    condition. `Put` itself has no success-rate argument.
 
-    Add the singleton ``ops.Put`` without parentheses. It accepts one or more
-    distinct scalar targets and supports
-    :meth:`~fatqat.Program.add` with ``condition=...``;
-    :class:`~fatqat.RegisterView` and an empty target tuple are rejected.
+    ``Put`` accepts one or more distinct scalar targets and can carry a
+    condition. `fatqat.Program.add` rejects
+    `fatqat.RegisterView` and an empty target tuple.
 
     Examples:
         >>> import fatqat as fq
@@ -43,5 +39,4 @@ class PutGate(Operation):
     num_subsystems: ClassVar[int | None] = None
 
 
-# singleton value: `ops.Put`, not `ops.Put()`.
 Put = PutGate()

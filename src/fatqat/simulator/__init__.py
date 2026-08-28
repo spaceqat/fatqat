@@ -1,10 +1,9 @@
 """Gate-level simulators.
 
-:class:`Simulator` is the general matrix backend for statevector,
-density-matrix, unitary, and super-operator methods. The superconducting
-subclasses add fixed grid gate sets; :class:`AtomArraySimulator` adds a native
-gate set, dynamic pairing, occupancy, and loss. Pulse-resolved models live in
-:mod:`fatqat.emulator`.
+``Simulator`` is the general matrix backend for statevector, density-matrix,
+unitary, and super-operator methods. The superconducting subclasses add fixed
+grid gate sets. ``AtomArraySimulator`` adds dynamic pairing, occupancy, and
+loss. Pulse-resolved models are available from ``fatqat.emulator``.
 """
 
 from __future__ import annotations

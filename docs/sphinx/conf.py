@@ -38,10 +38,6 @@ exclude_patterns: list[str] = [
     "Thumbs.db",
     ".DS_Store",
     "README.md",
-    # Backend-author and implementation records are intentionally not part
-    # of the end-user documentation site yet.
-    "api/implementation.rst",
-    "api/errors.rst",
 ]
 
 napoleon_google_docstring = True

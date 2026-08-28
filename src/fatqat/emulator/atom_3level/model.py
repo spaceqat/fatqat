@@ -46,12 +46,11 @@ def _raman_control(site: int) -> _ControlAddress:
     """Select the complex-valued Raman control for one site.
 
     Args:
-        site: Nonnegative site index. Arrangement binding later verifies that
-            the site exists.
+        site: Nonnegative site index. The emulator checks that the site exists
+            when the channel is used.
 
     Returns:
-        An opaque channel address for use with
-        :class:`~fatqat.emulator.PulseControl`.
+        A Raman channel for use with ``PulseControl``.
 
     Raises:
         BackendValidationError: If ``site`` is not a nonnegative built-in
@@ -64,12 +63,11 @@ def _rydberg_control(site: int) -> _ControlAddress:
     """Select the complex-valued Rydberg control for one site.
 
     Args:
-        site: Nonnegative site index. Arrangement binding later verifies that
-            the site exists.
+        site: Nonnegative site index. The emulator checks that the site exists
+            when the channel is used.
 
     Returns:
-        An opaque channel address for use with
-        :class:`~fatqat.emulator.PulseControl`.
+        A Rydberg channel for use with ``PulseControl``.
 
     Raises:
         BackendValidationError: If ``site`` is not a nonnegative built-in
@@ -136,11 +134,19 @@ _MODEL_PARSERS = MappingProxyType({_MODEL_FORMAT: _parse_model})
 
 @dataclass(frozen=True, slots=True, init=False)
 class Atom3LevelModel:
-    """Immutable geometry-free three-level Rb87 blockade model.
+    """Describe the three-level Rb87 physics used by the atom emulator.
 
-    Construct this value with :meth:`from_document`, then select local Raman
-    and Rydberg channels through :attr:`control`. Arrangement binding later
-    validates each selected site.
+    Create a model with ``from_document()``. Site coordinates are supplied
+    separately through ``AtomArrangement``; select local Raman and Rydberg
+    channels through ``control``.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> model = fq.emulator.Atom3LevelModel.from_document(
+        ...     fq.emulator.load_model_document("atom3level.reference")
+        ... )
+        >>> model.local_dimension
+        3
     """
 
     format: FormatIdentity = field(compare=False)
@@ -162,7 +168,7 @@ class Atom3LevelModel:
     c6_unit: ClassVar[str] = _MODEL_UNITS["c6"]
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
-        """Reject direct construction in favor of :meth:`from_document`.
+        """Reject direct construction in favor of ``from_document()``.
 
         Raises:
             TypeError: Always. Physics model selection must be explicit.
@@ -177,7 +183,7 @@ class Atom3LevelModel:
             document: Mapping using the supported Atom3Level model schema.
 
         Returns:
-            An immutable, geometry-free physics model.
+            A validated three-level atom model.
 
         Raises:
             BackendValidationError: If the document has an unsupported format
@@ -204,20 +210,19 @@ class Atom3LevelModel:
 
     @property
     def control(self) -> _Atom3Controls:
-        """Return the immutable namespace of supported control selectors.
+        """Return the local ``raman`` and ``rydberg`` selectors.
 
         Returns:
-            A family-owned namespace containing ``raman`` and ``rydberg``.
+            The available channel selectors.
         """
         return _CONTROLS
 
     @property
     def available_controls(self) -> Mapping[str, _ControlSelector]:
-        """Return inspectable selectors keyed by their public control names.
+        """Return the channel selectors keyed by control name.
 
         Returns:
-            An immutable mapping whose values are the selectors on
-            :attr:`control`.
+            A mapping containing ``raman`` and ``rydberg``.
         """
         return _AVAILABLE_CONTROLS
 
@@ -225,12 +230,11 @@ class Atom3LevelModel:
         """Select the virtual frame associated with one atom site.
 
         Args:
-            site: Nonnegative site index. Arrangement binding later verifies
-                that the site exists.
+            site: Nonnegative site index. The emulator checks that the site
+                exists when the frame is used.
 
         Returns:
-            An opaque frame address for :class:`~fatqat.emulator.PhaseShift`
-            and :class:`~fatqat.emulator.PhaseSwap`.
+            A frame for ``PhaseShift`` and ``PhaseSwap``.
 
         Raises:
             BackendValidationError: If ``site`` is not a nonnegative built-in

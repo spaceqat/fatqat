@@ -15,8 +15,8 @@ backend = fq.simulator.Simulator("SV")
 result = backend.run(program, shots=1000).result()
 ```
 
-{py:meth}`~fatqat.simulator.Simulator.run` returns a
-{py:class}`~fatqat.Job` immediately. Phase 1 jobs are already terminal, so
+{py:meth}`~fatqat.simulator.Simulator.run` returns a completed
+{py:class}`~fatqat.Job` after execution, so
 {py:meth}`~fatqat.Job.result` either returns a {py:class}`~fatqat.Result` or
 re-raises the exception from a failed run. `run()` itself still raises
 directly for validation failures, such as an unsupported operation or a
@@ -27,9 +27,8 @@ Key arguments:
 - `shots`: how many sampled executions to run when counts are requested. Ignored
   for a purely deterministic final-state request.
 - `resource_layout`: an optional {py:class}`~fatqat.ResourceLayout` mapping
-  every declared program quantum reference to a backend device operand. When
-  omitted, the backend applies its documented default. This never selects
-  numerical tensor indices.
+  every declared program quantum reference to a device label. When omitted,
+  the backend applies its documented default.
 - `simulation_config`: a plain dict for simulator-only controls: `seed`,
   `shot_parallelism`, `kernel_parallelism`, `max_workers`, and `fusion`.
   Both parallelism axes default to automatic selection; fusion defaults off. See
@@ -39,8 +38,8 @@ Key arguments:
 
 ## Choosing result fields
 
-`result_config` accepts `counts` and `final_state`, each `True`, `False`, or
-omitted for the backend default:
+`result_config` accepts `counts` and `final_state`. Each may be `True`,
+`False`, or `None`; omission and `None` use the backend default:
 
 - `counts` defaults to `True` when the program has at least one measurement,
   `False` otherwise.
@@ -102,8 +101,7 @@ measurement, feedforward conditions, and a `counts` request on either;
 
 ## Reading a Result
 
-The accessors below are a reference listing, not a runnable script — each
-one is only valid when the run actually produced that field:
+Each accessor is available only when the run produced its field:
 
 ```python
 result.get_counts()             # {"00": 512, "11": 488}, little-endian keys
@@ -113,12 +111,14 @@ result.available_data           # frozenset of field names actually present
 result.metadata                 # shots, backend name, normalized requests
 ```
 
-Metadata retains the normalized requested ``simulation_config`` and
-``result_config`` for provenance. It does not expose the private resolved shot
-or kernel strategy, thread partition, or active worker count. Pulse-emulator
-metadata also includes common solver facts, but does not duplicate model,
-target, arrangement, or control-table data; retain those inputs separately or
-attach application metadata when provenance is needed.
+`get_counts()` puts the highest classical slot on the left and slot 0 on the
+right. If any classical dimension is at least 10, commas separate the digits.
+Use `get_counts_as_tuples()` for keys ordered with slot 0 first.
+
+Metadata records the normalized `simulation_config` and `result_config`.
+Pulse-emulator results also include common solver settings. Keep the model,
+arrangement, controls, and any application metadata alongside the result when
+you need a complete record of a run.
 
 `final_state` is a request name, not an artifact name. When it is produced,
 `available_data` contains the method-native name: `"statevector"`,
@@ -126,17 +126,12 @@ attach application metadata when provenance is needed.
 `method`.
 
 When a complete state or operator is returned, ``metadata["state_axes"]``
-describes its physical subsystems in canonical order. Each entry contains a
-public ``device_operand`` and a ``register_ref`` containing the program's actual
-{py:class}`~fatqat.RegisterRef`, or ``None`` when that subsystem is not
-addressed by the program. Because it preserves the public domain object,
-``state_axes`` is not a JSON-serialization format. List position 0 is the
-least-significant subsystem of a flat basis index; for local dimensions
+describes its physical subsystems in order. Each entry contains a
+``device_operand`` and the corresponding program ``register_ref``, or ``None``
+when the model includes a subsystem not addressed by the program. Position 0
+is the least-significant subsystem of a flat basis index; for local dimensions
 ``dims``, position ``q`` has place value ``prod(dims[:q])``. Density-matrix
-rows and columns use the same basis order. These positions are not NumPy
-reshape axes or solver-library tensor-factor numbers, and no private engine
-index is published or accepted as a later selector. A physical model may
-therefore report axes that have a device operand but no program reference.
+rows and columns use the same basis order.
 
 Calling an accessor for a field that wasn't produced raises
 {py:exc}`~fatqat.errors.ResultFieldUnavailableError` rather than returning

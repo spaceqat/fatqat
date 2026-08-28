@@ -1,9 +1,7 @@
 """Matrix-based gate-level simulation.
 
-The public :class:`Simulator` selects a state or operator method and a NumPy or
-Numba runtime. It owns validation, lowering, execution policy, and public
-result assembly; numerical engines remain private implementation details.
-Pulse-resolved physical simulation lives in :mod:`fatqat.emulator`.
+``Simulator`` runs gate-level programs with a NumPy or Numba runtime. For
+pulse-resolved physical simulation, use the models in ``fatqat.emulator``.
 """
 
 from __future__ import annotations
@@ -199,7 +197,7 @@ _METHOD_SPECS: dict[str, _MethodSpec] = {
 
 
 class Simulator:
-    """Simulate a :class:`~fatqat.Program` with matrices and finite channels.
+    """Run a gate-level program with matrices and finite channels.
 
     ``statevector`` (``SV``) and ``density_matrix`` (``DM``) evolve a state.
     Statevector simulation samples reset and channel branches; density-matrix
@@ -207,30 +205,24 @@ class Simulator:
     program's map instead. Operator methods reject measurement, feedforward,
     counts, and an initial state; ``unitary`` also rejects reset and channels.
 
-    Public ``superop`` results are ``(D**2, D**2)`` matrices using
-    column-stacking vectorization (``rho.reshape(-1, order="F")``). This is a
-    mathematical convention, not the NumPy memory layout of the returned
-    matrix.
+    A ``superop`` result uses column-stacking vectorization, so apply it to
+    ``rho.reshape(-1, order="F")``.
 
     The generic simulator accepts qubits, qudits, and mixed local dimensions.
     Hardware-profile subclasses narrow the native gate set and resource layout
     while preserving the same run and result contract.
 
-    A backend may be reused for sequential runs. It keeps numerical caches but
-    resets evolving state for every run. One instance is not safe for
-    concurrent calls to :meth:`run`.
+    A backend may be reused for sequential runs. Use a separate instance for
+    each concurrent caller.
 
     Examples:
-        Density-matrix simulation, Qiskit style:
+        Run a one-qubit program with density-matrix simulation:
 
         >>> import fatqat as fq
         >>> import fatqat.operations as ops
         >>> program = fq.Program(1)
         >>> program.add(ops.H, 0)
-        >>> result = fq.simulator.Simulator(method="DM").run(
-        ...     program,
-        ...     result_config={"counts": False, "final_state": True},
-        ... ).result()
+        >>> result = fq.simulator.Simulator(method="DM").run(program).result()
         >>> result.get_density_matrix()
         array([[0.5+0.j, 0.5+0.j],
                [0.5+0.j, 0.5+0.j]])
@@ -273,18 +265,13 @@ class Simulator:
                 runtime's threaded and fusion paths. ``"numpy"`` executes the
                 reference kernels directly without JIT warm-up. Both support
                 every method, but are not promised to be bit-identical.
-            implementation_map: Optional matrix implementation map controlling
-                supported operations and their matrix builders. ``None`` uses
-                :func:`~fatqat.implementation.default_matrix_implementation_map`.
-            noise: Optional :py:class:`~fatqat.NoiseModel` applied to every
-                run. ``None`` means ideal execution.
-            channel_implementation_map: Optional map controlling which
-                channel descriptors can be resolved to Kraus operators.
-                ``None`` uses the default channel map.
-
-        Their registrations are copied at construction, so later additions or
-        removals on the supplied registries do not change this backend. Custom
-        rule and declaration objects should be treated as immutable.
+            implementation_map: Matrix rules for supported operations.
+                ``None`` uses ``default_matrix_implementation_map()``.
+            noise: Noise model applied to every run. ``None`` means ideal
+                execution.
+            channel_implementation_map: Rules that turn supported channel
+                descriptors into finite channels. ``None`` uses the default
+                channel map.
 
         Raises:
             BackendValidationError: If ``method`` or ``runtime`` is not one
@@ -528,19 +515,20 @@ class Simulator:
     ) -> Job[Result]:
         """Validate and execute one program.
 
-        The returned job is eager and already terminal. Validation and
-        lowering failures raise directly from this method; numerical or result
-        assembly failures produce a failed job whose :meth:`~fatqat.Job.result`
-        method re-raises the original error.
+        The returned job is eager and already terminal. Program and option
+        validation errors normally raise directly. Errors during execution or
+        result assembly are stored on the job, and ``Job.result()`` re-raises
+        the original error.
 
         Args:
             program: Program to execute.
             shots: Circuit repetitions. Counts require a positive integer. An
                 explicitly requested stochastic final state requires exactly
                 one shot; deterministic state-only runs ignore this value.
-            resource_layout: Optional mapping from every program quantum
-                reference to a backend device operand. The backend's default
-                mapping is used when omitted.
+            resource_layout: Assignment from every program quantum reference
+                to a device label. It must be complete, one-to-one, and
+                compatible with the backend. The documented backend default
+                is used when omitted.
             initial_state: Optional state to start every shot from instead of
                 the all-zero computational state. A statevector run takes a
                 ``(D,)`` vector; a density-matrix run takes ``(D, D)``, or a
@@ -549,22 +537,26 @@ class Simulator:
             simulation_config: Optional per-run execution controls. String
                 choices are case-sensitive. Accepted keys are:
 
-                - ``"seed"`` (``int | None``, default ``None``): Non-negative
-                  seed for stochastic sampling; booleans are rejected.
-                  ``None`` uses fresh entropy.
+                - ``"seed"`` (``int | None``, default ``None``): Use a
+                  non-negative sampling seed. Booleans are rejected; ``None``
+                  uses fresh entropy. A negative value is rejected during
+                  execution, so ``Job.result()`` raises ``ValueError``.
                 - ``"shot_parallelism"`` (``str``, default ``"auto"``): How
-                  independent per-shot evolutions run. ``"auto"`` chooses a
-                  mode, ``"serial"`` uses the caller, ``"threads"`` uses
-                  worker threads, and ``"processes"`` uses worker processes.
+                  independent shots run: ``"auto"``, ``"serial"``,
+                  ``"threads"``, or ``"processes"``. Explicit parallel modes
+                  require an eligible counts-only run with at least two shots
+                  and workers. Threads require a compatible Numba statevector
+                  run.
                 - ``"kernel_parallelism"`` (``str``, default ``"auto"``):
-                  How numerical work within one evolution runs. ``"auto"``
-                  chooses a mode, ``"serial"`` uses serial kernels, and
-                  ``"threads"`` uses Numba's threaded kernels.
+                  Numerical work within one shot: ``"auto"``, ``"serial"``,
+                  or ``"threads"``. Threads require Numba and cannot be
+                  requested with parallel shots.
                 - ``"max_workers"`` (``int | None``, default ``None``):
-                  Concurrency ceiling for the selected parallel axis.
-                - ``"fusion"`` (``bool``, default ``False``): Combine
-                  compatible adjacent operations when the selected Numba
-                  method supports it.
+                  Positive concurrency limit. ``None`` uses the runtime
+                  limit; ``1`` conflicts with an explicit parallel request.
+                - ``"fusion"`` (``bool``, default ``False``): Whether to
+                  combine compatible adjacent operations. ``True`` requires
+                  Numba with ``density_matrix``, ``unitary``, or ``superop``.
 
                 Unknown or incompatible entries are rejected.
             result_config: Optional output requests. Accepted keys are:
@@ -572,19 +564,21 @@ class Simulator:
                 - ``"counts"`` (``bool | None``, default ``None``): Histogram
                   of the final classical register. ``True`` requests it,
                   ``False`` suppresses it, and ``None`` enables it when the
-                  program measures.
+                  program measures. Counts require an integer ``shots > 0``.
                 - ``"final_state"`` (``bool | None``, default ``None``):
                   Method-native state or map. ``True`` requests it, ``False``
                   suppresses it, and ``None`` enables it when that artifact is
-                  deterministic.
+                  deterministic. A requested stochastic state requires
+                  ``shots == 1``.
 
         Returns:
-            A completed :class:`~fatqat.Job` whose result is a
-            :class:`~fatqat.Result`.
+            A completed ``Job`` whose result is a ``Result``.
 
         Raises:
             BackendValidationError: If the program, resource layout, noise
                 selectors, or requested configuration is invalid.
+            MatrixImplementationError: If a matrix rule cannot build the
+                selected operation for its target dimensions.
             TypeError: If ``simulation_config`` or ``result_config`` is not a
                 dictionary or ``None``.
             UnsupportedOperationError: If the program contains an operation
@@ -716,55 +710,76 @@ class Simulator:
     ) -> Job[list[Result]]:
         """Bind and run every row of a complete parameter batch.
 
-        Single parameters accept shape ``(N,)`` and parameter vectors accept
-        shape ``(N, M)``. Rows run in input order through :meth:`run` and share
-        the forwarded configuration. In particular, one explicit seed is
-        reused for every row, so sampled row errors are correlated. The full
-        batch is normalized before the first row executes.
+        Single parameters accept shape ``(N,)`` and parameter vectors of
+        length ``M`` accept shape ``(N, M)``. All entries must use the same
+        ``N``. Rows run in input order with the same options. One explicit seed
+        is reused for every row, so sampled row errors can be correlated.
+        Binding and row-validation errors raise directly. If execution fails
+        for a row, the returned sweep job is failed and its ``result()`` method
+        re-raises the error; no partial list is exposed.
 
         Args:
             program: Parameterized template program.
-            bindings: Complete object-keyed parameter batch.
+            bindings: Complete mapping from each ``Parameter`` or
+                ``ParameterVector`` in the program to its batch values.
             shots: Number of repetitions forwarded to every row.
-            resource_layout: Optional layout forwarded unchanged to every row.
-            initial_state: Optional starting state forwarded unchanged to every row.
-            simulation_config: Per-run controls forwarded unchanged. Accepted
-                keys are:
+            resource_layout: Complete, one-to-one assignment of program
+                quantum references to compatible device labels, reused for
+                every row. The backend default is used when omitted.
+            initial_state: Optional starting state reused for every row. The
+                same shape and method rules as ``run()`` apply.
+            simulation_config: Controls reused for every row. Accepted keys:
 
-                - ``"seed"`` (``int | None``, default ``None``): Sampling
-                  seed.
+                - ``"seed"`` (``int | None``, default ``None``): Use a
+                  non-negative sampling seed; booleans are rejected. ``None``
+                  uses fresh entropy for each row. A negative value fails
+                  during execution, so the sweep job's ``result()`` raises
+                  ``ValueError``.
                 - ``"shot_parallelism"`` (``str``, default ``"auto"``):
-                  ``"auto"``, ``"serial"``, ``"threads"``, or ``"processes"``.
+                  ``"auto"``, ``"serial"``, ``"threads"``, or
+                  ``"processes"``. Explicit parallel modes require an
+                  eligible counts-only run with at least two shots and
+                  workers. Threads require a compatible Numba statevector run.
                 - ``"kernel_parallelism"`` (``str``, default ``"auto"``):
-                  ``"auto"``, ``"serial"``, or ``"threads"``.
+                  ``"auto"``, ``"serial"``, or ``"threads"``. Threads
+                  require Numba and cannot be requested with parallel shots.
                 - ``"max_workers"`` (``int | None``, default ``None``):
-                  Concurrency ceiling.
-                - ``"fusion"`` (``bool``, default ``False``): Compatible
-                  operation fusion.
+                  Positive concurrency limit. ``None`` uses the runtime
+                  limit; ``1`` conflicts with an explicit parallel request.
+                - ``"fusion"`` (``bool``, default ``False``): Whether to
+                  combine compatible operations. ``True`` requires Numba with
+                  ``density_matrix``, ``unitary``, or ``superop``.
 
-            result_config: Output requests forwarded unchanged. Accepted keys
-                are:
+                Unknown or incompatible entries are rejected.
+            result_config: Output requests reused for every row. Accepted keys:
 
                 - ``"counts"`` (``bool | None``, default ``None``): Histogram
-                  of the final classical register.
+                  of the final classical register. ``None`` enables it when
+                  the program measures; counts require an integer
+                  ``shots > 0``.
                 - ``"final_state"`` (``bool | None``, default ``None``):
-                  Method-native state or map.
+                  Method-native state or map. ``None`` enables it when the
+                  result is deterministic; a requested stochastic state
+                  requires ``shots == 1``.
 
-                ``True`` requests a field, ``False`` suppresses it, and
-                ``None`` uses the normal per-field default.
+                ``True`` requests a field and ``False`` suppresses it.
 
         Returns:
-            An eager job carrying an ordered list of row results. If any row
-            fails, no partial list is exposed.
+            An eager job carrying an ordered list of row results.
 
         Raises:
-            TypeError: If ``bindings`` is not an object-keyed mapping or a
-                batch contains values other than built-in ``int``/``float``
-                or NumPy integer/floating scalars.
+            TypeError: If ``bindings`` is not an object-keyed mapping, a batch
+                contains values other than built-in ``int``/``float`` or NumPy
+                integer/floating scalars, or either configuration is not a
+                dictionary or ``None``.
             ValueError: If the program is not parameterized, assignments are
                 missing or duplicated, or batch ranks and lengths disagree.
             BackendValidationError: If a bound row or forwarded run option
                 fails normal Simulator validation.
+            MatrixImplementationError: If a matrix rule cannot build an
+                operation for one row.
+            UnsupportedOperationError: If a row contains an operation the
+                backend cannot run.
 
         Examples:
             Sweep one angle and request the final state from every row:
@@ -1229,30 +1244,29 @@ class Simulator:
         )
 
     def check_noise_support(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        """Report whether this backend can execute a noise model.
+        """Check whether this simulator can use a noise model.
 
-        Matrix simulators accept operation-bound finite channels for descriptor
-        types present in their channel implementation map. They reject
-        background sources, built-in damping descriptors in rate mode, and
-        :class:`~fatqat.noise.ThermalRelaxation` declarations; convert thermal
-        relaxation with ``as_channels(duration)`` first. Carrier loss is
-        accepted only by :class:`~fatqat.simulator.AtomArraySimulator`.
+        Matrix simulators accept operation-bound probability forms for
+        supported built-in descriptors. Custom descriptors need a matching
+        channel rule. Background sources, built-in damping descriptors in rate
+        form, and ``ThermalRelaxation`` are rejected; convert thermal
+        relaxation with ``as_channels(duration)`` first. Only
+        ``AtomArraySimulator`` accepts ``Loss``.
 
-        The returned report lists accepted and rejected source-form labels in
-        first registration order, deduplicated across matching registrations.
-        It does not validate selectors against a program, invoke rules for
-        concrete target dimensions, apply method-specific restrictions, or
-        mutate the model.
+        This checks the model as a whole, not its selectors against a program,
+        concrete target dimensions, or method-specific restrictions.
 
         Args:
             noise_model: The noise model to check; it is not executed.
 
         Returns:
-            A frozen report naming accepted and rejected sources.
+            A report whose ``supported`` flag summarizes the model.
+            ``accepted_sources`` and ``rejected_sources`` contain deduplicated
+            labels; ``warnings`` explains each rejected source in the same
+            order as ``rejected_sources``.
 
         Raises:
-            BackendValidationError: If ``noise_model`` is not a
-                :class:`~fatqat.NoiseModel`.
+            BackendValidationError: If ``noise_model`` is not a ``NoiseModel``.
         """
         if not isinstance(noise_model, NoiseModel):
             raise BackendValidationError("noise_model must be a NoiseModel")

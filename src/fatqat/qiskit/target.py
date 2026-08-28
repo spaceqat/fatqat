@@ -1,4 +1,4 @@
-"""Qiskit ``Target`` construction for fatqat simulators."""
+"""Construct the Qiskit target advertised by the FATQAT adapter."""
 
 from __future__ import annotations
 
@@ -40,7 +40,13 @@ except ImportError:  # pragma: no cover
 
 
 def build_simulator_target() -> Target:
-    """Build an unbounded ideal gate-level simulator target."""
+    """Return a new unbounded, fully connected gate-level target.
+
+    The target contains the fixed and parameterized qubit gates understood by
+    :func:`~fatqat.qiskit.circuit_to_program`, together with measurement,
+    reset, and barrier. ``iSwap`` is included when the installed Qiskit version
+    provides its gate class.
+    """
     target = Target(description="fatqat gate-level simulator", num_qubits=None)
     instructions = [
         IGate(),

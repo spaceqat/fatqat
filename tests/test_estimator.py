@@ -5,7 +5,11 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
+from fatqat.errors import (
+    BackendExecutionError,
+    BackendValidationError,
+    ResultFieldUnavailableError,
+)
 from fatqat.job import Job
 from fatqat.observable import Observable
 from fatqat.result import Result
@@ -564,3 +568,21 @@ def test_backend_without_a_method_property_is_left_alone():
             raise AssertionError("not reached")
 
     assert fq.Estimator(_Bare()) is not None
+
+
+def test_backend_result_without_state_returns_failed_job():
+    class _NoStateBackend:
+        method = "statevector"
+
+        def run(self, *_args, **_kwargs):
+            return Job(status="DONE", result=Result(data={"diagnostic": "complete"}))
+
+    job = fq.Estimator(_NoStateBackend()).run(_bell(), Observable([("ZZ", 1.0)]))
+
+    assert job.status == "ERROR"
+    with pytest.raises(
+        BackendExecutionError,
+        match="estimator backend returned no final state; expected a "
+        "statevector or density matrix",
+    ):
+        job.result()

@@ -58,7 +58,7 @@ class Transmon:
 
 @dataclass(frozen=True, slots=True)
 class Coupling:
-    """One declared pair-addressed control edge.
+    """A pair of transmons that supports exchange control and coupled gates.
 
     Attributes:
         id: Stable coupling label from the model document.
@@ -79,12 +79,11 @@ def _drive_control(subsystem_id: str) -> _ControlAddress:
     """Select the complex-valued drive control for one subsystem.
 
     Args:
-        subsystem_id: Nonempty subsystem label. Target binding later verifies
-            that the subsystem is declared by the model.
+        subsystem_id: Nonempty subsystem label. The emulator checks that the
+            label exists when the channel is used.
 
     Returns:
-        An opaque channel address for use with
-        :class:`~fatqat.emulator.PulseControl`.
+        A channel for use with ``PulseControl``.
 
     Raises:
         BackendValidationError: If ``subsystem_id`` is not a nonempty string.
@@ -98,12 +97,11 @@ def _detuning_control(subsystem_id: str) -> _ControlAddress:
     """Select the real-valued detuning control for one subsystem.
 
     Args:
-        subsystem_id: Nonempty subsystem label. Target binding later verifies
-            that the subsystem is declared by the model.
+        subsystem_id: Nonempty subsystem label. The emulator checks that the
+            label exists when the channel is used.
 
     Returns:
-        An opaque channel address for use with
-        :class:`~fatqat.emulator.PulseControl`.
+        A channel for use with ``PulseControl``.
 
     Raises:
         BackendValidationError: If ``subsystem_id`` is not a nonempty string.
@@ -121,12 +119,12 @@ def _exchange_control(first: str, second: str) -> _ControlAddress:
         second: Nonempty label of the distinct other endpoint.
 
     Returns:
-        An opaque canonical pair address for use with
-        :class:`~fatqat.emulator.PulseControl`.
+        An exchange channel for use with ``PulseControl``.
 
     Raises:
         BackendValidationError: If an endpoint is empty or the two endpoints
-            are equal. Target binding later verifies the declared edge.
+            are equal. The emulator checks for a declared coupling when the
+            channel is used.
     """
     endpoints = (
         _label(first, "control subsystem label"),
@@ -242,11 +240,18 @@ _MODEL_PARSERS = MappingProxyType({_MODEL_FORMAT: _parse_model})
 
 @dataclass(frozen=True, slots=True, init=False, eq=False)
 class TransmonModel:
-    """Immutable engine-neutral qutrit transmon physics model.
+    """Describe a fixed collection of three-level transmons and couplings.
 
-    Construct this value with :meth:`from_document`, then select local and
-    pair-addressed pulse channels through :attr:`control`. Final target
-    binding verifies subsystem labels and declared coupling pairs.
+    Create a model with ``from_document()``, then select drive, detuning, and
+    exchange channels through ``control``.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> model = fq.emulator.TransmonModel.from_document(
+        ...     fq.emulator.load_model_document("transmon.reference")
+        ... )
+        >>> model.subsystem_ids
+        ('q0', 'q1')
     """
 
     format: FormatIdentity
@@ -267,7 +272,7 @@ class TransmonModel:
     control_unit: ClassVar[str] = "rad/ns"
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
-        """Reject direct construction in favor of :meth:`from_document`.
+        """Reject direct construction in favor of ``from_document()``.
 
         Raises:
             TypeError: Always. Physics model selection must be explicit.
@@ -282,7 +287,7 @@ class TransmonModel:
             document: Mapping using the supported transmon/exchange schema.
 
         Returns:
-            An immutable engine-neutral transmon physics model.
+            A validated transmon model.
 
         Raises:
             BackendValidationError: If the document has an unsupported format
@@ -310,27 +315,25 @@ class TransmonModel:
         """Return subsystem labels in the model document's declared order.
 
         Returns:
-            An immutable tuple of labels accepted by local control selectors.
+            A tuple of labels accepted by local control selectors.
         """
         return tuple(subsystem.id for subsystem in self.subsystems)
 
     @property
     def control(self) -> _TransmonControls:
-        """Return the immutable namespace of supported control selectors.
+        """Return the ``drive``, ``detuning``, and ``exchange`` selectors.
 
         Returns:
-            A family-owned namespace containing ``drive``, ``detuning``, and
-            ``exchange``.
+            The available channel selectors.
         """
         return _CONTROLS
 
     @property
     def available_controls(self) -> Mapping[str, _ControlSelector]:
-        """Return inspectable selectors keyed by their public control names.
+        """Return the channel selectors keyed by control name.
 
         Returns:
-            An immutable mapping whose values are the selectors on
-            :attr:`control`.
+            A mapping containing ``drive``, ``detuning``, and ``exchange``.
         """
         return _AVAILABLE_CONTROLS
 
@@ -338,12 +341,11 @@ class TransmonModel:
         """Select the virtual drive frame for one subsystem.
 
         Args:
-            subsystem_id: Nonempty subsystem label. Target binding later
-                verifies that it is declared by the model.
+            subsystem_id: Nonempty subsystem label. The emulator checks that
+                the label exists when the frame is used.
 
         Returns:
-            An opaque frame address for :class:`~fatqat.emulator.PhaseShift`
-            and :class:`~fatqat.emulator.PhaseSwap`.
+            A frame for ``PhaseShift`` and ``PhaseSwap``.
 
         Raises:
             BackendValidationError: If ``subsystem_id`` is not a nonempty

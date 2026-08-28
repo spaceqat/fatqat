@@ -1,41 +1,4 @@
-"""Observables: weighted sums of local Pauli and projector factors.
-
-An `Observable` is a Hermitian operator written as a weighted sum of terms,
-where each term is a tensor product of single-qubit factors. It is the input
-to :py:class:`~fatqat.Estimator`, which reports ``<psi|O|psi>``.
-
-The representation deliberately mirrors Qiskit's ``SparsePauliOp``/
-``SparseObservable``: a term is described by *letters*, never by a matrix, and
-the full ``2**n x 2**n`` operator is never built. Only the non-identity factors
-of a term are stored, so memory grows with the number of factors actually
-written, not with the qubit count - a two-body term on 100 qubits costs the
-same as one on 4.
-
-Labels are little-endian: the rightmost character is qubit 0, matching both
-Qiskit's convention and fatqat's own counts strings (see
-``result.format_count_key``), so users never switch conventions mid-analysis.
-
-Supported letters:
-
-===========  ==========================  ==================================
-letter       operator                    role
-===========  ==========================  ==================================
-``I``        identity                    omitted from storage
-``X``        Pauli X                     off-diagonal (permutes basis)
-``Y``        Pauli Y                     off-diagonal, contributes a phase
-``Z``        Pauli Z                     diagonal, contributes a sign
-``ZERO``     ``|0><0|``                  diagonal projector
-``ONE``      ``|1><1|``                  diagonal projector
-===========  ==========================  ==================================
-
-``ZERO``/``ONE`` make site occupation directly expressible: ``<ONE_i>`` is the
-occupation number of qubit ``i``, which is the quantity atom-array experiments
-report. The non-diagonal projectors (``PLUS``/``MINUS``/``RIGHT``/``LEFT``)
-are not part of this version; the storage shape already accommodates them.
-
-Observables are qubit-only: the letter alphabet has no meaning for ``dim > 2``
-registers (see the design note in ``docs/design``).
-"""
+"""Weighted sums of Pauli and computational-basis projector terms."""
 
 from __future__ import annotations
 
@@ -57,11 +20,12 @@ _DIAGONAL_LETTERS = frozenset({"Z", "ZERO", "ONE"})
 
 
 class Observable:
-    """A Hermitian sum of weighted Pauli/projector terms.
+    """Represent a Hermitian observable on a fixed number of qubits.
 
-    Construct from dense labels, from label/coefficient sequences, or from a
-    sparse factor list. All three build the same internal form: one entry per
-    term holding its coefficient and only its non-identity factors.
+    Dense labels use ``I``, ``X``, ``Y``, and ``Z``, with qubit 0 at the
+    right. ``from_sparse`` also supports the ``ZERO`` and ``ONE`` projectors
+    while naming only non-identity factors. Repeated and zero-coefficient terms
+    are preserved.
 
     Examples:
         Three equivalent ways to write ``1.5 * ZZ``:
@@ -73,14 +37,6 @@ class Observable:
         >>> a == b == c
         True
 
-        Site occupation on qubit 5 of a 100-qubit register, without writing a
-        100-character label:
-
-        >>> occupation = fq.Observable.from_sparse(
-        ...     [("ONE", (5,), 1.0)], num_qubits=100
-        ... )
-        >>> occupation.num_qubits
-        100
     """
 
     __slots__ = ("_terms", "_num_qubits")
@@ -92,22 +48,25 @@ class Observable:
         *,
         num_qubits: int | None = None,
     ) -> None:
-        """Build an observable from dense labels.
+        """Build an observable from dense little-endian labels.
 
         Args:
             data: Either ``[(label, coefficient), ...]`` or, when ``coeffs`` is
-                given, a sequence of labels. Labels are little-endian strings
-                over ``I``/``X``/``Y``/``Z`` and must all have the same length.
-            coeffs: Coefficients paired with ``data`` when it holds bare
-                labels. Must match ``data`` in length.
-            num_qubits: Qubit count. Inferred from the label length when
-                omitted; when given, it must agree with the labels.
+                supplied, an iterable of labels. Every label must be a string
+                over ``I``, ``X``, ``Y``, and ``Z`` with the same width. The
+                rightmost character acts on qubit 0. Every coefficient must
+                have zero imaginary part and is stored as a float.
+            coeffs: Coefficients paired with bare labels in ``data``. The two
+                iterables must have the same length.
+            num_qubits: Optional check on the common label width. The width is
+                inferred when this is ``None``.
 
         Raises:
-            ValueError: If the term list is empty, labels disagree in length or
-                with ``num_qubits``, a letter is not recognized, or any
-                coefficient is not real (an observable must be Hermitian).
-            TypeError: If ``data`` is not one of the two accepted shapes.
+            TypeError: If ``data`` does not use one of the accepted forms.
+            ValueError: If no terms are supplied; labels have different
+                widths; ``num_qubits`` disagrees with that width; a label has
+                an unsupported letter; coefficient counts differ; or a
+                coefficient has a nonzero imaginary part.
         """
         pairs = _normalize_dense_input(data, coeffs)
         if not pairs:
@@ -153,24 +112,38 @@ class Observable:
     ) -> "Observable":
         """Build an observable by naming only the non-identity factors.
 
-        This is the practical constructor for large registers, and the only way
-        to use the ``ZERO``/``ONE`` projectors (whose names do not fit a
-        single-character dense label).
+        Use this form for wide observables and for the ``ZERO`` and ``ONE``
+        projectors, whose names do not fit a dense single-character label.
 
         Args:
-            data: ``[(letters, qubits, coefficient), ...]``. ``letters`` is
-                either a string of single-character letters (``"XY"``) or a
-                sequence of letter names (``["ONE", "Z"]``), paired positionally
-                with ``qubits``.
-            num_qubits: Total qubit count of the operator.
+            data: Iterable of ``(letters, qubits, coefficient)`` terms.
+                ``letters`` may be an ``I``/``X``/``Y``/``Z`` string such as
+                ``"XY"``, or a sequence of names such as ``["ONE", "Z"]``.
+                Letters pair with qubit indices positionally. Each qubit may
+                appear at most once in a term.
+            num_qubits: Positive total qubit count. Python and NumPy integers
+                are accepted; booleans are not.
 
         Returns:
             The assembled observable.
 
         Raises:
-            ValueError: If the term list is empty, ``letters`` and ``qubits``
-                disagree in length, a qubit is out of range or repeats within a
-                term, a letter is unknown, or a coefficient is not real.
+            TypeError: If ``num_qubits`` or a qubit index is not an accepted
+                integer, or if ``letters`` or ``qubits`` is not iterable.
+            ValueError: If no terms are supplied; ``num_qubits`` is less than
+                one; letters and qubits have different lengths; a qubit is out
+                of range or repeated; a letter is unsupported; or a
+                coefficient has a nonzero imaginary part.
+
+        Examples:
+            Name only the two factors in a wide observable:
+
+            >>> import fatqat as fq
+            >>> occupation = fq.Observable.from_sparse(
+            ...     [(["ONE", "Z"], (5, 3), 1.0)], num_qubits=100
+            ... )
+            >>> occupation.terms
+            ((1.0, ((3, 'Z'), (5, 'ONE'))),)
         """
         num_qubits = _as_index(num_qubits, "num_qubits")
         if num_qubits < 1:
@@ -226,18 +199,18 @@ class Observable:
 
     @property
     def terms(self) -> tuple[tuple[float, tuple[tuple[int, str], ...]], ...]:
-        """The terms as ``(coefficient, ((qubit, letter), ...))`` tuples.
+        """Return normalized ``(coefficient, factors)`` tuples.
 
         Identity factors are absent, so an identity-only term carries an empty
-        factor tuple. Factors are sorted by qubit.
+        factor tuple. Each factor is a ``(qubit, letter)`` pair, sorted by
+        qubit. The returned structure is immutable.
         """
         return self._terms
 
     def is_diagonal(self) -> bool:
-        """Whether every factor is diagonal (``Z``/``ZERO``/``ONE``).
+        """Return whether every factor is ``Z``, ``ZERO``, or ``ONE``.
 
-        A diagonal observable can be evaluated from the basis-state
-        probabilities alone, without touching amplitudes.
+        Identity-only terms are diagonal because identity factors are omitted.
         """
         return all(
             letter in _DIAGONAL_LETTERS

@@ -31,14 +31,10 @@ Register types
      - Quantum targets with rectangular selection helpers
      - Derived as ``rows * cols``
 
-Register fields are frozen and use object identity for equality and hashing.
-Names are display labels, need not be unique, and do not make two separately
-constructed registers interchangeable. The stored ``metadata`` dictionary
-defaults to empty and is the deliberate mutability exception: FATQAT reserves
-no keys and shallow-copies its string-keyed entries, so later top-level changes
-to the input are not observed while nested values remain shared. A
-:class:`~fatqat.Program` given an explicit register list or tuple retains those
-register objects while copying the outer collection.
+Names are labels and need not be unique. Keep and index the same register
+objects that you pass to :class:`~fatqat.Program`; a newly constructed register
+with the same fields is not interchangeable. ``metadata`` is a mutable,
+string-keyed mapping for application data.
 
 Indexing with ``register[index]`` creates an immutable
 :class:`~fatqat.RegisterRef`. In a program with multiple registers, pass the
@@ -80,10 +76,10 @@ only some dimensions. See :doc:`../guide/advanced` for a qutrit example.
 Grid selections
 ---------------
 
-A :class:`~fatqat.GridRegister` is a row-major, backend-neutral quantum
-register. Its shape describes program targets, not physical coordinates or a
-placement guarantee. Flat indexing uses ``row * cols + col``. The selection
-helpers return a :class:`~fatqat.RegisterView`, not a tuple of refs.
+A :class:`~fatqat.GridRegister` arranges logical targets in row-major order; it
+does not assign physical coordinates. The flat index of ``(row, col)`` is
+``row * cols + col``, and its selection helpers return
+:class:`~fatqat.RegisterView` objects rather than tuples of refs.
 
 For a ``GridRegister(2, 3)``, the helpers select these flat indices:
 
@@ -105,17 +101,14 @@ For a ``GridRegister(2, 3)``, the helpers select these flat indices:
 Pass views to :meth:`~fatqat.Program.add`. The built-in view-capable operations
 are :class:`~fatqat.operations.RX`, :class:`~fatqat.operations.RY`,
 :class:`~fatqat.operations.RZ`, :data:`~fatqat.operations.CX`, and
-:data:`~fatqat.operations.CZ`. A unary operation is applied independently to
-every selected member. For :data:`~fatqat.operations.CX` or
-:data:`~fatqat.operations.CZ`, FATQAT pairs the first and second views in their
-documented order. Both views must use the same selector kind and cardinality.
-Views over one register must not overlap; views over different grid registers
-still require equal cardinality.
-
-Views are operation target expressions. Measurements require scalar targets,
-and QASM export does not currently support a program containing a view.
-Device-specific placement and connectivity are validated by the selected
-backend. See :doc:`../guide/gates` for a paired-row example.
+:data:`~fatqat.operations.CZ`. Unary operations act independently on each
+selected member; :data:`~fatqat.operations.CX` and
+:data:`~fatqat.operations.CZ` pair corresponding members of the two views. A
+pair must use the same kind of grid selection and the same cardinality, and
+selections on the same grid cannot overlap. Measurements and QASM export
+require scalar targets. The backend validates physical placement and
+connectivity. See
+:doc:`../guide/gates` for a paired-row example.
 
 .. autoclass:: fatqat.GridRegister
    :members:
@@ -124,49 +117,27 @@ backend. See :doc:`../guide/gates` for a paired-row example.
 .. py:class:: fatqat.RegisterView
    :canonical: fatqat.registers.RegisterView
 
-   Immutable, hashable target value returned by the grid selection helpers
-   above. Its :py:attr:`~fatqat.RegisterView.register` attribute identifies the
-   owning grid, and equality combines that register's identity with the
-   selection. Construct views with the grid helpers; the selector
-   representation is not a public construction contract.
+   Immutable, hashable target returned by the grid selection helpers. Its
+   :py:attr:`~fatqat.RegisterView.register` attribute identifies the selected
+   grid. Obtain views from the grid helpers; direct construction is
+   unsupported.
 
    .. py:attribute:: register
       :canonical: fatqat.registers.RegisterView.register
       :type: fatqat.GridRegister
 
-      Grid register that owns the selected members.
+      Grid register containing the selected members.
 
 Resource layouts
 ----------------
 
-A :class:`~fatqat.ResourceLayout` is a read-only lookup from scalar quantum
-refs to opaque, hashable :obj:`~fatqat.DeviceOperand` labels. Most applications
-should let the backend create its default layout. Supply one through
-``resource_layout=`` only to request a placement supported by that backend.
-Labels identify public device resources; they are not private simulator
-tensor-axis indices.
-
-A layout maps the logical :class:`~fatqat.RegisterRef` operands of ordinary
-operations. Direct :class:`~fatqat.operations.PulseOperation` channels bind
-against the emulator's physical model and are not remapped by the layout.
-Backend calls do not mutate a layout, so it can be reused with the same
-register objects and a compatible backend. Use immutable labels whose equality
-and hashes remain stable for that lifetime.
-
-The constructor and backend perform different validation:
-
-.. list-table:: Layout validation
-   :header-rows: 1
-   :widths: 25 75
-
-   * - Stage
-     - Contract
-   * - Construction
-     - Shallow-copies the mapping and requires hashable labels.
-   * - Backend use
-     - Validates complete program coverage, distinct labels, accepted label
-       types, subsystem dimensions, placement, and connectivity as required by
-       the selected backend.
+A :class:`~fatqat.ResourceLayout` associates scalar quantum
+:class:`~fatqat.RegisterRef` operands with device labels. Most applications can
+use the backend's default layout; pass ``resource_layout=`` when you need a
+specific supported placement. Each backend defines the labels it accepts and
+checks coverage, uniqueness, dimensions, placement, and connectivity when the
+program runs. :class:`~fatqat.operations.PulseOperation` channels address the
+emulator model directly and do not use this layout.
 
 .. autoclass:: fatqat.ResourceLayout
    :members:

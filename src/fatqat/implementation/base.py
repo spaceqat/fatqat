@@ -1,30 +1,12 @@
-"""Matrix-implementation abstraction: the rule protocol, its wrappers, and the
-implementation map (unconstrained and device-specific).
+"""Matrix rules and device-aware rule maps.
 
-A matrix implementation maps an operation to its local matrix (physics only).
-The backend pairs that matrix with layout-resolved target indices to build an
-``ApplyMatrixStep`` (see ``_backends.steps``), the plain data container the
-statevector engine reads directly.
+A rule receives an applied operation and its ordered program targets, then
+returns the operation's local matrix. A map can register one rule for every
+device target or separate rules for specific ordered device labels.
 
-Local matrix convention (binding for every entry in this package):
-    - Program target operand order defines the local tensor-factor order;
-      ``targets[0]`` is the local most-significant bit
-      (MSB), ``targets[-1]`` the local least-significant bit (LSB). See
-      ``engine._apply_matrix`` for the little-endian contraction this feeds.
-    - For every controlled gate (``CX``, ``CZ``, ``CY``, and the controlled
-      gates added in later batches), the control operand(s) come first and the
-      target operand(s) come last: operand 0 (and operand 1 for
-      doubly-controlled gates) is the control, occupying the local MSB
-      position(s).
-
-A matrix implementation rule receives the bare :py:class:`~fatqat.operations.Operation` instance that was
-applied (e.g. `RX(0.3)`) plus the `targets: tuple[RegisterRef, ...]` operand
-tuple by keyword, and returns the local matrix, never the surrounding program
-instruction or a feedforward `condition`: condition resolution happens
-separately, in the backend. `targets` lets a rule read
-`targets[0].register.dim` to build a dimension-dependent matrix (e.g. a
-qudit `Shift`/`Clock`/`Sum` gate); a rule whose matrix never depends on
-target dimension (every fixed qubit gate) simply ignores the argument.
+The first program target is the most-significant local matrix factor and the
+last target changes fastest. Controlled operations follow FATQAT's usual
+control-first target order.
 """
 
 from __future__ import annotations
@@ -46,20 +28,28 @@ if TYPE_CHECKING:
 
 
 class MatrixImplementation:
-    """Base class for a matrix-family implementation rule.
+    """Base class for reusable matrix rules.
 
-    A rule receives the bare :py:class:`~fatqat.operations.Operation` instance that was applied (e.g. an
-    `RX(0.3)` value) plus the `targets` :py:class:`~fatqat.registers.RegisterRef` tuple by keyword, and
-    returns its local matrix. Most callers never need to subclass this
-    directly: `MatrixImplementationMap.add` auto-wraps a plain
-    `np.ndarray` (as `FixedMatrix`), a `_DimMatrix`, or a bare
-    callable. Subclass and override `__call__` for a stateful or configured
-    implementation.
+    Override `__call__` to return the local matrix for an applied operation.
+    The operation value carries parameters such as a rotation angle. The
+    keyword-only `targets` tuple lets a rule inspect each target register's
+    dimension. For a stateless rule, pass a plain callable directly to
+    `MatrixImplementationMap.add` instead.
     """
 
     def __call__(
         self, op: Operation, *, targets: tuple[RegisterRef, ...]
     ) -> np.ndarray:
+        """Return the local matrix for one applied operation.
+
+        Args:
+            op: Applied operation value.
+            targets: Scalar program targets in operand order.
+
+        Returns:
+            A square complex matrix with side length equal to the product of
+            the target dimensions.
+        """
         raise NotImplementedError
 
     def _kernel_key(
@@ -119,10 +109,16 @@ def _validate_square_matrix(matrix: np.ndarray) -> None:
 
 
 class FixedMatrix(MatrixImplementation):
-    """A constant matrix, independent of the applied operation's fields."""
+    """A copied, read-only matrix used for every matching operation.
+
+    `matrix` must be square with side length at least two. It need not have a
+    power-of-two size, so fixed qutrit and other qudit matrices are accepted.
+    FATQAT copies the input as a complex array and makes that copy read-only;
+    later changes to the input array do not affect the rule.
+    """
 
     def __init__(self, matrix: np.ndarray) -> None:
-        """Copy, validate, and freeze `matrix` as this rule's constant value.
+        """Create a constant rule from `matrix`.
 
         Args:
             matrix: Square matrix with side length >= 2. Copied on
@@ -140,6 +136,7 @@ class FixedMatrix(MatrixImplementation):
     def __call__(
         self, op: Operation, *, targets: tuple[RegisterRef, ...] = ()
     ) -> np.ndarray:
+        """Return the rule's read-only matrix."""
         return self._matrix
 
 
@@ -242,16 +239,15 @@ def _wrap_rule(
 
 
 class MatrixImplementationMap:
-    """Resolve operation families and device operands to implementations."""
+    """Map fixed-arity operation families to local matrix rules.
+
+    A new map is empty. Register either one uniform rule or one or more
+    device-specific rules for an operation family; the two registration modes
+    cannot be mixed for the same operation.
+    """
 
     def __init__(self) -> None:
-        """Create an empty implementation map.
-
-        Composes `_OperationRuleRegistry` for its unconstrained-versus-device-
-        specific storage mechanics, shared with every other implementation-map
-        family; this class owns only matrix-specific rule wrapping, public
-        documentation, and error wording.
-        """
+        """Create an empty implementation map."""
         self._registry: _OperationRuleRegistry[MatrixImplementation] = (
             _OperationRuleRegistry()
         )
@@ -263,36 +259,37 @@ class MatrixImplementationMap:
         *,
         device_operands: DeviceOperands | None = None,
     ) -> None:
-        """Add an unconstrained or device-specific implementation.
+        """Add a uniform or device-specific matrix rule.
 
-        Matrix rows and columns use the ordered targets as their local factor
-        order: targets[0] is most significant and targets[-1] is least
-        significant. For local basis digits (b0, ..., bk) with dimensions
-        (d0, ..., dk), the flat index is b0 * (d1 * ... * dk) +
-        b1 * (d2 * ... * dk) + ... + bk, so the last target changes fastest.
-        This local convention is independent of the simulator's full-system
-        little-endian basis order.
+        Matrix rows and columns follow program target order: `targets[0]` is
+        the most-significant local factor and the last target changes fastest.
+        For controlled operations, controls come before targets.
 
         Args:
-            op: An :py:class:`~fatqat.operations.Operation` instance (e.g. `ops.X`) or subclass (e.g. a
-                custom gate class). Normalized to the operation's class for
-                the registry key.
-            implementation: A `MatrixImplementation` instance (e.g. `FixedMatrix` or
-                `_DimMatrix`), a bare `np.ndarray` (wrapped in
-                `FixedMatrix`), or a bare callable, either `f(op)` or
-                `f(op, targets)`, detected by a parameter literally named
-                `targets` (or `**kwargs`), returning the operation's matrix
-                (wrapped automatically).
+            op: Operation instance, such as `ops.X`, or a fixed-arity
+                `Operation` subclass. Instances and their classes select the
+                same operation family.
+            implementation: A `MatrixImplementation`, a NumPy array, or a
+                callable. An array becomes a `FixedMatrix`. A callable is
+                called as `rule(op)` unless it accepts a `targets=` keyword or
+                `**kwargs`; in that case FATQAT calls it as
+                `rule(op, targets=targets)`.
+            device_operands: Ordered, hashable device labels for one physical
+                target tuple. Its length must equal the operation arity. Omit
+                it to make the rule apply uniformly.
 
         Raises:
-            TypeError: If `op` is neither an :py:class:`~fatqat.operations.Operation` instance nor
-                subclass, or if its operation class has variable arity. A bare
-                callable of the wrong shape is not rejected here; it fails on
-                first use (see `_wrap_rule`).
-            ValueError: If a bare `np.ndarray` is not square with side
-                length >= 2, or if `op` already has device-specific
-                registrations, mutually exclusive with `add(..., device_operands=...)`; see
-                its docstring for why.
+            TypeError: If `op` is not an operation instance or subclass, the
+                operation has variable arity or is a direct-control operation,
+                `implementation` has an unsupported form, or a device label is
+                not hashable.
+            ValueError: If an array is not square with side length at least
+                two, the device-operand count does not match the operation
+                arity, or this registration would mix uniform and
+                device-specific rules for one operation family.
+
+        A callable's invocation shape and returned matrix size are checked
+        only when a backend first uses the rule.
         """
         if device_operands is not None:
             self._registry.add_device_operands(
@@ -311,14 +308,16 @@ class MatrixImplementationMap:
         *,
         device_operands: DeviceOperands | None = None,
     ) -> bool:
-        """Return whether this map has any rule for the operation family.
+        """Return whether the operation has a matching rule.
 
-        True if the operation has an unconstrained implementation (`add`) or a
-        device-specific implementation for at least one operand tuple.
-        The two are mutually exclusive per operation, so never both. Does
-        not check whether any particular device operands is legal; use `implementation_for`
-        for that, or `device_operands_for` to distinguish uniform from explicit
-        support.
+        With `device_operands` omitted, this reports whether the operation
+        family has any uniform or device-specific registration. With device
+        operands supplied, it reports whether that exact tuple is supported;
+        a uniform rule supports every tuple.
+
+        Args:
+            op: Operation instance or subclass.
+            device_operands: Optional ordered device-label tuple.
         """
         if device_operands is not None:
             return (
@@ -334,69 +333,57 @@ class MatrixImplementationMap:
     ) -> MatrixImplementation | None:
         """Return the matrix implementation selected for an operation.
 
-        Always a `MatrixImplementation` instance regardless of what was
-        registered: a bare callable is wrapped, a bare ndarray becomes a
-        `FixedMatrix`.
+        The return value is always a `MatrixImplementation`, including when an
+        array or callable was originally registered.
 
-        With `device_operands` omitted, only the unconstrained `add()` implementation is
-        consulted, regardless of any device-specific implementations for the
-        operation. With `device_operands` given: if the operation has any
-        device-specific implementations, only those are consulted. `None` means
-        the operation family is supported but this specific device operands is
-        not legal. If the operation has no device-specific implementations at
-        all, the unconstrained `add()` implementation (if any) is returned for
-        every device operands. This is what keeps maps with only an unconstrained implementation working
-        unchanged under device-specific lookup.
+        Without `device_operands`, only a uniform rule is returned; a family
+        that has only device-specific rules returns `None`. With a tuple,
+        FATQAT returns its exact device-specific rule when that registration
+        mode is in use, or falls back to the family's uniform rule. `None`
+        means no rule matches the requested lookup.
 
         Args:
-            op: An :py:class:`~fatqat.operations.Operation` instance or subclass.
-            device_operands: An ordered hashable tuple identifying the device-level
-                target. Omit to look up only the unconstrained rule.
+            op: Operation instance or subclass.
+            device_operands: Ordered device labels. Omit to look up only the
+                uniform rule.
+
+        Returns:
+            The selected rule, or `None` when none matches.
         """
         return self._registry.get(op, device_operands=device_operands)
 
     def supported_operations(self) -> frozenset[type[Operation]]:
-        """Return every operation family with at least one implementation."""
+        """Return operation classes that have at least one registered rule."""
         return self._registry.supported_operations()
 
     def device_operands_for(
         self, op: Operation | type[Operation]
     ) -> frozenset[DeviceOperands]:
-        """Return the finite set of device operands selected for an operation.
+        """Return every explicitly registered device-label tuple for `op`.
 
-        Empty if the operation has no device-specific implementations, including
-        when it has an unconstrained `add()` implementation instead, which has no
-        fixed set of legal keys. Combine with `supports` to tell the two
-        apart: `supports(op) and not device_operands_for(op)` means `op` is legal
-        on any target of the correct arity (uniform); a non-empty result
-        means legal only on those keys; `not supports(op)` means not
-        supported at all.
+        The result is empty both for an unsupported operation and for an
+        operation with a uniform rule. Use `supports(op)` to distinguish
+        those cases.
         """
         return self._registry.device_operands_for(op)
 
     def remove(self, op: Operation | type[Operation]) -> None:
-        """Remove a registered matrix implementation, if present.
+        """Remove all rules for an operation family, if present.
 
-        Removes both the unconstrained rule and any device-specific implementations for
-        this operation.
+        This removes either the uniform rule or every device-specific rule.
+        Removing an unregistered operation is a no-op.
 
         Args:
-            op: An :py:class:`~fatqat.operations.Operation` instance or subclass to remove. Removing an
-                operation that was never registered is a no-op.
+            op: Operation instance or subclass.
         """
         self._registry.remove(op)
 
     def copy(self) -> "MatrixImplementationMap":
-        """Return a new map with an independent copy of this map's registrations.
+        """Return a map whose registrations can be edited independently.
 
-        Rule objects themselves are shared (not deep-copied) between the
-        original and the copy; rules are expected to be immutable or
-        self-contained, so sharing them across independent map copies is
-        safe. Mutating one map's registrations (`add`/`add(..., device_operands=...)`/
-        `remove`) never affects the other. The per-operation device-operand
-        tables are copied individually (not just the outer dict), so mutating
-        one map's device-specific implementations for an operation cannot leak
-        into the other map's table for that same operation.
+        Adding or removing rules on either map does not affect the other.
+        Registered rule objects are shared rather than deep-copied, so a
+        stateful custom rule remains the same object in both maps.
         """
         clone = MatrixImplementationMap()
         clone._registry = self._registry.copy()

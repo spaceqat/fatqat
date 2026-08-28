@@ -1,4 +1,4 @@
-"""Generic eager Job handle with terminal success and error states."""
+"""Completed job handles returned by FATQAT execution APIs."""
 
 from __future__ import annotations
 
@@ -8,15 +8,14 @@ T = TypeVar("T")
 
 
 class Job(Generic[T]):
-    """Eager job handle returned by backends.
+    """Hold the result of a completed submission.
 
-    Phase 1 jobs are already terminal when returned. ``DONE`` jobs return
-    their result, while ``ERROR`` jobs re-raise their stored exception from
-    ``result()``.
+    Jobs returned by current backends and estimators are already terminal.
+    ``result()`` returns the result value or raises the execution error.
 
     Attributes:
-        status: Current eager terminal status, normally ``"DONE"`` or
-            ``"ERROR"``.
+        status: ``"DONE"`` for a successful submission or ``"ERROR"`` for a
+            failed one. Applications should treat this value as read-only.
     """
 
     status: str
@@ -27,26 +26,28 @@ class Job(Generic[T]):
         result: T | None = None,
         error: BaseException | None = None,
     ) -> None:
-        """Create a job with a terminal or non-terminal status.
+        """Create a completed job.
+
+        Most users receive jobs from a backend or estimator ``run`` method.
 
         Args:
-            status: Job status string.
-            result: Payload for `DONE` jobs.
-            error: Exception payload for `ERROR` jobs.
+            status: ``"DONE"`` for success or ``"ERROR"`` for failure.
+            result: Value returned by ``result()`` for a successful job.
+            error: Exception raised by ``result()`` for a failed job.
         """
         self.status = status
         self._result = result
         self._error = error
 
     def result(self) -> T:
-        """Return the result payload or raise the terminal job error.
+        """Return the result value or raise the execution error.
 
         Returns:
-            The result payload stored on a ``DONE`` job.
+            The value produced by a ``"DONE"`` job.
 
         Raises:
-            BaseException: Re-raises the stored error for ``ERROR`` jobs.
-            RuntimeError: If the job is not in a terminal state.
+            BaseException: The error from an ``"ERROR"`` job.
+            RuntimeError: If ``status`` is neither ``"DONE"`` nor ``"ERROR"``.
         """
         if self.status == "DONE":
             return cast(T, self._result)

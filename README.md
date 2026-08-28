@@ -125,7 +125,7 @@ dyn.measure(1, 1)
 
 Noise lives in a `NoiseModel`, built separately from the program and passed
 to the backend, so the same program runs ideal or noisy without changes.
-Quantum channels attach to gate occurrences; readout confusion is classical
+Quantum channels attach to matching operations; readout confusion is classical
 (the collapse stays true, only the reported bit is resampled):
 
 ```python

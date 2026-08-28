@@ -1,24 +1,13 @@
 Program
 =======
 
-:py:class:`~fatqat.Program` is FATQAT's central object: a device-independent
-representation of a quantum workload. It owns the quantum and classical
-register declarations, user metadata, and ordered instruction stream of
-operations, measurements, and classical conditions. A program records the
-requested computation without selecting a device instruction set or promising
-that every operation has an implementation on the eventual target.
+:py:class:`~fatqat.Program` records a quantum workload without tying it to a
+device. Add operations and measurements in execution order, then choose a
+backend when you run it.
 
-Construction validates representation-level invariants such as register kind
-and ownership, operation arity and generic target constraints, measurement
-pairing, and condition shape. It does not decide whether a gate is native,
-supported by a selected backend, compatible with a device topology, or
-realizable for that device's subsystem dimensions. Those capability checks and
-the concrete lowering belong to the selected compiler and backend during
-program preparation or execution. The same well-formed program can therefore
-be offered to different backends, which may accept or reject different parts
-of its instruction stream.
-
-Operation examples use ``import fatqat.operations as ops``.
+FATQAT catches malformed targets, measurements, and conditions while you build
+the program. The backend checks whether it supports the requested operations,
+dimensions, placement, and feedforward.
 
 .. code-block:: python
 
@@ -52,20 +41,14 @@ The two register arguments accept these forms:
      - Every item must have the matching quantum or classical register kind.
        Use this form for names, multiple registers, grids, or qudits.
 
-The program copies the outer collection but retains its register objects.
-Treat the register tuple attributes as construction-time state. ``metadata``
-is a mutable, shallow-copied mapping for application-defined string keys;
-FATQAT does not reserve or interpret any key. See :doc:`registers` for register
-identity, dimensions, grids, and metadata ownership.
+See :doc:`registers` for explicit registers, dimensions, and grid selections.
 
 Targets
 -------
 
-A bare built-in integer is an index into the sole register of the relevant
-kind, not a global index across several registers. With multiple registers,
-pass an explicit :py:class:`~fatqat.RegisterRef` from the program. References
-belong to their original register objects, so a ref from a separately
-constructed register is not interchangeable with one from the program.
+A bare integer indexes the sole register of the relevant kind; it is not a
+global index across several registers. With multiple registers, index the
+register you want and pass the resulting :py:class:`~fatqat.RegisterRef`.
 
 .. list-table:: Target forms
    :header-rows: 1
@@ -82,7 +65,8 @@ constructed register is not interchangeable with one from the program.
    * - :py:class:`~fatqat.RegisterRef`
      - :py:meth:`~fatqat.Program.add`, :py:meth:`~fatqat.Program.measure`, and
        conditions
-     - Must have the required register kind and belong to this program.
+     - Must have the required register kind and come from a register in this
+       program.
    * - :py:class:`~fatqat.RegisterView`
      - :py:meth:`~fatqat.Program.add` only
      - :py:class:`~fatqat.operations.RX`,
@@ -91,16 +75,13 @@ constructed register is not interchangeable with one from the program.
        :py:data:`~fatqat.operations.CX` and :py:data:`~fatqat.operations.CZ`
        accept two compatible views. Measurement does not accept views.
 
-A :py:class:`~fatqat.operations.PulseOperation` uses a direct-control contract
-instead of the target forms above. It does not take a separate ``targets``
-argument. Add it with ``program.add(operation)``; each contained
-:py:attr:`~fatqat.emulator.PulseControl.channel` identifies the physical
-resource or resources that the selected emulator resolves during program
-preparation. See :doc:`operations/direct-control` for binding and validation.
+A :py:class:`~fatqat.operations.PulseOperation` does not use the target forms
+above. Add it with ``program.add(operation)`` and no ``targets`` argument.
+See :doc:`pulse-control/pulse-operation` for details.
 
-A tuple supplies operation operands in order; it is not variadic call syntax.
-For controlled gates, controls precede targets. See :doc:`registers` for view
-selection and pairing, and :doc:`../guide/gates` for gate target order.
+For other operations, ``targets`` is one tuple in operand order. Controlled
+gates list controls before targets. See :doc:`registers` for view selection and
+pairing, and :doc:`../guide/gates` for gate target order.
 
 Conditions
 ----------
@@ -108,14 +89,12 @@ Conditions
 Pass ``condition=(slot, literal)`` to :py:meth:`~fatqat.Program.add`, or pass a
 non-empty tuple or list of such pairs for logical AND. A slot follows the same
 integer-or-ref rules as other classical operands. Each literal is a Python
-integer in ``0 <= literal < slot.dim``; booleans are also accepted. On a
-backend that supports conditions, every term is compared with the current
-classical value when the operation is reached. Classical storage starts at
-zero, and an earlier measurement can replace a slot's value.
+integer in ``0 <= literal < slot.dim``; booleans are also accepted. Every term
+is compared with the current classical value when the operation is reached.
 
-Construction validates the condition shape, slot ownership, and literal
-range. It does not require the slot to have been measured and does not promise
-that every backend or execution method supports feedforward.
+FATQAT checks each condition when the operation is added. A condition may refer
+to an unmeasured slot, whose initial value is zero; an earlier measurement
+replaces that value. The backend decides whether it supports feedforward.
 
 Measurements
 ------------
@@ -123,7 +102,7 @@ Measurements
 :py:meth:`~fatqat.Program.measure` pairs quantum targets with classical
 outputs positionally. Both sides must be non-empty, have the same length, and
 have matching dimensions at every position. Repeated operands are processed
-in pair order; see :doc:`operations/structural` for measurement semantics.
+in pair order; see :doc:`operations/structural` for measurement behavior.
 
 :py:meth:`~fatqat.Program.measure_all` flattens all registers and their members
 in declaration order and appends one grouped measurement. It requires equal,
@@ -157,22 +136,21 @@ when several operation arguments should share a value.
        vector element must be used directly as an operation parameter. Bind
        individual elements for a partial vector.
 
-:py:meth:`~fatqat.Program.assign_parameters` may bind any subset and always
-returns a new program. Remaining parameters stay symbolic, but numeric
-execution and export reject them. String keys, booleans, complex values, and
-duplicate vector/element assignments are rejected. Only parameters used
-directly as operation arguments are bindable, and binding does not bypass an
-operation's value constraints. Read
+:py:meth:`~fatqat.Program.assign_parameters` accepts an empty or partial
+mapping and returns a new program. It binds only :py:class:`~fatqat.Parameter`
+objects used directly as operation arguments. Unbound parameters remain
+symbolic and are rejected by numeric execution and export. String keys,
+positional assignments, boolean or complex values, and assigning both a vector
+and one of its elements are rejected. Replacement values still undergo the
+operation's normal validation. Read
 :doc:`../guide/parameters-and-sweeps` for nested-value limitations, partial
 binding, sweep shapes, and execution behavior.
 
-:py:meth:`~fatqat.Program.copy` also returns a new mutable branch. Both methods
-retain the same register objects and copy the top-level metadata dictionary;
-nested metadata values remain shared. Later instruction additions and
-top-level metadata edits are independent. Calls to
+:py:meth:`~fatqat.Program.copy` and
+:py:meth:`~fatqat.Program.assign_parameters` return new programs.
 :py:meth:`~fatqat.Program.add`, :py:meth:`~fatqat.Program.measure`, and
-:py:meth:`~fatqat.Program.measure_all` instead mutate the current program and
-return ``None``.
+:py:meth:`~fatqat.Program.measure_all` update the current program and return
+``None``.
 
 Draw
 ----
@@ -200,8 +178,8 @@ Unknown or custom operations appear as labeled boxes. A direct
 :py:class:`~fatqat.operations.PulseOperation` cannot be represented and raises
 :py:exc:`~fatqat.errors.UnsupportedOperationError`.
 
-API
----
+Reference
+---------
 
 .. autoclass:: fatqat.Program(quantum_registers, classical_registers=0, *, metadata=None)
    :exclude-members: add, measure, measure_all, draw, copy, assign_parameters

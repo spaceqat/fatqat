@@ -33,7 +33,7 @@ def load_model_document(name: str) -> dict[str, object]:
     Mutating a returned document never changes later loads.
 
     Args:
-        name: One name returned by :func:`available_model_documents`.
+        name: One name returned by ``available_model_documents()``.
 
     Returns:
         A newly decoded, JSON-compatible mutable dictionary.

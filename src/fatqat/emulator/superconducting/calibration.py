@@ -1,4 +1,4 @@
-"""Portable fixed-pulse calibration for superconducting transmons."""
+"""Fixed-pulse calibration values for superconducting transmons."""
 
 from __future__ import annotations
 
@@ -132,7 +132,37 @@ _PARSERS = MappingProxyType({_FORMAT: _parse_calibration})
 
 @dataclass(frozen=True, slots=True, init=False)
 class TransmonCalibration:
-    """Immutable portable fixed-pulse calibration recipe."""
+    """Load transmon gate recipes from a decoded calibration document.
+
+    All fields are required; unknown fields are rejected. The document has:
+
+    - ``"format"``: ``{"id": "sc.transmon_exchange_fixed_pulse",
+      "version": 1}``.
+    - ``"calibration"``: nonempty string ``"id"`` and ``"revision"``.
+    - ``"units"``: exactly ``{"time": "ns", "frequency": "GHz",
+      "dimensionless": "1"}``.
+    - ``"recipes"``: ``"rx_ry"`` with positive ``"duration"`` and finite
+      ``"drag_coefficient"``; ``"iswap"`` with positive ``"duration"``;
+      and ``"cz"`` with one ``"default"`` recipe plus ``"overrides"``.
+
+    A CZ recipe contains ``"detuning_operand"`` (``0`` or ``1``), positive
+    ``"duration"``, non-negative ``"ramp_duration"`` shorter than half the
+    duration, and finite ``"detuning"`` in GHz. Each override contains two
+    distinct ordered string ``"device_operands"`` and a complete ``"recipe"``.
+
+    Args:
+        document: Decoded mapping with the schema above.
+
+    Raises:
+        BackendValidationError: If the document has an unsupported format,
+            missing or unknown keys, invalid units, or invalid recipe values.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> calibration = fq.emulator.default_transmon_calibration()
+        >>> calibration.recipe_time_unit
+        'ns'
+    """
 
     format: FormatIdentity = field(compare=False)
     identity: CalibrationIdentity
@@ -179,7 +209,7 @@ class TransmonCalibration:
 
 
 def default_transmon_calibration() -> TransmonCalibration:
-    """Return a fresh package-default portable transmon calibration."""
+    """Return the packaged reference transmon calibration."""
     document = json.loads(
         package_resources.files(__package__)
         .joinpath("data/default_calibration.json")

@@ -40,8 +40,7 @@ def _drive_control() -> _ControlAddress:
     """Select the global complex-valued Rydberg drive control.
 
     Returns:
-        An opaque channel address for use with
-        :class:`~fatqat.emulator.PulseControl`.
+        The global drive channel for use with ``PulseControl``.
     """
     return _ControlAddress(_FAMILY, "drive")
 
@@ -50,8 +49,7 @@ def _detuning_control() -> _ControlAddress:
     """Select the global real-valued detuning control.
 
     Returns:
-        An opaque channel address for use with
-        :class:`~fatqat.emulator.PulseControl`.
+        The global detuning channel for use with ``PulseControl``.
     """
     return _ControlAddress(_FAMILY, "detuning")
 
@@ -171,11 +169,19 @@ _MODEL_PARSERS = MappingProxyType({_MODEL_FORMAT: _parse_model})
 
 @dataclass(frozen=True, slots=True, init=False)
 class Atom2LevelModel:
-    """Immutable geometry-free two-level Rydberg physics model.
+    """Describe the two-level Rydberg physics used by the atom emulator.
 
-    Construct this value with :meth:`from_document`, then discover structural
-    pulse channels through :attr:`control` or :attr:`available_controls`.
-    Geometry is supplied separately to :class:`Atom2LevelEmulator`.
+    Create a model with ``from_document()``. Site coordinates are supplied
+    separately through ``AtomArrangement``; select the global drive and
+    detuning channels through ``control``.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> model = fq.emulator.Atom2LevelModel.from_document(
+        ...     fq.emulator.load_model_document("atom2level.reference")
+        ... )
+        >>> tuple(model.available_controls)
+        ('drive', 'detuning')
     """
 
     format: FormatIdentity = field(compare=False)
@@ -197,7 +203,7 @@ class Atom2LevelModel:
     c6_unit: ClassVar[str] = _UNITS["c6"]
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
-        """Reject direct construction in favor of :meth:`from_document`.
+        """Reject direct construction in favor of ``from_document()``.
 
         Raises:
             TypeError: Always. Physics model selection must be explicit.
@@ -212,7 +218,7 @@ class Atom2LevelModel:
             document: Mapping using the supported Atom2Level model schema.
 
         Returns:
-            An immutable, geometry-free physics model.
+            A validated two-level atom model.
 
         Raises:
             BackendValidationError: If the document has an unsupported format
@@ -241,20 +247,19 @@ class Atom2LevelModel:
 
     @property
     def control(self) -> _Atom2Controls:
-        """Return the immutable namespace of supported control selectors.
+        """Return the global ``drive`` and ``detuning`` selectors.
 
         Returns:
-            A family-owned namespace containing ``drive`` and ``detuning``.
+            The available channel selectors.
         """
         return _CONTROLS
 
     @property
     def available_controls(self) -> Mapping[str, _ControlSelector]:
-        """Return inspectable selectors keyed by their public control names.
+        """Return the channel selectors keyed by control name.
 
         Returns:
-            An immutable mapping whose values are the selectors on
-            :attr:`control`.
+            A mapping containing ``drive`` and ``detuning``.
         """
         return _AVAILABLE_CONTROLS
 

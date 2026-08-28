@@ -1,4 +1,5 @@
-"""Pair and Unpair connectivity instructions for ``AtomArraySimulator``."""
+"""Pair and Unpair connectivity instructions for
+`fatqat.simulator.AtomArraySimulator`."""
 
 from __future__ import annotations
 
@@ -12,23 +13,18 @@ from .base import Operation
 class PairGate(Operation):
     """Add one undirected edge to the atom-array connectivity graph.
 
-    ``Pair`` is implemented by :class:`~fatqat.simulator.AtomArraySimulator`
-    only. Targets are the two distinct atoms ``(a, b)``; their order does not
-    affect connectivity.
-    Pairing an already connected pair is a connectivity no-op. The instruction
-    changes no quantum state and does not make an otherwise unsupported gate
-    available: it only satisfies the connectivity prerequisite for a supported
-    two-atom gate such as the backend's native CZ.
+    ``Pair`` is implemented only by `fatqat.simulator.AtomArraySimulator`;
+    other built-in backends raise `fatqat.errors.UnsupportedOperationError`.
+    Targets are the two distinct atoms ``(a, b)``; their order does not affect
+    connectivity.
+    Pairing an existing edge does nothing. The instruction does not change the
+    quantum state or make an unsupported gate available; it only satisfies the
+    connectivity requirement for a supported two-atom gate.
 
-    ``Pair`` must be unconditional. :meth:`~fatqat.Program.add` accepts a
-    condition syntactically, but
-    :class:`~fatqat.simulator.AtomArraySimulator` raises
-    :exc:`~fatqat.errors.BackendValidationError` during program preparation.
-    Noise attached to ``Pair`` acts on its targets and can model movement loss
-    or decoherence even though ``Pair`` does not change the quantum state.
-
-    Add the singleton ``ops.Pair`` without parentheses. It requires exactly two
-    distinct scalar targets and rejects :class:`~fatqat.RegisterView`.
+    ``Pair`` takes exactly two distinct scalar targets and must be
+    unconditional. The atom-array simulator rejects a condition when the
+    program runs. Attached `fatqat.noise.Loss` or supported finite channel
+    noise still acts on the targets. `fatqat.RegisterView` targets are rejected.
 
     Examples:
         >>> import fatqat as fq
@@ -45,22 +41,19 @@ class PairGate(Operation):
 class UnpairGate(Operation):
     """Remove one undirected edge from the atom-array connectivity graph.
 
-    ``Unpair`` is implemented by
-    :class:`~fatqat.simulator.AtomArraySimulator` only. Targets are the two
-    distinct atoms ``(a, b)``; their order does not affect connectivity.
-    Removing an absent edge is a connectivity no-op. The instruction changes
-    no quantum state, but attached movement-cost noise is still applied to its
-    targets.
+    ``Unpair`` is implemented only by `fatqat.simulator.AtomArraySimulator`;
+    other built-in backends raise `fatqat.errors.UnsupportedOperationError`.
+    Targets are the two distinct atoms ``(a, b)``; their order does not affect
+    connectivity.
+    Removing a missing edge does nothing. The instruction does not change the
+    quantum state, but attached `fatqat.noise.Loss` or supported finite channel
+    noise still acts on its targets.
 
-    ``Unpair`` must be unconditional. :meth:`~fatqat.Program.add` accepts a
-    condition syntactically, but
-    :class:`~fatqat.simulator.AtomArraySimulator` raises
-    :exc:`~fatqat.errors.BackendValidationError` during program preparation.
-    After unpairing, a supported two-atom gate on that pair again fails its
-    connectivity check until another ``Pair``.
-
-    Add the singleton ``ops.Unpair`` without parentheses. It requires exactly
-    two distinct scalar targets and rejects :class:`~fatqat.RegisterView`.
+    ``Unpair`` takes exactly two distinct scalar targets and must be
+    unconditional. The atom-array simulator rejects a condition when the
+    program runs. After unpairing, a supported two-atom gate on that pair fails
+    its connectivity check until another ``Pair``. `fatqat.RegisterView`
+    targets are rejected.
 
     Examples:
         >>> import fatqat as fq
@@ -73,6 +66,5 @@ class UnpairGate(Operation):
     num_subsystems: ClassVar[int] = 2
 
 
-# singleton values: `ops.Pair` / `ops.Unpair`, not `ops.Pair()`.
 Pair = PairGate()
 Unpair = UnpairGate()

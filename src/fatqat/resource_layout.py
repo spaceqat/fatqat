@@ -1,4 +1,4 @@
-"""Public mapping from program quantum references to backend device labels."""
+"""Placement labels for program quantum references."""
 
 from __future__ import annotations
 
@@ -10,21 +10,15 @@ type DeviceOperand = Hashable
 
 
 class ResourceLayout:
-    """Read-only program-reference to device-label lookup object.
+    """Associate scalar quantum refs with backend device labels.
 
-    Device labels are opaque hashable values defined by a backend, such as a
-    site number, coordinate, or string identifier. They are not simulator
-    tensor-axis indices. Public lookups map register refs to device labels.
+    Labels are opaque hashable values such as site numbers, coordinates, or
+    strings. They identify device resources rather than simulator tensor axes.
 
-    Construction shallow-copies the input mapping, so later top-level changes
-    to that mapping are not observed. The ref keys and label objects are
-    retained. Use immutable labels whose equality and hashes remain stable for
-    the layout's lifetime. Backend calls do not mutate a layout, so it can be
-    reused with the same register objects and a compatible backend.
-
-    The selected backend validates program coverage, label uniqueness and
-    type, subsystem dimensions, placement, and connectivity when the layout is
-    used.
+    Most programs can use their backend's default layout. Supply an explicit
+    layout when you need a particular supported placement. Each backend defines
+    the labels it accepts and checks program coverage, uniqueness, dimensions,
+    placement, and connectivity when the program runs.
 
     Examples:
         >>> import fatqat as fq
@@ -38,10 +32,10 @@ class ResourceLayout:
         """Create a resource layout from explicit ref-to-label pairs.
 
         Args:
-            labels: Mapping from quantum :class:`~fatqat.RegisterRef` objects
-                to opaque, hashable device labels defined by the backend.
-                FATQAT defines no universal label type or reserved value. The
-                mapping is shallow-copied.
+            labels: Mapping from quantum `RegisterRef` objects to opaque,
+                hashable labels defined by the backend. FATQAT defines no
+                universal label type or reserved value. The mapping is
+                shallow-copied.
 
         Raises:
             TypeError: If ``labels`` cannot be copied into a dictionary or a
@@ -56,9 +50,8 @@ class ResourceLayout:
         """Return the device resource label mapped to ``ref``.
 
         Args:
-            ref: Stored mapping key to look up. Under the supported contract,
-                this is a scalar quantum register reference whose register
-                identity matches the original key.
+            ref: Scalar quantum register ref supplied as a key when the layout
+                was constructed.
 
         Returns:
             The mapped backend-defined device label.
@@ -78,7 +71,7 @@ class ResourceLayout:
 
     @property
     def refs(self) -> frozenset[RegisterRef]:
-        """Return every mapped :class:`~fatqat.RegisterRef` as an immutable set."""
+        """Return every mapped `RegisterRef` as an immutable set."""
         return frozenset(self._labels)
 
     def device_labels_for(

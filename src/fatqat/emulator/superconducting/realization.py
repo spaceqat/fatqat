@@ -1,4 +1,4 @@
-"""Compile standard transmon gate implementations into portable pulse maps."""
+"""Build standard transmon gate-to-pulse maps."""
 
 from __future__ import annotations
 
@@ -130,7 +130,22 @@ def _cz_definition(
 def default_transmon_gate_implementation_map(
     *, model: TransmonModel, calibration: TransmonCalibration
 ) -> PulseImplementationMap:
-    """Compile a fresh standard pulse map from source model and calibration."""
+    """Build the standard transmon gate-to-pulse map.
+
+    The returned rules use the model's channels, frames, subsystem parameters,
+    and coupling graph together with the supplied calibration. Rebuild the map
+    after changing values that should alter those pulse recipes.
+
+    Args:
+        model: Model whose physical resources and parameters the rules use.
+        calibration: Gate recipe values.
+
+    Returns:
+        A new map for ``RX``, ``RY``, ``RZ``, ``iSwap``, and coupled ``CZ``.
+
+    Raises:
+        BackendValidationError: If either argument has the wrong type.
+    """
     if not isinstance(model, TransmonModel):
         raise BackendValidationError("model must be a TransmonModel")
     if not isinstance(calibration, TransmonCalibration):

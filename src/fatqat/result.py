@@ -1,4 +1,4 @@
-"""Result objects and counts assembly helpers."""
+"""Result values returned by FATQAT execution APIs."""
 
 from __future__ import annotations
 
@@ -123,13 +123,15 @@ def format_count_key(key: tuple[int, ...], classical_dims: Sequence[int]) -> str
 
 
 class Result:
-    """Execution result with explicitly available data fields.
+    """Expose the data produced by one backend or estimator run.
 
-    Accessors raise ``ResultFieldUnavailableError`` when a field was not
-    produced by the backend. Check ``available_data`` or use the accessor
-    errors to handle optional fields. ``metadata`` always exists and stores
-    backend/run context such as shots, backend name, and the effective result
-    configuration.
+    ``available_data`` is the immutable set of fields produced by this run.
+    An unavailable accessor raises ``ResultFieldUnavailableError`` instead of
+    returning ``None``. ``metadata`` is a mutable dictionary whose keys and
+    values depend on the producer.
+
+    Treat values returned by accessors as read-only. ``get_counts`` is the
+    exception: it returns a new dictionary of formatted string keys.
     """
 
     def __init__(
@@ -144,23 +146,32 @@ class Result:
         superop: np.ndarray | None = None,
         data: Mapping[str, Any] | None = None,
     ) -> None:
-        """Create a result from backend-produced fields.
+        """Create a result from produced fields.
+
+        Most users receive a ``Result`` from ``Job.result()``. ``metadata`` and
+        ``data`` are shallow-copied; count dictionaries and arrays are retained
+        by reference.
 
         Args:
-            counts: Optional measurement-count dictionary, keyed by ascending
-                flat clbit index (clbit 0 first).
-            statevector: Optional statevector array.
-            available: Field names that accessors are allowed to return.
-            metadata: Optional backend/run metadata copied into the public
-                `metadata` dictionary.
-            classical_dims: Per-clbit classical dimensions, used to render
-                `get_counts()` display strings.
-            density_matrix: Optional density-matrix array.
-            unitary: Optional unitary-matrix array.
-            superop: Optional super-operator-matrix array.
-            data: Additional backend-specific result artifacts. Their names
-                are included in :attr:`available_data` and retrieved with
-                :meth:`get_data`.
+            counts: Counts keyed by tuples in ascending flat classical-slot
+                order.
+            statevector: Statevector field, if produced.
+            available: Core field names that their accessors may return.
+            metadata: Producer-specific run metadata.
+            classical_dims: Per-slot classical dimensions used to format count
+                strings.
+            density_matrix: Density-matrix field, if produced.
+            unitary: Unitary field, if produced.
+            superop: Super-operator field, if produced.
+            data: Additional named fields. These names are added to
+                ``available_data`` automatically and are read with
+                ``get_data`` or a dedicated accessor.
+
+        Raises:
+            BackendValidationError: If ``data`` uses ``"counts"``,
+                ``"final_state"``, ``"statevector"``, ``"density_matrix"``,
+                ``"unitary"``, or ``"superop"``, which are reserved for core
+                fields.
         """
         self._data = dict(data) if data is not None else {}
         reserved = {
@@ -187,21 +198,30 @@ class Result:
         self._classical_dims = tuple(classical_dims)
 
     def get_data(self, name: str) -> Any:
-        """Return a backend-specific result artifact by name.
+        """Return an additional result field by name.
+
+        Core fields such as counts and statevectors use their dedicated
+        accessors.
+
+        Args:
+            name: Additional backend-specific field name.
+
+        Returns:
+            The field value.
 
         Raises:
-            ResultFieldUnavailableError: If ``name`` was not produced by this
-                backend run.
+            ResultFieldUnavailableError: If ``name`` is not an additional
+                field in this result.
         """
         if name not in self._data:
             raise ResultFieldUnavailableError(f"{name} not available in this result")
         return self._data[name]
 
     def get_expectation(self) -> Any:
-        """Return the expectation value(s) produced by an estimator.
+        """Return expectation values produced by an estimator.
 
-        A ``float`` when a single observable was requested, an array when a
-        sequence was - the shape mirrors what was passed in.
+        One observable produces a scalar. A list or tuple produces a
+        one-dimensional NumPy array in input order.
 
         Raises:
             ResultFieldUnavailableError: If this result did not come from an
@@ -215,11 +235,11 @@ class Result:
         return self._data["expectation"]
 
     def get_std(self) -> Any:
-        """Return the standard error of the expectation value(s).
+        """Return estimator standard errors.
 
-        The shape mirrors ``get_expectation``. An exact run (``shots=0``)
-        reports ``0``: it carries no statistical error, since nothing was
-        sampled.
+        The shape matches ``get_expectation``. An exact run with ``shots=0``
+        reports zero. For a sampled run, this is the statistical standard
+        error reported by the estimator, not a sample standard deviation.
 
         Raises:
             ResultFieldUnavailableError: If this result did not come from an
@@ -233,12 +253,15 @@ class Result:
         return self._data["std"]
 
     def get_counts(self) -> dict[str, int]:
-        """Return measurement counts as little-endian display strings.
+        """Return a new counts dictionary with display-string keys.
+
+        The highest-index classical slot appears on the left and slot 0 on
+        the right. Digits are concatenated when every classical dimension is
+        at most 9; otherwise commas separate them.
 
         Returns:
-            Count dictionary keyed by little-endian classical bitstrings
-            (single-character digits when every classical dim is <= 9,
-            otherwise a comma-delimited little-endian form).
+            A newly created dictionary; changing it does not change this
+            result.
 
         Raises:
             ResultFieldUnavailableError: If counts were not produced.
@@ -261,11 +284,10 @@ class Result:
         }
 
     def get_counts_as_tuples(self) -> dict[tuple[int, ...], int]:
-        """Return measurement counts keyed by ascending flat clbit index.
+        """Return counts keyed by ascending flat classical-slot index.
 
         Returns:
-            Count dictionary keyed by tuples with clbit 0 first, the same
-            representation the backend produces internally.
+            A dictionary whose tuple position 0 is classical slot 0.
 
         Raises:
             ResultFieldUnavailableError: If counts were not produced.
@@ -275,25 +297,18 @@ class Result:
         return self._counts
 
     def get_statevector(self) -> np.ndarray:
-        """Return the statevector snapshot.
+        """Return the produced statevector.
+
+        Built-in backends return a length-``D`` array, where ``D`` is the
+        product of subsystem dimensions. ``metadata["state_axes"]`` describes
+        the least-significant-first subsystem order.
 
         Returns:
-            A statevector array produced by the backend.
+            The statevector array.
 
         Raises:
             ResultFieldUnavailableError: If a statevector was not produced.
 
-        Examples:
-            >>> import fatqat as fq
-            >>> import fatqat.operations as ops
-            >>> program = fq.Program(1)
-            >>> program.add(ops.X, 0)
-            >>> result = fq.simulator.Simulator("SV").run(
-            ...     program,
-            ...     result_config={"counts": False, "final_state": True},
-            ... ).result()
-            >>> result.get_statevector()
-            array([0.+0.j, 1.+0.j])
         """
         if "statevector" not in self.available_data:
             raise ResultFieldUnavailableError(
@@ -302,26 +317,18 @@ class Result:
         return self._statevector
 
     def get_density_matrix(self) -> np.ndarray:
-        """Return the density-matrix snapshot.
+        """Return the produced density matrix.
+
+        Built-in backends return a ``(D, D)`` array, where ``D`` is the product
+        of subsystem dimensions. ``metadata["state_axes"]`` describes the
+        least-significant-first subsystem order used by both axes.
 
         Returns:
-            A density-matrix array produced by the backend.
+            The density-matrix array.
 
         Raises:
             ResultFieldUnavailableError: If a density matrix was not produced.
 
-        Examples:
-            >>> import fatqat as fq
-            >>> import fatqat.operations as ops
-            >>> program = fq.Program(1)
-            >>> program.add(ops.H, 0)
-            >>> result = fq.simulator.Simulator("DM").run(
-            ...     program,
-            ...     result_config={"counts": False, "final_state": True},
-            ... ).result()
-            >>> result.get_density_matrix()
-            array([[0.5+0.j, 0.5+0.j],
-                   [0.5+0.j, 0.5+0.j]])
         """
         if "density_matrix" not in self.available_data:
             raise ResultFieldUnavailableError(
@@ -335,20 +342,12 @@ class Result:
         Returns:
             A ``(D, D)`` array, where ``D`` is the product of the subsystem
             dimensions. Column ``j`` is the state the program prepares from
-            basis state ``|j>``, so column 0 is the statevector a
-            ``method="statevector"`` run of the same program returns.
+            basis state ``|j>``. Column 0 therefore matches a statevector run
+            of the same program from the default all-zero state.
 
         Raises:
             ResultFieldUnavailableError: If a unitary was not produced.
 
-        Examples:
-            >>> import fatqat as fq
-            >>> import fatqat.operations as ops
-            >>> program = fq.Program(1)
-            >>> program.add(ops.H, 0)
-            >>> fq.simulator.Simulator("unitary").run(program).result().get_unitary()
-            array([[ 0.70710678+0.j,  0.70710678+0.j],
-                   [ 0.70710678+0.j, -0.70710678+0.j]])
         """
         if "unitary" not in self.available_data:
             raise ResultFieldUnavailableError("unitary not available in this result")
@@ -357,18 +356,9 @@ class Result:
     def get_superop(self) -> np.ndarray:
         """Return the program's super-operator matrix.
 
-        The public matrix uses column-stacking vectorization:
-
-        .. code-block:: python
-
-            rho_out = (
-                superop @ rho_in.reshape(-1, order="F")
-            ).reshape(rho_in.shape, order="F")
-
-        Column-stacking describes the mathematical vectorization of the
-        density matrix, not the NumPy memory layout of the returned
-        two-dimensional array. A unitary program's super-operator is
-        ``numpy.kron(U.conj(), U)``.
+        The representation uses column stacking: flatten both input and output
+        density matrices with ``reshape(-1, order="F")``. A unitary program's
+        super-operator is ``numpy.kron(U.conj(), U)``.
 
         Returns:
             A ``(D**2, D**2)`` array, where ``D`` is the product of the
@@ -377,16 +367,6 @@ class Result:
         Raises:
             ResultFieldUnavailableError: If a super-operator was not produced.
 
-        Examples:
-            >>> import fatqat as fq
-            >>> import fatqat.operations as ops
-            >>> program = fq.Program(1)
-            >>> program.add(ops.X, 0)
-            >>> fq.simulator.Simulator("superop").run(program).result().get_superop()
-            array([[0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j],
-                   [0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j],
-                   [0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j],
-                   [1.+0.j, 0.+0.j, 0.+0.j, 0.+0.j]])
         """
         if "superop" not in self.available_data:
             raise ResultFieldUnavailableError("superop not available in this result")

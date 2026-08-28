@@ -1,4 +1,9 @@
-"""Qiskit integration for fatqat simulators."""
+"""Optional Qiskit conversion and ``BackendV2`` integration.
+
+Import this namespace only when Qiskit is installed. Use
+:func:`circuit_to_program` for one-way circuit conversion, or construct a
+:class:`FatqatBackend` for Qiskit's transpiler and backend-based primitives.
+"""
 
 from __future__ import annotations
 

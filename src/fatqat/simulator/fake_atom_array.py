@@ -1,10 +1,9 @@
-"""Neutral-atom hardware-profile simulator with occupancy and dynamic pairing.
+"""Neutral-atom simulator with occupancy and dynamic pairing.
 
 The backend has a fixed native gate set but no fixed geometry. Programs with
-neither ``Put`` nor a matching, lowered atom-loss source start with every
-declared site occupied for compatibility with ordinary gate programs. Once
-either lifecycle feature is active, every site starts empty and ``Put`` loads
-atoms explicitly.
+neither ``Put`` nor an operation selected by a matching atom-loss source start
+with every declared site occupied. Once either lifecycle feature is active,
+every site starts empty and ``Put`` loads atoms explicitly.
 
 This simulator is intended for program and compiler testing. It does not model
 pulse timing, transport, or Hamiltonian dynamics.
@@ -83,9 +82,10 @@ class AtomArraySimulator(Simulator):
       is legal only while its atoms are paired. There is no fixed geometry.
     - Layout: registers map to flat labels in declaration order. ``num_sites``
       optionally limits capacity.
-    - Occupancy: programs using ``Put`` or matched atom loss start empty;
-      otherwise every declared site starts occupied. Empty or lost sites
-      measure as the erasure digit ``2``.
+    - Occupancy: programs using ``Put`` or matched atom loss, even with
+      ``p=0``, start empty; otherwise every declared site starts occupied.
+      Gates and reset do nothing on an empty site, which measures as the
+      erasure digit ``2``.
     - Methods: all four methods are selectable without an atom lifecycle;
       ``Put`` and loss require ``statevector`` or ``density_matrix``.
 
@@ -117,13 +117,14 @@ class AtomArraySimulator(Simulator):
                 (lazy JIT). See ``Simulator`` for runtime-specific
                 execution controls.
             noise: Optional ``NoiseModel``. ``None`` keeps the backend ideal;
-                no calibration-derived model is provided. The model is copied
-                at construction.
+                this class has no built-in reference noise model.
 
         Raises:
             TypeError: If ``num_sites`` is neither ``None`` nor an int (bools
                 rejected).
             ValueError: If ``num_sites`` is given and not positive.
+            BackendValidationError: If ``method`` or ``runtime`` is invalid,
+                or ``noise`` contains a source this simulator cannot run.
         """
         if num_sites is not None:
             if not isinstance(num_sites, int) or isinstance(num_sites, bool):
@@ -142,11 +143,10 @@ class AtomArraySimulator(Simulator):
 
     @property
     def implementation_map(self) -> MatrixImplementationMap:
-        """Copy of the compiler-facing native implementation map.
+        """Return the native operation map.
 
-        The map contains ``RX``, ``RY``, ``RZ``, and ``CZ``. Pairing legality
-        is checked separately while lowering the program. Mutating the returned
-        map does not change this backend.
+        The map contains ``RX``, ``RY``, ``RZ``, and ``CZ``. A program's
+        current ``Pair`` state determines whether a particular ``CZ`` can run.
         """
         return self._impl_map.copy()
 

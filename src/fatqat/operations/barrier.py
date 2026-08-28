@@ -13,13 +13,13 @@ class BarrierGate(Operation):
     """Mark a compiler boundary without changing the quantum state.
 
     A barrier has no matrix, measurement result, or noise boundary. Built-in
-    simulators treat it as a no-op, so it has no effect on states or counts.
-    :meth:`~fatqat.Program.add` accepts a condition, but built-in simulators
-    do not evaluate it.
+    simulators ignore it, including any recorded condition, so it has no effect
+    on states or counts. Selecting ``ops.Barrier`` in `fatqat.NoiseModel.add`
+    raises `ValueError`.
 
-    Add the singleton ``ops.Barrier`` without parentheses. It accepts one or
-    more distinct scalar targets; :class:`~fatqat.RegisterView` and an empty
-    target tuple are rejected by :meth:`~fatqat.Program.add`.
+    ``Barrier`` accepts one or more distinct scalar targets.
+    `fatqat.Program.add` rejects `fatqat.RegisterView` and an empty target
+    tuple.
 
     Examples:
         >>> import fatqat as fq
@@ -32,6 +32,4 @@ class BarrierGate(Operation):
     num_subsystems: ClassVar[int | None] = None
 
 
-# `Barrier` takes no parameters, so - like the fixed gates and `Reset` - it is
-# exported only as a singleton value: `ops.Barrier`, not `ops.Barrier()`.
 Barrier = BarrierGate()

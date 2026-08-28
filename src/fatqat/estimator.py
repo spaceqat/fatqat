@@ -1,37 +1,8 @@
-"""Estimator: expectation values of observables on a simulator backend.
+"""Evaluate qubit observables from a backend-produced final state.
 
-An `Estimator` wraps an already-constructed backend and reports
-``<psi|O|psi>`` (or ``Tr(rho O)``) for one or more
-:py:class:`~fatqat.Observable` values. The backend owns the method, runtime and
-noise model; the estimator adds only the observable step, so the same backend
-can serve counts through ``backend.run`` and expectation values here.
-
-The program is evolved **once** per ``run()`` call and every observable is evaluated
-against that same state. This is the structural advantage a simulator has over
-hardware: hardware must fan a multi-basis observable out into several circuits
-(one per commuting group, each with its own basis-rotation gates), while a
-simulator holds the final state and can read any observable off it directly.
-Costs scale as one evolution plus a cheap pass per term, rather than as one
-circuit execution per measurement basis.
-
-Because the expectation value is read from the final state, the program must
-not measure: a measurement collapses the state, and "the expectation value of
-the final state" then has no single meaning. Qiskit's estimators reject
-measured circuits for the same reason.
-
-The estimator reaches the backend only through its public surface -
-``backend.run`` and the ``Result`` it returns. In particular it never asks the
-backend which state representation it will produce, nor whether the run will be
-deterministic: the returned ``Result`` declares its own representation through
-``available_data``, and the backend already refuses to export a final state
-from a stochastic run. Re-deriving either would duplicate the backend's own
-answer from its internals, and get it wrong at the edges.
-
-With ``shots > 0`` the estimator reproduces the statistical error of a
-finite-shot experiment by drawing real samples from each term's eigenvalue
-distribution - not by adding analytic Gaussian noise to the exact value. See
-:py:func:`_outcome_probabilities` for why that distribution is fully determined
-by two numbers per term.
+An estimator evolves an unmeasured program once and evaluates every requested
+observable on the returned state. Exact evaluation is the default; positive
+``shots`` values sample each observable term from that same state.
 """
 
 from __future__ import annotations
@@ -46,7 +17,7 @@ from ._parameter_binding import (
     _normalize_parameter_batch,
     _raise_for_unbound_parameters,
 )
-from .errors import BackendValidationError
+from .errors import BackendExecutionError, BackendValidationError
 from .job import Job
 from .observable import Observable
 from .operations import Measurement
@@ -61,19 +32,18 @@ from .simulator._engine.expectation import (
 
 
 class Estimator:
-    """Expectation values of observables, evaluated on a backend.
+    """Evaluate observables with a state-producing backend.
+
+    Configure the method, runtime, and noise model on the backend before
+    constructing the estimator. The backend must return either a statevector
+    or a density matrix.
 
     Args:
-        backend: A constructed backend, e.g.
-            ``fq.simulator.Simulator(method="DM", noise=noise)``. Its method,
-            runtime and noise model are used as-is; the estimator never
-            overrides them. The method must produce a *state* -
-            ``"statevector"`` or ``"density_matrix"``; see
-            :py:func:`_validate_backend`.
+        backend: Constructed state-producing backend.
 
     Raises:
-        BackendValidationError: If the backend produces an operator rather
-            than a state.
+        BackendValidationError: If ``backend.method`` names a representation
+            other than ``"statevector"`` or ``"density_matrix"``.
 
     Examples:
         >>> import fatqat as fq
@@ -101,33 +71,39 @@ class Estimator:
     ) -> Job[Result]:
         """Evaluate one or more observables on a program.
 
+        All observables use one evolution of ``program``. Program, observable,
+        and shot validation errors raise before a job is returned. If execution
+        fails, ``job.result()`` raises the failure. If the backend completes
+        without a final state, ``job.result()`` raises
+        ``BackendExecutionError``.
+
         Args:
-            program: Program to evolve. Must not contain a measurement.
-            observables: A single :py:class:`~fatqat.Observable` or a sequence
-                of them. All are evaluated against one evolution.
-            shots: ``0`` (the default) computes the expectation value exactly
-                from the final state. A positive value samples, reproducing the
-                statistical error of a finite-shot experiment. Note the default
-                differs from ``Simulator.run``, whose ``shots`` defaults to
-                1024 - an estimator's usual request is the exact value.
-            simulation_config: Optional per-run backend options, forwarded
-                unchanged (e.g. ``{"seed": 7}``). A ``seed`` also seeds the
-                estimator's own sampling, so a seeded ``shots > 0`` run
-                reproduces.
+            program: Fully bound, measurement-free program containing only
+                dimension-2 quantum registers.
+            observables: One ``Observable`` or a non-empty list or tuple of
+                them. Every observable must span all program qubits. A list or
+                tuple preserves its order in the returned arrays.
+            shots: Non-negative integer. ``0`` computes exact values. A
+                positive value draws this many independent samples for each
+                term and reports the resulting statistical standard error.
+            simulation_config: Backend options for this evolution, or
+                ``None``. The dictionary is forwarded unchanged. Its ``seed``
+                value, when present, also seeds estimator sampling.
 
         Returns:
-            A completed ``Job``. ``result().get_expectation()`` returns a float
-            for a single observable and an array for a sequence, mirroring the
-            input shape. ``result().get_std()`` returns the matching standard
-            error, which is ``0`` for an exact run.
+            A completed ``Job``. A successful job contains a ``Result``; a
+            single observable produces scalar expectation and standard-error
+            values, while a list or tuple produces one-dimensional arrays.
+            Exact runs report zero standard error.
 
         Raises:
             TypeError: If ``observables`` is not an ``Observable`` or a
-                sequence containing only ``Observable`` values.
-            BackendValidationError: If the program measures, if the backend's
-                execution is not deterministic, if an observable's width does
-                not match the program, if the program uses non-qubit registers,
-                or if ``shots`` is negative.
+                supported collection containing only ``Observable`` values.
+            BackendValidationError: If no observables are supplied; ``shots``
+                is not a non-negative integer; the program is measured,
+                unbound, or not qubit-only; an observable has the wrong width;
+                or the backend raises this error for the required final-state
+                request.
         """
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
@@ -171,40 +147,40 @@ class Estimator:
         shots: int = 0,
         simulation_config: dict[str, Any] | None = None,
     ) -> Job[list[Result]]:
-        """Bind and evaluate every row of one complete parameter batch.
+        """Evaluate a complete parameter batch in input order.
 
-        Binding shapes match :meth:`fatqat.simulator.Simulator.run_sweep`.
-        Each list element is the ordinary result of one :meth:`run` call, so a
-        single observable remains scalar and a sequence remains array-shaped.
+        Each binding row produces an estimator result. Validation errors raise
+        directly. Other row failures make the returned job fail without
+        exposing a partial result list.
 
         Args:
             program: Parameterized template program.
             observables: One observable or a sequence evaluated for every row.
-            bindings: Complete object-keyed parameter batch.
-            shots: Exact or sampled Estimator mode forwarded to every row.
-            simulation_config: Backend and sampling options forwarded
-                unchanged. An explicit seed is reused for every row, so
-                sampled row errors are correlated; see
-                :doc:`../guide/parameters-and-sweeps`.
+            bindings: Complete object-keyed batch. A ``Parameter`` maps to a
+                rank-1 batch. A length-M ``ParameterVector`` maps to a rank-2
+                batch with shape ``(N, M)``. All batches must have the same
+                positive leading length.
+            shots: Non-negative integer. ``0`` computes exact values; a
+                positive value draws this many samples per observable term.
+            simulation_config: Backend and sampling options reused for every
+                row. Reusing a seed can correlate sampled row errors.
 
         Returns:
-            An eager job carrying an ordered list of row results. If a point
-            job fails, ``result()`` re-raises that error and no partial result
-            list is exposed.
+            A completed ``Job`` containing one ``Result`` per row, in batch
+            order. Each result has the same shape as :meth:`run`. An execution
+            failure exposes no partial list.
 
         Raises:
-            TypeError: If ``bindings`` is not an object-keyed mapping or a
-                batch contains values other than built-in ``int``/``float``
-                or NumPy integer/floating scalars, or if ``observables`` is
-                not an ``Observable`` or a sequence containing only
-                ``Observable`` values.
-            ValueError: If the program is not parameterized, assignments are
-                missing or duplicated, or batch ranks and lengths disagree.
-            BackendValidationError: If the observables, bound program, shots,
-                or backend execution mode fail normal Estimator validation.
+            TypeError: If a mapping key, batch container, scalar value, or
+                observable has an unsupported type.
+            ValueError: If the program is not parameterized; assignments are
+                missing, foreign, or duplicated; or batch ranks, widths, or
+                lengths disagree.
+            BackendValidationError: If a bound row, the observables, ``shots``,
+                or the backend fails normal estimator validation.
 
         Examples:
-            Each result keeps the ordinary single-observable scalar shape:
+            A single observable produces one scalar per row:
 
             >>> import fatqat as fq
             >>> import fatqat.operations as ops
@@ -272,8 +248,13 @@ class Estimator:
         # from what came back rather than predicted from the backend.
         if "statevector" in result.available_data:
             state, kernel = result.get_statevector(), expectation_statevector
-        else:
+        elif "density_matrix" in result.available_data:
             state, kernel = result.get_density_matrix(), expectation_density_matrix
+        else:
+            raise BackendExecutionError(
+                "estimator backend returned no final state; expected a "
+                "statevector or density matrix"
+            )
 
         if shots == 0:
             return [kernel(state, o.terms) for o in observables], [0.0] * len(

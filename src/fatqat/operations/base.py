@@ -10,25 +10,23 @@ from ..registers import RegisterRef
 
 @dataclass(frozen=True)
 class Operation:
-    """Base value for operations accepted by :meth:`~fatqat.Program.add`.
+    """Base value for operations accepted by `fatqat.Program.add`.
 
-    Built-in operations are immutable and reusable. Parameter-free gates and
-    structural operations are singleton values such as ``ops.H`` and
-    ``ops.Reset``; do not call them. Construct parameterized values such as
-    ``ops.RX(0.2)`` before adding them.
+    Parameter-free gates and structural operations are ready-to-use values such
+    as ``ops.H`` and ``ops.Reset``; do not call them. Construct parameterized
+    values such as ``ops.RX(0.2)`` before adding them.
 
     ``Operation`` is also the extension base for custom operations. An
     ordinary subclass declares a public ``name`` and ``num_subsystems``. A
-    positive integer gives the exact number of separate logical target
+    non-negative integer gives the exact number of logical target
     expressions; ``None`` gives variable arity with a minimum of one target.
     A custom operation also needs a compatible backend implementation;
     subclassing alone does not make it executable.
 
     Attributes:
         name: Stable name used in diagnostics and user-facing displays.
-        num_subsystems: Exact positive number of logical target expressions
-            for an ordinary operation, or ``None`` for variable arity. This is
-            not a count of physical resources affected during execution.
+        num_subsystems: Exact non-negative number of logical targets, or
+            ``None`` for variable arity.
 
     Raises:
         ValueError: At subclass definition if ``num_subsystems`` is negative,
@@ -47,18 +45,10 @@ class Operation:
     _min_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = False
     """Whether this operation accepts a ``RegisterView`` target expression in
-    addition to scalar ``RegisterRef`` targets. Only RX, RY, RZ, CX, and CZ
-    opt in (set ``True``); every other operation stays scalar-only. This is
-    the single, centralized capability flag consulted during instruction
-    validation. New code should read ``accepts_views`` rather than checking
-    operation identity or name.
+    addition to scalar ``RegisterRef`` targets.
     """
     _is_direct_control: ClassVar[bool] = False
-    """Whether the operation is a direct physical-control block.
-
-    Direct controls take no separate logical operands. This internal flag also
-    keeps them out of calibrated-gate and operation-scoped gate-noise paths.
-    """
+    """Whether the operation is a direct physical-control block."""
 
     def __init_subclass__(cls, **kwargs) -> None:
         # Validate the arity class constant once, at class-definition time,
@@ -94,15 +84,12 @@ class Operation:
 
     @property
     def accepts_views(self) -> bool:
-        """Return whether :meth:`~fatqat.Program.add` accepts
-        :class:`~fatqat.RegisterView` targets.
+        """Return whether `fatqat.Program.add` accepts `fatqat.RegisterView` targets.
 
-        The built-in view-capable operations are
-        :class:`~fatqat.operations.RX`, :class:`~fatqat.operations.RY`,
-        :class:`~fatqat.operations.RZ`, :data:`~fatqat.operations.CX`, and
-        :data:`~fatqat.operations.CZ`. All other built-ins require scalar
-        targets. A custom unary or two-target subclass may override this
-        property to opt into memberwise view application.
+        The built-in view-capable operations are `RX`, `RY`, `RZ`, `CX`, and
+        `CZ`. All other built-ins require scalar targets. A
+        custom unary or two-target subclass may override this property to opt
+        into memberwise view application.
         """
         return type(self)._accepts_views
 
@@ -111,13 +98,12 @@ class Operation:
 
         The base implementation accepts every target tuple. Override this hook
         when an operation parameter depends on a target property such as local
-        dimension. Scalar-target errors arise from
-        :meth:`~fatqat.Program.add`; for a :class:`~fatqat.RegisterView`, the
-        hook is applied to each selected member when the backend prepares the
-        program.
+        dimension. Scalar-target errors arise from `fatqat.Program.add`; for a
+        `fatqat.RegisterView`, the hook is applied to each selected member when
+        the program runs.
 
         Args:
-            targets: Resolved scalar quantum references in operand order.
+            targets: Resolved scalar `fatqat.RegisterRef` values in operand order.
 
         Raises:
             ValueError: If the operation's parameters are incompatible with

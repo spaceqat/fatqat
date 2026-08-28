@@ -1,4 +1,4 @@
-"""Portable fixed-pulse calibration for the three-level atom family."""
+"""Fixed-pulse calibration values for the three-level atom family."""
 
 from __future__ import annotations
 
@@ -97,7 +97,37 @@ _PARSERS = MappingProxyType({_FORMAT: _parse_calibration})
 
 @dataclass(frozen=True, slots=True, init=False)
 class Atom3LevelCalibration:
-    """Immutable portable fixed-pulse calibration recipe."""
+    """Load three-level atom gate recipes from a calibration document.
+
+    All fields are required; unknown fields are rejected. The document has:
+
+    - ``"format"``: ``{"id": "atom.rb87_rydberg_3level_fixed_pulse",
+      "version": 1}``.
+    - ``"calibration"``: nonempty string ``"id"`` and ``"revision"``.
+    - ``"units"``: ``"angular_frequency": "rad/us"``, ``"angle": "rad"``,
+      ``"cycles": "cycle"``, and ``"dimensionless": "1"``.
+    - ``"recipes"``: ``"rx_ry"`` with positive ``"omega_01"``, and ``"cz"``
+      with positive ``"omega_1r"`` and ``"duration_area"`` plus finite
+      ``"phase_amplitude"``, ``"phase_rate_ratio"``, ``"phase_offset"``,
+      ``"linear_phase_rate_ratio"``, and ``"local_z_correction"``.
+
+    The ``omega`` values are angular rates in rad/us. Phase amplitudes,
+    offsets, and corrections are in radians; rate ratios are dimensionless;
+    ``duration_area`` sets the CZ duration in cycles.
+
+    Args:
+        document: Decoded mapping with the schema above.
+
+    Raises:
+        BackendValidationError: If the document has an unsupported format,
+            missing or unknown keys, invalid units, or invalid recipe values.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> calibration = fq.emulator.default_atom_3level_calibration()
+        >>> calibration.angular_frequency_unit
+        'rad/us'
+    """
 
     format: FormatIdentity = field(compare=False)
     identity: CalibrationIdentity
@@ -119,6 +149,12 @@ class Atom3LevelCalibration:
         object.__setattr__(self, "_cz", cz)
 
     def recipe(self, name: str) -> Mapping[str, Any]:
+        """Return the named ``"rx_ry"`` or ``"cz"`` recipe.
+
+        Raises:
+            BackendValidationError: If ``name`` is not ``"rx_ry"`` or
+                ``"cz"``.
+        """
         if name == "rx_ry":
             return MappingProxyType({"omega_01": self._rx_ry.omega_01})
         if name == "cz":
@@ -137,51 +173,62 @@ class Atom3LevelCalibration:
 
     @property
     def omega_01_angular_per_us(self) -> float:
+        """Return the calibrated Raman angular rate in rad/us."""
         return self._rx_ry.omega_01
 
     @property
     def omega_1r_angular_per_us(self) -> float:
+        """Return the calibrated Rydberg angular rate in rad/us."""
         return self._cz.omega_1r
 
     @property
     def phase_amplitude_rad(self) -> float:
+        """Return the oscillating CZ phase amplitude in radians."""
         return self._cz.phase_amplitude
 
     @property
     def phase_offset_rad(self) -> float:
+        """Return the CZ phase offset in radians."""
         return self._cz.phase_offset
 
     @property
     def phase_rate_ratio(self) -> float:
+        """Return the oscillating CZ phase-rate ratio."""
         return self._cz.phase_rate_ratio
 
     @property
     def linear_phase_rate_ratio(self) -> float:
+        """Return the linear CZ phase-rate ratio."""
         return self._cz.linear_phase_rate_ratio
 
     @property
     def duration_area_cycles(self) -> float:
+        """Return the dimensionless CZ duration area in cycles."""
         return self._cz.duration_area
 
     @property
     def local_z_correction_rad(self) -> float:
+        """Return the local post-CZ frame correction in radians."""
         return self._cz.local_z_correction
 
     @property
     def cz_phase_rate_angular_per_us(self) -> float:
+        """Return the oscillating CZ phase rate in rad/us."""
         return self.phase_rate_ratio * self.omega_1r_angular_per_us
 
     @property
     def cz_linear_phase_rate_angular_per_us(self) -> float:
+        """Return the linear CZ phase rate in rad/us."""
         return self.linear_phase_rate_ratio * self.omega_1r_angular_per_us
 
     @property
     def cz_duration_us(self) -> float:
+        """Return the calibrated CZ duration in microseconds."""
         return 2 * pi * self.duration_area_cycles / self.omega_1r_angular_per_us
 
 
 def default_atom_3level_calibration() -> Atom3LevelCalibration:
-    """Return a fresh package-default portable three-level atom calibration."""
+    """Return the packaged reference three-level atom calibration."""
     document = json.loads(
         package_resources.files(__package__)
         .joinpath("data/default_calibration.json")

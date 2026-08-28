@@ -1,22 +1,9 @@
-"""Channel-noise abstraction: the descriptor marker, the rule protocol, the
-rule registry, and the resolved-Kraus shape check.
-
-A channel descriptor (`Channel` subclass) carries physical parameters only,
-never arrays - the same way an :py:class:`~fatqat.operations.Operation` like
-``RX(0.3)`` never stores its matrix. A `ChannelImplementation` rule turns a
-descriptor plus its resolution-time ``targets`` into a bare tuple of Kraus
-arrays, mirroring how a matrix-implementation rule produces a bare matrix.
-`ChannelImplementationMap` is the matrix family's registry from descriptor
-type to rule; it exists (instead of reusing the gate implementation map)
-because a channel resolves to a *tuple* of Kraus operators here but to local
-Lindblad operators in continuous simulators (see ``noise.lindblad``) - the
-same descriptor means different mathematical objects per backend family.
-"""
+"""Public descriptors and implementation maps for quantum-channel noise."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, ClassVar
+from typing import Callable, ClassVar, Self
 
 import numpy as np
 
@@ -25,18 +12,23 @@ from ..registers import RegisterRef
 
 
 class Channel:
-    """Base marker for channel descriptors.
+    """Base class for backend-independent quantum noise.
 
-    Concrete subclasses (see ``noise.catalog``) are frozen dataclasses holding
-    physical parameters only - rates, probabilities - never Kraus arrays. The
-    array computation belongs entirely to the `ChannelImplementation` rule
-    registered for the subclass. A subclass may declare ``num_subsystems``
-    when it has a fixed positive arity; ``None`` means it is width-agnostic.
+    A channel stores parameters such as probabilities, rates, and times. A
+    simulator resolves its exact type through a
+    `ChannelImplementationMap`; an emulator uses the separate
+    `LindbladImplementationMap` to obtain local Lindblad operators. Registering
+    a rule for a base class does not implement its subclasses.
+
+    Set ``num_subsystems`` to a positive ``int`` other than ``bool`` when every
+    instance acts on a fixed number of subsystems. Leave it as ``None`` to use
+    the matched operation's width, or expose a property when instance data
+    determines the width. Built-in channels are immutable; treat custom
+    channels the same way after adding them to a noise model.
 
     Attributes:
-        num_subsystems: Number of subsystems the declaration acts on, or
-            ``None`` when its width is determined by an occurrence or by
-            instance data.
+        num_subsystems: Fixed number of targeted subsystems, or ``None`` when
+            the channel takes its width from the matched operation.
     """
 
     num_subsystems: ClassVar[int | None] = None
@@ -62,20 +54,36 @@ class Channel:
 
 
 class ChannelImplementation:
-    """Base class for a channel implementation rule.
+    """Optional base class for a simulator channel rule.
 
-    A rule receives the bare `Channel` descriptor plus the ``targets``
-    :py:class:`~fatqat.registers.RegisterRef` tuple by keyword and returns the
-    channel's Kraus operators as a bare ``tuple[np.ndarray, ...]`` - no
-    wrapper type, mirroring how a matrix-implementation rule returns a bare
-    matrix. ``targets`` lets a rule read ``targets[0].register.dim`` to build
-    dimension-dependent operators. Most rules are plain functions with this
-    call shape; subclass only for a stateful or configured rule.
+    A matrix rule is called as ``rule(channel, *, targets=targets)``. The
+    ordered ``targets`` are the matched program ``RegisterRef`` objects, so a
+    rule can use their register dimensions to build its operators. The rule
+    returns a nonempty tuple of NumPy Kraus matrices. Each matrix must have
+    shape ``(D, D)``, where ``D`` is the product of the target dimensions.
+
+    The backend checks the number and shapes of the returned arrays, but not
+    complete positivity or trace preservation. The rule is responsible for
+    those physical guarantees. A plain callable with the same signature is
+    usually enough; subclass this type only for a configured rule object.
     """
 
     def __call__(
         self, channel: Channel, *, targets: tuple[RegisterRef, ...]
     ) -> tuple[np.ndarray, ...]:
+        """Return Kraus operators for one channel application.
+
+        Args:
+            channel: Noise object being resolved.
+            targets: Ordered program targets for the matching operation.
+
+        Returns:
+            A nonempty tuple of ``(D, D)`` NumPy arrays.
+
+        Raises:
+            NotImplementedError: Always on this base implementation. A
+                subclass must implement the rule.
+        """
         raise NotImplementedError
 
 
@@ -90,12 +98,16 @@ class _ChannelImplementationRegistry:
         channel_type: type[Channel],
         rule: ChannelImplementation | Callable,
     ) -> None:
-        """Add one channel descriptor implementation rule.
+        """Register or replace the rule for one exact channel type.
+
+        Lookup uses the concrete channel type and never searches its base
+        classes. The callable is stored by reference and its signature is
+        checked only when a backend invokes it.
 
         Args:
-            channel_type: `Channel` subclass to key the registry by.
-            rule: Backend-specific callable stored as-is; adding again
-                for the same type replaces the previous rule.
+            channel_type: `Channel` subclass used as the exact lookup key.
+            rule: Backend-specific callable. Adding the same type again
+                replaces its previous rule.
 
         Raises:
             TypeError: If ``channel_type`` is not a `Channel` subclass or
@@ -112,49 +124,60 @@ class _ChannelImplementationRegistry:
     def get(
         self, channel_type: type[Channel]
     ) -> ChannelImplementation | Callable | None:
-        """Return the rule for a descriptor type, or ``None`` if unsupported."""
+        """Return the rule registered for exactly ``channel_type``.
+
+        The lookup does not fall back to a registered base class.
+
+        Args:
+            channel_type: Exact channel type to look up.
+
+        Returns:
+            The stored callable, or ``None`` when the type is not registered.
+        """
         return self._rules.get(channel_type)
 
     def supported_channels(self) -> frozenset[type[Channel]]:
-        """Return every descriptor type with a registered rule."""
+        """Return an immutable snapshot of the registered channel types."""
         return frozenset(self._rules)
 
-    def copy(self) -> "_ChannelImplementationRegistry":
-        """Return a new map with an independent copy of the registrations.
-
-        Rule objects themselves are shared (rules are expected to be pure);
-        mutating one map's registrations never affects the other.
-        """
+    def copy(self) -> Self:
+        """Return a map whose registrations can be changed independently."""
         clone = type(self)()
         clone._rules = dict(self._rules)
         return clone
 
 
 class ChannelImplementationMap(_ChannelImplementationRegistry):
-    """Resolve channel descriptor types to their Kraus-producing rules.
+    """Map exact channel types to simulator rules.
 
-    A dumb class-keyed registry: it never invokes rules itself and holds no
-    layout or payload knowledge. The map is static per backend instance -
-    which `NoiseModel` a run uses has no bearing on what the map can resolve.
-    Its coverage is the backend's channel capability declaration: a descriptor
-    type without a registered rule is unsupported.
+    A registered rule has the call shape ``rule(channel, *, targets=targets)``
+    and returns a nonempty tuple of Kraus matrices. For targets with combined
+    dimension ``D``, every result must be a NumPy array of shape ``(D, D)``.
+    FATQAT validates these structural requirements but does not check that a
+    custom rule is completely positive or trace preserving.
+
+    A registered rule does not by itself guarantee backend support. A backend
+    may still reject the channel's parameter form, scope, target dimensions,
+    or execution method.
     """
 
 
 @dataclass(frozen=True)
 class NoiseSupportReport:
-    """Source-level compatibility report for a :class:`~fatqat.NoiseModel`.
+    """Result returned by a backend's ``check_noise_support()`` method.
 
-    Source-form labels are deduplicated, so several registrations of the same
-    descriptor and parameterization appear once. ``warnings`` contains
-    explanatory strings for rejected labels; constructing a report does not
-    emit Python warnings.
+    Equivalent registrations of the same noise type and parameter form
+    appear once. Users normally receive this value from a backend rather than
+    construct it directly. This is a model-level report: program references,
+    device labels, target dimensions, and the selected execution method can
+    impose additional constraints when a program is prepared. ``warnings`` is
+    report data; creating the value does not emit Python warnings.
 
     Attributes:
-        supported: ``True`` when every source in the model is executable.
-        accepted_sources: Source-form labels the backend accepts.
-        rejected_sources: Source-form labels the backend rejects.
-        warnings: Explanations corresponding to rejected labels.
+        supported: Whether every noise source in the model is accepted.
+        accepted_sources: Deduplicated labels for accepted sources.
+        rejected_sources: Deduplicated labels for rejected sources.
+        warnings: Explanations in the same order as ``rejected_sources``.
     """
 
     supported: bool

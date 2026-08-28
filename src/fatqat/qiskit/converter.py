@@ -1,4 +1,4 @@
-"""Convert Qiskit ``QuantumCircuit`` objects into fatqat ``Program`` instances."""
+"""Convert static Qiskit circuits into FATQAT programs."""
 
 from __future__ import annotations
 
@@ -16,18 +16,30 @@ if TYPE_CHECKING:
 
 
 def circuit_to_program(circuit: QuantumCircuit) -> Program:
-    """Convert one static Qiskit circuit into a fatqat ``Program``.
+    """Convert one bound, static Qiskit circuit into a FATQAT program.
+
+    Supported instructions are measurement, reset, barrier, and the gate
+    basis declared by :func:`~fatqat.qiskit.build_simulator_target`. Barrier
+    instructions are discarded. Transpile other gate-level circuits to that
+    target before conversion.
+
+    The converter preserves named quantum and classical registers. It records
+    the circuit name, metadata, and global phase in the program metadata, but
+    the global phase is not applied during FATQAT execution. Standalone bits,
+    unbound instruction parameters, delay or pulse instructions, and classical
+    control flow are not supported.
 
     Args:
-        circuit: A bound, gate-level Qiskit circuit without classical control
-            flow.
+        circuit: Bound Qiskit ``QuantumCircuit`` to convert.
 
     Returns:
-        An equivalent fatqat program.
+        A dimension-2 :class:`~fatqat.Program` with equivalent supported
+        instructions.
 
     Raises:
-        QiskitConversionError: If the circuit uses unsupported instructions or
-            unbound parameters.
+        QiskitConversionError: If the circuit uses an unsupported instruction,
+            control flow, standalone bit, unbound instruction parameter, or
+            unbound global phase.
         TypeError: If ``circuit`` is not a ``QuantumCircuit``.
     """
     from qiskit.circuit import (
@@ -45,7 +57,7 @@ def circuit_to_program(circuit: QuantumCircuit) -> Program:
     _reject_control_flow(circuit)
     program = _program_from_registers(circuit)
     metadata = dict(program.metadata)
-    metadata["qiskit_global_phase"] = float(circuit.global_phase)
+    metadata["qiskit_global_phase"] = _bound_global_phase(circuit)
     if circuit.metadata:
         metadata["qiskit_circuit_metadata"] = dict(circuit.metadata)
     program.metadata.update(metadata)
@@ -306,3 +318,20 @@ def _bound_params(inst_op: Any, circuit_name: str) -> list[float]:
             )
         values.append(float(param))
     return values
+
+
+def _bound_global_phase(circuit: QuantumCircuit) -> float:
+    from qiskit.circuit import ParameterExpression
+
+    phase = circuit.global_phase
+    if not isinstance(phase, ParameterExpression) or not phase.parameters:
+        return float(phase)
+
+    try:
+        return float(phase)
+    except (TypeError, ValueError) as exc:
+        names = ", ".join(sorted(str(name) for name in phase.parameters))
+        raise QiskitConversionError(
+            f"circuit {circuit.name!r}: global phase has unbound parameter(s): "
+            f"{names}"
+        ) from exc

@@ -1,8 +1,8 @@
 # Measurement and conditions
 
-Measurements copy quantum outcomes into classical slots. They are ordered
-instructions, so a program can measure one qubit and use that classical
-value to control a later operation.
+Measurements sample quantum targets in the computational basis and write the
+outcomes to classical slots. They are ordered instructions, so a program can
+use an earlier outcome to control a later operation.
 
 ## Measure a qubit
 
@@ -33,8 +33,9 @@ order.
 
 ## Classical conditions
 
-Pass `condition=(classical_bit, value)` to `add()` to apply an operation
-only when an earlier measurement wrote that value. A sequence of
+Pass `condition=(classical_bit, value)` to `add()` to apply an operation only
+when the slot currently contains that value. Classical slots start at zero;
+measurements replace their current values. A sequence of
 `(classical_bit, value)` pairs means all conditions must hold.
 
 ```python
@@ -60,15 +61,15 @@ program.add(ops.Reset, 0)
 program.add(ops.Reset, (0, 1))  # reset two qubits
 ```
 
-Reset can use the same `condition=` argument as another operation.
+Reset can use the same `condition=` argument on backends that support
+feedforward.
 
 ## What this means for a run
 
-Conditions, reset, and reuse of a measured qubit make later steps depend on
-an earlier outcome. The backend automatically performs the per-shot work
-needed to preserve that behavior. You do not choose an execution engine or
-strategy yourself, though these programs can take longer than a purely
-unitary terminal-measurement circuit.
+Conditions, reset, and reuse of a measured qubit make later steps depend on an
+earlier outcome. A backend either preserves that ordering or rejects the
+program when it does not support feedforward. See the selected backend's API
+page for supported operations and execution options.
 
 See [Running and results](running-and-results.md) for count-string order and
 for the limits on requesting a final state after a stochastic program.

@@ -1,23 +1,22 @@
-"""Pulse-level emulation for superconducting and neutral-atom models.
+"""Pulse emulators and model-specific pulse-authoring values.
 
-All three public emulators are direct concrete backends. They translate
-ordinary gates through a :class:`PulseImplementationMap`, accept
-channel-addressed direct controls through
-:class:`~fatqat.operations.PulseOperation`, and integrate the resulting
-physical dynamics; :mod:`fatqat.simulator` is their matrix-backend sibling.
+`TransmonEmulator`, `Atom3LevelEmulator`, and `Atom2LevelEmulator` execute
+`fatqat.Program` objects against physical models. Ordinary gates use a
+`PulseImplementationMap`; channel-addressed
+`fatqat.operations.PulseOperation` values carry direct controls created from a
+model's selectors.
 
-The common workflow lets each gate-capable emulator compile its package
-default internally::
+A gate-capable emulator uses its packaged gate implementation map when none is
+supplied::
 
     model = TransmonModel.from_document(model_document)
     result = TransmonEmulator(model).run(program).result()
 
-Calibration documents are portable inputs to the standard map builders, not
-emulator state. :class:`PulseDefinition` and :class:`PulseImplementationMap`
-form the shared gate-authoring surface. Every emulator accepts replacement
-gate and Lindblad maps; a family may choose an empty built-in default. Models
-create portable structural control and frame addresses. Public values never
-expose QuTiP.
+Use calibration documents with the standard map builders to customize gate
+realizations. `PulseDefinition` and `PulseImplementationMap` support custom
+gate rules. Every emulator accepts replacement gate maps and
+`fatqat.noise.LindbladImplementationMap` values, though built-in gate coverage
+depends on the model family.
 """
 
 from __future__ import annotations

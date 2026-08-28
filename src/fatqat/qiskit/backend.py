@@ -1,4 +1,4 @@
-"""Qiskit ``BackendV2`` wrapper around fatqat simulators."""
+"""Qiskit ``BackendV2`` wrapper around the gate-level FATQAT simulator."""
 
 from __future__ import annotations
 
@@ -22,7 +22,31 @@ from .target import build_simulator_target
 
 
 class FatqatBackend(BackendV2):
-    """Gate-level fatqat simulator exposed as a Qiskit ``BackendV2``."""
+    """Expose FATQAT's gate-level simulator as a Qiskit ``BackendV2``.
+
+    Execution is synchronous: :meth:`run` completes conversion and execution
+    before returning a terminal :class:`~fatqat.qiskit.FatqatJob`. The backend
+    has an unbounded, fully connected target. Transpile circuits to ``target``
+    before running when they contain gates outside its instruction basis.
+
+    Args:
+        method: FATQAT simulation method. Defaults to ``"statevector"`` and
+            accepts the same case-insensitive names and aliases as
+            :class:`fatqat.simulator.Simulator`.
+        runtime: FATQAT numerical runtime, ``"numpy"`` (default) or
+            ``"numba"``, case-insensitive.
+        noise_model: Optional FATQAT :class:`~fatqat.NoiseModel`. Qiskit Aer
+            noise models are not accepted.
+        provider: Provider reported through the Qiskit backend interface.
+        name: Qiskit backend name. Defaults to ``"fatqat_simulator"``.
+
+    Raises:
+        TypeError: If ``noise_model`` is neither a FATQAT ``NoiseModel`` nor
+            ``None``.
+
+    Invalid ``method`` or ``runtime`` values appear as an error job from
+    :meth:`run`, rather than failing construction.
+    """
 
     def __init__(
         self,
@@ -51,15 +75,17 @@ class FatqatBackend(BackendV2):
 
     @property
     def target(self) -> Target:
+        """Return the supported instruction basis for transpilation."""
         return self._sim_target
 
     @property
     def max_circuits(self) -> int | None:
+        """Return ``None``; circuit batches are not capped."""
         return None
 
     @property
     def coupling_map(self) -> None:
-        """Fully-connected simulator: no topology constraint."""
+        """Return ``None``; circuits are not restricted to a coupling map."""
         return None
 
     @classmethod
@@ -112,6 +138,8 @@ class FatqatBackend(BackendV2):
                 "seed_simulator must be an integer or None, "
                 f"got {type(seed).__name__}"
             )
+        if seed is not None and seed < 0:
+            raise QiskitBackendError(f"seed_simulator must be >= 0, got {seed}")
 
         return {
             "shots": shots,
@@ -124,6 +152,41 @@ class FatqatBackend(BackendV2):
         run_input: QuantumCircuit | Iterable[QuantumCircuit],
         **run_options: Any,
     ) -> FatqatJob:
+        """Convert and execute one circuit or a nonempty circuit iterable.
+
+        Supported run options are ``shots`` (positive ``int``, default 1024),
+        ``memory`` (``bool``, default ``False``), and ``seed_simulator``
+        (non-negative ``int`` or ``None``, default ``None``). Per-call values
+        override ``backend.options``. Other FATQAT execution controls are not
+        exposed by this backend.
+
+        Execution completes before :meth:`run` returns. Invalid input
+        collections, unknown options,
+        nonpositive ``shots``, negative seeds, and option-type errors raise
+        immediately. Conversion and simulator failures return a job with
+        ``ERROR`` status; calling its :meth:`~FatqatJob.result` raises Qiskit's
+        ``QiskitError`` with the original failure chained.
+
+        Counts use Qiskit's normal result formatting. With ``memory=True``,
+        the result includes entries consistent with those counts; do not rely
+        on their order to reconstruct shot chronology. A circuit with no
+        classical bits produces neither counts nor memory data.
+
+        Args:
+            run_input: One Qiskit ``QuantumCircuit`` or a nonempty iterable of
+                circuits.
+            **run_options: ``shots``, ``memory``, and/or ``seed_simulator``.
+
+        Returns:
+            A completed :class:`~fatqat.qiskit.FatqatJob` containing a Qiskit
+            ``Result`` or execution failure.
+
+        Raises:
+            QiskitBackendError: If ``run_input`` is empty or contains a
+                non-circuit value; an option is unknown; ``shots`` is not a
+                positive integer; ``memory`` is not a boolean; or
+                ``seed_simulator`` is not a non-negative integer or ``None``.
+        """
         circuits = self._normalize_circuits(run_input)
         validated = self._validate_run_options(dict(run_options))
         shots = validated["shots"]

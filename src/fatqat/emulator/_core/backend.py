@@ -98,7 +98,7 @@ class _PulseBackend(ABC):
     @property
     @final
     def model(self) -> object:
-        """Return the exact immutable physics model retained by the backend."""
+        """Return this emulator's physics model."""
         return self._model
 
     @final
@@ -251,52 +251,57 @@ class _PulseBackend(ABC):
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
     ) -> Job:
-        """Validate, execute, and package one pulse-program run.
+        """Run a program on this pulse emulator.
 
-        ``simulation_config`` accepts ``seed`` and ``schedule_mode``, the only
-        two controls pulse execution honors. ``schedule_mode`` is ``"ASAP"``
-        by default and may be ``"ALAP"``; both are lightweight placement
-        policies over dependencies and claimed physical resources, not
-        compiler-produced hardware schedules. The matrix backend's
-        ``shot_parallelism``, ``kernel_parallelism``, ``max_workers``, and
-        ``fusion`` are rejected here:
-        pulse execution is one serial solver call with no engine those settings
-        could steer.
-
-        ``result_config`` accepts ``counts`` and ``final_state``. When omitted,
-        counts default on for programs containing measurement and the final
-        state defaults on for programs without measurement. The selected
-        model family and execution mode determine whether that state is a
-        statevector or density matrix. A measured final state is one sampled
-        posterior and therefore requires ``shots == 1``.
-
-        Each pulse emulator constructs its model family's fixed product
-        initial state for every run.
-        :class:`~fatqat.emulator.TransmonEmulator` and
-        :class:`~fatqat.emulator.Atom3LevelEmulator` use local level 0;
-        :class:`~fatqat.emulator.Atom2LevelEmulator` uses its ground level.
-        This method has no ``initial_state`` argument.
+        The emulator family fixes the initial product state; pulse backends do
+        not accept an ``initial_state`` argument.
 
         Args:
-            program: Program to bind, lower, and execute.
+            program: Program to execute.
             shots: Number of repetitions used when counts are requested.
-            resource_layout: Optional public program-to-device mapping. The
-                target supplies its default binding when omitted.
-            simulation_config: Optional pulse-execution settings. Unknown or
-                incompatible keys are rejected before execution.
-            result_config: Optional result request. Unknown or incompatible
-                keys are rejected before execution.
+                Counts require a positive built-in ``int``. A measured final
+                state requires ``shots == 1``.
+            resource_layout: Optional program-to-device mapping. The emulator
+                uses its default mapping when omitted.
+            simulation_config: Optional ``dict`` of pulse-execution settings.
+                Accepted keys are:
+
+                - ``"seed"`` (``int | None``, default ``None``): Seed
+                  stochastic sampling. Use a non-negative integer; ``None``
+                  uses fresh entropy, and booleans are rejected.
+                - ``"schedule_mode"`` (``str: "ASAP" or "ALAP"``, default
+                  ``"ASAP"``): Choose whether operations are placed as early
+                  or as late as possible while preserving dependencies and
+                  physical-resource conflicts.
+
+                Other keys, including matrix-only execution settings, are
+                rejected.
+            result_config: Optional ``dict`` of output requests. Accepted keys
+                are:
+
+                - ``"counts"`` (``bool | None``, default ``None``):
+                  ``True`` requests classical counts, ``False`` suppresses
+                  them, and ``None`` enables them when measurement exists.
+                  Counts require a positive integer ``shots`` value.
+                - ``"final_state"`` (``bool | None``, default ``None``):
+                  ``True`` requests the emulator's ``statevector`` or
+                  ``density_matrix``, ``False`` suppresses it, and ``None``
+                  enables it when there is no measurement. With measurement,
+                  it requires ``shots == 1``.
+
+                Other keys are rejected.
 
         Returns:
-            An eager terminal :class:`~fatqat.Job`. Validation and lowering
-            failures raise directly. Solver-stage failures produce a failed
-            job whose :meth:`~fatqat.Job.result` raises
-            :exc:`~fatqat.errors.BackendExecutionError`.
+            A terminal ``Job``. Validation errors are raised by ``run()``.
+            Execution errors produce a failed job whose ``result()`` raises
+            ``BackendExecutionError``.
 
         Raises:
-            BackendValidationError: If the target cannot bind the program,
-                noise/configuration is unsupported, or requested results are
-                incompatible with ``shots`` and measurement.
+            BackendValidationError: If the program, noise, or configuration
+                is unsupported, or if requested results are incompatible with
+                ``shots`` and measurement.
+            TypeError: If ``simulation_config`` or ``result_config`` is not a
+                ``dict`` or ``None``.
             UnsupportedOperationError: If no pulse implementation exists for
                 an operation family or its ordered device operands.
             PulseImplementationError: If a selected custom pulse rule fails
@@ -346,36 +351,38 @@ class _PulseBackend(ABC):
     ) -> np.ndarray:
         """Return the coherent full-model propagator for ``program``.
 
-        For Hilbert-space dimension D, the result contains D * D complex
-        entries. Time-dependent propagation evolves the full operator, so use
-        this method for small models or occasional operator construction, not
-        repeated large-system time-series sweeps.
-
         Intermediate virtual-frame updates always rotate later phase-sensitive
         controls. By default the remaining terminal frame transformation is
         also composed onto the returned propagator; set
         ``apply_final_frame=False`` to inspect Hamiltonian-generated evolution
         before that final basis transformation.
 
-        The result is a complex NumPy array over the selected model family's
-        full physical Hilbert space. Its rows and columns use the same
-        canonical little-endian basis order as returned states: physical axis
-        0 is the least-significant subsystem. Measurement, reset, and classical
-        conditions are rejected. Bound collapse terms are rejected when the
-        plan contains nonzero elapsed evolution; rate-based noise has no effect
-        on an empty or frame-only plan because no time elapses.
+        The result is a complex NumPy array over the model's full physical
+        Hilbert space. Its rows and columns use the same little-endian basis
+        order as returned states: physical axis 0 is the least-significant
+        subsystem. Measurement, reset, and classical conditions are rejected.
+        Programs that apply Lindblad noise during nonzero-duration evolution
+        are rejected. Rate-based noise has no effect when no time elapses.
 
         Args:
-            program: Coherent program to lower, schedule, and propagate.
+            program: Coherent program whose propagator to compute.
             apply_final_frame: Whether to compose the terminal virtual-frame
                 transformation. Intermediate frame updates are always honored.
-            schedule_mode: Lightweight pulse placement policy, ``"ASAP"`` or
-                ``"ALAP"``.
-            resource_layout: Optional public program-to-device mapping. The
-                target supplies its default binding when omitted.
+            schedule_mode: Place operations ``"ASAP"`` or ``"ALAP"``.
+            resource_layout: Optional program-to-device mapping. The emulator
+                uses its default when omitted.
 
         Returns:
             Full-model coherent propagator as a NumPy array.
+
+        Raises:
+            BackendValidationError: If the program, mapping, schedule mode,
+                noise, or requested frame handling is invalid or unsupported.
+            UnsupportedOperationError: If an ordinary gate has no pulse
+                implementation for its ordered device operands.
+            PulseImplementationError: If a selected custom pulse rule fails
+                unexpectedly or returns the wrong value type.
+            BackendExecutionError: If propagator construction fails.
         """
         if type(apply_final_frame) is not bool:
             raise BackendValidationError("apply_final_frame must be a bool")
@@ -618,22 +625,21 @@ class _PulseBackend(ABC):
 
     @final
     def check_noise_support(self, noise_model: NoiseModel) -> NoiseSupportReport:
-        """Report whether this backend can execute an explicit noise model.
+        """Report which declarations in a noise model this emulator supports.
 
-        This check is program-agnostic. It classifies source types, authored
-        parameter modes, background support, loss support, and readout
-        support. Program references and physical selectors are validated when
-        a concrete program and resource layout are prepared.
+        This check does not inspect a particular program or resource layout.
+        Program references and physical selectors are checked when you call
+        ``run()`` or ``propagator()``.
 
         Args:
             noise_model: Noise model to inspect without executing a program.
 
         Returns:
-            A frozen report naming accepted and rejected sources.
+            A report naming accepted and rejected sources.
 
         Raises:
             BackendValidationError: If ``noise_model`` is not a
-                :class:`~fatqat.NoiseModel`.
+                ``fatqat.NoiseModel``.
         """
         if not isinstance(noise_model, NoiseModel):
             raise BackendValidationError("noise_model must be a NoiseModel")

@@ -1,22 +1,23 @@
 # Core concepts
 
-A fatqat program has seven user-facing pieces. Each has one job:
+A typical FATQAT workflow builds a program, submits it to a backend, and reads
+the result. Registers, operations, and an optional resource layout describe
+the workload and where it should run:
 
 | Concept | What you use it for |
 | --- | --- |
 | {py:class}`~fatqat.Program` | Record gates, measurements, and their order. |
 | registers and references | Name the quantum and classical slots that operations use. |
-| {py:class}`~fatqat.ResourceLayout` | Optionally map program quantum references to backend device operands for one run. |
-| operations | Describe a gate or reset before it is added to a program. |
+| {py:class}`~fatqat.ResourceLayout` | Optionally map program quantum references to backend device labels for one run. |
+| operations | Describe a gate or another instruction before it is added to a program. |
 | backend | Validate and execute a program. |
 | {py:class}`~fatqat.Job` | Represent one submitted run; call ``result()`` to obtain its output. |
 | {py:class}`~fatqat.Result` | Read the data requested from a run. |
 
 ## Program
 
-{py:class}`~fatqat.Program` is the frontend object you build. It owns the program’s
-registers and the ordered instructions you add. It does not execute those
-instructions itself.
+{py:class}`~fatqat.Program` records registers and instructions in execution
+order. It describes the workload without choosing or running a backend.
 
 ```python
 import fatqat as fq
@@ -47,7 +48,7 @@ import fatqat.operations as ops
 left = fq.QuantumRegister(2, name="left")
 right = fq.QuantumRegister(2, name="right")
 program = fq.Program([left, right])
-program.add(ops.H, program.quantum_registers[1][0])  # first slot in "right"
+program.add(ops.H, right[0])
 ```
 
 Slots default to dimension 2 (qubits). Registers with `dim > 2` hold
@@ -74,17 +75,15 @@ result = job.result()
 counts = result.get_counts()
 ```
 
-The backend handles validation and execution. ``run()`` returns a {py:class}`~fatqat.Job`, and
-``job.result()`` gives its {py:class}`~fatqat.Result`. The normal user-level Job contract is
-intentionally small: obtain the result, then read it. Applications do not
-configure the simulator engine or its private execution state.
+The backend validates and executes the program. ``run()`` returns a completed
+{py:class}`~fatqat.Job`; ``job.result()`` returns its
+{py:class}`~fatqat.Result` or re-raises a stored execution error.
 
-Backends provide a default {py:class}`~fatqat.ResourceLayout`. Pass an explicit
-one to ``run(resource_layout=...)`` only when you need a different legal
-program-to-device binding, for example mapping two program qubits to selected
-transmons in a larger model. The layout contains public device identities; it
-must cover every declared quantum reference and does not expose or choose the
-numerical tensor axes owned by the backend.
+Backends provide a default {py:class}`~fatqat.ResourceLayout`. Pass one to
+``run(resource_layout=...)`` when you need a different supported placement,
+for example to map two program qubits to selected transmons in a larger model.
+A supplied layout must cover every declared quantum reference with labels the
+backend recognizes.
 
 Execution options and supported program features are backend-specific. Use
 the {doc}`../api/index` capability comparison and the selected backend's API
@@ -102,7 +101,6 @@ program = fq.Program([qubits])
 program.add(ops.RX(0.2), qubits.row(1))
 ```
 
-The grid is an abstract description. A backend applies its device-specific
-default mapping and connectivity checks when it runs the program. A backend
-may deliberately constrain or reject a supplied layout when its workflow
-owns placement.
+The grid describes logical grouping, not physical placement. The backend maps
+it to device resources and checks connectivity when the program runs. Some
+backends choose placement themselves and do not accept a custom layout.

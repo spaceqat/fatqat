@@ -12,6 +12,7 @@ import pytest
 
 import fatqat as fc
 from fatqat.emulator import ControlChannel, PulseControl
+from fatqat.errors import FatqatError
 import fatqat.operations as ops
 from fatqat.operations import Measurement, PulseOperation
 from fatqat.qasm import (
@@ -22,6 +23,16 @@ from fatqat.qasm import (
     qasm_to_program,
 )
 from fatqat.emulator import SampledWaveform
+
+
+def test_qasm_exceptions_share_public_fatqat_error_hierarchy():
+    assert issubclass(QASMTranspileError, FatqatError)
+    assert issubclass(QasmExportError, FatqatError)
+
+
+def test_qasm_transpile_error_remains_value_error_compatible():
+    assert issubclass(QASMTranspileError, ValueError)
+
 
 # ===========================================================================
 # Export direction: fatqat.Program -> OpenQASM

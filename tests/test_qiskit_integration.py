@@ -88,6 +88,21 @@ def test_converter_rejects_unbound_parameter():
     print(f"expected error: {exc.value}")
 
 
+def test_converter_wraps_unbound_global_phase():
+    phase = Parameter("phase")
+    circuit = QuantumCircuit(1, name="unbound_global_phase")
+    circuit.global_phase = phase
+
+    with pytest.raises(
+        QiskitConversionError,
+        match=r"circuit 'unbound_global_phase': global phase has unbound "
+        r"parameter\(s\): phase",
+    ) as exc_info:
+        circuit_to_program(circuit)
+
+    assert exc_info.value.__cause__ is not None
+
+
 def test_converter_barrier_is_noop():
     circuit = QuantumCircuit(1)
     circuit.h(0)
@@ -192,6 +207,18 @@ def test_backend_rejects_invalid_run_options(option, value):
     print(f"\n=== invalid run option {option}={value!r} ===")
     with pytest.raises(QiskitBackendError):
         backend.run(circuit, **kwargs)
+
+
+def test_backend_rejects_negative_seed_before_returning_job():
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    backend = FatqatBackend(method="statevector")
+
+    with pytest.raises(
+        QiskitBackendError,
+        match=r"seed_simulator must be >= 0, got -1",
+    ):
+        backend.run(circuit, seed_simulator=-1)
 
 
 def test_converter_rejects_standalone_qubit():

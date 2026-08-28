@@ -113,32 +113,22 @@ class _AppliedOperation:
 
 
 class Program:
-    """Represent FATQAT's central device-independent quantum program.
+    """Record a quantum workload without choosing a device.
 
-    A program owns register declarations, user metadata, and an ordered stream
-    of operation and measurement instructions. It records the requested
-    computation without selecting a device implementation or establishing
-    that a particular compiler or backend can realize every operation.
+    A program keeps its registers, operations, measurements, conditions, and
+    metadata together. FATQAT checks their structure as instructions are added;
+    the selected backend later checks whether it supports the requested
+    operations, dimensions, and execution behavior.
 
-    :meth:`~fatqat.Program.add`, :meth:`~fatqat.Program.measure`, and
-    :meth:`~fatqat.Program.measure_all` append instructions in place. Register
-    collections are stored as tuples and should be treated as construction-time
-    state; replacing those public attributes is unsupported. ``metadata``
-    remains a mutable dictionary for user annotations. Use
-    :meth:`~fatqat.Program.copy` to branch from a shared program prefix.
-
-    Program construction validates frontend structure, not backend support.
-    A selected backend may reject an otherwise well-formed operation,
-    condition, register dimension, or instruction sequence when the program
-    is run.
+    `Program.add`, `Program.measure`, and `Program.measure_all` append in place.
+    ``metadata`` remains mutable. Use `Program.copy` to create an independent
+    branch.
 
     Attributes:
-        quantum_registers: Tuple of the supplied quantum register objects.
-            Replacing the attribute after construction is unsupported.
-        classical_registers: Tuple of the supplied classical register objects.
-            Replacing the attribute after construction is unsupported.
-        metadata: Mutable, shallow-copied dictionary of user metadata. FATQAT
-            does not define or interpret its keys.
+        quantum_registers: Quantum registers in declaration order.
+        classical_registers: Classical registers in declaration order.
+        metadata: Mutable dictionary of application metadata. FATQAT does not
+            define or interpret its keys.
 
     Examples:
         Build a two-qubit program, add gates, then measure both qubits:
@@ -165,20 +155,16 @@ class Program:
 
         Args:
             quantum_registers: Non-negative exact integer subsystem count, or
-                a list or tuple of :class:`~fatqat.QuantumRegister` objects. A positive
-                count creates one dimension-2 register named ``"q"``; zero
-                creates no quantum register. The outer collection is copied,
-                but the register objects are retained.
+                a list or tuple of `QuantumRegister` objects. A positive count
+                creates one dimension-2 register named ``"q"``; zero creates
+                no quantum register.
             classical_registers: Non-negative exact integer slot count, or a
-                list or tuple of :class:`~fatqat.ClassicalRegister` objects. A positive
-                count creates one dimension-2 register named ``"c"``. The
-                default ``0`` creates no classical register. The outer
-                collection is copied, but the register objects are retained.
-            metadata: Optional mapping of user-defined string keys to arbitrary
-                values. There are no predefined keys or per-key defaults. The
-                top-level mapping is shallow-copied into a mutable dictionary;
-                nested values are not copied. ``None`` creates an empty
-                dictionary.
+                list or tuple of `ClassicalRegister` objects. A positive count
+                creates one dimension-2 register named ``"c"``. The default
+                ``0`` creates no classical register.
+            metadata: Application metadata with string keys. FATQAT reserves
+                no keys. The mapping is copied into a mutable dictionary;
+                ``None`` creates an empty dictionary.
 
         Raises:
             TypeError: If a count is not an exact integer (booleans are not
@@ -213,8 +199,8 @@ class Program:
         Drawing uses one wire per quantum or classical slot. Register
         dimensions are not depicted. Built-in gates use native QuTiP-QIP
         symbols where available; other operations are labeled boxes. Direct
-        :class:`~fatqat.operations.PulseOperation` controls cannot be
-        represented by the circuit renderer.
+        `fatqat.operations.PulseOperation` controls cannot be represented by
+        the circuit renderer.
 
         Args:
             renderer: ``"matplotlib"`` (default) for a matplotlib ``Figure``,
@@ -229,8 +215,8 @@ class Program:
 
         Raises:
             ImportError: If QuTiP-QIP is unavailable.
-            :exc:`~fatqat.errors.UnsupportedOperationError`: If the program
-                contains a :class:`~fatqat.operations.PulseOperation`.
+            UnsupportedOperationError: If the program contains a
+                ``PulseOperation``.
         """
         from .draw import _draw_program
 
@@ -333,53 +319,50 @@ class Program:
         *,
         condition: ConditionInput = None,
     ) -> None:
-        """Validate and append one operation in place.
+        """Append one operation to the program.
 
-        This method checks program-level structure immediately; device and
-        backend capability checks occur when the program is run. For a
-        :class:`~fatqat.operations.PulseOperation`, omit ``targets``: its
-        :class:`~fatqat.emulator.PulseControl` channels address physical
-        resources directly, and the selected pulse emulator resolves and
-        validates those addresses during program preparation.
+        Target and condition structure is checked immediately; backend support
+        is checked when the program runs. For a
+        `fatqat.operations.PulseOperation`, omit ``targets``: its
+        `fatqat.emulator.PulseControl` channels address physical resources
+        directly, and the pulse emulator validates those addresses when the
+        program runs.
 
         Args:
-            op: :class:`~fatqat.operations.Operation` instance to append.
-                Fixed gates are available as singleton values such as
-                ``ops.X``; parametric gates should be instantiated, such as
+            op: `fatqat.operations.Operation` instance to append. Fixed gates
+                are ready-to-use values such as ``ops.X``;
+                parametric gates should be instantiated, such as
                 ``ops.RX(0.2)``.
             targets: One target expression, or a tuple in operation-operand
                 order. A bare target must be a built-in ``int`` and is accepted
                 only when the program has exactly one quantum register. An
-                explicit :class:`~fatqat.RegisterRef` must belong to this program's quantum
-                registers. ``RX``, ``RY``, and ``RZ`` also accept one
-                :class:`~fatqat.RegisterView`; ``CX`` and ``CZ`` accept a pair with the same
-                selector kind and length. Views over one grid must not overlap,
-                and a two-target application cannot mix a scalar with a view.
-                Omit this argument when adding a
-                :class:`~fatqat.operations.PulseOperation`; each
-                control's channel identifies the physical resource or
-                resources it drives.
+                explicit `RegisterRef` must come from one of this program's
+                quantum registers. ``RX``, ``RY``, and ``RZ`` also accept one
+                `RegisterView`; ``CX`` and ``CZ`` accept a pair with the same
+                kind of grid selection and the same length. Views over one
+                grid must not overlap, and a two-target application cannot mix
+                a scalar with a view. Omit this argument when adding a
+                ``PulseOperation``; each control's channel identifies the
+                physical resource or resources it drives.
             condition: ``None`` (default) for an unconditional operation,
                 one ``(classical_slot, literal)`` pair, or a non-empty tuple or
                 list of such pairs. Every pair is required (logical AND). A
                 slot may be an exact built-in ``int`` only when exactly one
                 classical register exists, or an explicit classical
-                :class:`~fatqat.RegisterRef` owned by the program. A literal must be a
-                Python ``int`` in ``[0, slot_dimension)``; booleans are also
-                accepted.
+                ``RegisterRef`` from the program. A literal must be a Python
+                ``int`` in ``[0, slot_dimension)``; booleans are also accepted.
 
         Returns:
             ``None``.
 
         Raises:
-            TypeError: If ``op`` is not an
-                :class:`~fatqat.operations.Operation`, if a target or
+            TypeError: If ``op`` is not an ``Operation``, if a target or
                 condition has an unsupported type or register kind, if an
                 integer operand is ambiguous, or if a condition literal is not
                 an integer.
             ValueError: If target arity is wrong, a target is repeated, a ref
-                or view is foreign to the program, ``op`` does not accept a
-                :class:`~fatqat.RegisterView` target, a view pair is incompatible, an
+                or view does not come from the program, ``op`` does not accept a
+                ``RegisterView`` target, a view pair is incompatible, an
                 operation-specific target constraint fails, a condition is
                 empty or a term does not contain exactly two items, or a
                 condition literal is out of range.
@@ -439,12 +422,11 @@ class Program:
         Targets and outputs are paired positionally, and each pair must have
         the same register dimension. Repeated operands are accepted and
         processed in pair order, so a repeated output keeps the later value.
-        Measurement does not accept :class:`~fatqat.RegisterView` objects.
+        Measurement does not accept `RegisterView` objects.
 
         Args:
             targets: Quantum operand(s) to measure, as a built-in ``int``,
-                explicit :class:`~fatqat.RegisterRef`, or non-empty tuple of
-                those operands.
+                explicit `RegisterRef`, or non-empty tuple of those operands.
                 Bare integers require exactly one quantum register.
             outputs: Classical operand(s) to write, in the same forms, with a
                 non-empty tuple matching ``targets`` in count. Bare integers
@@ -458,7 +440,7 @@ class Program:
                 operands are ambiguous, or if a view or unsupported container
                 is passed.
             ValueError: If ``targets``/``outputs`` have mismatched or zero
-                length, an explicit ref is foreign to the program, or a
+                length, an explicit ref does not come from the program, or a
                 quantum/classical pair has different dimensions.
             IndexError: If an integer operand is outside the relevant register.
 
@@ -509,15 +491,13 @@ class Program:
         self.measure(targets, outputs)
 
     def copy(self) -> "Program":
-        """Return a shallow structural copy for independent program mutation.
+        """Return a copy that can be edited independently.
 
-        The copy retains the original register objects and shallow-copies the
-        metadata dictionary. Later ``add()`` and ``measure()`` calls and
-        top-level metadata changes are independent; values nested inside
-        metadata remain shared.
+        Later ``add()`` and ``measure()`` calls and top-level metadata changes
+        are independent. Values nested inside metadata remain shared.
 
         Returns:
-            An independently mutable program branch.
+            A new program with the same instructions.
         """
         return self._copy_with_operations(self._operations)
 
@@ -548,24 +528,20 @@ class Program:
     ) -> "Program":
         """Return a copy with selected parameter objects replaced by numbers.
 
-        Matching is by object identity, not by name. Binding may be partial or
-        empty and never mutates the template. Only :class:`~fatqat.Parameter`
-        values used
-        directly as operation arguments are discovered; a parameter nested
-        inside another container is not a binding target. Any remaining
-        parameters stay in the returned program and are rejected later by
-        numeric execution or export APIs. Binding does not bypass an
-        operation's value constraints, so an invalid replacement may still be
-        rejected.
+        Matching uses object identity rather than names. Binding may be partial
+        or empty and never mutates the template. Parameters left unbound remain
+        symbolic and are rejected by numeric execution or export. Parameters
+        nested inside another container are not binding targets. Replacement
+        values still undergo the operation's normal validation.
 
         Args:
             values: Mapping with these accepted key/value forms:
 
-                - :class:`~fatqat.Parameter` key (built-in ``int`` or ``float``, or NumPy
+                - `Parameter` key (built-in ``int`` or ``float``, or NumPy
                   integer or floating scalar): Replaces every direct use of
                   that same object. Booleans, strings, complex numbers, and
                   other numeric classes are not accepted.
-                - :class:`~fatqat.ParameterVector` key (one-dimensional NumPy array or a
+                - `ParameterVector` key (one-dimensional NumPy array or a
                   non-string, non-bytes, non-mapping iterable of the scalar
                   types above): The iterable is consumed once in its own
                   iteration order and paired with vector index order. Its
@@ -577,8 +553,7 @@ class Program:
                 vector and one of its elements cannot both be assigned.
 
         Returns:
-            A new program containing the selected numeric values. It retains
-            the original registers and shallow-copies the metadata dictionary.
+            A new program containing the selected numeric values.
 
         Raises:
             TypeError: If the mapping, a key, a value container, or a scalar

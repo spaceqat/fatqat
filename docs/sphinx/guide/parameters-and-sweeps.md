@@ -35,9 +35,9 @@ fully_bound = partly_bound.assign_parameters({angles[1]: 0.2})
 parameters named `"theta"`, or two vectors named `"angles"`, remain distinct
 objects and distinct mapping keys. String keys are not accepted.
 
-Ordinary Simulator, Estimator, and pulse-emulator execution rejects any
-remaining unbound parameter before numeric realization. QASM export does the
-same before formatting numeric gate arguments.
+Simulator, Estimator, and pulse-emulator execution reject any remaining
+unbound parameter. QASM export does the same before formatting numeric gate
+arguments.
 
 ## Simulator sweeps
 
@@ -110,19 +110,14 @@ expectations = np.array([result.get_expectation() for result in results])
 For multiple observables, every `Result` contains an expectation array with
 the same length as the observable sequence.
 
-## Version 1 execution behavior
+## Sweep behavior
 
-Version 1 validates the complete binding batch, then binds and calls the
-existing `run()` once per row. It makes no promise of one-time lowering,
-parallel row execution, vectorized engines, or faster execution than the
-equivalent explicit Python loop. No partial result list is exposed if a later
-row fails.
+FATQAT validates the complete binding batch before execution. Binding and row
+validation errors raise directly. If execution fails for a row, the returned
+sweep job is failed and `job.result()` re-raises the error. Neither case
+returns a partial result list.
 
-An explicit seed is forwarded unchanged to every row. This exactly matches
-manually repeating `run()` with that seed, but it also reuses the same
-pseudorandom stream positions. Sampled row errors are correlated: do not treat
-their standard errors as independent or use this seed behavior to model
-finite-difference gradient noise.
-
-A reusable prepared-program handle, parameter expressions, gradients, and
-per-target broadcasting syntax are future work.
+An explicit seed is reused for every row. This matches separate calls to
+`run()` with the same seed, but sampled results across rows can be correlated.
+Use separate runs with different seeds when independent statistical errors
+matter.

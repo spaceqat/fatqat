@@ -1,21 +1,12 @@
-"""OpenQASM <-> fatqat conversion, in both directions.
+"""Translate between FATQAT programs and a practical OpenQASM 2/3 subset.
 
-The parsers/renderers in this module are intentionally independent of
-Qiskit or any other quantum SDK -- everything here is a hand-written,
-from-scratch translation between OpenQASM 2.0/3.0 text and fatqat's own
-circuit language (`fatqat.Program`).
+Use :func:`from_qasm` or :func:`from_qasm_file` to import source, and
+:func:`to_qasm` to export a :class:`~fatqat.Program`. The translator has no
+Qiskit dependency. Unsupported constructs raise a conversion error rather
+than being approximated.
 
-Import direction (OpenQASM -> Program): `from_qasm` / `qasm_to_program`.
-Export direction (Program -> OpenQASM): `to_qasm` / `program_to_qasm`.
-
-Every non-trivial gate decomposition used below (u/u2/u3 on the import
-side; the qudit-gate dim=2 reductions and the iSwap custom-gate
-definition on the export side) was checked by direct matrix
-multiplication against the textbook target unitary before being written
-down here -- see `tests/test_qasm.py`.
-
-See the `from_qasm` and `to_qasm` docstrings below for the full list of
-what each direction supports and does not support.
+``qasm_to_program`` and ``program_to_qasm`` are compatibility aliases for the
+canonical functions above.
 """
 
 from __future__ import annotations
@@ -32,6 +23,7 @@ from typing import Any
 
 from . import operations as ops
 from ._parameter_binding import _raise_for_unbound_parameters
+from .errors import FatqatError
 from .program import Program, _AppliedOperation
 from .registers import (
     ClassicalRegister,
@@ -42,8 +34,11 @@ from .registers import (
 )
 
 
-class QASMTranspileError(ValueError):
-    """Raised when OpenQASM input cannot be converted to a fatqat program."""
+class QASMTranspileError(FatqatError, ValueError):
+    """OpenQASM source could not be converted to a FATQAT program.
+
+    This error remains catchable as ValueError for compatibility.
+    """
 
 
 @dataclass
@@ -105,49 +100,51 @@ _MATH_FUNCS: dict[str, Callable[..., float]] = {
 
 
 def from_qasm(source: str) -> Program:
-    """Convert an OpenQASM 2.0 or 3.0 string into a fatqat ``Program``.
+    """Parse OpenQASM 2.0 or 3.0 source into a :class:`~fatqat.Program`.
 
-    Supported:
-        * Register declarations: ``qreg``/``creg`` (QASM2) and
-          ``qubit``/``bit`` (QASM3), including whole-register broadcast
-          (``h q;``, ``reset q;``).
-        * Measurements (``measure q -> c;`` and ``c = measure q;``),
-          ``reset``, ``barrier`` (accepted and ignored -- it is a
-          scheduling hint with no fatqat equivalent).
-        * Classical conditions: the whole-register form
-          ``if (creg == integer)`` and the bit-level AND form
-          ``if (c[0] == 1 && c[2] == 0)``. A single bare ``if`` (no
-          ``else``) is supported.
-        * User-defined ``gate name(params) qargs { ... }`` macros, expanded
-          inline and recursively at every call site.
-        * Built-in gates: ``id``/``x``/``y``/``z``/``h``/``s``/``sdg``/
-          ``t``/``tdg``, ``rx``/``ry``/``rz``, ``p``/``phase``/``u1``,
-          ``cx``/``cnot``/``cy``/``cz``/``swap``/``ccx``/``toffoli``/
-          ``cswap``/``fredkin``, ``cp``/``cu1``, and ``u``/``u2``/``u3``
-          (decomposed into ``rz``/``ry``/``rz``, exact up to a global
-          phase -- fatqat has no global-phase primitive, and this never
-          affects measurement probabilities).
+    This focused importer understands dimension-2 register declarations,
+    measurement, reset, built-in gate calls, and recursively expanded local
+    ``gate`` definitions. A gate call may target scalar refs or equal-sized
+    registers, which are expanded position by position. ``barrier`` is
+    accepted but discarded.
 
-    Not supported (raises ``QASMTranspileError``):
-        * Gates with no built-in mapping above and no local ``gate``
-          definition -- e.g. ``crz``/``cry``/``crx``, ``ch``, ``cu``/
-          ``cu3``, ``sx``/``sxdg``, ``rxx``/``ryy``/``rzz``/``rzx``, and
-          multi-controlled gates (``c3x``/``c4x``/``mcx``). These *do*
-          work if the QASM source itself provides a local ``gate``
-          definition for them built from supported primitives. This
-          matters most for QASM exported from real hardware or other
-          toolchains, which commonly use ``sx`` and controlled-rotation
-          gates as basis gates.
-        * ``opaque`` declarations (no body to expand).
-        * Classical control flow: ``for``/``while`` loops, the ``else``
-          branch of ``if``, subroutines (``def``), and gate modifiers
-          (``ctrl @`` / ``inv @`` / ``pow(n) @``).
-        * ``||`` (OR) and whole-register ``!=`` inside conditions.
+    Built-in names are ``id``/``u0``, ``x``/``y``/``z``/``h``,
+    ``s``/``sdg``/``t``/``tdg``, ``rx``/``ry``/``rz``,
+    ``p``/``phase``/``u1``, ``u``/``u2``/``u3``, ``cx``/``cnot``,
+    ``cy``/``cz``/``swap``, ``cp``/``cu1``, ``ccx``/``toffoli``, and
+    ``cswap``/``fredkin``. The ``u`` family is decomposed into rotations and
+    therefore preserves its unitary only up to global phase.
 
-    All unsupported constructs fail loudly rather than silently producing
-    an incorrect translation, though a few (``if``/``else``, ``for``, gate
-    modifiers) currently surface as a generic parse error rather than a
-    message naming the specific construct.
+    A condition may guard one gate or reset and may be a whole-register
+    equality or an AND of bit comparisons. A bit comparison may use ``==`` or
+    ``!=``; conditioned measurement, whole-register ``!=``, OR, ``else``,
+    loops, subroutines, gate modifiers, and ``opaque`` declarations are not
+    supported.
+
+    ``include`` statements are ignored rather than loaded. A gate supplied by
+    an include file must therefore be one of the built-ins above or have a
+    local ``gate`` definition in ``source``. Angle expressions may use numeric
+    literals, ``pi``, arithmetic, powers, and ``sin``, ``cos``, ``tan``,
+    ``exp``, ``ln``, or ``sqrt``.
+
+    Args:
+        source: Complete OpenQASM source text.
+
+    Returns:
+        A program with dimension-2 registers. Its ``metadata["source"]`` value
+        records the parsed OpenQASM version.
+
+    Raises:
+        QASMTranspileError: If a recognized declaration, instruction,
+            expression, or condition cannot be translated.
+        IndexError: If a register operand uses an out-of-range index.
+        TypeError: If ``source`` is not a string.
+
+    Examples:
+        >>> from fatqat.qasm import from_qasm
+        >>> program = from_qasm("OPENQASM 3.0; qubit q; x q;")
+        >>> program.metadata["source"]
+        'openqasm3.0'
     """
 
     builder = _QASMBuilder(source)
@@ -155,7 +152,23 @@ def from_qasm(source: str) -> Program:
 
 
 def from_qasm_file(path: str | Path, *, encoding: str = "utf-8") -> Program:
-    """Read an OpenQASM 2.0 or 3.0 file and convert it into a fatqat ``Program``."""
+    """Read an OpenQASM file and convert it into a :class:`~fatqat.Program`.
+
+    Conversion errors from :func:`from_qasm` propagate unchanged.
+
+    Args:
+        path: File to read.
+        encoding: Text encoding passed to :meth:`pathlib.Path.read_text`.
+            Defaults to ``"utf-8"``.
+
+    Returns:
+        The program returned by :func:`from_qasm`.
+
+    Raises:
+        OSError: If the file cannot be read.
+        UnicodeError: If the file cannot be decoded with ``encoding``.
+        QASMTranspileError: If the translator rejects the contents.
+    """
 
     return from_qasm(Path(path).read_text(encoding=encoding))
 
@@ -716,8 +729,8 @@ def _require_operand_count(name: str, expected: int | None, actual: int) -> None
 # ===========================================================================
 
 
-class QasmExportError(Exception):
-    """Raised when a fatqat program cannot be faithfully represented in QASM."""
+class QasmExportError(FatqatError):
+    """A FATQAT program cannot be represented faithfully in OpenQASM."""
 
 
 # ---------------------------------------------------------------------------
@@ -1091,48 +1104,43 @@ def _condition_value_qasm2(condition, layout: _Layout):
 
 
 def to_qasm(program: Program, version: int = 3) -> str:
-    """Translate a fatqat `Program` into OpenQASM source text.
+    """Serialize a :class:`~fatqat.Program` as OpenQASM 2.0 or 3.0.
 
-    Supported:
-        * Fixed gates (H/X/Y/Z/S/Sdg/T/Tdg/I, CX/CY/CZ/Swap/CCX/CSwap),
-          parametric gates (RX/RY/RZ/Phase/CPhase), CS (emitted as
-          `cp(pi/2)`), and iSwap (emitted as a self-contained custom `gate
-          iswap a, b {...}` definition, numerically verified equal to
-          fatqat's iSwap).
-        * Reset, measurement, and conditions -- QASM 3 supports arbitrary
-          bit-level AND conditions; QASM 2 only when the condition pins
-          down every bit of a single classical register (see `version`
-          below).
-        * fatqat's qudit-family gates (Shift/Clock/Sum/SwapLevels/
-          Fourier(dg)/SubspaceRX/RY/RZ/CClock) *only* when every register
-          involved has `dim == 2` -- each reduces to a standard qubit gate
-          in that case (e.g. `Sum` -> `cx`), verified against fatqat's own
-          matrix implementations.
+    Export supports dimension-2 programs containing measurement, reset,
+    conditions, the standard fixed qubit gates, ``RX``/``RY``/``RZ``,
+    ``Phase``/``CPhase``, ``CS``, and ``iSwap``. The qudit gate families are
+    also accepted when their registers have ``dim == 2`` and are lowered to
+    the equivalent qubit gates. ``iSwap`` adds one local gate definition to
+    the output.
 
-    Not supported (raises `QasmExportError`):
-        * Any register with `dim != 2` (a qudit) -- OpenQASM has no
-          representation for qudits at all, so this is a hard limitation
-          of the target format, not just of this function.
-        * Any operation with no QASM lowering defined above.
-        * QASM 2 export of a condition that does not pin down every bit of
-          exactly one classical register (use `version=3` instead, which
-          has no such restriction).
+    OpenQASM 3 can express FATQAT's arbitrary AND of bit comparisons. OpenQASM
+    2 can express a condition only when it fixes every bit of one classical
+    register. Register names may change to avoid conflicts; program metadata
+    is not serialized.
 
     Args:
-        program: The fatqat program to translate.
-        version: `3` for OpenQASM 3.0 (default, recommended -- supports
-            arbitrary bit-level classical conditions), or `2` for OpenQASM
-            2.0 (qelib1.inc; whole-register conditions only).
+        program: Bound, dimension-2 program to serialize.
+        version: ``3`` (default) for OpenQASM 3.0, or ``2`` for OpenQASM 2.0.
 
     Returns:
-        Complete OpenQASM source text, ready to write to a `.qasm` file.
+        Complete source text ending in a newline.
 
     Raises:
-        BackendValidationError: If the program contains unbound parameters.
-        QasmExportError: If the program uses a qudit register (dim != 2), an
-            operation with no QASM equivalent, or (QASM 2 only) a classical
-            condition that cannot be expressed as a whole-register equality.
+        BackendValidationError: If the program has unbound parameters.
+        QasmExportError: If a register has ``dim != 2``; an operation has no
+            defined lowering; a target is a :class:`~fatqat.RegisterView`; or
+            a QASM 2 condition cannot be represented. Barrier and direct pulse
+            operations are not exportable.
         ValueError: If ``version`` is neither ``2`` nor ``3``.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> import fatqat.operations as ops
+        >>> from fatqat.qasm import to_qasm
+        >>> program = fq.Program(1)
+        >>> program.add(ops.X, 0)
+        >>> "x q[0];" in to_qasm(program)
+        True
     """
     if version not in (2, 3):
         raise ValueError(f"version must be 2 or 3, got {version!r}")
@@ -1160,7 +1168,7 @@ def to_qasm(program: Program, version: int = 3) -> str:
         if any(isinstance(t, RegisterView) for t in step.targets):
             raise QasmExportError(
                 f"{op.name}: cannot export a RegisterView target to QASM; "
-                "view-bearing programs are not QASM-exportable yet"
+                "view-bearing programs are not QASM-exportable"
             )
 
         if type(op).__name__ == "ResetGate":

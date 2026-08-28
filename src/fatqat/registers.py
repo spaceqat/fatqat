@@ -10,23 +10,20 @@ from typing import Any, Mapping
 class Register:
     """Base class for a fixed-size resource register.
 
-    Use :class:`QuantumRegister` or :class:`ClassicalRegister` for registers
-    passed to a :class:`~fatqat.Program`; a plain :class:`Register` does not
-    identify either resource kind. Indexing creates an immutable
-    :class:`RegisterRef`.
+    Use `QuantumRegister` or `ClassicalRegister` for registers passed to a
+    `Program`; a plain `Register` does not identify either resource kind.
+    Indexing creates an immutable `RegisterRef`.
 
-    A register is a frozen identity object. Two separately constructed
-    registers remain distinct even when every field has the same value, and
-    ``name`` does not need to be unique. ``metadata`` is shallow-copied into a
-    new mutable dictionary: later top-level changes to the input are not
-    observed, but nested values remain shared.
+    Names are labels and need not be unique. Two separately constructed
+    registers are distinct even if their fields match, so keep and index the
+    same register passed to `Program`. ``metadata`` is copied into a mutable
+    dictionary for application data.
 
     Args:
         size: Positive number of slots. Must be an integer, not ``bool``.
         name: Optional display label. It does not determine register identity.
         metadata: Mapping with string keys and arbitrary application values
-            (default empty). FATQAT shallow-copies the mapping and does not
-            inspect or reserve any key.
+            (default empty). FATQAT does not inspect or reserve any key.
         dim: Local dimension of every slot. ``2`` (the default) represents a
             qubit or bit; values greater than ``2`` represent qudits or
             d-ary classical digits. Must be an integer, not ``bool``.
@@ -37,7 +34,7 @@ class Register:
         ValueError: If ``size`` is not positive or ``dim`` is less than ``2``.
 
     Examples:
-        Index a concrete register to get a :class:`RegisterRef`:
+        Index a concrete register to get a `RegisterRef`:
 
         >>> import fatqat as fq
         >>> qreg = fq.QuantumRegister(2, name="q")
@@ -78,7 +75,7 @@ class Register:
             index: Zero-based slot index. Must be an integer, not ``bool``.
 
         Returns:
-            A :class:`RegisterRef` pointing at this register and index.
+            A `RegisterRef` pointing at this register and index.
 
         Raises:
             TypeError: If ``index`` is not an integer.
@@ -95,16 +92,14 @@ class Register:
 class QuantumRegister(Register):
     """Fixed-size register whose refs name quantum operation targets.
 
-    It follows :class:`Register` identity and metadata ownership rules.
-    Operation and backend support for a local dimension is checked separately
-    when a program is built or run.
+    Individual operations and backends may support only a subset of valid
+    register dimensions.
 
     Args:
         size: Positive number of quantum slots. Must be an integer, not
             ``bool``.
         name: Optional display label; it does not determine register identity.
-        metadata: String-keyed application metadata (default empty),
-            shallow-copied into a mutable dictionary.
+        metadata: String-keyed application metadata (default empty).
         dim: Local dimension of every slot. ``2`` (the default) creates
             qubits; a larger value creates qudits. Must be an integer, not
             ``bool``.
@@ -121,15 +116,13 @@ class ClassicalRegister(Register):
     """Fixed-size register for measurement results and conditions.
 
     A slot stores a digit from ``0`` through ``dim - 1``. Measuring a quantum
-    slot into a classical slot requires equal dimensions. It follows
-    :class:`Register` identity and metadata ownership rules.
+    slot into a classical slot requires equal dimensions.
 
     Args:
         size: Positive number of classical slots. Must be an integer, not
             ``bool``.
         name: Optional display label; it does not determine register identity.
-        metadata: String-keyed application metadata (default empty),
-            shallow-copied into a mutable dictionary.
+        metadata: String-keyed application metadata (default empty).
         dim: Number of possible values in each slot. ``2`` (the default)
             creates bits; a larger value creates d-ary digits. Must be an
             integer, not ``bool``.
@@ -145,13 +138,9 @@ class ClassicalRegister(Register):
 class RegisterRef:
     """Immutable, hashable reference to one slot in a register.
 
-    Obtain refs by indexing a register. Equality combines the register's
-    identity with the index, so refs from lookalike register objects remain
-    distinct and can safely be dictionary keys.
-
-    Args:
-        register: Register object being referenced.
-        index: Zero-based slot index within ``register``.
+    Obtain refs by indexing a register, which checks the index and rejects
+    negative indexing. Direct construction is unsupported. Refs from different
+    register objects remain distinct and can be used as dictionary keys.
     """
 
     register: Register
@@ -246,24 +235,19 @@ class GridRegister(QuantumRegister):
     """Quantum register arranged as a rectangular, row-major grid.
 
     The flat slot at coordinate ``(row, col)`` has index
-    ``row * cols + col``. The grid is a backend-neutral program resource: its
-    shape does not assign physical sites or guarantee that a backend preserves
-    the coordinates.
+    ``row * cols + col``. Coordinates organize logical targets; they do not
+    choose physical sites or require a backend to preserve the grid.
 
-    :meth:`all`, :meth:`row`, :meth:`column`, and :meth:`block` create
-    immutable :class:`RegisterView` targets in deterministic member order.
-
-    Like other registers, a grid register is frozen and compares by identity.
-    ``metadata`` is shallow-copied into a new, still-mutable dictionary;
-    nested values are not copied.
+    `GridRegister.all`, `GridRegister.row`, `GridRegister.column`, and
+    `GridRegister.block` create immutable `RegisterView` targets in
+    deterministic member order.
 
     Args:
         rows: Positive number of rows. Must be an integer, not ``bool``.
         cols: Positive number of columns. Must be an integer, not ``bool``.
         name: Optional display label; it does not determine register identity.
         metadata: String-keyed application metadata, or ``None`` for an empty
-            mapping. FATQAT shallow-copies the mapping into a mutable
-            dictionary.
+            mapping.
         dim: Local dimension of every grid member. ``2`` (the default)
             creates qubits; a larger value creates qudits. Must be an integer,
             not ``bool``.
@@ -390,22 +374,20 @@ class GridRegister(QuantumRegister):
 class RegisterView:
     """Immutable, hashable target selecting members of one grid register.
 
-    Create views with :meth:`GridRegister.all`, :meth:`GridRegister.row`,
-    :meth:`GridRegister.column`, or :meth:`GridRegister.block` rather than
-    calling this class directly; its selector representation is not a public
-    construction contract. The ``register`` attribute identifies the owning
-    grid. Views compare and hash by that register's identity and their
-    selection. A unary view-capable operation is applied once to each selected
-    member. A two-target view operation pairs the two views member by member.
-    The built-in view-capable operations are
-    :class:`~fatqat.operations.RX`, :class:`~fatqat.operations.RY`,
-    :class:`~fatqat.operations.RZ`, :data:`~fatqat.operations.CX`, and
-    :data:`~fatqat.operations.CZ`; all other built-ins require scalar targets.
+    Obtain views from `GridRegister.all`, `GridRegister.row`,
+    `GridRegister.column`, or `GridRegister.block`; direct construction is
+    unsupported. The ``register`` attribute identifies the selected grid.
+    Views compare and hash by that register and their selection.
 
-    :meth:`~fatqat.Program.add` requires the view's grid to belong to that program. For a
-    two-target view operation, both operands must be views of the same
-    selector kind and cardinality; views on the same grid must not overlap.
-    Invalid combinations raise ``ValueError`` when the operation is added.
+    The built-in view-capable operations are ``RX``, ``RY``, ``RZ``, ``CX``,
+    and ``CZ``; all other built-ins require scalar targets. A unary operation
+    acts once on each selected member. A two-target operation pairs
+    corresponding members of the two views.
+
+    `Program.add` requires the view's grid to be one of the program's
+    registers. Paired views must have the same kind of selection and
+    cardinality; selections on the same grid must not overlap. Invalid
+    combinations raise `ValueError` when the operation is added.
 
     Member order is deterministic: ``all()`` and ``block()`` use row-major
     order, ``row()`` uses increasing column order, and ``column()`` uses

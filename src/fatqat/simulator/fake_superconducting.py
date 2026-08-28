@@ -1,36 +1,9 @@
-"""Fake configurable-shape superconducting-grid backends for compiler prototyping.
+"""Superconducting hardware-profile simulators.
 
-The default 4x4 device is row-major numbered:
-
-.. code-block:: text
-
-    0   1   2   3
-    4   5   6   7
-    8   9  10  11
-    12 13  14  15
-
-Two concrete backends share a configurable grid, its GridRegister-aware
-resource mapping, and nearest-neighbor connectivity (via the private
-`_SCQubitSimulator`), differing only in native gate set and
-calibration:
-
-- `SCQubitIBMSimulator` - `X`, `SX`, `RZ` (single-qubit, any device
-  labels), and `CZ` (nearest-neighbor edges only, both directions stored).
-- `SCQubitGoogleSimulator` - `RX`, `RY`, `RZ` (single-qubit, any device
-  labels), and `iSwap`/`CZ` (nearest-neighbor edges only, both directions
-  stored, both two-qubit gates native at once).
-
-Neither is a realistic device model: no routing, no timing, and ideal by
-default unless a noise model is supplied. Each ships a calibration-derived
-`default_noise_model()` on demand - the Qiskit ``NoiseModel.from_backend``
-workflow - see each class's own docstring for its gate set and noise
-profile.
-
-The native-gate-set restriction applies to unitary operations only.
-Measurement and reset are resolved by `Simulator._lower` before any
-implementation-map lookup happens (see the `isinstance` dispatch there), so
-both backends accept them on any valid device qubit regardless of the
-implementation map's contents.
+The IBM- and Google-style profiles use configurable row-major grids and
+nearest-neighbour connectivity. They validate programs already written in
+their native gate sets; neither profile routes, schedules, or models a named
+device. Both are ideal unless a noise model is supplied.
 """
 
 from __future__ import annotations
@@ -136,12 +109,11 @@ class _SCQubitSimulator(Simulator):
 
     @property
     def implementation_map(self) -> MatrixImplementationMap:
-        """Copy of the compiler-facing native implementation map.
+        """Return the native operation map.
 
         ``supported_operations()`` lists native operation families.
         ``device_operands_for(operation)`` lists ordered device tuples for a
         connectivity-limited gate and is empty for a uniformly available gate.
-        Mutating the returned map does not change this backend.
         """
         return self._impl_map.copy()
 
@@ -287,13 +259,15 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
                 execution controls.
             noise: Optional ``NoiseModel``. ``None`` keeps the backend ideal;
                 pass ``default_noise_model()`` explicitly to use the built-in
-                profile. The model is copied at construction.
+                profile.
 
         Raises:
             TypeError: If ``grid_size`` is not a tuple, or either item is not
                 an integer (bools rejected).
             ValueError: If the tuple does not contain exactly two items or
                 either item is not positive.
+            BackendValidationError: If ``method`` or ``runtime`` is invalid,
+                or ``noise`` contains a source this simulator cannot run.
         """
         rows, cols = _validate_grid_size(grid_size)
         super().__init__(
@@ -307,7 +281,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
 
     @classmethod
     def default_noise_model(cls) -> NoiseModel:
-        """Return a fresh calibration-derived noise model.
+        """Return a fresh built-in reference noise model.
 
         Profile:
 
@@ -319,9 +293,8 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         - Readout: ``P(report 1 | true 0) = 0.02`` and
           ``P(report 0 | true 1) = 0.04``.
 
-        The model is not enabled automatically. Each call returns an ordinary,
-        independent ``NoiseModel`` that may be extended before it is passed to
-        ``noise=``.
+        The model is not enabled automatically. Extend the returned
+        ``NoiseModel`` if needed, then pass it to ``noise=``.
         """
         noise = NoiseModel()
         damping, dephasing = _THERMAL_RELAXATION.as_channels(_SX_DURATION)
@@ -417,13 +390,15 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
                 execution controls.
             noise: Optional ``NoiseModel``. ``None`` keeps the backend ideal;
                 pass ``default_noise_model()`` explicitly to use the built-in
-                profile. The model is copied at construction.
+                profile.
 
         Raises:
             TypeError: If ``grid_size`` is not a tuple, or either item is not
                 an integer (bools rejected).
             ValueError: If the tuple does not contain exactly two items or
                 either item is not positive.
+            BackendValidationError: If ``method`` or ``runtime`` is invalid,
+                or ``noise`` contains a source this simulator cannot run.
         """
         rows, cols = _validate_grid_size(grid_size)
         super().__init__(
@@ -439,7 +414,7 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
 
     @classmethod
     def default_noise_model(cls) -> NoiseModel:
-        """Return a fresh calibration-derived noise model.
+        """Return a fresh built-in reference noise model.
 
         Profile:
 
@@ -452,9 +427,8 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         - Readout: ``P(report 1 | true 0) = 0.02`` and
           ``P(report 0 | true 1) = 0.04``.
 
-        The model is not enabled automatically. Each call returns an ordinary,
-        independent ``NoiseModel`` that may be extended before it is passed to
-        ``noise=``.
+        The model is not enabled automatically. Extend the returned
+        ``NoiseModel`` if needed, then pass it to ``noise=``.
         """
         noise = NoiseModel()
         damping, dephasing = _THERMAL_RELAXATION.as_channels(_ROTATION_DURATION)

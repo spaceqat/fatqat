@@ -26,7 +26,7 @@ def _spacing(value: Any) -> float:
 class AtomArrangement:
     """An immutable regular arrangement of physical atom sites.
 
-    Construct arrangements with :meth:`chain` or :meth:`rectangular`.
+    Construct arrangements with ``chain()`` or ``rectangular()``.
     Coordinates are in micrometres and ordered row-major, with the x
     coordinate advancing across columns. Arbitrary-coordinate construction is
     not part of the current public API.
@@ -115,9 +115,9 @@ class AtomArrangement:
         return len(self.coordinates)
 
     def __len__(self) -> int:
-        """Return the concise sequence-style site count.
+        """Return the number of sites.
 
         Returns:
-            The same exact geometry count as :attr:`num_sites`.
+            The same site count as ``num_sites``.
         """
         return self.num_sites

@@ -1,11 +1,13 @@
-"""Noise simulation surface: physical declarations and backend converters.
+"""Noise models and built-in noise sources for FATQAT backends.
 
-Users build a `NoiseModel` from channel descriptors
-(``fq.noise.Depolarizing`` and friends, plus `ThermalRelaxation`) and
-classical readout confusion matrices, then pass it to a backend via
-``noise=``. Matrix backends resolve supported operation-scoped channels into
-Kraus operators; continuous simulators resolve supported descriptors into
-local Lindblad operators. Readout confusion stays classical.
+Build a `NoiseModel` from quantum channels, carrier `Loss`, and classical
+`ReadoutConfusion`, then pass it to a backend through ``noise=``. Simulator
+behavior uses supported probability forms on matching operations. Emulator
+behavior uses supported rate or time forms as local Lindblad operators over
+elapsed time. FATQAT never converts a probability into a rate implicitly.
+
+`ChannelImplementationMap` and `LindbladImplementationMap` are optional
+extension APIs for custom noise types or backend-specific behavior.
 """
 
 from .base import (

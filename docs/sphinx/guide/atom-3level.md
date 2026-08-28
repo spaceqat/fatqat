@@ -1,242 +1,132 @@
 # Three-level atom emulation
 
-{py:class}`fq.emulator.Atom3LevelEmulator <fatqat.emulator.Atom3LevelEmulator>` translates
-a small native gate set into calibrated controls and integrates the physical
-Rb87 three-level model `|0>, |1>, |r>`. Use it when gate calibration, coherent
-Rydberg leakage, atom spacing, or parallel-gate crosstalk is part of the
-question. For global direct control in a two-level model, use
-[the two-level emulator](atom-2level.md); for fast ideal qubit gates on a
-connectivity-constrained target, use {py:class}`~fatqat.simulator.AtomArraySimulator`.
+{py:class}`~fatqat.emulator.Atom3LevelEmulator` runs calibrated gates and
+selected-site controls in the physical basis `|0>, |1>, |r>`. Use it when
+Rydberg leakage, atom spacing, or interactions during a pulse are important.
+For global controls in a two-level model, use [the two-level
+emulator](atom-2level.md).
 
-See [Neutral-atom emulation](neutral-atoms.md) for a side-by-side comparison
-and {doc}`../api/atom-emulators` for exact signatures.
+See [Neutral-atom emulation](neutral-atoms.md) for a comparison and
+{doc}`../api/atom-emulators` for the complete API reference.
 
-## At a glance
+## Create the emulator
 
-- The program may mix calibrated `RX`, `RY`, `RZ`, and `CZ` gates with direct
-  per-site Raman/Rydberg pulse values.
-- The backend requires a physics model and rectangular arrangement; its
-  nominal gate map is compiled internally.
-- Program qubits are dimension two, but the physical state is dimension three
-  per atom and is returned as a density matrix.
-- Every occupied pair contributes a signed `C6/R^6` interaction whenever
-  Rydberg population is present.
-- Binary readout confusion is built in. The Lindblad default is empty; a
-  supplied map enables registered qutrit channel descriptors.
-
-## Build the backend
-
-The physics model and calibration are separate, strict JSON-compatible
-documents. The model owns species, levels, units, and `C6`; the portable
-calibration owns only gate-control recipe data. Geometry belongs to neither
-document.
-
-This complete two-site example loads the public reference model catalog and
-defines the separate calibration inline. Inspect the loaded snapshot before
-construction; its references identify the Evered et al. source.
+The model supplies the atomic levels, units, and signed `C6` coefficient. The
+arrangement supplies fixed site coordinates.
 
 ```{doctest}
 >>> import fatqat as fq
 >>> import fatqat.operations as ops
->>> model_document = fq.emulator.load_model_document("atom3level.reference")
->>> model_document["model"]
-{'id': 'rb87-53s-reference', 'revision': '2026-08-22'}
->>> model_document["parameters"]
-{'mass': 86.9091805, 'c6': 180955.73684677208}
->>> len(model_document["references"])
-1
->>> calibration_document = {
-...     "format": {
-...         "id": "atom.rb87_rydberg_3level_fixed_pulse", "version": 1,
-...     },
-...     "calibration": {"id": "rb87_53s_lukin_2023_v1", "revision": "2026-08-05"},
-...     "units": {
-...         "angular_frequency": "rad/us", "angle": "rad",
-...         "cycles": "cycle", "dimensionless": "1",
-...     },
-...     "recipes": {
-...         "rx_ry": {"omega_01": 6.283185307179586},
-...         "cz": {
-...             "omega_1r": 28.902652413026097,
-...             "phase_amplitude": 0.704973391304749,
-...             "phase_rate_ratio": 1.0431,
-...             "phase_offset": -0.7318,
-...             "linear_phase_rate_ratio": 0.0,
-...             "duration_area": 1.215,
-...             "local_z_correction": 2.099085629,
-...         },
-...     },
-... }
->>> model = fq.emulator.Atom3LevelModel.from_document(model_document)
->>> tuple(model.available_controls)
-('raman', 'rydberg')
->>> arrangement = fq.emulator.AtomArrangement.rectangular(rows=1, cols=2, spacing=2.0)
+>>> model = fq.emulator.Atom3LevelModel.from_document(
+...     fq.emulator.load_model_document("atom3level.reference")
+... )
+>>> arrangement = fq.emulator.AtomArrangement.chain(2, spacing=6.0)
 >>> backend = fq.emulator.Atom3LevelEmulator(
-...     model, arrangement=arrangement
+...     model,
+...     arrangement=arrangement,
 ... )
 ```
 
-For explicit calibration, compile it before backend construction:
+The program must declare one dimension-two quantum resource per arrangement
+site. Declaration order binds resources to the arrangement's row-major site
+order. Every run starts with each atom in physical `|0>`.
 
-```{doctest}
->>> calibration = fq.emulator.Atom3LevelCalibration(calibration_document)
->>> gate_map = fq.emulator.default_atom_3level_gate_implementation_map(
-...     model=model, calibration=calibration
-... )
->>> explicit_backend = fq.emulator.Atom3LevelEmulator(
-...     model, arrangement=arrangement, gate_implementation_map=gate_map
-... )
+The default backend uses the packaged reference calibration. To use another
+complete calibration document, build and pass a gate map:
+
+```python
+calibration = fq.emulator.Atom3LevelCalibration(calibration_document)
+gate_map = fq.emulator.default_atom_3level_gate_implementation_map(
+    model=model,
+    calibration=calibration,
+)
+backend = fq.emulator.Atom3LevelEmulator(
+    model,
+    arrangement=arrangement,
+    gate_implementation_map=gate_map,
+)
 ```
 
-The v1 builder requires a source-model argument as its future pulse-design
-seam but deliberately does not read or retain C6 or geometry. Consequently a
-map compiled from a coarse source model can run on a distinct target model and
-arrangement; target C6 and geometry still govern physical evolution. Rebuild
-the map with a richer source model only when a later recipe actually uses its
-additional design facts.
+The resulting rules use that model's channels and frames. Geometry and `C6`
+still determine physical evolution, but they do not retune the fixed pulse
+recipes.
 
-## Write a gate-authored atom program
+## Run calibrated gates
 
-The program must declare exactly one dimension-two quantum resource per
-arrangement site. Declaration order binds resources to the arrangement's
-row-major coordinates.
-
-| Program feature | Three-level behavior |
-|---|---|
-| `RX(theta)`, `RY(theta)` | calibrated Raman rotation in `span{\|0>, \|1>}` |
-| `RZ(theta)` | zero-duration virtual frame update |
-| `CZ(a, b)` | fixed calibrated phase-modulated Rydberg pulse on the ordered pair |
-| measurement | samples physical levels, then writes a binary classical bit |
-| `Reset` | prepares physical `\|0>` |
-| classical condition | supported by the shared pulse execution path |
-| `Barrier` | structural no-op |
-| direct `PulseOperation` | per-site Raman or Rydberg control addresses from the model |
-| `Put`/`Pair`/`Unpair`; ordinary gates without a registered rule | rejected |
-
-Here is the minimal calibrated-CZ program and deterministic final-state
-request:
+The built-in map supports `RX`, `RY`, `RZ`, and `CZ`. `RZ` is a zero-duration
+frame update; `CZ` drives the requested sites with the calibrated Rydberg
+pulse.
 
 ```{doctest}
 >>> program = fq.Program(2)
 >>> program.add(ops.CZ, (0, 1))
->>> result = backend.run(
-...     program,
-...     shots=1,
-...     result_config={"counts": False, "final_state": True},
-... ).result()
+>>> result = backend.run(program).result()
 >>> result.get_density_matrix().shape
 (9, 9)
 ```
 
-The `(9, 9)` shape is the complete two-qutrit state, not a projected
-four-dimensional computational-subspace state. In general, `N` arrangement sites produce a
-`(3**N, 3**N)` density matrix. QuTiP objects never cross the public boundary.
+The density matrix covers the complete two-qutrit state, not only the
+four-dimensional computational subspace. In general, `N` sites produce a
+`(3**N, 3**N)` matrix.
 
-## Direct Raman and Rydberg controls
+Measurement reports physical `|0>` as `0` and both `|1>` and `|r>` as `1`,
+then applies any readout confusion. This does not remove Rydberg population
+from the physical state. A measured run can return one sampled posterior
+density matrix only when `shots=1`.
 
-Use model factories for selected-site control addresses. Complex samples
-encode the two quadratures of the selected transition; the address, rather
-than ordinary program targets, identifies the site:
+## Add direct controls
+
+Use `model.control.raman(site)` for the `|0> <-> |1>` transition and
+`model.control.rydberg(site)` for the `|1> <-> |r>` transition. Both channels
+accept complex angular-rate samples in `rad/us`.
 
 ```{doctest}
->>> direct = ops.PulseOperation(
-...     0.5,
-...     (
-...         fq.emulator.PulseControl(
-...             model.control.raman(0),
-...             fq.emulator.SampledWaveform((0.0, 0.5), (0.2, 0.2j)),
-...         ),
-...         fq.emulator.PulseControl(
-...             model.control.rydberg(1),
-...             fq.emulator.SampledWaveform((0.0, 0.5), (0.1, 0.1)),
-...         ),
-...     ),
+>>> waveform = fq.emulator.SampledWaveform(
+...     (0.0, 0.25, 0.5),
+...     (0.0, 0.2, 0.0),
 ... )
+>>> channel = model.control.raman(0)
+>>> control = fq.emulator.PulseControl(channel, waveform, start_offset=0.0)
+>>> operation = ops.PulseOperation(duration=0.5, controls=(control,))
 >>> direct_program = fq.Program(2)
->>> direct_program.add(direct)
+>>> direct_program.add(operation)
 >>> backend.run(direct_program).result().get_density_matrix().shape
 (9, 9)
 ```
 
-Direct and calibrated operations can coexist in one program. Raman and
-Rydberg control addresses are structural by site ordinal, so the same authored
-operation can be reused with another compatible arrangement containing that
-site.
+Direct controls and calibrated gates can coexist. A channel can also be reused
+with another three-level atom model when its site exists there.
 
-## Run configuration and results
+## Physics and timing
 
-`simulation_config` accepts only:
-
-- `seed`: an integer seed for physical measurement and readout sampling;
-- `schedule_mode`: `"ASAP"` by default or `"ALAP"`.
-
-`result_config` accepts `counts` and `final_state`. Measurement makes counts
-the default; without measurement, the full physical density matrix is the
-default. Counts require a positive integer `shots`. A run that both samples a
-physical measurement and returns its posterior density matrix requires
-`shots == 1`, because several sampled posterior states do not define one final
-state.
-
-Physical levels are reported as `|0> -> 0`, `|1> -> 1`, and `|r> -> 1` before
-classical readout confusion. The `|r>` mapping is only a reported bit: Rydberg
-population remains coherent qutrit leakage and does not mean the atom was
-physically lost. Classical conditions consume the reported classical value,
-including any configured readout confusion.
-
-## Coherent propagators
-
-`backend.propagator(program)` returns the complete coherent `(3**N, 3**N)`
-operator. It accepts gate programs without measurement, reset, or classical
-conditions. The default `apply_final_frame=True` includes terminal virtual
-frame corrections; set it to `False` to inspect the raw physical evolution
-before the remaining frame ledger is composed.
-
-Binary readout confusion is inert for a propagator because no measurement
-boundary exists.
-
-## Physics and geometry
-
-The physical model uses `|0>` and `|1>` as the computational subspace and
-drives `|1> <-> |r>` for the Rydberg gate. Its interaction drift is
+The Rydberg interaction is
 
 ```{math}
 \sum_{i<j} \frac{C_6}{R_{ij}^6} n_i^r n_j^r.
 ```
 
-The signed interaction includes every occupied pair, not only the targets of
-a requested `CZ`. A parallel layer of disjoint CZ gates therefore still has
-cross-pair interaction while Rydberg population is present. This is physical
-crosstalk, not an unintended all-to-all effective gate.
+Every site pair contributes while Rydberg population is present, including
+pairs that are not the targets of the same `CZ`. Changing the spacing changes
+this interaction and may change gate fidelity; the packaged CZ pulse is not
+automatically retuned.
 
-The built-in phase-modulated CZ recipe is fixed. Changing spacing changes
-`R_ij`, the interaction, and potentially the fidelity, but the backend does
-not optimize, retune, reject, or warn about that pulse.
+Use `backend.propagator(program)` for a coherent `(3**N, 3**N)` operator.
+Measurement, reset, conditions, and nonzero-duration Lindblad evolution are
+rejected. Terminal virtual-frame corrections are included by default.
 
-## Noise and current boundary
+`run()` supports `"ASAP"` and `"ALAP"` scheduling and classical conditions.
+A false condition skips the operation's controls while elapsed time, drift,
+and background noise continue.
 
-Binary `2 x 2` classical readout-confusion matrices are supported directly.
-The default Lindblad implementation map is empty, so physical channel
-descriptors reject unless the user supplies a map. A supplied map can enable
-registered `3 x 3` local qutrit collapse operators from authored generator
-declarations. `operation=...` limits a generator to matching blocks; omitting
-it declares target-local background noise. Finite probabilities are rejected
-rather than converted with a realized duration. Qutrit amplitude damping needs
-two adjacent-transition rates. Use `backend.check_noise_support(noise_model)` to
-inspect the effective instance capability without executing a program.
+## Add noise
 
-Physical atom loss, occupancy changes, Rydberg `T1`, quasi-static `T2_star`,
-intermediate-state scattering, adjacent Rydberg levels, and position
-fluctuation are not modeled in the current three-level system. `T2_star` is a
-measured aggregate reserved for a later stochastic model, not a synonym for
-one modeled Doppler term.
+The default three-level Lindblad map is empty. Pass a
+{py:class}`~fatqat.noise.LindbladImplementationMap` to enable compatible local
+rate- or time-form declarations. Qutrit amplitude damping needs two adjacent
+transition rates. Rates use inverse microseconds and relaxation times use
+microseconds.
 
-The three-level emulator accepts a public `PulseImplementationMap`. Standard
-maps come from `default_atom_3level_gate_implementation_map(model=...,
-calibration=...)`; custom operand-aware rules receive plain site ordinals in
-`device_operands` and return claim-free `PulseDefinition` values using public
-`frame()`, `model.control.raman()`, and `model.control.rydberg()` structural
-addresses.
-Direct control continues to bypass gate-map lookup. Package defaults are
-nominal simulation baselines rather than hardware-fidelity guarantees; use a
-complete separate calibration document for custom values instead of patching
-the packaged JSON.
+Binary {py:class}`~fatqat.noise.ReadoutConfusion` remains available without a
+Lindblad map. Probability-form channels are not converted to rates. See
+{ref}`noise-emulator-support` for supported forms and
+{ref}`pulse-probability-noise` for why pulse emulators require rates.

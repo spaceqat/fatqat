@@ -1,4 +1,4 @@
-"""Solver-free values shared by pulse authoring and emulator lowering."""
+"""Public pulse-control values shared by emulator families."""
 
 from __future__ import annotations
 
@@ -13,13 +13,11 @@ TIME_EPSILON = 1e-12
 
 
 class ControlChannel:
-    """Nominal base for immutable model-family control-channel addresses.
+    """Base type for a control channel returned by an emulator model.
 
-    Obtain concrete addresses from a model's ``control`` selectors. Each
-    address identifies the physical resource or resources driven by a
-    :class:`~fatqat.emulator.PulseControl`. The selected emulator resolves that
-    address against its physical model during program preparation;
-    :class:`~fatqat.ResourceLayout` does not remap it.
+    Use the selectors under ``model.control`` to obtain a channel; do not
+    construct this base class directly. A channel names the physical resource
+    driven by a ``PulseControl`` and is not changed by ``ResourceLayout``.
     """
 
     __slots__ = ()
@@ -27,25 +25,38 @@ class ControlChannel:
 
 @dataclass(frozen=True)
 class PulseControl:
-    """Bind one physical control-channel address to an immutable waveform.
+    """Assign a sampled waveform to one physical control channel.
 
-    Obtain ``channel`` from a model's ``control`` selectors. The selected
-    emulator resolves it against the physical model during preparation;
-    :class:`~fatqat.ResourceLayout` does not remap it. Controls are immutable
-    and reusable with compatible models. ``start_offset`` is measured from the
-    enclosing pulse operation's local origin.
+    Obtain ``channel`` from a compatible model's ``control`` selectors.
+    Channels may be reused with another model of the same family when that
+    model contains the named resources. The emulator checks the channel,
+    waveform values, and model-specific limits when the control is used.
 
     Args:
-        channel: Structural address returned by a model's ``control`` selector;
-            identifies the physical resource or resources to drive.
-        waveform: Backend-independent immutable waveform to bind.
-        start_offset: Non-negative local offset from the enclosing operation's
-            origin, in the model's native time unit.
+        channel: Physical channel returned by ``model.control``.
+        waveform: ``SampledWaveform`` applied to the channel.
+        start_offset: Finite non-negative delay from the start of the enclosing
+            pulse block, in the model's time unit. The default is ``0.0``.
 
     Raises:
-        TypeError: If ``channel`` or ``waveform`` has the wrong nominal type,
-            or ``start_offset`` is not a real number.
+        TypeError: If ``channel`` or ``waveform`` has an unsupported type, or
+            ``start_offset`` is not a real number. Booleans are rejected.
         ValueError: If ``start_offset`` is negative or non-finite.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> model = fq.emulator.TransmonModel.from_document(
+        ...     fq.emulator.load_model_document("transmon.reference")
+        ... )
+        >>> control = fq.emulator.PulseControl(
+        ...     model.control.drive("q0"),
+        ...     fq.emulator.SampledWaveform(
+        ...         (0.0, 0.5, 1.0), (0.0, 1.0j, 0.0)
+        ...     ),
+        ...     start_offset=0.25,
+        ... )
+        >>> control.start_offset
+        0.25
     """
 
     channel: ControlChannel

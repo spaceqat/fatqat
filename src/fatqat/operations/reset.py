@@ -12,16 +12,16 @@ from .base import Operation
 class ResetGate(Operation):
     """Reprepare one or more target subsystems in ``|0>``.
 
-    Reset is a non-unitary instruction with no matrix or attachable noise
-    boundary. It can be conditioned through :meth:`~fatqat.Program.add`.
-    Statevector execution samples the reset branch when the target is
-    entangled; density matrix execution applies the corresponding
-    deterministic channel.
+    Reset is non-unitary and has no matrix. Selecting ``ops.Reset`` in
+    `fatqat.NoiseModel.add` raises `ValueError` because reset cannot carry
+    operation-scoped noise. It can be conditioned through `fatqat.Program.add`
+    when the backend supports feedforward.
+    For an entangled target, a statevector run samples one reset branch, while
+    a density-matrix run represents the resulting mixture directly.
 
-    Add the singleton ``ops.Reset`` without parentheses. It accepts one or
-    more distinct scalar targets of any local dimension;
-    :class:`~fatqat.RegisterView` and an empty target tuple are rejected by
-    :meth:`~fatqat.Program.add`.
+    Reset accepts one or more distinct scalar targets of any local dimension.
+    ``Program.add`` rejects
+    `fatqat.RegisterView` and an empty target tuple.
 
     Examples:
         >>> import fatqat as fq
@@ -41,6 +41,4 @@ class ResetGate(Operation):
     num_subsystems: ClassVar[int | None] = None
 
 
-# `Reset` takes no parameters, so - like the fixed gates - it is exported only
-# as a singleton value: `ops.Reset`, not `ops.Reset()`.
 Reset = ResetGate()
