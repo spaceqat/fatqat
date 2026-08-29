@@ -98,14 +98,24 @@ does not render figures because graphics output can vary across platforms.
 Tutorial pages consume checked-in runtime snapshots from `tutorial-results/`.
 Each manifest records the SHA-256 digest of its canonical tutorial source and
 every captured PNG, so the default converter fails instead of presenting stale
-results. It regenerates English prose and synchronizes only the generated
-runtime panels in the manually translated Chinese pages; it never executes a
-tutorial. After reviewing a tutorial source change, refresh all snapshots in a
-full Sphinx documentation environment (which includes scikit-learn) with:
+results. It regenerates both localized tutorial indexes from the bilingual
+`TUTORIALS` metadata, using each tutorial's selected captured figure as its card
+thumbnail. It also regenerates English tutorial prose and synchronizes only the
+generated runtime panels in the manually translated Chinese tutorial pages; it
+never executes a tutorial. After reviewing a tutorial source change, refresh
+all snapshots in a full Sphinx documentation environment (which includes
+scikit-learn) with:
 
 ```sh
 uv run --group docs python docs/mkdocs/tools/convert_tutorials.py --execute
 ```
+
+When adding a tracked `tutorials/plot_*.py` file, register it in `TUTORIALS`
+with its bilingual card metadata and add bilingual entries to `FIGURE_ALTS`.
+The converter rejects unregistered tutorial sources, then generates both index
+cards and uses captured figure 1 as the thumbnail by default. Set the
+tutorial's `thumbnail_number` only when another reviewed figure is a better
+summary of the example.
 
 Tutorial execution is deliberately opt-in because the complete suite is
 computationally expensive and graphics can differ with plotting and font

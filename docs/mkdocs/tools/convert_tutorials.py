@@ -43,9 +43,12 @@ class Tutorial:
     source_name: str
     slug: str
     title: str
+    title_zh: str
     category: str
     summary: str
+    summary_zh: str
     icon: str
+    thumbnail_number: int = 1
 
 
 @dataclass(frozen=True)
@@ -69,10 +72,15 @@ TUTORIALS = (
         source_name="plot_bell_state.py",
         slug="bell-state",
         title="Prepare and measure a Bell state",
+        title_zh="制备并测量贝尔态",
         category="Foundations",
         summary=(
             "Follow a two-qubit Bell state from exact amplitudes to seeded "
             "measurement counts and a comparison with the ideal distribution."
+        ),
+        summary_zh=(
+            "从精确振幅出发，得到固定随机种子下的测量计数，并将其与理想分布比较，"
+            "完整追踪一个两比特贝尔态。"
         ),
         icon="material-set-split",
     ),
@@ -80,10 +88,15 @@ TUTORIALS = (
         source_name="plot_vqe_h2.py",
         slug="vqe-h2",
         title="Find the ground-state energy of H₂ with VQE",
+        title_zh="使用 VQE 求解 H₂ 的基态能量",
         category="Algorithms",
         summary=(
             "Run exact, finite-shot, and noisy VQE loops for molecular hydrogen "
             "and make the variational bound and sampling uncertainty explicit."
+        ),
+        summary_zh=(
+            "对氢分子运行精确、有限采样和含噪声的 VQE 循环，明确展示变分上界与"
+            "采样不确定性。"
         ),
         icon="material-chart-bell-curve-cumulative",
     ),
@@ -91,10 +104,15 @@ TUTORIALS = (
         source_name="plot_qnn_digits.py",
         slug="qnn-digits",
         title="Recognize handwritten digits with a quantum neural network",
+        title_zh="使用量子神经网络识别手写数字",
         category="Algorithms",
         summary=(
             "Train a data-reuploading circuit to distinguish handwritten 3s and "
             "6s while evaluating a whole parameter batch with one sweep."
+        ),
+        summary_zh=(
+            "训练一个数据重上传电路来区分手写数字 3 和 6，同时通过一次扫描评估"
+            "整批参数。"
         ),
         icon="material-brain",
     ),
@@ -102,10 +120,15 @@ TUTORIALS = (
         source_name="plot_atom_array_ghz8.py",
         slug="atom-array-ghz8",
         title="Entangle eight atoms into a GHZ state",
+        title_zh="将八个原子纠缠为 GHZ 态",
         category="Neutral-atom physics",
         summary=(
             "Use dynamic Pair and Unpair operations to build an eight-atom GHZ "
             "state, then test both its correlations and coherent phase."
+        ),
+        summary_zh=(
+            "利用动态 `Pair` 和 `Unpair` 操作构建八原子 GHZ 态，然后同时检验其"
+            "关联与相干相位。"
         ),
         icon="material-atom",
     ),
@@ -113,10 +136,15 @@ TUTORIALS = (
         source_name="plot_atom2level_antiferromagnetic_chain.py",
         slug="antiferromagnetic-chain",
         title="Build antiferromagnetic correlations in a Rydberg chain",
+        title_zh="在里德伯原子链中建立反铁磁关联",
         category="Neutral-atom physics",
         summary=(
             "Design a three-stage Rydberg pulse from physical units and watch "
             "short-range antiferromagnetic order emerge in a ten-site chain."
+        ),
+        summary_zh=(
+            "从实际物理单位出发设计三阶段里德伯脉冲，观察短程反铁磁序如何在十个"
+            "格点的原子链中出现。"
         ),
         icon="material-sine-wave",
     ),
@@ -124,28 +152,89 @@ TUTORIALS = (
         source_name="plot_pxp_z2_revival.py",
         slug="pxp-z2-revival",
         title="Revivals and entanglement growth in an open PXP chain",
+        title_zh="开放 PXP 链中的复苏与纠缠增长",
         category="Neutral-atom physics",
         summary=(
             "Trotterize the constrained PXP Hamiltonian and compare many-body "
             "revivals and half-chain entropy with an independent exact solve."
         ),
+        summary_zh=(
+            "对受约束的 PXP 哈密顿量进行 Trotter 分解，并将多体复苏与半链纠缠熵"
+            "同独立的精确求解结果比较。"
+        ),
         icon="material-waveform",
     ),
 )
 
-CATEGORY_INTRODUCTIONS = {
-    "Foundations": (
-        "Start with a compact circuit whose exact state, samples, and visual "
-        "interpretation can all be checked by hand."
-    ),
-    "Algorithms": (
-        "Build parameterized programs once, then use optimizers, sweeps, and "
-        "estimators to answer chemistry and machine-learning questions."
-    ),
-    "Neutral-atom physics": (
-        "Move from programmable connectivity to continuous-time Rydberg dynamics "
-        "and constrained many-body evolution."
-    ),
+CATEGORY_CONTENT = {
+    "Foundations": {
+        "en": (
+            "Foundations",
+            "Start with a compact circuit whose exact state, samples, and visual "
+            "interpretation can all be checked by hand.",
+        ),
+        "zh": (
+            "基础",
+            "从一个紧凑的量子电路入手：其精确态、采样结果与可视化解读都可以手工验证。",
+        ),
+    },
+    "Algorithms": {
+        "en": (
+            "Algorithms",
+            "Build parameterized programs once, then use optimizers, sweeps, and "
+            "estimators to answer chemistry and machine-learning questions.",
+        ),
+        "zh": (
+            "算法",
+            "一次构建参数化程序，再通过优化器、扫描与估计器回答量子化学和机器学习问题。",
+        ),
+    },
+    "Neutral-atom physics": {
+        "en": (
+            "Neutral-atom physics",
+            "Move from programmable connectivity to continuous-time Rydberg dynamics "
+            "and constrained many-body evolution.",
+        ),
+        "zh": (
+            "中性原子物理",
+            "从可编程连接逐步走向连续时间里德伯动力学与受约束的多体演化。",
+        ),
+    },
+}
+
+INDEX_CONTENT = {
+    "en": {
+        "title": "Tutorials",
+        "description": (
+            "Executable fatqat case studies, from first circuits to many-body dynamics."
+        ),
+        "introduction": (
+            "Go beyond the task-focused user guide with complete, deterministic case",
+            "studies. Each page alternates explanation and executable Python cells, and",
+            "includes the original source file for local exploration.",
+        ),
+        "tip_title": "Choose a path",
+        "tip": (
+            "Begin with the Bell state if you are new to fatqat. The algorithms",
+            "reuse the same parameter and execution model, while the neutral-atom",
+            "track moves progressively closer to many-body hardware physics.",
+        ),
+        "open_tutorial": "Open tutorial",
+    },
+    "zh": {
+        "title": "教程",
+        "description": "从入门量子电路到多体动力学的可执行 fatqat 案例研究。",
+        "introduction": (
+            "在面向具体任务的用户指南之外，这些完整且可复现的案例将带你进一步理解 fatqat。",
+            "每个页面都交替展示原理说明和可执行的 Python 单元，并附有原始源文件，便于在本地继续探索。",
+        ),
+        "tip_title": "选择学习路径",
+        "tip": (
+            "如果刚接触 fatqat，建议从贝尔态开始。算法篇会复用相同的参数与执行模型；",
+            "中性原子篇则循序渐进，逐步贴近多体硬件的真实物理。",
+        ),
+        "open_tutorial": "打开教程",
+    },
 }
 
 FIGURE_ALTS = {
@@ -799,34 +888,36 @@ def _sync_chinese_results(
     _write_text(page, text)
 
 
-def _render_index() -> str:
-    """Render the visual, category-based tutorial landing page."""
+def _render_index(locale: str) -> str:
+    """Render one localized visual, category-based tutorial landing page."""
 
+    if locale not in INDEX_CONTENT:
+        raise ValueError(f"unsupported tutorial-index locale: {locale}")
+    content = INDEX_CONTENT[locale]
+    title = content["title"]
     lines = [
         "---",
-        'title: "Tutorials"',
-        'description: "Executable fatqat case studies, from first circuits to many-body dynamics."',
+        f"title: {json.dumps(title, ensure_ascii=False)}",
+        f"description: {json.dumps(content['description'], ensure_ascii=False)}",
         "---",
         "<!-- Generated by docs/mkdocs/tools/convert_tutorials.py. -->",
         "",
-        "# Tutorials",
+        f"# {title}",
         "",
-        "Go beyond the task-focused user guide with complete, deterministic case",
-        "studies. Each page alternates explanation and executable Python cells, and",
-        "includes the original source file for local exploration.",
+        *content["introduction"],
         "",
-        '!!! tip "Choose a path"',
+        f'!!! tip "{content["tip_title"]}"',
         "",
-        "    Begin with the Bell state if you are new to fatqat. The algorithms",
-        "    reuse the same parameter and execution model, while the neutral-atom",
-        "    track moves progressively closer to many-body hardware physics.",
+        *(f"    {line}" for line in content["tip"]),
         "",
     ]
 
-    for category, introduction in CATEGORY_INTRODUCTIONS.items():
+    alt_index = 0 if locale == "en" else 1
+    for category, localized_content in CATEGORY_CONTENT.items():
+        category_title, introduction = localized_content[locale]
         lines.extend(
             (
-                f"## {category}",
+                f"## {category_title}",
                 "",
                 introduction,
                 "",
@@ -837,15 +928,38 @@ def _render_index() -> str:
         for tutorial in TUTORIALS:
             if tutorial.category != category:
                 continue
+            thumbnail_index = tutorial.thumbnail_number - 1
+            figure_alts = FIGURE_ALTS.get(tutorial.slug)
+            if not figure_alts:
+                raise ValueError(
+                    f"{tutorial.slug}: add localized FIGURE_ALTS before publishing "
+                    "its tutorial card"
+                )
+            if thumbnail_index not in range(len(figure_alts)):
+                raise ValueError(
+                    f"{tutorial.slug}: thumbnail {tutorial.thumbnail_number} does not "
+                    f"match {len(figure_alts)} captured figures"
+                )
+            thumbnail_name = f"{tutorial.slug}-{tutorial.thumbnail_number:02d}.png"
+            thumbnail_alt = figure_alts[thumbnail_index][alt_index]
+            tutorial_title = tutorial.title if locale == "en" else tutorial.title_zh
+            tutorial_summary = (
+                tutorial.summary if locale == "en" else tutorial.summary_zh
+            )
             lines.extend(
                 (
-                    f"-   :{tutorial.icon}:{{ .lg .middle }} **{tutorial.title}**",
+                    f"-   [![{thumbnail_alt}]"
+                    f"(../assets/generated/tutorials/{thumbnail_name})"
+                    f"{{ loading=lazy }}]({tutorial.slug}.md)",
+                    "",
+                    f"    :{tutorial.icon}:{{ .lg .middle }} **{tutorial_title}**",
                     "",
                     "    ---",
                     "",
-                    f"    {tutorial.summary}",
+                    f"    {tutorial_summary}",
                     "",
-                    f"    [:material-arrow-right: Open tutorial]({tutorial.slug}.md)",
+                    f"    [:material-arrow-right: {content['open_tutorial']}]"
+                    f"({tutorial.slug}.md)",
                     "",
                 )
             )
@@ -1003,6 +1117,15 @@ def capture_all() -> None:
 def convert_all() -> None:
     """Convert tutorials using checked-in results and copy exact source files."""
 
+    unknown_categories = sorted(
+        {tutorial.category for tutorial in TUTORIALS} - set(CATEGORY_CONTENT)
+    )
+    if unknown_categories:
+        raise ValueError(
+            "tutorial categories need localized index content: "
+            + ", ".join(unknown_categories)
+        )
+
     expected_sources = {tutorial.source_name for tutorial in TUTORIALS}
     actual_sources = {path.name for path in SOURCE_ROOT.glob("plot_*.py")}
     if actual_sources != expected_sources:
@@ -1014,8 +1137,10 @@ def convert_all() -> None:
         )
 
     PAGE_ROOT.mkdir(parents=True, exist_ok=True)
+    ZH_PAGE_ROOT.mkdir(parents=True, exist_ok=True)
     DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
-    _write_text(PAGE_ROOT / "index.md", _render_index())
+    _write_text(PAGE_ROOT / "index.md", _render_index("en"))
+    _write_text(ZH_PAGE_ROOT / "index.md", _render_index("zh"))
 
     for tutorial in TUTORIALS:
         source = SOURCE_ROOT / tutorial.source_name

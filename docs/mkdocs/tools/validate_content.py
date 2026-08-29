@@ -14,7 +14,11 @@ LOCALE_ROOTS = {
     "zh": MKDOCS_ROOT / "zh",
 }
 
-MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\(([^)\n]+)\)")
+MARKDOWN_DESTINATION = re.compile(
+    r"\[!\[[^\]]*\]\((?P<linked_image>[^)\n]+)\)"
+    r"(?:\{[^}\n]*\})?\]\((?P<linked_target>[^)\n]+)\)"
+    r"|!?\[[^\]]*\]\((?P<destination>[^)\n]+)\)"
+)
 FRONT_MATTER = re.compile(r"\A---\r?\n(?P<yaml>.*?)\r?\n---(?:\r?\n|\Z)", re.DOTALL)
 HOME_TEMPLATE_DESTINATION = re.compile(
     r'<(?:a|img)\b[^>]*?(?:href|src)="\{\{\s*["\'](?P<destination>[^"\']+)'
@@ -76,12 +80,33 @@ def _tutorial_code_cells(page: Path) -> list[tuple[int, str]]:
     ]
 
 
+def _markdown_destination_locations(text: str) -> list[tuple[int, str]]:
+    """Return offsets and destinations, including both halves of linked images."""
+
+    destinations: list[tuple[int, str]] = []
+    for match in MARKDOWN_DESTINATION.finditer(text):
+        if linked_image := match.group("linked_image"):
+            destinations.append(
+                (match.start(), _markdown_destination(linked_image))
+            )
+            destinations.append(
+                (match.start(), _markdown_destination(match.group("linked_target")))
+            )
+        else:
+            destinations.append(
+                (match.start(), _markdown_destination(match.group("destination")))
+            )
+    return destinations
+
+
 def _markdown_destinations(page: Path) -> list[str]:
     """Return ordered inline-link and image destinations from one page."""
 
     return [
-        _markdown_destination(match.group(1))
-        for match in MARKDOWN_LINK.finditer(page.read_text(encoding="utf-8"))
+        destination
+        for _, destination in _markdown_destination_locations(
+            page.read_text(encoding="utf-8")
+        )
     ]
 
 
@@ -162,10 +187,14 @@ def validate() -> list[str]:
                 f"{relative.as_posix()}"
             )
 
-    if _markdown_destinations(english / "index.md") != _markdown_destinations(
-        chinese / "index.md"
+    for relative, label in (
+        (Path("index.md"), "Homepage"),
+        (Path("tutorials/index.md"), "Tutorial index"),
     ):
-        errors.append("Homepage link and image destinations differ between locales")
+        if _markdown_destinations(english / relative) != _markdown_destinations(
+            chinese / relative
+        ):
+            errors.append(f"{label} link and image destinations differ between locales")
 
     home_template = MKDOCS_ROOT / "overrides" / "home.html"
     template_text = home_template.read_text(encoding="utf-8")
@@ -230,10 +259,9 @@ def validate() -> list[str]:
             text = page.read_text(encoding="utf-8")
             if locale == "zh" and not CJK.search(text):
                 errors.append(f"Chinese page has no CJK text: {relative.as_posix()}")
-            for match in MARKDOWN_LINK.finditer(text):
-                destination = _markdown_destination(match.group(1))
+            for offset, destination in _markdown_destination_locations(text):
                 if not _local_target_exists(page, root, destination):
-                    line = text.count("\n", 0, match.start()) + 1
+                    line = text.count("\n", 0, offset) + 1
                     errors.append(
                         f"Broken local link in {locale}/{relative.as_posix()}:{line}: "
                         f"{destination}"

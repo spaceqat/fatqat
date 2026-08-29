@@ -22,7 +22,9 @@ Start with a compact circuit whose exact state, samples, and visual interpretati
 
 <div class="grid cards" markdown>
 
--   :material-set-split:{ .lg .middle } **Prepare and measure a Bell state**
+-   [![Seeded Bell-state measurement frequencies compared with the ideal distribution](../assets/generated/tutorials/bell-state-01.png){ loading=lazy }](bell-state.md)
+
+    :material-set-split:{ .lg .middle } **Prepare and measure a Bell state**
 
     ---
 
@@ -38,7 +40,9 @@ Build parameterized programs once, then use optimizers, sweeps, and estimators t
 
 <div class="grid cards" markdown>
 
--   :material-chart-bell-curve-cumulative:{ .lg .middle } **Find the ground-state energy of H₂ with VQE**
+-   [![Exact VQE convergence trace](../assets/generated/tutorials/vqe-h2-01.png){ loading=lazy }](vqe-h2.md)
+
+    :material-chart-bell-curve-cumulative:{ .lg .middle } **Find the ground-state energy of H₂ with VQE**
 
     ---
 
@@ -46,7 +50,9 @@ Build parameterized programs once, then use optimizers, sweeps, and estimators t
 
     [:material-arrow-right: Open tutorial](vqe-h2.md)
 
--   :material-brain:{ .lg .middle } **Recognize handwritten digits with a quantum neural network**
+-   [![Average-pooled handwritten digit inputs](../assets/generated/tutorials/qnn-digits-01.png){ loading=lazy }](qnn-digits.md)
+
+    :material-brain:{ .lg .middle } **Recognize handwritten digits with a quantum neural network**
 
     ---
 
@@ -62,7 +68,9 @@ Move from programmable connectivity to continuous-time Rydberg dynamics and cons
 
 <div class="grid cards" markdown>
 
--   :material-atom:{ .lg .middle } **Entangle eight atoms into a GHZ state**
+-   [![Eight-atom GHZ measurement frequencies](../assets/generated/tutorials/atom-array-ghz8-01.png){ loading=lazy }](atom-array-ghz8.md)
+
+    :material-atom:{ .lg .middle } **Entangle eight atoms into a GHZ state**
 
     ---
 
@@ -70,7 +78,9 @@ Move from programmable connectivity to continuous-time Rydberg dynamics and cons
 
     [:material-arrow-right: Open tutorial](atom-array-ghz8.md)
 
--   :material-sine-wave:{ .lg .middle } **Build antiferromagnetic correlations in a Rydberg chain**
+-   [![Three-stage Rydberg pulse schedule](../assets/generated/tutorials/antiferromagnetic-chain-01.png){ loading=lazy }](antiferromagnetic-chain.md)
+
+    :material-sine-wave:{ .lg .middle } **Build antiferromagnetic correlations in a Rydberg chain**
 
     ---
 
@@ -78,7 +88,9 @@ Move from programmable connectivity to continuous-time Rydberg dynamics and cons
 
     [:material-arrow-right: Open tutorial](antiferromagnetic-chain.md)
 
--   :material-waveform:{ .lg .middle } **Revivals and entanglement growth in an open PXP chain**
+-   [![PXP revival fidelities, entanglement entropy, and site occupations](../assets/generated/tutorials/pxp-z2-revival-01.png){ loading=lazy }](pxp-z2-revival.md)
+
+    :material-waveform:{ .lg .middle } **Revivals and entanglement growth in an open PXP chain**
 
     ---
 
