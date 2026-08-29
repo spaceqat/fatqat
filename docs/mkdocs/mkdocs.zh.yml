@@ -11,14 +11,14 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
+      primary: blue grey
       accent: cyan
       toggle:
         icon: material/brightness-7
         name: 切换至深色模式
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
+      primary: blue grey
       accent: cyan
       toggle:
         icon: material/brightness-4
