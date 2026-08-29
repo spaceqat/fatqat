@@ -67,6 +67,15 @@ def _tutorial_code_cells(page: Path) -> list[tuple[int, str]]:
     ]
 
 
+def _markdown_destinations(page: Path) -> list[str]:
+    """Return ordered inline-link and image destinations from one page."""
+
+    return [
+        _markdown_destination(match.group(1))
+        for match in MARKDOWN_LINK.finditer(page.read_text(encoding="utf-8"))
+    ]
+
+
 def validate() -> list[str]:
     errors: list[str] = []
     english = LOCALE_ROOTS["en"]
@@ -130,6 +139,11 @@ def validate() -> list[str]:
                 "Translated tutorial code differs from English: "
                 f"{relative.as_posix()}"
             )
+
+    if _markdown_destinations(english / "index.md") != _markdown_destinations(
+        chinese / "index.md"
+    ):
+        errors.append("Homepage link and image destinations differ between locales")
 
     for locale, root in LOCALE_ROOTS.items():
         for relative in sorted(markdown_paths[locale]):

@@ -1,0 +1,235 @@
+.fatqat-home__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(18rem, 0.92fr);
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: center;
+  margin: 0.5rem 0 2rem;
+}
+
+.fatqat-home__hero-copy {
+  min-width: 0;
+}
+
+.fatqat-home__eyebrow {
+  margin: 0 0 0.55rem;
+  color: var(--md-primary-fg-color);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.fatqat-home__hero-copy h1 {
+  max-width: 13ch;
+  margin: 0 0 0.9rem;
+  color: var(--md-default-fg-color);
+  font-size: clamp(2.15rem, 5vw, 3.45rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.04;
+}
+
+.fatqat-home__hero-copy h1 .headerlink {
+  display: none;
+}
+
+.fatqat-home__summary {
+  max-width: 40rem;
+  margin-bottom: 1.25rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 1.05rem;
+}
+
+.fatqat-home__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin: 1.2rem 0 0;
+}
+
+.fatqat-home__actions .md-button {
+  display: inline-flex;
+  min-height: 2.65rem;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.fatqat-home__requirements {
+  margin: 0.7rem 0 0;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.78rem;
+}
+
+.fatqat-home__model {
+  min-width: 0;
+  padding: 1rem;
+  border: 0.05rem solid var(--md-default-fg-color--lightest);
+  border-radius: 0.6rem;
+  background: var(--md-default-bg-color);
+  box-shadow: var(--md-shadow-z1);
+}
+
+.fatqat-home__model-node {
+  padding: 0.65rem 0.8rem;
+  border: 0.08rem solid var(--md-primary-fg-color);
+  border-radius: 0.4rem;
+  background: var(--md-code-bg-color);
+  color: var(--md-default-fg-color);
+  text-align: center;
+}
+
+.fatqat-home__model-node code {
+  color: inherit;
+}
+
+.fatqat-home__model-connector {
+  width: 0.08rem;
+  height: 1rem;
+  margin: 0 auto;
+  background: var(--md-default-fg-color--lighter);
+}
+
+.fatqat-home__model-choice {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.fatqat-home__model-choice::before,
+.fatqat-home__model-choice::after {
+  min-width: 0;
+  height: 0.05rem;
+  flex: 1 1 auto;
+  background: var(--md-default-fg-color--lighter);
+  content: "";
+}
+
+.fatqat-home__model-targets {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.fatqat-home__model-target {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.62rem 0.72rem;
+  border: 0.05rem solid var(--md-default-fg-color--lightest);
+  border-radius: 0.4rem;
+  background: var(--md-default-bg-color);
+}
+
+.fatqat-home__model-target > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fatqat-home__model-target strong {
+  font-size: 0.78rem;
+}
+
+.fatqat-home__model-target span {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.7rem;
+}
+
+.fatqat-home__benefits {
+  margin: 0 0 2.4rem;
+}
+
+.fatqat-home__workflow {
+  align-items: stretch;
+}
+
+.fatqat-home__workflow > * {
+  min-width: 0;
+  margin: 0;
+}
+
+.fatqat-home__workflow .highlight,
+.fatqat-home__workflow pre {
+  height: 100%;
+  margin: 0;
+}
+
+.fatqat-home__workflow pre {
+  min-height: 20rem;
+}
+
+.fatqat-home__workflow-result {
+  display: flex;
+  min-height: 20rem;
+  flex-direction: column;
+  justify-content: center;
+  padding: 1rem;
+  border: 0.05rem solid var(--md-default-fg-color--lightest);
+  border-radius: 0.4rem;
+  background: #fff;
+}
+
+.fatqat-home__workflow-result img {
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+
+.fatqat-home__workflow-caption {
+  margin: 0.65rem 0 0;
+  color: #444;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.fatqat-home__destinations {
+  margin-bottom: 1rem;
+}
+
+.md-typeset .grid.fatqat-home__destinations {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media screen and (max-width: 59.984375em) {
+  .fatqat-home__hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fatqat-home__hero-copy h1 {
+    max-width: 17ch;
+  }
+
+  .md-typeset .grid.fatqat-home__destinations {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media screen and (max-width: 37.5em) {
+  .fatqat-home__actions {
+    display: grid;
+  }
+
+  .fatqat-home__actions .md-button {
+    width: 100%;
+  }
+
+  .fatqat-home__model-target {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
+  }
+
+  .md-typeset .grid.fatqat-home__destinations {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fatqat-home__workflow pre,
+  .fatqat-home__workflow-result {
+    min-height: 0;
+  }
+}

@@ -62,10 +62,10 @@ can expose warnings without failing. CI always uses the strict default.
 
 Each combined build first runs `tools/validate_content.py`. It checks that the
 locale trees expose the same Markdown, asset, and download paths; every Chinese
-page contains translated text; local Markdown links resolve; executable
-tutorial downloads and displayed code remain byte-for-byte identical; and
-captured tutorial figures match across locales. Run it directly for a fast
-content-only check:
+page contains translated text; homepage destinations stay aligned; local
+Markdown links resolve; executable tutorial downloads and displayed code remain
+byte-for-byte identical; and captured tutorial figures match across locales.
+Run it directly for a fast content-only check:
 
 ```sh
 python docs/mkdocs/tools/validate_content.py
@@ -82,6 +82,12 @@ python docs/mkdocs/tools/convert_api.py
 python docs/mkdocs/tools/convert_guides.py
 python docs/mkdocs/tools/convert_tutorials.py
 ```
+
+The two root `index.md` files are manually maintained, theme-specific Material
+landing pages. Keep their product story aligned with the Sphinx homepage, but
+use native Material components and maintain the Chinese translation alongside
+the English page. `convert_guides.py` intentionally owns only `guide/**` and
+does not overwrite either homepage.
 
 Pass `--render` to `convert_guides.py` only when its trusted plot blocks or
 figure inputs change and the committed PNGs need refreshing. CI deliberately

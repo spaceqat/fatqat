@@ -322,55 +322,6 @@ def convert_page(text: str, page_name: str, render: bool) -> str:
     return text
 
 
-def home_page(source: str) -> str:
-    intro = source.split("::::{grid}", 1)[0].rstrip()
-    workflow_marker = "Here is the complete circuit-level workflow:"
-    lead, workflow = intro.split(workflow_marker, 1)
-    cards = """
-<div class="grid cards" markdown>
-
--   :material-play-circle-outline: **[Run your first Program](guide/quickstart.md)**
-
-    Build and draw the Bell circuit, run it, and turn its counts into a figure.
-
--   :material-transit-connection-variant: **[Learn the Program](guide/program.md)**
-
-    Add registers, measurements, conditions, parameters, qudits, and mixed local
-    dimensions without changing authoring models.
-
--   :material-source-branch: **[Choose the modeling level](guide/execution-models.md)**
-
-    Compare general simulation, a hardware profile, and Hamiltonian-level
-    emulation using one Program.
-
--   :material-sine-wave: **[Study hardware behavior](guide/hardware-profile-simulation.md)**
-
-    Work with native gates, layouts, connectivity, pulse controls, leakage, and
-    physical models.
-
--   :material-flask-outline: **[Work through tutorials](tutorials/index.md)**
-
-    Continue into complete algorithm and physics case studies with downloadable
-    sources.
-
--   :material-format-list-bulleted: **[Look up the API](api/index.md)**
-
-    Find exact signatures, supported operations, shapes, units, and validation
-    rules.
-
-</div>
-"""
-    return (
-        convert_inline_markup(lead).rstrip()
-        + "\n\n"
-        + cards.strip()
-        + "\n\n## One Program from authoring to result\n\n"
-        + workflow_marker
-        + convert_inline_markup(workflow)
-        + "\n"
-    )
-
-
 def guide_index(source: str, render: bool) -> str:
     # Render the three original illustrations before replacing the Sphinx grid.
     convert_plot_blocks(source, "guide-index", render)
@@ -435,9 +386,6 @@ def write_guides(render: bool) -> None:
     sys.path.insert(0, str(REPO_ROOT / "src"))
     EN_ROOT.mkdir(parents=True, exist_ok=True)
     (EN_ROOT / "guide").mkdir(parents=True, exist_ok=True)
-
-    source_home = (SPHINX_ROOT / "index.md").read_text(encoding="utf-8")
-    (EN_ROOT / "index.md").write_text(home_page(source_home), encoding="utf-8")
 
     source_index = (SPHINX_ROOT / "guide" / "index.md").read_text(encoding="utf-8")
     converted_index = convert_page(
