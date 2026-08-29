@@ -13,31 +13,32 @@ def render(output: Path) -> tuple[str, ...]:
 
     import matplotlib.pyplot as plt
 
+    import fatqat as fq
+    import fatqat.operations as ops
+
+    ansatz = fq.Program(5)
+    first_rx = [fq.Parameter(f"x0_{qubit}") for qubit in range(5)]
+    first_ry = [fq.Parameter(f"y0_{qubit}") for qubit in range(5)]
+    second_rx = [fq.Parameter(f"x1_{qubit}") for qubit in range(5)]
+    second_ry = [fq.Parameter(f"y1_{qubit}") for qubit in range(5)]
+
+    for qubit, angle in enumerate(first_rx):
+        ansatz.add(ops.RX(angle), qubit)
+    for qubit, angle in enumerate(first_ry):
+        ansatz.add(ops.RY(angle), qubit)
+    for pair in ((0, 1), (2, 3)):
+        ansatz.add(ops.CZ, pair)
+    for pair in ((1, 2), (3, 4)):
+        ansatz.add(ops.CZ, pair)
+    ansatz.add(ops.Barrier, tuple(range(5)))
+    for qubit, angle in enumerate(second_rx):
+        ansatz.add(ops.RX(angle), qubit)
+    for qubit, angle in enumerate(second_ry):
+        ansatz.add(ops.RY(angle), qubit)
+
     fig, ax = plt.subplots(figsize=(4.7, 2.4))
-    for qubit in range(5):
-        ax.plot((0.25, 7.75), (qubit, qubit), color="0.55", linewidth=1.0)
-        ax.text(0.05, qubit, f"q{qubit}", ha="right", va="center", fontsize=8)
-    for column, label in ((1.0, "RX"), (2.0, "RY"), (5.9, "RX"), (6.9, "RY")):
-        for qubit in range(5):
-            ax.text(
-                column,
-                qubit,
-                label,
-                ha="center",
-                va="center",
-                fontsize=7.5,
-                color="white",
-                bbox={"boxstyle": "round,pad=0.28", "fc": "C0", "ec": "C0"},
-            )
-    for column, pairs in ((3.0, ((0, 1), (2, 3))), (4.1, ((1, 2), (3, 4)))):
-        for lower, upper in pairs:
-            ax.plot((column, column), (lower, upper), color="C3", linewidth=1.4)
-            ax.scatter((column, column), (lower, upper), s=24, color="C3", zorder=3)
-    ax.axvline(5.0, color="0.45", linestyle=(0, (2, 2)), linewidth=1.0)
-    ax.text(5.0, 4.45, "layer", ha="center", va="bottom", fontsize=7, color="0.35")
+    ansatz.draw(ax=ax)
     ax.set_title("5-qubit VQA ansatz", fontsize=10.5, pad=4)
-    ax.set(xlim=(-0.25, 8.0), ylim=(4.65, -0.65))
-    ax.axis("off")
     fig.tight_layout(pad=0.25)
     name = "guide-path-algorithm.png"
     fig.savefig(
