@@ -19,7 +19,10 @@ from typing import Mapping, Sequence
 HERE = Path(__file__).resolve().parent
 REPOSITORY_ROOT = HERE.parents[1]
 SITE_ROOT = HERE / "site"
-CONFIGURATIONS = (HERE / "mkdocs.en.yml", HERE / "mkdocs.zh.yml")
+CONFIGURATIONS = (
+    ("en", HERE / "mkdocs.en.yml"),
+    ("zh", HERE / "mkdocs.zh.yml"),
+)
 CONTENT_VALIDATOR = HERE / "tools" / "validate_content.py"
 
 LANDING_PAGE = """<!doctype html>
@@ -56,8 +59,15 @@ LANDING_PAGE = """<!doctype html>
 """
 
 
-def _run_mkdocs(config: Path, *, strict: bool, environment: Mapping[str, str]) -> None:
+def _run_mkdocs(
+    config: Path,
+    *,
+    site_dir: Path,
+    strict: bool,
+    environment: Mapping[str, str],
+) -> None:
     command = [sys.executable, "-m", "mkdocs", "build", "-f", str(config)]
+    command.extend(("--site-dir", str(site_dir)))
     if strict:
         command.append("--strict")
     subprocess.run(command, cwd=REPOSITORY_ROOT, env=environment, check=True)
@@ -77,11 +87,11 @@ class _IdParser(HTMLParser):
             self.ids[identifier] += 1
 
 
-def _validate_unique_html_ids() -> None:
+def _validate_unique_html_ids(site_root: Path) -> None:
     """Reject ambiguous fragments in generated pages."""
 
     failures: list[str] = []
-    pages = sorted(SITE_ROOT.rglob("*.html"))
+    pages = sorted(site_root.rglob("*.html"))
     for page in pages:
         parser = _IdParser()
         parser.feed(page.read_text(encoding="utf-8"))
@@ -92,7 +102,7 @@ def _validate_unique_html_ids() -> None:
             preview = ", ".join(duplicates[:8])
             suffix = "..." if len(duplicates) > 8 else ""
             failures.append(
-                f"{page.relative_to(SITE_ROOT)}: duplicate IDs {preview}{suffix}"
+                f"{page.relative_to(site_root)}: duplicate IDs {preview}{suffix}"
             )
 
     if failures:
@@ -111,7 +121,11 @@ def _remove_readonly(
 
 
 def build_site(
-    *, strict: bool = True, environment_overrides: Mapping[str, str] | None = None
+    *,
+    strict: bool = True,
+    site_root: Path = SITE_ROOT,
+    site_url: str | None = None,
+    environment_overrides: Mapping[str, str] | None = None,
 ) -> None:
     """Build both locales and add the root language-selection page."""
 
@@ -121,29 +135,51 @@ def build_site(
         check=True,
     )
 
-    if SITE_ROOT.exists():
-        shutil.rmtree(SITE_ROOT, onexc=_remove_readonly)
-    SITE_ROOT.mkdir(parents=True)
+    if site_root.exists():
+        shutil.rmtree(site_root, onexc=_remove_readonly)
+    site_root.mkdir(parents=True)
 
     environment = os.environ.copy()
+    if site_url:
+        base_url = site_url.rstrip("/")
+        english_url = f"{base_url}/en/"
+        chinese_url = f"{base_url}/zh/"
+        environment.update(
+            {
+                "FATQAT_MKDOCS_EN_SITE_URL": english_url,
+                "FATQAT_MKDOCS_ZH_SITE_URL": chinese_url,
+                "FATQAT_MKDOCS_EN_LINK": english_url,
+                "FATQAT_MKDOCS_ZH_LINK": chinese_url,
+            }
+        )
     if environment_overrides:
         environment.update(environment_overrides)
 
-    for config in CONFIGURATIONS:
-        _run_mkdocs(config, strict=strict, environment=environment)
+    for locale, config in CONFIGURATIONS:
+        _run_mkdocs(
+            config,
+            site_dir=site_root / locale,
+            strict=strict,
+            environment=environment,
+        )
 
     missing = [
-        str(path.relative_to(HERE))
-        for path in (SITE_ROOT / "en" / "index.html", SITE_ROOT / "zh" / "index.html")
+        str(path.relative_to(site_root))
+        for path in (
+            site_root / "en" / "index.html",
+            site_root / "zh" / "index.html",
+        )
         if not path.is_file()
     ]
     if missing:
         raise RuntimeError(f"localized builds did not create: {', '.join(missing)}")
 
-    (SITE_ROOT / "index.html").write_text(LANDING_PAGE, encoding="utf-8", newline="\n")
-    (SITE_ROOT / ".nojekyll").touch()
-    _validate_unique_html_ids()
-    print(f"Combined site written to {SITE_ROOT}")
+    (site_root / "index.html").write_text(
+        LANDING_PAGE, encoding="utf-8", newline="\n"
+    )
+    (site_root / ".nojekyll").touch()
+    _validate_unique_html_ids(site_root)
+    print(f"Combined site written to {site_root}")
 
 
 def serve_site(*, host: str, port: int, strict: bool, build: bool) -> None:
@@ -185,6 +221,16 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="allow MkDocs warnings during migration",
     )
+    build_parser.add_argument(
+        "--site-dir",
+        type=Path,
+        default=SITE_ROOT,
+        help="write the combined site to this directory",
+    )
+    build_parser.add_argument(
+        "--site-url",
+        help="canonical base URL containing the en/ and zh/ sites",
+    )
 
     serve_parser = subparsers.add_parser(
         "serve", help="build and serve the combined site for cross-language review"
@@ -206,7 +252,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         if args.command == "build":
-            build_site(strict=not args.no_strict)
+            build_site(
+                strict=not args.no_strict,
+                site_root=args.site_dir.resolve(),
+                site_url=args.site_url,
+            )
         else:
             serve_site(
                 host=args.host,

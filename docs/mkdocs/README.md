@@ -38,6 +38,12 @@ python docs/mkdocs/manage.py build
 python docs/mkdocs/manage.py serve
 ```
 
+The repository's `.readthedocs.yaml` uses the same build command. Read the
+Docs supplies its output directory and canonical version URL so the combined
+site is published at the version root, with English under `en/` and Simplified
+Chinese under `zh/`. This custom HTML job is necessary because the standard
+Read the Docs MkDocs builder accepts one MkDocs configuration per build.
+
 Open <http://127.0.0.1:8000/>. The combined server is intended for checking
 language switching and final static output; it does not live-reload. For a
 single-language authoring loop, use MkDocs directly:
