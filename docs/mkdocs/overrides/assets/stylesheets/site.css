@@ -1,0 +1,63 @@
+.md-typeset .grid.cards.fatqat-guide-paths {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.md-typeset .grid.cards.fatqat-guide-paths > ul > li {
+  display: grid;
+  grid-template-areas:
+    "heading visual"
+    "summary visual"
+    "action visual";
+  grid-template-columns: minmax(0, 1.28fr) minmax(10rem, 0.72fr);
+  grid-template-rows: auto 1fr auto;
+  gap: 0.45rem 1.15rem;
+  align-items: start;
+}
+
+.md-typeset .fatqat-guide-paths > ul > li > p {
+  margin: 0;
+}
+
+.md-typeset .fatqat-guide-paths > ul > li > p:first-child {
+  display: flex;
+  grid-area: visual;
+  align-items: center;
+  align-self: stretch;
+  justify-content: center;
+}
+
+.md-typeset .fatqat-guide-paths > ul > li > p:first-child img {
+  display: block;
+  width: 100%;
+  height: 10rem;
+  object-fit: contain;
+}
+
+.md-typeset .fatqat-guide-paths > ul > li > p:nth-child(2) {
+  grid-area: heading;
+}
+
+.md-typeset .fatqat-guide-paths > ul > li > p:nth-child(3) {
+  grid-area: summary;
+}
+
+.md-typeset .fatqat-guide-paths > ul > li > p:nth-child(4) {
+  grid-area: action;
+}
+
+@media screen and (max-width: 44em) {
+  .md-typeset .grid.cards.fatqat-guide-paths > ul > li {
+    grid-template-areas:
+      "visual"
+      "heading"
+      "summary"
+      "action";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .md-typeset .fatqat-guide-paths > ul > li > p:first-child img {
+    height: auto;
+    max-height: 14rem;
+  }
+}

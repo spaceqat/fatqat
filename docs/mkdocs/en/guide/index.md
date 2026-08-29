@@ -5,7 +5,7 @@ the same backend-independent [`Program`][fatqat.Program], so moving from an
 algorithm study to a hardware or physics study does not require a second
 authoring model.
 
-<div class="grid cards" markdown>
+<div class="grid cards fatqat-guide-paths" markdown>
 
 -   ![Five-qubit variational ansatz](../assets/generated/guide/guide-path-algorithm.png){ loading=lazy width="636" height="409" }
 

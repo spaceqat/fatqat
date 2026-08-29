@@ -4,7 +4,7 @@
 [`Program`][fatqat.Program] 出发，因此从算法研究转向硬件或物理研究时，
 无需采用第二套编程模型。
 
-<div class="grid cards" markdown>
+<div class="grid cards fatqat-guide-paths" markdown>
 
 -   ![五量子比特变分拟设](../assets/generated/guide/guide-path-algorithm.png){ loading=lazy width="636" height="409" }
 
