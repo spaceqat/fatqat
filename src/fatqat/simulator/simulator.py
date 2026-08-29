@@ -1246,9 +1246,9 @@ class Simulator:
         Matrix simulators accept operation-bound probability forms for
         supported built-in descriptors. Custom descriptors need a matching
         channel rule. Background sources, built-in damping descriptors in rate
-        form, and ``ThermalRelaxation`` are rejected; convert thermal
-        relaxation with ``as_channels(duration)`` first. Only
-        ``AtomArraySimulator`` accepts ``Loss``.
+        form, and ``ThermalRelaxation`` are rejected. For a matrix simulator,
+        declare probability-form ``AmplitudeDamping`` and ``PhaseDamping``
+        channels instead. Only ``AtomArraySimulator`` accepts ``Loss``.
 
         This validates the model as a whole, not its selectors against a
         program, concrete target dimensions, or method-specific restrictions.
@@ -1305,8 +1305,9 @@ class Simulator:
                 rejection_reasons.append(
                     f"{label} is rejected by matrix-family policy because it "
                     "is a generator/time declaration; a registered channel "
-                    "implementation does not override that policy. Explicitly "
-                    "convert it with as_channels(duration)",
+                    "implementation does not override that policy. Declare "
+                    "probability-form AmplitudeDamping and PhaseDamping "
+                    "channels instead",
                 )
             elif self._channel_map.get(channel_type) is None:
                 rejection_reasons.append(

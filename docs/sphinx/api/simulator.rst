@@ -219,10 +219,12 @@ Noise
 Matrix simulation has no physical timeline. Built-in damping and depolarizing
 descriptors therefore use their probability form and apply at operation
 boundaries. Rate forms, background sources, and
-:class:`~fatqat.noise.ThermalRelaxation` are rejected; convert thermal
-relaxation with ``as_channels(duration)`` first. Custom descriptors require a
-matching channel rule. :class:`AtomArraySimulator` additionally supports atom
-loss.
+:class:`~fatqat.noise.ThermalRelaxation` are rejected. For a known qubit
+operation duration, add probability-form
+:class:`~fatqat.noise.AmplitudeDamping` and
+:class:`~fatqat.noise.PhaseDamping` descriptors to the relevant operation.
+Custom descriptors require a matching channel rule.
+:class:`AtomArraySimulator` additionally supports atom loss.
 
 :meth:`Simulator.validate_noise_model` validates a model without running a
 program. A method can still impose a stricter rule: for example, ``unitary``

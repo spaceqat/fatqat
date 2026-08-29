@@ -273,14 +273,31 @@ def test_backend_is_ideal_by_default():
     assert counts == {"1": 100}  # SX SX = X up to phase, no noise
 
 
-def test_default_noise_model_is_fully_supported():
+def test_default_noise_model_is_supported_and_calibrated():
     model = SCQubitIBMSimulator.default_noise_model()
+    sources = model._noise_sources()
     assert SCQubitIBMSimulator().validate_noise_model(model) is None
-    assert {type(source) for source, _operation in model._noise_sources()} == {
+    assert {type(source) for source, _operation in sources} == {
         AmplitudeDamping,
         Depolarizing,
         PhaseDamping,
     }
+
+    x_channels = {
+        type(source): source
+        for source, operation in sources
+        if operation is type(ops.X)
+    }
+    t1, t2, duration = 60e-6, 48e-6, 20e-9
+    assert (
+        x_channels[AmplitudeDamping].p[0],
+        x_channels[PhaseDamping].p,
+    ) == pytest.approx(
+        (
+            1 - np.exp(-duration / t1),
+            1 - np.exp(-(1 / t2 - 1 / (2 * t1)) * duration),
+        )
+    )
 
 
 def test_noisy_backend_leaks_errors_but_stays_mostly_correct():

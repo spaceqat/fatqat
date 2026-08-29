@@ -52,7 +52,6 @@ from qiskit_aer.noise import (
     depolarizing_error,
     pauli_error,
     phase_damping_error,
-    thermal_relaxation_error,
 )
 
 # pylint: enable=wrong-import-position,wrong-import-order
@@ -409,21 +408,6 @@ def test_phase_damping_matches_aer(runtime):
     noise = fq.NoiseModel()
     noise.add(fq.noise.PhaseDamping(p=p), operation=ops.H)
     aer_model = _aer_model(phase_damping_error(1 - (1 - p) ** 2), ["h"])
-
-    _assert_close(
-        _fatqat_rho(program, runtime, noise),
-        _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
-    )
-
-
-def test_thermal_relaxation_channels_match_aer(runtime):
-    t1, t2, duration = 60e-6, 90e-6, 5e-6
-    program, circuit = _bell()
-    damping, dephasing = fq.noise.ThermalRelaxation(t1=t1, t2=t2).as_channels(duration)
-    noise = fq.NoiseModel()
-    noise.add(damping, operation=ops.H)
-    noise.add(dephasing, operation=ops.H)
-    aer_model = _aer_model(thermal_relaxation_error(t1, t2, duration), ["h"])
 
     _assert_close(
         _fatqat_rho(program, runtime, noise),

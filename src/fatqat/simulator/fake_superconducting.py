@@ -17,7 +17,14 @@ from ..implementation import (
     MatrixImplementation,
     default_matrix_implementation_map,
 )
-from ..noise import Depolarizing, NoiseModel, ReadoutConfusion, ThermalRelaxation
+from ..noise import (
+    AmplitudeDamping,
+    Depolarizing,
+    NoiseModel,
+    PhaseDamping,
+    ReadoutConfusion,
+    ThermalRelaxation,
+)
 from ..operations import Operation
 from ..program import Program
 from ..registers import GridRegister, RegisterRef
@@ -37,6 +44,8 @@ DEFAULT_GRID_SIZE = (DEFAULT_ROWS, DEFAULT_COLS)
 _T1 = 60e-6  # seconds
 _T2 = 48e-6
 _THERMAL_RELAXATION = ThermalRelaxation(t1=_T1, t2=_T2)
+_AMPLITUDE_SOURCE = AmplitudeDamping(rate=_THERMAL_RELAXATION.amplitude_rate)
+_PHASE_SOURCE = PhaseDamping(rate=_THERMAL_RELAXATION.pure_dephasing_rate)
 _SX_DURATION = 20e-9  # IBM-style RZ is virtual (zero duration -> no noise)
 _ROTATION_DURATION = 20e-9  # Google-style RX/RY/RZ: all physical rotations
 _CZ_DURATION = 50e-9
@@ -45,6 +54,16 @@ _CZ_DEPOLARIZING_P = 0.001
 _ISWAP_DEPOLARIZING_P = 0.001
 _READOUT_P01 = 0.02  # P(report 1 | true 0)
 _READOUT_P10 = 0.04  # P(report 0 | true 1)
+
+
+def _calibrated_relaxation_channels(
+    duration: float,
+) -> tuple[AmplitudeDamping, PhaseDamping]:
+    """Return finite qubit channels for the fake T1/T2 calibration."""
+    return (
+        AmplitudeDamping(p=_AMPLITUDE_SOURCE.as_probability(duration)),
+        PhaseDamping(p=_PHASE_SOURCE.as_probability(duration)),
+    )
 
 
 def _nearest_neighbor_edges(rows: int, cols: int) -> tuple[tuple[int, int], ...]:
@@ -297,11 +316,11 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         ``NoiseModel`` if needed, then pass it to ``noise=``.
         """
         noise = NoiseModel()
-        damping, dephasing = _THERMAL_RELAXATION.as_channels(_SX_DURATION)
+        damping, dephasing = _calibrated_relaxation_channels(_SX_DURATION)
         for gate in (ops.X, ops.SX):
             noise.add(damping, operation=gate)
             noise.add(dephasing, operation=gate)
-        cz_damping, cz_dephasing = _THERMAL_RELAXATION.as_channels(_CZ_DURATION)
+        cz_damping, cz_dephasing = _calibrated_relaxation_channels(_CZ_DURATION)
         for slot in (0, 1):
             noise.add(cz_damping, operation=ops.CZ, target_positions=(slot,))
             noise.add(cz_dephasing, operation=ops.CZ, target_positions=(slot,))
@@ -431,18 +450,18 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         ``NoiseModel`` if needed, then pass it to ``noise=``.
         """
         noise = NoiseModel()
-        damping, dephasing = _THERMAL_RELAXATION.as_channels(_ROTATION_DURATION)
+        damping, dephasing = _calibrated_relaxation_channels(_ROTATION_DURATION)
         for gate in (ops.RX, ops.RY, ops.RZ):
             noise.add(damping, operation=gate)
             noise.add(dephasing, operation=gate)
-        iswap_damping, iswap_dephasing = _THERMAL_RELAXATION.as_channels(
+        iswap_damping, iswap_dephasing = _calibrated_relaxation_channels(
             _ISWAP_DURATION
         )
         for slot in (0, 1):
             noise.add(iswap_damping, operation=ops.iSwap, target_positions=(slot,))
             noise.add(iswap_dephasing, operation=ops.iSwap, target_positions=(slot,))
         noise.add(Depolarizing(p=_ISWAP_DEPOLARIZING_P), operation=ops.iSwap)
-        cz_damping, cz_dephasing = _THERMAL_RELAXATION.as_channels(_CZ_DURATION)
+        cz_damping, cz_dephasing = _calibrated_relaxation_channels(_CZ_DURATION)
         for slot in (0, 1):
             noise.add(cz_damping, operation=ops.CZ, target_positions=(slot,))
             noise.add(cz_dephasing, operation=ops.CZ, target_positions=(slot,))

@@ -5,17 +5,17 @@ ThermalRelaxation
 
 :class:`ThermalRelaxation` models zero-temperature T1 and T2 relaxation on an
 emulator. It combines downward population decay with the additional pure
-dephasing needed to reproduce T2. For a qubit simulator, convert it explicitly
-for a known duration with :meth:`ThermalRelaxation.as_channels`.
+dephasing needed to reproduce T2. It is a continuous-time emulator
+declaration, not a finite simulator channel. Matrix simulators instead use
+operation-bound probability-form :class:`AmplitudeDamping` and
+:class:`PhaseDamping` descriptors.
 
 Times and rates
 ---------------
 
 ``t1`` and ``t2`` are finite positive values in the same unit; they have no
-intrinsic unit of their own. A duration passed to
-:meth:`ThermalRelaxation.as_channels` must use that same unit. When registering
-the noise with an emulator, use the emulator model's time unit. Physical
-consistency requires
+intrinsic unit of their own. When registering the noise with an emulator, use
+the emulator model's time unit. Physical consistency requires
 
 .. math::
 
@@ -55,11 +55,12 @@ excitation or equilibrium-population parameter.
 See :ref:`noise-emulator-support` for the accepted scopes and implementation-map
 requirements of each built-in emulator.
 
-Simulator conversion
---------------------
+Matrix simulators
+-----------------
 
-:meth:`ThermalRelaxation.as_channels` returns an ordered pair for a duration
-:math:`t`:
+For a known qubit operation duration :math:`t`, the corresponding finite
+probabilities are below. The duration must use the same time unit as ``t1``
+and ``t2``.
 
 .. math::
 
@@ -68,19 +69,41 @@ Simulator conversion
    p_\phi(t) &= 1-e^{-\gamma_\phi t}.
    \end{aligned}
 
-Apply the returned :class:`AmplitudeDamping` first and :class:`PhaseDamping`
-second. For a qubit, their composition gives population decay
-:math:`e^{-t/T_1}` and
-coherence decay :math:`e^{-t/T_2}`.
+Construct the two probability-form descriptors explicitly. The rate-form
+descriptors provide the public conversion methods:
 
-This conversion is for qubits. It returns one amplitude probability, whereas
-a higher-dimensional amplitude-damping channel needs :math:`d-1` values.
-``ThermalRelaxation`` itself is not a simulator channel. See
+.. code-block:: python
+
+   import fatqat as fq
+
+   relaxation = fq.noise.ThermalRelaxation(t1=60e-6, t2=80e-6)
+   duration = 2e-6
+
+   amplitude_source = fq.noise.AmplitudeDamping(
+       rate=relaxation.amplitude_rate
+   )
+   phase_source = fq.noise.PhaseDamping(
+       rate=relaxation.pure_dephasing_rate
+   )
+   damping = fq.noise.AmplitudeDamping(
+       p=amplitude_source.as_probability(duration)
+   )
+   dephasing = fq.noise.PhaseDamping(
+       p=phase_source.as_probability(duration)
+   )
+
+Register ``damping`` and ``dephasing`` on the relevant operation. For a qubit,
+their composition gives population decay :math:`e^{-t/T_1}` and coherence
+decay :math:`e^{-t/T_2}`.
+
+This construction is for qubits. A higher-dimensional amplitude-damping
+channel needs :math:`d-1` values, and the elementwise probability conversion
+does not reproduce full multilevel Lindblad evolution. See
 :ref:`noise-simulator-support` for simulator support.
 
 API
 ---
 
 .. autoclass:: ThermalRelaxation
-   :members: amplitude_rate, pure_dephasing_rate, as_channels
+   :members: amplitude_rate, pure_dephasing_rate
    :show-inheritance:
