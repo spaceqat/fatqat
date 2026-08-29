@@ -33,13 +33,26 @@ jobs:
           python -m pip install -e .
           python -m pip install -r docs/mkdocs/requirements.txt
 
-      - name: Verify generated tutorials
+      - name: Verify generated output is not tracked
         run: |
-          python docs/mkdocs/tools/convert_tutorials.py
-          git diff --exit-code -- docs/mkdocs/en docs/mkdocs/zh
+          tracked_generated="$(git ls-files -- \
+            docs/mkdocs/en/assets/generated \
+            docs/mkdocs/zh/assets/generated \
+            docs/mkdocs/en/downloads/tutorials \
+            docs/mkdocs/zh/downloads/tutorials \
+            docs/mkdocs/en/tutorials \
+            docs/mkdocs/zh/tutorials \
+            docs/mkdocs/tutorial-results)"
+          if [ -n "$tracked_generated" ]; then
+            printf 'Generated documentation files must not be tracked:\n%s\n' "$tracked_generated"
+            exit 1
+          fi
 
       - name: Build English and Chinese documentation
         run: python docs/mkdocs/manage.py build
+
+      - name: Verify the build did not modify sources
+        run: git diff --exit-code
 
       - name: Upload static-site artifact
         uses: actions/upload-artifact@v6

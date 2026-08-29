@@ -24,6 +24,8 @@ CONFIGURATIONS = (
     ("zh", HERE / "mkdocs.zh.yml"),
 )
 CONTENT_VALIDATOR = HERE / "tools" / "validate_content.py"
+GUIDE_FIGURE_RENDERER = HERE / "tools" / "render_guide_figures.py"
+TUTORIAL_BUILDER = HERE / "tools" / "build_tutorials.py"
 
 LANDING_PAGE = """<!doctype html>
 <html lang="en">
@@ -129,6 +131,7 @@ def build_site(
 ) -> None:
     """Build both locales and add the root language-selection page."""
 
+    generate_content()
     subprocess.run(
         [sys.executable, str(CONTENT_VALIDATOR)],
         cwd=REPOSITORY_ROOT,
@@ -182,6 +185,21 @@ def build_site(
     print(f"Combined site written to {site_root}")
 
 
+def generate_content(*, refresh_tutorials: bool = False) -> None:
+    """Create ignored publish-tree pages and assets from tracked sources."""
+
+    subprocess.run(
+        [sys.executable, str(GUIDE_FIGURE_RENDERER)],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+    )
+    tutorial_command = [sys.executable, str(TUTORIAL_BUILDER)]
+    tutorial_command.append(
+        "--execute" if refresh_tutorials else "--execute-if-needed"
+    )
+    subprocess.run(tutorial_command, cwd=REPOSITORY_ROOT, check=True)
+
+
 def serve_site(*, host: str, port: int, strict: bool, build: bool) -> None:
     """Build, then serve the combined static output without live reload."""
 
@@ -232,6 +250,15 @@ def _parser() -> argparse.ArgumentParser:
         help="canonical base URL containing the en/ and zh/ sites",
     )
 
+    generate_parser = subparsers.add_parser(
+        "generate", help="regenerate ignored pages and assets from tracked sources"
+    )
+    generate_parser.add_argument(
+        "--refresh-tutorials",
+        action="store_true",
+        help="execute tutorials even when the source-hashed cache is current",
+    )
+
     serve_parser = subparsers.add_parser(
         "serve", help="build and serve the combined site for cross-language review"
     )
@@ -257,13 +284,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 site_root=args.site_dir.resolve(),
                 site_url=args.site_url,
             )
-        else:
+        elif args.command == "serve":
             serve_site(
                 host=args.host,
                 port=args.port,
                 strict=not args.no_strict,
                 build=not args.no_build,
             )
+        else:
+            generate_content(refresh_tutorials=args.refresh_tutorials)
     except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

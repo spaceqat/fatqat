@@ -28,14 +28,21 @@ shown above.
 
 ## Build and review both languages
 
-The helper removes only `docs/mkdocs/site`, builds both configurations with
-warnings treated as errors, then writes a small root page that chooses Chinese
-for browsers whose preferred language starts with `zh` and English otherwise:
+The helper first generates the ignored publish-tree inputs, removes only
+`docs/mkdocs/site`, builds both configurations with warnings treated as errors,
+then writes a small root page that chooses Chinese for browsers whose preferred
+language starts with `zh` and English otherwise:
 
 ```sh
 python docs/mkdocs/manage.py build
 python docs/mkdocs/manage.py serve
 ```
+
+`manage.py generate` performs only the generation phase. It renders guide
+figures from their tracked examples, executes tutorials when their source-hashed
+cache is missing or stale, and assembles both localized tutorial trees. Use
+`generate --refresh-tutorials` to force a fresh tutorial run. Generated pages,
+plots, downloads, and runtime cache files are intentionally ignored by Git.
 
 The repository's `.readthedocs.yaml` uses the same build command. Read the
 Docs supplies its output directory and canonical version URL so the combined
@@ -65,12 +72,13 @@ python docs/mkdocs/manage.py serve --no-build
 During an incomplete migration, `build --no-strict` or `serve --no-strict`
 can expose warnings without failing. CI always uses the strict default.
 
-Each combined build first runs `tools/validate_content.py`. It checks that the
+After generation, each combined build runs `tools/validate_content.py`. It
+checks that the
 locale trees expose the same Markdown, asset, and download paths; every Chinese
 page contains translated text; homepage destinations stay aligned; local
 Markdown links resolve; executable tutorial downloads and displayed code remain
 byte-for-byte identical; and captured tutorial figures match across locales.
-Run it directly for a fast content-only check:
+Run it directly after `manage.py generate` for a fast content-only check:
 
 ```sh
 python docs/mkdocs/tools/validate_content.py
@@ -88,47 +96,52 @@ The two root `index.md` files contain manually maintained, localized content,
 while `overrides/home.html` owns their shared Material landing-page structure.
 Use native Material grids and cards for substantive sections, and keep the
 small `hero` front-matter mappings structurally identical. The homepage
-stylesheet is loaded only by the shared template. Guide illustrations are
-committed under each locale's `assets/generated/guide` tree; their adjacent
-expandable Python examples document how to reproduce the numerical figures.
+stylesheet is loaded only by the shared template. Seven guide illustrations
+come directly from adjacent expandable Python examples; the three visual guide
+cards come from `figure-sources/guide_cards.py`. The generator writes identical
+ignored PNGs into both locale trees.
 
-## Generate executable tutorials
+## Add and generate executable tutorials
 
-The tracked `tutorials/plot_*.py` scripts are the canonical executable tutorial
-sources. Regenerate their Material pages after changing those sources:
+A tutorial needs only one mirrored Markdown pair:
 
-```sh
-python docs/mkdocs/tools/convert_tutorials.py
+```text
+docs/mkdocs/tutorial-sources/
+├── en/<category>/<slug>.md
+└── zh/<category>/<slug>.md
 ```
 
-Tutorial pages consume checked-in runtime snapshots from `tutorial-results/`.
-Each manifest records the SHA-256 digest of its canonical tutorial source and
-every captured PNG, so the default converter fails instead of presenting stale
-results. It regenerates both localized tutorial indexes from the bilingual
-`TUTORIALS` metadata, using each tutorial's selected captured figure as its card
-thumbnail. It also regenerates English tutorial prose and synchronizes only the
-generated runtime panels in the manually translated Chinese tutorial pages; it
-never executes a tutorial. After reviewing a tutorial source change, refresh
-all snapshots in a documentation environment that includes the optional
-tutorial dependencies, such as scikit-learn, with:
+The folder name determines the category. The builder discovers every pair
+recursively, so there is no tutorial registry or navigation list to edit. Each
+file supplies `title`, `description`, `icon`, and localized `figure_alts` in
+YAML front matter. The English body contains ordinary top-level `python`
+fences; each is one executable cell. Put one `<!-- tutorial-code-cell -->`
+placeholder at the corresponding position in the Chinese body. This keeps the
+translated prose in Markdown while defining executable Python only once.
+
+The first generated plot automatically becomes the card image. Every tutorial
+must therefore create at least one Matplotlib figure, and `figure_alts` must
+contain one accessible label per generated figure. The downloadable Python is
+assembled from those same English cells. Generate the site inputs with:
 
 ```sh
-python docs/mkdocs/tools/convert_tutorials.py --execute
+python docs/mkdocs/manage.py generate
 ```
 
-When adding a tracked `tutorials/plot_*.py` file, register it in `TUTORIALS`
-with its bilingual card metadata and add bilingual entries to `FIGURE_ALTS`.
-The converter rejects unregistered tutorial sources, then generates both index
-cards and uses captured figure 1 as the thumbnail by default. Set the
-tutorial's `thumbnail_number` only when another reviewed figure is a better
-summary of the example.
+The ignored runtime cache records the SHA-256 digest of the English Markdown
+and every captured PNG. A normal generation reuses it only while all hashes
+match; a clean checkout or source change executes the suite before assembling
+the localized pages, downloads, figures, and category index. Force all
+tutorials to run again with:
 
-Tutorial execution is deliberately opt-in because the complete suite is
-computationally expensive and graphics can differ with plotting and font
-versions. Review changed stdout and figures before committing them. CI
-regenerates tutorial text from committed inputs and fails if either locale
-changes. Translate any resulting English narrative changes into the matching
-Chinese pages before committing.
+```sh
+python docs/mkdocs/manage.py generate --refresh-tutorials
+```
+
+Generated output is reviewable locally but is never committed. CI and Read the
+Docs both start from authored inputs and recreate the complete bilingual site.
+When English narrative changes, update the mirrored Chinese Markdown in the
+same change; discovery and structural validation check the assembled pages.
 
 ## Keep translations aligned
 
@@ -151,7 +164,7 @@ not machine-translated by the build. The small Griffe extension in
 `extensions/docstring_roles.py` converts Python cross-reference roles in those
 docstrings into native MkDocs links without changing the Python sources.
 
-Edit the four direct documentation requirements in `requirements.in`, then
+Edit the direct documentation requirements in `requirements.in`, then
 refresh the transitive lock with Python 3.12 before committing an upgrade:
 
 ```sh
