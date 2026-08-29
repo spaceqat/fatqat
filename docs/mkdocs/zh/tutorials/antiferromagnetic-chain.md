@@ -14,7 +14,7 @@ description: "从实际物理单位出发设计三阶段里德伯脉冲，观察
 
 -   :material-language-python: **可执行源码**
 
-    [下载 `plot_atom2level_antiferromagnetic_chain.py`](../downloads/tutorials/plot_atom2level_antiferromagnetic_chain.py)
+    [下载 `plot_atom2level_antiferromagnetic_chain.py`](../downloads/tutorials/plot_atom2level_antiferromagnetic_chain.py){ download }
 
 </div>
 

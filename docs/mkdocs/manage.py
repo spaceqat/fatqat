@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+from collections.abc import Callable
 import functools
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 from typing import Mapping, Sequence
@@ -18,14 +21,12 @@ REPOSITORY_ROOT = HERE.parents[1]
 SITE_ROOT = HERE / "site"
 CONFIGURATIONS = (HERE / "mkdocs.en.yml", HERE / "mkdocs.zh.yml")
 CONTENT_VALIDATOR = HERE / "tools" / "validate_content.py"
-LOCALES = ("en", "zh")
 
 LANDING_PAGE = """<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta http-equiv="refresh" content="1; url=en/">
     <title>FatQat documentation</title>
     <script>
       const preferred = (navigator.languages?.[0] || navigator.language || "en")
@@ -62,83 +63,51 @@ def _run_mkdocs(config: Path, *, strict: bool, environment: Mapping[str, str]) -
     subprocess.run(command, cwd=REPOSITORY_ROOT, env=environment, check=True)
 
 
-class _AlternateParser(HTMLParser):
-    """Collect language alternates from the document head and header selector."""
+class _IdParser(HTMLParser):
+    """Collect element IDs from one generated HTML document."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.links: list[tuple[str, str, str]] = []
-        self._in_head = False
+        self.ids: Counter[str] = Counter()
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "head":
-            self._in_head = True
-        attributes = dict(attrs)
-        language = attributes.get("hreflang")
-        href = attributes.get("href")
-        classes = (attributes.get("class") or "").split()
-        rels = (attributes.get("rel") or "").split()
-        if tag == "link" and self._in_head and "alternate" in rels:
-            kind = "head"
-        elif tag == "a" and "md-select__link" in classes:
-            kind = "selector"
-        else:
-            return
-        if language and href:
-            self.links.append((kind, language, href))
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "head":
-            self._in_head = False
+        del tag
+        identifier = dict(attrs).get("id")
+        if identifier:
+            self.ids[identifier] += 1
 
 
-def _page_output_path(locale: str, source: Path) -> Path:
-    relative = source.relative_to(HERE / locale).with_suffix("")
-    if relative.name == "index":
-        return SITE_ROOT / locale / relative.parent / "index.html"
-    return SITE_ROOT / locale / relative / "index.html"
+def _validate_unique_html_ids() -> None:
+    """Reject ambiguous fragments in generated pages."""
 
-
-def _localized_page_link(root: str, page_url: str) -> str:
-    return f"{root.rstrip('/')}/{page_url.lstrip('/')}"
-
-
-def _validate_alternate_links(environment: Mapping[str, str]) -> None:
-    roots = {
-        "en": environment.get("FATQAT_MKDOCS_EN_LINK", "/en/"),
-        "zh": environment.get("FATQAT_MKDOCS_ZH_LINK", "/zh/"),
-    }
     failures: list[str] = []
-
-    for locale in LOCALES:
-        for source in sorted((HERE / locale).rglob("*.md")):
-            relative = source.relative_to(HERE / locale).with_suffix("")
-            if relative.name == "index":
-                page_url = (
-                    ""
-                    if relative.parent == Path(".")
-                    else f"{relative.parent.as_posix()}/"
-                )
-            else:
-                page_url = f"{relative.as_posix()}/"
-            output = _page_output_path(locale, source)
-            parser = _AlternateParser()
-            parser.feed(output.read_text(encoding="utf-8"))
-            expected_links: list[tuple[str, str, str]] = []
-            for language, root in roots.items():
-                expected = _localized_page_link(root, page_url)
-                expected_links.extend(
-                    (("head", language, expected), ("selector", language, expected))
-                )
-            if sorted(parser.links) != sorted(expected_links):
-                failures.append(
-                    f"{output.relative_to(HERE)}: expected {expected_links}, "
-                    f"found {parser.links}"
-                )
+    pages = sorted(SITE_ROOT.rglob("*.html"))
+    for page in pages:
+        parser = _IdParser()
+        parser.feed(page.read_text(encoding="utf-8"))
+        duplicates = sorted(
+            identifier for identifier, count in parser.ids.items() if count > 1
+        )
+        if duplicates:
+            preview = ", ".join(duplicates[:8])
+            suffix = "..." if len(duplicates) > 8 else ""
+            failures.append(
+                f"{page.relative_to(SITE_ROOT)}: duplicate IDs {preview}{suffix}"
+            )
 
     if failures:
-        raise RuntimeError("invalid localized alternate links:\n" + "\n".join(failures))
-    print("Validated page-preserving language links in both locales.")
+        raise RuntimeError("duplicate generated HTML IDs:\n" + "\n".join(failures))
+    print(f"Validated unique HTML IDs across {len(pages)} generated pages.")
+
+
+def _remove_readonly(
+    function: Callable[[str], object], path: str, error: BaseException
+) -> None:
+    """Retry removal after clearing a Windows read-only file attribute."""
+
+    del error
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
 
 
 def build_site(
@@ -153,7 +122,7 @@ def build_site(
     )
 
     if SITE_ROOT.exists():
-        shutil.rmtree(SITE_ROOT)
+        shutil.rmtree(SITE_ROOT, onexc=_remove_readonly)
     SITE_ROOT.mkdir(parents=True)
 
     environment = os.environ.copy()
@@ -171,10 +140,9 @@ def build_site(
     if missing:
         raise RuntimeError(f"localized builds did not create: {', '.join(missing)}")
 
-    _validate_alternate_links(environment)
-
     (SITE_ROOT / "index.html").write_text(LANDING_PAGE, encoding="utf-8", newline="\n")
     (SITE_ROOT / ".nojekyll").touch()
+    _validate_unique_html_ids()
     print(f"Combined site written to {SITE_ROOT}")
 
 

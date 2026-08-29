@@ -14,7 +14,7 @@ description: "从精确振幅出发，得到固定随机种子下的测量计数
 
 -   :material-language-python: **可执行源码**
 
-    [下载 `plot_bell_state.py`](../downloads/tutorials/plot_bell_state.py)
+    [下载 `plot_bell_state.py`](../downloads/tutorials/plot_bell_state.py){ download }
 
 </div>
 

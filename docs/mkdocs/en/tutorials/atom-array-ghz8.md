@@ -14,7 +14,7 @@ description: "Use dynamic Pair and Unpair operations to build an eight-atom GHZ 
 
 -   :material-language-python: **Executable source**
 
-    [Download `plot_atom_array_ghz8.py`](../downloads/tutorials/plot_atom_array_ghz8.py)
+    [Download `plot_atom_array_ghz8.py`](../downloads/tutorials/plot_atom_array_ghz8.py){ download }
 
 </div>
 

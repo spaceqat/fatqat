@@ -14,7 +14,7 @@ description: "Trotterize the constrained PXP Hamiltonian and compare many-body r
 
 -   :material-language-python: **Executable source**
 
-    [Download `plot_pxp_z2_revival.py`](../downloads/tutorials/plot_pxp_z2_revival.py)
+    [Download `plot_pxp_z2_revival.py`](../downloads/tutorials/plot_pxp_z2_revival.py){ download }
 
 </div>
 

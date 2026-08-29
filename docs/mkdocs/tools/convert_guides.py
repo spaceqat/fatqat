@@ -324,6 +324,8 @@ def convert_page(text: str, page_name: str, render: bool) -> str:
 
 def home_page(source: str) -> str:
     intro = source.split("::::{grid}", 1)[0].rstrip()
+    workflow_marker = "Here is the complete circuit-level workflow:"
+    lead, workflow = intro.split(workflow_marker, 1)
     cards = """
 <div class="grid cards" markdown>
 
@@ -358,7 +360,15 @@ def home_page(source: str) -> str:
 
 </div>
 """
-    return convert_inline_markup(intro) + "\n\n" + cards.strip() + "\n"
+    return (
+        convert_inline_markup(lead).rstrip()
+        + "\n\n"
+        + cards.strip()
+        + "\n\n## One Program from authoring to result\n\n"
+        + workflow_marker
+        + convert_inline_markup(workflow)
+        + "\n"
+    )
 
 
 def guide_index(source: str, render: bool) -> str:

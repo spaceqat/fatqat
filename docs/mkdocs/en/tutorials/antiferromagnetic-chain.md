@@ -14,7 +14,7 @@ description: "Design a three-stage Rydberg pulse from physical units and watch s
 
 -   :material-language-python: **Executable source**
 
-    [Download `plot_atom2level_antiferromagnetic_chain.py`](../downloads/tutorials/plot_atom2level_antiferromagnetic_chain.py)
+    [Download `plot_atom2level_antiferromagnetic_chain.py`](../downloads/tutorials/plot_atom2level_antiferromagnetic_chain.py){ download }
 
 </div>
 

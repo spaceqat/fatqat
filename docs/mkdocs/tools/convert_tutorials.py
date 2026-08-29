@@ -746,7 +746,7 @@ def _render_page(
             "",
             "-   :material-language-python: **Executable source**",
             "",
-            f"    [Download `{tutorial.source_name}`]({download_path})",
+            f"    [Download `{tutorial.source_name}`]({download_path}){{ download }}",
             "",
             "</div>",
             "",

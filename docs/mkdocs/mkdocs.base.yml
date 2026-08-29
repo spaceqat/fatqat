@@ -10,12 +10,6 @@ repo_url: https://github.com/BoxiLi/fatqat
 
 use_directory_urls: true
 
-# Material renders alternate links literally. This hook appends the current
-# page URL so switching languages keeps readers on the matching translated
-# page (the content validator guarantees that the path exists in both trees).
-hooks:
-  - hooks/page_alternates.py
-
 theme:
   name: material
   custom_dir: overrides
@@ -31,6 +25,7 @@ theme:
     - navigation.tabs.sticky
     - navigation.sections
     - navigation.indexes
+    - navigation.prune
     - navigation.path
     - navigation.top
     - navigation.footer
@@ -60,6 +55,8 @@ plugins:
           docstring_style: google
           docstring_options:
             warn_missing_types: false
+          extensions:
+            - extensions/sphinx_roles.py:SphinxRolesExtension
           filters: public
           inherited_members: true
           members_order: source
@@ -68,7 +65,7 @@ plugins:
           show_root_full_path: false
           show_root_heading: true
           show_signature_annotations: true
-          show_source: true
+          show_source: false
           show_symbol_type_heading: true
           show_symbol_type_toc: true
           signature_crossrefs: true
@@ -94,8 +91,6 @@ markdown_extensions:
     emoji_generator: !!python/name:material.extensions.emoji.to_svg
     emoji_index: !!python/name:material.extensions.emoji.twemoji
   pymdownx.highlight:
-    anchor_linenums: true
-    line_spans: __span
     pygments_lang_class: true
   pymdownx.inlinehilite: {}
   pymdownx.snippets: {}

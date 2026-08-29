@@ -47,6 +47,16 @@ python -m mkdocs serve -f docs/mkdocs/mkdocs.en.yml
 python -m mkdocs serve -f docs/mkdocs/mkdocs.zh.yml --dev-addr 127.0.0.1:8001
 ```
 
+MkDocs uses clean directory URLs by default: a link such as `/en/guide/`
+resolves to `site/en/guide/index.html` through the web server. Do not open the
+generated HTML files directly with a `file://` URL; serve the output as shown
+above so navigation, search, and language switching behave as they will after
+deployment. To review an existing build without rebuilding it, run:
+
+```sh
+python docs/mkdocs/manage.py serve --no-build
+```
+
 During an incomplete migration, `build --no-strict` or `serve --no-strict`
 can expose warnings without failing. CI always uses the strict default.
 
@@ -99,11 +109,12 @@ narrative changes into the matching Chinese pages before committing.
 ## Keep translations aligned
 
 The English and Chinese trees must contain the same relative Markdown paths.
-`hooks/page_alternates.py` appends that shared page path to each configured
-locale root, so the Material selector keeps readers on the equivalent page.
-The combined build verifies both the head metadata and selector link on every
+Material uses the locale-root links in `extra.alternate` together with the
+generated locale sitemaps to keep readers on the equivalent page. If the
+destination locale does not contain that path, Material falls back to its home
 page. Every page addition, move, or deletion should update both trees and both
-localized `nav` lists in the same change.
+localized `nav` lists in the same change; the content validator enforces path
+parity.
 
 The `nav` lists are intentionally repeated. MkDocs configuration inheritance
 deep-merges mapping values, but replaces lists, so translated navigation
@@ -112,7 +123,10 @@ labels cannot be layered on top of one shared list.
 Generated API pages use mkdocstrings with `../../src` as the source path. Set
 `locale: zh` for the Chinese build to translate mkdocstrings interface labels;
 Python names, signatures, and source docstrings remain authoritative and are
-not machine-translated by the build.
+not machine-translated by the build. The small Griffe extension in
+`extensions/sphinx_roles.py` converts the Sphinx cross-reference roles that
+remain in those docstrings into native MkDocs links without changing the
+Python sources.
 
 Edit the four direct documentation requirements in `requirements.in`, then
 refresh the transitive lock with Python 3.12 before committing an upgrade:

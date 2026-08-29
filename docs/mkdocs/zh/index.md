@@ -3,30 +3,6 @@
 FatQat 让你只需将量子计算编写一次，保存为一个 `Program`，随后便可按问题所需的
 层次研究它：逻辑线路行为、硬件配置约束，或随时间变化的物理动力学。
 
-下面是完整的线路级工作流：
-
-```python
-import fatqat as fq
-import fatqat.operations as ops
-
-program = fq.Program(2, 2)
-program.add(ops.H, 0)
-program.add(ops.CX, (0, 1))
-program.measure((0, 1), (0, 1))
-
-result = fq.simulator.Simulator().run(
-    program,
-    shots=1000,
-    simulation_config={"seed": 7},
-).result()
-
-print(result.get_counts())
-```
-
-这段程序制备一个贝尔态。采样结果会随随机种子变化，但只可能出现 `"00"` 和
-`"11"`。同一个 `Program` 抽象还可以承载参数、量子多能级系统、经典条件和
-直接物理控制。
-
 <div class="grid cards" markdown>
 
 -   :material-play-circle-outline: **[运行你的第一个 Program](guide/quickstart.md)**
@@ -55,3 +31,29 @@ print(result.get_counts())
     查找准确的签名、支持的操作、形状、单位和校验规则。
 
 </div>
+
+## 从编写到结果的完整工作流
+
+下面是完整的线路级工作流：
+
+```python
+import fatqat as fq
+import fatqat.operations as ops
+
+program = fq.Program(2, 2)
+program.add(ops.H, 0)
+program.add(ops.CX, (0, 1))
+program.measure((0, 1), (0, 1))
+
+result = fq.simulator.Simulator().run(
+    program,
+    shots=1000,
+    simulation_config={"seed": 7},
+).result()
+
+print(result.get_counts())
+```
+
+这段程序制备一个贝尔态。采样结果会随随机种子变化，但只可能出现 `"00"` 和
+`"11"`。同一个 `Program` 抽象还可以承载参数、量子多能级系统、经典条件和
+直接物理控制。

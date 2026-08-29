@@ -14,7 +14,7 @@ description: "训练一个数据重上传电路来区分手写数字 3 和 6，�
 
 -   :material-language-python: **可执行源码**
 
-    [下载 `plot_qnn_digits.py`](../downloads/tutorials/plot_qnn_digits.py)
+    [下载 `plot_qnn_digits.py`](../downloads/tutorials/plot_qnn_digits.py){ download }
 
 </div>
 

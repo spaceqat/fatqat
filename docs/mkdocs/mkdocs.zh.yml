@@ -30,6 +30,10 @@ plugins:
   mkdocstrings:
     locale: zh
 
+markdown_extensions:
+  toc:
+    permalink_title: 永久链接
+
 nav:
   - 首页: index.md
   - 用户指南:

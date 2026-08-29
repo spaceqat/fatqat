@@ -14,7 +14,7 @@ description: "对受约束的 PXP 哈密顿量进行 Trotter 分解，并将多�
 
 -   :material-language-python: **可执行源码**
 
-    [下载 `plot_pxp_z2_revival.py`](../downloads/tutorials/plot_pxp_z2_revival.py)
+    [下载 `plot_pxp_z2_revival.py`](../downloads/tutorials/plot_pxp_z2_revival.py){ download }
 
 </div>
 

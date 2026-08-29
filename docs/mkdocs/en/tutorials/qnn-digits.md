@@ -14,7 +14,7 @@ description: "Train a data-reuploading circuit to distinguish handwritten 3s and
 
 -   :material-language-python: **Executable source**
 
-    [Download `plot_qnn_digits.py`](../downloads/tutorials/plot_qnn_digits.py)
+    [Download `plot_qnn_digits.py`](../downloads/tutorials/plot_qnn_digits.py){ download }
 
 </div>
 

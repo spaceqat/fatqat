@@ -1,3 +1,6 @@
+---
+title: 仿真器
+---
 <!-- 英文对应页由 docs/mkdocs/tools/convert_api.py 从 docs/sphinx/api 生成；此简体中文译文在本文件中维护。 -->
 
 # 仿真器

@@ -14,7 +14,7 @@ description: "Follow a two-qubit Bell state from exact amplitudes to seeded meas
 
 -   :material-language-python: **Executable source**
 
-    [Download `plot_bell_state.py`](../downloads/tutorials/plot_bell_state.py)
+    [Download `plot_bell_state.py`](../downloads/tutorials/plot_bell_state.py){ download }
 
 </div>
 

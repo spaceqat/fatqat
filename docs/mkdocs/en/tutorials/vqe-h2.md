@@ -14,7 +14,7 @@ description: "Run exact, finite-shot, and noisy VQE loops for molecular hydrogen
 
 -   :material-language-python: **Executable source**
 
-    [Download `plot_vqe_h2.py`](../downloads/tutorials/plot_vqe_h2.py)
+    [Download `plot_vqe_h2.py`](../downloads/tutorials/plot_vqe_h2.py){ download }
 
 </div>
 

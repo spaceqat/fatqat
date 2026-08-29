@@ -14,7 +14,7 @@ description: "利用动态 Pair 和 Unpair 操作构建八原子 GHZ 态，再�
 
 -   :material-language-python: **可执行源码**
 
-    [下载 `plot_atom_array_ghz8.py`](../downloads/tutorials/plot_atom_array_ghz8.py)
+    [下载 `plot_atom_array_ghz8.py`](../downloads/tutorials/plot_atom_array_ghz8.py){ download }
 
 </div>
 

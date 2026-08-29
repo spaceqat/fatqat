@@ -14,7 +14,7 @@ description: "对氢分子运行精确、有限采样和含噪声的 VQE 循环�
 
 -   :material-language-python: **可执行源码**
 
-    [下载 `plot_vqe_h2.py`](../downloads/tutorials/plot_vqe_h2.py)
+    [下载 `plot_vqe_h2.py`](../downloads/tutorials/plot_vqe_h2.py){ download }
 
 </div>
 
