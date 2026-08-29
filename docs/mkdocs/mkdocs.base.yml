@@ -52,6 +52,9 @@ plugins:
         paths:
           - ../../src
         options:
+          # Keep parameters, attributes, returns, and raises in the traditional
+          # vertical definition-list form instead of compressed data tables.
+          docstring_section_style: list
           docstring_style: google
           docstring_options:
             warn_missing_types: false
