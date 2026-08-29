@@ -8,6 +8,10 @@ Every gate on this page is defined for dimension-2 targets (qubits).
 dimensions. The backend checks that requirement and any device-specific limits
 when the program runs.
 
+Every unary gate accepts either one scalar target or one
+:py:class:`~fatqat.RegisterView`. Every multi-qubit gate accepts either scalar
+operands or one compatible view per operand and zips the views in order.
+
 Fixed gates
 -----------
 
@@ -222,23 +226,23 @@ All angles are in radians and are not normalized. Every angle field accepts a
      - One scalar or one view
      - Rotation about the Z axis by ``theta``.
    * - :py:class:`Phase` ``(theta)``
-     - One scalar
+     - One scalar or one view
      - Differs from RZ only by global phase.
    * - :py:class:`U` ``(theta, phi, lam)``
-     - One scalar
+     - One scalar or one view
      - General single-qubit gate using Qiskit's parameter convention.
    * - :py:class:`U1` ``(lam)``
-     - One scalar
+     - One scalar or one view
      - Equivalent to ``Phase(lam)``.
    * - :py:class:`U2` ``(phi, lam)``
-     - One scalar
+     - One scalar or one view
      - Equivalent to ``U(pi/2, phi, lam)``.
    * - :py:class:`U3` ``(theta, phi, lam)``
-     - One scalar
+     - One scalar or one view
      - Same matrix as ``U(theta, phi, lam)``; retained for Qiskit
        compatibility.
    * - :py:class:`CPhase` ``(theta)``
-     - ``(control, target)`` scalars
+     - ``(control, target)`` scalars or compatible views
      - Multiplies :math:`|11\rangle` by :math:`e^{i\theta}`.
 
 Matrix definitions

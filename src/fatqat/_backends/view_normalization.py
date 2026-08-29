@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ..errors import BackendValidationError
 from ..operations import Measurement
 from ..program import _AppliedOperation
 from ..registers import RegisterView, _view_members
@@ -23,16 +22,7 @@ def _expand_grouped_operation(
     if not any(isinstance(target, RegisterView) for target in step.targets):
         return (step,)
 
-    name = type(step.operation).__name__
-    if len(target_members) == 1:
-        emissions = [(member,) for member in target_members[0]]
-    elif len(target_members) == 2:
-        first, second = target_members
-        emissions = list(zip(first, second))
-    else:
-        raise BackendValidationError(
-            f"{name} cannot expand a view target at arity {len(target_members)}"
-        )
+    emissions = zip(*target_members, strict=True)
 
     return tuple(
         _AppliedOperation(

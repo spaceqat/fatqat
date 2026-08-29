@@ -110,60 +110,98 @@ def test_add_subspace_rotation_in_range_succeeds(op_cls):
 
 
 # ---------------------------------------------------------------------------
-# RegisterView target acceptance (view-capable operations: RX/RY/RZ/CX/CZ)
+# RegisterView target acceptance
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "make_op", [lambda: ops.RX(0.1), lambda: ops.RY(0.1), lambda: ops.RZ(0.1)]
-)
-def test_add_accepts_view_for_rotation_gates(make_op):
-    qubits = GridRegister(2, 2, name="qubits")
-    p = Program([qubits])
-    p.add(make_op(), qubits.row(0))
-    ao = p._instructions[0]
-    assert ao.targets == (qubits.row(0),)
-
-
-@pytest.mark.parametrize("op", [ops.CX, ops.CZ])
-def test_add_accepts_view_pair_for_cx_cz(op):
-    qubits = GridRegister(2, 2, name="qubits")
-    p = Program([qubits])
-    p.add(op, (qubits.row(0), qubits.row(1)))
-    ao = p._instructions[0]
-    assert ao.targets == (qubits.row(0), qubits.row(1))
 
 
 @pytest.mark.parametrize(
     "op",
     [
+        ops.I,
         ops.H,
+        ops.S,
+        ops.Sdg,
+        ops.SX,
+        ops.T,
+        ops.Tdg,
         ops.X,
         ops.Y,
         ops.Z,
-        ops.S,
-        ops.T,
-        ops.Swap,
-        ops.CCX,
+        ops.RX(0.1),
+        ops.RY(0.1),
+        ops.RZ(0.1),
         ops.Phase(0.1),
-        ops.CPhase(0.1),
+        ops.U(0.1, 0.2, 0.3),
+        ops.U1(0.1),
+        ops.U2(0.1, 0.2),
+        ops.U3(0.1, 0.2, 0.3),
+        ops.Shift(1),
+        ops.Clock(1),
+        ops.SwapLevels(0, 2),
+        ops.Fourier,
+        ops.InverseFourier,
+        ops.SubspaceRX(0.1, (0, 2)),
+        ops.SubspaceRY(0.1, (0, 2)),
+        ops.SubspaceRZ(0.1, (0, 2)),
     ],
 )
-def test_add_rejects_view_for_scalar_only_operations(op):
+def test_add_accepts_view_for_unary_gates(op):
+    # Program.add is dimension-agnostic for ordinary matrix gates; dim=3 also
+    # accommodates the level-selective gates in this shared contract table.
+    qudits = GridRegister(2, 2, name="qudits", dim=3)
+    p = Program([qudits])
+    p.add(op, qudits.row(0))
+    ao = p._instructions[0]
+    assert ao.targets == (qudits.row(0),)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        ops.CX,
+        ops.CZ,
+        ops.Swap,
+        ops.CY,
+        ops.CS,
+        ops.iSwap,
+        ops.CPhase(0.1),
+        ops.Sum,
+        ops.CClock(1),
+    ],
+)
+def test_add_accepts_view_pair_for_binary_gates(op):
+    qudits = GridRegister(2, 2, name="qudits", dim=3)
+    p = Program([qudits])
+    p.add(op, (qudits.row(0), qudits.row(1)))
+    ao = p._instructions[0]
+    assert ao.targets == (qudits.row(0), qudits.row(1))
+
+
+@pytest.mark.parametrize("op", [ops.CCX, ops.CSwap])
+def test_add_accepts_views_for_ternary_gates(op):
+    qubits = GridRegister(3, 2, name="qubits")
+    p = Program([qubits])
+    views = tuple(qubits.row(row) for row in range(3))
+    p.add(op, views)
+    assert p._instructions[0].targets == views
+
+
+@pytest.mark.parametrize("op", [ops.Reset, ops.Barrier, ops.Put, ops.Pair, ops.Unpair])
+def test_add_rejects_view_for_structural_operations(op):
     qubits = GridRegister(2, 2, name="qubits")
     p = Program([qubits])
-    views = (qubits.row(0), qubits.row(1), qubits.all(), qubits.column(0))
-    arity = op.num_subsystems
-    targets = views[0] if arity == 1 else views[:arity]
+    targets = (
+        (qubits.row(0), qubits.row(1)) if op.num_subsystems == 2 else qubits.row(0)
+    )
     with pytest.raises(ValueError):
         p.add(op, targets)
 
 
-def test_add_rejects_view_for_reset():
-    qubits = GridRegister(2, 2, name="qubits")
-    p = Program([qubits])
-    with pytest.raises(ValueError):
-        p.add(ops.Reset, qubits.row(0))
+def test_add_view_runs_target_dependent_validation():
+    qudits = GridRegister(1, 2, name="qudits", dim=3)
+    p = Program([qudits])
+    with pytest.raises(ValueError, match="invalid for target dimension 3"):
+        p.add(ops.SwapLevels(0, 3), qudits.row(0))
 
 
 def test_add_rejects_view_from_foreign_program():

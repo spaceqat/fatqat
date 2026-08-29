@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
 from typing import Any, Mapping, TypeVar
 
 from ._parameter_binding import (
@@ -17,6 +18,7 @@ from .registers import (
     RegisterView,
     ClassicalRegister,
     _validate_view_pair,
+    _view_members,
 )
 
 __all__ = ["Program"]
@@ -30,8 +32,8 @@ ConditionInput = (
 RegisterT = TypeVar("RegisterT", QuantumRegister, ClassicalRegister)
 
 # A frontend target expression: either a resolved scalar reference, or (for
-# the view-capable operations named on `Operation._accepts_views`) a
-# structured `RegisterView` selecting multiple members of one `GridRegister`.
+# operations that opt into `Operation._accepts_views`) a structured
+# `RegisterView` selecting multiple members of one `GridRegister`.
 # See `_AppliedOperation.targets` and `Program.add`.
 QuantumTarget = RegisterRef | RegisterView
 
@@ -48,8 +50,8 @@ class _AppliedOperation:
     This record checks operation arity, duplicate scalar targets,
     operation-specific scalar constraints, and grouped-view pairing. It trusts
     its callers for target element types, register ownership, container shape,
-    and condition normalization. Per-member validation of a grouped view is
-    deferred until expansion produces scalar instructions.
+    and condition normalization. Grouped views are validated through their
+    scalar member tuples while the grouped instruction remains intact.
     """
 
     operation: Operation
@@ -81,24 +83,20 @@ class _AppliedOperation:
                     f"{self.operation.name} does not accept a RegisterView target; "
                     "only view-capable operations may be applied to a view"
                 )
-            # Per-member scalar validation (validate_targets()) still needs
-            # concrete refs and is deferred to binding/expansion. Pairing
-            # legality (arity 2 only) does not - it is a fact about the two
-            # views themselves, decidable from their selectors alone - so it
-            # is checked here, not left to whichever backend/strategy later
-            # chooses how to lower the group.
-            if len(self.targets) == 2:
-                first, second = self.targets
-                first_is_view = isinstance(first, RegisterView)
-                second_is_view = isinstance(second, RegisterView)
-                if first_is_view != second_is_view:
-                    raise ValueError(
-                        f"{self.operation.name} mixes a scalar target with a "
-                        "view target; a two-target gate needs both operands "
-                        "scalar or both views"
-                    )
-                if first_is_view and second_is_view:
-                    _validate_view_pair(first, second, op_name=self.operation.name)
+            views = tuple(t for t in self.targets if isinstance(t, RegisterView))
+            if len(views) != len(self.targets):
+                raise ValueError(
+                    f"{self.operation.name} mixes a scalar target with a view "
+                    "target; a grouped gate needs every operand scalar or "
+                    "every operand a view"
+                )
+            # View compatibility is independent of lowering, so validate every
+            # operand pair here for gates of any arity.
+            for first, second in combinations(views, 2):
+                _validate_view_pair(first, second, op_name=self.operation.name)
+            member_groups = tuple(_view_members(view) for view in views)
+            for targets in zip(*member_groups, strict=True):
+                self.operation.validate_targets(targets)
             return
 
         seen: set[tuple[int, int]] = set()
@@ -337,11 +335,12 @@ class Program:
                 order. A bare target must be a built-in ``int`` and is accepted
                 only when the program has exactly one quantum register. An
                 explicit `RegisterRef` must come from one of this program's
-                quantum registers. ``RX``, ``RY``, and ``RZ`` also accept one
-                `RegisterView`; ``CX`` and ``CZ`` accept a pair with the same
-                kind of grid selection and the same length. Views over one
-                grid must not overlap, and a two-target application cannot mix
-                a scalar with a view. Omit this argument when adding a
+                quantum registers. Every built-in unitary gate also accepts
+                one compatible `RegisterView` per operand. Unary gates act on
+                each selected member; multi-target gates zip views of the same
+                selection kind and length. Views over one grid must not
+                overlap, and a grouped application cannot mix scalar and view
+                operands. Omit this argument when adding a
                 ``PulseOperation``; each control's channel identifies the
                 physical resource or resources it drives.
             condition: ``None`` (default) for an unconditional operation,
@@ -362,7 +361,7 @@ class Program:
                 an integer.
             ValueError: If target arity is wrong, a target is repeated, a ref
                 or view does not come from the program, ``op`` does not accept a
-                ``RegisterView`` target, a view pair is incompatible, an
+                ``RegisterView`` target, grouped views are incompatible, an
                 operation-specific target constraint fails, a condition is
                 empty or a term does not contain exactly two items, or a
                 condition literal is out of range.

@@ -9,6 +9,9 @@ operation, and the backend checks support when the program runs.
 Integer ``power`` values are reduced modulo the relevant target dimension, so
 negative and oversized values are valid.
 
+Unary gates accept one scalar target or one :py:class:`~fatqat.RegisterView`.
+Two-target gates accept scalars or two compatible views and zip their members.
+
 .. list-table:: Qudit gates
    :header-rows: 1
    :widths: 22 25 53
@@ -17,39 +20,39 @@ negative and oversized values are valid.
      - Targets and constraints
      - Basis action
    * - :py:class:`Shift` ``(power)``
-     - One scalar; any ``d >= 2``
+     - One scalar or view; any ``d >= 2``
      - ``|k> -> |(k + power) mod d>``. ``Shift(1)`` is X for ``d=2``.
    * - :py:class:`Clock` ``(power)``
-     - One scalar; any ``d >= 2``
+     - One scalar or view; any ``d >= 2``
      - ``|k> -> omega**(k*power)|k>``, ``omega=exp(2*pi*i/d)``.
        ``Clock(1)`` is Z for ``d=2``.
    * - :py:data:`Sum`
-     - ``(control, target)`` with equal dimensions
+     - Scalar or view pair with equal dimensions
      - ``|i,j> -> |i,(i+j) mod d>``. It is CX for ``d=2``.
    * - :py:class:`SwapLevels` ``(j, k)``
-     - One scalar; ``0 <= j,k < d`` and ``j != k``
+     - One scalar or view; ``0 <= j,k < d`` and ``j != k``
      - Exchanges ``|j>`` and ``|k>`` and fixes every other level.
    * - :py:data:`Fourier`
-     - One scalar; any ``d >= 2``
+     - One scalar or view; any ``d >= 2``
      - ``|j> -> sum(exp(2*pi*i*j*k/d)|k>) / sqrt(d)``. It is H for
        ``d=2``.
    * - :py:data:`InverseFourier`
-     - One scalar; any ``d >= 2``
+     - One scalar or view; any ``d >= 2``
      - Conjugate transpose of ``Fourier``; uses the negative exponent.
    * - :py:class:`SubspaceRX` ``(theta, (j, k))``
-     - One scalar; two distinct in-range levels
+     - One scalar or view; two distinct in-range levels
      - With ``c=cos(theta/2)``, ``s=sin(theta/2)``: ``|j> -> c|j>-i*s|k>``
        and ``|k> -> -i*s|j>+c|k>``.
    * - :py:class:`SubspaceRY` ``(theta, (j, k))``
-     - One scalar; two distinct in-range levels
+     - One scalar or view; two distinct in-range levels
      - ``|j> -> c|j>+s|k>`` and ``|k> -> -s|j>+c|k>``. Reversing
        ``(j, k)`` reverses the rotation.
    * - :py:class:`SubspaceRZ` ``(theta, (j, k))``
-     - One scalar; two distinct in-range levels
+     - One scalar or view; two distinct in-range levels
      - ``|j>`` gains ``exp(-i*theta/2)`` and ``|k>`` gains
        ``exp(i*theta/2)``. Reversing the pair reverses the rotation.
    * - :py:class:`CClock` ``(power)``
-     - ``(control, target)``; dimensions may differ
+     - Scalar or view pair; dimensions may differ
      - ``|i,j>`` gains ``omega**(i*j*power)`` using the target's
        ``omega=exp(2*pi*i/d_target)``. It is CZ for two qubits and power 1.
 
