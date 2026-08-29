@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "source": "plot_atom2level_antiferromagnetic_chain.py",
-  "source_sha256": "6a2c0460cf1ebc11aab35164853f60ec48c602ac652b67c7d7eff239e2c98edc",
+  "source_sha256": "787a340c89b115ae84d9d8c6feceb17077fca6cd704239794d54674e92b084d6",
   "code_cells": 8,
   "cells": {
     "1": {

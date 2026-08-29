@@ -30,7 +30,7 @@ the theoretical distribution in a figure.
 # A ``fatqat.Program`` is the backend-independent circuit description. Gate
 # values live in ``fatqat.operations``; fixed gates such as ``H`` and ``CX``
 # are passed directly rather than constructed. NumPy helps us check the state,
-# and Matplotlib supplies the figure captured by Sphinx-Gallery.
+# and Matplotlib supplies the captured runtime figure.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -86,14 +86,14 @@ print(f"Total probability: {np.vdot(statevector, statevector).real:.12f}")
 # The basis order is :math:`|00\rangle`, :math:`|01\rangle`,
 # :math:`|10\rangle`, :math:`|11\rangle`. The printed vector therefore has
 # amplitudes :math:`1/\sqrt{2}` at indices zero and three and zero elsewhere.
-# The documentation build also checks that expectation. The validation-only
-# lines are executed by Sphinx-Gallery but omitted from the public page and
-# generated notebook.
+# The snapshot refresh also checks that expectation. These validation-only
+# lines run when results are captured but are omitted from the public page and
+# downloadable source shown there.
 
-# sphinx_gallery_start_ignore
+# docs_start_ignore
 expected_state = np.array([1, 0, 0, 1], dtype=complex) / np.sqrt(2)
 np.testing.assert_allclose(statevector, expected_state, atol=1e-12)
-# sphinx_gallery_end_ignore
+# docs_end_ignore
 
 probabilities = np.abs(statevector) ** 2
 print("Exact basis probabilities:", probabilities)
@@ -159,12 +159,12 @@ observed_by_outcome = {
     outcome: float(frequency) for outcome, frequency in zip(outcomes, observed)
 }
 print("Observed frequencies:", observed_by_outcome)
-# sphinx_gallery_start_ignore
+# docs_start_ignore
 assert sum(counts.values()) == shots
 assert set(counts) <= {"00", "11"}
 np.testing.assert_allclose(observed.sum(), 1.0, atol=1e-12)
 np.testing.assert_array_equal(observed[[1, 2]], 0.0)
-# sphinx_gallery_end_ignore
+# docs_end_ignore
 
 figure, axis = plt.subplots(figsize=(7, 4))
 positions = np.arange(len(outcomes))

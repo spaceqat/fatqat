@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "source": "plot_bell_state.py",
-  "source_sha256": "9659d0ab32e03ad633cabff8aa18bb5fb0972698d7c156df78b2d670117b3509",
+  "source_sha256": "31e0cede7dec81786492c79c10b1735675d84467030d3c7dc65de4ae95de554d",
   "code_cells": 7,
   "cells": {
     "3": {

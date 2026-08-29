@@ -40,8 +40,7 @@ no fixed one-dimensional layout would place next to each other.
 #
 # A :class:`fatqat.Program` is the backend-independent circuit description.
 # Gate values live in :mod:`fatqat.operations`. NumPy helps us tabulate
-# expectation values, and Matplotlib supplies the figure captured by
-# Sphinx-Gallery.
+# expectation values, and Matplotlib supplies the captured runtime figure.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -193,10 +192,10 @@ counts = (
 )
 
 print("Counts:", counts)
-# sphinx_gallery_start_ignore
+# docs_start_ignore
 assert set(counts) <= {"0" * NUM_ATOMS, "1" * NUM_ATOMS}
 assert sum(counts.values()) == shots
-# sphinx_gallery_end_ignore
+# docs_end_ignore
 
 
 # %%
@@ -263,9 +262,9 @@ values = (
 for i, value in enumerate(values[:-1]):
     print(f"<Z{i}Z{i + 1}> = {value:+.6f}")
 print(f"<{'X' * NUM_ATOMS}> = {values[-1]:+.6f}")
-# sphinx_gallery_start_ignore
+# docs_start_ignore
 np.testing.assert_allclose(np.asarray(values), 1.0, atol=1e-9)
-# sphinx_gallery_end_ignore
+# docs_end_ignore
 
 
 # %%
@@ -309,10 +308,10 @@ print(f"{lost_shots}/{shots} shots lost at least one atom (a '2' in the readout)
 print("Most frequent outcomes under 1% loss per move:")
 for bitstring, n in sorted(lossy_counts.items(), key=lambda kv: -kv[1])[:6]:
     print(f"  {bitstring}: {n}")
-# sphinx_gallery_start_ignore
+# docs_start_ignore
 assert sum(lossy_counts.values()) == shots
 assert lost_shots > 0
-# sphinx_gallery_end_ignore
+# docs_end_ignore
 
 
 # %%

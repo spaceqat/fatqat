@@ -1,4 +1,4 @@
-"""Render the small Sphinx-role subset still present in Python docstrings."""
+"""Render Python cross-reference roles in source docstrings as MkDocs links."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _explicit_target(body: str) -> tuple[str | None, str]:
 
 
 def _resolve_target(obj: Object, role: str, target: str) -> str:
-    """Resolve a relative Sphinx role from its documented object."""
+    """Resolve a relative cross-reference from its documented object."""
 
     target = target.lstrip("~")
     if "." in target:
@@ -54,8 +54,8 @@ def _convert_role(match: re.Match[str], obj: Object) -> str:
     return f"[{rendered}][{target}]"
 
 
-class SphinxRolesExtension(Extension):
-    """Convert Sphinx object roles before mkdocstrings parses docstrings."""
+class DocstringRolesExtension(Extension):
+    """Convert Python object roles before mkdocstrings parses docstrings."""
 
     def on_object(self, *, obj: Object, **kwargs: Any) -> None:
         del kwargs

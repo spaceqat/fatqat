@@ -1,7 +1,7 @@
-# Direct dependencies for the parallel Material for MkDocs experiment.
+# Direct dependencies for the Material for MkDocs documentation.
 #
-# These versions were current on 2026-08-29. Keep the MkDocs toolchain
-# independent of the Sphinx requirements in docs/requirements.in.
+# These versions were current on 2026-08-29. Keep this toolchain independently
+# reproducible from the repository's other development environments.
 mkdocs==1.6.1
 mkdocs-material==9.7.7
 mkdocstrings==1.0.6

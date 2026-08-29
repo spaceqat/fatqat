@@ -1,16 +1,16 @@
-"""Convert and optionally execute Sphinx-Gallery tutorials for MkDocs.
+"""Convert and optionally execute documented Python tutorials for MkDocs.
 
 The top-level ``tutorials/*.py`` files remain the canonical executable sources.
 This script performs a deliberately small, deterministic conversion tailored to
-their current Sphinx-Gallery notebook structure:
+their current narrative-and-code structure:
 
 * the module docstring and leading comment blocks become Markdown narrative;
 * Python blocks become fenced notebook-style cells;
 * common reStructuredText math, links, roles, and code blocks are translated;
-* Sphinx-Gallery validation-only spans are hidden from the rendered page;
+* validation-only spans are hidden from the rendered page;
 * checked-in runtime snapshots restore the figures and stdout shown by the
-  Sphinx-Gallery build; and
-* the original Python file is copied byte-for-byte into the download tree.
+  documentation build; and
+* the original Python file is copied byte-for-byte into both download trees.
 
 Run this file from any working directory. It writes only below
 ``docs/mkdocs``. The normal mode is deterministic and does not execute the
@@ -291,13 +291,14 @@ SOURCE_ROOT = REPOSITORY_ROOT / "tutorials"
 PAGE_ROOT = MKDOCS_ROOT / "en" / "tutorials"
 DOWNLOAD_ROOT = MKDOCS_ROOT / "en" / "downloads" / "tutorials"
 ZH_PAGE_ROOT = MKDOCS_ROOT / "zh" / "tutorials"
+ZH_DOWNLOAD_ROOT = MKDOCS_ROOT / "zh" / "downloads" / "tutorials"
 EN_ASSET_ROOT = MKDOCS_ROOT / "en" / "assets" / "generated" / "tutorials"
 ZH_ASSET_ROOT = MKDOCS_ROOT / "zh" / "assets" / "generated" / "tutorials"
 RESULT_ROOT = MKDOCS_ROOT / "tutorial-results"
 
 CELL_SEPARATOR = re.compile(r"^#\s*%%\s*$")
-HIDDEN_START = "# sphinx_gallery_start_ignore"
-HIDDEN_END = "# sphinx_gallery_end_ignore"
+HIDDEN_START = "# docs_start_ignore"
+HIDDEN_END = "# docs_end_ignore"
 RST_HEADING = re.compile(r"^[=\-~^\"]{3,}\s*$")
 RST_ROLE = re.compile(
     r":(?:py:)?(?:attr|class|const|data|exc|func|meth|mod|obj):`([^`]+)`"
@@ -378,7 +379,7 @@ def _remove_document_title(text: str, expected_title: str) -> str:
 
 
 def _strip_hidden_validation(lines: list[str], source: Path) -> list[str]:
-    """Remove Sphinx-Gallery validation spans from displayed notebook cells."""
+    """Remove validation spans from displayed notebook cells."""
 
     visible: list[str] = []
     hidden = False
@@ -402,7 +403,7 @@ def _strip_hidden_validation(lines: list[str], source: Path) -> list[str]:
 
 
 def _split_cells(lines: list[str]) -> list[list[str]]:
-    """Split source lines at Sphinx-Gallery notebook separators."""
+    """Split source lines at notebook-style cell separators."""
 
     cells: list[list[str]] = []
     current: list[str] = []
@@ -593,7 +594,6 @@ def _convert_rst(text: str) -> str:
         "[`fatqat.operations`][fatqat.operations]",
         "[`fatqat.operations`](../api/operations.md)",
     )
-    converted = converted.replace("Sphinx-Gallery", "the docs build")
     converted = converted.replace("generated notebook", "downloadable Python source")
     converted = converted.replace("downloadable notebook", "downloadable Python source")
     converted = re.sub(
@@ -844,7 +844,7 @@ def _render_page(
             '!!! info "Source-backed tutorial"',
             "",
             "    The narrative and executable cells come from the tracked tutorial",
-            "    source. Validation-only Sphinx-Gallery spans are not displayed.",
+            "    source. Validation-only source spans are not displayed.",
             "    Runtime panels contain checked-in snapshots captured from that same",
             "    source. Run the download directly to reproduce its plots and stdout.",
             "",
@@ -1139,13 +1139,17 @@ def convert_all() -> None:
     PAGE_ROOT.mkdir(parents=True, exist_ok=True)
     ZH_PAGE_ROOT.mkdir(parents=True, exist_ok=True)
     DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    ZH_DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
     _write_text(PAGE_ROOT / "index.md", _render_index("en"))
     _write_text(ZH_PAGE_ROOT / "index.md", _render_index("zh"))
 
     for tutorial in TUTORIALS:
         source = SOURCE_ROOT / tutorial.source_name
         page = PAGE_ROOT / f"{tutorial.slug}.md"
-        download = DOWNLOAD_ROOT / tutorial.source_name
+        downloads = (
+            DOWNLOAD_ROOT / tutorial.source_name,
+            ZH_DOWNLOAD_ROOT / tutorial.source_name,
+        )
         code_cells, results = _load_results(tutorial, source)
         _write_text(page, _render_page(tutorial, source, code_cells, results))
         _sync_chinese_results(
@@ -1154,11 +1158,13 @@ def convert_all() -> None:
             code_cells,
             results,
         )
-        shutil.copyfile(source, download)
-        if source.read_bytes() != download.read_bytes():
-            raise RuntimeError(f"download copy differs from {source}")
+        for download in downloads:
+            shutil.copyfile(source, download)
+            if source.read_bytes() != download.read_bytes():
+                raise RuntimeError(f"download copy differs from {source}")
         print(page.relative_to(REPOSITORY_ROOT))
-        print(download.relative_to(REPOSITORY_ROOT))
+        for download in downloads:
+            print(download.relative_to(REPOSITORY_ROOT))
 
 
 if __name__ == "__main__":

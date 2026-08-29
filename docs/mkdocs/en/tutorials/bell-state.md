@@ -41,7 +41,7 @@ the theoretical distribution in a figure.
 !!! info "Source-backed tutorial"
 
     The narrative and executable cells come from the tracked tutorial
-    source. Validation-only Sphinx-Gallery spans are not displayed.
+    source. Validation-only source spans are not displayed.
     Runtime panels contain checked-in snapshots captured from that same
     source. Run the download directly to reproduce its plots and stdout.
 
@@ -115,7 +115,9 @@ print(f"Total probability: {np.vdot(statevector, statevector).real:.12f}")
 The basis order is $|00\rangle$, $|01\rangle$,
 $|10\rangle$, $|11\rangle$. The printed vector therefore has
 amplitudes $1/\sqrt{2}$ at indices zero and three and zero elsewhere.
-The canonical source also checks that expectation with validation-only lines; this page omits those checks from displayed code.
+The snapshot refresh also checks that expectation. These validation-only
+lines run when results are captured but are omitted from the public page and
+downloadable source shown there.
 
 ```python title="Python cell 4"
 probabilities = np.abs(statevector) ** 2

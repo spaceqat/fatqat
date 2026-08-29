@@ -72,7 +72,7 @@ download. Every source of randomness is seeded.
 !!! info "Source-backed tutorial"
 
     The narrative and executable cells come from the tracked tutorial
-    source. Validation-only Sphinx-Gallery spans are not displayed.
+    source. Validation-only source spans are not displayed.
     Runtime panels contain checked-in snapshots captured from that same
     source. Run the download directly to reproduce its plots and stdout.
 

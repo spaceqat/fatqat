@@ -232,7 +232,7 @@ EDGE_LEFT_MATRIX = _rotation_matrix(4, (0, 2), THETA)
 # Right edge (L-2, L-1): flip site L-1 -> pair (|gg>, |gr>) = (0, 1).
 EDGE_RIGHT_MATRIX = _rotation_matrix(4, (0, 1), THETA)
 
-# sphinx_gallery_start_ignore
+# docs_start_ignore
 for name, matrix in (
     ("bulk", BULK_MATRIX),
     ("left edge", EDGE_LEFT_MATRIX),
@@ -240,7 +240,7 @@ for name, matrix in (
 ):
     assert np.allclose(matrix @ matrix.conj().T, np.eye(matrix.shape[0]))
     print(f"{name} term matrix is unitary ({matrix.shape[0]}x{matrix.shape[0]})")
-# sphinx_gallery_end_ignore
+# docs_end_ignore
 
 implementation_map = fq.implementation.MatrixImplementationMap()
 implementation_map.add(PXPBulk, BULK_MATRIX)
@@ -440,7 +440,7 @@ first_peak_fidelity = fatqat_fidelity[peaks[0]]
 first_peak_entropy = fatqat_entropy[peaks[0]]
 print(f"Entropy maximum: {fatqat_entropy.max():.3f}")
 
-# sphinx_gallery_start_ignore
+# docs_start_ignore
 # The first revival lands where the scar prediction says it should, the
 # state returns to the same branch, and the Trotter curve hugs the exact
 # oracle the whole way.
@@ -451,7 +451,7 @@ assert max_gap < 2e-3
 assert fatqat_entropy[0] < 1e-12  # |Z2> is a product state
 assert fatqat_entropy.max() > 0.8
 assert first_peak_entropy < 0.5 * fatqat_entropy.max()  # revival dips
-# sphinx_gallery_end_ignore
+# docs_end_ignore
 
 
 # %%
@@ -519,12 +519,11 @@ figure.colorbar(image, ax=occ_axis, fraction=0.046, pad=0.04)
 figure.tight_layout()
 plt.show()
 
-# sphinx_gallery_start_ignore
+# docs_start_ignore
 # Save the figure and the raw time series next to this tutorial so a local
-# run leaves something to look at even without a documentation build. The
-# rendered page skips this block. Sphinx-Gallery executes examples with
-# exec(), which does not define ``__file__``, so guard on it: the docs build
-# simply skips the save, while a plain script / runpy run still writes.
+# run leaves something to inspect. The rendered page skips this block. Snapshot
+# capture uses exec(), which does not define ``__file__``, so guard on it: the
+# capture simply skips the save, while a plain script or runpy run still writes.
 import os as _os
 
 if "__file__" in globals():
@@ -564,4 +563,4 @@ if "__file__" in globals():
                 f"{fatqat_alt[_p]:>8.3f} {fatqat_entropy[_p]:>8.3f}\n"
             )
         _table_file.write(f"\nEntropy maximum: {fatqat_entropy.max():.3f}\n")
-# sphinx_gallery_end_ignore
+# docs_end_ignore

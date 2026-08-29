@@ -380,10 +380,10 @@ for label, backend in backends.items():
 # correlations from both a featureless state and one that merely has the right
 # average excitation density.
 
-# sphinx_gallery_start_ignore
+# docs_start_ignore
 assert min(staggered_results.values()) > 2 / NUM_SITES
 assert max(double_results.values()) < 0.02
-# sphinx_gallery_end_ignore
+# docs_end_ignore
 
 
 # %%

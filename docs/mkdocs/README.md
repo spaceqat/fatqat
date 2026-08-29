@@ -1,8 +1,8 @@
-# Parallel Material for MkDocs build
+# FatQat Material for MkDocs documentation
 
-This directory contains an English and Simplified Chinese documentation
-experiment alongside, and independent from, `docs/sphinx`. It does not alter
-the Read the Docs configuration or replace the Sphinx build.
+This directory is the self-contained source for the English and Simplified
+Chinese Material documentation. Its Markdown pages, configuration, templates,
+assets, validation, and publishing workflow are maintained here.
 
 Material supports one canonical language per MkDocs project. The two primary
 configuration files therefore inherit shared presentation and API settings
@@ -24,8 +24,7 @@ python -m pip install -r docs/mkdocs/requirements.txt
 
 The MkDocs toolchain requires Python 3.10 or newer. FatQat itself currently
 requires Python 3.12 or newer, so use Python 3.12+ when installing both as
-shown above. The Sphinx environment remains defined by `docs/requirements.in`
-and `docs/requirements.txt`.
+shown above.
 
 ## Build and review both languages
 
@@ -77,29 +76,30 @@ Run it directly for a fast content-only check:
 python docs/mkdocs/tools/validate_content.py
 ```
 
-## Keep generated English pages synchronized
+## Author guides and API reference pages
 
-Sphinx API and guide pages, plus the tracked Sphinx-Gallery tutorial scripts,
-remain the canonical English sources. Regenerate their Material counterparts
-after changing those sources:
-
-```sh
-python docs/mkdocs/tools/convert_api.py
-python docs/mkdocs/tools/convert_guides.py
-python docs/mkdocs/tools/convert_tutorials.py
-```
+English and Chinese guide and API pages are native Markdown under `en/` and
+`zh/`. Edit them directly and keep corresponding pages structurally aligned.
+API pages combine curated explanations with `mkdocstrings` directives such as
+`::: fatqat.Program`; signatures, members, and source docstrings are rendered
+from `src/fatqat` during each build.
 
 The two root `index.md` files contain manually maintained, localized content,
 while `overrides/home.html` owns their shared Material landing-page structure.
-Keep their product story aligned with the Sphinx homepage, use native Material
-grids and cards for substantive sections, and keep the small `hero` front-matter
-mappings structurally identical. The homepage stylesheet is loaded only by the
-shared template. `convert_guides.py` intentionally owns only `guide/**` and does
-not overwrite either homepage.
+Use native Material grids and cards for substantive sections, and keep the
+small `hero` front-matter mappings structurally identical. The homepage
+stylesheet is loaded only by the shared template. Guide illustrations are
+committed under each locale's `assets/generated/guide` tree; their adjacent
+expandable Python examples document how to reproduce the numerical figures.
 
-Pass `--render` to `convert_guides.py` only when its trusted plot blocks or
-figure inputs change and the committed PNGs need refreshing. CI deliberately
-does not render figures because graphics output can vary across platforms.
+## Generate executable tutorials
+
+The tracked `tutorials/plot_*.py` scripts are the canonical executable tutorial
+sources. Regenerate their Material pages after changing those sources:
+
+```sh
+python docs/mkdocs/tools/convert_tutorials.py
+```
 
 Tutorial pages consume checked-in runtime snapshots from `tutorial-results/`.
 Each manifest records the SHA-256 digest of its canonical tutorial source and
@@ -109,11 +109,11 @@ results. It regenerates both localized tutorial indexes from the bilingual
 thumbnail. It also regenerates English tutorial prose and synchronizes only the
 generated runtime panels in the manually translated Chinese tutorial pages; it
 never executes a tutorial. After reviewing a tutorial source change, refresh
-all snapshots in a full Sphinx documentation environment (which includes
-scikit-learn) with:
+all snapshots in a documentation environment that includes the optional
+tutorial dependencies, such as scikit-learn, with:
 
 ```sh
-uv run --group docs python docs/mkdocs/tools/convert_tutorials.py --execute
+python docs/mkdocs/tools/convert_tutorials.py --execute
 ```
 
 When adding a tracked `tutorials/plot_*.py` file, register it in `TUTORIALS`
@@ -125,10 +125,10 @@ summary of the example.
 
 Tutorial execution is deliberately opt-in because the complete suite is
 computationally expensive and graphics can differ with plotting and font
-versions. Review changed stdout and figures before committing them. CI runs the
-API converter in check mode, regenerates guide and tutorial text from committed
-inputs, and fails if either locale changes. Translate any resulting English
-narrative changes into the matching Chinese pages before committing.
+versions. Review changed stdout and figures before committing them. CI
+regenerates tutorial text from committed inputs and fails if either locale
+changes. Translate any resulting English narrative changes into the matching
+Chinese pages before committing.
 
 ## Keep translations aligned
 
@@ -144,13 +144,12 @@ The `nav` lists are intentionally repeated. MkDocs configuration inheritance
 deep-merges mapping values, but replaces lists, so translated navigation
 labels cannot be layered on top of one shared list.
 
-Generated API pages use mkdocstrings with `../../src` as the source path. Set
+API pages use mkdocstrings with `../../src` as the source path. Set
 `locale: zh` for the Chinese build to translate mkdocstrings interface labels;
 Python names, signatures, and source docstrings remain authoritative and are
 not machine-translated by the build. The small Griffe extension in
-`extensions/sphinx_roles.py` converts the Sphinx cross-reference roles that
-remain in those docstrings into native MkDocs links without changing the
-Python sources.
+`extensions/docstring_roles.py` converts Python cross-reference roles in those
+docstrings into native MkDocs links without changing the Python sources.
 
 Edit the four direct documentation requirements in `requirements.in`, then
 refresh the transitive lock with Python 3.12 before committing an upgrade:

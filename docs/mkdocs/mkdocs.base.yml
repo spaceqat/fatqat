@@ -56,7 +56,7 @@ plugins:
           docstring_options:
             warn_missing_types: false
           extensions:
-            - extensions/sphinx_roles.py:SphinxRolesExtension
+            - extensions/docstring_roles.py:DocstringRolesExtension
           filters: public
           inherited_members: true
           members_order: source

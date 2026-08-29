@@ -40,7 +40,7 @@ of the exact PXP model checks every curve along the way.
 !!! info "Source-backed tutorial"
 
     The narrative and executable cells come from the tracked tutorial
-    source. Validation-only Sphinx-Gallery spans are not displayed.
+    source. Validation-only source spans are not displayed.
     Runtime panels contain checked-in snapshots captured from that same
     source. Run the download directly to reproduce its plots and stdout.
 

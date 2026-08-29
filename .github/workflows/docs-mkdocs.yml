@@ -33,10 +33,8 @@ jobs:
           python -m pip install -e .
           python -m pip install -r docs/mkdocs/requirements.txt
 
-      - name: Verify generated documentation
+      - name: Verify generated tutorials
         run: |
-          python docs/mkdocs/tools/convert_api.py --check
-          python docs/mkdocs/tools/convert_guides.py
           python docs/mkdocs/tools/convert_tutorials.py
           git diff --exit-code -- docs/mkdocs/en docs/mkdocs/zh
 
