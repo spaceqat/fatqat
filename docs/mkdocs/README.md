@@ -129,8 +129,10 @@ presentation text.
 
 The first generated plot automatically becomes the card image. Every tutorial
 must therefore create at least one Matplotlib figure, and `figure_alts` must
-contain one accessible label per generated figure. The downloadable Python is
-assembled from those same English cells. Generate the site inputs with:
+contain one accessible label per generated figure. The downloadable Python
+script and localized, unexecuted Jupyter notebook are assembled from those
+same cells; notebook prose comes from the selected locale's Markdown. Generate
+the site inputs with:
 
 ```sh
 python docs/mkdocs/manage.py generate

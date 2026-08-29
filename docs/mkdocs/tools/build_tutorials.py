@@ -15,6 +15,7 @@ import shutil
 import sys
 import tempfile
 
+import nbformat
 import yaml
 
 
@@ -377,12 +378,22 @@ def _category_label(category: str, locale: str) -> tuple[str, str]:
 def _insert_page_header(tutorial: Tutorial, locale: str, body: str) -> str:
     source = tutorial.en if locale == "en" else tutorial.zh
     category_title, _ = _category_label(tutorial.category, locale)
-    download = f"../downloads/tutorials/{tutorial.slug}.py"
     labels = (
-        ("Track", "Executable source", "Download", "Source-backed tutorial")
+        (
+            "Track",
+            "Downloads",
+            "Python script",
+            "Jupyter notebook",
+        )
         if locale == "en"
-        else ("学习路径", "可执行源码", "下载", "基于源码的教程")
+        else (
+            "学习路径",
+            "下载",
+            "Python 脚本",
+            "Jupyter 笔记本",
+        )
     )
+    download_root = f"../downloads/tutorials/{tutorial.slug}"
     preamble = "\n".join(
         (
             '<div class="grid cards" markdown>',
@@ -391,20 +402,14 @@ def _insert_page_header(tutorial: Tutorial, locale: str, body: str) -> str:
             "",
             f"    {category_title}",
             "",
-            f"-   :material-language-python: **{labels[1]}**",
+            f"-   :material-download: **{labels[1]}**",
             "",
-            f"    [{labels[2]} `{tutorial.slug}.py`]({download}){{ download }}",
+            f'    [{labels[2]} `.py`]({download_root}.py)'
+            f'{{ download="{tutorial.slug}.py" }} \u00b7 '
+            f'[{labels[3]} `.ipynb`]({download_root}.ipynb)'
+            f'{{ download="{tutorial.slug}.ipynb" }}',
             "",
             "</div>",
-            "",
-            f'!!! info "{labels[3]}"',
-            "",
-            (
-                "    This page, its download, runtime output, and plots are assembled "
-                "from the authored Markdown source."
-                if locale == "en"
-                else "    本页、下载文件、运行输出与图形均由英文 Markdown 源文件在构建时组装。"
-            ),
         )
     )
     heading = re.search(r"(?m)^# .+$", body)
@@ -437,6 +442,60 @@ def _render_download(tutorial: Tutorial) -> str:
     for code in tutorial.code_cells:
         lines.extend(("# %%", code, ""))
     return "\n".join(lines)
+
+
+def _render_notebook(tutorial: Tutorial, locale: str) -> str:
+    """Create an unexecuted localized notebook from the authored Markdown cells."""
+
+    source = tutorial.en if locale == "en" else tutorial.zh
+    pattern = PYTHON_CELL if locale == "en" else CODE_PLACEHOLDER
+    cells = []
+    cursor = 0
+    codes = iter(tutorial.code_cells)
+
+    def cell_id(kind: str) -> str:
+        identity = (
+            f"{tutorial.category}/{tutorial.slug}:{locale}:{len(cells)}:{kind}"
+        )
+        return hashlib.sha256(identity.encode()).hexdigest()[:12]
+
+    for match in pattern.finditer(source.body):
+        if prose := source.body[cursor : match.start()].strip():
+            cells.append(
+                nbformat.v4.new_markdown_cell(
+                    prose,
+                    id=cell_id("markdown"),
+                )
+            )
+        code = match.group("code").rstrip() if locale == "en" else next(codes)
+        cells.append(
+            nbformat.v4.new_code_cell(
+                code,
+                id=cell_id("code"),
+            )
+        )
+        cursor = match.end()
+    if prose := source.body[cursor:].strip():
+        cells.append(
+            nbformat.v4.new_markdown_cell(
+                prose,
+                id=cell_id("markdown"),
+            )
+        )
+
+    notebook = nbformat.v4.new_notebook(
+        cells=cells,
+        metadata={
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3",
+            },
+            "language_info": {"name": "python"},
+        },
+    )
+    nbformat.validate(notebook)
+    return nbformat.writes(notebook, version=4)
 
 
 def _render_index(tutorials: tuple[Tutorial, ...], locale: str) -> str:
@@ -499,7 +558,11 @@ def _render_index(tutorials: tuple[Tutorial, ...], locale: str) -> str:
 
 def assemble_all(tutorials: tuple[Tutorial, ...]) -> None:
     expected_pages = {"index.md", *(f"{tutorial.slug}.md" for tutorial in tutorials)}
-    expected_downloads = {f"{tutorial.slug}.py" for tutorial in tutorials}
+    expected_downloads = {
+        f"{tutorial.slug}.{suffix}"
+        for tutorial in tutorials
+        for suffix in ("ipynb", "py")
+    }
     for root in (*PAGE_ROOTS.values(), *DOWNLOAD_ROOTS.values()):
         root.mkdir(parents=True, exist_ok=True)
     for locale, page_root in PAGE_ROOTS.items():
@@ -512,10 +575,15 @@ def assemble_all(tutorials: tuple[Tutorial, ...]) -> None:
         for locale in ("en", "zh"):
             _write_text(PAGE_ROOTS[locale] / f"{tutorial.slug}.md", _render_page(tutorial, results, locale))
             _write_text(DOWNLOAD_ROOTS[locale] / f"{tutorial.slug}.py", _render_download(tutorial))
+            _write_text(
+                DOWNLOAD_ROOTS[locale] / f"{tutorial.slug}.ipynb",
+                _render_notebook(tutorial, locale),
+            )
     for root in DOWNLOAD_ROOTS.values():
-        for stale in root.glob("*.py"):
-            if stale.name not in expected_downloads:
-                stale.unlink()
+        for pattern in ("*.ipynb", "*.py"):
+            for stale in root.glob(pattern):
+                if stale.name not in expected_downloads:
+                    stale.unlink()
     print(f"Assembled {len(tutorials)} bilingual tutorials from category folders.")
 
 
