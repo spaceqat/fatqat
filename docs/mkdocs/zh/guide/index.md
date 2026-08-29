@@ -6,34 +6,30 @@
 
 <div class="grid cards" markdown>
 
--   :material-chart-bell-curve-cumulative: **探索算法**
+-   ![五量子比特变分拟设](../assets/generated/guide/guide-path-algorithm.png){ loading=lazy width="636" height="409" }
+
+    :material-chart-bell-curve-cumulative: **探索算法**
 
     从理想线路行为开始，检查状态与测量结果，再加入可控噪声并评估性能。
 
     [从模拟开始 :material-arrow-right:](simulation.md)
 
--   :material-chip: **检验硬件约束**
+-   ![包含受支持与不受支持耦合的硬件拓扑](../assets/generated/guide/guide-path-hardware.png){ loading=lazy width="490" height="400" }
+
+    :material-chip: **检验硬件约束**
 
     在不改变逻辑工作负载的情况下，加入拓扑、原生操作、布局、占用、移动和
     参考噪声。
 
     [打开硬件配置模拟 :material-arrow-right:](hardware-profile-simulation.md)
 
--   :material-atom: **追踪物理过程**
+-   ![受驱动原子光谱热图](../assets/generated/guide/guide-path-physics.png){ loading=lazy width="639" height="418" }
+
+    :material-atom: **追踪物理过程**
 
     将已校准的门和直接脉冲控制解析为 Transmon 与中性原子的连续动力学。
 
     [打开哈密顿量仿真 :material-arrow-right:](hamiltonian-emulation.md)
-
-</div>
-
-<div class="grid" markdown>
-
-![五量子比特变分拟设](../assets/generated/guide/guide-path-algorithm.png)
-
-![包含受支持与不受支持耦合的硬件拓扑](../assets/generated/guide/guide-path-hardware.png)
-
-![受驱动原子光谱热图](../assets/generated/guide/guide-path-physics.png)
 
 </div>
 

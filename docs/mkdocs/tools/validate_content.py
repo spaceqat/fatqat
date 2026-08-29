@@ -189,6 +189,7 @@ def validate() -> list[str]:
 
     for relative, label in (
         (Path("index.md"), "Homepage"),
+        (Path("guide/index.md"), "Guide index"),
         (Path("tutorials/index.md"), "Tutorial index"),
     ):
         if _markdown_destinations(english / relative) != _markdown_destinations(

@@ -7,36 +7,32 @@ authoring model.
 
 <div class="grid cards" markdown>
 
--   :material-chart-bell-curve-cumulative: **Explore the algorithm**
+-   ![Five-qubit variational ansatz](../assets/generated/guide/guide-path-algorithm.png){ loading=lazy width="636" height="409" }
+
+    :material-chart-bell-curve-cumulative: **Explore the algorithm**
 
     Start with ideal circuit behavior, inspect states and measurements, then add
     controlled noise and measure performance.
 
     [Start with simulation :material-arrow-right:](simulation.md)
 
--   :material-chip: **Test hardware constraints**
+-   ![Hardware topology with supported and unsupported couplings](../assets/generated/guide/guide-path-hardware.png){ loading=lazy width="490" height="400" }
+
+    :material-chip: **Test hardware constraints**
 
     Add topology, native operations, placement, occupancy, movement, and
     reference noise without changing the logical workload.
 
     [Open hardware-profile simulation :material-arrow-right:](hardware-profile-simulation.md)
 
--   :material-atom: **Follow the physics**
+-   ![Driven-atom spectroscopy heatmap](../assets/generated/guide/guide-path-physics.png){ loading=lazy width="639" height="418" }
+
+    :material-atom: **Follow the physics**
 
     Resolve calibrated gates and direct pulse controls into continuous dynamics
     for transmons and neutral atoms.
 
     [Open Hamiltonian emulation :material-arrow-right:](hamiltonian-emulation.md)
-
-</div>
-
-<div class="grid" markdown>
-
-![Five-qubit variational ansatz](../assets/generated/guide/guide-path-algorithm.png)
-
-![Hardware topology with supported and unsupported couplings](../assets/generated/guide/guide-path-hardware.png)
-
-![Driven-atom spectroscopy heatmap](../assets/generated/guide/guide-path-physics.png)
 
 </div>
 
