@@ -1,0 +1,63 @@
+index:
+  en:
+    title: Tutorials
+    description: Executable FatQat case studies, from first circuits to many-body dynamics.
+    introduction: >-
+      Go beyond the task-focused user guide with complete, executable case studies.
+      Every card and runtime panel is discovered from the Markdown sources in its
+      category folder.
+    tip_title: Choose a path
+    tip: >-
+      Begin with the Bell state if you are new to FatQat. The algorithms reuse the
+      same execution model, while the neutral-atom track moves progressively closer
+      to many-body hardware physics.
+    open: Open tutorial
+  zh:
+    title: 教程
+    description: 从入门量子电路到多体动力学的可执行 FatQat 案例研究。
+    introduction: >-
+      在面向具体任务的用户指南之外，通过完整且可执行的案例进一步理解 FatQat。
+      所有卡片与运行结果都从各分类文件夹中的 Markdown 源文件自动发现。
+    tip_title: 选择学习路径
+    tip: >-
+      如果刚接触 FatQat，建议从贝尔态开始。算法篇复用相同的执行模型；
+      中性原子篇则循序渐进，逐步贴近多体硬件的真实物理。
+    open: 打开教程
+
+# Change this list to choose the gallery order. Unlisted folders follow alphabetically.
+category_order:
+  - foundations
+  - algorithms
+  - neutral-atom-physics
+
+categories:
+  foundations:
+    en:
+      title: Foundations
+      description: >-
+        Start with a compact circuit whose state, samples, and visual interpretation
+        can all be checked by hand.
+    zh:
+      title: 基础
+      description: >-
+        从一个紧凑的量子电路入手：其量子态、采样结果与可视化解读都可以手工验证。
+  algorithms:
+    en:
+      title: Algorithms
+      description: >-
+        Use parameterized programs, optimizers, sweeps, and estimators to answer
+        chemistry and machine-learning questions.
+    zh:
+      title: 算法
+      description: >-
+        通过参数化程序、优化器、扫描与估计器回答量子化学和机器学习问题。
+  neutral-atom-physics:
+    en:
+      title: Neutral-atom physics
+      description: >-
+        Move from programmable connectivity to continuous-time Rydberg dynamics and
+        constrained many-body evolution.
+    zh:
+      title: 中性原子物理
+      description: >-
+        从可编程连接逐步走向连续时间里德伯动力学与受约束的多体演化。

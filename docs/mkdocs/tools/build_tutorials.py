@@ -22,6 +22,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 REPOSITORY_ROOT = SCRIPT_PATH.parents[3]
 MKDOCS_ROOT = SCRIPT_PATH.parents[1]
 SOURCE_ROOT = MKDOCS_ROOT / "tutorial-sources"
+GALLERY = yaml.safe_load((SOURCE_ROOT / "gallery.yml").read_text(encoding="utf-8"))
 PAGE_ROOTS = {locale: MKDOCS_ROOT / locale / "tutorials" for locale in ("en", "zh")}
 DOWNLOAD_ROOTS = {
     locale: MKDOCS_ROOT / locale / "downloads" / "tutorials"
@@ -38,76 +39,6 @@ PYTHON_CELL = re.compile(
     r"(?ms)^```python(?:[^\n]*)\n(?P<code>.*?)^```(?=\n|$)"
 )
 CODE_PLACEHOLDER = re.compile(r"<!-- tutorial-code-cell -->")
-
-CATEGORY_CONTENT = {
-    "foundations": {
-        "en": (
-            "Foundations",
-            "Start with a compact circuit whose state, samples, and visual "
-            "interpretation can all be checked by hand.",
-        ),
-        "zh": (
-            "基础",
-            "从一个紧凑的量子电路入手：其量子态、采样结果与可视化解读都可以手工验证。",
-        ),
-    },
-    "algorithms": {
-        "en": (
-            "Algorithms",
-            "Use parameterized programs, optimizers, sweeps, and estimators to "
-            "answer chemistry and machine-learning questions.",
-        ),
-        "zh": (
-            "算法",
-            "通过参数化程序、优化器、扫描与估计器回答量子化学和机器学习问题。",
-        ),
-    },
-    "neutral-atom-physics": {
-        "en": (
-            "Neutral-atom physics",
-            "Move from programmable connectivity to continuous-time Rydberg "
-            "dynamics and constrained many-body evolution.",
-        ),
-        "zh": (
-            "中性原子物理",
-            "从可编程连接逐步走向连续时间里德伯动力学与受约束的多体演化。",
-        ),
-    },
-}
-
-INDEX_CONTENT = {
-    "en": {
-        "title": "Tutorials",
-        "description": "Executable FatQat case studies, from first circuits to many-body dynamics.",
-        "introduction": (
-            "Go beyond the task-focused user guide with complete, executable case",
-            "studies. Every card and runtime panel is discovered from the Markdown",
-            "sources in its category folder.",
-        ),
-        "tip_title": "Choose a path",
-        "tip": (
-            "Begin with the Bell state if you are new to FatQat. The algorithms",
-            "reuse the same execution model, while the neutral-atom track moves",
-            "progressively closer to many-body hardware physics.",
-        ),
-        "open": "Open tutorial",
-    },
-    "zh": {
-        "title": "教程",
-        "description": "从入门量子电路到多体动力学的可执行 FatQat 案例研究。",
-        "introduction": (
-            "在面向具体任务的用户指南之外，通过完整且可执行的案例进一步理解 FatQat。",
-            "所有卡片与运行结果都从各分类文件夹中的 Markdown 源文件自动发现。",
-        ),
-        "tip_title": "选择学习路径",
-        "tip": (
-            "如果刚接触 FatQat，建议从贝尔态开始。算法篇复用相同的执行模型；",
-            "中性原子篇则循序渐进，逐步贴近多体硬件的真实物理。",
-        ),
-        "open": "打开教程",
-    },
-}
-
 
 @dataclass(frozen=True)
 class LocalizedSource:
@@ -431,8 +362,9 @@ def _render_body(tutorial: Tutorial, results: dict[int, dict[str, object]], loca
 
 
 def _category_label(category: str, locale: str) -> tuple[str, str]:
-    if category in CATEGORY_CONTENT:
-        return CATEGORY_CONTENT[category][locale]
+    if category in GALLERY["categories"]:
+        content = GALLERY["categories"][category][locale]
+        return content["title"], content["description"]
     title = category.rsplit("/", maxsplit=1)[-1].replace("-", " ").title()
     description = (
         f"Tutorials collected from the {title} source folder."
@@ -508,7 +440,7 @@ def _render_download(tutorial: Tutorial) -> str:
 
 
 def _render_index(tutorials: tuple[Tutorial, ...], locale: str) -> str:
-    content = INDEX_CONTENT[locale]
+    content = GALLERY["index"][locale]
     lines = [
         "---",
         f"title: {json.dumps(content['title'], ensure_ascii=False)}",
@@ -518,14 +450,28 @@ def _render_index(tutorials: tuple[Tutorial, ...], locale: str) -> str:
         "",
         f"# {content['title']}",
         "",
-        *content["introduction"],
+        content["introduction"],
         "",
         f'!!! tip "{content["tip_title"]}"',
         "",
-        *(f"    {line}" for line in content["tip"]),
+        f"    {content['tip']}",
         "",
     ]
-    categories = sorted({tutorial.category for tutorial in tutorials})
+    discovered = {tutorial.category for tutorial in tutorials}
+    configured = tuple(GALLERY["category_order"])
+    unknown = set(configured) - discovered
+    if len(configured) != len(set(configured)) or unknown:
+        raise ValueError(
+            "gallery category_order must contain unique source folders; "
+            f"unknown={sorted(unknown)}"
+        )
+    categories = sorted(
+        discovered,
+        key=lambda category: (
+            configured.index(category) if category in configured else len(configured),
+            category,
+        ),
+    )
     for category in categories:
         title, description = _category_label(category, locale)
         lines.extend((f"## {title}", "", description, "", '<div class="grid cards" markdown>', ""))

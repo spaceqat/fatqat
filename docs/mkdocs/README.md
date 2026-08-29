@@ -119,6 +119,14 @@ fences; each is one executable cell. Put one `<!-- tutorial-code-cell -->`
 placeholder at the corresponding position in the Chinese body. This keeps the
 translated prose in Markdown while defining executable Python only once.
 
+The category order and localized category labels live in
+`tutorial-sources/gallery.yml`; rearrange the short `category_order` list to
+choose the display order. Tutorials in an existing category still need no
+registration. A new, unconfigured category also appears automatically with a
+title derived from its folder name, after the configured categories; add it to
+`gallery.yml` only when it needs an explicit position or localized
+presentation text.
+
 The first generated plot automatically becomes the card image. Every tutorial
 must therefore create at least one Matplotlib figure, and `figure_alts` must
 contain one accessible label per generated figure. The downloadable Python is
