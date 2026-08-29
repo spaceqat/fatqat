@@ -1,0 +1,67 @@
+{% extends "main.html" %}
+
+{# Load landing-page styles only for the two pages that select this template. #}
+{% block styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ 'assets/stylesheets/home.css' | url }}">
+{% endblock %}
+
+{# Material's own homepage places its landing section after the tabs block.
+   Calling super() preserves normal tab behavior for sticky and non-sticky nav. #}
+{% block tabs %}
+  {{ super() }}
+  {% set hero = page.meta.hero %}
+  <section class="fatqat-hero" aria-labelledby="fatqat-home-title">
+    <div class="fatqat-hero__inner md-grid md-typeset">
+      <div class="fatqat-hero__content">
+        <p class="fatqat-hero__eyebrow">{{ hero.eyebrow | e }}</p>
+        <h1 id="fatqat-home-title">{{ hero.title | e }}</h1>
+        <p class="fatqat-hero__summary">{{ hero.summary | e }}</p>
+        <div class="fatqat-hero__actions">
+          <a
+            href="{{ 'guide/quickstart/' | url }}"
+            class="md-button md-button--primary"
+          >
+            {{ hero.primary_action | e }}
+          </a>
+          <a href="{{ 'guide/execution-models/' | url }}" class="md-button">
+            {{ hero.secondary_action | e }}
+          </a>
+        </div>
+        <p class="fatqat-hero__requirements">
+          <strong>Python 3.12+</strong>
+          <span aria-hidden="true"> · </span>
+          <a href="{{ 'guide/quickstart/' | url }}">{{ hero.install_action | e }}</a>
+        </p>
+      </div>
+
+      <figure class="fatqat-hero__visual">
+        <div class="fatqat-hero__image">
+          <img
+            src="{{ 'assets/generated/guide/quickstart-circuit.png' | url }}"
+            alt="{{ hero.image_alt | e }}"
+            width="408"
+            height="272"
+            draggable="false"
+          >
+        </div>
+        <figcaption>
+          <span>{{ hero.visual_note | e }}</span>
+          <span class="fatqat-hero__flow" aria-label="{{ hero.flow_label | e }}">
+            <code>Program</code>
+            <span aria-hidden="true">→</span>
+            <code>Job</code>
+            <span aria-hidden="true">→</span>
+            <code>Result</code>
+          </span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+{% endblock %}
+
+{# The semantic H1 lives in the hero. Material's default content partial would
+   otherwise synthesize a second H1 because it only inspects Markdown content. #}
+{% block content %}
+  {{ page.content }}
+{% endblock %}

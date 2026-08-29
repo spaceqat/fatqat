@@ -1,82 +1,61 @@
 ---
+template: home.html
 hide:
   - navigation
   - toc
+description: 只编写一个 FatQat Program，并为每项量子研究选择恰到好处的物理细节。
+hero:
+  eyebrow: 量子 SDK
+  title: 一个 Program，三种物理细节层次
+  summary: >-
+    量子计算只需编写一次。随后无需更换编程模型，即可研究逻辑行为、测试设备约束，
+    或追踪随时间演化的物理动力学。
+  primary_action: 构建第一个 Program
+  secondary_action: 比较执行层次
+  install_action: 从源代码安装
+  image_alt: 一个带测量与经典输出的双量子比特贝尔态线路。
+  visual_note: 编写一次，运行时再选择所需细节。
+  flow_label: 从 Program 到 Job 再到 Result
 ---
 
-<!-- Material 专用首页；产品叙事应与 docs/sphinx/index.md 保持一致。 -->
+<!-- 本地化内容保留在 Markdown 中；共享的 Material 首屏位于 home.html。 -->
 
-<div class="fatqat-home" markdown>
+## 一套工作流，三种执行层次
 
-<section class="fatqat-home__hero" aria-labelledby="fatqat-home-title" markdown>
+每条路径都从同一个 [`Program`][fatqat.Program] 开始，并返回熟悉的 `Job` 与
+`Result` 对象。只需选择足以回答当前问题的最低物理细节层次。
 
-<div class="fatqat-home__hero-copy" markdown>
+<div class="grid cards" markdown>
 
-<p class="fatqat-home__eyebrow">量子 SDK</p>
+-   :material-chart-box-outline:{ .lg .middle } **通用模拟**
 
-# 一个 Program，三种物理细节层次 { #fatqat-home-title }
+    ---
 
-<p class="fatqat-home__summary" markdown>
-只需将量子计算编写一次，保存为一个 [`Program`][fatqat.Program]。随后无需更换
-编程模型，即可研究逻辑行为、测试设备约束，或追踪随时间演化的物理动力学。
-</p>
+    当问题聚焦逻辑行为时，检查状态、计数与噪声。
 
-<div class="fatqat-home__actions" markdown>
-[构建第一个 Program](guide/quickstart.md){ .md-button .md-button--primary }
-[比较执行层次](guide/execution-models.md){ .md-button }
-</div>
+    [:octicons-arrow-right-24: 了解通用模拟](guide/simulation.md)
 
-<p class="fatqat-home__requirements" markdown>
-Python 3.12+ · [从源代码安装](guide/quickstart.md)
-</p>
+-   :material-memory:{ .lg .middle } **硬件配置模拟**
 
-</div>
+    ---
 
-<div class="fatqat-home__model" role="img" aria-label="同一个 FatQat Program 可选择通用模拟、硬件配置模拟或哈密顿量仿真三种执行层次，且每条路径都返回 Job 与 Result。">
-<div class="fatqat-home__model-node"><code>Program</code></div>
-<div class="fatqat-home__model-connector" aria-hidden="true"></div>
-<div class="fatqat-home__model-choice">选择一种执行层次</div>
-<div class="fatqat-home__model-targets">
-<div class="fatqat-home__model-target">
-<strong>通用模拟</strong>
-<span>状态 · 计数 · 噪声</span>
-</div>
-<div class="fatqat-home__model-target">
-<strong>硬件配置模拟</strong>
-<span>原生门 · 拓扑</span>
-</div>
-<div class="fatqat-home__model-target">
-<strong>哈密顿量仿真</strong>
-<span>脉冲 · 泄漏 · 动力学</span>
-</div>
-</div>
-<div class="fatqat-home__model-connector" aria-hidden="true"></div>
-<div class="fatqat-home__model-node"><code>Job</code> → <code>Result</code></div>
-</div>
+    当设备约束很重要时，加入原生门与拓扑。
 
-</section>
+    [:octicons-arrow-right-24: 建模硬件配置](guide/hardware-profile-simulation.md)
 
-<div class="grid cards fatqat-home__benefits" markdown>
+-   :material-sine-wave:{ .lg .middle } **哈密顿量仿真**
 
--   :material-vector-combine: **统一编写对象**
+    ---
 
-    将门、测量、条件、参数、量子多能级系统和物理控制都保存在同一个 Program 中。
+    当物理行为很重要时，追踪脉冲、泄漏与动力学。
 
--   :material-tune-variant: **按需选择精度**
-
-    只建模当前问题真正需要的物理细节。
-
--   :material-swap-horizontal-bold: **工作流始终一致**
-
-    始终通过相同的 `Job` 与 `Result` 概念提交任务、检查输出。
+    [:octicons-arrow-right-24: 追踪物理动力学](guide/hamiltonian-emulation.md)
 
 </div>
 
 ## 查看完整工作流
 
-<div class="grid fatqat-home__workflow" markdown>
-
-<div markdown>
+<div class="grid fatqat-home-example" markdown>
 
 ```python
 import fatqat as fq
@@ -94,41 +73,53 @@ result = fq.simulator.Simulator().run(
 ).result()
 ```
 
-</div>
-
-<div class="fatqat-home__workflow-result" markdown>
+<figure markdown>
 
 ![只包含相关的 00 和 11 贝尔态结果的柱状图。](assets/generated/guide/quickstart-counts.png)
 
-<p class="fatqat-home__workflow-caption">固定随机种子的 1,000 次采样只返回相关结果。</p>
+<figcaption>固定随机种子的 1,000 次采样只返回相关结果。</figcaption>
+
+</figure>
 
 </div>
 
-</div>
+这段贝尔态 Program 展示了完整的线路级工作流。同一个编写对象还可以承载可复用
+参数、混合局域维数、经典条件和直接物理控制。
 
-这段贝尔态 Program 展示了完整的线路级工作流。同一个 Program 抽象还可以承载
-可复用参数、混合局域维数、经典条件和直接物理控制。
+## 探索文档
 
-## 选择下一步
+<div class="grid cards fatqat-home-destinations" markdown>
 
-<div class="grid cards fatqat-home__destinations" markdown>
+-   :material-play-circle-outline:{ .lg .middle } **快速上手**
 
--   :material-play-circle-outline: **[快速上手](guide/quickstart.md)**
+    ---
 
     构建、绘制并运行第一个 Program。
 
--   :material-book-open-page-variant-outline: **[用户指南](guide/index.md)**
+    [:octicons-arrow-right-24: 开始构建](guide/quickstart.md)
+
+-   :material-book-open-page-variant-outline:{ .lg .middle } **用户指南**
+
+    ---
 
     学习核心概念和完整工作流。
 
--   :material-flask-outline: **[教程](tutorials/index.md)**
+    [:octicons-arrow-right-24: 阅读指南](guide/index.md)
+
+-   :material-flask-outline:{ .lg .middle } **教程**
+
+    ---
 
     探索可执行的算法与物理案例。
 
--   :material-format-list-bulleted: **[API 参考](api/index.md)**
+    [:octicons-arrow-right-24: 运行教程](tutorials/index.md)
+
+-   :material-format-list-bulleted:{ .lg .middle } **API 参考**
+
+    ---
 
     查找准确的签名与校验约定。
 
-</div>
+    [:octicons-arrow-right-24: 查阅 API](api/index.md)
 
 </div>

@@ -1,84 +1,63 @@
 ---
+template: home.html
 hide:
   - navigation
   - toc
+description: Build one FatQat Program and choose the physical detail each quantum study needs.
+hero:
+  eyebrow: Quantum SDK
+  title: One Program. Three levels of physical detail.
+  summary: >-
+    Write a quantum computation once. Then study logical behavior, test device
+    constraints, or follow time-dependent physical dynamics without changing
+    authoring models.
+  primary_action: Build your first Program
+  secondary_action: Compare execution levels
+  install_action: Install from source
+  image_alt: A two-qubit Bell circuit with measurements and classical outputs.
+  visual_note: Author once, then choose the detail at run time.
+  flow_label: Program to Job to Result
 ---
 
-<!-- Material-specific landing page; keep the product story aligned with docs/sphinx/index.md. -->
+<!-- Localized content stays in Markdown; the shared Material hero lives in home.html. -->
 
-<div class="fatqat-home" markdown>
+## One workflow, three execution levels
 
-<section class="fatqat-home__hero" aria-labelledby="fatqat-home-title" markdown>
+Every path starts from the same [`Program`][fatqat.Program] and returns familiar
+`Job` and `Result` objects. Choose the least physical detail that can answer the
+question in front of you.
 
-<div class="fatqat-home__hero-copy" markdown>
+<div class="grid cards" markdown>
 
-<p class="fatqat-home__eyebrow">Quantum SDK</p>
+-   :material-chart-box-outline:{ .lg .middle } **General simulation**
 
-# One Program. Three levels of physical detail. { #fatqat-home-title }
+    ---
 
-<p class="fatqat-home__summary" markdown>
-Write a quantum computation once, as a [`Program`][fatqat.Program]. Then study
-logical behavior, test device constraints, or follow time-dependent physical
-dynamics without changing authoring models.
-</p>
+    Inspect states, counts, and noise when logical behavior is the question.
 
-<div class="fatqat-home__actions" markdown>
-[Build your first Program](guide/quickstart.md){ .md-button .md-button--primary }
-[Compare execution levels](guide/execution-models.md){ .md-button }
-</div>
+    [:octicons-arrow-right-24: Study simulation](guide/simulation.md)
 
-<p class="fatqat-home__requirements" markdown>
-Python 3.12+ · [Install from source](guide/quickstart.md)
-</p>
+-   :material-memory:{ .lg .middle } **Hardware-profile simulation**
 
-</div>
+    ---
 
-<div class="fatqat-home__model" role="img" aria-label="One FatQat Program runs through general simulation, a hardware profile, or Hamiltonian emulation, with each path returning a Job and Result.">
-<div class="fatqat-home__model-node"><code>Program</code></div>
-<div class="fatqat-home__model-connector" aria-hidden="true"></div>
-<div class="fatqat-home__model-choice">choose one execution level</div>
-<div class="fatqat-home__model-targets">
-<div class="fatqat-home__model-target">
-<strong>General simulation</strong>
-<span>states · counts · noise</span>
-</div>
-<div class="fatqat-home__model-target">
-<strong>Hardware profile</strong>
-<span>native gates · topology</span>
-</div>
-<div class="fatqat-home__model-target">
-<strong>Hamiltonian emulation</strong>
-<span>pulses · leakage · dynamics</span>
-</div>
-</div>
-<div class="fatqat-home__model-connector" aria-hidden="true"></div>
-<div class="fatqat-home__model-node"><code>Job</code> → <code>Result</code></div>
-</div>
+    Add native gates and topology when device constraints matter.
 
-</section>
+    [:octicons-arrow-right-24: Model a hardware profile](guide/hardware-profile-simulation.md)
 
-<div class="grid cards fatqat-home__benefits" markdown>
+-   :material-sine-wave:{ .lg .middle } **Hamiltonian emulation**
 
--   :material-vector-combine: **One authoring object**
+    ---
 
-    Keep gates, measurements, conditions, parameters, qudits, and physical
-    controls in one Program.
+    Follow pulses, leakage, and dynamics when physical behavior matters.
 
--   :material-tune-variant: **Choose the fidelity**
-
-    Model only the physical detail that the question actually requires.
-
--   :material-swap-horizontal-bold: **Keep the workflow**
-
-    Submit work and inspect outputs through the same `Job` and `Result` concepts.
+    [:octicons-arrow-right-24: Follow physical dynamics](guide/hamiltonian-emulation.md)
 
 </div>
 
-## See the complete workflow
+## See a complete workflow
 
-<div class="grid fatqat-home__workflow" markdown>
-
-<div markdown>
+<div class="grid fatqat-home-example" markdown>
 
 ```python
 import fatqat as fq
@@ -96,42 +75,54 @@ result = fq.simulator.Simulator().run(
 ).result()
 ```
 
-</div>
-
-<div class="fatqat-home__workflow-result" markdown>
+<figure markdown>
 
 ![A bar chart containing only the correlated 00 and 11 Bell-state outcomes.](assets/generated/guide/quickstart-counts.png)
 
-<p class="fatqat-home__workflow-caption">One thousand seeded shots return only correlated outcomes.</p>
+<figcaption>One thousand seeded shots return only correlated outcomes.</figcaption>
+
+</figure>
 
 </div>
 
-</div>
+This Bell Program is a complete circuit-level workflow. The same authoring
+object can also carry reusable parameters, mixed local dimensions, classical
+conditions, and direct physical controls.
 
-This Bell Program contains the complete circuit-level workflow. The same
-Program abstraction can also carry reusable parameters, mixed local
-dimensions, classical conditions, and direct physical controls.
+## Explore the documentation
 
-## Choose where to continue
+<div class="grid cards fatqat-home-destinations" markdown>
 
-<div class="grid cards fatqat-home__destinations" markdown>
+-   :material-play-circle-outline:{ .lg .middle } **Quickstart**
 
--   :material-play-circle-outline: **[Quickstart](guide/quickstart.md)**
+    ---
 
     Build, draw, and run a first Program.
 
--   :material-book-open-page-variant-outline: **[User guide](guide/index.md)**
+    [:octicons-arrow-right-24: Start building](guide/quickstart.md)
+
+-   :material-book-open-page-variant-outline:{ .lg .middle } **User guide**
+
+    ---
 
     Learn concepts and complete workflows.
 
--   :material-flask-outline: **[Tutorials](tutorials/index.md)**
+    [:octicons-arrow-right-24: Read the guide](guide/index.md)
+
+-   :material-flask-outline:{ .lg .middle } **Tutorials**
+
+    ---
 
     Explore executable algorithm and physics studies.
 
--   :material-format-list-bulleted: **[API reference](api/index.md)**
+    [:octicons-arrow-right-24: Run a tutorial](tutorials/index.md)
+
+-   :material-format-list-bulleted:{ .lg .middle } **API reference**
+
+    ---
 
     Find exact signatures and validation contracts.
 
-</div>
+    [:octicons-arrow-right-24: Look up an API](api/index.md)
 
 </div>

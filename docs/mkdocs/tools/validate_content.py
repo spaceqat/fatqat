@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+import yaml
+
 MKDOCS_ROOT = Path(__file__).resolve().parents[1]
 LOCALE_ROOTS = {
     "en": MKDOCS_ROOT / "en",
@@ -13,6 +15,13 @@ LOCALE_ROOTS = {
 }
 
 MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\(([^)\n]+)\)")
+FRONT_MATTER = re.compile(r"\A---\r?\n(?P<yaml>.*?)\r?\n---(?:\r?\n|\Z)", re.DOTALL)
+HOME_TEMPLATE_DESTINATION = re.compile(
+    r'<(?:a|img)\b[^>]*?(?:href|src)="\{\{\s*["\'](?P<destination>[^"\']+)'
+    r'["\']\s*\|\s*url\s*\}\}"',
+    re.DOTALL,
+)
+HOME_TEMPLATE_HERO_KEY = re.compile(r"\bhero\.([a-z_][a-z0-9_]*)\b")
 CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 GENERATED_ASSET_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
 TUTORIAL_CODE_BLOCK = re.compile(
@@ -74,6 +83,19 @@ def _markdown_destinations(page: Path) -> list[str]:
         _markdown_destination(match.group(1))
         for match in MARKDOWN_LINK.finditer(page.read_text(encoding="utf-8"))
     ]
+
+
+def _front_matter(page: Path) -> dict[str, object]:
+    """Return a page's YAML front matter as a mapping."""
+
+    text = page.read_text(encoding="utf-8")
+    match = FRONT_MATTER.match(text)
+    if not match:
+        return {}
+    metadata = yaml.safe_load(match.group("yaml")) or {}
+    if not isinstance(metadata, dict):
+        raise ValueError("front matter must be a mapping")
+    return metadata
 
 
 def validate() -> list[str]:
@@ -144,6 +166,63 @@ def validate() -> list[str]:
         chinese / "index.md"
     ):
         errors.append("Homepage link and image destinations differ between locales")
+
+    home_template = MKDOCS_ROOT / "overrides" / "home.html"
+    template_text = home_template.read_text(encoding="utf-8")
+    template_hero_keys = set(HOME_TEMPLATE_HERO_KEY.findall(template_text))
+    homepage_heroes: dict[str, dict[str, object]] = {}
+    for locale, root in LOCALE_ROOTS.items():
+        homepage = root / "index.md"
+        try:
+            metadata = _front_matter(homepage)
+        except (ValueError, yaml.YAMLError) as error:
+            errors.append(f"Invalid {locale} homepage front matter: {error}")
+            continue
+        if metadata.get("template") != "home.html":
+            errors.append(f"{locale} homepage must select template: home.html")
+        hero = metadata.get("hero")
+        if not isinstance(hero, dict):
+            errors.append(f"{locale} homepage hero metadata must be a mapping")
+            continue
+        empty = sorted(
+            key
+            for key, value in hero.items()
+            if not isinstance(value, str) or not value.strip()
+        )
+        if empty:
+            errors.append(
+                f"{locale} homepage hero values must be non-empty strings: "
+                + ", ".join(empty)
+            )
+        if set(hero) != template_hero_keys:
+            missing = template_hero_keys - set(hero)
+            extra = set(hero) - template_hero_keys
+            details = []
+            if missing:
+                details.append("missing " + ", ".join(sorted(missing)))
+            if extra:
+                details.append("unused " + ", ".join(sorted(extra)))
+            errors.append(
+                f"{locale} homepage hero metadata does not match home.html: "
+                + "; ".join(details)
+            )
+        homepage_heroes[locale] = hero
+
+    if set(homepage_heroes) == set(LOCALE_ROOTS) and set(
+        homepage_heroes["en"]
+    ) != set(homepage_heroes["zh"]):
+        errors.append("Homepage hero metadata keys differ between locales")
+
+    template_destinations = HOME_TEMPLATE_DESTINATION.findall(template_text)
+    if not template_destinations:
+        errors.append("Homepage template exposes no local CTA or image destinations")
+    for locale, root in LOCALE_ROOTS.items():
+        homepage = root / "index.md"
+        for destination in template_destinations:
+            if not _local_target_exists(homepage, root, destination):
+                errors.append(
+                    f"Broken local template destination for {locale}: {destination}"
+                )
 
     for locale, root in LOCALE_ROOTS.items():
         for relative in sorted(markdown_paths[locale]):

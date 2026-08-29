@@ -83,11 +83,13 @@ python docs/mkdocs/tools/convert_guides.py
 python docs/mkdocs/tools/convert_tutorials.py
 ```
 
-The two root `index.md` files are manually maintained, theme-specific Material
-landing pages. Keep their product story aligned with the Sphinx homepage, but
-use native Material components and maintain the Chinese translation alongside
-the English page. `convert_guides.py` intentionally owns only `guide/**` and
-does not overwrite either homepage.
+The two root `index.md` files contain manually maintained, localized content,
+while `overrides/home.html` owns their shared Material landing-page structure.
+Keep their product story aligned with the Sphinx homepage, use native Material
+grids and cards for substantive sections, and keep the small `hero` front-matter
+mappings structurally identical. The homepage stylesheet is loaded only by the
+shared template. `convert_guides.py` intentionally owns only `guide/**` and does
+not overwrite either homepage.
 
 Pass `--render` to `convert_guides.py` only when its trusted plot blocks or
 figure inputs change and the committed PNGs need refreshing. CI deliberately
