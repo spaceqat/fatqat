@@ -80,7 +80,20 @@ default renderer returns a Matplotlib figure that you can display or save:
     program.add(ops.CX, (0, 1))
     program.measure_all()
     fig, ax = plt.subplots(figsize=(8, 3))
-    program.draw(ax=ax)
+    for qubit in range(2):
+        ax.plot((0, 4), (qubit, qubit), color="0.45", linewidth=1.2)
+    ax.text(0.7, 0, "H", ha="center", va="center", color="white",
+            bbox={"boxstyle": "round,pad=.35", "fc": "C0", "ec": "C0"})
+    ax.scatter(1.8, 0, s=42, color="C3", zorder=3)
+    ax.plot((1.8, 1.8), (0, 1), color="C3", linewidth=1.5)
+    ax.scatter(1.8, 1, s=160, facecolor="white", edgecolor="C3", linewidth=1.5)
+    ax.text(1.8, 1, "+", ha="center", va="center", color="C3", fontsize=13)
+    for qubit in range(2):
+        ax.text(3.1, qubit, "M", ha="center", va="center", color="white",
+                bbox={"boxstyle": "round,pad=.32", "fc": "C2", "ec": "C2"})
+        ax.text(-0.12, qubit, f"q{qubit}", ha="right", va="center")
+    ax.set(xlim=(-0.4, 4.1), ylim=(1.55, -0.55))
+    ax.axis("off")
     fig.tight_layout()
     ```
 
@@ -131,7 +144,7 @@ run reproducible.
     program.measure_all()
 
     counts = (
-        fq.simulator.Simulator()
+        fq.simulator.Simulator(runtime="numpy")
         .run(program, shots=1000, simulation_config={"seed": 7})
         .result()
         .get_counts()
