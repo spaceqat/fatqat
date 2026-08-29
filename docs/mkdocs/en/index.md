@@ -57,7 +57,7 @@ question in front of you.
 
 ## See a complete workflow
 
-<div class="grid fatqat-home-example" markdown>
+<div class="grid" markdown>
 
 ```python
 import fatqat as fq
@@ -75,9 +75,9 @@ result = fq.simulator.Simulator().run(
 ).result()
 ```
 
-<figure markdown>
+<figure markdown="span">
 
-![A bar chart containing only the correlated 00 and 11 Bell-state outcomes.](assets/generated/guide/quickstart-counts.png)
+![A bar chart containing only the correlated 00 and 11 Bell-state outcomes.](assets/generated/guide/quickstart-counts.png){ loading=lazy width="763" height="464" }
 
 <figcaption>One thousand seeded shots return only correlated outcomes.</figcaption>
 
@@ -91,7 +91,7 @@ conditions, and direct physical controls.
 
 ## Explore the documentation
 
-<div class="grid cards fatqat-home-destinations" markdown>
+<div class="grid cards" markdown>
 
 -   :material-play-circle-outline:{ .lg .middle } **Quickstart**
 

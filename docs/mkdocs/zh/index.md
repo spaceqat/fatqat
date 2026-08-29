@@ -55,7 +55,7 @@ hero:
 
 ## 查看完整工作流
 
-<div class="grid fatqat-home-example" markdown>
+<div class="grid" markdown>
 
 ```python
 import fatqat as fq
@@ -73,9 +73,9 @@ result = fq.simulator.Simulator().run(
 ).result()
 ```
 
-<figure markdown>
+<figure markdown="span">
 
-![只包含相关的 00 和 11 贝尔态结果的柱状图。](assets/generated/guide/quickstart-counts.png)
+![只包含相关的 00 和 11 贝尔态结果的柱状图。](assets/generated/guide/quickstart-counts.png){ loading=lazy width="763" height="464" }
 
 <figcaption>固定随机种子的 1,000 次采样只返回相关结果。</figcaption>
 
@@ -88,7 +88,7 @@ result = fq.simulator.Simulator().run(
 
 ## 探索文档
 
-<div class="grid cards fatqat-home-destinations" markdown>
+<div class="grid cards" markdown>
 
 -   :material-play-circle-outline:{ .lg .middle } **快速上手**
 
