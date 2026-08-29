@@ -13,9 +13,15 @@ hero:
   primary_action: 构建第一个 Program
   secondary_action: 比较执行层次
   install_action: 从源代码安装
-  image_alt: 一个带测量与经典输出的双量子比特贝尔态线路。
+  structure_alt: 一个 FatQat Program 可选择通用模拟、硬件配置或哈密顿量仿真三条路径，每条路径都返回 Job 和 Result。
+  choice_label: 选择一种执行层次
+  general_title: 通用模拟
+  general_detail: 状态 · 计数 · 噪声
+  hardware_title: 硬件配置
+  hardware_detail: 原生门 · 拓扑
+  hamiltonian_title: 哈密顿量仿真
+  hamiltonian_detail: 脉冲 · 泄漏 · 动力学
   visual_note: 编写一次，运行时再选择所需细节。
-  flow_label: 从 Program 到 Job 再到 Result
 ---
 
 <!-- 本地化内容保留在 Markdown 中；共享的 Material 首屏位于 home.html。 -->

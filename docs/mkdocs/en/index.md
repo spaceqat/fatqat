@@ -14,9 +14,15 @@ hero:
   primary_action: Build your first Program
   secondary_action: Compare execution levels
   install_action: Install from source
-  image_alt: A two-qubit Bell circuit with measurements and classical outputs.
+  structure_alt: One FatQat Program runs through general simulation, a hardware profile, or Hamiltonian emulation, with every path returning a Job and Result.
+  choice_label: Choose one execution level
+  general_title: General simulation
+  general_detail: states · counts · noise
+  hardware_title: Hardware profile
+  hardware_detail: native gates · topology
+  hamiltonian_title: Hamiltonian emulation
+  hamiltonian_detail: pulses · leakage · dynamics
   visual_note: Author once, then choose the detail at run time.
-  flow_label: Program to Job to Result
 ---
 
 <!-- Localized content stays in Markdown; the shared Material hero lives in home.html. -->

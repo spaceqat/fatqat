@@ -36,25 +36,38 @@
       </div>
 
       <figure class="fatqat-hero__visual">
-        <div class="fatqat-hero__image">
-          <img
-            src="{{ 'assets/generated/guide/quickstart-circuit.png' | url }}"
-            alt="{{ hero.image_alt | e }}"
-            width="408"
-            height="300"
-            draggable="false"
-          >
-        </div>
-        <figcaption>
-          <span>{{ hero.visual_note | e }}</span>
-          <span class="fatqat-hero__flow" aria-label="{{ hero.flow_label | e }}">
+        <div
+          class="fatqat-model"
+          role="img"
+          aria-label="{{ hero.structure_alt | e }}"
+        >
+          <div class="fatqat-model__node fatqat-model__program">
             <code>Program</code>
-            <span aria-hidden="true">→</span>
+          </div>
+          <div class="fatqat-model__connector" aria-hidden="true"></div>
+          <div class="fatqat-model__choice">{{ hero.choice_label | e }}</div>
+          <div class="fatqat-model__targets">
+            <div class="fatqat-model__target">
+              <strong>{{ hero.general_title | e }}</strong>
+              <span>{{ hero.general_detail | e }}</span>
+            </div>
+            <div class="fatqat-model__target">
+              <strong>{{ hero.hardware_title | e }}</strong>
+              <span>{{ hero.hardware_detail | e }}</span>
+            </div>
+            <div class="fatqat-model__target">
+              <strong>{{ hero.hamiltonian_title | e }}</strong>
+              <span>{{ hero.hamiltonian_detail | e }}</span>
+            </div>
+          </div>
+          <div class="fatqat-model__connector" aria-hidden="true"></div>
+          <div class="fatqat-model__node fatqat-model__result">
             <code>Job</code>
             <span aria-hidden="true">→</span>
             <code>Result</code>
-          </span>
-        </figcaption>
+          </div>
+        </div>
+        <figcaption>{{ hero.visual_note | e }}</figcaption>
       </figure>
     </div>
   </section>

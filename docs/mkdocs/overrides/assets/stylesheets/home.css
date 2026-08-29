@@ -73,31 +73,93 @@
   box-shadow: var(--md-shadow-z2);
 }
 
-.fatqat-hero__image {
-  overflow: hidden;
-  border-radius: 0.5rem;
-  background: #fff;
+.fatqat-model {
+  min-width: 0;
 }
 
-.fatqat-hero__image img {
-  width: 100%;
+.fatqat-model__node {
+  padding: 0.72rem 0.85rem;
+  border: 0.05rem solid var(--md-primary-fg-color);
+  border-radius: 0.45rem;
+  background: color-mix(
+    in srgb,
+    var(--md-primary-fg-color) 10%,
+    var(--md-default-bg-color)
+  );
+  color: var(--md-default-fg-color);
+  text-align: center;
+}
+
+.fatqat-model__node code {
+  color: inherit;
+  font-weight: 700;
+}
+
+.fatqat-model__connector {
+  width: 0.05rem;
+  height: 0.85rem;
+  margin: 0 auto;
+  background: var(--md-default-fg-color--lighter);
+}
+
+.fatqat-model__choice {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.fatqat-model__choice::before,
+.fatqat-model__choice::after {
+  height: 0.05rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  background: var(--md-default-fg-color--lightest);
+  content: "";
+}
+
+.fatqat-model__targets {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.fatqat-model__target {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.62rem 0.72rem;
+  border: 0.05rem solid var(--md-default-fg-color--lightest);
+  border-radius: 0.4rem;
+  background: var(--md-default-bg-color);
+}
+
+.fatqat-model__target > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fatqat-model__target strong {
+  color: var(--md-default-fg-color);
+  font-size: 0.75rem;
+}
+
+.fatqat-model__target span {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.67rem;
 }
 
 .fatqat-hero__visual figcaption {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-  justify-content: space-between;
   padding: 0.75rem 0.25rem 0.1rem;
   color: var(--md-default-fg-color--light);
   font-size: 0.7rem;
-}
-
-.fatqat-hero__flow {
-  display: inline-flex;
-  flex: 0 0 auto;
-  gap: 0.25rem;
-  align-items: center;
+  text-align: center;
 }
 
 @media screen and (max-width: 59.984375em) {
@@ -120,8 +182,8 @@
     display: grid;
   }
 
-  .fatqat-hero__visual figcaption {
-    align-items: flex-start;
-    flex-direction: column;
+  .fatqat-model__target {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
   }
 }
