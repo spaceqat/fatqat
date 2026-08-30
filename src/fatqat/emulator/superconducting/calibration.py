@@ -11,13 +11,13 @@ from typing import Any, ClassVar
 
 from .._core.document_validation import _exact_keys, _fail, _mapping, _number, _string
 from .._core.model_document import (
-    CalibrationIdentity,
-    FormatIdentity,
+    _CalibrationIdentity,
+    _FormatIdentity,
     _dispatch_document,
     _parse_calibration_identity,
 )
 
-_FORMAT = FormatIdentity("sc.transmon_exchange_fixed_pulse", 1)
+_FORMAT = _FormatIdentity("sc.transmon_exchange_fixed_pulse", 1)
 _UNITS = {"time": "ns", "frequency": "GHz", "dimensionless": "1"}
 
 
@@ -164,8 +164,7 @@ class TransmonCalibration:
         'ns'
     """
 
-    format: FormatIdentity = field(compare=False)
-    identity: CalibrationIdentity
+    _identity: _CalibrationIdentity = field(repr=False)
     _rx_ry_duration_ns: float = field(repr=False)
     _rx_ry_drag_coefficient: float = field(repr=False)
     _iswap_duration_ns: float = field(repr=False)
@@ -178,10 +177,9 @@ class TransmonCalibration:
     recipe_dimensionless_unit: ClassVar[str] = _UNITS["dimensionless"]
 
     def __init__(self, document: Mapping[str, Any]) -> None:
-        source_format, parsed = _dispatch_document(document, "calibration", _PARSERS)
+        parsed = _dispatch_document(document, "calibration", _PARSERS)
         identity, rx_duration, drag, iswap_duration, cz_default, overrides = parsed
-        object.__setattr__(self, "format", source_format)
-        object.__setattr__(self, "identity", identity)
+        object.__setattr__(self, "_identity", identity)
         object.__setattr__(self, "_rx_ry_duration_ns", rx_duration)
         object.__setattr__(self, "_rx_ry_drag_coefficient", drag)
         object.__setattr__(self, "_iswap_duration_ns", iswap_duration)

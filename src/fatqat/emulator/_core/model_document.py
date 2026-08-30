@@ -1,4 +1,4 @@
-"""Shared identities and exact-format document dispatch."""
+"""Private identities and exact-format document dispatch."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from .document_validation import _exact_keys, _fail, _mapping, _string, _version
 
 
 @dataclass(frozen=True, slots=True)
-class FormatIdentity:
-    """Public identity of a persisted document format."""
+class _FormatIdentity:
+    """Private identity of a persisted document format."""
 
     id: str
     version: int
@@ -22,8 +22,8 @@ class FormatIdentity:
 
 
 @dataclass(frozen=True, slots=True)
-class ModelIdentity:
-    """Durable identity of one model parameter snapshot."""
+class _ModelIdentity:
+    """Private durable identity of one model parameter snapshot."""
 
     id: str
     revision: str
@@ -34,8 +34,8 @@ class ModelIdentity:
 
 
 @dataclass(frozen=True, slots=True)
-class CalibrationIdentity:
-    """Durable identity of one calibration snapshot."""
+class _CalibrationIdentity:
+    """Private durable identity of one calibration snapshot."""
 
     id: str
     revision: str
@@ -45,31 +45,31 @@ class CalibrationIdentity:
         _string(self.revision, "calibration.revision")
 
 
-def _parse_format_identity(value: Any, path: str) -> FormatIdentity:
+def _parse_format_identity(value: Any, path: str) -> _FormatIdentity:
     """Parse an exact ``{id, version}`` format identity."""
     data = _mapping(value, path)
     _exact_keys(data, {"id", "version"}, path)
-    return FormatIdentity(
+    return _FormatIdentity(
         _string(data["id"], f"{path}.id"),
         _version(data["version"], f"{path}.version"),
     )
 
 
-def _parse_model_identity(value: Any, path: str) -> ModelIdentity:
+def _parse_model_identity(value: Any, path: str) -> _ModelIdentity:
     """Parse an exact ``{id, revision}`` model identity."""
     data = _mapping(value, path)
     _exact_keys(data, {"id", "revision"}, path)
-    return ModelIdentity(
+    return _ModelIdentity(
         _string(data["id"], f"{path}.id"),
         _string(data["revision"], f"{path}.revision"),
     )
 
 
-def _parse_calibration_identity(value: Any, path: str) -> CalibrationIdentity:
+def _parse_calibration_identity(value: Any, path: str) -> _CalibrationIdentity:
     """Parse an exact ``{id, revision}`` calibration identity."""
     data = _mapping(value, path)
     _exact_keys(data, {"id", "revision"}, path)
-    return CalibrationIdentity(
+    return _CalibrationIdentity(
         _string(data["id"], f"{path}.id"),
         _string(data["revision"], f"{path}.revision"),
     )
@@ -100,8 +100,8 @@ def _validate_model_document_envelope(value: Mapping[str, Any], path: str) -> No
 def _dispatch_document(
     document: Any,
     path: str,
-    parsers: Mapping[FormatIdentity, Callable[[Mapping[str, Any]], Any]],
-) -> tuple[FormatIdentity, Any]:
+    parsers: Mapping[_FormatIdentity, Callable[[Mapping[str, Any]], Any]],
+) -> Any:
     """Select one exact parser without copying or recursively prechecking data."""
     data = _mapping(document, path)
     if "format" not in data:
@@ -110,7 +110,7 @@ def _dispatch_document(
     parser = parsers.get(identity)
     if parser is None:
         _fail("format", f"unknown format {identity.id} version {identity.version}")
-    return identity, parser(data)
+    return parser(data)
 
 
-__all__ = ["FormatIdentity", "ModelIdentity", "CalibrationIdentity"]
+__all__: list[str] = []

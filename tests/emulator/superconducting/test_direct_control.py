@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from qutip import Qobj, qeye, tensor
+from qutip import destroy, qeye, tensor
 
 import fatqat as fq
 import fatqat.operations as ops
@@ -134,7 +134,7 @@ def test_direct_drive_propagator_matches_independent_full_hamiltonian(backend):
         target,
         engine_allocation=_EngineAllocation(target.device_labels, (3, 3)),
     )
-    annihilation = Qobj(backend.model.annihilation)
+    annihilation = destroy(len(backend.model.basis_order))
     drift = adapter._drift.get_ideal_qobjevo([3, 3])(0.0)
     drive = amplitude * tensor(qeye(3), annihilation + annihilation.dag())
     expected = (-1j * (drift + drive) * duration).expm().full()

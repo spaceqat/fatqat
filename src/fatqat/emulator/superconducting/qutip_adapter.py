@@ -8,8 +8,10 @@ import numpy as np
 from qutip import (
     Qobj,
     basis,
+    destroy,
     ket2dm,
     mesolve,
+    num,
     propagator as qutip_propagator,
     qeye,
     tensor,
@@ -83,7 +85,7 @@ class _TransmonQutipAdapter:
         self._solver_used = "none"
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
-        expected_operands = tuple(self._target.model.subsystem_ids)
+        expected_operands = tuple(self._target.device_labels)
         if (
             engine_allocation.device_operands != expected_operands
             or engine_allocation.system_dims
@@ -96,15 +98,15 @@ class _TransmonQutipAdapter:
         self._engine_allocation = engine_allocation
         self._qutip_space = _QutipTensorSpace(engine_allocation)
         self._dims = list(self._qutip_space.dims)
-        self._local_annihilation = Qobj(self._target.model.annihilation)
-        self._local_number = Qobj(self._target.model.number)
+        self._local_annihilation = destroy(target.local_dimension)
+        self._local_number = num(target.local_dimension)
         self._annihilation = tuple(
             self._qutip_space.expand_local(ordinal, self._local_annihilation)
-            for ordinal in range(len(self._target.model.subsystems))
+            for ordinal in range(len(self._target.device_labels))
         )
         self._number = tuple(
             self._qutip_space.expand_local(ordinal, self._local_number)
-            for ordinal in range(len(self._target.model.subsystems))
+            for ordinal in range(len(self._target.device_labels))
         )
         self._drift = self._build_drift()
         self._projectors = tuple(
@@ -114,7 +116,7 @@ class _TransmonQutipAdapter:
                 )
                 for level in range(target.local_dimension)
             )
-            for ordinal in range(len(self._target.model.subsystems))
+            for ordinal in range(len(self._target.device_labels))
         )
         self._reset_operators = tuple(
             tuple(
@@ -125,7 +127,7 @@ class _TransmonQutipAdapter:
                 )
                 for level in range(target.local_dimension)
             )
-            for ordinal in range(len(self._target.model.subsystems))
+            for ordinal in range(len(self._target.device_labels))
         )
 
     def solver_metadata(self) -> dict[str, Any]:
@@ -306,7 +308,7 @@ class _TransmonQutipAdapter:
     def _frame_unitary(self, frames: dict[Any, float]) -> Any:
         """Build the full-model basis transform for terminal frame angles."""
         factors = []
-        levels = np.arange(self._target.model.physical_dimension)
+        levels = np.arange(self._target.local_dimension)
         for subsystem_id in self._engine_allocation.device_operands:
             angle = frames.get(self._target.model.frame(subsystem_id), 0.0)
             factors.append(Qobj(np.diag(np.exp(1j * angle * levels))))
@@ -324,7 +326,7 @@ class _TransmonQutipAdapter:
         """
         if isinstance(step, MeasurementStep):
             maps = step.reported_digit_maps or tuple(
-                tuple(range(self._target.model.physical_dimension))
+                tuple(range(self._target.local_dimension))
                 for _ in step.measured_indices
             )
             confusions = step.confusions or (None,) * len(step.measured_indices)
@@ -365,14 +367,11 @@ class _TransmonQutipAdapter:
         only through an explicitly driven control pulse.
         """
         drift = Drift()
-        identity = qeye(self._target.model.physical_dimension)
-        subsystems = {
-            subsystem.id: subsystem for subsystem in self._target.model.subsystems
-        }
+        identity = qeye(self._target.local_dimension)
         for engine_index, device_operand in enumerate(
             self._engine_allocation.device_operands
         ):
-            subsystem = subsystems[device_operand]
+            subsystem = self._target._subsystems[device_operand]
             local = (
                 angular_rate_from_ghz(subsystem.anharmonicity_ghz)
                 * self._local_number
@@ -448,7 +447,7 @@ class _TransmonQutipAdapter:
     def _validate_noise_ordinal(self, ordinal: int) -> int:
         """Validate and return one physical-model subsystem ordinal."""
         if type(ordinal) is not int or not 0 <= ordinal < len(
-            self._target.model.subsystems
+            self._target.device_labels
         ):
             raise BackendValidationError(
                 f"unknown physical-model subsystem ordinal {ordinal!r}"

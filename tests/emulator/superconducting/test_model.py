@@ -3,12 +3,10 @@
 from copy import deepcopy
 import inspect
 
-import numpy as np
 import pytest
 
-from fatqat.emulator._core.model_document import FormatIdentity
 from fatqat.emulator._core.target import _ControlAddress, _FrameAddress
-from fatqat.emulator.superconducting.model import TransmonModel, _MODEL_PARSERS
+from fatqat.emulator.superconducting.model import TransmonModel
 from fatqat.errors import BackendValidationError
 
 
@@ -21,29 +19,29 @@ def test_model_is_direct_frozen_slotted_semantic_value(model_document):
     )
     assert model == TransmonModel.from_document(pristine)
     assert isinstance(model == TransmonModel.from_document(pristine), bool)
+    changed_identity = deepcopy(pristine)
+    changed_identity["model"]["revision"] = "different"
+    assert model != TransmonModel.from_document(changed_identity)
     assert model.subsystem_ids == ("q0", "q1")
-    assert tuple(item.frequency_ghz for item in model.subsystems) == (5.1, 5.22)
-    assert model.couplings[0].subsystem_ids == ("q0", "q1")
-    assert np.array_equal(
-        model.annihilation,
-        np.array([[0.0, 1.0, 0.0], [0.0, 0.0, np.sqrt(2)], [0.0, 0.0, 0.0]]),
-    )
-    assert np.array_equal(model.number, np.diag([0.0, 1.0, 2.0]))
-    assert not model.annihilation.flags.writeable
-    assert (model.frequency_unit, model.anharmonicity_unit, model.time_unit) == (
-        "GHz",
-        "GHz",
-        "ns",
-    )
+    assert model.basis_order == ("0", "1", "2")
+    assert model.time_unit == "ns"
+    with pytest.raises((AttributeError, TypeError)):
+        model.subsystem_ids = ("changed",)
     with pytest.raises(TypeError):
         hash(model)
-    with pytest.raises(AttributeError):
-        model.identity = object()
     for removed in (
-        "_normalized" + "_state",
-        "_model" + "_key",
-        "registry",
-        "parser",
+        "format",
+        "identity",
+        "subsystems",
+        "couplings",
+        "kind",
+        "local_dimension",
+        "physical_dimension",
+        "annihilation",
+        "number",
+        "frequency_unit",
+        "anharmonicity_unit",
+        "control_unit",
     ):
         assert not hasattr(model, removed)
 
@@ -144,12 +142,13 @@ def test_model_factories_return_portable_structural_addresses(model_document):
 
 
 def test_model_copies_stored_topology_containers(model_document):
+    pristine = deepcopy(model_document)
     model = TransmonModel.from_document(model_document)
     model_document["system"]["subsystems"][0] = "changed"
     model_document["system"]["control_edges"][0]["subsystems"].reverse()
     model_document["system"]["control_edges"].clear()
     assert model.subsystem_ids == ("q0", "q1")
-    assert model.couplings[0].subsystem_ids == ("q0", "q1")
+    assert model == TransmonModel.from_document(pristine)
 
 
 def test_arbitrary_connectivity_is_valid(model_document):
@@ -163,11 +162,3 @@ def test_arbitrary_connectivity_is_valid(model_document):
         "q1",
         "q2",
     )
-
-
-def test_model_uses_one_immutable_exact_format_table():
-    assert tuple(_MODEL_PARSERS) == (FormatIdentity("sc.transmon_exchange", 1),)
-    with pytest.raises(TypeError):
-        _MODEL_PARSERS[FormatIdentity("other", 1)] = object()
-    with pytest.raises(TypeError):
-        del _MODEL_PARSERS[FormatIdentity("sc.transmon_exchange", 1)]

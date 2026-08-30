@@ -22,11 +22,6 @@ depends on the model family.
 from __future__ import annotations
 
 from .atom_arrangement import AtomArrangement
-from ._core.model_document import (
-    CalibrationIdentity,
-    FormatIdentity,
-    ModelIdentity,
-)
 from ._model_catalog import available_model_documents, load_model_document
 from .atom_2level import (
     Atom2LevelEmulator,
@@ -76,9 +71,6 @@ __all__ = [
     "default_atom_3level_gate_implementation_map",
     "Atom2LevelModel",
     "AtomArrangement",
-    "FormatIdentity",
-    "ModelIdentity",
-    "CalibrationIdentity",
     "available_model_documents",
     "load_model_document",
 ]

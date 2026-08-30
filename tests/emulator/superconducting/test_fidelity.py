@@ -96,7 +96,7 @@ def matrix_program_unitary(program):
 def computational_subspace_unitary(backend, program, schedule_mode="ASAP"):
     """Project the full qutrit propagator into canonical qubit order."""
     n_qubits = sum(register.size for register in program.quantum_registers)
-    physical_dimension = backend.model.physical_dimension
+    physical_dimension = len(backend.model.basis_order)
     indices = tuple(
         sum(
             ((basis_index >> qubit) & 1) * physical_dimension**qubit

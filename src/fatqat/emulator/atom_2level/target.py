@@ -29,6 +29,7 @@ from .._core.waveform import (
 from .model import Atom2LevelModel
 
 _FAMILY = "atom.rydberg_2level"
+_LOCAL_DIMENSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +92,7 @@ class _Atom2LevelTarget:
     resource binding, and scheduling claims without exposing a public graph.
     """
 
-    local_dimension = 2
+    local_dimension = _LOCAL_DIMENSION
 
     def __init__(
         self,
@@ -100,6 +101,7 @@ class _Atom2LevelTarget:
         interaction_cutoff: float | None,
     ) -> None:
         self.model = model
+        self._limits = model._limits
         self.device_labels = tuple(range(arrangement.num_sites))
         self.hilbert_dimension = 2**arrangement.num_sites
         owner = object()
@@ -124,7 +126,7 @@ class _Atom2LevelTarget:
                             first,
                             second,
                             distance,
-                            model.c6_angular_per_us_um6 / distance**6,
+                            model._c6_angular_per_us_um6 / distance**6,
                         )
                     )
         self.interactions = tuple(interactions)
@@ -154,8 +156,8 @@ class _Atom2LevelTarget:
     ) -> None:
         if len(controls) != len(bindings):
             raise BackendValidationError("pulse controls and bindings must align")
-        minimum_duration = self.model._limits.min_duration
-        maximum_duration = self.model._limits.max_duration
+        minimum_duration = self._limits.min_duration
+        maximum_duration = self._limits.max_duration
         if minimum_duration is not None and block_duration < minimum_duration:
             raise BackendValidationError(
                 "two-level pulse duration is below the minimum"
@@ -169,7 +171,7 @@ class _Atom2LevelTarget:
                 )
             values = np.asarray(child.waveform.values)
             if binding.kind == "drive":
-                maximum = self.model._limits.max_amplitude
+                maximum = self._limits.max_amplitude
                 if (
                     maximum is not None
                     and _complex_spline_magnitude_maximum(child.waveform.times, values)
@@ -185,8 +187,8 @@ class _Atom2LevelTarget:
                 raise BackendValidationError(
                     "two-level detuning coefficients must be real"
                 )
-            allowed_minimum = self.model._limits.min_detuning
-            allowed_maximum = self.model._limits.max_detuning
+            allowed_minimum = self._limits.min_detuning
+            allowed_maximum = self._limits.max_detuning
             if allowed_minimum is None and allowed_maximum is None:
                 continue
             minimum, maximum = _real_spline_minimum_and_maximum(

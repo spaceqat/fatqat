@@ -10,16 +10,15 @@ from typing import Any, ClassVar, Self
 from .._core.document_validation import _exact_keys, _fail, _mapping, _number, _string
 from .._core.control_discovery import _ControlSelector
 from .._core.model_document import (
-    FormatIdentity,
-    ModelIdentity,
+    _FormatIdentity,
+    _ModelIdentity,
     _dispatch_document,
     _parse_model_identity,
     _validate_model_document_envelope,
 )
 from .._core.target import _ControlAddress
 
-_MODEL_FORMAT = FormatIdentity("atom.rb87_rydberg_2level", 1)
-_MODEL_KIND = "atom.rydberg_2level"
+_MODEL_FORMAT = _FormatIdentity("atom.rb87_rydberg_2level", 1)
 _FAMILY = "atom.rydberg_2level"
 _UNITS = {
     "distance": "um",
@@ -184,23 +183,16 @@ class Atom2LevelModel:
         ('drive', 'detuning')
     """
 
-    format: FormatIdentity = field(compare=False)
-    identity: ModelIdentity
-    species: str
-    ground_state: str
-    rydberg_state: str
-    c6_angular_per_us_um6: float
-    _limits: _GlobalControlLimits
+    _identity: _ModelIdentity = field(repr=False)
+    _species: str = field(repr=False)
+    _ground_state: str = field(repr=False)
+    _rydberg_state: str = field(repr=False)
+    _c6_angular_per_us_um6: float = field(repr=False)
+    _limits: _GlobalControlLimits = field(repr=False)
 
     __hash__ = None
-    kind: ClassVar[str] = _MODEL_KIND
     basis_order: ClassVar[tuple[str, str]] = ("g", "r")
-    local_dimension: ClassVar[int] = 2
-    interaction_law: ClassVar[str] = "C6/R^6"
-    distance_unit: ClassVar[str] = _UNITS["distance"]
     time_unit: ClassVar[str] = _UNITS["time"]
-    angular_frequency_unit: ClassVar[str] = _UNITS["angular_frequency"]
-    c6_unit: ClassVar[str] = _UNITS["c6"]
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
         """Reject direct construction in favor of ``from_document()``.
@@ -224,9 +216,7 @@ class Atom2LevelModel:
             BackendValidationError: If the document has an unsupported format
                 or contains invalid model data.
         """
-        source_format, parsed = _dispatch_document(
-            document, "physics model", _MODEL_PARSERS
-        )
+        parsed = _dispatch_document(document, "physics model", _MODEL_PARSERS)
         (
             identity,
             species,
@@ -236,12 +226,11 @@ class Atom2LevelModel:
             limits,
         ) = parsed
         model = object.__new__(cls)
-        object.__setattr__(model, "format", source_format)
-        object.__setattr__(model, "identity", identity)
-        object.__setattr__(model, "species", species)
-        object.__setattr__(model, "ground_state", ground)
-        object.__setattr__(model, "rydberg_state", rydberg)
-        object.__setattr__(model, "c6_angular_per_us_um6", c6)
+        object.__setattr__(model, "_identity", identity)
+        object.__setattr__(model, "_species", species)
+        object.__setattr__(model, "_ground_state", ground)
+        object.__setattr__(model, "_rydberg_state", rydberg)
+        object.__setattr__(model, "_c6_angular_per_us_um6", c6)
         object.__setattr__(model, "_limits", limits)
         return model
 

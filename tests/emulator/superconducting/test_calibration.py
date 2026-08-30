@@ -1,7 +1,6 @@
 """Superconducting portable-calibration value tests."""
 
 from copy import deepcopy
-from dataclasses import fields
 from importlib import resources
 import inspect
 import json
@@ -9,10 +8,8 @@ from math import inf, nan
 
 import pytest
 
-from fatqat.emulator._core.model_document import FormatIdentity
 from fatqat.emulator.superconducting.calibration import (
     TransmonCalibration,
-    _PARSERS,
     default_transmon_calibration,
 )
 from fatqat.errors import BackendValidationError
@@ -25,12 +22,15 @@ def test_calibration_is_direct_frozen_slotted_semantic_value(calibration_documen
     calibration_document["recipes"]["cz"]["overrides"][0]["recipe"]["duration"] = 99
     assert tuple(inspect.signature(TransmonCalibration).parameters) == ("document",)
     assert value == TransmonCalibration(pristine)
+    changed_identity = deepcopy(pristine)
+    changed_identity["calibration"]["revision"] = "different"
+    assert value != TransmonCalibration(changed_identity)
     assert value._rx_ry_duration_ns == 20.0
     assert value._cz_duration_ns("q0", "q1") == 60.0
     with pytest.raises(TypeError):
         hash(value)
-    with pytest.raises(AttributeError):
-        value.identity = object()
+    assert not hasattr(value, "format")
+    assert not hasattr(value, "identity")
     for removed in ("_normalized" + "_recipes", "registry", "parser"):
         assert not hasattr(value, removed)
 
@@ -149,14 +149,3 @@ def test_default_calibration_is_fresh_and_loaded_from_resource():
     second = default_transmon_calibration()
     assert first is not second
     assert first == second == TransmonCalibration(document)
-
-
-def test_calibration_uses_one_immutable_exact_format_table():
-    assert tuple(_PARSERS) == (FormatIdentity("sc.transmon_exchange_fixed_pulse", 1),)
-    assert not next(
-        field for field in fields(TransmonCalibration) if field.name == "format"
-    ).compare
-    with pytest.raises(TypeError):
-        _PARSERS[FormatIdentity("other", 1)] = object()
-    with pytest.raises(TypeError):
-        del _PARSERS[FormatIdentity("sc.transmon_exchange_fixed_pulse", 1)]

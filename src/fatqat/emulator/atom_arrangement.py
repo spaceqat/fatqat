@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
-from typing import Any
+from typing import Any, ClassVar
 
 
 def _dimension(value: Any, name: str) -> int:
@@ -52,6 +52,7 @@ class AtomArrangement:
     cols: int
     spacing: float
     coordinates: tuple[tuple[float, float, float], ...]
+    distance_unit: ClassVar[str] = "um"
 
     @classmethod
     def chain(cls, num_sites: int, spacing: float) -> AtomArrangement:

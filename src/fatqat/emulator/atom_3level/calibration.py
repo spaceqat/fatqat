@@ -13,13 +13,13 @@ from typing import Any, ClassVar
 from ...errors import BackendValidationError
 from .._core.document_validation import _exact_keys, _fail, _mapping, _number
 from .._core.model_document import (
-    CalibrationIdentity,
-    FormatIdentity,
+    _CalibrationIdentity,
+    _FormatIdentity,
     _dispatch_document,
     _parse_calibration_identity,
 )
 
-_FORMAT = FormatIdentity("atom.rb87_rydberg_3level_fixed_pulse", 1)
+_FORMAT = _FormatIdentity("atom.rb87_rydberg_3level_fixed_pulse", 1)
 _UNITS = {
     "angular_frequency": "rad/us",
     "angle": "rad",
@@ -129,8 +129,7 @@ class Atom3LevelCalibration:
         'rad/us'
     """
 
-    format: FormatIdentity = field(compare=False)
-    identity: CalibrationIdentity
+    _identity: _CalibrationIdentity = field(repr=False)
     _rx_ry: _RxRyRecipe = field(repr=False)
     _cz: _CzRecipe = field(repr=False)
 
@@ -141,10 +140,9 @@ class Atom3LevelCalibration:
     dimensionless_unit: ClassVar[str] = _UNITS["dimensionless"]
 
     def __init__(self, document: Mapping[str, Any]) -> None:
-        source_format, parsed = _dispatch_document(document, "calibration", _PARSERS)
+        parsed = _dispatch_document(document, "calibration", _PARSERS)
         identity, rx_ry, cz = parsed
-        object.__setattr__(self, "format", source_format)
-        object.__setattr__(self, "identity", identity)
+        object.__setattr__(self, "_identity", identity)
         object.__setattr__(self, "_rx_ry", rx_ry)
         object.__setattr__(self, "_cz", cz)
 

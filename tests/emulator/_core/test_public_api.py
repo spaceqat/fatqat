@@ -18,11 +18,8 @@ from fatqat.emulator import (
     Atom2LevelEmulator,
     Atom2LevelModel,
     Atom3LevelEmulator,
-    CalibrationIdentity,
     Atom3LevelCalibration,
     Atom3LevelModel,
-    FormatIdentity,
-    ModelIdentity,
     PhaseShift,
     PhaseSwap,
     PulseControl,
@@ -86,9 +83,6 @@ def test_family_and_aggregate_exports_are_exact():
         "default_atom_3level_gate_implementation_map",
         "Atom2LevelModel",
         "AtomArrangement",
-        "FormatIdentity",
-        "ModelIdentity",
-        "CalibrationIdentity",
         "available_model_documents",
         "load_model_document",
     )
@@ -105,10 +99,8 @@ def test_family_and_aggregate_exports_are_exact():
     )
     assert tuple(superconducting.__all__) == (
         "TransmonEmulator",
-        "Coupling",
         "TransmonCalibration",
         "TransmonModel",
-        "Transmon",
         "angular_rate_from_ghz",
         "default_transmon_calibration",
         "default_transmon_gate_implementation_map",
@@ -168,15 +160,23 @@ def test_removed_transmon_surface_has_no_compatibility_aliases():
         assert removed_helper not in owner.__all__
 
 
-def test_document_identities_and_family_values_are_namespaced_publicly():
-    assert fq.emulator.FormatIdentity is FormatIdentity
-    assert fq.emulator.ModelIdentity is ModelIdentity
-    assert fq.emulator.CalibrationIdentity is CalibrationIdentity
+def test_document_identities_and_normalized_records_are_not_public():
+    from fatqat.emulator import superconducting
+
     assert fq.emulator.Atom2LevelModel is Atom2LevelModel
     for name in (
         "FormatIdentity",
         "ModelIdentity",
         "CalibrationIdentity",
+        "Transmon",
+        "Coupling",
+    ):
+        assert not hasattr(fq.emulator, name)
+        assert name not in fq.emulator.__all__
+        assert not hasattr(superconducting, name)
+        assert name not in superconducting.__all__
+
+    for name in (
         "TransmonModel",
         "TransmonCalibration",
         "Atom3LevelModel",

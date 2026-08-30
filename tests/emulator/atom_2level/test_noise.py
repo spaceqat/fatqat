@@ -42,11 +42,14 @@ from tests.emulator.atom_2level.reference.two_level_hamiltonian import (
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
 
+@pytest.fixture(name="model_document")
+def model_document_fixture():
+    return json.loads(_FIXTURE.read_text(encoding="utf-8"))
+
+
 @pytest.fixture(name="model")
-def model_fixture():
-    return Atom2LevelModel.from_document(
-        json.loads(_FIXTURE.read_text(encoding="utf-8"))
-    )
+def model_fixture(model_document):
+    return Atom2LevelModel.from_document(model_document)
 
 
 def _backend(
@@ -444,7 +447,9 @@ def test_unmeasured_noise_returns_exact_density_matrix(model):
     assert result.metadata["solver"]["solver"] == "mesolve"
 
 
-def test_two_atom_mesolve_matches_independently_assembled_master_equation(model):
+def test_two_atom_mesolve_matches_independently_assembled_master_equation(
+    model, model_document
+):
     gamma = 0.15
     per_site = fq.NoiseModel()
     per_site.add(AmplitudeDamping(rate=gamma), targets=0)
@@ -462,7 +467,7 @@ def test_two_atom_mesolve_matches_independently_assembled_master_equation(model)
         amplitude=amplitude,
         detuning=0.0,
         phase=0.0,
-        interactions=((0, 1, model.c6_angular_per_us_um6 / 2.0**6),),
+        interactions=((0, 1, model_document["parameters"]["c6"] / 2.0**6),),
     )
     lowering = np.asarray([[0.0, np.sqrt(gamma)], [0.0, 0.0]])
     identity = np.eye(2)

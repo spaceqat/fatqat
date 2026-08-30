@@ -288,7 +288,7 @@ def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames(model):
             resolve_lindblad_operators(
                 thermal,
                 implementation_map=default_lindblad_implementation_map(),
-                physical_dimension=model.physical_dimension,
+                physical_dimension=len(model.basis_order),
             ),
             engine_indices=(0,),
         ),

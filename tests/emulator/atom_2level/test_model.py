@@ -1,7 +1,6 @@
 """Strict two-level atom document-construction and channel contracts."""
 
 from copy import deepcopy
-from dataclasses import fields
 import inspect
 import json
 from math import inf, nan
@@ -10,9 +9,8 @@ from pathlib import Path
 import pytest
 
 from fatqat._pulse_values import ControlChannel
-from fatqat.emulator._core.model_document import FormatIdentity, ModelIdentity
 from fatqat.emulator._core.target import _ControlAddress
-from fatqat.emulator.atom_2level.model import Atom2LevelModel, _MODEL_PARSERS
+from fatqat.emulator.atom_2level.model import Atom2LevelModel
 from fatqat.errors import BackendValidationError
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
@@ -33,32 +31,32 @@ def test_from_document_is_geometry_free_immutable_and_unit_explicit(document):
 
     assert model == Atom2LevelModel.from_document(source)
     assert isinstance(model == Atom2LevelModel.from_document(source), bool)
-    assert model.format == FormatIdentity("atom.rb87_rydberg_2level", 1)
-    assert model.kind == "atom.rydberg_2level"
-    assert model.identity == ModelIdentity("rb87-53s-two-level-reference", "2026-08-22")
-    assert model.species == "Rb87"
-    assert model.ground_state == "5S1/2,F=2,mF=0"
-    assert model.rydberg_state == "53S1/2,mJ=+1/2"
+    changed_identity = deepcopy(source)
+    changed_identity["model"]["revision"] = "different"
+    assert model != Atom2LevelModel.from_document(changed_identity)
     assert model.basis_order == ("g", "r")
-    assert model.local_dimension == 2
-    assert model.interaction_law == "C6/R^6"
-    assert model.c6_angular_per_us_um6 == 180955.73684677208
-    assert (
-        model.distance_unit,
-        model.time_unit,
-        model.angular_frequency_unit,
-        model.c6_unit,
-    ) == ("um", "us", "rad/us", "rad/us*um^6")
-    assert not hasattr(model, "units")
-    assert not hasattr(model, "system")
-    assert not hasattr(model, "builder")
-    assert not hasattr(model, "channel_limits")
+    assert model.time_unit == "us"
+    for removed in (
+        "format",
+        "identity",
+        "kind",
+        "local_dimension",
+        "species",
+        "ground_state",
+        "rydberg_state",
+        "interaction_law",
+        "c6_angular_per_us_um6",
+        "distance_unit",
+        "angular_frequency_unit",
+        "c6_unit",
+        "units",
+        "system",
+        "builder",
+        "channel_limits",
+    ):
+        assert not hasattr(model, removed)
     with pytest.raises(TypeError):
         hash(model)
-    with pytest.raises(AttributeError):
-        model.identity = object()
-    with pytest.raises(AttributeError):
-        del model.identity
 
 
 def test_direct_construction_is_removed(document):
@@ -71,7 +69,9 @@ def test_direct_construction_is_removed(document):
 @pytest.mark.parametrize("c6", [-2.0, 0.0, 2.0])
 def test_constructor_accepts_finite_signed_or_zero_c6(document, c6):
     document["parameters"]["c6"] = c6
-    assert Atom2LevelModel.from_document(document).c6_angular_per_us_um6 == c6
+    assert Atom2LevelModel.from_document(document) == Atom2LevelModel.from_document(
+        deepcopy(document)
+    )
 
 
 @pytest.mark.parametrize(
@@ -181,16 +181,8 @@ def test_removed_legacy_discovery_types_are_not_public(document):
     assert not hasattr(model, "describe_" + "channel")
 
 
-def test_model_is_a_direct_frozen_slotted_value_with_exact_parser_table(document):
+def test_model_is_a_direct_frozen_slotted_value(document):
     model = Atom2LevelModel.from_document(document)
-    assert tuple(_MODEL_PARSERS) == (FormatIdentity("atom.rb87_rydberg_2level", 1),)
-    assert not next(
-        field for field in fields(Atom2LevelModel) if field.name == "format"
-    ).compare
-    with pytest.raises(TypeError):
-        _MODEL_PARSERS[FormatIdentity("other", 1)] = object()
-    with pytest.raises(TypeError):
-        del _MODEL_PARSERS[FormatIdentity("atom.rb87_rydberg_2level", 1)]
     assert hasattr(Atom2LevelModel, "__slots__")
     for removed in (
         "_normalized" + "_state",

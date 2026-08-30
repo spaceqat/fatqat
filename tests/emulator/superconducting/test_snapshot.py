@@ -5,7 +5,6 @@ import inspect
 
 import pytest
 
-from fatqat.emulator._core.model_document import CalibrationIdentity, FormatIdentity
 from fatqat.emulator.superconducting import TransmonCalibration, TransmonModel
 from fatqat.errors import BackendValidationError
 
@@ -19,11 +18,10 @@ def test_public_snapshot_constructors_are_document_only(
     assert tuple(inspect.signature(TransmonCalibration).parameters) == ("document",)
     model = TransmonModel.from_document(model_document)
     calibration = TransmonCalibration(calibration_document)
-    assert model.format == FormatIdentity("sc.transmon_exchange", 1)
-    assert calibration.format == FormatIdentity("sc.transmon_exchange_fixed_pulse", 1)
-    assert calibration.identity == CalibrationIdentity(
-        "test-sc-2q-fixed-pulse", "2026-07-26"
-    )
+    assert not hasattr(model, "format")
+    assert not hasattr(model, "identity")
+    assert not hasattr(calibration, "format")
+    assert not hasattr(calibration, "identity")
 
 
 def test_calibration_document_rejects_model_binding_fields(calibration_document):
@@ -55,3 +53,17 @@ def test_model_and_calibration_format_dispatch_remain_distinct(
         TransmonModel.from_document(calibration_document)
     with pytest.raises(BackendValidationError, match="unknown format"):
         TransmonCalibration(model_document)
+
+
+def test_document_identities_remain_validated_with_qualified_paths(
+    model_document, calibration_document
+):
+    model_document["model"]["id"] = ""
+    with pytest.raises(BackendValidationError, match=r"physics model\.model\.id"):
+        TransmonModel.from_document(model_document)
+
+    calibration_document["calibration"]["revision"] = ""
+    with pytest.raises(
+        BackendValidationError, match=r"calibration\.calibration\.revision"
+    ):
+        TransmonCalibration(calibration_document)

@@ -18,7 +18,7 @@ from .._core.pulse import PulseImplementationMap
 from .calibration import default_transmon_calibration
 from .model import TransmonModel
 from .realization import default_transmon_gate_implementation_map
-from .target import _TransmonTarget
+from .target import _LOCAL_DIMENSION, _TransmonTarget
 
 
 class TransmonEmulator(_PulseBackend):
@@ -91,7 +91,7 @@ class TransmonEmulator(_PulseBackend):
         return _lindblad_noise_rejection_reasons(
             noise_model,
             self._lindblad_implementation_map,
-            local_dimension=self.model.local_dimension,
+            local_dimension=_LOCAL_DIMENSION,
             backend_name=type(self).__name__,
             supports_readout_confusion=True,
         )

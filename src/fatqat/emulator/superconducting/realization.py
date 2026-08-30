@@ -159,10 +159,10 @@ def default_transmon_gate_implementation_map(
             calibration._rx_ry_duration_ns,
             calibration._rx_ry_drag_coefficient,
         )
-        for subsystem in model.subsystems
+        for subsystem in model._subsystems
     }
     rz_frames = {
-        subsystem.id: model.frame(subsystem.id) for subsystem in model.subsystems
+        subsystem.id: model.frame(subsystem.id) for subsystem in model._subsystems
     }
 
     def rx_ry(operation: Operation, *, device_operands: tuple[object, ...]):
@@ -191,7 +191,7 @@ def default_transmon_gate_implementation_map(
     implementations.add(ops.RX, rx_ry)
     implementations.add(ops.RY, rx_ry)
     implementations.add(ops.RZ, rz)
-    for coupling in model.couplings:
+    for coupling in model._couplings:
         first, second = coupling.subsystem_ids
         for ordered in ((first, second), (second, first)):
             implementations.add(

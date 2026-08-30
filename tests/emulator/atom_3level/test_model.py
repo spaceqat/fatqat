@@ -1,15 +1,13 @@
 """Three-level atom physics-model value tests."""
 
 from copy import deepcopy
-from dataclasses import fields
 import inspect
 from math import nan
 
 import pytest
 
-from fatqat.emulator._core.model_document import FormatIdentity, ModelIdentity
 from fatqat.emulator._core.target import _ControlAddress, _FrameAddress
-from fatqat.emulator.atom_3level.model import Atom3LevelModel, _MODEL_PARSERS
+from fatqat.emulator.atom_3level.model import Atom3LevelModel
 from fatqat.errors import BackendValidationError
 
 
@@ -23,8 +21,11 @@ def test_model_is_direct_frozen_slotted_semantic_value(atom_3level_model_documen
     )
     assert model == Atom3LevelModel.from_document(pristine)
     assert isinstance(model == Atom3LevelModel.from_document(pristine), bool)
-    assert model.format == FormatIdentity("atom.rb87_rydberg_3level", 1)
-    assert model.identity == ModelIdentity("rb87-53s-reference", "2026-08-22")
+    changed_identity = deepcopy(pristine)
+    changed_identity["model"]["revision"] = "different"
+    assert model != Atom3LevelModel.from_document(changed_identity)
+    assert not hasattr(model, "format")
+    assert not hasattr(model, "identity")
     assert model.kind == "atom.rydberg_3level"
     assert model.species == "Rb87"
     assert model.local_dimension == 3
@@ -36,8 +37,6 @@ def test_model_is_direct_frozen_slotted_semantic_value(atom_3level_model_documen
     assert (model.mass_unit, model.distance_unit, model.time_unit) == ("u", "um", "us")
     with pytest.raises(TypeError):
         hash(model)
-    with pytest.raises(AttributeError):
-        model.identity = object()
     for removed in (
         "_normalized" + "_state",
         "_model" + "_key",
@@ -117,14 +116,3 @@ def test_model_factories_return_portable_structural_addresses(
         first.control.raman(-1)
     with pytest.raises(BackendValidationError):
         first.control.rydberg(True)
-
-
-def test_model_uses_one_immutable_exact_format_table():
-    assert tuple(_MODEL_PARSERS) == (FormatIdentity("atom.rb87_rydberg_3level", 1),)
-    assert not next(
-        field for field in fields(Atom3LevelModel) if field.name == "format"
-    ).compare
-    with pytest.raises(TypeError):
-        _MODEL_PARSERS[FormatIdentity("other", 1)] = object()
-    with pytest.raises(TypeError):
-        del _MODEL_PARSERS[FormatIdentity("atom.rb87_rydberg_3level", 1)]

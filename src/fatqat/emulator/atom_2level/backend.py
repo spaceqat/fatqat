@@ -33,7 +33,7 @@ from .._core.planning import (
 )
 from .._core.pulse import PulseImplementationMap
 from .model import Atom2LevelModel
-from .target import _Atom2LevelTarget
+from .target import _Atom2LevelTarget, _LOCAL_DIMENSION
 
 _CUTOFF_ERROR = "interaction_cutoff must be None or a finite nonnegative real number"
 
@@ -216,7 +216,7 @@ class Atom2LevelEmulator(_PulseBackend):
         return _lindblad_noise_rejection_reasons(
             noise_model,
             self._lindblad_implementation_map,
-            local_dimension=self.model.local_dimension,
+            local_dimension=_LOCAL_DIMENSION,
             backend_name=type(self).__name__,
             allow_operation_scoped=not self._uses_builtin_lindblad_defaults,
             supports_readout_confusion=True,
