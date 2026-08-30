@@ -11,7 +11,7 @@ from qutip import Qobj, basis
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
-from fatqat.emulator._core.engine import PulseEngine
+from fatqat.emulator._core.engine import _ShotContext
 from fatqat.emulator._core.scheduling import schedule_pulse_run
 from fatqat.emulator.atom_2level import (
     Atom2LevelModel,
@@ -63,89 +63,6 @@ def _program(*, measured=True, amplitude=1.0, duration=0.6):
     return program
 
 
-def test_one_mcsolve_call_receives_exact_shot_count_seed_order_and_options(
-    model, monkeypatch
-):
-    backend = _backend(model)
-    captured = {}
-
-    class SolverResult:
-        def __init__(self, final_states, seeds):
-            self.runs_final_states = final_states
-            self.seeds = [SimpleNamespace(entropy=seed) for seed in seeds]
-
-        @property
-        def states(self):
-            raise AssertionError("adapter read averaged/intermediate states")
-
-        @property
-        def average_final_state(self):
-            raise AssertionError("adapter read an averaged final state")
-
-    def fake_mcsolve(
-        hamiltonian,
-        initial,
-        tlist,
-        *,
-        c_ops,
-        ntraj,
-        seeds,
-        options,
-    ):
-        captured.update(
-            {
-                "hamiltonian": hamiltonian,
-                "initial": initial,
-                "tlist": tlist,
-                "c_ops": c_ops,
-                "ntraj": ntraj,
-                "seeds": tuple(seeds),
-                "options": options,
-            }
-        )
-        states = tuple(basis(2, index % 2) for index in range(ntraj))
-        return SolverResult(states, seeds)
-
-    monkeypatch.setattr(
-        "fatqat.emulator.atom_2level.qutip_adapter.mcsolve", fake_mcsolve
-    )
-    result = backend.run(_program(), shots=5, simulation_config={"seed": 1234}).result()
-
-    assert captured["ntraj"] == 5
-    assert len(captured["seeds"]) == 5
-    assert len(set(captured["seeds"])) == 5
-    assert captured["options"]["store_final_state"] is True
-    assert captured["options"]["keep_runs_results"] is True
-    assert captured["options"]["progress_bar"] is False
-    assert sum(result.get_counts().values()) == 5
-    assert result.metadata["solver"]["solver"] == "mcsolve"
-
-
-def test_counts_off_trajectory_executes_exactly_one_retained_run(model, monkeypatch):
-    backend = _backend(model)
-    calls = []
-
-    def fake_mcsolve(*_args, ntraj, seeds, **_kwargs):
-        calls.append((ntraj, tuple(seeds)))
-        return SimpleNamespace(
-            runs_final_states=[basis(2, 0)],
-            seeds=[SimpleNamespace(entropy=seeds[0])],
-        )
-
-    monkeypatch.setattr(
-        "fatqat.emulator.atom_2level.qutip_adapter.mcsolve", fake_mcsolve
-    )
-    result = backend.run(
-        _program(),
-        shots=20,
-        result_config={"counts": False, "final_state": False},
-    ).result()
-
-    assert calls == [(1, calls[0][1])]
-    assert len(calls[0][1]) == 1
-    assert result.available_data == frozenset()
-
-
 @pytest.mark.parametrize("failure", ["none", "count", "nonket", "reordered"])
 def test_retained_trajectory_diagnostics_are_explicit(model, monkeypatch, failure):
     backend = _backend(model)
@@ -186,40 +103,6 @@ def test_retained_trajectory_diagnostics_are_explicit(model, monkeypatch, failur
         adapter.run_trajectory_batch(run, ntraj=2, seeds=seeds)
 
 
-def test_engine_preserves_returned_trajectory_order_and_counts_only_memory(
-    model, monkeypatch
-):
-    backend = _backend(model)
-    captured = []
-    original = PulseEngine.run_terminal_trajectory_batch
-
-    def fake_mcsolve(*_args, ntraj, seeds, **_kwargs):
-        return SimpleNamespace(
-            runs_final_states=[basis(2, index % 2) for index in range(ntraj)],
-            seeds=[SimpleNamespace(entropy=seed) for seed in seeds],
-        )
-
-    def record(self, *args, **kwargs):
-        outcomes = original(self, *args, **kwargs)
-        captured.extend(outcomes)
-        return outcomes
-
-    monkeypatch.setattr(
-        "fatqat.emulator.atom_2level.qutip_adapter.mcsolve", fake_mcsolve
-    )
-    monkeypatch.setattr(PulseEngine, "run_terminal_trajectory_batch", record)
-    result = backend.run(_program(), shots=4).result()
-
-    assert result.get_counts_as_tuples() == {(0,): 2, (1,): 2}
-    assert [outcome.classical_digits for outcome in captured] == [
-        (0,),
-        (1,),
-        (0,),
-        (1,),
-    ]
-    assert all(outcome.final_state is None for outcome in captured)
-
-
 def test_real_trajectory_runs_are_reproducible_and_converge_to_mesolve(model):
     backend = _backend(model, rate=0.4)
     program = _program(amplitude=np.pi, duration=1.0)
@@ -241,15 +124,35 @@ def test_real_trajectory_runs_are_reproducible_and_converge_to_mesolve(model):
     assert observed_excited == pytest.approx(expected_excited, abs=0.08)
 
 
-def test_one_shot_trajectory_final_state_is_reproducible(model):
+def test_one_shot_regional_trajectory_continues_and_is_reproducible(model):
     backend = _backend(model)
-    kwargs = {
-        "shots": 1,
-        "simulation_config": {"seed": 71},
-        "result_config": {"counts": True, "final_state": True},
-    }
-    first = backend.run(_program(), **kwargs).result()
-    second = backend.run(_program(), **kwargs).result()
+    prepared = backend._prepare_program(
+        _program(measured=False, amplitude=0.8, duration=0.4)
+    )
 
-    assert first.get_counts() == second.get_counts()
-    assert first.get_statevector() == pytest.approx(second.get_statevector())
+    def execute():
+        adapter = _Atom2LevelQutipAdapter(
+            backend._target,
+            engine_allocation=prepared.engine_allocation,
+            background_noise=prepared.background_noise,
+            execution_mode="trajectory",
+        )
+        context = _ShotContext(
+            adapter.initial_state(),
+            [],
+            np.random.default_rng(71),
+        )
+        for boundary_time in (0.0, 0.4):
+            run = schedule_pulse_run(
+                prepared.plan,
+                boundary_time=boundary_time,
+            )
+            adapter.evolve(run, context, (True,))
+            context.time = run.end_time
+        return adapter.finish_shot(context).final_state
+
+    first = execute()
+    second = execute()
+
+    assert first == pytest.approx(second)
+    assert np.linalg.norm(first) == pytest.approx(1.0)

@@ -148,12 +148,7 @@ class PulseEngine:
         the complete trajectory for each shot. The supplied generator is
         shared in deterministic shot order.
         """
-        if type(shots) is not int or shots <= 0:
-            raise BackendValidationError("pulse engine shots must be a positive int")
-        if type(n_clbits) is not int or n_clbits < 0:
-            raise BackendValidationError(
-                "pulse engine classical width must be a non-negative int"
-            )
+        self._validate_run_request(shots, n_clbits)
         frozen_plan = tuple(plan)
         is_dynamic, terminal_measurements = self._analyze_plan(frozen_plan)
         if is_dynamic:
@@ -168,6 +163,36 @@ class PulseEngine:
             rng=rng,
         )
 
+    def run_trajectories(
+        self,
+        plan: Iterable[PulsePlanStep],
+        *,
+        shots: int,
+        n_clbits: int,
+        rng: np.random.Generator,
+    ) -> tuple[Any, ...]:
+        """Execute one independent stochastic trajectory per requested shot."""
+        self._validate_run_request(shots, n_clbits)
+        frozen_plan = tuple(plan)
+        if isinstance(self._runner, _TerminalTrajectoryBatchRunner):
+            try:
+                self._split_terminal_trajectory_plan(frozen_plan)
+            except BackendValidationError:
+                pass
+            else:
+                return self.run_terminal_trajectory_batch(
+                    frozen_plan,
+                    shots=shots,
+                    n_clbits=n_clbits,
+                    rng=rng,
+                )
+        return self._run_per_shot(
+            frozen_plan,
+            shots=shots,
+            n_clbits=n_clbits,
+            rng=rng,
+        )
+
     def run_terminal_trajectory_batch(
         self,
         plan: Iterable[PulsePlanStep],
@@ -177,48 +202,13 @@ class PulseEngine:
         rng: np.random.Generator,
     ) -> tuple[Any, ...]:
         """Batch one continuous trajectory region, then apply terminal boundaries."""
-        if type(shots) is not int or shots <= 0:
-            raise BackendValidationError("pulse engine shots must be a positive int")
-        if type(n_clbits) is not int or n_clbits < 0:
-            raise BackendValidationError(
-                "pulse engine classical width must be a non-negative int"
-            )
+        self._validate_run_request(shots, n_clbits)
         if not isinstance(self._runner, _TerminalTrajectoryBatchRunner):
             raise BackendValidationError(
                 "pulse runner does not support terminal trajectory batching"
             )
 
-        blocks: list[PulseBlock] = []
-        measurements: list[MeasurementStep] = []
-        in_measurement_suffix = False
-        for step in plan:
-            if isinstance(step, PulseBlock):
-                if in_measurement_suffix:
-                    raise BackendValidationError(
-                        "terminal trajectory plans cannot pulse after measurement"
-                    )
-                if step.condition is not None:
-                    raise BackendValidationError(
-                        "terminal trajectory plans do not support conditions"
-                    )
-                blocks.append(step)
-                continue
-            if isinstance(step, MeasurementStep):
-                in_measurement_suffix = True
-                measurements.append(step)
-                continue
-            if isinstance(step, ResetStep):
-                raise BackendValidationError(
-                    "terminal trajectory plans do not support reset"
-                )
-            raise BackendValidationError(
-                "terminal trajectory plan contains an unknown execution step"
-            )
-        if not blocks:
-            raise BackendValidationError(
-                "terminal trajectory batching requires elapsed pulse evolution"
-            )
-
+        blocks, measurements = self._split_terminal_trajectory_plan(tuple(plan))
         scheduled_run = schedule_pulse_run(
             blocks,
             boundary_time=0.0,
@@ -259,6 +249,53 @@ class PulseEngine:
                 self._runner.execute_boundary(measurement, context)
             outcomes.append(self._runner.finish_shot(context))
         return tuple(outcomes)
+
+    @staticmethod
+    def _split_terminal_trajectory_plan(
+        plan: tuple[PulsePlanStep, ...],
+    ) -> tuple[tuple[PulseBlock, ...], tuple[MeasurementStep, ...]]:
+        """Validate and split the optional terminal-batch plan shape."""
+        blocks: list[PulseBlock] = []
+        measurements: list[MeasurementStep] = []
+        in_measurement_suffix = False
+        for step in plan:
+            if isinstance(step, PulseBlock):
+                if in_measurement_suffix:
+                    raise BackendValidationError(
+                        "terminal trajectory plans cannot pulse after measurement"
+                    )
+                if step.condition is not None:
+                    raise BackendValidationError(
+                        "terminal trajectory plans do not support conditions"
+                    )
+                blocks.append(step)
+                continue
+            if isinstance(step, MeasurementStep):
+                in_measurement_suffix = True
+                measurements.append(step)
+                continue
+            if isinstance(step, ResetStep):
+                raise BackendValidationError(
+                    "terminal trajectory plans do not support reset"
+                )
+            raise BackendValidationError(
+                "terminal trajectory plan contains an unknown execution step"
+            )
+        if not blocks:
+            raise BackendValidationError(
+                "terminal trajectory batching requires elapsed pulse evolution"
+            )
+        return tuple(blocks), tuple(measurements)
+
+    @staticmethod
+    def _validate_run_request(shots: int, n_clbits: int) -> None:
+        """Validate model-neutral shot and classical-memory dimensions."""
+        if type(shots) is not int or shots <= 0:
+            raise BackendValidationError("pulse engine shots must be a positive int")
+        if type(n_clbits) is not int or n_clbits < 0:
+            raise BackendValidationError(
+                "pulse engine classical width must be a non-negative int"
+            )
 
     def propagator(
         self,

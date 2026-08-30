@@ -20,6 +20,14 @@ from fatqat.emulator import SampledWaveform
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
 
+class _DensityMatrixAtom2LevelEmulator(Atom2LevelEmulator):
+    """Select the pre-cutover private density-matrix capability in tests."""
+
+    def _resolve_execution_mode(self, facts):
+        del facts
+        return "density_matrix"
+
+
 @pytest.fixture(name="backend")
 def backend_fixture():
     model = Atom2LevelModel.from_document(
@@ -134,3 +142,36 @@ def test_one_shot_requested_posterior_is_an_independent_collapsed_ket(backend):
     assert np.count_nonzero(np.abs(state) > 1e-10) == 1
     assert np.linalg.norm(state) == pytest.approx(1.0)
     assert counts == {format(int(np.argmax(np.abs(state))), "02b"): 1}
+
+
+def test_terminal_density_matrix_measurement_samples_and_collapses():
+    model = Atom2LevelModel.from_document(
+        json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    )
+    backend = _DensityMatrixAtom2LevelEmulator(
+        model,
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
+    )
+    program = _pulse_program(measured=True)
+
+    sampled = backend.run(
+        program,
+        shots=30,
+        simulation_config={"seed": 20260830},
+    ).result()
+    posterior = backend.run(
+        program,
+        shots=1,
+        simulation_config={"seed": 11},
+        result_config={"counts": True, "final_state": True},
+    ).result()
+
+    assert sum(sampled.get_counts().values()) == 30
+    assert all(set(key) <= {"0", "1"} for key in sampled.get_counts())
+    state = posterior.get_density_matrix()
+    assert state.shape == (4, 4)
+    assert np.trace(state) == pytest.approx(1.0)
+    assert np.trace(state @ state) == pytest.approx(1.0)
+    assert posterior.get_counts() == {
+        format(int(np.argmax(np.real(np.diag(state)))), "02b"): 1
+    }

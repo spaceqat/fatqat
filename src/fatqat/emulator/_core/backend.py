@@ -471,7 +471,7 @@ class _PulseBackend(ABC):
         execution_shots = shots if request.counts else 1
         engine = PulseEngine(runner, schedule_mode=simulation.schedule_mode)
         engine_method = (
-            engine.run_terminal_trajectory_batch
+            engine.run_trajectories
             if request.execution_mode == "trajectory"
             else engine.run
         )

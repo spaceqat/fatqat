@@ -242,6 +242,63 @@ class _TrajectoryRunner(_FakeRunner):
         return result
 
 
+class _RegionalTrajectoryRunner(_TrajectoryRunner):
+    """Expose shot context continuity through runner payloads."""
+
+    def initial_state(self):
+        return {"regions": []}
+
+    def evolve(self, run, context, enabled):
+        context.state["regions"].append(
+            (
+                context.time,
+                run.end_time,
+                tuple(context.classical_memory),
+                enabled,
+                int(context.rng.integers(0, 10_000)),
+            )
+        )
+
+    def execute_boundary(self, step, context):
+        context.classical_memory[0] = int(context.rng.integers(0, 2))
+
+    def finish_shot(self, context):
+        return (
+            tuple(context.state["regions"]),
+            tuple(context.classical_memory),
+            context.time,
+        )
+
+
+def test_trajectory_execution_preserves_context_across_regions(model):
+    plan = (
+        _physical_block(model, 1.0),
+        MeasurementStep((0,), (0,)),
+        _physical_block(model, 2.0, condition=((0, 1),)),
+    )
+
+    def execute():
+        return PulseEngine(_RegionalTrajectoryRunner()).run_trajectories(
+            plan,
+            shots=2,
+            n_clbits=1,
+            rng=np.random.default_rng(20260830),
+        )
+
+    first = execute()
+    second = execute()
+
+    assert first == second
+    assert first[0] != first[1]
+    for regions, memory, final_time in first:
+        assert len(regions) == 2
+        assert regions[0][:4] == (0.0, 1.0, (0,), (True,))
+        assert regions[1][:3] == (1.0, 3.0, memory)
+        expected_enabled = (memory[0] == 1,)
+        assert regions[1][3] == expected_enabled
+        assert final_time == 3.0
+
+
 def test_terminal_trajectory_batch_preserves_seed_and_outcome_order(model):
     blocks = (
         _physical_block(model, 1.0),
