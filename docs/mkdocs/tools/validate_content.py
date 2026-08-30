@@ -1,4 +1,4 @@
-"""Validate the parallel English and Simplified Chinese documentation trees."""
+"""Validate every active MkDocs locale and its shared content contracts."""
 
 from __future__ import annotations
 
@@ -9,10 +9,11 @@ from urllib.parse import unquote, urlsplit
 import yaml
 
 MKDOCS_ROOT = Path(__file__).resolve().parents[1]
-LOCALE_ROOTS = {
-    "en": MKDOCS_ROOT / "en",
-    "zh": MKDOCS_ROOT / "zh",
-}
+LOCALE_REGISTRY = MKDOCS_ROOT / "locales.yml"
+_LOCALE_DATA = yaml.safe_load(LOCALE_REGISTRY.read_text(encoding="utf-8"))
+CANONICAL_LOCALE = _LOCALE_DATA["canonical"]
+LOCALES = tuple(_LOCALE_DATA["locales"])
+LOCALE_ROOTS = {locale: MKDOCS_ROOT / locale for locale in LOCALES}
 
 MARKDOWN_DESTINATION = re.compile(
     r"\[!\[[^\]]*\]\((?P<linked_image>[^)\n]+)\)"
@@ -26,10 +27,9 @@ HOME_TEMPLATE_DESTINATION = re.compile(
     re.DOTALL,
 )
 HOME_TEMPLATE_HERO_KEY = re.compile(r"\bhero\.([a-z_][a-z0-9_]*)\b")
-CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 GENERATED_ASSET_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
 TUTORIAL_CODE_BLOCK = re.compile(
-    r'^```python title="Python (?:cell|单元) (?P<number>\d+)"\n' r"(?P<code>.*?)^```$",
+    r'^```python title="[^"\n]*? (?P<number>\d+)"\n' r"(?P<code>.*?)^```$",
     re.DOTALL | re.MULTILINE,
 )
 
@@ -125,17 +125,25 @@ def _front_matter(page: Path) -> dict[str, object]:
 
 def validate() -> list[str]:
     errors: list[str] = []
-    english = LOCALE_ROOTS["en"]
-    chinese = LOCALE_ROOTS["zh"]
+    canonical_root = LOCALE_ROOTS[CANONICAL_LOCALE]
+    translated_locales = tuple(
+        locale for locale in LOCALES if locale != CANONICAL_LOCALE
+    )
 
     markdown_paths = {
         locale: _relative_files(root, suffixes={".md"})
         for locale, root in LOCALE_ROOTS.items()
     }
-    if missing := markdown_paths["en"] - markdown_paths["zh"]:
-        errors.append(f"Chinese Markdown pages are missing: {_describe_paths(missing)}")
-    if extra := markdown_paths["zh"] - markdown_paths["en"]:
-        errors.append(f"Chinese-only Markdown pages exist: {_describe_paths(extra)}")
+    canonical_markdown = markdown_paths[CANONICAL_LOCALE]
+    for locale in translated_locales:
+        if missing := canonical_markdown - markdown_paths[locale]:
+            errors.append(
+                f"{locale} Markdown pages are missing: {_describe_paths(missing)}"
+            )
+        if extra := markdown_paths[locale] - canonical_markdown:
+            errors.append(
+                f"{locale}-only Markdown pages exist: {_describe_paths(extra)}"
+            )
 
     for folder, suffixes in (
         ("assets", GENERATED_ASSET_SUFFIXES),
@@ -145,57 +153,79 @@ def validate() -> list[str]:
             locale: _relative_files(root / folder, suffixes=suffixes)
             for locale, root in LOCALE_ROOTS.items()
         }
-        if missing := localized["en"] - localized["zh"]:
-            errors.append(f"Chinese {folder} are missing: {_describe_paths(missing)}")
-        if extra := localized["zh"] - localized["en"]:
-            errors.append(f"Chinese-only {folder} exist: {_describe_paths(extra)}")
+        canonical_files = localized[CANONICAL_LOCALE]
+        for locale in translated_locales:
+            if missing := canonical_files - localized[locale]:
+                errors.append(
+                    f"{locale} {folder} are missing: {_describe_paths(missing)}"
+                )
+            if extra := localized[locale] - canonical_files:
+                errors.append(
+                    f"{locale}-only {folder} exist: {_describe_paths(extra)}"
+                )
 
-    for download in _relative_files(english / "downloads", suffixes={".py"}):
-        english_download = english / "downloads" / download
-        chinese_download = chinese / "downloads" / download
-        if (
-            chinese_download.is_file()
-            and english_download.read_bytes() != chinese_download.read_bytes()
-        ):
-            errors.append(
-                f"Translated Python download differs from English: {download.as_posix()}"
-            )
+    for download in _relative_files(
+        canonical_root / "downloads", suffixes={".py"}
+    ):
+        canonical_download = canonical_root / "downloads" / download
+        for locale in translated_locales:
+            localized_download = LOCALE_ROOTS[locale] / "downloads" / download
+            if (
+                localized_download.is_file()
+                and canonical_download.read_bytes() != localized_download.read_bytes()
+            ):
+                errors.append(
+                    f"{locale} Python download differs from {CANONICAL_LOCALE}: "
+                    f"{download.as_posix()}"
+                )
 
     tutorial_asset_root = Path("assets/generated/tutorials")
     for asset in _relative_files(
-        english / tutorial_asset_root, suffixes=GENERATED_ASSET_SUFFIXES
+        canonical_root / tutorial_asset_root, suffixes=GENERATED_ASSET_SUFFIXES
     ):
-        english_asset = english / tutorial_asset_root / asset
-        chinese_asset = chinese / tutorial_asset_root / asset
-        if (
-            chinese_asset.is_file()
-            and english_asset.read_bytes() != chinese_asset.read_bytes()
-        ):
-            errors.append(
-                "Captured tutorial figure differs between locales: "
-                f"{asset.as_posix()}"
-            )
+        canonical_asset = canonical_root / tutorial_asset_root / asset
+        for locale in translated_locales:
+            localized_asset = LOCALE_ROOTS[locale] / tutorial_asset_root / asset
+            if (
+                localized_asset.is_file()
+                and canonical_asset.read_bytes() != localized_asset.read_bytes()
+            ):
+                errors.append(
+                    f"Captured tutorial figure differs for {locale}: "
+                    f"{asset.as_posix()}"
+                )
 
-    for relative in sorted(markdown_paths["en"]):
+    for relative in sorted(canonical_markdown):
         if relative.parts[:1] != ("tutorials",) or relative.name == "index.md":
             continue
-        english_cells = _tutorial_code_cells(english / relative)
-        chinese_cells = _tutorial_code_cells(chinese / relative)
-        if english_cells != chinese_cells:
-            errors.append(
-                "Translated tutorial code differs from English: "
-                f"{relative.as_posix()}"
-            )
+        canonical_cells = _tutorial_code_cells(canonical_root / relative)
+        for locale in translated_locales:
+            localized_page = LOCALE_ROOTS[locale] / relative
+            if localized_page.is_file() and canonical_cells != _tutorial_code_cells(
+                localized_page
+            ):
+                errors.append(
+                    f"{locale} tutorial code differs from {CANONICAL_LOCALE}: "
+                    f"{relative.as_posix()}"
+                )
 
     for relative, label in (
         (Path("index.md"), "Homepage"),
         (Path("guide/index.md"), "Guide index"),
         (Path("tutorials/index.md"), "Tutorial index"),
     ):
-        if _markdown_destinations(english / relative) != _markdown_destinations(
-            chinese / relative
-        ):
-            errors.append(f"{label} link and image destinations differ between locales")
+        canonical_page = canonical_root / relative
+        if not canonical_page.is_file():
+            continue
+        canonical_destinations = _markdown_destinations(canonical_page)
+        for locale in translated_locales:
+            localized_page = LOCALE_ROOTS[locale] / relative
+            if localized_page.is_file() and canonical_destinations != (
+                _markdown_destinations(localized_page)
+            ):
+                errors.append(
+                    f"{label} link and image destinations differ for {locale}"
+                )
 
     home_template = MKDOCS_ROOT / "overrides" / "home.html"
     template_text = home_template.read_text(encoding="utf-8")
@@ -203,6 +233,9 @@ def validate() -> list[str]:
     homepage_heroes: dict[str, dict[str, object]] = {}
     for locale, root in LOCALE_ROOTS.items():
         homepage = root / "index.md"
+        if not homepage.is_file():
+            errors.append(f"{locale} homepage is missing")
+            continue
         try:
             metadata = _front_matter(homepage)
         except (ValueError, yaml.YAMLError) as error:
@@ -238,16 +271,22 @@ def validate() -> list[str]:
             )
         homepage_heroes[locale] = hero
 
-    if set(homepage_heroes) == set(LOCALE_ROOTS) and set(
-        homepage_heroes["en"]
-    ) != set(homepage_heroes["zh"]):
-        errors.append("Homepage hero metadata keys differ between locales")
+    canonical_hero = homepage_heroes.get(CANONICAL_LOCALE)
+    if canonical_hero is not None:
+        for locale in translated_locales:
+            localized_hero = homepage_heroes.get(locale)
+            if localized_hero is not None and set(canonical_hero) != set(
+                localized_hero
+            ):
+                errors.append(f"Homepage hero metadata keys differ for {locale}")
 
     template_destinations = HOME_TEMPLATE_DESTINATION.findall(template_text)
     if not template_destinations:
         errors.append("Homepage template exposes no local CTA or image destinations")
     for locale, root in LOCALE_ROOTS.items():
         homepage = root / "index.md"
+        if not homepage.is_file():
+            continue
         for destination in template_destinations:
             if not _local_target_exists(homepage, root, destination):
                 errors.append(
@@ -258,8 +297,6 @@ def validate() -> list[str]:
         for relative in sorted(markdown_paths[locale]):
             page = root / relative
             text = page.read_text(encoding="utf-8")
-            if locale == "zh" and not CJK.search(text):
-                errors.append(f"Chinese page has no CJK text: {relative.as_posix()}")
             for offset, destination in _markdown_destination_locations(text):
                 if not _local_target_exists(page, root, destination):
                     line = text.count("\n", 0, offset) + 1
@@ -269,11 +306,21 @@ def validate() -> list[str]:
                     )
 
     if not errors:
+        locale_summary = ", ".join(LOCALES)
+        asset_count = len(
+            _relative_files(
+                canonical_root / "assets", suffixes=GENERATED_ASSET_SUFFIXES
+            )
+        )
+        download_count = len(
+            _relative_files(
+                canonical_root / "downloads", suffixes={".ipynb", ".py"}
+            )
+        )
         print(
-            "Validated locale parity: "
-            f"{len(markdown_paths['en'])} Markdown pages, "
-            f"{len(_relative_files(english / 'assets', suffixes=GENERATED_ASSET_SUFFIXES))} assets, "
-            f"and {len(_relative_files(english / 'downloads', suffixes={'.ipynb', '.py'}))} downloads per locale."
+            f"Validated documentation content for {locale_summary}: "
+            f"{len(canonical_markdown)} Markdown pages, "
+            f"{asset_count} assets, and {download_count} downloads."
         )
     return errors
 

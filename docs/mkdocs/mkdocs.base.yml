@@ -38,7 +38,7 @@ theme:
     - content.tabs.link
     - content.tooltips
 
-# Mapping form is intentional: MkDocs can deep-merge it when the localized
+# Mapping form is intentional: MkDocs can deep-merge it when locale
 # configurations use INHERIT. Keep autorefs before mkdocstrings.
 plugins:
   search: {}
@@ -47,8 +47,8 @@ plugins:
     default_handler: python
     handlers:
       python:
-        # Paths are relative to mkdocs.en.yml / mkdocs.zh.yml. Both localized
-        # configs live beside this base file, so ../../src is stable with -f.
+        # Paths are relative to locale configs beside this base file, so
+        # ../../src is stable when MkDocs is invoked with -f.
         paths:
           - ../../src
         options:
@@ -96,7 +96,8 @@ markdown_extensions:
   pymdownx.highlight:
     pygments_lang_class: true
   pymdownx.inlinehilite: {}
-  pymdownx.snippets: {}
+  pymdownx.snippets:
+    check_paths: true
   pymdownx.superfences: {}
   pymdownx.tabbed:
     alternate_style: true
@@ -104,16 +105,7 @@ markdown_extensions:
       kwds:
         case: lower
 
-extra:
-  alternate:
-    - name: English
-      link: !ENV [FATQAT_MKDOCS_EN_LINK, /en/]
-      lang: en
-    - name: 简体中文
-      link: !ENV [FATQAT_MKDOCS_ZH_LINK, /zh/]
-      lang: zh
-
-# Both primary configuration files are co-located, so this inherited path is
-# resolved identically for English and Chinese live-preview builds.
+# Locale configuration files are co-located, so this inherited path resolves
+# identically for every active live-preview build.
 watch:
   - ../../src/fatqat

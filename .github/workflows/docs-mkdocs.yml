@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: Strict bilingual build
+    name: Strict documentation build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -36,19 +36,16 @@ jobs:
       - name: Verify generated output is not tracked
         run: |
           tracked_generated="$(git ls-files -- \
-            docs/mkdocs/en/assets/generated \
-            docs/mkdocs/zh/assets/generated \
-            docs/mkdocs/en/downloads/tutorials \
-            docs/mkdocs/zh/downloads/tutorials \
-            docs/mkdocs/en/tutorials \
-            docs/mkdocs/zh/tutorials \
+            ':(glob)docs/mkdocs/*/assets/generated/**' \
+            ':(glob)docs/mkdocs/*/downloads/tutorials/**' \
+            ':(glob)docs/mkdocs/*/tutorials/**' \
             docs/mkdocs/tutorial-results)"
           if [ -n "$tracked_generated" ]; then
             printf 'Generated documentation files must not be tracked:\n%s\n' "$tracked_generated"
             exit 1
           fi
 
-      - name: Build English and Chinese documentation
+      - name: Build documentation
         run: python docs/mkdocs/manage.py build
 
       - name: Verify the build did not modify sources

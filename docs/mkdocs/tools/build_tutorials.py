@@ -1,4 +1,4 @@
-"""Discover, execute, and assemble bilingual Markdown tutorials for MkDocs."""
+"""Discover, execute, and assemble localized Markdown tutorials for MkDocs."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import re
 import shutil
 import sys
 import tempfile
+from typing import Mapping
 
 import nbformat
 import yaml
@@ -23,15 +24,19 @@ SCRIPT_PATH = Path(__file__).resolve()
 REPOSITORY_ROOT = SCRIPT_PATH.parents[3]
 MKDOCS_ROOT = SCRIPT_PATH.parents[1]
 SOURCE_ROOT = MKDOCS_ROOT / "tutorial-sources"
+LOCALE_REGISTRY = MKDOCS_ROOT / "locales.yml"
+_LOCALE_DATA = yaml.safe_load(LOCALE_REGISTRY.read_text(encoding="utf-8"))
+CANONICAL_LOCALE = _LOCALE_DATA["canonical"]
+LOCALES = tuple(_LOCALE_DATA["locales"])
 GALLERY = yaml.safe_load((SOURCE_ROOT / "gallery.yml").read_text(encoding="utf-8"))
-PAGE_ROOTS = {locale: MKDOCS_ROOT / locale / "tutorials" for locale in ("en", "zh")}
+PAGE_ROOTS = {locale: MKDOCS_ROOT / locale / "tutorials" for locale in LOCALES}
 DOWNLOAD_ROOTS = {
     locale: MKDOCS_ROOT / locale / "downloads" / "tutorials"
-    for locale in ("en", "zh")
+    for locale in LOCALES
 }
 ASSET_ROOTS = {
     locale: MKDOCS_ROOT / locale / "assets" / "generated" / "tutorials"
-    for locale in ("en", "zh")
+    for locale in LOCALES
 }
 RESULT_ROOT = MKDOCS_ROOT / "tutorial-results"
 
@@ -40,6 +45,7 @@ PYTHON_CELL = re.compile(
     r"(?ms)^```python(?:[^\n]*)\n(?P<code>.*?)^```(?=\n|$)"
 )
 CODE_PLACEHOLDER = re.compile(r"<!-- tutorial-code-cell -->")
+
 
 @dataclass(frozen=True)
 class LocalizedSource:
@@ -55,13 +61,23 @@ class LocalizedSource:
 
 @dataclass(frozen=True)
 class Tutorial:
-    """One automatically discovered bilingual tutorial pair."""
+    """One tutorial with a canonical program and localized prose."""
 
     category: str
     slug: str
-    en: LocalizedSource
-    zh: LocalizedSource
+    sources: Mapping[str, LocalizedSource]
     code_cells: tuple[str, ...]
+
+    @property
+    def canonical_source(self) -> LocalizedSource:
+        """Return the source that owns executable Python cells."""
+
+        return self.sources[CANONICAL_LOCALE]
+
+    def source(self, locale: str) -> LocalizedSource:
+        """Return one active locale's authored source."""
+
+        return self.sources[locale]
 
 
 def _write_text(path: Path, content: str) -> None:
@@ -114,9 +130,9 @@ def _parse_source(path: Path) -> LocalizedSource:
 
 
 def discover_tutorials() -> tuple[Tutorial, ...]:
-    """Discover mirrored locale files; their parent folder is the category."""
+    """Discover active-locale files; their parent folder is the category."""
 
-    roots = {locale: SOURCE_ROOT / locale for locale in ("en", "zh")}
+    roots = {locale: SOURCE_ROOT / locale for locale in LOCALES}
     inventories = {
         locale: {
             path.relative_to(root): path
@@ -125,48 +141,63 @@ def discover_tutorials() -> tuple[Tutorial, ...]:
         }
         for locale, root in roots.items()
     }
-    if inventories["en"].keys() != inventories["zh"].keys():
-        raise ValueError(
-            "tutorial translations must mirror English source paths: "
-            f"missing_zh={sorted(map(str, inventories['en'].keys() - inventories['zh'].keys()))}, "
-            f"missing_en={sorted(map(str, inventories['zh'].keys() - inventories['en'].keys()))}"
-        )
+    canonical_paths = set(inventories[CANONICAL_LOCALE])
+    for locale in LOCALES:
+        locale_paths = set(inventories[locale])
+        if locale_paths != canonical_paths:
+            raise ValueError(
+                f"tutorial locale {locale!r} must mirror {CANONICAL_LOCALE!r}: "
+                f"missing={sorted(map(str, canonical_paths - locale_paths))}, "
+                f"extra={sorted(map(str, locale_paths - canonical_paths))}"
+            )
 
     tutorials: list[Tutorial] = []
     slugs: set[str] = set()
-    for relative in sorted(inventories["en"]):
+    for relative in sorted(inventories[CANONICAL_LOCALE]):
         if relative.parent == Path("."):
             raise ValueError(f"{relative}: put each tutorial in a category subfolder")
         slug = relative.stem
         if slug in slugs:
             raise ValueError(f"tutorial slug {slug!r} occurs in more than one category")
         slugs.add(slug)
-        en = _parse_source(inventories["en"][relative])
-        zh = _parse_source(inventories["zh"][relative])
-        code_cells = tuple(match.group("code").rstrip() for match in PYTHON_CELL.finditer(en.body))
+        sources = {
+            locale: _parse_source(inventories[locale][relative])
+            for locale in LOCALES
+        }
+        canonical = sources[CANONICAL_LOCALE]
+        code_cells = tuple(
+            match.group("code").rstrip()
+            for match in PYTHON_CELL.finditer(canonical.body)
+        )
         if not code_cells:
-            raise ValueError(f"{en.path}: expected at least one top-level Python block")
-        placeholder_count = len(CODE_PLACEHOLDER.findall(zh.body))
-        if placeholder_count != len(code_cells):
             raise ValueError(
-                f"{zh.path}: expected {len(code_cells)} tutorial-code-cell placeholders, "
-                f"found {placeholder_count}"
+                f"{canonical.path}: expected at least one top-level Python block"
             )
-        if en.icon != zh.icon:
-            raise ValueError(f"{relative}: icon differs between locales")
-        if len(en.figure_alts) != len(zh.figure_alts):
-            raise ValueError(f"{relative}: figure_alts length differs between locales")
+        for locale, source in sources.items():
+            if locale == CANONICAL_LOCALE:
+                continue
+            placeholder_count = len(CODE_PLACEHOLDER.findall(source.body))
+            if placeholder_count != len(code_cells):
+                raise ValueError(
+                    f"{source.path}: expected {len(code_cells)} "
+                    f"tutorial-code-cell placeholders, found {placeholder_count}"
+                )
+            if canonical.icon != source.icon:
+                raise ValueError(f"{relative}: icon differs for locale {locale}")
+            if len(canonical.figure_alts) != len(source.figure_alts):
+                raise ValueError(
+                    f"{relative}: figure_alts length differs for locale {locale}"
+                )
         tutorials.append(
             Tutorial(
                 category=relative.parent.as_posix(),
                 slug=slug,
-                en=en,
-                zh=zh,
+                sources=sources,
                 code_cells=code_cells,
             )
         )
     if not tutorials:
-        raise ValueError(f"no tutorial pairs found under {SOURCE_ROOT}")
+        raise ValueError(f"no tutorials found under {SOURCE_ROOT}")
     return tuple(tutorials)
 
 
@@ -190,12 +221,17 @@ def _execute_tutorial(tutorial: Tutorial, output: Path) -> dict[str, object]:
         try:
             with redirect_stdout(stdout):
                 exec(
-                    compile(code + "\n", f"{tutorial.en.path}#cell-{cell_number}", "exec"),
+                    compile(
+                        code + "\n",
+                        f"{tutorial.canonical_source.path}#cell-{cell_number}",
+                        "exec",
+                    ),
                     namespace,
                 )
         except Exception as error:
             raise RuntimeError(
-                f"{tutorial.en.path}: execution failed in Python cell {cell_number}"
+                f"{tutorial.canonical_source.path}: execution failed in "
+                f"Python cell {cell_number}"
             ) from error
 
         figures: list[dict[str, str]] = []
@@ -217,14 +253,17 @@ def _execute_tutorial(tutorial: Tutorial, output: Path) -> dict[str, object]:
             "figures": figures,
         }
 
-    if figure_number != len(tutorial.en.figure_alts):
+    if figure_number != len(tutorial.canonical_source.figure_alts):
         raise ValueError(
-            f"{tutorial.en.path}: generated {figure_number} figures but front matter "
-            f"defines {len(tutorial.en.figure_alts)} figure_alts"
+            f"{tutorial.canonical_source.path}: generated {figure_number} figures "
+            f"but front matter defines "
+            f"{len(tutorial.canonical_source.figure_alts)} figure_alts"
         )
     return {
         "schema": 2,
-        "source": str(tutorial.en.path.relative_to(MKDOCS_ROOT)).replace("\\", "/"),
+        "source": str(
+            tutorial.canonical_source.path.relative_to(MKDOCS_ROOT)
+        ).replace("\\", "/"),
         "code_sha256": _code_sha256(tutorial),
         "cells": captured,
     }
@@ -243,7 +282,10 @@ def capture_all(tutorials: tuple[Tutorial, ...]) -> None:
         with tempfile.TemporaryDirectory(prefix="fatqat-mkdocs-tutorials-") as temp:
             temporary_assets = Path(temp)
             for tutorial in tutorials:
-                print(f"Executing {tutorial.en.path.relative_to(REPOSITORY_ROOT)}")
+                print(
+                    "Executing "
+                    f"{tutorial.canonical_source.path.relative_to(REPOSITORY_ROOT)}"
+                )
                 manifests[tutorial.slug] = _execute_tutorial(tutorial, temporary_assets)
 
             expected = {
@@ -278,7 +320,9 @@ def _load_results(tutorial: Tutorial) -> dict[int, dict[str, object]]:
     if not result_path.is_file():
         raise FileNotFoundError(result_path)
     payload = json.loads(result_path.read_text(encoding="utf-8"))
-    if payload.get("schema") != 2 or payload.get("code_sha256") != _code_sha256(tutorial):
+    if payload.get("schema") != 2 or payload.get("code_sha256") != _code_sha256(
+        tutorial
+    ):
         raise ValueError(f"{result_path}: runtime cache is stale")
     raw_cells = payload.get("cells")
     if not isinstance(raw_cells, dict) or len(raw_cells) != len(tutorial.code_cells):
@@ -296,14 +340,16 @@ def _load_results(tutorial: Tutorial) -> dict[int, dict[str, object]]:
             figure_count += 1
             name = figure.get("name") if isinstance(figure, dict) else None
             digest = figure.get("sha256") if isinstance(figure, dict) else None
-            if name != f"{tutorial.slug}-{figure_count:02d}.png" or not isinstance(digest, str):
+            if name != f"{tutorial.slug}-{figure_count:02d}.png" or not isinstance(
+                digest, str
+            ):
                 raise ValueError(f"{result_path}: invalid figure {figure_count}")
             for asset_root in ASSET_ROOTS.values():
                 asset = asset_root / name
                 if not asset.is_file() or _sha256(asset) != digest:
                     raise ValueError(f"{result_path}: missing or modified {asset}")
         results[number] = raw
-    if figure_count != len(tutorial.en.figure_alts):
+    if figure_count != len(tutorial.canonical_source.figure_alts):
         raise ValueError(f"{result_path}: figure count does not match source metadata")
     return results
 
@@ -324,14 +370,15 @@ def _result_block(
     locale: str,
     first_figure: int,
 ) -> tuple[str, int]:
-    lines = [f'!!! example "{"Runtime result" if locale == "en" else "运行结果"}"', ""]
+    ui = GALLERY["ui"][locale]
+    lines = [f'!!! example "{ui["runtime_result"]}"', ""]
     stdout = result["stdout"]
     if stdout:
         lines.append("    ```text")
         lines.extend(f"    {line}" if line else "" for line in stdout.splitlines())
         lines.extend(("    ```", ""))
     figure_number = first_figure
-    source = tutorial.en if locale == "en" else tutorial.zh
+    source = tutorial.source(locale)
     for figure in result["figures"]:
         name = figure["name"]
         alt = source.figure_alts[figure_number - 1]
@@ -340,26 +387,38 @@ def _result_block(
     return "\n".join(lines).rstrip(), figure_number
 
 
-def _render_body(tutorial: Tutorial, results: dict[int, dict[str, object]], locale: str) -> str:
+def _render_body(
+    tutorial: Tutorial,
+    results: dict[int, dict[str, object]],
+    locale: str,
+) -> str:
     figure_number = 1
     cell_number = 0
 
     def code_block(code: str) -> str:
         nonlocal cell_number, figure_number
         cell_number += 1
-        label = "Python cell" if locale == "en" else "Python 单元"
+        label = GALLERY["ui"][locale]["python_cell"]
         rendered = f'```python title="{label} {cell_number}"\n{code}\n```'
         result_block, figure_number = _result_block(
             tutorial, cell_number, results[cell_number], locale, figure_number
         )
-        if result_block.endswith('"') and not results[cell_number]["stdout"] and not results[cell_number]["figures"]:
+        result = results[cell_number]
+        if (
+            result_block.endswith('"')
+            and not result["stdout"]
+            and not result["figures"]
+        ):
             return rendered
         return rendered + "\n\n" + result_block
 
-    if locale == "en":
-        return PYTHON_CELL.sub(lambda match: code_block(match.group("code").rstrip()), tutorial.en.body)
+    source = tutorial.source(locale)
+    if locale == CANONICAL_LOCALE:
+        return PYTHON_CELL.sub(
+            lambda match: code_block(match.group("code").rstrip()), source.body
+        )
     codes = iter(tutorial.code_cells)
-    return CODE_PLACEHOLDER.sub(lambda _match: code_block(next(codes)), tutorial.zh.body)
+    return CODE_PLACEHOLDER.sub(lambda _match: code_block(next(codes)), source.body)
 
 
 def _category_label(category: str, locale: str) -> tuple[str, str]:
@@ -367,32 +426,17 @@ def _category_label(category: str, locale: str) -> tuple[str, str]:
         content = GALLERY["categories"][category][locale]
         return content["title"], content["description"]
     title = category.rsplit("/", maxsplit=1)[-1].replace("-", " ").title()
-    description = (
-        f"Tutorials collected from the {title} source folder."
-        if locale == "en"
-        else f"从 {title} 源文件夹自动收集的教程。"
+    description = GALLERY["ui"][locale]["default_category_description"].format(
+        title=title
     )
     return title, description
 
 
 def _insert_page_header(tutorial: Tutorial, locale: str, body: str) -> str:
-    source = tutorial.en if locale == "en" else tutorial.zh
+    source = tutorial.source(locale)
     category_title, _ = _category_label(tutorial.category, locale)
-    labels = (
-        (
-            "Track",
-            "Downloads",
-            "Python script",
-            "Jupyter notebook",
-        )
-        if locale == "en"
-        else (
-            "学习路径",
-            "下载",
-            "Python 脚本",
-            "Jupyter 笔记本",
-        )
-    )
+    ui = GALLERY["ui"][locale]
+    labels = (ui["track"], ui["downloads"], ui["python_script"], ui["notebook"])
     download_root = f"../downloads/tutorials/{tutorial.slug}"
     preamble = "\n".join(
         (
@@ -418,9 +462,15 @@ def _insert_page_header(tutorial: Tutorial, locale: str, body: str) -> str:
     return body[: heading.end()] + "\n\n" + preamble + body[heading.end() :]
 
 
-def _render_page(tutorial: Tutorial, results: dict[int, dict[str, object]], locale: str) -> str:
-    source = tutorial.en if locale == "en" else tutorial.zh
-    body = _insert_page_header(tutorial, locale, _render_body(tutorial, results, locale))
+def _render_page(
+    tutorial: Tutorial,
+    results: dict[int, dict[str, object]],
+    locale: str,
+) -> str:
+    source = tutorial.source(locale)
+    body = _insert_page_header(
+        tutorial, locale, _render_body(tutorial, results, locale)
+    )
     return "\n".join(
         (
             "---",
@@ -436,7 +486,8 @@ def _render_page(tutorial: Tutorial, results: dict[int, dict[str, object]], loca
 
 def _render_download(tutorial: Tutorial) -> str:
     lines = [
-        f'"""{tutorial.en.title}\n\n{tutorial.en.description}\n"""',
+        f'"""{tutorial.canonical_source.title}\n\n'
+        f'{tutorial.canonical_source.description}\n"""',
         "",
     ]
     for code in tutorial.code_cells:
@@ -447,8 +498,8 @@ def _render_download(tutorial: Tutorial) -> str:
 def _render_notebook(tutorial: Tutorial, locale: str) -> str:
     """Create an unexecuted localized notebook from the authored Markdown cells."""
 
-    source = tutorial.en if locale == "en" else tutorial.zh
-    pattern = PYTHON_CELL if locale == "en" else CODE_PLACEHOLDER
+    source = tutorial.source(locale)
+    pattern = PYTHON_CELL if locale == CANONICAL_LOCALE else CODE_PLACEHOLDER
     cells = []
     cursor = 0
     codes = iter(tutorial.code_cells)
@@ -467,7 +518,11 @@ def _render_notebook(tutorial: Tutorial, locale: str) -> str:
                     id=cell_id("markdown"),
                 )
             )
-        code = match.group("code").rstrip() if locale == "en" else next(codes)
+        code = (
+            match.group("code").rstrip()
+            if locale == CANONICAL_LOCALE
+            else next(codes)
+        )
         cells.append(
             nbformat.v4.new_code_cell(
                 code,
@@ -533,9 +588,11 @@ def _render_index(tutorials: tuple[Tutorial, ...], locale: str) -> str:
     )
     for category in categories:
         title, description = _category_label(category, locale)
-        lines.extend((f"## {title}", "", description, "", '<div class="grid cards" markdown>', ""))
+        lines.extend(
+            (f"## {title}", "", description, "", '<div class="grid cards" markdown>', "")
+        )
         for tutorial in (item for item in tutorials if item.category == category):
-            source = tutorial.en if locale == "en" else tutorial.zh
+            source = tutorial.source(locale)
             thumbnail = f"{tutorial.slug}-01.png"
             lines.extend(
                 (
@@ -572,9 +629,15 @@ def assemble_all(tutorials: tuple[Tutorial, ...]) -> None:
                 stale.unlink()
     for tutorial in tutorials:
         results = _load_results(tutorial)
-        for locale in ("en", "zh"):
-            _write_text(PAGE_ROOTS[locale] / f"{tutorial.slug}.md", _render_page(tutorial, results, locale))
-            _write_text(DOWNLOAD_ROOTS[locale] / f"{tutorial.slug}.py", _render_download(tutorial))
+        for locale in LOCALES:
+            _write_text(
+                PAGE_ROOTS[locale] / f"{tutorial.slug}.md",
+                _render_page(tutorial, results, locale),
+            )
+            _write_text(
+                DOWNLOAD_ROOTS[locale] / f"{tutorial.slug}.py",
+                _render_download(tutorial),
+            )
             _write_text(
                 DOWNLOAD_ROOTS[locale] / f"{tutorial.slug}.ipynb",
                 _render_notebook(tutorial, locale),
@@ -584,13 +647,18 @@ def assemble_all(tutorials: tuple[Tutorial, ...]) -> None:
             for stale in root.glob(pattern):
                 if stale.name not in expected_downloads:
                     stale.unlink()
-    print(f"Assembled {len(tutorials)} bilingual tutorials from category folders.")
+    print(
+        f"Assembled {len(tutorials)} tutorials for {len(LOCALES)} locale(s) "
+        "from category folders."
+    )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     execution = parser.add_mutually_exclusive_group()
-    execution.add_argument("--execute", action="store_true", help="force tutorial execution")
+    execution.add_argument(
+        "--execute", action="store_true", help="force tutorial execution"
+    )
     execution.add_argument(
         "--execute-if-needed",
         action="store_true",

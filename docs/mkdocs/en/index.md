@@ -14,7 +14,7 @@ hero:
   primary_action: Build your first Program
   secondary_action: Compare execution levels
   install_action: Install from source
-  structure_alt: One FatQat Program runs through general simulation, a hardware profile, or Hamiltonian emulation, with every path returning a Job and Result.
+  structure_alt: One FatQat Program runs through general simulation, a hardware profile, or Hamiltonian emulation, with every path returning a Result.
   choice_label: Choose one execution level
   general_title: General simulation
   general_detail: states · counts · noise
@@ -26,6 +26,25 @@ hero:
 ---
 
 <!-- Localized content stays in Markdown; the shared Material hero lives in home.html. -->
+
+<div class="grid cards" markdown>
+
+-   :material-code-braces-box:{ .lg .middle } **One authoring model**
+
+    Keep gates, measurements, conditions, parameters, qudits, and direct
+    controls in a single `Program`.
+
+-   :material-tune-variant:{ .lg .middle } **Only the detail you need**
+
+    Start with algorithm behavior, add device constraints when needed, or
+    follow continuous-time dynamics when the physics matters.
+
+-   :material-transit-connection-variant:{ .lg .middle } **One execution workflow**
+
+    Every target accepts a `Program` and uses the same `Job` / `Result`
+    interface, while validating what it can realize.
+
+</div>
 
 ## One workflow, three execution levels
 
@@ -61,39 +80,117 @@ question in front of you.
 
 </div>
 
-## See a complete workflow
+## One Grover Program, three execution models
 
-<div class="grid" markdown>
-
-```python
-import fatqat as fq
-import fatqat.operations as ops
-
-program = fq.Program(2, 2)
-program.add(ops.H, 0)
-program.add(ops.CX, (0, 1))
-program.measure_all()
-
-result = fq.simulator.Simulator().run(
-    program,
-    shots=1000,
-    simulation_config={"seed": 7},
-).result()
-```
+This three-qubit Grover `Program` begins with all eight bit strings equally
+likely. Two iterations mark `101` and amplify it. Its fused `RX` / `RY` / `RZ`
+/ `CZ` realization runs unchanged on all three targets below. The two physical
+models share the same `T1 = T2 = 200 µs` coherence assumption.
 
 <figure markdown="span">
 
-![A bar chart containing only the correlated 00 and 11 Bell-state outcomes.](assets/generated/guide/quickstart-counts.png){ loading=lazy width="763" height="464" }
+![A compact three-qubit Grover search uses fused RY and RZ rotations with four logical Toffoli gates to amplify 101.](assets/generated/home/grover-circuit.png){ loading=lazy width=1100 height=318 }
 
-<figcaption>One thousand seeded shots return only correlated outcomes.</figcaption>
+<figcaption>Adjacent single-qubit gates are fused into rotations; Toffoli stays logical. All three backends execute the same fused native Program.</figcaption>
 
 </figure>
 
+<div class="grid cards" markdown>
+
+-   :material-chart-box-outline:{ .lg .middle } **General `Simulator`**
+
+    ![The ideal Simulator result gives the target outcome 101 a probability of 94.53 percent.](assets/generated/home/grover-general.png){ loading=lazy width=714 height=515 }
+
+    Circuit-level evolution returns `101` with **94.53%** probability.
+
+-   :material-memory:{ .lg .middle } **`SCQubitGoogleSimulator`**
+
+    ![The SCQubitGoogleSimulator result gives the target outcome 101 a probability of 85.06 percent with 200-microsecond coherence times, 99.8-percent total CZ fidelity on q0–q1, and 99.6-percent total CZ fidelity on q1–q2.](assets/generated/home/grover-google-profile.png){ loading=lazy width=714 height=515 }
+
+    With `T1 = T2 = 200 µs` and total CZ fidelities of **99.8% on q0–q1**
+    and **99.6% on q1–q2**, native-gate simulation returns `101` with
+    **85.06%** probability.
+
+-   :material-sine-wave:{ .lg .middle } **`TransmonEmulator`**
+
+    ![The three-level TransmonEmulator result gives the target outcome 101 a probability of 68.59 percent with the same coherence times.](assets/generated/home/grover-transmon.png){ loading=lazy width=714 height=515 }
+
+    Calibrated pulses, three physical levels, and the same coherence times
+    return `101` with **68.59%** probability; physical leakage is **0.0446%**.
+
 </div>
 
-This Bell Program is a complete circuit-level workflow. The same authoring
-object can also carry reusable parameters, mixed local dimensions, classical
-conditions, and direct physical controls.
+??? abstract "Shared `Program` — `home_grover_program.py`"
+
+    The compact logical view and the exact fused native Program live in this one
+    visible source. Every execution script below imports it unchanged.
+
+    ```python
+    --8<-- "docs/mkdocs/figure-sources/home_grover_program.py"
+    ```
+
+??? example "Run each execution model independently"
+
+    Each tab is a top-to-bottom script. It imports the shared Program above,
+    while private plotting details stay out of the execution flow.
+
+    === "General `Simulator`"
+
+        ```python
+        --8<-- "docs/mkdocs/figure-sources/home_grover_general.py"
+        ```
+
+    === "`SCQubitGoogleSimulator`"
+
+        ```python
+        --8<-- "docs/mkdocs/figure-sources/home_grover_google.py"
+        ```
+
+    === "`TransmonEmulator`"
+
+        ```python
+        --8<-- "docs/mkdocs/figure-sources/home_grover_transmon.py"
+        ```
+
+## Program a reconfigurable atom array
+
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] brings occupancy and
+changing connectivity into the same `Program` model. `Put` establishes which
+sites are occupied, `Pair` makes native `CZ` legal, and `Unpair` removes that
+eligibility. Optional movement noise can attach to those operations explicitly.
+
+<figure markdown="span">
+
+![Two occupied atoms begin separated, pair so that CZ becomes legal, and unpair while optional depolarizing noise follows the pairing operations.](assets/generated/guide/atom-pairing-lifecycle.svg){ loading=lazy width=960 height=306 }
+
+<figcaption>Occupancy stays explicit while pairing changes which native interactions are legal.</figcaption>
+
+</figure>
+
+??? example "Run the atom-array Program"
+
+    ```python
+    import numpy as np
+    import fatqat as fq
+    import fatqat.operations as ops
+
+    atoms = fq.Program(2, 2)
+    atoms.add(ops.Put, (0, 1))
+    atoms.add(ops.Pair, (0, 1))
+    atoms.add(ops.RX(np.pi), 0)
+    atoms.add(ops.CZ, (0, 1))
+    atoms.add(ops.Unpair, (0, 1))
+    atoms.measure_all()
+
+    counts = fq.simulator.AtomArraySimulator(num_sites=2).run(
+        atoms,
+        shots=8,
+        simulation_config={"seed": 7},
+    ).result().get_counts()
+    print(counts)  # {'01': 8}
+    ```
+
+[:octicons-arrow-right-24: Track occupancy, pairing, and loss](guide/hardware-profile-simulation.md#atom-occupancy-and-pairing)
 
 ## Explore the documentation
 
