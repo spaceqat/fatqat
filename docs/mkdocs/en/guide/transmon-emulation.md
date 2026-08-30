@@ -33,6 +33,65 @@ This guide chooses the density-matrix method because it repeatedly inspects
 populations. The common default is `method="statevector"`; use
 `method="unitary"` when the complete coherent operator is the result you need.
 
+## Generate a grid reference
+
+For a rectangular nearest-neighbor grid, generate matching model and
+calibration documents, parse both, and pass the resulting map explicitly to
+the emulator:
+
+```pycon
+>>> reference = fq.emulator.generate_transmon_grid_reference(
+...     shape=(2, 2),
+...     frequency_groups_ghz=(5.0, 5.2),
+...     seed=0,
+... )
+>>> grid_model = fq.emulator.TransmonModel.from_document(
+...     reference.model_document
+... )
+>>> grid_calibration = fq.emulator.TransmonCalibration(
+...     reference.calibration_document
+... )
+>>> grid_gate_map = fq.emulator.default_transmon_gate_implementation_map(
+...     model=grid_model,
+...     calibration=grid_calibration,
+... )
+>>> grid_backend = fq.emulator.TransmonEmulator(
+...     grid_model,
+...     gate_implementation_map=grid_gate_map,
+... )
+>>> grid_model.subsystem_ids
+('q0', 'q1', 'q2', 'q3')
+```
+
+The generated calibration contains fixed analytic reference recipes; this
+workflow does not run numerical pulse calibration. The documents are ordinary
+JSON-compatible mappings, so standard-library JSON tools are sufficient when
+you want to persist and read them later. The following is a literal file-I/O
+example and is not executed by the documentation build:
+
+```python
+import json
+
+with open("model.json", "w", encoding="utf-8") as stream:
+    json.dump(reference.model_document, stream, indent=2)
+with open("calibration.json", "w", encoding="utf-8") as stream:
+    json.dump(reference.calibration_document, stream, indent=2)
+
+with open("model.json", encoding="utf-8") as stream:
+    saved_model = fq.emulator.TransmonModel.from_document(json.load(stream))
+with open("calibration.json", encoding="utf-8") as stream:
+    saved_calibration = fq.emulator.TransmonCalibration(json.load(stream))
+```
+
+For `N` transmons, the physical qutrit Hilbert-space dimension is `3**N`.
+
+The generator warnings cover idle fabrication spread only. The current
+effective rotating-frame/RWA model cannot evaluate laboratory-frequency
+crossings during ramp, park, or return, including spectator crossings. When
+such a check matters, keep each relevant pairwise frequency-separation sign
+unchanged with a positive margin throughout the trajectory, using your own
+carrier/flux mapping or JSON post-processing.
+
 ## Run the rotation as a calibrated gate
 
 Reuse the guide's central rotation as an ordinary Program operation. The

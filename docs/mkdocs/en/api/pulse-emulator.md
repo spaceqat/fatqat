@@ -202,6 +202,37 @@ anharmonicities. The runtime model exposes ordered device labels through
 `subsystem_ids`, but it does not expose normalized subsystem or coupling
 records.
 
+### Generated grid reference bundles
+
+[`generate_transmon_grid_reference`][fatqat.emulator.generate_transmon_grid_reference]
+returns an immutable bundle containing one model document and one matching
+portable calibration document. Its `model_document` and
+`calibration_document` properties are read-only, and every access returns a
+fresh JSON-ready mapping that callers may modify without changing the bundle.
+
+| Argument | Meaning |
+| --- | --- |
+| `shape` | Positive `(rows, columns)` dimensions containing at least two transmons. Sites use a checkerboard assignment to the two frequency groups. |
+| `frequency_groups_ghz` | Two distinct, positive idle-frequency centers in GHz. |
+| `frequency_jitter_std_ghz` | Non-negative fabrication-spread standard deviation in GHz. The default is `0.010`. |
+| `anharmonicity_ghz` | Shared negative anharmonicity in GHz. The default is `-0.22`. |
+| `seed` | Non-negative integer selecting deterministic, site-keyed frequency draws. The default is `0`. |
+
+The generator emits a `UserWarning` when the nominal three-standard-deviation
+group intervals touch or overlap. After drawing, it emits at most one
+additional warning when the realized group ranges touch or overlap, or when a
+nearest-neighbor pair reverses or ties the order implied by the group centers.
+Warnings do not rewrite generated values.
+
+Both documents receive deterministic `sha256:` revisions derived from their
+emitted content. The model and portable recipe revisions are computed
+independently, so the calibration revision does not bind the recipe to a model
+identity, seed, or realized frequency set.
+
+Generation constructs analytic reference documents only. It performs no
+numerical pulse calibration, optimization, simulation, fidelity calculation,
+or leakage calculation.
+
 ### Units
 
 
@@ -354,6 +385,14 @@ for the complete workflow.
       merge_init_into_class: false
       filters:
         - "!^_"
+
+::: fatqat.emulator.TransmonGridReference
+    options:
+      inherited_members: false
+      show_bases: false
+      merge_init_into_class: false
+
+::: fatqat.emulator.generate_transmon_grid_reference
 
 ::: fatqat.emulator.available_model_documents
 
