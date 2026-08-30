@@ -5,7 +5,7 @@ from math import pi
 
 import numpy as np
 import pytest
-from qutip import Qobj, basis, ket2dm, mesolve, qeye, tensor
+from qutip import Qobj, basis, destroy, ket2dm, mesolve, num, qeye, tensor
 from scipy.interpolate import CubicSpline
 
 from fatqat._backends.steps import MeasurementStep, ResetStep
@@ -224,7 +224,7 @@ def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints(model):
     assert np.allclose(evolution(6.0).full(), evolution(5.5).full())
     time = 4.95
     spline = CubicSpline(pulse.tlist, expected)
-    annihilation = Qobj(model.annihilation)
+    annihilation = destroy(len(model.basis_order))
     x_operator = annihilation + annihilation.dag()
     y_operator = -1j * (annihilation - annihilation.dag())
     expected_hamiltonian = spline(time).real * _qutip_tensor(
@@ -249,7 +249,7 @@ def test_constant_drive_matches_an_independent_full_model_hamiltonian(model):
         ),
     )
 
-    annihilation = Qobj(model.annihilation)
+    annihilation = destroy(len(model.basis_order))
     drift = adapter._drift.get_ideal_qobjevo([3, 3])(0.0)
     hamiltonian = drift + amplitude * _qutip_tensor(
         annihilation + annihilation.dag(), qeye(3)
@@ -280,7 +280,7 @@ def test_exchange_keeps_both_qutrit_leakage_paths_and_matches_reference(model):
     initial = ket2dm(tensor(basis(3, 1), basis(3, 1)))
     context = _evolve(adapter, (exchange,), _context(adapter, initial))
 
-    annihilation = Qobj(model.annihilation)
+    annihilation = destroy(len(model.basis_order))
     exchange_operator = tensor(annihilation.dag(), annihilation) + tensor(
         annihilation, annihilation.dag()
     )
@@ -312,7 +312,7 @@ def test_realized_iswap_matches_the_public_positive_i_phase_convention(
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
 
 
-def test_drift_and_detuning_match_independent_qutrit_phase_facts(model):
+def test_drift_and_detuning_match_independent_qutrit_phase_facts(model, model_document):
     adapter = _adapter(model)
     duration = 0.17
     ket_00 = _qutip_tensor(basis(3, 0), basis(3, 0))
@@ -325,7 +325,8 @@ def test_drift_and_detuning_match_independent_qutrit_phase_facts(model):
         coefficients=(0.0, 0.0),
     )
     actual = _evolve(adapter, (idle,), _context(adapter, initial)).state
-    phase = np.exp(-1j * 2 * pi * model.subsystems[0].anharmonicity_ghz * duration)
+    anharmonicity = model_document["parameters"]["subsystems"]["q0"]["anharmonicity"]
+    phase = np.exp(-1j * 2 * pi * anharmonicity * duration)
     expected = ket2dm((ket_00 + phase * ket_20).unit())
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
 
@@ -341,9 +342,7 @@ def test_drift_and_detuning_match_independent_qutrit_phase_facts(model):
         duration,
     )
     actual = _evolve(adapter, (detuned,), _context(adapter, initial)).state
-    phase = np.exp(
-        -1j * (2 * pi * model.subsystems[0].anharmonicity_ghz + 2 * detuning) * duration
-    )
+    phase = np.exp(-1j * (2 * pi * anharmonicity + 2 * detuning) * duration)
     expected = ket2dm((ket_00 + phase * ket_20).unit())
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
 
@@ -397,13 +396,16 @@ def test_drift_covers_leading_internal_and_trailing_idle_intervals(model):
 
 
 def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data(
-    model, calibration
+    model, calibration, model_document
 ):
     adapter = _adapter(model)
     detuning_ghz = calibration._cz_detuning_ghz("q0", "q1")
     ramp_duration_ns = calibration._cz_ramp_duration_ns("q0", "q1")
     assert FRAME_CONVENTION.endswith("(Delta_i = 0)")
-    assert detuning_ghz == -model.subsystems[0].anharmonicity_ghz
+    assert (
+        detuning_ghz
+        == -model_document["parameters"]["subsystems"]["q0"]["anharmonicity"]
+    )
 
     drift = adapter._drift.get_ideal_qobjevo([3, 3])(0.0)
     parked = drift + 2 * pi * detuning_ghz * adapter._number[0]
@@ -423,7 +425,7 @@ def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data(
 
 
 def test_realized_cz_matches_an_independent_synchronized_hamiltonian(
-    model, calibration
+    model, calibration, model_document
 ):
     adapter = _adapter(model)
     block = _realize(
@@ -451,18 +453,19 @@ def test_realized_cz_matches_an_independent_synchronized_hamiltonian(
 
     assert parked_exchange(exchange.start_offset / 2) == 0.0
     assert parked_exchange(block.duration - exchange.start_offset / 2) == 0.0
-    number = Qobj(model.number)
-    annihilation = Qobj(model.annihilation)
+    dimension = len(model.basis_order)
+    number = num(dimension)
+    annihilation = destroy(dimension)
     identity = qeye(3)
     drift = sum(
         2
         * pi
-        * subsystem.anharmonicity_ghz
+        * model_document["parameters"]["subsystems"][subsystem_id]["anharmonicity"]
         * _qutip_tensor(
             number * (number - identity) / 2 if ordinal == 0 else identity,
             number * (number - identity) / 2 if ordinal == 1 else identity,
         )
-        for ordinal, subsystem in enumerate(model.subsystems)
+        for ordinal, subsystem_id in enumerate(model.subsystem_ids)
     )
     exchange_operator = _qutip_tensor(annihilation.dag(), annihilation) + _qutip_tensor(
         annihilation, annihilation.dag()
@@ -582,7 +585,9 @@ def test_frame_only_run_returns_frames_without_constructing_dynamics(model):
         Qobj(np.diag(np.exp(1j * 0.4 * np.arange(3)))), Qobj(np.eye(3))
     )
     assert np.allclose(adapter.propagator(run).full(), expected.full())
-    assert adapter.solver_metadata()["solver"] == "none"
+    assert np.allclose(
+        adapter.propagator(run, apply_final_frame=False).full(), np.eye(9)
+    )
 
 
 def test_disabled_block_suppresses_control_and_post_frame_but_advances_time(model):
@@ -646,14 +651,40 @@ def test_initial_copy_and_propagator_shapes_cover_full_qutrit_model(model):
     block = _drive_block(adapter._target, "q0", duration=0.2)
     unitary = adapter.propagator(schedule_pulse_run((block,), boundary_time=0.0))
     assert unitary.shape == (9, 9)
-    assert adapter.solver_metadata()["solver"] == "propagator"
 
 
-def test_solver_metadata_reports_actual_mesolve_and_keeps_configuration(model):
-    adapter = _adapter(model)
-    assert adapter.solver_metadata()["solver"] == "none"
-    _evolve(adapter, (_drive_block(adapter._target, "q0", duration=0.2),))
-    metadata = adapter.solver_metadata()
-    assert metadata["solver"] == "mesolve"
-    assert metadata["frame_convention"] == FRAME_CONVENTION
-    assert metadata["options"]["atol"] > 0
+def test_coherent_statevector_execution_returns_a_flat_full_qutrit_ket(model):
+    adapter = _adapter(model, execution_mode="statevector")
+    initial = adapter.initial_state()
+    context = _evolve(
+        adapter,
+        (_drive_block(adapter._target, "q0", duration=0.2, coefficients=(2.0, 2.0)),),
+    )
+    outcome = adapter.finish_shot(context)
+
+    assert initial.shape == (9, 1)
+    assert outcome.final_state_kind == "statevector"
+    assert outcome.final_state.shape == (9,)
+    assert np.linalg.norm(outcome.final_state) == pytest.approx(1.0)
+    assert abs(outcome.final_state[0]) < 0.999
+
+
+def test_sampled_ket_reset_matches_the_exact_qutrit_channel_ensemble(model):
+    entangled = (
+        _qutip_tensor(basis(3, 1), basis(3, 0))
+        + _qutip_tensor(basis(3, 2), basis(3, 2))
+    ).unit()
+    exact_adapter = _adapter(model, execution_mode="density_matrix")
+    exact_context = _context(exact_adapter, ket2dm(entangled))
+    exact_adapter.execute_boundary(ResetStep((0,)), exact_context)
+
+    trajectory_adapter = _adapter(model, execution_mode="statevector")
+    projectors = []
+    for seed in range(400):
+        context = _ShotContext(entangled.copy(), [], np.random.default_rng(seed))
+        trajectory_adapter.execute_boundary(ResetStep((0,)), context)
+        vector = np.asarray(context.state.full()).reshape(-1)
+        projectors.append(np.outer(vector, vector.conj()))
+
+    sampled = np.mean(projectors, axis=0)
+    assert sampled == pytest.approx(exact_context.state.full(), abs=0.08)

@@ -30,6 +30,7 @@ from .._core.outcome import ExecutionMode, _PulseShotOutcome
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
 from .._core.waveform import _REQUESTED_SPLINE_DEGREE
+from .._qutip_boundaries import _sample_projective_qutip_state
 from .._qutip_space import _QutipTensorSpace
 from .target import _Atom2LevelTarget
 
@@ -84,6 +85,7 @@ class _Atom2LevelQutipAdapter:
         self._solver_used = "none"
         self._site_count = engine_allocation.n_subsystems
         self._dims = list(self._qutip_space.dims)
+        self._projectors: list[tuple[Qobj, ...] | None] = [None] * self._site_count
         self.local_raising = Qobj(np.asarray([[0.0, 0.0], [1.0, 0.0]], complex))
         self.local_number = Qobj(np.diag([0.0, 1.0]))
         identity = self._qutip_space.full_tensor(
@@ -142,6 +144,26 @@ class _Atom2LevelQutipAdapter:
         enabled: tuple[bool, ...],
     ) -> None:
         self._validate_state(context.state)
+        if self._execution_mode == "trajectory":
+            collapse_operators = (
+                self._collapse_operators
+                + self._bind_block_collapse_operators(run, enabled)
+            )
+            if collapse_operators:
+                seed = int(
+                    context.rng.integers(
+                        0,
+                        np.iinfo(np.uint64).max,
+                        dtype=np.uint64,
+                    )
+                )
+                context.state = self._solve_trajectories(
+                    run,
+                    initial_state=context.state,
+                    enabled=enabled,
+                    seeds=(seed,),
+                )[0]
+                return
         hamiltonian = self._bind_run(
             run,
             enabled=enabled,
@@ -159,17 +181,13 @@ class _Atom2LevelQutipAdapter:
                 ),
                 options=_SOLVER_OPTIONS,
             )
-        elif self._execution_mode == "statevector":
+        else:
             self._solver_used = "sesolve"
             result = sesolve(
                 hamiltonian,
                 context.state,
                 [context.time, run.end_time],
                 options=_SOLVER_OPTIONS,
-            )
-        else:
-            raise BackendValidationError(
-                "trajectory evolution requires terminal batch execution"
             )
         context.state = result.states[-1]
 
@@ -197,10 +215,6 @@ class _Atom2LevelQutipAdapter:
     ) -> None:
         if isinstance(step, ResetStep):
             raise BackendValidationError("two-level execution does not support reset")
-        if self._execution_mode == "density_matrix":
-            raise BackendValidationError(
-                "two-level density-matrix execution has no measurement boundary"
-            )
         maps = step.reported_digit_maps or ((0, 1),) * len(step.measured_indices)
         confusions = step.confusions or (None,) * len(step.measured_indices)
         for engine_index, classical_index, digit_map, confusion in zip(
@@ -258,16 +272,32 @@ class _Atom2LevelQutipAdapter:
             raise BackendValidationError(
                 "trajectory seeds must be one non-negative int per trajectory"
             )
+        return self._solve_trajectories(
+            scheduled_run,
+            initial_state=self.initial_state(),
+            enabled=(True,) * len(scheduled_run.blocks),
+            seeds=seeds,
+        )
+
+    def _solve_trajectories(
+        self,
+        scheduled_run: _ScheduledPulseRun,
+        *,
+        initial_state: Qobj,
+        enabled: tuple[bool, ...],
+        seeds: tuple[int, ...],
+    ) -> tuple[Qobj, ...]:
+        """Solve and validate one or more retained trajectory final states."""
         hamiltonian = self._bind_run(
             scheduled_run,
-            enabled=(True,) * len(scheduled_run.blocks),
+            enabled=enabled,
             input_time=scheduled_run.start_time,
         )
         collapse_operators = (
             self._collapse_operators
             + self._bind_block_collapse_operators(
                 scheduled_run,
-                (True,) * len(scheduled_run.blocks),
+                enabled,
             )
         )
         options = {
@@ -279,10 +309,10 @@ class _Atom2LevelQutipAdapter:
         self._solver_used = "mcsolve"
         result = mcsolve(
             hamiltonian,
-            self.initial_state(),
+            initial_state,
             [scheduled_run.start_time, scheduled_run.end_time],
             c_ops=collapse_operators,
-            ntraj=ntraj,
+            ntraj=len(seeds),
             seeds=list(seeds),
             options=options,
         )
@@ -291,7 +321,7 @@ class _Atom2LevelQutipAdapter:
             raise BackendValidationError(
                 "mcsolve retained run-final states were unavailable"
             )
-        if len(final_states) != ntraj:
+        if len(final_states) != len(seeds):
             raise BackendValidationError(
                 "mcsolve returned the wrong number of retained run-final states"
             )
@@ -447,23 +477,19 @@ class _Atom2LevelQutipAdapter:
         return QobjEvo(terms)
 
     def _measure(self, canonical_axis: int, context: _ShotContext) -> int:
-        state = self._statevector(context.state)
-        basis_indices = np.arange(len(state), dtype=np.int64)
-        digits = (basis_indices >> canonical_axis) & 1
-        probabilities = np.bincount(
-            digits,
-            weights=np.abs(state) ** 2,
-            minlength=2,
-        ).astype(float)
-        total = float(np.sum(probabilities))
-        if not np.isfinite(total) or total <= 0.0:
-            raise RuntimeError("two-level measurement produced invalid probabilities")
-        probabilities /= total
-        outcome = int(context.rng.choice(2, p=probabilities))
-        collapsed = np.array(state, dtype=complex, copy=True)
-        collapsed[digits != outcome] = 0.0
-        collapsed /= np.sqrt(probabilities[outcome] * total)
-        context.state = Qobj(collapsed, dims=[self._dims, [1] * self._site_count])
+        self._validate_state(context.state)
+        projectors = self._projectors[canonical_axis]
+        if projectors is None:
+            projectors = tuple(
+                self._qutip_space.expand_local(canonical_axis, basis(2, outcome).proj())
+                for outcome in range(2)
+            )
+            self._projectors[canonical_axis] = projectors
+        outcome, context.state = _sample_projective_qutip_state(
+            context.state,
+            projectors,
+            context.rng,
+        )
         return outcome
 
     def _statevector(self, state: Any) -> np.ndarray:

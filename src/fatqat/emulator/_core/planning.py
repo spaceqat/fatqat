@@ -13,8 +13,11 @@ from ..._backends.steps import MeasurementStep, ResetStep
 from ..._index_allocation import _ClassicalAllocation, _EngineAllocation
 from ...errors import BackendValidationError
 from ...implementation._operation_registry import _select_implementation
-from ...noise import LindbladImplementationMap, NoiseModel
-from ...noise.lindblad import resolve_lindblad_operators
+from ...noise import NoiseModel
+from ...noise.lindblad import (
+    LindbladImplementationMap,
+    resolve_lindblad_operators,
+)
 from ...operations.measurement import Measurement
 from ...program import _AppliedOperation
 from ...resource_layout import ResourceLayout
@@ -49,8 +52,7 @@ class PulsePlanFacts:
     has_reset: bool = False
     has_conditions: bool = False
     has_nonzero_evolution: bool = False
-    has_resolved_lindblad: bool = False
-    has_supported_background_lindblad_registration: bool = False
+    has_potentially_active_lindblad: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -345,21 +347,19 @@ def _resolve_background_noise(
 def _derive_plan_facts(
     plan: tuple[PulsePlanStep, ...],
     background_noise: tuple[ResolvedLindbladTerm, ...],
-    *,
-    has_supported_background_lindblad_registration: bool,
 ) -> PulsePlanFacts:
+    nonzero_blocks = tuple(
+        step for step in plan if isinstance(step, PulseBlock) and step.duration > 0.0
+    )
     return PulsePlanFacts(
         has_measurement=any(isinstance(step, MeasurementStep) for step in plan),
         has_reset=any(isinstance(step, ResetStep) for step in plan),
         has_conditions=any(
             getattr(step, "condition", None) is not None for step in plan
         ),
-        has_nonzero_evolution=any(
-            isinstance(step, PulseBlock) and step.duration > 0.0 for step in plan
-        ),
-        has_resolved_lindblad=bool(background_noise)
-        or any(isinstance(step, PulseBlock) and bool(step.noise) for step in plan),
-        has_supported_background_lindblad_registration=(
-            has_supported_background_lindblad_registration
-        ),
+        has_nonzero_evolution=bool(nonzero_blocks),
+        has_potentially_active_lindblad=(
+            bool(background_noise) and bool(nonzero_blocks)
+        )
+        or any(bool(step.noise) for step in nonzero_blocks),
     )

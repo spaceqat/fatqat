@@ -15,8 +15,7 @@ class BackendExecutionError(FatqatError):
     """A backend failed after accepting an execution request.
 
     A backend run may store this error on a failed `Job`; calling
-    `job.result()` then raises it. APIs that return a value directly, such as
-    pulse-emulator propagator construction, raise it directly.
+    `job.result()` then raises it.
     """
 
 

@@ -379,10 +379,9 @@ class RegisterView:
     unsupported. The ``register`` attribute identifies the selected grid.
     Views compare and hash by that register and their selection.
 
-    The built-in view-capable operations are ``RX``, ``RY``, ``RZ``, ``CX``,
-    and ``CZ``; all other built-ins require scalar targets. A unary operation
-    acts once on each selected member. A two-target operation pairs
-    corresponding members of the two views.
+    Every built-in unitary gate accepts views. A unary gate acts once on each
+    selected member. A multi-target gate zips corresponding members from one
+    compatible view per operand.
 
     `Program.add` requires the view's grid to be one of the program's
     registers. Paired views must have the same kind of selection and
@@ -454,7 +453,7 @@ def _views_overlap(first: RegisterView, second: RegisterView) -> bool:
 def _validate_view_pair(
     first: RegisterView, second: RegisterView, *, op_name: str
 ) -> None:
-    """Validate that two views may legally pair as one two-target operation's operands.
+    """Validate two views used by one grouped operation.
 
     Cross-selector-type pairing is disallowed outright - only row/row,
     column/column, block/block, and all/all pairs are legal - since a mixed
@@ -467,19 +466,18 @@ def _validate_view_pair(
     if type(first.selector) is not type(second.selector):
         raise ValueError(
             f"{op_name} pairs a {type(first.selector).__name__} view with a "
-            f"{type(second.selector).__name__} view; grouped two-target "
-            "application requires both views to use the same selector kind"
+            f"{type(second.selector).__name__} view; grouped application "
+            "requires every view to use the same selector kind"
         )
     first_size, second_size = len(_view_members(first)), len(_view_members(second))
     if first_size != second_size:
         raise ValueError(
             f"{op_name} pairs views of unequal size "
-            f"({first_size} vs {second_size}); pairwise view application "
+            f"({first_size} vs {second_size}); zipped view application "
             "requires equal cardinality"
         )
     if first.register is second.register and _views_overlap(first, second):
         raise ValueError(
             f"{op_name} pairs overlapping views on the same register; a "
-            "member cannot be both control and target of one two-target "
-            "application"
+            "member cannot fill two operands of one grouped application"
         )

@@ -18,11 +18,8 @@ from fatqat.emulator import (
     Atom2LevelEmulator,
     Atom2LevelModel,
     Atom3LevelEmulator,
-    CalibrationIdentity,
     Atom3LevelCalibration,
     Atom3LevelModel,
-    FormatIdentity,
-    ModelIdentity,
     PhaseShift,
     PhaseSwap,
     PulseControl,
@@ -86,9 +83,6 @@ def test_family_and_aggregate_exports_are_exact():
         "default_atom_3level_gate_implementation_map",
         "Atom2LevelModel",
         "AtomArrangement",
-        "FormatIdentity",
-        "ModelIdentity",
-        "CalibrationIdentity",
         "available_model_documents",
         "load_model_document",
     )
@@ -105,10 +99,8 @@ def test_family_and_aggregate_exports_are_exact():
     )
     assert tuple(superconducting.__all__) == (
         "TransmonEmulator",
-        "Coupling",
         "TransmonCalibration",
         "TransmonModel",
-        "Transmon",
         "angular_rate_from_ghz",
         "default_transmon_calibration",
         "default_transmon_gate_implementation_map",
@@ -125,28 +117,25 @@ def test_transmon_public_names_have_exact_modules_and_constructor_signature():
     parameters = inspect.signature(TransmonEmulator).parameters
     assert tuple(parameters) == (
         "model",
+        "method",
         "noise",
-        "lindblad_implementation_map",
         "gate_implementation_map",
     )
     assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
     assert all(
         parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
         for name in (
+            "method",
             "noise",
-            "lindblad_implementation_map",
             "gate_implementation_map",
         )
     )
-    assert all(
-        parameters[name].default is None
-        for name in (
-            "noise",
-            "lindblad_implementation_map",
-            "gate_implementation_map",
-        )
-    )
+    assert parameters["method"].default == "statevector"
+    assert parameters["noise"].default is None
+    assert parameters["gate_implementation_map"].default is None
     assert "pulse_" + "implementation_map" not in parameters
+    assert not hasattr(TransmonEmulator, "propagator")
+    assert not hasattr(TransmonEmulator, "apply_final_frame")
 
 
 def test_removed_transmon_surface_has_no_compatibility_aliases():
@@ -168,15 +157,23 @@ def test_removed_transmon_surface_has_no_compatibility_aliases():
         assert removed_helper not in owner.__all__
 
 
-def test_document_identities_and_family_values_are_namespaced_publicly():
-    assert fq.emulator.FormatIdentity is FormatIdentity
-    assert fq.emulator.ModelIdentity is ModelIdentity
-    assert fq.emulator.CalibrationIdentity is CalibrationIdentity
+def test_document_identities_and_normalized_records_are_not_public():
+    from fatqat.emulator import superconducting
+
     assert fq.emulator.Atom2LevelModel is Atom2LevelModel
     for name in (
         "FormatIdentity",
         "ModelIdentity",
         "CalibrationIdentity",
+        "Transmon",
+        "Coupling",
+    ):
+        assert not hasattr(fq.emulator, name)
+        assert name not in fq.emulator.__all__
+        assert not hasattr(superconducting, name)
+        assert name not in superconducting.__all__
+
+    for name in (
         "TransmonModel",
         "TransmonCalibration",
         "Atom3LevelModel",
@@ -244,26 +241,24 @@ def test_removed_three_level_atom_surface_has_no_compatibility_aliases():
     assert importlib.util.find_spec("fatqat.emulator." + "atom") is None
 
 
-def test_atom_3level_constructor_has_final_portable_map_keywords():
+def test_atom_3level_constructor_has_final_portable_keywords():
     parameters = inspect.signature(Atom3LevelEmulator).parameters
     assert tuple(parameters) == (
         "model",
         "arrangement",
+        "method",
         "noise",
         "gate_implementation_map",
-        "lindblad_implementation_map",
     )
     assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
     assert parameters["arrangement"].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["arrangement"].default is inspect.Parameter.empty
+    assert parameters["method"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["method"].default == "statevector"
     assert parameters["noise"].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["noise"].default is None
     assert parameters["gate_implementation_map"].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["gate_implementation_map"].default is None
-    assert (
-        parameters["lindblad_implementation_map"].kind is inspect.Parameter.KEYWORD_ONLY
-    )
-    assert parameters["lindblad_implementation_map"].default is None
     assert issubclass(Atom3LevelEmulator, _PulseBackend)
 
 
@@ -288,21 +283,8 @@ def test_atom_3level_execution_methods_have_the_exact_public_forwarding_signatur
     assert run["result_config"].default is None
     assert get_type_hints(Atom3LevelEmulator.run)["return"] is Job
 
-    propagator = inspect.signature(Atom3LevelEmulator.propagator).parameters
-    assert tuple(propagator) == (
-        "self",
-        "program",
-        "apply_final_frame",
-        "schedule_mode",
-        "resource_layout",
-    )
-    assert propagator["program"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert propagator["apply_final_frame"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["apply_final_frame"].default is True
-    assert propagator["schedule_mode"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["schedule_mode"].default == "ASAP"
-    assert propagator["resource_layout"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["resource_layout"].default is None
+    assert not hasattr(Atom3LevelEmulator, "propagator")
+    assert not hasattr(Atom3LevelEmulator, "apply_final_frame")
 
 
 def test_atom_2level_family_exports_final_public_values_only():
@@ -338,15 +320,15 @@ def test_removed_two_level_atom_surface_has_no_compatibility_aliases():
     assert importlib.util.find_spec("fatqat.emulator.atom_2level.policy") is None
 
 
-def test_atom_2level_constructor_has_general_map_keywords():
+def test_atom_2level_constructor_has_final_public_keywords():
     parameters = inspect.signature(Atom2LevelEmulator).parameters
     assert tuple(parameters) == (
         "model",
         "arrangement",
         "interaction_cutoff",
+        "method",
         "noise",
         "gate_implementation_map",
-        "lindblad_implementation_map",
     )
     assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
     assert all(
@@ -354,17 +336,41 @@ def test_atom_2level_constructor_has_general_map_keywords():
         for name in (
             "arrangement",
             "interaction_cutoff",
+            "method",
             "noise",
             "gate_implementation_map",
-            "lindblad_implementation_map",
         )
     )
     assert parameters["arrangement"].default is inspect.Parameter.empty
     assert parameters["interaction_cutoff"].default is None
+    assert parameters["method"].default == "statevector"
     assert parameters["noise"].default is None
     assert parameters["gate_implementation_map"].default is None
-    assert parameters["lindblad_implementation_map"].default is None
     assert issubclass(Atom2LevelEmulator, _PulseBackend)
+
+
+def test_family_constructors_reject_removed_lindblad_keyword(model, atom_3level_model):
+    atom_2level_model = Atom2LevelModel.from_document(
+        fq.emulator.load_model_document("atom2level.reference")
+    )
+    arrangement = fq.emulator.AtomArrangement.chain(2, spacing=6.0)
+    constructors = (
+        lambda: TransmonEmulator(model, lindblad_implementation_map=object()),
+        lambda: Atom2LevelEmulator(
+            atom_2level_model,
+            arrangement=arrangement,
+            lindblad_implementation_map=object(),
+        ),
+        lambda: Atom3LevelEmulator(
+            atom_3level_model,
+            arrangement=arrangement,
+            lindblad_implementation_map=object(),
+        ),
+    )
+
+    for construct in constructors:
+        with pytest.raises(TypeError, match="lindblad_implementation_map"):
+            construct()
 
 
 def test_atom_2level_execution_methods_have_exact_public_forwarding_signatures():
@@ -388,21 +394,8 @@ def test_atom_2level_execution_methods_have_exact_public_forwarding_signatures()
     assert run["result_config"].default is None
     assert get_type_hints(Atom2LevelEmulator.run)["return"] is Job
 
-    propagator = inspect.signature(Atom2LevelEmulator.propagator).parameters
-    assert tuple(propagator) == (
-        "self",
-        "program",
-        "apply_final_frame",
-        "schedule_mode",
-        "resource_layout",
-    )
-    assert propagator["program"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert propagator["apply_final_frame"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["apply_final_frame"].default is True
-    assert propagator["schedule_mode"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["schedule_mode"].default == "ASAP"
-    assert propagator["resource_layout"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["resource_layout"].default is None
+    assert not hasattr(Atom2LevelEmulator, "propagator")
+    assert not hasattr(Atom2LevelEmulator, "apply_final_frame")
 
 
 def test_pulse_authoring_values_are_public_and_identical_to_private_definitions():

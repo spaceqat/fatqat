@@ -48,14 +48,6 @@ def test_both_families_reject_unknown_simulation_controls(family_backend):
         family_backend.run(_program(), simulation_config={"unknown": 1})
 
 
-def test_both_families_return_a_square_empty_propagator(family_backend):
-    propagator = family_backend.propagator(fq.Program(2))
-
-    assert propagator.ndim == 2
-    assert propagator.shape[0] == propagator.shape[1]
-    assert np.allclose(propagator, np.eye(propagator.shape[0]))
-
-
 def test_counts_only_execution_does_not_retain_shot_state_arrays(
     family_backend, monkeypatch
 ):

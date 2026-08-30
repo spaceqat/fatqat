@@ -86,10 +86,10 @@ class Operation:
     def accepts_views(self) -> bool:
         """Return whether `fatqat.Program.add` accepts `fatqat.RegisterView` targets.
 
-        The built-in view-capable operations are `RX`, `RY`, `RZ`, `CX`, and
-        `CZ`. All other built-ins require scalar targets. A
-        custom unary or two-target subclass may override this property to opt
-        into memberwise view application.
+        Every built-in unitary gate is view-capable. Unary gates act on every
+        selected member; multi-target gates zip one compatible view per
+        operand. A custom fixed-arity subclass may override this property to
+        opt into the same behavior.
         """
         return type(self)._accepts_views
 
@@ -98,9 +98,9 @@ class Operation:
 
         The base implementation accepts every target tuple. Override this hook
         when an operation parameter depends on a target property such as local
-        dimension. Scalar-target errors arise from `fatqat.Program.add`; for a
-        `fatqat.RegisterView`, the hook is applied to each selected member when
-        the program runs.
+        dimension. Scalar-target errors arise from `fatqat.Program.add`; for
+        `fatqat.RegisterView` operands, the hook is applied to each zipped
+        scalar target tuple when the operation is added.
 
         Args:
             targets: Resolved scalar `fatqat.RegisterRef` values in operand order.

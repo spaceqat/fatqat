@@ -11,15 +11,15 @@ from ...errors import BackendValidationError
 from .._core.control_discovery import _ControlSelector
 from .._core.document_validation import _exact_keys, _fail, _mapping, _number
 from .._core.model_document import (
-    FormatIdentity,
-    ModelIdentity,
+    _FormatIdentity,
+    _ModelIdentity,
     _dispatch_document,
     _parse_model_identity,
     _validate_model_document_envelope,
 )
 from .._core.target import _ControlAddress, _FrameAddress
 
-_MODEL_FORMAT = FormatIdentity("atom.rb87_rydberg_3level", 1)
+_MODEL_FORMAT = _FormatIdentity("atom.rb87_rydberg_3level", 1)
 _MODEL_KIND = "atom.rydberg_3level"
 _FAMILY = "atom.rydberg_3level"
 _BASIS = {
@@ -149,8 +149,7 @@ class Atom3LevelModel:
         3
     """
 
-    format: FormatIdentity = field(compare=False)
-    identity: ModelIdentity
+    _identity: _ModelIdentity = field(repr=False)
     species: str
     mass_u: float
     computational_states: Mapping[str, str]
@@ -189,13 +188,10 @@ class Atom3LevelModel:
             BackendValidationError: If the document has an unsupported format
                 or contains invalid model data.
         """
-        source_format, parsed = _dispatch_document(
-            document, "physics model", _MODEL_PARSERS
-        )
+        parsed = _dispatch_document(document, "physics model", _MODEL_PARSERS)
         identity, species, mass, c6 = parsed
         model = object.__new__(cls)
-        object.__setattr__(model, "format", source_format)
-        object.__setattr__(model, "identity", identity)
+        object.__setattr__(model, "_identity", identity)
         object.__setattr__(model, "species", species)
         object.__setattr__(model, "mass_u", mass)
         object.__setattr__(

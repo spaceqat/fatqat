@@ -65,8 +65,9 @@ Backend support
 ---------------
 
 Support depends on the noise form, where it applies, and the backend. The
-:ref:`noise-backend-support` tables show what works out of the box, what needs
-a custom implementation map, and what a backend family cannot support.
+:ref:`noise-backend-support` tables show the built-in behavior and unsupported
+forms for each backend family. Pulse-emulator continuous-noise realizations are
+family-owned rather than user-replaceable.
 
 Quick start
 -----------

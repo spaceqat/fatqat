@@ -5,7 +5,6 @@ paired six-test physics gate reported 35.66 seconds under contention; the
 parallel module records the corresponding propagation timing and CI allowance.
 """
 
-import numpy as np
 import pytest
 
 import fatqat as fq
@@ -15,9 +14,7 @@ from fatqat._pulse_values import PulseControl
 from tests.emulator.atom_3level.reference.atom_3level_cz_reference import (
     analyze_cz_propagator,
     analytic_cz_oracle,
-    correction_unitary,
     principal,
-    PRODUCTION_SOLVER_OPTIONS,
     sampled_cz_reference,
 )
 
@@ -63,6 +60,7 @@ def _backend(atom_3level_model, atom_3level_calibration, ratio):
         arrangement=fq.emulator.AtomArrangement.rectangular(
             1, 2, _spacing(atom_3level_model, atom_3level_calibration, ratio)
         ),
+        method="unitary",
     )
 
 
@@ -86,54 +84,13 @@ def test_analytic_dimensionless_oracle_rederives_the_calibrated_reference(
     ).local_phases == pytest.approx((-2.099085629, -2.099085629), abs=1e-9)
 
 
-def test_production_raw_and_final_frame_paths_apply_the_correction_exactly_once(
-    atom_3level_model, atom_3level_calibration
-):
-    backend = _backend(
-        atom_3level_model, atom_3level_calibration, CALIBRATED_V_OVER_OMEGA
-    )
-    raw = backend.propagator(_program(), apply_final_frame=False)
-    final = backend.propagator(_program(), apply_final_frame=True)
-    raw_uncorrected = analyze_cz_propagator(
-        raw, atom_3level_calibration, apply_correction=False
-    )
-    raw_metrics = analyze_cz_propagator(
-        raw, atom_3level_calibration, apply_correction=True
-    )
-    final_metrics = analyze_cz_propagator(
-        final, atom_3level_calibration, apply_correction=False
-    )
-    assert raw_metrics.process_fidelity == pytest.approx(
-        final_metrics.process_fidelity, abs=1e-10
-    )
-    assert raw_metrics.survival == pytest.approx(final_metrics.survival, abs=1e-10)
-    assert raw_metrics.entangling_phase == pytest.approx(
-        final_metrics.entangling_phase, abs=1e-10
-    )
-    assert np.allclose(
-        correction_unitary(atom_3level_calibration.local_z_correction_rad) @ raw,
-        final,
-        rtol=0.0,
-        atol=1e-8,
-    )
-    assert raw_uncorrected.local_phases == pytest.approx(
-        (-2.099085629, -2.099085629), abs=PRODUCTION_TABLE_PHASE_TOLERANCE
-    )
-    assert raw_metrics.local_phases == pytest.approx((0.0, 0.0), abs=1e-6)
-    assert final_metrics.local_phases == pytest.approx((0.0, 0.0), abs=1e-6)
-    double_corrected = analyze_cz_propagator(
-        final, atom_3level_calibration, apply_correction=True
-    )
-    assert abs(principal(double_corrected.local_phases[0])) > 1.0
-
-
 def test_production_matches_the_calibrated_analytic_oracle(
     atom_3level_model, atom_3level_calibration
 ):
     backend = _backend(
         atom_3level_model, atom_3level_calibration, CALIBRATED_V_OVER_OMEGA
     )
-    produced = backend.propagator(_program())
+    produced = backend.run(_program()).result().get_unitary()
     production = analyze_cz_propagator(
         produced, atom_3level_calibration, apply_correction=False
     )
@@ -159,6 +116,11 @@ def test_production_matches_the_calibrated_analytic_oracle(
     assert production.entangling_phase == pytest.approx(
         CALIBRATED_ENTANGLING_PHASE, abs=PRODUCTION_TABLE_PHASE_TOLERANCE
     )
+    assert production.local_phases == pytest.approx((0.0, 0.0), abs=1e-6)
+    double_corrected = analyze_cz_propagator(
+        produced, atom_3level_calibration, apply_correction=True
+    )
+    assert abs(principal(double_corrected.local_phases[0])) > 1.0
     for name in ("process_fidelity", "average_fidelity", "survival", "leakage"):
         delta = getattr(analytic, name) - getattr(production, name)
         assert (
@@ -177,21 +139,16 @@ def test_production_grid_metadata_sampled_reference_and_convergence(
         atom_3level_model, atom_3level_calibration, CALIBRATED_V_OVER_OMEGA
     )
     program = _program()
-    result = backend.run(
-        program, shots=1, result_config={"counts": False, "final_state": True}
-    ).result()
     points = _CZ_SAMPLE_POINT_COUNT
-    assert result.metadata["solver"] == {
-        "solver": "mesolve",
-        "options": PRODUCTION_SOLVER_OPTIONS,
-    }
     plan = backend._prepare_program(program).plan
     controls = [
         control for control in plan[0].controls if isinstance(control, PulseControl)
     ]
     assert {len(control.waveform.times) for control in controls} == {points}
     production = analyze_cz_propagator(
-        backend.propagator(program), atom_3level_calibration, apply_correction=False
+        backend.run(program).result().get_unitary(),
+        atom_3level_calibration,
+        apply_correction=False,
     )
     _sampled_unitary, sampled = sampled_cz_reference(
         atom_3level_calibration, CALIBRATED_V_OVER_OMEGA, points

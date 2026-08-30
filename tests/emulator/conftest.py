@@ -106,4 +106,4 @@ def backend_fixture(model, calibration) -> TransmonEmulator:
     copies of the implementation maps, and several tests register noise on it.
     """
     del calibration
-    return TransmonEmulator(model)
+    return TransmonEmulator(model, method="density_matrix")

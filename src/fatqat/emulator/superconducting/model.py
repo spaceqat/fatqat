@@ -4,27 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from math import pi, sqrt
+from math import pi
 from types import MappingProxyType
 from typing import Any, ClassVar, Self
-
-import numpy as np
 
 from ...errors import BackendValidationError
 from .._core.control_discovery import _ControlSelector
 from .._core.document_validation import _exact_keys, _fail, _mapping, _number, _string
 from .._core.model_document import (
-    FormatIdentity,
-    ModelIdentity,
+    _FormatIdentity,
+    _ModelIdentity,
     _dispatch_document,
     _parse_model_identity,
     _validate_model_document_envelope,
 )
 from .._core.target import _ControlAddress, _FrameAddress
-from .._core.value_validation import _freeze
 
-_MODEL_FORMAT = FormatIdentity("sc.transmon_exchange", 1)
-_MODEL_KIND = "sc.transmon"
+_MODEL_FORMAT = _FormatIdentity("sc.transmon_exchange", 1)
 _FAMILY = "sc.transmon"
 _MODEL_UNITS = {"frequency": "GHz", "anharmonicity": "GHz"}
 
@@ -42,14 +38,8 @@ def angular_rate_from_ghz(value: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class Transmon:
-    """Physical parameters of one declared transmon subsystem.
-
-    Attributes:
-        id: Stable subsystem label used when selecting controls.
-        frequency_ghz: Ordinary transition frequency in GHz.
-        anharmonicity_ghz: Signed anharmonicity in GHz.
-    """
+class _Transmon:
+    """Private normalized parameters of one transmon subsystem."""
 
     id: str
     frequency_ghz: float
@@ -57,13 +47,8 @@ class Transmon:
 
 
 @dataclass(frozen=True, slots=True)
-class Coupling:
-    """A pair of transmons that supports exchange control and coupled gates.
-
-    Attributes:
-        id: Stable coupling label from the model document.
-        subsystem_ids: Ordered pair of endpoint subsystem labels.
-    """
+class _Coupling:
+    """Private normalized exchange edge between two transmons."""
 
     id: str
     subsystem_ids: tuple[str, str]
@@ -203,7 +188,7 @@ def _parse_model(data: Mapping[str, Any]) -> tuple[Any, ...]:
         anharmonicity = _number(item["anharmonicity"], f"{item_path}.anharmonicity")
         if anharmonicity >= 0:
             _fail(f"{item_path}.anharmonicity", "must be negative")
-        subsystems.append(Transmon(identifier, frequency, anharmonicity))
+        subsystems.append(_Transmon(identifier, frequency, anharmonicity))
     edges = system["control_edges"]
     if not isinstance(edges, list):
         _fail(f"{path}.system.control_edges", "must be an array")
@@ -231,7 +216,7 @@ def _parse_model(data: Mapping[str, Any]) -> tuple[Any, ...]:
         if edge_key in edge_keys:
             _fail(f"{edge_path}.subsystems", "duplicates an undirected control edge")
         edge_keys.add(edge_key)
-        couplings.append(Coupling(edge_id, (first, second)))
+        couplings.append(_Coupling(edge_id, (first, second)))
     return identity, tuple(subsystems), tuple(couplings)
 
 
@@ -254,22 +239,13 @@ class TransmonModel:
         ('q0', 'q1')
     """
 
-    format: FormatIdentity
-    identity: ModelIdentity
-    subsystems: tuple[Transmon, ...]
-    couplings: tuple[Coupling, ...]
-    annihilation: np.ndarray = field(compare=False, repr=False)
-    number: np.ndarray = field(compare=False, repr=False)
+    _identity: _ModelIdentity = field(repr=False)
+    _subsystems: tuple[_Transmon, ...] = field(repr=False)
+    _couplings: tuple[_Coupling, ...] = field(repr=False)
 
     __hash__ = None
-    kind: ClassVar[str] = _MODEL_KIND
     basis_order: ClassVar[tuple[str, str, str]] = ("0", "1", "2")
-    local_dimension: ClassVar[int] = 3
-    physical_dimension: ClassVar[int] = 3
-    frequency_unit: ClassVar[str] = _MODEL_UNITS["frequency"]
-    anharmonicity_unit: ClassVar[str] = _MODEL_UNITS["anharmonicity"]
     time_unit: ClassVar[str] = "ns"
-    control_unit: ClassVar[str] = "rad/ns"
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
         """Reject direct construction in favor of ``from_document()``.
@@ -293,21 +269,12 @@ class TransmonModel:
             BackendValidationError: If the document has an unsupported format
                 or contains invalid model data.
         """
-        source_format, parsed = _dispatch_document(
-            document, "physics model", _MODEL_PARSERS
-        )
+        parsed = _dispatch_document(document, "physics model", _MODEL_PARSERS)
         identity, subsystems, couplings = parsed
-        annihilation = _freeze(
-            np.array([[0.0, 1.0, 0.0], [0.0, 0.0, sqrt(2)], [0.0, 0.0, 0.0]])
-        )
-        number = _freeze(np.diag([0.0, 1.0, 2.0]))
         model = object.__new__(cls)
-        object.__setattr__(model, "format", source_format)
-        object.__setattr__(model, "identity", identity)
-        object.__setattr__(model, "subsystems", subsystems)
-        object.__setattr__(model, "couplings", couplings)
-        object.__setattr__(model, "annihilation", annihilation)
-        object.__setattr__(model, "number", number)
+        object.__setattr__(model, "_identity", identity)
+        object.__setattr__(model, "_subsystems", subsystems)
+        object.__setattr__(model, "_couplings", couplings)
         return model
 
     @property
@@ -317,7 +284,7 @@ class TransmonModel:
         Returns:
             A tuple of labels accepted by local control selectors.
         """
-        return tuple(subsystem.id for subsystem in self.subsystems)
+        return tuple(subsystem.id for subsystem in self._subsystems)
 
     @property
     def control(self) -> _TransmonControls:
@@ -357,22 +324,20 @@ class TransmonModel:
         if not isinstance(other, TransmonModel):
             return False
         return bool(
-            self.identity == other.identity
-            and self.subsystems == other.subsystems
+            self._identity == other._identity
+            and self._subsystems == other._subsystems
             and tuple(
                 (coupling.id, frozenset(coupling.subsystem_ids))
-                for coupling in self.couplings
+                for coupling in self._couplings
             )
             == tuple(
                 (coupling.id, frozenset(coupling.subsystem_ids))
-                for coupling in other.couplings
+                for coupling in other._couplings
             )
         )
 
 
 __all__ = [
     "TransmonModel",
-    "Transmon",
-    "Coupling",
     "angular_rate_from_ghz",
 ]

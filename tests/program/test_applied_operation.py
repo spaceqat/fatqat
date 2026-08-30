@@ -72,10 +72,10 @@ def test_applied_operation_accepts_view_for_view_capable_operation():
     assert ao.targets == (qubits.row(0),)
 
 
-def test_applied_operation_rejects_view_for_scalar_only_operation():
+def test_applied_operation_rejects_view_for_structural_operation():
     qubits = GridRegister(2, 2, name="qubits")
     with pytest.raises(ValueError):
-        _AppliedOperation(operation=ops.H, targets=(qubits.row(0),))
+        _AppliedOperation(operation=ops.Reset, targets=(qubits.row(0),))
 
 
 def test_applied_operation_view_arity_checked_before_scalar_validation():
@@ -86,7 +86,7 @@ def test_applied_operation_view_arity_checked_before_scalar_validation():
         _AppliedOperation(operation=ops.CX, targets=(qubits.row(0),))
 
 
-def test_applied_operation_view_bearing_skips_validate_hook():
+def test_applied_operation_view_bearing_validates_each_emission():
     qubits = GridRegister(2, 2, name="qubits")
     calls = []
 
@@ -98,22 +98,19 @@ def test_applied_operation_view_bearing_skips_validate_hook():
 
         def validate_targets(self, targets):
             calls.append(targets)
-            raise AssertionError(
-                "validate_targets must not run for view-bearing targets"
-            )
 
-    # Non-overlapping views (distinct rows): legal pairing, so only the
-    # per-operation validate_targets() hook is at stake here - it must not
-    # run for view-bearing targets, unlike the scalar path.
     ao = _AppliedOperation(operation=_Probe(), targets=(qubits.row(0), qubits.row(1)))
     assert ao.targets == (qubits.row(0), qubits.row(1))
-    assert calls == []
+    assert calls == [
+        (qubits[0], qubits[2]),
+        (qubits[1], qubits[3]),
+    ]
 
 
 # ---------------------------------------------------------------------------
-# View-pair legality (arity 2: matching selector kind, equal cardinality, no
-# same-register overlap) - checked once here, at construction, not deferred
-# to backend expansion. See registers._validate_view_pair.
+# View compatibility (matching selector kind, equal cardinality, no
+# same-register overlap) is checked once at construction for every operand
+# pair, not deferred to backend expansion.
 # ---------------------------------------------------------------------------
 
 
@@ -142,6 +139,25 @@ def test_applied_operation_accepts_disjoint_rows_same_register():
     qubits = GridRegister(2, 2, name="qubits")
     ao = _AppliedOperation(operation=ops.CX, targets=(qubits.row(0), qubits.row(1)))
     assert ao.targets == (qubits.row(0), qubits.row(1))
+
+
+def test_applied_operation_validates_nonfirst_ternary_view_pair():
+    first = GridRegister(1, 2, name="first")
+    other = GridRegister(2, 2, name="other")
+    with pytest.raises(ValueError, match="overlapping"):
+        _AppliedOperation(
+            operation=ops.CCX,
+            targets=(first.row(0), other.row(0), other.row(0)),
+        )
+
+
+def test_applied_operation_rejects_scalar_view_mixture_for_ternary_gate():
+    qubits = GridRegister(3, 2, name="qubits")
+    with pytest.raises(ValueError, match="mixes a scalar target with a view"):
+        _AppliedOperation(
+            operation=ops.CCX,
+            targets=(qubits.row(0), qubits.row(1), qubits[4]),
+        )
 
 
 def test_applied_operation_rejects_overlapping_blocks():

@@ -38,6 +38,7 @@ class HGate(Operation):
 
     name: ClassVar[str] = "H"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ class IGate(Operation):
 
     name: ClassVar[str] = "I"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,7 @@ class SGate(Operation):
 
     name: ClassVar[str] = "S"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,7 @@ class SdgGate(Operation):
 
     name: ClassVar[str] = "Sdg"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -82,6 +86,7 @@ class SXGate(Operation):
 
     name: ClassVar[str] = "SX"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -93,6 +98,7 @@ class TGate(Operation):
 
     name: ClassVar[str] = "T"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -104,6 +110,7 @@ class TdgGate(Operation):
 
     name: ClassVar[str] = "Tdg"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -115,6 +122,7 @@ class XGate(Operation):
 
     name: ClassVar[str] = "X"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -126,6 +134,7 @@ class YGate(Operation):
 
     name: ClassVar[str] = "Y"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -137,6 +146,7 @@ class ZGate(Operation):
 
     name: ClassVar[str] = "Z"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 # ---------------------------------------------------------------------------
@@ -148,8 +158,7 @@ class ZGate(Operation):
 class CXGate(Operation):
     """Flip a target qubit when its control is ``|1>``.
 
-    Targets are ``(control, target)``. ``CX`` also accepts a compatible pair
-    of `fatqat.RegisterView` values and applies the gate member by member.
+    Targets are ``(control, target)``.
     """
 
     name: ClassVar[str] = "CX"
@@ -161,8 +170,7 @@ class CXGate(Operation):
 class CZGate(Operation):
     """Negate ``|11>`` and leave the other two-qubit basis states unchanged.
 
-    Targets are ``(control, target)``. ``CZ`` also accepts a compatible pair
-    of `fatqat.RegisterView` values and applies the gate member by member.
+    Targets are ``(control, target)``.
     """
 
     name: ClassVar[str] = "CZ"
@@ -174,11 +182,12 @@ class CZGate(Operation):
 class SwapGate(Operation):
     """Exchange the states of two qubits.
 
-    Targets are two distinct scalar qubits.
+    Targets are two distinct qubits.
     """
 
     name: ClassVar[str] = "Swap"
     num_subsystems: ClassVar[int] = 2
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -190,6 +199,7 @@ class CYGate(Operation):
 
     name: ClassVar[str] = "CY"
     num_subsystems: ClassVar[int] = 2
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -201,17 +211,19 @@ class CSGate(Operation):
 
     name: ClassVar[str] = "CS"
     num_subsystems: ClassVar[int] = 2
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
 class iSwapGate(Operation):
     """Swap ``|01>`` and ``|10>`` while multiplying each by ``i``.
 
-    Targets are two distinct scalar qubits.
+    Targets are two distinct qubits.
     """
 
     name: ClassVar[str] = "iSwap"
     num_subsystems: ClassVar[int] = 2
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -223,6 +235,7 @@ class CCXGate(Operation):
 
     name: ClassVar[str] = "CCX"
     num_subsystems: ClassVar[int] = 3
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -234,6 +247,7 @@ class CSwapGate(Operation):
 
     name: ClassVar[str] = "CSwap"
     num_subsystems: ClassVar[int] = 3
+    _accepts_views: ClassVar[bool] = True
 
 
 # ---------------------------------------------------------------------------

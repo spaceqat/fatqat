@@ -14,8 +14,11 @@ from fatqat._backends.steps import MeasurementStep, ResetStep
 from fatqat.emulator.superconducting.backend import TransmonEmulator
 from fatqat.emulator._core.engine import PulseEngine, _ShotContext
 from fatqat.emulator._core.lindblad import bind_lindblad_operators
-from fatqat.noise import default_lindblad_implementation_map
-from fatqat.noise.lindblad import resolve_lindblad_operators
+from fatqat.noise.lindblad import (
+    LindbladImplementationMap,
+    resolve_lindblad_operators,
+    thermal_relaxation_lindblad_rule,
+)
 from fatqat.emulator.superconducting.qutip_adapter import _TransmonQutipAdapter
 from fatqat.emulator.superconducting.target import _TransmonTarget
 from fatqat.emulator._core.pulse import (
@@ -28,7 +31,7 @@ from fatqat.emulator import SampledWaveform
 from fatqat.emulator.superconducting.realization import (
     default_transmon_gate_implementation_map,
 )
-from fatqat.noise import NoiseModel, ThermalRelaxation
+from fatqat.noise import AmplitudeDamping, NoiseModel, ThermalRelaxation
 
 
 @pytest.fixture(name="make_backend")
@@ -36,7 +39,7 @@ def make_backend_fixture(model, calibration):
     """Build a backend on the shared model with an optional noise model."""
 
     def build(noise=None):
-        return TransmonEmulator(model, noise=noise)
+        return TransmonEmulator(model, method="density_matrix", noise=noise)
 
     return build
 
@@ -66,13 +69,17 @@ def _qutip_tensor(*canonical_factors):
     return tensor(*reversed(canonical_factors))
 
 
-def test_partial_entangled_measurement_collapses_the_physical_posterior(model):
-    adapter = _adapter(model)
+@pytest.mark.parametrize("execution_mode", ["density_matrix", "statevector"])
+def test_partial_entangled_measurement_collapses_the_physical_posterior(
+    model, execution_mode
+):
+    adapter = _adapter(model, execution_mode=execution_mode)
     ket = (
         _qutip_tensor(basis(3, 0), basis(3, 0))
         + _qutip_tensor(basis(3, 1), basis(3, 2))
     ).unit()
-    context = _context(adapter, ket2dm(ket), seed=4)
+    state = ket2dm(ket) if execution_mode == "density_matrix" else ket
+    context = _context(adapter, state, seed=4)
     adapter.execute_boundary(
         MeasurementStep((0,), (0,), reported_digit_maps=((0, 1, 2),)),
         context,
@@ -172,6 +179,37 @@ def test_seeded_dynamic_replay_is_reproducible(make_backend):
         program, shots=40, simulation_config={"seed": 19}, result_config=config
     ).result()
     assert first.get_counts_as_tuples() == second.get_counts_as_tuples()
+
+
+def test_seeded_noisy_trajectory_continues_across_measurement_regions(model):
+    noise = NoiseModel()
+    for target in ("q0", "q1"):
+        noise.add(AmplitudeDamping(rate=(1e-5, 1e-5)), targets=target)
+    backend = TransmonEmulator(model, method="statevector", noise=noise)
+    program = fq.Program(2, 1)
+    program.add(ops.RX(pi), 0)
+    program.measure(0, 0)
+    program.add(ops.RX(pi), 1, condition=(0, 1))
+    kwargs = {
+        "shots": 1,
+        "simulation_config": {"seed": 71},
+        "result_config": {"counts": True, "final_state": True},
+    }
+
+    first = backend.run(program, **kwargs).result()
+    second = backend.run(program, **kwargs).result()
+
+    assert first.get_counts() == second.get_counts() == {"1": 1}
+    assert first.get_statevector() == pytest.approx(second.get_statevector())
+    probabilities = np.abs(first.get_statevector()) ** 2
+    q0_occupied = sum(
+        probability
+        for index, probability in enumerate(probabilities)
+        if index % 3 in (1, 2)
+    )
+    q1_occupied = sum(probabilities[3:])
+    assert q0_occupied > 0.8
+    assert q1_occupied > 0.8
 
 
 def test_real_boundary_preserves_frame_ledger_for_later_drive(make_backend):
@@ -281,14 +319,16 @@ class _ExcitedAdapter(_TransmonQutipAdapter):
 
 def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames(model):
     thermal = ThermalRelaxation(t1=5, t2=10)
+    lindblad_map = LindbladImplementationMap()
+    lindblad_map.add(ThermalRelaxation, thermal_relaxation_lindblad_rule)
     adapter = _adapter(
         model,
         kind=_ExcitedAdapter,
         background_noise=bind_lindblad_operators(
             resolve_lindblad_operators(
                 thermal,
-                implementation_map=default_lindblad_implementation_map(),
-                physical_dimension=model.physical_dimension,
+                implementation_map=lindblad_map,
+                physical_dimension=len(model.basis_order),
             ),
             engine_indices=(0,),
         ),
@@ -359,7 +399,11 @@ def test_custom_cz_rule_executes_end_to_end_and_yields_a_valid_physical_state(
     )
     implementations.remove(ops.CZ)
     implementations.add(ops.CZ, custom_cz)
-    backend = TransmonEmulator(model, gate_implementation_map=implementations)
+    backend = TransmonEmulator(
+        model,
+        method="density_matrix",
+        gate_implementation_map=implementations,
+    )
 
     program = fq.Program(2)
     program.add(ops.CZ, (0, 1))

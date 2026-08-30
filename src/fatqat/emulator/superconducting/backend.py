@@ -6,19 +6,38 @@ from typing import Any
 
 from ...errors import BackendValidationError
 from ...noise import (
-    LindbladImplementationMap,
+    AmplitudeDamping,
+    Depolarizing,
     NoiseModel,
-    default_lindblad_implementation_map,
+    PhaseDamping,
+    ThermalRelaxation,
+)
+from ...noise.lindblad import (
+    LindbladImplementationMap,
+    amplitude_damping_lindblad_rule,
+    depolarizing_lindblad_rule,
+    phase_damping_lindblad_rule,
+    thermal_relaxation_lindblad_rule,
 )
 from .._core.backend import _PulseBackend
 from .._core.lindblad import _lindblad_noise_rejection_reasons
 from .._core.outcome import ExecutionMode
-from .._core.planning import PulsePlanFacts, _PreparedPulseProgram
+from .._core.planning import _PreparedPulseProgram
 from .._core.pulse import PulseImplementationMap
 from .calibration import default_transmon_calibration
 from .model import TransmonModel
 from .realization import default_transmon_gate_implementation_map
-from .target import _TransmonTarget
+from .target import _LOCAL_DIMENSION, _TransmonTarget
+
+
+def _default_lindblad_map() -> LindbladImplementationMap:
+    """Return a fresh Transmon continuous-noise catalog."""
+    implementations = LindbladImplementationMap()
+    implementations.add(AmplitudeDamping, amplitude_damping_lindblad_rule)
+    implementations.add(PhaseDamping, phase_damping_lindblad_rule)
+    implementations.add(ThermalRelaxation, thermal_relaxation_lindblad_rule)
+    implementations.add(Depolarizing, depolarizing_lindblad_rule)
+    return implementations
 
 
 class TransmonEmulator(_PulseBackend):
@@ -30,10 +49,10 @@ class TransmonEmulator(_PulseBackend):
 
     Args:
         model: Transmon model created with ``TransmonModel.from_document``.
+        method: Mathematical result representation: ``"statevector"``
+            (default), ``"density_matrix"``, or ``"unitary"``. The aliases
+            ``"SV"`` and ``"DM"`` are accepted.
         noise: Noise applied by this emulator. The default is no noise.
-        lindblad_implementation_map: Continuous-noise rules. ``None`` uses the
-            built-in amplitude-damping, phase-damping, and thermal-relaxation
-            rules. An explicit map replaces those defaults.
         gate_implementation_map: Gate-to-pulse rules. ``None`` uses the
             built-in transmon gate map and packaged calibration.
 
@@ -51,14 +70,12 @@ class TransmonEmulator(_PulseBackend):
         True
     """
 
-    _coherent_execution_mode: ExecutionMode = "density_matrix"
-
     def __init__(
         self,
         model: TransmonModel,
         *,
+        method: str = "statevector",
         noise: NoiseModel | None = None,
-        lindblad_implementation_map: LindbladImplementationMap | None = None,
         gate_implementation_map: PulseImplementationMap | None = None,
     ) -> None:
         if not isinstance(model, TransmonModel):
@@ -71,16 +88,12 @@ class TransmonEmulator(_PulseBackend):
             if gate_implementation_map is None
             else gate_implementation_map
         )
-        effective_lindblad_map = (
-            default_lindblad_implementation_map()
-            if lindblad_implementation_map is None
-            else lindblad_implementation_map
-        )
         super().__init__(
             model,
+            method=method,
             noise=noise,
             gate_implementation_map=effective_gate_map,
-            lindblad_implementation_map=effective_lindblad_map,
+            lindblad_implementation_map=_default_lindblad_map(),
         )
         self.validate_noise_model(self._noise_model)
         self._set_target(_TransmonTarget(model))
@@ -91,14 +104,11 @@ class TransmonEmulator(_PulseBackend):
         return _lindblad_noise_rejection_reasons(
             noise_model,
             self._lindblad_implementation_map,
-            local_dimension=self.model.local_dimension,
+            local_dimension=_LOCAL_DIMENSION,
             backend_name=type(self).__name__,
             supports_readout_confusion=True,
+            readout_confusion_shape=(2, 2),
         )
-
-    def _resolve_execution_mode(self, facts: PulsePlanFacts) -> ExecutionMode:
-        del facts
-        return "density_matrix"
 
     def _create_runner(
         self,
@@ -107,16 +117,13 @@ class TransmonEmulator(_PulseBackend):
         execution_mode: ExecutionMode,
         retain_final_state: bool,
     ) -> Any:
-        if execution_mode != "density_matrix":
-            raise BackendValidationError(
-                "TransmonEmulator supports only density-matrix execution"
-            )
         from .qutip_adapter import _TransmonQutipAdapter
 
         return _TransmonQutipAdapter(
             self._target,
             engine_allocation=prepared.engine_allocation,
             background_noise=prepared.background_noise,
+            execution_mode=execution_mode,
             retain_final_state=retain_final_state,
         )
 

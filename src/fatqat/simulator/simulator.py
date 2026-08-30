@@ -56,6 +56,7 @@ from ._engine.np import (
 )
 from .._backends.backend_utils import (
     _LoweringContext,
+    _canonicalize_method,
     _normalize_config,
     _resolve_result_flags,
     _validate_result_shots,
@@ -85,16 +86,6 @@ from .._backends.steps import (
     ResetStep,
     ResolvedStep,
 )
-
-# Canonical method names plus Qiskit-style short aliases, all case-insensitive.
-_METHOD_ALIASES = {
-    "statevector": "statevector",
-    "sv": "statevector",
-    "density_matrix": "density_matrix",
-    "dm": "density_matrix",
-    "unitary": "unitary",
-    "superop": "superop",
-}
 
 
 def _dispatch_execution(
@@ -278,7 +269,7 @@ class Simulator:
                 be imported, or the captured noise model contains a source
                 this backend cannot execute.
         """
-        normalized = _METHOD_ALIASES.get(str(method).lower())
+        normalized = _canonicalize_method(method, _METHOD_SPECS)
         if normalized is None:
             raise BackendValidationError(
                 f"unsupported method={method!r}; expected one of "

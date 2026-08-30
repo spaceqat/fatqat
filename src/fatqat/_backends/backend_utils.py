@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Container
 from dataclasses import dataclass, fields
 from typing import Any
 
@@ -13,6 +14,29 @@ from ..program import _AppliedOperation
 from ..registers import RegisterRef
 from ..resource_layout import ResourceLayout
 from .steps import ResetStep
+
+
+def _canonicalize_method(
+    method: object,
+    allowed: Container[str],
+) -> str | None:
+    """Return a canonical representation name accepted by one backend.
+
+    Method-like values retain the existing ``str(value).lower()`` coercion.
+    Callers own their allowlist and validation message because the matrix and
+    pulse backends intentionally support different representations.
+    """
+    canonical = {
+        "statevector": "statevector",
+        "sv": "statevector",
+        "density_matrix": "density_matrix",
+        "dm": "density_matrix",
+        "unitary": "unitary",
+        "superop": "superop",
+    }.get(str(method).lower())
+    if canonical is None or canonical not in allowed:
+        return None
+    return canonical
 
 
 def _validate_grid_size(grid_size: object) -> tuple[int, int]:

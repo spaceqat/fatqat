@@ -4,9 +4,8 @@ Backend support
 ===============
 
 Use these tables to see which built-in backends accept each noise type and
-form. **Built in** means the standard backend accepts it. **Custom only** means
-you must provide an implementation map for that exact noise type.
-**Unsupported** means a custom map cannot enable it for that backend family.
+form. **Built in** means the standard backend accepts it. **Unsupported** means
+the backend family rejects it.
 
 For one configured backend, use
 :meth:`~fatqat.simulator.Simulator.validate_noise_model` on a simulator or
@@ -81,7 +80,7 @@ Pulse emulators
 Pulse emulators use local Lindblad operators built from supported rates and
 times. They do not infer a rate from a probability. Built-in probability
 forms, :class:`~fatqat.noise.PauliChannel`, and :class:`~fatqat.noise.Loss`
-remain unsupported even when a custom Lindblad map registers their types.
+are unsupported. Each emulator family owns its continuous-noise realizations.
 
 .. list-table:: Emulator support
    :header-rows: 1
@@ -89,35 +88,33 @@ remain unsupported even when a custom Lindblad map registers their types.
 
    * - Backend
      - Built-in Lindblad-operator behavior
-     - Custom maps and readout
+     - Readout and limits
    * - :class:`~fatqat.emulator.TransmonEmulator`
      - Background or operation scope:
        :class:`~fatqat.noise.AmplitudeDamping` ``(rate)`` with two rates for
        the three-level model, :class:`~fatqat.noise.PhaseDamping`
-       ``(rate or t_phi)``, and :class:`~fatqat.noise.ThermalRelaxation`.
-     - :class:`~fatqat.noise.Depolarizing` ``(rate)`` is **custom only** in
-       background or operation scope. Readout confusion is built in and
-       binary. A run requires a ``2 x 2`` matrix, although
-       :meth:`~fatqat.emulator.TransmonEmulator.validate_noise_model` alone may
-       not reject a larger square matrix.
+       ``(rate or t_phi)``, :class:`~fatqat.noise.ThermalRelaxation`, and
+       :class:`~fatqat.noise.Depolarizing` ``(rate)`` over the full qutrit.
+     - Readout confusion is built in and binary. Construction and
+       :meth:`~fatqat.emulator.TransmonEmulator.validate_noise_model` require a
+       ``2 x 2`` matrix.
    * - :class:`~fatqat.emulator.Atom2LevelEmulator`
      - Background scope:
        :class:`~fatqat.noise.Depolarizing` ``(rate)``,
        :class:`~fatqat.noise.AmplitudeDamping` ``(rate)`` with one rate,
        :class:`~fatqat.noise.PhaseDamping` ``(rate or t_phi)``, and
        :class:`~fatqat.noise.ThermalRelaxation`.
-     - An explicit map can also enable compatible noise during matching
-       operation windows. Readout confusion is built in and ``2 x 2`` only.
+     - Operation-scoped continuous noise is unsupported. Readout confusion is
+       built in and ``2 x 2`` only.
    * - :class:`~fatqat.emulator.Atom3LevelEmulator`
-     - None. The default Lindblad implementation map is empty.
-     - Compatible rate/time noise is **custom only** in background or
-       operation scope; amplitude damping requires two rates. Readout confusion
-       is built in and ``2 x 2`` only, even though the physical model has three
-       levels.
+     - None. Continuous noise declarations are unsupported.
+     - Readout confusion is built in and ``2 x 2`` only, even though the
+       physical model has three levels.
 
-Each background rule selects one site. Operation-scoped noise is active only
-during matching pulse windows. Readout confusion may apply to every
-measurement or one operand; correlated multi-operand readout is not supported.
+Each supported background declaration selects one site. Transmon
+operation-scoped noise is active only during matching pulse windows. Readout
+confusion may apply to every measurement or one operand; correlated
+multi-operand readout is not supported.
 
 Rates use the inverse of the model's time unit. ``t_phi``, ``t1``, and ``t2``
 use that unit directly. The reference
@@ -126,12 +123,6 @@ use that unit directly. The reference
 :attr:`~fatqat.emulator.Atom3LevelModel.time_unit` are microseconds. Read the
 chosen model's ``time_unit`` rather than guessing from a value's magnitude.
 
-An explicit :class:`~fatqat.noise.LindbladImplementationMap` replaces the
-emulator's default map, and the emulator copies it at construction. Atom2's
-built-in map supports background noise only; a custom map may also enable
-compatible noise during matching operation windows. Atom3's default map is
-empty, so all dynamical noise needs a custom rule. Custom maps still cannot
-enable built-in probability forms, :class:`~fatqat.noise.PauliChannel`,
-nonlocal noise, or :class:`~fatqat.noise.Loss`. Custom channel types must
-describe a continuous generator whose interpretation is defined by their
-registered rule. See :doc:`custom-implementations`.
+Unsupported continuous declarations cannot be enabled through emulator
+construction. Use ``NoiseModel`` for the declarations listed above and call
+the family's ``validate_noise_model()`` method for an eager support check.

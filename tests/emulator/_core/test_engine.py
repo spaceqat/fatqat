@@ -242,7 +242,64 @@ class _TrajectoryRunner(_FakeRunner):
         return result
 
 
-def test_terminal_trajectory_batch_preserves_seed_and_outcome_order(model):
+class _RegionalTrajectoryRunner(_TrajectoryRunner):
+    """Expose shot context continuity through runner payloads."""
+
+    def initial_state(self):
+        return {"regions": []}
+
+    def evolve(self, run, context, enabled):
+        context.state["regions"].append(
+            (
+                context.time,
+                run.end_time,
+                tuple(context.classical_memory),
+                enabled,
+                int(context.rng.integers(0, 10_000)),
+            )
+        )
+
+    def execute_boundary(self, step, context):
+        context.classical_memory[0] = int(context.rng.integers(0, 2))
+
+    def finish_shot(self, context):
+        return (
+            tuple(context.state["regions"]),
+            tuple(context.classical_memory),
+            context.time,
+        )
+
+
+def test_trajectory_execution_preserves_context_across_regions(model):
+    plan = (
+        _physical_block(model, 1.0),
+        MeasurementStep((0,), (0,)),
+        _physical_block(model, 2.0, condition=((0, 1),)),
+    )
+
+    def execute():
+        return PulseEngine(_RegionalTrajectoryRunner()).run_trajectories(
+            plan,
+            shots=2,
+            n_clbits=1,
+            rng=np.random.default_rng(20260830),
+        )
+
+    first = execute()
+    second = execute()
+
+    assert first == second
+    assert first[0] != first[1]
+    for regions, memory, final_time in first:
+        assert len(regions) == 2
+        assert regions[0][:4] == (0.0, 1.0, (0,), (True,))
+        assert regions[1][:3] == (1.0, 3.0, memory)
+        expected_enabled = (memory[0] == 1,)
+        assert regions[1][3] == expected_enabled
+        assert final_time == 3.0
+
+
+def test_trajectory_execution_preserves_batched_seed_and_outcome_order(model):
     blocks = (
         _physical_block(model, 1.0),
         _physical_block(model, 2.0, subsystem_id="q1"),
@@ -251,7 +308,7 @@ def test_terminal_trajectory_batch_preserves_seed_and_outcome_order(model):
     runner = _TrajectoryRunner()
     rng = np.random.default_rng(17)
 
-    outcomes = PulseEngine(runner, schedule_mode="ALAP").run_terminal_trajectory_batch(
+    outcomes = PulseEngine(runner, schedule_mode="ALAP").run_trajectories(
         (*blocks, measurement), shots=3, n_clbits=1, rng=rng
     )
 
@@ -267,7 +324,7 @@ def test_terminal_trajectory_batch_preserves_seed_and_outcome_order(model):
     assert runner.finished == list(outcomes)
 
     repeated = _TrajectoryRunner()
-    PulseEngine(repeated, schedule_mode="ALAP").run_terminal_trajectory_batch(
+    PulseEngine(repeated, schedule_mode="ALAP").run_trajectories(
         (*blocks, measurement),
         shots=3,
         n_clbits=1,
@@ -277,9 +334,9 @@ def test_terminal_trajectory_batch_preserves_seed_and_outcome_order(model):
 
 
 @pytest.mark.parametrize("shots", [0, -1, True, 1.5])
-def test_terminal_trajectory_batch_rejects_invalid_shots(model, shots):
+def test_trajectory_execution_rejects_invalid_shots(model, shots):
     with pytest.raises(BackendValidationError, match="shots"):
-        PulseEngine(_TrajectoryRunner()).run_terminal_trajectory_batch(
+        PulseEngine(_TrajectoryRunner()).run_trajectories(
             (_physical_block(model, 1.0),),
             shots=shots,
             n_clbits=0,
@@ -288,9 +345,9 @@ def test_terminal_trajectory_batch_rejects_invalid_shots(model, shots):
 
 
 @pytest.mark.parametrize("n_clbits", [-1, True, 1.5])
-def test_terminal_trajectory_batch_rejects_invalid_classical_width(model, n_clbits):
+def test_trajectory_execution_rejects_invalid_classical_width(model, n_clbits):
     with pytest.raises(BackendValidationError, match="classical width"):
-        PulseEngine(_TrajectoryRunner()).run_terminal_trajectory_batch(
+        PulseEngine(_TrajectoryRunner()).run_trajectories(
             (_physical_block(model, 1.0),),
             shots=1,
             n_clbits=n_clbits,
@@ -298,53 +355,10 @@ def test_terminal_trajectory_batch_rejects_invalid_classical_width(model, n_clbi
         )
 
 
-@pytest.mark.parametrize(
-    ("plan", "match"),
-    [
-        ((ResetStep((0,)),), "reset"),
-        ((MeasurementStep((0,), (0,)),), "requires elapsed"),
-        ((object(),), "unknown"),
-    ],
-)
-def test_terminal_trajectory_batch_rejects_nonterminal_plan_shapes(model, plan, match):
-    with pytest.raises(BackendValidationError, match=match):
-        PulseEngine(_TrajectoryRunner()).run_terminal_trajectory_batch(
-            plan,
-            shots=1,
-            n_clbits=1,
-            rng=np.random.default_rng(1),
-        )
-
-
-def test_terminal_trajectory_batch_rejects_conditions_and_pulses_after_measurement(
-    model,
-):
-    conditioned = _physical_block(model, 1.0, condition=((0, 1),))
-    with pytest.raises(BackendValidationError, match="conditions"):
-        PulseEngine(_TrajectoryRunner()).run_terminal_trajectory_batch(
-            (conditioned,),
-            shots=1,
-            n_clbits=1,
-            rng=np.random.default_rng(1),
-        )
-
-    measurement = MeasurementStep((0,), (0,))
-    with pytest.raises(BackendValidationError, match="pulse after measurement"):
-        PulseEngine(_TrajectoryRunner()).run_terminal_trajectory_batch(
-            (measurement, _physical_block(model, 1.0)),
-            shots=1,
-            n_clbits=1,
-            rng=np.random.default_rng(1),
-        )
-
-
-def test_terminal_trajectory_batch_requires_the_optional_runner_protocol(model):
-    with pytest.raises(BackendValidationError, match="does not support"):
-        PulseEngine(_FakeRunner()).run_terminal_trajectory_batch(
-            (_physical_block(model, 1.0),),
-            shots=1,
-            n_clbits=0,
-            rng=np.random.default_rng(1),
+def test_trajectory_execution_rejects_unknown_plan_steps():
+    with pytest.raises(BackendValidationError, match="unknown"):
+        PulseEngine(_TrajectoryRunner()).run_trajectories(
+            (object(),), shots=1, n_clbits=0, rng=np.random.default_rng(1)
         )
 
 
@@ -357,7 +371,7 @@ def test_runtime_protocol_guard_checks_presence_not_signature(model):
     runner = WrongSignature()
     assert isinstance(runner, _TerminalTrajectoryBatchRunner)
     with pytest.raises(TypeError):
-        PulseEngine(runner).run_terminal_trajectory_batch(
+        PulseEngine(runner).run_trajectories(
             (_physical_block(model, 1.0),),
             shots=1,
             n_clbits=0,
@@ -366,11 +380,11 @@ def test_runtime_protocol_guard_checks_presence_not_signature(model):
 
 
 @pytest.mark.parametrize("returned", [[], ({"seed": 1}, {"seed": 2})])
-def test_terminal_trajectory_batch_validates_returned_tuple_and_count(model, returned):
+def test_trajectory_execution_validates_batched_return_shape(model, returned):
     runner = _TrajectoryRunner()
     runner.run_trajectory_batch = lambda *_args, **_kwargs: returned
     with pytest.raises(BackendValidationError, match="return"):
-        PulseEngine(runner).run_terminal_trajectory_batch(
+        PulseEngine(runner).run_trajectories(
             (_physical_block(model, 1.0),),
             shots=1,
             n_clbits=0,

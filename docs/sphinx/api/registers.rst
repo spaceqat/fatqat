@@ -99,17 +99,14 @@ For a ``GridRegister(2, 3)``, the helpers select these flat indices:
    * - ``grid.block((0, 2), (1, 3))``
      - ``(1, 2, 4, 5)``
 
-Pass views to :meth:`~fatqat.Program.add`. The built-in view-capable operations
-are :class:`~fatqat.operations.RX`, :class:`~fatqat.operations.RY`,
-:class:`~fatqat.operations.RZ`, :data:`~fatqat.operations.CX`, and
-:data:`~fatqat.operations.CZ`. Unary operations act independently on each
-selected member; :data:`~fatqat.operations.CX` and
-:data:`~fatqat.operations.CZ` pair corresponding members of the two views. A
-pair must use the same kind of grid selection and the same cardinality, and
-selections on the same grid cannot overlap. Measurements and QASM export
-require scalar targets. The backend validates physical placement and
-connectivity. See :doc:`../guide/program` for the ordinary Program workflow
-and :doc:`../guide/hardware-profile-simulation` for physical placement.
+Pass views to :meth:`~fatqat.Program.add`. Every built-in unitary gate accepts
+them. Unary gates act independently on each selected member; multi-target
+gates zip corresponding members from one view per operand. All views must use
+the same kind of grid selection and cardinality, and selections on the same
+grid cannot overlap. Measurements and QASM export require scalar targets. The
+backend validates physical placement and connectivity. See
+:doc:`../guide/program` for the ordinary Program workflow and
+:doc:`../guide/hardware-profile-simulation` for physical placement.
 
 .. autoclass:: fatqat.GridRegister
    :members:

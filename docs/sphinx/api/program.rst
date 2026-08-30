@@ -69,11 +69,9 @@ register you want and pass the resulting :py:class:`~fatqat.RegisterRef`.
        program.
    * - :py:class:`~fatqat.RegisterView`
      - :py:meth:`~fatqat.Program.add` only
-     - :py:class:`~fatqat.operations.RX`,
-       :py:class:`~fatqat.operations.RY`, and
-       :py:class:`~fatqat.operations.RZ` accept one view.
-       :py:data:`~fatqat.operations.CX` and :py:data:`~fatqat.operations.CZ`
-       accept two compatible views. Measurement does not accept views.
+     - Every built-in unitary gate accepts views. Unary gates map over one
+       view; multi-target gates zip one compatible view per operand.
+       Measurement does not accept views.
 
 A :py:class:`~fatqat.operations.PulseOperation` does not use the target forms
 above. Add it with ``program.add(operation)`` and no ``targets`` argument.
@@ -81,7 +79,8 @@ See :doc:`pulse-control/pulse-operation` for details.
 
 For other operations, ``targets`` is one tuple in operand order. Controlled
 gates list controls before targets. See :doc:`registers` for view selection and
-pairing, and :doc:`../guide/program` for the ordinary construction workflow.
+compatibility, and :doc:`../guide/program` for the ordinary construction
+workflow.
 
 Conditions
 ----------

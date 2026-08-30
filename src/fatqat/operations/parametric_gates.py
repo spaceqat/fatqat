@@ -38,8 +38,7 @@ class RX(Operation):
 
     In ``|0>, |1>`` basis order, the matrix is
     ``[[c, -i*s], [-i*s, c]]``, where ``c = cos(theta/2)`` and
-    ``s = sin(theta/2)``. A `fatqat.RegisterView` applies the same rotation to
-    each selected member.
+    ``s = sin(theta/2)``.
 
     Args:
         theta: Numeric angle in radians, or a `fatqat.Parameter` to bind before
@@ -57,8 +56,7 @@ class RY(Operation):
     """Rotate a qubit about the Y axis by ``theta`` radians.
 
     In ``|0>, |1>`` basis order, the matrix is ``[[c, -s], [s, c]]``, where
-    ``c = cos(theta/2)`` and ``s = sin(theta/2)``. A `fatqat.RegisterView`
-    applies the same rotation to each selected member.
+    ``c = cos(theta/2)`` and ``s = sin(theta/2)``.
 
     Args:
         theta: Numeric angle in radians, or a `fatqat.Parameter` to bind before
@@ -77,8 +75,7 @@ class RZ(Operation):
 
     The matrix is ``diag(exp(-i*theta/2), exp(i*theta/2))``. It differs from
     `Phase` with the same ``theta`` only by the global phase
-    ``exp(-i*theta/2)``. A `fatqat.RegisterView` applies the same rotation to
-    each selected member.
+    ``exp(-i*theta/2)``.
 
     Args:
         theta: Numeric angle in radians, or a `fatqat.Parameter` to bind before
@@ -106,6 +103,7 @@ class Phase(Operation):
     theta: float | Parameter
     name: ClassVar[str] = "Phase"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +132,7 @@ class U(Operation):
     lam: float | Parameter
     name: ClassVar[str] = "U"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -151,6 +150,7 @@ class U1(Operation):
     lam: float | Parameter
     name: ClassVar[str] = "U1"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -170,6 +170,7 @@ class U2(Operation):
     lam: float | Parameter
     name: ClassVar[str] = "U2"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -191,6 +192,7 @@ class U3(Operation):
     lam: float | Parameter
     name: ClassVar[str] = "U3"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -208,3 +210,4 @@ class CPhase(Operation):
     theta: float | Parameter
     name: ClassVar[str] = "CPhase"
     num_subsystems: ClassVar[int] = 2
+    _accepts_views: ClassVar[bool] = True

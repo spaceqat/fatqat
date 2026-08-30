@@ -68,11 +68,11 @@ index the register you want. Controlled gates use control-first order, and the
 first local operand is the most-significant digit in the matrices and basis
 actions on the family pages.
 
-:py:class:`RX`, :py:class:`RY`, and :py:class:`RZ` accept one
-:py:class:`~fatqat.RegisterView`; :py:data:`CX` and :py:data:`CZ` accept two
-compatible views and pair their members in order. See :doc:`registers` for the
-view compatibility rules and :doc:`../guide/program` for the ordinary
-construction workflow.
+Every built-in unitary gate accepts :py:class:`~fatqat.RegisterView` targets.
+A unary gate acts on each selected member. A multi-target gate accepts one
+compatible view per operand and zips their members in order. See
+:doc:`registers` for the compatibility rules and :doc:`../guide/program` for
+the ordinary construction workflow.
 
 Operation base
 --------------

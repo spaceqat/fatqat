@@ -104,6 +104,15 @@ def test_old_noise_support_api_is_not_public():
     assert not hasattr(fq.noise, "NoiseSupportReport")
 
 
+def test_lindblad_realization_registry_is_not_public():
+    for name in (
+        "LindbladImplementationMap",
+        "default_lindblad_implementation_map",
+    ):
+        assert not hasattr(fq.noise, name)
+        assert name not in fq.noise.__all__
+
+
 def test_constrained_targets_exported_under_simulator_namespace():
     from fatqat.simulator import SCQubitGoogleSimulator, SCQubitIBMSimulator
 

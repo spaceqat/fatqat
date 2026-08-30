@@ -22,6 +22,7 @@ def test_rectangular_arrangement_is_row_major_3d_immutable_value():
     assert (
         arrangement.num_sites == len(arrangement) == len(arrangement.coordinates) == 6
     )
+    assert arrangement.distance_unit == "um"
     assert not hasattr(arrangement, "cardinality")
     assert not hasattr(arrangement, "occupancy")
     assert arrangement == AtomArrangement.rectangular(2, 3, 1.5)

@@ -73,6 +73,17 @@ def test_grouped_two_target_operation_zips_views_in_order():
     ]
 
 
+def test_grouped_three_target_operation_zips_views_in_order():
+    qubits = GridRegister(3, 2, name="qubits")
+    program = Program([qubits])
+    program.add(ops.CCX, tuple(qubits.row(row) for row in range(3)))
+    broken = _break_grouped_operations(program._instructions)
+    assert [step.targets for step in broken] == [
+        (qubits[0], qubits[2], qubits[4]),
+        (qubits[1], qubits[3], qubits[5]),
+    ]
+
+
 def test_grouped_operation_does_not_mutate_program():
     qubits = GridRegister(2, 2, name="qubits")
     program = Program([qubits])

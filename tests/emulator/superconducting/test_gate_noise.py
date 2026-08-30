@@ -1,6 +1,5 @@
 """Gate-keyed AmplitudeDamping/PhaseDamping lowered into pulse intervals."""
 
-from dataclasses import dataclass
 from math import sqrt
 
 import numpy as np
@@ -27,40 +26,12 @@ from fatqat.emulator import SampledWaveform
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     AmplitudeDamping,
-    Channel,
     Depolarizing,
-    LindbladImplementationMap,
     NoiseModel,
     PauliChannel,
     PhaseDamping,
     ThermalRelaxation,
 )
-from fatqat.noise.lindblad import phase_damping_lindblad_rule
-
-
-@dataclass(frozen=True)
-class _DriveBroadening(Channel):
-    """Test-only local generator whose physics is not expressed as a rate field."""
-
-    num_subsystems = 1
-    strength: float
-
-
-@dataclass(frozen=True)
-class _TwoBodyGenerator(Channel):
-    num_subsystems = 2
-    strength: float
-
-
-@dataclass(frozen=True)
-class _VariableWidthGenerator(Channel):
-    strength: float
-
-
-def _broadening_rule(channel, *, physical_dimension):
-    return (
-        np.sqrt(channel.strength) * np.diag(np.arange(physical_dimension, dtype=float)),
-    )
 
 
 @pytest.fixture(name="make_backend")
@@ -198,106 +169,30 @@ def test_background_rate_lowers_to_the_same_lindblad_term(make_backend):
     assert np.allclose(bindings[0].local_operator, _phase_term(0.0025).local_operator)
 
 
-def test_pulse_backend_still_rejects_channel_types_without_a_pulse_implementation(
-    make_backend,
-):
+@pytest.mark.parametrize(
+    "channel",
+    [
+        AmplitudeDamping(rate=(0.1, 0.2)),
+        PhaseDamping(rate=0.1),
+        ThermalRelaxation(t1=10.0, t2=15.0),
+        Depolarizing(rate=0.1),
+    ],
+)
+def test_transmon_accepts_builtin_rate_generators(make_backend, channel):
+    noise = NoiseModel()
+    noise.add(channel, operation=ops.RX)
+
+    assert make_backend().validate_noise_model(noise) is None
+
+
+def test_pulse_backend_rejects_probability_mode_depolarizing(make_backend):
     noise = NoiseModel()
     noise.add(Depolarizing(p=0.1), operation=ops.RX)
-    backend = make_backend()
-
     with pytest.raises(
         BackendValidationError,
         match=r"Depolarizing\(p\).*finite probability mode",
     ):
-        backend.validate_noise_model(noise)
-
-
-def test_custom_generator_fields_are_interpreted_only_by_the_registered_rule(
-    model,
-):
-    implementations = LindbladImplementationMap()
-    implementations.add(_DriveBroadening, _broadening_rule)
-    noise = NoiseModel()
-    noise.add(_DriveBroadening(strength=0.25), operation=ops.RX)
-    backend = TransmonEmulator(
-        model,
-        noise=noise,
-        lindblad_implementation_map=implementations,
-    )
-    program = fq.Program(1)
-    program.add(ops.RX(0.2), 0)
-
-    plan = backend._prepare_program(program).plan
-    (block,) = [step for step in plan if isinstance(step, PulseBlock)]
-
-    assert np.allclose(
-        block.noise[0].local_operator,
-        _broadening_rule(
-            _DriveBroadening(strength=0.25),
-            physical_dimension=3,
-        )[0],
-    )
-
-
-def test_known_two_body_generator_is_rejected_during_capability_validation(model):
-    implementations = LindbladImplementationMap()
-    implementations.add(_TwoBodyGenerator, _broadening_rule)
-    noise = NoiseModel()
-    noise.add(_TwoBodyGenerator(strength=0.1), operation=ops.CZ)
-    backend = TransmonEmulator(
-        model,
-        lindblad_implementation_map=implementations,
-    )
-
-    with pytest.raises(
-        BackendValidationError,
-        match="_TwoBodyGenerator.*single-subsystem",
-    ):
-        backend.validate_noise_model(noise)
-
-
-def test_variable_width_generator_rejects_a_nonlocal_occurrence_at_lowering(model):
-    implementations = LindbladImplementationMap()
-    implementations.add(_VariableWidthGenerator, _broadening_rule)
-    noise = NoiseModel()
-    noise.add(_VariableWidthGenerator(strength=0.1), operation=ops.CZ)
-    backend = TransmonEmulator(
-        model,
-        noise=noise,
-        lindblad_implementation_map=implementations,
-    )
-    program = fq.Program(2)
-    program.add(ops.CZ, (0, 1))
-
-    assert backend.validate_noise_model(noise) is None
-    with pytest.raises(BackendValidationError, match="local to one subsystem"):
-        backend._prepare_program(program)
-
-
-def test_lindblad_implementation_map_declares_pulse_noise_capability(
-    model, calibration
-):
-    implementations = LindbladImplementationMap()
-    implementations.add(PhaseDamping, phase_damping_lindblad_rule)
-    noise = NoiseModel()
-    noise.add(AmplitudeDamping(rate=(0.01, 0.02)), operation=ops.RX)
-    backend = TransmonEmulator(
-        model,
-        lindblad_implementation_map=implementations,
-    )
-
-    with pytest.raises(
-        BackendValidationError,
-        match=r"AmplitudeDamping\(rate\).*no registered Lindblad implementation",
-    ):
-        backend.validate_noise_model(noise)
-
-    implementations.add(AmplitudeDamping, phase_damping_lindblad_rule)
-    with pytest.raises(
-        BackendValidationError,
-        match=r"AmplitudeDamping\(rate\).*no registered Lindblad implementation",
-    ):
-        backend.validate_noise_model(noise)
+        make_backend().validate_noise_model(noise)
 
 
 # --- lowering: rate resolution ----------------------------------------------

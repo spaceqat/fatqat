@@ -42,6 +42,7 @@ class Shift(Operation):
     power: int
     name: ClassVar[str] = "Shift"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,7 @@ class Clock(Operation):
     power: int
     name: ClassVar[str] = "Clock"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,7 @@ class SumGate(Operation):
 
     name: ClassVar[str] = "Sum"
     num_subsystems: ClassVar[int] = 2
+    _accepts_views: ClassVar[bool] = True
 
 
 Sum = SumGate()
@@ -102,6 +105,7 @@ class SwapLevels(Operation):
     k: int
     name: ClassVar[str] = "SwapLevels"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
     def __post_init__(self) -> None:
         if self.j == self.k:
@@ -139,6 +143,7 @@ class FourierGate(Operation):
 
     name: ClassVar[str] = "Fourier"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -151,6 +156,7 @@ class FourierdgGate(Operation):
 
     name: ClassVar[str] = "InverseFourier"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
 
 Fourier = FourierGate()
@@ -181,6 +187,7 @@ class SubspaceRX(Operation):
     subspace: tuple[int, int]
     name: ClassVar[str] = "SubspaceRX"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
     def __post_init__(self) -> None:
         j, k = self.subspace
@@ -236,6 +243,7 @@ class SubspaceRY(Operation):
     subspace: tuple[int, int]
     name: ClassVar[str] = "SubspaceRY"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
     def __post_init__(self) -> None:
         j, k = self.subspace
@@ -291,6 +299,7 @@ class SubspaceRZ(Operation):
     subspace: tuple[int, int]
     name: ClassVar[str] = "SubspaceRZ"
     num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
 
     def __post_init__(self) -> None:
         j, k = self.subspace
@@ -339,3 +348,4 @@ class CClock(Operation):
     power: int
     name: ClassVar[str] = "CClock"
     num_subsystems: ClassVar[int] = 2
+    _accepts_views: ClassVar[bool] = True

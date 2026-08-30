@@ -586,3 +586,69 @@ def test_backend_result_without_state_returns_failed_job():
         "statevector or density matrix",
     ):
         job.result()
+
+
+class _FixedStateBackend:
+    def __init__(self, representation, state):
+        self.method = representation
+        self._representation = representation
+        self._state = state
+
+    def run(self, *_args, **_kwargs):
+        return Job(
+            status="DONE",
+            result=Result(
+                **{
+                    self._representation: self._state,
+                    "available": frozenset({self._representation}),
+                }
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("representation", "state", "expected_shape"),
+    [
+        ("statevector", np.zeros(9, dtype=complex), (4,)),
+        ("density_matrix", np.zeros((9, 9), dtype=complex), (4, 4)),
+    ],
+)
+def test_estimator_rejects_nonlogical_result_shapes(
+    representation, state, expected_shape
+):
+    estimator = fq.Estimator(_FixedStateBackend(representation, state))
+
+    with pytest.raises(BackendValidationError) as caught:
+        estimator.run(_bell(), Observable([("ZZ", 1.0)]))
+
+    message = str(caught.value)
+    assert representation in message
+    assert str(expected_shape) in message
+    assert str(state.shape) in message
+
+
+def test_qutrit_density_is_rejected_before_binary_expectation_kernels(
+    monkeypatch,
+):
+    density = np.zeros((9, 9), dtype=complex)
+    density[4, 4] = 1.0
+    estimator = fq.Estimator(_FixedStateBackend("density_matrix", density))
+
+    def kernel_must_not_run(*_args, **_kwargs):
+        raise AssertionError("binary expectation kernel received a qutrit state")
+
+    monkeypatch.setattr(
+        "fatqat.estimator.expectation_statevector",
+        kernel_must_not_run,
+    )
+    monkeypatch.setattr(
+        "fatqat.estimator.expectation_density_matrix",
+        kernel_must_not_run,
+    )
+
+    with pytest.raises(BackendValidationError, match="density_matrix") as caught:
+        estimator.run(_bell(), Observable([("IZ", 1.0), ("ZI", 1.0)]))
+
+    message = str(caught.value)
+    assert "(4, 4)" in message
+    assert "(9, 9)" in message

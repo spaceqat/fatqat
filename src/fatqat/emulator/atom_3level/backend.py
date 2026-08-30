@@ -7,13 +7,13 @@ from typing import Any
 from ..atom_arrangement import AtomArrangement
 from ...errors import BackendValidationError
 from ...noise import (
-    LindbladImplementationMap,
     NoiseModel,
 )
+from ...noise.lindblad import LindbladImplementationMap
 from .._core.backend import _PulseBackend
 from .._core.lindblad import _lindblad_noise_rejection_reasons
 from .._core.outcome import ExecutionMode
-from .._core.planning import PulsePlanFacts, _PreparedPulseProgram
+from .._core.planning import _PreparedPulseProgram
 from .._core.pulse import PulseImplementationMap
 from .calibration import default_atom_3level_calibration
 from .model import Atom3LevelModel
@@ -24,21 +24,21 @@ from .target import _Atom3LevelTarget
 class Atom3LevelEmulator(_PulseBackend):
     """Run calibrated gates and local controls in ``|0>, |1>, |r>``.
 
-    Programs use dimension-two resources, while evolution and returned density
-    matrices retain all three physical levels. Every run starts with each atom
-    in ``|0>``.
+    Programs use dimension-two resources, while evolution and returned states
+    retain all three physical levels. Every run starts with each atom in
+    ``|0>``.
 
     Args:
         model: Three-level atom model created with
             ``Atom3LevelModel.from_document``.
         arrangement: Fixed site coordinates for the program. The program must
             contain one dimension-two resource per site.
+        method: Mathematical result representation: ``"statevector"``
+            (default), ``"density_matrix"``, or ``"unitary"``. The aliases
+            ``"SV"`` and ``"DM"`` are accepted.
         noise: Noise applied by this emulator. The default is no noise.
         gate_implementation_map: Gate-to-pulse rules. ``None`` uses the
             built-in ``RX``, ``RY``, ``RZ``, and ``CZ`` rules.
-        lindblad_implementation_map: Continuous-noise rules. ``None`` uses an
-            empty map; pass an explicit map to enable Lindblad declarations.
-
     Raises:
         BackendValidationError: If an argument has the wrong type or ``noise``
             contains a declaration unsupported by the selected rules.
@@ -56,16 +56,14 @@ class Atom3LevelEmulator(_PulseBackend):
         2
     """
 
-    _coherent_execution_mode: ExecutionMode = "density_matrix"
-
     def __init__(
         self,
         model: Atom3LevelModel,
         *,
         arrangement: AtomArrangement,
+        method: str = "statevector",
         noise: NoiseModel | None = None,
         gate_implementation_map: PulseImplementationMap | None = None,
-        lindblad_implementation_map: LindbladImplementationMap | None = None,
     ) -> None:
         if not isinstance(model, Atom3LevelModel):
             raise BackendValidationError("model must be an Atom3LevelModel")
@@ -80,17 +78,13 @@ class Atom3LevelEmulator(_PulseBackend):
             if gate_implementation_map is None
             else gate_implementation_map
         )
-        effective_lindblad_map = (
-            LindbladImplementationMap()
-            if lindblad_implementation_map is None
-            else lindblad_implementation_map
-        )
         self._arrangement = arrangement
         super().__init__(
             model,
+            method=method,
             noise=noise,
             gate_implementation_map=effective_gate_map,
-            lindblad_implementation_map=effective_lindblad_map,
+            lindblad_implementation_map=LindbladImplementationMap(),
         )
         self.validate_noise_model(self._noise_model)
         self._set_target(_Atom3LevelTarget(model, arrangement))
@@ -113,10 +107,6 @@ class Atom3LevelEmulator(_PulseBackend):
             readout_confusion_shape=(2, 2),
         )
 
-    def _resolve_execution_mode(self, facts: PulsePlanFacts) -> ExecutionMode:
-        del facts
-        return "density_matrix"
-
     def _create_runner(
         self,
         prepared: _PreparedPulseProgram,
@@ -124,9 +114,9 @@ class Atom3LevelEmulator(_PulseBackend):
         execution_mode: ExecutionMode,
         retain_final_state: bool,
     ) -> Any:
-        if execution_mode != "density_matrix":
+        if execution_mode not in ("statevector", "density_matrix"):
             raise BackendValidationError(
-                "Atom3LevelEmulator supports only density-matrix execution"
+                "Atom3LevelEmulator does not support continuous trajectories"
             )
         from .qutip_adapter import _Atom3LevelQutipAdapter
 
@@ -134,6 +124,7 @@ class Atom3LevelEmulator(_PulseBackend):
             self._target,
             engine_allocation=prepared.engine_allocation,
             background_noise=prepared.background_noise,
+            execution_mode=execution_mode,
             retain_final_state=retain_final_state,
         )
 

@@ -18,14 +18,7 @@ from fatqat.emulator.atom_2level import (
 from fatqat.emulator._core.backend import _PulseBackend
 from fatqat.emulator._core.pulse import PulseDefinition, PulseImplementationMap
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
-from fatqat.noise import (
-    AmplitudeDamping,
-    Depolarizing,
-    LindbladImplementationMap,
-    PhaseDamping,
-    ThermalRelaxation,
-)
-from fatqat.noise.lindblad import amplitude_damping_lindblad_rule
+from fatqat.noise import Depolarizing
 from fatqat.emulator import SampledWaveform
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
@@ -38,11 +31,19 @@ def model_fixture():
     )
 
 
-def _backend(model, *, site_count=2, interaction_cutoff=None, noise=None):
+def _backend(
+    model,
+    *,
+    site_count=2,
+    interaction_cutoff=None,
+    method="statevector",
+    noise=None,
+):
     return Atom2LevelEmulator(
         model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, site_count, 2.0),
         interaction_cutoff=interaction_cutoff,
+        method=method,
         noise=noise,
     )
 
@@ -75,19 +76,7 @@ def _pulse(duration=1.0, **components):
     return ops.PulseOperation(duration, tuple(controls))
 
 
-def test_public_constructor_has_only_the_locked_two_level_arguments(model):
-    signature = inspect.signature(Atom2LevelEmulator)
-    assert tuple(signature.parameters) == (
-        "model",
-        "arrangement",
-        "interaction_cutoff",
-        "noise",
-        "gate_implementation_map",
-        "lindblad_implementation_map",
-    )
-    assert signature.parameters["arrangement"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert not any(name in signature.parameters for name in ("calibration", "solver"))
-
+def test_public_constructor_retains_model_and_arrangement_ownership(model):
     arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     backend = Atom2LevelEmulator(model, arrangement=arrangement)
     assert backend.model is model
@@ -96,12 +85,6 @@ def test_public_constructor_has_only_the_locked_two_level_arguments(model):
     assert not hasattr(backend, "calibration")
     assert type(backend).__bases__ == (_PulseBackend,)
     assert not backend._gate_implementation_map.supported_operations()
-    assert backend._lindblad_implementation_map.supported_channels() == {
-        AmplitudeDamping,
-        Depolarizing,
-        PhaseDamping,
-        ThermalRelaxation,
-    }
     assert not any(
         name in type(backend).__dict__
         for name in ("run", "propagator", "_prepare_program", "_execute")
@@ -172,12 +155,6 @@ def test_removed_interaction_policy_keyword_and_property_are_absent(model):
     assert not hasattr(
         Atom2LevelEmulator(model, arrangement=arrangement), "interaction_policy"
     )
-    with pytest.raises(BackendValidationError, match="lindblad_implementation_map"):
-        Atom2LevelEmulator(
-            model,
-            arrangement=arrangement,
-            lindblad_implementation_map=object(),
-        )
 
 
 def _global_gate_map(model, operation=ops.CZ):
@@ -199,34 +176,24 @@ def _global_gate_map(model, operation=ops.CZ):
     return implementations
 
 
-def test_maps_are_copied_once_and_explicit_empty_maps_stay_empty(model):
+def test_gate_map_is_copied_once_and_explicit_empty_map_stays_empty(model):
     arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     gate_map = _global_gate_map(model)
-    lindblad_map = LindbladImplementationMap()
-    lindblad_map.add(AmplitudeDamping, amplitude_damping_lindblad_rule)
     backend = Atom2LevelEmulator(
         model,
         arrangement=arrangement,
         gate_implementation_map=gate_map,
-        lindblad_implementation_map=lindblad_map,
     )
 
     gate_map.remove(ops.CZ)
-    lindblad_map.add(AmplitudeDamping, lambda channel, **kwargs: ())
 
     assert backend._gate_implementation_map.supports(ops.CZ)
-    assert (
-        backend._lindblad_implementation_map.get(AmplitudeDamping)
-        is amplitude_damping_lindblad_rule
-    )
     empty = Atom2LevelEmulator(
         model,
         arrangement=arrangement,
         gate_implementation_map=PulseImplementationMap(),
-        lindblad_implementation_map=LindbladImplementationMap(),
     )
     assert not empty._gate_implementation_map.supported_operations()
-    assert not empty._lindblad_implementation_map.supported_channels()
 
 
 def test_invalid_attached_noise_rejects_before_target_construction(model, monkeypatch):
@@ -262,7 +229,6 @@ def test_custom_global_gate_requires_and_executes_a_whole_arrangement_occurrence
 
     assert prepared.plan[0].control_bindings[0].engine_indices == (0, 1)
     assert result.get_statevector().shape == (4,)
-    assert result.metadata["solver"]["solver"] == "sesolve"
 
     narrow = Atom2LevelEmulator(
         model,
@@ -367,28 +333,28 @@ def test_lowered_measurement_uses_the_binary_digit_map(model):
     assert prepared.plan[0].reported_digit_maps == ((0, 1),)
 
 
-def test_propagator_accepts_coherent_or_empty_programs_and_rejects_measurement(model):
-    backend = _backend(model)
+def test_unitary_accepts_coherent_or_empty_programs_and_rejects_measurement(model):
+    backend = _backend(model, method="unitary")
     program = fq.Program(2)
     program.add(_pulse(amplitude=np.pi / 3))
 
-    first = backend.propagator(program)
-    second = backend.propagator(program)
+    first = backend.run(program).result().get_unitary()
+    second = backend.run(program).result().get_unitary()
     assert first.shape == (4, 4)
     assert first == pytest.approx(second)
     first[0, 0] = 99
     assert second[0, 0] != 99
-    assert backend.propagator(fq.Program(2)) == pytest.approx(np.eye(4))
+    assert backend.run(fq.Program(2)).result().get_unitary() == pytest.approx(np.eye(4))
 
     measured = fq.Program(2, 1)
     measured.measure(0, 0)
-    with pytest.raises(BackendValidationError, match="propagator.*measurement"):
-        backend.propagator(measured)
+    with pytest.raises(BackendValidationError, match="unitary.*measurement"):
+        backend.run(measured)
 
 
-def test_run_and_propagator_expose_no_solver_mode_keyword(model):
+def test_run_exposes_no_solver_mode_keyword(model):
     backend = _backend(model)
     assert "solver" not in inspect.signature(backend.run).parameters
-    assert "solver" not in inspect.signature(backend.propagator).parameters
+    assert not hasattr(backend, "propagator")
     with pytest.raises(TypeError):
         backend.run(fq.Program(2), solver="sesolve")

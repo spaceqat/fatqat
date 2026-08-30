@@ -23,34 +23,38 @@ from .._core.target import (
 from .model import TransmonModel
 
 _FAMILY = "sc.transmon"
+_LOCAL_DIMENSION = 3
 
 
 class _TransmonTarget:
     """Bind one immutable transmon model to claims and topology lookups."""
 
-    local_dimension = 3
+    local_dimension = _LOCAL_DIMENSION
 
     def __init__(self, model: TransmonModel) -> None:
         self.model = model
         self.device_labels = model.subsystem_ids
-        self.hilbert_dimension = 3 ** len(model.subsystems)
+        self.hilbert_dimension = self.local_dimension ** len(self.device_labels)
+        self._subsystems = MappingProxyType(
+            {subsystem.id: subsystem for subsystem in model._subsystems}
+        )
         self._subsystem_ordinals = MappingProxyType(
             {label: ordinal for ordinal, label in enumerate(self.device_labels)}
         )
         self._coupling_ordinals = MappingProxyType(
             {
                 frozenset(coupling.subsystem_ids): ordinal
-                for ordinal, coupling in enumerate(model.couplings)
+                for ordinal, coupling in enumerate(model._couplings)
             }
         )
         owner = object()
         self._subsystem_claims = tuple(
             _TargetClaim(owner, "subsystem", ordinal)
-            for ordinal in range(len(model.subsystems))
+            for ordinal in range(len(self.device_labels))
         )
         self._coupling_claims = tuple(
             _TargetClaim(owner, "coupling", ordinal)
-            for ordinal in range(len(model.couplings))
+            for ordinal in range(len(model._couplings))
         )
 
     def bind_control(self, reference: ControlChannel) -> _ControlBinding:

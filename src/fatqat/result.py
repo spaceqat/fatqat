@@ -342,8 +342,9 @@ class Result:
         Returns:
             A ``(D, D)`` array, where ``D`` is the product of the subsystem
             dimensions. Column ``j`` is the state the program prepares from
-            basis state ``|j>``. Column 0 therefore matches a statevector run
-            of the same program from the default all-zero state.
+            basis state ``|j>``. Column 0 matches a default-state statevector
+            run only when that backend uses the same terminal-frame convention
+            for states and operators.
 
         Raises:
             ResultFieldUnavailableError: If a unitary was not produced.

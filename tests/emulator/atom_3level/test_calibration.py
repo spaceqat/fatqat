@@ -1,7 +1,6 @@
 """Three-level atom portable-calibration value tests."""
 
 from copy import deepcopy
-from dataclasses import fields
 from importlib import resources
 import inspect
 import json
@@ -9,10 +8,8 @@ from math import inf, nan, pi
 
 import pytest
 
-from fatqat.emulator._core.model_document import CalibrationIdentity, FormatIdentity
 from fatqat.emulator.atom_3level.calibration import (
     Atom3LevelCalibration,
-    _PARSERS,
     default_atom_3level_calibration,
 )
 from fatqat.errors import BackendValidationError
@@ -26,14 +23,15 @@ def test_calibration_is_direct_frozen_slotted_semantic_value(
     atom_3level_calibration_document["recipes"]["cz"]["phase_offset"] = 99
     assert tuple(inspect.signature(Atom3LevelCalibration).parameters) == ("document",)
     assert value == Atom3LevelCalibration(pristine)
-    assert value.format == FormatIdentity("atom.rb87_rydberg_3level_fixed_pulse", 1)
-    assert value.identity == CalibrationIdentity("rb87_53s_lukin_2023_v1", "2026-08-05")
+    changed_identity = deepcopy(pristine)
+    changed_identity["calibration"]["revision"] = "different"
+    assert value != Atom3LevelCalibration(changed_identity)
+    assert not hasattr(value, "format")
+    assert not hasattr(value, "identity")
     assert value.phase_offset_rad == -0.7318
     assert value.cz_duration_us == pytest.approx(2 * pi * 1.215 / 28.902652413026097)
     with pytest.raises(TypeError):
         hash(value)
-    with pytest.raises(AttributeError):
-        value.identity = object()
     for removed in ("_normalized" + "_recipes", "registry", "parser"):
         assert not hasattr(value, removed)
 
@@ -120,16 +118,3 @@ def test_default_calibration_is_fresh_and_loaded_from_package_resource():
     second = default_atom_3level_calibration()
     assert first is not second
     assert first == second == Atom3LevelCalibration(document)
-
-
-def test_calibration_uses_one_immutable_exact_format_table():
-    assert tuple(_PARSERS) == (
-        FormatIdentity("atom.rb87_rydberg_3level_fixed_pulse", 1),
-    )
-    assert not next(
-        field for field in fields(Atom3LevelCalibration) if field.name == "format"
-    ).compare
-    with pytest.raises(TypeError):
-        _PARSERS[FormatIdentity("other", 1)] = object()
-    with pytest.raises(TypeError):
-        del _PARSERS[FormatIdentity("atom.rb87_rydberg_3level_fixed_pulse", 1)]

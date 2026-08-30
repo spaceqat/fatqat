@@ -76,10 +76,10 @@ integrates a three-level physical model:
 ... )
 >>> emulator = fq.emulator.TransmonEmulator(model)
 >>> physical_result = emulator.run(program, shots=0).result()
->>> physical_state = physical_result.get_density_matrix()
+>>> physical_state = physical_result.get_statevector()
 >>> physical_state.shape
-(9, 9)
->>> round(float(np.trace(physical_state).real), 12)
+(9,)
+>>> round(float(np.linalg.norm(physical_state)), 12)
 1.0
 ```
 

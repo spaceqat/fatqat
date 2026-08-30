@@ -14,10 +14,9 @@ class Channel:
     """Base class for backend-independent quantum noise.
 
     A channel stores parameters such as probabilities, rates, and times. A
-    simulator resolves its exact type through a
-    `ChannelImplementationMap`; an emulator uses the separate
-    `LindbladImplementationMap` to obtain local Lindblad operators. Registering
-    a rule for a base class does not implement its subclasses.
+    simulator resolves its exact type through a `ChannelImplementationMap`;
+    pulse emulators use family-owned Lindblad realizations. Registering a rule
+    for a base class does not implement its subclasses.
 
     Set ``num_subsystems`` to a positive ``int`` other than ``bool`` when every
     instance acts on a fixed number of subsystems. Leave it as ``None`` to use

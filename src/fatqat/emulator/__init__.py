@@ -6,27 +6,25 @@
 `fatqat.operations.PulseOperation` values carry direct controls created from a
 model's selectors.
 
+The ``method`` constructor argument selects the mathematical representation
+and corresponding `fatqat.Result` accessor. Pulse emulators support
+``"statevector"`` (the default), ``"density_matrix"``, and ``"unitary"``;
+``"SV"`` and ``"DM"`` are accepted aliases.
+
 A gate-capable emulator uses its packaged gate implementation map when none is
 supplied::
 
     model = TransmonModel.from_document(model_document)
-    result = TransmonEmulator(model).run(program).result()
+    result = TransmonEmulator(model, method="statevector").run(program).result()
 
 Use calibration documents with the standard map builders to customize gate
 realizations. `PulseDefinition` and `PulseImplementationMap` support custom
-gate rules. Every emulator accepts replacement gate maps and
-`fatqat.noise.LindbladImplementationMap` values, though built-in gate coverage
-depends on the model family.
+gate rules. Continuous-noise realizations are selected by the emulator family.
 """
 
 from __future__ import annotations
 
 from .atom_arrangement import AtomArrangement
-from ._core.model_document import (
-    CalibrationIdentity,
-    FormatIdentity,
-    ModelIdentity,
-)
 from ._model_catalog import available_model_documents, load_model_document
 from .atom_2level import (
     Atom2LevelEmulator,
@@ -76,9 +74,6 @@ __all__ = [
     "default_atom_3level_gate_implementation_map",
     "Atom2LevelModel",
     "AtomArrangement",
-    "FormatIdentity",
-    "ModelIdentity",
-    "CalibrationIdentity",
     "available_model_documents",
     "load_model_document",
 ]

@@ -1,7 +1,6 @@
 """Pulse backend shell contracts before physical execution is wired."""
 
 from dataclasses import fields
-import inspect
 
 import numpy as np
 import pytest
@@ -29,30 +28,13 @@ def make_backend_fixture(model, calibration):
     """Build a backend on the shared model with an optional noise model."""
     del calibration
 
-    def build(noise=None):
-        return TransmonEmulator(model, noise=noise)
+    def build(noise=None, *, method="density_matrix"):
+        return TransmonEmulator(model, method=method, noise=noise)
 
     return build
 
 
-def test_constructor_signature_map_type_and_model_ownership_are_exact(model):
-    parameters = inspect.signature(TransmonEmulator).parameters
-    assert tuple(parameters) == (
-        "model",
-        "noise",
-        "lindblad_implementation_map",
-        "gate_implementation_map",
-    )
-    assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert all(
-        parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
-        and parameters[name].default is None
-        for name in (
-            "noise",
-            "lindblad_implementation_map",
-            "gate_implementation_map",
-        )
-    )
+def test_constructor_map_type_and_model_ownership_are_exact(model):
     with pytest.raises(BackendValidationError, match="PulseImplementationMap"):
         TransmonEmulator(model, gate_implementation_map=object())
     backend = TransmonEmulator(model)
@@ -121,7 +103,6 @@ def test_run_directly_validates_config_and_executes_ideal_program(backend):
         program, result_config={"counts": False, "final_state": True}
     ).result()
     assert result.get_density_matrix().shape == (9, 9)
-    assert result.metadata["solver"]["frame_convention"].endswith("(Delta_i = 0)")
     assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
 
 
@@ -135,105 +116,59 @@ def test_result_metadata_keeps_common_runtime_facts(backend):
     }
 
 
-def test_propagator_applies_the_terminal_frame_by_default(backend):
+def test_unitary_result_applies_the_terminal_frame(backend):
     angle = 0.2
     program = fq.Program(1)
     program.add(ops.RZ(angle), 0)
 
-    dynamical = backend.propagator(program, apply_final_frame=False)
-    complete = backend.propagator(program)
+    unitary_backend = TransmonEmulator(backend.model, method="unitary")
+    complete = unitary_backend.run(program).result().get_unitary()
     expected_frame = np.diag(np.exp(1j * angle * np.arange(3)))
 
-    assert np.allclose(dynamical, np.eye(9))
     assert np.allclose(complete, np.kron(np.eye(3), expected_frame))
 
 
-def test_propagator_rejects_noncoherent_program_features_and_noise(
-    backend, make_backend
-):
+def test_unitary_rejects_noncoherent_program_features_and_noise(backend, make_backend):
+    unitary_backend = TransmonEmulator(backend.model, method="unitary")
     measured = fq.Program(1, 1)
     measured.measure(0, 0)
     with pytest.raises(BackendValidationError, match="measurement"):
-        backend.propagator(measured)
+        unitary_backend.run(measured)
 
     reset = fq.Program(1)
     reset.add(ops.Reset, 0)
     with pytest.raises(BackendValidationError, match="reset"):
-        backend.propagator(reset)
+        unitary_backend.run(reset)
 
     conditioned = fq.Program(1, 1)
     conditioned.add(ops.RX(0.2), 0, condition=(0, 1))
     with pytest.raises(BackendValidationError, match="conditioned"):
-        backend.propagator(conditioned)
+        unitary_backend.run(conditioned)
 
     noise = NoiseModel()
     noise.add(PhaseDamping(rate=0.001), targets="q0")
-    noisy_backend = make_backend(noise)
+    noisy_backend = make_backend(noise, method="unitary")
     driven = fq.Program(1)
     driven.add(ops.RX(0.2), 0)
     with pytest.raises(BackendValidationError, match="dissipative"):
-        noisy_backend.propagator(driven)
+        noisy_backend.run(driven)
 
 
-def test_propagator_allows_noise_when_frame_only_plan_has_zero_duration(
-    make_backend, monkeypatch
-):
+def test_unitary_ignores_inactive_noise_and_applies_the_terminal_frame(make_backend):
     noise = NoiseModel()
     noise.add(PhaseDamping(rate=0.001), targets="q0")
-    backend = make_backend(noise)
+    backend = make_backend(noise, method="unitary")
     program = fq.Program(1)
     program.add(ops.RZ(0.2), 0)
 
-    from fatqat.emulator.superconducting import qutip_adapter
-
-    def forbidden_dissipative_or_solver_work(*_args, **_kwargs):
-        pytest.fail("frame-only propagation constructed dynamics or invoked a solver")
-
-    monkeypatch.setattr(
-        qutip_adapter._TransmonQutipAdapter,
-        "_build_background_noise",
-        forbidden_dissipative_or_solver_work,
-    )
-    monkeypatch.setattr(qutip_adapter, "mesolve", forbidden_dissipative_or_solver_work)
-    monkeypatch.setattr(
-        qutip_adapter,
-        "qutip_propagator",
-        forbidden_dissipative_or_solver_work,
-    )
-
     expected = np.kron(np.eye(3), np.diag(np.exp(0.2j * np.arange(3))))
-    assert np.allclose(backend.propagator(program), expected)
+    assert np.allclose(backend.run(program).result().get_unitary(), expected)
 
 
-def test_propagator_validates_its_options_and_empty_program_is_identity(
-    backend, monkeypatch
-):
+def test_unitary_empty_program_is_full_model_identity(backend):
     empty = fq.Program(0)
-
-    from fatqat.emulator.superconducting import qutip_adapter
-
-    def fail_if_runner_is_built(*_args, **_kwargs):
-        pytest.fail("an empty propagator constructed a QuTiP runner")
-
-    monkeypatch.setattr(qutip_adapter, "_TransmonQutipAdapter", fail_if_runner_is_built)
-    assert np.allclose(backend.propagator(empty), np.eye(9))
-    with pytest.raises(BackendValidationError, match="apply_final_frame"):
-        backend.propagator(empty, apply_final_frame=1)
-    with pytest.raises(BackendValidationError, match="schedule_mode"):
-        backend.propagator(empty, schedule_mode="SIDEWAYS")
-
-
-@pytest.mark.parametrize(
-    "options",
-    ({"apply_final_frame": 1}, {"schedule_mode": "SIDEWAYS"}),
-)
-def test_propagator_validates_options_before_lowering(backend, monkeypatch, options):
-    def fail_if_lowered(_program):
-        pytest.fail("invalid propagator options reached lowering")
-
-    monkeypatch.setattr(backend, "_prepare_program", fail_if_lowered)
-    with pytest.raises(BackendValidationError):
-        backend.propagator(fq.Program(0), **options)
+    unitary_backend = TransmonEmulator(backend.model, method="unitary")
+    assert np.allclose(unitary_backend.run(empty).result().get_unitary(), np.eye(9))
 
 
 def test_final_state_measurement_constraint_and_reset_only_determinism_validate_before_execution(
@@ -310,7 +245,7 @@ def test_common_preparation_owns_target_and_lindblad_binding_once(model, monkeyp
     noise.add(PhaseDamping(rate=0.02), operation=ops.RX)
     noise.add(ThermalRelaxation(t1=100.0, t2=150.0), targets="q0")
     noise.add(ThermalRelaxation(t1=100.0, t2=150.0), targets="q1")
-    backend = TransmonEmulator(model, noise=noise)
+    backend = TransmonEmulator(model, method="density_matrix", noise=noise)
     program = fq.Program(1)
     program.add(ops.RX(0.3), 0)
     target_binding_calls = 0
@@ -355,7 +290,7 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
     model = TransmonModel.from_document(model_document)
     noise = NoiseModel()
     noise.add(PhaseDamping(rate=0.02), targets="q1")
-    backend = TransmonEmulator(model, noise=noise)
+    backend = TransmonEmulator(model, method="density_matrix", noise=noise)
     program = fq.Program(2, 1)
     program.add(ops.RX(np.pi), 0)
     program.measure(0, 0)
@@ -428,15 +363,11 @@ def test_private_execution_failures_are_sanitized_but_keep_the_original_cause(
     assert str(cause) == "private qutip solver detail"
 
 
-def test_unrealizable_envelope_is_rejected_identically_by_run_and_propagator(
-    model, calibration
-):
+def test_unrealizable_envelope_is_rejected_before_execution(model, calibration):
     """A complex detuning envelope is one user error with one message.
 
-    It used to surface only during solver binding, so `propagator()` raised a
-    precise `BackendValidationError` while `run()` returned an opaque failed
-    job. Preparation now asks the bound target to reject it before constructing
-    the `PulseBlock`, which is before either execution path diverges.
+    Preparation asks the bound target to reject this before constructing the
+    `PulseBlock`, so the validation error is raised directly by `run()`.
     """
 
     def complex_detuning_rx(operation, *, device_operands):
@@ -461,9 +392,8 @@ def test_unrealizable_envelope_is_rejected_identically_by_run_and_propagator(
     program = fq.Program(1)
     program.add(ops.RX(0.3), 0)
 
-    for call in (backend.run, backend.propagator):
-        with pytest.raises(BackendValidationError, match="detuning.*must be real"):
-            call(program)
+    with pytest.raises(BackendValidationError, match="detuning.*must be real"):
+        backend.run(program)
 
 
 def test_sc_model_is_read_only_and_retained_by_identity(model):
