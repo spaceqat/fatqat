@@ -121,12 +121,6 @@ class Atom3LevelCalibration:
     Raises:
         BackendValidationError: If the document has an unsupported format,
             missing or unknown keys, invalid units, or invalid recipe values.
-
-    Examples:
-        >>> import fatqat as fq
-        >>> calibration = fq.emulator.default_atom_3level_calibration()
-        >>> calibration.angular_frequency_unit
-        'rad/us'
     """
 
     _identity: _CalibrationIdentity = field(repr=False)

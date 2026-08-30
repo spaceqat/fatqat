@@ -39,7 +39,7 @@ model = fq.emulator.Atom2LevelModel.from_document(model_document)
 
 print("Model:", model_document["model"]["id"])
 print("Basis:", model_document["system"]["basis"])
-print("C6 unit:", model.c6_unit)
+print("C6 unit:", model_document["units"]["c6"])
 
 
 # %%
@@ -79,7 +79,7 @@ NUM_SITES = 10
 OMEGA_MAX = 2 * np.pi  # rad/us
 U = 2 * OMEGA_MAX  # nearest-pair Rydberg interaction, rad/us
 J_ZZ = U / 4
-C6 = model.c6_angular_per_us_um6
+C6 = model_document["parameters"]["c6"]
 SPACING = (C6 / U) ** (1 / 6)
 
 arrangement = fq.emulator.AtomArrangement.chain(

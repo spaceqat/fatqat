@@ -16,9 +16,9 @@ from fatqat.emulator._core.outcome import _PulseShotOutcome
 from fatqat.emulator._core.pulse import PhaseShift, PulseBlock
 from fatqat.emulator._core.target import _PreparedControlBinding
 from fatqat.emulator._core.scheduling import _ScheduledPulseRun
-from fatqat.emulator.atom_3level import Atom3LevelModel
-from fatqat.emulator.atom_3level.qutip_adapter import _Atom3LevelQutipAdapter
-from fatqat.emulator.atom_3level.target import _Atom3LevelTarget
+from fatqat.emulator._atom_3level import Atom3LevelModel
+from fatqat.emulator._atom_3level.qutip_adapter import _Atom3LevelQutipAdapter
+from fatqat.emulator._atom_3level.target import _Atom3LevelTarget
 from fatqat.errors import BackendValidationError
 from fatqat.emulator import SampledWaveform
 

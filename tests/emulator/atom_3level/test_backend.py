@@ -1,6 +1,8 @@
-"""Public three-level atom backend ownership and execution coverage."""
+"""Internal three-level atom backend ownership and execution coverage."""
 
 from copy import deepcopy
+import inspect
+from typing import get_type_hints
 import warnings
 
 import numpy as np
@@ -9,12 +11,18 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
+from fatqat.emulator._atom_3level import (
+    Atom3LevelEmulator,
+    Atom3LevelModel,
+    default_atom_3level_gate_implementation_map,
+)
 from fatqat.emulator._core.backend import _PulseBackend
 from fatqat.errors import (
     BackendExecutionError,
     BackendValidationError,
     UnsupportedOperationError,
 )
+from fatqat.job import Job
 from fatqat.noise import (
     AmplitudeDamping,
     Depolarizing,
@@ -36,7 +44,7 @@ def _backend(
     spacing=2.0,
     method="density_matrix",
 ):
-    return fq.emulator.Atom3LevelEmulator(
+    return Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(rows, cols, spacing),
         method=method,
@@ -44,15 +52,12 @@ def _backend(
     )
 
 
-def test_atom_3level_public_identity_and_private_ownership(
+def test_atom_3level_private_module_identity_and_backend_ownership(
     atom_3level_model, atom_3level_calibration
 ):
-    assert (
-        fq.emulator.Atom3LevelEmulator.__module__
-        == "fatqat.emulator.atom_3level.backend"
-    )
+    assert Atom3LevelEmulator.__module__ == "fatqat.emulator._atom_3level.backend"
     arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
-    backend = fq.emulator.Atom3LevelEmulator(atom_3level_model, arrangement=arrangement)
+    backend = Atom3LevelEmulator(atom_3level_model, arrangement=arrangement)
     assert backend.model is atom_3level_model
     assert backend.arrangement is arrangement
     assert type(backend).__bases__ == (_PulseBackend,)
@@ -74,13 +79,70 @@ def test_atom_3level_public_identity_and_private_ownership(
         "adapter",
     ):
         with pytest.raises(TypeError, match=keyword):
-            fq.emulator.Atom3LevelEmulator(
+            Atom3LevelEmulator(
                 atom_3level_model,
                 arrangement=arrangement,
                 **{keyword: object()},
             )
     assert not hasattr(fq.emulator, "_prepare_atom_3level_runtime")
     assert not hasattr(fq.emulator, "_Atom3LevelQutipAdapter")
+
+
+def test_atom_3level_constructor_has_the_internal_family_contract():
+    parameters = inspect.signature(Atom3LevelEmulator).parameters
+    assert tuple(parameters) == (
+        "model",
+        "arrangement",
+        "method",
+        "noise",
+        "gate_implementation_map",
+    )
+    assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+    assert parameters["arrangement"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["arrangement"].default is inspect.Parameter.empty
+    assert parameters["method"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["method"].default == "statevector"
+    assert parameters["noise"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["noise"].default is None
+    assert parameters["gate_implementation_map"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["gate_implementation_map"].default is None
+    assert issubclass(Atom3LevelEmulator, _PulseBackend)
+
+
+def test_atom_3level_execution_methods_keep_the_shared_forwarding_contract():
+    run = inspect.signature(Atom3LevelEmulator.run).parameters
+    assert tuple(run) == (
+        "self",
+        "program",
+        "shots",
+        "resource_layout",
+        "simulation_config",
+        "result_config",
+    )
+    assert run["program"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+    assert all(
+        run[name].kind is inspect.Parameter.KEYWORD_ONLY
+        for name in ("shots", "resource_layout", "simulation_config", "result_config")
+    )
+    assert run["shots"].default == 1024
+    assert run["resource_layout"].default is None
+    assert run["simulation_config"].default is None
+    assert run["result_config"].default is None
+    assert get_type_hints(Atom3LevelEmulator.run)["return"] is Job
+    assert not hasattr(Atom3LevelEmulator, "propagator")
+    assert not hasattr(Atom3LevelEmulator, "apply_final_frame")
+
+
+def test_atom_3level_constructor_rejects_removed_lindblad_keyword(
+    atom_3level_model,
+):
+    arrangement = fq.emulator.AtomArrangement.chain(2, spacing=6.0)
+    with pytest.raises(TypeError, match="lindblad_implementation_map"):
+        Atom3LevelEmulator(
+            atom_3level_model,
+            arrangement=arrangement,
+            lindblad_implementation_map=object(),
+        )
 
 
 def test_atom_3level_backend_lowers_model_factory_direct_control(
@@ -107,7 +169,7 @@ def test_atom_3level_backend_lowers_model_factory_direct_control(
 def test_atom3_coherent_statevector_is_flat_and_full_physical(
     atom_3level_model,
 ):
-    backend = fq.emulator.Atom3LevelEmulator(
+    backend = Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
         method="statevector",
@@ -164,12 +226,12 @@ def test_atom_3level_default_map_does_not_bind_calibration_to_model_identity(
 ):
     same_identity = deepcopy(atom_3level_model_document)
     same_identity["parameters"]["c6"] *= -1
-    declared_same = fq.emulator.Atom3LevelModel.from_document(same_identity)
+    declared_same = Atom3LevelModel.from_document(same_identity)
     assert _backend(declared_same, atom_3level_calibration).model is declared_same
 
     changed_identity = deepcopy(atom_3level_model_document)
     changed_identity["model"]["revision"] = "new-revision"
-    changed_model = fq.emulator.Atom3LevelModel.from_document(changed_identity)
+    changed_model = Atom3LevelModel.from_document(changed_identity)
     assert _backend(changed_model, atom_3level_calibration).model is changed_model
 
 
@@ -178,15 +240,15 @@ def test_atom_3level_supplied_map_is_type_checked_copied_and_empty_is_explicit(
 ):
     arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     with pytest.raises(BackendValidationError, match="PulseImplementationMap"):
-        fq.emulator.Atom3LevelEmulator(
+        Atom3LevelEmulator(
             atom_3level_model,
             arrangement=arrangement,
             gate_implementation_map=object(),
         )
-    supplied = fq.emulator.atom_3level.default_atom_3level_gate_implementation_map(
+    supplied = default_atom_3level_gate_implementation_map(
         model=atom_3level_model, calibration=atom_3level_calibration
     )
-    backend = fq.emulator.Atom3LevelEmulator(
+    backend = Atom3LevelEmulator(
         atom_3level_model,
         arrangement=arrangement,
         method="unitary",
@@ -199,7 +261,7 @@ def test_atom_3level_supplied_map_is_type_checked_copied_and_empty_is_explicit(
     assert backend.run(program).result().get_unitary().shape == (9, 9)
 
     empty = fq.emulator.PulseImplementationMap()
-    direct_only = fq.emulator.Atom3LevelEmulator(
+    direct_only = Atom3LevelEmulator(
         atom_3level_model,
         arrangement=arrangement,
         method="unitary",
@@ -214,20 +276,20 @@ def test_compiled_map_transfers_while_target_c6_and_geometry_control_evolution(
     atom_3level_calibration,
     atom_3level_model_document,
 ):
-    compiled = fq.emulator.atom_3level.default_atom_3level_gate_implementation_map(
+    compiled = default_atom_3level_gate_implementation_map(
         model=atom_3level_model, calibration=atom_3level_calibration
     )
     changed_document = deepcopy(atom_3level_model_document)
     changed_document["model"]["revision"] = "finer-target"
     changed_document["parameters"]["c6"] *= -1
-    changed_model = fq.emulator.Atom3LevelModel.from_document(changed_document)
-    source_target = fq.emulator.Atom3LevelEmulator(
+    changed_model = Atom3LevelModel.from_document(changed_document)
+    source_target = Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
         method="unitary",
         gate_implementation_map=compiled,
     )
-    changed_target = fq.emulator.Atom3LevelEmulator(
+    changed_target = Atom3LevelEmulator(
         changed_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 3.0),
         method="unitary",
@@ -266,7 +328,7 @@ def test_custom_map_uses_only_public_atom_structural_authoring_values(
         )
 
     implementation_map.add(ops.X, custom_x)
-    backend = fq.emulator.Atom3LevelEmulator(
+    backend = Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 1, 2.0),
         gate_implementation_map=implementation_map,
@@ -324,7 +386,7 @@ def _readout(matrix):
 
 
 def _capture_adapter_bindings(monkeypatch):
-    from fatqat.emulator.atom_3level import qutip_adapter as atom_3level_qutip_adapter
+    from fatqat.emulator._atom_3level import qutip_adapter as atom_3level_qutip_adapter
 
     captured = []
     actual = atom_3level_qutip_adapter._Atom3LevelQutipAdapter
@@ -634,7 +696,7 @@ def test_weak_blockade_neither_rejects_nor_emits_the_removed_advisory(
 
     negative_document = deepcopy(atom_3level_model_document)
     negative_document["parameters"]["c6"] = -atom_3level_model.c6_angular_per_us_um6
-    negative_model = fq.emulator.Atom3LevelModel.from_document(negative_document)
+    negative_model = Atom3LevelModel.from_document(negative_document)
     negative = _backend(negative_model, atom_3level_calibration, spacing=20.0)
     _backend(
         negative_model,

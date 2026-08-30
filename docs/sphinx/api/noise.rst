@@ -104,12 +104,11 @@ time:
        targets="q0",
    )
 
-The reference transmon model uses nanoseconds, while the neutral-atom models
-use microseconds. Check the chosen model's ``time_unit`` instead of inferring a
+The reference transmon model uses nanoseconds, while the neutral-atom model
+uses microseconds. Check the chosen model's ``time_unit`` instead of inferring a
 unit from the size of a value: see
-:attr:`~fatqat.emulator.superconducting.TransmonModel.time_unit`,
-:attr:`~fatqat.emulator.Atom2LevelModel.time_unit`, and
-:attr:`~fatqat.emulator.Atom3LevelModel.time_unit`.
+:attr:`~fatqat.emulator.superconducting.TransmonModel.time_unit` and
+:attr:`~fatqat.emulator.Atom2LevelModel.time_unit`.
 
 API pages
 ---------

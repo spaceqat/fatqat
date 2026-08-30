@@ -17,9 +17,6 @@ import fatqat as fq
 from fatqat.emulator import (
     Atom2LevelEmulator,
     Atom2LevelModel,
-    Atom3LevelEmulator,
-    Atom3LevelCalibration,
-    Atom3LevelModel,
     PhaseShift,
     PhaseSwap,
     PulseControl,
@@ -29,8 +26,6 @@ from fatqat.emulator import (
     TransmonEmulator,
     TransmonCalibration,
     TransmonModel,
-    default_atom_3level_calibration,
-    default_atom_3level_gate_implementation_map,
     default_transmon_calibration,
     default_transmon_gate_implementation_map,
 )
@@ -60,11 +55,10 @@ def test_sc_pulse_factories_are_public_without_exposing_execution_types():
 
 
 def test_family_and_aggregate_exports_are_exact():
-    from fatqat.emulator import atom_2level, atom_3level, superconducting
+    from fatqat.emulator import atom_2level, superconducting
 
     assert tuple(fq.emulator.__all__) == (
         "TransmonEmulator",
-        "Atom3LevelEmulator",
         "Atom2LevelEmulator",
         "TransmonModel",
         "TransmonCalibration",
@@ -77,10 +71,6 @@ def test_family_and_aggregate_exports_are_exact():
         "PulseImplementationMap",
         "default_transmon_gate_implementation_map",
         "default_transmon_calibration",
-        "Atom3LevelModel",
-        "Atom3LevelCalibration",
-        "default_atom_3level_calibration",
-        "default_atom_3level_gate_implementation_map",
         "Atom2LevelModel",
         "AtomArrangement",
         "available_model_documents",
@@ -89,13 +79,6 @@ def test_family_and_aggregate_exports_are_exact():
     assert tuple(atom_2level.__all__) == (
         "Atom2LevelEmulator",
         "Atom2LevelModel",
-    )
-    assert tuple(atom_3level.__all__) == (
-        "Atom3LevelEmulator",
-        "Atom3LevelCalibration",
-        "Atom3LevelModel",
-        "default_atom_3level_calibration",
-        "default_atom_3level_gate_implementation_map",
     )
     assert tuple(superconducting.__all__) == (
         "TransmonEmulator",
@@ -201,90 +184,26 @@ def test_removed_construction_surfaces_have_no_compatibility_aliases():
         assert name not in fq.emulator.__all__
 
 
-def test_atom_3level_exports_data_but_not_private_authoring_or_execution_seams():
-    assert fq.emulator.Atom3LevelEmulator is Atom3LevelEmulator
-    assert fq.emulator.Atom3LevelModel is Atom3LevelModel
-    assert fq.emulator.Atom3LevelCalibration is Atom3LevelCalibration
-    assert not hasattr(fq.emulator, "Atom3Level" + "Frame" + "Ref")
-    assert (
-        fq.emulator.default_atom_3level_calibration is default_atom_3level_calibration
+def test_three_level_atom_family_is_absent_from_the_public_surface():
+    atom3_names = (
+        "Atom3LevelEmulator",
+        "Atom3LevelModel",
+        "Atom3LevelCalibration",
+        "default_atom_3level_calibration",
+        "default_atom_3level_gate_implementation_map",
     )
-    assert (
-        fq.emulator.default_atom_3level_gate_implementation_map
-        is default_atom_3level_gate_implementation_map
-    )
-    assert Atom3LevelEmulator.__module__ == "fatqat.emulator.atom_3level.backend"
-    assert Atom3LevelModel.__module__ == "fatqat.emulator.atom_3level.model"
-    assert Atom3LevelCalibration.__module__ == "fatqat.emulator.atom_3level.calibration"
-    for private_name in (
-        "_Prepared" + "Atom3LevelRuntime",
-        "_Atom3LevelQutipAdapter",
-        "_Atom3LevelResourceRef",
-        "_build_atom_3level_gate_implementation_map",
-    ):
-        assert not hasattr(fq.emulator, private_name)
-
-
-def test_removed_three_level_atom_surface_has_no_compatibility_aliases():
-    from fatqat.emulator import atom_3level
-
-    removed_names = (
+    legacy_names = (
         "Atom" + "Emulator",
         "Digital" + "Atom" + "Model",
         "Digital" + "Atom" + "Calibration",
         "Atom3Level" + "Frame" + "Ref",
     )
-    for owner in (fq.emulator, atom_3level):
-        for name in removed_names:
-            assert not hasattr(owner, name)
-            assert name not in owner.__all__
+    for name in (*atom3_names, *legacy_names):
+        assert not hasattr(fq.emulator, name)
+        assert name not in fq.emulator.__all__
+    assert not hasattr(fq.emulator, "atom_3level")
+    assert importlib.util.find_spec("fatqat.emulator.atom_3level") is None
     assert importlib.util.find_spec("fatqat.emulator." + "atom") is None
-
-
-def test_atom_3level_constructor_has_final_portable_keywords():
-    parameters = inspect.signature(Atom3LevelEmulator).parameters
-    assert tuple(parameters) == (
-        "model",
-        "arrangement",
-        "method",
-        "noise",
-        "gate_implementation_map",
-    )
-    assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert parameters["arrangement"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert parameters["arrangement"].default is inspect.Parameter.empty
-    assert parameters["method"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert parameters["method"].default == "statevector"
-    assert parameters["noise"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert parameters["noise"].default is None
-    assert parameters["gate_implementation_map"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert parameters["gate_implementation_map"].default is None
-    assert issubclass(Atom3LevelEmulator, _PulseBackend)
-
-
-def test_atom_3level_execution_methods_have_the_exact_public_forwarding_signatures():
-    run = inspect.signature(Atom3LevelEmulator.run).parameters
-    assert tuple(run) == (
-        "self",
-        "program",
-        "shots",
-        "resource_layout",
-        "simulation_config",
-        "result_config",
-    )
-    assert run["program"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert all(
-        run[name].kind is inspect.Parameter.KEYWORD_ONLY
-        for name in ("shots", "resource_layout", "simulation_config", "result_config")
-    )
-    assert run["shots"].default == 1024
-    assert run["resource_layout"].default is None
-    assert run["simulation_config"].default is None
-    assert run["result_config"].default is None
-    assert get_type_hints(Atom3LevelEmulator.run)["return"] is Job
-
-    assert not hasattr(Atom3LevelEmulator, "propagator")
-    assert not hasattr(Atom3LevelEmulator, "apply_final_frame")
 
 
 def test_atom_2level_family_exports_final_public_values_only():
@@ -349,7 +268,7 @@ def test_atom_2level_constructor_has_final_public_keywords():
     assert issubclass(Atom2LevelEmulator, _PulseBackend)
 
 
-def test_family_constructors_reject_removed_lindblad_keyword(model, atom_3level_model):
+def test_public_family_constructors_reject_removed_lindblad_keyword(model):
     atom_2level_model = Atom2LevelModel.from_document(
         fq.emulator.load_model_document("atom2level.reference")
     )
@@ -358,11 +277,6 @@ def test_family_constructors_reject_removed_lindblad_keyword(model, atom_3level_
         lambda: TransmonEmulator(model, lindblad_implementation_map=object()),
         lambda: Atom2LevelEmulator(
             atom_2level_model,
-            arrangement=arrangement,
-            lindblad_implementation_map=object(),
-        ),
-        lambda: Atom3LevelEmulator(
-            atom_3level_model,
             arrangement=arrangement,
             lindblad_implementation_map=object(),
         ),
@@ -423,9 +337,7 @@ def test_pulse_authoring_values_are_public_and_identical_to_private_definitions(
     assert definition["post_actions"].default == ()
 
 
-def test_models_author_structural_controls_and_frames_without_public_handles(
-    model, atom_3level_model
-):
+def test_models_author_structural_controls_and_frames_without_public_handles(model):
     document_path = (
         Path(__file__).parents[1]
         / "atom_2level"
@@ -438,19 +350,15 @@ def test_models_author_structural_controls_and_frames_without_public_handles(
     controls = (
         model.control.drive("q0"),
         model.control.exchange("q0", "q1"),
-        atom_3level_model.control.raman(0),
-        atom_3level_model.control.rydberg(0),
         atom_2level_model.control.drive(),
         atom_2level_model.control.detuning(),
     )
     assert all(isinstance(control, ControlChannel) for control in controls)
-    for frame in (model.frame("q0"), atom_3level_model.frame(0)):
-        assert PhaseShift(frame, 0.1).frame is frame
+    frame = model.frame("q0")
+    assert PhaseShift(frame, 0.1).frame is frame
 
 
-def test_model_control_discovery_is_minimal_immutable_and_family_owned(
-    model, atom_3level_model
-):
+def test_model_control_discovery_is_minimal_immutable_and_family_owned(model):
     atom_2level_model = Atom2LevelModel.from_document(
         fq.emulator.load_model_document("atom2level.reference")
     )
@@ -460,13 +368,6 @@ def test_model_control_discovery_is_minimal_immutable_and_family_owned(
             {
                 "drive": ("global", (), "complex", "rad/us"),
                 "detuning": ("global", (), "real", "rad/us"),
-            },
-        ),
-        (
-            atom_3level_model,
-            {
-                "raman": ("local", ("site",), "complex", "rad/us"),
-                "rydberg": ("local", ("site",), "complex", "rad/us"),
             },
         ),
         (
@@ -510,7 +411,7 @@ def test_model_control_discovery_is_minimal_immutable_and_family_owned(
 
 
 def test_concrete_target_owned_claim_classes_are_not_exported():
-    from fatqat.emulator import atom_3level, superconducting
+    from fatqat.emulator import superconducting
 
     for owner in (fq.emulator, superconducting):
         for name in (
@@ -521,5 +422,3 @@ def test_concrete_target_owned_claim_classes_are_not_exported():
         ):
             assert not hasattr(owner, name)
             assert name not in owner.__all__
-    assert not hasattr(fq.emulator, "_Atom3LevelResourceRef")
-    assert not hasattr(atom_3level, "_Atom3LevelResourceRef")

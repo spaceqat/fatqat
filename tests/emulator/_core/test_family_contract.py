@@ -7,6 +7,7 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
+from fatqat.emulator._atom_3level import Atom3LevelEmulator
 from fatqat.emulator._core.engine import PulseEngine
 from fatqat.emulator._core.outcome import _PulseShotOutcome
 from fatqat.errors import BackendExecutionError, BackendValidationError
@@ -18,7 +19,7 @@ def family_backend_fixture(request, model, atom_3level_model):
     """Build one backend with the smallest valid two-resource program shape."""
     if request.param == "superconducting":
         return fq.emulator.TransmonEmulator(model)
-    return fq.emulator.Atom3LevelEmulator(
+    return Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
     )

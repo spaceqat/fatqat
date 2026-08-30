@@ -106,10 +106,6 @@ are unsupported. Each emulator family owns its continuous-noise realizations.
        :class:`~fatqat.noise.ThermalRelaxation`.
      - Operation-scoped continuous noise is unsupported. Readout confusion is
        built in and ``2 x 2`` only.
-   * - :class:`~fatqat.emulator.Atom3LevelEmulator`
-     - None. Continuous noise declarations are unsupported.
-     - Readout confusion is built in and ``2 x 2`` only, even though the
-       physical model has three levels.
 
 Each supported background declaration selects one site. Transmon
 operation-scoped noise is active only during matching pulse windows. Readout
@@ -118,10 +114,9 @@ multi-operand readout is not supported.
 
 Rates use the inverse of the model's time unit. ``t_phi``, ``t1``, and ``t2``
 use that unit directly. The reference
-:attr:`~fatqat.emulator.superconducting.TransmonModel.time_unit` is nanoseconds;
-:attr:`~fatqat.emulator.Atom2LevelModel.time_unit` and
-:attr:`~fatqat.emulator.Atom3LevelModel.time_unit` are microseconds. Read the
-chosen model's ``time_unit`` rather than guessing from a value's magnitude.
+:attr:`~fatqat.emulator.superconducting.TransmonModel.time_unit` is nanoseconds,
+while :attr:`~fatqat.emulator.Atom2LevelModel.time_unit` is microseconds. Read
+the chosen model's ``time_unit`` rather than guessing from a value's magnitude.
 
 Unsupported continuous declarations cannot be enabled through emulator
 construction. Use ``NoiseModel`` for the declarations listed above and call

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+from fatqat.emulator._atom_3level import Atom3LevelEmulator
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     AmplitudeDamping,
@@ -22,7 +23,7 @@ def _noise(channel):
 
 
 def _backend(model, *, noise=None):
-    return fq.emulator.Atom3LevelEmulator(
+    return Atom3LevelEmulator(
         model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 1, 2.0),
         noise=noise,
@@ -59,7 +60,7 @@ def test_invalid_attached_noise_is_rejected_before_target_construction(
         raise AssertionError("target was built before noise validation")
 
     monkeypatch.setattr(
-        "fatqat.emulator.atom_3level.backend._Atom3LevelTarget",
+        "fatqat.emulator._atom_3level.backend._Atom3LevelTarget",
         target_must_not_be_built,
     )
     with pytest.raises(BackendValidationError, match="PhaseDamping"):

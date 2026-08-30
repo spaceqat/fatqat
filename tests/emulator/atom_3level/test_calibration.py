@@ -8,7 +8,7 @@ from math import inf, nan, pi
 
 import pytest
 
-from fatqat.emulator.atom_3level.calibration import (
+from fatqat.emulator._atom_3level.calibration import (
     Atom3LevelCalibration,
     default_atom_3level_calibration,
 )
@@ -110,7 +110,7 @@ def test_recipe_queries_preserve_public_values(atom_3level_calibration_document)
 
 def test_default_calibration_is_fresh_and_loaded_from_package_resource():
     document = json.loads(
-        resources.files("fatqat.emulator.atom_3level")
+        resources.files("fatqat.emulator._atom_3level")
         .joinpath("data/default_calibration.json")
         .read_text(encoding="utf-8")
     )

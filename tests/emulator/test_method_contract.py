@@ -1,15 +1,16 @@
-"""Shared public representation contract for pulse emulators."""
+"""Shared representation contract for pulse emulators."""
 
 import numpy as np
 import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
+from fatqat.emulator._atom_3level import Atom3LevelEmulator
 from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
 from fatqat.noise import AmplitudeDamping, NoiseModel
 
 
-def _family_case(name, method):
+def _family_case(name, method, atom_3level_model):
     if name == "transmon":
         model = fq.emulator.TransmonModel.from_document(
             fq.emulator.load_model_document("transmon.reference")
@@ -18,15 +19,12 @@ def _family_case(name, method):
         program.add(ops.RZ(0.2), 0)
         return fq.emulator.TransmonEmulator(model, method=method), program, 9
     if name == "atom3":
-        model = fq.emulator.Atom3LevelModel.from_document(
-            fq.emulator.load_model_document("atom3level.reference")
-        )
         arrangement = fq.emulator.AtomArrangement.chain(2, spacing=6.0)
         program = fq.Program(2)
         program.add(ops.RZ(0.2), 0)
         return (
-            fq.emulator.Atom3LevelEmulator(
-                model, arrangement=arrangement, method=method
+            Atom3LevelEmulator(
+                atom_3level_model, arrangement=arrangement, method=method
             ),
             program,
             9,
@@ -63,8 +61,10 @@ def _family_case(name, method):
         ("unitary", "unitary", lambda dimension: (dimension,) * 2),
     ),
 )
-def test_method_selects_one_full_physical_artifact(family, method, field, shape):
-    backend, program, dimension = _family_case(family, method)
+def test_method_selects_one_full_physical_artifact(
+    family, method, field, shape, atom_3level_model
+):
+    backend, program, dimension = _family_case(family, method, atom_3level_model)
 
     result = backend.run(program).result()
 

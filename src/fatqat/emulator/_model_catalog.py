@@ -9,7 +9,6 @@ from . import _model_documents
 
 _DOCUMENT_RESOURCES = {
     "atom2level.reference": "atom2level_reference.json",
-    "atom3level.reference": "atom3level_reference.json",
     "transmon.reference": "transmon_reference.json",
 }
 _DOCUMENT_NAMES = tuple(_DOCUMENT_RESOURCES)

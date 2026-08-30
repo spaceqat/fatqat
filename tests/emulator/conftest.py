@@ -23,7 +23,7 @@ from fatqat.emulator.superconducting import (
     TransmonCalibration,
     TransmonModel,
 )
-from fatqat.emulator.atom_3level import Atom3LevelCalibration, Atom3LevelModel
+from fatqat.emulator._atom_3level import Atom3LevelCalibration, Atom3LevelModel
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _ATOM_3LEVEL_FIXTURES = Path(__file__).parent / "atom_3level" / "fixtures"
