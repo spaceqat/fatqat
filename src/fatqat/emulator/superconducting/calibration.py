@@ -224,7 +224,7 @@ class TransmonCalibration:
     _rx_ry_duration_ns: float = field(repr=False)
     _rx_ry_drag_coefficient: float = field(repr=False)
     _iswap_duration_ns: float = field(repr=False)
-    _cz_edges: tuple[_CzEdge, ...] = field(repr=False)
+    _cz_by_edge: Mapping[tuple[str, str], _CzRecipe] = field(repr=False)
 
     __hash__ = None
     recipe_time_unit: ClassVar[str] = _UNITS["time"]
@@ -238,14 +238,17 @@ class TransmonCalibration:
         object.__setattr__(self, "_rx_ry_duration_ns", rx_duration)
         object.__setattr__(self, "_rx_ry_drag_coefficient", drag)
         object.__setattr__(self, "_iswap_duration_ns", iswap_duration)
-        object.__setattr__(self, "_cz_edges", cz_edges)
+        object.__setattr__(
+            self,
+            "_cz_by_edge",
+            MappingProxyType(
+                {entry.canonical_edge: entry.recipe for entry in cz_edges}
+            ),
+        )
 
     def _cz_recipe(self, first: str, second: str) -> _CzRecipe | None:
         key = tuple(sorted((first, second)))
-        for entry in self._cz_edges:
-            if entry.canonical_edge == key:
-                return entry.recipe
-        return None
+        return self._cz_by_edge.get(key)
 
 
 def default_transmon_calibration() -> TransmonCalibration:

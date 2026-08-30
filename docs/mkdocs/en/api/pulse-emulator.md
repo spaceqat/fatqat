@@ -296,6 +296,15 @@ direct controls bypass it. The
 builder returns a new map containing the built-in `RX`, `RY`, `RZ`, `iSwap`,
 and `CZ` rules for one model and calibration.
 
+A standard map records the source model's subsystem labels and signed
+anharmonicities, canonical coupling topology, selected CZ endpoints, and
+realization contract. Reusing it with incompatible values raises
+[`BackendValidationError`][fatqat.errors.BackendValidationError]; rebuild the
+map with `default_transmon_gate_implementation_map` for the destination model.
+Model identity, revision, idle frequencies, declaration order, and edge IDs do
+not affect this compatibility check. Plain user-authored maps make no
+standard-map compatibility claim.
+
 See [Gate realization](pulse-control/gate-realization.md) for accepted rule forms and errors.
 
 ## Direct controls

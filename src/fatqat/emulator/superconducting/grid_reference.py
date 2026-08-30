@@ -22,6 +22,7 @@ _ISWAP_DURATION_NS = 40.0
 _CZ_DURATION_NS = 60.0
 _CZ_RAMP_DURATION_NS = 3.0
 _CZ_BRANCH_TOLERANCE_GHZ = 1e-12
+_WARNING_EDGE_LABEL_LIMIT = 10
 
 _CanonicalEdge = tuple[str, str]
 
@@ -160,18 +161,20 @@ def _warn_about_realized_ordering(
     if not ranges_overlap and not reversed_or_tied:
         return
     range_status = "touch or overlap" if ranges_overlap else "do not overlap"
-    edge_labels = ", ".join(
-        f"({first}, {second})" for first, second in reversed_or_tied
-    )
+    shown_edges = reversed_or_tied[:_WARNING_EDGE_LABEL_LIMIT]
+    edge_labels = ", ".join(f"({first}, {second})" for first, second in shown_edges)
     if not edge_labels:
         edge_labels = "none"
+    omitted = len(reversed_or_tied) - len(shown_edges)
+    if omitted:
+        edge_labels += f", ... and {omitted} more"
     warnings.warn(
         "Generated transmon realized group ranges "
         f"{range_status}; {len(reversed_or_tied)} nearest-neighbor edge(s) "
         "reverse or tie the group-center ordering: "
         f"{edge_labels}.",
         UserWarning,
-        stacklevel=2,
+        stacklevel=4,
     )
 
 

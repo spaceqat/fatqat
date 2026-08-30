@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 import math
+from pathlib import Path
 import re
 import warnings
 
@@ -286,6 +287,9 @@ def test_realized_overlap_and_reversal_warnings_are_aggregated(
         reference = _generate(**arguments)
     assert len(seen) == 2
     assert all(item.category is UserWarning for item in seen)
+    assert all(
+        Path(item.filename).resolve() == Path(__file__).resolve() for item in seen
+    )
     realized_message = str(seen[1].message)
     assert all(fragment in realized_message for fragment in expected_fragments)
 
@@ -293,6 +297,20 @@ def test_realized_overlap_and_reversal_warnings_are_aggregated(
         assert _frequencies(reference)["q0"]["frequency"] == pytest.approx(
             10.0 - 1.0657422531523777
         )
+
+
+def test_realized_warning_caps_reported_edge_labels():
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        _generate(
+            shape=(10, 10),
+            frequency_groups_ghz=(10.0, 10.1),
+            frequency_jitter_std_ghz=1.0,
+            seed=0,
+        )
+    realized_message = str(seen[1].message)
+    assert "... and " in realized_message
+    assert len(realized_message) < 1_000
 
 
 def test_exact_realized_tie_warns_and_selects_the_canonical_first_endpoint():

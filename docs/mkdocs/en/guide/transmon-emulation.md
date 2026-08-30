@@ -64,10 +64,14 @@ the emulator:
 ```
 
 The generated calibration contains fixed analytic reference recipes; this
-workflow does not run numerical pulse calibration. The documents are ordinary
-JSON-compatible mappings, so standard-library JSON tools are sufficient when
-you want to persist and read them later. The following is a literal file-I/O
-example and is not executed by the documentation build:
+workflow does not run numerical pulse calibration. For each generated edge,
+it selects the endpoint with the higher realized idle frequency as a
+deterministic synthetic convention, not a universal hardware preference;
+packaged and hand-authored profiles may select another physically checked
+branch. The documents are ordinary JSON-compatible mappings, so
+standard-library JSON tools are sufficient when you want to persist and read
+them later. The following is a literal file-I/O example and is not executed by
+the documentation build:
 
 ```python
 import json

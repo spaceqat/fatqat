@@ -62,7 +62,8 @@ class TransmonEmulator(_PulseBackend):
 
     Raises:
         BackendValidationError: If an argument has the wrong type or ``noise``
-            contains a declaration unsupported by the selected rules.
+            contains a declaration unsupported by the selected rules, or if a
+            standard gate map was compiled for an incompatible transmon model.
 
     Examples:
         >>> import fatqat as fq
