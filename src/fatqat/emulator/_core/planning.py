@@ -52,9 +52,7 @@ class PulsePlanFacts:
     has_reset: bool = False
     has_conditions: bool = False
     has_nonzero_evolution: bool = False
-    has_resolved_lindblad: bool = False
     has_potentially_active_lindblad: bool = False
-    has_supported_background_lindblad_registration: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,8 +347,6 @@ def _resolve_background_noise(
 def _derive_plan_facts(
     plan: tuple[PulsePlanStep, ...],
     background_noise: tuple[ResolvedLindbladTerm, ...],
-    *,
-    has_supported_background_lindblad_registration: bool,
 ) -> PulsePlanFacts:
     nonzero_blocks = tuple(
         step for step in plan if isinstance(step, PulseBlock) and step.duration > 0.0
@@ -362,13 +358,8 @@ def _derive_plan_facts(
             getattr(step, "condition", None) is not None for step in plan
         ),
         has_nonzero_evolution=bool(nonzero_blocks),
-        has_resolved_lindblad=bool(background_noise)
-        or any(isinstance(step, PulseBlock) and bool(step.noise) for step in plan),
         has_potentially_active_lindblad=(
             bool(background_noise) and bool(nonzero_blocks)
         )
         or any(bool(step.noise) for step in nonzero_blocks),
-        has_supported_background_lindblad_registration=(
-            has_supported_background_lindblad_registration
-        ),
     )

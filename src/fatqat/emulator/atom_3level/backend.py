@@ -13,7 +13,7 @@ from ...noise.lindblad import LindbladImplementationMap
 from .._core.backend import _PulseBackend
 from .._core.lindblad import _lindblad_noise_rejection_reasons
 from .._core.outcome import ExecutionMode
-from .._core.planning import PulsePlanFacts, _PreparedPulseProgram
+from .._core.planning import _PreparedPulseProgram
 from .._core.pulse import PulseImplementationMap
 from .calibration import default_atom_3level_calibration
 from .model import Atom3LevelModel
@@ -53,13 +53,12 @@ class Atom3LevelEmulator(_PulseBackend):
         2
     """
 
-    _coherent_execution_mode: ExecutionMode = "density_matrix"
-
     def __init__(
         self,
         model: Atom3LevelModel,
         *,
         arrangement: AtomArrangement,
+        method: str = "statevector",
         noise: NoiseModel | None = None,
         gate_implementation_map: PulseImplementationMap | None = None,
     ) -> None:
@@ -79,6 +78,7 @@ class Atom3LevelEmulator(_PulseBackend):
         self._arrangement = arrangement
         super().__init__(
             model,
+            method=method,
             noise=noise,
             gate_implementation_map=effective_gate_map,
             lindblad_implementation_map=LindbladImplementationMap(),
@@ -103,10 +103,6 @@ class Atom3LevelEmulator(_PulseBackend):
             supports_readout_confusion=True,
             readout_confusion_shape=(2, 2),
         )
-
-    def _resolve_execution_mode(self, facts: PulsePlanFacts) -> ExecutionMode:
-        del facts
-        return "density_matrix"
 
     def _create_runner(
         self,

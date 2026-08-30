@@ -117,6 +117,7 @@ def test_transmon_public_names_have_exact_modules_and_constructor_signature():
     parameters = inspect.signature(TransmonEmulator).parameters
     assert tuple(parameters) == (
         "model",
+        "method",
         "noise",
         "gate_implementation_map",
     )
@@ -124,18 +125,17 @@ def test_transmon_public_names_have_exact_modules_and_constructor_signature():
     assert all(
         parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
         for name in (
+            "method",
             "noise",
             "gate_implementation_map",
         )
     )
-    assert all(
-        parameters[name].default is None
-        for name in (
-            "noise",
-            "gate_implementation_map",
-        )
-    )
+    assert parameters["method"].default == "statevector"
+    assert parameters["noise"].default is None
+    assert parameters["gate_implementation_map"].default is None
     assert "pulse_" + "implementation_map" not in parameters
+    assert not hasattr(TransmonEmulator, "propagator")
+    assert not hasattr(TransmonEmulator, "apply_final_frame")
 
 
 def test_removed_transmon_surface_has_no_compatibility_aliases():
@@ -246,12 +246,15 @@ def test_atom_3level_constructor_has_final_portable_keywords():
     assert tuple(parameters) == (
         "model",
         "arrangement",
+        "method",
         "noise",
         "gate_implementation_map",
     )
     assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
     assert parameters["arrangement"].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["arrangement"].default is inspect.Parameter.empty
+    assert parameters["method"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["method"].default == "statevector"
     assert parameters["noise"].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["noise"].default is None
     assert parameters["gate_implementation_map"].kind is inspect.Parameter.KEYWORD_ONLY
@@ -280,21 +283,8 @@ def test_atom_3level_execution_methods_have_the_exact_public_forwarding_signatur
     assert run["result_config"].default is None
     assert get_type_hints(Atom3LevelEmulator.run)["return"] is Job
 
-    propagator = inspect.signature(Atom3LevelEmulator.propagator).parameters
-    assert tuple(propagator) == (
-        "self",
-        "program",
-        "apply_final_frame",
-        "schedule_mode",
-        "resource_layout",
-    )
-    assert propagator["program"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert propagator["apply_final_frame"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["apply_final_frame"].default is True
-    assert propagator["schedule_mode"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["schedule_mode"].default == "ASAP"
-    assert propagator["resource_layout"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["resource_layout"].default is None
+    assert not hasattr(Atom3LevelEmulator, "propagator")
+    assert not hasattr(Atom3LevelEmulator, "apply_final_frame")
 
 
 def test_atom_2level_family_exports_final_public_values_only():
@@ -336,6 +326,7 @@ def test_atom_2level_constructor_has_final_public_keywords():
         "model",
         "arrangement",
         "interaction_cutoff",
+        "method",
         "noise",
         "gate_implementation_map",
     )
@@ -345,12 +336,14 @@ def test_atom_2level_constructor_has_final_public_keywords():
         for name in (
             "arrangement",
             "interaction_cutoff",
+            "method",
             "noise",
             "gate_implementation_map",
         )
     )
     assert parameters["arrangement"].default is inspect.Parameter.empty
     assert parameters["interaction_cutoff"].default is None
+    assert parameters["method"].default == "statevector"
     assert parameters["noise"].default is None
     assert parameters["gate_implementation_map"].default is None
     assert issubclass(Atom2LevelEmulator, _PulseBackend)
@@ -401,21 +394,8 @@ def test_atom_2level_execution_methods_have_exact_public_forwarding_signatures()
     assert run["result_config"].default is None
     assert get_type_hints(Atom2LevelEmulator.run)["return"] is Job
 
-    propagator = inspect.signature(Atom2LevelEmulator.propagator).parameters
-    assert tuple(propagator) == (
-        "self",
-        "program",
-        "apply_final_frame",
-        "schedule_mode",
-        "resource_layout",
-    )
-    assert propagator["program"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert propagator["apply_final_frame"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["apply_final_frame"].default is True
-    assert propagator["schedule_mode"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["schedule_mode"].default == "ASAP"
-    assert propagator["resource_layout"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert propagator["resource_layout"].default is None
+    assert not hasattr(Atom2LevelEmulator, "propagator")
+    assert not hasattr(Atom2LevelEmulator, "apply_final_frame")
 
 
 def test_pulse_authoring_values_are_public_and_identical_to_private_definitions():

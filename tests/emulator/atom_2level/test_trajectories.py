@@ -32,12 +32,13 @@ def model_fixture():
     )
 
 
-def _backend(model, rate=0.3):
+def _backend(model, rate=0.3, *, method="statevector"):
     noise = fq.NoiseModel()
     noise.add(AmplitudeDamping(rate=rate), targets=0)
     return Atom2LevelEmulator(
         model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 1, 2.0),
+        method=method,
         noise=noise,
     )
 
@@ -114,7 +115,12 @@ def test_real_trajectory_runs_are_reproducible_and_converge_to_mesolve(model):
     ).result()
 
     ensemble_program = _program(measured=False, amplitude=np.pi, duration=1.0)
-    density = backend.run(ensemble_program).result().get_density_matrix()
+    density = (
+        _backend(model, rate=0.4, method="density_matrix")
+        .run(ensemble_program)
+        .result()
+        .get_density_matrix()
+    )
     expected_excited = float(np.real(density[1, 1]))
     observed_excited = first.get_counts().get("1", 0) / 400
 

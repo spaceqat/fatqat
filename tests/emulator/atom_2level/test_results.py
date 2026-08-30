@@ -20,14 +20,6 @@ from fatqat.emulator import SampledWaveform
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
 
-class _DensityMatrixAtom2LevelEmulator(Atom2LevelEmulator):
-    """Select the pre-cutover private density-matrix capability in tests."""
-
-    def _resolve_execution_mode(self, facts):
-        del facts
-        return "density_matrix"
-
-
 @pytest.fixture(name="backend")
 def backend_fixture():
     model = Atom2LevelModel.from_document(
@@ -148,9 +140,10 @@ def test_terminal_density_matrix_measurement_samples_and_collapses():
     model = Atom2LevelModel.from_document(
         json.loads(_FIXTURE.read_text(encoding="utf-8"))
     )
-    backend = _DensityMatrixAtom2LevelEmulator(
+    backend = Atom2LevelEmulator(
         model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
+        method="density_matrix",
     )
     program = _pulse_program(measured=True)
 

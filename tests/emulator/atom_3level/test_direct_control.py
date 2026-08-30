@@ -15,10 +15,11 @@ from fatqat.errors import BackendValidationError
 from fatqat.emulator import SampledWaveform
 
 
-def _backend(model, calibration, sites=2):
+def _backend(model, calibration, sites=2, *, method="density_matrix"):
     return fq.emulator.Atom3LevelEmulator(
         model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, sites, 2.0),
+        method=method,
     )
 
 
@@ -36,7 +37,9 @@ def _control(channel, value, duration=0.3):
 def test_local_direct_propagator_matches_independent_qutrit_reference(
     atom_3level_model, atom_3level_calibration, factory_name, raising
 ):
-    backend = _backend(atom_3level_model, atom_3level_calibration, sites=1)
+    backend = _backend(
+        atom_3level_model, atom_3level_calibration, sites=1, method="unitary"
+    )
     duration = 0.3
     envelope = 0.4 + 0.2j
     channel = getattr(atom_3level_model.control, factory_name)(0)
@@ -44,7 +47,7 @@ def test_local_direct_propagator_matches_independent_qutrit_reference(
     program = fq.Program(1)
     program.add(operation)
 
-    actual = backend.propagator(program)
+    actual = backend.run(program).result().get_unitary()
     raising = raising.astype(complex)
     hamiltonian = 0.5 * (envelope * raising + envelope.conjugate() * raising.T)
     expected = expm(-1j * hamiltonian * duration)
@@ -141,8 +144,8 @@ def test_direct_rydberg_drives_coexist_with_signed_all_pair_drift(
     )
     program = fq.Program(2)
     program.add(ops.PulseOperation(0.1, controls))
-    positive = _backend(positive_model, positive_calibration)
-    negative = _backend(negative_model, negative_calibration)
+    positive = _backend(positive_model, positive_calibration, method="unitary")
+    negative = _backend(negative_model, negative_calibration, method="unitary")
 
     positive_values = positive._target.interactions
     negative_values = negative._target.interactions
@@ -151,7 +154,10 @@ def test_direct_rydberg_drives_coexist_with_signed_all_pair_drift(
         positive_values[0].signed_strength_rad_per_us
         == -negative_values[0].signed_strength_rad_per_us
     )
-    assert not np.allclose(positive.propagator(program), negative.propagator(program))
+    assert not np.allclose(
+        positive.run(program).result().get_unitary(),
+        negative.run(program).result().get_unitary(),
+    )
 
 
 def test_condition_changes_actual_direct_atom_execution(

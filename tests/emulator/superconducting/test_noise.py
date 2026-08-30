@@ -97,7 +97,7 @@ def test_rate_depolarization_populates_the_full_qutrit_space(model):
     duration = 0.4
     noise = NoiseModel()
     noise.add(Depolarizing(rate=rate), targets="q0")
-    backend = TransmonEmulator(model, noise=noise)
+    backend = TransmonEmulator(model, method="density_matrix", noise=noise)
     program = fq.Program(1)
     program.add(
         ops.PulseOperation(
@@ -129,7 +129,7 @@ def test_qutrit_collapse_coefficients_and_t2_limit_are_exact(model, calibration)
     noise = NoiseModel()
     source = ThermalRelaxation(t1=100, t2=120)
     noise.add(source, targets="q0")
-    backend = TransmonEmulator(model, noise=noise)
+    backend = TransmonEmulator(model, method="density_matrix", noise=noise)
     adapter = _adapter(
         model,
         background_noise=backend._prepare_program(fq.Program(1)).background_noise,
@@ -156,7 +156,7 @@ def test_qutrit_collapse_coefficients_and_t2_limit_are_exact(model, calibration)
 def test_pulse_backend_accepts_and_executes_thermal_relaxation(model, calibration):
     noise = NoiseModel()
     noise.add(ThermalRelaxation(t1=100, t2=150), targets="q0")
-    backend = TransmonEmulator(model, noise=noise)
+    backend = TransmonEmulator(model, method="density_matrix", noise=noise)
 
     program = fq.Program(1)
     program.add(ops.RX(0.3), 0)

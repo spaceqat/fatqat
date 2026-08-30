@@ -34,20 +34,14 @@ def _backend(
     rows=1,
     cols=2,
     spacing=2.0,
+    method="density_matrix",
 ):
     return fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(rows, cols, spacing),
+        method=method,
         noise=noise,
     )
-
-
-class _StatevectorAtom3LevelEmulator(fq.emulator.Atom3LevelEmulator):
-    """Select the pre-cutover private statevector capability in tests."""
-
-    def _resolve_execution_mode(self, facts):
-        del facts
-        return "statevector"
 
 
 def test_atom_3level_public_identity_and_private_ownership(
@@ -113,9 +107,10 @@ def test_atom_3level_backend_lowers_model_factory_direct_control(
 def test_atom3_coherent_statevector_is_flat_and_full_physical(
     atom_3level_model,
 ):
-    backend = _StatevectorAtom3LevelEmulator(
+    backend = fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
+        method="statevector",
     )
     program = fq.Program(2)
     program.add(ops.RX(np.pi / 2), 0)
@@ -194,22 +189,24 @@ def test_atom_3level_supplied_map_is_type_checked_copied_and_empty_is_explicit(
     backend = fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
         arrangement=arrangement,
+        method="unitary",
         gate_implementation_map=supplied,
     )
     assert backend._gate_implementation_map is not supplied
     supplied.remove(ops.RX)
     program = fq.Program(2)
     program.add(ops.RX(0.2), 0)
-    assert backend.propagator(program).shape == (9, 9)
+    assert backend.run(program).result().get_unitary().shape == (9, 9)
 
     empty = fq.emulator.PulseImplementationMap()
     direct_only = fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
         arrangement=arrangement,
+        method="unitary",
         gate_implementation_map=empty,
     )
     with pytest.raises(UnsupportedOperationError, match="RX is not supported"):
-        direct_only.propagator(program)
+        direct_only.run(program)
 
 
 def test_compiled_map_transfers_while_target_c6_and_geometry_control_evolution(
@@ -227,11 +224,13 @@ def test_compiled_map_transfers_while_target_c6_and_geometry_control_evolution(
     source_target = fq.emulator.Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
+        method="unitary",
         gate_implementation_map=compiled,
     )
     changed_target = fq.emulator.Atom3LevelEmulator(
         changed_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 3.0),
+        method="unitary",
         gate_implementation_map=compiled,
     )
     program = fq.Program(2)
@@ -244,7 +243,8 @@ def test_compiled_map_transfers_while_target_c6_and_geometry_control_evolution(
         assert first.channel == second.channel
         assert np.array_equal(first.waveform.values, second.waveform.values)
     assert not np.allclose(
-        source_target.propagator(program), changed_target.propagator(program)
+        source_target.run(program).result().get_unitary(),
+        changed_target.run(program).result().get_unitary(),
     )
 
 
@@ -307,7 +307,11 @@ def test_atom_3level_noise_is_retained_validated_and_binary(
     driven = fq.Program(2)
     driven.add(ops.RX(0.1), 0)
     backend.run(driven).result()
-    backend.propagator(driven)
+    _backend(
+        atom_3level_model,
+        atom_3level_calibration,
+        method="unitary",
+    ).run(driven).result().get_unitary()
 
     with pytest.raises(BackendValidationError, match="2 x 2"):
         _backend(atom_3level_model, atom_3level_calibration, noise=_readout(np.eye(3)))
@@ -333,10 +337,13 @@ def _capture_adapter_bindings(monkeypatch):
     return captured
 
 
-def test_atom_3level_binding_is_exact_row_major_all_occupied_for_run_and_propagator(
+def test_atom_3level_binding_is_exact_row_major_all_occupied_for_run_and_unitary(
     atom_3level_model, atom_3level_calibration, monkeypatch
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
+    unitary_backend = _backend(
+        atom_3level_model, atom_3level_calibration, method="unitary"
+    )
     captured = _capture_adapter_bindings(monkeypatch)
     run_program = fq.Program(2)
     run_program.add(ops.RZ(0.2), 0)
@@ -345,10 +352,10 @@ def test_atom_3level_binding_is_exact_row_major_all_occupied_for_run_and_propaga
     ).result()
     propagate_program = fq.Program(2)
     propagate_program.add(ops.RZ(0.3), 1)
-    backend.propagator(propagate_program)
+    unitary_backend.run(propagate_program).result().get_unitary()
     assert len(captured) == 2
     for target, allocation in captured:
-        assert target is backend._target
+        assert target in (backend._target, unitary_backend._target)
         assert allocation.device_operands == (0, 1)
         assert allocation.system_dims == (3, 3)
         assert tuple(
@@ -364,9 +371,9 @@ def test_atom_3level_declaration_order_binds_multi_register_nonprefix_refs(
     program = fq.Program([left, right])
     # The first operation addresses the second declaration, not a prefix.
     program.add(ops.RZ(0.2), right[0])
-    backend = _backend(atom_3level_model, atom_3level_calibration)
+    backend = _backend(atom_3level_model, atom_3level_calibration, method="unitary")
     captured = _capture_adapter_bindings(monkeypatch)
-    propagator = backend.propagator(program)
+    propagator = backend.run(program).result().get_unitary()
     assert len(captured) == 1
     target, allocation = captured[0]
     assert target is backend._target
@@ -396,7 +403,7 @@ def test_atom_3level_exact_binding_dimension_capacity_and_qutrit_result(
     assert result.get_density_matrix().shape == (9, 9)
 
 
-def test_atom_3level_binary_measurement_reset_and_readout_propagator_inert(
+def test_atom_3level_binary_measurement_reset_and_readout_unitary_inert(
     atom_3level_model, atom_3level_calibration
 ):
     backend = _backend(
@@ -415,8 +422,17 @@ def test_atom_3level_binary_measurement_reset_and_readout_propagator_inert(
     assert result.get_density_matrix().shape == (9, 9)
     coherent = fq.Program(2)
     coherent.add(ops.RZ(0.2), 0)
-    empty = _backend(atom_3level_model, atom_3level_calibration)
-    assert np.allclose(backend.propagator(coherent), empty.propagator(coherent))
+    noisy_unitary = _backend(
+        atom_3level_model,
+        atom_3level_calibration,
+        noise=backend._noise_model,
+        method="unitary",
+    )
+    empty = _backend(atom_3level_model, atom_3level_calibration, method="unitary")
+    assert np.allclose(
+        noisy_unitary.run(coherent).result().get_unitary(),
+        empty.run(coherent).result().get_unitary(),
+    )
 
 
 @pytest.mark.parametrize(
@@ -442,7 +458,7 @@ def test_atom_3level_all_computational_inputs_remain_physical_qutrit_states(
     assert np.isclose(np.trace(density), 1.0, atol=1e-8)
 
 
-def test_atom_3level_superposition_and_raw_vs_final_frame_propagators(
+def test_atom_3level_superposition_and_final_frame_unitary(
     atom_3level_model, atom_3level_calibration
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
@@ -459,10 +475,13 @@ def test_atom_3level_superposition_and_raw_vs_final_frame_propagators(
 
     framed = fq.Program(2)
     framed.add(ops.RZ(0.37), 0)
-    raw = backend.propagator(framed, apply_final_frame=False)
-    final = backend.propagator(framed, apply_final_frame=True)
-    assert np.allclose(raw, np.eye(9))
-    assert not np.allclose(final, raw)
+    final = (
+        _backend(atom_3level_model, atom_3level_calibration, method="unitary")
+        .run(framed)
+        .result()
+        .get_unitary()
+    )
+    assert not np.allclose(final, np.eye(9))
 
 
 def test_atom_3level_measurement_returns_the_physical_single_shot_posterior_before_reset(
@@ -565,15 +584,6 @@ def test_atom_3level_result_metadata_keeps_common_runtime_facts(
         "counts": False,
         "final_state": True,
     }
-    assert result.metadata["solver"] == {
-        "solver": "none",
-        "options": {
-            "method": "adams",
-            "atol": 1e-11,
-            "rtol": 1e-9,
-            "nsteps": 100000,
-        },
-    }
 
     def check_public(value, path=()):
         if isinstance(value, RegisterRef):
@@ -613,7 +623,12 @@ def test_weak_blockade_neither_rejects_nor_emits_the_removed_advisory(
     weak = _backend(atom_3level_model, atom_3level_calibration, spacing=20.0)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        weak.propagator(pair)
+        _backend(
+            atom_3level_model,
+            atom_3level_calibration,
+            spacing=20.0,
+            method="unitary",
+        ).run(pair).result().get_unitary()
         weak.run(pair, shots=1)
     assert not any("V/Omega" in str(warning.message) for warning in caught)
 
@@ -621,7 +636,12 @@ def test_weak_blockade_neither_rejects_nor_emits_the_removed_advisory(
     negative_document["parameters"]["c6"] = -atom_3level_model.c6_angular_per_us_um6
     negative_model = fq.emulator.Atom3LevelModel.from_document(negative_document)
     negative = _backend(negative_model, atom_3level_calibration, spacing=20.0)
-    negative.propagator(pair)
+    _backend(
+        negative_model,
+        atom_3level_calibration,
+        spacing=20.0,
+        method="unitary",
+    ).run(pair).result().get_unitary()
     assert negative._target.interactions[0].signed_strength_rad_per_us < 0
     prepared = negative._prepare_program(pair)
     runner = negative._create_runner(

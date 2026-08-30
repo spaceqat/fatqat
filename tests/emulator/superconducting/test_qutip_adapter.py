@@ -585,7 +585,9 @@ def test_frame_only_run_returns_frames_without_constructing_dynamics(model):
         Qobj(np.diag(np.exp(1j * 0.4 * np.arange(3)))), Qobj(np.eye(3))
     )
     assert np.allclose(adapter.propagator(run).full(), expected.full())
-    assert adapter.solver_metadata()["solver"] == "none"
+    assert np.allclose(
+        adapter.propagator(run, apply_final_frame=False).full(), np.eye(9)
+    )
 
 
 def test_disabled_block_suppresses_control_and_post_frame_but_advances_time(model):
@@ -649,7 +651,6 @@ def test_initial_copy_and_propagator_shapes_cover_full_qutrit_model(model):
     block = _drive_block(adapter._target, "q0", duration=0.2)
     unitary = adapter.propagator(schedule_pulse_run((block,), boundary_time=0.0))
     assert unitary.shape == (9, 9)
-    assert adapter.solver_metadata()["solver"] == "propagator"
 
 
 def test_coherent_statevector_execution_returns_a_flat_full_qutrit_ket(model):
@@ -687,13 +688,3 @@ def test_sampled_ket_reset_matches_the_exact_qutrit_channel_ensemble(model):
 
     sampled = np.mean(projectors, axis=0)
     assert sampled == pytest.approx(exact_context.state.full(), abs=0.08)
-
-
-def test_solver_metadata_reports_actual_mesolve_and_keeps_configuration(model):
-    adapter = _adapter(model)
-    assert adapter.solver_metadata()["solver"] == "none"
-    _evolve(adapter, (_drive_block(adapter._target, "q0", duration=0.2),))
-    metadata = adapter.solver_metadata()
-    assert metadata["solver"] == "mesolve"
-    assert metadata["frame_convention"] == FRAME_CONVENTION
-    assert metadata["options"]["atol"] > 0

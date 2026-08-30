@@ -8,6 +8,7 @@ from typing import Any, Literal, Mapping
 
 import numpy as np
 
+PulseMethod = Literal["statevector", "density_matrix", "unitary"]
 ExecutionMode = Literal["density_matrix", "statevector", "trajectory"]
 FinalStateKind = Literal["statevector", "density_matrix"]
 
@@ -16,7 +17,8 @@ FinalStateKind = Literal["statevector", "density_matrix"]
 class _PulseResultRequest:
     counts: bool
     final_state: bool
-    execution_mode: ExecutionMode
+    method: PulseMethod
+    execution_mode: ExecutionMode | None
 
 
 @dataclass(frozen=True)

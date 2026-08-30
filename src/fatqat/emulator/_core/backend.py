@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import asdict
-from typing import Any, Literal, final
+from typing import Any, final
 
 import numpy as np
 
@@ -16,6 +16,7 @@ from ..._index_allocation import (
     _describe_state_axes,
 )
 from ..._backends.backend_utils import (
+    _canonicalize_method,
     _normalize_config,
     _resolve_result_flags,
     _validate_result_shots,
@@ -50,7 +51,6 @@ from .planning import (
     _PulseLoweringContext,
 )
 from .pulse import PulseImplementationMap
-from .scheduling import _validate_schedule_mode
 from .outcome import (
     ExecutionMode,
     _PulseExecutionSummary,
@@ -62,24 +62,31 @@ from .target import _PulseTarget
 class _PulseBackend(ABC):
     """Private model-neutral pulse execution orchestration.
 
-    This layer owns preparation, lowering, execution, propagation, error
-    boundaries, and result assembly. A concrete family supplies only source
-    and noise-model validation, execution-mode selection, runner creation, and
-    optional metadata. Its bound target answers physical binding
-    questions without adding backend hooks.
+    This layer owns preparation, lowering, execution, error boundaries, and
+    result assembly. A concrete family supplies only source and noise-model
+    validation, runner creation, and optional metadata. Its bound target
+    answers physical binding questions without adding backend hooks.
     """
 
-    _coherent_execution_mode: ExecutionMode
     _target: _PulseTarget
 
     def __init__(
         self,
         model: object,
         *,
+        method: object,
         noise: NoiseModel | None,
         gate_implementation_map: PulseImplementationMap,
         lindblad_implementation_map: LindbladImplementationMap,
     ) -> None:
+        canonical_method = _canonicalize_method(
+            method, {"statevector", "density_matrix", "unitary"}
+        )
+        if canonical_method is None:
+            raise BackendValidationError(
+                "method must be 'statevector', 'density_matrix', or 'unitary' "
+                "(aliases 'SV' and 'DM' are accepted)"
+            )
         if noise is not None and not isinstance(noise, NoiseModel):
             raise BackendValidationError("noise must be a NoiseModel or None")
         if not isinstance(gate_implementation_map, PulseImplementationMap):
@@ -91,6 +98,7 @@ class _PulseBackend(ABC):
                 "lindblad_implementation_map must be a LindbladImplementationMap"
             )
         self._model = model
+        self._method = canonical_method
         self._gate_implementation_map = gate_implementation_map.copy()
         self._lindblad_implementation_map = lindblad_implementation_map.copy()
         source_noise = NoiseModel() if noise is None else noise
@@ -101,6 +109,13 @@ class _PulseBackend(ABC):
     def model(self) -> object:
         """Return this emulator's physics model."""
         return self._model
+
+    @property
+    @final
+    def method(self) -> str:
+        """Return the canonical mathematical representation for this emulator."""
+
+        return self._method
 
     @final
     def _set_target(self, target: _PulseTarget) -> None:
@@ -151,16 +166,7 @@ class _PulseBackend(ABC):
             noise_model=self._noise_model,
             implementation_map=self._lindblad_implementation_map,
         )
-        supported_background = any(
-            operation is None
-            and self._lindblad_implementation_map.get(type(channel)) is not None
-            for channel, operation in self._noise_model._noise_sources()
-        )
-        facts = planning._derive_plan_facts(
-            plan,
-            background_noise,
-            has_supported_background_lindblad_registration=supported_background,
-        )
+        facts = planning._derive_plan_facts(plan, background_noise)
         return _PreparedPulseProgram(
             plan=plan,
             facts=facts,
@@ -335,95 +341,6 @@ class _PulseBackend(ABC):
             return Job(status="ERROR", error=failure)
 
     @final
-    def propagator(
-        self,
-        program: Program,
-        *,
-        apply_final_frame: bool = True,
-        schedule_mode: Literal["ASAP", "ALAP"] = "ASAP",
-        resource_layout: ResourceLayout | None = None,
-    ) -> np.ndarray:
-        """Return the coherent full-model propagator for ``program``.
-
-        Intermediate virtual-frame updates always rotate later phase-sensitive
-        controls. By default the remaining terminal frame transformation is
-        also composed onto the returned propagator; set
-        ``apply_final_frame=False`` to inspect Hamiltonian-generated evolution
-        before that final basis transformation.
-
-        The result is a complex NumPy array over the model's full physical
-        Hilbert space. Its rows and columns use the same little-endian basis
-        order as returned states: physical axis 0 is the least-significant
-        subsystem. Measurement, reset, and classical conditions are rejected.
-        Programs that apply Lindblad noise during nonzero-duration evolution
-        are rejected. Rate-based noise has no effect when no time elapses.
-
-        Args:
-            program: Coherent program whose propagator to compute.
-            apply_final_frame: Whether to compose the terminal virtual-frame
-                transformation. Intermediate frame updates are always honored.
-            schedule_mode: Place operations ``"ASAP"`` or ``"ALAP"``.
-            resource_layout: Optional program-to-device mapping. The emulator
-                uses its default when omitted.
-
-        Returns:
-            Full-model coherent propagator as a NumPy array.
-
-        Raises:
-            BackendValidationError: If the program, mapping, schedule mode,
-                noise, or requested frame handling is invalid or unsupported.
-            UnsupportedOperationError: If an ordinary gate has no pulse
-                implementation for its ordered device operands.
-            PulseImplementationError: If a selected custom pulse rule fails
-                unexpectedly or returns the wrong value type.
-            BackendExecutionError: If propagator construction fails.
-        """
-        if type(apply_final_frame) is not bool:
-            raise BackendValidationError("apply_final_frame must be a bool")
-        schedule_mode = _validate_schedule_mode(schedule_mode)
-        _raise_for_unbound_parameters(program._instructions)
-        prepared = self._prepare_program(program, resource_layout)
-
-        if not prepared.plan:
-            return np.eye(self._target.hilbert_dimension, dtype=complex)
-
-        self._validate_propagator_facts(prepared.facts)
-        runner = self._create_runner(
-            prepared,
-            execution_mode=self._coherent_execution_mode,
-            retain_final_state=True,
-        )
-        engine = PulseEngine(runner, schedule_mode=schedule_mode)
-        try:
-            return np.asarray(
-                engine.propagator(
-                    prepared.plan,
-                    apply_final_frame=apply_final_frame,
-                ).full(),
-                dtype=complex,
-            )
-        except BackendValidationError:
-            raise
-        except Exception as exc:
-            raise BackendExecutionError("Pulse propagator construction failed") from exc
-
-    @staticmethod
-    @final
-    def _validate_propagator_facts(facts: PulsePlanFacts) -> None:
-        if facts.has_measurement:
-            raise BackendValidationError("propagator does not support measurement")
-        if facts.has_reset:
-            raise BackendValidationError("propagator does not support reset")
-        if facts.has_conditions:
-            raise BackendValidationError(
-                "propagator does not support classically conditioned operations"
-            )
-        if facts.has_nonzero_evolution and facts.has_resolved_lindblad:
-            raise BackendValidationError(
-                "propagator does not support dissipative Lindblad evolution"
-            )
-
-    @final
     def _validate(
         self,
         config: _ResultConfig,
@@ -431,28 +348,75 @@ class _PulseBackend(ABC):
         facts: PulsePlanFacts,
     ) -> _PulseResultRequest:
         """Resolve default output requests and validate their shot constraints."""
+        stochastic_final_state = (
+            (self._method == "statevector" and facts.has_potentially_active_lindblad)
+            or facts.has_measurement
+            or (self._method == "statevector" and facts.has_reset)
+        )
         counts, final_state = _resolve_result_flags(
             config,
             has_measurement=facts.has_measurement,
-            stochastic_final_state=facts.has_measurement,
+            stochastic_final_state=stochastic_final_state,
         )
-        execution_mode = self._resolve_execution_mode(facts)
+        self._validate_method_facts(facts, counts=counts)
+        execution_mode = self._execution_mode(facts)
         _validate_result_shots(
             counts=counts,
             explicit_final_state=config.final_state is True,
-            stochastic_final_state=facts.has_measurement,
+            stochastic_final_state=stochastic_final_state,
             shots=shots,
             shots_type_error=(
                 "shots must be an int when requested results depend on it"
             ),
-            state_label=self._state_label_for_execution_mode(execution_mode),
-            stochastic_sources="physical measurement sampling",
+            state_label=self._method,
+            stochastic_sources=self._stochastic_sources(facts),
         )
         return _PulseResultRequest(
             counts=counts,
             final_state=final_state,
+            method=self._method,
             execution_mode=execution_mode,
         )
+
+    @final
+    def _stochastic_sources(self, facts: PulsePlanFacts) -> str:
+        sources = []
+        if facts.has_measurement:
+            sources.append("physical measurement sampling")
+        if self._method == "statevector" and facts.has_reset:
+            sources.append("reset sampling")
+        if self._method == "statevector" and facts.has_potentially_active_lindblad:
+            sources.append("trajectory sampling")
+        return ", ".join(sources)
+
+    @final
+    def _execution_mode(self, facts: PulsePlanFacts) -> ExecutionMode | None:
+        if self._method == "unitary":
+            return None
+        if self._method == "density_matrix":
+            return "density_matrix"
+        if facts.has_potentially_active_lindblad:
+            return "trajectory"
+        return "statevector"
+
+    @final
+    def _validate_method_facts(self, facts: PulsePlanFacts, *, counts: bool) -> None:
+        if self._method != "unitary":
+            return
+        if facts.has_measurement:
+            raise BackendValidationError("unitary method does not support measurement")
+        if facts.has_reset:
+            raise BackendValidationError("unitary method does not support reset")
+        if facts.has_conditions:
+            raise BackendValidationError(
+                "unitary method does not support classically conditioned operations"
+            )
+        if facts.has_potentially_active_lindblad:
+            raise BackendValidationError(
+                "unitary method does not support dissipative Lindblad evolution"
+            )
+        if counts:
+            raise BackendValidationError("unitary method does not support counts")
 
     @final
     def _execute(
@@ -463,6 +427,10 @@ class _PulseBackend(ABC):
         shots: int,
     ) -> Result:
         """Execute a validated plan and convert private shot payloads to Result."""
+        if request.method == "unitary":
+            return self._execute_unitary(prepared, request, simulation, shots)
+        if request.execution_mode is None:
+            raise BackendExecutionError("state execution requires an execution mode")
         runner = self._create_runner(
             prepared,
             execution_mode=request.execution_mode,
@@ -492,6 +460,44 @@ class _PulseBackend(ABC):
             simulation,
             shots,
             summary,
+        )
+
+    @final
+    def _execute_unitary(
+        self,
+        prepared: _PreparedPulseProgram,
+        request: _PulseResultRequest,
+        simulation: _EmulatorConfig,
+        shots: int,
+    ) -> Result:
+        unitary = None
+        available = frozenset()
+        if request.final_state:
+            if prepared.plan:
+                runner = self._create_runner(
+                    prepared,
+                    execution_mode="statevector",
+                    retain_final_state=False,
+                )
+                engine = PulseEngine(runner, schedule_mode=simulation.schedule_mode)
+                unitary = np.asarray(
+                    engine.propagator(prepared.plan, apply_final_frame=True).full(),
+                    dtype=complex,
+                )
+            else:
+                unitary = np.eye(self._target.hilbert_dimension, dtype=complex)
+            available = frozenset({"unitary"})
+        metadata = self._result_metadata(request, simulation, shots)
+        if request.final_state:
+            metadata["state_axes"] = _describe_state_axes(
+                prepared.engine_allocation,
+                prepared.resource_layout,
+            )
+        return Result(
+            unitary=unitary,
+            available=available,
+            classical_dims=prepared.classical_allocation.classical_dims,
+            metadata=metadata,
         )
 
     @staticmethod
@@ -548,26 +554,23 @@ class _PulseBackend(ABC):
         statevector = None
         density_matrix = None
         if request.final_state:
-            available.add(summary.final_state_kind)
-            if summary.final_state_kind == "statevector":
+            if summary.final_state_kind != request.method:
+                raise BackendExecutionError(
+                    "pulse execution produced a final state inconsistent with "
+                    f"method={request.method!r}"
+                )
+            available.add(request.method)
+            if request.method == "statevector":
                 statevector = final_state
             else:
                 density_matrix = final_state
-        metadata = {
-            "backend_name": self._backend_name(),
-            "shots": shots,
-            "simulation_config": asdict(simulation),
-            "result_config": {
-                "counts": request.counts,
-                "final_state": request.final_state,
-            },
-            "solver": dict(summary.solver_metadata),
-        }
+        metadata = self._result_metadata(request, simulation, shots)
         if request.final_state:
             metadata["state_axes"] = _describe_state_axes(
                 prepared.engine_allocation,
                 prepared.resource_layout,
             )
+        metadata["solver"] = dict(summary.solver_metadata)
         return Result(
             counts=counts,
             statevector=statevector,
@@ -577,19 +580,23 @@ class _PulseBackend(ABC):
             metadata=metadata,
         )
 
-    @abstractmethod
-    def _resolve_execution_mode(
-        self,
-        facts: PulsePlanFacts,
-    ) -> ExecutionMode:
-        """Select the private representation from plan and noise physics."""
-        raise NotImplementedError
-
-    @staticmethod
     @final
-    def _state_label_for_execution_mode(execution_mode: ExecutionMode) -> str:
-        """Return the public result label used by shot validation."""
-        return "density_matrix" if execution_mode == "density_matrix" else "statevector"
+    def _result_metadata(
+        self,
+        request: _PulseResultRequest,
+        simulation: _EmulatorConfig,
+        shots: int,
+    ) -> dict[str, Any]:
+        return {
+            "backend_name": self._backend_name(),
+            "method": request.method,
+            "shots": shots,
+            "simulation_config": asdict(simulation),
+            "result_config": {
+                "counts": request.counts,
+                "final_state": request.final_state,
+            },
+        }
 
     @final
     def _backend_name(self) -> str:
@@ -625,7 +632,7 @@ class _PulseBackend(ABC):
 
         This validation does not inspect a particular program or resource
         layout. Program references and physical selectors are checked when you
-        call ``run()`` or ``propagator()``.
+        call ``run()``.
 
         Args:
             noise_model: Noise model to validate without executing a program.

@@ -128,7 +128,12 @@ def test_direct_drive_propagator_matches_independent_full_hamiltonian(backend):
     program = fq.Program(2)
     program.add(operation)
 
-    actual = backend.propagator(program)
+    actual = (
+        fq.emulator.TransmonEmulator(backend.model, method="unitary")
+        .run(program)
+        .result()
+        .get_unitary()
+    )
     target = _TransmonTarget(backend.model)
     adapter = _TransmonQutipAdapter(
         target,

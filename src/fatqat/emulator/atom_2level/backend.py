@@ -27,10 +27,7 @@ from ...program import Program, _AppliedOperation
 from .._core.backend import _PulseBackend
 from .._core.lindblad import _lindblad_noise_rejection_reasons
 from .._core.outcome import ExecutionMode
-from .._core.planning import (
-    PulsePlanFacts,
-    _PreparedPulseProgram,
-)
+from .._core.planning import _PreparedPulseProgram
 from .._core.pulse import PulseImplementationMap
 from .model import Atom2LevelModel
 from .target import _Atom2LevelTarget, _LOCAL_DIMENSION
@@ -109,14 +106,13 @@ class Atom2LevelEmulator(_PulseBackend):
         True
     """
 
-    _coherent_execution_mode: ExecutionMode = "statevector"
-
     def __init__(
         self,
         model: Atom2LevelModel,
         *,
         arrangement: AtomArrangement,
         interaction_cutoff: float | None = None,
+        method: str = "statevector",
         noise: NoiseModel | None = None,
         gate_implementation_map: PulseImplementationMap | None = None,
     ) -> None:
@@ -135,6 +131,7 @@ class Atom2LevelEmulator(_PulseBackend):
         )
         super().__init__(
             model,
+            method=method,
             noise=noise,
             gate_implementation_map=effective_gate_map,
             lindblad_implementation_map=_default_lindblad_map(),
@@ -207,17 +204,6 @@ class Atom2LevelEmulator(_PulseBackend):
             supports_readout_confusion=True,
             readout_confusion_shape=(2, 2),
         )
-
-    def _resolve_execution_mode(self, facts: PulsePlanFacts) -> ExecutionMode:
-        has_lindblad = (
-            facts.has_resolved_lindblad
-            or facts.has_supported_background_lindblad_registration
-        )
-        if has_lindblad and facts.has_measurement:
-            return "trajectory" if facts.has_nonzero_evolution else "statevector"
-        if has_lindblad:
-            return "density_matrix"
-        return "statevector"
 
     def _create_runner(
         self,

@@ -39,7 +39,7 @@ def make_backend_fixture(model, calibration):
     """Build a backend on the shared model with an optional noise model."""
 
     def build(noise=None):
-        return TransmonEmulator(model, noise=noise)
+        return TransmonEmulator(model, method="density_matrix", noise=noise)
 
     return build
 
@@ -67,14 +67,6 @@ def _adapter(model, *, kind=_TransmonQutipAdapter, **kwargs):
 def _qutip_tensor(*canonical_factors):
     """Construct a QuTiP value from canonical least-significant-first factors."""
     return tensor(*reversed(canonical_factors))
-
-
-class _TrajectoryTransmonEmulator(TransmonEmulator):
-    """Select the pre-cutover private trajectory capability in tests."""
-
-    def _resolve_execution_mode(self, facts):
-        del facts
-        return "trajectory"
 
 
 @pytest.mark.parametrize("execution_mode", ["density_matrix", "statevector"])
@@ -193,7 +185,7 @@ def test_seeded_noisy_trajectory_continues_across_measurement_regions(model):
     noise = NoiseModel()
     for target in ("q0", "q1"):
         noise.add(AmplitudeDamping(rate=(1e-5, 1e-5)), targets=target)
-    backend = _TrajectoryTransmonEmulator(model, noise=noise)
+    backend = TransmonEmulator(model, method="statevector", noise=noise)
     program = fq.Program(2, 1)
     program.add(ops.RX(pi), 0)
     program.measure(0, 0)
@@ -407,7 +399,11 @@ def test_custom_cz_rule_executes_end_to_end_and_yields_a_valid_physical_state(
     )
     implementations.remove(ops.CZ)
     implementations.add(ops.CZ, custom_cz)
-    backend = TransmonEmulator(model, gate_implementation_map=implementations)
+    backend = TransmonEmulator(
+        model,
+        method="density_matrix",
+        gate_implementation_map=implementations,
+    )
 
     program = fq.Program(2)
     program.add(ops.CZ, (0, 1))

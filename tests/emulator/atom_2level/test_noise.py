@@ -50,10 +50,12 @@ def _backend(
     noise=None,
     *,
     sites=1,
+    method="statevector",
 ):
     return Atom2LevelEmulator(
         model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, sites, 2.0),
+        method=method,
         noise=noise,
     )
 
@@ -231,7 +233,7 @@ def test_one_atom_damping_matches_analytic_master_equation(model, kind):
 def test_continuous_depolarization_matches_probability_law(model):
     rate = 0.4
     duration = 0.8
-    backend = _backend(model, _noise(Depolarizing(rate=rate)))
+    backend = _backend(model, _noise(Depolarizing(rate=rate)), method="density_matrix")
     result = backend.run(_pulse_program(amplitude=0.0, duration=duration)).result()
 
     probability = 1.0 - np.exp(-rate * duration)
@@ -257,14 +259,15 @@ def test_readout_confusion_changes_only_the_reported_digit(model):
 
 
 def test_unmeasured_noise_returns_exact_density_matrix(model):
-    backend = _backend(model, _noise(AmplitudeDamping(rate=0.2)))
+    backend = _backend(
+        model, _noise(AmplitudeDamping(rate=0.2)), method="density_matrix"
+    )
     result = backend.run(_pulse_program(amplitude=1.1, duration=0.5)).result()
 
     assert result.available_data == frozenset({"density_matrix"})
     density = result.get_density_matrix()
     assert density.shape == (2, 2)
     assert np.trace(density) == pytest.approx(1.0)
-    assert result.metadata["solver"]["solver"] == "mesolve"
 
 
 def test_two_atom_mesolve_matches_independently_assembled_master_equation(
@@ -274,7 +277,7 @@ def test_two_atom_mesolve_matches_independently_assembled_master_equation(
     per_site = fq.NoiseModel()
     per_site.add(AmplitudeDamping(rate=gamma), targets=0)
     per_site.add(AmplitudeDamping(rate=gamma), targets=1)
-    backend = _backend(model, per_site, sites=2)
+    backend = _backend(model, per_site, sites=2, method="density_matrix")
     duration = 0.4
     amplitude = 0.8
     program = _pulse_program(
@@ -307,17 +310,8 @@ def test_two_atom_mesolve_matches_independently_assembled_master_equation(
     assert actual == pytest.approx(expected.full(), abs=3e-8)
 
 
-def test_explicit_counts_without_measurement_does_not_select_mcsolve(
-    model, monkeypatch
-):
+def test_explicit_counts_without_measurement_return_empty_classical_key(model):
     backend = _backend(model, _noise(AmplitudeDamping(rate=0.2)))
-
-    def mcsolve_must_not_run(*_args, **_kwargs):
-        raise AssertionError("mcsolve selected without terminal measurement")
-
-    monkeypatch.setattr(
-        "fatqat.emulator.atom_2level.qutip_adapter.mcsolve", mcsolve_must_not_run
-    )
     result = backend.run(
         _pulse_program(amplitude=0.0),
         shots=3,
@@ -326,27 +320,18 @@ def test_explicit_counts_without_measurement_does_not_select_mcsolve(
     assert result.get_counts() == {"": 3}
 
 
-def test_noisy_measurement_only_program_uses_no_dynamical_solver(model, monkeypatch):
+def test_noisy_measurement_only_program_reports_the_ground_count(model):
     backend = _backend(model, _noise(AmplitudeDamping(rate=0.2)))
     program = fq.Program(1, 1)
     program.measure(0, 0)
-
-    def solver_must_not_run(*_args, **_kwargs):
-        raise AssertionError("a dynamical solver ran at zero elapsed time")
-
-    for name in ("sesolve", "mesolve", "mcsolve"):
-        monkeypatch.setattr(
-            f"fatqat.emulator.atom_2level.qutip_adapter.{name}", solver_must_not_run
-        )
     result = backend.run(program, shots=4).result()
 
     assert result.get_counts() == {"0": 4}
-    assert result.metadata["solver"]["solver"] == "none"
 
 
-def test_noisy_propagator_allows_empty_identity_but_rejects_elapsed_plan(model):
-    backend = _backend(model, _noise(AmplitudeDamping(rate=0.2)))
-    assert backend.propagator(fq.Program(1)) == pytest.approx(np.eye(2))
+def test_noisy_unitary_allows_empty_identity_but_rejects_elapsed_plan(model):
+    backend = _backend(model, _noise(AmplitudeDamping(rate=0.2)), method="unitary")
+    assert backend.run(fq.Program(1)).result().get_unitary() == pytest.approx(np.eye(2))
 
     with pytest.raises(BackendValidationError, match="dissipative Lindblad"):
-        backend.propagator(_pulse_program(amplitude=0.0))
+        backend.run(_pulse_program(amplitude=0.0))

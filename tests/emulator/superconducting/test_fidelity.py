@@ -104,7 +104,12 @@ def computational_subspace_unitary(backend, program, schedule_mode="ASAP"):
         )
         for basis_index in range(2**n_qubits)
     )
-    propagator = backend.propagator(program, schedule_mode=schedule_mode)
+    unitary_backend = fq.emulator.TransmonEmulator(backend.model, method="unitary")
+    propagator = (
+        unitary_backend.run(program, simulation_config={"schedule_mode": schedule_mode})
+        .result()
+        .get_unitary()
+    )
     return propagator[np.ix_(indices, indices)]
 
 
@@ -138,20 +143,6 @@ def test_virtual_frame_sequence_matches_analytic_unitary(backend):
 
     phase_invariant_error = 1 - abs(np.trace(ideal.conj().T @ actual)) / 4
     assert phase_invariant_error < 1e-5
-
-
-def test_intermediate_frame_rotates_later_drive_with_virtual_z_sign(backend):
-    framed_rx = fq.Program(1)
-    framed_rx.add(ops.RZ(pi / 2), 0)
-    framed_rx.add(ops.RX(0.3), 0)
-    ry = fq.Program(1)
-    ry.add(ops.RY(-0.3), 0)
-
-    assert np.allclose(
-        backend.propagator(framed_rx, apply_final_frame=False),
-        backend.propagator(ry, apply_final_frame=False),
-        atol=2e-7,
-    )
 
 
 @pytest.mark.parametrize(
@@ -231,12 +222,9 @@ def test_composed_ground_state_matches_matrix_simulator(
     """Cross-check the pulse stack against the matrix simulator end to end.
 
     `test_composed_process_fidelity_in_both_schedule_modes` already bounds
-    every composed program's full propagator, which mathematically implies
-    this state fidelity. The value kept here is the *other execution path*:
-    that comparison goes through `propagator()`, while this one goes through
-    the matrix simulator and the shared ordering contract of both backends.
-    Two representative programs cover that path; repeating all five only
-    re-ran the solver.
+    every composed program's full unitary, which mathematically implies this
+    state fidelity. Two representative programs cover the matrix-simulator
+    ordering contract without repeating every expensive pulse solve.
     """
     program = program_from_operations(operations)
     pulse_state = pulse_ground_state(backend, program)

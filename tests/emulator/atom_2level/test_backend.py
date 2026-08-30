@@ -31,11 +31,19 @@ def model_fixture():
     )
 
 
-def _backend(model, *, site_count=2, interaction_cutoff=None, noise=None):
+def _backend(
+    model,
+    *,
+    site_count=2,
+    interaction_cutoff=None,
+    method="statevector",
+    noise=None,
+):
     return Atom2LevelEmulator(
         model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, site_count, 2.0),
         interaction_cutoff=interaction_cutoff,
+        method=method,
         noise=noise,
     )
 
@@ -221,7 +229,6 @@ def test_custom_global_gate_requires_and_executes_a_whole_arrangement_occurrence
 
     assert prepared.plan[0].control_bindings[0].engine_indices == (0, 1)
     assert result.get_statevector().shape == (4,)
-    assert result.metadata["solver"]["solver"] == "sesolve"
 
     narrow = Atom2LevelEmulator(
         model,
@@ -326,28 +333,28 @@ def test_lowered_measurement_uses_the_binary_digit_map(model):
     assert prepared.plan[0].reported_digit_maps == ((0, 1),)
 
 
-def test_propagator_accepts_coherent_or_empty_programs_and_rejects_measurement(model):
-    backend = _backend(model)
+def test_unitary_accepts_coherent_or_empty_programs_and_rejects_measurement(model):
+    backend = _backend(model, method="unitary")
     program = fq.Program(2)
     program.add(_pulse(amplitude=np.pi / 3))
 
-    first = backend.propagator(program)
-    second = backend.propagator(program)
+    first = backend.run(program).result().get_unitary()
+    second = backend.run(program).result().get_unitary()
     assert first.shape == (4, 4)
     assert first == pytest.approx(second)
     first[0, 0] = 99
     assert second[0, 0] != 99
-    assert backend.propagator(fq.Program(2)) == pytest.approx(np.eye(4))
+    assert backend.run(fq.Program(2)).result().get_unitary() == pytest.approx(np.eye(4))
 
     measured = fq.Program(2, 1)
     measured.measure(0, 0)
-    with pytest.raises(BackendValidationError, match="propagator.*measurement"):
-        backend.propagator(measured)
+    with pytest.raises(BackendValidationError, match="unitary.*measurement"):
+        backend.run(measured)
 
 
-def test_run_and_propagator_expose_no_solver_mode_keyword(model):
+def test_run_exposes_no_solver_mode_keyword(model):
     backend = _backend(model)
     assert "solver" not in inspect.signature(backend.run).parameters
-    assert "solver" not in inspect.signature(backend.propagator).parameters
+    assert not hasattr(backend, "propagator")
     with pytest.raises(TypeError):
         backend.run(fq.Program(2), solver="sesolve")
