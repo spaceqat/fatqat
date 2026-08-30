@@ -87,8 +87,8 @@ class Atom2LevelEmulator(_PulseBackend):
         arrangement: Fixed site coordinates for the program. The program must
             contain one dimension-two resource per site.
         interaction_cutoff: Maximum interacting-pair separation in the
-            model's distance unit. ``None`` keeps every pair; ``0.0`` disables
-            pair interactions.
+            arrangement's distance unit. ``None`` keeps every pair; ``0.0``
+            disables pair interactions.
         noise: Noise applied by this emulator. The default is no noise.
         gate_implementation_map: Gate-to-pulse rules. ``None`` uses an empty
             map.
@@ -158,7 +158,7 @@ class Atom2LevelEmulator(_PulseBackend):
 
         Returns:
             ``None`` when all unordered pairs are retained, otherwise the
-            finite nonnegative cutoff in the model's distance unit.
+            finite nonnegative cutoff in the arrangement's distance unit.
         """
 
         return self._interaction_cutoff

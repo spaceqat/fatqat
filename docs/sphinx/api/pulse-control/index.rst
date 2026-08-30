@@ -76,13 +76,15 @@ limits.
 Continuous-time noise
 ---------------------
 
-Pulse emulators evolve noise over time, so their Lindblad rules use rates or
-relaxation times. They do not infer a rate from a finite probability.
+Pulse emulators evolve noise over time, so their family-owned Lindblad
+realizations use rates or relaxation times. They do not infer a rate from a
+finite probability.
 In particular, :py:class:`~fatqat.noise.PauliChannel` remains a discrete
-Simulator channel even if a Lindblad rule is registered: its probabilities do
-not specify a duration or conversion convention. Use
+Simulator channel: its probabilities do not specify a duration or conversion
+convention. Use
 :py:class:`~fatqat.simulator.Simulator` for discrete Pauli noise, or a
-rate-form declaration supported by the pulse emulator's Lindblad map.
+rate-form declaration listed for the pulse-emulator family in
+:ref:`noise-emulator-support`.
 
 .. toctree::
    :maxdepth: 1

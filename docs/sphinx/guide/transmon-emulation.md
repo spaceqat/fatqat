@@ -15,9 +15,10 @@ simulation baseline, not a live calibration from a named device:
 >>> import numpy as np
 >>> import fatqat as fq
 >>> import fatqat.operations as ops
->>> model = fq.emulator.TransmonModel.from_document(
-...     fq.emulator.load_model_document("transmon.reference")
-... )
+>>> model_document = fq.emulator.load_model_document("transmon.reference")
+>>> model_document["parameters"]["subsystems"]["q0"]["frequency"]
+5.1
+>>> model = fq.emulator.TransmonModel.from_document(model_document)
 >>> model.subsystem_ids
 ('q0', 'q1')
 >>> backend = fq.emulator.TransmonEmulator(model)
@@ -26,6 +27,9 @@ simulation baseline, not a live calibration from a named device:
 Program qubits bind to those subsystem IDs in declaration order unless a
 {py:class}`~fatqat.ResourceLayout` says otherwise. Every model transmon remains
 in the physical state even when the Program addresses only one of them.
+Retain `model_document` when you need persisted frequencies, anharmonicities,
+model identity, or coupling topology; the runtime model intentionally exposes
+execution capabilities rather than normalized copies of those records.
 
 ## Run the rotation as a calibrated gate
 

@@ -15,8 +15,8 @@ channels and does not use that map. See :doc:`pulse-control/index` for direct
 pulse authoring.
 
 Unless an import path is written explicitly, supported imports on this page
-come from ``fatqat.emulator``. ``Transmon``, ``Coupling``, and the GHz
-conversion helper are imported from ``fatqat.emulator.superconducting``.
+come from ``fatqat.emulator``. The GHz conversion helper is imported from
+``fatqat.emulator.superconducting``.
 
 Create the emulator
 -------------------
@@ -70,11 +70,6 @@ and propagator dimensions. Their ordered public identities appear in result
      - Meaning
    * - ``noise``
      - A :py:class:`~fatqat.NoiseModel`. ``None`` means no noise.
-   * - ``lindblad_implementation_map``
-     - A :py:class:`~fatqat.noise.LindbladImplementationMap` mapping channel
-       descriptors to local collapse operators. ``None`` uses
-       :py:func:`~fatqat.noise.default_lindblad_implementation_map`. See
-       :ref:`noise-emulator-support` for built-in coverage.
    * - ``gate_implementation_map``
      - A :py:class:`~fatqat.emulator.PulseImplementationMap` mapping operation
        families and device labels to pulse definitions. ``None`` uses the
@@ -194,12 +189,6 @@ define the implicit resonant carriers.
 Model documents
 ~~~~~~~~~~~~~~~
 
-.. autoclass:: fatqat.emulator.FormatIdentity
-
-.. autoclass:: fatqat.emulator.ModelIdentity
-
-.. autoclass:: fatqat.emulator.CalibrationIdentity
-
 .. autofunction:: fatqat.emulator.available_model_documents
 
 .. autofunction:: fatqat.emulator.load_model_document
@@ -214,58 +203,41 @@ Model documents
 
 .. autoclass:: fatqat.emulator.TransmonCalibration
 
-.. autoclass:: fatqat.emulator.superconducting.Transmon
-   :no-inherited-members:
-
-.. autoclass:: fatqat.emulator.superconducting.Coupling
-   :no-inherited-members:
-
 .. autofunction:: fatqat.emulator.default_transmon_calibration
 
-``model.format`` identifies the document schema; ``model.kind`` and
-``model.identity`` identify the model family and snapshot.
-``calibration.format`` and ``calibration.identity`` identify the calibration
-document, which has no target-model field.
-
-``model.subsystems``
-   Ordered transmon records with ``id``, ``frequency_ghz``, and
-   ``anharmonicity_ghz``.
-
-``model.couplings``
-   Undirected edge records with ``id`` and two ``subsystem_ids``.
-
-``model.annihilation``, ``model.number``
-   Read-only local qutrit matrices. They are local operators, not full-model
-   tensor expansions. The raising operator is not stored separately; derive it
-   as ``model.annihilation.conj().T``.
+Retain the decoded source documents when application code needs persisted
+identity, physical parameters, or topology. In a model document, inspect
+``model`` for the ID and revision, ``system.control_edges`` for the coupling
+graph, and ``parameters.subsystems`` for frequencies and anharmonicities.
+The runtime model exposes ``subsystem_ids`` as the ordered device-label
+discovery surface, but not normalized subsystem or coupling records.
 
 Units
 ~~~~~
 
-Two units govern every pulse a rule emits, and both come from the model:
+The runtime model exposes the pulse time coordinate:
 
 ``model.time_unit`` (``"ns"``)
    The coordinate for ``PulseDefinition.duration`` and for each
    ``PulseControl`` waveform and ``start_offset``.
 
-``model.control_unit`` (``"rad/ns"``)
-   The unit of every ``SampledWaveform.values`` entry, for all three
-   channel kinds. This is an **angular** rate, not an ordinary frequency.
-
-Model and calibration documents store ordinary frequencies in GHz. Pulse
-waveforms use angular rates, so custom gate rules should convert document
-values with
+Model and calibration documents store ordinary frequencies in GHz. Convert
+document values to angular pulse rates with
 :py:func:`fatqat.emulator.superconducting.angular_rate_from_ghz`.
+Each control selector exposes its accepted waveform unit through
+``selector.coefficient_unit``; the built-in drive, detuning, and exchange
+selectors use ``"rad/ns"``.
+
+``model.basis_order`` is ``("0", "1", "2")``. Use it to interpret flattened
+physical results and derive the local dimension as ``len(model.basis_order)``.
 
 .. autofunction:: fatqat.emulator.superconducting.angular_rate_from_ghz
 
+.. autoattribute:: fatqat.emulator.TransmonModel.basis_order
+
 .. autoattribute:: fatqat.emulator.TransmonModel.time_unit
 
-.. autoattribute:: fatqat.emulator.TransmonModel.control_unit
-
 .. autoattribute:: fatqat.emulator.TransmonModel.subsystem_ids
-
-.. autoattribute:: fatqat.emulator.TransmonModel.physical_dimension
 
 The ``model.control`` namespace chooses the Hamiltonian mechanism, while
 ``frame`` selects a virtual-drive phase. Its methods are also available by
@@ -304,7 +276,7 @@ calibration recipe.
 The public scalar unit accessors ``recipe_time_unit``,
 ``recipe_frequency_unit``, and ``recipe_dimensionless_unit`` describe the
 stored recipe quantities. They are distinct from the model's pulse
-coordinate ``time_unit`` and ``control_unit``.
+coordinate ``time_unit`` and each control selector's ``coefficient_unit``.
 
 Pulse implementation maps
 -------------------------
@@ -335,26 +307,27 @@ See :doc:`pulse-control/pulse-operation`,
 ``iSwap`` is a gate whose built-in realization uses exchange;
 ``iSwap`` is not a channel name.
 
-Lindblad noise and custom rules
--------------------------------
+Lindblad noise
+---------------
 
-Pass a :py:class:`~fatqat.noise.LindbladImplementationMap` to add or replace
-Lindblad noise rules. See :doc:`noise/custom-implementations` for the map API
-and :ref:`noise-emulator-support` for the built-in backend support table.
-When the map is omitted, the default registers
+Pass supported declarations through ``noise=``. The Transmon family owns the
+collapse-operator realizations documented in
+:ref:`noise-emulator-support`: it supports
 :py:class:`~fatqat.noise.AmplitudeDamping`,
 :py:class:`~fatqat.noise.PhaseDamping`, and
-:py:class:`~fatqat.noise.ThermalRelaxation`; an explicit map replaces those
-rules. Qutrit amplitude damping requires two adjacent-level rates. Rates use
-inverse nanoseconds, while ``t1``, ``t2``, and ``t_phi`` use nanoseconds.
-Background and ordinary-operation-scoped generators are accepted. Finite
-probability forms, ``Loss``, and nonlocal declarations are rejected.
+:py:class:`~fatqat.noise.ThermalRelaxation`, plus rate-form
+:py:class:`~fatqat.noise.Depolarizing`. Qutrit amplitude damping requires two
+adjacent-level rates. Depolarization acts on the full three-level space and can
+populate ``|2>``. Rates use inverse nanoseconds, while ``t1``, ``t2``, and
+``t_phi`` use nanoseconds. Background and ordinary-operation-scoped generators
+are accepted. Finite probability forms, ``Loss``, and nonlocal declarations
+are rejected.
 
 Probability-form channels are not converted to rates. In particular,
-:py:class:`~fatqat.noise.PauliChannel` remains Simulator-only even when a rule
-is registered. See :ref:`pulse-probability-noise`. A rate-form
-``Depolarizing`` declaration also requires a Lindblad map that registers it;
-the transmon default map does not.
+:py:class:`~fatqat.noise.PauliChannel` remains Simulator-only. See
+:ref:`pulse-probability-noise`. Readout confusion is classical and must use a
+binary ``2 x 2`` matrix; construction and ``validate_noise_model()`` reject
+larger matrices before a measured run.
 
 Call :py:meth:`~fatqat.emulator.TransmonEmulator.validate_noise_model` before
 running a program to validate its noise model. Program-specific selectors are
@@ -363,8 +336,8 @@ checked at run time.
 Neutral-atom pulse emulators
 ----------------------------
 
-The three-level and two-level atom backends also accept optional gate and
-Lindblad implementation maps.
+The three-level and two-level atom backends also accept optional gate
+implementation maps. Their continuous-noise support is family-owned.
 ``Atom3LevelEmulator`` has built-in gate recipes and per-site direct
 controls. ``Atom2LevelEmulator`` has an empty built-in gate map and global
 direct controls; user-supplied maps can add gate rules.

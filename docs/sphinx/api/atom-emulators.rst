@@ -31,7 +31,7 @@ device capacity and accepts programs with at most six resources; omitting its
 ``num_sites`` argument leaves that simulator unbounded.
 
 .. autoclass:: fatqat.emulator.AtomArrangement
-   :members: chain, rectangular, num_sites
+   :members: chain, rectangular, num_sites, distance_unit
 
 Run configuration and results
 -----------------------------
@@ -128,8 +128,6 @@ The available final-state result depends on the backend and execution mode:
 Use ``result.available_data`` when code must handle more than one execution
 mode. Neither backend exposes QuTiP values.
 
-Result metadata identifies the model format, kind, ID, and revision.
-
 Three-level atom emulator
 -------------------------
 
@@ -146,13 +144,9 @@ retained; ``|r>`` is coherent leakage and is not physical atom loss.
 
 The signed ``C6/R^6`` drift includes every occupied pair. The calibrated CZ
 pulse is fixed and is not retuned when spacing or ``C6`` changes. Binary
-``2 x 2`` classical readout confusion is built in. The default Lindblad map is
-empty; pass a map to add compatible qutrit rate- or time-based noise. Qutrit
-amplitude damping requires two adjacent-level rates. Rates use inverse
-microseconds, while ``t1``, ``t2``, and ``t_phi`` use microseconds. Background
-and ordinary-operation-scoped noise are accepted. See
-:ref:`noise-emulator-support` for the supported forms and
-:ref:`pulse-probability-noise` for why pulse emulators require rates.
+``2 x 2`` classical readout confusion is built in. Continuous Lindblad
+declarations are not supported by this family. See
+:ref:`noise-emulator-support` for the family support table.
 
 Construction and execution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -174,6 +168,11 @@ for the packaged reference; load and decode custom files before passing the
 mapping. The calibration class accepts its own decoded calibration mapping.
 The model defines species, basis and transitions, quantity units, mass, and
 signed ``C6``. The calibration supplies the Raman and CZ recipe values.
+Unlike the narrower Transmon and two-level runtime models, the current
+three-level model retains its public ``kind``, ``local_dimension``, ``species``,
+state and interaction parameters, and ``mass_unit``, ``distance_unit``,
+``time_unit``, ``angular_frequency_unit``, and ``c6_unit`` inventory. That
+family-specific inventory is unchanged by this cleanup.
 
 .. py:class:: fatqat.emulator.Atom3LevelModel
 
@@ -228,9 +227,11 @@ elapses.
 Model and controls
 ~~~~~~~~~~~~~~~~~~
 
-The model fixes basis order ``("g", "r")``, unit spellings, signed ``C6``,
-the ``C6/R^6`` interaction law, and optional channel bounds. It contains no
-geometry or calibration.
+The runtime model exposes basis order ``("g", "r")``, the pulse time unit,
+and global control selectors. It contains no geometry or calibration. Retain
+the decoded source document when application code needs persisted species,
+state labels, signed ``C6``, interaction-law metadata, parameter units, or
+channel bounds. Derive the local dimension as ``len(model.basis_order)``.
 
 .. py:class:: fatqat.emulator.Atom2LevelModel
 
@@ -244,21 +245,24 @@ geometry or calibration.
 
 .. autoattribute:: fatqat.emulator.Atom2LevelModel.available_controls
 
-.. autoattribute:: fatqat.emulator.Atom2LevelModel.angular_frequency_unit
+.. autoattribute:: fatqat.emulator.Atom2LevelModel.basis_order
 
 .. autoattribute:: fatqat.emulator.Atom2LevelModel.time_unit
 
 The global drive accepts a complex :py:class:`~fatqat.emulator.SampledWaveform`;
 its complex values encode amplitude and phase together. The global detuning
 accepts real samples. Both use ``rad/us`` and apply to every arrangement site.
+The selector's ``coefficient_unit`` property is the runtime source for that
+unit.
 
 Interaction cutoff
 ~~~~~~~~~~~~~~~~~~
 
 The default ``interaction_cutoff=None`` keeps every pair and preserves the
 complete ``C6/R^6`` Hamiltonian. A finite nonnegative cutoff keeps pairs whose
-Euclidean distance is at or below that value in the model distance unit
-(currently micrometres); ``0.0`` disables pair interactions. For a rectangular
+Euclidean distance is at or below that value in
+``arrangement.distance_unit`` (currently micrometres); ``0.0`` disables pair
+interactions. For a rectangular
 arrangement, ``interaction_cutoff=arrangement.spacing`` keeps only horizontal
 and vertical nearest pairs. This is a numerical Hamiltonian truncation, not a
 physical blockade radius.
@@ -274,13 +278,11 @@ Binary :py:class:`~fatqat.noise.ReadoutConfusion` is a classical report channel
 applied only to the reported digit after physical collapse, not a Lindblad
 operator.
 
-When ``lindblad_implementation_map`` is omitted, the backend uses built-in
-rules for amplitude damping, phase damping, thermal relaxation, and
-depolarizing noise. Those defaults accept background declarations only. An
-explicit map replaces those rules and can enable operation-scoped rate
-declarations for its registered channel types.
+The family-owned built-ins are amplitude damping, phase damping, thermal
+relaxation, and depolarizing noise. They accept background declarations only;
+operation-scoped continuous noise is unsupported.
 
-With no Lindblad registration, the two-level backend uses pure-state
+With no Lindblad noise declaration, the two-level backend uses pure-state
 evolution. An unmeasured noisy program returns an exact ensemble density
 matrix. A noisy program with terminal measurement uses seeded trajectories. A
 zero-time measured program samples the initial state without time evolution.
