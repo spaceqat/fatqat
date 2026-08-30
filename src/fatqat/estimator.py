@@ -247,13 +247,27 @@ class Estimator:
         # The result declares its own representation, so the kernel is chosen
         # from what came back rather than predicted from the backend.
         if "statevector" in result.available_data:
+            representation = "statevector"
             state, kernel = result.get_statevector(), expectation_statevector
         elif "density_matrix" in result.available_data:
+            representation = "density_matrix"
             state, kernel = result.get_density_matrix(), expectation_density_matrix
         else:
             raise BackendExecutionError(
                 "estimator backend returned no final state; expected a "
                 "statevector or density matrix"
+            )
+
+        logical_dimension = 2 ** _program_width(program)
+        expected_shape = (
+            (logical_dimension,)
+            if representation == "statevector"
+            else (logical_dimension, logical_dimension)
+        )
+        if state.shape != expected_shape:
+            raise BackendValidationError(
+                f"estimator backend returned {representation} shape {state.shape}; "
+                f"expected logical-qubit shape {expected_shape}"
             )
 
         if shots == 0:
