@@ -12,6 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Verify generated documentation is not tracked
+        run: |
+          tracked_generated="$(git ls-files -- \
+            ':(glob)docs/mkdocs/*/assets/generated/**' \
+            ':(glob)docs/mkdocs/*/downloads/tutorials/**' \
+            ':(glob)docs/mkdocs/*/tutorials/**' \
+            docs/mkdocs/tutorial-results)"
+          if [ -n "$tracked_generated" ]; then
+            printf 'Generated documentation files must not be tracked:\n%s\n' "$tracked_generated"
+            exit 1
+          fi
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
