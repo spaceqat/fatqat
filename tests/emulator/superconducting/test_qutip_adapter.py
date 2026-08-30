@@ -479,7 +479,7 @@ def test_realized_cz_matches_an_independent_synchronized_hamiltonian(
         ],
         initial,
         [0.0, block.duration],
-        options={"atol": 1e-11, "rtol": 1e-9, "nsteps": 10000},
+        options={"atol": 1e-11, "rtol": 1e-9, "nsteps": 100000},
     ).states[-1]
     actual = _evolve(adapter, (block,), _context(adapter, initial)).state
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
