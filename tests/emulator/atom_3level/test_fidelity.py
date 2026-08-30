@@ -5,7 +5,6 @@ paired six-test physics gate reported 35.66 seconds under contention; the
 parallel module records the corresponding propagation timing and CI allowance.
 """
 
-import numpy as np
 import pytest
 
 import fatqat as fq
