@@ -41,9 +41,11 @@ from .._waveforms import SampledWaveform
 from .superconducting import (
     TransmonEmulator,
     TransmonCalibration,
+    TransmonGridReference,
     TransmonModel,
     default_transmon_calibration,
     default_transmon_gate_implementation_map,
+    generate_transmon_grid_reference,
 )
 
 __all__ = [
@@ -51,6 +53,7 @@ __all__ = [
     "Atom2LevelEmulator",
     "TransmonModel",
     "TransmonCalibration",
+    "TransmonGridReference",
     "PulseDefinition",
     "ControlChannel",
     "PulseControl",
@@ -60,6 +63,7 @@ __all__ = [
     "PulseImplementationMap",
     "default_transmon_gate_implementation_map",
     "default_transmon_calibration",
+    "generate_transmon_grid_reference",
     "Atom2LevelModel",
     "AtomArrangement",
     "available_model_documents",

@@ -6,14 +6,20 @@ to fixed device topology and accepts a replacement gate implementation map.
 
 from .backend import TransmonEmulator
 from .calibration import TransmonCalibration, default_transmon_calibration
+from .grid_reference import (
+    TransmonGridReference,
+    generate_transmon_grid_reference,
+)
 from .model import TransmonModel, angular_rate_from_ghz
 from .realization import default_transmon_gate_implementation_map
 
 __all__ = [
     "TransmonEmulator",
     "TransmonCalibration",
+    "TransmonGridReference",
     "TransmonModel",
     "angular_rate_from_ghz",
     "default_transmon_calibration",
     "default_transmon_gate_implementation_map",
+    "generate_transmon_grid_reference",
 ]
