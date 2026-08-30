@@ -118,16 +118,13 @@ class TransmonEmulator(_PulseBackend):
         execution_mode: ExecutionMode,
         retain_final_state: bool,
     ) -> Any:
-        if execution_mode != "density_matrix":
-            raise BackendValidationError(
-                "TransmonEmulator supports only density-matrix execution"
-            )
         from .qutip_adapter import _TransmonQutipAdapter
 
         return _TransmonQutipAdapter(
             self._target,
             engine_allocation=prepared.engine_allocation,
             background_noise=prepared.background_noise,
+            execution_mode=execution_mode,
             retain_final_state=retain_final_state,
         )
 

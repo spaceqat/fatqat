@@ -652,6 +652,43 @@ def test_initial_copy_and_propagator_shapes_cover_full_qutrit_model(model):
     assert adapter.solver_metadata()["solver"] == "propagator"
 
 
+def test_coherent_statevector_execution_returns_a_flat_full_qutrit_ket(model):
+    adapter = _adapter(model, execution_mode="statevector")
+    initial = adapter.initial_state()
+    context = _evolve(
+        adapter,
+        (_drive_block(adapter._target, "q0", duration=0.2, coefficients=(2.0, 2.0)),),
+    )
+    outcome = adapter.finish_shot(context)
+
+    assert initial.shape == (9, 1)
+    assert outcome.final_state_kind == "statevector"
+    assert outcome.final_state.shape == (9,)
+    assert np.linalg.norm(outcome.final_state) == pytest.approx(1.0)
+    assert abs(outcome.final_state[0]) < 0.999
+
+
+def test_sampled_ket_reset_matches_the_exact_qutrit_channel_ensemble(model):
+    entangled = (
+        _qutip_tensor(basis(3, 1), basis(3, 0))
+        + _qutip_tensor(basis(3, 2), basis(3, 2))
+    ).unit()
+    exact_adapter = _adapter(model, execution_mode="density_matrix")
+    exact_context = _context(exact_adapter, ket2dm(entangled))
+    exact_adapter.execute_boundary(ResetStep((0,)), exact_context)
+
+    trajectory_adapter = _adapter(model, execution_mode="statevector")
+    projectors = []
+    for seed in range(400):
+        context = _ShotContext(entangled.copy(), [], np.random.default_rng(seed))
+        trajectory_adapter.execute_boundary(ResetStep((0,)), context)
+        vector = np.asarray(context.state.full()).reshape(-1)
+        projectors.append(np.outer(vector, vector.conj()))
+
+    sampled = np.mean(projectors, axis=0)
+    assert sampled == pytest.approx(exact_context.state.full(), abs=0.08)
+
+
 def test_solver_metadata_reports_actual_mesolve_and_keeps_configuration(model):
     adapter = _adapter(model)
     assert adapter.solver_metadata()["solver"] == "none"

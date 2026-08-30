@@ -14,6 +14,7 @@ from qutip import (
     mesolve,
     propagator as qutip_propagator,
     qeye,
+    sesolve,
 )
 from qutip_qip.pulse import Pulse
 
@@ -29,10 +30,11 @@ from .._core.adapter_common import (
 )
 from .._core.engine import _ShotContext, _condition_matches
 from .._core.lindblad import ResolvedLindbladTerm
-from .._core.outcome import _PulseShotOutcome
+from .._core.outcome import ExecutionMode, _PulseShotOutcome
 from .._core.pulse import PhaseShift, PhaseSwap
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
+from .._qutip_boundaries import _apply_qutip_reset, _sample_projective_qutip_state
 from .._core.target import _PreparedControlBinding
 from .._qutip_space import _QutipTensorSpace
 from .target import _Atom3LevelTarget
@@ -49,12 +51,17 @@ class _Atom3LevelQutipAdapter:
         *,
         engine_allocation: _EngineAllocation,
         background_noise: tuple[ResolvedLindbladTerm, ...] = (),
+        execution_mode: ExecutionMode = "density_matrix",
         retain_final_state: bool = True,
     ) -> None:
         if not isinstance(target, _Atom3LevelTarget):
             raise BackendValidationError("atom adapter requires an atom target")
         if type(retain_final_state) is not bool:
             raise BackendValidationError("retain_final_state must be a bool")
+        if execution_mode not in ("statevector", "density_matrix"):
+            raise BackendValidationError(
+                f"unknown three-level atom execution mode {execution_mode!r}"
+            )
         self._target = target
         if (
             engine_allocation.device_operands != target.device_labels
@@ -66,6 +73,7 @@ class _Atom3LevelQutipAdapter:
         self._engine_allocation = engine_allocation
         self._qutip_space = _QutipTensorSpace(engine_allocation)
         self._retain_final_state = retain_final_state
+        self._execution_mode = execution_mode
         self._solver_used = "none"
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
@@ -115,15 +123,24 @@ class _Atom3LevelQutipAdapter:
         return Qobj(np.diag([1.0, np.exp(1j * theta), 1.0]))
 
     def initial_state(self) -> Any:
-        return ket2dm(
-            self._qutip_space.full_tensor(
-                tuple(basis(dim, 0) for dim in self._engine_allocation.system_dims)
-            )
+        ket = self._qutip_space.full_tensor(
+            tuple(basis(dim, 0) for dim in self._engine_allocation.system_dims)
         )
+        return ket2dm(ket) if self._execution_mode == "density_matrix" else ket
 
     @staticmethod
     def copy_state(state: Any) -> Any:
         return state.copy()
+
+    def _validate_state(self, state: Any) -> None:
+        if not isinstance(state, Qobj):
+            raise TypeError("three-level atom runner requires a QuTiP state")
+        if self._execution_mode == "density_matrix" and not state.isoper:
+            raise TypeError(
+                "three-level atom density-matrix runner requires an operator"
+            )
+        if self._execution_mode == "statevector" and not state.isket:
+            raise TypeError("three-level atom statevector runner requires a ket")
 
     def interaction_drift(self) -> Qobj:
         drift = 0 * self._qutip_space.full_tensor(
@@ -203,19 +220,34 @@ class _Atom3LevelQutipAdapter:
             input_time=context.time,
             input_frames=context.frame_angles,
         )
+        self._validate_state(context.state)
         solver_state = context.state
         if isinstance(bound, _BoundDynamics):
-            self._solver_used = "mesolve"
-            result = mesolve(
-                bound.hamiltonian,
-                solver_state,
-                [context.time, run.end_time],
-                c_ops=(
-                    self._background_collapse_operators()
-                    + self._bind_block_collapse_operators(run, enabled)
-                ),
-                options=_SOLVER_OPTIONS,
+            collapse_operators = (
+                self._background_collapse_operators()
+                + self._bind_block_collapse_operators(run, enabled)
             )
+            if self._execution_mode == "density_matrix":
+                self._solver_used = "mesolve"
+                result = mesolve(
+                    bound.hamiltonian,
+                    solver_state,
+                    [context.time, run.end_time],
+                    c_ops=collapse_operators,
+                    options=_SOLVER_OPTIONS,
+                )
+            else:
+                if collapse_operators:
+                    raise BackendValidationError(
+                        "Atom3LevelEmulator does not support continuous trajectories"
+                    )
+                self._solver_used = "sesolve"
+                result = sesolve(
+                    bound.hamiltonian,
+                    solver_state,
+                    [context.time, run.end_time],
+                    options=_SOLVER_OPTIONS,
+                )
             solver_state = result.states[-1]
         context.state = solver_state
         context.frame_angles.clear()
@@ -281,35 +313,31 @@ class _Atom3LevelQutipAdapter:
 
     def finish_shot(self, context: _ShotContext) -> _PulseShotOutcome:
         """Convert the solver component to a copied NumPy payload."""
+        self._validate_state(context.state)
+        final_state = None
+        if self._retain_final_state:
+            array = np.asarray(context.state.full(), dtype=complex)
+            if self._execution_mode == "statevector":
+                array = array.reshape(-1)
+            final_state = np.array(array, dtype=complex, copy=True)
         return _PulseShotOutcome(
-            final_state=(
-                np.array(context.state.full(), dtype=complex, copy=True)
-                if self._retain_final_state
-                else None
-            ),
-            final_state_kind="density_matrix",
+            final_state=final_state,
+            final_state_kind=self._execution_mode,
             classical_digits=tuple(context.classical_memory),
         )
 
     def _measure(self, ordinal: int, context: _ShotContext) -> int:
-        """Sample and collapse one physical qutrit while retaining its binding."""
+        """Sample and collapse one physical qutrit in the active representation."""
         try:
             projectors = self._projectors[ordinal]
         except (IndexError, TypeError):
             raise BackendValidationError(f"unknown atom site {ordinal!r}") from None
-        probabilities = np.array(
-            [
-                max(0.0, float(np.real((projector * context.state).tr())))
-                for projector in projectors
-            ]
+        self._validate_state(context.state)
+        outcome, context.state = _sample_projective_qutip_state(
+            context.state,
+            projectors,
+            context.rng,
         )
-        total = probabilities.sum()
-        if not np.isfinite(total) or total <= 0:
-            raise RuntimeError("physical measurement produced invalid probabilities")
-        probabilities /= total
-        outcome = int(context.rng.choice(len(probabilities), p=probabilities))
-        projector = projectors[outcome]
-        context.state = projector * context.state * projector / probabilities[outcome]
         return outcome
 
     def _reset(self, ordinal: int, context: _ShotContext) -> None:
@@ -318,9 +346,8 @@ class _Atom3LevelQutipAdapter:
             operators = self._reset_operators[ordinal]
         except (IndexError, TypeError):
             raise BackendValidationError(f"unknown atom site {ordinal!r}") from None
-        context.state = sum(
-            operator * context.state * operator.dag() for operator in operators
-        )
+        self._validate_state(context.state)
+        context.state = _apply_qutip_reset(context.state, operators, context.rng)
 
     def _background_collapse_operators(self) -> tuple[Any, ...]:
         if self._collapse_operators is None:

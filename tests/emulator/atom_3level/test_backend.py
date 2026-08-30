@@ -42,6 +42,14 @@ def _backend(
     )
 
 
+class _StatevectorAtom3LevelEmulator(fq.emulator.Atom3LevelEmulator):
+    """Select the pre-cutover private statevector capability in tests."""
+
+    def _resolve_execution_mode(self, facts):
+        del facts
+        return "statevector"
+
+
 def test_atom_3level_public_identity_and_private_ownership(
     atom_3level_model, atom_3level_calibration
 ):
@@ -100,6 +108,25 @@ def test_atom_3level_backend_lowers_model_factory_direct_control(
     (block,) = backend._prepare_program(program).plan
     assert block.controls == operation.controls
     assert block.target_indices == (0,)
+
+
+def test_atom3_coherent_statevector_is_flat_and_full_physical(
+    atom_3level_model,
+):
+    backend = _StatevectorAtom3LevelEmulator(
+        atom_3level_model,
+        arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
+    )
+    program = fq.Program(2)
+    program.add(ops.RX(np.pi / 2), 0)
+
+    result = backend.run(program).result()
+    state = result.get_statevector()
+
+    assert result.available_data == frozenset({"statevector"})
+    assert state.shape == (9,)
+    assert np.linalg.norm(state) == pytest.approx(1.0)
+    assert abs(state[0]) < 0.999
 
 
 def test_atom_3level_result_shot_validation_preserves_exact_messages(

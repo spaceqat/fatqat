@@ -250,6 +250,15 @@ def test_engine_allocation_must_match_the_complete_target(atom_3level_model):
         )
 
 
+def test_atom3_adapter_has_no_continuous_trajectory_mode(atom_3level_model):
+    with pytest.raises(BackendValidationError, match="execution mode"):
+        _adapter(
+            atom_3level_model,
+            ((0.0, 0.0, 0.0),),
+            execution_mode="trajectory",
+        )
+
+
 def test_frame_only_run_preserves_virtual_frame_semantics(atom_3level_model):
     adapter = _adapter(atom_3level_model, ((0.0, 0.0, 0.0),))
     theta = 0.37

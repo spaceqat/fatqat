@@ -30,6 +30,7 @@ from .._core.outcome import ExecutionMode, _PulseShotOutcome
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
 from .._core.waveform import _REQUESTED_SPLINE_DEGREE
+from .._qutip_boundaries import _sample_projective_qutip_state
 from .._qutip_space import _QutipTensorSpace
 from .target import _Atom2LevelTarget
 
@@ -84,6 +85,13 @@ class _Atom2LevelQutipAdapter:
         self._solver_used = "none"
         self._site_count = engine_allocation.n_subsystems
         self._dims = list(self._qutip_space.dims)
+        self._projectors = tuple(
+            tuple(
+                self._qutip_space.expand_local(site, basis(2, outcome).proj())
+                for outcome in range(2)
+            )
+            for site in range(self._site_count)
+        )
         self.local_raising = Qobj(np.asarray([[0.0, 0.0], [1.0, 0.0]], complex))
         self.local_number = Qobj(np.diag([0.0, 1.0]))
         identity = self._qutip_space.full_tensor(
@@ -221,11 +229,7 @@ class _Atom2LevelQutipAdapter:
             maps,
             confusions,
         ):
-            outcome = (
-                self._measure_density_matrix(engine_index, context)
-                if self._execution_mode == "density_matrix"
-                else self._measure_statevector(engine_index, context)
-            )
+            outcome = self._measure(engine_index, context)
             try:
                 reported = digit_map[outcome]
             except IndexError as error:
@@ -478,53 +482,13 @@ class _Atom2LevelQutipAdapter:
                     raise BackendValidationError("unknown two-level atom control kind")
         return QobjEvo(terms)
 
-    def _measure_statevector(self, canonical_axis: int, context: _ShotContext) -> int:
-        state = self._statevector(context.state)
-        basis_indices = np.arange(len(state), dtype=np.int64)
-        digits = (basis_indices >> canonical_axis) & 1
-        probabilities = np.bincount(
-            digits,
-            weights=np.abs(state) ** 2,
-            minlength=2,
-        ).astype(float)
-        total = float(np.sum(probabilities))
-        if not np.isfinite(total) or total <= 0.0:
-            raise RuntimeError("two-level measurement produced invalid probabilities")
-        probabilities /= total
-        outcome = int(context.rng.choice(2, p=probabilities))
-        collapsed = np.array(state, dtype=complex, copy=True)
-        collapsed[digits != outcome] = 0.0
-        collapsed /= np.sqrt(probabilities[outcome] * total)
-        context.state = Qobj(collapsed, dims=[self._dims, [1] * self._site_count])
-        return outcome
-
-    def _measure_density_matrix(
-        self, canonical_axis: int, context: _ShotContext
-    ) -> int:
+    def _measure(self, canonical_axis: int, context: _ShotContext) -> int:
         self._validate_state(context.state)
-        projectors = tuple(
-            self._qutip_space.expand_local(
-                canonical_axis,
-                basis(2, outcome).proj(),
-            )
-            for outcome in range(2)
+        outcome, context.state = _sample_projective_qutip_state(
+            context.state,
+            self._projectors[canonical_axis],
+            context.rng,
         )
-        weights = np.asarray(
-            [
-                float(np.real((projector * context.state).tr()))
-                for projector in projectors
-            ]
-        )
-        if np.any(weights < -1e-10):
-            raise RuntimeError("two-level measurement produced invalid probabilities")
-        weights = np.clip(weights, 0.0, None)
-        total = float(np.sum(weights))
-        if not np.isfinite(total) or total <= 0.0:
-            raise RuntimeError("two-level measurement produced invalid probabilities")
-        probabilities = weights / total
-        outcome = int(context.rng.choice(2, p=probabilities))
-        projector = projectors[outcome]
-        context.state = (projector * context.state * projector) / weights[outcome]
         return outcome
 
     def _statevector(self, state: Any) -> np.ndarray:

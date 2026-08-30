@@ -115,9 +115,9 @@ class Atom3LevelEmulator(_PulseBackend):
         execution_mode: ExecutionMode,
         retain_final_state: bool,
     ) -> Any:
-        if execution_mode != "density_matrix":
+        if execution_mode not in ("statevector", "density_matrix"):
             raise BackendValidationError(
-                "Atom3LevelEmulator supports only density-matrix execution"
+                "Atom3LevelEmulator does not support continuous trajectories"
             )
         from .qutip_adapter import _Atom3LevelQutipAdapter
 
@@ -125,6 +125,7 @@ class Atom3LevelEmulator(_PulseBackend):
             self._target,
             engine_allocation=prepared.engine_allocation,
             background_noise=prepared.background_noise,
+            execution_mode=execution_mode,
             retain_final_state=retain_final_state,
         )
 

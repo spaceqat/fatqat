@@ -10,10 +10,12 @@ from qutip import (
     basis,
     destroy,
     ket2dm,
+    mcsolve,
     mesolve,
     num,
     propagator as qutip_propagator,
     qeye,
+    sesolve,
     tensor,
 )
 from qutip_qip.pulse import Drift, Pulse
@@ -30,11 +32,12 @@ from .._core.adapter_common import (
 )
 from .._core.engine import _ShotContext, _condition_matches
 from .._core.lindblad import ResolvedLindbladTerm
-from .._core.outcome import _PulseShotOutcome
+from .._core.outcome import ExecutionMode, _PulseShotOutcome
 from .._core.pulse import PhaseShift, PhaseSwap, PulseBlock
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.target import _PreparedControlBinding
 from .._core.value_validation import TIME_EPSILON
+from .._qutip_boundaries import _apply_qutip_reset, _sample_projective_qutip_state
 from .._qutip_space import _QutipTensorSpace
 from .model import angular_rate_from_ghz
 from .target import _TransmonTarget
@@ -68,6 +71,7 @@ class _TransmonQutipAdapter:
         *,
         engine_allocation: _EngineAllocation,
         background_noise: tuple[ResolvedLindbladTerm, ...] = (),
+        execution_mode: ExecutionMode = "density_matrix",
         retain_final_state: bool = True,
     ) -> None:
         """Adapt one already-bound physical target to the QuTiP layer.
@@ -81,7 +85,12 @@ class _TransmonQutipAdapter:
         self._target = target
         if type(retain_final_state) is not bool:
             raise BackendValidationError("retain_final_state must be a bool")
+        if execution_mode not in ("statevector", "density_matrix", "trajectory"):
+            raise BackendValidationError(
+                f"unknown transmon execution mode {execution_mode!r}"
+            )
         self._retain_final_state = retain_final_state
+        self._execution_mode = execution_mode
         self._solver_used = "none"
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
@@ -139,16 +148,24 @@ class _TransmonQutipAdapter:
         }
 
     def initial_state(self) -> Any:
-        """Create the full-model physical ground-state density matrix."""
+        """Create the full-model physical ground state."""
         ket = self._qutip_space.full_tensor(
             [basis(dimension, 0) for dimension in self._engine_allocation.system_dims]
         )
-        return ket2dm(ket)
+        return ket2dm(ket) if self._execution_mode == "density_matrix" else ket
 
     @staticmethod
     def copy_state(state: Any) -> Any:
         """Copy a state for an independent terminal-measurement trajectory."""
         return state.copy()
+
+    def _validate_state(self, state: Any) -> None:
+        if not isinstance(state, Qobj):
+            raise TypeError("transmon runner requires a QuTiP state")
+        if self._execution_mode == "density_matrix" and not state.isoper:
+            raise TypeError("transmon density-matrix runner requires an operator")
+        if self._execution_mode != "density_matrix" and not state.isket:
+            raise TypeError("transmon statevector runner requires a ket")
 
     def evolve(
         self,
@@ -168,21 +185,88 @@ class _TransmonQutipAdapter:
             input_time=context.time,
             input_frames=context.frame_angles,
         )
+        self._validate_state(context.state)
         state = context.state
         if isinstance(bound, _BoundDynamics):
-            self._solver_used = "mesolve"
-            result = mesolve(
-                bound.hamiltonian,
-                state,
-                [context.time, run.end_time],
-                c_ops=bound.collapse_operators,
-                options=_SOLVER_OPTIONS,
-            )
-            state = result.states[-1]
+            if self._execution_mode == "density_matrix":
+                self._solver_used = "mesolve"
+                result = mesolve(
+                    bound.hamiltonian,
+                    state,
+                    [context.time, run.end_time],
+                    c_ops=bound.collapse_operators,
+                    options=_SOLVER_OPTIONS,
+                )
+                state = result.states[-1]
+            elif bound.collapse_operators:
+                if self._execution_mode != "trajectory":
+                    raise BackendValidationError(
+                        "transmon statevector execution requires coherent dynamics"
+                    )
+                state = self._solve_trajectory(
+                    bound,
+                    state,
+                    start_time=context.time,
+                    end_time=run.end_time,
+                    rng=context.rng,
+                )
+            else:
+                self._solver_used = "sesolve"
+                result = sesolve(
+                    bound.hamiltonian,
+                    state,
+                    [context.time, run.end_time],
+                    options=_SOLVER_OPTIONS,
+                )
+                state = result.states[-1]
 
         context.state = state
         context.frame_angles.clear()
         context.frame_angles.update(bound.output_frames)
+
+    def _solve_trajectory(
+        self,
+        bound: _BoundDynamics,
+        state: Qobj,
+        *,
+        start_time: float,
+        end_time: float,
+        rng: np.random.Generator,
+    ) -> Qobj:
+        """Solve one retained stochastic trajectory from the current ket."""
+        seed = int(
+            rng.integers(
+                0,
+                np.iinfo(np.uint64).max,
+                dtype=np.uint64,
+            )
+        )
+        self._solver_used = "mcsolve"
+        result = mcsolve(
+            bound.hamiltonian,
+            state,
+            [start_time, end_time],
+            c_ops=bound.collapse_operators,
+            ntraj=1,
+            seeds=[seed],
+            options={
+                **_SOLVER_OPTIONS,
+                "store_final_state": True,
+                "keep_runs_results": True,
+                "progress_bar": False,
+            },
+        )
+        final_states = result.runs_final_states
+        if (
+            final_states is None
+            or len(final_states) != 1
+            or not isinstance(final_states[0], Qobj)
+            or not final_states[0].isket
+        ):
+            raise BackendValidationError(
+                "mcsolve did not retain one transmon trajectory final ket"
+            )
+        return final_states[0].copy()
 
     def propagator(
         self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True
@@ -350,13 +434,20 @@ class _TransmonQutipAdapter:
 
     def finish_shot(self, context: _ShotContext) -> _PulseShotOutcome:
         """Return a NumPy copy; no solver value crosses the engine boundary."""
+        self._validate_state(context.state)
+        final_state = None
+        if self._retain_final_state:
+            array = np.asarray(context.state.full(), dtype=complex)
+            if self._execution_mode != "density_matrix":
+                array = array.reshape(-1)
+            final_state = np.array(array, dtype=complex, copy=True)
         return _PulseShotOutcome(
-            final_state=(
-                np.array(context.state.full(), dtype=complex, copy=True)
-                if self._retain_final_state
-                else None
+            final_state=final_state,
+            final_state_kind=(
+                "density_matrix"
+                if self._execution_mode == "density_matrix"
+                else "statevector"
             ),
-            final_state_kind="density_matrix",
             classical_digits=tuple(context.classical_memory),
         )
 
@@ -455,28 +546,22 @@ class _TransmonQutipAdapter:
         return ordinal
 
     def _measure(self, ordinal: int, context: _ShotContext) -> int:
-        """Sample one physical qutrit projector and collapse the density matrix."""
-        probabilities = np.array(
-            [
-                max(0.0, float(np.real((projector * context.state).tr())))
-                for projector in self._projectors[ordinal]
-            ]
+        """Sample one physical qutrit projector and collapse the active state."""
+        self._validate_state(context.state)
+        outcome, context.state = _sample_projective_qutip_state(
+            context.state,
+            self._projectors[ordinal],
+            context.rng,
         )
-        total = probabilities.sum()
-        if not np.isfinite(total) or total <= 0:
-            raise RuntimeError("physical measurement produced invalid probabilities")
-        probabilities /= total
-        outcome = int(context.rng.choice(len(probabilities), p=probabilities))
-        projector = self._projectors[ordinal][outcome]
-        probability = probabilities[outcome]
-        context.state = projector * context.state * projector / probability
         return outcome
 
     def _reset(self, ordinal: int, context: _ShotContext) -> None:
-        """Apply the deterministic local qutrit reset channel."""
-        context.state = sum(
-            operator * context.state * operator.dag()
-            for operator in self._reset_operators[ordinal]
+        """Apply the exact channel or sample one pure-state Kraus branch."""
+        self._validate_state(context.state)
+        context.state = _apply_qutip_reset(
+            context.state,
+            self._reset_operators[ordinal],
+            context.rng,
         )
 
     def _bind_child(
