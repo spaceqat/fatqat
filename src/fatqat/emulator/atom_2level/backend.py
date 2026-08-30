@@ -86,6 +86,9 @@ class Atom2LevelEmulator(_PulseBackend):
         interaction_cutoff: Maximum interacting-pair separation in the
             arrangement's distance unit. ``None`` keeps every pair; ``0.0``
             disables pair interactions.
+        method: Mathematical result representation: ``"statevector"``
+            (default), ``"density_matrix"``, or ``"unitary"``. The aliases
+            ``"SV"`` and ``"DM"`` are accepted.
         noise: Noise applied by this emulator. The default is no noise.
         gate_implementation_map: Gate-to-pulse rules. ``None`` uses an empty
             map.

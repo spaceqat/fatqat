@@ -259,8 +259,8 @@ class _PulseBackend(ABC):
         Args:
             program: Program to execute.
             shots: Number of repetitions used when counts are requested.
-                Counts require a positive built-in ``int``. A measured final
-                state requires ``shots == 1``.
+                Counts require a positive built-in ``int``. A stochastic
+                final state requires ``shots == 1``.
             resource_layout: Optional program-to-device mapping. The emulator
                 uses its default mapping when omitted.
             simulation_config: Optional ``dict`` of pulse-execution settings.
@@ -284,10 +284,11 @@ class _PulseBackend(ABC):
                   them, and ``None`` enables them when measurement exists.
                   Counts require a positive integer ``shots`` value.
                 - ``"final_state"`` (``bool | None``, default ``None``):
-                  ``True`` requests the emulator's ``statevector`` or
-                  ``density_matrix``, ``False`` suppresses it, and ``None``
-                  enables it when there is no measurement. With measurement,
-                  it requires ``shots == 1``.
+                  ``True`` requests the method-native ``statevector``,
+                  ``density_matrix``, or ``unitary``; ``False`` suppresses it;
+                  ``None`` enables deterministic unmeasured output. A
+                  stochastic final state requires an explicit request and
+                  ``shots == 1``.
 
                 Other keys are rejected.
 

@@ -24,15 +24,18 @@ from .target import _Atom3LevelTarget
 class Atom3LevelEmulator(_PulseBackend):
     """Run calibrated gates and local controls in ``|0>, |1>, |r>``.
 
-    Programs use dimension-two resources, while evolution and returned density
-    matrices retain all three physical levels. Every run starts with each atom
-    in ``|0>``.
+    Programs use dimension-two resources, while evolution and returned states
+    retain all three physical levels. Every run starts with each atom in
+    ``|0>``.
 
     Args:
         model: Three-level atom model created with
             ``Atom3LevelModel.from_document``.
         arrangement: Fixed site coordinates for the program. The program must
             contain one dimension-two resource per site.
+        method: Mathematical result representation: ``"statevector"``
+            (default), ``"density_matrix"``, or ``"unitary"``. The aliases
+            ``"SV"`` and ``"DM"`` are accepted.
         noise: Noise applied by this emulator. The default is no noise.
         gate_implementation_map: Gate-to-pulse rules. ``None`` uses the
             built-in ``RX``, ``RY``, ``RZ``, and ``CZ`` rules.

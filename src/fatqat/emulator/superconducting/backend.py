@@ -49,6 +49,9 @@ class TransmonEmulator(_PulseBackend):
 
     Args:
         model: Transmon model created with ``TransmonModel.from_document``.
+        method: Mathematical result representation: ``"statevector"``
+            (default), ``"density_matrix"``, or ``"unitary"``. The aliases
+            ``"SV"`` and ``"DM"`` are accepted.
         noise: Noise applied by this emulator. The default is no noise.
         gate_implementation_map: Gate-to-pulse rules. ``None`` uses the
             built-in transmon gate map and packaged calibration.

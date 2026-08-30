@@ -6,11 +6,16 @@
 `fatqat.operations.PulseOperation` values carry direct controls created from a
 model's selectors.
 
+The ``method`` constructor argument selects the mathematical representation
+and corresponding `fatqat.Result` accessor. Pulse emulators support
+``"statevector"`` (the default), ``"density_matrix"``, and ``"unitary"``;
+``"SV"`` and ``"DM"`` are accepted aliases.
+
 A gate-capable emulator uses its packaged gate implementation map when none is
 supplied::
 
     model = TransmonModel.from_document(model_document)
-    result = TransmonEmulator(model).run(program).result()
+    result = TransmonEmulator(model, method="statevector").run(program).result()
 
 Use calibration documents with the standard map builders to customize gate
 realizations. `PulseDefinition` and `PulseImplementationMap` support custom

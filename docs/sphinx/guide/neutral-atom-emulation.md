@@ -72,12 +72,12 @@ Load the three-level reference model and run an ordinary calibrated rotation:
 ... )
 >>> calibrated = fq.Program(arrangement.num_sites)
 >>> calibrated.add(ops.RX(np.pi / 2), 0)
->>> atom3_rho = atom3.run(calibrated).result().get_density_matrix()
->>> atom3_rho.shape
-(9, 9)
+>>> atom3_state = atom3.run(calibrated).result().get_statevector()
+>>> atom3_state.shape
+(9,)
 ```
 
-The `(9, 9)` result retains physical `|r>` population for both sites. The
+The nine-amplitude result retains physical `|r>` population for both sites. The
 built-in map also realizes `RY`, `RZ`, and `CZ`; use it when the packaged
 calibration is the experiment's starting point.
 
@@ -100,7 +100,12 @@ Rydberg waveform halfway through the operation:
 ... )
 >>> selected_site = fq.Program(arrangement.num_sites)
 >>> selected_site.add(ops.PulseOperation(1.0, controls))
->>> selected_rho = atom3.run(selected_site).result().get_density_matrix()
+>>> atom3_density = fq.emulator.Atom3LevelEmulator(
+...     atom3_model,
+...     arrangement=arrangement,
+...     method="density_matrix",
+... )
+>>> selected_rho = atom3_density.run(selected_site).result().get_density_matrix()
 >>> physical = np.real(np.diag(selected_rho)).reshape((3, 3), order="F")
 >>> round(float(physical[2].sum()), 3)
 0.146
@@ -156,10 +161,12 @@ For this short pulse, about 5.4% of the final probability lies outside the
 all-ground state. That number is a physical consequence of the waveform,
 detuning, spacing, interaction model, and duration—not a gate label.
 
-An ideal, unmeasured run returns the complete two-level statevector. With
-supported Lindblad noise it can instead return a density matrix, and terminal
-measurement returns counts. Mid-circuit measurement, reset, conditions, and
-per-site direct controls are not part of this two-level workflow.
+The default method returns the complete two-level statevector. With supported
+Lindblad noise it follows one seeded trajectory when a final state is
+explicitly requested; choose `method="density_matrix"` for the exact ensemble.
+Terminal measurement returns counts. Mid-circuit measurement, reset,
+conditions, and per-site direct controls are not part of this two-level
+workflow.
 
 ## Continue with a physics study
 

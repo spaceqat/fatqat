@@ -230,6 +230,7 @@ Hamiltonian, including leakage and continuous-time noise.
    backend = fq.emulator.Atom2LevelEmulator(
        model,
        arrangement=arrangement,
+       method="unitary",
    )
    omega = 2.0 * np.pi
    durations = np.linspace(0.0, 1.5, 31)
@@ -249,11 +250,11 @@ Hamiltonian, including leakage and continuous-time noise.
        )
        program = fq.Program(arrangement.num_sites)
        program.add(ops.PulseOperation(step, (drive, offset)))
-       propagator = backend.propagator(program)
+       step_unitary = backend.run(program, shots=0).result().get_unitary()
 
        state = ground_state.copy()
        for column in range(1, len(durations)):
-           state = propagator @ state
+           state = step_unitary @ state
            population[row, column] = abs(state[1]) ** 2
 
    resonance = population[len(detunings) // 2]

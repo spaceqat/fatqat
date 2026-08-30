@@ -57,8 +57,8 @@ starts is represented by a failed job, and ``job.result()`` raises
    * - ``seed``
      - ``int`` or ``None``; not ``bool``
      - ``None``
-     - Random seed for measurement, readout, and trajectory sampling. Integers
-       must be non-negative; ``None`` chooses a fresh seed.
+     - Random seed for measurement, reset, readout, and statevector trajectory
+       sampling. Integers must be non-negative; ``None`` chooses a fresh seed.
    * - ``schedule_mode``
      - ``"ASAP"`` or ``"ALAP"``
      - ``"ASAP"``
@@ -83,9 +83,10 @@ starts is represented by a failed job, and ``job.result()`` raises
    * - ``final_state``
      - ``bool`` or ``None``
      - ``None``
-     - ``True`` requests the model- and mode-specific terminal state,
-       ``False`` suppresses it, and ``None`` enables it when measurement is
-       absent. With physical measurement, it requires ``shots == 1``.
+     - ``True`` requests the method-native state or operator, ``False``
+       suppresses it, and ``None`` enables deterministic unmeasured output.
+       A stochastic final state requires an explicit request and
+       ``shots == 1``.
 
 Both configuration arguments must be a ``dict`` or ``None``; unknown keys
 are rejected.
@@ -94,39 +95,51 @@ Each run starts from a fixed product state: ``|0>`` on the three-level backend
 and ``|g>`` on the two-level backend. Neither constructor accepts an
 ``initial_state`` argument.
 
-The available final-state result depends on the backend and execution mode:
+Both constructors accept the case-insensitive values ``method="statevector"``
+(the default), ``"density_matrix"``, or ``"unitary"``. ``"SV"`` and ``"DM"``
+are aliases.
+The read-only ``backend.method`` property and ``result.metadata["method"]``
+use the canonical full name. A method selects the mathematical representation
+and predictable Result accessor, not an internal solver:
 
 .. list-table:: Final-state representations
    :header-rows: 1
-   :widths: 32 24 24 20
+   :widths: 22 28 25 25
 
-   * - Backend/mode
+   * - Method
      - Result accessor
      - Shape for ``N`` sites
      - Interpretation
-   * - Three-level, no measurement
-     - :py:meth:`~fatqat.Result.get_density_matrix`
-     - ``(3**N, 3**N)``
-     - Exact ensemble state.
-   * - Three-level, measured
-     - :py:meth:`~fatqat.Result.get_density_matrix` when requested
-     - ``(3**N, 3**N)``
-     - One sampled posterior state; requires ``shots == 1``.
-   * - Two-level, no Lindblad evolution
+   * - ``"statevector"``
      - :py:meth:`~fatqat.Result.get_statevector`
-     - ``(2**N,)``
-     - Pure state, or one sampled posterior state after measurement.
-   * - Two-level unmeasured Lindblad
+     - ``(d**N,)``
+     - A pure coherent state, or one sampled posterior/trajectory when the
+       execution is stochastic.
+   * - ``"density_matrix"``
      - :py:meth:`~fatqat.Result.get_density_matrix`
-     - ``(2**N, 2**N)``
-     - Exact ensemble state.
-   * - Two-level measured Lindblad
-     - :py:meth:`~fatqat.Result.get_statevector` when requested
-     - ``(2**N,)``
-     - One sampled trajectory and posterior state; requires ``shots == 1``.
+     - ``(d**N, d**N)``
+     - The exact ensemble state under supported Lindblad evolution.
+   * - ``"unitary"``
+     - :py:meth:`~fatqat.Result.get_unitary`
+     - ``(d**N, d**N)``
+     - The complete coherent operator in the canonical terminal frame.
 
-Use ``result.available_data`` when code must handle more than one execution
-mode. Neither backend exposes QuTiP values.
+Here ``d=3`` for :py:class:`~fatqat.emulator.Atom3LevelEmulator` and ``d=2``
+for :py:class:`~fatqat.emulator.Atom2LevelEmulator`. Neither backend exposes
+QuTiP values, ``superop``, or internal solver names as public methods.
+
+Measurement and statevector reset make a retained final state stochastic. On
+the two-level family, potentially active Lindblad noise does too. In those
+cases the default request returns counts when measurement exists and otherwise
+metadata only; request a single seeded final state explicitly with
+``result_config={"final_state": True}``, ``shots=1``, and
+``simulation_config={"seed": ...}``. Select ``method="density_matrix"`` for
+an exact supported Lindblad ensemble.
+
+Use ``method="unitary"`` through ``run()`` and
+:py:meth:`~fatqat.Result.get_unitary`. It rejects measurement, reset,
+conditions, counts, and potentially active Lindblad evolution. There is no
+separate public propagator API.
 
 Three-level atom emulator
 -------------------------
@@ -152,12 +165,7 @@ Construction and execution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: fatqat.emulator.Atom3LevelEmulator
-   :members: model, arrangement, run, propagator, validate_noise_model
-
-``propagator()`` returns the coherent full-qutrit ``(3**N, 3**N)`` operator.
-It rejects measurement, reset, and conditions. ``apply_final_frame=True``
-includes the final virtual-frame transformation; ``False`` omits that final
-transformation. Readout-only noise does not affect the propagator.
+   :members: method, model, arrangement, run, validate_noise_model
 
 Model and calibration values
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -217,12 +225,7 @@ Construction and execution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: fatqat.emulator.Atom2LevelEmulator
-   :members: model, arrangement, interaction_cutoff, run, propagator, validate_noise_model
-
-``propagator()`` returns a coherent ``(2**N, 2**N)`` operator. It rejects
-measurement, and rejects Lindblad noise when the program has nonzero duration.
-A zero-duration program returns identity even with such noise because no time
-elapses.
+   :members: method, model, arrangement, interaction_cutoff, run, validate_noise_model
 
 Model and controls
 ~~~~~~~~~~~~~~~~~~
@@ -267,8 +270,8 @@ arrangement, ``interaction_cutoff=arrangement.spacing`` keeps only horizontal
 and vertical nearest pairs. This is a numerical Hamiltonian truncation, not a
 physical blockade radius.
 
-Lindblad noise and result types
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Lindblad noise
+~~~~~~~~~~~~~~
 
 The built-in forms are listed at :ref:`noise-emulator-support`. Each background
 registration names one site; enumerate sites explicitly to apply the same noise
@@ -282,11 +285,13 @@ The family-owned built-ins are amplitude damping, phase damping, thermal
 relaxation, and depolarizing noise. They accept background declarations only;
 operation-scoped continuous noise is unsupported.
 
-With no Lindblad noise declaration, the two-level backend uses pure-state
-evolution. An unmeasured noisy program returns an exact ensemble density
-matrix. A noisy program with terminal measurement uses seeded trajectories. A
-zero-time measured program samples the initial state without time evolution.
-Even a zero-rate Lindblad declaration selects the noisy result type.
+With ``method="statevector"``, resolved Lindblad noise that can act during a
+nonzero-duration block uses seeded trajectories. Because this family accepts
+background declarations only, one is conservatively considered active when
+any nonzero-duration block exists. Conditioned blocks and zero-rate
+declarations still count. Use ``method="density_matrix"`` for the exact
+ensemble. A zero-time measured program samples the initial state without time
+evolution.
 
 See :doc:`pulse-control/index` for direct pulse authoring and
 :doc:`../guide/neutral-atom-emulation` for the complete two-level workflow.

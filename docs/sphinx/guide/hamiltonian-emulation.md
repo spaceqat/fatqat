@@ -37,14 +37,14 @@ three-level transmons:
 >>> calibrated_program = fq.Program(1)
 >>> calibrated_program.add(ops.RX(np.pi / 2), 0)
 >>> calibrated_result = backend.run(calibrated_program).result()
->>> calibrated_result.get_density_matrix().shape
-(9, 9)
+>>> calibrated_result.get_statevector().shape
+(9,)
 ```
 
 `RX` remains an ordinary Program operation. At execution time, the emulator's
 gate map obtains a pulse recipe from its calibration and binds that recipe to
 the model's drive channel. The physical model has two qutrits, so the returned
-matrix covers all $3^2$ basis states, including the unaddressed second
+vector covers all $3^2$ basis states, including the unaddressed second
 transmon. This physical qutrit state is not a logical qutrit Program.
 
 Packaged models and calibrations are reference snapshots. Supply a validated
@@ -73,8 +73,8 @@ that order as a {py:class}`~fatqat.emulator.SampledWaveform`, a
 >>> direct_program = fq.Program(1)
 >>> direct_program.add(pulse)
 >>> direct_result = backend.run(direct_program).result()
->>> direct_result.get_density_matrix().shape
-(9, 9)
+>>> direct_result.get_statevector().shape
+(9,)
 ```
 
 Notice that `direct_program.add(pulse)` has no logical target. The channel
@@ -109,8 +109,12 @@ control block without deleting its duration, so the model still evolves during
 the interval. Those differences are why a Hamiltonian emulator answers a
 different question from a hardware-profile simulator.
 
+The constructor's `method` selects the mathematical representation and Result
+accessor: `statevector` (the default), `density_matrix`, or `unitary`. It does
+not select an internal differential-equation solver.
+
 Continue with {doc}`Transmon emulation <transmon-emulation>` or
 {doc}`Neutral-atom emulation <neutral-atom-emulation>`. For pulse object,
-schedule, solver, and model contracts, use the
+schedule, execution-method, and model contracts, use the
 {doc}`pulse-control API <../api/pulse-control/index>` and
 {doc}`emulator API <../api/emulators/index>`.

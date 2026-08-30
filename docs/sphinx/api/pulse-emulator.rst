@@ -53,12 +53,12 @@ hardware calibration. To customize it, supply a complete calibration document
 rather than a partial patch.
 
 Program qubits bind to ``model.subsystem_ids`` in declaration order by
-default. ``run(resource_layout=...)`` and ``propagator(resource_layout=...)``
-accept an explicit :py:class:`~fatqat.ResourceLayout` whose device labels
-are model subsystem IDs. Unaddressed model transmons still participate in the
-full physical state and therefore still contribute factors of three to result
-and propagator dimensions. Their ordered public identities appear in result
-``state_axes`` metadata.
+default. ``run(resource_layout=...)`` accepts an explicit
+:py:class:`~fatqat.ResourceLayout` whose device labels are model subsystem
+IDs. Unaddressed model transmons still participate in the full physical state
+and therefore still contribute factors of three to state and operator
+dimensions. Their ordered public identities appear in result ``state_axes``
+metadata.
 
 ``TransmonEmulator(...)`` accepts these optional arguments:
 
@@ -68,12 +68,74 @@ and propagator dimensions. Their ordered public identities appear in result
 
    * - Argument
      - Meaning
+   * - ``method``
+     - Mathematical representation and method-native result field. Accepted
+       case-insensitive values are ``"statevector"`` (the default),
+       ``"density_matrix"``, and ``"unitary"``; ``"SV"`` and ``"DM"`` are
+       aliases.
    * - ``noise``
      - A :py:class:`~fatqat.NoiseModel`. ``None`` means no noise.
    * - ``gate_implementation_map``
      - A :py:class:`~fatqat.emulator.PulseImplementationMap` mapping operation
        families and device labels to pulse definitions. ``None`` uses the
        built-in map.
+
+Execution methods
+-----------------
+
+``method`` names a mathematical representation, not the internal differential-
+equation solver. The read-only ``backend.method`` property always returns the
+canonical full name, and ``result.metadata["method"]`` records it.
+
+.. list-table:: Method-native results
+   :header-rows: 1
+   :widths: 22 28 25 25
+
+   * - Method
+     - Result accessor
+     - Shape for ``m`` transmons
+     - Meaning
+   * - ``"statevector"``
+     - :py:meth:`~fatqat.Result.get_statevector`
+     - ``(3**m,)``
+     - A pure coherent state, or one seeded trajectory when Lindblad noise
+       can act.
+   * - ``"density_matrix"``
+     - :py:meth:`~fatqat.Result.get_density_matrix`
+     - ``(3**m, 3**m)``
+     - The exact ensemble state under supported Lindblad evolution.
+   * - ``"unitary"``
+     - :py:meth:`~fatqat.Result.get_unitary`
+     - ``(3**m, 3**m)``
+     - The complete coherent operator, including the canonical terminal
+       virtual-frame transformation.
+
+All three representations cover the complete physical qutrit model, not only
+the logical Program resources. Pulse emulators do not expose ``superop`` or
+internal solver names as methods.
+
+An unmeasured statevector run with potentially active Lindblad noise is
+stochastic, so the default result request retains metadata only. Request one
+reproducible trajectory with
+``result_config={"final_state": True}``, ``shots=1``, and a non-negative
+``simulation_config["seed"]``. Choose ``method="density_matrix"`` for the
+exact ensemble instead.
+
+``method="unitary"`` is used through ``run()`` and
+:py:meth:`~fatqat.Result.get_unitary`; there is no separate public propagator
+API. It rejects measurement, reset, classical conditions, counts, and a
+program for which resolved Lindblad noise can act during nonzero-duration
+evolution. This is a conservative structural check: background noise counts
+when any nonzero-duration block exists, while operation-scoped noise counts
+only when attached to such a block. Conditioned blocks and zero-rate
+declarations still count; unmatched and zero-duration scoped declarations do
+not. The check does not analyze reachability, trajectories, jump probability,
+or internal solver coefficients. Readout-only noise does not affect an
+unmeasured unitary run.
+
+The unitary uses per-subsystem near-resonant rotating frames and may differ
+from a conventional qubit ``RZ`` by global phase; compare ideal operators
+phase-invariantly.
 
 Run
 ---
@@ -92,8 +154,9 @@ Run
    * - ``seed``
      - ``int`` or ``None``; not ``bool``
      - ``None``
-     - Seed measurement and readout sampling. Use a non-negative integer;
-       ``None`` uses fresh entropy.
+     - Seed stochastic sampling for measurement, reset, readout, and
+       statevector trajectories. Use a non-negative integer; ``None`` uses
+       fresh entropy.
    * - ``schedule_mode``
      - ``"ASAP"`` or ``"ALAP"``
      - ``"ASAP"``
@@ -121,9 +184,10 @@ settings.
    * - ``final_state``
      - ``bool`` or ``None``
      - ``None``
-     - ``True`` requests the terminal full-model physical density matrix,
-       ``False`` suppresses it, and ``None`` enables it when measurement is
-       absent. With measurement, it requires ``shots == 1``.
+     - ``True`` requests the method-native state or operator, ``False``
+       suppresses it, and ``None`` enables deterministic unmeasured output.
+       A stochastic final state requires an explicit request and
+       ``shots == 1``.
 
 Both configuration arguments must be a ``dict`` or ``None``; unknown keys
 are rejected.
@@ -131,7 +195,6 @@ are rejected.
 Every run begins in the product state with each transmon in physical
 ``|0>``. Pulse emulators do not accept an ``initial_state`` argument.
 
-The density matrix has shape ``(3**m, 3**m)`` for all ``m`` model transmons.
 Measurement first samples a physical level, maps ``0, 1, 2`` to ``0, 1, 1``,
 then applies any classical readout-confusion matrix. Reset prepares physical
 ``|0>``.
@@ -143,28 +206,11 @@ model or calibration documents.
 after a job is returned, ``job.result()`` raises
 :py:class:`~fatqat.errors.BackendExecutionError`.
 
-Propagators
------------
-
-:py:meth:`~fatqat.emulator.TransmonEmulator.propagator` returns a complex NumPy
-array for the complete physical model. Measurement, reset, and classical
-conditions are rejected because they do not define one coherent operator.
-Programs that apply Lindblad noise during nonzero-duration evolution are also
-rejected. Rate-based noise has no effect when no time elapses.
-
-Intermediate virtual-frame updates always rotate later phase-sensitive
-controls. ``apply_final_frame=True`` (the default) additionally composes the
-remaining terminal virtual-frame transformation. ``False`` omits only this
-last transform.
-The result uses per-subsystem near-resonant rotating frames and may differ from
-a conventional qubit ``RZ`` by global phase; compare against ideal matrices
-phase-invariantly.
-
 Reference
 ---------
 
 .. autoclass:: fatqat.emulator.TransmonEmulator
-   :members: run, propagator, validate_noise_model
+   :members: method, model, run, validate_noise_model
 
 Physics model and calibration
 -----------------------------
@@ -179,7 +225,7 @@ unknown keys, unsupported versions, non-finite values, and values outside the
 documented JSON-compatible types are rejected.
 
 Control and frame addresses name model resources. Invalid addresses are
-reported when you call ``run()`` or ``propagator()``.
+reported when you call ``run()``.
 
 The built-in model contains fixed qutrit transmons and an arbitrary undirected
 coupling graph. A coupling declares where controlled exchange operations may
