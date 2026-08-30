@@ -7,7 +7,6 @@ from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     Channel,
     ChannelImplementationMap,
-    LindbladImplementationMap,
     default_channel_implementation_map,
 )
 from fatqat.noise.base import _validate_kraus_shapes
@@ -59,11 +58,8 @@ def _identity_rule(channel, *, targets):
     return (np.eye(2, dtype=complex),)
 
 
-@pytest.mark.parametrize(
-    "map_type", [ChannelImplementationMap, LindbladImplementationMap]
-)
-def test_add_is_the_only_public_registration_verb_and_roundtrips(map_type):
-    channel_map = map_type()
+def test_add_is_the_only_public_registration_verb_and_roundtrips():
+    channel_map = ChannelImplementationMap()
     assert channel_map.add(_CustomChannel, _identity_rule) is None
 
     assert channel_map.get(_CustomChannel) is _identity_rule

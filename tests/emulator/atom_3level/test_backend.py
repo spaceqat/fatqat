@@ -1,7 +1,6 @@
 """Public three-level atom backend ownership and execution coverage."""
 
 from copy import deepcopy
-import inspect
 import warnings
 
 import numpy as np
@@ -43,31 +42,13 @@ def _backend(
     )
 
 
-def test_atom_3level_public_signature_and_private_ownership(
+def test_atom_3level_public_identity_and_private_ownership(
     atom_3level_model, atom_3level_calibration
 ):
     assert (
         fq.emulator.Atom3LevelEmulator.__module__
         == "fatqat.emulator.atom_3level.backend"
     )
-    signature = inspect.signature(fq.emulator.Atom3LevelEmulator)
-    assert tuple(signature.parameters) == (
-        "model",
-        "arrangement",
-        "noise",
-        "gate_implementation_map",
-        "lindblad_implementation_map",
-    )
-    assert signature.parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert signature.parameters["arrangement"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert signature.parameters["arrangement"].default is inspect.Parameter.empty
-    assert signature.parameters["noise"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert signature.parameters["noise"].default is None
-    assert (
-        signature.parameters["gate_implementation_map"].kind
-        is inspect.Parameter.KEYWORD_ONLY
-    )
-    assert signature.parameters["gate_implementation_map"].default is None
     arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     backend = fq.emulator.Atom3LevelEmulator(atom_3level_model, arrangement=arrangement)
     assert backend.model is atom_3level_model

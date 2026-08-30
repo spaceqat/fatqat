@@ -7,9 +7,9 @@ from typing import Any
 from ..atom_arrangement import AtomArrangement
 from ...errors import BackendValidationError
 from ...noise import (
-    LindbladImplementationMap,
     NoiseModel,
 )
+from ...noise.lindblad import LindbladImplementationMap
 from .._core.backend import _PulseBackend
 from .._core.lindblad import _lindblad_noise_rejection_reasons
 from .._core.outcome import ExecutionMode
@@ -36,9 +36,6 @@ class Atom3LevelEmulator(_PulseBackend):
         noise: Noise applied by this emulator. The default is no noise.
         gate_implementation_map: Gate-to-pulse rules. ``None`` uses the
             built-in ``RX``, ``RY``, ``RZ``, and ``CZ`` rules.
-        lindblad_implementation_map: Continuous-noise rules. ``None`` uses an
-            empty map; pass an explicit map to enable Lindblad declarations.
-
     Raises:
         BackendValidationError: If an argument has the wrong type or ``noise``
             contains a declaration unsupported by the selected rules.
@@ -65,7 +62,6 @@ class Atom3LevelEmulator(_PulseBackend):
         arrangement: AtomArrangement,
         noise: NoiseModel | None = None,
         gate_implementation_map: PulseImplementationMap | None = None,
-        lindblad_implementation_map: LindbladImplementationMap | None = None,
     ) -> None:
         if not isinstance(model, Atom3LevelModel):
             raise BackendValidationError("model must be an Atom3LevelModel")
@@ -80,17 +76,12 @@ class Atom3LevelEmulator(_PulseBackend):
             if gate_implementation_map is None
             else gate_implementation_map
         )
-        effective_lindblad_map = (
-            LindbladImplementationMap()
-            if lindblad_implementation_map is None
-            else lindblad_implementation_map
-        )
         self._arrangement = arrangement
         super().__init__(
             model,
             noise=noise,
             gate_implementation_map=effective_gate_map,
-            lindblad_implementation_map=effective_lindblad_map,
+            lindblad_implementation_map=LindbladImplementationMap(),
         )
         self.validate_noise_model(self._noise_model)
         self._set_target(_Atom3LevelTarget(model, arrangement))

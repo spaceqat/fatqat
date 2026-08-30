@@ -14,9 +14,7 @@ supplied::
 
 Use calibration documents with the standard map builders to customize gate
 realizations. `PulseDefinition` and `PulseImplementationMap` support custom
-gate rules. Every emulator accepts replacement gate maps and
-`fatqat.noise.LindbladImplementationMap` values, though built-in gate coverage
-depends on the model family.
+gate rules. Continuous-noise realizations are selected by the emulator family.
 """
 
 from __future__ import annotations

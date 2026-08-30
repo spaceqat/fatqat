@@ -2,7 +2,6 @@
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -12,7 +11,6 @@ import fatqat as fq
 import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
 from fatqat.emulator._core.engine import _ShotContext
-from fatqat.emulator._core.pulse import PulseDefinition, PulseImplementationMap
 from fatqat.emulator._core.scheduling import schedule_pulse_run
 from fatqat.emulator.atom_2level import (
     Atom2LevelModel,
@@ -24,14 +22,9 @@ from fatqat.noise import (
     AmplitudeDamping,
     Depolarizing,
     Loss,
-    LindbladImplementationMap,
     PhaseDamping,
     ReadoutConfusion,
     ThermalRelaxation,
-)
-from fatqat.noise.lindblad import (
-    amplitude_damping_lindblad_rule,
-    phase_damping_lindblad_rule,
 )
 from fatqat.emulator import SampledWaveform
 
@@ -57,15 +50,11 @@ def _backend(
     noise=None,
     *,
     sites=1,
-    gate_map=None,
-    lindblad_map=None,
 ):
     return Atom2LevelEmulator(
         model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, sites, 2.0),
         noise=noise,
-        gate_implementation_map=gate_map,
-        lindblad_implementation_map=lindblad_map,
     )
 
 
@@ -96,38 +85,6 @@ def _pulse_program(sites=1, *, measured=False, amplitude=0.0, duration=1.0):
     if measured:
         program.measure(tuple(range(sites)), tuple(range(sites)))
     return program
-
-
-def _explicit_damping_map():
-    implementations = LindbladImplementationMap()
-    implementations.add(
-        AmplitudeDamping,
-        amplitude_damping_lindblad_rule,
-    )
-    implementations.add(
-        PhaseDamping,
-        phase_damping_lindblad_rule,
-    )
-    return implementations
-
-
-def _single_site_x_map(model):
-    implementations = PulseImplementationMap()
-
-    def realize(_operation, *, device_operands):
-        del device_operands
-        return PulseDefinition(
-            0.5,
-            (
-                PulseControl(
-                    model.control.drive(),
-                    SampledWaveform((0.0, 0.5), (0.0, 0.0)),
-                ),
-            ),
-        )
-
-    implementations.add(ops.X, realize)
-    return implementations
 
 
 @pytest.mark.parametrize(
@@ -174,143 +131,6 @@ def test_support_accepts_binary_and_rejects_nonbinary_readout_confusion(model):
         match="ReadoutConfusion.*2 x 2",
     ):
         _backend(model).validate_noise_model(invalid)
-
-
-def test_explicit_equivalent_map_enables_rate_operation_scope(model):
-    channel = AmplitudeDamping(rate=0.2)
-    noise = _noise(channel, operation=ops.X)
-    with pytest.raises(
-        BackendValidationError,
-        match="built-in defaults accept only background generators",
-    ):
-        _backend(model).validate_noise_model(noise)
-
-    explicit = _backend(
-        model,
-        noise,
-        gate_map=_single_site_x_map(model),
-        lindblad_map=_explicit_damping_map(),
-    )
-    program = fq.Program(1)
-    program.add(ops.X, 0)
-    prepared = explicit._prepare_program(program)
-
-    term = prepared.plan[0].noise[0]
-    expected_rate = channel.rate[0]
-    assert term.engine_indices == (0,)
-    assert abs(term.local_operator[0, 1]) ** 2 == pytest.approx(expected_rate)
-    assert explicit.run(program).result().available_data == {"density_matrix"}
-
-
-@pytest.mark.parametrize(
-    "channel",
-    (
-        AmplitudeDamping(p=(0.1, 0.2)),
-        AmplitudeDamping(rate=(0.1, 0.2)),
-    ),
-)
-def test_explicit_map_rejects_wrong_probability_and_rate_arity(model, channel):
-    noise = _noise(channel, operation=ops.X)
-    backend = _backend(
-        model,
-        gate_map=_single_site_x_map(model),
-        lindblad_map=_explicit_damping_map(),
-    )
-
-    expected_label = (
-        "AmplitudeDamping(p)"
-        if channel.p is not None
-        else "AmplitudeDamping(rate-arity-2)"
-    )
-    with pytest.raises(BackendValidationError) as caught:
-        backend.validate_noise_model(noise)
-    assert expected_label in str(caught.value)
-
-
-def test_explicit_map_keeps_background_rate_and_rejects_probability(model):
-    implementations = _explicit_damping_map()
-    _backend(
-        model,
-        _noise(PhaseDamping(rate=0.2)),
-        lindblad_map=implementations,
-    )
-    with pytest.raises(BackendValidationError, match="not supported"):
-        _backend(
-            model,
-            _noise(PhaseDamping(p=0.2)),
-            lindblad_map=implementations,
-        )
-
-
-def test_operation_scoped_terms_reach_the_adapter_time_window(model, monkeypatch):
-    noise = _noise(AmplitudeDamping(rate=0.2), operation=ops.X)
-    backend = _backend(
-        model,
-        noise,
-        gate_map=_single_site_x_map(model),
-        lindblad_map=_explicit_damping_map(),
-    )
-    program = fq.Program(1)
-    program.add(
-        ops.PulseOperation(
-            0.3,
-            (
-                PulseControl(
-                    model.control.drive(),
-                    SampledWaveform((0.0, 0.3), (0.0, 0.0)),
-                ),
-            ),
-        )
-    )
-    program.add(ops.X, 0)
-    captured = []
-
-    def record(*args, c_ops=(), **kwargs):
-        captured.append(tuple(c_ops))
-        return mesolve(*args, c_ops=c_ops, **kwargs)
-
-    monkeypatch.setattr(
-        "fatqat.emulator.atom_2level.qutip_adapter.mesolve",
-        record,
-    )
-    result = backend.run(program).result()
-
-    assert captured and captured[0]
-    assert captured[0][0](0.15).norm() == pytest.approx(0.0)
-    assert captured[0][0](0.4).norm() > 0.0
-    assert captured[0][0](0.8).norm() == pytest.approx(0.0)
-    assert result.metadata["solver"]["solver"] == "mesolve"
-
-
-def test_operation_scoped_terms_reach_terminal_trajectory_solver(model, monkeypatch):
-    noise = _noise(AmplitudeDamping(rate=0.2), operation=ops.X)
-    backend = _backend(
-        model,
-        noise,
-        gate_map=_single_site_x_map(model),
-        lindblad_map=_explicit_damping_map(),
-    )
-    program = fq.Program(1, 1)
-    program.add(ops.X, 0)
-    program.measure(0, 0)
-    captured = {}
-
-    def record(*_args, c_ops, ntraj, seeds, **_kwargs):
-        captured["c_ops"] = tuple(c_ops)
-        return SimpleNamespace(
-            runs_final_states=[basis(2, 0) for _ in range(ntraj)],
-            seeds=[SimpleNamespace(entropy=seed) for seed in seeds],
-        )
-
-    monkeypatch.setattr(
-        "fatqat.emulator.atom_2level.qutip_adapter.mcsolve",
-        record,
-    )
-    result = backend.run(program, shots=2).result()
-
-    assert len(captured["c_ops"]) == 1
-    assert captured["c_ops"][0](0.25).norm() > 0.0
-    assert result.metadata["solver"]["solver"] == "mcsolve"
 
 
 def test_invalid_noise_selector_is_rejected_against_the_run_layout(model):

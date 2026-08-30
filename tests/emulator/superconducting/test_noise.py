@@ -2,17 +2,22 @@
 
 import numpy as np
 import pytest
+from qutip import Qobj
 
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat._index_allocation import _EngineAllocation
+from fatqat._pulse_values import PulseControl
+from fatqat.emulator import SampledWaveform
 from fatqat.emulator.superconducting.backend import TransmonEmulator
 from fatqat.emulator.superconducting.qutip_adapter import _TransmonQutipAdapter
 from fatqat.emulator.superconducting.target import _TransmonTarget
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     Channel,
+    Depolarizing,
     NoiseModel,
+    ReadoutConfusion,
     ThermalRelaxation,
 )
 from fatqat.resource_layout import ResourceLayout
@@ -70,6 +75,54 @@ def test_noise_validation_rejects_unknown_background_sources(model, calibration)
         match="_UnsupportedAlwaysOn.*no registered Lindblad implementation",
     ):
         TransmonEmulator(model).validate_noise_model(noise)
+
+
+def test_transmon_accepts_binary_and_eagerly_rejects_nonbinary_readout_confusion(
+    model,
+):
+    valid = NoiseModel()
+    valid.add(ReadoutConfusion(np.eye(2)))
+    assert TransmonEmulator(model, noise=valid).validate_noise_model(valid) is None
+
+    invalid = NoiseModel()
+    invalid.add(ReadoutConfusion(np.eye(3)))
+    with pytest.raises(BackendValidationError, match="2 x 2"):
+        TransmonEmulator(model).validate_noise_model(invalid)
+    with pytest.raises(BackendValidationError, match="2 x 2"):
+        TransmonEmulator(model, noise=invalid)
+
+
+def test_rate_depolarization_populates_the_full_qutrit_space(model):
+    rate = 0.7
+    duration = 0.4
+    noise = NoiseModel()
+    noise.add(Depolarizing(rate=rate), targets="q0")
+    backend = TransmonEmulator(model, noise=noise)
+    program = fq.Program(1)
+    program.add(
+        ops.PulseOperation(
+            duration,
+            (
+                PulseControl(
+                    model.control.drive("q0"),
+                    SampledWaveform((0.0, duration), (0.0, 0.0)),
+                ),
+            ),
+        )
+    )
+
+    density = (
+        backend.run(
+            program,
+            result_config={"counts": False, "final_state": True},
+        )
+        .result()
+        .get_density_matrix()
+    )
+    q0_state = Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(1)
+
+    expected_population = (1.0 - np.exp(-rate * duration)) / 3.0
+    assert q0_state.diag()[2].real == pytest.approx(expected_population, abs=2e-7)
 
 
 def test_qutrit_collapse_coefficients_and_t2_limit_are_exact(model, calibration):

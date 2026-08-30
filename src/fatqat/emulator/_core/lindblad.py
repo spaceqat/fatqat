@@ -11,11 +11,11 @@ from ...noise import (
     AmplitudeDamping,
     Depolarizing,
     Loss,
-    LindbladImplementationMap,
     NoiseModel,
     PauliChannel,
     PhaseDamping,
 )
+from ...noise.lindblad import LindbladImplementationMap
 
 
 @dataclass(frozen=True)

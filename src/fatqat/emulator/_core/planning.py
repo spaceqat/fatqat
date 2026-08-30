@@ -13,8 +13,11 @@ from ..._backends.steps import MeasurementStep, ResetStep
 from ..._index_allocation import _ClassicalAllocation, _EngineAllocation
 from ...errors import BackendValidationError
 from ...implementation._operation_registry import _select_implementation
-from ...noise import LindbladImplementationMap, NoiseModel
-from ...noise.lindblad import resolve_lindblad_operators
+from ...noise import NoiseModel
+from ...noise.lindblad import (
+    LindbladImplementationMap,
+    resolve_lindblad_operators,
+)
 from ...operations.measurement import Measurement
 from ...program import _AppliedOperation
 from ...resource_layout import ResourceLayout

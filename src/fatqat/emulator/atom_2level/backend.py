@@ -11,12 +11,12 @@ from ...errors import BackendValidationError
 from ...noise import (
     AmplitudeDamping,
     Depolarizing,
-    LindbladImplementationMap,
     NoiseModel,
     PhaseDamping,
     ThermalRelaxation,
 )
 from ...noise.lindblad import (
+    LindbladImplementationMap,
     amplitude_damping_lindblad_rule,
     depolarizing_lindblad_rule,
     phase_damping_lindblad_rule,
@@ -54,11 +54,7 @@ def _normalize_interaction_cutoff(value: object) -> float | None:
 
 
 def _default_lindblad_map() -> LindbladImplementationMap:
-    """Return a fresh Atom2-only built-in continuous-noise catalog.
-
-    This map is used only when the caller omits a map; an explicitly supplied
-    map replaces the catalog rather than extending it implicitly.
-    """
+    """Return a fresh Atom2 continuous-noise catalog."""
     implementations = LindbladImplementationMap()
     implementations.add(
         AmplitudeDamping,
@@ -96,10 +92,6 @@ class Atom2LevelEmulator(_PulseBackend):
         noise: Noise applied by this emulator. The default is no noise.
         gate_implementation_map: Gate-to-pulse rules. ``None`` uses an empty
             map.
-        lindblad_implementation_map: Continuous-noise rules. ``None`` uses the
-            built-in rate-form damping, relaxation, and depolarizing rules. An
-            explicit map replaces those defaults.
-
     Raises:
         BackendValidationError: If an argument is invalid or ``noise``
             contains a declaration unsupported by the selected rules.
@@ -127,7 +119,6 @@ class Atom2LevelEmulator(_PulseBackend):
         interaction_cutoff: float | None = None,
         noise: NoiseModel | None = None,
         gate_implementation_map: PulseImplementationMap | None = None,
-        lindblad_implementation_map: LindbladImplementationMap | None = None,
     ) -> None:
         if not isinstance(model, Atom2LevelModel):
             raise BackendValidationError("model must be an Atom2LevelModel")
@@ -137,22 +128,16 @@ class Atom2LevelEmulator(_PulseBackend):
 
         self._arrangement = arrangement
         self._interaction_cutoff = cutoff
-        self._uses_builtin_lindblad_defaults = lindblad_implementation_map is None
         effective_gate_map = (
             PulseImplementationMap()
             if gate_implementation_map is None
             else gate_implementation_map
         )
-        effective_lindblad_map = (
-            _default_lindblad_map()
-            if lindblad_implementation_map is None
-            else lindblad_implementation_map
-        )
         super().__init__(
             model,
             noise=noise,
             gate_implementation_map=effective_gate_map,
-            lindblad_implementation_map=effective_lindblad_map,
+            lindblad_implementation_map=_default_lindblad_map(),
         )
         self.validate_noise_model(self._noise_model)
         self._set_target(_Atom2LevelTarget(model, arrangement, cutoff))
@@ -218,7 +203,7 @@ class Atom2LevelEmulator(_PulseBackend):
             self._lindblad_implementation_map,
             local_dimension=_LOCAL_DIMENSION,
             backend_name=type(self).__name__,
-            allow_operation_scoped=not self._uses_builtin_lindblad_defaults,
+            allow_operation_scoped=False,
             supports_readout_confusion=True,
             readout_confusion_shape=(2, 2),
         )

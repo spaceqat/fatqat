@@ -29,7 +29,8 @@ from ...errors import (
     BackendValidationError,
 )
 from ...job import Job
-from ...noise import LindbladImplementationMap, NoiseModel
+from ...noise import NoiseModel
+from ...noise.lindblad import LindbladImplementationMap
 from ...operations import BarrierGate, Measurement, PulseOperation, ResetGate
 from ...program import Program, _AppliedOperation
 from ...resource_layout import ResourceLayout

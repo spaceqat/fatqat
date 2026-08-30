@@ -20,7 +20,7 @@ from fatqat.emulator.superconducting import TransmonModel
 from fatqat.emulator.superconducting.realization import (
     default_transmon_gate_implementation_map,
 )
-from fatqat.errors import BackendValidationError, UnsupportedOperationError
+from fatqat.errors import UnsupportedOperationError
 from fatqat.noise import NoiseModel
 
 
@@ -109,27 +109,6 @@ def test_edgeless_source_is_unsupported_while_reversed_cz_is_valid(
     reversed_cz.add(ops.CZ, (1, 0))
     (block,) = backend._prepare_program(reversed_cz).plan
     assert block.controls[0].channel == backend.model.control.detuning("q1")
-
-
-# --- shared measurement-lowering boundary: confusion validation parity -----
-
-
-def test_pulse_measurement_confusion_must_match_the_reported_bit_dimension(
-    make_backend,
-):
-    noise = NoiseModel()
-    noise.add(fq.noise.ReadoutConfusion(np.eye(3)), targets="q0")
-    backend = make_backend(noise)
-    program = fq.Program(1, 1)
-    program.measure(0, 0)
-
-    # Routed through the shared boundary helper (backend_utils._resolve_confusions):
-    # pulse's literal (0, 1, 1) reported-digit map implies reported dimension
-    # 2, so a 3x3 confusion is rejected with the same "reported classical
-    # dimension" message the matrix family raises for an analogous mismatch
-    # (see the simulator readout-confusion dimension-mismatch coverage).
-    with pytest.raises(BackendValidationError, match="reported classical dimension"):
-        backend._prepare_program(program)
 
 
 def test_pulse_measurement_accepts_a_correctly_shaped_confusion_matrix(

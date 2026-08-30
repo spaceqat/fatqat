@@ -36,11 +36,13 @@ from fatqat.errors import BackendExecutionError, BackendValidationError
 from fatqat.job import Job
 from fatqat.noise import (
     AmplitudeDamping,
-    LindbladImplementationMap,
     NoiseModel,
     PauliChannel,
 )
-from fatqat.noise.lindblad import amplitude_damping_lindblad_rule
+from fatqat.noise.lindblad import (
+    LindbladImplementationMap,
+    amplitude_damping_lindblad_rule,
+)
 from fatqat.resource_layout import ResourceLayout
 from fatqat.emulator import SampledWaveform
 
@@ -598,44 +600,35 @@ def test_invalid_shots_raise_directly_after_preparation_without_a_runner():
     assert backend.runner_calls == 0
 
 
-def test_constructor_copies_maps_and_captures_noise_registrations():
+def test_constructor_copies_gate_map_and_source_noise():
     target = _CountingTarget()
     noise = _CountingNoiseModel()
     gate_map = _gate_map(target)
-    lindblad_map = _lindblad_map()
-    original_lindblad_rule = lindblad_map.get(AmplitudeDamping)
     backend = _TemplateBackend(
         target,
         noise=noise,
         gate_map=gate_map,
-        lindblad_map=lindblad_map,
+        lindblad_map=_lindblad_map(),
     )
 
     gate_map.remove(ops.X)
-    lindblad_map.add(AmplitudeDamping, lambda channel, **kwargs: ())
-
-    assert backend._noise_model is not noise
     assert backend._gate_implementation_map.supports(ops.X)
-    assert (
-        backend._lindblad_implementation_map.get(AmplitudeDamping)
-        is original_lindblad_rule
+
+    noise.add(PauliChannel({"X": 0.2}), targets="q0")
+    dimension = target.local_dimension ** len(target.device_labels)
+    assert backend.run(fq.Program(1)).result().get_density_matrix().shape == (
+        dimension,
+        dimension,
     )
 
-    noise.add(AmplitudeDamping(rate=0.2), targets="q0")
-    prepared = backend._prepare_program(fq.Program(1))
-    assert prepared.background_noise == ()
-    assert backend.validate_noise_model(noise) is None
 
-
-def test_explicit_empty_maps_remain_empty_and_constructor_types_are_checked():
+def test_explicit_empty_gate_map_and_public_constructor_types_are_checked():
     target = _CountingTarget()
     backend = _TemplateBackend(
         target,
         gate_map=PulseImplementationMap(),
-        lindblad_map=LindbladImplementationMap(),
     )
     assert not backend._gate_implementation_map.supported_operations()
-    assert not backend._lindblad_implementation_map.supported_channels()
 
     with pytest.raises(BackendValidationError, match="noise must"):
         _PulseBackend.__init__(
@@ -652,14 +645,6 @@ def test_explicit_empty_maps_remain_empty_and_constructor_types_are_checked():
             noise=None,
             gate_implementation_map=object(),
             lindblad_implementation_map=LindbladImplementationMap(),
-        )
-    with pytest.raises(BackendValidationError, match="lindblad_implementation_map"):
-        _PulseBackend.__init__(
-            backend,
-            target.model,
-            noise=None,
-            gate_implementation_map=PulseImplementationMap(),
-            lindblad_implementation_map=object(),
         )
 
 

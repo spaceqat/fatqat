@@ -1,7 +1,6 @@
 """Pulse backend shell contracts before physical execution is wired."""
 
 from dataclasses import fields
-import inspect
 
 import numpy as np
 import pytest
@@ -35,24 +34,7 @@ def make_backend_fixture(model, calibration):
     return build
 
 
-def test_constructor_signature_map_type_and_model_ownership_are_exact(model):
-    parameters = inspect.signature(TransmonEmulator).parameters
-    assert tuple(parameters) == (
-        "model",
-        "noise",
-        "lindblad_implementation_map",
-        "gate_implementation_map",
-    )
-    assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert all(
-        parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
-        and parameters[name].default is None
-        for name in (
-            "noise",
-            "lindblad_implementation_map",
-            "gate_implementation_map",
-        )
-    )
+def test_constructor_map_type_and_model_ownership_are_exact(model):
     with pytest.raises(BackendValidationError, match="PulseImplementationMap"):
         TransmonEmulator(model, gate_implementation_map=object())
     backend = TransmonEmulator(model)

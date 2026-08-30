@@ -118,7 +118,6 @@ def test_transmon_public_names_have_exact_modules_and_constructor_signature():
     assert tuple(parameters) == (
         "model",
         "noise",
-        "lindblad_implementation_map",
         "gate_implementation_map",
     )
     assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
@@ -126,7 +125,6 @@ def test_transmon_public_names_have_exact_modules_and_constructor_signature():
         parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
         for name in (
             "noise",
-            "lindblad_implementation_map",
             "gate_implementation_map",
         )
     )
@@ -134,7 +132,6 @@ def test_transmon_public_names_have_exact_modules_and_constructor_signature():
         parameters[name].default is None
         for name in (
             "noise",
-            "lindblad_implementation_map",
             "gate_implementation_map",
         )
     )
@@ -244,14 +241,13 @@ def test_removed_three_level_atom_surface_has_no_compatibility_aliases():
     assert importlib.util.find_spec("fatqat.emulator." + "atom") is None
 
 
-def test_atom_3level_constructor_has_final_portable_map_keywords():
+def test_atom_3level_constructor_has_final_portable_keywords():
     parameters = inspect.signature(Atom3LevelEmulator).parameters
     assert tuple(parameters) == (
         "model",
         "arrangement",
         "noise",
         "gate_implementation_map",
-        "lindblad_implementation_map",
     )
     assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
     assert parameters["arrangement"].kind is inspect.Parameter.KEYWORD_ONLY
@@ -260,10 +256,6 @@ def test_atom_3level_constructor_has_final_portable_map_keywords():
     assert parameters["noise"].default is None
     assert parameters["gate_implementation_map"].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["gate_implementation_map"].default is None
-    assert (
-        parameters["lindblad_implementation_map"].kind is inspect.Parameter.KEYWORD_ONLY
-    )
-    assert parameters["lindblad_implementation_map"].default is None
     assert issubclass(Atom3LevelEmulator, _PulseBackend)
 
 
@@ -338,7 +330,7 @@ def test_removed_two_level_atom_surface_has_no_compatibility_aliases():
     assert importlib.util.find_spec("fatqat.emulator.atom_2level.policy") is None
 
 
-def test_atom_2level_constructor_has_general_map_keywords():
+def test_atom_2level_constructor_has_final_public_keywords():
     parameters = inspect.signature(Atom2LevelEmulator).parameters
     assert tuple(parameters) == (
         "model",
@@ -346,7 +338,6 @@ def test_atom_2level_constructor_has_general_map_keywords():
         "interaction_cutoff",
         "noise",
         "gate_implementation_map",
-        "lindblad_implementation_map",
     )
     assert parameters["model"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
     assert all(
@@ -356,15 +347,37 @@ def test_atom_2level_constructor_has_general_map_keywords():
             "interaction_cutoff",
             "noise",
             "gate_implementation_map",
-            "lindblad_implementation_map",
         )
     )
     assert parameters["arrangement"].default is inspect.Parameter.empty
     assert parameters["interaction_cutoff"].default is None
     assert parameters["noise"].default is None
     assert parameters["gate_implementation_map"].default is None
-    assert parameters["lindblad_implementation_map"].default is None
     assert issubclass(Atom2LevelEmulator, _PulseBackend)
+
+
+def test_family_constructors_reject_removed_lindblad_keyword(model, atom_3level_model):
+    atom_2level_model = Atom2LevelModel.from_document(
+        fq.emulator.load_model_document("atom2level.reference")
+    )
+    arrangement = fq.emulator.AtomArrangement.chain(2, spacing=6.0)
+    constructors = (
+        lambda: TransmonEmulator(model, lindblad_implementation_map=object()),
+        lambda: Atom2LevelEmulator(
+            atom_2level_model,
+            arrangement=arrangement,
+            lindblad_implementation_map=object(),
+        ),
+        lambda: Atom3LevelEmulator(
+            atom_3level_model,
+            arrangement=arrangement,
+            lindblad_implementation_map=object(),
+        ),
+    )
+
+    for construct in constructors:
+        with pytest.raises(TypeError, match="lindblad_implementation_map"):
+            construct()
 
 
 def test_atom_2level_execution_methods_have_exact_public_forwarding_signatures():

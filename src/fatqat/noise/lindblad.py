@@ -121,27 +121,6 @@ def thermal_relaxation_lindblad_rule(
     return amplitude, sqrt(2 * channel.pure_dephasing_rate) * number
 
 
-def default_lindblad_implementation_map() -> LindbladImplementationMap:
-    """Return a fresh standard map for transmon Lindblad simulation.
-
-    The map registers `AmplitudeDamping`, `PhaseDamping`, and
-    `ThermalRelaxation`. These objects must use the rate/time forms
-    accepted by the pulse backend. `Depolarizing` and `PauliChannel` are not
-    registered by this factory.
-
-    Each call returns an independent registration container. Individual
-    emulator families may select a different built-in map.
-
-    Returns:
-        A new map containing the three standard rule registrations.
-    """
-    implementations = LindbladImplementationMap()
-    implementations.add(AmplitudeDamping, amplitude_damping_lindblad_rule)
-    implementations.add(PhaseDamping, phase_damping_lindblad_rule)
-    implementations.add(ThermalRelaxation, thermal_relaxation_lindblad_rule)
-    return implementations
-
-
 def resolve_lindblad_operators(
     channel: Channel,
     *,

@@ -14,8 +14,11 @@ from fatqat._backends.steps import MeasurementStep, ResetStep
 from fatqat.emulator.superconducting.backend import TransmonEmulator
 from fatqat.emulator._core.engine import PulseEngine, _ShotContext
 from fatqat.emulator._core.lindblad import bind_lindblad_operators
-from fatqat.noise import default_lindblad_implementation_map
-from fatqat.noise.lindblad import resolve_lindblad_operators
+from fatqat.noise.lindblad import (
+    LindbladImplementationMap,
+    resolve_lindblad_operators,
+    thermal_relaxation_lindblad_rule,
+)
 from fatqat.emulator.superconducting.qutip_adapter import _TransmonQutipAdapter
 from fatqat.emulator.superconducting.target import _TransmonTarget
 from fatqat.emulator._core.pulse import (
@@ -281,13 +284,15 @@ class _ExcitedAdapter(_TransmonQutipAdapter):
 
 def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames(model):
     thermal = ThermalRelaxation(t1=5, t2=10)
+    lindblad_map = LindbladImplementationMap()
+    lindblad_map.add(ThermalRelaxation, thermal_relaxation_lindblad_rule)
     adapter = _adapter(
         model,
         kind=_ExcitedAdapter,
         background_noise=bind_lindblad_operators(
             resolve_lindblad_operators(
                 thermal,
-                implementation_map=default_lindblad_implementation_map(),
+                implementation_map=lindblad_map,
                 physical_dimension=len(model.basis_order),
             ),
             engine_indices=(0,),
