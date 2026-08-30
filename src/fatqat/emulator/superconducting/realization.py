@@ -168,9 +168,7 @@ def _cz_definition(
         ramp_shape[falling] = (
             1 - np.cos(pi * (duration - detuning_grid[falling]) / ramp)
         ) / 2
-    detuning = (
-        angular_rate_from_ghz(recipe.park_detuning_ghz) * ramp_shape
-    )
+    detuning = angular_rate_from_ghz(recipe.park_detuning_ghz) * ramp_shape
     exchange_grid = _sample_grid(parked_duration)
     exchange = _hann(exchange_grid, parked_duration, sqrt(2) * pi / parked_duration)
     detuning_subsystem = recipe.detuned_subsystem
@@ -204,9 +202,7 @@ def _resolve_cz_recipes(
                 f"calibration has no CZ recipe for canonical model edge {edge!r}"
             )
         selected = subsystems[recipe.detuned_subsystem]
-        branch_error = abs(
-            recipe.park_detuning_ghz + selected.anharmonicity_ghz
-        )
+        branch_error = abs(recipe.park_detuning_ghz + selected.anharmonicity_ghz)
         if branch_error > recipe.branch_tolerance_ghz:
             expected = -selected.anharmonicity_ghz
             raise BackendValidationError(

@@ -55,9 +55,7 @@ def test_drag_uses_compiled_source_anharmonicity_and_calibration(
     changed_model = deepcopy(model_document)
     changed_model["parameters"]["subsystems"]["q0"]["anharmonicity"] = -0.4
     changed_branch = deepcopy(calibration_document)
-    changed_branch["recipes"]["cz"]["edges"][0]["recipe"][
-        "park_detuning_ghz"
-    ] = 0.4
+    changed_branch["recipes"]["cz"]["edges"][0]["recipe"]["park_detuning_ghz"] = 0.4
     redesigned = _resolve(
         ops.RX(0.7),
         ("q0",),
@@ -102,9 +100,7 @@ def test_single_qubit_rules_are_unconstrained_operand_aware(model, calibration):
         assert first != second
 
 
-def test_two_body_rules_cover_both_orders_and_share_one_physical_cz(
-    model, calibration
-):
+def test_two_body_rules_cover_both_orders_and_share_one_physical_cz(model, calibration):
     implementations = _map(model, calibration)
     expected_keys = frozenset({("q0", "q1"), ("q1", "q0")})
     assert implementations.device_operands_for(ops.CZ) == expected_keys
@@ -116,12 +112,8 @@ def test_two_body_rules_cover_both_orders_and_share_one_physical_cz(
     reverse_rule = implementations.implementation_for(
         ops.CZ, device_operands=("q1", "q0")
     )
-    forward = _invoke_pulse_rule(
-        forward_rule, ops.CZ, device_operands=("q0", "q1")
-    )
-    reverse = _invoke_pulse_rule(
-        reverse_rule, ops.CZ, device_operands=("q1", "q0")
-    )
+    forward = _invoke_pulse_rule(forward_rule, ops.CZ, device_operands=("q0", "q1"))
+    reverse = _invoke_pulse_rule(reverse_rule, ops.CZ, device_operands=("q1", "q0"))
     assert forward.duration == reverse.duration == 60.0
     assert forward.controls[0].channel == model.control.detuning("q0")
     assert reverse.controls[0].channel == model.control.detuning("q0")
@@ -157,8 +149,7 @@ def test_unused_canonical_edge_is_accepted_but_source_domain_does_not_expand(
     implementations = _map(model, calibration)
     assert calibration._cz_recipe("q9", "q8") is not None
     assert (
-        implementations.implementation_for(ops.CZ, device_operands=("q8", "q9"))
-        is None
+        implementations.implementation_for(ops.CZ, device_operands=("q8", "q9")) is None
     )
     with pytest.raises(BackendValidationError, match="no subsystem"):
         _invoke_pulse_rule(

@@ -53,9 +53,7 @@ def test_calibration_copies_edge_containers_and_ignores_list_order(
     value = TransmonCalibration(calibration_document)
     assert value == TransmonCalibration(reversed_document)
 
-    calibration_document["recipes"]["cz"]["edges"][0]["canonical_edge"][0] = (
-        "changed"
-    )
+    calibration_document["recipes"]["cz"]["edges"][0]["canonical_edge"][0] = "changed"
     calibration_document["recipes"]["cz"]["edges"].clear()
     assert value._cz_recipe("q0", "q1").duration_ns == 60.0
     assert value._cz_recipe("q3", "q2").detuned_subsystem == "q3"
@@ -207,9 +205,7 @@ def test_cz_park_and_absolute_edge_lookup_are_validated(calibration_document):
         ["q9", "q10"],
     ],
 )
-def test_cz_edges_are_distinct_canonical_string_pairs(
-    calibration_document, endpoints
-):
+def test_cz_edges_are_distinct_canonical_string_pairs(calibration_document, endpoints):
     calibration_document["recipes"]["cz"]["edges"][0]["canonical_edge"] = endpoints
     with pytest.raises(BackendValidationError):
         TransmonCalibration(calibration_document)

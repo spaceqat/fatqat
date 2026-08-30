@@ -130,8 +130,7 @@ def test_transmon_emulator_values_are_namespaced_under_emulator():
     assert fq.emulator.TransmonCalibration is TransmonCalibration
     assert fq.emulator.TransmonGridReference is TransmonGridReference
     assert (
-        fq.emulator.generate_transmon_grid_reference
-        is generate_transmon_grid_reference
+        fq.emulator.generate_transmon_grid_reference is generate_transmon_grid_reference
     )
     assert (
         fq.emulator.default_transmon_gate_implementation_map

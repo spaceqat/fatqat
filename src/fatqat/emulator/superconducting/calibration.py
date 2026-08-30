@@ -101,9 +101,10 @@ def _validate_generated_provenance(value: Any, path: str) -> None:
     )
     if provenance["kind"] != "generated_reference_recipe":
         _fail(f"{path}.kind", "must identify a generated reference recipe")
-    if type(provenance["generator_version"]) is not int or provenance[
-        "generator_version"
-    ] != 1:
+    if (
+        type(provenance["generator_version"]) is not int
+        or provenance["generator_version"] != 1
+    ):
         _fail(f"{path}.generator_version", "must be the integer 1")
     if provenance["numerically_calibrated"] is not False:
         _fail(f"{path}.numerically_calibrated", "must be false")
