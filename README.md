@@ -48,8 +48,8 @@ print(result.get_counts())
 ```
 
 Only `00` and `11` appear: the measured bits agree because the two qubits are
-entangled. The [quickstart](docs/sphinx/guide/quickstart.md) draws this Program,
-runs it, and turns the counts into a plot.
+entangled. The [quickstart](docs/mkdocs/en/guide/quickstart.md) draws this
+Program, runs it, and turns the counts into a plot.
 
 ## Grow the same authoring model
 
@@ -59,27 +59,27 @@ mixed local dimensions, circuit drawing, and direct physical controls. These
 features stay together instead of splitting into separate circuit and pulse
 languages.
 
-The [Program guide](docs/sphinx/guide/program.md) builds those ideas step by
-step. [Choose how much physics to model](docs/sphinx/guide/execution-models.md)
+The [Program guide](docs/mkdocs/en/guide/program.md) builds those ideas step by
+step. [Choose how much physics to model](docs/mkdocs/en/guide/execution-models.md)
 then runs one unchanged rotation through all three execution levels.
 
 From there:
 
-- [Simulate a quantum program](docs/sphinx/guide/simulation.md) for states,
+- [Simulate a quantum program](docs/mkdocs/en/guide/simulation.md) for states,
   sampling, and parameter sweeps.
-- [Ask questions of a run](docs/sphinx/guide/interpret-results.md) for counts,
+- [Ask questions of a run](docs/mkdocs/en/guide/interpret-results.md) for counts,
   states, maps, and observables.
-- [Compare ideal and noisy execution](docs/sphinx/guide/ideal-and-noisy.md).
-- [Measure performance and scaling](docs/sphinx/guide/performance.md).
-- [Test a hardware profile](docs/sphinx/guide/hardware-profile-simulation.md).
-- [Follow a Program into physical dynamics](docs/sphinx/guide/hamiltonian-emulation.md),
+- [Compare ideal and noisy execution](docs/mkdocs/en/guide/ideal-and-noisy.md).
+- [Measure performance and scaling](docs/mkdocs/en/guide/performance.md).
+- [Test a hardware profile](docs/mkdocs/en/guide/hardware-profile-simulation.md).
+- [Follow a Program into physical dynamics](docs/mkdocs/en/guide/hamiltonian-emulation.md),
   then continue with the transmon or neutral-atom workflow.
-- [Connect OpenQASM and Qiskit](docs/sphinx/guide/interoperability.md).
+- [Connect OpenQASM and Qiskit](docs/mkdocs/en/guide/interoperability.md).
 
-The [tutorials](docs/sphinx/tutorials/index.rst) are longer algorithm and
-physics case studies. The [API reference](docs/sphinx/api/index.rst) contains
-the exact signatures, supported operations, shapes, units, and validation
-contracts.
+The [tutorial sources](docs/mkdocs/tutorial-sources/en/) are longer algorithm
+and physics case studies assembled into the MkDocs gallery. The
+[API reference](docs/mkdocs/en/api/index.md) contains the exact signatures,
+supported operations, shapes, units, and validation contracts.
 
 ## Development
 
@@ -96,12 +96,11 @@ Build the documentation with warnings treated as errors:
 
 ```sh
 python -m pip install --editable . --group docs
-python -m sphinx -b html -W --keep-going -E -a docs/sphinx docs/sphinx/_build/html
+python docs/mkdocs/manage.py build
 ```
 
 The main repository directories are:
 
 - `src/fatqat/` — package source.
 - `tests/` — behavior-focused test suite.
-- `tutorials/` — executable case studies used by Sphinx-Gallery.
-- `docs/sphinx/` — user guide, tutorials, and API reference.
+- `docs/mkdocs/` — Material user guide, executable tutorials, and API reference.

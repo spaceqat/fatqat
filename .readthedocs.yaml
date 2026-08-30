@@ -9,8 +9,6 @@ build:
       html:
         - python docs/mkdocs/manage.py build --site-dir "$READTHEDOCS_OUTPUT/html" --site-url "$READTHEDOCS_CANONICAL_URL"
 
-# The built-in MkDocs builder accepts one configuration. FatQat uses a custom
-# build job so the English and Chinese configurations share one published site.
 mkdocs:
   configuration: docs/mkdocs/mkdocs.en.yml
   fail_on_warning: true
