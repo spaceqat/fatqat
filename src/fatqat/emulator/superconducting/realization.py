@@ -16,10 +16,13 @@ from ..._waveforms import SampledWaveform
 from .._core.target import Frame
 from .._core.pulse import PhaseShift, PhaseSwap, PulseDefinition, PulseImplementationMap
 from .._core.value_validation import _finite
-from .calibration import TransmonCalibration
+from .calibration import TransmonCalibration, _CzRecipe
 from .model import TransmonModel, angular_rate_from_ghz
 
 _WAVEFORM_SAMPLES = 129
+_REALIZATION_CONTRACT = "fixed-qutrit-effective-rwa-v1"
+
+_CanonicalEdge = tuple[str, str]
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,68 @@ class _DragContext:
     frame: Frame
     duration: float
     coefficient: float
+
+
+@dataclass(frozen=True, slots=True)
+class _TransmonMapCompatibility:
+    """Private physical-value requirements captured by a standard map."""
+
+    realization_contract: str
+    subsystem_anharmonicities: tuple[tuple[str, float], ...]
+    control_edges: tuple[_CanonicalEdge, ...]
+    cz_detuned_subsystems: tuple[tuple[_CanonicalEdge, str], ...]
+
+
+class _TransmonPulseImplementationMap(PulseImplementationMap):
+    """Standard map carrying destination-model compatibility requirements."""
+
+    def __init__(self, compatibility: _TransmonMapCompatibility) -> None:
+        super().__init__()
+        self._transmon_compatibility = compatibility
+
+    def copy(self) -> "_TransmonPulseImplementationMap":
+        """Return an independent map while retaining compatibility facts."""
+        clone = _TransmonPulseImplementationMap(self._transmon_compatibility)
+        clone._registry = self._registry.copy()
+        return clone
+
+
+def _canonical_model_edges(model: TransmonModel) -> tuple[_CanonicalEdge, ...]:
+    return tuple(
+        sorted(tuple(sorted(coupling.subsystem_ids)) for coupling in model._couplings)
+    )
+
+
+def _map_compatibility(
+    model: TransmonModel,
+    cz_detuned_subsystems: tuple[tuple[_CanonicalEdge, str], ...],
+) -> _TransmonMapCompatibility:
+    return _TransmonMapCompatibility(
+        _REALIZATION_CONTRACT,
+        tuple(
+            sorted(
+                (subsystem.id, subsystem.anharmonicity_ghz)
+                for subsystem in model._subsystems
+            )
+        ),
+        _canonical_model_edges(model),
+        tuple(sorted(cz_detuned_subsystems)),
+    )
+
+
+def _validate_transmon_map_compatibility(
+    implementations: object, model: TransmonModel
+) -> None:
+    """Reject a standard compiled map whose captured model facts changed."""
+    if not isinstance(implementations, _TransmonPulseImplementationMap):
+        return
+    source = implementations._transmon_compatibility
+    destination = _map_compatibility(model, source.cz_detuned_subsystems)
+    if destination != source:
+        raise BackendValidationError(
+            "compiled transmon gate map is incompatible with this model; "
+            "rebuild it with default_transmon_gate_implementation_map()"
+        )
 
 
 def _sample_grid(duration: float) -> np.ndarray:
@@ -87,12 +152,12 @@ def _iswap_definition(
 
 def _cz_definition(
     model: TransmonModel,
-    calibration: TransmonCalibration,
+    recipe: _CzRecipe,
     first: str,
     second: str,
 ) -> PulseDefinition:
-    duration = calibration._cz_duration_ns(first, second)
-    ramp = calibration._cz_ramp_duration_ns(first, second)
+    duration = recipe.duration_ns
+    ramp = recipe.ramp_duration_ns
     parked_duration = duration - 2 * ramp
     detuning_grid = _sample_grid(duration)
     ramp_shape = np.ones_like(detuning_grid)
@@ -104,11 +169,11 @@ def _cz_definition(
             1 - np.cos(pi * (duration - detuning_grid[falling]) / ramp)
         ) / 2
     detuning = (
-        angular_rate_from_ghz(calibration._cz_detuning_ghz(first, second)) * ramp_shape
+        angular_rate_from_ghz(recipe.park_detuning_ghz) * ramp_shape
     )
     exchange_grid = _sample_grid(parked_duration)
     exchange = _hann(exchange_grid, parked_duration, sqrt(2) * pi / parked_duration)
-    detuning_subsystem = calibration._cz_detuning_subsystem(first, second)
+    detuning_subsystem = recipe.detuned_subsystem
     detuning_phase = float(_cumulative_trapezoid(detuning, detuning_grid)[-1])
     return PulseDefinition(
         duration,
@@ -125,6 +190,33 @@ def _cz_definition(
         ),
         (PhaseShift(model.frame(detuning_subsystem), detuning_phase),),
     )
+
+
+def _resolve_cz_recipes(
+    model: TransmonModel, calibration: TransmonCalibration
+) -> dict[_CanonicalEdge, _CzRecipe]:
+    subsystems = {subsystem.id: subsystem for subsystem in model._subsystems}
+    resolved: dict[_CanonicalEdge, _CzRecipe] = {}
+    for edge in _canonical_model_edges(model):
+        recipe = calibration._cz_recipe(*edge)
+        if recipe is None:
+            raise BackendValidationError(
+                f"calibration has no CZ recipe for canonical model edge {edge!r}"
+            )
+        selected = subsystems[recipe.detuned_subsystem]
+        branch_error = abs(
+            recipe.park_detuning_ghz + selected.anharmonicity_ghz
+        )
+        if branch_error > recipe.branch_tolerance_ghz:
+            expected = -selected.anharmonicity_ghz
+            raise BackendValidationError(
+                f"CZ recipe for edge {edge!r} selects {selected.id!r} with "
+                f"park_detuning_ghz={recipe.park_detuning_ghz!r}; expected "
+                f"{expected!r} within branch_tolerance_ghz="
+                f"{recipe.branch_tolerance_ghz!r}"
+            )
+        resolved[edge] = recipe
+    return resolved
 
 
 def default_transmon_gate_implementation_map(
@@ -144,13 +236,16 @@ def default_transmon_gate_implementation_map(
         A new map for ``RX``, ``RY``, ``RZ``, ``iSwap``, and coupled ``CZ``.
 
     Raises:
-        BackendValidationError: If either argument has the wrong type.
+        BackendValidationError: If either argument has the wrong type, a model
+            edge has no CZ recipe, or a selected CZ branch is incompatible
+            with the model's signed anharmonicity.
     """
     if not isinstance(model, TransmonModel):
         raise BackendValidationError("model must be a TransmonModel")
     if not isinstance(calibration, TransmonCalibration):
         raise BackendValidationError("calibration must be a TransmonCalibration")
 
+    cz_recipes = _resolve_cz_recipes(model, calibration)
     drag_contexts = {
         subsystem.id: _DragContext(
             angular_rate_from_ghz(subsystem.anharmonicity_ghz),
@@ -187,12 +282,21 @@ def default_transmon_gate_implementation_map(
             (PhaseShift(frame, _finite(operation.theta, "rotation angle")),),
         )
 
-    implementations = PulseImplementationMap()
+    cz_detuned_subsystems = tuple(
+        (edge, recipe.detuned_subsystem) for edge, recipe in cz_recipes.items()
+    )
+    implementations = _TransmonPulseImplementationMap(
+        _map_compatibility(model, cz_detuned_subsystems)
+    )
     implementations.add(ops.RX, rx_ry)
     implementations.add(ops.RY, rx_ry)
     implementations.add(ops.RZ, rz)
     for coupling in model._couplings:
         first, second = coupling.subsystem_ids
+        canonical_edge = tuple(sorted((first, second)))
+        cz_definition = _cz_definition(
+            model, cz_recipes[canonical_edge], *canonical_edge
+        )
         for ordered in ((first, second), (second, first)):
             implementations.add(
                 ops.iSwap,
@@ -201,7 +305,7 @@ def default_transmon_gate_implementation_map(
             )
             implementations.add(
                 ops.CZ,
-                _cz_definition(model, calibration, *ordered),
+                cz_definition,
                 device_operands=ordered,
             )
     return implementations

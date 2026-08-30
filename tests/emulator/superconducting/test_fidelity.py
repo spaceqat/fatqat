@@ -157,6 +157,7 @@ def test_virtual_frame_sequence_matches_analytic_unitary(backend):
         (ops.iSwap, (0, 1), 0.985),
         (ops.iSwap, (1, 0), 0.985),
         (ops.CZ, (0, 1), 0.99),
+        (ops.CZ, (1, 0), 0.99),
     ),
     ids=(
         "rx-q0",
@@ -168,6 +169,7 @@ def test_virtual_frame_sequence_matches_analytic_unitary(backend):
         "iswap-01",
         "iswap-10",
         "cz-01",
+        "cz-10",
     ),
 )
 def test_native_gate_process_fidelity_and_leakage(

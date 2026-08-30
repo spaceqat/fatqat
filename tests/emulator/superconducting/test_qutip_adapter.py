@@ -399,8 +399,10 @@ def test_local_frame_fixes_nominal_cz_crossing_but_calibration_remains_data(
     model, calibration, model_document
 ):
     adapter = _adapter(model)
-    detuning_ghz = calibration._cz_detuning_ghz("q0", "q1")
-    ramp_duration_ns = calibration._cz_ramp_duration_ns("q0", "q1")
+    recipe = calibration._cz_recipe("q0", "q1")
+    assert recipe is not None
+    detuning_ghz = recipe.park_detuning_ghz
+    ramp_duration_ns = recipe.ramp_duration_ns
     assert FRAME_CONVENTION.endswith("(Delta_i = 0)")
     assert (
         detuning_ghz

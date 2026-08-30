@@ -1,6 +1,6 @@
 {
   "format": {"id": "sc.transmon_exchange_fixed_pulse", "version": 1},
-  "calibration": {"id": "test-sc-2q-fixed-pulse", "revision": "2026-07-26"},
+  "calibration": {"id": "test-sc-2q-fixed-pulse", "revision": "2026-08-31"},
   "units": {
     "time": "ns",
     "frequency": "GHz",
@@ -13,20 +13,15 @@
     },
     "iswap": {"duration": 40.0},
     "cz": {
-      "default": {
-        "detuning_operand": 0,
-        "duration": 60.0,
-        "ramp_duration": 3.0,
-        "detuning": 0.22
-      },
-      "overrides": [
+      "edges": [
         {
-          "device_operands": ["q0", "q1"],
+          "canonical_edge": ["q0", "q1"],
           "recipe": {
-            "detuning_operand": 0,
+            "detuned_subsystem": "q0",
             "duration": 60.0,
             "ramp_duration": 3.0,
-            "detuning": 0.22
+            "park_detuning_ghz": 0.22,
+            "branch_tolerance_ghz": 1e-12
           }
         }
       ]

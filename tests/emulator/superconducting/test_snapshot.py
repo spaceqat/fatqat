@@ -34,16 +34,16 @@ def test_calibration_document_rejects_model_binding_fields(calibration_document)
         TransmonCalibration(calibration_document)
 
 
-def test_portable_calibration_accepts_unused_ordered_override(calibration_document):
+def test_portable_calibration_accepts_unused_canonical_edge(calibration_document):
     document = deepcopy(calibration_document)
-    document["recipes"]["cz"]["overrides"].append(
-        {
-            "device_operands": ["future-q0", "future-q1"],
-            "recipe": deepcopy(document["recipes"]["cz"]["default"]),
-        }
-    )
+    entry = deepcopy(document["recipes"]["cz"]["edges"][0])
+    entry["canonical_edge"] = ["future-q0", "future-q1"]
+    entry["recipe"]["detuned_subsystem"] = "future-q1"
+    document["recipes"]["cz"]["edges"].append(entry)
     calibration = TransmonCalibration(document)
-    assert calibration._cz_duration_ns("future-q0", "future-q1") == 60.0
+    recipe = calibration._cz_recipe("future-q1", "future-q0")
+    assert recipe.duration_ns == 60.0
+    assert recipe.detuned_subsystem == "future-q1"
 
 
 def test_model_and_calibration_format_dispatch_remain_distinct(

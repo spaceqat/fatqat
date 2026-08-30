@@ -23,15 +23,16 @@ _UNITS = {"time": "ns", "frequency": "GHz", "dimensionless": "1"}
 
 @dataclass(frozen=True, slots=True)
 class _CzRecipe:
-    detuning_operand: int
+    detuned_subsystem: str
     duration_ns: float
     ramp_duration_ns: float
-    detuning_ghz: float
+    park_detuning_ghz: float
+    branch_tolerance_ghz: float
 
 
 @dataclass(frozen=True, slots=True)
-class _CzOverride:
-    device_operands: tuple[str, str]
+class _CzEdge:
+    canonical_edge: tuple[str, str]
     recipe: _CzRecipe
 
 
@@ -51,21 +52,61 @@ def _validate_single_recipe(
     }
 
 
-def _validate_cz_recipe(value: Any, path: str) -> _CzRecipe:
+def _validate_cz_recipe(
+    value: Any, path: str, canonical_edge: tuple[str, str]
+) -> _CzRecipe:
     recipe = _mapping(value, path)
     _exact_keys(
-        recipe, {"detuning_operand", "duration", "ramp_duration", "detuning"}, path
+        recipe,
+        {
+            "detuned_subsystem",
+            "duration",
+            "ramp_duration",
+            "park_detuning_ghz",
+            "branch_tolerance_ghz",
+        },
+        path,
     )
-    operand = recipe["detuning_operand"]
-    if type(operand) is not int or operand not in (0, 1):
-        _fail(f"{path}.detuning_operand", "must be 0 or 1")
+    detuned_subsystem = _string(
+        recipe["detuned_subsystem"], f"{path}.detuned_subsystem"
+    )
+    if detuned_subsystem not in canonical_edge:
+        _fail(
+            f"{path}.detuned_subsystem",
+            "must name one endpoint of the canonical edge",
+        )
     duration = _number(recipe["duration"], f"{path}.duration", positive=True)
     ramp = _number(recipe["ramp_duration"], f"{path}.ramp_duration", nonnegative=True)
     if 2 * ramp >= duration:
         _fail(path, "has inconsistent duration and ramp_duration")
     return _CzRecipe(
-        operand, duration, ramp, _number(recipe["detuning"], f"{path}.detuning")
+        detuned_subsystem,
+        duration,
+        ramp,
+        _number(recipe["park_detuning_ghz"], f"{path}.park_detuning_ghz"),
+        _number(
+            recipe["branch_tolerance_ghz"],
+            f"{path}.branch_tolerance_ghz",
+            nonnegative=True,
+        ),
     )
+
+
+def _validate_generated_provenance(value: Any, path: str) -> None:
+    provenance = _mapping(value, path)
+    _exact_keys(
+        provenance,
+        {"kind", "generator_version", "numerically_calibrated"},
+        path,
+    )
+    if provenance["kind"] != "generated_reference_recipe":
+        _fail(f"{path}.kind", "must identify a generated reference recipe")
+    if type(provenance["generator_version"]) is not int or provenance[
+        "generator_version"
+    ] != 1:
+        _fail(f"{path}.generator_version", "must be the integer 1")
+    if provenance["numerically_calibrated"] is not False:
+        _fail(f"{path}.numerically_calibrated", "must be false")
 
 
 def _validate_recipes(recipes: Mapping[str, Any]) -> tuple[Any, ...]:
@@ -79,46 +120,54 @@ def _validate_recipes(recipes: Mapping[str, Any]) -> tuple[Any, ...]:
     iswap = _validate_single_recipe(
         recipes["iswap"], "calibration.recipes.iswap", {"duration"}
     )
-    cz = _mapping(recipes["cz"], "calibration.recipes.cz")
-    _exact_keys(cz, {"default", "overrides"}, "calibration.recipes.cz")
-    default = _validate_cz_recipe(cz["default"], "calibration.recipes.cz.default")
-    raw_overrides = cz["overrides"]
-    if not isinstance(raw_overrides, list):
-        _fail("calibration.recipes.cz.overrides", "must be an array")
+    cz_path = "calibration.recipes.cz"
+    cz = _mapping(recipes["cz"], cz_path)
+    _exact_keys(cz, {"edges"}, cz_path)
+    raw_edges = cz["edges"]
+    if not isinstance(raw_edges, list):
+        _fail(f"{cz_path}.edges", "must be an array")
     found: set[tuple[str, str]] = set()
-    overrides = []
-    for ordinal, raw in enumerate(raw_overrides):
-        path = f"calibration.recipes.cz.overrides[{ordinal}]"
-        override = _mapping(raw, path)
-        _exact_keys(override, {"device_operands", "recipe"}, path)
-        endpoints = override["device_operands"]
+    edges = []
+    for ordinal, raw in enumerate(raw_edges):
+        path = f"{cz_path}.edges[{ordinal}]"
+        entry = _mapping(raw, path)
+        _exact_keys(entry, {"canonical_edge", "recipe"}, path)
+        endpoints = entry["canonical_edge"]
         if not isinstance(endpoints, list) or len(endpoints) != 2:
-            _fail(f"{path}.device_operands", "must name exactly two device operands")
+            _fail(f"{path}.canonical_edge", "must name exactly two endpoints")
         key = (
-            _string(endpoints[0], f"{path}.device_operands[0]"),
-            _string(endpoints[1], f"{path}.device_operands[1]"),
+            _string(endpoints[0], f"{path}.canonical_edge[0]"),
+            _string(endpoints[1], f"{path}.canonical_edge[1]"),
         )
         if key[0] == key[1]:
-            _fail(f"{path}.device_operands", "must name two distinct device operands")
+            _fail(f"{path}.canonical_edge", "must name two distinct endpoints")
+        if key[0] > key[1]:
+            _fail(f"{path}.canonical_edge", "must use ascending string order")
         if key in found:
-            _fail(f"{path}.device_operands", "duplicates an ordered CZ override")
+            _fail(f"{path}.canonical_edge", "duplicates a canonical CZ edge")
         found.add(key)
-        overrides.append(
-            _CzOverride(key, _validate_cz_recipe(override["recipe"], f"{path}.recipe"))
+        edges.append(
+            _CzEdge(
+                key,
+                _validate_cz_recipe(entry["recipe"], f"{path}.recipe", key),
+            )
         )
     return (
         rx_ry["duration"],
         rx_ry["drag_coefficient"],
         iswap["duration"],
-        default,
-        tuple(sorted(overrides, key=lambda item: item.device_operands)),
+        tuple(sorted(edges, key=lambda item: item.canonical_edge)),
     )
 
 
 def _parse_calibration(data: Mapping[str, Any]) -> tuple[Any, ...]:
     path = "calibration"
-    _exact_keys(data, {"format", "calibration", "units", "recipes"}, path)
+    required = {"format", "calibration", "units", "recipes"}
+    expected = required | ({"provenance"} if "provenance" in data else set())
+    _exact_keys(data, expected, path)
     identity = _parse_calibration_identity(data["calibration"], f"{path}.calibration")
+    if "provenance" in data:
+        _validate_generated_provenance(data["provenance"], f"{path}.provenance")
     units = _mapping(data["units"], f"{path}.units")
     _exact_keys(units, set(_UNITS), f"{path}.units")
     if dict(units) != _UNITS:
@@ -134,7 +183,7 @@ _PARSERS = MappingProxyType({_FORMAT: _parse_calibration})
 class TransmonCalibration:
     """Load transmon gate recipes from a decoded calibration document.
 
-    All fields are required; unknown fields are rejected. The document has:
+    All core fields are required; unknown fields are rejected. The document has:
 
     - ``"format"``: ``{"id": "sc.transmon_exchange_fixed_pulse",
       "version": 1}``.
@@ -143,12 +192,18 @@ class TransmonCalibration:
       "dimensionless": "1"}``.
     - ``"recipes"``: ``"rx_ry"`` with positive ``"duration"`` and finite
       ``"drag_coefficient"``; ``"iswap"`` with positive ``"duration"``;
-      and ``"cz"`` with one ``"default"`` recipe plus ``"overrides"``.
+      and ``"cz"`` with an ``"edges"`` array.
 
-    A CZ recipe contains ``"detuning_operand"`` (``0`` or ``1``), positive
-    ``"duration"``, non-negative ``"ramp_duration"`` shorter than half the
-    duration, and finite ``"detuning"`` in GHz. Each override contains two
-    distinct ordered string ``"device_operands"`` and a complete ``"recipe"``.
+    Each CZ entry names a distinct two-endpoint ``"canonical_edge"`` already
+    in ascending string order. Its recipe names one absolute
+    ``"detuned_subsystem"`` endpoint, a positive ``"duration"``, a
+    non-negative ``"ramp_duration"`` shorter than half the duration, a finite
+    ``"park_detuning_ghz"``, and a non-negative finite
+    ``"branch_tolerance_ghz"``. The edge array may be empty.
+
+    A package-generated document may also carry the strictly validated
+    ``"generated_reference_recipe"`` provenance marker. This is origin
+    metadata, not a runtime calibration or qualification interface.
 
     Args:
         document: Decoded mapping with the schema above.
@@ -168,8 +223,7 @@ class TransmonCalibration:
     _rx_ry_duration_ns: float = field(repr=False)
     _rx_ry_drag_coefficient: float = field(repr=False)
     _iswap_duration_ns: float = field(repr=False)
-    _cz_default: _CzRecipe = field(repr=False)
-    _cz_overrides: tuple[_CzOverride, ...] = field(repr=False)
+    _cz_edges: tuple[_CzEdge, ...] = field(repr=False)
 
     __hash__ = None
     recipe_time_unit: ClassVar[str] = _UNITS["time"]
@@ -178,32 +232,19 @@ class TransmonCalibration:
 
     def __init__(self, document: Mapping[str, Any]) -> None:
         parsed = _dispatch_document(document, "calibration", _PARSERS)
-        identity, rx_duration, drag, iswap_duration, cz_default, overrides = parsed
+        identity, rx_duration, drag, iswap_duration, cz_edges = parsed
         object.__setattr__(self, "_identity", identity)
         object.__setattr__(self, "_rx_ry_duration_ns", rx_duration)
         object.__setattr__(self, "_rx_ry_drag_coefficient", drag)
         object.__setattr__(self, "_iswap_duration_ns", iswap_duration)
-        object.__setattr__(self, "_cz_default", cz_default)
-        object.__setattr__(self, "_cz_overrides", overrides)
+        object.__setattr__(self, "_cz_edges", cz_edges)
 
-    def _cz_entry(self, first: str, second: str) -> _CzRecipe:
-        key = (first, second)
-        for override in self._cz_overrides:
-            if override.device_operands == key:
-                return override.recipe
-        return self._cz_default
-
-    def _cz_detuning_subsystem(self, first: str, second: str) -> str:
-        return (first, second)[self._cz_entry(first, second).detuning_operand]
-
-    def _cz_duration_ns(self, first: str, second: str) -> float:
-        return self._cz_entry(first, second).duration_ns
-
-    def _cz_ramp_duration_ns(self, first: str, second: str) -> float:
-        return self._cz_entry(first, second).ramp_duration_ns
-
-    def _cz_detuning_ghz(self, first: str, second: str) -> float:
-        return self._cz_entry(first, second).detuning_ghz
+    def _cz_recipe(self, first: str, second: str) -> _CzRecipe | None:
+        key = tuple(sorted((first, second)))
+        for entry in self._cz_edges:
+            if entry.canonical_edge == key:
+                return entry.recipe
+        return None
 
 
 def default_transmon_calibration() -> TransmonCalibration:
