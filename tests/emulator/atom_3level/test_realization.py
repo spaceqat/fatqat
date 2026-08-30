@@ -8,7 +8,7 @@ import pytest
 
 import fatqat.operations as ops
 from fatqat.emulator._core.pulse import _invoke_pulse_rule
-from fatqat.emulator.atom_3level import (
+from fatqat.emulator._atom_3level import (
     Atom3LevelCalibration,
     Atom3LevelModel,
     default_atom_3level_gate_implementation_map,

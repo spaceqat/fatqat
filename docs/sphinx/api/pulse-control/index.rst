@@ -53,10 +53,6 @@ values use the channel's unit and may be restricted to real values.
        ``exchange(first, second)`` require real values.
      - ``ns``, ``rad/ns``
      - Yes
-   * - :py:class:`~fatqat.emulator.Atom3LevelEmulator`
-     - ``raman(site)`` and ``rydberg(site)`` accept complex values.
-     - ``us``, ``rad/us``
-     - Yes
    * - :py:class:`~fatqat.emulator.Atom2LevelEmulator`
      - Global ``drive()`` accepts complex values; global ``detuning()``
        requires real values.

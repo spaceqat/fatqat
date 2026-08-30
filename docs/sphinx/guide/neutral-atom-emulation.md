@@ -1,21 +1,15 @@
 # Choose and run a neutral-atom workflow
 
-FatQat offers three neutral-atom execution levels. Choose the least detailed
+FatQat offers two neutral-atom execution levels. Choose the least detailed
 one that still contains the effect you want to study:
 
-::::{grid} 1 1 3 3
+::::{grid} 1 1 2 2
 :gutter: 3
 
 :::{grid-item-card} Gate-level array
 {py:class}`~fatqat.simulator.AtomArraySimulator` adds occupancy and a changing
 pairing graph to finite qubit gates. Use it for fast loading, loss, and
 connectivity checks.
-:::
-
-:::{grid-item-card} Three physical levels
-{py:class}`~fatqat.emulator.Atom3LevelEmulator` follows $\lvert 0\rangle$,
-$\lvert 1\rangle$, and $\lvert r\rangle$. Use it for calibrated gates,
-selected-site control, and Rydberg leakage.
 :::
 
 :::{grid-item-card} Two physical levels
@@ -28,12 +22,12 @@ dynamics.
 
 The atom-array simulator is the profile introduced in
 {doc}`Hardware-profile simulation <hardware-profile-simulation>`; it does not
-integrate a Hamiltonian. The two emulators below use the pulse workflow from
-{doc}`Hamiltonian emulation <hamiltonian-emulation>`.
+integrate a Hamiltonian. The physical emulator below uses the pulse workflow
+from {doc}`Hamiltonian emulation <hamiltonian-emulation>`.
 
 ## Describe the sites once
 
-Both physical emulators use a fixed set of sites described by an
+The physical emulator uses a fixed set of sites described by an
 {py:class}`~fatqat.emulator.AtomArrangement`. Program resources map to those
 sites in declaration order by default:
 
@@ -51,69 +45,10 @@ sites in declaration order by default:
 
 The arrangement is fixed geometry, not an atom-transport instruction. It sets
 the distances used by Rydberg interactions, and the Program must declare
-exactly one dimension-two resource per site. In the three-level emulator,
-those logical qubit resources are embedded into physical qutrits; that does
-not turn them into logical qutrit resources.
+exactly one dimension-two resource per site.
 
 Use a {py:class}`~fatqat.ResourceLayout` only when you need to override the
 default declaration-order mapping.
-
-## Address one site with the three-level model
-
-Load the three-level reference model and run an ordinary calibrated rotation:
-
-```{doctest}
->>> atom3_model = fq.emulator.Atom3LevelModel.from_document(
-...     fq.emulator.load_model_document("atom3level.reference")
-... )
->>> atom3 = fq.emulator.Atom3LevelEmulator(
-...     atom3_model,
-...     arrangement=arrangement,
-... )
->>> calibrated = fq.Program(arrangement.num_sites)
->>> calibrated.add(ops.RX(np.pi / 2), 0)
->>> atom3_state = atom3.run(calibrated).result().get_statevector()
->>> atom3_state.shape
-(9,)
-```
-
-The nine-amplitude result retains physical `|r>` population for both sites. The
-built-in map also realizes `RY`, `RZ`, and `CZ`; use it when the packaged
-calibration is the experiment's starting point.
-
-For selected-site control, address a Raman or Rydberg channel by site. This
-direct block first drives the Raman transition on site `0`, then starts a
-Rydberg waveform halfway through the operation:
-
-```{doctest}
->>> shaped = fq.emulator.SampledWaveform(
-...     (0.0, 0.25, 0.5),
-...     (0.0, 4.0, 0.0),
-... )
->>> controls = (
-...     fq.emulator.PulseControl(atom3_model.control.raman(0), shaped),
-...     fq.emulator.PulseControl(
-...         atom3_model.control.rydberg(0),
-...         shaped,
-...         start_offset=0.5,
-...     ),
-... )
->>> selected_site = fq.Program(arrangement.num_sites)
->>> selected_site.add(ops.PulseOperation(1.0, controls))
->>> atom3_density = fq.emulator.Atom3LevelEmulator(
-...     atom3_model,
-...     arrangement=arrangement,
-...     method="density_matrix",
-... )
->>> selected_rho = atom3_density.run(selected_site).result().get_density_matrix()
->>> physical = np.real(np.diag(selected_rho)).reshape((3, 3), order="F")
->>> round(float(physical[2].sum()), 3)
-0.146
-```
-
-Here the last value is site `0`'s physical Rydberg population. Geometry also
-contributes an interaction whenever more than one site has Rydberg
-population, including sites not named by the same control block.
 
 ## Drive the array with the two-level model
 

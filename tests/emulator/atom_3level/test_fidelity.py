@@ -9,7 +9,8 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.emulator.atom_3level.realization import _CZ_SAMPLE_POINT_COUNT
+from fatqat.emulator._atom_3level import Atom3LevelEmulator
+from fatqat.emulator._atom_3level.realization import _CZ_SAMPLE_POINT_COUNT
 from fatqat._pulse_values import PulseControl
 from tests.emulator.atom_3level.reference.atom_3level_cz_reference import (
     analyze_cz_propagator,
@@ -55,7 +56,7 @@ def _program():
 
 
 def _backend(atom_3level_model, atom_3level_calibration, ratio):
-    return fq.emulator.Atom3LevelEmulator(
+    return Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(
             1, 2, _spacing(atom_3level_model, atom_3level_calibration, ratio)

@@ -1,13 +1,17 @@
 """Three-level atom physics-model value tests."""
 
 from copy import deepcopy
+from importlib.resources import files
 import inspect
+import json
 from math import nan
 
 import pytest
 
+from fatqat.emulator import ControlChannel, PhaseShift, load_model_document
+from fatqat.emulator import _model_documents
 from fatqat.emulator._core.target import _ControlAddress, _FrameAddress
-from fatqat.emulator.atom_3level.model import Atom3LevelModel
+from fatqat.emulator._atom_3level.model import Atom3LevelModel
 from fatqat.errors import BackendValidationError
 
 
@@ -110,9 +114,45 @@ def test_model_factories_return_portable_structural_addresses(
     assert isinstance(first.control.raman(2), _ControlAddress)
     assert isinstance(first.control.rydberg(2), _ControlAddress)
     assert isinstance(first.frame(2), _FrameAddress)
+    assert isinstance(first.control.raman(2), ControlChannel)
+    assert isinstance(first.control.rydberg(2), ControlChannel)
     assert first.control.raman(2) == second.control.raman(2)
     assert first.frame(2) == second.frame(2)
+    assert PhaseShift(first.frame(2), 0.1).frame == first.frame(2)
+    expected = {
+        "raman": ("local", ("site",), "complex", "rad/us"),
+        "rydberg": ("local", ("site",), "complex", "rad/us"),
+    }
+    assert tuple(first.available_controls) == tuple(expected)
+    for name, metadata in expected.items():
+        selector = first.available_controls[name]
+        assert selector is getattr(first.control, name)
+        assert (
+            selector.scope,
+            selector.operands,
+            selector.coefficient_domain,
+            selector.coefficient_unit,
+        ) == metadata
+    with pytest.raises(TypeError):
+        first.available_controls["other"] = object()
     with pytest.raises(BackendValidationError):
         first.control.raman(-1)
     with pytest.raises(BackendValidationError):
         first.control.rydberg(True)
+
+
+def test_internal_atom3_reference_matches_the_public_atom2_physical_profile():
+    atom2 = load_model_document("atom2level.reference")
+    atom3 = json.loads(
+        files(_model_documents)
+        .joinpath("atom3level_reference.json")
+        .read_text(encoding="utf-8")
+    )
+    parsed = Atom3LevelModel.from_document(atom3)
+
+    assert isinstance(parsed, Atom3LevelModel)
+    assert atom2["system"]["species"] == atom3["system"]["species"]
+    assert atom2["system"]["basis"]["g"] == atom3["system"]["basis"]["1"]
+    assert atom2["system"]["basis"]["r"] == atom3["system"]["basis"]["r"]
+    assert atom2["parameters"]["c6"] == atom3["parameters"]["c6"]
+    assert atom2["references"] == atom3["references"]

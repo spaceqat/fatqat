@@ -1,6 +1,6 @@
 """Pulse emulators and model-specific pulse-authoring values.
 
-`TransmonEmulator`, `Atom3LevelEmulator`, and `Atom2LevelEmulator` execute
+`TransmonEmulator` and `Atom2LevelEmulator` execute
 `fatqat.Program` objects against physical models. Ordinary gates use a
 `PulseImplementationMap`; channel-addressed
 `fatqat.operations.PulseOperation` values carry direct controls created from a
@@ -30,13 +30,6 @@ from .atom_2level import (
     Atom2LevelEmulator,
     Atom2LevelModel,
 )
-from .atom_3level import (
-    Atom3LevelCalibration,
-    Atom3LevelEmulator,
-    Atom3LevelModel,
-    default_atom_3level_calibration,
-    default_atom_3level_gate_implementation_map,
-)
 from ._core.pulse import (
     PhaseShift,
     PhaseSwap,
@@ -55,7 +48,6 @@ from .superconducting import (
 
 __all__ = [
     "TransmonEmulator",
-    "Atom3LevelEmulator",
     "Atom2LevelEmulator",
     "TransmonModel",
     "TransmonCalibration",
@@ -68,10 +60,6 @@ __all__ = [
     "PulseImplementationMap",
     "default_transmon_gate_implementation_map",
     "default_transmon_calibration",
-    "Atom3LevelModel",
-    "Atom3LevelCalibration",
-    "default_atom_3level_calibration",
-    "default_atom_3level_gate_implementation_map",
     "Atom2LevelModel",
     "AtomArrangement",
     "available_model_documents",

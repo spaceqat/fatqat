@@ -1,25 +1,23 @@
-Neutral-atom emulators
-======================
+Neutral-atom emulator
+=====================
 
-Both neutral-atom emulators follow the standard
+The neutral-atom pulse emulator follows the standard
 :py:class:`~fatqat.simulator.Simulator` workflow. Pass a
 :py:class:`~fatqat.Program` to ``run()``, then call ``job.result()`` on the
-eager :py:class:`~fatqat.Job` to get a :py:class:`~fatqat.Result`. They are
-pulse-resolved physical emulators rather than modes of
+eager :py:class:`~fatqat.Job` to get a :py:class:`~fatqat.Result`. It is a
+pulse-resolved physical emulator rather than a mode of
 :py:class:`~fatqat.simulator.AtomArraySimulator`.
 
-Use :py:class:`~fatqat.emulator.Atom3LevelEmulator` for calibrated gates or
-selected-site direct controls in the physical ``|0>, |1>, |r>`` model. Use
-:py:class:`~fatqat.emulator.Atom2LevelEmulator` for directly authored global
-controls in the ``|g>, |r>`` model. The comparison and executable workflows
-are in :doc:`../guide/neutral-atom-emulation`.
+Use :py:class:`~fatqat.emulator.Atom2LevelEmulator` for directly authored
+global controls in the physical ``|g>, |r>`` model. The executable workflow is
+in :doc:`../guide/neutral-atom-emulation`.
 
 Arrangements and program resources
 ----------------------------------
 
-Both backends require a regular
+The backend requires a regular
 :py:class:`~fatqat.emulator.AtomArrangement`. Coordinates are row-major,
-``(column * spacing, row * spacing, 0)``, and the current atom models interpret
+``(column * spacing, row * spacing, 0)``, and the current atom model interprets
 spacing in micrometres. A program must declare exactly one dimension-two
 quantum resource per site; declaration order binds resources to coordinates.
 The arrangement describes fixed geometry; it does not track atom loading or
@@ -36,7 +34,7 @@ device capacity and accepts programs with at most six resources; omitting its
 Run configuration and results
 -----------------------------
 
-Both ``run()`` methods have the signature ``(program, *, shots=1024,
+The ``run()`` method has the signature ``(program, *, shots=1024,
 resource_layout=None, simulation_config=None, result_config=None)``. The
 optional layout must still cover every arrangement site exactly once; the
 default uses declaration order. Validation errors are raised
@@ -57,7 +55,7 @@ starts is represented by a failed job, and ``job.result()`` raises
    * - ``seed``
      - ``int`` or ``None``; not ``bool``
      - ``None``
-     - Random seed for measurement, reset, readout, and statevector trajectory
+     - Random seed for measurement, readout, and statevector trajectory
        sampling. Integers must be non-negative; ``None`` chooses a fresh seed.
    * - ``schedule_mode``
      - ``"ASAP"`` or ``"ALAP"``
@@ -91,11 +89,10 @@ starts is represented by a failed job, and ``job.result()`` raises
 Both configuration arguments must be a ``dict`` or ``None``; unknown keys
 are rejected.
 
-Each run starts from a fixed product state: ``|0>`` on the three-level backend
-and ``|g>`` on the two-level backend. Neither constructor accepts an
-``initial_state`` argument.
+Each run starts from the fixed product state ``|g>`` on every site. The
+constructor does not accept an ``initial_state`` argument.
 
-Both constructors accept the case-insensitive values ``method="statevector"``
+The constructor accepts the case-insensitive values ``method="statevector"``
 (the default), ``"density_matrix"``, or ``"unitary"``. ``"SV"`` and ``"DM"``
 are aliases.
 The read-only ``backend.method`` property and ``result.metadata["method"]``
@@ -124,14 +121,14 @@ and predictable Result accessor, not an internal solver:
      - ``(d**N, d**N)``
      - The complete coherent operator in the canonical terminal frame.
 
-Here ``d=3`` for :py:class:`~fatqat.emulator.Atom3LevelEmulator` and ``d=2``
-for :py:class:`~fatqat.emulator.Atom2LevelEmulator`. Neither backend exposes
-QuTiP values, ``superop``, or internal solver names as public methods.
+Here ``d=2`` for :py:class:`~fatqat.emulator.Atom2LevelEmulator`. The backend
+does not expose QuTiP values, ``superop``, or internal solver names as public
+methods.
 
-Measurement and statevector reset make a retained final state stochastic. On
-the two-level family, potentially active Lindblad noise does too. In those
-cases the default request returns counts when measurement exists and otherwise
-metadata only; request a single seeded final state explicitly with
+Measurement makes a retained final state stochastic. Potentially active
+Lindblad noise does too. In those cases the default request returns counts when
+measurement exists and otherwise metadata only; request a single seeded final
+state explicitly with
 ``result_config={"final_state": True}``, ``shots=1``, and
 ``simulation_config={"seed": ...}``. Select ``method="density_matrix"`` for
 an exact supported Lindblad ensemble.
@@ -140,75 +137,6 @@ Use ``method="unitary"`` through ``run()`` and
 :py:meth:`~fatqat.Result.get_unitary`. It rejects measurement, reset,
 conditions, counts, and potentially active Lindblad evolution. There is no
 separate public propagator API.
-
-Three-level atom emulator
--------------------------
-
-:py:class:`~fatqat.emulator.Atom3LevelEmulator` takes a physical model and an
-arrangement. Its default gate map supports
-:py:class:`~fatqat.operations.RX`,
-:py:class:`~fatqat.operations.RY`, :py:class:`~fatqat.operations.RZ`, and
-:py:data:`~fatqat.operations.CZ`. It also supports measurement, reset,
-barriers, and classical conditions.
-
-The local physical basis is ``|0>, |1>, |r>``. Measurement maps those levels
-to ``0, 1, 1`` before binary readout confusion. The complete qutrit state is
-retained; ``|r>`` is coherent leakage and is not physical atom loss.
-
-The signed ``C6/R^6`` drift includes every occupied pair. The calibrated CZ
-pulse is fixed and is not retuned when spacing or ``C6`` changes. Binary
-``2 x 2`` classical readout confusion is built in. Continuous Lindblad
-declarations are not supported by this family. See
-:ref:`noise-emulator-support` for the family support table.
-
-Construction and execution
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. autoclass:: fatqat.emulator.Atom3LevelEmulator
-   :members: method, model, arrangement, run, validate_noise_model
-
-Model and calibration values
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-``Atom3LevelModel.from_document(...)`` parses a decoded mapping that matches
-the model schema exactly. Use ``load_model_document("atom3level.reference")``
-for the packaged reference; load and decode custom files before passing the
-mapping. The calibration class accepts its own decoded calibration mapping.
-The model defines species, basis and transitions, quantity units, mass, and
-signed ``C6``. The calibration supplies the Raman and CZ recipe values.
-Unlike the narrower Transmon and two-level runtime models, the current
-three-level model retains its public ``kind``, ``local_dimension``, ``species``,
-state and interaction parameters, and ``mass_unit``, ``distance_unit``,
-``time_unit``, ``angular_frequency_unit``, and ``c6_unit`` inventory. That
-family-specific inventory is unchanged by this cleanup.
-
-.. py:class:: fatqat.emulator.Atom3LevelModel
-
-   Create instances with
-   :py:meth:`~fatqat.emulator.Atom3LevelModel.from_document`; direct
-   construction is not supported.
-
-.. automethod:: fatqat.emulator.Atom3LevelModel.from_document
-
-.. autoattribute:: fatqat.emulator.Atom3LevelModel.control
-
-.. autoattribute:: fatqat.emulator.Atom3LevelModel.available_controls
-
-.. automethod:: fatqat.emulator.Atom3LevelModel.frame
-
-.. autoattribute:: fatqat.emulator.Atom3LevelModel.time_unit
-
-.. autoclass:: fatqat.emulator.Atom3LevelCalibration
-   :members:
-
-.. autofunction:: fatqat.emulator.default_atom_3level_calibration
-
-.. autofunction:: fatqat.emulator.default_atom_3level_gate_implementation_map
-
-The standard builder requires ``model=`` and ``calibration=`` and returns a
-new :py:class:`~fatqat.emulator.PulseImplementationMap`. Its rules use that
-model's channels and frames. Geometry and C6 affect physical evolution but do
-not retune the built-in pulse shapes.
 
 Two-level atom emulator
 -----------------------
@@ -288,10 +216,9 @@ operation-scoped continuous noise is unsupported.
 With ``method="statevector"``, resolved Lindblad noise that can act during a
 nonzero-duration block uses seeded trajectories. Because this family accepts
 background declarations only, one is conservatively considered active when
-any nonzero-duration block exists. Conditioned blocks and zero-rate
-declarations still count. Use ``method="density_matrix"`` for the exact
-ensemble. A zero-time measured program samples the initial state without time
-evolution.
+any nonzero-duration block exists. Zero-rate declarations still count. Use
+``method="density_matrix"`` for the exact ensemble. A zero-time measured
+program samples the initial state without time evolution.
 
 See :doc:`pulse-control/index` for direct pulse authoring and
 :doc:`../guide/neutral-atom-emulation` for the complete two-level workflow.

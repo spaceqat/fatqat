@@ -6,7 +6,7 @@ AtomArraySimulator
 :class:`AtomArraySimulator` adds neutral-atom occupancy, loss, and dynamic
 pairing to the :class:`Simulator` execution model. Use it to check a program
 against those constraints. It is not a Hamiltonian or transport model; use
-the :doc:`neutral-atom emulators
+the :doc:`neutral-atom emulator
 <../atom-emulators>` when pulse timing and physical interactions matter.
 
 .. list-table:: Hardware profile

@@ -12,7 +12,8 @@ def test_root_emulator_import_does_not_eagerly_import_solver_adapters():
     script = """
 import sys
 import fatqat.emulator
-assert 'fatqat.emulator.atom_3level.qutip_adapter' not in sys.modules
+assert 'fatqat.emulator._atom_3level' not in sys.modules
+assert 'fatqat.emulator._atom_3level.qutip_adapter' not in sys.modules
 assert 'fatqat.emulator.atom_2level.qutip_adapter' not in sys.modules
 assert 'fatqat.emulator.superconducting.qutip_adapter' not in sys.modules
 """
@@ -28,6 +29,7 @@ def test_removed_atom_package_paths_do_not_resolve():
 import importlib.util
 
 assert importlib.util.find_spec('fatqat.emulator.' + 'atom') is None
+assert importlib.util.find_spec('fatqat.emulator.' + 'atom_3level') is None
 try:
     importlib.util.find_spec('fatqat.emulator.' + 'atom' + '.analog')
 except ModuleNotFoundError:
@@ -51,7 +53,7 @@ import fatqat.emulator
 removed = (
     'fatqat.emulator._core.' + 'model_' + 'contract',
     'fatqat.emulator.atom_2level.' + 'runtime',
-    'fatqat.emulator.atom_3level.' + 'runtime',
+    'fatqat.emulator._atom_3level.' + 'runtime',
 )
 for name in removed:
     assert name not in sys.modules

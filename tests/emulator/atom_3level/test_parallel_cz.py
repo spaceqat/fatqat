@@ -6,9 +6,9 @@ import pytest
 
 import fatqat as fq
 from fatqat._index_allocation import _EngineAllocation
-from fatqat.emulator.atom_3level import target as target_module
-from fatqat.emulator.atom_3level.qutip_adapter import _Atom3LevelQutipAdapter
-from fatqat.emulator.atom_3level.target import _Atom3LevelTarget
+from fatqat.emulator._atom_3level import target as target_module
+from fatqat.emulator._atom_3level.qutip_adapter import _Atom3LevelQutipAdapter
+from fatqat.emulator._atom_3level.target import _Atom3LevelTarget
 
 
 def test_target_computes_each_public_two_by_two_pair_exactly_once(

@@ -383,13 +383,11 @@ Call :py:meth:`~fatqat.emulator.TransmonEmulator.validate_noise_model` before
 running a program to validate its noise model. Program-specific selectors are
 checked at run time.
 
-Neutral-atom pulse emulators
-----------------------------
+Neutral-atom pulse emulator
+---------------------------
 
-The three-level and two-level atom backends also accept optional gate
-implementation maps. Their continuous-noise support is family-owned.
-``Atom3LevelEmulator`` has built-in gate recipes and per-site direct
-controls. ``Atom2LevelEmulator`` has an empty built-in gate map and global
-direct controls; user-supplied maps can add gate rules.
-See :doc:`atom-emulators` for their API and
-:doc:`../guide/neutral-atom-emulation` for help choosing between them.
+The two-level atom backend also accepts an optional gate implementation map.
+Its continuous-noise support is family-owned. ``Atom2LevelEmulator`` has an
+empty built-in gate map and global direct controls; user-supplied maps can add
+gate rules. See :doc:`atom-emulators` for its API and
+:doc:`../guide/neutral-atom-emulation` for the complete workflow.

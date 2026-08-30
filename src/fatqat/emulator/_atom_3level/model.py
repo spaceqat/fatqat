@@ -139,14 +139,6 @@ class Atom3LevelModel:
     Create a model with ``from_document()``. Site coordinates are supplied
     separately through ``AtomArrangement``; select local Raman and Rydberg
     channels through ``control``.
-
-    Examples:
-        >>> import fatqat as fq
-        >>> model = fq.emulator.Atom3LevelModel.from_document(
-        ...     fq.emulator.load_model_document("atom3level.reference")
-        ... )
-        >>> model.local_dimension
-        3
     """
 
     _identity: _ModelIdentity = field(repr=False)

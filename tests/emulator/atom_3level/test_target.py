@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 import fatqat as fq
-from fatqat.emulator.atom_3level.model import Atom3LevelModel
-from fatqat.emulator.atom_3level.target import _Atom3LevelTarget
+from fatqat.emulator._atom_3level.model import Atom3LevelModel
+from fatqat.emulator._atom_3level.target import _Atom3LevelTarget
 from fatqat.errors import BackendValidationError
 
 

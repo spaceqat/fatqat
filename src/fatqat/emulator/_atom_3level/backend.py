@@ -42,18 +42,6 @@ class Atom3LevelEmulator(_PulseBackend):
     Raises:
         BackendValidationError: If an argument has the wrong type or ``noise``
             contains a declaration unsupported by the selected rules.
-
-    Examples:
-        >>> import fatqat as fq
-        >>> model = fq.emulator.Atom3LevelModel.from_document(
-        ...     fq.emulator.load_model_document("atom3level.reference")
-        ... )
-        >>> arrangement = fq.emulator.AtomArrangement.chain(2, spacing=6.0)
-        >>> backend = fq.emulator.Atom3LevelEmulator(
-        ...     model, arrangement=arrangement
-        ... )
-        >>> backend.arrangement.num_sites
-        2
     """
 
     def __init__(

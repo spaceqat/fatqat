@@ -9,14 +9,18 @@ from scipy.linalg import expm
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat._pulse_values import PulseControl
-from fatqat.emulator.atom_3level import Atom3LevelCalibration, Atom3LevelModel
+from fatqat.emulator._atom_3level import (
+    Atom3LevelCalibration,
+    Atom3LevelEmulator,
+    Atom3LevelModel,
+)
 from fatqat.emulator._core.engine import PulseEngine
 from fatqat.errors import BackendValidationError
 from fatqat.emulator import SampledWaveform
 
 
 def _backend(model, calibration, sites=2, *, method="density_matrix"):
-    return fq.emulator.Atom3LevelEmulator(
+    return Atom3LevelEmulator(
         model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, sites, 2.0),
         method=method,
@@ -114,7 +118,7 @@ def test_structural_controls_reuse_across_compatible_arrangements(
     program.add(operation)
 
     first = _backend(atom_3level_model, atom_3level_calibration, sites=2)
-    second = fq.emulator.Atom3LevelEmulator(
+    second = Atom3LevelEmulator(
         atom_3level_model,
         arrangement=fq.emulator.AtomArrangement.rectangular(2, 1, 3.0),
     )

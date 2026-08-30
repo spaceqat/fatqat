@@ -1,4 +1,4 @@
-"""Three-level neutral-atom pulse emulator and portable calibration API.
+"""Private three-level neutral-atom pulse-emulator implementation.
 
 Models create structural controls and frames; the concrete backend binds them
 to its arrangement and accepts a replacement gate implementation map.

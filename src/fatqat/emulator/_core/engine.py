@@ -122,8 +122,7 @@ class PulseEngine:
     to a model runner. It does not construct Hamiltonians or know QuTiP.
 
     This class is private implementation machinery. Applications use the
-    public :class:`fatqat.emulator.TransmonEmulator`,
-    :class:`fatqat.emulator.Atom3LevelEmulator`, or
+    public :class:`fatqat.emulator.TransmonEmulator` or
     :class:`fatqat.emulator.Atom2LevelEmulator` backend instead.
     """
 
