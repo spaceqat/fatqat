@@ -156,10 +156,12 @@ intuition. Exact state-axis metadata is specified in [Result](result.md).
 Matrix simulation has no physical timeline. Built-in damping and depolarizing
 descriptors therefore use their probability form and apply at operation
 boundaries. Rate forms, background sources, and
-[`ThermalRelaxation`][fatqat.noise.ThermalRelaxation] are rejected; convert thermal
-relaxation with `as_channels(duration)` first. Custom descriptors require a
-matching channel rule. [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] additionally supports atom
-loss.
+[`ThermalRelaxation`][fatqat.noise.ThermalRelaxation] are rejected. For a known qubit
+operation duration, add probability-form
+[`AmplitudeDamping`][fatqat.noise.AmplitudeDamping] and
+[`PhaseDamping`][fatqat.noise.PhaseDamping] descriptors to the relevant operation.
+Custom descriptors require a matching channel rule.
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] additionally supports atom loss.
 
 [`Simulator.validate_noise_model`][fatqat.simulator.Simulator.validate_noise_model] validates a model without running a
 program. A method can still impose a stricter rule: for example, `unitary`

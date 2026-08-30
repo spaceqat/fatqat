@@ -10,6 +10,10 @@ Every gate on this page is defined for dimension-2 targets (qubits).
 dimensions. The backend checks that requirement and any device-specific limits
 when the program runs.
 
+Every unary gate accepts either one scalar target or one
+[`RegisterView`](../registers.md#fatqat.RegisterView). Every multi-qubit gate accepts either scalar
+operands or one compatible view per operand and zips the views in order.
+
 ## Fixed gates
 
 
@@ -179,12 +183,12 @@ All angles are in radians and are not normalized. Every angle field accepts a
 | [`RX`][fatqat.operations.RX] `(theta)` | One scalar or one view | Rotation about the X axis by `theta`. |
 | [`RY`][fatqat.operations.RY] `(theta)` | One scalar or one view | Rotation about the Y axis by `theta`. |
 | [`RZ`][fatqat.operations.RZ] `(theta)` | One scalar or one view | Rotation about the Z axis by `theta`. |
-| [`Phase`][fatqat.operations.Phase] `(theta)` | One scalar | Differs from RZ only by global phase. |
-| [`U`][fatqat.operations.U] `(theta, phi, lam)` | One scalar | General single-qubit gate using Qiskit's parameter convention. |
-| [`U1`][fatqat.operations.U1] `(lam)` | One scalar | Equivalent to `Phase(lam)`. |
-| [`U2`][fatqat.operations.U2] `(phi, lam)` | One scalar | Equivalent to `U(pi/2, phi, lam)`. |
-| [`U3`][fatqat.operations.U3] `(theta, phi, lam)` | One scalar | Same matrix as `U(theta, phi, lam)`; retained for Qiskit compatibility. |
-| [`CPhase`][fatqat.operations.CPhase] `(theta)` | `(control, target)` scalars | Multiplies $\|11\rangle$ by $e^{i\theta}$. |
+| [`Phase`][fatqat.operations.Phase] `(theta)` | One scalar or one view | Differs from RZ only by global phase. |
+| [`U`][fatqat.operations.U] `(theta, phi, lam)` | One scalar or one view | General single-qubit gate using Qiskit's parameter convention. |
+| [`U1`][fatqat.operations.U1] `(lam)` | One scalar or one view | Equivalent to `Phase(lam)`. |
+| [`U2`][fatqat.operations.U2] `(phi, lam)` | One scalar or one view | Equivalent to `U(pi/2, phi, lam)`. |
+| [`U3`][fatqat.operations.U3] `(theta, phi, lam)` | One scalar or one view | Same matrix as `U(theta, phi, lam)`; retained for Qiskit compatibility. |
+| [`CPhase`][fatqat.operations.CPhase] `(theta)` | `(control, target)` scalars or compatible views | Multiplies $\|11\rangle$ by $e^{i\theta}$. |
 
 ### Matrix definitions
 

@@ -17,11 +17,10 @@ to drive. Add it with `program.add(operation)`. A
 ## Conditions and noise
 
 
-`TransmonEmulator` and `Atom3LevelEmulator` allow
-`program.add(operation, condition=...)`. If the condition is false, the
-controls are skipped but the block still takes its full duration. Model drift
-and background Lindblad noise continue during that time. `Atom2LevelEmulator`
-does not support conditions.
+`TransmonEmulator` allows `program.add(operation, condition=...)`. If the
+condition is false, the controls are skipped but the block still takes its full
+duration. Model drift and background Lindblad noise continue during that time.
+`Atom2LevelEmulator` does not support conditions.
 
 Operation-scoped noise cannot be attached to a direct pulse block, so
 `noise.add(..., operation=ops.PulseOperation)` raises `ValueError`.

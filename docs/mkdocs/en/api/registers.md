@@ -101,17 +101,14 @@ For a `GridRegister(2, 3)`, the helpers select these flat indices:
 | `grid.column(1)` | `(1, 4)` |
 | `grid.block((0, 2), (1, 3))` | `(1, 2, 4, 5)` |
 
-Pass views to [`add`][fatqat.Program.add]. The built-in view-capable operations
-are [`RX`][fatqat.operations.RX], [`RY`][fatqat.operations.RY],
-[`RZ`][fatqat.operations.RZ], [`CX`][fatqat.operations.CX], and
-[`CZ`][fatqat.operations.CZ]. Unary operations act independently on each
-selected member; [`CX`][fatqat.operations.CX] and
-[`CZ`][fatqat.operations.CZ] pair corresponding members of the two views. A
-pair must use the same kind of grid selection and the same cardinality, and
-selections on the same grid cannot overlap. Measurements and QASM export
-require scalar targets. The backend validates physical placement and
-connectivity. See [Write quantum computations with Program](../guide/program.md) for the ordinary Program workflow
-and [Test a Program against a hardware profile](../guide/hardware-profile-simulation.md) for physical placement.
+Pass views to [`add`][fatqat.Program.add]. Every built-in unitary gate accepts
+them. Unary gates act independently on each selected member; multi-target
+gates zip corresponding members from one view per operand. All views must use
+the same kind of grid selection and cardinality, and selections on the same
+grid cannot overlap. Measurements and QASM export require scalar targets. The
+backend validates physical placement and connectivity. See
+[Write quantum computations with Program](../guide/program.md) for the ordinary Program workflow and
+[Test a Program against a hardware profile](../guide/hardware-profile-simulation.md) for physical placement.
 
 ::: fatqat.GridRegister
     options:

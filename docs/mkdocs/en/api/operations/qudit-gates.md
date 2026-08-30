@@ -11,20 +11,23 @@ operation, and the backend checks support when the program runs.
 Integer `power` values are reduced modulo the relevant target dimension, so
 negative and oversized values are valid.
 
+Unary gates accept one scalar target or one [`RegisterView`](../registers.md#fatqat.RegisterView).
+Two-target gates accept scalars or two compatible views and zip their members.
+
 **Qudit gates**
 
 | Value or constructor | Targets and constraints | Basis action |
 | --- | --- | --- |
-| [`Shift`][fatqat.operations.Shift] `(power)` | One scalar; any `d >= 2` | `\|k> -> \|(k + power) mod d>`. `Shift(1)` is X for `d=2`. |
-| [`Clock`][fatqat.operations.Clock] `(power)` | One scalar; any `d >= 2` | `\|k> -> omega**(k*power)\|k>`, `omega=exp(2*pi*i/d)`. `Clock(1)` is Z for `d=2`. |
-| [`Sum`][fatqat.operations.Sum] | `(control, target)` with equal dimensions | `\|i,j> -> \|i,(i+j) mod d>`. It is CX for `d=2`. |
-| [`SwapLevels`][fatqat.operations.SwapLevels] `(j, k)` | One scalar; `0 <= j,k < d` and `j != k` | Exchanges `\|j>` and `\|k>` and fixes every other level. |
-| [`Fourier`][fatqat.operations.Fourier] | One scalar; any `d >= 2` | `\|j> -> sum(exp(2*pi*i*j*k/d)\|k>) / sqrt(d)`. It is H for `d=2`. |
-| [`InverseFourier`][fatqat.operations.InverseFourier] | One scalar; any `d >= 2` | Conjugate transpose of `Fourier`; uses the negative exponent. |
-| [`SubspaceRX`][fatqat.operations.SubspaceRX] `(theta, (j, k))` | One scalar; two distinct in-range levels | With `c=cos(theta/2)`, `s=sin(theta/2)`: `\|j> -> c\|j>-i*s\|k>` and `\|k> -> -i*s\|j>+c\|k>`. |
-| [`SubspaceRY`][fatqat.operations.SubspaceRY] `(theta, (j, k))` | One scalar; two distinct in-range levels | `\|j> -> c\|j>+s\|k>` and `\|k> -> -s\|j>+c\|k>`. Reversing `(j, k)` reverses the rotation. |
-| [`SubspaceRZ`][fatqat.operations.SubspaceRZ] `(theta, (j, k))` | One scalar; two distinct in-range levels | `\|j>` gains `exp(-i*theta/2)` and `\|k>` gains `exp(i*theta/2)`. Reversing the pair reverses the rotation. |
-| [`CClock`][fatqat.operations.CClock] `(power)` | `(control, target)`; dimensions may differ | `\|i,j>` gains `omega**(i*j*power)` using the target's `omega=exp(2*pi*i/d_target)`. It is CZ for two qubits and power 1. |
+| [`Shift`][fatqat.operations.Shift] `(power)` | One scalar or view; any `d >= 2` | `\|k> -> \|(k + power) mod d>`. `Shift(1)` is X for `d=2`. |
+| [`Clock`][fatqat.operations.Clock] `(power)` | One scalar or view; any `d >= 2` | `\|k> -> omega**(k*power)\|k>`, `omega=exp(2*pi*i/d)`. `Clock(1)` is Z for `d=2`. |
+| [`Sum`][fatqat.operations.Sum] | Scalar or view pair with equal dimensions | `\|i,j> -> \|i,(i+j) mod d>`. It is CX for `d=2`. |
+| [`SwapLevels`][fatqat.operations.SwapLevels] `(j, k)` | One scalar or view; `0 <= j,k < d` and `j != k` | Exchanges `\|j>` and `\|k>` and fixes every other level. |
+| [`Fourier`][fatqat.operations.Fourier] | One scalar or view; any `d >= 2` | `\|j> -> sum(exp(2*pi*i*j*k/d)\|k>) / sqrt(d)`. It is H for `d=2`. |
+| [`InverseFourier`][fatqat.operations.InverseFourier] | One scalar or view; any `d >= 2` | Conjugate transpose of `Fourier`; uses the negative exponent. |
+| [`SubspaceRX`][fatqat.operations.SubspaceRX] `(theta, (j, k))` | One scalar or view; two distinct in-range levels | With `c=cos(theta/2)`, `s=sin(theta/2)`: `\|j> -> c\|j>-i*s\|k>` and `\|k> -> -i*s\|j>+c\|k>`. |
+| [`SubspaceRY`][fatqat.operations.SubspaceRY] `(theta, (j, k))` | One scalar or view; two distinct in-range levels | `\|j> -> c\|j>+s\|k>` and `\|k> -> -s\|j>+c\|k>`. Reversing `(j, k)` reverses the rotation. |
+| [`SubspaceRZ`][fatqat.operations.SubspaceRZ] `(theta, (j, k))` | One scalar or view; two distinct in-range levels | `\|j>` gains `exp(-i*theta/2)` and `\|k>` gains `exp(i*theta/2)`. Reversing the pair reverses the rotation. |
+| [`CClock`][fatqat.operations.CClock] `(power)` | Scalar or view pair; dimensions may differ | `\|i,j>` gains `omega**(i*j*power)` using the target's `omega=exp(2*pi*i/d_target)`. It is CZ for two qubits and power 1. |
 
 Level pairs must contain distinct, non-negative integers. Equality and
 negativity are checked at construction, and the target dimension is checked

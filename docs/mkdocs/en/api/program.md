@@ -50,7 +50,7 @@ register you want and pass the resulting [`RegisterRef`][fatqat.RegisterRef].
 | --- | --- | --- |
 | Integer | [`add`][fatqat.Program.add], [`measure`][fatqat.Program.measure], and conditions | Requires exactly one register of the relevant kind and must be within its zero-based bounds. |
 | [`RegisterRef`][fatqat.RegisterRef] | [`add`][fatqat.Program.add], [`measure`][fatqat.Program.measure], and conditions | Must have the required register kind and come from a register in this program. |
-| [`RegisterView`](registers.md#fatqat.RegisterView) | [`add`][fatqat.Program.add] only | [`RX`][fatqat.operations.RX], [`RY`][fatqat.operations.RY], and [`RZ`][fatqat.operations.RZ] accept one view. [`CX`][fatqat.operations.CX] and [`CZ`][fatqat.operations.CZ] accept two compatible views. Measurement does not accept views. |
+| [`RegisterView`](registers.md#fatqat.RegisterView) | [`add`][fatqat.Program.add] only | Every built-in unitary gate accepts views. Unary gates map over one view; multi-target gates zip one compatible view per operand. Measurement does not accept views. |
 
 A [`PulseOperation`][fatqat.operations.PulseOperation] does not use the target forms
 above. Add it with `program.add(operation)` and no `targets` argument.
@@ -58,7 +58,8 @@ See [PulseOperation](pulse-control/pulse-operation.md) for details.
 
 For other operations, `targets` is one tuple in operand order. Controlled
 gates list controls before targets. See [Registers](registers.md) for view selection and
-pairing, and [Write quantum computations with Program](../guide/program.md) for the ordinary construction workflow.
+compatibility, and [Write quantum computations with Program](../guide/program.md) for the ordinary construction
+workflow.
 
 ## Conditions
 

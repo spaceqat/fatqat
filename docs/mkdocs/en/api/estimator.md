@@ -8,7 +8,7 @@ title: "Observables and estimation"
 Use [`Estimator`][fatqat.Estimator] to evaluate one or more
 [`Observable`][fatqat.Observable] values from a backend's final state. The program
 must be unmeasured, fully bound, and qubit-only; the backend must return a
-statevector or density matrix.
+statevector or density matrix in the program's logical qubit space.
 
 ## Estimate an observable
 
@@ -70,6 +70,15 @@ unsupported observable types raise `TypeError`. Later failures are raised by
 
 Use a density-matrix backend when the program resets qubits or channel noise
 applies.
+
+For a program with `N` qubits, the returned statevector must have shape
+`(2**N,)` or the density matrix must have shape `(2**N, 2**N)`. A backend
+state with another shape raises [`BackendValidationError`][fatqat.errors.BackendValidationError]
+before any Pauli expectation kernel runs. In particular, a full physical qutrit
+state returned by a Transmon emulator is not implicitly projected into the
+logical subspace. Inspect that physical state directly with the backend
+[`Result`][fatqat.Result] until explicit leakage-aware observable semantics are
+available.
 
 Read estimator results with [`get_expectation`][fatqat.Result.get_expectation] and
 [`get_std`][fatqat.Result.get_std]. Run the backend separately if you also need its

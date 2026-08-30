@@ -197,7 +197,7 @@ Hamiltonian emulators add costs that a circuit-level array-size estimate does
 not capture: the model's physical levels, unaddressed modeled subsystems,
 time-dependent controls, scheduling, integration intervals, and open-system
 evolution. A logical qubit may therefore contribute three physical levels in a
-transmon or three-level atom model.
+transmon model.
 
 Benchmark the actual model, arrangement, controls, duration, solver settings,
 and requested result. Do not extrapolate an emulator run from a gate-level

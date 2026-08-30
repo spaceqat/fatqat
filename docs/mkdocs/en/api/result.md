@@ -24,8 +24,11 @@ use its accessor. An unavailable accessor raises
 | Backend extension name | [`get_data`][fatqat.Result.get_data] | A backend extension |
 
 `"final_state"` is a request name, not an available-data name. A produced
-state uses its concrete representation name from the table. Deterministic runs
-enable final-state output by default.
+state or operator uses its concrete representation name from the table.
+Deterministic unmeasured runs enable method-native output by default. A
+stochastic pulse-emulator state—caused by measurement, statevector reset, or
+potentially active statevector Lindblad evolution—must be requested explicitly
+with `shots=1`.
 
 ## Ordering and mutable values
 
@@ -39,9 +42,11 @@ classical slot 0 at tuple position 0.
 Most other accessors return the value stored in the result. Copy arrays or
 dictionaries before changing them if you need to preserve the original.
 Metadata records the normalized `simulation_config` and `result_config`.
-Backend extensions may add fields; pulse-emulator results also include common
-solver settings. Keep the model, arrangement, controls, and application
-metadata alongside a result when they are needed to reproduce a physical run.
+Backend extensions may add fields. Pulse-emulator metadata records the
+canonical `method`; any solver diagnostics are informational and their keys
+are not a public compatibility contract. Keep the model, arrangement,
+controls, and application metadata alongside a result when they are needed to
+reproduce a physical run.
 
 For every complete state or operator, `metadata["state_axes"]` lists the
 physical subsystems from least to most significant. Each entry contains a

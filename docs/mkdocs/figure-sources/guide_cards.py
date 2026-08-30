@@ -193,6 +193,7 @@ def render(output: Path) -> tuple[str, ...]:
     backend = fq.emulator.Atom2LevelEmulator(
         model,
         arrangement=arrangement,
+        method="unitary",
     )
     omega = 2.0 * np.pi
     durations = np.linspace(0.0, 1.5, 31)
@@ -212,7 +213,7 @@ def render(output: Path) -> tuple[str, ...]:
         )
         program = fq.Program(arrangement.num_sites)
         program.add(ops.PulseOperation(step, (drive, offset)))
-        propagator = backend.propagator(program)
+        propagator = backend.run(program).result().get_unitary()
 
         state = ground_state.copy()
         for column in range(1, len(durations)):

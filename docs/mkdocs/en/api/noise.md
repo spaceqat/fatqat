@@ -44,8 +44,9 @@ its parameters, units, and mathematical definition.
 
 
 Support depends on the noise form, where it applies, and the backend. The
-[Backend support](noise/backend-support.md#noise-backend-support) tables show what works out of the box, what needs
-a custom implementation map, and what a backend family cannot support.
+[Backend support](noise/backend-support.md#noise-backend-support) tables show the built-in behavior and unsupported
+forms for each backend family. Pulse-emulator continuous-noise realizations are
+family-owned rather than user-replaceable.
 
 ## Quick start
 
@@ -82,12 +83,11 @@ pulse_noise.add(
 )
 ```
 
-The reference transmon model uses nanoseconds, while the neutral-atom models
-use microseconds. Check the chosen model's `time_unit` instead of inferring a
+The reference transmon model uses nanoseconds, while the neutral-atom model
+uses microseconds. Check the chosen model's `time_unit` instead of inferring a
 unit from the size of a value: see
-[`time_unit`][fatqat.emulator.TransmonModel.time_unit],
-[`time_unit`][fatqat.emulator.Atom2LevelModel.time_unit], and
-[`time_unit`][fatqat.emulator.Atom3LevelModel.time_unit].
+[`time_unit`][fatqat.emulator.TransmonModel.time_unit] and
+[`time_unit`][fatqat.emulator.Atom2LevelModel.time_unit].
 
 ## API pages
 

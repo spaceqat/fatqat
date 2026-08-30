@@ -8,7 +8,7 @@ title: "AtomArraySimulator"
 [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] adds neutral-atom occupancy, loss, and dynamic
 pairing to the [`Simulator`][fatqat.simulator.Simulator] execution model. Use it to check a program
 against those constraints. It is not a Hamiltonian or transport model; use
-the [neutral-atom emulators](../atom-emulators.md) when pulse timing and physical interactions matter.
+the [neutral-atom emulator](../atom-emulators.md) when pulse timing and physical interactions matter.
 
 **Hardware profile**
 

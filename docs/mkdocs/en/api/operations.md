@@ -58,11 +58,11 @@ index the register you want. Controlled gates use control-first order, and the
 first local operand is the most-significant digit in the matrices and basis
 actions on the family pages.
 
-[`RX`][fatqat.operations.RX], [`RY`][fatqat.operations.RY], and [`RZ`][fatqat.operations.RZ] accept one
-[`RegisterView`](registers.md#fatqat.RegisterView); [`CX`][fatqat.operations.CX] and [`CZ`][fatqat.operations.CZ] accept two
-compatible views and pair their members in order. See [Registers](registers.md) for the
-view compatibility rules and [Write quantum computations with Program](../guide/program.md) for the ordinary
-construction workflow.
+Every built-in unitary gate accepts [`RegisterView`](registers.md#fatqat.RegisterView) targets.
+A unary gate acts on each selected member. A multi-target gate accepts one
+compatible view per operand and zips their members in order. See
+[Registers](registers.md) for the compatibility rules and [Write quantum computations with Program](../guide/program.md) for
+the ordinary construction workflow.
 
 ## Operation base
 
