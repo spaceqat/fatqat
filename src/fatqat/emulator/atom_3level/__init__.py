@@ -1,7 +1,7 @@
 """Three-level neutral-atom pulse emulator and portable calibration API.
 
 Models create structural controls and frames; the concrete backend binds them
-to its arrangement and accepts replacement gate and Lindblad maps.
+to its arrangement and accepts a replacement gate implementation map.
 """
 
 from .backend import Atom3LevelEmulator

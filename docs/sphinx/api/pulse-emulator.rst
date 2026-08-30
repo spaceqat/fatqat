@@ -121,6 +121,10 @@ reproducible trajectory with
 ``simulation_config["seed"]``. Choose ``method="density_matrix"`` for the
 exact ensemble instead.
 
+Each Transmon statevector trajectory is an independent physical evolution, so
+the cost of a measured trajectory run grows with ``shots``. Use the
+density-matrix method when one exact ensemble is the more useful result.
+
 ``method="unitary"`` is used through ``run()`` and
 :py:meth:`~fatqat.Result.get_unitary`; there is no separate public propagator
 API. It rejects measurement, reset, classical conditions, counts, and a

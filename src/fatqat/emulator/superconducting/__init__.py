@@ -1,7 +1,7 @@
 """Superconducting transmon pulse emulator and portable calibration API.
 
 Models create structural controls and frames; the concrete backend binds them
-to fixed device topology and accepts replacement gate and Lindblad maps.
+to fixed device topology and accepts a replacement gate implementation map.
 """
 
 from .backend import TransmonEmulator

@@ -85,13 +85,7 @@ class _Atom2LevelQutipAdapter:
         self._solver_used = "none"
         self._site_count = engine_allocation.n_subsystems
         self._dims = list(self._qutip_space.dims)
-        self._projectors = tuple(
-            tuple(
-                self._qutip_space.expand_local(site, basis(2, outcome).proj())
-                for outcome in range(2)
-            )
-            for site in range(self._site_count)
-        )
+        self._projectors: list[tuple[Qobj, ...] | None] = [None] * self._site_count
         self.local_raising = Qobj(np.asarray([[0.0, 0.0], [1.0, 0.0]], complex))
         self.local_number = Qobj(np.diag([0.0, 1.0]))
         identity = self._qutip_space.full_tensor(
@@ -484,9 +478,16 @@ class _Atom2LevelQutipAdapter:
 
     def _measure(self, canonical_axis: int, context: _ShotContext) -> int:
         self._validate_state(context.state)
+        projectors = self._projectors[canonical_axis]
+        if projectors is None:
+            projectors = tuple(
+                self._qutip_space.expand_local(canonical_axis, basis(2, outcome).proj())
+                for outcome in range(2)
+            )
+            self._projectors[canonical_axis] = projectors
         outcome, context.state = _sample_projective_qutip_state(
             context.state,
-            self._projectors[canonical_axis],
+            projectors,
             context.rng,
         )
         return outcome

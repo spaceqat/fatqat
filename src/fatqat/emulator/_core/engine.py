@@ -9,7 +9,7 @@ fact lives behind the ``_PulseModelRunner`` it delegates to.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Protocol, runtime_checkable
+from typing import Any, Iterable, Protocol, cast, runtime_checkable
 
 import numpy as np
 
@@ -175,13 +175,10 @@ class PulseEngine:
         self._validate_run_request(shots, n_clbits)
         frozen_plan = tuple(plan)
         if isinstance(self._runner, _TerminalTrajectoryBatchRunner):
-            try:
-                self._split_terminal_trajectory_plan(frozen_plan)
-            except BackendValidationError:
-                pass
-            else:
-                return self.run_terminal_trajectory_batch(
-                    frozen_plan,
+            batch_plan = self._split_terminal_trajectory_plan(frozen_plan)
+            if batch_plan is not None:
+                return self._run_terminal_batch(
+                    *batch_plan,
                     shots=shots,
                     n_clbits=n_clbits,
                     rng=rng,
@@ -193,22 +190,17 @@ class PulseEngine:
             rng=rng,
         )
 
-    def run_terminal_trajectory_batch(
+    def _run_terminal_batch(
         self,
-        plan: Iterable[PulsePlanStep],
+        blocks: tuple[PulseBlock, ...],
+        measurements: tuple[MeasurementStep, ...],
         *,
         shots: int,
         n_clbits: int,
         rng: np.random.Generator,
     ) -> tuple[Any, ...]:
-        """Batch one continuous trajectory region, then apply terminal boundaries."""
-        self._validate_run_request(shots, n_clbits)
-        if not isinstance(self._runner, _TerminalTrajectoryBatchRunner):
-            raise BackendValidationError(
-                "pulse runner does not support terminal trajectory batching"
-            )
-
-        blocks, measurements = self._split_terminal_trajectory_plan(tuple(plan))
+        """Run one eligible continuous region as a trajectory batch."""
+        runner = cast(_TerminalTrajectoryBatchRunner, self._runner)
         scheduled_run = schedule_pulse_run(
             blocks,
             boundary_time=0.0,
@@ -223,7 +215,7 @@ class PulseEngine:
                 dtype=np.uint64,
             )
         )
-        final_states = self._runner.run_trajectory_batch(
+        final_states = runner.run_trajectory_batch(
             scheduled_run,
             ntraj=shots,
             seeds=seeds,
@@ -240,34 +232,30 @@ class PulseEngine:
         outcomes = []
         for final_state in final_states:
             context = _ShotContext(
-                state=self._runner.copy_state(final_state),
+                state=runner.copy_state(final_state),
                 classical_memory=[0] * n_clbits,
                 rng=rng,
                 time=scheduled_run.end_time,
             )
             for measurement in measurements:
-                self._runner.execute_boundary(measurement, context)
-            outcomes.append(self._runner.finish_shot(context))
+                runner.execute_boundary(measurement, context)
+            outcomes.append(runner.finish_shot(context))
         return tuple(outcomes)
 
     @staticmethod
     def _split_terminal_trajectory_plan(
         plan: tuple[PulsePlanStep, ...],
-    ) -> tuple[tuple[PulseBlock, ...], tuple[MeasurementStep, ...]]:
-        """Validate and split the optional terminal-batch plan shape."""
+    ) -> tuple[tuple[PulseBlock, ...], tuple[MeasurementStep, ...]] | None:
+        """Return terminal-batch regions, or ``None`` for a dynamic plan."""
         blocks: list[PulseBlock] = []
         measurements: list[MeasurementStep] = []
         in_measurement_suffix = False
         for step in plan:
             if isinstance(step, PulseBlock):
                 if in_measurement_suffix:
-                    raise BackendValidationError(
-                        "terminal trajectory plans cannot pulse after measurement"
-                    )
+                    return None
                 if step.condition is not None:
-                    raise BackendValidationError(
-                        "terminal trajectory plans do not support conditions"
-                    )
+                    return None
                 blocks.append(step)
                 continue
             if isinstance(step, MeasurementStep):
@@ -275,16 +263,12 @@ class PulseEngine:
                 measurements.append(step)
                 continue
             if isinstance(step, ResetStep):
-                raise BackendValidationError(
-                    "terminal trajectory plans do not support reset"
-                )
+                return None
             raise BackendValidationError(
                 "terminal trajectory plan contains an unknown execution step"
             )
         if not blocks:
-            raise BackendValidationError(
-                "terminal trajectory batching requires elapsed pulse evolution"
-            )
+            return None
         return tuple(blocks), tuple(measurements)
 
     @staticmethod
