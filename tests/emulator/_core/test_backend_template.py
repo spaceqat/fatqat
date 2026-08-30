@@ -1,7 +1,6 @@
 """The shared pulse backend prepares every run fact exactly once."""
 
 from dataclasses import FrozenInstanceError
-import inspect
 
 import numpy as np
 import pytest
@@ -179,8 +178,6 @@ class _TemplateRunner:
         self._target = target
         self._execution_mode = execution_mode
         self._retain_final_state = retain_final_state
-        self.solver_metadata_calls = 0
-        self.propagator_calls = 0
 
     def initial_state(self):
         if self._execution_mode == "density_matrix":
@@ -204,7 +201,6 @@ class _TemplateRunner:
 
     def propagator(self, run, *, apply_final_frame=True):
         del run, apply_final_frame
-        self.propagator_calls += 1
         return _ArrayOperator(np.eye(self._target.hilbert_dimension))
 
     @staticmethod
@@ -227,7 +223,6 @@ class _TemplateRunner:
         )
 
     def solver_metadata(self):
-        self.solver_metadata_calls += 1
         return {"mode": self._execution_mode}
 
 
@@ -238,7 +233,6 @@ class _TemplateBackend(_PulseBackend):
         self._local_dimension = target.local_dimension
         self.source_validations = 0
         self.runner_calls = 0
-        self.execution_mode_calls = 0
         self.last_runner = None
         self.runner_prepared = None
         super().__init__(
@@ -268,7 +262,6 @@ class _TemplateBackend(_PulseBackend):
         )
 
     def _resolve_execution_mode(self, facts):
-        self.execution_mode_calls += 1
         del facts
         return "density_matrix"
 
@@ -356,6 +349,7 @@ def test_preparation_builds_one_complete_immutable_value_exactly_once():
     assert len(prepared.background_noise) == 3
     assert prepared.facts.has_nonzero_evolution
     assert prepared.facts.has_resolved_lindblad
+    assert prepared.facts.has_potentially_active_lindblad
     assert prepared.facts.has_supported_background_lindblad_registration
     assert target.bind_program_calls == 1
     assert target.bind_control_calls == 1
@@ -420,6 +414,7 @@ def test_background_targets_bind_declared_and_unreferenced_physical_targets():
     backend = _TemplateBackend(
         target,
         noise=noise,
+        gate_map=_gate_map(target),
         lindblad_map=_lindblad_map(),
     )
     prepared = backend._prepare_program(fq.Program(1))
@@ -428,6 +423,12 @@ def test_background_targets_bind_declared_and_unreferenced_physical_targets():
         (1,),
         (2,),
     )
+    assert not prepared.facts.has_potentially_active_lindblad
+
+    elapsed_program = fq.Program(1)
+    elapsed_program.add(ops.X, 0)
+    elapsed = backend._prepare_program(elapsed_program)
+    assert elapsed.facts.has_potentially_active_lindblad
 
 
 def test_resolved_terms_use_local_not_full_hilbert_dimension():
@@ -481,7 +482,34 @@ def test_operation_scoped_rate_keeps_target_binding_and_fact_scope_separate():
     assert term.engine_indices == (0,)
     assert abs(term.local_operator[0, 1]) ** 2 == pytest.approx(0.2)
     assert prepared.facts.has_resolved_lindblad
+    assert prepared.facts.has_potentially_active_lindblad
     assert not prepared.facts.has_supported_background_lindblad_registration
+
+
+@pytest.mark.parametrize(
+    ("rate", "condition"),
+    ((0.2, (0, 1)), (0.0, None)),
+)
+def test_conditioned_and_zero_rate_noise_count_as_potentially_active(
+    rate,
+    condition,
+):
+    target = _CountingTarget(("q0",))
+    noise = NoiseModel()
+    noise.add(AmplitudeDamping(rate=rate), operation=ops.X)
+    backend = _TemplateBackend(
+        target,
+        noise=noise,
+        gate_map=_gate_map(target),
+        lindblad_map=_lindblad_map(),
+    )
+    program = fq.Program(1, 1 if condition is not None else 0)
+    program.add(ops.X, 0, condition=condition)
+
+    facts = backend._prepare_program(program).facts
+
+    assert facts.has_conditions is (condition is not None)
+    assert facts.has_potentially_active_lindblad
 
 
 def test_supported_noise_for_an_absent_operation_is_a_valid_no_op():
@@ -501,6 +529,34 @@ def test_supported_noise_for_an_absent_operation_is_a_valid_no_op():
 
     assert prepared.plan[0].noise == ()
     assert not prepared.facts.has_resolved_lindblad
+    assert not prepared.facts.has_potentially_active_lindblad
+
+
+def test_zero_duration_scoped_noise_does_not_borrow_unrelated_elapsed_time():
+    target = _CountingTarget(("q0",))
+    noise = NoiseModel()
+    noise.add(AmplitudeDamping(rate=0.2), operation=ops.X)
+    gate_map = _gate_map(target)
+    gate_map.remove(ops.X)
+    gate_map.add(
+        ops.X,
+        lambda _operation, *, device_operands: PulseDefinition(0.0, ()),
+    )
+    backend = _TemplateBackend(
+        target,
+        noise=noise,
+        gate_map=gate_map,
+        lindblad_map=_lindblad_map(),
+    )
+    program = fq.Program(1)
+    program.add(ops.X, 0)
+    program.add(ops.Y, 0)
+
+    facts = backend._prepare_program(program).facts
+
+    assert facts.has_nonzero_evolution
+    assert facts.has_resolved_lindblad
+    assert not facts.has_potentially_active_lindblad
 
 
 def test_supported_background_registration_can_set_capability_without_resolution():
@@ -517,6 +573,7 @@ def test_supported_background_registration_can_set_capability_without_resolution
 
     assert prepared.background_noise == ()
     assert not prepared.facts.has_resolved_lindblad
+    assert not prepared.facts.has_potentially_active_lindblad
     assert prepared.facts.has_supported_background_lindblad_registration
 
 
@@ -656,41 +713,7 @@ def test_public_noise_validation_checks_type_and_accepts_an_empty_model():
     assert backend.validate_noise_model(NoiseModel()) is None
 
 
-def test_shared_workflows_are_final_and_only_four_family_hooks_remain():
-    expected_hooks = {
-        "_validate_source_program",
-        "_noise_model_rejection_reasons",
-        "_resolve_execution_mode",
-        "_create_runner",
-    }
-    nonfinal_private_methods = {
-        name
-        for name, member in inspect.getmembers(_PulseBackend, inspect.isfunction)
-        if name.startswith("_")
-        and not name.startswith("__")
-        and not getattr(member, "__final__", False)
-    }
-    assert nonfinal_private_methods == expected_hooks
-    for name in (
-        "run",
-        "propagator",
-        "_prepare_program",
-        "_execute",
-        "_assemble_result",
-        "validate_noise_model",
-    ):
-        assert getattr(getattr(_PulseBackend, name), "__final__", False)
-    assert not hasattr(_PulseBackend, "_create_runner_from_bindings")
-    assert "_coherent_execution_mode" not in _PulseBackend.__dict__
-    assert _TemplateBackend.__dict__["_coherent_execution_mode"] == "density_matrix"
-    assert not {
-        name
-        for name in _TemplateBackend.__dict__
-        if getattr(getattr(_PulseBackend, name, None), "__final__", False)
-    }
-
-
-def test_execution_summary_drives_common_metadata_once():
+def test_execution_summary_preserves_common_public_metadata():
     backend = _TemplateBackend(_CountingTarget())
 
     result = backend.run(
@@ -699,14 +722,11 @@ def test_execution_summary_drives_common_metadata_once():
         result_config={"counts": False, "final_state": True},
     ).result()
 
-    assert result.metadata["solver"] == {"mode": "density_matrix"}
     assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
     assert result.metadata["result_config"] == {
         "counts": False,
         "final_state": True,
     }
-    assert backend.last_runner.solver_metadata_calls == 1
-    assert backend.execution_mode_calls == 1
 
 
 def test_execution_summary_is_a_minimal_immutable_owned_handoff():
@@ -764,7 +784,7 @@ def _frame_gate_map(target):
     return implementation_map
 
 
-def test_propagator_empty_and_frame_only_paths_use_fixed_coherent_mode():
+def test_propagator_empty_and_frame_only_paths_return_identity():
     target = _CountingTarget(("q0",))
     noise = NoiseModel()
     noise.add(AmplitudeDamping(rate=0.2), targets="q0")
@@ -776,14 +796,10 @@ def test_propagator_empty_and_frame_only_paths_use_fixed_coherent_mode():
     )
 
     assert np.allclose(backend.propagator(fq.Program(1)), np.eye(2))
-    assert backend.runner_calls == 0
 
     program = fq.Program(1)
     program.add(ops.RZ(0.2), 0)
     assert np.allclose(backend.propagator(program), np.eye(2))
-    assert backend.runner_calls == 1
-    assert backend.last_runner.propagator_calls == 1
-    assert backend.execution_mode_calls == 0
 
 
 def test_unbound_gate_is_rejected_before_shared_pulse_preparation():

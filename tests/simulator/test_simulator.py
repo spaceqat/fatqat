@@ -44,6 +44,14 @@ def test_unknown_method_rejected():
         Simulator(method="mps")
 
 
+def test_method_like_values_keep_string_coercion():
+    class DensityMatrixMethod:
+        def __str__(self):
+            return "DM"
+
+    assert Simulator(method=DensityMatrixMethod()).method == "density_matrix"
+
+
 def test_alias_selects_identical_behavior():
     p = _bell()
     a = Simulator(method="SV").run(p, shots=64, simulation_config={"seed": 7}).result()

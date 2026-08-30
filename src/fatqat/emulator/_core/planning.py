@@ -53,6 +53,7 @@ class PulsePlanFacts:
     has_conditions: bool = False
     has_nonzero_evolution: bool = False
     has_resolved_lindblad: bool = False
+    has_potentially_active_lindblad: bool = False
     has_supported_background_lindblad_registration: bool = False
 
 
@@ -351,17 +352,22 @@ def _derive_plan_facts(
     *,
     has_supported_background_lindblad_registration: bool,
 ) -> PulsePlanFacts:
+    nonzero_blocks = tuple(
+        step for step in plan if isinstance(step, PulseBlock) and step.duration > 0.0
+    )
     return PulsePlanFacts(
         has_measurement=any(isinstance(step, MeasurementStep) for step in plan),
         has_reset=any(isinstance(step, ResetStep) for step in plan),
         has_conditions=any(
             getattr(step, "condition", None) is not None for step in plan
         ),
-        has_nonzero_evolution=any(
-            isinstance(step, PulseBlock) and step.duration > 0.0 for step in plan
-        ),
+        has_nonzero_evolution=bool(nonzero_blocks),
         has_resolved_lindblad=bool(background_noise)
         or any(isinstance(step, PulseBlock) and bool(step.noise) for step in plan),
+        has_potentially_active_lindblad=(
+            bool(background_noise) and bool(nonzero_blocks)
+        )
+        or any(bool(step.noise) for step in nonzero_blocks),
         has_supported_background_lindblad_registration=(
             has_supported_background_lindblad_registration
         ),
