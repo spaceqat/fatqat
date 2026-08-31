@@ -672,3 +672,26 @@ def test_export_barrier_as_native_statement():
     out = program_to_qasm(p2, version=2)
     assert "barrier q[0];" in out
     assert "if" not in out
+
+
+def test_from_qasm_scalar_register_broadcast():
+    program = from_qasm("""
+        OPENQASM 2.0;
+        qreg q[1];
+        qreg r[3];
+        cx q[0], r;
+        """)
+    q = program.quantum_registers[0]
+    r = program.quantum_registers[1]
+    applied = [step.targets for step in program._instructions]
+    assert applied == [(q[0], r[0]), (q[0], r[1]), (q[0], r[2])]
+
+
+def test_from_qasm_mismatched_register_widths_still_rejected():
+    with pytest.raises(QASMTranspileError, match="equal size"):
+        from_qasm("""
+            OPENQASM 2.0;
+            qreg a[2];
+            qreg b[3];
+            cx a, b;
+            """)

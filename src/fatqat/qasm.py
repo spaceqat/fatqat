@@ -105,8 +105,9 @@ def from_qasm(source: str) -> Program:
     This focused importer understands dimension-2 register declarations,
     measurement, reset, built-in gate calls, and recursively expanded local
     ``gate`` definitions. A gate call may target scalar refs or equal-sized
-    registers, which are expanded position by position. ``barrier`` is
-    accepted but discarded.
+    registers, which are expanded position by position; a scalar operand
+    broadcasts against full-register operands (``cx q[0], r;``), per the
+    OpenQASM 2 spec. ``barrier`` is accepted but discarded.
 
     Built-in names are ``id``/``u0``, ``x``/``y``/``z``/``h``, ``sx``,
     ``s``/``sdg``/``t``/``tdg``, ``rx``/``ry``/``rz``,
@@ -364,9 +365,16 @@ class _QASMBuilder:
             self._apply_gate(ops.Reset, operand_groups, condition=condition)
             return
 
-        width = len(operand_groups[0])
-        if any(len(group) != width for group in operand_groups):
+        width = max(len(group) for group in operand_groups)
+        if any(len(group) not in (1, width) for group in operand_groups):
             raise QASMTranspileError(f"{name!r} register operands must have equal size")
+        if width > 1:
+            # QASM 2 broadcast: a scalar operand repeats against full-register
+            # operands, e.g. `cx q[0], r;` applies cx(q[0], r[i]) for every i.
+            operand_groups = [
+                group * width if len(group) == 1 else group
+                for group in operand_groups
+            ]
 
         expanded = self._expand_gate(name, params, len(operand_groups))
         for operands in zip(*operand_groups):
