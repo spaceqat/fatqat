@@ -157,19 +157,6 @@ execution object.
       merge_init_into_class: false
       filters:
         - "!^_"
-        - "!^(?:add|measure|measure_all|draw|copy|assign_parameters)$"
-
-::: fatqat.Program.add
-
-::: fatqat.Program.measure
-
-::: fatqat.Program.measure_all
-
-::: fatqat.Program.draw
-
-::: fatqat.Program.copy
-
-::: fatqat.Program.assign_parameters
 
 ## Parameter values
 

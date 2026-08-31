@@ -13,35 +13,26 @@ pulse-resolved physical emulator rather than a mode of
 [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator].
 
 Use [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator] for directly authored
-global controls in the physical `|g>, |r>` model. The executable workflow is
-in [Choose and run a neutral-atom workflow](../guide/neutral-atom-emulation.md).
+global controls in the physical `|g>, |r>` model. See
+[Choose and run a neutral-atom workflow](../guide/neutral-atom-emulation.md)
+for a complete executable example.
 
 ## Arrangements and program resources
 
 
 The backend requires a regular
 [`AtomArrangement`][fatqat.emulator.AtomArrangement]. Coordinates are row-major,
-`(column * spacing, row * spacing, 0)`, and the current atom model interprets
+`(column * spacing, row * spacing, 0)`, and the atom model interprets
 spacing in micrometres. A program must declare exactly one dimension-two
 quantum resource per site; declaration order binds resources to coordinates.
 The arrangement describes fixed geometry; it does not track atom loading or
 loss.
-`arrangement.num_sites` and `len(arrangement)` both return the coordinate
-count, which a pulse program must match exactly.
+`arrangement.num_sites` and `len(arrangement)` both return the site count,
+which must exactly match the number of quantum resources declared by a pulse
+program.
 By contrast, `AtomArraySimulator(num_sites=6)` declares a maximum gate-level
 device capacity and accepts programs with at most six resources; omitting its
 `num_sites` argument leaves that simulator unbounded.
-
-::: fatqat.emulator.AtomArrangement
-    options:
-      members:
-        - "chain"
-        - "rectangular"
-        - "num_sites"
-        - "distance_unit"
-      inherited_members: true
-      show_bases: false
-      merge_init_into_class: false
 
 ## Run configuration and results
 
@@ -82,7 +73,7 @@ The constructor accepts the case-insensitive values `method="statevector"`
 are aliases.
 The read-only `backend.method` property and `result.metadata["method"]`
 use the canonical full name. A method selects the mathematical representation
-and predictable Result accessor, not an internal solver:
+and its corresponding Result accessor, not an internal solver:
 
 **Final-state representations**
 
@@ -92,22 +83,23 @@ and predictable Result accessor, not an internal solver:
 | `"density_matrix"` | [`get_density_matrix`][fatqat.Result.get_density_matrix] | `(d**N, d**N)` | The exact ensemble state under supported Lindblad evolution. |
 | `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | `(d**N, d**N)` | The complete coherent operator in the canonical terminal frame. |
 
-Here `d=2` for [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator]. The backend
-does not expose QuTiP values, `superop`, or internal solver names as public
-methods.
+Here `d=2` for [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator]. Its
+results use FATQAT and NumPy types; the public API does not expose QuTiP
+objects, `superop`, or internal solver names.
 
-Measurement makes a retained final state stochastic. Potentially active
-Lindblad noise does too. In those cases the default request returns counts when
-measurement exists and otherwise metadata only; request a single seeded final
-state explicitly with
+Measurement and potentially active Lindblad noise make a retained final state
+stochastic. In those cases, the default request returns counts when the
+program contains measurement and otherwise returns metadata only. Request a
+single seeded final state explicitly with
 `result_config={"final_state": True}`, `shots=1`, and
 `simulation_config={"seed": ...}`. Select `method="density_matrix"` for
 an exact supported Lindblad ensemble.
 
-Use `method="unitary"` through `run()` and
-[`get_unitary`][fatqat.Result.get_unitary]. It rejects measurement, reset,
-conditions, counts, and potentially active Lindblad evolution. There is no
-separate public propagator API.
+For unitary execution, construct the backend with `method="unitary"`, call
+`run()`, and retrieve the result with
+[`get_unitary`][fatqat.Result.get_unitary]. Unitary execution rejects
+measurement, reset, conditions, counts, and potentially active Lindblad
+evolution. There is no separate public propagator API.
 
 ## Two-level atom emulator
 
@@ -120,52 +112,23 @@ barriers are ignored. The built-in gate map is empty, so ordinary gates
 require a custom map. Reset, conditions, per-site controls, mid-circuit
 measurement, and pulses after measurement are not supported.
 
-### Construction and execution
-
-
-::: fatqat.emulator.Atom2LevelEmulator
-    options:
-      members:
-        - "method"
-        - "model"
-        - "arrangement"
-        - "interaction_cutoff"
-        - "run"
-        - "validate_noise_model"
-      inherited_members: true
-      show_bases: false
-      merge_init_into_class: false
-
 ### Model and controls
 
 
-The runtime model exposes basis order `("g", "r")`, the pulse time unit,
-and global control selectors. It contains no geometry or calibration. Retain
-the decoded source document when application code needs persisted species,
-state labels, signed `C6`, interaction-law metadata, parameter units, or
+The runtime model exposes basis order `("g", "r")`, the pulse time unit, and
+global control selectors, but it contains no geometry or calibration. Retain
+the decoded source document when application code needs persisted species
+data, state labels, signed `C6`, interaction-law metadata, parameter units, or
 channel bounds. Derive the local dimension as `len(model.basis_order)`.
-
-### class `fatqat.emulator.Atom2LevelModel` { #fatqat.emulator.Atom2LevelModel }
 
 Create instances with
 [`from_document`][fatqat.emulator.Atom2LevelModel.from_document]; direct
 construction is not supported.
 
-::: fatqat.emulator.Atom2LevelModel.from_document
-
-::: fatqat.emulator.Atom2LevelModel.control
-
-::: fatqat.emulator.Atom2LevelModel.available_controls
-
-::: fatqat.emulator.Atom2LevelModel.basis_order
-
-::: fatqat.emulator.Atom2LevelModel.time_unit
-
 The global drive accepts a complex [`SampledWaveform`][fatqat.emulator.SampledWaveform];
-its complex values encode amplitude and phase together. The global detuning
-accepts real samples. Both use `rad/us` and apply to every arrangement site.
-The selector's `coefficient_unit` property is the runtime source for that
-unit.
+its values encode amplitude and phase together. The global detuning accepts
+real samples. Both controls use `rad/us` and apply to every arrangement site.
+At runtime, read this unit from each selector's `coefficient_unit` property.
 
 ### Interaction cutoff
 
@@ -182,24 +145,67 @@ physical blockade radius.
 ### Lindblad noise
 
 
-The built-in forms are listed at [Pulse emulators](noise/backend-support.md#noise-emulator-support). Each background
-registration names one site; enumerate sites explicitly to apply the same noise
-at several sites. Rates use inverse microseconds and relaxation times use
-microseconds. Finite `p` forms are not converted with a pulse duration.
+The built-in forms are listed under
+[Pulse emulators](noise/backend-support.md#noise-emulator-support). Each
+background registration names one site; enumerate sites explicitly to apply
+the same noise at several sites. Rates use inverse microseconds and relaxation
+times use microseconds. Finite-probability (`p`) forms are not converted into
+rates from the pulse duration.
 Binary [`ReadoutConfusion`][fatqat.noise.ReadoutConfusion] is a classical report channel
 applied only to the reported digit after physical collapse, not a Lindblad
 operator.
 
-The family-owned built-ins are amplitude damping, phase damping, thermal
-relaxation, and depolarizing noise. They accept background declarations only;
-operation-scoped continuous noise is unsupported.
+The emulator provides built-in amplitude damping, phase damping, thermal
+relaxation, and depolarizing noise. These forms accept background declarations
+only; operation-scoped continuous noise is unsupported.
 
 With `method="statevector"`, resolved Lindblad noise that can act during a
-nonzero-duration block uses seeded trajectories. Because this family accepts
-background declarations only, one is conservatively considered active when
-any nonzero-duration block exists. Zero-rate declarations still count. Use
-`method="density_matrix"` for the exact ensemble. A zero-time measured
-program samples the initial state without time evolution.
+nonzero-duration block uses seeded trajectories. Because the atom emulator
+accepts background declarations only, a declaration is conservatively
+considered active whenever a nonzero-duration block exists. Zero-rate
+declarations are still considered active. Use `method="density_matrix"` for
+the exact ensemble. A zero-duration measured program samples the initial
+state without time evolution.
 
-See [Pulse control](pulse-control/index.md) for direct pulse authoring and
-[Choose and run a neutral-atom workflow](../guide/neutral-atom-emulation.md) for the complete two-level workflow.
+See [Pulse control](pulse-control/index.md) for direct pulse authoring. For the
+complete two-level workflow, see
+[Choose and run a neutral-atom workflow](../guide/neutral-atom-emulation.md).
+
+## API
+
+
+::: fatqat.emulator.AtomArrangement
+    options:
+      members:
+        - "chain"
+        - "rectangular"
+        - "num_sites"
+        - "distance_unit"
+      inherited_members: true
+      show_bases: false
+      merge_init_into_class: false
+
+::: fatqat.emulator.Atom2LevelEmulator
+    options:
+      members:
+        - "method"
+        - "model"
+        - "arrangement"
+        - "interaction_cutoff"
+        - "run"
+        - "validate_noise_model"
+      inherited_members: true
+      show_bases: false
+      merge_init_into_class: false
+
+::: fatqat.emulator.Atom2LevelModel
+    options:
+      members:
+        - "from_document"
+        - "control"
+        - "available_controls"
+        - "basis_order"
+        - "time_unit"
+      inherited_members: false
+      show_bases: false
+      merge_init_into_class: false
