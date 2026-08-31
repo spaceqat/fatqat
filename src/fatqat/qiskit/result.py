@@ -23,20 +23,27 @@ def build_qiskit_result(
     fatqat_results: list[FatqatResult],
     shots: int,
     memory: bool,
-    seed_simulator: int | None,
+    seed_simulators: list[int | None],
     success: bool = True,
 ) -> Result:
-    """Package one fatqat result per input circuit into a Qiskit ``Result``."""
+    """Package one fatqat result per input circuit into a Qiskit ``Result``.
+
+    ``seed_simulators`` carries the seed each experiment actually ran with
+    (they differ per circuit in a batch), so every experiment's metadata is
+    individually reproducible.
+    """
     job_id = str(uuid.uuid4())
     experiments = []
-    for circuit, fatqat_result in zip(circuits, fatqat_results):
+    for circuit, fatqat_result, circuit_seed in zip(
+        circuits, fatqat_results, seed_simulators
+    ):
         experiments.append(
             _experiment_result(
                 circuit=circuit,
                 fatqat_result=fatqat_result,
                 shots=shots,
                 memory=memory,
-                seed_simulator=seed_simulator,
+                seed_simulator=circuit_seed,
                 success=success,
             )
         )

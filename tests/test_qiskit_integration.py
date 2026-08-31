@@ -419,3 +419,19 @@ def test_result_header_labels_use_standard_pairs():
     header = header if isinstance(header, dict) else header.__dict__
     assert header["qubit_labels"] == [["q", 0], ["q", 1]]
     assert header["clbit_labels"] == [["c", 0], ["c", 1]]
+
+
+def test_batch_result_metadata_reports_each_circuit_seed():
+    circuit = QuantumCircuit(1, 1, name="seed_meta")
+    circuit.h(0)
+    circuit.measure(0, 0)
+
+    result = FatqatBackend().run(
+        [circuit, circuit.copy(), circuit.copy()], shots=50, seed_simulator=7
+    ).result()
+    reported = [experiment.seed_simulator for experiment in result.results]
+    assert reported == [7, 8, 9]
+
+    # a reported seed must actually reproduce its experiment
+    replay = FatqatBackend().run(circuit, shots=50, seed_simulator=9).result()
+    assert replay.get_counts() == result.get_counts(2)

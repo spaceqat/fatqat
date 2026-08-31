@@ -202,6 +202,7 @@ class FatqatBackend(BackendV2):
                 return FatqatJob(self, job_id, error=exc)
 
         fatqat_results = []
+        circuit_seeds: list[int | None] = []
         try:
             for index, (program, circuit) in enumerate(zip(programs, circuits)):
                 backend = Simulator(
@@ -214,6 +215,7 @@ class FatqatBackend(BackendV2):
                 # would make identical circuits in a batch return identical
                 # samples.
                 circuit_seed = None if seed is None else seed + index
+                circuit_seeds.append(circuit_seed)
                 fatqat_results.append(
                     backend.run(
                         program,
@@ -233,7 +235,7 @@ class FatqatBackend(BackendV2):
             fatqat_results=fatqat_results,
             shots=shots,
             memory=memory,
-            seed_simulator=seed,
+            seed_simulators=circuit_seeds,
         )
         return FatqatJob(self, qiskit_result.job_id, result=qiskit_result)
 
