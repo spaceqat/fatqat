@@ -121,17 +121,19 @@ True
 Here `calibrated_populations[2]` is population in physical level `|2>`. This
 level models transmon leakage; it is not a qutrit declared by the Program.
 
-## Replace the gate with a direct drive
+## Drive the transmon directly
 
-To see how pulse shape changes the physical behavior, replace the calibrated
-`RX` with a drive on the same transmon. The pulse below is intentionally
-hard-edged so its leakage is visible:
+Use a [`PulseOperation`][fatqat.operations.PulseOperation] when the waveform is
+part of the experiment. This example uses a Hann envelope with the same
+nominal \(\pi/2\) area as the calibrated rotation:
 
 ```pycon
->>> duration = 20.0
+>>> duration = 10.0
+>>> times = np.linspace(0.0, duration, 41)
+>>> rabi_rate = (np.pi / duration) * np.sin(np.pi * times / duration) ** 2
 >>> drive = fq.emulator.SampledWaveform(
-...     (0.0, duration),
-...     (0.08, 0.08),
+...     tuple(times),
+...     tuple(rabi_rate),
 ... )
 >>> control = fq.emulator.PulseControl(model.control.drive("q0"), drive)
 >>> direct = fq.Program(1)
@@ -139,15 +141,23 @@ hard-edged so its leakage is visible:
 >>> direct_rho = backend.run(direct).result().get_density_matrix()
 >>> direct_populations = np.real(np.diag(direct_rho))
 >>> np.round(direct_populations, 3)
-array([0.486, 0.513, 0.001])
+array([0.509, 0.491, 0.001])
 >>> f"{100 * direct_populations[2]:.2f}%"
-'0.08%'
+'0.07%'
 ```
 
 The waveform samples are the full complex Rabi rate \(\Omega(t)\) in rad/ns.
-Here their area is 1.6 rad, close to \(\pi/2\), so the pulse leaves nearly
-equal populations in `|0>` and `|1>`. The final value is the leakage
-probability in `|2>`.
+Real samples drive the X quadrature; imaginary samples drive the Y quadrature.
+The analytic Hann envelope has area \(\pi/2\), and the sampled spline closely
+approximates it. The 10 ns direct pulse is shorter and stronger than the
+reference recipe's 20 ns `RX` pulse, and it omits that recipe's DRAG
+corrections. Those differences account for the changed populations and the
+reported `|2>` leakage. Both pulses use fixed analytic values rather than
+numerical calibration.
+
+`SampledWaveform` uses the endpoint values you provide. It does not taper a
+waveform or require it to start and finish at zero; this example does both
+explicitly through the envelope.
 
 ![Computational-level populations for a calibrated rotation and a direct drive are shown beside a magnified comparison of their level-two leakage percentages.](../assets/generated/guide/transmon-emulation-1.png)
 
@@ -168,10 +178,12 @@ probability in `|2>`.
     calibrated.add(ops.RX(np.pi / 2), 0)
     calibrated_rho = backend.run(calibrated).result().get_density_matrix()
 
-    duration = 20.0
+    duration = 10.0
+    times = np.linspace(0.0, duration, 41)
+    rabi_rate = (np.pi / duration) * np.sin(np.pi * times / duration) ** 2
     waveform = fq.emulator.SampledWaveform(
-        (0.0, duration),
-        (0.08, 0.08),
+        tuple(times),
+        tuple(rabi_rate),
     )
     control = fq.emulator.PulseControl(model.control.drive("q0"), waveform)
     direct = fq.Program(1)
