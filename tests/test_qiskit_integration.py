@@ -384,3 +384,18 @@ def test_memory_entries_without_counts_raises_instead_of_fabricating():
 
     with pytest.raises(QiskitBackendError, match="memory=True requires counts"):
         _memory_entries(fatqat_result, shots=10)
+
+
+def test_adapter_errors_are_also_qiskit_errors():
+    from qiskit.exceptions import QiskitError
+
+    from fatqat.errors import FatqatError
+
+    assert issubclass(QiskitBackendError, QiskitError)
+    assert issubclass(QiskitBackendError, FatqatError)
+    assert issubclass(QiskitConversionError, QiskitError)
+    assert issubclass(QiskitConversionError, FatqatError)
+
+    backend = FatqatBackend()
+    with pytest.raises(QiskitError):
+        backend.run(QuantumCircuit(1, 1), shots=-1)
