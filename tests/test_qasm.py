@@ -695,3 +695,13 @@ def test_from_qasm_mismatched_register_widths_still_rejected():
             qreg b[3];
             cx a, b;
             """)
+
+
+def test_from_qasm_u0_accepts_ignored_parameter():
+    program = from_qasm("""
+        OPENQASM 2.0;
+        qreg q[1];
+        u0(1) q[0];
+        u0 q[0];
+        """)
+    assert [step.operation.name for step in program._instructions] == ["I", "I"]

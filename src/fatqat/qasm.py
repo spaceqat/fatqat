@@ -458,7 +458,10 @@ class _QASMBuilder:
             "fredkin": ops.CSwap,
         }
         if name in fixed:
-            _require_param_count(name, params, 0)
+            # qelib1 declares `gate u0(gamma) q` - an identity/delay whose
+            # parameter is ignored - so u0 accepts (and discards) one param.
+            if not (name == "u0" and len(params) == 1):
+                _require_param_count(name, params, 0)
             op = fixed[name]
             _require_operand_count(name, op.num_subsystems, n_operands)
             return (op,)
