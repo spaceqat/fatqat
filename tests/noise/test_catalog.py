@@ -365,11 +365,11 @@ def test_pauli_channel_reproduces_depolarizing_at_one_qubit():
     assert np.allclose(_apply(pauli, rho), expected)
 
 
-def test_pauli_string_reads_right_to_left_like_qiskit():
+def test_pauli_string_reads_left_to_right_in_target_order():
     # string[0] describes targets[0], which is the local matrix's MSB - the
     # same convention gate matrices use, and the reverse of Qiskit's Pauli.
-    assert np.allclose(_pauli_string_matrix("IX"), np.kron(_X, np.eye(2)))
-    assert np.allclose(_pauli_string_matrix("XI"), np.kron(np.eye(2), _X))
+    assert np.allclose(_pauli_string_matrix("XI"), np.kron(_X, np.eye(2)))
+    assert np.allclose(_pauli_string_matrix("IX"), np.kron(np.eye(2), _X))
 
 
 def test_pauli_channel_rejects_non_qubit_targets():

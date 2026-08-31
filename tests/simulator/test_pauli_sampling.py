@@ -133,29 +133,28 @@ def test_degenerate_all_zero_channel_falls_back():
 
 
 @pytest.mark.parametrize("runtime", RUNTIMES)
-@pytest.mark.parametrize("string, expected_index", [("IX", 1), ("XI", 2), ("XX", 3)])
+@pytest.mark.parametrize(
+    "string, expected_count", [("XI", (1, 0)), ("IX", (0, 1)), ("XX", (1, 1))]
+)
 def test_a_certain_pauli_error_acts_exactly_like_the_gate(
-    runtime, string, expected_index
+    runtime, string, expected_count
 ):
-    # p=1 on one term makes the channel deterministic, pinning both the sampler
-    # and the string's endianness (Qiskit reading: the rightmost character
-    # describes targets[0], whose flat stride is 1). A final-state request also routes numba to its serial
-    # fallback rather than the compiled multi-shot kernel, covering that path too.
+    # p=1 pins label-to-target association without depending on the public flat
+    # state order, which migrates separately from label meaning.
     noise = NoiseModel()
     noise.add(PauliChannel({string: 1.0}), operation=ops.CX)
-    program = fq.Program(2)
+    program = fq.Program(2, 2)
     program.add(ops.CX, (0, 1))
+    program.measure_all()
 
-    statevector = (
+    counts = (
         Simulator("SV", runtime=_runtime(runtime), noise=noise)
-        .run(program, shots=1, result_config={"counts": False, "final_state": True})
+        .run(program, shots=1)
         .result()
-        .get_statevector()
+        .get_counts_as_tuples()
     )
 
-    expected = np.zeros(4, dtype=complex)
-    expected[expected_index] = 1.0
-    assert np.allclose(statevector, expected)
+    assert counts == {expected_count: 1}
 
 
 @pytest.mark.parametrize("runtime", RUNTIMES)

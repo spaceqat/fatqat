@@ -369,21 +369,28 @@ def test_pauli_channel_matches_aer(runtime):
     )
 
 
-def test_two_qubit_pauli_channel_matches_aer_with_identical_labels(runtime):
-    # fatqat now shares Qiskit's Pauli-string reading (rightmost character is
-    # the first target), so the same label names the same operator on both
-    # sides. The channel is asymmetric across the two qubits so that a
-    # convention mismatch would be observable.
-    program, circuit = _bell()
+def test_two_qubit_pauli_channel_reverses_label_at_aer_boundary(runtime):
+    program = fq.Program(2)
+    program.add(ops.X, 0)
+    program.add(ops.CX, (0, 1))
+    circuit = QuantumCircuit(2)
+    circuit.x(0)
+    circuit.cx(0, 1)
+
     noise = fq.NoiseModel()
-    noise.add(fq.noise.PauliChannel({"IX": 0.09, "ZZ": 0.04}), operation=ops.CX)
-    aer_model = _aer_model(
-        pauli_error([("IX", 0.09), ("ZZ", 0.04), ("II", 0.87)]), ["cx"]
+    noise.add(fq.noise.PauliChannel({"XI": 1.0}), operation=ops.CX)
+    aer_model = _aer_model(pauli_error([("IX", 1.0)]), ["cx"])
+    unconverted_aer_model = _aer_model(
+        pauli_error([("XI", 1.0)]), ["cx"]
     )
 
-    _assert_close(
-        _fatqat_rho(program, runtime, noise),
-        _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
+    ours = _fatqat_rho(program, runtime, noise)
+    _assert_close(ours, _aer_rho(circuit, aer_model, basis_gates=["x", "cx"]))
+    assert not np.allclose(
+        ours,
+        _aer_rho(circuit, unconverted_aer_model, basis_gates=["x", "cx"]),
+        rtol=0,
+        atol=_ATOL,
     )
 
 

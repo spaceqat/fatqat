@@ -14,9 +14,9 @@ from fatqat.observable import Observable
 
 
 def test_dense_pairs_labels_and_sparse_agree():
-    pairs = Observable([("ZZ", 1.5)])
-    labels = Observable(["ZZ"], coeffs=[1.5])
-    sparse = Observable.from_sparse([("ZZ", (1, 0), 1.5)], num_qubits=2)
+    pairs = Observable([("XI", 1.5)])
+    labels = Observable(["XI"], coeffs=[1.5])
+    sparse = Observable.from_sparse([("X", (0,), 1.5)], num_qubits=2)
 
     assert pairs == labels == sparse
     assert pairs.num_qubits == 2
@@ -32,9 +32,8 @@ def test_sparse_only_stores_non_identity_factors():
     assert obs.num_qubits == 100
 
 
-def test_dense_label_is_little_endian():
-    # Rightmost character is qubit 0 - same convention as fatqat counts strings.
-    ((_, factors),) = Observable([("ZIX", 1.0)]).terms
+def test_dense_label_uses_public_qubit_order():
+    ((_, factors),) = Observable([("XIZ", 1.0)]).terms
 
     assert factors == ((0, "X"), (2, "Z"))
 
