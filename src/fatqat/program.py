@@ -169,7 +169,8 @@ class Program:
                 counts), if a register specification is not an integer, list,
                 or tuple, if a collection contains the wrong register type, or
                 if ``metadata`` cannot be copied into a dictionary.
-            ValueError: If an integer register count is negative.
+            ValueError: If an integer register count is negative, or a
+                collection contains the same register object more than once.
         """
         self.quantum_registers: tuple[QuantumRegister, ...] = tuple(
             self._coerce_registers(quantum_registers, QuantumRegister, "q")
@@ -237,12 +238,22 @@ class Program:
                 f"{cls.__name__}, "
                 f"got {type(spec).__name__!r}"
             )
+        seen: set[int] = set()
         for r in spec:
             if not isinstance(r, cls):
                 raise TypeError(
                     f"register collection must contain {cls.__name__} instances, "
                     f"got {type(r).__name__!r}"
                 )
+            # The same object twice would collide in the slot-allocation maps
+            # and silently mis-map every later slot.
+            if id(r) in seen:
+                raise ValueError(
+                    f"register collection contains the same {cls.__name__} "
+                    f"object (name={r.name!r}) more than once; create a "
+                    "separate register for each entry"
+                )
+            seen.add(id(r))
         return list(spec)
 
     def _resolve_ref(

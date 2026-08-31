@@ -115,3 +115,20 @@ def test_construction_rejects_wrong_register_type_in_list():
     cr = ClassicalRegister(1)
     with pytest.raises(TypeError, match="QuantumRegister instances"):
         Program([cr], 0)
+
+
+def test_duplicate_register_object_rejected():
+    qreg = QuantumRegister(2, name="q")
+    with pytest.raises(ValueError, match="more than once"):
+        Program([qreg, qreg])
+
+    creg = ClassicalRegister(2, name="c")
+    with pytest.raises(ValueError, match="more than once"):
+        Program(2, [creg, creg])
+
+
+def test_distinct_equal_registers_accepted():
+    program = Program(
+        [QuantumRegister(1, name="q"), QuantumRegister(1, name="q")]
+    )
+    assert len(program.quantum_registers) == 2
