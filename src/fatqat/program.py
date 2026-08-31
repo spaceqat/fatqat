@@ -180,7 +180,10 @@ class Program:
         )
         self._operations: list[_AppliedOperation | Measurement] = []
         self._operations_view: tuple[_AppliedOperation | Measurement, ...] | None = ()
-        self.metadata: dict[str, Any] = dict(metadata) if metadata else {}
+        # `is not None` (not truthiness): a falsy non-mapping like 0 or ""
+        # must fail the dict copy below, exactly as Register.__post_init__
+        # does, instead of silently becoming {}.
+        self.metadata: dict[str, Any] = dict(metadata) if metadata is not None else {}
 
     @property
     def _instructions(self) -> tuple[_AppliedOperation | Measurement, ...]:

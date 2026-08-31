@@ -132,3 +132,10 @@ def test_distinct_equal_registers_accepted():
         [QuantumRegister(1, name="q"), QuantumRegister(1, name="q")]
     )
     assert len(program.quantum_registers) == 2
+
+
+def test_falsy_non_mapping_metadata_rejected_like_register():
+    with pytest.raises(TypeError):
+        Program(1, metadata=0)
+    assert Program(1, metadata={}).metadata == {}
+    assert Program(1, metadata=None).metadata == {}
