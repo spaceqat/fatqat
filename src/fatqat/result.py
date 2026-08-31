@@ -47,10 +47,10 @@ def decode_indices_to_clbit_rows(
 
     Args:
         indices: Sampled flat basis-state indices.
-        n_clbits: Number of classical bits in the result key.
         measurements: `(qubit_flat, clbit_flat)` pairs in program order.
         system_dims: Per-subsystem dimensions of the quantum register, used to
             decode each measured subsystem's digit from the flat index.
+        n_clbits: Number of classical bits in the result key.
 
     Returns:
         One row per shot, with clbit 0 in column 0.
@@ -102,11 +102,13 @@ def _radix_strides(dims: Sequence[int]) -> list[int]:
 
 
 def format_count_key(key: tuple[int, ...], classical_dims: Sequence[int]) -> str:
-    """Render a tuple-keyed count as a little-endian display string.
+    """Render a tuple-keyed count as a display string, clbit 0 rightmost.
 
-    Single-character concatenation when every classical register dim is
-    <= 9; a comma-delimited little-endian form once any classical dim is
-    >= 10. The trigger is `classical_dims` (never quantum `system_dims`).
+    The rendering follows Qiskit's display convention: the highest clbit is
+    the leftmost character and clbit 0 is the rightmost. Single-character
+    concatenation when every classical register dim is <= 9; a
+    comma-delimited form once any classical dim is >= 10. The trigger is
+    `classical_dims` (never quantum `system_dims`).
 
     Args:
         key: Tuple-keyed count in ascending flat clbit index order.
@@ -114,7 +116,7 @@ def format_count_key(key: tuple[int, ...], classical_dims: Sequence[int]) -> str
             the rendering form.
 
     Returns:
-        A little-endian string (highest clbit first).
+        A string with the highest clbit first (leftmost) and clbit 0 last.
     """
     order = range(len(key) - 1, -1, -1)
     if all(d <= 9 for d in classical_dims):
