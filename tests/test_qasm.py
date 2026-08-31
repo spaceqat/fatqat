@@ -705,3 +705,20 @@ def test_from_qasm_u0_accepts_ignored_parameter():
         u0 q[0];
         """)
     assert [step.operation.name for step in program._instructions] == ["I", "I"]
+
+
+def test_export_register_named_after_gate_is_renamed():
+    qiskit_qasm2 = pytest.importorskip("qiskit.qasm2")
+
+    sx_reg = fc.QuantumRegister(1, name="sx")
+    iswap_reg = fc.QuantumRegister(2, name="iswap")
+    p = fc.Program([sx_reg, iswap_reg])
+    p.add(ops.SX, sx_reg[0])
+    p.add(ops.iSwap, (iswap_reg[0], iswap_reg[1]))
+
+    out = program_to_qasm(p, version=2)
+    assert "qreg sx_[1];" in out
+    assert "qreg iswap_[2];" in out
+    assert "sx sx_[0];" in out
+    circuit = qiskit_qasm2.loads(out)
+    assert circuit.num_qubits == 3

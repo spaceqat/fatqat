@@ -780,6 +780,19 @@ _QASM_RESERVED = {
     "array",
 }
 
+# Gate identifiers live in the same flat namespace as register names, so a
+# register named after any gate the output may reference -- an include-file
+# gate or a locally emitted definition (`sx`, `iswap`) -- must be renamed:
+# `gate sx ...` plus `qreg sx[1];` is rejected as a redefinition. Union of
+# qelib1.inc and stdgates.inc names; over-reserving is harmless.
+_QASM_GATE_NAMES = {
+    "p", "x", "y", "z", "h", "s", "sdg", "t", "tdg", "sx", "sxdg",
+    "rx", "ry", "rz", "cx", "cy", "cz", "cp", "crx", "cry", "crz", "ch",
+    "swap", "ccx", "cswap", "cu", "cu1", "cu3", "csx", "phase", "cphase",
+    "id", "u0", "u1", "u2", "u3", "rxx", "rzz", "rccx", "rc3x", "c3x",
+    "c3sx", "c4x", "iswap", "gphase",
+}  # fmt: skip
+
 
 def _sanitize_identifier(raw: str | None, fallback: str, taken: set[str]) -> str:
     """Turn a user-supplied register name into a safe, unique QASM identifier."""
@@ -791,7 +804,12 @@ def _sanitize_identifier(raw: str | None, fallback: str, taken: set[str]) -> str
     if cleaned[0] == "_":
         # QASM identifiers conventionally start with a letter; prefix safely.
         cleaned = f"r{cleaned}"
-    if keyword.iskeyword(cleaned) or cleaned.lower() in _QASM_RESERVED:
+    lowered = cleaned.lower()
+    if (
+        keyword.iskeyword(cleaned)
+        or lowered in _QASM_RESERVED
+        or lowered in _QASM_GATE_NAMES
+    ):
         cleaned = f"{cleaned}_"
     base = cleaned
     suffix = 0
