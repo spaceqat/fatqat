@@ -84,8 +84,15 @@ class Register:
         if not isinstance(index, int) or isinstance(index, bool):
             raise TypeError(f"register index must be int, got {type(index)!r}")
         if not 0 <= index < self.size:
-            raise IndexError(index)
+            raise IndexError(
+                f"register index {index} out of range for size {self.size} "
+                "(negative indexing is not supported)"
+            )
         return RegisterRef(register=self, index=index)
+
+    def __len__(self) -> int:
+        """Return ``size``, so ``len(reg)`` matches iteration over its refs."""
+        return self.size
 
 
 @dataclass(frozen=True, eq=False)

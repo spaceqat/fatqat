@@ -367,3 +367,17 @@ def test_selectors_compare_by_value():
     assert BlockSelector(rows=(0, 1), cols=(0, 2)) == BlockSelector(
         rows=(0, 1), cols=(0, 2)
     )
+
+
+def test_register_len_matches_size_and_iteration():
+    reg = QuantumRegister(3, name="q")
+    assert len(reg) == 3
+    assert [ref.index for ref in reg] == [0, 1, 2]
+
+
+def test_register_out_of_range_message_names_size():
+    reg = QuantumRegister(2, name="q")
+    with pytest.raises(IndexError, match="out of range for size 2"):
+        reg[5]
+    with pytest.raises(IndexError, match="negative indexing is not supported"):
+        reg[-1]
