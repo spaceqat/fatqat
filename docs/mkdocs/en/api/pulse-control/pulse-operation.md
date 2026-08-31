@@ -1,0 +1,43 @@
+---
+title: "PulseOperation"
+---
+
+# PulseOperation
+
+
+[`PulseOperation`][fatqat.operations.PulseOperation] adds an explicit pulse block to a program. Import
+it from `fatqat.operations`, normally as `ops.PulseOperation`.
+
+An ordinary gate is added by passing logical targets to `Program.add`.
+For a `PulseOperation`, do not pass targets: every
+[`PulseControl`][fatqat.emulator.PulseControl] already names the physical channel
+to drive. Add it with `program.add(operation)`. A
+[`ResourceLayout`][fatqat.ResourceLayout] does not remap its channels.
+
+## Conditions and noise
+
+
+`TransmonEmulator` allows `program.add(operation, condition=...)`. If the
+condition is false, the controls are skipped but the block still takes its full
+duration. Model drift and background Lindblad noise continue during that time.
+`Atom2LevelEmulator` does not support conditions.
+
+Operation-scoped noise cannot be attached to a direct pulse block, so
+`noise.add(..., operation=ops.PulseOperation)` raises `ValueError`.
+Background noise selected by target or device label still applies.
+
+## Support
+
+
+The three pulse emulators listed in [Pulse control](index.md) support
+`PulseOperation`. [Matrix simulators and their device profiles](../simulators/index.md) do not; neither do circuit drawing or OpenQASM export.
+
+## Reference
+
+
+::: fatqat.operations.PulseOperation
+    options:
+      members: false
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false

@@ -1,0 +1,190 @@
+.fatqat-hero {
+  border-bottom: 0.05rem solid var(--md-default-fg-color--lightest);
+  background:
+    radial-gradient(circle at 88% 16%, rgb(0 188 212 / 18%), transparent 24rem),
+    linear-gradient(135deg, rgb(103 58 183 / 16%), transparent 62%);
+}
+
+[data-md-color-scheme="slate"] .fatqat-hero {
+  background:
+    radial-gradient(circle at 88% 16%, rgb(0 188 212 / 12%), transparent 24rem),
+    linear-gradient(135deg, rgb(103 58 183 / 22%), transparent 62%);
+}
+
+.fatqat-hero__inner {
+  display: grid;
+  min-height: 27rem;
+  grid-template-columns: minmax(0, 1.05fr) minmax(18rem, 0.95fr);
+  gap: clamp(2rem, 6vw, 5rem);
+  align-items: center;
+  padding: clamp(2.5rem, 6vw, 4.5rem) 0.8rem;
+}
+
+.fatqat-hero__content,
+.fatqat-hero__visual {
+  min-width: 0;
+}
+
+.fatqat-hero__eyebrow {
+  margin: 0 0 0.55rem;
+  color: var(--md-primary-fg-color);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.fatqat-hero__content h1 {
+  max-width: 14ch;
+  margin: 0 0 0.9rem;
+  color: var(--md-default-fg-color);
+  font-size: clamp(2.2rem, 5vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.04;
+}
+
+.fatqat-hero__summary {
+  max-width: 40rem;
+  margin: 0;
+  color: var(--md-default-fg-color--light);
+  font-size: 1.02rem;
+}
+
+.fatqat-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 1.35rem;
+}
+
+.fatqat-hero__requirements {
+  margin: 0.7rem 0 0;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.78rem;
+}
+
+.fatqat-hero__visual {
+  margin: 0;
+  padding: 0.75rem;
+  border: 0.05rem solid var(--md-default-fg-color--lightest);
+  border-radius: 0.75rem;
+  background: var(--md-default-bg-color);
+  box-shadow: var(--md-shadow-z2);
+}
+
+.fatqat-model {
+  min-width: 0;
+}
+
+.fatqat-model__node {
+  padding: 0.72rem 0.85rem;
+  border: 0.05rem solid var(--md-primary-fg-color);
+  border-radius: 0.45rem;
+  background: color-mix(
+    in srgb,
+    var(--md-primary-fg-color) 10%,
+    var(--md-default-bg-color)
+  );
+  color: var(--md-default-fg-color);
+  text-align: center;
+}
+
+.fatqat-model__node code {
+  color: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.fatqat-model__connector {
+  width: 0.05rem;
+  height: 0.85rem;
+  margin: 0 auto;
+  background: var(--md-default-fg-color--lighter);
+}
+
+.fatqat-model__choice {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.fatqat-model__choice::before,
+.fatqat-model__choice::after {
+  height: 0.05rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  background: var(--md-default-fg-color--lightest);
+  content: "";
+}
+
+.fatqat-model__targets {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.fatqat-model__target {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.62rem 0.72rem;
+  border: 0.05rem solid var(--md-default-fg-color--lightest);
+  border-radius: 0.4rem;
+  background: var(--md-default-bg-color);
+}
+
+.fatqat-model__target > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fatqat-model__target strong {
+  color: var(--md-default-fg-color);
+  font-size: 0.75rem;
+}
+
+.fatqat-model__target span {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.67rem;
+}
+
+.fatqat-hero__visual figcaption {
+  padding: 0.75rem 0.25rem 0.1rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+@media screen and (max-width: 59.984375em) {
+  .fatqat-hero__inner {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fatqat-hero__content h1 {
+    max-width: 17ch;
+  }
+
+  .fatqat-hero__visual {
+    width: min(100%, 32rem);
+  }
+}
+
+@media screen and (max-width: 37.5em) {
+  .fatqat-hero__actions {
+    display: grid;
+  }
+
+  .fatqat-model__target {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
+  }
+}

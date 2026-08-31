@@ -1,0 +1,86 @@
+---
+title: "OpenQASM"
+---
+
+# OpenQASM
+
+
+<a id="fatqat.qasm"></a>
+
+Use [`from_qasm`][fatqat.qasm.from_qasm] or [`from_qasm_file`][fatqat.qasm.from_qasm_file] to import OpenQASM 2 or 3 into
+a [`Program`][fatqat.Program], and [`to_qasm`][fatqat.qasm.to_qasm] to export a program. These
+functions do not require Qiskit. Existing code can continue to use
+`qasm_to_program` and `program_to_qasm`.
+
+```python
+from fatqat.qasm import from_qasm, to_qasm
+
+program = from_qasm(
+    "OPENQASM 3.0; "
+    'include "stdgates.inc"; '
+    "qubit[2] q; h q[0]; cx q[0], q[1];"
+)
+source = to_qasm(program)  # OpenQASM 3.0 by default
+```
+
+## Import support
+
+
+Imported quantum and classical registers have dimension 2. FATQAT supports
+scalar operands, equal-sized whole-register operations, measurement, reset,
+local `gate` definitions, and the built-ins listed by [`from_qasm`][fatqat.qasm.from_qasm].
+Barriers are ignored. A condition can guard a gate or reset using
+whole-register equality or an AND of bit comparisons.
+
+`include` statements do not load files. A gate normally supplied by an
+include must already be built in or defined in a local `gate` block. Other
+control flow, gate modifiers, declarations, and classical conditions raise
+[`QASMTranspileError`][fatqat.qasm.QASMTranspileError].
+
+## Export support
+
+
+[`to_qasm`][fatqat.qasm.to_qasm] emits OpenQASM 3 by default. The program must be fully bound.
+Use `version=2` only when each condition compares every bit in a single
+classical register.
+
+Export requires `dim == 2` for every register and scalar operation targets.
+Supported gates and dimension-2 reductions are listed by [`to_qasm`][fatqat.qasm.to_qasm].
+Register names may change to avoid conflicts, and program metadata is omitted.
+
+Barrier, direct pulse controls, [`RegisterView`](../registers.md#fatqat.RegisterView) targets, and
+operations without a QASM representation raise [`QasmExportError`][fatqat.qasm.QasmExportError].
+
+## Errors
+
+
+Catch [`fatqat.errors.FatqatError`][fatqat.errors.FatqatError] to handle either conversion error. Catch
+[`QASMTranspileError`][fatqat.qasm.QASMTranspileError] to handle translator rejection separately from
+[`QasmExportError`][fatqat.qasm.QasmExportError], which reports a program that cannot be represented.
+For compatibility, [`QASMTranspileError`][fatqat.qasm.QASMTranspileError] is also a [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError).
+
+File I/O and text-decoding failures from [`from_qasm_file`][fatqat.qasm.from_qasm_file] use the
+underlying Python exceptions.
+
+## Reference
+
+
+::: fatqat.qasm.from_qasm
+
+::: fatqat.qasm.from_qasm_file
+
+::: fatqat.qasm.to_qasm
+
+::: fatqat.qasm.QASMTranspileError
+    options:
+      members: false
+      inherited_members: false
+      show_bases: false
+      merge_init_into_class: false
+
+::: fatqat.qasm.QasmExportError
+    options:
+      members: false
+      inherited_members: false
+      show_bases: false
+      merge_init_into_class: false

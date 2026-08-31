@@ -26,12 +26,11 @@ path = "src/fatqat/__init__.py"
 [dependency-groups]
 dev = ["pytest>=8", "scipy-doctest>=1.0"]
 docs = [
-    "sphinx",
-    "pydata-sphinx-theme",
-    "myst-parser",
-    "sphinx-design",
-    "sphinx-copybutton",
-    "sphinx-gallery",
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings",
+    "mkdocstrings-python",
+    "nbformat",
     "scikit-learn",
 ]
 # Optional: enables the Qiskit integration and numerical cross-check tests in

@@ -1,0 +1,8 @@
+canonical: en
+
+# Add a locale here only when its MkDocs configuration, authored pages, and
+# tutorial sources are present. All build utilities consume this registry.
+locales:
+  en:
+    label: English
+    config: mkdocs.en.yml

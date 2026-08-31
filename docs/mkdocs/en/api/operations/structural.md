@@ -1,0 +1,62 @@
+---
+title: "Measurement and structural operations"
+---
+
+# Measurement and structural operations
+
+
+## Measurement and reset
+
+
+Measurement writes computational-basis outcomes to classical storage. Reset
+returns its targets to `|0>` without producing an output.
+
+Create measurements with [`fatqat.Program.measure`][fatqat.Program.measure] or
+[`fatqat.Program.measure_all`][fatqat.Program.measure_all]. A grouped measurement pairs quantum
+targets and classical outputs by tuple position, and each pair must have the
+same local dimension. Measurements are created through these methods, not
+[`add`][fatqat.Program.add], and cannot carry its `condition=` argument.
+
+Repeated targets and outputs are accepted, and pairs are processed in tuple
+order. Repeating a target reports its already-collapsed outcome, with reporting
+noise applied independently to each pair. Repeating a classical output means
+the last write wins. [`ReadoutConfusion`][fatqat.noise.ReadoutConfusion] changes only
+the reported digit, not the collapsed physical outcome.
+
+::: fatqat.operations.Measurement
+    options:
+      inherited_members: false
+      show_bases: false
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+Add [`Reset`][fatqat.operations.Reset] with [`fatqat.Program.add`][fatqat.Program.add]. It accepts one or more
+distinct scalar targets and can carry a condition when the backend supports
+feedforward. It rejects an empty target tuple, duplicate targets, and
+[`RegisterView`](../registers.md#fatqat.RegisterView). Reset is non-unitary. For an entangled
+target, a statevector run samples one reset branch, while a density-matrix run
+represents the resulting mixture directly. It has no attached-noise
+realization, so using it as the `operation=` selector in
+[`fatqat.NoiseModel.add`][fatqat.NoiseModel.add] raises [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError).
+
+::: fatqat.operations.Reset
+    options:
+      show_attribute_values: false
+
+## Compiler barrier
+
+
+[`Barrier`][fatqat.operations.Barrier] is a compiler and scheduling marker, not a state-changing
+operation or noise boundary. Add it with [`fatqat.Program.add`][fatqat.Program.add] and one
+or more distinct scalar targets. It rejects an empty target tuple, duplicate
+targets, and [`RegisterView`](../registers.md#fatqat.RegisterView).
+
+Built-in simulators ignore barriers, including any condition recorded by
+[`add`][fatqat.Program.add], so barriers do not change states or counts. A
+barrier cannot be bound to noise: using it as the `operation=` selector in
+[`fatqat.NoiseModel.add`][fatqat.NoiseModel.add] raises [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError).
+
+::: fatqat.operations.Barrier
+    options:
+      show_attribute_values: false

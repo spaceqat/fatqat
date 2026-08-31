@@ -46,7 +46,7 @@ _SOLVER_OPTIONS = {
     "method": "adams",
     "atol": 1e-11,
     "rtol": 1e-9,
-    "nsteps": 10000,
+    "nsteps": 100000,
 }
 FRAME_CONVENTION = "per-subsystem near-resonant rotating frames (Delta_i = 0)"
 

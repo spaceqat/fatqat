@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=https://squidfunk.github.io/mkdocs-material/schema.json
+
+site_name: FatQat
+site_description: Model quantum programs from logical circuits to physical dynamics
+site_author: FatQat contributors
+copyright: Copyright &copy; 2026 FatQat contributors
+
+repo_name: BoxiLi/fatqat
+repo_url: https://github.com/BoxiLi/fatqat
+
+use_directory_urls: true
+
+theme:
+  name: material
+  custom_dir: overrides
+  font: false
+  icon:
+    logo: material/atom-variant
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.prune
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+
+# Mapping form is intentional: MkDocs can deep-merge it when locale
+# configurations use INHERIT. Keep autorefs before mkdocstrings.
+plugins:
+  search: {}
+  autorefs: {}
+  mkdocstrings:
+    default_handler: python
+    handlers:
+      python:
+        # Paths are relative to locale configs beside this base file, so
+        # ../../src is stable when MkDocs is invoked with -f.
+        paths:
+          - ../../src
+        options:
+          # Keep parameters, attributes, returns, and raises in the traditional
+          # vertical definition-list form instead of compressed data tables.
+          docstring_section_style: list
+          docstring_style: google
+          docstring_options:
+            warn_missing_types: false
+          extensions:
+            - extensions/docstring_roles.py:DocstringRolesExtension
+          filters: public
+          inherited_members: true
+          members_order: source
+          merge_init_into_class: true
+          separate_signature: true
+          show_root_full_path: false
+          show_root_heading: true
+          show_signature_annotations: true
+          show_source: false
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          signature_crossrefs: true
+          unwrap_annotated: true
+
+# Mapping form also lets the child configs retain the complete extension set.
+markdown_extensions:
+  abbr: {}
+  admonition: {}
+  attr_list: {}
+  def_list: {}
+  footnotes: {}
+  md_in_html: {}
+  toc:
+    permalink: true
+    slugify: !!python/object/apply:pymdownx.slugs.slugify
+      kwds:
+        case: lower
+  pymdownx.arithmatex:
+    generic: true
+  pymdownx.details: {}
+  pymdownx.emoji:
+    emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    emoji_index: !!python/name:material.extensions.emoji.twemoji
+  pymdownx.highlight:
+    pygments_lang_class: true
+  pymdownx.inlinehilite: {}
+  pymdownx.snippets:
+    check_paths: true
+  pymdownx.superfences: {}
+  pymdownx.tabbed:
+    alternate_style: true
+    slugify: !!python/object/apply:pymdownx.slugs.slugify
+      kwds:
+        case: lower
+
+# Locale configuration files are co-located, so this inherited path resolves
+# identically for every active live-preview build.
+watch:
+  - ../../src/fatqat

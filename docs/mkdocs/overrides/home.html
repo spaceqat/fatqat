@@ -1,0 +1,78 @@
+{% extends "main.html" %}
+
+{# Load landing-page styles only for the two pages that select this template. #}
+{% block styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ 'assets/stylesheets/home.css' | url }}">
+{% endblock %}
+
+{# Material's own homepage places its landing section after the tabs block.
+   Calling super() preserves normal tab behavior for sticky and non-sticky nav. #}
+{% block tabs %}
+  {{ super() }}
+  {% set hero = page.meta.hero %}
+  <section class="fatqat-hero" aria-labelledby="fatqat-home-title">
+    <div class="fatqat-hero__inner md-grid md-typeset">
+      <div class="fatqat-hero__content">
+        <p class="fatqat-hero__eyebrow">{{ hero.eyebrow | e }}</p>
+        <h1 id="fatqat-home-title">{{ hero.title | e }}</h1>
+        <p class="fatqat-hero__summary">{{ hero.summary | e }}</p>
+        <div class="fatqat-hero__actions">
+          <a
+            href="{{ 'guide/quickstart/' | url }}"
+            class="md-button md-button--primary"
+          >
+            {{ hero.primary_action | e }}
+          </a>
+          <a href="{{ 'guide/execution-models/' | url }}" class="md-button">
+            {{ hero.secondary_action | e }}
+          </a>
+        </div>
+        <p class="fatqat-hero__requirements">
+          <strong>Python 3.12+</strong>
+          <span aria-hidden="true"> · </span>
+          <a href="{{ 'guide/quickstart/' | url }}">{{ hero.install_action | e }}</a>
+        </p>
+      </div>
+
+      <figure class="fatqat-hero__visual">
+        <div
+          class="fatqat-model"
+          role="img"
+          aria-label="{{ hero.structure_alt | e }}"
+        >
+          <div class="fatqat-model__node fatqat-model__program">
+            <code>Program</code>
+          </div>
+          <div class="fatqat-model__connector" aria-hidden="true"></div>
+          <div class="fatqat-model__choice">{{ hero.choice_label | e }}</div>
+          <div class="fatqat-model__targets">
+            <div class="fatqat-model__target">
+              <strong>{{ hero.general_title | e }}</strong>
+              <span>{{ hero.general_detail | e }}</span>
+            </div>
+            <div class="fatqat-model__target">
+              <strong>{{ hero.hardware_title | e }}</strong>
+              <span>{{ hero.hardware_detail | e }}</span>
+            </div>
+            <div class="fatqat-model__target">
+              <strong>{{ hero.hamiltonian_title | e }}</strong>
+              <span>{{ hero.hamiltonian_detail | e }}</span>
+            </div>
+          </div>
+          <div class="fatqat-model__connector" aria-hidden="true"></div>
+          <div class="fatqat-model__node fatqat-model__result">
+            <code>Result</code>
+          </div>
+        </div>
+        <figcaption>{{ hero.visual_note | e }}</figcaption>
+      </figure>
+    </div>
+  </section>
+{% endblock %}
+
+{# The semantic H1 lives in the hero. Material's default content partial would
+   otherwise synthesize a second H1 because it only inspects Markdown content. #}
+{% block content %}
+  {{ page.content }}
+{% endblock %}
