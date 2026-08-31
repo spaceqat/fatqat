@@ -99,7 +99,9 @@ def _validate_square_matrix(matrix: np.ndarray) -> None:
     target operation or register), and a fixed-dimension restriction here
     would reject legitimate non-qubit matrices (e.g. a qutrit's dim=3 gate)
     with no compensating safety benefit. The arity-aware shape check against
-    a specific operation happens separately, in `_wrap_rule`.
+    a specific operation happens separately, when a backend first resolves
+    the rule for a concrete target (`_wrap_rule` itself does not check
+    shapes).
     """
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
         raise ValueError(f"matrix must be square, got shape {matrix.shape}")
