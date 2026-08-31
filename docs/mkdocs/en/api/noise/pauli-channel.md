@@ -51,18 +51,18 @@ Compatible simulators apply this channel after the matched operation. See
 
 
 The string width determines the number of targets, and every target must be a
-qubit. The first character describes the first target and forms the
-most-significant tensor factor. For targets `(q0, q1)`:
+qubit. Strings follow Qiskit's displayed Pauli-string convention, the same
+reading as [`Observable`][fatqat.Observable] labels: the rightmost character
+describes the first target. For targets `(q0, q1)`:
 
 **Two-qubit ordering**
 
 | String | First target `q0` | Second target `q1` |
 | --- | --- | --- |
-| `XI` | `X` | `I` |
-| `IX` | `I` | `X` |
+| `XI` | `I` | `X` |
+| `IX` | `X` | `I` |
 
-This left-to-right convention is the reverse of Qiskit's displayed Pauli
-strings. FATQAT checks the target count and qubit dimensions when the program
+FATQAT checks the target count and qubit dimensions when the program
 runs.
 
 ## API
