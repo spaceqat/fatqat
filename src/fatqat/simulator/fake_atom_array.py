@@ -1,9 +1,7 @@
 """Neutral-atom simulator with occupancy and dynamic pairing.
 
-The backend has a fixed native gate set but no fixed geometry. Programs with
-neither ``Put`` nor an operation selected by a matching atom-loss source start
-with every declared site occupied. Once either lifecycle feature is active,
-every site starts empty and ``Put`` loads atoms explicitly.
+The backend has a fixed native gate set but no fixed geometry. Every site
+declared by the program starts empty, and ``Put`` loads atoms explicitly.
 
 This simulator is intended for program and compiler testing. It does not model
 pulse timing, transport, or Hamiltonian dynamics.
@@ -11,7 +9,7 @@ pulse timing, transport, or Hamiltonian dynamics.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .. import operations as ops
@@ -43,14 +41,6 @@ if TYPE_CHECKING:
     from .._backends.steps import ResolvedStep
 
 
-@dataclass(frozen=True, slots=True)
-class _AtomArrayPlanFacts:
-    """Plan facts owned by the atom occupancy lifecycle."""
-
-    has_loss: bool = False
-    has_atom_lifecycle: bool = False
-
-
 def fake_atom_array_implementation_map() -> MatrixImplementationMap:
     """Native gate map: RX/RY/RZ and CZ without fixed operand restrictions.
 
@@ -80,14 +70,12 @@ class AtomArraySimulator(Simulator):
     - Native gates: ``RX``, ``RY``, ``RZ``, and ``CZ``.
     - Connectivity: ``Pair`` and ``Unpair`` update the pairing graph; ``CZ``
       is legal only while its atoms are paired. There is no fixed geometry.
-    - Layout: registers map to flat labels in declaration order. ``num_sites``
-      optionally limits capacity.
-    - Occupancy: programs using ``Put`` or matched atom loss, even with
-      ``p=0``, start empty; otherwise every declared site starts occupied.
-      Gates and reset do nothing on an empty site, which measures as the
+    - Layout: the program declares the site count, and registers map to flat
+      labels in declaration order.
+    - Occupancy: every declared site starts empty. ``Put`` loads an atom;
+      gates and reset do nothing on an empty site, which measures as the
       erasure digit ``2``.
-    - Methods: all four methods are selectable without an atom lifecycle;
-      ``Put`` and loss require ``statevector`` or ``density_matrix``.
+    - Methods: atom occupancy requires ``statevector`` or ``density_matrix``.
 
     The simulator validates the program as written; it does not transport,
     pair, route, or transpile atoms automatically.
@@ -98,42 +86,26 @@ class AtomArraySimulator(Simulator):
     def __init__(
         self,
         *,
-        num_sites: int | None = None,
         method: str = "statevector",
-        runtime: str = "numpy",
+        runtime: str = "numba",
         noise: NoiseModel | None = None,
     ) -> None:
         """Create a constrained neutral-atom simulator.
 
         Args:
-            num_sites: Number of trap sites the device holds (its atom
-                capacity). ``None`` (the default) imposes no capacity limit,
-                so a program of any size binds; if given, must be a positive
-                integer.
             method: ``"statevector"`` (or ``"SV"``), ``"density_matrix"``
                 (or ``"DM"``), ``"unitary"``, or ``"superop"``. Names are
                 case-insensitive.
-            runtime: ``"numpy"`` (default, direct execution) or ``"numba"``
-                (lazy JIT). See ``Simulator`` for runtime-specific
+            runtime: ``"numba"`` (default, lazy JIT) or ``"numpy"`` (direct
+                execution). See ``Simulator`` for runtime-specific
                 execution controls.
             noise: Optional ``NoiseModel``. ``None`` keeps the backend ideal;
                 this class has no built-in reference noise model.
 
         Raises:
-            TypeError: If ``num_sites`` is neither ``None`` nor an int (bools
-                rejected).
-            ValueError: If ``num_sites`` is given and not positive.
             BackendValidationError: If ``method`` or ``runtime`` is invalid,
                 or ``noise`` contains a source this simulator cannot run.
         """
-        if num_sites is not None:
-            if not isinstance(num_sites, int) or isinstance(num_sites, bool):
-                raise TypeError(
-                    f"num_sites must be an int or None, got {type(num_sites)!r}"
-                )
-            if num_sites <= 0:
-                raise ValueError(f"num_sites must be positive, got {num_sites}")
-        self._num_sites = num_sites
         super().__init__(
             method=method,
             runtime=runtime,
@@ -155,19 +127,12 @@ class AtomArraySimulator(Simulator):
         program: Program,
         supplied_layout: ResourceLayout | None = None,
     ) -> ResourceLayout:
-        """Reject shapes the device can't run, then map by declaration order.
+        """Reject unsupported dimensions, then map by declaration order.
 
         No coordinates: a GridRegister (if any) is treated as a plain flat
         register (its rows/cols carry no physical meaning here), so binding is
         the base class's declaration-order identity mapping.
         """
-        n_subsystems = sum(register.size for register in program.quantum_registers)
-        capacity = self._num_sites
-        if capacity is not None and n_subsystems > capacity:
-            raise BackendValidationError(
-                f"AtomArraySimulator supports at most {capacity} atoms, "
-                f"got {n_subsystems}"
-            )
         dims = (
             register.dim
             for register in program.quantum_registers
@@ -184,13 +149,10 @@ class AtomArraySimulator(Simulator):
     ) -> list[ResolvedStep]:
         """Apply this program's atom lifecycle, then lower normally.
 
-        When the program contains ``Put`` or atom loss, every site starts empty
-        and `~fatqat.operations.Put` loads a fresh ``|0>`` atom into its
-        targets. A target that can never hold an atom (never named in any
-        ``Put``) has its gates statically dropped; ``Put``, ``Pair``, and
-        ``Unpair`` are themselves never dropped this way. Without ``Put`` or
-        loss, no occupancy is imposed and every declared qubit is present,
-        exactly like the plain backend.
+        Every site starts empty and `~fatqat.operations.Put` loads a fresh
+        ``|0>`` atom into its targets. A target that can never hold an atom
+        (never named in any ``Put``) has its gates statically dropped; ``Put``,
+        ``Pair``, and ``Unpair`` are themselves never dropped this way.
 
         Two-qubit-gate legality follows the connectivity graph, not a fixed
         topology. Connectivity starts empty and evolves at each
@@ -204,8 +166,7 @@ class AtomArraySimulator(Simulator):
         noise. The resource layout carries no coordinates and never changes, so
         every segment lowers under the same layout.
 
-        Occupancy is seeded empty whenever the program has any atom lifecycle
-        (a ``Put`` or an atom loss); ``Put`` then fills its targets per shot.
+        Occupancy is seeded empty and ``Put`` then fills its targets per shot.
         That empty seed is not a plan step - it is an initialization input the
         engine receives at run start (see ``_initial_occupancy``), because
         seeding occupancy is the atom simulator's own setup, not an operation.
@@ -231,8 +192,7 @@ class AtomArraySimulator(Simulator):
         realized: list[ProgramInstruction] = []
         for step in operations:
             if (
-                put_targets
-                and isinstance(step, _AppliedOperation)
+                isinstance(step, _AppliedOperation)
                 and not isinstance(
                     step.operation, (ops.PutGate, ops.PairGate, ops.UnpairGate)
                 )
@@ -267,17 +227,9 @@ class AtomArraySimulator(Simulator):
         plan.extend(self._lower_segment(segment, connectivity, context))
         return plan
 
-    def _initial_occupancy(self, facts: _AtomArrayPlanFacts) -> frozenset[int] | None:
-        """Seed occupancy empty whenever the program has an atom lifecycle.
-
-        A ``Put`` or an atom loss makes occupancy shot-dependent: every site
-        starts empty and `~fatqat.operations.Put` loads a fresh ``|0>`` into its
-        targets per shot. Without either, no occupancy is imposed and every
-        declared qubit is present (``None``), exactly like the plain backend.
-        This is the engine's per-shot occupancy seed, delivered as a run
-        initialization input rather than a lowered plan step.
-        """
-        return frozenset() if facts.has_atom_lifecycle else None
+    def _initial_occupancy(self) -> frozenset[int]:
+        """Return the empty per-shot occupancy seed for this atom array."""
+        return frozenset()
 
     def _lower_segment(
         self,
@@ -382,35 +334,18 @@ class AtomArraySimulator(Simulator):
             plan,
             claimed_step_types=(LossStep, PutStep),
         )
-        atom_facts = self._analyze_atom_plan_facts(plan)
-        execution_shape = common.execution_shape
-        deferred_measurements = common.deferred_measurements
-        if not self._is_operator and atom_facts.has_atom_lifecycle:
-            execution_shape = "per_shot"
-            deferred_measurements = ()
+        has_loss = any(isinstance(step, LossStep) for step in plan)
+        execution_shape = "operator" if self._is_operator else "per_shot"
+        deferred_measurements = (
+            common.deferred_measurements if self._is_operator else ()
+        )
         translated = replace(
             common,
             execution_shape=execution_shape,
             deferred_measurements=deferred_measurements,
-            stochastic_final_state=(
-                common.stochastic_final_state or atom_facts.has_loss
-            ),
+            stochastic_final_state=common.stochastic_final_state or has_loss,
         )
-        return translated, self._initial_occupancy(atom_facts)
-
-    def _analyze_atom_plan_facts(
-        self, plan: Sequence[ResolvedStep]
-    ) -> _AtomArrayPlanFacts:
-        """Collect the atom-only lifecycle facts in one cohesive scan."""
-        has_loss = False
-        has_put = False
-        for step in plan:
-            has_loss = has_loss or isinstance(step, LossStep)
-            has_put = has_put or isinstance(step, PutStep)
-        return _AtomArrayPlanFacts(
-            has_loss=has_loss,
-            has_atom_lifecycle=has_loss or has_put,
-        )
+        return translated, self._initial_occupancy()
 
     def _validate_method_support(
         self,

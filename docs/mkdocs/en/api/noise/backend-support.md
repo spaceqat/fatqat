@@ -42,10 +42,11 @@ profiles may impose additional operation, placement, and dimension limits.
 
 [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] additionally supports
 [`Loss`][fatqat.noise.Loss] after matching operations. It samples each selected
-present carrier independently. A matching registration, even with `p=0`,
-enables explicit occupancy; loss after `Put` can model a loading failure.
-Other simulators reject `Loss`. Empty-site erasure outcome `2` bypasses
-readout confusion because no physical digit was measured.
+present carrier independently. Every declared site starts empty, so a program
+must use [`Put`][fatqat.operations.Put] to load every atom it intends to use;
+loss after `Put` can model a loading failure. Other simulators reject `Loss`.
+Empty-site erasure outcome `2` bypasses readout confusion because no physical
+digit was measured.
 
 Attach every supported probability-form channel above to an operation; matrix
 backends reject background channels.

@@ -133,7 +133,8 @@ implementation map, then make the Program and layout choices that it requires.
 ## Track atom occupancy and pairing { #atom-occupancy-and-pairing }
 
 The atom-array profile asks a different hardware question. It has no fixed
-geometry. Instead, `Put` establishes occupancy and `Pair`/`Unpair` change the
+geometry. The `Program` declares the number of sites, and every site starts
+empty. Use `Put` to load every intended atom; `Pair`/`Unpair` then change the
 connectivity on which `CZ` is legal:
 
 ![Two occupied atoms begin separated, move together when Pair applies with depolarizing noise, remain paired for CZ, and separate again when Unpair applies with depolarizing noise.](../assets/generated/guide/atom-pairing-lifecycle.svg)
@@ -151,7 +152,7 @@ trajectory. `AtomArraySimulator` records no coordinates or movement duration;
 >>> atoms.add(ops.CZ, (0, 1))
 >>> atoms.add(ops.Unpair, (0, 1))
 >>> atoms.measure_all()
->>> atom_counts = fq.simulator.AtomArraySimulator(num_sites=2).run(
+>>> atom_counts = fq.simulator.AtomArraySimulator().run(
 ...     atoms,
 ...     shots=8,
 ...     simulation_config={"seed": 7},
@@ -174,7 +175,6 @@ instruction occurs:
 ...             target_positions=target_position,
 ...         )
 >>> noisy_atom_backend = fq.simulator.AtomArraySimulator(
-...     num_sites=2,
 ...     noise=movement_noise,
 ... )
 >>> noisy_counts = noisy_atom_backend.run(

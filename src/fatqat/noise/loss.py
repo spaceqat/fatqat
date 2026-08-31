@@ -20,10 +20,10 @@ class Loss:
 
     Loss can act on any number of operands selected from the matching
     operation. AtomArraySimulator is currently the only backend that supports
-    it. Attaching Loss enables that simulator's occupancy lifecycle even when
-    p is zero: sites start empty and must be loaded with Put. Loss attached to
-    Put is sampled after loading, so it models loading failure or immediate
-    post-load loss.
+    it. Every site on that simulator starts empty and must be loaded with Put,
+    independently of whether Loss is attached or whether p is zero. Loss
+    attached to Put is sampled after loading, so it models loading failure or
+    immediate post-load loss.
 
     Args:
         p: Per-carrier probability each time a matching operation runs. Must

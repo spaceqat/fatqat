@@ -35,6 +35,7 @@ def test_default_runtime_is_numba_for_every_method(method, engine_name):
 @pytest.mark.parametrize(
     "backend_cls",
     [
+        fq.simulator.AtomArraySimulator,
         fq.simulator.SCQubitIBMSimulator,
         fq.simulator.SCQubitGoogleSimulator,
     ],
@@ -137,7 +138,7 @@ def test_serial_shots_with_threaded_kernels_match_serial_kernels():
     program.add(ops.Put, (0, 1))
     program.add(ops.RX(np.pi / 3), 0)
     program.measure((0, 1), (0, 1))
-    backend = AtomArraySimulator(num_sites=2, runtime="numba")
+    backend = AtomArraySimulator(runtime="numba")
 
     def run(kernel_parallelism, max_workers):
         return backend.run(

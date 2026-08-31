@@ -155,9 +155,10 @@ models share the same `T1 = T2 = 200 µs` coherence assumption.
 ## Program a reconfigurable atom array
 
 [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] brings occupancy and
-changing connectivity into the same `Program` model. `Put` establishes which
-sites are occupied, `Pair` makes native `CZ` legal, and `Unpair` removes that
-eligibility. Optional movement noise can attach to those operations explicitly.
+changing connectivity into the same `Program` model. Every declared site
+starts empty: `Put` establishes which sites are occupied, `Pair` makes native
+`CZ` legal, and `Unpair` removes that eligibility. Optional movement noise can
+attach to those operations explicitly.
 
 <figure markdown="span">
 
@@ -182,7 +183,7 @@ eligibility. Optional movement noise can attach to those operations explicitly.
     atoms.add(ops.Unpair, (0, 1))
     atoms.measure_all()
 
-    counts = fq.simulator.AtomArraySimulator(num_sites=2).run(
+    counts = fq.simulator.AtomArraySimulator().run(
         atoms,
         shots=8,
         simulation_config={"seed": 7},
