@@ -242,24 +242,23 @@ def test_composed_ground_state_matches_matrix_simulator(
     assert state_fidelity > minimum_fidelity
 
 
-def test_run_uses_the_correct_virtual_frame_binding(backend):
+@pytest.mark.parametrize("method", ("statevector", "density_matrix"))
+def test_run_composes_terminal_virtual_frame(backend, method):
     program = fq.Program(1)
     program.add(ops.RZ(pi / 2), 0)
     program.add(ops.RX(0.3), 0)
-    pulse_density_matrix = (
-        backend.run(program, result_config={"counts": False, "final_state": True})
+    result = (
+        fq.emulator.TransmonEmulator(backend.model, method=method)
+        .run(program, result_config={"counts": False, "final_state": True})
         .result()
-        .get_density_matrix()
     )
-    # run() reports the rotating-frame density matrix without composing its
-    # terminal frame. RZ(pi/2) therefore binds the later RX as RY(-0.3).
-    rotating_frame_state = np.array((np.cos(0.15), -np.sin(0.15)))
-    expected_density_matrix = np.outer(
-        rotating_frame_state, rotating_frame_state.conj()
-    )
+    expected_state = np.zeros(9, dtype=complex)
+    expected_state[:2] = (np.cos(0.15), -1j * np.sin(0.15))
+    expected_density_matrix = np.outer(expected_state, expected_state.conj())
 
-    assert np.allclose(
-        pulse_density_matrix[np.ix_((0, 1), (0, 1))],
-        expected_density_matrix,
-        atol=2e-3,
-    )
+    if method == "statevector":
+        state = result.get_statevector()
+        actual_density_matrix = np.outer(state, state.conj())
+    else:
+        actual_density_matrix = result.get_density_matrix()
+    assert np.allclose(actual_density_matrix, expected_density_matrix, atol=2e-3)

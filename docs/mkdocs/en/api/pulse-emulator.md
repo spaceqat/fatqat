@@ -88,11 +88,15 @@ canonical full name, and `result.metadata["method"]` records it.
 | --- | --- | --- | --- |
 | `"statevector"` | [`get_statevector`][fatqat.Result.get_statevector] | `(3**m,)` | A pure coherent state, or one seeded trajectory when Lindblad noise can act. |
 | `"density_matrix"` | [`get_density_matrix`][fatqat.Result.get_density_matrix] | `(3**m, 3**m)` | The exact ensemble state under supported Lindblad evolution. |
-| `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | `(3**m, 3**m)` | The complete coherent operator, including the canonical terminal virtual-frame transformation. |
+| `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | `(3**m, 3**m)` | The complete coherent operator. |
 
 All three representations cover the complete physical qutrit model, not just
-the logical resources declared by the program. Pulse emulators do not expose
-`superop` or internal solver names as methods.
+the resources declared by the program. They use the same canonical model
+basis: terminal virtual-frame changes are composed into every returned state
+or operator. This does not convert the effective RWA model to a laboratory
+frame. `result_config` controls whether the method-native value is returned;
+it does not expose the solver's internal rotating-frame coordinates. Pulse
+emulators do not expose `superop` or internal solver names as methods.
 
 An unmeasured statevector run with potentially active Lindblad noise is
 stochastic, so the default result request retains metadata only. Request one

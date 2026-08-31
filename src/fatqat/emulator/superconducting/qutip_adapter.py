@@ -433,11 +433,18 @@ class _TransmonQutipAdapter:
                 self._reset(engine_index, context)
 
     def finish_shot(self, context: _ShotContext) -> _PulseShotOutcome:
-        """Return a NumPy copy; no solver value crosses the engine boundary."""
+        """Return the final state after composing its terminal virtual frame."""
         self._validate_state(context.state)
         final_state = None
         if self._retain_final_state:
-            array = np.asarray(context.state.full(), dtype=complex)
+            state = context.state
+            if context.frame_angles:
+                frame_unitary = self._frame_unitary(context.frame_angles)
+                if self._execution_mode == "density_matrix":
+                    state = frame_unitary * state * frame_unitary.dag()
+                else:
+                    state = frame_unitary * state
+            array = np.asarray(state.full(), dtype=complex)
             if self._execution_mode != "density_matrix":
                 array = array.reshape(-1)
             final_state = np.array(array, dtype=complex, copy=True)

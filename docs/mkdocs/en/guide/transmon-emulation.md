@@ -302,6 +302,7 @@ nominal exchange area; it does not recalibrate phases or fidelity.
   model, and an unaddressed neighbour is still part of the Hamiltonian.
 - **Frames and timing:** calibrated frame changes and the placement of later
   controls can change phases even when computational populations look alike.
+  Returned states include terminal virtual-frame changes.
 - **Continuous noise:** rate- or time-form Lindblad declarations act over
   elapsed physical time, rather than once at a circuit-operation boundary.
 
