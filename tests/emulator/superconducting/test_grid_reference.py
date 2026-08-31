@@ -20,12 +20,12 @@ def _generate(**overrides):
     arguments = {
         "shape": (2, 2),
         "frequency_groups_ghz": (5.0, 5.2),
-        "frequency_jitter_std_ghz": 0.01,
+        "frequency_std_ghz": 0.01,
         "anharmonicity_ghz": -0.22,
         "seed": 0,
     }
     arguments.update(overrides)
-    return fq.emulator.generate_transmon_grid_reference(**arguments)
+    return fq.emulator.generate_transmon_grid_documents(**arguments)
 
 
 def _revision_without_declared_revision(document, identity_key):
@@ -41,17 +41,18 @@ def _revision_without_declared_revision(document, identity_key):
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
-def _frequencies(reference):
-    return reference.model_document["parameters"]["subsystems"]
+def _frequencies(documents):
+    model_document, _calibration_document = documents
+    return model_document["parameters"]["subsystems"]
 
 
-def test_generator_signature_and_bundle_ownership_are_explicit():
-    function = fq.emulator.generate_transmon_grid_reference
+def test_generator_signature_and_document_ownership_are_explicit():
+    function = fq.emulator.generate_transmon_grid_documents
     parameters = inspect.signature(function).parameters
     assert tuple(parameters) == (
         "shape",
         "frequency_groups_ghz",
-        "frequency_jitter_std_ghz",
+        "frequency_std_ghz",
         "anharmonicity_ghz",
         "seed",
     )
@@ -61,29 +62,24 @@ def test_generator_signature_and_bundle_ownership_are_explicit():
     )
     assert parameters["shape"].default is inspect.Parameter.empty
     assert parameters["frequency_groups_ghz"].default is inspect.Parameter.empty
-    assert parameters["frequency_jitter_std_ghz"].default == 0.010
+    assert parameters["frequency_std_ghz"].default == 0.010
     assert parameters["anharmonicity_ghz"].default == -0.22
     assert parameters["seed"].default == 0
 
-    reference = _generate()
-    assert isinstance(reference, fq.emulator.TransmonGridReference)
-    assert reference == _generate()
-    assert reference != _generate(seed=1)
-    with pytest.raises(TypeError, match="generate_transmon_grid_reference"):
-        fq.emulator.TransmonGridReference()
-    with pytest.raises(TypeError):
-        hash(reference)
-    with pytest.raises((AttributeError, TypeError)):
-        reference.model_document = {}
+    documents = _generate()
+    repeated = _generate()
+    assert isinstance(documents, tuple)
+    assert len(documents) == 2
+    assert all(isinstance(document, dict) for document in documents)
+    assert documents == repeated
+    assert documents != _generate(seed=1)
+    assert documents[0] is not repeated[0]
+    assert documents[1] is not repeated[1]
 
-    first = reference.model_document
-    second = reference.model_document
-    assert first == second and first is not second
-    first["parameters"]["subsystems"]["q0"]["frequency"] = 99.0
-    assert reference.model_document == second
-    assert reference.calibration_document is not reference.calibration_document
-    for absent in ("write_json", "save", "qualification", "qualification_document"):
-        assert not hasattr(reference, absent)
+    documents[0]["parameters"]["subsystems"]["q0"]["frequency"] = 99.0
+    documents[1]["recipes"]["rx_ry"]["duration"] = 99.0
+    assert repeated[0]["parameters"]["subsystems"]["q0"]["frequency"] != 99.0
+    assert repeated[1]["recipes"]["rx_ry"]["duration"] != 99.0
 
 
 @pytest.mark.parametrize(
@@ -103,9 +99,9 @@ def test_generator_signature_and_bundle_ownership_are_explicit():
         ({"frequency_groups_ghz": (5.0, 5.0)}, ValueError),
         ({"frequency_groups_ghz": (math.nan, 5.2)}, ValueError),
         ({"frequency_groups_ghz": (5.0, math.inf)}, ValueError),
-        ({"frequency_jitter_std_ghz": True}, TypeError),
-        ({"frequency_jitter_std_ghz": -0.1}, ValueError),
-        ({"frequency_jitter_std_ghz": math.inf}, ValueError),
+        ({"frequency_std_ghz": True}, TypeError),
+        ({"frequency_std_ghz": -0.1}, ValueError),
+        ({"frequency_std_ghz": math.inf}, ValueError),
         ({"anharmonicity_ghz": False}, TypeError),
         ({"anharmonicity_ghz": 0.0}, ValueError),
         ({"anharmonicity_ghz": math.nan}, ValueError),
@@ -121,12 +117,12 @@ def test_generator_rejects_invalid_inputs(overrides, error):
 def test_numeric_inputs_normalize_and_realized_overflow_names_its_site():
     integral = _generate(
         frequency_groups_ghz=(5, 6),
-        frequency_jitter_std_ghz=0,
+        frequency_std_ghz=0,
         anharmonicity_ghz=-1,
     )
     floating = _generate(
         frequency_groups_ghz=(5.0, 6.0),
-        frequency_jitter_std_ghz=0.0,
+        frequency_std_ghz=0.0,
         anharmonicity_ghz=-1.0,
     )
     assert integral == floating
@@ -135,13 +131,13 @@ def test_numeric_inputs_normalize_and_realized_overflow_names_its_site():
             _generate(
                 shape=(1, 2),
                 frequency_groups_ghz=(1e308, 9e307),
-                frequency_jitter_std_ghz=1e308,
+                frequency_std_ghz=1e308,
                 seed=7,
             )
 
 
 def test_zero_jitter_uses_row_column_checkerboard_parameters():
-    reference = _generate(frequency_jitter_std_ghz=0, anharmonicity_ghz=-0.3)
+    reference = _generate(frequency_std_ghz=0, anharmonicity_ghz=-0.3)
     parameters = _frequencies(reference)
     assert [parameters[f"q{i}"]["frequency"] for i in range(4)] == [
         5.0,
@@ -172,7 +168,7 @@ def test_zero_jitter_uses_row_column_checkerboard_parameters():
     ],
 )
 def test_edges_follow_right_then_down_traversal(shape, expected):
-    document = _generate(shape=shape, frequency_jitter_std_ghz=0).model_document
+    document, _calibration = _generate(shape=shape, frequency_std_ghz=0)
     assert document["system"]["subsystems"] == [
         f"q{index}" for index in range(shape[0] * shape[1])
     ]
@@ -182,9 +178,8 @@ def test_edges_follow_right_then_down_traversal(shape, expected):
 
 
 def test_edge_canonicalization_uses_string_order_not_numeric_suffixes():
-    edges = _generate(shape=(1, 11), frequency_jitter_std_ghz=0).model_document[
-        "system"
-    ]["control_edges"]
+    document, _calibration = _generate(shape=(1, 11), frequency_std_ghz=0)
+    edges = document["system"]["control_edges"]
     assert edges[-1] == {"id": "e9", "subsystems": ["q10", "q9"]}
 
 
@@ -194,11 +189,11 @@ def test_site_keyed_rng_is_repeatable_extensible_and_matches_v1_goldens():
     changed_seed = _generate(shape=(2, 3), seed=1)
     extended = _generate(shape=(3, 3), seed=0)
     assert base == repeated
-    assert base.model_document != changed_seed.model_document
+    assert base[0] != changed_seed[0]
 
     base_parameters = _frequencies(base)
     extended_parameters = _frequencies(extended)
-    assert {label: base_parameters[label] for label in base_parameters} == {
+    assert base_parameters == {
         label: extended_parameters[label] for label in base_parameters
     }
 
@@ -215,7 +210,7 @@ def test_site_keyed_rng_is_repeatable_extensible_and_matches_v1_goldens():
             center + 0.01 * draw
         )
 
-    doubled = _frequencies(_generate(seed=0, frequency_jitter_std_ghz=0.02))
+    doubled = _frequencies(_generate(seed=0, frequency_std_ghz=0.02))
     for index, center in enumerate(centers):
         label = f"q{index}"
         assert (doubled[label]["frequency"] - center) / 0.02 == pytest.approx(
@@ -230,8 +225,8 @@ def test_generation_leaves_ambient_numpy_rng_untouched_and_zero_jitter_skips_see
     assert before[0] == after[0]
     np.testing.assert_array_equal(before[1], after[1])
     assert before[2:] == after[2:]
-    assert _generate(frequency_jitter_std_ghz=0, seed=0) == _generate(
-        frequency_jitter_std_ghz=0, seed=10**100
+    assert _generate(frequency_std_ghz=0, seed=0) == _generate(
+        frequency_std_ghz=0, seed=10**100
     )
 
 
@@ -241,7 +236,7 @@ def test_nominal_overlap_warning_includes_the_three_sigma_boundary():
         _generate(
             shape=(1, 2),
             frequency_groups_ghz=(10.0, 16.0),
-            frequency_jitter_std_ghz=1.0,
+            frequency_std_ghz=1.0,
         )
     assert [item.category for item in boundary] == [UserWarning]
     assert "three-standard-deviation" in str(boundary[0].message)
@@ -251,7 +246,7 @@ def test_nominal_overlap_warning_includes_the_three_sigma_boundary():
         _generate(
             shape=(1, 2),
             frequency_groups_ghz=(10.0, 16.0000000001),
-            frequency_jitter_std_ghz=1.0,
+            frequency_std_ghz=1.0,
         )
     assert not separated
 
@@ -263,7 +258,7 @@ def test_nominal_overlap_warning_includes_the_three_sigma_boundary():
             {
                 "shape": (2, 3),
                 "frequency_groups_ghz": (10.0, 10.72714200189354),
-                "frequency_jitter_std_ghz": 1.0,
+                "frequency_std_ghz": 1.0,
                 "seed": 1,
             },
             ("touch or overlap", "0 nearest-neighbor", "none"),
@@ -272,7 +267,7 @@ def test_nominal_overlap_warning_includes_the_three_sigma_boundary():
             {
                 "shape": (2, 2),
                 "frequency_groups_ghz": (10.0, 10.1),
-                "frequency_jitter_std_ghz": 1.0,
+                "frequency_std_ghz": 1.0,
                 "seed": 0,
             },
             ("do not overlap", "4 nearest-neighbor", "(q0, q1)"),
@@ -305,7 +300,7 @@ def test_realized_warning_caps_reported_edge_labels():
         _generate(
             shape=(10, 10),
             frequency_groups_ghz=(10.0, 10.1),
-            frequency_jitter_std_ghz=1.0,
+            frequency_std_ghz=1.0,
             seed=0,
         )
     realized_message = str(seen[1].message)
@@ -322,12 +317,13 @@ def test_exact_realized_tie_warns_and_selects_the_canonical_first_endpoint():
         reference = _generate(
             shape=(1, 2),
             frequency_groups_ghz=(lower, upper),
-            frequency_jitter_std_ghz=standard_deviation,
+            frequency_std_ghz=standard_deviation,
             seed=2,
         )
     parameters = _frequencies(reference)
     assert parameters["q0"]["frequency"] == parameters["q1"]["frequency"]
-    entry = reference.calibration_document["recipes"]["cz"]["edges"][0]
+    _model, calibration = reference
+    entry = calibration["recipes"]["cz"]["edges"][0]
     assert entry["canonical_edge"] == ["q0", "q1"]
     assert entry["recipe"]["detuned_subsystem"] == "q0"
     assert any("1 nearest-neighbor" in str(item.message) for item in seen)
@@ -338,15 +334,14 @@ def test_nonpositive_realized_frequency_fails_with_site_context():
         _generate(
             shape=(1, 2),
             frequency_groups_ghz=(1.0, 10.0),
-            frequency_jitter_std_ghz=1.0,
+            frequency_std_ghz=1.0,
             seed=0,
         )
 
 
 def test_documents_have_content_revisions_and_portable_analytic_recipes():
     reference = _generate(shape=(2, 3), anharmonicity_ghz=-0.25)
-    model = reference.model_document
-    calibration = reference.calibration_document
+    model, calibration = reference
     revision_pattern = re.compile(r"sha256:[0-9a-f]{64}\Z")
     assert model["model"]["id"] == "synthetic-transmon-grid-reference"
     assert calibration["calibration"]["id"] == (
@@ -401,21 +396,19 @@ def test_documents_have_content_revisions_and_portable_analytic_recipes():
         assert forbidden not in encoded
 
     horizontal = _generate(
-        shape=(1, 3), frequency_groups_ghz=(5, 6), frequency_jitter_std_ghz=0
+        shape=(1, 3), frequency_groups_ghz=(5, 6), frequency_std_ghz=0
     )
-    vertical = _generate(
-        shape=(3, 1), frequency_groups_ghz=(5, 6), frequency_jitter_std_ghz=0
-    )
+    vertical = _generate(shape=(3, 1), frequency_groups_ghz=(5, 6), frequency_std_ghz=0)
     assert horizontal == vertical
 
 
 def test_documents_round_trip_and_build_an_explicit_multiedge_emulator():
-    reference = _generate(shape=(2, 2))
+    model_document, calibration_document = _generate(shape=(2, 2))
     model = fq.emulator.TransmonModel.from_document(
-        json.loads(json.dumps(reference.model_document))
+        json.loads(json.dumps(model_document))
     )
     calibration = fq.emulator.TransmonCalibration(
-        json.loads(json.dumps(reference.calibration_document))
+        json.loads(json.dumps(calibration_document))
     )
     implementations = fq.emulator.default_transmon_gate_implementation_map(
         model=model, calibration=calibration
@@ -425,7 +418,7 @@ def test_documents_round_trip_and_build_an_explicit_multiedge_emulator():
     )
     assert backend.model is model
 
-    first, second = reference.model_document["system"]["control_edges"][0]["subsystems"]
+    first, second = model_document["system"]["control_edges"][0]["subsystems"]
     forward_rule = implementations.implementation_for(
         ops.CZ, device_operands=(first, second)
     )
@@ -447,7 +440,10 @@ def test_document_generation_does_not_enter_realization_or_emulation(monkeypatch
         superconducting, "default_transmon_gate_implementation_map", unexpected
     )
     monkeypatch.setattr(superconducting, "TransmonEmulator", unexpected)
-    reference = superconducting.generate_transmon_grid_reference(
-        shape=(1, 2), frequency_groups_ghz=(5.0, 5.2)
+    model_document, calibration_document = (
+        superconducting.generate_transmon_grid_documents(
+            shape=(1, 2), frequency_groups_ghz=(5.0, 5.2)
+        )
     )
-    assert reference.model_document["system"]["subsystems"] == ["q0", "q1"]
+    assert model_document["system"]["subsystems"] == ["q0", "q1"]
+    assert calibration_document["recipes"]["cz"]["edges"]

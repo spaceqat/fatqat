@@ -119,18 +119,16 @@ def test_transmon_emulator_values_are_namespaced_under_emulator():
     from fatqat.emulator.superconducting import (
         TransmonCalibration,
         TransmonEmulator,
-        TransmonGridReference,
         TransmonModel,
         default_transmon_gate_implementation_map,
-        generate_transmon_grid_reference,
+        generate_transmon_grid_documents,
     )
 
     assert fq.emulator.TransmonEmulator is TransmonEmulator
     assert fq.emulator.TransmonModel is TransmonModel
     assert fq.emulator.TransmonCalibration is TransmonCalibration
-    assert fq.emulator.TransmonGridReference is TransmonGridReference
     assert (
-        fq.emulator.generate_transmon_grid_reference is generate_transmon_grid_reference
+        fq.emulator.generate_transmon_grid_documents is generate_transmon_grid_documents
     )
     assert (
         fq.emulator.default_transmon_gate_implementation_map
@@ -140,8 +138,7 @@ def test_transmon_emulator_values_are_namespaced_under_emulator():
         "TransmonEmulator",
         "TransmonModel",
         "TransmonCalibration",
-        "TransmonGridReference",
-        "generate_transmon_grid_reference",
+        "generate_transmon_grid_documents",
     ):
         assert not hasattr(fq, name)
 

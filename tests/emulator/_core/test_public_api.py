@@ -9,7 +9,7 @@ import importlib.util
 import inspect
 import json
 from pathlib import Path
-from typing import get_type_hints
+from typing import Any, get_type_hints
 
 import pytest
 
@@ -25,11 +25,10 @@ from fatqat.emulator import (
     ControlChannel,
     TransmonEmulator,
     TransmonCalibration,
-    TransmonGridReference,
     TransmonModel,
     default_transmon_calibration,
     default_transmon_gate_implementation_map,
-    generate_transmon_grid_reference,
+    generate_transmon_grid_documents,
 )
 from fatqat.emulator._core.pulse import PhaseShift as _PhaseShift
 from fatqat.emulator._core.pulse import PhaseSwap as _PhaseSwap
@@ -50,9 +49,8 @@ def test_sc_pulse_factories_are_public_without_exposing_execution_types():
     assert not hasattr(fq.emulator, "waveform")
     assert fq.emulator.TransmonModel is TransmonModel
     assert fq.emulator.TransmonCalibration is TransmonCalibration
-    assert fq.emulator.TransmonGridReference is TransmonGridReference
     assert (
-        fq.emulator.generate_transmon_grid_reference is generate_transmon_grid_reference
+        fq.emulator.generate_transmon_grid_documents is generate_transmon_grid_documents
     )
     assert fq.emulator.default_transmon_calibration is default_transmon_calibration
     assert not hasattr(fq.emulator, "_TransmonQutipAdapter")
@@ -68,7 +66,6 @@ def test_family_and_aggregate_exports_are_exact():
         "Atom2LevelEmulator",
         "TransmonModel",
         "TransmonCalibration",
-        "TransmonGridReference",
         "PulseDefinition",
         "ControlChannel",
         "PulseControl",
@@ -78,7 +75,7 @@ def test_family_and_aggregate_exports_are_exact():
         "PulseImplementationMap",
         "default_transmon_gate_implementation_map",
         "default_transmon_calibration",
-        "generate_transmon_grid_reference",
+        "generate_transmon_grid_documents",
         "Atom2LevelModel",
         "AtomArrangement",
         "available_model_documents",
@@ -91,12 +88,11 @@ def test_family_and_aggregate_exports_are_exact():
     assert tuple(superconducting.__all__) == (
         "TransmonEmulator",
         "TransmonCalibration",
-        "TransmonGridReference",
         "TransmonModel",
         "angular_rate_from_ghz",
         "default_transmon_calibration",
         "default_transmon_gate_implementation_map",
-        "generate_transmon_grid_reference",
+        "generate_transmon_grid_documents",
     )
 
 
@@ -107,17 +103,17 @@ def test_transmon_public_names_have_exact_modules_and_constructor_signature():
     )
     assert TransmonEmulator.__module__ == "fatqat.emulator.superconducting.backend"
     assert (
-        TransmonGridReference.__module__
+        generate_transmon_grid_documents.__module__
         == "fatqat.emulator.superconducting.grid_reference"
     )
 
     generator_parameters = inspect.signature(
-        generate_transmon_grid_reference
+        generate_transmon_grid_documents
     ).parameters
     assert tuple(generator_parameters) == (
         "shape",
         "frequency_groups_ghz",
-        "frequency_jitter_std_ghz",
+        "frequency_std_ghz",
         "anharmonicity_ghz",
         "seed",
     )
@@ -125,12 +121,12 @@ def test_transmon_public_names_have_exact_modules_and_constructor_signature():
         parameter.kind is inspect.Parameter.KEYWORD_ONLY
         for parameter in generator_parameters.values()
     )
-    assert generator_parameters["frequency_jitter_std_ghz"].default == 0.010
+    assert generator_parameters["frequency_std_ghz"].default == 0.010
     assert generator_parameters["anharmonicity_ghz"].default == -0.22
     assert generator_parameters["seed"].default == 0
     assert (
-        get_type_hints(generate_transmon_grid_reference)["return"]
-        is TransmonGridReference
+        get_type_hints(generate_transmon_grid_documents)["return"]
+        == tuple[dict[str, Any], dict[str, Any]]
     )
 
     parameters = inspect.signature(TransmonEmulator).parameters
@@ -164,6 +160,8 @@ def test_removed_transmon_surface_has_no_compatibility_aliases():
         "SCQubit" + "Emulator",
         "SCTransmon" + "Model",
         "SCTransmon" + "Calibration",
+        "TransmonGridReference",
+        "generate_transmon_grid_reference",
     )
     removed_helper = (
         "default_" + "superconducting_" + "pulse_" + "implementation_" + "map"
@@ -195,8 +193,7 @@ def test_document_identities_and_normalized_records_are_not_public():
     for name in (
         "TransmonModel",
         "TransmonCalibration",
-        "TransmonGridReference",
-        "generate_transmon_grid_reference",
+        "generate_transmon_grid_documents",
         "Atom3LevelModel",
         "Atom3LevelCalibration",
         "Atom2LevelModel",

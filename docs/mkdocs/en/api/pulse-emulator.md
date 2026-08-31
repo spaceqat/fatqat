@@ -202,19 +202,21 @@ anharmonicities. The runtime model exposes ordered device labels through
 `subsystem_ids`, but it does not expose normalized subsystem or coupling
 records.
 
-### Generated grid reference bundles
+### Generated grid reference documents
 
-[`generate_transmon_grid_reference`][fatqat.emulator.generate_transmon_grid_reference]
-returns an immutable bundle containing one model document and one matching
-portable calibration document. Its `model_document` and
-`calibration_document` properties are read-only, and every access returns a
-fresh JSON-ready mapping that callers may modify without changing the bundle.
+[`generate_transmon_grid_documents`][fatqat.emulator.generate_transmon_grid_documents]
+returns a two-item tuple containing one model document and one matching
+portable calibration document. Unpack the result as
+`model_document, calibration_document`. Both JSON-ready mappings are mutable
+and owned by the caller; a later generator call returns new independent
+mappings. If callers modify document content, they also own any corresponding
+identity or revision update.
 
 | Argument | Meaning |
 | --- | --- |
 | `shape` | Positive `(rows, columns)` dimensions containing at least two transmons. Sites use a checkerboard assignment to the two frequency groups. |
 | `frequency_groups_ghz` | Two distinct, positive idle-frequency centers in GHz. |
-| `frequency_jitter_std_ghz` | Non-negative fabrication-spread standard deviation in GHz. The default is `0.010`. |
+| `frequency_std_ghz` | Non-negative fabrication-spread standard deviation in GHz. The default is `0.010`. |
 | `anharmonicity_ghz` | Shared negative anharmonicity in GHz. The default is `-0.22`. |
 | `seed` | Non-negative integer selecting deterministic, site-keyed frequency draws. The default is `0`. |
 
@@ -396,13 +398,7 @@ for the complete workflow.
       filters:
         - "!^_"
 
-::: fatqat.emulator.TransmonGridReference
-    options:
-      inherited_members: false
-      show_bases: false
-      merge_init_into_class: false
-
-::: fatqat.emulator.generate_transmon_grid_reference
+::: fatqat.emulator.generate_transmon_grid_documents
 
 ::: fatqat.emulator.available_model_documents
 

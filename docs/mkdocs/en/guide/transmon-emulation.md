@@ -40,16 +40,14 @@ calibration documents, parse both, and pass the resulting map explicitly to
 the emulator:
 
 ```pycon
->>> reference = fq.emulator.generate_transmon_grid_reference(
+>>> model_document, calibration_document = fq.emulator.generate_transmon_grid_documents(
 ...     shape=(2, 2),
 ...     frequency_groups_ghz=(5.0, 5.2),
 ...     seed=0,
 ... )
->>> grid_model = fq.emulator.TransmonModel.from_document(
-...     reference.model_document
-... )
+>>> grid_model = fq.emulator.TransmonModel.from_document(model_document)
 >>> grid_calibration = fq.emulator.TransmonCalibration(
-...     reference.calibration_document
+...     calibration_document
 ... )
 >>> grid_gate_map = fq.emulator.default_transmon_gate_implementation_map(
 ...     model=grid_model,
@@ -77,9 +75,9 @@ the documentation build:
 import json
 
 with open("model.json", "w", encoding="utf-8") as stream:
-    json.dump(reference.model_document, stream, indent=2)
+    json.dump(model_document, stream, indent=2)
 with open("calibration.json", "w", encoding="utf-8") as stream:
-    json.dump(reference.calibration_document, stream, indent=2)
+    json.dump(calibration_document, stream, indent=2)
 
 with open("model.json", encoding="utf-8") as stream:
     saved_model = fq.emulator.TransmonModel.from_document(json.load(stream))

@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import warnings
-from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any
 
@@ -25,38 +24,6 @@ _CZ_BRANCH_TOLERANCE_GHZ = 1e-12
 _WARNING_EDGE_LABEL_LIMIT = 10
 
 _CanonicalEdge = tuple[str, str]
-
-
-@dataclass(frozen=True, slots=True, init=False)
-class TransmonGridReference:
-    """Own generated transmon model and calibration document snapshots.
-
-    Construct instances with :func:`generate_transmon_grid_reference`. Each
-    document property decodes a fresh JSON-ready mapping, so mutating a
-    returned mapping cannot change the reference or a later property value.
-    """
-
-    _model_snapshot: str = field(repr=False)
-    _calibration_snapshot: str = field(repr=False)
-
-    __hash__ = None
-
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        """Reject direct construction in favor of the public generator."""
-        raise TypeError(
-            "TransmonGridReference must be constructed with "
-            "generate_transmon_grid_reference()"
-        )
-
-    @property
-    def model_document(self) -> dict[str, Any]:
-        """Return a fresh JSON-ready transmon model document."""
-        return json.loads(self._model_snapshot)
-
-    @property
-    def calibration_document(self) -> dict[str, Any]:
-        """Return a fresh JSON-ready reference calibration document."""
-        return json.loads(self._calibration_snapshot)
 
 
 def _frequency_value(value: object, name: str) -> float:
@@ -290,26 +257,25 @@ def _calibration_document(
     return document
 
 
-def generate_transmon_grid_reference(
+def generate_transmon_grid_documents(
     *,
     shape: tuple[int, int],
     frequency_groups_ghz: tuple[float, float],
-    frequency_jitter_std_ghz: float = 0.010,
+    frequency_std_ghz: float = 0.010,
     anharmonicity_ghz: float = -0.22,
     seed: int = 0,
-) -> TransmonGridReference:
-    """Generate deterministic rectangular transmon reference documents.
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return matching model and calibration documents for a transmon grid.
 
     This function constructs model and analytic reference-calibration JSON. It
-    performs no numerical calibration or simulation.
+    performs no numerical calibration or simulation. Both returned mappings
+    are mutable and owned by the caller.
     """
     rows, columns = _validate_shape(shape)
     centers = _validate_frequency_groups(frequency_groups_ghz)
-    standard_deviation = _frequency_value(
-        frequency_jitter_std_ghz, "frequency_jitter_std_ghz"
-    )
+    standard_deviation = _frequency_value(frequency_std_ghz, "frequency_std_ghz")
     if standard_deviation < 0:
-        raise ValueError("frequency_jitter_std_ghz must be non-negative")
+        raise ValueError("frequency_std_ghz must be non-negative")
     anharmonicity = _frequency_value(anharmonicity_ghz, "anharmonicity_ghz")
     if anharmonicity >= 0:
         raise ValueError("anharmonicity_ghz must be negative")
@@ -340,23 +306,7 @@ def generate_transmon_grid_reference(
         anharmonicity=anharmonicity,
     )
 
-    reference = object.__new__(TransmonGridReference)
-    object.__setattr__(
-        reference,
-        "_model_snapshot",
-        json.dumps(model, separators=(",", ":"), ensure_ascii=False, allow_nan=False),
-    )
-    object.__setattr__(
-        reference,
-        "_calibration_snapshot",
-        json.dumps(
-            calibration,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ),
-    )
-    return reference
+    return model, calibration
 
 
-__all__ = ["TransmonGridReference", "generate_transmon_grid_reference"]
+__all__ = ["generate_transmon_grid_documents"]
