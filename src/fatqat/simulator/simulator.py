@@ -258,7 +258,10 @@ class Simulator:
             implementation_map: Matrix rules for supported operations.
                 ``None`` uses ``default_matrix_implementation_map()``.
             noise: Noise model applied to every run. ``None`` means ideal
-                execution.
+                execution. The model is copied at construction: ``add()``
+                calls made on the original after the backend is built do not
+                reach this backend - build the backend after the model is
+                complete, or build a new backend.
             channel_implementation_map: Rules that turn supported channel
                 descriptors into finite channels. ``None`` uses the default
                 channel map.
