@@ -161,6 +161,17 @@ def test_condition_v2_full_register_ok():
     assert "if (c == 1) x q[1];" in out
 
 
+def test_condition_v2_integer_weights_classical_bit_zero_as_lsb():
+    def export_condition(values):
+        program = fc.Program(1, 2)
+        c0, c1 = program.classical_registers[0]
+        program.add(ops.X, 0, condition=((c0, values[0]), (c1, values[1])))
+        return program_to_qasm(program, version=2)
+
+    assert "if (c == 1) x q[0];" in export_condition((1, 0))
+    assert "if (c == 2) x q[0];" in export_condition((0, 1))
+
+
 def test_condition_v2_partial_register_rejected():
     p = fc.Program(2, 3)
     p.add(ops.X, 1, condition=(p.classical_registers[0][0], 1))
