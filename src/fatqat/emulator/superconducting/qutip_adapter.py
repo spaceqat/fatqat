@@ -573,10 +573,10 @@ class _TransmonQutipAdapter:
     ) -> Pulse:
         """Convert one sampled control to an absolute-time qutip-qip pulse.
 
-        Drive controls bind complex envelopes to X/Y quadratures and rotate by
-        the negative accumulated virtual-frame angle. Detuning binds the local
-        number operator; exchange binds the two-qutrit ladder interaction on
-        its declared coupling edge.
+        Drive controls bind half of each full complex Rabi envelope to the X/Y
+        quadratures and rotate by the negative accumulated virtual-frame angle.
+        Detuning binds the local number operator; exchange binds the two-qutrit
+        ladder interaction on its declared coupling edge.
         """
         absolute_tlist = (
             block_start_time + child.start_offset + np.asarray(child.waveform.times)
@@ -627,7 +627,7 @@ class _TransmonQutipAdapter:
                 0.0,
             )
         )
-        envelope = phase * coefficients
+        envelope = 0.5 * phase * coefficients
         x_operator = self._local_annihilation + self._local_annihilation.dag()
         y_operator = -1j * (self._local_annihilation - self._local_annihilation.dag())
         pulse = Pulse(

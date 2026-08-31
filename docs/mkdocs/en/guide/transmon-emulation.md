@@ -7,19 +7,19 @@ It uses the shared [Hamiltonian-emulation workflow](hamiltonian-emulation.md).
 
 ## Load a reproducible baseline
 
-The packaged document describes two coupled physical transmons. It is a
-simulation baseline, not a live calibration from a named device:
+The packaged document describes one physical transmon. It is a simulation
+baseline, not a live calibration from a named device:
 
 ```pycon
 >>> import numpy as np
 >>> import fatqat as fq
 >>> import fatqat.operations as ops
->>> model_document = fq.emulator.load_model_document("transmon.reference")
+>>> model_document = fq.emulator.load_model_document("transmon.single")
 >>> model_document["parameters"]["subsystems"]["q0"]["frequency"]
 5.1
 >>> model = fq.emulator.TransmonModel.from_document(model_document)
 >>> model.subsystem_ids
-('q0', 'q1')
+('q0',)
 >>> backend = fq.emulator.TransmonEmulator(model, method="density_matrix")
 ```
 
@@ -35,9 +35,8 @@ populations. The common default is `method="statevector"`; use
 
 ## Start with a transmon grid
 
-The packaged reference above has two transmons. To try a larger rectangular
-grid without writing model and calibration documents by hand, generate a
-matching pair and use it to create the emulator:
+To try a rectangular grid without writing model and calibration documents by
+hand, generate a matching pair and use it to create the emulator:
 
 ```pycon
 >>> model_document, calibration_document = fq.emulator.generate_transmon_grid_documents(
@@ -105,27 +104,22 @@ calibration:
 >>> rotation.add(ops.RX(np.pi / 2), 0)
 >>> calibrated_rho = backend.run(rotation).result().get_density_matrix()
 >>> calibrated_rho.shape
-(9, 9)
+(3, 3)
 ```
 
-The Program declares a logical qubit, but the result covers the complete
-two-transmon qutrit space. To inspect `q0`, reshape the diagonal in FatQat's
-little-endian physical-axis order and sum over `q1`:
+The Program declares one qubit, and the result covers all three levels of the
+physical transmon:
 
 ```pycon
->>> calibrated_physical = np.real(np.diag(calibrated_rho)).reshape(
-...     (3, 3), order="F"
-... )
->>> calibrated_q0 = calibrated_physical.sum(axis=1)
->>> np.allclose(calibrated_q0.sum(), 1.0)
+>>> calibrated_populations = np.real(np.diag(calibrated_rho))
+>>> np.allclose(calibrated_populations.sum(), 1.0)
 True
->>> bool(calibrated_q0[2] < 1e-6)
+>>> bool(calibrated_populations[2] < 1e-6)
 True
 ```
 
-Here `calibrated_q0[2]` is population in physical level `|2>`. This is a
-physical qutrit used to model transmon leakage; it is not the logical qutrit
-authoring feature supported by the general simulator.
+Here `calibrated_populations[2]` is population in physical level `|2>`. This
+level models transmon leakage; it is not a qutrit declared by the Program.
 
 ## Replace the gate with a direct drive
 
@@ -143,16 +137,17 @@ hard-edged so its leakage is visible:
 >>> direct = fq.Program(1)
 >>> direct.add(ops.PulseOperation(duration, (control,)))
 >>> direct_rho = backend.run(direct).result().get_density_matrix()
->>> direct_physical = np.real(np.diag(direct_rho)).reshape((3, 3), order="F")
->>> direct_q0 = direct_physical.sum(axis=1)
->>> q0_leakage = direct_q0[2]
->>> f"{100 * q0_leakage:.2f}%"
-'0.64%'
+>>> direct_populations = np.real(np.diag(direct_rho))
+>>> np.round(direct_populations, 3)
+array([0.486, 0.513, 0.001])
+>>> f"{100 * direct_populations[2]:.2f}%"
+'0.08%'
 ```
 
-`q0_leakage` is the probability that the driven transmon finishes in physical
-level `|2>`. The plot keeps that small value on its own scale so it does not
-disappear beside the computational-level populations.
+The waveform samples are the full complex Rabi rate \(\Omega(t)\) in rad/ns.
+Here their area is 1.6 rad, close to \(\pi/2\), so the pulse leaves nearly
+equal populations in `|0>` and `|1>`. The final value is the leakage
+probability in `|2>`.
 
 ![Computational-level populations for a calibrated rotation and a direct drive are shown beside a magnified comparison of their level-two leakage percentages.](../assets/generated/guide/transmon-emulation-1.png)
 
@@ -165,7 +160,7 @@ disappear beside the computational-level populations.
     import fatqat.operations as ops
 
     model = fq.emulator.TransmonModel.from_document(
-        fq.emulator.load_model_document("transmon.reference")
+        fq.emulator.load_model_document("transmon.single")
     )
     backend = fq.emulator.TransmonEmulator(model, method="density_matrix")
 
@@ -183,14 +178,10 @@ disappear beside the computational-level populations.
     direct.add(ops.PulseOperation(duration, (control,)))
     direct_rho = backend.run(direct).result().get_density_matrix()
 
-    def q0_populations(rho):
-        physical = np.real(np.diag(rho)).reshape((3, 3), order="F")
-        return physical.sum(axis=1)
-
-    calibrated_q0 = q0_populations(calibrated_rho)
-    direct_q0 = q0_populations(direct_rho)
-    assert np.allclose(calibrated_q0.sum(), 1.0)
-    assert np.allclose(direct_q0.sum(), 1.0)
+    calibrated_populations = np.real(np.diag(calibrated_rho))
+    direct_populations = np.real(np.diag(direct_rho))
+    assert np.allclose(calibrated_populations.sum(), 1.0)
+    assert np.allclose(direct_populations.sum(), 1.0)
 
     levels = np.arange(2)
     width = 0.36
@@ -202,13 +193,13 @@ disappear beside the computational-level populations.
     )
     population_ax.bar(
         levels - width / 2,
-        calibrated_q0[:2],
+        calibrated_populations[:2],
         width,
         label="calibrated RX(pi/2)",
     )
     population_ax.bar(
         levels + width / 2,
-        direct_q0[:2],
+        direct_populations[:2],
         width,
         label="direct drive",
     )
@@ -221,12 +212,12 @@ disappear beside the computational-level populations.
     population_ax.legend()
     leakage_bars = leakage_ax.bar(
         ("calibrated", "direct"),
-        100 * np.array((calibrated_q0[2], direct_q0[2])),
+        100 * np.array((calibrated_populations[2], direct_populations[2])),
         color=("C0", "C1"),
     )
     leakage_ax.bar_label(leakage_bars, fmt="%.2f%%", padding=3)
     leakage_ax.set(ylabel="|2> population (%)")
-    leakage_ax.set_ylim(0.0, max(0.75, 120 * direct_q0[2]))
+    leakage_ax.set_ylim(0.0, max(0.1, 120 * direct_populations[2]))
     leakage_ax.tick_params(axis="x", rotation=20)
     fig.tight_layout()
     ```
@@ -240,14 +231,14 @@ pulses, fits them to hardware, or guarantees high fidelity or low leakage.
 
 The emulator keeps three levels per transmon and uses an effective rotating-
 frame/RWA Hamiltonian. In the solver, \(\alpha_i\), \(\delta_i\),
-\(\epsilon_i\), and \(g_{ij}\) are angular rates:
+\(\Omega_i\), and \(g_{ij}\) are angular rates:
 
 \[
 H(t) =
 \sum_i \frac{\alpha_i}{2} n_i(n_i-1)
 + \sum_i \delta_i(t)n_i
-+ \sum_i \left[\epsilon_i(t)a_i^\dagger
-                 + \epsilon_i^*(t)a_i\right]
++ \frac{1}{2}\sum_i \left[\Omega_i(t)a_i^\dagger
+                 + \Omega_i^*(t)a_i\right]
 + \sum_{(i,j)\in E} g_{ij}(t)
   \left(a_i^\dagger a_j+a_i a_j^\dagger\right),
 \qquad n_i=a_i^\dagger a_i.

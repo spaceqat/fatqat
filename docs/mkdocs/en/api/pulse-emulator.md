@@ -256,6 +256,11 @@ Each control selector exposes its accepted waveform unit through
 `selector.coefficient_unit`; the built-in drive, detuning, and exchange
 selectors use `"rad/ns"`.
 
+Transmon drive samples are the full complex Rabi rate \(\Omega(t)\). The
+Hamiltonian uses \(\operatorname{Re}\Omega/2\) on the X quadrature and
+\(\operatorname{Im}\Omega/2\) on the Y quadrature. Detuning and exchange
+samples are their direct Hamiltonian coefficients.
+
 `model.basis_order` is `("0", "1", "2")`. Use it to interpret flattened
 physical results and derive the local dimension as `len(model.basis_order)`.
 
@@ -315,10 +320,10 @@ See [Gate realization](pulse-control/gate-realization.md) for accepted rule form
 
 The same model channels can be used without a gate-realization rule.
 Drive and detuning resolve one declared transmon; exchange resolves two
-transmons and their declared coupling. Drive accepts a complex envelope for
-the two quadratures, while detuning and exchange require real values. Pulse
-times use the model units described above. The current transmon model
-does not add amplitude or duration limits beyond requiring finite values.
+transmons and their declared coupling. Drive accepts a full complex Rabi-rate
+envelope for the two quadratures, while detuning and exchange require real
+values. Pulse times use the model units described above. The current transmon
+model does not add amplitude or duration limits beyond requiring finite values.
 
 See [PulseOperation](pulse-control/pulse-operation.md),
 [PulseControl](pulse-control/pulse-control.md), and

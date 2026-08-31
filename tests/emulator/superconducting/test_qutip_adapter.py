@@ -209,7 +209,7 @@ def test_child_binding_uses_one_cubic_qip_pulse_and_native_endpoints(model):
         ),
     )
     pulse = adapter._bind_child(child, binding, 4.0, {model.frame("q0"): phase})
-    expected = np.exp(-1j * phase) * np.asarray(child.waveform.values)
+    expected = 0.5 * np.exp(-1j * phase) * np.asarray(child.waveform.values)
 
     assert type(pulse).__module__ == "qutip_qip.pulse"
     assert pulse.spline_kind == "cubic"
@@ -251,7 +251,7 @@ def test_constant_drive_matches_an_independent_full_model_hamiltonian(model):
 
     annihilation = destroy(len(model.basis_order))
     drift = adapter._drift.get_ideal_qobjevo([3, 3])(0.0)
-    hamiltonian = drift + amplitude * _qutip_tensor(
+    hamiltonian = drift + 0.5 * amplitude * _qutip_tensor(
         annihilation + annihilation.dag(), qeye(3)
     )
     initial = adapter.initial_state()

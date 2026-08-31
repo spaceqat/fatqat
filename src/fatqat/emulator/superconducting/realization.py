@@ -170,6 +170,9 @@ def _drag_definition(operation: Operation, context: _DragContext) -> PulseDefini
     envelope = (x0 + 1j * y0) * np.exp(1j * phase)
     if isinstance(operation, RY):
         envelope *= 1j
+    # DRAG is derived in Hamiltonian-coefficient units; expose full Omega only
+    # after its nonlinear corrections and frame rotation are complete.
+    envelope *= 2.0
     return PulseDefinition(
         context.duration,
         (PulseControl(context.drive, SampledWaveform(tlist, envelope)),),
