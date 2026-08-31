@@ -89,6 +89,9 @@ Here `d=2` for [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator]. Its
 results use FATQAT and NumPy types; the public API does not expose QuTiP
 objects, `superop`, or internal solver names.
 
+Results follow arrangement order, with site 0 as the most-significant factor.
+State and unitary results may still use different documented terminal frames.
+
 Measurement and potentially active Lindblad noise make a retained final state
 stochastic. In those cases, the default request returns counts when the
 program contains measurement and otherwise returns metadata only. Request a

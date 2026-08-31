@@ -61,9 +61,11 @@ to `model.subsystem_ids`. Pass an explicit
 [`ResourceLayout`][fatqat.ResourceLayout] to `run(resource_layout=...)` to
 override that binding; its device labels must be model subsystem IDs.
 Unaddressed transmons remain part of the full physical state and still
-contribute factors of three to state and operator dimensions. The ordered
-public identities of all model transmons appear in the result's `state_axes`
-metadata.
+contribute factors of three to state and operator dimensions. The result's
+`state_axes` lists every model transmon in model order, most-significant first.
+Statevectors and both axes of density matrices and unitaries use that order.
+State and unitary
+results may still use different documented terminal frames.
 
 `TransmonEmulator(...)` accepts these optional arguments:
 

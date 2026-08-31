@@ -166,10 +166,13 @@ classical slot of the same dimension:
 ... )
 >>> hybrid_result.get_counts_as_tuples()
 {(1, 2): 20}
+>>> hybrid_result.get_counts()
+{'12': 20}
 ```
 
 Tuple keys put the flattened classical slots in declaration order, making the
-qubit value `1` and qutrit value `2` explicit. Operations decide which local
+qubit value `1` and qutrit value `2` explicit. Native strings use the same
+left-to-right slot order. Operations decide which local
 dimensions they accept, so use the [qudit operation reference](../api/operations/qudit-gates.md) when you move beyond `Shift`.
 
 ## Inspect what was written

@@ -53,10 +53,11 @@ The system begins in $|00\rangle$. Applying a Hadamard gate to qubit
 zero creates
 
 $$
-\frac{|00\rangle + |01\rangle}{\sqrt{2}},
+\frac{|00\rangle + |10\rangle}{\sqrt{2}},
 $$
 
-in fatqat's little-endian subsystem convention. The controlled-X then flips
+in FATQAT's public most-significant-first subsystem convention. The
+controlled-X then flips
 qubit one exactly when qubit zero is one, producing
 $|\Phi^+\rangle$. This first program has no classical register and no
 measurements because we want the exact final state.
@@ -101,8 +102,8 @@ print("Exact basis probabilities:", probabilities)
 
 A sampled program needs two classical bits. We rebuild the short program so
 its quantum instructions are unchanged, then measure quantum slots zero and
-one into classical slots zero and one. Count strings are displayed with the
-highest classical index on the left, so the correlated results appear as
+one into classical slots zero and one. Count strings are displayed with
+classical slot zero on the left, so the correlated results appear as
 `"00"` and `"11"`.
 
 ```python

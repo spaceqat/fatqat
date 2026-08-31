@@ -43,8 +43,8 @@ classical distribution:
 True
 ```
 
-Only the correlated Bell outcomes occur. Count strings display the highest
-classical slot on the left and slot 0 on the right. A deliberately asymmetric
+Only the correlated Bell outcomes occur. Count strings display classical slot
+0 on the left, matching tuple position 0. A deliberately asymmetric
 example makes that order visible:
 
 ```pycon
@@ -56,12 +56,11 @@ example makes that order visible:
 ...     shots=8,
 ...     simulation_config={"seed": 7},
 ... ).result().get_counts()
-{'01': 8}
+{'10': 8}
 ```
 
-Qubit 0 is `1`, so classical slot 0 appears as the rightmost digit. Use
-[`get_counts_as_tuples`][fatqat.Result.get_counts_as_tuples] when code benefits from slot 0
-being first rather than from display strings.
+Qubit 0 is `1`, so classical slot 0 appears as the leftmost digit. Tuple counts
+use the same slot order; they avoid string-token parsing for mixed dimensions.
 
 ## What state did the run reach?
 
@@ -85,6 +84,11 @@ density-matrix run expresses the same pure state as a matrix and can also
 represent exact mixed evolution. Hamiltonian emulators may return states that
 include non-computational physical levels or model subsystems not addressed by
 the logical Program.
+
+Flat basis indices use `state_result.metadata["state_axes"]` from most to
+least significant. With public dimensions `(d0, ..., d_last)`, ordinary
+`state.reshape(d0, ..., d_last)` uses C order. For two qubits, `|10>` is flat
+index 2 and `|01>` is index 1.
 
 ## What transformation did the Program implement?
 
@@ -119,15 +123,15 @@ unmeasured Program through a backend and evaluates an
 ...     fq.simulator.Simulator(method="statevector", runtime="numpy")
 ... )
 >>> zz = fq.Observable([("ZZ", 1.0)])
->>> z_on_qubit_zero = fq.Observable([("IZ", 1.0)])
+>>> z_on_qubit_zero = fq.Observable([("ZI", 1.0)])
 >>> exact = estimator.run(bell, [zz, z_on_qubit_zero]).result()
 >>> np.round(exact.get_expectation(), 6).tolist()
 [1.0, 0.0]
 ```
 
 The Bell pair is perfectly correlated, so `<ZZ> = 1`. Either individual qubit
-is balanced between zero and one, so `<Z_0> = 0`. Observable labels place
-qubit 0 at the right, matching count-string order.
+is balanced between zero and one, so `<Z_0> = 0`. Observable labels run in
+public qubit order: the leftmost character acts on qubit 0.
 
 By default, Estimator calculates an exact value from the final state. A
 positive shot count instead shows the statistical precision of a finite-shot

@@ -157,7 +157,7 @@ trajectory. `AtomArraySimulator` records no coordinates or movement duration;
 ...     simulation_config={"seed": 7},
 ... ).result().get_counts()
 >>> atom_counts
-{'01': 8}
+{'10': 8}
 ```
 
 Pairing is ideal unless you attach a noise assumption. For example, apply a

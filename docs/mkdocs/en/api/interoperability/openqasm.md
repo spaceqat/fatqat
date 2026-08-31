@@ -44,6 +44,12 @@ control flow, gate modifiers, declarations, and classical conditions raise
 Use `version=2` only when each condition compares every bit in a single
 classical register.
 
+Quantum operands remain positional: `cx q[0], q[1]` keeps q0 as the first
+operand. OpenQASM whole-register condition integers use the language's
+classical weighting, where bit `i` contributes `2**i`. Thus `(c0, c1) =
+(1, 0)` exports as `if (c == 1)`, while `(0, 1)` exports as
+`if (c == 2)`. FATQAT count strings still display `c0` first.
+
 Export requires `dim == 2` for every register and scalar operation targets.
 Supported gates and dimension-2 reductions are listed by [`to_qasm`][fatqat.qasm.to_qasm].
 Register names may change to avoid conflicts, and program metadata is omitted.

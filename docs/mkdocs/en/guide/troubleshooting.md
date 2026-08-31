@@ -145,12 +145,12 @@ execution engine.
     [Ask questions of a run](interpret-results.md) connects each output to the
     question it answers.
 
-??? question "Count strings appear reversed"
+??? question "How are count strings ordered?"
 
-    Displayed count strings put classical slot 0 on the right. When local
-    dimensions differ—or when you simply want an unambiguous program-order
-    representation—use `result.get_counts_as_tuples()` instead. Tuple position 0
-    is classical slot 0.
+    Displayed count strings and tuple keys both put classical slot 0 first, on
+    the left or at tuple position 0. When local dimensions differ, tuple keys
+    avoid string-token parsing; native strings use commas if any classical
+    dimension is at least 10.
 
 ## Reduce the problem without losing the clue
 

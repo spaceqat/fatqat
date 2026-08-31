@@ -137,6 +137,11 @@ This path returns Qiskit's job and result types, with Qiskit-formatted counts.
 Use direct conversion when you need FatQat state, map, or observable results;
 the Qiskit backend adapter is intentionally counts-oriented.
 
+FATQAT full-register arrays and dense labels put subsystem 0 first, as the
+most-significant factor. Qiskit raw arrays and displayed Pauli labels use its
+own convention. Convert explicitly when comparing them; circuit operand order
+itself is unchanged.
+
 !!! note
 
     The adapter accepts bound, static circuits in its advertised target basis.

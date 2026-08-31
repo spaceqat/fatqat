@@ -49,8 +49,10 @@ and basis digits `(b0, b1, ..., bk)`, the flat local index is
 
 For two qubits, targets `(q0, q1)` therefore use the local basis `|00>`,
 `|01>`, `|10>`, `|11>`. Controlled operations list controls before
-targets. This local convention is independent of the full-system display and
-result bit order.
+targets. When the tuple lists every subsystem in public order, this is also
+the basis used by returned states and operators. A local matrix on a smaller
+or differently ordered target tuple must be embedded before direct use with a
+full returned state; the simulator performs that embedding during execution.
 
 ## Target-specific rules
 

@@ -187,7 +187,7 @@ eligibility. Optional movement noise can attach to those operations explicitly.
         shots=8,
         simulation_config={"seed": 7},
     ).result().get_counts()
-    print(counts)  # {'01': 8}
+    print(counts)  # {'10': 8}
     ```
 
 [:octicons-arrow-right-24: Track occupancy, pairing, and loss](guide/hardware-profile-simulation.md#atom-occupancy-and-pairing)

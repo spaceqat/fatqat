@@ -32,8 +32,9 @@ For a guided workflow, see [Ask questions of a run](../guide/interpret-results.m
 ## Construct an observable
 
 
-Dense labels put qubit 0 at the right and accept `I`, `X`, `Y`, and
-`Z`. These forms are equivalent:
+Dense labels run left to right in public qubit order: the character at
+position `q` acts on qubit `q`. They accept `I`, `X`, `Y`, and `Z`. These
+forms are equivalent:
 
 ```python
 fq.Observable([("ZZ", 1.5)])
@@ -51,6 +52,11 @@ fq.Observable.from_sparse(
 ```
 
 Coefficients must be real.
+
+For example, `"XI"` means `X(q0) tensor I(q1)`. On public state `|10>`,
+`<ZI> = -1` and `<IZ> = +1`. Dense labels therefore match an explicit
+left-to-right Kronecker product; sparse labels retain the qubit associations
+written in their `qubits` tuple.
 
 ## Exact and sampled results
 

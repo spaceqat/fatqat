@@ -85,10 +85,7 @@ PAULI = {
     "Z": np.array([[1, 0], [0, -1]]),
 }
 
-# np.kron places the first factor on the high tensor factor, so this matrix
-# is big-endian (qubit 0 = high bit) — the opposite of fatqat's statevector
-# order. Only its eigenvalues are used below, and those are unaffected by
-# the qubit-ordering convention.
+# np.kron's first factor matches FATQAT public qubit 0.
 H_MATRIX = sum(
     coeff * np.kron(PAULI[pauli[0]], PAULI[pauli[1]]) for pauli, coeff in H2_TERMS
 )
