@@ -708,6 +708,7 @@ def test_weak_blockade_neither_rejects_nor_emits_the_removed_advisory(
     prepared = negative._prepare_program(pair)
     runner = negative._create_runner(
         prepared,
+        simulation=negative._simulation_config_cls(),
         execution_mode="density_matrix",
         retain_final_state=True,
     )

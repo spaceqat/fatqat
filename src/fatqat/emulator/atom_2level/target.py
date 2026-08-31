@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import dist
-import sys
 
 import numpy as np
 
@@ -38,50 +37,15 @@ class _Atom2LevelInteraction:
 
     Ordinals follow arrangement coordinate order. The signed strength retains
     the model's C6 sign and is already divided by the sixth power of distance.
+    ``coordinate_scale_um`` preserves the scale used by the inclusive cutoff's
+    floating-point boundary check without retaining duplicate coordinates.
     """
 
     first: int
     second: int
     distance_um: float
     signed_strength_rad_per_us: float
-
-
-def _within_interaction_cutoff(
-    first: tuple[float, float, float],
-    second: tuple[float, float, float],
-    distance: float,
-    cutoff: float | None,
-) -> bool:
-    """Test an interaction distance against the numerical cutoff.
-
-    ``None`` retains every pair and the explicit zero value retains none. A
-    distance at or below a finite cutoff is included. Values just above the
-    boundary are included only within ``8 * epsilon * scale``, where ``scale``
-    is the largest distance, cutoff, or absolute coordinate component. This
-    fixed allowance compensates for arithmetic used to construct rectangular
-    coordinates without defining an adjustable physical tolerance.
-
-    Args:
-        first: First site's three-dimensional coordinate.
-        second: Second site's three-dimensional coordinate.
-        distance: Precomputed Euclidean distance between the coordinates.
-        cutoff: Normalized finite nonnegative cutoff, or ``None``.
-
-    Returns:
-        Whether the pair contributes an interaction term.
-    """
-    if cutoff is None:
-        return True
-    if cutoff == 0.0:
-        return False
-    if distance <= cutoff:
-        return True
-    scale = max(
-        distance,
-        cutoff,
-        *(abs(component) for point in (first, second) for component in point),
-    )
-    return distance - cutoff <= 8 * sys.float_info.epsilon * scale
+    coordinate_scale_um: float
 
 
 class _Atom2LevelTarget:
@@ -98,7 +62,6 @@ class _Atom2LevelTarget:
         self,
         model: Atom2LevelModel,
         arrangement: AtomArrangement,
-        interaction_cutoff: float | None,
     ) -> None:
         self.model = model
         self._limits = model._limits
@@ -115,20 +78,19 @@ class _Atom2LevelTarget:
                 first_coordinate = coordinates[first]
                 second_coordinate = coordinates[second]
                 distance = dist(first_coordinate, second_coordinate)
-                if _within_interaction_cutoff(
-                    first_coordinate,
-                    second_coordinate,
-                    distance,
-                    interaction_cutoff,
-                ):
-                    interactions.append(
-                        _Atom2LevelInteraction(
-                            first,
-                            second,
-                            distance,
-                            model._c6_angular_per_us_um6 / distance**6,
-                        )
+                interactions.append(
+                    _Atom2LevelInteraction(
+                        first,
+                        second,
+                        distance,
+                        model._c6_angular_per_us_um6 / distance**6,
+                        max(
+                            abs(component)
+                            for point in (first_coordinate, second_coordinate)
+                            for component in point
+                        ),
                     )
+                )
         self.interactions = tuple(interactions)
 
     def bind_control(self, reference: ControlChannel) -> _ControlBinding:

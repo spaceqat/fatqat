@@ -318,9 +318,10 @@ observables = site_occupations + pair_occupations + [staggered_order_squared]
 
 ## 6. Keep all interactions, then test the nearest-pair approximation
 
-The first emulator uses the default `interaction_cutoff=None` and retains
-every unordered pair. The second deletes terms beyond one lattice spacing.
-That cutoff is a numerical Hamiltonian truncation, not a blockade radius.
+The first run uses the default `interaction_cutoff=None` and retains every
+unordered pair. The second run on the same emulator deletes terms beyond one
+lattice spacing. That cutoff is a numerical Hamiltonian truncation, not a
+blockade radius.
 
 In a uniform chain, the next-nearest interaction is only
 $U/(2^6)=U/64$. This suggests that nearest-pair physics should be a good
@@ -328,16 +329,14 @@ explanation, but the comparison below checks the evolved state rather than
 assuming that a small Hamiltonian term is always irrelevant.
 
 ```python
-backends = {
-    "all pairs": fq.emulator.Atom2LevelEmulator(
-        model,
-        arrangement=arrangement,
-    ),
-    "nearest-pair cutoff": fq.emulator.Atom2LevelEmulator(
-        model,
-        arrangement=arrangement,
-        interaction_cutoff=SPACING,
-    ),
+backend = fq.emulator.Atom2LevelEmulator(
+    model,
+    arrangement=arrangement,
+)
+estimator = fq.Estimator(backend)
+run_configs = {
+    "all pairs": {"interaction_cutoff": None},
+    "nearest-pair cutoff": {"interaction_cutoff": SPACING},
 }
 
 site_results = {}
@@ -345,9 +344,15 @@ double_results = {}
 staggered_results = {}
 connected_results = {}
 
-for label, backend in backends.items():
+for label, simulation_config in run_configs.items():
     values = np.asarray(
-        fq.Estimator(backend).run(program, observables).result().get_expectation()
+        estimator.run(
+            program,
+            observables,
+            simulation_config=simulation_config,
+        )
+        .result()
+        .get_expectation()
     )
     occupations = values[:NUM_SITES]
     pair_values = values[NUM_SITES:-1]
@@ -418,7 +423,7 @@ figure.colorbar(image, ax=correlation_axis, fraction=0.046, pad=0.04)
 
 metric_names = ("squared staggered\norder", "adjacent double\nexcitation")
 metric_positions = np.arange(len(metric_names))
-for index, label in enumerate(backends):
+for index, label in enumerate(run_configs):
     offset = (index - 0.5) * bar_width
     bars = summary_axis.bar(
         metric_positions + offset,

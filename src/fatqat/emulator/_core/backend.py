@@ -70,6 +70,11 @@ class _PulseBackend(ABC):
 
     _target: _PulseTarget
 
+    # Families may replace this with a dataclass derived from
+    # ``_EmulatorConfig`` for family-specific per-run controls. The normalizer
+    # derives accepted keys from the schema, so other families reject them.
+    _simulation_config_cls: type[_EmulatorConfig] = _EmulatorConfig
+
     def __init__(
         self,
         model: object,
@@ -264,7 +269,7 @@ class _PulseBackend(ABC):
             resource_layout: Optional program-to-device mapping. The emulator
                 uses its default mapping when omitted.
             simulation_config: Optional ``dict`` of pulse-execution settings.
-                Accepted keys are:
+                Every pulse emulator accepts:
 
                 - ``"seed"`` (``int | None``, default ``None``): Seed
                   stochastic sampling. Use a non-negative integer; ``None``
@@ -273,6 +278,11 @@ class _PulseBackend(ABC):
                   ``"ASAP"``): Choose whether operations are placed as early
                   or as late as possible while preserving dependencies and
                   physical-resource conflicts.
+
+                ``Atom2LevelEmulator`` additionally accepts
+                ``"interaction_cutoff"`` (finite nonnegative ``Real`` or
+                ``None``, default ``None``) to truncate that run's static
+                ``C6/R^6`` interaction Hamiltonian by pair distance.
 
                 Other keys, including matrix-only execution settings, are
                 rejected.
@@ -310,7 +320,7 @@ class _PulseBackend(ABC):
         """
         simulation = _normalize_config(
             simulation_config,
-            _EmulatorConfig,
+            self._simulation_config_cls,
             "simulation_config",
             backend_name=self._backend_name(),
         )
@@ -434,6 +444,7 @@ class _PulseBackend(ABC):
             raise BackendExecutionError("state execution requires an execution mode")
         runner = self._create_runner(
             prepared,
+            simulation=simulation,
             execution_mode=request.execution_mode,
             retain_final_state=request.final_state,
         )
@@ -477,6 +488,7 @@ class _PulseBackend(ABC):
             if prepared.plan:
                 runner = self._create_runner(
                     prepared,
+                    simulation=simulation,
                     execution_mode="statevector",
                     retain_final_state=False,
                 )
@@ -620,11 +632,12 @@ class _PulseBackend(ABC):
         self,
         prepared: _PreparedPulseProgram,
         *,
+        simulation: _EmulatorConfig,
         execution_mode: ExecutionMode,
         retain_final_state: bool,
     ) -> Any:
         """Create a runner from already-bound execution data."""
-        del prepared, execution_mode, retain_final_state
+        del prepared, simulation, execution_mode, retain_final_state
         raise NotImplementedError
 
     @final

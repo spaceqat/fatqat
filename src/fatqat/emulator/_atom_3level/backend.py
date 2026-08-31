@@ -11,6 +11,7 @@ from ...noise import (
 )
 from ...noise.lindblad import LindbladImplementationMap
 from .._core.backend import _PulseBackend
+from .._core.config import _EmulatorConfig
 from .._core.lindblad import _lindblad_noise_rejection_reasons
 from .._core.outcome import ExecutionMode
 from .._core.planning import _PreparedPulseProgram
@@ -99,9 +100,11 @@ class Atom3LevelEmulator(_PulseBackend):
         self,
         prepared: _PreparedPulseProgram,
         *,
+        simulation: _EmulatorConfig,
         execution_mode: ExecutionMode,
         retain_final_state: bool,
     ) -> Any:
+        del simulation
         if execution_mode not in ("statevector", "density_matrix"):
             raise BackendValidationError(
                 "Atom3LevelEmulator does not support continuous trajectories"

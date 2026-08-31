@@ -135,9 +135,9 @@ global phase.
 | `seed` | `int` or `None`; not `bool` | `None` | Seed stochastic sampling for measurement, reset, readout, and statevector trajectories. Use a non-negative integer; `None` uses fresh entropy. |
 | `schedule_mode` | `"ASAP"` or `"ALAP"` | `"ASAP"` | Place operations as early or as late as possible while preserving dependencies and physical-resource conflicts. |
 
-These are the only two keys. Pulse emulators reject the matrix backend's
-`shot_parallelism`, `kernel_parallelism`, `max_workers`, and `fusion`
-settings.
+These are the only two keys for `TransmonEmulator`. Pulse emulators reject
+the matrix backend's `shot_parallelism`, `kernel_parallelism`, `max_workers`,
+and `fusion` settings.
 
 **`result_config` keys**
 

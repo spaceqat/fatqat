@@ -244,7 +244,6 @@ def test_atom_2level_constructor_has_final_public_keywords():
     assert tuple(parameters) == (
         "model",
         "arrangement",
-        "interaction_cutoff",
         "method",
         "noise",
         "gate_implementation_map",
@@ -254,14 +253,12 @@ def test_atom_2level_constructor_has_final_public_keywords():
         parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
         for name in (
             "arrangement",
-            "interaction_cutoff",
             "method",
             "noise",
             "gate_implementation_map",
         )
     )
     assert parameters["arrangement"].default is inspect.Parameter.empty
-    assert parameters["interaction_cutoff"].default is None
     assert parameters["method"].default == "statevector"
     assert parameters["noise"].default is None
     assert parameters["gate_implementation_map"].default is None

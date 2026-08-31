@@ -24,11 +24,10 @@ def document_fixture():
     return json.loads(_FIXTURE.read_text(encoding="utf-8"))
 
 
-def _target(document, sites=2, *, interaction_cutoff=2.0, spacing=2.0):
+def _target(document, sites=2, *, spacing=2.0):
     return _Atom2LevelTarget(
         Atom2LevelModel.from_document(document),
         fq.emulator.AtomArrangement.rectangular(1, sites, spacing),
-        interaction_cutoff,
     )
 
 
@@ -92,61 +91,34 @@ def test_program_binding_reads_each_declared_resource_once(document):
     assert reads == [0, 1]
 
 
-def test_no_cutoff_prepares_every_signed_interaction_once(document):
-    target = _target(document, 3, interaction_cutoff=None)
-    assert tuple((value.first, value.second) for value in target.interactions) == (
-        (0, 1),
-        (0, 2),
-        (1, 2),
-    )
-
-
-def test_cutoff_selects_coordinate_distance_shells_and_preserves_strength(document):
+def test_interaction_table_preserves_all_distance_shells_and_strengths(document):
     document["parameters"]["c6"] = -64.0
     arrangement = fq.emulator.AtomArrangement.rectangular(2, 3, 2.0)
     model = Atom2LevelModel.from_document(document)
 
-    all_pairs = _Atom2LevelTarget(model, arrangement, None)
-    no_pairs = _Atom2LevelTarget(model, arrangement, 0.0)
-    nearest = _Atom2LevelTarget(model, arrangement, arrangement.spacing)
-    diagonals = _Atom2LevelTarget(model, arrangement, sqrt(2) * arrangement.spacing)
+    target = _Atom2LevelTarget(model, arrangement)
 
-    assert len(all_pairs.interactions) == 15
-    assert no_pairs.interactions == ()
-    assert tuple((item.first, item.second) for item in nearest.interactions) == (
-        (0, 1),
-        (0, 3),
-        (1, 2),
-        (1, 4),
-        (2, 5),
-        (3, 4),
-        (4, 5),
+    assert len(target.interactions) == 15
+    assert {(item.first, item.second) for item in target.interactions} == {
+        (first, second)
+        for first in range(arrangement.num_sites)
+        for second in range(first + 1, arrangement.num_sites)
+    }
+    assert (
+        sum(item.distance_um <= arrangement.spacing for item in target.interactions)
+        == 7
     )
-    assert len(diagonals.interactions) == 11
-    assert nearest.interactions[0].signed_strength_rad_per_us == -1.0
-
-
-def test_cutoff_boundary_keeps_decimal_nearest_pairs_without_diagonals(document):
-    arrangement = fq.emulator.AtomArrangement.rectangular(2, 10, 0.1)
-    target = _Atom2LevelTarget(
-        Atom2LevelModel.from_document(document), arrangement, arrangement.spacing
+    assert (
+        sum(
+            item.distance_um <= sqrt(2) * arrangement.spacing
+            for item in target.interactions
+        )
+        == 11
     )
-
-    expected_pairs = 2 * 9 + 10
-    assert len(target.interactions) == expected_pairs
-    assert all(item.distance_um < 0.11 for item in target.interactions)
-
-
-def test_cutoff_selection_uses_only_coordinates(document):
-    arrangement = SimpleNamespace(
-        num_sites=3,
-        coordinates=((0.0, 0.0, 0.0), (0.5, 0.0, 0.0), (2.0, 0.0, 0.0)),
+    nearest = next(
+        item for item in target.interactions if (item.first, item.second) == (0, 1)
     )
-    target = _Atom2LevelTarget(
-        Atom2LevelModel.from_document(document), arrangement, 1.0
-    )
-
-    assert tuple((item.first, item.second) for item in target.interactions) == ((0, 1),)
+    assert nearest.signed_strength_rad_per_us == -1.0
 
 
 def test_target_owns_duration_and_complete_interpolant_limits(document):

@@ -44,7 +44,8 @@ directly from `run()` before a job is returned. A failure after execution
 starts is represented by a failed job, and `job.result()` raises
 [`BackendExecutionError`][fatqat.errors.BackendExecutionError].
 
-`simulation_config` accepts only `seed` and `schedule_mode`:
+`simulation_config` accepts the shared pulse controls plus an Atom2-specific
+Hamiltonian cutoff:
 
 **Simulation configuration**
 
@@ -52,6 +53,7 @@ starts is represented by a failed job, and `job.result()` raises
 | --- | --- | --- | --- |
 | `seed` | `int` or `None`; not `bool` | `None` | Random seed for measurement, readout, and statevector trajectory sampling. Integers must be non-negative; `None` chooses a fresh seed. |
 | `schedule_mode` | `"ASAP"` or `"ALAP"` | `"ASAP"` | Place operations as early or as late as their dependencies allow. |
+| `interaction_cutoff` | finite nonnegative `Real` or `None`; not `bool` | `None` | For this run, retain interaction pairs at or below this distance in the arrangement's distance unit. `None` keeps all pairs; `0.0` disables pair interactions. |
 
 `result_config` accepts only these keys:
 
@@ -133,14 +135,16 @@ At runtime, read this unit from each selector's `coefficient_unit` property.
 ### Interaction cutoff
 
 
-The default `interaction_cutoff=None` keeps every pair and preserves the
-complete `C6/R^6` Hamiltonian. A finite nonnegative cutoff keeps pairs whose
-Euclidean distance is at or below that value in
-`arrangement.distance_unit` (currently micrometres); `0.0` disables pair
-interactions. For a rectangular
-arrangement, `interaction_cutoff=arrangement.spacing` keeps only horizontal
-and vertical nearest pairs. This is a numerical Hamiltonian truncation, not a
-physical blockade radius.
+Set `interaction_cutoff` per run through `simulation_config`. The default
+`None` keeps every pair and preserves the complete `C6/R^6` Hamiltonian. A
+finite nonnegative cutoff keeps pairs whose Euclidean distance is at or below
+that value in `arrangement.distance_unit` (currently micrometres); `0.0`
+disables pair interactions. For a rectangular arrangement,
+`simulation_config={"interaction_cutoff": arrangement.spacing}` keeps only
+horizontal and vertical nearest pairs. This is a numerical Hamiltonian
+truncation, not a physical blockade radius. One emulator can therefore be
+reused to compare several truncations without rebuilding its model or
+arrangement.
 
 ### Lindblad noise
 
@@ -191,7 +195,6 @@ complete two-level workflow, see
         - "method"
         - "model"
         - "arrangement"
-        - "interaction_cutoff"
         - "run"
         - "validate_noise_model"
       inherited_members: true

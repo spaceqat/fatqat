@@ -241,6 +241,7 @@ class _TemplateBackend(_PulseBackend):
         self.runner_calls = 0
         self.last_runner = None
         self.runner_prepared = None
+        self.runner_simulation = None
         super().__init__(
             target.model,
             method=method,
@@ -272,11 +273,13 @@ class _TemplateBackend(_PulseBackend):
         self,
         prepared,
         *,
+        simulation,
         execution_mode,
         retain_final_state,
     ):
         self.runner_calls += 1
         self.runner_prepared = prepared
+        self.runner_simulation = simulation
         self.last_runner = _TemplateRunner(
             self._target,
             execution_mode,
@@ -720,10 +723,16 @@ def test_execution_summary_preserves_common_public_metadata():
     result = backend.run(
         fq.Program(1),
         shots=7,
+        simulation_config={"seed": 11, "schedule_mode": "ALAP"},
         result_config={"counts": False, "final_state": True},
     ).result()
 
-    assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
+    assert result.metadata["simulation_config"] == {
+        "seed": 11,
+        "schedule_mode": "ALAP",
+    }
+    assert backend.runner_simulation.seed == 11
+    assert backend.runner_simulation.schedule_mode == "ALAP"
     assert result.metadata["method"] == "density_matrix"
     assert result.metadata["result_config"] == {
         "counts": False,

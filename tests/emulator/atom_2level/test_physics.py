@@ -5,15 +5,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from qutip import basis, tensor
 
 from fatqat.emulator import AtomArrangement
 from fatqat._pulse_values import PulseControl
 from fatqat._index_allocation import _EngineAllocation
-from fatqat.emulator._core.engine import PulseEngine, _ShotContext
+from fatqat.emulator._core.engine import PulseEngine
 from fatqat.emulator._core.pulse import PulseBlock
 from fatqat.emulator._core.target import _PreparedControlBinding
-from fatqat.emulator._core.scheduling import schedule_pulse_run
 from fatqat.emulator.atom_2level import Atom2LevelModel
 from fatqat.emulator.atom_2level.qutip_adapter import _Atom2LevelQutipAdapter
 from fatqat.emulator.atom_2level.target import _Atom2LevelTarget
@@ -27,13 +25,12 @@ from tests.emulator.atom_2level.reference.two_level_hamiltonian import (
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
 
-def _target(site_count=1, *, c6=0.0, interaction_cutoff=2.0, spacing=2.0):
+def _target(site_count=1, *, c6=0.0, spacing=2.0):
     document = json.loads(_FIXTURE.read_text(encoding="utf-8"))
     document["parameters"]["c6"] = c6
     return _Atom2LevelTarget(
         Atom2LevelModel.from_document(document),
         AtomArrangement.rectangular(1, site_count, spacing),
-        interaction_cutoff,
     )
 
 
@@ -157,44 +154,6 @@ def test_signed_two_atom_interaction_matches_independent_dense_oracle(c6):
     )
 
     assert state == pytest.approx(expected, abs=4e-9)
-
-
-def test_spacing_cutoff_omits_long_range_pair_and_no_cutoff_restores_it():
-    c6 = 64.0
-    spacing = 2.0
-    nearest_target = _target(
-        site_count=3,
-        c6=c6,
-        spacing=spacing,
-        interaction_cutoff=spacing,
-    )
-    full_target = _target(
-        site_count=3,
-        c6=c6,
-        spacing=spacing,
-        interaction_cutoff=None,
-    )
-    nearest = _adapter(nearest_target)
-    full = _adapter(full_target)
-    initial = tensor(basis(2, 1), basis(2, 0), basis(2, 1))
-    duration = 0.8
-
-    def evolve_zero(adapter, target):
-        run = schedule_pulse_run(
-            (_block(target, duration, amplitude=0.0),), boundary_time=0.0
-        )
-        context = _ShotContext(initial.copy(), [], np.random.default_rng(5))
-        adapter.evolve(run, context, (True,))
-        return np.asarray(context.state.full()).reshape(-1)
-
-    nearest_state = evolve_zero(nearest, nearest_target)
-    full_state = evolve_zero(full, full_target)
-    long_range_strength = c6 / (2 * spacing) ** 6
-    expected_phase = np.exp(-1j * long_range_strength * duration)
-
-    assert nearest_state == pytest.approx(np.asarray(initial.full()).reshape(-1))
-    assert full_state[5] == pytest.approx(expected_phase)
-    assert full_state != pytest.approx(nearest_state)
 
 
 def test_sampled_effective_degree_execution_matches_independent_ode_oracle():

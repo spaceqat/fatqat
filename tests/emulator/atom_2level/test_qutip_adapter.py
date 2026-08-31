@@ -25,13 +25,12 @@ from fatqat.emulator import SampledWaveform
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
 
 
-def _target(site_count=2, *, c6=1.0, interaction_cutoff=2.0):
+def _target(site_count=2, *, c6=1.0):
     document = json.loads(_FIXTURE.read_text(encoding="utf-8"))
     document["parameters"]["c6"] = c6
     return _Atom2LevelTarget(
         Atom2LevelModel.from_document(document),
         AtomArrangement.rectangular(1, site_count, 2.0),
-        interaction_cutoff,
     )
 
 
@@ -215,6 +214,39 @@ def test_interaction_drift_is_one_sparse_diagonal_operator():
     assert drift.isherm
     assert drift.data.__class__.__name__ in {"CSR", "Dia"}
     assert np.count_nonzero(drift.full() - np.diag(np.diag(drift.full()))) == 0
+
+
+def test_interaction_drift_filters_one_precomputed_pair_table_per_adapter():
+    target = _target(site_count=3, c6=64.0)
+    disabled = _adapter(target, interaction_cutoff=0.0).interaction_drift.full()
+    nearest = _adapter(target, interaction_cutoff=2.0).interaction_drift.full()
+    full = _adapter(target).interaction_drift.full()
+
+    assert np.count_nonzero(disabled) == 0
+    assert disabled[5, 5] == pytest.approx(0.0)
+    assert nearest[3, 3] == pytest.approx(1.0)
+    assert nearest[5, 5] == pytest.approx(0.0)
+    assert full[3, 3] == pytest.approx(1.0)
+    assert full[5, 5] == pytest.approx(64.0 / 4.0**6)
+
+
+def test_decimal_cutoff_boundary_keeps_nearest_pairs_without_diagonals():
+    document = json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    arrangement = AtomArrangement.rectangular(2, 3, 0.1)
+    target = _Atom2LevelTarget(
+        Atom2LevelModel.from_document(document),
+        arrangement,
+    )
+
+    drift = _adapter(
+        target,
+        interaction_cutoff=arrangement.spacing,
+    ).interaction_drift.full()
+    nearest_strength = document["parameters"]["c6"] / arrangement.spacing**6
+
+    assert drift[63, 63] == pytest.approx(7 * nearest_strength)
+    assert drift[18, 18] == pytest.approx(nearest_strength)
+    assert drift[17, 17] == pytest.approx(0.0)
 
 
 def test_windowed_coefficient_uses_qutip_sampled_array_interpolation(monkeypatch):

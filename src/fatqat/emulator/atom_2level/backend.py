@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from math import isfinite
-from numbers import Real
-from typing import Any
+from typing import Any, cast
 
 from ..atom_arrangement import AtomArrangement
 from ...errors import BackendValidationError
@@ -25,29 +23,14 @@ from ...noise.lindblad import (
 from ...operations import BarrierGate, Measurement, PulseOperation, ResetGate
 from ...program import Program, _AppliedOperation
 from .._core.backend import _PulseBackend
+from .._core.config import _EmulatorConfig
 from .._core.lindblad import _lindblad_noise_rejection_reasons
 from .._core.outcome import ExecutionMode
 from .._core.planning import _PreparedPulseProgram
 from .._core.pulse import PulseImplementationMap
+from .config import _Atom2LevelSimulationConfig
 from .model import Atom2LevelModel
 from .target import _Atom2LevelTarget, _LOCAL_DIMENSION
-
-_CUTOFF_ERROR = "interaction_cutoff must be None or a finite nonnegative real number"
-
-
-def _normalize_interaction_cutoff(value: object) -> float | None:
-    """Normalize the public distance cutoff at the backend boundary."""
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise BackendValidationError(_CUTOFF_ERROR)
-    try:
-        cutoff = float(value)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise BackendValidationError(_CUTOFF_ERROR) from exc
-    if not isfinite(cutoff) or cutoff < 0.0:
-        raise BackendValidationError(_CUTOFF_ERROR)
-    return cutoff
 
 
 def _default_lindblad_map() -> LindbladImplementationMap:
@@ -83,9 +66,6 @@ class Atom2LevelEmulator(_PulseBackend):
             ``Atom2LevelModel.from_document``.
         arrangement: Fixed site coordinates for the program. The program must
             contain one dimension-two resource per site.
-        interaction_cutoff: Maximum interacting-pair separation in the
-            arrangement's distance unit. ``None`` keeps every pair; ``0.0``
-            disables pair interactions.
         method: Mathematical result representation: ``"statevector"``
             (default), ``"density_matrix"``, or ``"unitary"``. The aliases
             ``"SV"`` and ``"DM"`` are accepted.
@@ -105,16 +85,17 @@ class Atom2LevelEmulator(_PulseBackend):
         >>> backend = fq.emulator.Atom2LevelEmulator(
         ...     model, arrangement=arrangement
         ... )
-        >>> backend.interaction_cutoff is None
+        >>> backend.arrangement is arrangement
         True
     """
+
+    _simulation_config_cls = _Atom2LevelSimulationConfig
 
     def __init__(
         self,
         model: Atom2LevelModel,
         *,
         arrangement: AtomArrangement,
-        interaction_cutoff: float | None = None,
         method: str = "statevector",
         noise: NoiseModel | None = None,
         gate_implementation_map: PulseImplementationMap | None = None,
@@ -123,10 +104,8 @@ class Atom2LevelEmulator(_PulseBackend):
             raise BackendValidationError("model must be an Atom2LevelModel")
         if not isinstance(arrangement, AtomArrangement):
             raise BackendValidationError("arrangement must be an AtomArrangement")
-        cutoff = _normalize_interaction_cutoff(interaction_cutoff)
 
         self._arrangement = arrangement
-        self._interaction_cutoff = cutoff
         effective_gate_map = (
             PulseImplementationMap()
             if gate_implementation_map is None
@@ -140,7 +119,7 @@ class Atom2LevelEmulator(_PulseBackend):
             lindblad_implementation_map=_default_lindblad_map(),
         )
         self.validate_noise_model(self._noise_model)
-        self._set_target(_Atom2LevelTarget(model, arrangement, cutoff))
+        self._set_target(_Atom2LevelTarget(model, arrangement))
 
     @property
     def arrangement(self) -> AtomArrangement:
@@ -151,17 +130,6 @@ class Atom2LevelEmulator(_PulseBackend):
         """
 
         return self._arrangement
-
-    @property
-    def interaction_cutoff(self) -> float | None:
-        """Return the normalized maximum interaction-pair distance.
-
-        Returns:
-            ``None`` when all unordered pairs are retained, otherwise the
-            finite nonnegative cutoff in the arrangement's distance unit.
-        """
-
-        return self._interaction_cutoff
 
     def _validate_source_program(self, program: Program) -> None:
         measurement_suffix = False
@@ -212,14 +180,17 @@ class Atom2LevelEmulator(_PulseBackend):
         self,
         prepared: _PreparedPulseProgram,
         *,
+        simulation: _EmulatorConfig,
         execution_mode: ExecutionMode,
         retain_final_state: bool,
     ) -> Any:
         from .qutip_adapter import _Atom2LevelQutipAdapter
 
+        atom2_simulation = cast(_Atom2LevelSimulationConfig, simulation)
         return _Atom2LevelQutipAdapter(
             self._target,
             engine_allocation=prepared.engine_allocation,
+            interaction_cutoff=atom2_simulation.interaction_cutoff,
             background_noise=prepared.background_noise,
             execution_mode=execution_mode,
             retain_final_state=retain_final_state,

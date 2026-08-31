@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import sys
 from typing import Any
 
 import numpy as np
@@ -32,7 +33,8 @@ from .._core.value_validation import TIME_EPSILON
 from .._core.waveform import _REQUESTED_SPLINE_DEGREE
 from .._qutip_boundaries import _sample_projective_qutip_state
 from .._qutip_space import _QutipTensorSpace
-from .target import _Atom2LevelTarget
+from .config import _normalize_interaction_cutoff
+from .target import _Atom2LevelInteraction, _Atom2LevelTarget
 
 _SOLVER_OPTIONS = {
     "method": "vern9",
@@ -46,6 +48,25 @@ def _seed_entropies(values: Iterable[Any]) -> tuple[int, ...]:
     return tuple(int(getattr(seed, "entropy", seed)) for seed in values)
 
 
+def _within_interaction_cutoff(
+    interaction: _Atom2LevelInteraction,
+    cutoff: float | None,
+) -> bool:
+    """Return whether one precomputed pair belongs in this run's drift."""
+    if cutoff is None:
+        return True
+    if cutoff == 0.0:
+        return False
+    if interaction.distance_um <= cutoff:
+        return True
+    scale = max(
+        interaction.distance_um,
+        cutoff,
+        interaction.coordinate_scale_um,
+    )
+    return interaction.distance_um - cutoff <= 8 * sys.float_info.epsilon * scale
+
+
 class _Atom2LevelQutipAdapter:
     """Ket-preserving coherent runner for one bound two-level target."""
 
@@ -54,6 +75,7 @@ class _Atom2LevelQutipAdapter:
         target: _Atom2LevelTarget,
         *,
         engine_allocation: _EngineAllocation,
+        interaction_cutoff: float | None = None,
         background_noise: tuple[ResolvedLindbladTerm, ...] = (),
         execution_mode: ExecutionMode = "statevector",
         retain_final_state: bool = True,
@@ -78,6 +100,7 @@ class _Atom2LevelQutipAdapter:
             )
 
         self._target = target
+        self._interaction_cutoff = _normalize_interaction_cutoff(interaction_cutoff)
         self._engine_allocation = engine_allocation
         self._qutip_space = _QutipTensorSpace(engine_allocation)
         self._retain_final_state = retain_final_state
@@ -348,6 +371,11 @@ class _Atom2LevelQutipAdapter:
         basis_indices = np.arange(dimension, dtype=np.int64)
         diagonal = np.zeros(dimension, dtype=float)
         for interaction in self._target.interactions:
+            if not _within_interaction_cutoff(
+                interaction,
+                self._interaction_cutoff,
+            ):
+                continue
             first = self._engine_allocation.engine_index(interaction.first)
             second = self._engine_allocation.engine_index(interaction.second)
             both_occupied = ((basis_indices >> first) & 1) * (

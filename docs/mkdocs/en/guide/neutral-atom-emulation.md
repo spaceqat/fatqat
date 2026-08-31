@@ -88,8 +88,9 @@ True
 Both controls act on every site. The arrangement supplies the distances and
 the model supplies the signed interaction strength, so changing the spacing
 can change the dynamics without changing the Program. By default every site
-pair interacts; `interaction_cutoff` can remove terms beyond a distance, but
-it is a Hamiltonian truncation rather than a blockade radius.
+pair interacts. Set `simulation_config={"interaction_cutoff": distance}` on a
+particular `run()` to remove terms beyond that distance; this is a numerical
+Hamiltonian truncation rather than a blockade radius.
 
 For this short pulse, about 5.4% of the final probability lies outside the
 all-ground state. That number is a physical consequence of the waveform,

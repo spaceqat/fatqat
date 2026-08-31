@@ -42,11 +42,12 @@ def test_both_families_return_an_eager_job_with_public_metadata(family_backend):
     assert job.result().metadata["shots"] == 17
 
 
-def test_both_families_reject_unknown_simulation_controls(family_backend):
+@pytest.mark.parametrize("config", [{"unknown": 1}, {"interaction_cutoff": 2.0}])
+def test_both_families_reject_unknown_simulation_controls(family_backend, config):
     with pytest.raises(
         BackendValidationError, match="does not support simulation_config"
     ):
-        family_backend.run(_program(), simulation_config={"unknown": 1})
+        family_backend.run(_program(), simulation_config=config)
 
 
 def test_counts_only_execution_does_not_retain_shot_state_arrays(

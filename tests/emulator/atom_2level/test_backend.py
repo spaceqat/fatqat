@@ -35,14 +35,12 @@ def _backend(
     model,
     *,
     site_count=2,
-    interaction_cutoff=None,
     method="statevector",
     noise=None,
 ):
     return Atom2LevelEmulator(
         model,
         arrangement=fq.emulator.AtomArrangement.rectangular(1, site_count, 2.0),
-        interaction_cutoff=interaction_cutoff,
         method=method,
         noise=noise,
     )
@@ -81,7 +79,7 @@ def test_public_constructor_retains_model_and_arrangement_ownership(model):
     backend = Atom2LevelEmulator(model, arrangement=arrangement)
     assert backend.model is model
     assert backend.arrangement is arrangement
-    assert backend.interaction_cutoff is None
+    assert not hasattr(backend, "interaction_cutoff")
     assert not hasattr(backend, "calibration")
     assert type(backend).__bases__ == (_PulseBackend,)
     assert not backend._gate_implementation_map.supported_operations()
@@ -99,15 +97,12 @@ def test_public_constructor_retains_model_and_arrangement_ownership(model):
     )
 
 
-def test_cutoff_normalization_read_only_properties_and_constructor_types(model):
+def test_arrangement_is_read_only_and_constructor_types_are_validated(model):
     arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
-    backend = Atom2LevelEmulator(model, arrangement=arrangement, interaction_cutoff=2)
+    backend = Atom2LevelEmulator(model, arrangement=arrangement)
     assert backend.arrangement is arrangement
-    assert backend.interaction_cutoff == 2.0
     with pytest.raises(AttributeError):
         backend.arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 3.0)
-    with pytest.raises(AttributeError):
-        backend.interaction_cutoff = 3.0
 
     with pytest.raises(BackendValidationError, match="Atom2LevelModel"):
         Atom2LevelEmulator(object(), arrangement=arrangement)
@@ -122,26 +117,57 @@ def test_cutoff_normalization_read_only_properties_and_constructor_types(model):
 
 
 @pytest.mark.parametrize("cutoff", [True, -1, nan, inf, -inf, "2", 1j, object()])
-def test_constructor_rejects_invalid_interaction_cutoffs(model, cutoff):
-    arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
+def test_run_rejects_invalid_interaction_cutoffs(model, cutoff):
+    backend = _backend(model)
     with pytest.raises(
         BackendValidationError,
         match="interaction_cutoff must be None or a finite nonnegative real number",
     ):
-        Atom2LevelEmulator(model, arrangement=arrangement, interaction_cutoff=cutoff)
+        backend.run(
+            fq.Program(2),
+            simulation_config={"interaction_cutoff": cutoff},
+        )
 
 
 @pytest.mark.parametrize(
     ("authored", "normalized"),
     [(None, None), (0, 0.0), (2, 2.0), (2.5, 2.5)],
 )
-def test_constructor_normalizes_valid_interaction_cutoffs(model, authored, normalized):
-    backend = Atom2LevelEmulator(
-        model,
-        arrangement=fq.emulator.AtomArrangement.rectangular(1, 2, 2.0),
-        interaction_cutoff=authored,
-    )
-    assert backend.interaction_cutoff == normalized
+def test_run_normalizes_interaction_cutoff_in_result_metadata(
+    model, authored, normalized
+):
+    backend = _backend(model)
+    result = backend.run(
+        fq.Program(2),
+        simulation_config={"interaction_cutoff": authored},
+    ).result()
+
+    assert result.metadata["simulation_config"]["interaction_cutoff"] == normalized
+
+
+def test_one_backend_applies_interaction_cutoff_independently_per_run(model):
+    backend = _backend(model, site_count=3, method="unitary")
+    program = fq.Program(3)
+    program.add(_pulse(duration=0.05, amplitude=0.0, detuning=0.0))
+
+    nearest = backend.run(
+        program,
+        simulation_config={"interaction_cutoff": 2.0},
+    ).result()
+    full = backend.run(
+        program,
+        simulation_config={"interaction_cutoff": None},
+    ).result()
+    nearest_again = backend.run(
+        program,
+        simulation_config={"interaction_cutoff": 2.0},
+    ).result()
+
+    nearest_unitary = nearest.get_unitary()
+    full_unitary = full.get_unitary()
+    assert nearest_unitary[5, 5] == pytest.approx(1.0)
+    assert full_unitary[5, 5] != pytest.approx(nearest_unitary[5, 5])
+    assert nearest_again.get_unitary() == pytest.approx(nearest_unitary)
 
 
 def test_removed_interaction_policy_keyword_and_property_are_absent(model):

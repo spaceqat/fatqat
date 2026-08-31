@@ -20,6 +20,7 @@ from ...noise.lindblad import (
     thermal_relaxation_lindblad_rule,
 )
 from .._core.backend import _PulseBackend
+from .._core.config import _EmulatorConfig
 from .._core.lindblad import _lindblad_noise_rejection_reasons
 from .._core.outcome import ExecutionMode
 from .._core.planning import _PreparedPulseProgram
@@ -114,9 +115,11 @@ class TransmonEmulator(_PulseBackend):
         self,
         prepared: _PreparedPulseProgram,
         *,
+        simulation: _EmulatorConfig,
         execution_mode: ExecutionMode,
         retain_final_state: bool,
     ) -> Any:
+        del simulation
         from .qutip_adapter import _TransmonQutipAdapter
 
         return _TransmonQutipAdapter(
