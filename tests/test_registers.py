@@ -267,17 +267,29 @@ def test_block_returns_view_with_block_selector():
     [
         ((0, 0), (0, 2)),  # start == stop
         ((2, 1), (0, 2)),  # start > stop
-        ((-1, 2), (0, 2)),  # start < 0
-        ((0, 5), (0, 2)),  # stop > limit
         ((0, 2), (0, 0)),
         ((0, 2), (2, 1)),
+    ],
+)
+def test_block_rejects_malformed_ranges(rows, cols):
+    qubits = GridRegister(4, 5)
+    with pytest.raises(ValueError):
+        qubits.block(rows=rows, cols=cols)
+
+
+@pytest.mark.parametrize(
+    "rows,cols",
+    [
+        ((-1, 2), (0, 2)),  # start < 0
+        ((0, 5), (0, 2)),  # stop > limit
         ((0, 2), (-1, 2)),
         ((0, 2), (0, 6)),
     ],
 )
-def test_block_rejects_invalid_half_open_ranges(rows, cols):
+def test_block_rejects_out_of_bounds_ranges_with_indexerror(rows, cols):
+    # Out-of-bounds coordinates raise IndexError, matching row()/column().
     qubits = GridRegister(4, 5)
-    with pytest.raises(ValueError):
+    with pytest.raises(IndexError):
         qubits.block(rows=rows, cols=cols)
 
 
@@ -381,3 +393,18 @@ def test_register_out_of_range_message_names_size():
         reg[5]
     with pytest.raises(IndexError, match="negative indexing is not supported"):
         reg[-1]
+
+
+def test_grid_out_of_range_coordinates_raise_indexerror_consistently():
+    grid = GridRegister(2, 3, name="g")
+    with pytest.raises(IndexError):
+        grid.row(5)
+    with pytest.raises(IndexError):
+        grid.column(9)
+    with pytest.raises(IndexError):
+        grid.block((0, 5), (0, 1))
+    with pytest.raises(IndexError):
+        grid.block((0, 1), (-1, 2))
+    # malformed (empty/inverted) ranges are still ValueError
+    with pytest.raises(ValueError, match="start < stop"):
+        grid.block((1, 1), (0, 1))
