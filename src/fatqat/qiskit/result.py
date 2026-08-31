@@ -93,11 +93,10 @@ def _experiment_result(
     return experiment
 
 
-def _register_labels(registers) -> list[list[str]]:
-    labels: list[list[str]] = []
-    for reg in registers:
-        labels.append([f"{reg.name}[{index}]" for index in range(reg.size)])
-    return labels
+def _register_labels(registers) -> list[list[Any]]:
+    # Qiskit's result-header convention: a flat list of [name, index] pairs,
+    # one per bit, not nested per-register label strings.
+    return [[reg.name, index] for reg in registers for index in range(reg.size)]
 
 
 def _hex_counts(fatqat_result: FatqatResult) -> dict[str, int]:

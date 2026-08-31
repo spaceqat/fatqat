@@ -407,3 +407,15 @@ def test_provider_backends_report_their_provider():
     provider = FatqatProvider()
     backend = provider.get_backend("fatqat_simulator")
     assert backend.provider is provider
+
+
+def test_result_header_labels_use_standard_pairs():
+    circuit = QuantumCircuit(2, 2, name="labels")
+    circuit.h(0)
+    circuit.measure([0, 1], [0, 1])
+
+    result = FatqatBackend().run(circuit, shots=10).result()
+    header = result.results[0].header
+    header = header if isinstance(header, dict) else header.__dict__
+    assert header["qubit_labels"] == [["q", 0], ["q", 1]]
+    assert header["clbit_labels"] == [["c", 0], ["c", 1]]
