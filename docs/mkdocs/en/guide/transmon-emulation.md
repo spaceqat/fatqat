@@ -33,11 +33,11 @@ This guide chooses the density-matrix method because it repeatedly inspects
 populations. The common default is `method="statevector"`; use
 `method="unitary"` when the complete coherent operator is the result you need.
 
-## Generate a grid reference
+## Start with a transmon grid
 
-For a rectangular nearest-neighbor grid, generate matching model and
-calibration documents, parse both, and pass the resulting map explicitly to
-the emulator:
+The packaged reference above has two transmons. To try a larger rectangular
+grid without writing model and calibration documents by hand, generate a
+matching pair and use it to create the emulator:
 
 ```pycon
 >>> model_document, calibration_document = fq.emulator.generate_transmon_grid_documents(
@@ -61,15 +61,17 @@ the emulator:
 ('q0', 'q1', 'q2', 'q3')
 ```
 
-The generated calibration contains fixed analytic reference recipes; this
-workflow does not run numerical pulse calibration. For each generated edge,
-it selects the endpoint with the higher realized idle frequency as a
-deterministic synthetic convention, not a universal hardware preference;
-packaged and hand-authored profiles may select another physically checked
-branch. The documents are ordinary JSON-compatible mappings, so
-standard-library JSON tools are sufficient when you want to persist and read
-them later. The following is a literal file-I/O example and is not executed by
-the documentation build:
+This helper is a convenient way to get a simulation running. It places the two
+frequency groups in a checkerboard pattern, adds the requested frequency
+spread, and supplies fixed analytic gate recipes. It does not numerically
+calibrate the pulses or calculate their fidelity or leakage.
+
+For each edge, the helper chooses the transmon with the higher idle frequency
+as the detuned endpoint for CZ. This gives the generated grid a consistent
+default; it is not a recommendation for a particular device.
+
+The returned documents are ordinary dictionaries. You can edit them directly
+or save them as JSON and load them again later:
 
 ```python
 import json
@@ -87,12 +89,10 @@ with open("calibration.json", encoding="utf-8") as stream:
 
 For `N` transmons, the physical qutrit Hilbert-space dimension is `3**N`.
 
-The generator warnings cover idle fabrication spread only. The current
-effective rotating-frame/RWA model cannot evaluate laboratory-frequency
-crossings during ramp, park, or return, including spectator crossings. When
-such a check matters, keep each relevant pairwise frequency-separation sign
-unchanged with a positive margin throughout the trajectory, using your own
-carrier/flux mapping or JSON post-processing.
+The frequency warnings cover the generated idle frequencies only. The RWA
+model does not simulate laboratory-frequency collisions. If a pulse tunes the
+qubit frequencies, check separately that relevant qubits and spectators do not
+cross during the ramp, park, or return.
 
 ## Run the rotation as a calibrated gate
 

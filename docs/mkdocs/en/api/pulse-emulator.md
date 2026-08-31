@@ -202,38 +202,42 @@ anharmonicities. The runtime model exposes ordered device labels through
 `subsystem_ids`, but it does not expose normalized subsystem or coupling
 records.
 
-### Generated grid reference documents
+### Generate transmon grid documents
 
 [`generate_transmon_grid_documents`][fatqat.emulator.generate_transmon_grid_documents]
-returns a two-item tuple containing one model document and one matching
-portable calibration document. Unpack the result as
-`model_document, calibration_document`. Both JSON-ready mappings are mutable
-and owned by the caller; a later generator call returns new independent
-mappings. If callers modify document content, they also own any corresponding
-identity or revision update.
+is a shortcut for setting up a rectangular nearest-neighbor grid. It returns a
+model document and a matching calibration document, so you can start a
+simulation without writing either document by hand:
+
+```python
+import fatqat as fq
+
+model_document, calibration_document = fq.emulator.generate_transmon_grid_documents(
+    shape=(2, 2),
+    frequency_groups_ghz=(5.0, 5.2),
+)
+```
+
+Both values are ordinary JSON-compatible dictionaries. You can edit them or
+save them with the standard `json` module.
 
 | Argument | Meaning |
 | --- | --- |
-| `shape` | Positive `(rows, columns)` dimensions containing at least two transmons. Sites use a checkerboard assignment to the two frequency groups. |
-| `frequency_groups_ghz` | Two distinct, positive idle-frequency centers in GHz. |
-| `frequency_std_ghz` | Non-negative fabrication-spread standard deviation in GHz. The default is `0.010`. |
-| `anharmonicity_ghz` | Shared negative anharmonicity in GHz. The default is `-0.22`. |
-| `seed` | Non-negative integer selecting deterministic, site-keyed frequency draws. The default is `0`. |
+| `shape` | Grid dimensions as `(rows, columns)`. The grid must contain at least two transmons. |
+| `frequency_groups_ghz` | The two idle-frequency centers in GHz. The generator assigns them in a checkerboard pattern. |
+| `frequency_std_ghz` | Standard deviation of the normally distributed frequency variation in GHz. The default is `0.010`. |
+| `anharmonicity_ghz` | Anharmonicity used for every transmon. The default is `-0.22`. |
+| `seed` | Seed for reproducible frequency values. The default is `0`. |
 
-The generator emits a `UserWarning` when the nominal three-standard-deviation
-group intervals touch or overlap. After drawing, it emits at most one
-additional warning when the realized group ranges touch or overlap, or when a
-nearest-neighbor pair reverses or ties the order implied by the group centers.
-Warnings do not rewrite generated values.
+The generator warns when the requested spread may make the two frequency
+groups overlap. It also warns if the generated values overlap or reverse the
+expected ordering on a neighboring pair. These warnings do not stop generation
+or change the values.
 
-Both documents receive deterministic `sha256:` revisions derived from their
-emitted content. The model and portable recipe revisions are computed
-independently, so the calibration revision does not bind the recipe to a model
-identity, seed, or realized frequency set.
-
-Generation constructs analytic reference documents only. It performs no
-numerical pulse calibration, optimization, simulation, fidelity calculation,
-or leakage calculation.
+The calibration contains fixed analytic starting values. The helper does not
+run numerical calibration or optimization, start a simulation, or calculate
+fidelity or leakage. See [Start with a transmon grid](../guide/transmon-emulation.md#start-with-a-transmon-grid)
+for the complete workflow.
 
 ### Units
 
@@ -298,15 +302,11 @@ direct controls bypass it. The
 builder returns a new map containing the built-in `RX`, `RY`, `RZ`, `iSwap`,
 and `CZ` rules for one model and calibration.
 
-A standard map checks the source realization contract, subsystem labels and
-signed anharmonicities, and canonical coupling topology. It also retains the
-selected CZ endpoints so branch-relevant anharmonicity errors can identify the
-affected edge. Reusing the map with incompatible values raises
-[`BackendValidationError`][fatqat.errors.BackendValidationError]; rebuild the
-map with `default_transmon_gate_implementation_map` for the destination model.
-Model identity, revision, idle frequencies, declaration order, and edge IDs do
-not affect this compatibility check. Plain user-authored maps make no
-standard-map compatibility claim.
+A map built by `default_transmon_gate_implementation_map` is tied to the
+model's subsystem labels, anharmonicities, coupling topology, and selected CZ
+endpoints. Build a new map after changing any of these values. Model identity,
+revision, idle frequencies, declaration order, and edge IDs do not require a
+new map. This compatibility check does not apply to maps written by users.
 
 See [Gate realization](pulse-control/gate-realization.md) for accepted rule forms and errors.
 
