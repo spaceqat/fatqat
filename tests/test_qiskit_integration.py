@@ -348,3 +348,24 @@ def test_converter_legacy_c_if_on_measure_rejected():
 
     with pytest.raises(QiskitConversionError, match="conditional measurement"):
         circuit_to_program(circuit)
+
+
+def test_backend_batch_circuits_get_distinct_seeds():
+    circuit = QuantumCircuit(1, 1, name="coin")
+    circuit.h(0)
+    circuit.measure(0, 0)
+
+    backend = FatqatBackend()
+    result = backend.run(
+        [circuit, circuit.copy(), circuit.copy()], shots=200, seed_simulator=7
+    ).result()
+    counts = [result.get_counts(i) for i in range(3)]
+    print("\n=== batch seed independence ===")
+    print(f"counts per experiment: {counts}")
+
+    assert len({tuple(sorted(c.items())) for c in counts}) > 1
+
+    repeat = backend.run(
+        [circuit, circuit.copy(), circuit.copy()], shots=200, seed_simulator=7
+    ).result()
+    assert [repeat.get_counts(i) for i in range(3)] == counts
