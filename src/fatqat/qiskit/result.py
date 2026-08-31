@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from qiskit.result import Result
 
+from .errors import QiskitBackendError
+
 if TYPE_CHECKING:
     from qiskit.circuit import QuantumCircuit
 
@@ -106,12 +108,14 @@ def _hex_counts(fatqat_result: FatqatResult) -> dict[str, int]:
 
 
 def _memory_entries(fatqat_result: FatqatResult, shots: int) -> list[str]:
-    if "memory" in fatqat_result.available_data:
-        return [
-            _tuple_to_hex(tuple(row)) for row in fatqat_result.get_memory_as_tuples()
-        ]
+    # fatqat results carry no native per-shot record, so memory is always
+    # synthesized from counts; entries are grouped by outcome, not in shot
+    # order.
     if "counts" not in fatqat_result.available_data:
-        return ["0x0"] * shots
+        raise QiskitBackendError(
+            "memory=True requires counts data, but the fatqat result "
+            "contains none"
+        )
     return _expand_counts_to_memory(fatqat_result.get_counts_as_tuples(), shots)
 
 

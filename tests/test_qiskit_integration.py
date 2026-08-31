@@ -369,3 +369,18 @@ def test_backend_batch_circuits_get_distinct_seeds():
         [circuit, circuit.copy(), circuit.copy()], shots=200, seed_simulator=7
     ).result()
     assert [repeat.get_counts(i) for i in range(3)] == counts
+
+
+def test_memory_entries_without_counts_raises_instead_of_fabricating():
+    from fatqat.qiskit.result import _memory_entries
+
+    program = fq.Program(1)
+    program.add(ops.H, 0)
+    fatqat_result = (
+        fq.simulator.Simulator("SV")
+        .run(program, result_config={"counts": False, "final_state": True})
+        .result()
+    )
+
+    with pytest.raises(QiskitBackendError, match="memory=True requires counts"):
+        _memory_entries(fatqat_result, shots=10)
