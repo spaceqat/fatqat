@@ -266,3 +266,28 @@ def test_drawing_rejects_pulse_operations_before_qutip_translation():
 
     with pytest.raises(UnsupportedOperationError, match="PulseOperation"):
         to_qubit_circuit(program)
+
+
+def test_public_circuit_translation_has_no_private_barrier_marker():
+    program = fq.Program(2)
+    program.add(ops.H, 0)
+    program.add(ops.Barrier, (0, 1))
+
+    circuit = to_qubit_circuit(program)
+    labels = [
+        (getattr(gate, "name", None), getattr(gate, "arg_label", None))
+        for gate in circuit.gates
+    ]
+    assert all(
+        "__fatqat_barrier__" not in str(part) for pair in labels for part in pair
+    ), labels
+
+
+def test_program_draw_text_still_renders_dashed_barrier():
+    program = fq.Program(2)
+    program.add(ops.H, 0)
+    program.add(ops.Barrier, (0, 1))
+
+    text = program.draw("text")
+    assert "__fatqat_barrier__" not in text
+    assert "┊" in text  # the dashed separator glyph
