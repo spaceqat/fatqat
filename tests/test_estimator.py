@@ -652,3 +652,31 @@ def test_qutrit_density_is_rejected_before_binary_expectation_kernels(
     message = str(caught.value)
     assert "(4, 4)" in message
     assert "(9, 9)" in message
+
+
+def test_unrelated_validation_errors_are_not_rewrapped():
+    from fatqat.errors import UnsupportedOperationError
+
+    class Unknown(ops.Operation):
+        name = "Unknown"
+        num_subsystems = 1
+
+    program = fq.Program(1)
+    program.add(Unknown(), 0)
+
+    with pytest.raises(UnsupportedOperationError) as caught:
+        _estimator().run(program, Observable([("Z", 1.0)]))
+    assert "no single final state" not in str(caught.value)
+
+
+def test_bad_simulation_config_error_is_not_rewrapped():
+    program = fq.Program(1)
+    program.add(ops.H, 0)
+
+    with pytest.raises(BackendValidationError) as caught:
+        _estimator().run(
+            program,
+            Observable([("Z", 1.0)]),
+            simulation_config={"no_such_option": True},
+        )
+    assert "no single final state" not in str(caught.value)
