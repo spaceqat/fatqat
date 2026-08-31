@@ -25,7 +25,7 @@ from fatqat.implementation import (
     default_matrix_implementation_map,
 )
 from fatqat.program import Program
-from fatqat.registers import GridRegister
+from fatqat.registers import GridRegister, QuantumRegister
 from fatqat.resource_layout import ResourceLayout
 
 
@@ -60,6 +60,14 @@ def test_grouped_rotation_expands_in_view_order_and_preserves_operation_data(
     ]
     assert all(step.operation is operation for step in broken)
     assert all(step.condition == program._instructions[0].condition for step in broken)
+
+
+def test_flat_register_all_expands_in_index_order():
+    qubits = QuantumRegister(3)
+    program = Program([qubits])
+    program.add(ops.X, qubits.all())
+    broken = _break_grouped_operations(program._instructions)
+    assert [step.targets for step in broken] == [(qubits[index],) for index in range(3)]
 
 
 def test_grouped_two_target_operation_zips_views_in_order():

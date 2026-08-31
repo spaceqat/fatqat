@@ -110,6 +110,10 @@ class QuantumRegister(Register):
         ValueError: If ``size`` is not positive or ``dim`` is less than ``2``.
     """
 
+    def all(self) -> "RegisterView":
+        """Return a view selecting every member in increasing index order."""
+        return RegisterView(register=self, selector=AllSelector())
+
 
 @dataclass(frozen=True, eq=False)
 class ClassicalRegister(Register):
@@ -183,9 +187,11 @@ def _validate_range(value: Any, limit: int, label: str) -> tuple[int, int]:
 
 @dataclass(frozen=True)
 class AllSelector:
-    """Immutable value selecting every grid member in row-major order.
+    """Immutable value selecting every member of a quantum register.
 
-    Normally created by ``GridRegister.all`` rather than directly.
+    Normally created by ``QuantumRegister.all`` rather than directly. Members
+    follow increasing flat-index order, which is row-major for a
+    ``GridRegister``.
     """
 
 
@@ -296,14 +302,6 @@ class GridRegister(QuantumRegister):
         # metadata copy.
         self.__post_init__()
 
-    def all(self) -> "RegisterView":
-        """Return a view selecting every member in row-major order.
-
-        Returns:
-            An immutable view bound to this register.
-        """
-        return RegisterView(register=self, selector=AllSelector())
-
     def row(self, row: int) -> "RegisterView":
         """Return a view selecting one row, in increasing column order.
 
@@ -372,29 +370,30 @@ class GridRegister(QuantumRegister):
 
 @dataclass(frozen=True)
 class RegisterView:
-    """Immutable, hashable target selecting members of one grid register.
+    """Immutable, hashable target selecting members of one quantum register.
 
-    Obtain views from `GridRegister.all`, `GridRegister.row`,
-    `GridRegister.column`, or `GridRegister.block`; direct construction is
-    unsupported. The ``register`` attribute identifies the selected grid.
-    Views compare and hash by that register and their selection.
+    Obtain a full-register view from `QuantumRegister.all`; grid registers also
+    provide `GridRegister.row`, `GridRegister.column`, and `GridRegister.block`.
+    Direct construction is unsupported. Views compare and hash by their
+    register and selection.
 
     Every built-in unitary gate accepts views. A unary gate acts once on each
     selected member. A multi-target gate zips corresponding members from one
-    compatible view per operand.
+    compatible view per operand. `fatqat.operations.Put` accepts one view as
+    its complete target collection.
 
-    `Program.add` requires the view's grid to be one of the program's
-    registers. Paired views must have the same kind of selection and
-    cardinality; selections on the same grid must not overlap. Invalid
+    `Program.add` requires the view's register to be one of the program's
+    quantum registers. Paired views must have the same kind of selection and
+    cardinality; selections on the same register must not overlap. Invalid
     combinations raise `ValueError` when the operation is added.
 
-    Member order is deterministic: ``all()`` and ``block()`` use row-major
-    order, ``row()`` uses increasing column order, and ``column()`` uses
-    increasing row order.
+    Member order is deterministic: ``all()`` uses increasing flat-index order,
+    ``block()`` uses row-major order, ``row()`` uses increasing column order,
+    and ``column()`` uses increasing row order.
 
     """
 
-    register: GridRegister
+    register: QuantumRegister
     selector: Selector
 
 
@@ -403,10 +402,14 @@ def _view_members(view: RegisterView) -> tuple[RegisterRef, ...]:
     register = view.register
     selector = view.selector
     if isinstance(selector, AllSelector):
-        coordinates = [
-            (row, col) for row in range(register.rows) for col in range(register.cols)
-        ]
-    elif isinstance(selector, RowSelector):
+        return tuple(register[index] for index in range(register.size))
+
+    # The remaining selectors can only be produced by GridRegister helpers.
+    if not isinstance(register, GridRegister):  # pragma: no cover - unsupported
+        raise AssertionError(
+            f"{type(selector).__name__} requires a GridRegister, got {register!r}"
+        )
+    if isinstance(selector, RowSelector):
         coordinates = [(selector.row, col) for col in range(register.cols)]
     elif isinstance(selector, ColumnSelector):
         coordinates = [(row, selector.col) for row in range(register.rows)]

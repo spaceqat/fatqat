@@ -88,8 +88,9 @@ class Operation:
 
         Every built-in unitary gate is view-capable. Unary gates act on every
         selected member; multi-target gates zip one compatible view per
-        operand. A custom fixed-arity subclass may override this property to
-        opt into the same behavior.
+        operand. A view-capable variable-arity operation accepts one view as
+        its complete target collection. A custom subclass may override this
+        property to opt into the corresponding behavior.
         """
         return type(self)._accepts_views
 
@@ -98,9 +99,10 @@ class Operation:
 
         The base implementation accepts every target tuple. Override this hook
         when an operation parameter depends on a target property such as local
-        dimension. Scalar-target errors arise from `fatqat.Program.add`; for
-        `fatqat.RegisterView` operands, the hook is applied to each zipped
-        scalar target tuple when the operation is added.
+        dimension. Scalar-target errors arise from `fatqat.Program.add`.
+        Fixed-arity views are validated per zipped scalar application; a
+        variable-arity view is expanded first and validated once as its
+        complete scalar target tuple.
 
         Args:
             targets: Resolved scalar `fatqat.RegisterRef` values in operand order.

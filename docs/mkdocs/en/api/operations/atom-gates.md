@@ -13,11 +13,11 @@ backends raise [`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationE
 
 **Atom-array operations**
 
-| Value | Scalar targets | Effect | Conditions | Attached noise |
+| Value | Targets | Effect | Conditions | Attached noise |
 | --- | --- | --- | --- | --- |
-| [`Put`][fatqat.operations.Put] | One or more | Loads `\|0>` into each empty site; leaves occupied sites unchanged. | Allowed. | [`Loss`][fatqat.noise.Loss] only, after each enabled `Put` operation. |
-| [`Pair`][fatqat.operations.Pair] | Exactly two | Adds their undirected connectivity edge; repeated pairing is a no-op. | Rejected. | [`Loss`][fatqat.noise.Loss] or a supported finite channel. |
-| [`Unpair`][fatqat.operations.Unpair] | Exactly two | Removes their edge; removing an absent edge is a no-op. | Rejected. | [`Loss`][fatqat.noise.Loss] or a supported finite channel. |
+| [`Put`][fatqat.operations.Put] | One or more scalars, or one [`RegisterView`](../registers.md#fatqat.RegisterView) | Loads `\|0>` into each empty site; leaves occupied sites unchanged. | Allowed. | [`Loss`][fatqat.noise.Loss] only, after each enabled `Put` operation. |
+| [`Pair`][fatqat.operations.Pair] | Exactly two scalars | Adds their undirected connectivity edge; repeated pairing is a no-op. | Rejected. | [`Loss`][fatqat.noise.Loss] or a supported finite channel. |
+| [`Unpair`][fatqat.operations.Unpair] | Exactly two scalars | Removes their edge; removing an absent edge is a no-op. | Rejected. | [`Loss`][fatqat.noise.Loss] or a supported finite channel. |
 
 If a program contains `Put`, every declared site starts empty for every shot.
 Sites are populated only when `Put` runs, and a later `Put` can reload a
@@ -25,6 +25,9 @@ lost atom. A [`Loss`][fatqat.noise.Loss] declaration attached to `Put`
 shares the operation's condition and runs after every matching `Put`
 operation whose condition passes, even when the site was already occupied and
 the `Put` itself did nothing.
+
+For convenience, `program.add(ops.Put, register.all())` expands the view into
+one variadic `Put` operation targeting every member of that quantum register.
 
 `Pair` and `Unpair` update the connectivity used by later supported gates;
 they do not change the quantum state or make an unsupported gate available. In

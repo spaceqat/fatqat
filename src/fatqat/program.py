@@ -33,7 +33,7 @@ RegisterT = TypeVar("RegisterT", QuantumRegister, ClassicalRegister)
 
 # A frontend target expression: either a resolved scalar reference, or (for
 # operations that opt into `Operation._accepts_views`) a structured
-# `RegisterView` selecting multiple members of one `GridRegister`.
+# `RegisterView` selecting multiple members of one `QuantumRegister`.
 # See `_AppliedOperation.targets` and `Program.add`.
 QuantumTarget = RegisterRef | RegisterView
 
@@ -338,9 +338,11 @@ class Program:
                 quantum registers. Every built-in unitary gate also accepts
                 one compatible `RegisterView` per operand. Unary gates act on
                 each selected member; multi-target gates zip views of the same
-                selection kind and length. Views over one grid must not
+                selection kind and length. Views over one register must not
                 overlap, and a grouped application cannot mix scalar and view
-                operands. Omit this argument when adding a
+                operands. A view-capable variable-arity operation accepts one
+                view as its complete target collection and expands it eagerly
+                into scalar members. Omit this argument when adding a
                 ``PulseOperation``; each control's channel identifies the
                 physical resource or resources it drives.
             condition: ``None`` (default) for an unconditional operation,
@@ -375,6 +377,14 @@ class Program:
             )
         operands = targets if isinstance(targets, tuple) else (targets,)
         target_refs = tuple(self._resolve_quantum_target(o) for o in operands)
+        views = tuple(t for t in target_refs if isinstance(t, RegisterView))
+        if op.num_subsystems is None and op.accepts_views and views:
+            if len(target_refs) != 1:
+                raise ValueError(
+                    f"{op.name} accepts a RegisterView only as its sole target "
+                    "expression"
+                )
+            target_refs = _view_members(views[0])
         normalized = self._normalize_condition(condition)
         self._operations.append(
             _AppliedOperation(operation=op, targets=target_refs, condition=normalized)

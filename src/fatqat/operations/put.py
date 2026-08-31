@@ -25,18 +25,21 @@ class PutGate(Operation):
     condition. `Put` itself has no success-rate argument.
 
     ``Put`` accepts one or more distinct scalar targets and can carry a
-    condition. `fatqat.Program.add` rejects
-    `fatqat.RegisterView` and an empty target tuple.
+    condition. A single `fatqat.RegisterView`, such as ``register.all()``, is
+    expanded into one variadic ``Put`` occurrence over its selected targets.
+    An empty target tuple is rejected.
 
     Examples:
         >>> import fatqat as fq
         >>> import fatqat.operations as ops
-        >>> program = fq.Program(3)
-        >>> program.add(ops.Put, (0, 1, 2))
+        >>> atoms = fq.QuantumRegister(3, name="atoms")
+        >>> program = fq.Program([atoms])
+        >>> program.add(ops.Put, atoms.all())
     """
 
     name: ClassVar[str] = "Put"
     num_subsystems: ClassVar[int | None] = None
+    _accepts_views: ClassVar[bool] = True
 
 
 Put = PutGate()

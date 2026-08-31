@@ -23,6 +23,14 @@ def test_getitem_returns_registerref():
     assert ref.index == 1
 
 
+def test_quantum_register_all_returns_full_view():
+    qubits = QuantumRegister(3)
+    view = qubits.all()
+    assert isinstance(view, RegisterView)
+    assert view.register is qubits
+    assert view.selector == AllSelector()
+
+
 def test_getitem_out_of_range_raises_indexerror():
     qr = QuantumRegister(2)
     with pytest.raises(IndexError):

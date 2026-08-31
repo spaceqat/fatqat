@@ -12,6 +12,7 @@ def test_singleton_shape():
     assert ops.Put.num_subsystems is None  # variable arity, >= 1 target
     assert isinstance(ops.Put, ops.PutGate)
     assert ops.Put == ops.PutGate()
+    assert ops.Put.accepts_views
 
 
 def test_put_added_with_multiple_targets():

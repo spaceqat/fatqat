@@ -186,7 +186,7 @@ def test_add_accepts_views_for_ternary_gates(op):
     assert p._instructions[0].targets == views
 
 
-@pytest.mark.parametrize("op", [ops.Reset, ops.Barrier, ops.Put, ops.Pair, ops.Unpair])
+@pytest.mark.parametrize("op", [ops.Reset, ops.Barrier, ops.Pair, ops.Unpair])
 def test_add_rejects_view_for_structural_operations(op):
     qubits = GridRegister(2, 2, name="qubits")
     p = Program([qubits])
@@ -195,6 +195,21 @@ def test_add_rejects_view_for_structural_operations(op):
     )
     with pytest.raises(ValueError):
         p.add(op, targets)
+
+
+def test_add_expands_sole_view_for_variable_arity_operation():
+    qubits = QuantumRegister(3)
+    p = Program([qubits])
+    p.add(ops.Put, qubits.all())
+    (step,) = p._instructions
+    assert step.targets == tuple(qubits[i] for i in range(3))
+
+
+def test_add_rejects_multiple_views_for_variable_arity_operation():
+    qubits = GridRegister(2, 2)
+    p = Program([qubits])
+    with pytest.raises(ValueError, match="sole target expression"):
+        p.add(ops.Put, (qubits.row(0), qubits.row(1)))
 
 
 def test_add_view_runs_target_dependent_validation():

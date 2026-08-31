@@ -42,6 +42,16 @@ program = fq.Program([left, right])
 program.add(ops.H, right[0])
 ```
 
+Call [`quantum_register.all()`][fatqat.QuantumRegister.all] to select every
+member in increasing index order. It returns a [`RegisterView`](#fatqat.RegisterView),
+which can be passed to view-capable operations:
+
+```python
+atoms = fq.QuantumRegister(3, name="atoms")
+program = fq.Program([atoms])
+program.add(ops.Put, atoms.all())
+```
+
 `dim=2` creates qubits or classical bits. A larger value creates qudits or
 d-ary classical digits; the quantum and classical dimensions of each
 measurement pair must match. Register construction accepts every integer
@@ -82,12 +92,14 @@ example.
       filters:
         - "!^_"
 
-## Grid selections
+## Register selections
 
 
-A [`GridRegister`][fatqat.GridRegister] arranges logical targets in row-major order; it
+Every [`QuantumRegister`][fatqat.QuantumRegister] provides `all()`. A
+[`GridRegister`][fatqat.GridRegister] additionally arranges logical targets in
+row-major order and provides `row()`, `column()`, and `block()` selections. It
 does not assign physical coordinates. The flat index of `(row, col)` is
-`row * cols + col`, and its selection helpers return
+`row * cols + col`, and all selection helpers return
 [`RegisterView`](#fatqat.RegisterView) objects rather than tuples of refs.
 
 For a `GridRegister(2, 3)`, the helpers select these flat indices:
@@ -104,8 +116,10 @@ For a `GridRegister(2, 3)`, the helpers select these flat indices:
 Pass views to [`add`][fatqat.Program.add]. Every built-in unitary gate accepts
 them. Unary gates act independently on each selected member; multi-target
 gates zip corresponding members from one view per operand. All views must use
-the same kind of grid selection and cardinality, and selections on the same
-grid cannot overlap. Measurements and QASM export require scalar targets. The
+the same selector kind and cardinality, and selections on the same
+register cannot overlap. [`Put`][fatqat.operations.Put] accepts one view as its
+complete target collection and records one variadic operation. Measurements
+and QASM export require scalar targets. The
 backend validates physical placement and connectivity. See
 [Write quantum computations with Program](../guide/program.md) for the ordinary Program workflow and
 [Test a Program against a hardware profile](../guide/hardware-profile-simulation.md) for physical placement.
@@ -121,17 +135,17 @@ backend validates physical placement and connectivity. See
 <a id="fatqat.registers.RegisterView"></a>
 ### class `fatqat.RegisterView` { #fatqat.RegisterView }
 
-Immutable, hashable target returned by the grid selection helpers. Its
+Immutable, hashable target returned by quantum-register selection helpers. Its
 [`register`](#fatqat.RegisterView.register) attribute identifies the selected
-grid. Obtain views from the grid helpers; direct construction is
+quantum register. Obtain views from register helpers; direct construction is
 unsupported.
 
 <a id="fatqat.registers.RegisterView.register"></a>
 #### attribute `register` { #fatqat.RegisterView.register }
 
-**Type:** `fatqat.GridRegister`
+**Type:** `fatqat.QuantumRegister`
 
-Grid register containing the selected members.
+Quantum register containing the selected members.
 
 
 ## Resource layouts
