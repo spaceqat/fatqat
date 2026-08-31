@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import fatqat.operations as ops
-from fatqat._backends.steps import ApplyMatrixStep, LossStep, PutStep, ResetStep
+from fatqat._backends.steps import ApplyMatrixStep, LossStep, PutStep
 from fatqat.simulator import AtomArraySimulator, Simulator
 from fatqat.simulator.fake_atom_array import fake_atom_array_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
@@ -18,10 +18,6 @@ from fatqat.resource_layout import ResourceLayout
 
 def _matrix_steps(plan):
     return [step for step in plan if isinstance(step, ApplyMatrixStep)]
-
-
-def _one_qubit_matrix_steps(plan):
-    return [s for s in _matrix_steps(plan) if len(s.target_indices) == 1]
 
 
 def _two_qubit_matrix_steps(plan):
@@ -74,7 +70,6 @@ def test_cz_is_registered_as_a_universal_rule_not_by_edge():
 
 def test_cx_is_unsupported_end_to_end():
     p = Program(2)
-    p.add(ops.Put, (0, 1))
     p.add(ops.Pair, (0, 1))  # even paired, CX has no native implementation
     p.add(ops.CX, (0, 1))
     with pytest.raises(UnsupportedOperationError):
@@ -88,9 +83,8 @@ def test_cx_is_unsupported_end_to_end():
 
 def test_cz_on_unpaired_atoms_raises():
     # An unpaired CZ is a compile-time program error (a missing Pair), distinct
-    # from a run-time atom loss: it is rejected at lowering, not dropped.
+    # from missing atoms or run-time atom loss: it is rejected at lowering.
     p = Program(2)
-    p.add(ops.Put, (0, 1))
     p.add(ops.CZ, (0, 1))  # never paired -> program error
     with pytest.raises(BackendValidationError, match="paired"):
         AtomArraySimulator().run(
@@ -322,33 +316,14 @@ def test_program_without_put_reports_every_atom_missing():
     assert counts == {"22": 4}
 
 
-def test_program_without_put_starts_empty_and_runs_per_shot():
-    program = Program(1)
-    program.add(ops.RX(0.1), 0)
+def test_inert_reset_on_never_loaded_site_keeps_default_final_state():
+    program = Program(2)
+    program.add(ops.Put, 0)
+    program.add(ops.Reset, 1)
 
-    plan, facts, occupied = AtomArraySimulator()._prepare_program(program)
+    result = AtomArraySimulator().run(program).result()
 
-    assert plan == ()
-    assert facts.execution_shape == "per_shot"
-    assert occupied == frozenset()
-
-
-def test_gate_on_never_put_site_is_dropped():
-    p = Program(2)
-    p.add(ops.Put, 0)  # only site 0 loaded; site 1 never Put
-    p.add(ops.RX(np.pi), 0)
-    p.add(ops.RX(np.pi), 1)  # site 1 can never hold an atom -> dropped
-    plan, _facts = AtomArraySimulator()._lower_program(p)
-    assert len(_one_qubit_matrix_steps(plan)) == 1
-
-
-def test_reset_on_never_put_site_is_dropped_from_plan():
-    p = Program(2)
-    p.add(ops.Put, 0)
-    p.add(ops.Reset, 1)  # site 1 never Put -> dropped, never lowered
-    plan, facts = AtomArraySimulator()._lower_program(p)
-    assert not facts.has_reset
-    assert not any(isinstance(step, ResetStep) for step in plan)
+    assert "statevector" in result.available_data
 
 
 def test_gate_on_put_site_executes_normally():
@@ -583,10 +558,9 @@ def test_put_only_final_state_remains_deterministic_for_any_shots():
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_operator_methods_reject_atom_array_occupancy(method):
-    program = Program(1)
-    with pytest.raises(BackendValidationError, match="cannot represent atom occupancy"):
-        AtomArraySimulator(method=method).run(program)
+def test_operator_methods_are_rejected_at_construction(method):
+    with pytest.raises(BackendValidationError, match="supports only"):
+        AtomArraySimulator(method=method)
 
 
 # --- misc backend surface -----------------------------------------------------

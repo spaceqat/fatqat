@@ -13,6 +13,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .. import operations as ops
+from .._backends.backend_utils import _canonicalize_method
 from ..errors import BackendValidationError
 from ..implementation import (
     MatrixImplementationMap,
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
 
     from ..implementation import MatrixImplementation
     from ..operations import Operation
-    from ..result import _ResultConfig
+    from ..registers import RegisterRef
     from .._backends.backend_utils import _LoweringContext
     from .simulator import ProgramInstruction
     from .._backends.steps import ResolvedStep
@@ -73,8 +74,8 @@ class AtomArraySimulator(Simulator):
     - Layout: the program declares the site count, and registers map to flat
       labels in declaration order.
     - Occupancy: every declared site starts empty. ``Put`` loads an atom;
-      gates and reset do nothing on an empty site, which measures as the
-      erasure digit ``2``.
+      supported, correctly paired gates and reset do nothing on an empty site,
+      which measures as the erasure digit ``2``.
     - Methods: atom occupancy requires ``statevector`` or ``density_matrix``.
 
     The simulator validates the program as written; it does not transport,
@@ -94,8 +95,7 @@ class AtomArraySimulator(Simulator):
 
         Args:
             method: ``"statevector"`` (or ``"SV"``), ``"density_matrix"``
-                (or ``"DM"``), ``"unitary"``, or ``"superop"``. Names are
-                case-insensitive.
+                (or ``"DM"``). Names are case-insensitive.
             runtime: ``"numba"`` (default, lazy JIT) or ``"numpy"`` (direct
                 execution). See ``Simulator`` for runtime-specific
                 execution controls.
@@ -106,8 +106,16 @@ class AtomArraySimulator(Simulator):
             BackendValidationError: If ``method`` or ``runtime`` is invalid,
                 or ``noise`` contains a source this simulator cannot run.
         """
+        canonical_method = _canonicalize_method(
+            method, {"statevector", "density_matrix"}
+        )
+        if canonical_method is None:
+            raise BackendValidationError(
+                f"unsupported method={method!r}; AtomArraySimulator supports "
+                "only 'statevector'/'SV' or 'density_matrix'/'DM'"
+            )
         super().__init__(
-            method=method,
+            method=canonical_method,
             runtime=runtime,
             implementation_map=fake_atom_array_implementation_map(),
             noise=noise,
@@ -150,9 +158,11 @@ class AtomArraySimulator(Simulator):
         """Apply this program's atom lifecycle, then lower normally.
 
         Every site starts empty and `~fatqat.operations.Put` loads a fresh
-        ``|0>`` atom into its targets. A target that can never hold an atom
-        (never named in any ``Put``) has its gates statically dropped; ``Put``,
-        ``Pair``, and ``Unpair`` are themselves never dropped this way.
+        ``|0>`` atom into its targets. Operation support and pairing are
+        validated independently of occupancy. After validation, gates and
+        resets targeting a site that is never named in any ``Put`` are omitted
+        from the execution plan; a valid operation on a site emptied by loss
+        has no effect for that shot.
 
         Two-qubit-gate legality follows the connectivity graph, not a fixed
         topology. Connectivity starts empty and evolves at each
@@ -179,36 +189,26 @@ class AtomArraySimulator(Simulator):
                 currently paired (see :py:meth:`_require_pairing`).
         """
         resource_layout = context.resource_layout
-
-        # Targets that can ever hold an atom: those named in some Put.
-        put_targets = {
-            t
+        put_targets = frozenset(
+            target
             for step in operations
             if isinstance(step, _AppliedOperation)
             and isinstance(step.operation, ops.PutGate)
-            for t in step.targets
-        }
-
-        realized: list[ProgramInstruction] = []
-        for step in operations:
-            if (
-                isinstance(step, _AppliedOperation)
-                and not isinstance(
-                    step.operation, (ops.PutGate, ops.PairGate, ops.UnpairGate)
-                )
-                and any(t not in put_targets for t in step.targets)
-            ):
-                continue  # a target can never hold an atom -> static drop
-            realized.append(step)
+            for target in step.targets
+        )
 
         connectivity = _AtomConnectivity()
         plan: list[ResolvedStep] = []
         segment: list[ProgramInstruction] = []
-        for step in realized:
+        for step in operations:
             if isinstance(step, _AppliedOperation) and isinstance(
                 step.operation, (ops.PairGate, ops.UnpairGate)
             ):
-                plan.extend(self._lower_segment(segment, connectivity, context))
+                plan.extend(
+                    self._lower_segment(
+                        segment, connectivity, put_targets, context
+                    )
+                )
                 segment = []
                 plan.extend(
                     _lower_channels(
@@ -224,7 +224,9 @@ class AtomArraySimulator(Simulator):
                 connectivity = self._apply_pairing(connectivity, step)
                 continue
             segment.append(step)
-        plan.extend(self._lower_segment(segment, connectivity, context))
+        plan.extend(
+            self._lower_segment(segment, connectivity, put_targets, context)
+        )
         return plan
 
     def _initial_occupancy(self) -> frozenset[int]:
@@ -235,6 +237,7 @@ class AtomArraySimulator(Simulator):
         self,
         segment: Sequence[ProgramInstruction],
         connectivity: _AtomConnectivity,
+        put_targets: frozenset[RegisterRef],
         context: _LoweringContext,
     ) -> list[ResolvedStep]:
         """Lower one inter-pairing segment, rejecting unpaired two-qubit gates.
@@ -244,7 +247,9 @@ class AtomArraySimulator(Simulator):
         program-construction error - the pairing graph is fixed at compile time
         by ``Pair``/``Unpair``, independent of any shot - so it is rejected
         here (see :py:meth:`_require_pairing`), distinct from a per-shot atom
-        loss, which the engine drops silently.
+        loss, which the engine drops silently. Operations on sites that no
+        ``Put`` can load still pass through common lowering for validation;
+        their resolved work is then omitted from the execution plan.
         """
         for step in segment:
             self._require_pairing(step, connectivity)
@@ -272,6 +277,13 @@ class AtomArraySimulator(Simulator):
                         self._noise_model,
                     )
                 )
+            elif isinstance(step, _AppliedOperation) and any(
+                target not in put_targets for target in step.targets
+            ):
+                flush_ordinary()
+                # Reuse canonical lowering for validation, then omit work that
+                # can never execute because at least one target is never loaded.
+                lower_common((step,), context)
             else:
                 ordinary.append(step)
         flush_ordinary()
@@ -335,36 +347,13 @@ class AtomArraySimulator(Simulator):
             claimed_step_types=(LossStep, PutStep),
         )
         has_loss = any(isinstance(step, LossStep) for step in plan)
-        execution_shape = "operator" if self._is_operator else "per_shot"
-        deferred_measurements = (
-            common.deferred_measurements if self._is_operator else ()
-        )
         translated = replace(
             common,
-            execution_shape=execution_shape,
-            deferred_measurements=deferred_measurements,
+            execution_shape="per_shot",
+            deferred_measurements=(),
             stochastic_final_state=common.stochastic_final_state or has_loss,
         )
         return translated, self._initial_occupancy()
-
-    def _validate_method_support(
-        self,
-        config: _ResultConfig,
-        facts: _PlanFacts,
-        *,
-        initial_occupied: frozenset[int] | None,
-    ) -> None:
-        """Reject operator methods that cannot carry atom occupancy state."""
-        super()._validate_method_support(
-            config,
-            facts,
-            initial_occupied=initial_occupied,
-        )
-        if self._is_operator and initial_occupied is not None:
-            raise BackendValidationError(
-                f"method={self._state_field!r} cannot represent atom occupancy, "
-                "loss, or refill; use method='statevector' or 'density_matrix'"
-            )
 
     def _apply_pairing(
         self, connectivity: _AtomConnectivity, applied: _AppliedOperation

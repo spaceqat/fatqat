@@ -21,8 +21,10 @@ backends raise [`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationE
 
 Every site declared by a program starts empty for every shot. Sites are
 populated only when `Put` runs, and a later `Put` can reload a lost atom. A
-site that is never loaded ignores gates and reset and reports the erasure digit
-`2` when measured. A [`Loss`][fatqat.noise.Loss] declaration attached to
+site that is never loaded ignores otherwise-valid supported gates and reset,
+and reports the erasure digit `2` when measured. Native-operation and pairing
+validation still happens first, so missing atoms do not hide an unsupported
+gate or a missing `Pair`. A [`Loss`][fatqat.noise.Loss] declaration attached to
 `Put` shares the operation's condition and runs after every matching `Put`
 operation whose condition passes, even when the site was already occupied and
 the `Put` itself did nothing.

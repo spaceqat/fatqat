@@ -36,6 +36,11 @@ paired. [`AtomArraySimulator.implementation_map`][fatqat.simulator.AtomArraySimu
 set; the program's current `Pair` state determines whether a particular
 `CZ` is allowed.
 
+Native-operation and pairing checks happen independently of occupancy. An
+unsupported gate or unpaired `CZ` is therefore rejected even if one of its
+sites is never loaded. Only an otherwise-valid supported gate can become an
+empty-site no-op.
+
 Pairing changes as the program runs. An unconditional
 [`fatqat.operations.Pair`][fatqat.operations.Pair] connects two sites and
 [`fatqat.operations.Unpair`][fatqat.operations.Unpair] disconnects them. A `CZ` on an unpaired
@@ -95,8 +100,9 @@ counts = backend.run(program, shots=1000).result().get_counts()
 
 The atom lifecycle cannot be represented by `unitary` or `superop` because
 occupancy is state outside the quantum matrix. `AtomArraySimulator` therefore
-supports only `statevector` and `density_matrix`, even when a program contains
-no `Put` or loss.
+accepts only `statevector` and `density_matrix`; selecting `unitary` or
+`superop` is rejected when the backend is constructed, even if a program would
+contain no `Put` or loss.
 
 ## API
 
