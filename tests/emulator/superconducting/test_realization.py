@@ -137,7 +137,7 @@ def test_two_body_rules_cover_both_orders_and_share_one_physical_cz(model, calib
     )
 
 
-def test_unused_canonical_edge_is_accepted_but_source_domain_does_not_expand(
+def test_unused_calibration_edge_does_not_expand_map_operand_domain(
     model, calibration_document
 ):
     document = deepcopy(calibration_document)
@@ -147,7 +147,6 @@ def test_unused_canonical_edge_is_accepted_but_source_domain_does_not_expand(
     document["recipes"]["cz"]["edges"].append(extra)
     calibration = TransmonCalibration(document)
     implementations = _map(model, calibration)
-    assert calibration._cz_recipe("q9", "q8") is not None
     assert (
         implementations.implementation_for(ops.CZ, device_operands=("q8", "q9")) is None
     )

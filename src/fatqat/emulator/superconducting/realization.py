@@ -41,7 +41,7 @@ class _TransmonMapCompatibility:
     realization_contract: str
     subsystem_anharmonicities: tuple[tuple[str, float], ...]
     control_edges: tuple[_CanonicalEdge, ...]
-    cz_branches: tuple[tuple[_CanonicalEdge, str, float], ...]
+    cz_detuned_subsystems: tuple[tuple[_CanonicalEdge, str], ...]
 
 
 class _TransmonPulseImplementationMap(PulseImplementationMap):
@@ -74,18 +74,58 @@ def _map_compatibility(
             for subsystem in model._subsystems
         )
     )
-    anharmonicity_by_subsystem = dict(subsystem_anharmonicities)
     return _TransmonMapCompatibility(
         _REALIZATION_CONTRACT,
         subsystem_anharmonicities,
         _canonical_model_edges(model),
-        tuple(
-            sorted(
-                (edge, selected, anharmonicity_by_subsystem[selected])
-                for edge, selected in cz_detuned_subsystems
-            )
-        ),
+        tuple(sorted(cz_detuned_subsystems)),
     )
+
+
+def _compatibility_mismatch(
+    source: _TransmonMapCompatibility, model: TransmonModel
+) -> str | None:
+    if source.realization_contract != _REALIZATION_CONTRACT:
+        return (
+            f"realization contract changed from {source.realization_contract!r} "
+            f"to {_REALIZATION_CONTRACT!r}"
+        )
+
+    source_anharmonicities = dict(source.subsystem_anharmonicities)
+    destination_anharmonicities = {
+        subsystem.id: subsystem.anharmonicity_ghz for subsystem in model._subsystems
+    }
+    source_labels = set(source_anharmonicities)
+    destination_labels = set(destination_anharmonicities)
+    if source_labels != destination_labels:
+        missing = sorted(source_labels - destination_labels)
+        unexpected = sorted(destination_labels - source_labels)
+        return (
+            f"subsystem labels changed (missing={missing!r}, unexpected={unexpected!r})"
+        )
+
+    selected_edges = {selected: edge for edge, selected in source.cz_detuned_subsystems}
+    for label, expected in source.subsystem_anharmonicities:
+        actual = destination_anharmonicities[label]
+        if actual != expected:
+            branch_context = (
+                f" selected by CZ edge {selected_edges[label]!r}"
+                if label in selected_edges
+                else ""
+            )
+            return (
+                f"anharmonicity for subsystem {label!r}{branch_context} changed "
+                f"from {expected!r} to {actual!r}"
+            )
+
+    destination_edges = _canonical_model_edges(model)
+    if source.control_edges != destination_edges:
+        source_edges = set(source.control_edges)
+        destination_edge_set = set(destination_edges)
+        missing = sorted(source_edges - destination_edge_set)
+        unexpected = sorted(destination_edge_set - source_edges)
+        return f"canonical topology changed (missing={missing!r}, unexpected={unexpected!r})"
+    return None
 
 
 def _validate_transmon_map_compatibility(
@@ -95,28 +135,11 @@ def _validate_transmon_map_compatibility(
     if not isinstance(implementations, _TransmonPulseImplementationMap):
         return
     source = implementations._transmon_compatibility
-    destination_anharmonicities = tuple(
-        sorted(
-            (subsystem.id, subsystem.anharmonicity_ghz)
-            for subsystem in model._subsystems
-        )
-    )
-    destination_edges = _canonical_model_edges(model)
-    incompatible = (
-        source.realization_contract != _REALIZATION_CONTRACT
-        or source.subsystem_anharmonicities != destination_anharmonicities
-        or source.control_edges != destination_edges
-    )
-    if not incompatible:
-        destination_by_subsystem = dict(destination_anharmonicities)
-        destination_branches = tuple(
-            (edge, selected, destination_by_subsystem[selected])
-            for edge, selected, _source_anharmonicity in source.cz_branches
-        )
-        incompatible = destination_branches != source.cz_branches
-    if incompatible:
+    mismatch = _compatibility_mismatch(source, model)
+    if mismatch is not None:
         raise BackendValidationError(
-            "compiled transmon gate map is incompatible with this model; "
+            "compiled transmon gate map is incompatible with this model: "
+            f"{mismatch}; "
             "rebuild it with default_transmon_gate_implementation_map()"
         )
 

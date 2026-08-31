@@ -245,9 +245,16 @@ def test_mutating_the_callers_map_after_construction_does_not_affect_the_backend
     assert len(plan) == 1  # still resolves; the backend's copy is unaffected
 
 
-@pytest.mark.parametrize("changed_fact", ("label", "anharmonicity", "topology"))
+@pytest.mark.parametrize(
+    ("changed_fact", "reason"),
+    (
+        ("label", "subsystem labels"),
+        ("anharmonicity", "anharmonicity.*q0.*selected by CZ edge"),
+        ("topology", "canonical topology"),
+    ),
+)
 def test_standard_map_rejects_transfer_to_a_physically_incompatible_model(
-    model, calibration, model_document, changed_fact
+    model, calibration, model_document, changed_fact, reason
 ):
     source_map = default_transmon_gate_implementation_map(
         model=model, calibration=calibration
@@ -265,7 +272,9 @@ def test_standard_map_rejects_transfer_to_a_physically_incompatible_model(
         changed["system"]["control_edges"].clear()
 
     destination = TransmonModel.from_document(changed)
-    with pytest.raises(BackendValidationError, match="incompatible.*rebuild"):
+    with pytest.raises(
+        BackendValidationError, match=rf"incompatible.*{reason}.*rebuild"
+    ):
         TransmonEmulator(destination, gate_implementation_map=source_map.copy())
 
 

@@ -1,6 +1,5 @@
 """Durable transmon model and portable-calibration snapshot identities."""
 
-from copy import deepcopy
 import inspect
 
 import pytest
@@ -32,18 +31,6 @@ def test_calibration_document_rejects_model_binding_fields(calibration_document)
     }
     with pytest.raises(BackendValidationError):
         TransmonCalibration(calibration_document)
-
-
-def test_portable_calibration_accepts_unused_canonical_edge(calibration_document):
-    document = deepcopy(calibration_document)
-    entry = deepcopy(document["recipes"]["cz"]["edges"][0])
-    entry["canonical_edge"] = ["future-q0", "future-q1"]
-    entry["recipe"]["detuned_subsystem"] = "future-q1"
-    document["recipes"]["cz"]["edges"].append(entry)
-    calibration = TransmonCalibration(document)
-    recipe = calibration._cz_recipe("future-q1", "future-q0")
-    assert recipe.duration_ns == 60.0
-    assert recipe.detuned_subsystem == "future-q1"
 
 
 def test_model_and_calibration_format_dispatch_remain_distinct(

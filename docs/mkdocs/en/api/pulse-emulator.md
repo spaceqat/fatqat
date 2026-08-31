@@ -296,9 +296,10 @@ direct controls bypass it. The
 builder returns a new map containing the built-in `RX`, `RY`, `RZ`, `iSwap`,
 and `CZ` rules for one model and calibration.
 
-A standard map records the source model's subsystem labels and signed
-anharmonicities, canonical coupling topology, selected CZ endpoints, and
-realization contract. Reusing it with incompatible values raises
+A standard map checks the source realization contract, subsystem labels and
+signed anharmonicities, and canonical coupling topology. It also retains the
+selected CZ endpoints so branch-relevant anharmonicity errors can identify the
+affected edge. Reusing the map with incompatible values raises
 [`BackendValidationError`][fatqat.errors.BackendValidationError]; rebuild the
 map with `default_transmon_gate_implementation_map` for the destination model.
 Model identity, revision, idle frequencies, declaration order, and edge IDs do

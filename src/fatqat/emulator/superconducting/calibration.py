@@ -30,12 +30,6 @@ class _CzRecipe:
     branch_tolerance_ghz: float
 
 
-@dataclass(frozen=True, slots=True)
-class _CzEdge:
-    canonical_edge: tuple[str, str]
-    recipe: _CzRecipe
-
-
 def _validate_single_recipe(
     value: Any,
     path: str,
@@ -127,8 +121,7 @@ def _validate_recipes(recipes: Mapping[str, Any]) -> tuple[Any, ...]:
     raw_edges = cz["edges"]
     if not isinstance(raw_edges, list):
         _fail(f"{cz_path}.edges", "must be an array")
-    found: set[tuple[str, str]] = set()
-    edges = []
+    edges: dict[tuple[str, str], _CzRecipe] = {}
     for ordinal, raw in enumerate(raw_edges):
         path = f"{cz_path}.edges[{ordinal}]"
         entry = _mapping(raw, path)
@@ -144,20 +137,14 @@ def _validate_recipes(recipes: Mapping[str, Any]) -> tuple[Any, ...]:
             _fail(f"{path}.canonical_edge", "must name two distinct endpoints")
         if key[0] > key[1]:
             _fail(f"{path}.canonical_edge", "must use ascending string order")
-        if key in found:
+        if key in edges:
             _fail(f"{path}.canonical_edge", "duplicates a canonical CZ edge")
-        found.add(key)
-        edges.append(
-            _CzEdge(
-                key,
-                _validate_cz_recipe(entry["recipe"], f"{path}.recipe", key),
-            )
-        )
+        edges[key] = _validate_cz_recipe(entry["recipe"], f"{path}.recipe", key)
     return (
         rx_ry["duration"],
         rx_ry["drag_coefficient"],
         iswap["duration"],
-        tuple(sorted(edges, key=lambda item: item.canonical_edge)),
+        MappingProxyType({key: edges[key] for key in sorted(edges)}),
     )
 
 
@@ -233,18 +220,12 @@ class TransmonCalibration:
 
     def __init__(self, document: Mapping[str, Any]) -> None:
         parsed = _dispatch_document(document, "calibration", _PARSERS)
-        identity, rx_duration, drag, iswap_duration, cz_edges = parsed
+        identity, rx_duration, drag, iswap_duration, cz_by_edge = parsed
         object.__setattr__(self, "_identity", identity)
         object.__setattr__(self, "_rx_ry_duration_ns", rx_duration)
         object.__setattr__(self, "_rx_ry_drag_coefficient", drag)
         object.__setattr__(self, "_iswap_duration_ns", iswap_duration)
-        object.__setattr__(
-            self,
-            "_cz_by_edge",
-            MappingProxyType(
-                {entry.canonical_edge: entry.recipe for entry in cz_edges}
-            ),
-        )
+        object.__setattr__(self, "_cz_by_edge", cz_by_edge)
 
     def _cz_recipe(self, first: str, second: str) -> _CzRecipe | None:
         key = tuple(sorted((first, second)))
