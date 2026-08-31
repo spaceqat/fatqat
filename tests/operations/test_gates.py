@@ -199,3 +199,39 @@ def test_custom_operation_rejects_retired_width_declarations(retired_name):
 def test_custom_operation_rejects_invalid_num_subsystems(bad):
     with pytest.raises(ValueError, match="num_subsystems"):
         type("BadSubsystemCount", (Operation,), {"num_subsystems": bad})
+
+
+class TestAngleValidationAtConstruction:
+    """Angles follow the assign_parameters scalar policy from construction."""
+
+    def test_scalars_and_parameters_accepted(self):
+        import numpy as np
+
+        import fatqat as fq
+
+        ops.RX(1)
+        ops.RX(0.5)
+        ops.RX(np.float64(0.5))
+        ops.RX(np.int32(2))
+        ops.RX(fq.Parameter("t"))
+        ops.U(0.1, 0.2, 0.3)
+        ops.SubspaceRY(0.4, (0, 1))
+
+    @pytest.mark.parametrize("bad", [True, "a", 1 + 2j, None, [0.1]])
+    def test_invalid_angle_types_rejected(self, bad):
+        with pytest.raises(TypeError, match="must be a real number"):
+            ops.RX(bad)
+        with pytest.raises(TypeError, match="must be a real number"):
+            ops.U(0.1, bad, 0.3)
+        with pytest.raises(TypeError, match="must be a real number"):
+            ops.CPhase(bad)
+        with pytest.raises(TypeError, match="must be a real number"):
+            ops.SubspaceRZ(bad, (0, 1))
+
+    def test_whole_parameter_vector_rejected(self):
+        import fatqat as fq
+
+        vec = fq.ParameterVector("a", 2)
+        with pytest.raises(TypeError, match="must be a real number"):
+            ops.RX(vec)
+        ops.RX(vec[0])

@@ -24,8 +24,31 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
+from .._parameter_binding import _validate_parameter_scalar
 from ..parameters import Parameter
 from .base import Operation
+
+
+def _validate_angles(op: Operation, **angles: object) -> None:
+    """Require each angle to be a real scalar or an unbound `Parameter`.
+
+    Applies the same scalar policy as ``assign_parameters`` (int/float/NumPy
+    real scalars; no bool, complex, or str), so a value the binder would
+    reject is also rejected at construction instead of failing deep inside
+    matrix lowering. A whole `ParameterVector` is rejected too - index it
+    (``vec[i]``) to get a bindable `Parameter`.
+    """
+    for field_name, value in angles.items():
+        if isinstance(value, Parameter):
+            continue
+        try:
+            _validate_parameter_scalar(value)
+        except TypeError:
+            raise TypeError(
+                f"{op.name}.{field_name} must be a real number or a "
+                f"fatqat.Parameter, got {type(value).__name__!r}"
+            ) from None
+
 
 # ---------------------------------------------------------------------------
 # Parametric single-qubit unitary gates
@@ -50,6 +73,9 @@ class RX(Operation):
     num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
 
+    def __post_init__(self) -> None:
+        _validate_angles(self, theta=self.theta)
+
 
 @dataclass(frozen=True)
 class RY(Operation):
@@ -67,6 +93,9 @@ class RY(Operation):
     name: ClassVar[str] = "RY"
     num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
+
+    def __post_init__(self) -> None:
+        _validate_angles(self, theta=self.theta)
 
 
 @dataclass(frozen=True)
@@ -87,6 +116,9 @@ class RZ(Operation):
     num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
 
+    def __post_init__(self) -> None:
+        _validate_angles(self, theta=self.theta)
+
 
 @dataclass(frozen=True)
 class Phase(Operation):
@@ -104,6 +136,9 @@ class Phase(Operation):
     name: ClassVar[str] = "Phase"
     num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
+
+    def __post_init__(self) -> None:
+        _validate_angles(self, theta=self.theta)
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +169,9 @@ class U(Operation):
     num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
 
+    def __post_init__(self) -> None:
+        _validate_angles(self, theta=self.theta, phi=self.phi, lam=self.lam)
+
 
 @dataclass(frozen=True)
 class U1(Operation):
@@ -151,6 +189,9 @@ class U1(Operation):
     name: ClassVar[str] = "U1"
     num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
+
+    def __post_init__(self) -> None:
+        _validate_angles(self, lam=self.lam)
 
 
 @dataclass(frozen=True)
@@ -171,6 +212,9 @@ class U2(Operation):
     name: ClassVar[str] = "U2"
     num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
+
+    def __post_init__(self) -> None:
+        _validate_angles(self, phi=self.phi, lam=self.lam)
 
 
 @dataclass(frozen=True)
@@ -194,6 +238,9 @@ class U3(Operation):
     num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
 
+    def __post_init__(self) -> None:
+        _validate_angles(self, theta=self.theta, phi=self.phi, lam=self.lam)
+
 
 @dataclass(frozen=True)
 class CPhase(Operation):
@@ -211,3 +258,6 @@ class CPhase(Operation):
     name: ClassVar[str] = "CPhase"
     num_subsystems: ClassVar[int] = 2
     _accepts_views: ClassVar[bool] = True
+
+    def __post_init__(self) -> None:
+        _validate_angles(self, theta=self.theta)

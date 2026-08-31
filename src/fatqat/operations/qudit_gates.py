@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from ..parameters import Parameter
+from .parametric_gates import _validate_angles
 from ..registers import RegisterRef
 from .base import Operation
 
@@ -190,6 +191,7 @@ class SubspaceRX(Operation):
     _accepts_views: ClassVar[bool] = True
 
     def __post_init__(self) -> None:
+        _validate_angles(self, theta=self.theta)
         j, k = self.subspace
         if j == k:
             raise ValueError(
@@ -246,6 +248,7 @@ class SubspaceRY(Operation):
     _accepts_views: ClassVar[bool] = True
 
     def __post_init__(self) -> None:
+        _validate_angles(self, theta=self.theta)
         j, k = self.subspace
         if j == k:
             raise ValueError(
@@ -302,6 +305,7 @@ class SubspaceRZ(Operation):
     _accepts_views: ClassVar[bool] = True
 
     def __post_init__(self) -> None:
+        _validate_angles(self, theta=self.theta)
         j, k = self.subspace
         if j == k:
             raise ValueError(
