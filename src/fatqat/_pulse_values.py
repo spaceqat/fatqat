@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from numbers import Real
 
-from ._waveforms import SampledWaveform, Waveform
+from ._waveforms import Waveform
 
 TIME_EPSILON = 1e-12
 """Absolute tolerance for comparisons on a model's native time axis."""
@@ -34,7 +34,8 @@ class PulseControl:
 
     Args:
         channel: Physical channel returned by ``model.control``.
-        waveform: ``SampledWaveform`` applied to the channel.
+        waveform: `Waveform` applied to the channel. Built-in pulse
+            emulators currently accept only ``SampledWaveform``.
         start_offset: Finite non-negative delay from the start of the enclosing
             pulse block, in the model's time unit. The default is ``0.0``.
 
@@ -60,7 +61,7 @@ class PulseControl:
     """
 
     channel: ControlChannel
-    waveform: SampledWaveform
+    waveform: Waveform
     start_offset: float = 0.0
 
     def __post_init__(self) -> None:

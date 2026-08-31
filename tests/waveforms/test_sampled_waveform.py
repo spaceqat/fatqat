@@ -59,3 +59,10 @@ def test_sampled_waveform_has_no_interpolation_or_channel_policy():
 
     assert not hasattr(waveform, "interpolation")
     assert not hasattr(waveform, "channel")
+
+
+def test_waveform_base_is_abstract():
+    from fatqat._waveforms import Waveform
+
+    with pytest.raises(TypeError, match="abstract"):
+        Waveform()

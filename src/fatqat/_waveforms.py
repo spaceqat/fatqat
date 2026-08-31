@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import math
+from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass
 from numbers import Complex, Real
 
 
-class Waveform:
-    """Base class for waveforms accepted by pulse controls."""
+class Waveform(ABC):
+    """Base class for waveforms accepted by pulse controls.
+
+    Abstract: a subclass must implement ``duration``. The built-in pulse
+    emulators currently accept only `SampledWaveform`.
+    """
 
     @property
+    @abstractmethod
     def duration(self) -> float:
         """Duration of the waveform in its enclosing model's time unit."""
-        raise NotImplementedError
 
 
 def _finite_tuple(values: Iterable[Real], *, field: str) -> tuple[float, ...]:
