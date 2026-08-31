@@ -236,3 +236,20 @@ def test_add_targets_optional_for_zero_arity_operation():
     p = Program(1)
     p.add(_ZeroArityProbe())
     assert p._instructions[0].targets == ()
+
+
+def test_add_accepts_list_targets():
+    p = Program(2)
+    p.add(ops.CZ, [0, 1])
+    assert p._instructions[0].targets == (
+        p.quantum_registers[0][0],
+        p.quantum_registers[0][1],
+    )
+
+
+def test_measure_accepts_list_operands():
+    p = Program(2, 2)
+    p.measure([0, 1], [0, 1])
+    m = p._instructions[0]
+    assert m.targets == (p.quantum_registers[0][0], p.quantum_registers[0][1])
+    assert m.outputs == (p.classical_registers[0][0], p.classical_registers[0][1])

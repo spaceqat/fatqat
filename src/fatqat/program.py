@@ -342,8 +342,8 @@ class Program:
                 are ready-to-use values such as ``ops.X``;
                 parametric gates should be instantiated, such as
                 ``ops.RX(0.2)``.
-            targets: One target expression, or a tuple in operation-operand
-                order. A bare target must be a built-in ``int`` and is accepted
+            targets: One target expression, or a tuple or list in
+                operation-operand order. A bare target must be a built-in ``int`` and is accepted
                 only when the program has exactly one quantum register. An
                 explicit `RegisterRef` must come from one of this program's
                 quantum registers. Every built-in unitary gate also accepts
@@ -384,7 +384,11 @@ class Program:
                 f"op must be an Operation instance, got {type(op)!r} "
                 "(did you forget to call a parametric gate, e.g. ops.RX(0.2)?)"
             )
-        operands = targets if isinstance(targets, tuple) else (targets,)
+        # Lists are accepted alongside tuples, matching `condition`.
+        if isinstance(targets, (tuple, list)):
+            operands = tuple(targets)
+        else:
+            operands = (targets,)
         target_refs = tuple(self._resolve_quantum_target(o) for o in operands)
         normalized = self._normalize_condition(condition)
         self._operations.append(
@@ -444,7 +448,8 @@ class Program:
 
         Args:
             targets: Quantum operand(s) to measure, as a built-in ``int``,
-                explicit `RegisterRef`, or non-empty tuple of those operands.
+                explicit `RegisterRef`, or non-empty tuple or list of those
+                operands.
                 Bare integers require exactly one quantum register.
             outputs: Classical operand(s) to write, in the same forms, with a
                 non-empty tuple matching ``targets`` in count. Bare integers
@@ -472,8 +477,9 @@ class Program:
             >>> program.add(ops.CZ, (0, 1))
             >>> program.measure((0, 1), (0, 1))
         """
-        q_operands = targets if isinstance(targets, tuple) else (targets,)
-        c_operands = outputs if isinstance(outputs, tuple) else (outputs,)
+        # Lists are accepted alongside tuples, matching `Program.add`.
+        q_operands = tuple(targets) if isinstance(targets, (tuple, list)) else (targets,)
+        c_operands = tuple(outputs) if isinstance(outputs, (tuple, list)) else (outputs,)
         target_refs = tuple(self._resolve_quantum_ref(q) for q in q_operands)
         output_refs = tuple(self._resolve_classical_ref(c) for c in c_operands)
         # Length, non-empty, and per-pair dim invariants are enforced once in
