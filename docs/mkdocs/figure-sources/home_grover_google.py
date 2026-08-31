@@ -18,9 +18,9 @@ T1_SECONDS = 200e-6
 T2_SECONDS = 200e-6
 ROTATION_DURATION_SECONDS = 20e-9
 CZ_DURATION_SECONDS = 50e-9
-EDGE_CZ_FIDELITIES = {
-    (0, 1): 0.998,
-    (1, 2): 0.996,
+EDGE_CZ_DEPOLARIZING_P = {
+    (0, 1): 0.003,
+    (1, 2): 0.003,
 }
 
 program = build_native_program()
@@ -47,26 +47,9 @@ for target_position in (0, 1):
     noise.add(damping, operation=ops.CZ, target_positions=(target_position,))
     noise.add(dephasing, operation=ops.CZ, target_positions=(target_position,))
 
-# Reserve only the error budget left after T1/T2 decay for the joint
-# depolarizing channel, so each combined CZ channel reaches its stated
-# two-qubit average gate fidelity.
-single_qubit_entanglement_fidelity = (
-    1
-    + np.exp(-CZ_DURATION_SECONDS / T1_SECONDS)
-    + 2 * np.exp(-CZ_DURATION_SECONDS / T2_SECONDS)
-) / 4
-cz_relaxation_fidelity = (4 * single_qubit_entanglement_fidelity**2 + 1) / 5
-
 qubits = program.quantum_registers[0]
-for edge, fidelity in EDGE_CZ_FIDELITIES.items():
-    depolarizing_p = (cz_relaxation_fidelity - fidelity) / (
-        cz_relaxation_fidelity - 1 / 4
-    )
-    assert 0 <= depolarizing_p <= 1
-    assert np.isclose(
-        (1 - depolarizing_p) * cz_relaxation_fidelity + depolarizing_p / 4,
-        fidelity,
-    )
+# Add explicit depolarizing noise on top of the T1/T2 channels.
+for edge, depolarizing_p in EDGE_CZ_DEPOLARIZING_P.items():
     noise.add(
         fq.noise.Depolarizing(p=depolarizing_p),
         operation=ops.CZ,
@@ -89,7 +72,7 @@ probabilities /= probabilities.sum()
 
 assert np.isclose(probabilities.sum(), 1.0)
 assert np.argmax(probabilities) == TARGET_INDEX
-assert np.isclose(probabilities[TARGET_INDEX], 0.8506314517, atol=5e-7)
+assert np.isclose(probabilities[TARGET_INDEX], 0.8636356839, atol=5e-7)
 
 print(f"SCQubitGoogleSimulator P({TARGET}) = {probabilities[TARGET_INDEX]:.8%}")
 draw_distribution(PROFILE_FIGURE, probabilities)

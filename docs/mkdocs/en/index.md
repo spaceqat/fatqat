@@ -105,11 +105,11 @@ models share the same `T1 = T2 = 200 µs` coherence assumption.
 
 -   :material-memory:{ .lg .middle } **`SCQubitGoogleSimulator`**
 
-    ![The SCQubitGoogleSimulator result gives the target outcome 101 a probability of 85.06 percent with 200-microsecond coherence times, 99.8-percent total CZ fidelity on q0–q1, and 99.6-percent total CZ fidelity on q1–q2.](assets/generated/home/grover-google-profile.png){ loading=lazy width=714 height=515 }
+    ![The SCQubitGoogleSimulator result gives the target outcome 101 a probability of 86.36 percent with 200-microsecond coherence times and additional CZ depolarizing noise of 0.003 on both edges.](assets/generated/home/grover-google-profile.png){ loading=lazy width=714 height=515 }
 
-    With `T1 = T2 = 200 µs` and total CZ fidelities of **99.8% on q0–q1**
-    and **99.6% on q1–q2**, native-gate simulation returns `101` with
-    **85.06%** probability.
+    With `T1 = T2 = 200 µs`, we add CZ depolarizing noise with `p = 0.003`
+    on both q0–q1 and q1–q2. Native-gate simulation then returns `101` with
+    **86.36%** probability.
 
 -   :material-sine-wave:{ .lg .middle } **`TransmonEmulator`**
 
