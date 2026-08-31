@@ -295,3 +295,56 @@ def test_u_matrix_matches_qiskit_statevector():
     print(f"qiskit statevector: {qiskit_state}")
 
     assert fatqat_state == pytest.approx(qiskit_state)
+
+
+def _attach_legacy_condition(circuit, index, condition):
+    """Re-create a Qiskit 1.x ``c_if`` instruction on a Qiskit 2.x circuit."""
+    instruction = circuit.data[index]
+    operation = instruction.operation.to_mutable()
+    operation.condition = condition
+    circuit.data[index] = instruction.replace(operation=operation)
+
+
+def test_converter_legacy_c_if_whole_register():
+    circuit = QuantumCircuit(2, 2, name="legacy_cond")
+    circuit.x(0)
+    _attach_legacy_condition(circuit, 0, (circuit.cregs[0], 2))
+
+    program = circuit_to_program(circuit)
+    step = program._instructions[0]
+    creg = program.classical_registers[0]
+    print("\n=== legacy c_if whole-register conversion ===")
+    print(f"condition: {step.condition}")
+
+    assert step.operation.name == "X"
+    assert step.condition == ((creg[0], 0), (creg[1], 1))
+
+
+def test_converter_legacy_c_if_single_clbit():
+    circuit = QuantumCircuit(1, 1, name="legacy_cond_bit")
+    circuit.x(0)
+    _attach_legacy_condition(circuit, 0, (circuit.clbits[0], 1))
+
+    program = circuit_to_program(circuit)
+    step = program._instructions[0]
+    creg = program.classical_registers[0]
+
+    assert step.condition == ((creg[0], 1),)
+
+
+def test_converter_legacy_c_if_value_overflow_rejected():
+    circuit = QuantumCircuit(1, 1, name="legacy_cond_overflow")
+    circuit.x(0)
+    _attach_legacy_condition(circuit, 0, (circuit.cregs[0], 2))
+
+    with pytest.raises(QiskitConversionError, match="does not fit"):
+        circuit_to_program(circuit)
+
+
+def test_converter_legacy_c_if_on_measure_rejected():
+    circuit = QuantumCircuit(1, 1, name="legacy_cond_measure")
+    circuit.measure(0, 0)
+    _attach_legacy_condition(circuit, 0, (circuit.cregs[0], 1))
+
+    with pytest.raises(QiskitConversionError, match="conditional measurement"):
+        circuit_to_program(circuit)
