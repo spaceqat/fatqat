@@ -65,8 +65,9 @@ class SampledWaveform(Waveform):
     """Define a waveform on a strictly increasing local time grid.
 
     The grid may be nonuniform. It starts at ``0.0``, and its final time is
-    the waveform's ``duration``. Built-in pulse emulators use not-a-knot
-    spline interpolation.
+    the waveform's ``duration``. Built-in pulse emulators interpolate with
+    a spline of degree ``min(3, n_samples - 1)``: not-a-knot cubic from
+    four samples up, quadratic at three, linear at two.
 
     Samples may be real or complex. The selected channel determines which form
     is allowed. A pulse emulator also checks interpolation and any amplitude
