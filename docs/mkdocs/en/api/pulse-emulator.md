@@ -88,11 +88,15 @@ canonical full name, and `result.metadata["method"]` records it.
 | --- | --- | --- | --- |
 | `"statevector"` | [`get_statevector`][fatqat.Result.get_statevector] | `(3**m,)` | A pure coherent state, or one seeded trajectory when Lindblad noise can act. |
 | `"density_matrix"` | [`get_density_matrix`][fatqat.Result.get_density_matrix] | `(3**m, 3**m)` | The exact ensemble state under supported Lindblad evolution. |
-| `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | `(3**m, 3**m)` | The complete coherent operator, including the canonical terminal virtual-frame transformation. |
+| `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | `(3**m, 3**m)` | The complete coherent operator. |
 
 All three representations cover the complete physical qutrit model, not just
-the logical resources declared by the program. Pulse emulators do not expose
-`superop` or internal solver names as methods.
+the resources declared by the program. They use the same canonical model
+basis: terminal virtual-frame changes are composed into every returned state
+or operator. This does not convert the effective RWA model to a laboratory
+frame. `result_config` controls whether the method-native value is returned;
+it does not expose the solver's internal rotating-frame coordinates. Pulse
+emulators do not expose `superop` or internal solver names as methods.
 
 An unmeasured statevector run with potentially active Lindblad noise is
 stochastic, so the default result request retains metadata only. Request one
@@ -202,6 +206,43 @@ anharmonicities. The runtime model exposes ordered device labels through
 `subsystem_ids`, but it does not expose normalized subsystem or coupling
 records.
 
+### Generate transmon grid documents
+
+[`generate_transmon_grid_documents`][fatqat.emulator.generate_transmon_grid_documents]
+is a shortcut for setting up a rectangular nearest-neighbor grid. It returns a
+model document and a matching calibration document, so you can start a
+simulation without writing either document by hand:
+
+```python
+import fatqat as fq
+
+model_document, calibration_document = fq.emulator.generate_transmon_grid_documents(
+    shape=(2, 2),
+    frequency_groups_ghz=(5.0, 5.2),
+)
+```
+
+Both values are ordinary JSON-compatible dictionaries. You can edit them or
+save them with the standard `json` module.
+
+| Argument | Meaning |
+| --- | --- |
+| `shape` | Grid dimensions as `(rows, columns)`. The grid must contain at least two transmons. |
+| `frequency_groups_ghz` | The two idle-frequency centers in GHz. The generator assigns them in a checkerboard pattern. |
+| `frequency_std_ghz` | Standard deviation of the normally distributed frequency variation in GHz. The default is `0.010`. |
+| `anharmonicity_ghz` | Anharmonicity used for every transmon. The default is `-0.22`. |
+| `seed` | Seed for reproducible frequency values. The default is `0`. |
+
+The generator warns when the requested spread may make the two frequency
+groups overlap. It also warns if the generated values overlap or reverse the
+expected ordering on a neighboring pair. These warnings do not stop generation
+or change the values.
+
+The calibration contains fixed analytic starting values. The helper does not
+run numerical calibration or optimization, start a simulation, or calculate
+fidelity or leakage. See [Start with a transmon grid](../guide/transmon-emulation.md#start-with-a-transmon-grid)
+for the complete workflow.
+
 ### Units
 
 
@@ -218,6 +259,11 @@ document values to angular pulse rates with
 Each control selector exposes its accepted waveform unit through
 `selector.coefficient_unit`; the built-in drive, detuning, and exchange
 selectors use `"rad/ns"`.
+
+Transmon drive samples are the full complex Rabi rate \(\Omega(t)\). The
+Hamiltonian uses \(\operatorname{Re}\Omega/2\) on the X quadrature and
+\(\operatorname{Im}\Omega/2\) on the Y quadrature. Detuning and exchange
+samples are their direct Hamiltonian coefficients.
 
 `model.basis_order` is `("0", "1", "2")`. Use it to interpret flattened
 physical results and derive the local dimension as `len(model.basis_order)`.
@@ -265,6 +311,12 @@ direct controls bypass it. The
 builder returns a new map containing the built-in `RX`, `RY`, `RZ`, `iSwap`,
 and `CZ` rules for one model and calibration.
 
+A map built by `default_transmon_gate_implementation_map` is tied to the
+model's subsystem labels, anharmonicities, coupling topology, and selected CZ
+endpoints. Build a new map after changing any of these values. Model identity,
+revision, idle frequencies, declaration order, and edge IDs do not require a
+new map. This compatibility check does not apply to maps written by users.
+
 See [Gate realization](pulse-control/gate-realization.md) for accepted rule forms and errors.
 
 ## Direct controls
@@ -272,10 +324,10 @@ See [Gate realization](pulse-control/gate-realization.md) for accepted rule form
 
 The same model channels can be used without a gate-realization rule.
 Drive and detuning resolve one declared transmon; exchange resolves two
-transmons and their declared coupling. Drive accepts a complex envelope for
-the two quadratures, while detuning and exchange require real values. Pulse
-times use the model units described above. The current transmon model
-does not add amplitude or duration limits beyond requiring finite values.
+transmons and their declared coupling. Drive accepts a full complex Rabi-rate
+envelope for the two quadratures, while detuning and exchange require real
+values. Pulse times use the model units described above. The current transmon
+model does not add amplitude or duration limits beyond requiring finite values.
 
 See [PulseOperation](pulse-control/pulse-operation.md),
 [PulseControl](pulse-control/pulse-control.md), and
@@ -354,6 +406,8 @@ for the complete workflow.
       merge_init_into_class: false
       filters:
         - "!^_"
+
+::: fatqat.emulator.generate_transmon_grid_documents
 
 ::: fatqat.emulator.available_model_documents
 

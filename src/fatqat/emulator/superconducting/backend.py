@@ -27,7 +27,10 @@ from .._core.planning import _PreparedPulseProgram
 from .._core.pulse import PulseImplementationMap
 from .calibration import default_transmon_calibration
 from .model import TransmonModel
-from .realization import default_transmon_gate_implementation_map
+from .realization import (
+    _validate_transmon_map_compatibility,
+    default_transmon_gate_implementation_map,
+)
 from .target import _LOCAL_DIMENSION, _TransmonTarget
 
 
@@ -59,7 +62,8 @@ class TransmonEmulator(_PulseBackend):
 
     Raises:
         BackendValidationError: If an argument has the wrong type or ``noise``
-            contains a declaration unsupported by the selected rules.
+            contains a declaration unsupported by the selected rules, or if a
+            standard gate map was compiled for an incompatible transmon model.
 
     Examples:
         >>> import fatqat as fq
@@ -89,6 +93,7 @@ class TransmonEmulator(_PulseBackend):
             if gate_implementation_map is None
             else gate_implementation_map
         )
+        _validate_transmon_map_compatibility(effective_gate_map, model)
         super().__init__(
             model,
             method=method,

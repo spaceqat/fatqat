@@ -51,20 +51,25 @@ calibration_document = {
         "rx_ry": {"duration": 20.0, "drag_coefficient": 1.0},
         "iswap": {"duration": 40.0},
         "cz": {
-            "default": {
-                "detuning_operand": 0,
-                "duration": 60.0,
-                "ramp_duration": 3.0,
-                "detuning": 0.22,
-            },
-            "overrides": [
+            "edges": [
                 {
-                    "device_operands": ["q1", "q2"],
+                    "canonical_edge": ["q0", "q1"],
                     "recipe": {
-                        "detuning_operand": 0,
+                        "detuned_subsystem": "q0",
                         "duration": 60.0,
                         "ramp_duration": 3.0,
-                        "detuning": 0.24,
+                        "park_detuning_ghz": 0.22,
+                        "branch_tolerance_ghz": 1e-12,
+                    },
+                },
+                {
+                    "canonical_edge": ["q1", "q2"],
+                    "recipe": {
+                        "detuned_subsystem": "q1",
+                        "duration": 60.0,
+                        "ramp_duration": 3.0,
+                        "park_detuning_ghz": 0.24,
+                        "branch_tolerance_ghz": 1e-12,
                     },
                 }
             ],

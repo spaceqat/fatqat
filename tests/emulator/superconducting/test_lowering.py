@@ -20,7 +20,7 @@ from fatqat.emulator.superconducting import TransmonModel
 from fatqat.emulator.superconducting.realization import (
     default_transmon_gate_implementation_map,
 )
-from fatqat.errors import UnsupportedOperationError
+from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import NoiseModel
 
 
@@ -108,7 +108,7 @@ def test_edgeless_source_is_unsupported_while_reversed_cz_is_valid(
     reversed_cz = fq.Program(2)
     reversed_cz.add(ops.CZ, (1, 0))
     (block,) = backend._prepare_program(reversed_cz).plan
-    assert block.controls[0].channel == backend.model.control.detuning("q1")
+    assert block.controls[0].channel == backend.model.control.detuning("q0")
 
 
 def test_pulse_measurement_accepts_a_correctly_shaped_confusion_matrix(
@@ -245,36 +245,55 @@ def test_mutating_the_callers_map_after_construction_does_not_affect_the_backend
     assert len(plan) == 1  # still resolves; the backend's copy is unaffected
 
 
-def test_coarse_compiled_map_transfers_unchanged_but_rebuild_redesigns_drag(
+@pytest.mark.parametrize(
+    ("changed_fact", "reason"),
+    (
+        ("label", "subsystem labels"),
+        ("anharmonicity", "anharmonicity.*q0.*selected by CZ edge"),
+        ("topology", "canonical topology"),
+    ),
+)
+def test_standard_map_rejects_transfer_to_a_physically_incompatible_model(
+    model, calibration, model_document, changed_fact, reason
+):
+    source_map = default_transmon_gate_implementation_map(
+        model=model, calibration=calibration
+    )
+    changed = deepcopy(model_document)
+    if changed_fact == "label":
+        changed["system"]["subsystems"][0] = "qa"
+        changed["parameters"]["subsystems"]["qa"] = changed["parameters"][
+            "subsystems"
+        ].pop("q0")
+        changed["system"]["control_edges"][0]["subsystems"][0] = "qa"
+    elif changed_fact == "anharmonicity":
+        changed["parameters"]["subsystems"]["q0"]["anharmonicity"] = -0.4
+    else:
+        changed["system"]["control_edges"].clear()
+
+    destination = TransmonModel.from_document(changed)
+    with pytest.raises(
+        BackendValidationError, match=rf"incompatible.*{reason}.*rebuild"
+    ):
+        TransmonEmulator(destination, gate_implementation_map=source_map.copy())
+
+
+def test_standard_map_transfers_across_nonphysical_document_changes(
     model, calibration, model_document
 ):
     source_map = default_transmon_gate_implementation_map(
         model=model, calibration=calibration
     )
-    finer_document = deepcopy(model_document)
-    finer_document["parameters"]["subsystems"]["q0"]["anharmonicity"] = -0.4
-    finer = TransmonModel.from_document(finer_document)
-    source_backend = TransmonEmulator(model, gate_implementation_map=source_map)
-    transferred = TransmonEmulator(finer, gate_implementation_map=source_map)
-    rebuilt = TransmonEmulator(
-        finer,
-        gate_implementation_map=default_transmon_gate_implementation_map(
-            model=finer, calibration=calibration
-        ),
-    )
-    program = fq.Program(1)
-    program.add(ops.RX(0.7), 0)
-    source_block = source_backend._prepare_program(program).plan[0]
-    transferred_block = transferred._prepare_program(program).plan[0]
-    rebuilt_block = rebuilt._prepare_program(program).plan[0]
-    assert np.array_equal(
-        source_block.controls[0].waveform.values,
-        transferred_block.controls[0].waveform.values,
-    )
-    assert not np.allclose(
-        transferred_block.controls[0].waveform.values,
-        rebuilt_block.controls[0].waveform.values,
-    )
+    changed = deepcopy(model_document)
+    changed["model"] = {"id": "other", "revision": "other"}
+    changed["system"]["subsystems"].reverse()
+    changed["system"]["control_edges"][0]["id"] = "other-edge"
+    changed["parameters"]["subsystems"]["q0"]["frequency"] = 7.0
+    destination = TransmonModel.from_document(changed)
+
+    backend = TransmonEmulator(destination, gate_implementation_map=source_map)
+
+    assert backend.model is destination
 
 
 def test_unsupported_operation_from_map_selection_raises_out_of_run_not_as_a_failed_job(
