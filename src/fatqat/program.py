@@ -388,6 +388,13 @@ class Program:
 
         """
         if not isinstance(op, Operation):
+            # Measurement lives in the operations namespace but is not an
+            # Operation; the generic parametric-gate hint would mislead here.
+            if op is Measurement or isinstance(op, Measurement):
+                raise TypeError(
+                    "Measurement cannot be added with Program.add; use "
+                    "program.measure(targets, outputs) instead"
+                )
             raise TypeError(
                 f"op must be an Operation instance, got {type(op)!r} "
                 "(did you forget to call a parametric gate, e.g. ops.RX(0.2)?)"

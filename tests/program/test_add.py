@@ -262,3 +262,18 @@ def test_integer_operand_with_no_registers_names_the_real_fix():
     p2 = Program(1, 0)
     with pytest.raises(TypeError, match="has no classical register"):
         p2.add(ops.X, 0, condition=(0, 1))
+
+
+def test_add_measurement_points_to_program_measure():
+    from fatqat.operations import Measurement
+
+    p = Program(1, 1)
+    with pytest.raises(TypeError, match="program.measure"):
+        p.add(Measurement)
+    with pytest.raises(TypeError, match="program.measure"):
+        p.add(
+            Measurement(
+                targets=(p.quantum_registers[0][0],),
+                outputs=(p.classical_registers[0][0],),
+            )
+        )
