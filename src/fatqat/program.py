@@ -396,6 +396,14 @@ class Program:
         """Normalize user conditions to an AND tuple of classical refs and values."""
         if condition is None:
             return None
+        # Check the container shape first: a Mapping would otherwise fail
+        # below with a bare KeyError (condition[0] is a key lookup), and a
+        # set with an unsubscriptable error.
+        if not isinstance(condition, (tuple, list)):
+            raise TypeError(
+                "condition must be a (slot, literal) pair or a tuple/list of "
+                f"such pairs, got {type(condition).__name__!r}"
+            )
         if len(condition) == 0:
             raise ValueError(
                 "condition is empty; pass None or omit the argument for an unconditional operation"

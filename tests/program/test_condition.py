@@ -100,3 +100,17 @@ def test_condition_literal_rejects_non_int():
     p = Program(2, 2)
     with pytest.raises(TypeError, match="condition literal must be int"):
         p.add(ops.X, 0, condition=(0, 1.5))
+
+
+def test_condition_mapping_rejected_with_typeerror():
+    program = Program(1, 1)
+    creg = program.classical_registers[0]
+    with pytest.raises(TypeError, match="condition must be"):
+        program.add(ops.X, 0, condition={creg[0]: 1})
+
+
+def test_condition_set_rejected_with_typeerror():
+    program = Program(1, 1)
+    creg = program.classical_registers[0]
+    with pytest.raises(TypeError, match="condition must be"):
+        program.add(ops.X, 0, condition={(creg[0], 1)})
