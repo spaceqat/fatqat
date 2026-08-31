@@ -369,14 +369,14 @@ def test_pauli_channel_matches_aer(runtime):
     )
 
 
-def test_two_qubit_pauli_channel_matches_aer_under_its_reversed_reading(runtime):
-    # Term labels read in opposite directions: fatqat's first character
-    # describes the gate's first target, Qiskit's its last, so "XI" here and
-    # "IX" there name the same operator. The channel is asymmetric across the
-    # two qubits so that the distinction is observable.
+def test_two_qubit_pauli_channel_matches_aer_with_identical_labels(runtime):
+    # fatqat now shares Qiskit's Pauli-string reading (rightmost character is
+    # the first target), so the same label names the same operator on both
+    # sides. The channel is asymmetric across the two qubits so that a
+    # convention mismatch would be observable.
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add(fq.noise.PauliChannel({"XI": 0.09, "ZZ": 0.04}), operation=ops.CX)
+    noise.add(fq.noise.PauliChannel({"IX": 0.09, "ZZ": 0.04}), operation=ops.CX)
     aer_model = _aer_model(
         pauli_error([("IX", 0.09), ("ZZ", 0.04), ("II", 0.87)]), ["cx"]
     )

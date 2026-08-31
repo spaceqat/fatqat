@@ -252,14 +252,16 @@ _PAULI_PROBABILITY_TOL = 1e-9
 
 
 def _pauli_string_matrix(string: str) -> np.ndarray:
-    """Build a Pauli string's ``2**k x 2**k`` matrix, ``string[0]`` most-significant.
+    """Build a Pauli string's ``2**k x 2**k`` matrix, Qiskit reading.
 
-    ``string[0]`` describes ``targets[0]``, the matrix's most-significant index
-    digit - the same convention as a gate matrix, and the reverse of Qiskit's
-    ``Pauli("IX")`` reading.
+    The rightmost character describes ``targets[0]`` -- the same convention
+    as Qiskit's ``Pauli("IX")`` and this library's own ``Observable`` labels.
+    ``targets[0]`` is the matrix's most-significant index digit (the gate
+    matrix convention), so the most-significant Kronecker factor is the
+    string's last character.
     """
-    matrix = _PAULI_MATRICES[string[0]]
-    for letter in string[1:]:
+    matrix = _PAULI_MATRICES[string[-1]]
+    for letter in reversed(string[:-1]):
         matrix = np.kron(matrix, _PAULI_MATRICES[letter])
     return matrix
 
@@ -332,9 +334,9 @@ class PauliChannel(Channel):
     the uppercase letters ``I``, ``X``, ``Y``, and ``Z``, and have the same
     width. The width sets the number of qubit targets.
 
-    Strings follow target order: the first character describes the first
-    target and is the most-significant factor in the local matrix. This is the
-    reverse of Qiskit's displayed Pauli-string convention.
+    Strings follow Qiskit's displayed Pauli-string convention, the same
+    reading as `fatqat.Observable` labels: the rightmost character describes
+    the first target, and the leftmost the last target.
 
     Each probability must be a finite ``int`` or ``float`` other than ``bool``
     in ``[0, 1]``. Error terms may sum to less than 1; the unassigned weight
