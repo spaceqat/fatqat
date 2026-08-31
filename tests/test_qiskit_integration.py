@@ -426,9 +426,11 @@ def test_batch_result_metadata_reports_each_circuit_seed():
     circuit.h(0)
     circuit.measure(0, 0)
 
-    result = FatqatBackend().run(
-        [circuit, circuit.copy(), circuit.copy()], shots=50, seed_simulator=7
-    ).result()
+    result = (
+        FatqatBackend()
+        .run([circuit, circuit.copy(), circuit.copy()], shots=50, seed_simulator=7)
+        .result()
+    )
     reported = [experiment.seed_simulator for experiment in result.results]
     assert reported == [7, 8, 9]
 
