@@ -112,8 +112,7 @@ def _memory_entries(fatqat_result: FatqatResult, shots: int) -> list[str]:
     # order.
     if "counts" not in fatqat_result.available_data:
         raise QiskitBackendError(
-            "memory=True requires counts data, but the fatqat result "
-            "contains none"
+            "memory=True requires counts data, but the fatqat result contains none"
         )
     return _expand_counts_to_memory(fatqat_result.get_counts_as_tuples(), shots)
 

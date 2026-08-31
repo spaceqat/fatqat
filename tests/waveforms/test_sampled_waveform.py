@@ -65,4 +65,4 @@ def test_waveform_base_is_abstract():
     from fatqat._waveforms import Waveform
 
     with pytest.raises(TypeError, match="abstract"):
-        Waveform()
+        Waveform()  # pylint: disable=abstract-class-instantiated

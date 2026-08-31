@@ -372,8 +372,7 @@ class _QASMBuilder:
             # QASM 2 broadcast: a scalar operand repeats against full-register
             # operands, e.g. `cx q[0], r;` applies cx(q[0], r[i]) for every i.
             operand_groups = [
-                group * width if len(group) == 1 else group
-                for group in operand_groups
+                group * width if len(group) == 1 else group for group in operand_groups
             ]
 
         expanded = self._expand_gate(name, params, len(operand_groups))

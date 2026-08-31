@@ -128,9 +128,7 @@ def test_duplicate_register_object_rejected():
 
 
 def test_distinct_equal_registers_accepted():
-    program = Program(
-        [QuantumRegister(1, name="q"), QuantumRegister(1, name="q")]
-    )
+    program = Program([QuantumRegister(1, name="q"), QuantumRegister(1, name="q")])
     assert len(program.quantum_registers) == 2
 
 

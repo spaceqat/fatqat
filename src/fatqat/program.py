@@ -493,8 +493,12 @@ class Program:
             >>> program.measure((0, 1), (0, 1))
         """
         # Lists are accepted alongside tuples, matching `Program.add`.
-        q_operands = tuple(targets) if isinstance(targets, (tuple, list)) else (targets,)
-        c_operands = tuple(outputs) if isinstance(outputs, (tuple, list)) else (outputs,)
+        q_operands = (
+            tuple(targets) if isinstance(targets, (tuple, list)) else (targets,)
+        )
+        c_operands = (
+            tuple(outputs) if isinstance(outputs, (tuple, list)) else (outputs,)
+        )
         target_refs = tuple(self._resolve_quantum_ref(q) for q in q_operands)
         output_refs = tuple(self._resolve_classical_ref(c) for c in c_operands)
         # Length, non-empty, and per-pair dim invariants are enforced once in
