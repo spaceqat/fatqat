@@ -108,12 +108,12 @@ def from_qasm(source: str) -> Program:
     registers, which are expanded position by position. ``barrier`` is
     accepted but discarded.
 
-    Built-in names are ``id``/``u0``, ``x``/``y``/``z``/``h``,
+    Built-in names are ``id``/``u0``, ``x``/``y``/``z``/``h``, ``sx``,
     ``s``/``sdg``/``t``/``tdg``, ``rx``/``ry``/``rz``,
     ``p``/``phase``/``u1``, ``u``/``u2``/``u3``, ``cx``/``cnot``,
     ``cy``/``cz``/``swap``, ``cp``/``cu1``, ``ccx``/``toffoli``, and
-    ``cswap``/``fredkin``. The ``u`` family is decomposed into rotations and
-    therefore preserves its unitary only up to global phase.
+    ``cswap``/``fredkin``. The ``u`` family maps to fatqat's exact
+    ``U``/``U1``/``U2``/``U3`` gates, matching the Qiskit converter.
 
     A condition may guard one gate or reset and may be a whole-register
     equality or an AND of bit comparisons. A bit comparison may use ``==`` or
@@ -431,6 +431,7 @@ class _QASMBuilder:
             "id": ops.I,
             "u0": ops.I,
             "h": ops.H,
+            "sx": ops.SX,
             "x": ops.X,
             "y": ops.Y,
             "z": ops.Z,
@@ -460,7 +461,14 @@ class _QASMBuilder:
             "rz": (1, ops.RZ),
             "p": (1, ops.Phase),
             "phase": (1, ops.Phase),
-            "u1": (1, ops.Phase),
+            # u1/u2/u3 map to fatqat's exact registered gates, the same
+            # operations the Qiskit converter produces, so both import paths
+            # yield identical instruction identities and statevectors
+            # (including global phase).
+            "u1": (1, ops.U1),
+            "u2": (2, ops.U2),
+            "u": (3, ops.U),
+            "u3": (3, ops.U3),
             "cp": (1, ops.CPhase),
             "cu1": (1, ops.CPhase),
         }
@@ -470,26 +478,6 @@ class _QASMBuilder:
             op = factory(*params)
             _require_operand_count(name, op.num_subsystems, n_operands)
             return (op,)
-
-        if name in {"u", "u3"}:
-            _require_param_count(name, params, 3)
-            _require_operand_count(name, 1, n_operands)
-            theta, phi, lam = params
-            # U3(theta,phi,lam) == RZ(phi) . RY(theta) . RZ(lam) as a matrix
-            # product, which means RZ(lam) must be applied FIRST and RZ(phi)
-            # LAST (gates are applied in time order, matrices compose in the
-            # opposite order). The previous version of this code applied
-            # RZ(phi) first and RZ(lam) last -- i.e. phi and lam were swapped
-            # -- which is only invisible when phi == lam or one of them is 0.
-            # Exact up to a global phase e^{i(phi+lam)/2}; fatqat has no
-            # global-phase primitive to restore it with, which never affects
-            # measurement probabilities.
-            return (ops.RZ(lam), ops.RY(theta), ops.RZ(phi))
-        if name == "u2":
-            _require_param_count(name, params, 2)
-            _require_operand_count(name, 1, n_operands)
-            phi, lam = params
-            return (ops.RZ(lam), ops.RY(math.pi / 2), ops.RZ(phi))
 
         raise QASMTranspileError(
             f"unsupported gate {name!r} (no built-in mapping and no local 'gate' "

@@ -324,8 +324,9 @@ def test_from_qasm_parses_parameter_expressions():
         """)
 
     assert math.isclose(program._instructions[0].operation.theta, math.pi / 2)
-    assert [op.operation.name for op in program._instructions[1:]] == ["RZ", "RY", "RZ"]
-    assert math.isclose(program._instructions[2].operation.theta, math.pi / 2)
+    assert [op.operation.name for op in program._instructions[1:]] == ["U2"]
+    assert program._instructions[1].operation.phi == 0
+    assert math.isclose(program._instructions[1].operation.lam, math.pi)
 
 
 def test_from_qasm_supports_classical_conditions():
@@ -346,8 +347,8 @@ def test_from_qasm_rejects_unsupported_gate():
     with pytest.raises(QASMTranspileError, match="unsupported gate"):
         from_qasm("""
             OPENQASM 2.0;
-            qreg q[1];
-            sx q[0];
+            qreg q[2];
+            rzz(0.5) q[0], q[1];
             """)
 
 
@@ -638,3 +639,18 @@ def test_export_qasm2_sx_definition_emitted_once_and_parses():
     assert qasm2.count("gate sx a") == 1
     circuit = qiskit_qasm2.loads(qasm2)
     assert [instruction.operation.name for instruction in circuit.data] == ["sx", "sx"]
+
+
+def test_from_qasm_u_family_matches_qiskit_converter_identity():
+    program = from_qasm("""
+        OPENQASM 2.0;
+        qreg q[1];
+        u1(0.3) q[0];
+        u3(0.9, 0.4, -0.6) q[0];
+        sx q[0];
+        """)
+
+    names = [step.operation.name for step in program._instructions]
+    assert names == ["U1", "U3", "SX"]
+    u3 = program._instructions[1].operation
+    assert (u3.theta, u3.phi, u3.lam) == (0.9, 0.4, -0.6)
