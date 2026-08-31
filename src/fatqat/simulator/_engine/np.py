@@ -909,8 +909,7 @@ class NumpySuperopEngine(_NumpyOperatorEngine, NumpyDMEngine):
     def export_state(self) -> np.ndarray:
         """Export the super-operator in the public column-stacking convention.
 
-        This transpose converts row-stacked working columns to column stacking;
-        it is not a subsystem-order permutation introduced by the migration.
+        This existing vectorization conversion does not reorder subsystems.
         """
         size = prod(self._dims) if self._dims else 1
         internal = self.state.reshape((size,) * 4)

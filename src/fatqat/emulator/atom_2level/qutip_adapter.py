@@ -113,17 +113,14 @@ class _Atom2LevelQutipAdapter:
         self.local_raising = Qobj(np.asarray([[0.0, 0.0], [1.0, 0.0]], complex))
         self.local_number = Qobj(np.diag([0.0, 1.0]))
         identity = tensor(*[qeye(2) for _ in range(self._site_count)])
-        raising_terms = []
-        number_terms = []
+        self._global_raising = 0 * identity
+        self._global_number = 0 * identity
         for site in range(self._site_count):
             factors = [qeye(dim) for dim in self._dims]
             factors[site] = self.local_raising
-            raising_terms.append(tensor(*factors))
-            factors = [qeye(dim) for dim in self._dims]
+            self._global_raising += tensor(*factors)
             factors[site] = self.local_number
-            number_terms.append(tensor(*factors))
-        self._global_raising = sum(raising_terms, 0 * identity)
-        self._global_number = sum(number_terms, 0 * identity)
+            self._global_number += tensor(*factors)
         self._interaction_drift = self._build_interaction_drift()
         self._collapse_operators = self._build_collapse_operators(background_noise)
 

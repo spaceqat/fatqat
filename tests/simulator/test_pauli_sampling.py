@@ -139,8 +139,7 @@ def test_degenerate_all_zero_channel_falls_back():
 def test_a_certain_pauli_error_acts_exactly_like_the_gate(
     runtime, string, expected_count
 ):
-    # p=1 pins label-to-target association without depending on the public flat
-    # state order, which migrates separately from label meaning.
+    # p=1 pins label-to-target association without depending on flat state order.
     noise = NoiseModel()
     noise.add(PauliChannel({string: 1.0}), operation=ops.CX)
     program = fq.Program(2, 2)

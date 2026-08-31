@@ -529,9 +529,8 @@ class Simulator:
                 ``(D,)`` vector; a density-matrix run takes ``(D, D)``, or a
                 ``(D,)`` ket interpreted as a pure state. Only shape is
                 validated. Basis indices use public most-significant-first
-                subsystem order, with no input permutation or copy added by
-                the ordering migration. Operator methods reject an initial
-                state.
+                subsystem order; no basis-order permutation is applied.
+                Operator methods reject an initial state.
             simulation_config: Optional per-run execution controls. String
                 choices are case-sensitive. Accepted keys are:
 
