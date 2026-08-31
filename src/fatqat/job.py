@@ -52,5 +52,8 @@ class Job(Generic[T]):
         if self.status == "DONE":
             return cast(T, self._result)
         if self.status == "ERROR":
+            if self._error is None:
+                # `raise None` would surface as an unrelated TypeError.
+                raise RuntimeError("job failed with no recorded error")
             raise self._error
         raise RuntimeError(f"job is not complete (status={self.status!r})")
