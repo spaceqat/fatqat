@@ -62,7 +62,9 @@ def squared_factors(
     return tuple((qubit, letter) for qubit, letter in factors if letter in _PROJECTORS)
 
 
-def _term_masks(factors: tuple[tuple[int, str], ...]) -> tuple[int, int, int, int, int]:
+def _term_masks(
+    factors: tuple[tuple[int, str], ...], num_qubits: int
+) -> tuple[int, int, int, int, int]:
     """Pack one term's factors into bit masks.
 
     Returns ``(x_mask, z_mask, zero_mask, one_mask, n_y)``. Only the qubits the
@@ -70,7 +72,10 @@ def _term_masks(factors: tuple[tuple[int, str], ...]) -> tuple[int, int, int, in
     """
     x_mask = z_mask = zero_mask = one_mask = n_y = 0
     for qubit, letter in factors:
-        bit = 1 << qubit
+        # Public factors run most-significant first, while integer bit positions
+        # count from the right. Translating these small masks avoids permuting or
+        # copying the state array.
+        bit = 1 << (num_qubits - 1 - qubit)
         if letter in _FLIPS:
             x_mask |= bit
         if letter in _SIGNS:
@@ -192,11 +197,12 @@ def expectation_statevector(
     many-term observable in one place: the evolution is paid for once.
     """
     term_value = _bind_term_evaluator(state, 0, _statevector_term_numpy)
+    num_qubits = state.shape[0].bit_length() - 1
     total = 0.0 + 0.0j
     for coefficient, factors in terms:
         if coefficient == 0.0:
             continue  # a zero coefficient contributes nothing; skip the pass
-        x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors)
+        x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors, num_qubits)
         value = term_value(x_mask, z_mask, zero_mask, one_mask)
         total += coefficient * value * (1j**n_y)
     return float(total.real)
@@ -212,11 +218,12 @@ def expectation_density_matrix(
     read per term rather than the full ``4**n`` matrix.
     """
     term_value = _bind_term_evaluator(rho, 1, _density_matrix_term_numpy)
+    num_qubits = rho.shape[0].bit_length() - 1
     total = 0.0 + 0.0j
     for coefficient, factors in terms:
         if coefficient == 0.0:
             continue
-        x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors)
+        x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors, num_qubits)
         value = term_value(x_mask, z_mask, zero_mask, one_mask)
         total += coefficient * value * (1j**n_y)
     return float(total.real)

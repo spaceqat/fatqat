@@ -27,7 +27,7 @@ if importlib.util.find_spec("numba") is not None:
 
 
 def _cx_program():
-    """``CX`` with qubit 0 controlling qubit 1, so |01> becomes |11>."""
+    """``CX`` with qubit 0 controlling qubit 1, so |10> becomes |11>."""
     program = fq.Program(2)
     program.add(ops.CX, (0, 1))
     return program
@@ -52,7 +52,7 @@ def test_statevector_run_starts_from_the_given_state():
         .run(
             _cx_program(),
             shots=0,
-            initial_state=[0, 1, 0, 0],
+            initial_state=[0, 0, 1, 0],
             result_config=_STATE_ONLY,
         )
         .result()
@@ -69,7 +69,7 @@ def test_density_matrix_run_accepts_a_ket_as_the_pure_state():
         .run(
             _cx_program(),
             shots=0,
-            initial_state=[0, 1, 0, 0],
+            initial_state=[0, 0, 1, 0],
             result_config=_STATE_ONLY,
         )
         .result()
@@ -89,9 +89,9 @@ def test_density_matrix_run_accepts_a_mixed_state():
         .result()
     )
 
-    # CX maps |01> -> |11> and leaves |10> alone, so the weights swap places.
+    # CX maps |10> -> |11> and leaves |01> alone.
     assert result.get_density_matrix().diagonal() == pytest.approx(
-        [0.0, 0.0, 0.7, 0.3], abs=1e-12
+        [0.0, 0.3, 0.0, 0.7], abs=1e-12
     )
 
 
@@ -116,8 +116,8 @@ def test_reused_backend_uses_each_runs_own_initial_state(method, runtime):
             return np.abs(result.get_statevector()) ** 2
         return np.real(np.diag(result.get_density_matrix()))
 
-    assert populations([0, 1, 0, 0]) == pytest.approx([0, 0, 0, 1])
-    assert populations([0, 0, 1, 0]) == pytest.approx([0, 0, 1, 0])
+    assert populations([0, 0, 1, 0]) == pytest.approx([0, 0, 0, 1])
+    assert populations([0, 1, 0, 0]) == pytest.approx([0, 1, 0, 0])
     assert populations() == pytest.approx([1, 0, 0, 0])
 
 
@@ -150,7 +150,7 @@ def test_an_unnormalized_state_is_accepted_and_stays_unnormalized():
         .run(
             _cx_program(),
             shots=0,
-            initial_state=[0, 2, 0, 0],
+            initial_state=[0, 0, 2, 0],
             result_config=_STATE_ONLY,
         )
         .result()
@@ -170,14 +170,14 @@ def test_counts_still_come_from_a_normalized_distribution():
         .run(
             program,
             shots=100,
-            initial_state=[0, 3, 0, 0],
+            initial_state=[0, 0, 3, 0],
             simulation_config={"seed": 1},
         )
         .result()
         .get_counts()
     )
 
-    assert counts == {"01": 100}
+    assert counts == {"10": 100}
 
 
 def test_a_non_hermitian_matrix_is_accepted():
@@ -213,6 +213,18 @@ def test_a_wrong_shape_is_rejected(method, bad):
         )
 
 
+def test_wrong_shape_reports_mixed_dimensions_in_public_order():
+    qubit = fq.QuantumRegister(1, dim=2)
+    qutrit = fq.QuantumRegister(1, dim=3)
+    program = fq.Program([qubit, qutrit])
+
+    with pytest.raises(
+        BackendValidationError,
+        match=r"subsystem dimensions \(2, 3\)",
+    ):
+        Simulator().run(program, shots=0, initial_state=np.zeros(5))
+
+
 @pytest.mark.parametrize("method", ["unitary", "superop"])
 def test_operator_methods_reject_an_initial_state(method):
     # They compute the program's map rather than a state evolving under it, so
@@ -244,7 +256,7 @@ def test_every_shot_of_a_dynamic_run_starts_from_the_state(runtime):
         .run(
             _dynamic_program(),
             shots=400,
-            initial_state=[0, 0, 1, 0],
+            initial_state=[0, 1, 0, 0],
             simulation_config={
                 "seed": 7,
                 "shot_parallelism": "serial",
@@ -266,7 +278,7 @@ def test_numba_process_workers_preserve_initial_state():
     # would disagree silently.
     pytest.importorskip("numba")
     runtime = "numba"
-    start = [0, 0, 1, 0]
+    start = [0, 1, 0, 0]
     program = _dynamic_program()
     serial = (
         Simulator(method="SV", runtime=runtime)
@@ -300,7 +312,7 @@ def test_numba_process_workers_preserve_initial_state():
 
 
 def test_the_callers_array_is_not_evolved_in_place():
-    start = np.array([0, 1, 0, 0], dtype=complex)
+    start = np.array([0, 0, 1, 0], dtype=complex)
     untouched = start.copy()
 
     Simulator(method="SV").run(

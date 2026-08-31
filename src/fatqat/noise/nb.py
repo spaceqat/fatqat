@@ -35,9 +35,10 @@ Numba compiles kernels lazily on first call. This module is never imported from
 (``from fatqat.noise.nb import ...``), exactly as
 ``fatqat.simulator._engine.nb`` is treated.
 
-Conventions match ``simulator._engine.np`` / ``simulator._engine.nb``: little-endian flat
-indexing, and a local Kraus matrix whose most-significant index digit is
-``target_indices[0]``.
+Conventions match ``simulator._engine.np`` / ``simulator._engine.nb``: private
+little-endian engine indexing, and a local Kraus matrix whose most-significant
+index digit is ``target_indices[0]``. Public subsystems are mapped before this
+module receives a step; no result-side reversal belongs in these kernels.
 """
 
 from __future__ import annotations

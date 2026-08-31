@@ -93,13 +93,13 @@ def test_rejects_non_qubit_dimension():
         AtomArraySimulator()._resolve_resource_layout(p)
 
 
-def test_binding_is_declaration_order_identity():
+def test_public_device_labels_are_separate_from_private_engine_indices():
     p = Program(3)
     backend = AtomArraySimulator()
     ref = p.quantum_registers[0][2]
     resource_layout = backend._resolve_resource_layout(p)
     engine_index_allocation = backend._allocate_engine_indices(p, resource_layout)
-    assert engine_index_allocation.engine_index(resource_layout.device_label(ref)) == 2
+    assert engine_index_allocation.engine_index(resource_layout.device_label(ref)) == 0
     assert resource_layout.device_label(ref) == 2
 
 

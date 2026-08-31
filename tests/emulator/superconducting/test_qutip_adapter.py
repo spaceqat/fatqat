@@ -55,9 +55,9 @@ def _adapter(model, **kwargs):
     )
 
 
-def _qutip_tensor(*canonical_factors):
-    """Construct a QuTiP value from canonical least-significant-first factors."""
-    return tensor(*reversed(canonical_factors))
+def _qutip_tensor(*public_factors):
+    """Construct a QuTiP value directly in public factor order."""
+    return tensor(*public_factors)
 
 
 def _block(target, controls, duration, *, post_actions=(), condition=None):
@@ -347,7 +347,7 @@ def test_drift_and_detuning_match_independent_qutrit_phase_facts(model, model_do
     assert np.allclose(actual.full(), expected.full(), atol=2e-7)
 
 
-def test_control_on_q1_keeps_complete_model_canonical_state_order(model):
+def test_control_on_q1_keeps_complete_model_public_state_order(model):
     adapter = _adapter(model)
     outcomes = PulseEngine(adapter).run(
         (_drive_block(adapter._target, "q1"),),
@@ -356,8 +356,8 @@ def test_control_on_q1_keeps_complete_model_canonical_state_order(model):
         rng=np.random.default_rng(3),
     )
     physical = Qobj(outcomes[0].final_state, dims=[[3, 3], [3, 3]])
-    assert np.allclose(physical.ptrace(1).full(), ket2dm(basis(3, 0)).full())
-    assert physical.ptrace(0).diag()[0].real < 0.999
+    assert np.allclose(physical.ptrace(0).full(), ket2dm(basis(3, 0)).full())
+    assert physical.ptrace(1).diag()[0].real < 0.999
 
 
 def test_drift_covers_leading_internal_and_trailing_idle_intervals(model):
@@ -607,7 +607,7 @@ def test_disabled_block_suppresses_control_and_post_frame_but_advances_time(mode
     assert np.allclose(context.state.full(), adapter.initial_state().full())
 
 
-def test_measurement_and_reset_indices_are_canonical_physical_axes(model):
+def test_measurement_and_reset_indices_follow_public_factors(model):
     adapter = _adapter(model)
     state = ket2dm(_qutip_tensor(basis(3, 0), basis(3, 2)))
     context = _context(adapter, state, memory=(0,))

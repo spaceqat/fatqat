@@ -125,7 +125,7 @@ def test_unitary_result_applies_the_terminal_frame(backend):
     complete = unitary_backend.run(program).result().get_unitary()
     expected_frame = np.diag(np.exp(1j * angle * np.arange(3)))
 
-    assert np.allclose(complete, np.kron(np.eye(3), expected_frame))
+    assert np.allclose(complete, np.kron(expected_frame, np.eye(3)))
 
 
 def test_unitary_rejects_noncoherent_program_features_and_noise(backend, make_backend):
@@ -161,7 +161,7 @@ def test_unitary_ignores_inactive_noise_and_applies_the_terminal_frame(make_back
     program = fq.Program(1)
     program.add(ops.RZ(0.2), 0)
 
-    expected = np.kron(np.eye(3), np.diag(np.exp(0.2j * np.arange(3))))
+    expected = np.kron(np.diag(np.exp(0.2j * np.arange(3))), np.eye(3))
     assert np.allclose(backend.run(program).result().get_unitary(), expected)
 
 
@@ -317,7 +317,7 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
     assert all("engine_index" not in axis for axis in result.metadata["state_axes"])
     assert result.get_counts() == {"1": 1}
     density = result.get_density_matrix()
-    q2_excited_indices = (3**2, 2 * 3**2)
+    q2_excited_indices = (1, 2)
     assert sum(np.real(density[index, index]) for index in q2_excited_indices) == (
         pytest.approx(1.0)
     )

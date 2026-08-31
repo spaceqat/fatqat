@@ -125,7 +125,7 @@ def test_counts_only_finish_does_not_materialize_a_statevector():
     assert outcome.classical_digits == (1,)
 
 
-def test_measurement_indices_are_canonical_axes_and_state_is_little_endian():
+def test_measurement_indices_follow_public_qutip_factor_order():
     adapter = _adapter(_target())
     context = _ShotContext(
         tensor(basis(2, 0), basis(2, 1)),
@@ -140,7 +140,7 @@ def test_measurement_indices_are_canonical_axes_and_state_is_little_endian():
 
     adapter.execute_boundary(step, context)
 
-    assert context.classical_memory == [1, 0]
+    assert context.classical_memory == [0, 1]
     assert np.asarray(context.state.full()).reshape(-1).tolist() == [0.0, 1.0, 0.0, 0.0]
 
 

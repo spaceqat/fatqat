@@ -3,8 +3,8 @@ import json
 import numpy as np
 
 from fatqat.result import (
+    _decode_engine_indices_to_clbit_rows,
     counts_dict_from_arrays,
-    decode_indices_to_clbit_rows,
     format_count_key,
     reduce_to_counts,
 )
@@ -17,7 +17,7 @@ def test_reduce_to_counts_key_ordering_from_clbit_rows():
 
 
 def test_reduce_to_counts_agrees_with_decoded_static_case():
-    via_indices = decode_indices_to_clbit_rows(
+    via_indices = _decode_engine_indices_to_clbit_rows(
         [1, 1, 0], measurements=[(0, 0)], system_dims=(2,), n_clbits=1
     )
     keys_from_indices, counts_from_indices = reduce_to_counts(via_indices)
@@ -41,17 +41,18 @@ def test_reduce_to_counts_empty_rows():
     assert counts_dict_from_arrays(keys, counts) == {}
 
 
-def test_decode_indices_to_clbit_rows_binary_tuple_keys():
-    # 2 qubits measured into clbits 0,1; sampled flat index 0b10 = 2 -> q1=1,q0=0.
-    rows = decode_indices_to_clbit_rows(
+def test_decode_engine_indices_to_clbit_rows_binary_tuple_keys():
+    # Two engine subsystems measured into clbits 0,1; flat index 0b10 means
+    # engine subsystem 1 is 1 and engine subsystem 0 is 0.
+    rows = _decode_engine_indices_to_clbit_rows(
         [2, 2], measurements=[(0, 0), (1, 1)], system_dims=(2, 2), n_clbits=2
     )
     assert np.array_equal(rows, np.array([[0, 1], [0, 1]], dtype=int))
 
 
-def test_decode_indices_to_clbit_rows_qutrit_digit_decode():
-    # 1 qutrit (subsystem 0) measured into clbit 0. Flat index 2 -> digit 2.
-    rows = decode_indices_to_clbit_rows(
+def test_decode_engine_indices_to_clbit_rows_qutrit_digit_decode():
+    # One qutrit at engine subsystem 0; flat index 2 decodes to digit 2.
+    rows = _decode_engine_indices_to_clbit_rows(
         [2, 1, 0], measurements=[(0, 0)], system_dims=(3,), n_clbits=1
     )
     assert np.array_equal(rows, np.array([[2], [1], [0]], dtype=int))
@@ -75,28 +76,41 @@ def test_counts_dict_from_arrays_returns_python_ints():
     json.dumps({"counts": [(key, value)]})
 
 
-def test_format_count_key_single_digit_little_endian():
-    # clbit0=0, clbit1=1 -> little-endian string "10".
-    assert format_count_key((0, 1), classical_dims=(2, 2)) == "10"
+def test_decode_engine_indices_unwritten_clbit_stays_zero():
+    rows = _decode_engine_indices_to_clbit_rows(
+        [1, 1], measurements=[(0, 0)], system_dims=(2,), n_clbits=2
+    )
+    assert np.array_equal(rows, np.array([[1, 0], [1, 0]], dtype=int))
+
+
+def test_decode_engine_indices_last_write_wins():
+    rows = _decode_engine_indices_to_clbit_rows(
+        [2], measurements=[(0, 0), (1, 0)], system_dims=(2, 2), n_clbits=2
+    )
+    assert np.array_equal(rows, np.array([[1, 0]], dtype=int))
+
+
+def test_format_count_key_uses_public_classical_order():
+    assert format_count_key((1, 0), classical_dims=(2, 2)) == "10"
+    assert format_count_key((0, 1), classical_dims=(2, 2)) == "01"
 
 
 def test_format_count_key_delimited_when_dim_ge_10():
-    # clbits (3, 0, 15, 2) with a dim>=10 register -> delimited, little-endian.
-    assert format_count_key((3, 0, 15, 2), classical_dims=(4, 4, 16, 4)) == "2,15,0,3"
+    assert format_count_key((3, 0, 15, 2), classical_dims=(4, 4, 16, 4)) == "3,0,15,2"
 
 
 def test_format_count_key_high_quantum_dim_stays_plain():
     # classical dims are small even though a quantum register was dim 11 upstream;
     # format only sees classical_dims, so the plain string is used.
-    assert format_count_key((0, 1), classical_dims=(2, 2)) == "10"
+    assert format_count_key((0, 1), classical_dims=(2, 2)) == "01"
 
 
 def test_delimited_key_threshold_end_to_end():
     import fatqat as fq
     import fatqat.operations as ops
 
-    # Two classical slots so plain concatenation ("310") and the delimited
-    # little-endian form ("3,10") are visibly different strings -- a single
+    # Two classical slots so plain concatenation ("103") and the delimited
+    # public-order form ("10,3") are visibly different strings -- a single
     # dim>=10 clbit can't distinguish the two formats (e.g. "10" is the same
     # string either way), so this must use >= 2 slots to actually pin the
     # delimited branch.
@@ -107,8 +121,7 @@ def test_delimited_key_threshold_end_to_end():
     program.add(ops.Shift(3), qreg[1])  # |0> -> |3>
     program.measure((qreg[0], qreg[1]), (creg[0], creg[1]))
     result = fq.simulator.Simulator("SV").run(program, shots=4).result()
-    # clbit0=10, clbit1=3; little-endian (highest clbit first): "3,10".
-    assert result.get_counts() == {"3,10": 4}
+    assert result.get_counts() == {"10,3": 4}
     assert result.get_counts_as_tuples() == {(10, 3): 4}
 
 

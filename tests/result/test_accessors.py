@@ -1,31 +1,9 @@
 """Tests result configuration, count-key assembly, and result accessors."""
 
-import numpy as np
 import pytest
 
-from fatqat.result import Result, decode_indices_to_clbit_rows
+from fatqat.result import Result
 from fatqat.errors import ResultFieldUnavailableError
-
-
-def test_decode_indices_little_endian_key():
-    rows = decode_indices_to_clbit_rows(
-        [1, 1, 0], measurements=[(0, 0), (1, 1)], system_dims=(2, 2), n_clbits=2
-    )
-    assert np.array_equal(rows, np.array([[1, 0], [1, 0], [0, 0]], dtype=int))
-
-
-def test_decode_indices_unwritten_clbit_stays_zero():
-    rows = decode_indices_to_clbit_rows(
-        [1, 1], measurements=[(0, 0)], system_dims=(2,), n_clbits=2
-    )
-    assert np.array_equal(rows, np.array([[1, 0], [1, 0]], dtype=int))
-
-
-def test_decode_indices_last_write_wins():
-    rows = decode_indices_to_clbit_rows(
-        [2], measurements=[(0, 0), (1, 0)], system_dims=(2, 2), n_clbits=2
-    )
-    assert np.array_equal(rows, np.array([[1, 0]], dtype=int))
 
 
 def test_result_get_counts_available():
@@ -42,7 +20,7 @@ def test_result_get_counts_and_tuples():
         available=frozenset({"counts"}),
     )
     assert r.get_counts_as_tuples() == {(0, 1): 5, (2, 0): 3}
-    assert r.get_counts() == {"10": 5, "02": 3}
+    assert r.get_counts() == {"01": 5, "20": 3}
 
 
 def test_result_metadata_defaults_and_is_copied():

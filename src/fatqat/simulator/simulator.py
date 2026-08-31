@@ -448,6 +448,10 @@ class Simulator:
     ) -> _EngineAllocation:
         """Build the private engine allocation from the modeled physical order."""
         modeled = self._modeled_subsystems(program, resource_layout)
+        # NumPy/Numba keep private little-endian prefix strides. Reversing the
+        # public (operand, dimension) pairs together makes those prefixes equal
+        # public MSB suffix strides, so native results need no ordering copy.
+        modeled = tuple(reversed(modeled))
         return _EngineAllocation(
             tuple(operand for operand, _dimension in modeled),
             tuple(dimension for _operand, dimension in modeled),
@@ -524,7 +528,10 @@ class Simulator:
                 the all-zero computational state. A statevector run takes a
                 ``(D,)`` vector; a density-matrix run takes ``(D, D)``, or a
                 ``(D,)`` ket interpreted as a pure state. Only shape is
-                validated. Operator methods reject an initial state.
+                validated. Basis indices use public most-significant-first
+                subsystem order, with no input permutation or copy added by
+                the ordering migration. Operator methods reject an initial
+                state.
             simulation_config: Optional per-run execution controls. String
                 choices are case-sensitive. Accepted keys are:
 
@@ -611,7 +618,7 @@ class Simulator:
         engine_allocation = self._allocate_engine_indices(program, resource_layout)
         classical_allocation = _ClassicalAllocation.from_program(program)
         initial_state = self._validate_initial_state(
-            initial_state, engine_allocation.system_dims
+            initial_state, tuple(reversed(engine_allocation.system_dims))
         )
         # Strict selector-identity validation runs immediately after the
         # effective resource layout is known and before any lowering/plan
@@ -725,7 +732,8 @@ class Simulator:
                 quantum references to compatible device labels, reused for
                 every row. The backend default is used when omitted.
             initial_state: Optional starting state reused for every row. The
-                same shape and method rules as ``run()`` apply.
+                same public basis order, shape, and method rules as ``run()``
+                apply; the array is not permuted between sweep points.
             simulation_config: Controls reused for every row. Accepted keys:
 
                 - ``"seed"`` (``int | None``, default ``None``): Use a
@@ -1056,7 +1064,7 @@ class Simulator:
         }
         if state_requested:
             metadata["state_axes"] = _describe_state_axes(
-                engine_allocation,
+                tuple(reversed(engine_allocation.device_operands)),
                 lowering.resource_layout,
             )
         return Result(

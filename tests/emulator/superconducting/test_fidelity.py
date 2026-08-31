@@ -57,11 +57,13 @@ def program_from_operations(operations):
 
 
 def embed_local_unitary(local, targets, n_qubits):
-    """Embed a target-ordered local matrix in canonical little-endian order."""
+    """Embed a target-ordered local matrix in public subsystem order."""
     target_count = len(targets)
     result = np.zeros((2**n_qubits, 2**n_qubits), dtype=complex)
     for input_index in range(2**n_qubits):
-        input_bits = [(input_index >> qubit) & 1 for qubit in range(n_qubits)]
+        input_bits = [
+            (input_index >> (n_qubits - 1 - qubit)) & 1 for qubit in range(n_qubits)
+        ]
         local_input = sum(
             input_bits[target] << (target_count - 1 - ordinal)
             for ordinal, target in enumerate(targets)
@@ -70,13 +72,15 @@ def embed_local_unitary(local, targets, n_qubits):
             output_bits = input_bits.copy()
             for ordinal, target in enumerate(targets):
                 output_bits[target] = (local_output >> (target_count - 1 - ordinal)) & 1
-            output_index = sum(bit << qubit for qubit, bit in enumerate(output_bits))
+            output_index = sum(
+                bit << (n_qubits - 1 - qubit) for qubit, bit in enumerate(output_bits)
+            )
             result[output_index, input_index] += local[local_output, local_input]
     return result
 
 
 def matrix_program_unitary(program):
-    """Compose public matrix rules in FATQAT's canonical state order."""
+    """Compose public matrix rules in FATQAT's public state order."""
     implementation_map = default_matrix_implementation_map()
     references = tuple(
         register[index]
@@ -94,12 +98,13 @@ def matrix_program_unitary(program):
 
 
 def computational_subspace_unitary(backend, program, schedule_mode="ASAP"):
-    """Project the full qutrit propagator into canonical qubit order."""
+    """Project the full qutrit propagator into public qubit order."""
     n_qubits = sum(register.size for register in program.quantum_registers)
     physical_dimension = len(backend.model.basis_order)
     indices = tuple(
         sum(
-            ((basis_index >> qubit) & 1) * physical_dimension**qubit
+            ((basis_index >> (n_qubits - 1 - qubit)) & 1)
+            * physical_dimension ** (n_qubits - 1 - qubit)
             for qubit in range(n_qubits)
         )
         for basis_index in range(2**n_qubits)
@@ -123,7 +128,7 @@ def process_fidelity_and_leakage(actual, ideal):
 
 
 def pulse_ground_state(backend, program):
-    """Return propagated |0...0> in FATQAT's canonical state order."""
+    """Return propagated |0...0> in FATQAT's public state order."""
     return computational_subspace_unitary(backend, program)[:, 0]
 
 
@@ -253,7 +258,7 @@ def test_run_composes_terminal_virtual_frame(backend, method):
         .result()
     )
     expected_state = np.zeros(9, dtype=complex)
-    expected_state[:2] = (np.cos(0.15), -1j * np.sin(0.15))
+    expected_state[[0, 3]] = (np.cos(0.15), -1j * np.sin(0.15))
     expected_density_matrix = np.outer(expected_state, expected_state.conj())
 
     if method == "statevector":

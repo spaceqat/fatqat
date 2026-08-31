@@ -94,10 +94,10 @@ class _ControlBinding:
 
 @dataclass(frozen=True, slots=True)
 class _PreparedControlBinding:
-    """One control bound to canonical physical axes for a prepared run.
+    """One control bound to owning pulse-allocation indices for a prepared run.
 
-    Axis 0 is the least-significant subsystem in returned flat states. Solver
-    adapters translate these indices to their own tensor-factor order.
+    Built-in QuTiP adapters use public model/factor order and pass these indices
+    directly to QuTiP.
     """
 
     kind: str

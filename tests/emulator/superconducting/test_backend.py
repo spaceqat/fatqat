@@ -64,9 +64,9 @@ def _adapter(model, *, kind=_TransmonQutipAdapter, **kwargs):
     )
 
 
-def _qutip_tensor(*canonical_factors):
-    """Construct a QuTiP value from canonical least-significant-first factors."""
-    return tensor(*reversed(canonical_factors))
+def _qutip_tensor(*public_factors):
+    """Construct a QuTiP value directly in public factor order."""
+    return tensor(*public_factors)
 
 
 @pytest.mark.parametrize("execution_mode", ["density_matrix", "statevector"])
@@ -87,7 +87,7 @@ def test_partial_entangled_measurement_collapses_the_physical_posterior(
 
     outcome = context.classical_memory[0]
     assert outcome in (0, 1)
-    posterior = context.state.ptrace(0)
+    posterior = context.state.ptrace(1)
     expected = ket2dm(basis(3, 0 if outcome == 0 else 2))
     assert np.allclose(posterior.full(), expected.full())
 
@@ -162,8 +162,8 @@ def test_confused_reported_value_drives_later_guarded_pulse(make_backend):
 
     assert result.get_counts() == {"1": 1}
     density = Qobj(result.get_density_matrix(), dims=[[3, 3], [3, 3]])
-    assert density.ptrace(0).diag()[1].real > 0.8
-    assert np.allclose(density.ptrace(1).full(), ket2dm(basis(3, 0)).full())
+    assert density.ptrace(1).diag()[1].real > 0.8
+    assert np.allclose(density.ptrace(0).full(), ket2dm(basis(3, 0)).full())
 
 
 def test_seeded_dynamic_replay_is_reproducible(make_backend):
@@ -257,7 +257,7 @@ def test_reset_and_both_guarded_boundary_outcomes_preserve_later_frame_use(
             .result()
             .get_density_matrix()
         )
-        return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(1).full()
+        return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(0).full()
 
     continuous = fq.Program(2)
     continuous.add(ops.RZ(0.3), 0)
@@ -292,7 +292,7 @@ def test_both_guarded_pulse_outcomes_flush_before_later_frame_aware_drive(make_b
             .result()
             .get_density_matrix()
         )
-        return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(1).full()
+        return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(0).full()
 
     continuous = fq.Program(2)
     continuous.add(ops.RZ(0.3), 0)
