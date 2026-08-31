@@ -16,13 +16,13 @@ import functools
 import io
 from typing import TYPE_CHECKING, Any
 
-from . import operations as ops
-from .errors import UnsupportedOperationError
-from .operations import BarrierGate, Measurement, PulseOperation, ResetGate
-from .registers import RegisterRef, RegisterView, _view_members
+from .. import operations as ops
+from ..errors import UnsupportedOperationError
+from ..operations import BarrierGate, Measurement, PulseOperation, ResetGate
+from ..registers import RegisterRef, RegisterView, _view_members
 
 if TYPE_CHECKING:
-    from .program import Program
+    from ..program import Program
 
 # Map exact fatqat built-in operation types to their native QuTiP-QIP gate.
 # Using types instead of public ``Operation.name`` strings prevents a custom

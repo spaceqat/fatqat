@@ -220,7 +220,7 @@ class Program:
             UnsupportedOperationError: If the program contains a
                 ``PulseOperation``.
         """
-        from .draw import _draw_program
+        from .visualization.qutip_circuit import _draw_program
 
         return _draw_program(self, renderer, **kwargs)
 
