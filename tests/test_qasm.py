@@ -588,3 +588,53 @@ def test_qasm_export_rejects_unbound_parameters_descriptively():
         match=r"^program has unbound parameters: theta$",
     ):
         program_to_qasm(program)
+
+
+def test_export_sx_and_u_family():
+    import numpy as np
+
+    from fatqat.simulator import Simulator
+
+    program = fc.Program(1)
+    program.add(ops.SX, 0)
+    program.add(ops.U(0.7, 0.4, 1.1), 0)
+    program.add(ops.U1(0.3), 0)
+    program.add(ops.U2(0.2, 0.5), 0)
+    program.add(ops.U3(0.9, -0.4, 0.25), 0)
+
+    qasm3 = program_to_qasm(program, version=3)
+    assert "sx q[0];" in qasm3
+    assert "U(0.7, 0.4, 1.1) q[0];" in qasm3
+    assert "p(0.3) q[0];" in qasm3
+    assert "U(pi/2, 0.2, 0.5) q[0];" in qasm3
+
+    qasm2 = program_to_qasm(program, version=2)
+    assert "gate sx a" in qasm2
+    assert "u3(0.7, 0.4, 1.1) q[0];" in qasm2
+    assert "u1(0.3) q[0];" in qasm2
+
+    def statevector(p):
+        job = Simulator("SV").run(
+            p, result_config={"counts": False, "final_state": True}, shots=1
+        )
+        return np.asarray(job.result().get_statevector())
+
+    reference = statevector(program)
+    reimported = statevector(from_qasm(qasm2))
+    k = int(np.argmax(np.abs(reference)))
+    phase = reimported[k] / reference[k]
+    assert np.isclose(abs(phase), 1.0)
+    assert np.allclose(reimported, reference * phase)
+
+
+def test_export_qasm2_sx_definition_emitted_once_and_parses():
+    qiskit_qasm2 = pytest.importorskip("qiskit.qasm2")
+
+    program = fc.Program(1)
+    program.add(ops.SX, 0)
+    program.add(ops.SX, 0)
+
+    qasm2 = program_to_qasm(program, version=2)
+    assert qasm2.count("gate sx a") == 1
+    circuit = qiskit_qasm2.loads(qasm2)
+    assert [instruction.operation.name for instruction in circuit.data] == ["sx", "sx"]

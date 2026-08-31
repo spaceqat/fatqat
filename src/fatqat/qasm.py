@@ -960,6 +960,20 @@ def _lower(op: ops.Operation, dim: int) -> tuple[str, ...]:
     if name == "iSwapGate":
         return ("gate", "iswap", [])
 
+    if name == "SXGate":
+        # stdgates.inc `sx` in QASM 3; a local definition in QASM 2.
+        return ("gate", "sx", [])
+
+    if name in ("U", "U3"):
+        # QASM 3 builtin U(theta, phi, lam) is exactly this matrix
+        # (e^{i(phi+lam)/2} Rz(phi) Ry(theta) Rz(lam)); qelib1's u3 likewise.
+        return ("gate", "U", [_fmt(op.theta), _fmt(op.phi), _fmt(op.lam)])
+    if name == "U2":
+        return ("gate", "U", [_fmt(math.pi / 2), _fmt(op.phi), _fmt(op.lam)])
+    if name == "U1":
+        # U1(lam) == Phase(lam) exactly.
+        return ("gate", "p", [_fmt(op.lam)])
+
     if name == "RX":
         return ("gate", "rx", [_fmt(op.theta)])
     if name == "RY":
@@ -1026,7 +1040,7 @@ def _lower(op: ops.Operation, dim: int) -> tuple[str, ...]:
 
 def _qasm2_lower_name(qasm3_name: str) -> str:
     """A handful of stdgates.inc names differ from qelib1.inc names."""
-    return {"cp": "cu1", "p": "u1"}.get(qasm3_name, qasm3_name)
+    return {"cp": "cu1", "p": "u1", "U": "u3"}.get(qasm3_name, qasm3_name)
 
 
 # ---------------------------------------------------------------------------
@@ -1053,6 +1067,10 @@ _ISWAP_DEF_QASM2 = (
     "    h b;\n"
     "}"
 )
+
+# qelib1.inc has no sx. This matches Qiskit's own QASM 2 export definition;
+# it equals SX up to the global phase e^{i*pi/4}, which QASM 2 cannot express.
+_SX_DEF_QASM2 = "gate sx a {\n    sdg a;\n    h a;\n    sdg a;\n}"
 
 
 # ---------------------------------------------------------------------------
@@ -1107,11 +1125,12 @@ def to_qasm(program: Program, version: int = 3) -> str:
     """Serialize a :class:`~fatqat.Program` as OpenQASM 2.0 or 3.0.
 
     Export supports dimension-2 programs containing measurement, reset,
-    conditions, the standard fixed qubit gates, ``RX``/``RY``/``RZ``,
-    ``Phase``/``CPhase``, ``CS``, and ``iSwap``. The qudit gate families are
-    also accepted when their registers have ``dim == 2`` and are lowered to
-    the equivalent qubit gates. ``iSwap`` adds one local gate definition to
-    the output.
+    conditions, the standard fixed qubit gates, ``SX``, ``RX``/``RY``/``RZ``,
+    ``Phase``/``CPhase``, ``U``/``U1``/``U2``/``U3``, ``CS``, and ``iSwap``.
+    The qudit gate families are also accepted when their registers have
+    ``dim == 2`` and are lowered to the equivalent qubit gates. ``iSwap``
+    (both versions) and ``SX`` (OpenQASM 2 only, up to global phase) add one
+    local gate definition each to the output.
 
     OpenQASM 3 can express FATQAT's arbitrary AND of bit comparisons. OpenQASM
     2 can express a condition only when it fixes every bit of one classical
@@ -1149,6 +1168,7 @@ def to_qasm(program: Program, version: int = 3) -> str:
     layout = _Layout(program)
     body: list[str] = []
     uses_iswap = False
+    uses_sx = False
 
     for step in program._instructions:
         if isinstance(step, ops.Measurement):
@@ -1182,6 +1202,8 @@ def to_qasm(program: Program, version: int = 3) -> str:
             _, gate_name, params = (kind, *rest)
             if gate_name == "iswap":
                 uses_iswap = True
+            if gate_name == "sx":
+                uses_sx = True
             qasm_gate = gate_name if version == 3 else _qasm2_lower_name(gate_name)
             arg_list = ", ".join(layout.qref(t) for t in step.targets)
             if params:
@@ -1215,6 +1237,8 @@ def to_qasm(program: Program, version: int = 3) -> str:
             header += ["", _ISWAP_DEF_QASM3]
     else:
         header = ["OPENQASM 2.0;", 'include "qelib1.inc";']
+        if uses_sx:
+            header += ["", _SX_DEF_QASM2]
         if uses_iswap:
             header += ["", _ISWAP_DEF_QASM2]
 
