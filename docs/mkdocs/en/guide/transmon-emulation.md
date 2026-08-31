@@ -231,6 +231,80 @@ disappear beside the computational-level populations.
     fig.tight_layout()
     ```
 
+## Reference pulse model
+
+The packaged calibration is a fixed analytic reference for simulation. Grid
+calibrations use the same pulse shapes, with deterministic rules choosing the
+CZ branch and filling in the recipe. Neither path numerically calibrates the
+pulses, fits them to hardware, or guarantees high fidelity or low leakage.
+
+The emulator keeps three levels per transmon and uses an effective rotating-
+frame/RWA Hamiltonian. In the solver, \(\alpha_i\), \(\delta_i\),
+\(\epsilon_i\), and \(g_{ij}\) are angular rates:
+
+\[
+H(t) =
+\sum_i \frac{\alpha_i}{2} n_i(n_i-1)
++ \sum_i \delta_i(t)n_i
++ \sum_i \left[\epsilon_i(t)a_i^\dagger
+                 + \epsilon_i^*(t)a_i\right]
++ \sum_{(i,j)\in E} g_{ij}(t)
+  \left(a_i^\dagger a_j+a_i a_j^\dagger\right),
+\qquad n_i=a_i^\dagger a_i.
+\]
+
+Here \(a_i\) is the three-level lowering operator. The signed anharmonicity
+\(\alpha_i\) is the only coherent drift. Drive, detuning, and exchange appear
+only while their controls are active. In particular, there is no static
+exchange. Exchange is allowed only on a declared model edge; generated
+rectangular grids connect horizontal and vertical nearest neighbours.
+
+The reference iSwap is a 40 ns Hann exchange pulse. For duration \(T\),
+
+\[
+g_{ij}(t) = -\frac{\pi}{T}\sin^2\!\left(\frac{\pi t}{T}\right),
+\qquad 0\leq t\leq T,
+\]
+
+so \(\int_0^T g_{ij}(t)\,dt=-\pi/2\). A frame swap after the pulse gives
+the public \(+i\) convention. The full qutrit exchange operator also couples
+\(\lvert11\rangle\) to \(\lvert20\rangle\) and \(\lvert02\rangle\), so
+conditional-phase error and residual leakage remain possible.
+
+For CZ, label the selected endpoint \(i\). In a basis that lists it first, the
+chosen branch is
+\(\lvert11\rangle\leftrightarrow\lvert20\rangle\). The recipe parks that
+endpoint with \(\delta_i(t)=-\alpha_i s(t)\). For total duration \(T\) and
+ramp time \(t_r\),
+
+\[
+s(t)=
+\begin{cases}
+\frac{1-\cos(\pi t/t_r)}{2}, & 0\leq t<t_r,\\
+1, & t_r\leq t\leq T-t_r,\\
+\frac{1-\cos(\pi(T-t)/t_r)}{2}, & T-t_r<t\leq T.
+\end{cases}
+\]
+
+Exchange is active only during the parked interval \(T_p=T-2t_r\):
+
+\[
+g_{ij}(t) = \frac{\sqrt{2}\pi}{T_p}
+\sin^2\!\left(\frac{\pi(t-t_r)}{T_p}\right),
+\qquad t_r\leq t\leq T-t_r.
+\]
+
+The nominal resonant branch closes one cycle, and a frame update removes the
+local phase accumulated from detuning. The defaults are 60 ns total with 3 ns
+ramps.
+
+Because exchange is zero during the ramps, this recipe does not model
+Landau–Zener leakage from crossing an avoided crossing with finite coupling.
+It also omits a tunable coupler, residual exchange, waveform distortion, and
+non-RWA terms. Final leakage can therefore be tiny even when the transient
+\(\lvert20\rangle\) population is large. Changing the duration preserves the
+nominal exchange area; it does not recalibrate phases or fidelity.
+
 ## Know when more physics changes the answer
 
 - **Coupling:** two-transmon gates are available only on coupling edges in the
