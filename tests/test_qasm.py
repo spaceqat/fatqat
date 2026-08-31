@@ -654,3 +654,21 @@ def test_from_qasm_u_family_matches_qiskit_converter_identity():
     assert names == ["U1", "U3", "SX"]
     u3 = program._instructions[1].operation
     assert (u3.theta, u3.phi, u3.lam) == (0.9, 0.4, -0.6)
+
+
+def test_export_barrier_as_native_statement():
+    p = fc.Program(2, 1)
+    p.add(ops.H, 0)
+    p.add(ops.Barrier, (0, 1))
+    p.add(ops.X, 1)
+    out3 = program_to_qasm(p, version=3)
+    assert "barrier q[0], q[1];" in out3
+    out2 = program_to_qasm(p, version=2)
+    assert "barrier q[0], q[1];" in out2
+
+    # a conditioned barrier exports unconditioned (it is a no-op either way)
+    p2 = fc.Program(1, 1)
+    p2.add(ops.Barrier, 0, condition=(0, 1))
+    out = program_to_qasm(p2, version=2)
+    assert "barrier q[0];" in out
+    assert "if" not in out

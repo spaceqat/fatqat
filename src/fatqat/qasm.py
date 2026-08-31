@@ -1136,7 +1136,9 @@ def to_qasm(program: Program, version: int = 3) -> str:
         BackendValidationError: If the program has unbound parameters.
         QasmExportError: If a register has ``dim != 2``; an operation has no
             defined lowering; a target is a :class:`~fatqat.RegisterView`; or
-            a QASM 2 condition cannot be represented. Barrier and direct pulse
+            a QASM 2 condition cannot be represented. Barriers export as
+            native ``barrier`` statements (a condition on a barrier is
+            ignored, matching the built-in simulators); direct pulse
             operations are not exportable.
         ValueError: If ``version`` is neither ``2`` nor ``3``.
 
@@ -1178,6 +1180,14 @@ def to_qasm(program: Program, version: int = 3) -> str:
                 f"{op.name}: cannot export a RegisterView target to QASM; "
                 "view-bearing programs are not QASM-exportable"
             )
+
+        if type(op).__name__ == "BarrierGate":
+            # QASM has a native barrier. Like the built-in simulators, export
+            # ignores any recorded condition (a conditioned barrier is a no-op
+            # either way, and `if` cannot guard a barrier in QASM 2).
+            targets = ", ".join(layout.qref(t) for t in step.targets)
+            body.append(f"barrier {targets};")
+            continue
 
         if type(op).__name__ == "ResetGate":
             lines = [f"reset {layout.qref(t)};" for t in step.targets]
