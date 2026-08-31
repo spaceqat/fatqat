@@ -281,6 +281,11 @@ class Program:
             raise TypeError(
                 f"operand must be int or RegisterRef, got {type(operand)!r}"
             )
+        if len(regs) == 0:
+            raise TypeError(
+                f"this program has no {kind_name}; declare one before "
+                "referring to its slots"
+            )
         if len(regs) != 1:
             raise TypeError(
                 "integer operands are only allowed when there is exactly one "

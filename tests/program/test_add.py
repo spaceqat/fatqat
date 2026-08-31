@@ -253,3 +253,12 @@ def test_measure_accepts_list_operands():
     m = p._instructions[0]
     assert m.targets == (p.quantum_registers[0][0], p.quantum_registers[0][1])
     assert m.outputs == (p.classical_registers[0][0], p.classical_registers[0][1])
+
+
+def test_integer_operand_with_no_registers_names_the_real_fix():
+    p = Program(0, 2)
+    with pytest.raises(TypeError, match="has no quantum register"):
+        p.add(ops.H, 0)
+    p2 = Program(1, 0)
+    with pytest.raises(TypeError, match="has no classical register"):
+        p2.add(ops.X, 0, condition=(0, 1))
