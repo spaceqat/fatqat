@@ -399,3 +399,11 @@ def test_adapter_errors_are_also_qiskit_errors():
     backend = FatqatBackend()
     with pytest.raises(QiskitError):
         backend.run(QuantumCircuit(1, 1), shots=-1)
+
+
+def test_provider_backends_report_their_provider():
+    from fatqat.qiskit import FatqatProvider
+
+    provider = FatqatProvider()
+    backend = provider.get_backend("fatqat_simulator")
+    assert backend.provider is provider

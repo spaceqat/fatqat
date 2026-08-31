@@ -42,6 +42,7 @@ class FatqatProvider:
         """
         del filters
         backend_kwargs = {**self._default_backend_kwargs, **kwargs}
+        backend_kwargs.setdefault("provider", self)
         backend = FatqatBackend(**backend_kwargs)
         if name is not None and backend.name != name:
             return []
