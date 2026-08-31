@@ -506,14 +506,17 @@ def _expand_targets(targets: tuple) -> tuple[tuple[RegisterRef, ...], ...]:
     return tuple(zip(*members))
 
 
-def to_qubit_circuit(program: Program):
+def to_qubit_circuit(program: Program, *, _barrier_markers: bool = False):
     """Convert a program to a QuTiP-QIP circuit for drawing.
 
     Quantum and classical slots become wires in register declaration order.
     Native gates use QuTiP-QIP symbols; gates it cannot draw natively,
     including custom and qudit operations, become boxes labeled with the
     operation name. Measurements, reset, barriers, and classical conditions
-    are retained. Register dimensions are not shown.
+    are retained; a barrier appears as a box labeled ``barrier`` (fatqat's
+    own `fatqat.Program.draw` renders it as a dashed separator instead), and
+    a condition attached to a barrier is not depicted. Register dimensions
+    are not shown.
 
     Use the returned circuit for drawing only. Placeholder gates for non-native
     operations cannot be simulated with QuTiP-QIP.
@@ -553,11 +556,20 @@ def to_qubit_circuit(program: Program):
         # Applied gate/reset/barrier - expand any grouped target first so each
         # emitted element acts on scalar wires.
         for operands in _expand_targets(step.targets):
-            _add_operation(circuit, step, operands, qubit_index, clbit_index)
+            _add_operation(
+                circuit,
+                step,
+                operands,
+                qubit_index,
+                clbit_index,
+                barrier_markers=_barrier_markers,
+            )
     return circuit
 
 
-def _add_operation(circuit, step, operands, qubit_index, clbit_index):
+def _add_operation(
+    circuit, step, operands, qubit_index, clbit_index, *, barrier_markers=False
+):
     """Add one scalar operation occurrence to the QuTiP circuit."""
     operation = step.operation
     wires = [_wire(ref, qubit_index) for ref in operands]
@@ -590,18 +602,24 @@ def _add_operation(circuit, step, operands, qubit_index, clbit_index):
         predicate = " & ".join(f"c{wire}={value}" for wire, value in condition_terms)
         return f"{label} if {predicate}"
 
-    # QuTiP-QIP has no barrier primitive. Add a drawing-only box carrying a
-    # private style marker; fatqat's renderer adapters replace it with a dashed
-    # vertical separator while retaining its position in QuTiP's layer layout.
+    # QuTiP-QIP has no barrier primitive. For fatqat's own renderers, add a
+    # drawing-only box carrying a private style marker that the adapters
+    # replace with a dashed vertical separator. Circuits handed to any other
+    # renderer (the public to_qubit_circuit contract, or a forwarded renderer
+    # name) get a plain box labeled "barrier" instead, so the private marker
+    # label never leaks into user-visible output.
     if isinstance(operation, BarrierGate):
-        _add_box(
-            circuit,
-            "barrier",
-            wires,
-            None,
-            arg_label=_BARRIER_RENDER_LABEL,
-            style={_BARRIER_STYLE_KEY: True},
-        )
+        if barrier_markers:
+            _add_box(
+                circuit,
+                "barrier",
+                wires,
+                None,
+                arg_label=_BARRIER_RENDER_LABEL,
+                style={_BARRIER_STYLE_KEY: True},
+            )
+        else:
+            _add_box(circuit, "barrier", wires, None)
         return
 
     # Reset: also no native primitive; draw a small ``|0>`` box per target.
@@ -670,16 +688,18 @@ def _draw_program(program: Program, renderer: str = "matplotlib", **kwargs: Any)
         A matplotlib ``Figure`` for ``"matplotlib"``, a ``str`` for ``"text"``,
         or whatever QuTiP-QIP's ``draw`` returns for any other renderer.
     """
-    circuit = to_qubit_circuit(program)
-
     if renderer == "text":
+        circuit = to_qubit_circuit(program, _barrier_markers=True)
         if _gate_api() == _API_STRING:
             _adapt_legacy_condition_controls(circuit)
         return _render_text(circuit, **kwargs)
 
     if renderer == "matplotlib":
+        circuit = to_qubit_circuit(program, _barrier_markers=True)
         if _gate_api() == _API_STRING:
             _adapt_legacy_condition_controls(circuit)
         return _render_matplotlib(circuit, **kwargs)
 
+    # Foreign renderers receive marker-free circuits; see _add_operation.
+    circuit = to_qubit_circuit(program)
     return circuit.draw(renderer, **kwargs)

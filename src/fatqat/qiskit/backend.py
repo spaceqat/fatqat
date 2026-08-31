@@ -202,19 +202,25 @@ class FatqatBackend(BackendV2):
                 return FatqatJob(self, job_id, error=exc)
 
         fatqat_results = []
+        circuit_seeds: list[int | None] = []
         try:
-            for program, circuit in zip(programs, circuits):
+            for index, (program, circuit) in enumerate(zip(programs, circuits)):
                 backend = Simulator(
                     method=self._method,
                     runtime=self._runtime,
                     noise=self._noise_model,
                 )
                 result_config = {"counts": True} if circuit.num_clbits > 0 else {}
+                # Distinct per-circuit seeds, as Aer does: reusing one seed
+                # would make identical circuits in a batch return identical
+                # samples.
+                circuit_seed = None if seed is None else seed + index
+                circuit_seeds.append(circuit_seed)
                 fatqat_results.append(
                     backend.run(
                         program,
                         shots=shots,
-                        simulation_config={"seed": seed},
+                        simulation_config={"seed": circuit_seed},
                         result_config=result_config,
                     ).result()
                 )
@@ -229,7 +235,7 @@ class FatqatBackend(BackendV2):
             fatqat_results=fatqat_results,
             shots=shots,
             memory=memory,
-            seed_simulator=seed,
+            seed_simulators=circuit_seeds,
         )
         return FatqatJob(self, qiskit_result.job_id, result=qiskit_result)
 

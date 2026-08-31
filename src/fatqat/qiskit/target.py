@@ -23,20 +23,21 @@ from qiskit.circuit.library import (
     SwapGate,
     TGate,
     TdgGate,
-    U1Gate,
-    U2Gate,
-    U3Gate,
     UGate,
     XGate,
     YGate,
     ZGate,
+    iSwapGate,
 )
 from qiskit.transpiler import Target
 
+# The legacy u1/u2/u3 gates are deprecated in Qiskit and are the realistic
+# future removal risk, so only they are import-guarded; iSwapGate has been in
+# qiskit.circuit.library since before 1.0.
 try:
-    from qiskit.circuit.library import iSwapGate
+    from qiskit.circuit.library import U1Gate, U2Gate, U3Gate
 except ImportError:  # pragma: no cover
-    iSwapGate = None
+    U1Gate = U2Gate = U3Gate = None
 
 
 def build_simulator_target() -> Target:
@@ -44,8 +45,9 @@ def build_simulator_target() -> Target:
 
     The target contains the fixed and parameterized qubit gates understood by
     :func:`~fatqat.qiskit.circuit_to_program`, together with measurement,
-    reset, and barrier. ``iSwap`` is included when the installed Qiskit version
-    provides its gate class.
+    reset, and barrier. The legacy ``u1``/``u2``/``u3`` gates are included
+    when the installed Qiskit version still provides their (deprecated)
+    classes.
     """
     target = Target(description="fatqat gate-level simulator", num_qubits=None)
     instructions = [
@@ -64,9 +66,6 @@ def build_simulator_target() -> Target:
         RZGate(0.0),
         PhaseGate(0.0),
         UGate(0.0, 0.0, 0.0),
-        U1Gate(0.0),
-        U2Gate(0.0, 0.0),
-        U3Gate(0.0, 0.0, 0.0),
         CXGate(),
         CYGate(),
         CZGate(),
@@ -78,9 +77,10 @@ def build_simulator_target() -> Target:
         Measure(),
         Reset(),
         Barrier(1),
+        iSwapGate(),
     ]
-    if iSwapGate is not None:
-        instructions.append(iSwapGate())
+    if U1Gate is not None:
+        instructions += [U1Gate(0.0), U2Gate(0.0, 0.0), U3Gate(0.0, 0.0, 0.0)]
     for instruction in instructions:
         target.add_instruction(instruction)
     return target

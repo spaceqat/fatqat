@@ -236,6 +236,11 @@ class Estimator:
             # attributes, and doing it worse: the backend knows whether a
             # registered channel actually landed on any operation in *this*
             # program, which a look at the noise model alone cannot tell.
+            # Only that specific refusal gets the stochastic explanation;
+            # every other validation failure (unsupported operation, bad
+            # config key, ...) propagates with its subtype and message intact.
+            if "is only supported for shots == 1" not in str(exc):
+                raise
             raise BackendValidationError(
                 f"no single final state is available to evaluate: {exc}. An "
                 "expectation value needs a well-defined final state, so a "

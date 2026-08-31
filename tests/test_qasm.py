@@ -324,8 +324,9 @@ def test_from_qasm_parses_parameter_expressions():
         """)
 
     assert math.isclose(program._instructions[0].operation.theta, math.pi / 2)
-    assert [op.operation.name for op in program._instructions[1:]] == ["RZ", "RY", "RZ"]
-    assert math.isclose(program._instructions[2].operation.theta, math.pi / 2)
+    assert [op.operation.name for op in program._instructions[1:]] == ["U2"]
+    assert program._instructions[1].operation.phi == 0
+    assert math.isclose(program._instructions[1].operation.lam, math.pi)
 
 
 def test_from_qasm_supports_classical_conditions():
@@ -346,8 +347,8 @@ def test_from_qasm_rejects_unsupported_gate():
     with pytest.raises(QASMTranspileError, match="unsupported gate"):
         from_qasm("""
             OPENQASM 2.0;
-            qreg q[1];
-            sx q[0];
+            qreg q[2];
+            rzz(0.5) q[0], q[1];
             """)
 
 
@@ -588,3 +589,136 @@ def test_qasm_export_rejects_unbound_parameters_descriptively():
         match=r"^program has unbound parameters: theta$",
     ):
         program_to_qasm(program)
+
+
+def test_export_sx_and_u_family():
+    import numpy as np
+
+    from fatqat.simulator import Simulator
+
+    program = fc.Program(1)
+    program.add(ops.SX, 0)
+    program.add(ops.U(0.7, 0.4, 1.1), 0)
+    program.add(ops.U1(0.3), 0)
+    program.add(ops.U2(0.2, 0.5), 0)
+    program.add(ops.U3(0.9, -0.4, 0.25), 0)
+
+    qasm3 = program_to_qasm(program, version=3)
+    assert "sx q[0];" in qasm3
+    assert "U(0.7, 0.4, 1.1) q[0];" in qasm3
+    assert "p(0.3) q[0];" in qasm3
+    assert "U(pi/2, 0.2, 0.5) q[0];" in qasm3
+
+    qasm2 = program_to_qasm(program, version=2)
+    assert "gate sx a" in qasm2
+    assert "u3(0.7, 0.4, 1.1) q[0];" in qasm2
+    assert "u1(0.3) q[0];" in qasm2
+
+    def statevector(p):
+        job = Simulator("SV").run(
+            p, result_config={"counts": False, "final_state": True}, shots=1
+        )
+        return np.asarray(job.result().get_statevector())
+
+    reference = statevector(program)
+    reimported = statevector(from_qasm(qasm2))
+    k = int(np.argmax(np.abs(reference)))
+    phase = reimported[k] / reference[k]
+    assert np.isclose(abs(phase), 1.0)
+    assert np.allclose(reimported, reference * phase)
+
+
+def test_export_qasm2_sx_definition_emitted_once_and_parses():
+    qiskit_qasm2 = pytest.importorskip("qiskit.qasm2")
+
+    program = fc.Program(1)
+    program.add(ops.SX, 0)
+    program.add(ops.SX, 0)
+
+    qasm2 = program_to_qasm(program, version=2)
+    assert qasm2.count("gate sx a") == 1
+    circuit = qiskit_qasm2.loads(qasm2)
+    assert [instruction.operation.name for instruction in circuit.data] == ["sx", "sx"]
+
+
+def test_from_qasm_u_family_matches_qiskit_converter_identity():
+    program = from_qasm("""
+        OPENQASM 2.0;
+        qreg q[1];
+        u1(0.3) q[0];
+        u3(0.9, 0.4, -0.6) q[0];
+        sx q[0];
+        """)
+
+    names = [step.operation.name for step in program._instructions]
+    assert names == ["U1", "U3", "SX"]
+    u3 = program._instructions[1].operation
+    assert (u3.theta, u3.phi, u3.lam) == (0.9, 0.4, -0.6)
+
+
+def test_export_barrier_as_native_statement():
+    p = fc.Program(2, 1)
+    p.add(ops.H, 0)
+    p.add(ops.Barrier, (0, 1))
+    p.add(ops.X, 1)
+    out3 = program_to_qasm(p, version=3)
+    assert "barrier q[0], q[1];" in out3
+    out2 = program_to_qasm(p, version=2)
+    assert "barrier q[0], q[1];" in out2
+
+    # a conditioned barrier exports unconditioned (it is a no-op either way)
+    p2 = fc.Program(1, 1)
+    p2.add(ops.Barrier, 0, condition=(0, 1))
+    out = program_to_qasm(p2, version=2)
+    assert "barrier q[0];" in out
+    assert "if" not in out
+
+
+def test_from_qasm_scalar_register_broadcast():
+    program = from_qasm("""
+        OPENQASM 2.0;
+        qreg q[1];
+        qreg r[3];
+        cx q[0], r;
+        """)
+    q = program.quantum_registers[0]
+    r = program.quantum_registers[1]
+    applied = [step.targets for step in program._instructions]
+    assert applied == [(q[0], r[0]), (q[0], r[1]), (q[0], r[2])]
+
+
+def test_from_qasm_mismatched_register_widths_still_rejected():
+    with pytest.raises(QASMTranspileError, match="equal size"):
+        from_qasm("""
+            OPENQASM 2.0;
+            qreg a[2];
+            qreg b[3];
+            cx a, b;
+            """)
+
+
+def test_from_qasm_u0_accepts_ignored_parameter():
+    program = from_qasm("""
+        OPENQASM 2.0;
+        qreg q[1];
+        u0(1) q[0];
+        u0 q[0];
+        """)
+    assert [step.operation.name for step in program._instructions] == ["I", "I"]
+
+
+def test_export_register_named_after_gate_is_renamed():
+    qiskit_qasm2 = pytest.importorskip("qiskit.qasm2")
+
+    sx_reg = fc.QuantumRegister(1, name="sx")
+    iswap_reg = fc.QuantumRegister(2, name="iswap")
+    p = fc.Program([sx_reg, iswap_reg])
+    p.add(ops.SX, sx_reg[0])
+    p.add(ops.iSwap, (iswap_reg[0], iswap_reg[1]))
+
+    out = program_to_qasm(p, version=2)
+    assert "qreg sx_[1];" in out
+    assert "qreg iswap_[2];" in out
+    assert "sx sx_[0];" in out
+    circuit = qiskit_qasm2.loads(out)
+    assert circuit.num_qubits == 3

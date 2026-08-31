@@ -295,3 +295,145 @@ def test_u_matrix_matches_qiskit_statevector():
     print(f"qiskit statevector: {qiskit_state}")
 
     assert fatqat_state == pytest.approx(qiskit_state)
+
+
+def _attach_legacy_condition(circuit, index, condition):
+    """Re-create a Qiskit 1.x ``c_if`` instruction on a Qiskit 2.x circuit."""
+    instruction = circuit.data[index]
+    operation = instruction.operation.to_mutable()
+    operation.condition = condition
+    circuit.data[index] = instruction.replace(operation=operation)
+
+
+def test_converter_legacy_c_if_whole_register():
+    circuit = QuantumCircuit(2, 2, name="legacy_cond")
+    circuit.x(0)
+    _attach_legacy_condition(circuit, 0, (circuit.cregs[0], 2))
+
+    program = circuit_to_program(circuit)
+    step = program._instructions[0]
+    creg = program.classical_registers[0]
+    print("\n=== legacy c_if whole-register conversion ===")
+    print(f"condition: {step.condition}")
+
+    assert step.operation.name == "X"
+    assert step.condition == ((creg[0], 0), (creg[1], 1))
+
+
+def test_converter_legacy_c_if_single_clbit():
+    circuit = QuantumCircuit(1, 1, name="legacy_cond_bit")
+    circuit.x(0)
+    _attach_legacy_condition(circuit, 0, (circuit.clbits[0], 1))
+
+    program = circuit_to_program(circuit)
+    step = program._instructions[0]
+    creg = program.classical_registers[0]
+
+    assert step.condition == ((creg[0], 1),)
+
+
+def test_converter_legacy_c_if_value_overflow_rejected():
+    circuit = QuantumCircuit(1, 1, name="legacy_cond_overflow")
+    circuit.x(0)
+    _attach_legacy_condition(circuit, 0, (circuit.cregs[0], 2))
+
+    with pytest.raises(QiskitConversionError, match="does not fit"):
+        circuit_to_program(circuit)
+
+
+def test_converter_legacy_c_if_on_measure_rejected():
+    circuit = QuantumCircuit(1, 1, name="legacy_cond_measure")
+    circuit.measure(0, 0)
+    _attach_legacy_condition(circuit, 0, (circuit.cregs[0], 1))
+
+    with pytest.raises(QiskitConversionError, match="conditional measurement"):
+        circuit_to_program(circuit)
+
+
+def test_backend_batch_circuits_get_distinct_seeds():
+    circuit = QuantumCircuit(1, 1, name="coin")
+    circuit.h(0)
+    circuit.measure(0, 0)
+
+    backend = FatqatBackend()
+    result = backend.run(
+        [circuit, circuit.copy(), circuit.copy()], shots=200, seed_simulator=7
+    ).result()
+    counts = [result.get_counts(i) for i in range(3)]
+    print("\n=== batch seed independence ===")
+    print(f"counts per experiment: {counts}")
+
+    assert len({tuple(sorted(c.items())) for c in counts}) > 1
+
+    repeat = backend.run(
+        [circuit, circuit.copy(), circuit.copy()], shots=200, seed_simulator=7
+    ).result()
+    assert [repeat.get_counts(i) for i in range(3)] == counts
+
+
+def test_memory_entries_without_counts_raises_instead_of_fabricating():
+    from fatqat.qiskit.result import _memory_entries
+
+    program = fq.Program(1)
+    program.add(ops.H, 0)
+    fatqat_result = (
+        fq.simulator.Simulator("SV")
+        .run(program, result_config={"counts": False, "final_state": True})
+        .result()
+    )
+
+    with pytest.raises(QiskitBackendError, match="memory=True requires counts"):
+        _memory_entries(fatqat_result, shots=10)
+
+
+def test_adapter_errors_are_also_qiskit_errors():
+    from qiskit.exceptions import QiskitError
+
+    from fatqat.errors import FatqatError
+
+    assert issubclass(QiskitBackendError, QiskitError)
+    assert issubclass(QiskitBackendError, FatqatError)
+    assert issubclass(QiskitConversionError, QiskitError)
+    assert issubclass(QiskitConversionError, FatqatError)
+
+    backend = FatqatBackend()
+    with pytest.raises(QiskitError):
+        backend.run(QuantumCircuit(1, 1), shots=-1)
+
+
+def test_provider_backends_report_their_provider():
+    from fatqat.qiskit import FatqatProvider
+
+    provider = FatqatProvider()
+    backend = provider.get_backend("fatqat_simulator")
+    assert backend.provider is provider
+
+
+def test_result_header_labels_use_standard_pairs():
+    circuit = QuantumCircuit(2, 2, name="labels")
+    circuit.h(0)
+    circuit.measure([0, 1], [0, 1])
+
+    result = FatqatBackend().run(circuit, shots=10).result()
+    header = result.results[0].header
+    header = header if isinstance(header, dict) else header.__dict__
+    assert header["qubit_labels"] == [["q", 0], ["q", 1]]
+    assert header["clbit_labels"] == [["c", 0], ["c", 1]]
+
+
+def test_batch_result_metadata_reports_each_circuit_seed():
+    circuit = QuantumCircuit(1, 1, name="seed_meta")
+    circuit.h(0)
+    circuit.measure(0, 0)
+
+    result = (
+        FatqatBackend()
+        .run([circuit, circuit.copy(), circuit.copy()], shots=50, seed_simulator=7)
+        .result()
+    )
+    reported = [experiment.seed_simulator for experiment in result.results]
+    assert reported == [7, 8, 9]
+
+    # a reported seed must actually reproduce its experiment
+    replay = FatqatBackend().run(circuit, shots=50, seed_simulator=9).result()
+    assert replay.get_counts() == result.get_counts(2)

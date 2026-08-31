@@ -133,13 +133,13 @@ def test_degenerate_all_zero_channel_falls_back():
 
 
 @pytest.mark.parametrize("runtime", RUNTIMES)
-@pytest.mark.parametrize("string, expected_index", [("XI", 1), ("IX", 2), ("XX", 3)])
+@pytest.mark.parametrize("string, expected_index", [("IX", 1), ("XI", 2), ("XX", 3)])
 def test_a_certain_pauli_error_acts_exactly_like_the_gate(
     runtime, string, expected_index
 ):
     # p=1 on one term makes the channel deterministic, pinning both the sampler
-    # and the string's endianness (string[0] describes targets[0], whose flat
-    # stride is 1). A final-state request also routes numba to its serial
+    # and the string's endianness (Qiskit reading: the rightmost character
+    # describes targets[0], whose flat stride is 1). A final-state request also routes numba to its serial
     # fallback rather than the compiled multi-shot kernel, covering that path too.
     noise = NoiseModel()
     noise.add(PauliChannel({string: 1.0}), operation=ops.CX)

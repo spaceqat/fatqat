@@ -84,8 +84,15 @@ class Register:
         if not isinstance(index, int) or isinstance(index, bool):
             raise TypeError(f"register index must be int, got {type(index)!r}")
         if not 0 <= index < self.size:
-            raise IndexError(index)
+            raise IndexError(
+                f"register index {index} out of range for size {self.size} "
+                "(negative indexing is not supported)"
+            )
         return RegisterRef(register=self, index=index)
+
+    def __len__(self) -> int:
+        """Return ``size``, so ``len(reg)`` matches iteration over its refs."""
+        return self.size
 
 
 @dataclass(frozen=True, eq=False)
@@ -164,7 +171,8 @@ def _validate_range(value: Any, limit: int, label: str) -> tuple[int, int]:
 
     Raises:
         TypeError: If ``value`` is not a two-element pair of ints.
-        ValueError: If the range does not satisfy ``0 <= start < stop <= limit``.
+        ValueError: If ``start >= stop`` (a malformed range).
+        IndexError: If the range extends outside ``0 <= start < stop <= limit``.
     """
     try:
         start, stop = value
@@ -177,10 +185,15 @@ def _validate_range(value: Any, limit: int, label: str) -> tuple[int, int]:
             raise TypeError(
                 f"{label} {part_name} must be int, got {type(part_value)!r}"
             )
-    if not 0 <= start < stop <= limit:
+    if start >= stop:
         raise ValueError(
-            f"{label} range must satisfy 0 <= start < stop <= {limit}, "
-            f"got ({start}, {stop})"
+            f"{label} range must satisfy start < stop, got ({start}, {stop})"
+        )
+    if start < 0 or stop > limit:
+        # Out-of-bounds coordinates raise IndexError, matching row()/column().
+        raise IndexError(
+            f"{label} range ({start}, {stop}) out of range for limit {limit} "
+            f"(must satisfy 0 <= start < stop <= {limit})"
         )
     return start, stop
 
@@ -318,7 +331,7 @@ class GridRegister(QuantumRegister):
         if not isinstance(row, int) or isinstance(row, bool):
             raise TypeError(f"row must be int, got {type(row)!r}")
         if not 0 <= row < self.rows:
-            raise IndexError(row)
+            raise IndexError(f"row {row} out of range for {self.rows} rows")
         return RegisterView(register=self, selector=RowSelector(row=row))
 
     def column(self, col: int) -> "RegisterView":
@@ -337,7 +350,7 @@ class GridRegister(QuantumRegister):
         if not isinstance(col, int) or isinstance(col, bool):
             raise TypeError(f"col must be int, got {type(col)!r}")
         if not 0 <= col < self.cols:
-            raise IndexError(col)
+            raise IndexError(f"col {col} out of range for {self.cols} cols")
         return RegisterView(register=self, selector=ColumnSelector(col=col))
 
     def block(self, rows: tuple[int, int], cols: tuple[int, int]) -> "RegisterView":
@@ -356,9 +369,9 @@ class GridRegister(QuantumRegister):
 
         Raises:
             TypeError: If either range is not a two-element pair of ints.
-            ValueError: If either range does not satisfy
-                ``0 <= start < stop <= limit`` for the register's row/column
-                count.
+            ValueError: If either range has ``start >= stop``.
+            IndexError: If either range extends outside the register's
+                row/column count, matching :meth:`row` and :meth:`column`.
         """
         row_range = _validate_range(rows, self.rows, "rows")
         col_range = _validate_range(cols, self.cols, "cols")

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from qiskit.result import Result
 
+from .errors import QiskitBackendError
+
 if TYPE_CHECKING:
     from qiskit.circuit import QuantumCircuit
 
@@ -21,20 +23,27 @@ def build_qiskit_result(
     fatqat_results: list[FatqatResult],
     shots: int,
     memory: bool,
-    seed_simulator: int | None,
+    seed_simulators: list[int | None],
     success: bool = True,
 ) -> Result:
-    """Package one fatqat result per input circuit into a Qiskit ``Result``."""
+    """Package one fatqat result per input circuit into a Qiskit ``Result``.
+
+    ``seed_simulators`` carries the seed each experiment actually ran with
+    (they differ per circuit in a batch), so every experiment's metadata is
+    individually reproducible.
+    """
     job_id = str(uuid.uuid4())
     experiments = []
-    for circuit, fatqat_result in zip(circuits, fatqat_results):
+    for circuit, fatqat_result, circuit_seed in zip(
+        circuits, fatqat_results, seed_simulators
+    ):
         experiments.append(
             _experiment_result(
                 circuit=circuit,
                 fatqat_result=fatqat_result,
                 shots=shots,
                 memory=memory,
-                seed_simulator=seed_simulator,
+                seed_simulator=circuit_seed,
                 success=success,
             )
         )
@@ -91,11 +100,10 @@ def _experiment_result(
     return experiment
 
 
-def _register_labels(registers) -> list[list[str]]:
-    labels: list[list[str]] = []
-    for reg in registers:
-        labels.append([f"{reg.name}[{index}]" for index in range(reg.size)])
-    return labels
+def _register_labels(registers) -> list[list[Any]]:
+    # Qiskit's result-header convention: a flat list of [name, index] pairs,
+    # one per bit, not nested per-register label strings.
+    return [[reg.name, index] for reg in registers for index in range(reg.size)]
 
 
 def _hex_counts(fatqat_result: FatqatResult) -> dict[str, int]:
@@ -106,12 +114,13 @@ def _hex_counts(fatqat_result: FatqatResult) -> dict[str, int]:
 
 
 def _memory_entries(fatqat_result: FatqatResult, shots: int) -> list[str]:
-    if "memory" in fatqat_result.available_data:
-        return [
-            _tuple_to_hex(tuple(row)) for row in fatqat_result.get_memory_as_tuples()
-        ]
+    # fatqat results carry no native per-shot record, so memory is always
+    # synthesized from counts; entries are grouped by outcome, not in shot
+    # order.
     if "counts" not in fatqat_result.available_data:
-        return ["0x0"] * shots
+        raise QiskitBackendError(
+            "memory=True requires counts data, but the fatqat result contains none"
+        )
     return _expand_counts_to_memory(fatqat_result.get_counts_as_tuples(), shots)
 
 

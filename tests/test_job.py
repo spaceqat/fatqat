@@ -51,3 +51,9 @@ def test_no_sweep_job_type_is_exposed():
     import fatqat as fq
 
     assert not hasattr(fq, "SweepJob")
+
+
+def test_error_job_without_error_raises_clear_runtimeerror():
+    job = Job(status="ERROR")
+    with pytest.raises(RuntimeError, match="no recorded error"):
+        job.result()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -25,9 +26,11 @@ def circuit_to_program(circuit: QuantumCircuit) -> Program:
 
     The converter preserves named quantum and classical registers. It records
     the circuit name, metadata, and global phase in the program metadata, but
-    the global phase is not applied during FATQAT execution. Standalone bits,
+    the global phase is not applied during FATQAT execution. Legacy ``c_if``
+    conditions (Qiskit 1.x) on gates and resets are converted to fatqat
+    conditions; a conditional measurement is rejected. Standalone bits,
     unbound instruction parameters, delay or pulse instructions, and classical
-    control flow are not supported.
+    control flow (``if_else`` and friends) are not supported.
 
     Args:
         circuit: Bound Qiskit ``QuantumCircuit`` to convert.
@@ -83,7 +86,14 @@ def circuit_to_program(circuit: QuantumCircuit) -> Program:
                 f"({name!r}) are not supported"
             )
 
+        condition = _legacy_condition(program, circuit, inst_op)
+
         if isinstance(inst_op, Measure):
+            if condition is not None:
+                raise QiskitConversionError(
+                    f"circuit {circuit.name!r}: a conditional measurement "
+                    "(measure with c_if) has no fatqat equivalent"
+                )
             if not qubits or not clbits or len(qubits) != len(clbits):
                 raise QiskitConversionError(
                     f"circuit {circuit.name!r}: invalid measure arity "
@@ -109,6 +119,7 @@ def circuit_to_program(circuit: QuantumCircuit) -> Program:
             program.add(
                 ops.Reset,
                 _classical_or_quantum_ref(program, circuit, qubits[0], quantum=True),
+                condition=condition,
             )
             continue
 
@@ -117,18 +128,21 @@ def circuit_to_program(circuit: QuantumCircuit) -> Program:
             program.add(
                 _FIXED_1Q[name],
                 _single_qubit_ref(program, circuit, qubits),
+                condition=condition,
             )
             continue
         if name in _FIXED_2Q:
             program.add(
                 _FIXED_2Q[name],
                 _two_qubit_targets(program, circuit, qubits),
+                condition=condition,
             )
             continue
         if name in _FIXED_3Q:
             program.add(
                 _FIXED_3Q[name],
                 _three_qubit_targets(program, circuit, qubits),
+                condition=condition,
             )
             continue
         if name in _PARAMETRIC:
@@ -142,24 +156,28 @@ def circuit_to_program(circuit: QuantumCircuit) -> Program:
                 program.add(
                     factory(params),
                     _single_qubit_ref(program, circuit, qubits),
+                    condition=condition,
                 )
                 continue
             if expected == 2 and name == "u2":
                 program.add(
                     factory(params),
                     _single_qubit_ref(program, circuit, qubits),
+                    condition=condition,
                 )
                 continue
             if expected == 3 and name in {"u", "u3"}:
                 program.add(
                     factory(params),
                     _single_qubit_ref(program, circuit, qubits),
+                    condition=condition,
                 )
                 continue
             if expected == 1 and name in {"cp", "cu1"}:
                 program.add(
                     factory(params),
                     _two_qubit_targets(program, circuit, qubits),
+                    condition=condition,
                 )
                 continue
 
@@ -211,6 +229,44 @@ _PARAMETRIC: dict[str, tuple[int, Callable[[list[float]], Any]]] = {
     "cp": (1, lambda p: ops.CPhase(p[0])),
     "cu1": (1, lambda p: ops.CPhase(p[0])),
 }
+
+
+def _legacy_condition(
+    program: Program, circuit: QuantumCircuit, inst_op: Any
+) -> tuple[tuple[RegisterRef, int], ...] | None:
+    """Translate a legacy ``c_if`` condition into fatqat's AND-of-equalities form.
+
+    Qiskit 1.x attaches ``(ClassicalRegister | Clbit, value)`` to
+    ``Instruction.condition``; Qiskit 2 removed both ``c_if`` and the
+    attribute, so ``getattr`` keeps this working on either major version.
+    A whole-register condition is decoded bit by bit, mirroring how the QASM
+    importer handles ``if (c == N)``.
+    """
+    with warnings.catch_warnings():
+        # Reading Instruction.condition warns on late Qiskit 1.x releases.
+        warnings.simplefilter("ignore", DeprecationWarning)
+        condition = getattr(inst_op, "condition", None)
+    if condition is None:
+        return None
+
+    target, value = condition
+    value = int(value)
+    if hasattr(target, "size"):  # ClassicalRegister
+        reg = _fatqat_register(program, target, quantum=False)
+        if not 0 <= value < 2**reg.size:
+            raise QiskitConversionError(
+                f"circuit {circuit.name!r}: condition value {value} does not "
+                f"fit classical register {target.name!r}"
+            )
+        return tuple((reg[i], (value >> i) & 1) for i in range(reg.size))
+
+    ref = _classical_or_quantum_ref(program, circuit, target, quantum=False)
+    if value not in (0, 1):
+        raise QiskitConversionError(
+            f"circuit {circuit.name!r}: condition value {value} is not a "
+            "valid single-clbit value"
+        )
+    return ((ref, value),)
 
 
 def _reject_control_flow(circuit: QuantumCircuit) -> None:

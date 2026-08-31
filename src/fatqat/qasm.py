@@ -105,15 +105,16 @@ def from_qasm(source: str) -> Program:
     This focused importer understands dimension-2 register declarations,
     measurement, reset, built-in gate calls, and recursively expanded local
     ``gate`` definitions. A gate call may target scalar refs or equal-sized
-    registers, which are expanded position by position. ``barrier`` is
-    accepted but discarded.
+    registers, which are expanded position by position; a scalar operand
+    broadcasts against full-register operands (``cx q[0], r;``), per the
+    OpenQASM 2 spec. ``barrier`` is accepted but discarded.
 
-    Built-in names are ``id``/``u0``, ``x``/``y``/``z``/``h``,
+    Built-in names are ``id``/``u0``, ``x``/``y``/``z``/``h``, ``sx``,
     ``s``/``sdg``/``t``/``tdg``, ``rx``/``ry``/``rz``,
     ``p``/``phase``/``u1``, ``u``/``u2``/``u3``, ``cx``/``cnot``,
     ``cy``/``cz``/``swap``, ``cp``/``cu1``, ``ccx``/``toffoli``, and
-    ``cswap``/``fredkin``. The ``u`` family is decomposed into rotations and
-    therefore preserves its unitary only up to global phase.
+    ``cswap``/``fredkin``. The ``u`` family maps to fatqat's exact
+    ``U``/``U1``/``U2``/``U3`` gates, matching the Qiskit converter.
 
     A condition may guard one gate or reset and may be a whole-register
     equality or an AND of bit comparisons. A bit comparison may use ``==`` or
@@ -364,9 +365,15 @@ class _QASMBuilder:
             self._apply_gate(ops.Reset, operand_groups, condition=condition)
             return
 
-        width = len(operand_groups[0])
-        if any(len(group) != width for group in operand_groups):
+        width = max(len(group) for group in operand_groups)
+        if any(len(group) not in (1, width) for group in operand_groups):
             raise QASMTranspileError(f"{name!r} register operands must have equal size")
+        if width > 1:
+            # QASM 2 broadcast: a scalar operand repeats against full-register
+            # operands, e.g. `cx q[0], r;` applies cx(q[0], r[i]) for every i.
+            operand_groups = [
+                group * width if len(group) == 1 else group for group in operand_groups
+            ]
 
         expanded = self._expand_gate(name, params, len(operand_groups))
         for operands in zip(*operand_groups):
@@ -431,6 +438,7 @@ class _QASMBuilder:
             "id": ops.I,
             "u0": ops.I,
             "h": ops.H,
+            "sx": ops.SX,
             "x": ops.X,
             "y": ops.Y,
             "z": ops.Z,
@@ -449,7 +457,10 @@ class _QASMBuilder:
             "fredkin": ops.CSwap,
         }
         if name in fixed:
-            _require_param_count(name, params, 0)
+            # qelib1 declares `gate u0(gamma) q` - an identity/delay whose
+            # parameter is ignored - so u0 accepts (and discards) one param.
+            if not (name == "u0" and len(params) == 1):
+                _require_param_count(name, params, 0)
             op = fixed[name]
             _require_operand_count(name, op.num_subsystems, n_operands)
             return (op,)
@@ -460,7 +471,14 @@ class _QASMBuilder:
             "rz": (1, ops.RZ),
             "p": (1, ops.Phase),
             "phase": (1, ops.Phase),
-            "u1": (1, ops.Phase),
+            # u1/u2/u3 map to fatqat's exact registered gates, the same
+            # operations the Qiskit converter produces, so both import paths
+            # yield identical instruction identities and statevectors
+            # (including global phase).
+            "u1": (1, ops.U1),
+            "u2": (2, ops.U2),
+            "u": (3, ops.U),
+            "u3": (3, ops.U3),
             "cp": (1, ops.CPhase),
             "cu1": (1, ops.CPhase),
         }
@@ -470,26 +488,6 @@ class _QASMBuilder:
             op = factory(*params)
             _require_operand_count(name, op.num_subsystems, n_operands)
             return (op,)
-
-        if name in {"u", "u3"}:
-            _require_param_count(name, params, 3)
-            _require_operand_count(name, 1, n_operands)
-            theta, phi, lam = params
-            # U3(theta,phi,lam) == RZ(phi) . RY(theta) . RZ(lam) as a matrix
-            # product, which means RZ(lam) must be applied FIRST and RZ(phi)
-            # LAST (gates are applied in time order, matrices compose in the
-            # opposite order). The previous version of this code applied
-            # RZ(phi) first and RZ(lam) last -- i.e. phi and lam were swapped
-            # -- which is only invisible when phi == lam or one of them is 0.
-            # Exact up to a global phase e^{i(phi+lam)/2}; fatqat has no
-            # global-phase primitive to restore it with, which never affects
-            # measurement probabilities.
-            return (ops.RZ(lam), ops.RY(theta), ops.RZ(phi))
-        if name == "u2":
-            _require_param_count(name, params, 2)
-            _require_operand_count(name, 1, n_operands)
-            phi, lam = params
-            return (ops.RZ(lam), ops.RY(math.pi / 2), ops.RZ(phi))
 
         raise QASMTranspileError(
             f"unsupported gate {name!r} (no built-in mapping and no local 'gate' "
@@ -782,6 +780,19 @@ _QASM_RESERVED = {
     "array",
 }
 
+# Gate identifiers live in the same flat namespace as register names, so a
+# register named after any gate the output may reference -- an include-file
+# gate or a locally emitted definition (`sx`, `iswap`) -- must be renamed:
+# `gate sx ...` plus `qreg sx[1];` is rejected as a redefinition. Union of
+# qelib1.inc and stdgates.inc names; over-reserving is harmless.
+_QASM_GATE_NAMES = {
+    "p", "x", "y", "z", "h", "s", "sdg", "t", "tdg", "sx", "sxdg",
+    "rx", "ry", "rz", "cx", "cy", "cz", "cp", "crx", "cry", "crz", "ch",
+    "swap", "ccx", "cswap", "cu", "cu1", "cu3", "csx", "phase", "cphase",
+    "id", "u0", "u1", "u2", "u3", "rxx", "rzz", "rccx", "rc3x", "c3x",
+    "c3sx", "c4x", "iswap", "gphase",
+}  # fmt: skip
+
 
 def _sanitize_identifier(raw: str | None, fallback: str, taken: set[str]) -> str:
     """Turn a user-supplied register name into a safe, unique QASM identifier."""
@@ -793,7 +804,12 @@ def _sanitize_identifier(raw: str | None, fallback: str, taken: set[str]) -> str
     if cleaned[0] == "_":
         # QASM identifiers conventionally start with a letter; prefix safely.
         cleaned = f"r{cleaned}"
-    if keyword.iskeyword(cleaned) or cleaned.lower() in _QASM_RESERVED:
+    lowered = cleaned.lower()
+    if (
+        keyword.iskeyword(cleaned)
+        or lowered in _QASM_RESERVED
+        or lowered in _QASM_GATE_NAMES
+    ):
         cleaned = f"{cleaned}_"
     base = cleaned
     suffix = 0
@@ -960,6 +976,20 @@ def _lower(op: ops.Operation, dim: int) -> tuple[str, ...]:
     if name == "iSwapGate":
         return ("gate", "iswap", [])
 
+    if name == "SXGate":
+        # stdgates.inc `sx` in QASM 3; a local definition in QASM 2.
+        return ("gate", "sx", [])
+
+    if name in ("U", "U3"):
+        # QASM 3 builtin U(theta, phi, lam) is exactly this matrix
+        # (e^{i(phi+lam)/2} Rz(phi) Ry(theta) Rz(lam)); qelib1's u3 likewise.
+        return ("gate", "U", [_fmt(op.theta), _fmt(op.phi), _fmt(op.lam)])
+    if name == "U2":
+        return ("gate", "U", [_fmt(math.pi / 2), _fmt(op.phi), _fmt(op.lam)])
+    if name == "U1":
+        # U1(lam) == Phase(lam) exactly.
+        return ("gate", "p", [_fmt(op.lam)])
+
     if name == "RX":
         return ("gate", "rx", [_fmt(op.theta)])
     if name == "RY":
@@ -1026,7 +1056,7 @@ def _lower(op: ops.Operation, dim: int) -> tuple[str, ...]:
 
 def _qasm2_lower_name(qasm3_name: str) -> str:
     """A handful of stdgates.inc names differ from qelib1.inc names."""
-    return {"cp": "cu1", "p": "u1"}.get(qasm3_name, qasm3_name)
+    return {"cp": "cu1", "p": "u1", "U": "u3"}.get(qasm3_name, qasm3_name)
 
 
 # ---------------------------------------------------------------------------
@@ -1053,6 +1083,10 @@ _ISWAP_DEF_QASM2 = (
     "    h b;\n"
     "}"
 )
+
+# qelib1.inc has no sx. This matches Qiskit's own QASM 2 export definition;
+# it equals SX up to the global phase e^{i*pi/4}, which QASM 2 cannot express.
+_SX_DEF_QASM2 = "gate sx a {\n    sdg a;\n    h a;\n    sdg a;\n}"
 
 
 # ---------------------------------------------------------------------------
@@ -1107,11 +1141,12 @@ def to_qasm(program: Program, version: int = 3) -> str:
     """Serialize a :class:`~fatqat.Program` as OpenQASM 2.0 or 3.0.
 
     Export supports dimension-2 programs containing measurement, reset,
-    conditions, the standard fixed qubit gates, ``RX``/``RY``/``RZ``,
-    ``Phase``/``CPhase``, ``CS``, and ``iSwap``. The qudit gate families are
-    also accepted when their registers have ``dim == 2`` and are lowered to
-    the equivalent qubit gates. ``iSwap`` adds one local gate definition to
-    the output.
+    conditions, the standard fixed qubit gates, ``SX``, ``RX``/``RY``/``RZ``,
+    ``Phase``/``CPhase``, ``U``/``U1``/``U2``/``U3``, ``CS``, and ``iSwap``.
+    The qudit gate families are also accepted when their registers have
+    ``dim == 2`` and are lowered to the equivalent qubit gates. ``iSwap``
+    (both versions) and ``SX`` (OpenQASM 2 only, up to global phase) add one
+    local gate definition each to the output.
 
     OpenQASM 3 can express FATQAT's arbitrary AND of bit comparisons. OpenQASM
     2 can express a condition only when it fixes every bit of one classical
@@ -1129,7 +1164,9 @@ def to_qasm(program: Program, version: int = 3) -> str:
         BackendValidationError: If the program has unbound parameters.
         QasmExportError: If a register has ``dim != 2``; an operation has no
             defined lowering; a target is a :class:`~fatqat.RegisterView`; or
-            a QASM 2 condition cannot be represented. Barrier and direct pulse
+            a QASM 2 condition cannot be represented. Barriers export as
+            native ``barrier`` statements (a condition on a barrier is
+            ignored, matching the built-in simulators); direct pulse
             operations are not exportable.
         ValueError: If ``version`` is neither ``2`` nor ``3``.
 
@@ -1149,6 +1186,7 @@ def to_qasm(program: Program, version: int = 3) -> str:
     layout = _Layout(program)
     body: list[str] = []
     uses_iswap = False
+    uses_sx = False
 
     for step in program._instructions:
         if isinstance(step, ops.Measurement):
@@ -1171,6 +1209,14 @@ def to_qasm(program: Program, version: int = 3) -> str:
                 "view-bearing programs are not QASM-exportable"
             )
 
+        if type(op).__name__ == "BarrierGate":
+            # QASM has a native barrier. Like the built-in simulators, export
+            # ignores any recorded condition (a conditioned barrier is a no-op
+            # either way, and `if` cannot guard a barrier in QASM 2).
+            targets = ", ".join(layout.qref(t) for t in step.targets)
+            body.append(f"barrier {targets};")
+            continue
+
         if type(op).__name__ == "ResetGate":
             lines = [f"reset {layout.qref(t)};" for t in step.targets]
         else:
@@ -1182,6 +1228,8 @@ def to_qasm(program: Program, version: int = 3) -> str:
             _, gate_name, params = (kind, *rest)
             if gate_name == "iswap":
                 uses_iswap = True
+            if gate_name == "sx":
+                uses_sx = True
             qasm_gate = gate_name if version == 3 else _qasm2_lower_name(gate_name)
             arg_list = ", ".join(layout.qref(t) for t in step.targets)
             if params:
@@ -1215,6 +1263,8 @@ def to_qasm(program: Program, version: int = 3) -> str:
             header += ["", _ISWAP_DEF_QASM3]
     else:
         header = ["OPENQASM 2.0;", 'include "qelib1.inc";']
+        if uses_sx:
+            header += ["", _SX_DEF_QASM2]
         if uses_iswap:
             header += ["", _ISWAP_DEF_QASM2]
 

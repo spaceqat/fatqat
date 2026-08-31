@@ -169,7 +169,8 @@ class Program:
                 counts), if a register specification is not an integer, list,
                 or tuple, if a collection contains the wrong register type, or
                 if ``metadata`` cannot be copied into a dictionary.
-            ValueError: If an integer register count is negative.
+            ValueError: If an integer register count is negative, or a
+                collection contains the same register object more than once.
         """
         self.quantum_registers: tuple[QuantumRegister, ...] = tuple(
             self._coerce_registers(quantum_registers, QuantumRegister, "q")
@@ -179,7 +180,10 @@ class Program:
         )
         self._operations: list[_AppliedOperation | Measurement] = []
         self._operations_view: tuple[_AppliedOperation | Measurement, ...] | None = ()
-        self.metadata: dict[str, Any] = dict(metadata) if metadata else {}
+        # `is not None` (not truthiness): a falsy non-mapping like 0 or ""
+        # must fail the dict copy below, exactly as Register.__post_init__
+        # does, instead of silently becoming {}.
+        self.metadata: dict[str, Any] = dict(metadata) if metadata is not None else {}
 
     @property
     def _instructions(self) -> tuple[_AppliedOperation | Measurement, ...]:
@@ -237,12 +241,22 @@ class Program:
                 f"{cls.__name__}, "
                 f"got {type(spec).__name__!r}"
             )
+        seen: set[int] = set()
         for r in spec:
             if not isinstance(r, cls):
                 raise TypeError(
                     f"register collection must contain {cls.__name__} instances, "
                     f"got {type(r).__name__!r}"
                 )
+            # The same object twice would collide in the slot-allocation maps
+            # and silently mis-map every later slot.
+            if id(r) in seen:
+                raise ValueError(
+                    f"register collection contains the same {cls.__name__} "
+                    f"object (name={r.name!r}) more than once; create a "
+                    "separate register for each entry"
+                )
+            seen.add(id(r))
         return list(spec)
 
     def _resolve_ref(
@@ -266,6 +280,11 @@ class Program:
         if type(operand) is not int:
             raise TypeError(
                 f"operand must be int or RegisterRef, got {type(operand)!r}"
+            )
+        if len(regs) == 0:
+            raise TypeError(
+                f"this program has no {kind_name}; declare one before "
+                "referring to its slots"
             )
         if len(regs) != 1:
             raise TypeError(
@@ -331,8 +350,8 @@ class Program:
                 are ready-to-use values such as ``ops.X``;
                 parametric gates should be instantiated, such as
                 ``ops.RX(0.2)``.
-            targets: One target expression, or a tuple in operation-operand
-                order. A bare target must be a built-in ``int`` and is accepted
+            targets: One target expression, or a tuple or list in
+                operation-operand order. A bare target must be a built-in ``int`` and is accepted
                 only when the program has exactly one quantum register. An
                 explicit `RegisterRef` must come from one of this program's
                 quantum registers. Every built-in unitary gate also accepts
@@ -371,11 +390,22 @@ class Program:
 
         """
         if not isinstance(op, Operation):
+            # Measurement lives in the operations namespace but is not an
+            # Operation; the generic parametric-gate hint would mislead here.
+            if op is Measurement or isinstance(op, Measurement):
+                raise TypeError(
+                    "Measurement cannot be added with Program.add; use "
+                    "program.measure(targets, outputs) instead"
+                )
             raise TypeError(
                 f"op must be an Operation instance, got {type(op)!r} "
                 "(did you forget to call a parametric gate, e.g. ops.RX(0.2)?)"
             )
-        operands = targets if isinstance(targets, tuple) else (targets,)
+        # Lists are accepted alongside tuples, matching `condition`.
+        if isinstance(targets, (tuple, list)):
+            operands = tuple(targets)
+        else:
+            operands = (targets,)
         target_refs = tuple(self._resolve_quantum_target(o) for o in operands)
         views = tuple(t for t in target_refs if isinstance(t, RegisterView))
         if op.num_subsystems is None and op.accepts_views and views:
@@ -395,6 +425,14 @@ class Program:
         """Normalize user conditions to an AND tuple of classical refs and values."""
         if condition is None:
             return None
+        # Check the container shape first: a Mapping would otherwise fail
+        # below with a bare KeyError (condition[0] is a key lookup), and a
+        # set with an unsubscriptable error.
+        if not isinstance(condition, (tuple, list)):
+            raise TypeError(
+                "condition must be a (slot, literal) pair or a tuple/list of "
+                f"such pairs, got {type(condition).__name__!r}"
+            )
         if len(condition) == 0:
             raise ValueError(
                 "condition is empty; pass None or omit the argument for an unconditional operation"
@@ -435,7 +473,8 @@ class Program:
 
         Args:
             targets: Quantum operand(s) to measure, as a built-in ``int``,
-                explicit `RegisterRef`, or non-empty tuple of those operands.
+                explicit `RegisterRef`, or non-empty tuple or list of those
+                operands.
                 Bare integers require exactly one quantum register.
             outputs: Classical operand(s) to write, in the same forms, with a
                 non-empty tuple matching ``targets`` in count. Bare integers
@@ -463,8 +502,13 @@ class Program:
             >>> program.add(ops.CZ, (0, 1))
             >>> program.measure((0, 1), (0, 1))
         """
-        q_operands = targets if isinstance(targets, tuple) else (targets,)
-        c_operands = outputs if isinstance(outputs, tuple) else (outputs,)
+        # Lists are accepted alongside tuples, matching `Program.add`.
+        q_operands = (
+            tuple(targets) if isinstance(targets, (tuple, list)) else (targets,)
+        )
+        c_operands = (
+            tuple(outputs) if isinstance(outputs, (tuple, list)) else (outputs,)
+        )
         target_refs = tuple(self._resolve_quantum_ref(q) for q in q_operands)
         output_refs = tuple(self._resolve_classical_ref(c) for c in c_operands)
         # Length, non-empty, and per-pair dim invariants are enforced once in

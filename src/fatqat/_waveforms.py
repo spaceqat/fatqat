@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import math
+from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass
 from numbers import Complex, Real
 
 
-class Waveform:
-    """Base class for waveforms accepted by pulse controls."""
+class Waveform(ABC):
+    """Base class for waveforms accepted by pulse controls.
+
+    Abstract: a subclass must implement ``duration``. The built-in pulse
+    emulators currently accept only `SampledWaveform`.
+    """
 
     @property
+    @abstractmethod
     def duration(self) -> float:
         """Duration of the waveform in its enclosing model's time unit."""
-        raise NotImplementedError
 
 
 def _finite_tuple(values: Iterable[Real], *, field: str) -> tuple[float, ...]:
@@ -60,8 +65,9 @@ class SampledWaveform(Waveform):
     """Define a waveform on a strictly increasing local time grid.
 
     The grid may be nonuniform. It starts at ``0.0``, and its final time is
-    the waveform's ``duration``. Built-in pulse emulators use not-a-knot
-    spline interpolation.
+    the waveform's ``duration``. Built-in pulse emulators interpolate with
+    a spline of degree ``min(3, n_samples - 1)``: not-a-knot cubic from
+    four samples up, quadratic at three, linear at two.
 
     Samples may be real or complex. The selected channel determines which form
     is allowed. A pulse emulator also checks interpolation and any amplitude
