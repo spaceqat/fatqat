@@ -67,6 +67,17 @@ previously lost site likewise has no effect for that shot. Measurement still
 reports an erasure, pairing still changes connectivity, and a later `Put`
 can refill a lost site.
 
+Occupancy is separate from the quantum-state representation. Final
+`statevector` and `density_matrix` results, and expectations from
+[`Estimator`][fatqat.Estimator], retain a qubit axis for every declared site
+but do not encode whether that site contains an atom. With the default initial
+state, a never-loaded site's placeholder therefore appears as `|0>` even
+though measuring it reports `2`. An observable acting on an empty site is
+evaluated against that placeholder—for example, `Z` gives `+1` for the
+default `|0>` placeholder—not as an atom-presence observable. Use measurements
+and counts when the result must distinguish an occupied atom from an empty
+site.
+
 [`fatqat.noise.Loss`][fatqat.noise.Loss] can eject gate targets, make `Put` fail, or model
 loss during `Pair` and `Unpair`. It affects a run only when its selector
 matches an operation; a matching source with `p=0` removes no atoms and does

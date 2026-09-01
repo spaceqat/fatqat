@@ -316,14 +316,41 @@ def test_program_without_put_reports_every_atom_missing():
     assert counts == {"22": 4}
 
 
-def test_inert_reset_on_never_loaded_site_keeps_default_final_state():
-    program = Program(2)
-    program.add(ops.Put, 0)
-    program.add(ops.Reset, 1)
+def test_empty_site_erasure_is_not_encoded_in_final_state():
+    program = Program(1, 1)
+    program.measure(0, 0)
 
-    result = AtomArraySimulator().run(program).result()
+    result = (
+        AtomArraySimulator()
+        .run(
+            program,
+            shots=1,
+            result_config={"counts": True, "final_state": True},
+            simulation_config={"seed": 0},
+        )
+        .result()
+    )
 
-    assert "statevector" in result.available_data
+    assert result.get_counts() == {"2": 1}
+    assert np.allclose(result.get_statevector(), [1, 0])
+
+
+def test_never_loaded_operations_do_not_change_default_final_state():
+    backend = AtomArraySimulator()
+
+    def final_state(*, include_empty_site_operations):
+        program = Program(2)
+        program.add(ops.Put, 0)
+        program.add(ops.RX(np.pi), 0)
+        if include_empty_site_operations:
+            program.add(ops.RX(np.pi), 1)
+            program.add(ops.Reset, 1)
+        return backend.run(program).result().get_statevector()
+
+    assert np.allclose(
+        final_state(include_empty_site_operations=True),
+        final_state(include_empty_site_operations=False),
+    )
 
 
 def test_gate_on_put_site_executes_normally():
@@ -350,10 +377,12 @@ def test_gate_on_put_site_executes_normally():
 
 
 def test_measurement_of_empty_site_reads_erasure():
-    # With the lifecycle active (some Put), a never-Put site is an empty trap:
-    # measuring it reads the erasure digit 2, not 0.
+    # Supported operations are inert on a never-Put site, which still reports
+    # the erasure digit 2 rather than a plausible qubit result.
     p = Program(2, 1)
     p.add(ops.Put, 0)  # site 1 never Put -> empty
+    p.add(ops.RX(np.pi), 1)
+    p.add(ops.Reset, 1)
     p.measure(1, 0)
     counts = (
         AtomArraySimulator()

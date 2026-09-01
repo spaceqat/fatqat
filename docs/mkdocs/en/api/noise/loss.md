@@ -44,9 +44,10 @@ a loss event is sampled. A matching `Loss(p=0)` removes no atoms, but every
 site still starts empty and requires an explicit `Put` operation.
 
 Each shot has its own occupancy state. `statevector` and `density_matrix`
-support this lifecycle; `unitary` and `superop` do not. Because a final
-state depends on the sampled loss history, requesting one requires a single
-shot.
+execute this lifecycle, but their exported quantum states do not encode
+[atom occupancy](../simulators/atom-array.md#occupancy-and-loss); `unitary` and
+`superop` do not support the lifecycle. Because a final state depends on the
+sampled loss history, requesting one requires a single shot.
 
 See [Simulators](backend-support.md#noise-simulator-support) for the built-in occupancy-aware backend and
 its method restrictions.

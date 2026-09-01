@@ -194,7 +194,7 @@ Omitting `Pair` before `CZ` is a Program error; FatQat does not transport or
 pair atoms automatically. A missing atom is different: an empty site reports
 the erasure digit `2`, while supported gates simply have no atom to act on.
 
-For native sets, capacities, and method support, use the
+For native sets, site counts, and method support, use the
 [hardware-profile API](../api/simulators/index.md). Continue to
 [Hamiltonian emulation](hamiltonian-emulation.md) when pulse duration,
 physical levels, drift, or continuous-time noise becomes relevant.
