@@ -36,8 +36,8 @@ test-full = [
     {include-group = "dev"},
     {include-group = "qiskit"},
 ]
-# Formatting (black) and static analysis (pylint). Drives scripts/format.sh,
-# scripts/lint.sh, and the Lint CI workflow. See [tool.black] / [tool.pylint].
+# Formatting (black) and static analysis (pylint). Used by the Lint CI workflow;
+# configuration lives in [tool.black] and [tool.pylint].
 lint = ["black>=24", "pylint>=3"]
 
 [tool.pytest.ini_options]
