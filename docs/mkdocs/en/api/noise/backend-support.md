@@ -40,12 +40,13 @@ profiles may impose additional operation, placement, and dimension limits.
 | Built-in rate forms and [`ThermalRelaxation`][fatqat.noise.ThermalRelaxation] | **Unsupported.** Simulators have no physical timeline and do not convert rates or times into a channel application. |
 | [`ReadoutConfusion`][fatqat.noise.ReadoutConfusion] | **Built in.** Applies universally or to one measured operand. The matrix size must equal the reported digit dimension; the superconducting profiles therefore require `2 x 2`. |
 
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] additionally supports
-[`Loss`][fatqat.noise.Loss] after matching operations. It samples each selected
-present carrier independently. A matching registration, even with `p=0`,
-enables explicit occupancy; loss after `Put` can model a loading failure.
-Other simulators reject `Loss`. Empty-site erasure outcome `2` bypasses
-readout confusion because no physical digit was measured.
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] also supports
+[`Loss`][fatqat.noise.Loss], sampling each selected carrier that is present
+after a matching operation. Sites begin empty and
+[`Put`][fatqat.operations.Put] loads
+them, so loss attached to `Put` can model a loading failure. Other simulators
+reject `Loss`. Because an empty site produces no physical readout digit, its
+erasure value `2` bypasses readout confusion.
 
 Attach every supported probability-form channel above to an operation; matrix
 backends reject background channels.

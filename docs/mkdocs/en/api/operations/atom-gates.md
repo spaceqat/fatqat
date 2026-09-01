@@ -19,15 +19,20 @@ backends raise [`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationE
 | [`Pair`][fatqat.operations.Pair] | Exactly two scalars | Adds their undirected connectivity edge; repeated pairing is a no-op. | Rejected. | [`Loss`][fatqat.noise.Loss] or a supported finite channel. |
 | [`Unpair`][fatqat.operations.Unpair] | Exactly two scalars | Removes their edge; removing an absent edge is a no-op. | Rejected. | [`Loss`][fatqat.noise.Loss] or a supported finite channel. |
 
-If a program contains `Put`, every declared site starts empty for every shot.
-Sites are populated only when `Put` runs, and a later `Put` can reload a
-lost atom. A [`Loss`][fatqat.noise.Loss] declaration attached to `Put`
-shares the operation's condition and runs after every matching `Put`
-operation whose condition passes, even when the site was already occupied and
-the `Put` itself did nothing.
+Every declared site starts empty on each shot. `Put` is the only operation
+that loads an atom, and a later `Put` can refill a lost site. Until a site is
+loaded, supported gates and reset have no effect there, and measurement
+reports `2`. Native-gate and pairing checks still run first, so an empty site
+cannot conceal an unsupported gate or unpaired `CZ`.
 
-For convenience, `program.add(ops.Put, register.all())` expands the view into
-one variadic `Put` operation targeting every member of that quantum register.
+A [`Loss`][fatqat.noise.Loss] declaration attached to `Put` shares the
+operation's condition and runs after every matching `Put` whose condition
+passes, even if the target was already occupied and loading did nothing.
+
+To load an entire named register, use
+`program.add(ops.Put, register.all())`; the view expands into one variadic
+`Put` over its members. For a program created from an integer site count, use
+`program.add(ops.Put, tuple(range(num_atoms)))`.
 
 `Pair` and `Unpair` update the connectivity used by later supported gates;
 they do not change the quantum state or make an unsupported gate available. In

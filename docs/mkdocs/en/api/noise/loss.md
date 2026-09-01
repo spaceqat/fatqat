@@ -25,8 +25,7 @@ controls its loss: if the operation is skipped, its attached loss is skipped.
 ## Occupancy-aware simulators
 
 
-On an occupancy-aware simulator, any matching loss registration turns on the
-atom lifecycle:
+On an occupancy-aware simulator, the atom lifecycle is always active:
 
 * every site starts empty;
 * `Put` loads a fresh `|0>` atom into an empty site;
@@ -40,14 +39,14 @@ physical readout digit. Attaching loss to `Put` samples after loading, which
 models loading failure or immediate post-load loss. `Put` accepts no other
 noise type.
 
-The lifecycle is enabled by the registration itself, not by a sampled loss
-event. A matching `Loss(p=0)` therefore still makes all sites start empty
-and requires explicit `Put` operations.
+Explicit loading is independent of loss: sites begin empty even when no loss
+source is registered, while a matching `Loss(p=0)` simply removes nothing.
 
 Each shot has its own occupancy state. `statevector` and `density_matrix`
-support this lifecycle; `unitary` and `superop` do not. Because a final
-state depends on the sampled loss history, requesting one requires a single
-shot.
+support this lifecycle, but their exported states do not encode
+[atom occupancy](../simulators/atom-array.md#occupancy-and-loss). `unitary` and
+`superop` do not support it. Because a final state depends on sampled loss
+history, requesting one requires a single shot.
 
 See [Simulators](backend-support.md#noise-simulator-support) for the built-in occupancy-aware backend and
 its method restrictions.

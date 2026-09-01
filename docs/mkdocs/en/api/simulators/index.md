@@ -19,8 +19,9 @@ nearest-neighbour `CZ`. [`SCQubitGoogleSimulator`][fatqat.simulator.SCQubitGoogl
 rotations and nearest-neighbour `iSwap` and `CZ`. Both offer an optional
 reference noise model.
 
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] has no fixed connectivity. `Pair` and `Unpair`
-change which atoms can interact, while `Put` and `Loss` control occupancy.
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] has no fixed
+connectivity. Every program site starts empty: `Put` loads atoms, `Loss`
+removes them, and `Pair` and `Unpair` change which atoms can interact.
 
 The profiles validate the program as written: they do not transpile or route
 it, and they do not reproduce a named processor. Use the
