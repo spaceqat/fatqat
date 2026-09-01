@@ -154,11 +154,11 @@ models share the same `T1 = T2 = 200 µs` coherence assumption.
 
 ## Program a reconfigurable atom array
 
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] brings occupancy and
-changing connectivity into the same `Program` model. Every declared site
-starts empty: `Put` establishes which sites are occupied, `Pair` makes native
-`CZ` legal, and `Unpair` removes that eligibility. Optional movement noise can
-attach to those operations explicitly.
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] brings explicit
+loading and reconfigurable connectivity into the `Program` model. Sites begin
+empty, so `Put` loads the atoms; `Pair` then makes native `CZ` available, and
+`Unpair` closes that connection again. Optional movement noise can follow the
+pairing operations.
 
 <figure markdown="span">
 

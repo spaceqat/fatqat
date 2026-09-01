@@ -13,10 +13,10 @@ class PutGate(Operation):
     """Load a fresh ``|0>`` atom into each empty target site.
 
     ``Put`` is implemented only by `fatqat.simulator.AtomArraySimulator`.
-    Every site on that backend starts empty on each shot, and only ``Put``
-    loads it. An occupied target is unchanged, and a later ``Put`` can reload
-    a lost atom in ``|0>``. Other built-in backends raise
-    `fatqat.errors.UnsupportedOperationError`.
+    Every site on that backend starts empty on each shot; ``Put`` is the only
+    operation that loads an atom. It leaves an occupied target unchanged, and a
+    later ``Put`` can reload a lost site in ``|0>``. Other built-in backends
+    raise `fatqat.errors.UnsupportedOperationError`.
 
     Model loading efficiency by attaching `fatqat.noise.Loss` to `Put`.
     `fatqat.NoiseModel.add` raises `ValueError` for any other noise declaration.

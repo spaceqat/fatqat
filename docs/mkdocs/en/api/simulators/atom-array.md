@@ -5,10 +5,12 @@ title: "AtomArraySimulator"
 # AtomArraySimulator
 
 
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] adds neutral-atom occupancy, loss, and dynamic
-pairing to the [`Simulator`][fatqat.simulator.Simulator] execution model. Use it to check a program
-against those constraints. It is not a Hamiltonian or transport model; use
-the [neutral-atom emulator](../atom-emulators.md) when pulse timing and physical interactions matter.
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] layers neutral-atom
+occupancy, loss, and dynamic pairing onto the
+[`Simulator`][fatqat.simulator.Simulator] execution model. It is useful for
+checking whether a gate-level program respects those constraints. For pulse
+timing, transport, or physical interactions, use the
+[neutral-atom emulator](../atom-emulators.md) instead.
 
 **Hardware profile**
 
@@ -25,71 +27,59 @@ the [neutral-atom emulator](../atom-emulators.md) when pulse timing and physical
 ## Program size, mapping, and native operations
 
 
-The program declares the array size through its quantum resources; the backend
-has no separate site-count or capacity argument. Registers map to integer
-device labels in declaration order; a [`GridRegister`][fatqat.GridRegister] is
-flattened and its coordinates have no physical meaning on this backend.
+The quantum resources in each program define the array size, so the backend
+needs no separate site-count or capacity setting. Registers map to integer
+device labels in declaration order. A [`GridRegister`][fatqat.GridRegister] is
+flattened because its coordinates have no physical meaning on this backend.
 
-The native operations are `RX`, `RY`, `RZ`, and `CZ`. The simulator
-does not decompose other gates, so `CX` is rejected even when the atoms are
-paired. [`AtomArraySimulator.implementation_map`][fatqat.simulator.AtomArraySimulator.implementation_map] lists the native gate
-set; the program's current `Pair` state determines whether a particular
-`CZ` is allowed.
+Only `RX`, `RY`, `RZ`, and `CZ` are native. The simulator does not decompose
+other gates, so it rejects `CX` even when the atoms are paired.
+[`AtomArraySimulator.implementation_map`][fatqat.simulator.AtomArraySimulator.implementation_map]
+exposes this gate set, while the current `Pair` graph determines where `CZ`
+is legal.
 
-Native-operation and pairing checks happen independently of occupancy. An
-unsupported gate or unpaired `CZ` is therefore rejected even if one of its
-sites is never loaded. Only an otherwise-valid supported gate can become an
-empty-site no-op.
+Native-gate support and `CZ` pairing are checked before occupancy is
+considered. An unsupported gate or unpaired `CZ` is therefore rejected even
+when one of its sites is empty; only a supported, correctly-paired gate can
+become an empty-site no-op.
 
-Pairing changes as the program runs. An unconditional
+Connectivity evolves as the program runs. An unconditional
 [`fatqat.operations.Pair`][fatqat.operations.Pair] connects two sites and
-[`fatqat.operations.Unpair`][fatqat.operations.Unpair] disconnects them. A `CZ` on an unpaired
-pair is rejected. Pairing operations do not change the quantum state, though
-noise attached to them still applies. Conditional `Pair` and `Unpair` are
-not supported.
+[`fatqat.operations.Unpair`][fatqat.operations.Unpair] disconnects them.
+Neither operation changes the quantum state, although attached noise still
+applies. Both must be unconditional.
 
 ## Occupancy and loss
 
 
-Occupancy is tracked separately for every shot. Every declared site starts
-empty, independently of whether the program contains `Put` or a matching loss
-source:
+Occupancy is tracked independently for each shot, and every declared site
+starts empty whether or not the program contains `Put` or has a matching loss
+source.
+[`fatqat.operations.Put`][fatqat.operations.Put] loads a fresh `\|0>` atom into
+an empty target and leaves an occupied target unchanged. Until a site is
+loaded—or after it is lost—supported gates and reset have no effect there,
+while measurement reports erasure digit `2`. A later `Put` can refill the
+site, and pairing instructions continue to update connectivity throughout.
 
-**Occupancy rules**
-
-| Program action | Occupancy behavior |
-| --- | --- |
-| [`fatqat.operations.Put`][fatqat.operations.Put] runs for a site | Loads a fresh `\|0>` atom if the site is empty. |
-| No `Put` runs for a site | The site remains empty: gates and reset do nothing, and measurement reports erasure digit `2`. |
-
-`Put` on an occupied site has no effect. A gate or reset on an empty or
-previously lost site likewise has no effect for that shot. Measurement still
-reports an erasure, pairing still changes connectivity, and a later `Put`
-can refill a lost site.
-
-Occupancy is separate from the quantum-state representation. Final
-`statevector` and `density_matrix` results, and expectations from
-[`Estimator`][fatqat.Estimator], retain a qubit axis for every declared site
-but do not encode whether that site contains an atom. With the default initial
-state, a never-loaded site's placeholder therefore appears as `|0>` even
-though measuring it reports `2`. An observable acting on an empty site is
-evaluated against that placeholder—for example, `Z` gives `+1` for the
-default `|0>` placeholder—not as an atom-presence observable. Use measurements
-and counts when the result must distinguish an occupied atom from an empty
-site.
+Occupancy is tracked outside the quantum-state representation. Final
+statevectors, density matrices, and [`Estimator`][fatqat.Estimator]
+calculations still include one qubit subsystem per declared site, whether or
+not an atom is present. With the default initial state, a never-loaded site is
+represented by `|0>`: measuring it returns `2`, while evaluating `Z` returns
+`+1`. These quantum-state exports cannot reveal whether a site is occupied;
+use measurements and counts for that distinction.
 
 [`fatqat.noise.Loss`][fatqat.noise.Loss] can eject gate targets, make `Put` fail, or model
-loss during `Pair` and `Unpair`. It affects a run only when its selector
-matches an operation; a matching source with `p=0` removes no atoms and does
-not change the explicit-loading rule. This is the only gate-level simulator
-that accepts `Loss`. A missing atom makes an otherwise valid paired `CZ` do
-nothing for that shot; an unpaired `CZ` is rejected before execution.
+loss during `Pair` and `Unpair`. Its selector runs only after a matching
+operation; `p=0` removes nothing and leaves the loading rule unchanged. No
+other gate-level simulator accepts `Loss`. If an otherwise-valid paired `CZ`
+finds a missing atom, it does nothing for that shot; an unpaired `CZ` still
+fails before execution.
 
-Measurement of an empty site reports the erasure digit `2`. Erasure bypasses
-readout-confusion noise because there is no occupied qubit to read. Atom loss
-makes the final state stochastic, so `final_state=True` requires
-`shots == 1`. A measured lossy run returns counts by default but not an
-arbitrary trajectory's final state.
+Because an empty site produces no physical readout digit, its erasure value
+`2` bypasses readout-confusion noise. Atom loss also makes the final state
+stochastic, so `final_state=True` requires `shots == 1`. A measured lossy run
+returns counts by default rather than one arbitrary trajectory's final state.
 
 ## Example
 
@@ -109,11 +99,10 @@ backend = fq.simulator.AtomArraySimulator()
 counts = backend.run(program, shots=1000).result().get_counts()
 ```
 
-The atom lifecycle cannot be represented by `unitary` or `superop` because
-occupancy is state outside the quantum matrix. `AtomArraySimulator` therefore
-accepts only `statevector` and `density_matrix`; selecting `unitary` or
-`superop` is rejected when the backend is constructed, even if a program would
-contain no `Put` or loss.
+Because occupancy sits outside the quantum matrix, `unitary` and `superop`
+cannot represent this lifecycle. `AtomArraySimulator` accepts only
+`statevector` and `density_matrix`, rejecting either operator method when the
+backend is constructed—even for a program with no `Put` or loss.
 
 ## API
 

@@ -132,10 +132,10 @@ implementation map, then make the Program and layout choices that it requires.
 
 ## Track atom occupancy and pairing { #atom-occupancy-and-pairing }
 
-The atom-array profile asks a different hardware question. It has no fixed
-geometry. The `Program` declares the number of sites, and every site starts
-empty. Use `Put` to load every intended atom; `Pair`/`Unpair` then change the
-connectivity on which `CZ` is legal:
+Unlike the superconducting profiles, the atom array has no fixed geometry.
+Program resources define sites that begin empty. `Put` loads
+the atoms, while `Pair` and `Unpair` reshape the connectivity on which `CZ`
+is legal:
 
 ![Two occupied atoms begin separated, move together when Pair applies with depolarizing noise, remain paired for CZ, and separate again when Unpair applies with depolarizing noise.](../assets/generated/guide/atom-pairing-lifecycle.svg)
 
@@ -190,11 +190,11 @@ This channel perturbs the quantum state during `Pair` and `Unpair`; it does not
 remove either atom. Use [`Loss`][fatqat.noise.Loss] instead when movement
 should change occupancy.
 
-Omitting `Pair` before `CZ` is a Program error; FatQat does not transport or
-pair atoms automatically. A missing atom is different: an empty site reports
-the erasure digit `2`, while supported gates simply have no atom to act on.
+Omitting `Pair` before `CZ` is a program error; FatQat does not transport or
+pair atoms automatically. A missing atom is different: supported gates find
+nothing to act on, and measurement reports the erasure digit `2`.
 
-For native sets, site counts, and method support, use the
+For native gates, program sizing, and method support, use the
 [hardware-profile API](../api/simulators/index.md). Continue to
 [Hamiltonian emulation](hamiltonian-emulation.md) when pulse duration,
 physical levels, drift, or continuous-time noise becomes relevant.

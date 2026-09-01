@@ -172,12 +172,12 @@ ghz_program = build_ghz8_program()
 
 ## Sample the eight-atom experiment
 
-We run the measured program on [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator].
-The program's eight quantum resources declare the site count. A fixed seed
-keeps this page's numbers stable across repeated tutorial runs; drop it for
-independent experimental samples. Because the circuit is noiseless, every one
-of the 2000 shots lands on one of the two GHZ branches -- no other bitstring
-appears.
+We run the measured program on
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator]; its eight quantum
+resources also determine the array size. A fixed seed keeps the numbers stable
+across tutorial runs, while omitting it produces independent samples. Because
+the circuit is noiseless, all 2000 shots land on one of the two GHZ branches
+and no other bitstring appears.
 
 ```python
 shots = 2_000

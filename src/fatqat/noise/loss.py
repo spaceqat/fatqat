@@ -20,9 +20,9 @@ class Loss:
 
     Loss can act on any number of operands selected from the matching
     operation. AtomArraySimulator is currently the only backend that supports
-    it. Every site on that simulator starts empty and must be loaded with Put,
-    independently of whether Loss is attached or whether p is zero. Loss
-    attached to Put is sampled after loading, so it models loading failure or
+    it. Every site on that simulator starts empty and requires ``Put``,
+    regardless of whether a ``Loss`` source is registered. ``Loss`` attached
+    to ``Put`` is sampled after loading, so it models loading failure or
     immediate post-load loss.
 
     Args:

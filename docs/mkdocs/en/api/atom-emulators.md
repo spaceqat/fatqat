@@ -30,9 +30,9 @@ loss.
 `arrangement.num_sites` and `len(arrangement)` both return the site count,
 which must exactly match the number of quantum resources declared by a pulse
 program.
-By contrast, [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] takes
-its gate-level site count directly from the quantum resources declared by each
-[`Program`][fatqat.Program]. It has no separate capacity argument.
+At the gate level, [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator]
+instead derives its site count from each [`Program`][fatqat.Program] and needs
+no separate capacity setting.
 
 ## Run configuration and results
 

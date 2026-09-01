@@ -39,15 +39,14 @@ physical readout digit. Attaching loss to `Put` samples after loading, which
 models loading failure or immediate post-load loss. `Put` accepts no other
 noise type.
 
-Site loading does not depend on whether a loss source is registered or whether
-a loss event is sampled. A matching `Loss(p=0)` removes no atoms, but every
-site still starts empty and requires an explicit `Put` operation.
+Explicit loading is independent of loss: sites begin empty even when no loss
+source is registered, while a matching `Loss(p=0)` simply removes nothing.
 
 Each shot has its own occupancy state. `statevector` and `density_matrix`
-execute this lifecycle, but their exported quantum states do not encode
-[atom occupancy](../simulators/atom-array.md#occupancy-and-loss); `unitary` and
-`superop` do not support the lifecycle. Because a final state depends on the
-sampled loss history, requesting one requires a single shot.
+support this lifecycle, but their exported states do not encode
+[atom occupancy](../simulators/atom-array.md#occupancy-and-loss). `unitary` and
+`superop` do not support it. Because a final state depends on sampled loss
+history, requesting one requires a single shot.
 
 See [Simulators](backend-support.md#noise-simulator-support) for the built-in occupancy-aware backend and
 its method restrictions.
