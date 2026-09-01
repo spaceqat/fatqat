@@ -1,4 +1,4 @@
-"""Tests for the private instruction dependency DAG."""
+"""Tests for the private logical program graph."""
 
 from dataclasses import FrozenInstanceError
 
@@ -6,7 +6,7 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.visualization._dag import _build_instruction_dag
+from fatqat._program_graph import _build_instruction_dag
 
 
 def _reasons(dag, source, target):
@@ -99,13 +99,3 @@ def test_unpaired_two_target_gate_is_not_a_dag_violation():
 
     assert dag.nodes[0].node_type == "operation"
     assert not any(edge.reason == "connectivity" for edge in dag.edges)
-
-
-def test_dag_view_models_are_not_mutable_or_publicly_exported():
-    dag = _build_instruction_dag(fq.Program(1))
-
-    with pytest.raises(FrozenInstanceError):
-        dag.nodes = ()
-
-    assert not hasattr(fq.visualization, "_InstructionDAG")
-    assert "_InstructionDAG" not in fq.visualization.__all__

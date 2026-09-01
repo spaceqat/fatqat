@@ -5,7 +5,7 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.visualization._dag import _build_interaction_frequency_graph
+from fatqat._program_graph import _build_interaction_frequency_graph
 
 
 def test_interaction_frequency_counts_logical_two_qubit_operations():

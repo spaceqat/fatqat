@@ -242,7 +242,7 @@ class Program:
         conditions, and barriers. Backend directives such as ``Put``,
         ``Pair``, and ``Unpair`` are intentionally excluded.
         """
-        from .visualization._dag import _build_instruction_dag
+        from ._program_graph import _build_instruction_dag
 
         return _build_instruction_dag(self)
 
@@ -253,7 +253,7 @@ class Program:
         two-qubit interactions. Call ``program.interaction_frequency().draw()``
         to render it.
         """
-        from .visualization._dag import _build_interaction_frequency_graph
+        from ._program_graph import _build_interaction_frequency_graph
 
         return _build_interaction_frequency_graph(self)
 

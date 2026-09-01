@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._viewmodels import _CountsView, _InteractionFrequencyGraph
+from .._program_graph import _InteractionFrequencyGraph
+from ._viewmodels import _CountsView
 
 
 def _render_counts(
