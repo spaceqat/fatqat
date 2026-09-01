@@ -113,10 +113,10 @@ models share the same `T1 = T2 = 200 µs` coherence assumption.
 
 -   :material-sine-wave:{ .lg .middle } **`TransmonEmulator`**
 
-    ![The three-level TransmonEmulator result gives the target outcome 101 a probability of 68.59 percent with the same coherence times.](assets/generated/home/grover-transmon.png){ loading=lazy width=714 height=515 }
+    ![The three-level TransmonEmulator result gives the target outcome 101 a probability of about 68.5 percent with the same coherence times.](assets/generated/home/grover-transmon.png){ loading=lazy width=714 height=515 }
 
     Calibrated pulses, three physical levels, and the same coherence times
-    return `101` with **68.59%** probability; physical leakage is **0.0446%**.
+    return `101` with about **68.5%** probability; physical leakage is **0.0446%**.
 
 </div>
 

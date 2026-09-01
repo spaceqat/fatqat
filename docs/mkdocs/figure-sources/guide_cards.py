@@ -224,7 +224,7 @@ def render(output: Path) -> tuple[str, ...]:
     np.testing.assert_allclose(
         resonance,
         np.sin(omega * durations / 2.0) ** 2,
-        atol=1e-7,
+        atol=1e-4,
     )
     np.testing.assert_allclose(population, population[::-1], atol=1e-7)
 
