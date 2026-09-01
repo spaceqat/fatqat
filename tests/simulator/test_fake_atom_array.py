@@ -13,7 +13,6 @@ from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import Loss, NoiseModel, ReadoutConfusion
 from fatqat.program import Program
 from fatqat.registers import QuantumRegister
-from fatqat.resource_layout import ResourceLayout
 
 
 def _matrix_steps(plan):

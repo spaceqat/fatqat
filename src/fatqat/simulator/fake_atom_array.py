@@ -205,9 +205,7 @@ class AtomArraySimulator(Simulator):
                 step.operation, (ops.PairGate, ops.UnpairGate)
             ):
                 plan.extend(
-                    self._lower_segment(
-                        segment, connectivity, put_targets, context
-                    )
+                    self._lower_segment(segment, connectivity, put_targets, context)
                 )
                 segment = []
                 plan.extend(
@@ -224,9 +222,7 @@ class AtomArraySimulator(Simulator):
                 connectivity = self._apply_pairing(connectivity, step)
                 continue
             segment.append(step)
-        plan.extend(
-            self._lower_segment(segment, connectivity, put_targets, context)
-        )
+        plan.extend(self._lower_segment(segment, connectivity, put_targets, context))
         return plan
 
     def _initial_occupancy(self) -> frozenset[int]:
