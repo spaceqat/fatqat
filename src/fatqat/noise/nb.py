@@ -250,9 +250,9 @@ def _compile_channel_table(entries: Sequence[tuple]) -> tuple:
             cdf_flat.extend(float(c) for c in cumulative / cumulative[-1])
             ident_flat.extend(int(flag) for flag in identities)
             stack = _kraus_stack(unitaries)
-        assert stack.shape[1] == offsets.shape[0], (
-            "Kraus dimension must equal the coset layout's local dimension"
-        )
+        assert (
+            stack.shape[1] == offsets.shape[0]
+        ), "Kraus dimension must equal the coset layout's local dimension"
         kra_ptr.append(len(kra_flat))
         num_kraus.append(stack.shape[0])
         local_dim.append(stack.shape[1])
@@ -319,9 +319,9 @@ def _compile_readout_table(entries: Sequence[tuple]) -> tuple:
         if confusions is None:
             conf_ptr.extend([-1] * num_subsystems)
             continue
-        assert len(confusions) == num_subsystems, (
-            "confusions must align with the step's measured subsystems"
-        )
+        assert (
+            len(confusions) == num_subsystems
+        ), "confusions must align with the step's measured subsystems"
         for confusion in confusions:
             if confusion is None:
                 conf_ptr.append(-1)

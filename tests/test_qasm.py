@@ -251,9 +251,9 @@ def test_export_same_named_qreg_and_creg_do_not_collide():
         line = line.strip()
         if line.startswith("qubit[") or line.startswith("bit["):
             name = line.split("]", 1)[1].strip().rstrip(";").strip()
-            assert name not in declared_names, (
-                f"duplicate identifier {name!r} in emitted QASM:\n{out}"
-            )
+            assert (
+                name not in declared_names
+            ), f"duplicate identifier {name!r} in emitted QASM:\n{out}"
             declared_names.add(name)
 
     # And the result must actually round-trip back through from_qasm.

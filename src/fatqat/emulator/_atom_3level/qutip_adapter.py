@@ -412,9 +412,9 @@ class _Atom3LevelQutipAdapter:
 
         frames = dict(input_frames)
         pulses: list[Pulse] = []
-        pending_actions: list[
-            tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]
-        ] = []
+        pending_actions: list[tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]] = (
+            []
+        )
         for source_index in sorted(
             range(len(run.blocks)), key=lambda index: (run.starts[index], index)
         ):

@@ -1,9 +1,5 @@
 """Tests for the private logical program graph."""
 
-from dataclasses import FrozenInstanceError
-
-import pytest
-
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat._program_graph import _build_instruction_dag

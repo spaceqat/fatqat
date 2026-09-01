@@ -427,7 +427,8 @@ class _Atom2LevelQutipAdapter:
                 for engine_index in term.engine_indices:
                     if not 0 <= engine_index < self._site_count:
                         raise BackendValidationError(
-                            f"unknown two-level Lindblad engine index {engine_index!r}"
+                            "unknown two-level Lindblad engine index "
+                            f"{engine_index!r}"
                         )
                     result.append(
                         QobjEvo(

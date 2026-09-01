@@ -28,7 +28,8 @@ GUIDE_OUTPUTS = {
     for locale in LOCALES
 }
 HOME_OUTPUTS = {
-    locale: MKDOCS_ROOT / locale / "assets" / "generated" / "home" for locale in LOCALES
+    locale: MKDOCS_ROOT / locale / "assets" / "generated" / "home"
+    for locale in LOCALES
 }
 DEFAULT_FIGURE_DPI = 144
 GUIDE_SOURCES = (
@@ -272,7 +273,8 @@ def render_all() -> None:
         for name in HOME_FIGURES:
             shutil.copyfile(canonical_home_output / name, output / name)
     print(
-        f"Rendered {len(HOME_FIGURES)} homepage figures for {len(LOCALES)} locale(s)."
+        f"Rendered {len(HOME_FIGURES)} homepage figures for "
+        f"{len(LOCALES)} locale(s)."
     )
 
 

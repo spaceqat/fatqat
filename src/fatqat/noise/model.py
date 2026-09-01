@@ -76,9 +76,9 @@ class NoiseModel:
 
     def __init__(self) -> None:
         self._noise_registrations: list[_NoiseRegistration] = []
-        self._readout_registrations: list[
-            tuple[_ReadoutSelector, ReadoutConfusion]
-        ] = []
+        self._readout_registrations: list[tuple[_ReadoutSelector, ReadoutConfusion]] = (
+            []
+        )
 
     @overload
     def add(

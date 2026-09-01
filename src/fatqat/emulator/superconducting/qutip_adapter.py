@@ -323,9 +323,9 @@ class _TransmonQutipAdapter:
         frames = dict(input_frames)
         pulses: list[Pulse] = []
         noise_pulses: list[Pulse] = []
-        pending_actions: list[
-            tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]
-        ] = []
+        pending_actions: list[tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]] = (
+            []
+        )
         ordered = sorted(
             range(len(run.blocks)),
             key=lambda index: (run.starts[index], index),

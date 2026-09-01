@@ -156,6 +156,20 @@ The returned circuit is a rendering adapter, not an execution object. The old
 
 ::: fatqat.visualization.to_qubit_circuit
 
+### Logical interaction frequency
+
+Logical interaction frequency is derived separately from circuit drawing:
+
+```python
+interaction_frequency = program.interaction_frequency()
+figure = interaction_frequency.draw()
+```
+
+The graph counts source-level two-target logical operations across the complete
+program. It is not a device connectivity graph and does not include `Put`,
+`Pair`, or `Unpair` directives. See [Visualization](../guide/visualization.md)
+for drawing, styling, embedding, and saving examples.
+
 ## Reference
 
 

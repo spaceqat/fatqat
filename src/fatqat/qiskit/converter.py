@@ -388,5 +388,6 @@ def _bound_global_phase(circuit: QuantumCircuit) -> float:
     except (TypeError, ValueError) as exc:
         names = ", ".join(sorted(str(name) for name in phase.parameters))
         raise QiskitConversionError(
-            f"circuit {circuit.name!r}: global phase has unbound parameter(s): {names}"
+            f"circuit {circuit.name!r}: global phase has unbound parameter(s): "
+            f"{names}"
         ) from exc

@@ -31,7 +31,8 @@ LOCALES = tuple(_LOCALE_DATA["locales"])
 GALLERY = yaml.safe_load((SOURCE_ROOT / "gallery.yml").read_text(encoding="utf-8"))
 PAGE_ROOTS = {locale: MKDOCS_ROOT / locale / "tutorials" for locale in LOCALES}
 DOWNLOAD_ROOTS = {
-    locale: MKDOCS_ROOT / locale / "downloads" / "tutorials" for locale in LOCALES
+    locale: MKDOCS_ROOT / locale / "downloads" / "tutorials"
+    for locale in LOCALES
 }
 ASSET_ROOTS = {
     locale: MKDOCS_ROOT / locale / "assets" / "generated" / "tutorials"
@@ -40,7 +41,9 @@ ASSET_ROOTS = {
 RESULT_ROOT = MKDOCS_ROOT / "tutorial-results"
 
 FRONT_MATTER = re.compile(r"\A---\s*\n(?P<yaml>.*?)\n---\s*\n", re.DOTALL)
-PYTHON_CELL = re.compile(r"(?ms)^```python(?:[^\n]*)\n(?P<code>.*?)^```(?=\n|$)")
+PYTHON_CELL = re.compile(
+    r"(?ms)^```python(?:[^\n]*)\n(?P<code>.*?)^```(?=\n|$)"
+)
 CODE_PLACEHOLDER = re.compile(r"<!-- tutorial-code-cell -->")
 
 
@@ -112,10 +115,8 @@ def _parse_source(path: Path) -> LocalizedSource:
     if not isinstance(icon, str) or not re.fullmatch(r"material-[a-z0-9-]+", icon):
         raise ValueError(f"{path}: icon must be a Material icon name")
     raw_alts = metadata.get("figure_alts")
-    if (
-        not isinstance(raw_alts, list)
-        or not raw_alts
-        or not all(isinstance(alt, str) and alt.strip() for alt in raw_alts)
+    if not isinstance(raw_alts, list) or not raw_alts or not all(
+        isinstance(alt, str) and alt.strip() for alt in raw_alts
     ):
         raise ValueError(f"{path}: figure_alts must contain at least one label")
     return LocalizedSource(
@@ -160,7 +161,8 @@ def discover_tutorials() -> tuple[Tutorial, ...]:
             raise ValueError(f"tutorial slug {slug!r} occurs in more than one category")
         slugs.add(slug)
         sources = {
-            locale: _parse_source(inventories[locale][relative]) for locale in LOCALES
+            locale: _parse_source(inventories[locale][relative])
+            for locale in LOCALES
         }
         canonical = sources[CANONICAL_LOCALE]
         code_cells = tuple(
@@ -259,9 +261,9 @@ def _execute_tutorial(tutorial: Tutorial, output: Path) -> dict[str, object]:
         )
     return {
         "schema": 2,
-        "source": str(tutorial.canonical_source.path.relative_to(MKDOCS_ROOT)).replace(
-            "\\", "/"
-        ),
+        "source": str(
+            tutorial.canonical_source.path.relative_to(MKDOCS_ROOT)
+        ).replace("\\", "/"),
         "code_sha256": _code_sha256(tutorial),
         "cells": captured,
     }
@@ -446,9 +448,9 @@ def _insert_page_header(tutorial: Tutorial, locale: str, body: str) -> str:
             "",
             f"-   :material-download: **{labels[1]}**",
             "",
-            f"    [{labels[2]} `.py`]({download_root}.py)"
+            f'    [{labels[2]} `.py`]({download_root}.py)'
             f'{{ download="{tutorial.slug}.py" }} \u00b7 '
-            f"[{labels[3]} `.ipynb`]({download_root}.ipynb)"
+            f'[{labels[3]} `.ipynb`]({download_root}.ipynb)'
             f'{{ download="{tutorial.slug}.ipynb" }}',
             "",
             "</div>",
@@ -503,7 +505,9 @@ def _render_notebook(tutorial: Tutorial, locale: str) -> str:
     codes = iter(tutorial.code_cells)
 
     def cell_id(kind: str) -> str:
-        identity = f"{tutorial.category}/{tutorial.slug}:{locale}:{len(cells)}:{kind}"
+        identity = (
+            f"{tutorial.category}/{tutorial.slug}:{locale}:{len(cells)}:{kind}"
+        )
         return hashlib.sha256(identity.encode()).hexdigest()[:12]
 
     for match in pattern.finditer(source.body):
@@ -515,7 +519,9 @@ def _render_notebook(tutorial: Tutorial, locale: str) -> str:
                 )
             )
         code = (
-            match.group("code").rstrip() if locale == CANONICAL_LOCALE else next(codes)
+            match.group("code").rstrip()
+            if locale == CANONICAL_LOCALE
+            else next(codes)
         )
         cells.append(
             nbformat.v4.new_code_cell(
@@ -583,14 +589,7 @@ def _render_index(tutorials: tuple[Tutorial, ...], locale: str) -> str:
     for category in categories:
         title, description = _category_label(category, locale)
         lines.extend(
-            (
-                f"## {title}",
-                "",
-                description,
-                "",
-                '<div class="grid cards" markdown>',
-                "",
-            )
+            (f"## {title}", "", description, "", '<div class="grid cards" markdown>', "")
         )
         for tutorial in (item for item in tutorials if item.category == category):
             source = tutorial.source(locale)

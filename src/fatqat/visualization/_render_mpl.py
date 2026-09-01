@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .._program_graph import _InteractionFrequencyGraph
 from ._viewmodels import _CountsView
+
+if TYPE_CHECKING:
+    from .._program_graph import _InteractionFrequencyGraph
 
 
 def _render_counts(
@@ -70,7 +72,9 @@ def _render_interaction_frequency(
     """Render a logical-qubit interaction frequency graph."""
     from math import cos, pi, sin
 
+    from matplotlib import rcParams
     from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.colors import to_rgba
     from matplotlib.figure import Figure
     from matplotlib.lines import Line2D
 
@@ -85,6 +89,16 @@ def _render_interaction_frequency(
     else:
         axis = ax
         figure = axis.get_figure()
+
+    label_background = axis.get_facecolor()
+    node_edge_color = rcParams["text.color"]
+    cycle_colors = tuple(rcParams["axes.prop_cycle"].by_key().get("color", ()))
+    edge_color = to_rgba(cycle_colors[0] if cycle_colors else rcParams["lines.color"])
+    node_color = to_rgba(
+        cycle_colors[1]
+        if len(cycle_colors) > 1
+        else cycle_colors[0] if cycle_colors else rcParams["patch.facecolor"]
+    )
 
     count = len(graph.nodes)
     positions: dict[Any, tuple[float, float]] = {}
@@ -109,7 +123,7 @@ def _render_interaction_frequency(
                 [x1, x2],
                 [y1, y2],
                 linewidth=1.5 + 5.0 * edge.count / maximum,
-                color="C0",
+                color=edge_color,
                 alpha=0.8,
                 zorder=1,
             )
@@ -120,7 +134,11 @@ def _render_interaction_frequency(
             str(edge.count),
             ha="center",
             va="center",
-            bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.5},
+            bbox={
+                "facecolor": label_background,
+                "edgecolor": "none",
+                "pad": 1.5,
+            },
             zorder=3,
         )
 
@@ -131,8 +149,8 @@ def _render_interaction_frequency(
             ys,
             s=700,
             marker="o",
-            color="C1",
-            edgecolors="black",
+            color=node_color,
+            edgecolors=node_edge_color,
             linewidths=1.2,
             zorder=2,
         )

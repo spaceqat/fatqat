@@ -63,7 +63,7 @@ class ReadoutConfusion:
             )
         if value.shape[0] < 2:
             raise ValueError(
-                f"confusion matrix side length must be >= 2, got {value.shape[0]}"
+                "confusion matrix side length must be >= 2, " f"got {value.shape[0]}"
             )
         if not np.all(np.isfinite(value)):
             raise ValueError("confusion matrix entries must be finite")

@@ -62,7 +62,10 @@ def render(output: Path) -> tuple[str, ...]:
         runtime="numpy",
     )
     gate_map = profile.implementation_map
-    edges = {tuple(sorted(edge)) for edge in gate_map.device_operands_for(ops.CZ)}
+    edges = {
+        tuple(sorted(edge))
+        for edge in gate_map.device_operands_for(ops.CZ)
+    }
     native_pair = (9, 10)
     diagonal_pair = (1, 6)
     assert gate_map.supports(ops.CZ, device_operands=native_pair)

@@ -2,6 +2,8 @@
 
 import matplotlib
 import pytest
+from cycler import cycler
+from matplotlib.colors import to_hex
 
 import fatqat as fq
 import fatqat.operations as ops
@@ -57,7 +59,6 @@ def test_interaction_frequency_draw_returns_figure():
     program.measure(4, 0)
 
     figure = program.interaction_frequency().draw()
-    figure.savefig("interaction_frequency_plot.png")
 
     assert isinstance(figure, matplotlib.figure.Figure)
     axis = figure.axes[0]
@@ -82,6 +83,29 @@ def test_interaction_frequency_draw_returns_figure():
 def test_interaction_frequency_draw_rejects_non_matplotlib_renderer():
     with pytest.raises(ValueError, match="only supports the matplotlib"):
         fq.Program(2).interaction_frequency().draw(renderer="text")
+
+
+def test_interaction_frequency_draw_inherits_matplotlib_colors():
+    program = fq.Program(2)
+    program.add(ops.CZ, (0, 1))
+
+    with matplotlib.rc_context(
+        {
+            "axes.facecolor": "#172554",
+            "axes.prop_cycle": cycler(color=["#22d3ee", "#f472b6"]),
+            "text.color": "#f8fafc",
+        }
+    ):
+        figure = program.interaction_frequency().draw()
+
+    axis = figure.axes[0]
+    edge_label = next(text for text in axis.texts if text.get_bbox_patch() is not None)
+    nodes = axis.collections[0]
+
+    assert to_hex(axis.lines[0].get_color()) == "#22d3ee"
+    assert to_hex(nodes.get_facecolors()[0]) == "#f472b6"
+    assert to_hex(nodes.get_edgecolors()[0]) == "#f8fafc"
+    assert to_hex(edge_label.get_bbox_patch().get_facecolor()) == "#172554"
 
 
 def test_program_draw_rejects_analysis_view_argument():

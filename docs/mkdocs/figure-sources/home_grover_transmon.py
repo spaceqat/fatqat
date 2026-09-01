@@ -71,7 +71,7 @@ calibration_document = {
                         "park_detuning_ghz": 0.24,
                         "branch_tolerance_ghz": 1e-12,
                     },
-                },
+                }
             ],
         },
     },

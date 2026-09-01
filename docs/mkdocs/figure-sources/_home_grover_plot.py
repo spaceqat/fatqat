@@ -63,7 +63,8 @@ def draw_distribution(name, probabilities):
     axis.set_facecolor(PANEL)
     x_positions = np.arange(len(OUTCOMES))
     colors = [
-        TARGET_BAR if index == TARGET_INDEX else BAR for index in range(len(OUTCOMES))
+        TARGET_BAR if index == TARGET_INDEX else BAR
+        for index in range(len(OUTCOMES))
     ]
     edges = [
         TARGET_DARK if index == TARGET_INDEX else "#9EB0C7"

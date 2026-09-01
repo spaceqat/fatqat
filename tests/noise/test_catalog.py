@@ -291,9 +291,9 @@ def test_amplitude_damping_descriptor_validation():
 
 def test_descriptors_hold_parameters_not_arrays():
     channel = Depolarizing(p=0.1)
-    assert not any(isinstance(v, np.ndarray) for v in vars(channel).values()), (
-        "descriptors must never precompute or store Kraus arrays"
-    )
+    assert not any(
+        isinstance(v, np.ndarray) for v in vars(channel).values()
+    ), "descriptors must never precompute or store Kraus arrays"
 
 
 # --- PauliChannel ---
@@ -384,6 +384,6 @@ def test_pauli_channel_rejects_a_target_count_its_terms_do_not_cover():
 
 def test_pauli_channel_holds_parameters_not_arrays():
     channel = PauliChannel({"X": 0.1})
-    assert not any(isinstance(v, np.ndarray) for v in vars(channel).values()), (
-        "descriptors must never precompute or store Kraus arrays"
-    )
+    assert not any(
+        isinstance(v, np.ndarray) for v in vars(channel).values()
+    ), "descriptors must never precompute or store Kraus arrays"

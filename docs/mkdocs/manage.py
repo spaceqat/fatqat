@@ -241,7 +241,9 @@ def generate_content(*, refresh_tutorials: bool = False) -> None:
         check=True,
     )
     tutorial_command = [sys.executable, str(TUTORIAL_BUILDER)]
-    tutorial_command.append("--execute" if refresh_tutorials else "--execute-if-needed")
+    tutorial_command.append(
+        "--execute" if refresh_tutorials else "--execute-if-needed"
+    )
     subprocess.run(tutorial_command, cwd=REPOSITORY_ROOT, check=True)
 
 
@@ -254,7 +256,9 @@ def serve_site(*, host: str, port: int, strict: bool, build: bool) -> None:
         overrides = {}
         for locale in LOCALES:
             prefix = locale.code.upper().replace("-", "_")
-            overrides[f"FATQAT_MKDOCS_{prefix}_SITE_URL"] = f"{base_url}/{locale.code}/"
+            overrides[f"FATQAT_MKDOCS_{prefix}_SITE_URL"] = (
+                f"{base_url}/{locale.code}/"
+            )
             overrides[f"FATQAT_MKDOCS_{prefix}_LINK"] = f"/{locale.code}/"
         build_site(
             strict=strict,

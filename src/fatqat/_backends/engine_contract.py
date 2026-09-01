@@ -47,7 +47,8 @@ class _SimulationConfig:
             type(self.max_workers) is not int or self.max_workers < 1
         ):
             raise BackendValidationError(
-                f"max_workers must be a positive int or None, got {self.max_workers!r}"
+                "max_workers must be a positive int or None, got "
+                f"{self.max_workers!r}"
             )
         if self.shot_parallelism in {"threads", "processes"} and (
             self.kernel_parallelism == "threads"

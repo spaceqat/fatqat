@@ -7,7 +7,9 @@ from typing import Any
 
 from griffe import Extension, Object
 
-ROLE = re.compile(r":(?:py:)?(?P<kind>class|meth|attr|data|exc|func):`(?P<body>[^`]+)`")
+ROLE = re.compile(
+    r":(?:py:)?(?P<kind>class|meth|attr|data|exc|func):`(?P<body>[^`]+)`"
+)
 EXTERNAL_OBJECTS = {
     "pathlib.Path.read_text": (
         "https://docs.python.org/3/library/pathlib.html#pathlib.Path.read_text"

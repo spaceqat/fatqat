@@ -252,7 +252,10 @@ def _node_info(
 def _build_instruction_dag(program: Program) -> _InstructionDAG:
     """Build the private dependency DAG for a program.
 
-    The builder deliberately consumes ``Program._instructions`` rather than adding a public extraction method. This is a circuit-level graph: it knows about logical quantum resources, classical predicates, and barriers, but it does not inspect a device topology or decide whether a two-qubit gate is physically legal. Hardware-specific connectivity is evaluated by the backend-specific evolution timeline used for later animation views.
+    The builder deliberately consumes ``Program._instructions``. This is a
+    circuit-level graph: it knows about logical quantum resources, classical
+    predicates, and barriers, but it does not inspect a device topology or
+    decide whether a two-qubit gate is physically legal.
 
     Every dependency points from an earlier source position to a later one, so a malformed or cyclic graph cannot be introduced by this extraction strategy. Multiple reasons between the same pair of nodes are retained because they are useful to future renderers and diagnostics.
     """
@@ -274,9 +277,8 @@ def _build_instruction_dag(program: Program) -> _InstructionDAG:
 
     for program_index, step in enumerate(program._instructions):
         if _is_hardware_instruction(step):
-            # Hardware directives remain in Program._instructions for the
-            # backend-specific connectivity/evolution pass. They are not
-            # logical circuit nodes and must not affect the generic DAG.
+            # Hardware directives are not logical circuit nodes and must not
+            # affect the generic DAG.
             continue
         (
             operation_name,
