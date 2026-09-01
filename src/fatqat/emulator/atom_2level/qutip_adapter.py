@@ -37,9 +37,9 @@ from .config import _normalize_interaction_cutoff
 from .target import _Atom2LevelInteraction, _Atom2LevelTarget
 
 _SOLVER_OPTIONS = {
-    "method": "vern9",
-    "atol": 1e-11,
-    "rtol": 1e-9,
+    "method": "adams",
+    "atol": 1e-13,
+    "rtol": 1e-11,
     "nsteps": 100000,
 }
 
