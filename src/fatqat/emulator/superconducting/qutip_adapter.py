@@ -38,6 +38,7 @@ from .._core.scheduling import _ScheduledPulseRun
 from .._core.target import _PreparedControlBinding
 from .._core.value_validation import TIME_EPSILON
 from .._qutip_boundaries import _apply_qutip_reset, _sample_projective_qutip_state
+from .._qutip_runtime import _qutip_runtime_details
 from .._qutip_space import _QutipTensorSpace
 from .model import angular_rate_from_ghz
 from .target import _TransmonTarget
@@ -48,7 +49,6 @@ _SOLVER_OPTIONS = {
     "rtol": 1e-9,
     "nsteps": 100000,
 }
-FRAME_CONVENTION = "per-subsystem near-resonant rotating frames (Delta_i = 0)"
 
 
 class _TransmonQutipAdapter:
@@ -91,7 +91,7 @@ class _TransmonQutipAdapter:
             )
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
-        self._solver_used = "none"
+        self._solvers_used: set[str] = set()
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
         expected_operands = tuple(self._target.device_labels)
@@ -139,13 +139,9 @@ class _TransmonQutipAdapter:
             for ordinal in range(len(self._target.device_labels))
         )
 
-    def solver_metadata(self) -> dict[str, Any]:
-        """Return normalized, public-safe solver facts for result metadata."""
-        return {
-            "solver": self._solver_used,
-            "frame_convention": FRAME_CONVENTION,
-            "options": dict(_SOLVER_OPTIONS),
-        }
+    def runtime_details(self) -> dict[str, Any]:
+        """Return normalized QuTiP details for result metadata."""
+        return _qutip_runtime_details(self._solvers_used, _SOLVER_OPTIONS)
 
     def initial_state(self) -> Any:
         """Create the full-model physical ground state."""
@@ -189,7 +185,7 @@ class _TransmonQutipAdapter:
         state = context.state
         if isinstance(bound, _BoundDynamics):
             if self._execution_mode == "density_matrix":
-                self._solver_used = "mesolve"
+                self._solvers_used.add("mesolve")
                 result = mesolve(
                     bound.hamiltonian,
                     state,
@@ -211,7 +207,7 @@ class _TransmonQutipAdapter:
                     rng=context.rng,
                 )
             else:
-                self._solver_used = "sesolve"
+                self._solvers_used.add("sesolve")
                 result = sesolve(
                     bound.hamiltonian,
                     state,
@@ -241,7 +237,7 @@ class _TransmonQutipAdapter:
                 dtype=np.uint64,
             )
         )
-        self._solver_used = "mcsolve"
+        self._solvers_used.add("mcsolve")
         result = mcsolve(
             bound.hamiltonian,
             state,
@@ -294,7 +290,7 @@ class _TransmonQutipAdapter:
                 "propagator is unavailable for dissipative pulse evolution"
             )
         else:
-            self._solver_used = "propagator"
+            self._solvers_used.add("propagator")
             unitary = qutip_propagator(
                 bound.hamiltonian,
                 run.end_time,

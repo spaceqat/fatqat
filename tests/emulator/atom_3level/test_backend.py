@@ -637,10 +637,22 @@ def test_atom_3level_result_metadata_keeps_common_runtime_facts(
     atom_3level_model, atom_3level_calibration
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
+    program = fq.Program(2)
+    program.add(ops.RX(0.1), 0)
     result = backend.run(
-        fq.Program(2), result_config={"counts": False, "final_state": True}
+        program, result_config={"counts": False, "final_state": True}
     ).result()
     assert result.metadata["backend_name"] == "Atom3LevelEmulator"
+    assert result.metadata["runtime"] == "qutip"
+    assert result.metadata["runtime_details"] == {
+        "solver": "mesolve",
+        "solver_options": {
+            "method": "adams",
+            "atol": 1e-11,
+            "rtol": 1e-9,
+            "nsteps": 100000,
+        },
+    }
     assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
     assert result.metadata["result_config"] == {
         "counts": False,
@@ -656,8 +668,7 @@ def test_atom_3level_result_metadata_keeps_common_runtime_facts(
             for key, child in value.items():
                 assert isinstance(key, str)
                 assert not any(
-                    token in key.lower()
-                    for token in ("coordinate", "handle", "runtime", "engine")
+                    token in key.lower() for token in ("coordinate", "handle", "engine")
                 )
                 check_public(child, (*path, key))
         elif isinstance(value, (tuple, list)):

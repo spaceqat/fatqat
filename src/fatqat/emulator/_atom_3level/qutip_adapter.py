@@ -37,6 +37,7 @@ from .._core.value_validation import TIME_EPSILON
 from .._qutip_boundaries import _apply_qutip_reset, _sample_projective_qutip_state
 from .._core.target import _PreparedControlBinding
 from .._qutip_space import _QutipTensorSpace
+from .._qutip_runtime import _qutip_runtime_details
 from .target import _Atom3LevelTarget
 
 _SOLVER_OPTIONS = {"method": "adams", "atol": 1e-11, "rtol": 1e-9, "nsteps": 100000}
@@ -74,7 +75,7 @@ class _Atom3LevelQutipAdapter:
         self._qutip_space = _QutipTensorSpace(engine_allocation)
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
-        self._solver_used = "none"
+        self._solvers_used: set[str] = set()
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
         self._dims = list(self._qutip_space.dims)
@@ -103,12 +104,9 @@ class _Atom3LevelQutipAdapter:
             for ordinal in range(engine_allocation.n_subsystems)
         )
 
-    def solver_metadata(self) -> dict[str, Any]:
+    def runtime_details(self) -> dict[str, Any]:
         """Return public, normalized numerical integration facts."""
-        return {
-            "solver": self._solver_used,
-            "options": dict(_SOLVER_OPTIONS),
-        }
+        return _qutip_runtime_details(self._solvers_used, _SOLVER_OPTIONS)
 
     @staticmethod
     def raman_frame_multiplier(theta: float) -> complex:
@@ -228,7 +226,7 @@ class _Atom3LevelQutipAdapter:
                 + self._bind_block_collapse_operators(run, enabled)
             )
             if self._execution_mode == "density_matrix":
-                self._solver_used = "mesolve"
+                self._solvers_used.add("mesolve")
                 result = mesolve(
                     bound.hamiltonian,
                     solver_state,
@@ -241,7 +239,7 @@ class _Atom3LevelQutipAdapter:
                     raise BackendValidationError(
                         "Atom3LevelEmulator does not support continuous trajectories"
                     )
-                self._solver_used = "sesolve"
+                self._solvers_used.add("sesolve")
                 result = sesolve(
                     bound.hamiltonian,
                     solver_state,
@@ -269,7 +267,7 @@ class _Atom3LevelQutipAdapter:
                 tuple(qeye(dim) for dim in self._engine_allocation.system_dims)
             )
         else:
-            self._solver_used = "propagator"
+            self._solvers_used.add("propagator")
             unitary = qutip_propagator(
                 bound.hamiltonian,
                 run.end_time,

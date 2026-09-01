@@ -96,7 +96,7 @@ class _FakeRunner:
         )
 
     @staticmethod
-    def solver_metadata():
+    def runtime_details():
         return {"mode": "fake"}
 
 

@@ -40,12 +40,12 @@ class _PulseExecutionSummary:
 
     outcomes: tuple[_PulseShotOutcome, ...]
     final_state_kind: FinalStateKind
-    solver_metadata: Mapping[str, Any]
+    runtime_details: Mapping[str, Any]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "outcomes", tuple(self.outcomes))
         object.__setattr__(
             self,
-            "solver_metadata",
-            MappingProxyType(dict(self.solver_metadata)),
+            "runtime_details",
+            MappingProxyType(dict(self.runtime_details)),
         )

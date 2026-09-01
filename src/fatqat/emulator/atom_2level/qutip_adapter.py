@@ -32,6 +32,7 @@ from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
 from .._core.waveform import _REQUESTED_SPLINE_DEGREE
 from .._qutip_boundaries import _sample_projective_qutip_state
+from .._qutip_runtime import _qutip_runtime_details
 from .._qutip_space import _QutipTensorSpace
 from .config import _normalize_interaction_cutoff
 from .target import _Atom2LevelInteraction, _Atom2LevelTarget
@@ -105,7 +106,7 @@ class _Atom2LevelQutipAdapter:
         self._qutip_space = _QutipTensorSpace(engine_allocation)
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
-        self._solver_used = "none"
+        self._solvers_used: set[str] = set()
         self._site_count = engine_allocation.n_subsystems
         self._dims = list(self._qutip_space.dims)
         self._projectors: list[tuple[Qobj, ...] | None] = [None] * self._site_count
@@ -131,11 +132,8 @@ class _Atom2LevelQutipAdapter:
         self._interaction_drift = self._build_interaction_drift()
         self._collapse_operators = self._build_collapse_operators(background_noise)
 
-    def solver_metadata(self) -> dict[str, Any]:
-        return {
-            "solver": self._solver_used,
-            "options": dict(_SOLVER_OPTIONS),
-        }
+    def runtime_details(self) -> dict[str, Any]:
+        return _qutip_runtime_details(self._solvers_used, _SOLVER_OPTIONS)
 
     def initial_state(self) -> Any:
         ket = self._qutip_space.full_tensor(
@@ -193,7 +191,7 @@ class _Atom2LevelQutipAdapter:
             input_time=context.time,
         )
         if self._execution_mode == "density_matrix":
-            self._solver_used = "mesolve"
+            self._solvers_used.add("mesolve")
             result = mesolve(
                 hamiltonian,
                 context.state,
@@ -205,7 +203,7 @@ class _Atom2LevelQutipAdapter:
                 options=_SOLVER_OPTIONS,
             )
         else:
-            self._solver_used = "sesolve"
+            self._solvers_used.add("sesolve")
             result = sesolve(
                 hamiltonian,
                 context.state,
@@ -226,7 +224,7 @@ class _Atom2LevelQutipAdapter:
             enabled=(True,) * len(run.blocks),
             input_time=0.0,
         )
-        self._solver_used = "propagator"
+        self._solvers_used.add("propagator")
         return propagator(
             hamiltonian,
             run.end_time,
@@ -329,7 +327,7 @@ class _Atom2LevelQutipAdapter:
             "keep_runs_results": True,
             "progress_bar": False,
         }
-        self._solver_used = "mcsolve"
+        self._solvers_used.add("mcsolve")
         result = mcsolve(
             hamiltonian,
             initial_state,

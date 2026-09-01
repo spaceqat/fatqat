@@ -72,6 +72,13 @@ def test_method_selects_one_full_physical_artifact(
 
     assert backend.method == method
     assert result.metadata["method"] == method
+    assert result.metadata["runtime"] == "qutip"
+    assert set(result.metadata["runtime_details"]) == {
+        "solver",
+        "solver_options",
+    }
+    assert "solver" not in result.metadata
+    assert "frame_convention" not in result.metadata["runtime_details"]
     assert result.available_data == {field}
     assert result.metadata["state_axes"]
     artifact = getattr(result, f"get_{field}")()
