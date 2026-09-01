@@ -124,13 +124,13 @@ def test_production_matches_the_calibrated_analytic_oracle(
     assert abs(principal(double_corrected.local_phases[0])) > 1.0
     for name in ("process_fidelity", "average_fidelity", "survival", "leakage"):
         delta = getattr(analytic, name) - getattr(production, name)
-        assert (
-            abs(delta) <= ANALYTIC_VS_PRODUCTION_METRIC_TOLERANCE
-        ), f"analytic-production {name} delta={delta:+.3e}"
+        assert abs(delta) <= ANALYTIC_VS_PRODUCTION_METRIC_TOLERANCE, (
+            f"analytic-production {name} delta={delta:+.3e}"
+        )
     phase_delta = principal(analytic.entangling_phase - production.entangling_phase)
-    assert (
-        abs(phase_delta) <= ANALYTIC_VS_PRODUCTION_PHASE_TOLERANCE
-    ), f"analytic-production phase delta={phase_delta:+.3e}"
+    assert abs(phase_delta) <= ANALYTIC_VS_PRODUCTION_PHASE_TOLERANCE, (
+        f"analytic-production phase delta={phase_delta:+.3e}"
+    )
 
 
 def test_production_grid_metadata_sampled_reference_and_convergence(
@@ -159,9 +159,9 @@ def test_production_grid_metadata_sampled_reference_and_convergence(
     )
     for name in ("process_fidelity", "average_fidelity", "survival", "leakage"):
         delta = getattr(production, name) - getattr(sampled, name)
-        assert (
-            abs(delta) <= PRODUCTION_VS_SAMPLED_METRIC_TOLERANCE
-        ), f"production-sampled({points}) {name} delta={delta:+.3e}"
+        assert abs(delta) <= PRODUCTION_VS_SAMPLED_METRIC_TOLERANCE, (
+            f"production-sampled({points}) {name} delta={delta:+.3e}"
+        )
     assert (
         abs(principal(production.entangling_phase - sampled.entangling_phase))
         <= PRODUCTION_VS_SAMPLED_PHASE_TOLERANCE

@@ -2864,9 +2864,9 @@ class NumbaUnitaryEngine(  # pylint: disable=too-many-ancestors
         # A unitary plan holds only gates, so it reaches this translator as lowered.
         payloads = []
         for step in plan:
-            assert isinstance(
-                step, ApplyMatrixStep
-            ), "unitary execution accepts only matrix steps"
+            assert isinstance(step, ApplyMatrixStep), (
+                "unitary execution accepts only matrix steps"
+            )
             code, columns, values = self._resolve_structure(step)
             payloads.append(
                 (step.matrix, code, columns, values, None, tuple(step.target_indices))

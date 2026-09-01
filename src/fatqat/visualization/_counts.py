@@ -24,8 +24,7 @@ def _prepare_counts(
     if number_to_keep is not None:
         if type(number_to_keep) is not int:
             raise TypeError(
-                "number_to_keep must be a positive int or None, "
-                f"got {number_to_keep!r}"
+                f"number_to_keep must be a positive int or None, got {number_to_keep!r}"
             )
         if number_to_keep <= 0:
             raise ValueError(f"number_to_keep must be positive, got {number_to_keep}")

@@ -86,9 +86,7 @@ def _markdown_destination_locations(text: str) -> list[tuple[int, str]]:
     destinations: list[tuple[int, str]] = []
     for match in MARKDOWN_DESTINATION.finditer(text):
         if linked_image := match.group("linked_image"):
-            destinations.append(
-                (match.start(), _markdown_destination(linked_image))
-            )
+            destinations.append((match.start(), _markdown_destination(linked_image)))
             destinations.append(
                 (match.start(), _markdown_destination(match.group("linked_target")))
             )
@@ -160,13 +158,9 @@ def validate() -> list[str]:
                     f"{locale} {folder} are missing: {_describe_paths(missing)}"
                 )
             if extra := localized[locale] - canonical_files:
-                errors.append(
-                    f"{locale}-only {folder} exist: {_describe_paths(extra)}"
-                )
+                errors.append(f"{locale}-only {folder} exist: {_describe_paths(extra)}")
 
-    for download in _relative_files(
-        canonical_root / "downloads", suffixes={".py"}
-    ):
+    for download in _relative_files(canonical_root / "downloads", suffixes={".py"}):
         canonical_download = canonical_root / "downloads" / download
         for locale in translated_locales:
             localized_download = LOCALE_ROOTS[locale] / "downloads" / download
@@ -191,8 +185,7 @@ def validate() -> list[str]:
                 and canonical_asset.read_bytes() != localized_asset.read_bytes()
             ):
                 errors.append(
-                    f"Captured tutorial figure differs for {locale}: "
-                    f"{asset.as_posix()}"
+                    f"Captured tutorial figure differs for {locale}: {asset.as_posix()}"
                 )
 
     for relative in sorted(canonical_markdown):
@@ -313,9 +306,7 @@ def validate() -> list[str]:
             )
         )
         download_count = len(
-            _relative_files(
-                canonical_root / "downloads", suffixes={".ipynb", ".py"}
-            )
+            _relative_files(canonical_root / "downloads", suffixes={".ipynb", ".py"})
         )
         print(
             f"Validated documentation content for {locale_summary}: "

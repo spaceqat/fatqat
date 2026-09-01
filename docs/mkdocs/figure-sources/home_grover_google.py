@@ -37,6 +37,7 @@ def coherence_channels(duration):
         fq.noise.PhaseDamping(p=phase_p),
     )
 
+
 for operation in (ops.RX, ops.RY, ops.RZ):
     damping, dephasing = coherence_channels(ROTATION_DURATION_SECONDS)
     noise.add(damping, operation=operation)

@@ -208,8 +208,10 @@ class Program:
             renderer: ``"matplotlib"`` (default) for a matplotlib ``Figure``,
                 ``"text"`` for a returned terminal-diagram string, or another
                 renderer name supported by QuTiP-QIP.
-            **kwargs: Renderer options forwarded to QuTiP-QIP. Matplotlib also
-                accepts ``ax`` to draw on an existing axis.
+        **kwargs: Renderer options forwarded to QuTiP-QIP. Matplotlib also
+            accepts ``ax`` to draw on an existing axis. Set
+            ``view="interaction_frequency"`` for a hardware-independent
+            logical-qubit interaction frequency graph.
 
         Returns:
             A matplotlib ``Figure`` for ``"matplotlib"``, a string for

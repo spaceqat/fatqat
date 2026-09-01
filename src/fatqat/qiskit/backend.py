@@ -135,8 +135,7 @@ class FatqatBackend(BackendV2):
         seed = options.seed_simulator
         if seed is not None and type(seed) is not int:
             raise QiskitBackendError(
-                "seed_simulator must be an integer or None, "
-                f"got {type(seed).__name__}"
+                f"seed_simulator must be an integer or None, got {type(seed).__name__}"
             )
         if seed is not None and seed < 0:
             raise QiskitBackendError(f"seed_simulator must be >= 0, got {seed}")

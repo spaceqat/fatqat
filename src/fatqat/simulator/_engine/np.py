@@ -817,12 +817,12 @@ class _NumpyOperatorEngine(_NumpyMatrixEngine):
         request: ResultRequest,
     ) -> RawResult:
         for step in plan:
-            assert not isinstance(
-                step, MeasurementStep
-            ), "operator execution cannot represent a measurement"
-            assert (
-                step.condition is None
-            ), "operator execution cannot represent a feedforward condition"
+            assert not isinstance(step, MeasurementStep), (
+                "operator execution cannot represent a measurement"
+            )
+            assert step.condition is None, (
+                "operator execution cannot represent a feedforward condition"
+            )
             if isinstance(step, ApplyMatrixStep):
                 self.apply(step)
             elif isinstance(step, ApplyChannelStep):

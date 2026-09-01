@@ -171,9 +171,9 @@ def _resolve_execution_policy(
             )
 
     if kernel_request == "threads":
-        assert (
-            capabilities.supports_kernel_threads
-        ), "explicit kernel threads require validated engine capabilities"
+        assert capabilities.supports_kernel_threads, (
+            "explicit kernel threads require validated engine capabilities"
+        )
         kernel_workers = _explicit_thread_worker_ceiling(
             simulation.max_workers, capabilities
         )

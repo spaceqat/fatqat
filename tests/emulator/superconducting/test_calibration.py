@@ -53,10 +53,12 @@ def test_calibration_copies_edge_containers_and_ignores_list_order(
     value = TransmonCalibration(calibration_document)
     assert value == TransmonCalibration(reversed_document)
 
-    calibration_document["recipes"]["cz"]["edges"][0]["canonical_edge"][0] = "changed"
-    calibration_document["recipes"]["cz"]["edges"].clear()
-    assert value._cz_recipe("q0", "q1").duration_ns == 60.0
-    assert value._cz_recipe("q3", "q2").detuned_subsystem == "q3"
+    calibration_document["recipes"]["cz"]["overrides"][0]["device_operands"][
+        0
+    ] = "changed"
+    calibration_document["recipes"]["cz"]["overrides"].clear()
+    assert value._cz_duration_ns("q0", "q1") == 60.0
+    assert value._cz_duration_ns("q2", "q3") == 60.0
 
 
 @pytest.mark.parametrize(
