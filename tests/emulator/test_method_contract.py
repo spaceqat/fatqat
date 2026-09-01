@@ -1,5 +1,7 @@
 """Shared representation contract for pulse emulators."""
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -79,6 +81,41 @@ def test_method_selects_one_full_physical_artifact(
     for alternate in {"statevector", "density_matrix", "unitary"} - {field}:
         with pytest.raises(ResultFieldUnavailableError):
             getattr(result, f"get_{alternate}")()
+
+
+@pytest.mark.parametrize("family", ("transmon", "atom3", "atom2"))
+def test_counts_only_warns_when_a_declared_clbit_is_never_measured(
+    family, atom_3level_model
+):
+    backend, _program, _dimension = _family_case(
+        family, "density_matrix", atom_3level_model
+    )
+    program = fq.Program(2, 2)
+    program.measure(0, 0)
+
+    with pytest.warns(UserWarning, match="clbits that were never measured"):
+        result = backend.run(program, shots=2).result()
+
+    assert result.get_counts() == {"00": 2}
+
+
+@pytest.mark.parametrize("family", ("transmon", "atom3", "atom2"))
+def test_counts_only_does_not_warn_when_every_declared_clbit_is_measured(
+    family, atom_3level_model
+):
+    backend, _program, _dimension = _family_case(
+        family, "density_matrix", atom_3level_model
+    )
+    program = fq.Program(2, 2)
+    program.measure(0, 0)
+    program.measure(1, 1)
+
+    with warnings.catch_warnings(record=True) as caught:
+        backend.run(program, shots=2).result()
+
+    assert not any(
+        "clbits that were never measured" in str(item.message) for item in caught
+    )
 
 
 @pytest.mark.parametrize(

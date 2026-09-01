@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import asdict
@@ -577,6 +578,17 @@ class _PulseBackend(ABC):
                 statevector = final_state
             else:
                 density_matrix = final_state
+        if request.counts and not request.final_state:
+            n_clbits = prepared.classical_allocation.n_clbits
+            if any(
+                classical_index not in prepared.facts.written_clbits
+                for classical_index in range(n_clbits)
+            ):
+                warnings.warn(
+                    "counts contain clbits that were never measured; "
+                    "returning zero-filled counts",
+                    stacklevel=4,
+                )
         metadata = self._result_metadata(request, simulation, shots)
         if request.final_state:
             metadata["state_axes"] = _describe_state_axes(
