@@ -116,10 +116,8 @@ def test_result_metadata_keeps_common_runtime_facts(backend):
     assert result.metadata["runtime_details"] == {
         "solver": "sesolve",
         "solver_options": {
-            "method": "adams",
-            "atol": 1e-11,
-            "rtol": 1e-9,
             "nsteps": 100000,
+            "max_step": 0.1,
         },
     }
     assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
@@ -152,10 +150,8 @@ def test_runtime_details_report_every_solver_used_across_dynamic_regions(
     assert result.metadata["runtime_details"] == {
         "solver": ("mcsolve", "sesolve"),
         "solver_options": {
-            "method": "adams",
-            "atol": 1e-11,
-            "rtol": 1e-9,
             "nsteps": 100000,
+            "max_step": 0.1,
         },
     }
 

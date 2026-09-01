@@ -37,10 +37,8 @@ from .._qutip_space import _QutipTensorSpace
 from .config import _normalize_interaction_cutoff
 from .target import _Atom2LevelInteraction, _Atom2LevelTarget
 
-_SOLVER_OPTIONS = {
-    "method": "adams",
-    "atol": 1e-13,
-    "rtol": 1e-11,
+# Use QuTiP's native method and error tolerances; only raise its work ceiling.
+_SOLVER_OVERRIDES = {
     "nsteps": 100000,
 }
 
@@ -133,7 +131,7 @@ class _Atom2LevelQutipAdapter:
         self._collapse_operators = self._build_collapse_operators(background_noise)
 
     def runtime_details(self) -> dict[str, Any]:
-        return _qutip_runtime_details(self._solvers_used, _SOLVER_OPTIONS)
+        return _qutip_runtime_details(self._solvers_used, _SOLVER_OVERRIDES)
 
     def initial_state(self) -> Any:
         ket = self._qutip_space.full_tensor(
@@ -200,7 +198,7 @@ class _Atom2LevelQutipAdapter:
                     self._collapse_operators
                     + self._bind_block_collapse_operators(run, enabled)
                 ),
-                options=_SOLVER_OPTIONS,
+                options=_SOLVER_OVERRIDES,
             )
         else:
             self._solvers_used.add("sesolve")
@@ -208,7 +206,7 @@ class _Atom2LevelQutipAdapter:
                 hamiltonian,
                 context.state,
                 [context.time, run.end_time],
-                options=_SOLVER_OPTIONS,
+                options=_SOLVER_OVERRIDES,
             )
         context.state = result.states[-1]
 
@@ -228,7 +226,7 @@ class _Atom2LevelQutipAdapter:
         return propagator(
             hamiltonian,
             run.end_time,
-            options=_SOLVER_OPTIONS,
+            options=_SOLVER_OVERRIDES,
         )
 
     def execute_boundary(
@@ -322,7 +320,7 @@ class _Atom2LevelQutipAdapter:
             )
         )
         options = {
-            **_SOLVER_OPTIONS,
+            **_SOLVER_OVERRIDES,
             "store_final_state": True,
             "keep_runs_results": True,
             "progress_bar": False,

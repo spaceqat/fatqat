@@ -40,7 +40,8 @@ from .._qutip_space import _QutipTensorSpace
 from .._qutip_runtime import _qutip_runtime_details
 from .target import _Atom3LevelTarget
 
-_SOLVER_OPTIONS = {"method": "adams", "atol": 1e-11, "rtol": 1e-9, "nsteps": 100000}
+# Use QuTiP's native method and error tolerances; only raise its work ceiling.
+_SOLVER_OVERRIDES = {"nsteps": 100000}
 
 
 class _Atom3LevelQutipAdapter:
@@ -106,7 +107,7 @@ class _Atom3LevelQutipAdapter:
 
     def runtime_details(self) -> dict[str, Any]:
         """Return public, normalized numerical integration facts."""
-        return _qutip_runtime_details(self._solvers_used, _SOLVER_OPTIONS)
+        return _qutip_runtime_details(self._solvers_used, _SOLVER_OVERRIDES)
 
     @staticmethod
     def raman_frame_multiplier(theta: float) -> complex:
@@ -232,7 +233,7 @@ class _Atom3LevelQutipAdapter:
                     solver_state,
                     [context.time, run.end_time],
                     c_ops=collapse_operators,
-                    options=_SOLVER_OPTIONS,
+                    options=_SOLVER_OVERRIDES,
                 )
             else:
                 if collapse_operators:
@@ -244,7 +245,7 @@ class _Atom3LevelQutipAdapter:
                     bound.hamiltonian,
                     solver_state,
                     [context.time, run.end_time],
-                    options=_SOLVER_OPTIONS,
+                    options=_SOLVER_OVERRIDES,
                 )
             solver_state = result.states[-1]
         context.state = solver_state
@@ -271,7 +272,7 @@ class _Atom3LevelQutipAdapter:
             unitary = qutip_propagator(
                 bound.hamiltonian,
                 run.end_time,
-                options=_SOLVER_OPTIONS,
+                options=_SOLVER_OVERRIDES,
             )
         return (
             self._frame_unitary(bound.output_frames) * unitary

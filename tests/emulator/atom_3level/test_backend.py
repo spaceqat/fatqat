@@ -647,9 +647,6 @@ def test_atom_3level_result_metadata_keeps_common_runtime_facts(
     assert result.metadata["runtime_details"] == {
         "solver": "mesolve",
         "solver_options": {
-            "method": "adams",
-            "atol": 1e-11,
-            "rtol": 1e-9,
             "nsteps": 100000,
         },
     }

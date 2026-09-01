@@ -8,9 +8,9 @@ from typing import Any
 
 def _qutip_runtime_details(
     solvers: Iterable[str],
-    solver_options: Mapping[str, Any],
+    solver_overrides: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Return owned metadata that truthfully summarizes all invoked solvers."""
+    """Return invoked solvers and the options FatQAT overrides."""
     names = tuple(sorted(set(solvers)))
     if not names:
         solver: str | tuple[str, ...] = "none"
@@ -20,7 +20,7 @@ def _qutip_runtime_details(
         solver = names
     return {
         "solver": solver,
-        "solver_options": {} if not names else dict(solver_options),
+        "solver_options": {} if not names else dict(solver_overrides),
     }
 
 
