@@ -128,7 +128,7 @@ def test_atom_3level_execution_methods_keep_the_shared_forwarding_contract():
     assert run["resource_layout"].default is None
     assert run["simulation_config"].default is None
     assert run["result_config"].default is None
-    assert get_type_hints(Atom3LevelEmulator.run)["return"] is Job
+    assert get_type_hints(Atom3LevelEmulator.run)["return"] == Job[fq.Result]
     assert not hasattr(Atom3LevelEmulator, "propagator")
     assert not hasattr(Atom3LevelEmulator, "apply_final_frame")
 

@@ -255,7 +255,7 @@ class _PulseBackend(ABC):
         resource_layout: ResourceLayout | None = None,
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
-    ) -> Job:
+    ) -> Job[Result]:
         """Run a program on this pulse emulator.
 
         The emulator family fixes the initial product state; pulse backends do

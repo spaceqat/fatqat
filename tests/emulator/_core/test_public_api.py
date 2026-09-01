@@ -338,7 +338,7 @@ def test_atom_2level_execution_methods_have_exact_public_forwarding_signatures()
     assert run["resource_layout"].default is None
     assert run["simulation_config"].default is None
     assert run["result_config"].default is None
-    assert get_type_hints(Atom2LevelEmulator.run)["return"] is Job
+    assert get_type_hints(Atom2LevelEmulator.run)["return"] == Job[fq.Result]
 
     assert not hasattr(Atom2LevelEmulator, "propagator")
     assert not hasattr(Atom2LevelEmulator, "apply_final_frame")
