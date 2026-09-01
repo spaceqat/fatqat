@@ -8,29 +8,17 @@ import re
 import runpy
 import shutil
 import sys
+import tempfile
 import textwrap
-
-import yaml
-
 
 SCRIPT_PATH = Path(__file__).resolve()
 MKDOCS_ROOT = SCRIPT_PATH.parents[1]
 REPOSITORY_ROOT = SCRIPT_PATH.parents[3]
-LOCALE_REGISTRY = MKDOCS_ROOT / "locales.yml"
-_LOCALE_DATA = yaml.safe_load(LOCALE_REGISTRY.read_text(encoding="utf-8"))
-CANONICAL_LOCALE = _LOCALE_DATA["canonical"]
-LOCALES = tuple(_LOCALE_DATA["locales"])
-CANONICAL_GUIDE_ROOT = MKDOCS_ROOT / CANONICAL_LOCALE / "guide"
+GUIDE_ROOT = MKDOCS_ROOT / "en" / "guide"
 CARD_SOURCE = MKDOCS_ROOT / "figure-sources" / "guide_cards.py"
 FIGURE_SOURCE_ROOT = MKDOCS_ROOT / "figure-sources"
-GUIDE_OUTPUTS = {
-    locale: MKDOCS_ROOT / locale / "assets" / "generated" / "guide"
-    for locale in LOCALES
-}
-HOME_OUTPUTS = {
-    locale: MKDOCS_ROOT / locale / "assets" / "generated" / "home"
-    for locale in LOCALES
-}
+GUIDE_OUTPUT = MKDOCS_ROOT / "en" / "assets" / "generated" / "guide"
+HOME_OUTPUT = MKDOCS_ROOT / "en" / "assets" / "generated" / "home"
 DEFAULT_FIGURE_DPI = 144
 GUIDE_SOURCES = (
     (
@@ -57,8 +45,7 @@ HOME_FIGURES = tuple(
 )
 
 IMAGE = re.compile(
-    r"!\[[^]]*]\(\.\./assets/generated/guide/"
-    r"(?P<name>[a-z0-9-]+\.(?:png|svg))\)"
+    r"!\[[^]]*]\(\.\./assets/generated/guide/" r"(?P<name>[a-z0-9-]+\.(?:png|svg))\)"
 )
 REPRODUCTION = re.compile(
     r'(?ms)^\?\?\? example "Reproduce this figure"\s*\n\s*'
@@ -191,13 +178,35 @@ def _render_labeled_sources(
     return rendered_names
 
 
+def _sync_rendered(
+    temporary_output: Path,
+    output: Path,
+    expected: set[str],
+    *,
+    suffixes: set[str],
+) -> None:
+    """Copy changed outputs and remove stale generated files."""
+
+    output.mkdir(parents=True, exist_ok=True)
+    for stale in output.iterdir():
+        if stale.suffix in suffixes and stale.name not in expected:
+            stale.unlink()
+    for name in sorted(expected):
+        temporary = temporary_output / name
+        destination = output / name
+        if destination.is_file() and destination.read_bytes() == temporary.read_bytes():
+            continue
+        shutil.copyfile(temporary, destination)
+
+
 def render_all() -> None:
-    """Regenerate every tracked guide and homepage figure for active locales."""
+    """Regenerate every English guide and homepage figure."""
 
     import matplotlib
 
     # Select the non-interactive backend before importing any figure source.
     matplotlib.use("Agg", force=True)
+    matplotlib.rcParams["svg.hashsalt"] = "fatqat-documentation"
 
     source_path = str(REPOSITORY_ROOT / "src")
     if source_path not in sys.path:
@@ -205,77 +214,66 @@ def render_all() -> None:
     figure_source_path = str(FIGURE_SOURCE_ROOT)
     if figure_source_path not in sys.path:
         sys.path.insert(0, figure_source_path)
-    canonical_output = GUIDE_OUTPUTS[CANONICAL_LOCALE]
-    canonical_output.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="fatqat-mkdocs-figures-") as temp:
+        temporary_root = Path(temp)
+        temporary_guide = temporary_root / "guide"
+        temporary_home = temporary_root / "home"
+        temporary_guide.mkdir()
+        temporary_home.mkdir()
 
-    rendered = set(_load_card_renderer()(canonical_output))
-    sourced = _render_labeled_sources(
-        GUIDE_SOURCES,
-        canonical_output,
-        group="guide",
-    )
-    duplicates = rendered & sourced
-    if duplicates:
-        raise ValueError(f"duplicate guide figure source for {sorted(duplicates)}")
-    rendered.update(sourced)
-    for page in sorted(CANONICAL_GUIDE_ROOT.glob("*.md")):
-        for name, code in _page_examples(page):
-            if name in rendered:
-                raise ValueError(f"duplicate guide figure source for {name}")
-            print(f"Rendering {name} from {page.relative_to(MKDOCS_ROOT)}")
-            _render_inline_example(name, code, canonical_output)
-            rendered.add(name)
-
-    referenced = {
-        match.group("name")
-        for page in CANONICAL_GUIDE_ROOT.glob("*.md")
-        for match in IMAGE.finditer(page.read_text(encoding="utf-8"))
-    }
-    if rendered != referenced:
-        raise ValueError(
-            "guide figure sources do not match references: "
-            f"missing={sorted(referenced - rendered)}, "
-            f"unreferenced={sorted(rendered - referenced)}"
+        rendered = set(_load_card_renderer()(temporary_guide))
+        sourced = _render_labeled_sources(
+            GUIDE_SOURCES,
+            temporary_guide,
+            group="guide",
         )
-    for stale in canonical_output.iterdir():
-        if stale.suffix in {".png", ".svg"} and stale.name not in rendered:
-            stale.unlink()
+        duplicates = rendered & sourced
+        if duplicates:
+            raise ValueError(f"duplicate guide figure source for {sorted(duplicates)}")
+        rendered.update(sourced)
+        for page in sorted(GUIDE_ROOT.glob("*.md")):
+            for name, code in _page_examples(page):
+                if name in rendered:
+                    raise ValueError(f"duplicate guide figure source for {name}")
+                print(f"Rendering {name} from {page.relative_to(MKDOCS_ROOT)}")
+                _render_inline_example(name, code, temporary_guide)
+                rendered.add(name)
 
-    for locale, output in GUIDE_OUTPUTS.items():
-        if locale == CANONICAL_LOCALE:
-            continue
-        output.mkdir(parents=True, exist_ok=True)
-        for stale in output.iterdir():
-            if stale.suffix in {".png", ".svg"} and stale.name not in rendered:
-                stale.unlink()
-        for name in sorted(rendered):
-            shutil.copyfile(canonical_output / name, output / name)
-    print(f"Rendered {len(rendered)} guide figures for {len(LOCALES)} locale(s).")
+        referenced = {
+            match.group("name")
+            for page in GUIDE_ROOT.glob("*.md")
+            for match in IMAGE.finditer(page.read_text(encoding="utf-8"))
+        }
+        if rendered != referenced:
+            raise ValueError(
+                "guide figure sources do not match references: "
+                f"missing={sorted(referenced - rendered)}, "
+                f"unreferenced={sorted(rendered - referenced)}"
+            )
 
-    canonical_home_output = HOME_OUTPUTS[CANONICAL_LOCALE]
-    canonical_home_output.mkdir(parents=True, exist_ok=True)
-    for stale in canonical_home_output.glob("*.png"):
-        if stale.name not in HOME_FIGURES:
-            stale.unlink()
-    _render_labeled_sources(
-        HOME_SOURCES,
-        canonical_home_output,
-        group="homepage",
-    )
+        home_figures = _render_labeled_sources(
+            HOME_SOURCES,
+            temporary_home,
+            group="homepage",
+        )
+        if home_figures != set(HOME_FIGURES):
+            raise ValueError("homepage figure source contract is incomplete")
 
-    for locale, output in HOME_OUTPUTS.items():
-        if locale == CANONICAL_LOCALE:
-            continue
-        output.mkdir(parents=True, exist_ok=True)
-        for stale in output.glob("*.png"):
-            if stale.name not in HOME_FIGURES:
-                stale.unlink()
-        for name in HOME_FIGURES:
-            shutil.copyfile(canonical_home_output / name, output / name)
-    print(
-        f"Rendered {len(HOME_FIGURES)} homepage figures for "
-        f"{len(LOCALES)} locale(s)."
-    )
+        _sync_rendered(
+            temporary_guide,
+            GUIDE_OUTPUT,
+            rendered,
+            suffixes={".png", ".svg"},
+        )
+        _sync_rendered(
+            temporary_home,
+            HOME_OUTPUT,
+            home_figures,
+            suffixes={".png"},
+        )
+
+    print(f"Rendered {len(rendered)} English guide figures.")
+    print(f"Rendered {len(HOME_FIGURES)} English homepage figures.")
 
 
 if __name__ == "__main__":

@@ -92,12 +92,8 @@ python -m pip install --editable . --group dev
 python -m pytest
 ```
 
-Build the documentation with warnings treated as errors:
-
-```sh
-python -m pip install --editable . --group docs
-python docs/mkdocs/manage.py build
-```
+For documentation changes, follow the
+[pinned setup and build workflow](docs/mkdocs/README.md).
 
 The main repository directories are:
 
