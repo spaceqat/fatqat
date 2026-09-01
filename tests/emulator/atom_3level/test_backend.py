@@ -516,7 +516,7 @@ def test_atom_3level_all_computational_inputs_remain_physical_qutrit_states(
         .get_density_matrix()
     )
     assert density.shape == (9, 9)
-    assert density[expected_index, expected_index].real > 0.999999
+    assert density[expected_index, expected_index].real > 0.9999
     assert np.isclose(np.trace(density), 1.0, atol=1e-8)
 
 

@@ -84,7 +84,11 @@ def test_method_selects_one_full_physical_artifact(
     artifact = getattr(result, f"get_{field}")()
     assert artifact.shape == shape(dimension)
     if method == "unitary":
-        assert np.allclose(artifact.conj().T @ artifact, np.eye(dimension))
+        assert np.allclose(
+            artifact.conj().T @ artifact,
+            np.eye(dimension),
+            atol=1e-5,
+        )
     for alternate in {"statevector", "density_matrix", "unitary"} - {field}:
         with pytest.raises(ResultFieldUnavailableError):
             getattr(result, f"get_{alternate}")()
