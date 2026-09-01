@@ -32,7 +32,7 @@ from .._core.outcome import ExecutionMode, _PulseShotOutcome
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
 from .._core.waveform import _REQUESTED_SPLINE_DEGREE
-from .._qutip_boundaries import _sample_projective_qutip_state
+from .._qutip_boundaries import _expand_qutip_local, _sample_projective_qutip_state
 from .config import _normalize_interaction_cutoff
 from .target import _Atom2LevelInteraction, _Atom2LevelTarget
 
@@ -116,11 +116,12 @@ class _Atom2LevelQutipAdapter:
         self._global_raising = 0 * identity
         self._global_number = 0 * identity
         for site in range(self._site_count):
-            factors = [qeye(dim) for dim in self._dims]
-            factors[site] = self.local_raising
-            self._global_raising += tensor(*factors)
-            factors[site] = self.local_number
-            self._global_number += tensor(*factors)
+            self._global_raising += _expand_qutip_local(
+                self._dims, site, self.local_raising
+            )
+            self._global_number += _expand_qutip_local(
+                self._dims, site, self.local_number
+            )
         self._interaction_drift = self._build_interaction_drift()
         self._collapse_operators = self._build_collapse_operators(background_noise)
 
@@ -393,9 +394,7 @@ class _Atom2LevelQutipAdapter:
                     raise BackendValidationError(
                         f"unknown two-level Lindblad engine index {engine_index!r}"
                     )
-                factors = [qeye(dim) for dim in self._dims]
-                factors[engine_index] = local
-                result.append(tensor(*factors))
+                result.append(_expand_qutip_local(self._dims, engine_index, local))
         return tuple(result)
 
     def _bind_block_collapse_operators(
@@ -430,12 +429,7 @@ class _Atom2LevelQutipAdapter:
                     result.append(
                         QobjEvo(
                             [
-                                tensor(
-                                    *(
-                                        local if factor == engine_index else qeye(dim)
-                                        for factor, dim in enumerate(self._dims)
-                                    )
-                                ),
+                                _expand_qutip_local(self._dims, engine_index, local),
                                 coefficient(window, args={}),
                             ]
                         )
@@ -510,12 +504,10 @@ class _Atom2LevelQutipAdapter:
         self._validate_state(context.state)
         projectors = self._projectors[engine_index]
         if projectors is None:
-            expanded = []
-            for outcome in range(2):
-                factors = [qeye(dim) for dim in self._dims]
-                factors[engine_index] = basis(2, outcome).proj()
-                expanded.append(tensor(*factors))
-            projectors = tuple(expanded)
+            projectors = tuple(
+                _expand_qutip_local(self._dims, engine_index, basis(2, outcome).proj())
+                for outcome in range(2)
+            )
             self._projectors[engine_index] = projectors
         outcome, context.state = _sample_projective_qutip_state(
             context.state,

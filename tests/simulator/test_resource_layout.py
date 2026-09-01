@@ -98,9 +98,7 @@ def test_simulator_allocate_engine_indices_returns_a_separate_engine_allocation(
     # Two independently-resolved values: not the same object...
     assert resource_layout is not engine_index_allocation
     assert isinstance(engine_index_allocation, _EngineAllocation)
-    # NumPy/Numba keep a private little-endian allocation, while public device
-    # labels remain in declaration order. Operand/dimension pairs reverse
-    # together so mixed-radix strides stay associated with the right operand.
+    # This private index reversal is a zero-copy performance contract.
     assert [
         engine_index_allocation.engine_index(resource_layout.device_label(ref))
         for ref in refs

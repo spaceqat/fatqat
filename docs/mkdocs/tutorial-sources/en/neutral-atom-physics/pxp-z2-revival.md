@@ -110,9 +110,7 @@ Z2 = np.zeros(DIM, dtype=complex)
 Z2[Z2_INDEX] = 1.0
 
 ALT_BITS = tuple(1 - bit for bit in Z2_BITS)  # the twin Neel branch
-ALT_INDEX = sum(
-    2 ** (NUM_SITES - 1 - i) for i in range(NUM_SITES) if ALT_BITS[i]
-)
+ALT_INDEX = sum(2 ** (NUM_SITES - 1 - i) for i in range(NUM_SITES) if ALT_BITS[i])
 ALT = np.zeros(DIM, dtype=complex)
 ALT[ALT_INDEX] = 1.0
 

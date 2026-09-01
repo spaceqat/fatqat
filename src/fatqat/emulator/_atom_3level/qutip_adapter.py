@@ -35,7 +35,11 @@ from .._core.outcome import ExecutionMode, _PulseShotOutcome
 from .._core.pulse import PhaseShift, PhaseSwap
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
-from .._qutip_boundaries import _apply_qutip_reset, _sample_projective_qutip_state
+from .._qutip_boundaries import (
+    _apply_qutip_reset,
+    _expand_qutip_local,
+    _sample_projective_qutip_state,
+)
 from .._core.target import _PreparedControlBinding
 from .target import _Atom3LevelTarget
 
@@ -88,27 +92,17 @@ class _Atom3LevelQutipAdapter:
         self.local_rydberg_number = Qobj(np.diag([0, 0, 1]))
         self._projectors = tuple(
             tuple(
-                tensor(
-                    *(
-                        ket2dm(basis(3, level)) if factor == ordinal else qeye(dim)
-                        for factor, dim in enumerate(self._dims)
-                    )
-                )
+                _expand_qutip_local(self._dims, ordinal, ket2dm(basis(3, level)))
                 for level in range(3)
             )
             for ordinal in range(engine_allocation.n_subsystems)
         )
         self._reset_operators = tuple(
             tuple(
-                tensor(
-                    *(
-                        (
-                            basis(3, 0) * basis(3, level).dag()
-                            if factor == ordinal
-                            else qeye(dim)
-                        )
-                        for factor, dim in enumerate(self._dims)
-                    )
+                _expand_qutip_local(
+                    self._dims,
+                    ordinal,
+                    basis(3, 0) * basis(3, level).dag(),
                 )
                 for level in range(3)
             )
@@ -155,7 +149,7 @@ class _Atom3LevelQutipAdapter:
     def interaction_drift(self) -> Qobj:
         drift = 0 * tensor(*tuple(qeye(dim) for dim in self._dims))
         for value in self._target.interactions:
-            factors = [qeye(dim) for dim in self._engine_allocation.system_dims]
+            factors = [qeye(dim) for dim in self._dims]
             factors[self._engine_allocation.engine_index(value.first)] = (
                 self.local_rydberg_number
             )
@@ -371,9 +365,7 @@ class _Atom3LevelQutipAdapter:
                     raise BackendValidationError(
                         f"unknown atom Lindblad engine index {engine_index!r}"
                     )
-                factors = [qeye(dim) for dim in self._dims]
-                factors[engine_index] = local
-                result.append(tensor(*factors))
+                result.append(_expand_qutip_local(self._dims, engine_index, local))
         return tuple(result)
 
     def _bind_block_collapse_operators(

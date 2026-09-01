@@ -37,7 +37,11 @@ from .._core.pulse import PhaseShift, PhaseSwap, PulseBlock
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.target import _PreparedControlBinding
 from .._core.value_validation import TIME_EPSILON
-from .._qutip_boundaries import _apply_qutip_reset, _sample_projective_qutip_state
+from .._qutip_boundaries import (
+    _apply_qutip_reset,
+    _expand_qutip_local,
+    _sample_projective_qutip_state,
+)
 from .model import angular_rate_from_ghz
 from .target import _TransmonTarget
 
@@ -110,35 +114,20 @@ class _TransmonQutipAdapter:
         self._local_annihilation = destroy(target.local_dimension)
         self._local_number = num(target.local_dimension)
         self._annihilation = tuple(
-            tensor(
-                *(
-                    self._local_annihilation if factor == ordinal else qeye(dim)
-                    for factor, dim in enumerate(self._dims)
-                )
-            )
+            _expand_qutip_local(self._dims, ordinal, self._local_annihilation)
             for ordinal in range(len(self._target.device_labels))
         )
         self._number = tuple(
-            tensor(
-                *(
-                    self._local_number if factor == ordinal else qeye(dim)
-                    for factor, dim in enumerate(self._dims)
-                )
-            )
+            _expand_qutip_local(self._dims, ordinal, self._local_number)
             for ordinal in range(len(self._target.device_labels))
         )
         self._drift = self._build_drift()
         self._projectors = tuple(
             tuple(
-                tensor(
-                    *(
-                        (
-                            ket2dm(basis(target.local_dimension, level))
-                            if factor == ordinal
-                            else qeye(dim)
-                        )
-                        for factor, dim in enumerate(self._dims)
-                    )
+                _expand_qutip_local(
+                    self._dims,
+                    ordinal,
+                    ket2dm(basis(target.local_dimension, level)),
                 )
                 for level in range(target.local_dimension)
             )
@@ -146,16 +135,11 @@ class _TransmonQutipAdapter:
         )
         self._reset_operators = tuple(
             tuple(
-                tensor(
-                    *(
-                        (
-                            basis(target.local_dimension, 0)
-                            * basis(target.local_dimension, level).dag()
-                            if factor == ordinal
-                            else qeye(dim)
-                        )
-                        for factor, dim in enumerate(self._dims)
-                    )
+                _expand_qutip_local(
+                    self._dims,
+                    ordinal,
+                    basis(target.local_dimension, 0)
+                    * basis(target.local_dimension, level).dag(),
                 )
                 for level in range(target.local_dimension)
             )

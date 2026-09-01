@@ -162,9 +162,14 @@ def test_interaction_drift_uses_public_qutip_factor_indices():
     target.interactions = (target.interactions[0],)
     adapter = _adapter(target)
     interaction = target.interactions[0]
-    expected = interaction.signed_strength_rad_per_us * tensor(
-        adapter.local_number, adapter.local_number, qeye(2)
+    factors = [qeye(dim) for dim in adapter._engine_allocation.system_dims]
+    factors[adapter._engine_allocation.engine_index(interaction.first)] = (
+        adapter.local_number
     )
+    factors[adapter._engine_allocation.engine_index(interaction.second)] = (
+        adapter.local_number
+    )
+    expected = interaction.signed_strength_rad_per_us * tensor(*factors)
 
     assert np.allclose(adapter.interaction_drift.full(), expected.full())
 

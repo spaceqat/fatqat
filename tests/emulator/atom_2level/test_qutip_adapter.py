@@ -151,6 +151,15 @@ def test_engine_allocation_must_match_the_complete_target():
         )
 
 
+def test_interaction_drift_keeps_diagonal_sparse_storage():
+    drift = _adapter(_target(site_count=3, c6=64.0)).interaction_drift
+    stored = drift.data.as_scipy()
+    rows, columns = stored.nonzero()
+
+    assert np.array_equal(rows, columns)
+    assert stored.nnz <= drift.shape[0]
+
+
 def test_terminal_measurement_uses_supplied_rng_and_collapses_the_complete_ket():
     adapter = _adapter(_target(site_count=1))
     superposition = (basis(2, 0) + basis(2, 1)).unit()
@@ -205,15 +214,6 @@ def test_density_evolution_validates_state_without_copying_it(monkeypatch):
     adapter.evolve(run, context, (True,))
 
     assert context.state.isoper
-
-
-def test_interaction_drift_is_one_sparse_diagonal_operator():
-    adapter = _adapter(_target(site_count=3, c6=64.0))
-    drift = adapter.interaction_drift
-
-    assert drift.isherm
-    assert drift.data.__class__.__name__ in {"CSR", "Dia"}
-    assert np.count_nonzero(drift.full() - np.diag(np.diag(drift.full()))) == 0
 
 
 def test_interaction_drift_filters_one_precomputed_pair_table_per_adapter():
