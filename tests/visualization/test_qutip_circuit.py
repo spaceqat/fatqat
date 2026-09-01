@@ -1,4 +1,4 @@
-"""Translation of a Program into a QuTiP-QIP circuit for drawing.
+"""Test translation of a Program into a QuTiP-QIP circuit for drawing.
 
 Asserts on the translated ``QubitCircuit`` structure (gate names, controls,
 targets, classical controls) rather than on rendered images.
@@ -10,6 +10,9 @@ master's ``H``) and check the fatqat-controlled facts instead: wire routing,
 custom-box labels, and the classical-control wiring.
 """
 
+import importlib
+import subprocess
+import sys
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -18,10 +21,39 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.draw import to_qubit_circuit
 from fatqat.emulator import ControlChannel, PulseControl, SampledWaveform
 from fatqat.errors import UnsupportedOperationError
 from fatqat.operations import PulseOperation
+from fatqat.visualization import to_qubit_circuit
+
+
+def test_visualization_exports_to_qubit_circuit():
+    assert fq.visualization.to_qubit_circuit is to_qubit_circuit
+
+
+def test_legacy_draw_module_is_removed():
+    with pytest.raises(ModuleNotFoundError, match=r"fatqat\.draw"):
+        importlib.import_module("fatqat.draw")
+
+
+def test_import_fatqat_keeps_rendering_dependencies_lazy():
+    code = """
+import sys
+import fatqat
+
+assert hasattr(fatqat, "visualization")
+assert "matplotlib" not in sys.modules
+assert "qutip_qip" not in sys.modules
+"""
+
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def _elements(circuit):

@@ -40,6 +40,7 @@ nav:
       - Study algorithm behavior:
           - Simulation: guide/simulation.md
           - Interpret results: guide/interpret-results.md
+          - Visualization: guide/visualization.md
           - Ideal and noisy runs: guide/ideal-and-noisy.md
           - Performance: guide/performance.md
       - Model hardware and physics:

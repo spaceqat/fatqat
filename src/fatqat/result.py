@@ -298,6 +298,54 @@ class Result:
             raise ResultFieldUnavailableError("counts not available in this result")
         return self._counts
 
+    def draw(
+        self,
+        view: str = "counts",
+        *,
+        stat: str = "counts",
+        number_to_keep: int | None = None,
+        sort: str = "key",
+        ax: Any = None,
+        title: str | None = None,
+        figsize: tuple[float, float] | None = None,
+    ) -> Any:
+        """Draw measurement outcomes as a bar chart.
+
+        Colors inherit Matplotlib's active style and ``rcParams``.
+
+        Args:
+            view: Result view to draw. Must be ``"counts"``.
+            stat: Plot raw ``"counts"`` or relative ``"frequencies"``.
+            number_to_keep: Keep the most frequent outcomes and combine the
+                remainder into an ``"other"`` bar. ``None`` keeps all outcomes.
+            sort: Display outcomes by ``"key"`` or descending ``"count"``.
+            ax: Existing Matplotlib axis, or ``None`` to create a figure.
+            title: Optional plot title.
+            figsize: Figure size used only when creating a new figure.
+
+        Returns:
+            A Matplotlib ``Figure``.
+
+        Raises:
+            ResultFieldUnavailableError: If counts were not produced.
+            ValueError: If the view or drawing options are invalid.
+            TypeError: If an option has the wrong type.
+        """
+        if view != "counts":
+            raise ValueError(f"unsupported Result view {view!r}; expected 'counts'")
+
+        from .visualization._counts import _draw_result_counts
+
+        return _draw_result_counts(
+            self,
+            stat=stat,
+            number_to_keep=number_to_keep,
+            sort=sort,
+            ax=ax,
+            title=title,
+            figsize=figsize,
+        )
+
     def get_statevector(self) -> np.ndarray:
         """Return the produced statevector.
 
