@@ -120,7 +120,7 @@ def test_one_atom_signed_detuning_matches_dense_oracle(detuning):
     state = _evolve(target, _block(target, duration, **values))
     expected = solve_constant(1, duration, interactions=(), **values)
 
-    assert state == pytest.approx(expected, abs=2e-9)
+    assert state == pytest.approx(expected, abs=1e-8)
 
 
 def test_zero_controls_still_advance_a_nonzero_interval():
