@@ -172,3 +172,13 @@ class _InteractionFrequencyGraph:
             if {edge.source, edge.target} == {first, second}:
                 return edge
         return None
+
+    def draw(self, renderer: str = "matplotlib", **kwargs: Any):
+        """Render this interaction graph with the selected renderer."""
+        if renderer != "matplotlib":
+            raise ValueError(
+                "interaction frequency drawing only supports the matplotlib renderer"
+            )
+        from ._render_mpl import _render_interaction_frequency
+
+        return _render_interaction_frequency(self, **kwargs)

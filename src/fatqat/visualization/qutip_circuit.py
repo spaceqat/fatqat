@@ -500,7 +500,6 @@ def _expand_targets(targets: tuple) -> tuple[tuple[RegisterRef, ...], ...]:
 def to_qubit_circuit(program: Program, *, _barrier_markers: bool = False):
     """Convert a program to a QuTiP-QIP circuit for drawing.
 
-<<<<<<< HEAD
     Quantum and classical slots become wires in register declaration order.
     Native gates use QuTiP-QIP symbols; gates it cannot draw natively,
     including custom and qudit operations, become boxes labeled with the
@@ -509,9 +508,6 @@ def to_qubit_circuit(program: Program, *, _barrier_markers: bool = False):
     own `fatqat.Program.draw` renders it as a dashed separator instead), and
     a condition attached to a barrier is not depicted. Register dimensions
     are not shown.
-=======
-    Quantum and classical slots become wires in register declaration order. Native gates use QuTiP-QIP symbols; gates it cannot draw natively,including custom and qudit operations, become boxes labeled with the operation name. Measurements, reset, barriers, and classical conditions are retained. Register dimensions are not shown.
->>>>>>> f9b1ac9 (Add instruction DAG and interaction graph)
 
     Use the returned circuit for drawing only. Placeholder gates for non-native operations cannot be simulated with QuTiP-QIP.
 
@@ -669,8 +665,10 @@ def _draw_program(program: Program, renderer: str = "matplotlib", **kwargs: Any)
     Args:
         program: The program to draw.
         renderer: ``"matplotlib"`` (default) returns a matplotlib ``Figure`` -
-            save it yourself with ``fig.savefig("circuit.png")``; ``"text"``
-            returns the terminal diagram as a ``str``. Any other renderer name (e.g. ``"latex"``) is forwarded to QuTiP-QIP unchanged.
+            save it yourself with ``fig.savefig("circuit.png")``;
+            ``"text"`` returns the terminal diagram as a ``str``. Any other
+            renderer name (e.g. ``"latex"``) is forwarded to QuTiP-QIP
+            unchanged.
         **kwargs: Forwarded to the QuTiP renderer (e.g. ``dpi``, ``theme``,
             ``title`` for matplotlib).
 
@@ -678,38 +676,13 @@ def _draw_program(program: Program, renderer: str = "matplotlib", **kwargs: Any)
         A matplotlib ``Figure`` for ``"matplotlib"``, a ``str`` for ``"text"``,
         or whatever QuTiP-QIP's ``draw`` returns for any other renderer.
     """
-<<<<<<< HEAD
-=======
-    view = kwargs.pop("view", "circuit")
-    if view == "interaction_frequency":
-        if renderer != "matplotlib":
-            raise ValueError(
-                "interaction_frequency view only supports the matplotlib renderer"
-            )
-        from ._dag import _build_interaction_frequency_graph
-        from ._render_mpl import _render_interaction_frequency
-
-        graph = _build_interaction_frequency_graph(program)
-        return _render_interaction_frequency(graph, **kwargs)
-    if view != "circuit":
-        raise ValueError(
-            f"unsupported Program view {view!r}; expected 'circuit' or "
-            "'interaction_frequency'"
-        )
-
-    circuit = to_qubit_circuit(program)
-
->>>>>>> f9b1ac9 (Add instruction DAG and interaction graph)
-    if renderer == "text":
+    if renderer in {"text", "matplotlib"}:
         circuit = to_qubit_circuit(program, _barrier_markers=True)
         if _gate_api() == _API_STRING:
             _adapt_legacy_condition_controls(circuit)
-        return _render_text(circuit, **kwargs)
 
-    if renderer == "matplotlib":
-        circuit = to_qubit_circuit(program, _barrier_markers=True)
-        if _gate_api() == _API_STRING:
-            _adapt_legacy_condition_controls(circuit)
+        if renderer == "text":
+            return _render_text(circuit, **kwargs)
         return _render_matplotlib(circuit, **kwargs)
 
     # Foreign renderers receive marker-free circuits; see _add_operation.

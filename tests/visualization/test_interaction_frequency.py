@@ -44,7 +44,7 @@ def test_interaction_frequency_excludes_hardware_directives():
     assert graph.edges[0].count == 1
 
 
-def test_interaction_frequency_view_returns_figure():
+def test_interaction_frequency_draw_returns_figure():
     program = fq.Program(5, 1)
     program.add(ops.H, 0)
     program.add(ops.H, 3)
@@ -56,7 +56,8 @@ def test_interaction_frequency_view_returns_figure():
     program.add(ops.CZ, (3, 4))
     program.measure(4, 0)
 
-    figure = program.draw(view="interaction_frequency")
+    figure = program.interaction_frequency().draw()
+    figure.savefig("interaction_frequency_plot.png")
 
     assert isinstance(figure, matplotlib.figure.Figure)
     axis = figure.axes[0]
@@ -78,6 +79,11 @@ def test_interaction_frequency_view_returns_figure():
     )
 
 
-def test_interaction_frequency_view_rejects_non_matplotlib_renderer():
+def test_interaction_frequency_draw_rejects_non_matplotlib_renderer():
     with pytest.raises(ValueError, match="only supports the matplotlib"):
-        fq.Program(2).draw(renderer="text", view="interaction_frequency")
+        fq.Program(2).interaction_frequency().draw(renderer="text")
+
+
+def test_program_draw_rejects_analysis_view_argument():
+    with pytest.raises(TypeError, match="only draws circuits"):
+        fq.Program(2).draw(view="interaction_frequency")
