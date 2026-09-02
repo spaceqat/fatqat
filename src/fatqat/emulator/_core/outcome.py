@@ -23,10 +23,10 @@ class _PulseResultRequest:
 
 @dataclass(frozen=True)
 class _PulseShotOutcome:
-    """One shot in canonical physical-axis order at the backend boundary.
+    """One shot in the owning pulse allocation's order at the backend boundary.
 
-    A retained statevector is flat in canonical little-endian basis order. A
-    retained density matrix uses that same order for both rows and columns.
+    Built-in QuTiP adapters use public model/factor order. A retained density
+    matrix uses the same order for both rows and columns.
     """
 
     final_state: np.ndarray | None

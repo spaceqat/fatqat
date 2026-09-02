@@ -20,7 +20,7 @@ def test_lower_terminal_measurement_is_not_dynamic():
     p.measure(1, 1)
     _plan, facts = Simulator("SV")._lower_program(p)
     assert facts.execution_shape == "single_pass"
-    assert facts.deferred_measurements == ((0, 0), (1, 1))
+    assert facts.deferred_measurements == ((1, 0), (0, 1))
     assert facts.written_clbits == frozenset({0, 1})
     assert facts.stochastic_final_state is True
     assert facts.has_measurement is True
@@ -35,7 +35,7 @@ def test_lower_measure_then_gate_on_disjoint_qubit_is_not_dynamic():
     p.measure(1, 1)
     _plan, facts = Simulator("SV")._lower_program(p)
     assert facts.execution_shape == "single_pass"
-    assert facts.deferred_measurements == ((0, 0), (1, 1))
+    assert facts.deferred_measurements == ((1, 0), (0, 1))
 
 
 def test_lower_gate_on_measured_qubit_is_dynamic():
@@ -165,7 +165,7 @@ def test_reset_and_reuse_counts():
         .result()
         .get_counts()
     )
-    assert counts == {"01": 32}  # c1=0 (left), c0=1 (right) -> "01"
+    assert counts == {"10": 32}  # c0=1 then c1=0 in public slot order
 
 
 def test_dynamic_counts_use_snapshots_not_final_index():
@@ -184,13 +184,44 @@ def test_dynamic_counts_use_snapshots_not_final_index():
     assert counts == {"1": 10}
 
 
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+@pytest.mark.parametrize("method", ["SV", "DM"])
+def test_measurement_feedforward_and_reset_keep_public_targets(runtime, method):
+    if runtime == "numba":
+        pytest.importorskip("numba")
+    program = Program(2, 2)
+    program.add(ops.X, 0)
+    program.measure(0, 0)
+    program.add(ops.X, 1, condition=(0, 1))
+    program.add(ops.Reset, 0)
+    program.measure(1, 1)
+
+    backend = Simulator(method, runtime=runtime)
+    counts = backend.run(program, shots=8).result().get_counts_as_tuples()
+    assert counts == {(1, 1): 8}
+
+    final = backend.run(
+        program,
+        shots=1,
+        result_config={"counts": False, "final_state": True},
+    ).result()
+    if method == "SV":
+        expected = np.zeros(4, dtype=complex)
+        expected[1] = 1.0
+        assert np.allclose(final.get_statevector(), expected)
+    else:
+        expected = np.zeros((4, 4), dtype=complex)
+        expected[1, 1] = 1.0
+        assert np.allclose(final.get_density_matrix(), expected)
+
+
 def test_condition_only_statevector_default_at_many_shots():
     # Dynamic (condition) but no measurement/reset -> statevector available/default.
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 0))  # applies (slot 0 == 0)
     sv = Simulator("SV").run(p, shots=8).result().get_statevector()
     expected = np.zeros(4, dtype=complex)
-    expected[0b10] = 1.0  # qubit 1 -> |1>
+    expected[0b01] = 1.0  # public qubit 1 -> |01>
     assert np.allclose(sv, expected)
 
 
@@ -214,7 +245,7 @@ def test_conditional_reset_fires_when_guard_true():
         .result()
         .get_counts()
     )
-    assert counts == {"01": 16}  # c1=0, c0=1
+    assert counts == {"10": 16}  # c0=1, c1=0
 
 
 def test_conditional_reset_skipped_when_guard_false():
@@ -246,7 +277,7 @@ def test_condition_only_statevector_ignores_shots_value():
         .get_statevector()
     )
     expected = np.zeros(4, dtype=complex)
-    expected[0b10] = 1.0
+    expected[0b01] = 1.0
     assert np.allclose(sv, expected)
 
 
@@ -258,7 +289,7 @@ def test_lower_grouped_measurement_emits_one_grouped_step():
 
     assert facts.has_measurement is True
     assert facts.execution_shape == "single_pass"
-    assert plan == (MeasurementStep(measured_indices=(0, 2), classical_indices=(1, 0)),)
+    assert plan == (MeasurementStep(measured_indices=(2, 0), classical_indices=(1, 0)),)
 
 
 def test_lower_adjacent_single_measurements_stay_separate_steps():
@@ -270,8 +301,8 @@ def test_lower_adjacent_single_measurements_stay_separate_steps():
 
     assert facts.execution_shape == "single_pass"
     assert plan == (
-        MeasurementStep(measured_indices=(0,), classical_indices=(0,)),
-        MeasurementStep(measured_indices=(1,), classical_indices=(1,)),
+        MeasurementStep(measured_indices=(1,), classical_indices=(0,)),
+        MeasurementStep(measured_indices=(0,), classical_indices=(1,)),
     )
 
 
@@ -283,7 +314,7 @@ def test_lower_grouped_reset_uses_all_targets():
 
     assert facts.execution_shape == "per_shot"
     assert facts.has_reset is True
-    assert plan == (ResetStep(reset_indices=(0, 2)),)
+    assert plan == (ResetStep(reset_indices=(2, 0)),)
 
 
 def test_grouped_reset_resets_all_targets_in_dynamic_path():

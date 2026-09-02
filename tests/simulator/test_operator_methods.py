@@ -20,6 +20,8 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
+from fatqat.implementation import MatrixImplementationMap
+from fatqat.noise import Channel, ChannelImplementationMap
 from fatqat.program import Program
 from fatqat.simulator import Simulator
 
@@ -37,25 +39,24 @@ def _runtime(request):
 # --- reference embedding (numpy.kron only, no engine machinery) ---
 
 
-def _embed(matrix: np.ndarray, targets: tuple[int, ...], dims: tuple[int, ...]):
-    """Embed a local matrix into the full space, little-endian.
+def _embed_public(matrix: np.ndarray, targets: tuple[int, ...], dims: tuple[int, ...]):
+    """Embed a local matrix into the full space in public subsystem order.
 
     Built by permuting a ``kron`` of the local matrix with identities, which
     shares no code with either engine: ``targets[0]`` is the local matrix's
-    most-significant index digit and subsystem 0 is the flat index's least
-    significant digit.
+    most-significant index digit and public subsystem 0 is the global
+    most-significant digit.
     """
     n = len(dims)
     size = int(np.prod(dims))
     rest = [q for q in range(n) if q not in targets]
-    # kron order is most- to least-significant, i.e. reversed subsystem order.
     order = list(targets) + rest
     kron = matrix
     for q in rest:
         kron = np.kron(kron, np.eye(dims[q]))
-    # `kron`'s index digits run in `order`; rebuild the flat index in
-    # descending subsystem order (n-1 ... 0), which is the flat convention.
-    axes = [order.index(q) for q in range(n - 1, -1, -1)]
+    # `kron`'s local digit j belongs to targets[j]; rebuild global axes in
+    # public q0-to-qN-1 order without sorting the positional target tuple.
+    axes = [order.index(q) for q in range(n)]
     tensor = kron.reshape(tuple(dims[q] for q in order) * 2)
     tensor = np.transpose(tensor, axes + [n + a for a in axes])
     return tensor.reshape(size, size)
@@ -65,7 +66,7 @@ def _reference_unitary(steps, dims):
     """Product of embedded local matrices, applied left to right."""
     total = np.eye(int(np.prod(dims)), dtype=complex)
     for matrix, targets in steps:
-        total = _embed(np.asarray(matrix, dtype=complex), targets, dims) @ total
+        total = _embed_public(np.asarray(matrix, dtype=complex), targets, dims) @ total
     return total
 
 
@@ -280,11 +281,11 @@ def test_superop_reset_is_the_partial_trace_channel(runtime):
     rho = _random_density_matrix(4, seed=5)
     evolved = (superop @ rho.reshape(-1, order="F")).reshape(rho.shape, order="F")
 
-    # Subsystem 0 is the least-significant digit, so tracing it out leaves the
-    # 2x2 block indexed by subsystem 1, re-prepared in |0>.
-    traced = rho.reshape(2, 2, 2, 2).trace(axis1=1, axis2=3)
+    # Public subsystem 0 is the leading row/column factor. Trace it out and
+    # re-prepare that leading factor in |0>.
+    traced = rho.reshape(2, 2, 2, 2).trace(axis1=0, axis2=2)
     expected = np.zeros((4, 4), dtype=complex)
-    expected[np.ix_([0, 2], [0, 2])] = traced
+    expected[np.ix_([0, 1], [0, 1])] = traced
     assert np.allclose(evolved, expected, atol=_ATOL)
 
 
@@ -298,6 +299,63 @@ def test_superop_handles_qutrit_registers(runtime):
     rho = _random_density_matrix(9, seed=17)
     evolved = (superop @ rho.reshape(-1, order="F")).reshape(rho.shape, order="F")
     assert np.allclose(evolved, unitary @ rho @ unitary.conj().T, atol=_ATOL)
+
+
+@pytest.mark.parametrize(
+    "runtime, fusion", [("numpy", False), ("numba", False), ("numba", True)]
+)
+def test_nonadjacent_channel_and_superop_use_public_target_positions(runtime, fusion):
+    if runtime == "numba":
+        pytest.importorskip("numba")
+
+    class Carrier(ops.Operation):
+        name = "Carrier"
+        num_subsystems = 2
+
+    class EmbeddedChannel(Channel):
+        num_subsystems = 2
+
+    kraus = np.zeros((4, 4), dtype=complex)
+    permutation = np.asarray([2, 0, 3, 1])
+    kraus[permutation, np.arange(4)] = np.exp(1j * np.asarray([0.2, -0.4, 0.7, 1.1]))
+    full_kraus = _embed_public(kraus, (2, 0), (2, 2, 2))
+    rho = _random_density_matrix(8, seed=29)
+
+    matrix_map = MatrixImplementationMap()
+    matrix_map.add(Carrier, np.eye(4, dtype=complex))
+    channel_map = ChannelImplementationMap()
+    channel_map.add(EmbeddedChannel, lambda _channel, *, targets: (kraus,))
+    noise = fq.NoiseModel()
+    noise.add(EmbeddedChannel(), operation=Carrier)
+    program = Program(3)
+    program.add(Carrier(), (2, 0))
+    kwargs = {
+        "runtime": runtime,
+        "implementation_map": matrix_map,
+        "channel_implementation_map": channel_map,
+        "noise": noise,
+    }
+    config = {"fusion": fusion}
+
+    evolved = (
+        Simulator("DM", **kwargs)
+        .run(
+            program,
+            initial_state=rho,
+            simulation_config=config,
+            result_config={"counts": False, "final_state": True},
+        )
+        .result()
+        .get_density_matrix()
+    )
+    superop = (
+        Simulator("superop", **kwargs)
+        .run(program, simulation_config=config)
+        .result()
+        .get_superop()
+    )
+    assert np.allclose(evolved, full_kraus @ rho @ full_kraus.conj().T, atol=_ATOL)
+    assert np.allclose(superop, np.kron(full_kraus.conj(), full_kraus), atol=_ATOL)
 
 
 # --- runtime parity ---
@@ -415,6 +473,36 @@ def test_gate_fusion_preserves_the_operator(method, force_fusion):
         f"get_{method}",
     )()
     assert np.allclose(fused, unfused, atol=_ATOL)
+
+
+@pytest.mark.parametrize("method", ["unitary", "superop"])
+def test_fusion_preserves_reversed_nonadjacent_target_positions(method, force_fusion):
+    del force_fusion
+    program = Program(3)
+    program.add(ops.CX, (2, 0))
+    program.add(ops.X, 1)
+    cx = np.array(
+        [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]],
+        dtype=complex,
+    )
+    x = np.array([[0, 1], [1, 0]], dtype=complex)
+    expected_unitary = _reference_unitary([(cx, (2, 0)), (x, (1,))], (2, 2, 2))
+    expected = (
+        expected_unitary
+        if method == "unitary"
+        else np.kron(expected_unitary.conj(), expected_unitary)
+    )
+
+    def run(fusion):
+        result = (
+            Simulator(method, runtime="numba")
+            .run(program, simulation_config={"fusion": fusion})
+            .result()
+        )
+        return getattr(result, f"get_{method}")()
+
+    assert np.allclose(run(True), expected, atol=_ATOL)
+    assert np.allclose(run(False), expected, atol=_ATOL)
 
 
 @pytest.mark.parametrize(

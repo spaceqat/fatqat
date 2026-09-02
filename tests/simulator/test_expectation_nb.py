@@ -81,7 +81,7 @@ def _masks(letters, qubits, num_qubits):
     if not qubits:
         return (0, 0, 0, 0)
     observable = Observable.from_sparse([(letters, qubits, 1.0)], num_qubits=num_qubits)
-    return ex._term_masks(observable.terms[0][1])[:4]
+    return ex._term_masks(observable.terms[0][1], num_qubits)[:4]
 
 
 @pytest.mark.parametrize("case", _TERMS.values(), ids=_TERMS.keys())
@@ -159,8 +159,8 @@ def test_estimator_values_are_unchanged_by_the_compiled_path():
     dense = np.zeros((16, 16), dtype=complex)
     for coefficient, factors in observable.terms:
         letters = dict(factors)
-        operator = local[letters.get(3, "I")]
-        for qubit in (2, 1, 0):
+        operator = local[letters.get(0, "I")]
+        for qubit in (1, 2, 3):
             operator = np.kron(operator, local[letters.get(qubit, "I")])
         dense += coefficient * operator
     reference = complex(np.vdot(state, dense @ state)).real

@@ -53,6 +53,7 @@ def to_sc_simulator_program(
 
     for instruction in native.operations:
         if isinstance(instruction, NativeGate):
+            # Native sites retain the operation's public operand order.
             targets = tuple(refs[site] for site in instruction.sites)
             program.add(instruction.operation, targets)
         elif isinstance(instruction, NativeReset):

@@ -59,6 +59,17 @@ For a noise-free program, `superop` equals
 entries for `n` qubits, while a super-operator contains `16**n`; use the
 operator methods only for programs small enough to hold the result.
 
+All returned quantum arrays list subsystem 0 as the most-significant factor.
+For two qubits, `X(q0)|00>` is nonzero at flat index
+2, while `X(q1)|00>` is nonzero at index 1. For dimensions `(3, 2)`, digits
+`(1, 0)` and `(0, 1)` likewise have indices 2 and 1. Ordinary NumPy C-order
+reshape follows this order.
+
+The same basis applies to input states and to operator rows and columns. For
+an arbitrary state `psi`, a matrix acting on every subsystem satisfies
+`unitary @ psi == state_out`; density matrices satisfy
+`unitary @ rho @ unitary.conj().T == rho_out`.
+
 ## Runtime and execution
 
 
@@ -126,7 +137,7 @@ Besides `simulation_config`, [`Simulator.run`][fatqat.simulator.Simulator.run] a
 | --- | --- | --- |
 | `shots` | `1024` | Samples used for counts or a stochastic final state. A deterministic state-only or operator result does not use this value. |
 | `resource_layout` | `None` | Assigns every program quantum reference to a device label. The generic simulator uses integer labels in declaration order. A supplied layout must be complete, one-to-one, and compatible with the backend. |
-| `initial_state` | `None` | Starts every shot from this state rather than the all-zero state. `statevector` accepts shape `(D,)`; `density_matrix` accepts `(D,)` or `(D, D)`. Operator methods reject it. |
+| `initial_state` | `None` | Starts every shot from this state rather than the all-zero state. It uses the public most-significant-first basis. `statevector` accepts shape `(D,)`; `density_matrix` accepts `(D,)` or `(D, D)`. Operator methods reject it. |
 
 Only the initial state's shape is checked. You are responsible for
 normalization and, for density matrices, Hermiticity and positivity.

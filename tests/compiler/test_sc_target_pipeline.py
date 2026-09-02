@@ -13,7 +13,7 @@ TRIANGLE_QASM = """
 OPENQASM 3.0;
 qubit[3] q;
 bit[3] c;
-h q[0];
+x q[0];
 cx q[0], q[1];
 cx q[1], q[2];
 cx q[0], q[2];
@@ -41,7 +41,7 @@ FIVE_SITE_LINE = ((0, 1), (1, 2), (2, 3), (3, 4))
         ),
     ),
 )
-def test_qasm_target_pipeline_executes_on_corresponding_simulator(
+def test_qasm_target_pipeline_preserves_public_order_through_routing(
     backend, compile_qasm, program_type, pass_name
 ):
     result = compile_qasm(TRIANGLE_QASM, backend, seed=5)
@@ -61,7 +61,7 @@ def test_qasm_target_pipeline_executes_on_corresponding_simulator(
         .get_counts()
     )
 
-    assert sum(counts.values()) == 256
+    assert counts == {"110": 256}
 
 
 def test_simulator_bridge_uses_fixed_physical_refs_and_original_clbits():

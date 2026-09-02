@@ -1,10 +1,12 @@
 """Tests statevector backend execution, validation, repeatability, and counts."""
 
 import warnings
+from itertools import product
 
 import numpy as np
 import pytest
 
+import fatqat as fq
 from fatqat.simulator import Simulator
 from fatqat.errors import (
     BackendValidationError,
@@ -17,6 +19,24 @@ from fatqat.implementation import (
 )
 import fatqat.operations as ops
 from fatqat.program import Program
+
+
+def _monomial_unitary(permutation, angles):
+    matrix = np.zeros((len(permutation), len(permutation)), dtype=complex)
+    matrix[np.asarray(permutation), np.arange(len(permutation))] = np.exp(
+        1j * np.asarray(angles)
+    )
+    return matrix
+
+
+class FullRegisterGate(ops.Operation):
+    name = "FullRegisterGate"
+    num_subsystems = 2
+
+
+FULL_REGISTER_MATRIX = _monomial_unitary([2, 0, 3, 1], [0.17, -0.31, 0.53, 0.89])
+PUBLIC_PSI = np.asarray([1 + 2j, -3 + 0.5j, 2 - 1j, 0.7 + 1.2j])
+PUBLIC_PSI = PUBLIC_PSI / np.linalg.norm(PUBLIC_PSI)
 
 
 def _h_cz_program():
@@ -84,7 +104,7 @@ def test_condition_now_runs():
             .result()
             .get_counts()
         )
-    assert counts == {"10": 16}  # c1=1, c0=0 -> "10"
+    assert counts == {"01": 16}  # c0=0, c1=1
 
 
 def test_mid_circuit_measurement_now_runs():
@@ -99,7 +119,7 @@ def test_mid_circuit_measurement_now_runs():
         .result()
         .get_counts()
     )
-    assert set(counts) <= {"10", "11"}  # c1 always 1; c0 either
+    assert set(counts) <= {"01", "11"}  # c0 varies; c1 is always 1
 
 
 def test_nonpositive_shots_with_counts_raises():
@@ -201,6 +221,133 @@ def test_custom_operation_runs_end_to_end_via_bare_callable():
     assert np.allclose(statevector, [0, 1])
 
 
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+@pytest.mark.parametrize("target, expected_index", [(0, 2), (1, 1)])
+def test_public_qubit_zero_is_the_most_significant_state_digit(
+    runtime, target, expected_index
+):
+    if runtime == "numba":
+        pytest.importorskip("numba")
+    program = Program(2)
+    program.add(ops.X, target)
+    state = (
+        Simulator("SV", runtime=runtime)
+        .run(program, result_config={"counts": False, "final_state": True})
+        .result()
+        .get_statevector()
+    )
+    expected = np.zeros(4, dtype=complex)
+    expected[expected_index] = 1.0
+    assert np.array_equal(state, expected)
+
+
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_full_register_matrix_uses_public_basis_without_conversion(runtime):
+    if runtime == "numba":
+        pytest.importorskip("numba")
+    implementation_map = MatrixImplementationMap()
+    implementation_map.add(FullRegisterGate, FULL_REGISTER_MATRIX)
+    program = Program(2)
+    program.add(FullRegisterGate(), (0, 1))
+
+    state = (
+        Simulator("SV", runtime=runtime, implementation_map=implementation_map)
+        .run(
+            program,
+            initial_state=PUBLIC_PSI,
+            result_config={"counts": False, "final_state": True},
+        )
+        .result()
+        .get_statevector()
+    )
+    unitary = (
+        Simulator("unitary", runtime=runtime, implementation_map=implementation_map)
+        .run(program)
+        .result()
+        .get_unitary()
+    )
+    assert np.allclose(state, FULL_REGISTER_MATRIX @ PUBLIC_PSI, atol=1e-12)
+    assert np.allclose(unitary, FULL_REGISTER_MATRIX, atol=1e-12)
+
+
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_mixed_radix_public_state_and_measurement_round_trip(runtime):
+    if runtime == "numba":
+        pytest.importorskip("numba")
+    q0 = fq.QuantumRegister(1, dim=2)
+    q1 = fq.QuantumRegister(1, dim=3)
+    c0 = fq.ClassicalRegister(1, dim=2)
+    c1 = fq.ClassicalRegister(1, dim=3)
+
+    for a0, a1 in product(range(2), range(3)):
+        state_program = Program([q0, q1])
+        state_program.add(ops.Shift(a0), q0[0])
+        state_program.add(ops.Shift(a1), q1[0])
+        state = (
+            Simulator("SV", runtime=runtime)
+            .run(
+                state_program,
+                result_config={"counts": False, "final_state": True},
+            )
+            .result()
+            .get_statevector()
+        )
+        expected = np.zeros(6, dtype=complex)
+        expected[3 * a0 + a1] = 1.0
+        assert np.array_equal(state, expected)
+
+        measured = Program([q0, q1], [c0, c1])
+        measured.add(ops.Shift(a0), q0[0])
+        measured.add(ops.Shift(a1), q1[0])
+        measured.measure((q0[0], q1[0]), (c0[0], c1[0]))
+        counts = (
+            Simulator("SV", runtime=runtime)
+            .run(measured, shots=3)
+            .result()
+            .get_counts_as_tuples()
+        )
+        assert counts == {(a0, a1): 3}
+
+
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_mixed_radix_full_register_matrix_keeps_operand_dimension_pairs(runtime):
+    if runtime == "numba":
+        pytest.importorskip("numba")
+
+    class MixedRegisterGate(ops.Operation):
+        name = "MixedRegisterGate"
+        num_subsystems = 2
+
+    matrix = _monomial_unitary([2, 5, 1, 4, 0, 3], [0.1, -0.2, 0.3, -0.4, 0.5, -0.6])
+    psi = np.asarray([1 + 1j, -2 + 0.5j, 0.3 - 1j, 2.1j, -0.7, 1.2 + 0.4j])
+    psi = psi / np.linalg.norm(psi)
+    q0 = fq.QuantumRegister(1, dim=2)
+    q1 = fq.QuantumRegister(1, dim=3)
+    program = Program([q0, q1])
+    program.add(MixedRegisterGate(), (q0[0], q1[0]))
+    implementation_map = MatrixImplementationMap()
+    implementation_map.add(MixedRegisterGate, matrix)
+
+    state = (
+        Simulator("SV", runtime=runtime, implementation_map=implementation_map)
+        .run(
+            program,
+            initial_state=psi,
+            result_config={"counts": False, "final_state": True},
+        )
+        .result()
+        .get_statevector()
+    )
+    unitary = (
+        Simulator("unitary", runtime=runtime, implementation_map=implementation_map)
+        .run(program)
+        .result()
+        .get_unitary()
+    )
+    assert np.allclose(state, matrix @ psi, atol=1e-12)
+    assert np.allclose(unitary, matrix, atol=1e-12)
+
+
 def test_custom_matrix_uses_first_target_as_local_most_significant_subsystem():
     class RotateLastTarget(ops.Operation):
         name = "RotateLastTarget"
@@ -212,7 +359,7 @@ def test_custom_matrix_uses_first_target_as_local_most_significant_subsystem():
     implementation_map = MatrixImplementationMap()
     implementation_map.add(RotateLastTarget, matrix)
 
-    for targets, expected_index in [((0, 1), 2), ((1, 0), 1)]:
+    for targets, expected_index in [((0, 1), 1), ((1, 0), 2)]:
         program = Program(2)
         program.add(RotateLastTarget(), targets)
         statevector = (

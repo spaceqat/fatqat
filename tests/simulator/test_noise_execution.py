@@ -122,13 +122,13 @@ def test_viewed_gate_resolves_a_channel_per_expanded_member():
     noise = NoiseModel()
     noise.add(Depolarizing(p=0.1), operation=ops.RX)
     backend = Simulator(noise=noise)
-    program.add(ops.RX(0.3), atoms.row(0))  # members at engine indices 0,1,2
+    program.add(ops.RX(0.3), atoms.row(0))  # public members 0, 1, 2
     plan, facts = backend._lower_program(program)
 
     matrix_steps = [s for s in plan if isinstance(s, ApplyMatrixStep)]
     channel_steps = [s for s in plan if isinstance(s, ApplyChannelStep)]
-    assert [s.target_indices for s in matrix_steps] == [(0,), (1,), (2,)]
-    assert [s.target_indices for s in channel_steps] == [(0,), (1,), (2,)]
+    assert [s.target_indices for s in matrix_steps] == [(5,), (4,), (3,)]
+    assert [s.target_indices for s in channel_steps] == [(5,), (4,), (3,)]
     # Interleaved matrix-then-channel per member, not batched.
     assert [type(s).__name__ for s in plan] == [
         "ApplyMatrixStep",
@@ -269,10 +269,10 @@ def test_taken_conditioned_gate_applies_its_channel():
     )
 
     rho = result.get_density_matrix()
-    # Little-endian: q0 is the least-significant digit. q0=1 fixed, q1 mixed.
+    # Public q0 is the most-significant digit. q0=1 is fixed while q1 is mixed.
     expected = np.zeros((4, 4), dtype=complex)
-    expected[1, 1] = p / 2  # q1=0, q0=1
-    expected[3, 3] = 1 - p / 2  # q1=1, q0=1
+    expected[2, 2] = p / 2  # q0=1, q1=0
+    expected[3, 3] = 1 - p / 2  # q0=1, q1=1
     assert np.allclose(rho, expected)
 
 
@@ -652,9 +652,8 @@ def test_scoped_damping_decays_only_the_selected_cz_slot():
             .result()
             .get_density_matrix()
         )
-        # Fatqat's global basis order is little-endian: |q1 q0>.
-        p_q0 = np.real(density_matrix[1, 1] + density_matrix[3, 3])
-        p_q1 = np.real(density_matrix[2, 2] + density_matrix[3, 3])
+        p_q0 = np.real(density_matrix[2, 2] + density_matrix[3, 3])
+        p_q1 = np.real(density_matrix[1, 1] + density_matrix[3, 3])
         assert np.allclose((p_q0, p_q1), expected_marginals)
 
 
@@ -667,7 +666,7 @@ def test_scoped_channel_uses_only_the_qudit_extent_dimension():
     plan, _ = Simulator(noise=noise)._lower_program(program)
     channel_steps = [step for step in plan if isinstance(step, ApplyChannelStep)]
 
-    assert channel_steps[0].target_indices == (1,)
+    assert channel_steps[0].target_indices == (0,)
     assert all(kraus.shape == (3, 3) for kraus in channel_steps[0].kraus_ops)
 
 
@@ -680,5 +679,5 @@ def test_multi_slot_extent_has_joint_kraus_dimension():
     plan, _ = Simulator(noise=noise)._lower_program(program)
     channel_steps = [step for step in plan if isinstance(step, ApplyChannelStep)]
 
-    assert channel_steps[0].target_indices == (1, 2)
+    assert channel_steps[0].target_indices == (1, 0)
     assert all(kraus.shape == (4, 4) for kraus in channel_steps[0].kraus_ops)

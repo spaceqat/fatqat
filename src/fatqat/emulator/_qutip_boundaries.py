@@ -5,7 +5,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import numpy as np
-from qutip import Qobj
+from qutip import Qobj, qeye, tensor
+
+
+def _expand_qutip_local(dims: Sequence[int], index: int, operator: Qobj) -> Qobj:
+    """Place one local operator at a public QuTiP factor index."""
+    factors = [qeye(dim) for dim in dims]
+    factors[index] = operator
+    return tensor(*factors)
 
 
 def _sample_projective_qutip_state(

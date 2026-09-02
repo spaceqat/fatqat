@@ -219,6 +219,30 @@ def test_ordinary_estimator_rejects_unbound_without_translating_message():
 # --- exact values ------------------------------------------------------------
 
 
+@pytest.mark.parametrize("method", ["SV", "DM"])
+def test_asymmetric_observables_use_public_qubit_order_exactly(method):
+    program = fq.Program(2)
+    program.add(ops.X, 0)  # public |10>
+    observables = [Observable([("ZI", 1.0)]), Observable([("IZ", 1.0)])]
+
+    values = _estimator(method).run(program, observables).result().get_expectation()
+    assert values == pytest.approx([-1.0, 1.0], abs=1e-12)
+
+
+def test_sampled_asymmetric_observables_keep_public_target_association():
+    program = fq.Program(2)
+    program.add(ops.X, 0)
+    observables = [Observable([("ZI", 1.0)]), Observable([("IZ", 1.0)])]
+
+    values = (
+        _estimator("SV")
+        .run(program, observables, shots=64, simulation_config={"seed": 7})
+        .result()
+        .get_expectation()
+    )
+    assert values == pytest.approx([-1.0, 1.0], abs=1e-12)
+
+
 @pytest.mark.parametrize(
     "label, expected",
     [("ZZ", 1.0), ("XX", 1.0), ("YY", -1.0), ("ZI", 0.0), ("IZ", 0.0)],

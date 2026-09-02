@@ -40,7 +40,7 @@ def test_resolve_matrix_step_has_flat_indices_and_matrix():
     p.add(ops.CZ, (0, 1))
     step = _resolve(p)[0]
     assert isinstance(step, ApplyMatrixStep)
-    assert step.target_indices == (0, 1)
+    assert step.target_indices == (1, 0)
     assert np.allclose(step.matrix, np.diag([1, 1, 1, -1]))
 
 
@@ -68,7 +68,7 @@ def test_target_aware_map_allows_registered_target_key():
 
     assert len(plan) == 1
     assert isinstance(plan[0], ApplyMatrixStep)
-    assert plan[0].target_indices == (0, 1)
+    assert plan[0].target_indices == (1, 0)
 
 
 def test_target_aware_map_rejects_illegal_target_key():
@@ -110,4 +110,4 @@ def test_legacy_default_map_still_resolves_any_target_key():
     plan, _facts = backend._lower_program(p)
 
     assert isinstance(plan[0], ApplyMatrixStep)
-    assert plan[0].target_indices == (1, 0)
+    assert plan[0].target_indices == (0, 1)

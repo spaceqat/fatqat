@@ -333,4 +333,4 @@ def test_iswap_has_scoped_relaxation_before_joint_depolarizing():
 
     assert [
         step.target_indices for step in plan if isinstance(step, ApplyChannelStep)
-    ] == [(0,), (0,), (1,), (1,), (0, 1)]
+    ] == [(1,), (1,), (0,), (0,), (1, 0)]

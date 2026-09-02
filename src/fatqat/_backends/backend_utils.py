@@ -79,7 +79,7 @@ class _LoweringContext:
     classical_allocation: _ClassicalAllocation
 
     def engine_index(self, ref: RegisterRef) -> int:
-        """Resolve a program ref through the public layout to an engine axis."""
+        """Resolve a program ref to its backend-local subsystem index."""
         return self.engine_allocation.engine_index(
             self.resource_layout.device_label(ref)
         )
@@ -188,7 +188,6 @@ def _lower_reset_boundary(
 
 def _resolve_confusions(
     measured_targets: tuple[RegisterRef, ...],
-    measured_indices: tuple[int, ...],
     reported_digit_maps: tuple[tuple[int, ...], ...],
     resource_layout: ResourceLayout,
     noise_model: NoiseModel,
@@ -200,8 +199,7 @@ def _resolve_confusions(
     the noise-free (and the common) case allocates nothing on the step.
     Selection matches against each measured ref's RegisterRef identity and/or
     resource-layout device label (never an engine index); the paired engine
-    index is used only in the error message, never derived backward from a
-    device label.
+    index remains private and is not reported in public validation errors.
 
     Shared by the matrix and pulse families: each caller supplies its own
     ``reported_digit_maps`` (matrix's per-subsystem identity range or a pulse
@@ -215,9 +213,7 @@ def _resolve_confusions(
     matrix's dimension does not match the reported classical digit dimension.
     """
     resolved = []
-    for target, measured, reported_map in zip(
-        measured_targets, measured_indices, reported_digit_maps
-    ):
+    for target, reported_map in zip(measured_targets, reported_digit_maps):
         declaration = noise_model._readout_confusion_for(target, resource_layout)
         confusion = None if declaration is None else declaration.matrix
         if declaration is not None:
@@ -225,7 +221,8 @@ def _resolve_confusions(
             if confusion.shape != (reported_dim, reported_dim):
                 raise BackendValidationError(
                     f"readout confusion matrix of shape {confusion.shape} "
-                    f"selected for subsystem {measured} has reported classical "
+                    f"selected for target {target!r} mapped to device "
+                    f"{resource_layout.device_label(target)!r} has reported classical "
                     f"dimension {reported_dim}"
                 )
         resolved.append(confusion)
@@ -261,7 +258,6 @@ def _lower_measurement_boundary(
     )
     confusions = _resolve_confusions(
         step.targets,
-        measured_indices,
         reported_digit_maps,
         resource_layout,
         noise_model,

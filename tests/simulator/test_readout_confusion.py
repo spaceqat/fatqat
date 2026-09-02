@@ -2,13 +2,9 @@
 
 Every bare-int ``target=`` below is a physical device-resource label (see
 ``NoiseModel.add(ReadoutConfusion(...), targets=...)``), never an engine index.
-It is only numerically equal to the measured subsystem's engine
-index because `Simulator`'s default `_resolve_resource_layout` policy
-happens to assign device labels in declaration order, coinciding with
-`_EngineAllocation`'s flat indices for this generic backend. That coincidence
-is backend-specific, not part of the selector's meaning; see
-`tests/simulator/test_fake_atom_array.py`'s readout-selector tests for a
-non-trivial layout where a device label and its engine index diverge.
+The generic matrix engine deliberately reverses subsystem indices relative to
+these public labels. Selector meaning therefore cannot depend on the private
+integer allocation.
 """
 
 import numpy as np
@@ -20,6 +16,7 @@ from fatqat._backends.steps import MeasurementStep
 from fatqat.simulator import Simulator
 from fatqat.errors import BackendValidationError
 from fatqat.noise import NoiseModel, ReadoutConfusion
+from fatqat.resource_layout import ResourceLayout
 
 _ALWAYS_ONE = np.array([[0.0, 0.0], [1.0, 1.0]])  # report 1 whatever is true
 _FLIP_30 = np.array([[0.7, 0.0], [0.3, 1.0]])  # P(report 1 | true 0) = 0.3
@@ -175,7 +172,7 @@ def test_collapse_and_state_export_keep_the_true_outcome():
 def test_reused_qubit_evolves_from_the_true_state():
     # Always-flip readout: the first read of |0> reports 1 (c0 = 1) but the
     # physical qubit really stays |0>, so X drives it to |1| and the second
-    # read (true 1, flipped) reports 0 (c1 = 0) -> key "01". If readout
+    # read (true 1, flipped) reports 0 (c1 = 0) -> key "10". If readout
     # error wrongly corrupted the collapse itself, the second report would
     # be 1 and the key "11".
     always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
@@ -192,7 +189,7 @@ def test_reused_qubit_evolves_from_the_true_state():
         .get_counts()
     )
 
-    assert counts == {"01": 50}
+    assert counts == {"10": 50}
 
 
 def test_threaded_compiled_shots_match_serial_with_readout_confusion():
@@ -353,3 +350,19 @@ def test_run_succeeds_when_valid_readout_selector_targets_unmeasured_subsystem()
 
     result = backend.run(program).result()
     assert result is not None
+
+
+def test_readout_shape_error_names_public_target_and_device_label():
+    program = fq.Program(2, 1)
+    q0, q1 = (program.quantum_registers[0][index] for index in range(2))
+    layout = ResourceLayout({q0: "site-B", q1: "site-A"})
+    program.measure(q0, 0)
+    backend = Simulator(noise=_readout_model(np.eye(3), target="site-B"))
+
+    with pytest.raises(BackendValidationError) as raised:
+        backend.run(program, resource_layout=layout)
+
+    message = str(raised.value)
+    assert repr(q0) in message
+    assert "site-B" in message
+    assert "subsystem 1" not in message

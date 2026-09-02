@@ -17,8 +17,10 @@ density-matrix columns (column ``b`` is the image of basis matrix ``E_b``).
 
 Conventions:
 
-- little-endian: the flat basis-index digit for subsystem ``q`` has place value
-  ``prod(dims[:q])``; subsystem 0 is the least-significant digit.
+- private little-endian engine order: engine subsystem ``q`` has place value
+  ``prod(dims[:q])``. The simulator maps public subsystems into this order, so
+  the native flat buffer is already public-order; exporting it with another
+  subsystem reversal would be wrong and would add a full-result copy.
 - an ``ApplyMatrixStep``'s ``target_indices`` map to the matrix's local index
   with ``target_indices[0]`` as the most-significant digit.
 - a density matrix reshaped to ``reversed(dims) + reversed(dims)`` exposes ket
@@ -79,7 +81,7 @@ from ..._backends.steps import (
 )
 from ...implementation.matrices import shift_matrix
 from ...noise.base import _sampled_unitary_branches
-from ...result import decode_indices_to_clbit_rows, reduce_to_counts
+from ...result import _decode_engine_indices_to_clbit_rows, reduce_to_counts
 from .._execution_contract import (
     _ExecutionContext as ExecutionContext,
     _ExecutionPolicy as ExecutionPolicy,
@@ -192,7 +194,8 @@ def _reporting_by_clbit(
     """Map each clbit to the reporting contract of its last writer.
 
     Fast-path counts decode only each clbit's final value (later measurement
-    writes replace earlier ones, see ``decode_indices_to_clbit_rows``), so the
+    writes replace earlier ones, see ``_decode_engine_indices_to_clbit_rows``),
+    so the
     physical-to-reported map and its readout confusion must likewise come from
     the last writer. An earlier map or confusion must not survive an error-free
     overwrite.
@@ -363,7 +366,7 @@ class _NumpyMatrixEngine(MatrixEngine):
                 indices = np.array([collapsed_index], dtype=int)
             else:
                 indices = self.sample_indices(shots, rng)
-            rows = decode_indices_to_clbit_rows(
+            rows = _decode_engine_indices_to_clbit_rows(
                 indices, measurements, self._dims, self._n_clbits
             )
             _apply_measurement_reporting(rows, _reporting_by_clbit(plan), rng)
@@ -904,7 +907,10 @@ class NumpySuperopEngine(_NumpyOperatorEngine, NumpyDMEngine):
         return np.eye(size * size, dtype=complex)
 
     def export_state(self) -> np.ndarray:
-        """Export the super-operator in the public column-stacking convention."""
+        """Export the super-operator in the public column-stacking convention.
+
+        This existing vectorization conversion does not reorder subsystems.
+        """
         size = prod(self._dims) if self._dims else 1
         internal = self.state.reshape((size,) * 4)
         exported = np.empty_like(self.state, order="C")

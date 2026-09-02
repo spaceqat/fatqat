@@ -34,9 +34,8 @@ def _dense(observable: Observable) -> np.ndarray:
     for coefficient, factors in observable.terms:
         letters = dict(factors)
         locals_ = [_LOCAL[letters.get(qubit, "I")] for qubit in range(_N)]
-        # Little-endian: qubit 0 is the least significant factor.
-        operator = locals_[_N - 1]
-        for qubit in range(_N - 2, -1, -1):
+        operator = locals_[0]
+        for qubit in range(1, _N):
             operator = np.kron(operator, locals_[qubit])
         total += coefficient * operator
     return total
@@ -120,7 +119,7 @@ def test_occupation_equals_probability_of_bit_set(states):
 
     for qubit in range(_N):
         observable = Observable.from_sparse([("ONE", (qubit,), 1.0)], num_qubits=_N)
-        expected = probabilities[(index >> qubit) & 1 == 1].sum()
+        expected = probabilities[(index >> (_N - 1 - qubit)) & 1 == 1].sum()
 
         assert expectation_statevector(statevector, observable.terms) == pytest.approx(
             expected, abs=1e-12
@@ -136,6 +135,21 @@ def test_zero_and_one_projectors_are_complementary(states):
         statevector, one.terms
     )
     assert total == pytest.approx(1.0, abs=1e-12)
+
+
+def test_asymmetric_public_factor_matches_complex_state_and_density_oracles():
+    psi = np.asarray([1 + 2j, -3 + 0.5j, 2 - 1j, 0.7 + 1.2j])
+    psi = psi / np.linalg.norm(psi)
+    rho = np.outer(psi, psi.conj())
+    operator = np.kron(_LOCAL["X"], _LOCAL["I"])
+    observable = Observable([("XI", 1.0)])
+
+    assert expectation_statevector(psi, observable.terms) == pytest.approx(
+        np.vdot(psi, operator @ psi).real, abs=1e-12
+    )
+    assert expectation_density_matrix(rho, observable.terms) == pytest.approx(
+        np.trace(rho @ operator).real, abs=1e-12
+    )
 
 
 def test_statevector_kernel_does_not_modify_the_state(states):

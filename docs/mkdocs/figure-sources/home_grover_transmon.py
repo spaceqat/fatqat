@@ -110,12 +110,14 @@ density_matrix = (
 
 physical = np.clip(np.real(np.diag(density_matrix)), 0.0, None)
 physical /= physical.sum()
-physical = physical.reshape((3, 3, 3), order="F")
+physical = physical.reshape((3, 3, 3))
 binary = np.zeros(8)
 leakage = 0.0
 for levels in product(range(3), repeat=3):
     probability = physical[levels]
-    outcome = sum((level > 0) << bit for bit, level in enumerate(levels))
+    outcome = sum(
+        (level > 0) << (len(levels) - 1 - factor) for factor, level in enumerate(levels)
+    )
     binary[outcome] += probability
     if 2 in levels:
         leakage += probability

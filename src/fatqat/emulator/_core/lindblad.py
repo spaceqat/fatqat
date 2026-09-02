@@ -23,8 +23,8 @@ class ResolvedLindbladTerm:
     """One local Lindblad operator bound to target subsystems.
 
     ``local_operator`` acts on one target subsystem. ``engine_indices`` selects
-    canonical physical axes on which that same local operator is active; axis
-    0 is least significant in returned flat states. The matrix is read-only so
+    indices in the owning pulse allocation on which that operator is active.
+    Built-in QuTiP allocations use public model/factor order. The matrix is read-only so
     a resolved execution plan cannot be mutated by a simulator. Operation
     scope belongs to the containing ``PulseBlock``.
     """
@@ -54,7 +54,7 @@ class ResolvedLindbladTerm:
 def bind_lindblad_operators(
     local_operators: tuple[np.ndarray, ...], *, engine_indices: tuple[int, ...]
 ) -> tuple[ResolvedLindbladTerm, ...]:
-    """Bind reusable local collapse operators to canonical subsystem axes.
+    """Bind reusable local collapse operators to pulse-allocation indices.
 
     One resolved local operator becomes one :class:`ResolvedLindbladTerm` and
     may apply to every index in ``engine_indices``. Tensor expansion remains

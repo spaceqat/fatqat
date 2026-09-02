@@ -503,7 +503,7 @@ class _PulseBackend(ABC):
         metadata = self._result_metadata(request, simulation, shots)
         if request.final_state:
             metadata["state_axes"] = _describe_state_axes(
-                prepared.engine_allocation,
+                prepared.engine_allocation.device_operands,
                 prepared.resource_layout,
             )
         return Result(
@@ -580,7 +580,7 @@ class _PulseBackend(ABC):
         metadata = self._result_metadata(request, simulation, shots)
         if request.final_state:
             metadata["state_axes"] = _describe_state_axes(
-                prepared.engine_allocation,
+                prepared.engine_allocation.device_operands,
                 prepared.resource_layout,
             )
         metadata["solver"] = dict(summary.solver_metadata)

@@ -34,10 +34,11 @@ with `shots=1`.
 
 
 [`get_counts`][fatqat.Result.get_counts] returns a new dictionary of display strings.
-The highest-index classical slot is on the left and slot 0 is on the right. If
-any classical dimension is at least 10, commas make multi-digit outcomes
-unambiguous. [`get_counts_as_tuples`][fatqat.Result.get_counts_as_tuples] instead puts flat
-classical slot 0 at tuple position 0.
+Classical slot 0 is on the left, matching tuple position 0 from
+[`get_counts_as_tuples`][fatqat.Result.get_counts_as_tuples]. Thus tuple `(1, 0)` renders as
+`"10"`, and `(0, 1)` renders as `"01"`. If any classical dimension is at
+least 10, commas make multi-digit outcomes unambiguous: `(10, 3)` renders as
+`"10,3"`.
 
 Most other accessors return the value stored in the result. Copy arrays or
 dictionaries before changing them if you need to preserve the original.
@@ -48,13 +49,14 @@ are not a public compatibility contract. Keep the model, arrangement,
 controls, and application metadata alongside a result when they are needed to
 reproduce a physical run.
 
-For every complete state or operator, `metadata["state_axes"]` lists the
-physical subsystems from least to most significant. Each entry contains a
+When a result includes a state or operator, `metadata["state_axes"]` lists
+its physical subsystems from most to least significant. Each entry contains a
 `device_operand` and its program `register_ref`; `register_ref` is
 `None` when a physical model contains a subsystem the Program did not
-address. Position 0 is the least-significant subsystem of a flat basis index.
+address. Position 0 is the most-significant subsystem of a flat basis index.
 For local dimensions `dims`, position `q` has place value
-`prod(dims[:q])`. Density-matrix rows and columns use the same basis order.
+`prod(dims[q + 1:])`. Statevectors, both density-matrix and unitary axes, and
+the global operator basis of super-operators use this same public order.
 
 A counts-only run zero-fills every declared classical slot that was never
 written by measurement and emits a standard `UserWarning`. This usually

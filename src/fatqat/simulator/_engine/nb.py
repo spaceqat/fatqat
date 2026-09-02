@@ -77,9 +77,11 @@ see `np.py`).
 Numba compiles kernels lazily on first call. This module is never imported from
 ``fatqat.simulator._engine``'s ``__init__``; import it explicitly.
 
-Conventions match `np.py`: little-endian flat indexing (subsystem ``q`` has
-place value ``prod(dims[:q])``, subsystem 0 least-significant) and a local gate
-matrix whose most-significant index digit is ``targets[0]``.
+Conventions match `np.py`: private little-endian engine indexing (engine
+subsystem ``q`` has place value ``prod(dims[:q])``) and a local gate matrix
+whose most-significant index digit is ``targets[0]``. The simulator maps public
+subsystems before lowering; reversing an exported buffer here would apply the
+mapping twice and allocate an unnecessary full-result copy.
 """
 
 from __future__ import annotations
@@ -2666,6 +2668,9 @@ def _merge_block(
     replaces. Caps are checked before anything is materialized.
     """
     _matrix, code, _columns, _values, _sparse, targets = payload
+    # Sorting defines a new private embedding space only. The helpers below
+    # re-embed each original positional target tuple into that union, so the
+    # union never replaces a local matrix's target order.
     union = tuple(sorted(set(block.targets) | set(targets)))
     local_dim = prod(dims[t] for t in union)
     monomial = block.code != _DENSE and code in (_DIAGONAL, _PERMUTATION)

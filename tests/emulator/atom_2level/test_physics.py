@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from qutip import qeye, tensor
 
 from fatqat.emulator import AtomArrangement
 from fatqat._pulse_values import PulseControl
@@ -154,6 +155,23 @@ def test_signed_two_atom_interaction_matches_independent_dense_oracle(c6):
     )
 
     assert state == pytest.approx(expected, abs=4e-9)
+
+
+def test_interaction_drift_uses_public_qutip_factor_indices():
+    target = _target(site_count=3, c6=64.0, spacing=2.0)
+    target.interactions = (target.interactions[0],)
+    adapter = _adapter(target)
+    interaction = target.interactions[0]
+    factors = [qeye(dim) for dim in adapter._engine_allocation.system_dims]
+    factors[adapter._engine_allocation.engine_index(interaction.first)] = (
+        adapter.local_number
+    )
+    factors[adapter._engine_allocation.engine_index(interaction.second)] = (
+        adapter.local_number
+    )
+    expected = interaction.signed_strength_rad_per_us * tensor(*factors)
+
+    assert np.allclose(adapter.interaction_drift.full(), expected.full())
 
 
 def test_sampled_effective_degree_execution_matches_independent_ode_oracle():

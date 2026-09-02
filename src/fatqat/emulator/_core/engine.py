@@ -48,9 +48,9 @@ class _PulseModelRunner(Protocol):
     measurement/reset physics, and conversion of one completed shot into a
     backend-facing payload. The protocol deliberately uses ``Any`` so QuTiP
     values remain confined to the concrete adapter. Regardless of its internal
-    solver representation, a runner's completed state and propagator must use
-    its engine allocation's canonical little-endian basis order: physical axis
-    0 is the least-significant subsystem.
+    solver representation, a runner's completed state and propagator use its
+    owning pulse allocation. Built-in QuTiP adapters store that allocation in
+    public model/factor order, with public subsystem 0 most significant.
     """
 
     def initial_state(self) -> Any: ...

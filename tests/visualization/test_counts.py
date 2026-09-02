@@ -14,8 +14,7 @@ from fatqat.result import Result
 def _result(counts: dict[str, int]) -> Result:
     width = len(next(iter(counts))) if counts else 1
     tuple_counts = {
-        tuple(int(digit) for digit in reversed(label)): count
-        for label, count in counts.items()
+        tuple(int(digit) for digit in label): count for label, count in counts.items()
     }
     return Result(
         counts=tuple_counts,

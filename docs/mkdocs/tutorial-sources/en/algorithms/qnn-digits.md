@@ -192,16 +192,13 @@ def batch_logits(params, X):
 def z_logits(states, axes):
     """Contract four :math:`\\langle Z_q\\rangle` from final statevectors.
 
-    The flat statevector is little-endian over the engine's axes, and the
-    result's ``state_axes`` metadata says which engine axis each qubit was
-    assigned to — contracting along those axes avoids any endianness
-    assumption. A Fortran-order reshape puts engine axis ``k`` on NumPy
-    axis ``k``; contracting qubit's axis with :math:`(1, -1)` gives
+    A C-order reshape puts ``state_axes`` factor ``k`` on quantum axis ``k``.
+    Contracting qubit ``q`` with :math:`(1, -1)` gives
     :math:`\\langle Z_q\\rangle`, and summing the remaining axes
     marginalizes them.
     """
     probs = np.abs(states) ** 2
-    tensor = probs.reshape(len(states), *([2] * NUM_QUBITS), order="F")
+    tensor = probs.reshape(len(states), *([2] * NUM_QUBITS))
     z = np.array([1.0, -1.0])
     expectations = np.stack(
         [

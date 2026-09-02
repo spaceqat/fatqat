@@ -518,8 +518,8 @@ def test_backend_accepts_custom_implementation_map():
         .get_counts()
     )
 
-    assert set(counts) <= {"00", "10"}
-    assert counts.get("00", 0) + counts.get("10", 0) == 200
+    assert set(counts) <= {"00", "01"}
+    assert counts.get("00", 0) + counts.get("01", 0) == 200
 
 
 def test_backend_none_implementation_map_uses_defaults():

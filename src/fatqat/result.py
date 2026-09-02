@@ -33,23 +33,24 @@ class _ResultConfig:
                 )
 
 
-def decode_indices_to_clbit_rows(
+def _decode_engine_indices_to_clbit_rows(
     indices: Iterable[int],
     measurements: Sequence[tuple[int, int]],
     system_dims: Sequence[int],
     n_clbits: int,
 ) -> np.ndarray:
-    """Decode sampled flat basis indices into per-shot clbit rows.
+    """Decode private engine basis indices into per-shot clbit rows.
 
     Each measured subsystem's digit is extracted by its own radix
-    ``system_dims[qubit_flat]`` via little-endian place value. Later writes to
-    the same clbit replace earlier ones; unwritten clbits stay 0.
+    ``system_dims[engine_index]`` via the engine's little-endian place value.
+    This private decoder intentionally uses prefix-product strides; it is not
+    a public state-array ordering conversion. Later writes to the same clbit
+    replace earlier ones; unwritten clbits stay 0.
 
     Args:
         indices: Sampled flat basis-state indices.
-        measurements: `(qubit_flat, clbit_flat)` pairs in program order.
-        system_dims: Per-subsystem dimensions of the quantum register, used to
-            decode each measured subsystem's digit from the flat index.
+        measurements: ``(engine_index, clbit_index)`` pairs in program order.
+        system_dims: Dimensions in private engine subsystem-index order.
         n_clbits: Number of classical bits in the result key.
 
     Returns:
@@ -102,13 +103,12 @@ def _radix_strides(dims: Sequence[int]) -> list[int]:
 
 
 def format_count_key(key: tuple[int, ...], classical_dims: Sequence[int]) -> str:
-    """Render a tuple-keyed count as a display string, clbit 0 rightmost.
+    """Render a tuple-keyed count in public classical-slot order.
 
-    The rendering follows Qiskit's display convention: the highest clbit is
-    the leftmost character and clbit 0 is the rightmost. Single-character
-    concatenation when every classical register dim is <= 9; a
-    comma-delimited form once any classical dim is >= 10. The trigger is
-    `classical_dims` (never quantum `system_dims`).
+    Classical slot 0 is leftmost, matching tuple position 0. Digits are
+    concatenated when every classical dimension is <= 9; commas delimit them
+    once any classical dimension is >= 10. The trigger is ``classical_dims``
+    (never quantum ``system_dims``).
 
     Args:
         key: Tuple-keyed count in ascending flat clbit index order.
@@ -116,9 +116,9 @@ def format_count_key(key: tuple[int, ...], classical_dims: Sequence[int]) -> str
             the rendering form.
 
     Returns:
-        A string with the highest clbit first (leftmost) and clbit 0 last.
+        A string with classical slot 0 first (leftmost).
     """
-    order = range(len(key) - 1, -1, -1)
+    order = range(len(key))
     if all(d <= 9 for d in classical_dims):
         return "".join(str(key[c]) for c in order)
     return ",".join(str(key[c]) for c in order)
@@ -257,9 +257,9 @@ class Result:
     def get_counts(self) -> dict[str, int]:
         """Return a new counts dictionary with display-string keys.
 
-        The highest-index classical slot appears on the left and slot 0 on
-        the right. Digits are concatenated when every classical dimension is
-        at most 9; otherwise commas separate them.
+        Classical slot 0 appears on the left, matching tuple position 0.
+        Digits are concatenated when every classical dimension is at most 9;
+        otherwise commas separate them.
 
         Returns:
             A newly created dictionary; changing it does not change this
@@ -350,8 +350,9 @@ class Result:
         """Return the produced statevector.
 
         Built-in backends return a length-``D`` array, where ``D`` is the
-        product of subsystem dimensions. ``metadata["state_axes"]`` describes
-        the least-significant-first subsystem order.
+        product of subsystem dimensions. Basis indices and
+        ``metadata["state_axes"]`` use public most-significant-first subsystem
+        order.
 
         Returns:
             The statevector array.
@@ -370,8 +371,9 @@ class Result:
         """Return the produced density matrix.
 
         Built-in backends return a ``(D, D)`` array, where ``D`` is the product
-        of subsystem dimensions. ``metadata["state_axes"]`` describes the
-        least-significant-first subsystem order used by both axes.
+        of subsystem dimensions. Both matrix axes and
+        ``metadata["state_axes"]`` use public most-significant-first subsystem
+        order.
 
         Returns:
             The density-matrix array.
@@ -388,6 +390,9 @@ class Result:
 
     def get_unitary(self) -> np.ndarray:
         """Return the program's unitary matrix.
+
+        Rows and columns use the same public most-significant-first basis as
+        returned statevectors.
 
         Returns:
             A ``(D, D)`` array, where ``D`` is the product of the subsystem
@@ -409,7 +414,8 @@ class Result:
 
         The representation uses column stacking: flatten both input and output
         density matrices with ``reshape(-1, order="F")``. A unitary program's
-        super-operator is ``numpy.kron(U.conj(), U)``.
+        super-operator is ``numpy.kron(U.conj(), U)``. The underlying density
+        matrix axes use the public most-significant-first basis.
 
         Returns:
             A ``(D**2, D**2)`` array, where ``D`` is the product of the

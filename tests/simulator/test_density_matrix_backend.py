@@ -31,6 +31,26 @@ def test_density_matrix_default_attached_when_no_measurement():
     assert np.allclose(rho, np.full((2, 2), 0.5))
 
 
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+@pytest.mark.parametrize("target, expected_index", [(0, 2), (1, 1)])
+def test_public_qubit_zero_is_the_most_significant_density_digit(
+    runtime, target, expected_index
+):
+    if runtime == "numba":
+        pytest.importorskip("numba")
+    program = Program(2)
+    program.add(ops.X, target)
+    rho = (
+        Simulator("DM", runtime=runtime)
+        .run(program, result_config={"counts": False, "final_state": True})
+        .result()
+        .get_density_matrix()
+    )
+    expected = np.zeros((4, 4), dtype=complex)
+    expected[expected_index, expected_index] = 1.0
+    assert np.array_equal(rho, expected)
+
+
 def test_density_matrix_not_attached_by_default_with_measurement():
     p = Program(1, 1)
     p.add(ops.H, 0)
@@ -68,7 +88,7 @@ def test_reset_of_entangled_qubit_gives_exact_mixed_state():
     rho = result.get_density_matrix()
     expected = np.zeros((4, 4), dtype=complex)
     expected[0, 0] = 0.5
-    expected[2, 2] = 0.5
+    expected[1, 1] = 0.5
     assert np.allclose(rho, expected)
 
 
