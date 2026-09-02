@@ -7,10 +7,6 @@ from fatqat.simulator import (
     SCQubitGoogleSimulator,
     SCQubitIBMSimulator,
 )
-from fatqat.simulator.fake_superconducting import (
-    fake_superconducting_google_implementation_map,
-    fake_superconducting_ibm_implementation_map,
-)
 from fatqat._index_allocation import _ClassicalAllocation, _EngineAllocation
 from fatqat._backends.backend_utils import (
     _lower_measurement_boundary,
@@ -25,52 +21,33 @@ from fatqat.program import _AppliedOperation
 from fatqat.resource_layout import ResourceLayout
 from fatqat.result import _ResultConfig
 
-# Every fake-target backend constructor routes grid_size through the shared
-# `_validate_grid_size` (see fake_superconducting.py), so this pins that
-# routing for the superconducting backends.
-_GRID_BACKENDS = (SCQubitIBMSimulator, SCQubitGoogleSimulator)
+# Both concrete SC simulators expose the same small constructor contract,
+# while implementing their own target-facing site property.
+_SC_BACKENDS = (SCQubitIBMSimulator, SCQubitGoogleSimulator)
 
 
-@pytest.mark.parametrize("backend_cls", _GRID_BACKENDS)
-def test_backend_rejects_non_tuple_grid_size(backend_cls):
-    with pytest.raises(TypeError):
-        backend_cls(grid_size=[2, 3])
+@pytest.mark.parametrize("backend_cls", _SC_BACKENDS)
+def test_sc_backend_rejects_non_positive_num_qubits(backend_cls):
+    with pytest.raises(ValueError, match="positive"):
+        backend_cls(num_qubits=0)
 
 
-@pytest.mark.parametrize("backend_cls", _GRID_BACKENDS)
-def test_backend_rejects_grid_size_with_wrong_length(backend_cls):
-    with pytest.raises(ValueError):
-        backend_cls(grid_size=(2,))
+@pytest.mark.parametrize("backend_cls", _SC_BACKENDS)
+def test_sc_backend_rejects_coupling_outside_device_sites(backend_cls):
+    with pytest.raises(ValueError, match="outside"):
+        backend_cls(num_qubits=3, couplings=((0, 3),))
 
 
-@pytest.mark.parametrize("backend_cls", _GRID_BACKENDS)
-def test_backend_rejects_non_int_grid_entry(backend_cls):
-    with pytest.raises(TypeError):
-        backend_cls(grid_size=(2, "3"))
+@pytest.mark.parametrize("backend_cls", _SC_BACKENDS)
+def test_sc_backend_rejects_self_coupling(backend_cls):
+    with pytest.raises(ValueError, match="distinct"):
+        backend_cls(num_qubits=3, couplings=((1, 1),))
 
 
-@pytest.mark.parametrize("backend_cls", _GRID_BACKENDS)
-def test_backend_rejects_bool_grid_entry(backend_cls):
-    with pytest.raises(TypeError):
-        backend_cls(grid_size=(True, 3))
-
-
-@pytest.mark.parametrize("backend_cls", _GRID_BACKENDS)
-def test_backend_rejects_non_positive_grid_entry(backend_cls):
-    with pytest.raises(ValueError):
-        backend_cls(grid_size=(0, 3))
-
-
-@pytest.mark.parametrize(
-    "implementation_map",
-    (
-        fake_superconducting_ibm_implementation_map,
-        fake_superconducting_google_implementation_map,
-    ),
-)
-def test_grid_implementation_map_rejects_invalid_shape(implementation_map):
-    with pytest.raises(ValueError):
-        implementation_map(0, 3)
+@pytest.mark.parametrize("backend_cls", _SC_BACKENDS)
+def test_sc_backend_rejects_non_integer_coupling_endpoint(backend_cls):
+    with pytest.raises(TypeError, match="integers"):
+        backend_cls(num_qubits=3, couplings=((0, "1"),))
 
 
 def test_resolve_result_flags_defaults_state_for_nonstochastic_program():

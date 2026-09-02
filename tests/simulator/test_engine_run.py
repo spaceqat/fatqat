@@ -97,3 +97,4 @@ def test_engine_fast_counts_and_state_share_collapse_event():
     measured = int(result.outcome_keys[0, 0])
     assert result.outcome_counts.tolist() == [1]
     assert np.isclose(abs(result.state[measured]), 1.0)
+    assert np.count_nonzero(np.abs(result.state) > 1e-12) == 1

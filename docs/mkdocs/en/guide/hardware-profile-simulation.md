@@ -40,7 +40,9 @@ gate table into application code:
 
 ```pycon
 >>> profile = fq.simulator.SCQubitGoogleSimulator(
-...     grid_size=(2, 3),
+...     num_qubits=6,
+...     couplings=((0, 1), (1, 2), (3, 4), (4, 5),
+...                (0, 3), (1, 4), (2, 5)),
 ...     runtime="numpy",
 ... )
 >>> profile.implementation_map.supports(ops.H)
@@ -103,7 +105,9 @@ characterizations:
 ```python
 profile_type = fq.simulator.SCQubitGoogleSimulator
 noisy_profile = profile_type(
-    grid_size=(2, 3),
+    num_qubits=6,
+    couplings=((0, 1), (1, 2), (3, 4), (4, 5),
+               (0, 3), (1, 4), (2, 5)),
     runtime="numpy",
     noise=profile_type.default_noise_model(),
 )

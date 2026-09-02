@@ -58,7 +58,8 @@ for edge, depolarizing_p in EDGE_CZ_DEPOLARIZING_P.items():
 
 density_matrix = (
     fq.simulator.SCQubitGoogleSimulator(
-        grid_size=(1, 3),
+        num_qubits=3,
+        couplings=((0, 1), (1, 2)),
         method="density_matrix",
         runtime="numpy",
         noise=noise,

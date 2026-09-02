@@ -43,7 +43,8 @@ single-qubit rotation is understood by all three examples below:
 
     ```pycon
     >>> profile = fq.simulator.SCQubitGoogleSimulator(
-    ...     grid_size=(1, 1),
+    ...     num_qubits=1,
+    ...     couplings=(),
     ...     runtime="numpy",
     ... )
     >>> profile_result = profile.run(
