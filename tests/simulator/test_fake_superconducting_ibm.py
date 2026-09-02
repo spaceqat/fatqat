@@ -6,9 +6,6 @@ import pytest
 import fatqat.operations as ops
 from fatqat._backends.steps import ApplyChannelStep
 from fatqat.simulator import SCQubitIBMSimulator
-from fatqat.simulator.fake_superconducting import (
-    fake_superconducting_ibm_implementation_map,
-)
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import AmplitudeDamping, Depolarizing, PhaseDamping
 from fatqat.program import Program
@@ -21,7 +18,7 @@ COUPLINGS = ((0, 1), (1, 2), (1, 3), (3, 4))
 
 
 def test_fake_superconducting_ibm_map_exposes_native_device_operands_for():
-    m = fake_superconducting_ibm_implementation_map()
+    m = SCQubitIBMSimulator().implementation_map
 
     assert m.supports(ops.X)
     assert m.supports(ops.SX)
@@ -52,7 +49,7 @@ def test_fake_superconducting_ibm_map_x_sx_rz_are_uniform():
     # plain one unconstrained add() rather than explicit device-operand
     # additions. supports() + empty device_operands_for() is how a compiler
     # infers "uniform, legal on any target" instead of "not supported".
-    m = fake_superconducting_ibm_implementation_map()
+    m = SCQubitIBMSimulator().implementation_map
     assert m.supports(ops.X) and not m.device_operands_for(ops.X)
     assert m.supports(ops.SX) and not m.device_operands_for(ops.SX)
     assert m.supports(ops.RZ) and not m.device_operands_for(ops.RZ)
@@ -64,12 +61,12 @@ def test_fake_superconducting_ibm_map_x_sx_rz_are_uniform():
 def test_fake_superconducting_ibm_map_cz_has_no_class_keyed_rule():
     # CZ must be entirely target-aware; a stray unconstrained implementation
     # would let get() silently accept non-neighbor pairs via fallback.
-    m = fake_superconducting_ibm_implementation_map()
+    m = SCQubitIBMSimulator().implementation_map
     assert m.implementation_for(ops.CZ) is None
 
 
 def test_fake_superconducting_ibm_map_rejects_cx_and_iswap():
-    m = fake_superconducting_ibm_implementation_map()
+    m = SCQubitIBMSimulator().implementation_map
     assert not m.supports(ops.CX)
     assert not m.supports(ops.iSwap)
 

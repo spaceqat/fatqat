@@ -14,7 +14,9 @@ from fatqat._pulse_values import PulseControl
 from fatqat.emulator._atom_3level import (
     Atom3LevelEmulator,
     Atom3LevelModel,
-    default_atom_3level_gate_implementation_map,
+)
+from fatqat.emulator._atom_3level.realization import (
+    _default_atom_3level_gate_implementation_map,
 )
 from fatqat.emulator._core.backend import _PulseBackend
 from fatqat.errors import (
@@ -245,7 +247,7 @@ def test_atom_3level_supplied_map_is_type_checked_copied_and_empty_is_explicit(
             arrangement=arrangement,
             gate_implementation_map=object(),
         )
-    supplied = default_atom_3level_gate_implementation_map(
+    supplied = _default_atom_3level_gate_implementation_map(
         model=atom_3level_model, calibration=atom_3level_calibration
     )
     backend = Atom3LevelEmulator(
@@ -276,7 +278,7 @@ def test_compiled_map_transfers_while_target_c6_and_geometry_control_evolution(
     atom_3level_calibration,
     atom_3level_model_document,
 ):
-    compiled = default_atom_3level_gate_implementation_map(
+    compiled = _default_atom_3level_gate_implementation_map(
         model=atom_3level_model, calibration=atom_3level_calibration
     )
     changed_document = deepcopy(atom_3level_model_document)

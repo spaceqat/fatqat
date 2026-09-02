@@ -8,7 +8,6 @@ import pytest
 import fatqat.operations as ops
 from fatqat._backends.steps import ApplyMatrixStep, LossStep, PutStep
 from fatqat.simulator import AtomArraySimulator, Simulator
-from fatqat.simulator.fake_atom_array import fake_atom_array_implementation_map
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import Loss, NoiseModel, ReadoutConfusion
 from fatqat.program import Program
@@ -62,7 +61,7 @@ def test_implementation_map_exposes_four_native_families():
 def test_cz_is_registered_as_a_universal_rule_not_by_edge():
     # Connectivity, not a fixed edge set, gates CZ legality now, so CZ carries a
     # single class-keyed universal rule and no device-operand edges.
-    m = fake_atom_array_implementation_map()
+    m = AtomArraySimulator().implementation_map
     assert m.implementation_for(ops.CZ) is not None
     assert not m.device_operands_for(ops.CZ)
 

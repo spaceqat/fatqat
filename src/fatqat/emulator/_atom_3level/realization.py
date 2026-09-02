@@ -41,7 +41,7 @@ def _theta(operation: Operation) -> float:
     return float(value)
 
 
-def default_atom_3level_gate_implementation_map(
+def _default_atom_3level_gate_implementation_map(
     *, model: Atom3LevelModel, calibration: Atom3LevelCalibration
 ) -> PulseImplementationMap:
     """Build the standard three-level atom gate-to-pulse map.

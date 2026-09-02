@@ -10,12 +10,10 @@ from .calibration import (
     default_atom_3level_calibration,
 )
 from .model import Atom3LevelModel
-from .realization import default_atom_3level_gate_implementation_map
 
 __all__ = [
     "Atom3LevelEmulator",
     "Atom3LevelCalibration",
     "Atom3LevelModel",
     "default_atom_3level_calibration",
-    "default_atom_3level_gate_implementation_map",
 ]

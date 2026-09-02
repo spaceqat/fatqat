@@ -18,7 +18,7 @@ from .._core.planning import _PreparedPulseProgram
 from .._core.pulse import PulseImplementationMap
 from .calibration import default_atom_3level_calibration
 from .model import Atom3LevelModel
-from .realization import default_atom_3level_gate_implementation_map
+from .realization import _default_atom_3level_gate_implementation_map
 from .target import _Atom3LevelTarget
 
 
@@ -60,7 +60,7 @@ class Atom3LevelEmulator(_PulseBackend):
             raise BackendValidationError("arrangement must be an AtomArrangement")
 
         effective_gate_map = (
-            default_atom_3level_gate_implementation_map(
+            _default_atom_3level_gate_implementation_map(
                 model=model,
                 calibration=default_atom_3level_calibration(),
             )

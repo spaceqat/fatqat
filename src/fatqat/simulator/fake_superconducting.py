@@ -229,7 +229,7 @@ class _SCQubitSimulator(Simulator):
 # --- IBM-style backend: X, SX, RZ, CZ --------------------------------------
 
 
-def fake_superconducting_ibm_implementation_map(
+def _fake_superconducting_ibm_implementation_map(
     couplings: tuple[tuple[int, int], ...] = DEFAULT_COUPLINGS,
 ) -> MatrixImplementationMap:
     """Build the native gate map for an IBM-style coupling graph.
@@ -306,7 +306,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         super().__init__(
             method=method,
             runtime=runtime,
-            implementation_map=fake_superconducting_ibm_implementation_map(couplings),
+            implementation_map=_fake_superconducting_ibm_implementation_map(couplings),
             num_qubits=num_qubits,
             noise=noise,
         )
@@ -359,7 +359,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
 # --- Google-style backend: RX, RY, RZ, iSwap, CZ ---------------------------
 
 
-def fake_superconducting_google_implementation_map(
+def _fake_superconducting_google_implementation_map(
     couplings: tuple[tuple[int, int], ...] = DEFAULT_COUPLINGS,
 ) -> MatrixImplementationMap:
     """Build the native gate map for a Google-style coupling graph.
@@ -436,7 +436,7 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         num_qubits = _validate_num_qubits(num_qubits)
         couplings = _normalize_couplings(num_qubits, couplings)
         super().__init__(
-            implementation_map=fake_superconducting_google_implementation_map(
+            implementation_map=_fake_superconducting_google_implementation_map(
                 couplings
             ),
             num_qubits=num_qubits,

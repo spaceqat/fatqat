@@ -11,13 +11,15 @@ from fatqat.emulator._core.pulse import _invoke_pulse_rule
 from fatqat.emulator._atom_3level import (
     Atom3LevelCalibration,
     Atom3LevelModel,
-    default_atom_3level_gate_implementation_map,
+)
+from fatqat.emulator._atom_3level.realization import (
+    _default_atom_3level_gate_implementation_map,
 )
 from fatqat.errors import BackendValidationError
 
 
 def _map(model, calibration):
-    return default_atom_3level_gate_implementation_map(
+    return _default_atom_3level_gate_implementation_map(
         model=model, calibration=calibration
     )
 
@@ -42,7 +44,7 @@ def test_builder_signature_and_runtime_types_are_exact(
     atom_3level_model, atom_3level_calibration
 ):
     parameters = inspect.signature(
-        default_atom_3level_gate_implementation_map
+        _default_atom_3level_gate_implementation_map
     ).parameters
     assert tuple(parameters) == ("model", "calibration")
     assert all(
@@ -51,11 +53,11 @@ def test_builder_signature_and_runtime_types_are_exact(
         for parameter in parameters.values()
     )
     with pytest.raises(BackendValidationError, match="Atom3LevelModel"):
-        default_atom_3level_gate_implementation_map(
+        _default_atom_3level_gate_implementation_map(
             model=object(), calibration=atom_3level_calibration
         )
     with pytest.raises(BackendValidationError, match="Atom3LevelCalibration"):
-        default_atom_3level_gate_implementation_map(
+        _default_atom_3level_gate_implementation_map(
             model=atom_3level_model, calibration=object()
         )
 

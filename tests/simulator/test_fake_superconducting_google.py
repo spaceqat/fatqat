@@ -6,9 +6,6 @@ import pytest
 import fatqat.operations as ops
 from fatqat._backends.steps import ApplyChannelStep
 from fatqat.simulator import SCQubitGoogleSimulator
-from fatqat.simulator.fake_superconducting import (
-    fake_superconducting_google_implementation_map,
-)
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import AmplitudeDamping, Depolarizing, PhaseDamping
 from fatqat.program import Program
@@ -21,7 +18,7 @@ COUPLINGS = ((0, 1), (1, 2), (1, 3), (3, 4))
 
 
 def test_fake_superconducting_google_map_exposes_native_device_operands_for():
-    m = fake_superconducting_google_implementation_map()
+    m = SCQubitGoogleSimulator().implementation_map
 
     assert m.supports(ops.RX)
     assert m.supports(ops.RY)
@@ -47,7 +44,7 @@ def test_fake_superconducting_google_accepts_arbitrary_couplings_and_exposes_sit
 
 
 def test_fake_superconducting_google_map_rx_ry_rz_are_uniform():
-    m = fake_superconducting_google_implementation_map()
+    m = SCQubitGoogleSimulator().implementation_map
     assert m.supports(ops.RX) and not m.device_operands_for(ops.RX)
     assert m.supports(ops.RY) and not m.device_operands_for(ops.RY)
     assert m.supports(ops.RZ) and not m.device_operands_for(ops.RZ)
@@ -60,13 +57,13 @@ def test_fake_superconducting_google_map_iswap_and_cz_have_no_class_keyed_rule()
     # Both two-qubit gates must be entirely target-aware; a stray
     # unconstrained implementation would let get() silently accept
     # non-neighbor pairs via fallback.
-    m = fake_superconducting_google_implementation_map()
+    m = SCQubitGoogleSimulator().implementation_map
     assert m.implementation_for(ops.iSwap) is None
     assert m.implementation_for(ops.CZ) is None
 
 
 def test_fake_superconducting_google_map_rejects_cx_and_sx():
-    m = fake_superconducting_google_implementation_map()
+    m = SCQubitGoogleSimulator().implementation_map
     assert not m.supports(ops.CX)
     assert not m.supports(ops.SX)
     assert not m.supports(ops.X)

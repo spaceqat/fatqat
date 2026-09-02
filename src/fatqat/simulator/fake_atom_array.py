@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from .._backends.steps import ResolvedStep
 
 
-def fake_atom_array_implementation_map() -> MatrixImplementationMap:
+def _fake_atom_array_implementation_map() -> MatrixImplementationMap:
     """Native gate map: RX/RY/RZ and CZ without fixed operand restrictions.
 
     CZ is registered as a single universal rule; two-qubit-gate *legality* is
@@ -117,7 +117,7 @@ class AtomArraySimulator(Simulator):
         super().__init__(
             method=canonical_method,
             runtime=runtime,
-            implementation_map=fake_atom_array_implementation_map(),
+            implementation_map=_fake_atom_array_implementation_map(),
             noise=noise,
         )
 
