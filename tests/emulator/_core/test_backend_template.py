@@ -222,7 +222,7 @@ class _TemplateRunner:
             tuple(context.classical_memory),
         )
 
-    def solver_metadata(self):
+    def runtime_details(self):
         return {"mode": self._execution_mode}
 
 
@@ -747,20 +747,20 @@ def test_execution_summary_is_a_minimal_immutable_owned_handoff():
         (),
     )
     source_outcomes = [outcome]
-    source_metadata = {"mode": "fake"}
+    source_runtime_details = {"mode": "fake"}
     summary = _PulseExecutionSummary(
         source_outcomes,
         "statevector",
-        source_metadata,
+        source_runtime_details,
     )
 
     source_outcomes.clear()
-    source_metadata["mode"] = "changed"
+    source_runtime_details["mode"] = "changed"
 
     assert summary.outcomes == (outcome,)
-    assert summary.solver_metadata == {"mode": "fake"}
+    assert summary.runtime_details == {"mode": "fake"}
     with pytest.raises(TypeError):
-        summary.solver_metadata["mode"] = "changed"
+        summary.runtime_details["mode"] = "changed"
     with pytest.raises(FrozenInstanceError):
         summary.final_state_kind = "density_matrix"
 

@@ -41,9 +41,11 @@ from .._qutip_boundaries import (
     _sample_projective_qutip_state,
 )
 from .._core.target import _PreparedControlBinding
+from .._qutip_runtime import _qutip_runtime_details
 from .target import _Atom3LevelTarget
 
-_SOLVER_OPTIONS = {"method": "adams", "atol": 1e-11, "rtol": 1e-9, "nsteps": 100000}
+# Use QuTiP's native method and error tolerances; only raise its work ceiling.
+_SOLVER_OVERRIDES = {"nsteps": 100000}
 
 
 class _Atom3LevelQutipAdapter:
@@ -79,7 +81,7 @@ class _Atom3LevelQutipAdapter:
         # allocation order directly rather than translating tensor factors.
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
-        self._solver_used = "none"
+        self._solvers_used: set[str] = set()
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
         self._dims = list(engine_allocation.system_dims)
@@ -109,12 +111,9 @@ class _Atom3LevelQutipAdapter:
             for ordinal in range(engine_allocation.n_subsystems)
         )
 
-    def solver_metadata(self) -> dict[str, Any]:
+    def runtime_details(self) -> dict[str, Any]:
         """Return public, normalized numerical integration facts."""
-        return {
-            "solver": self._solver_used,
-            "options": dict(_SOLVER_OPTIONS),
-        }
+        return _qutip_runtime_details(self._solvers_used, _SOLVER_OVERRIDES)
 
     @staticmethod
     def raman_frame_multiplier(theta: float) -> complex:
@@ -228,25 +227,25 @@ class _Atom3LevelQutipAdapter:
                 + self._bind_block_collapse_operators(run, enabled)
             )
             if self._execution_mode == "density_matrix":
-                self._solver_used = "mesolve"
+                self._solvers_used.add("mesolve")
                 result = mesolve(
                     bound.hamiltonian,
                     solver_state,
                     [context.time, run.end_time],
                     c_ops=collapse_operators,
-                    options=_SOLVER_OPTIONS,
+                    options=_SOLVER_OVERRIDES,
                 )
             else:
                 if collapse_operators:
                     raise BackendValidationError(
                         "Atom3LevelEmulator does not support continuous trajectories"
                     )
-                self._solver_used = "sesolve"
+                self._solvers_used.add("sesolve")
                 result = sesolve(
                     bound.hamiltonian,
                     solver_state,
                     [context.time, run.end_time],
-                    options=_SOLVER_OPTIONS,
+                    options=_SOLVER_OVERRIDES,
                 )
             solver_state = result.states[-1]
         context.state = solver_state
@@ -267,11 +266,11 @@ class _Atom3LevelQutipAdapter:
         if isinstance(bound, _BoundFrames):
             unitary = tensor(*tuple(qeye(dim) for dim in self._dims))
         else:
-            self._solver_used = "propagator"
+            self._solvers_used.add("propagator")
             unitary = qutip_propagator(
                 bound.hamiltonian,
                 run.end_time,
-                options=_SOLVER_OPTIONS,
+                options=_SOLVER_OVERRIDES,
             )
         return (
             self._frame_unitary(bound.output_frames) * unitary

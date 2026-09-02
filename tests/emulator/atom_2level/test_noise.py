@@ -227,7 +227,7 @@ def test_one_atom_damping_matches_analytic_master_equation(model, kind):
 
     adapter.evolve(run, context, (True,))
 
-    assert context.state.full() == pytest.approx(expected, abs=2e-8)
+    assert context.state.full() == pytest.approx(expected, abs=1e-6)
 
 
 def test_continuous_depolarization_matches_probability_law(model):
@@ -238,7 +238,7 @@ def test_continuous_depolarization_matches_probability_law(model):
 
     probability = 1.0 - np.exp(-rate * duration)
     expected = (1.0 - probability) * np.diag([1.0, 0.0]) + probability * np.eye(2) / 2
-    assert result.get_density_matrix() == pytest.approx(expected, abs=2e-8)
+    assert result.get_density_matrix() == pytest.approx(expected, abs=1e-6)
 
 
 def test_readout_confusion_changes_only_the_reported_digit(model):
@@ -307,7 +307,7 @@ def test_two_atom_mesolve_matches_independently_assembled_master_equation(
         options={"method": "vern9", "atol": 1e-11, "rtol": 1e-9},
     ).states[-1]
 
-    assert actual == pytest.approx(expected.full(), abs=3e-8)
+    assert actual == pytest.approx(expected.full(), abs=1e-6)
 
 
 def test_explicit_counts_without_measurement_return_empty_classical_key(model):

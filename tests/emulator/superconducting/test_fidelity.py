@@ -187,7 +187,7 @@ def test_native_gate_process_fidelity_and_leakage(
     process_fidelity, leakage = process_fidelity_and_leakage(actual, ideal)
 
     assert process_fidelity > minimum_fidelity
-    assert -1e-8 < leakage < 1e-5
+    assert abs(leakage) < 5e-5
 
 
 @pytest.mark.parametrize("schedule_mode", ("ASAP", "ALAP"))
@@ -212,7 +212,7 @@ def test_composed_process_fidelity_in_both_schedule_modes(
     process_fidelity, leakage = process_fidelity_and_leakage(actual, ideal)
 
     assert process_fidelity > minimum_fidelity
-    assert -1e-8 < leakage < 1e-5
+    assert abs(leakage) < 5e-5
 
 
 @pytest.mark.parametrize(

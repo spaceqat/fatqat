@@ -43,11 +43,12 @@ least 10, commas make multi-digit outcomes unambiguous: `(10, 3)` renders as
 Most other accessors return the value stored in the result. Copy arrays or
 dictionaries before changing them if you need to preserve the original.
 Metadata records the normalized `simulation_config` and `result_config`.
-Backend extensions may add fields. Pulse-emulator metadata records the
-canonical `method`; any solver diagnostics are informational and their keys
-are not a public compatibility contract. Keep the model, arrangement,
-controls, and application metadata alongside a result when they are needed to
-reproduce a physical run.
+Backend extensions may add fields. Pulse-emulator metadata records
+`runtime="qutip"` and a `runtime_details` mapping with `solver` and
+`solver_options`. A run that invokes multiple solvers reports their names as
+a tuple. These numerical-runtime details are informational. Keep the
+model, arrangement, controls, and application metadata alongside a result when
+they are needed to reproduce a physical run.
 
 When a result includes a state or operator, `metadata["state_axes"]` lists
 its physical subsystems from most to least significant. Each entry contains a

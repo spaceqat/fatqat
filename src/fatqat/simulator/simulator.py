@@ -619,11 +619,11 @@ class Simulator:
         initial_state = self._validate_initial_state(
             initial_state, tuple(reversed(engine_allocation.system_dims))
         )
-        # Strict selector-identity validation runs immediately after the
-        # effective resource layout is known and before any lowering/plan
-        # step is built, on this same direct-raise path: a foreign ref or
-        # unmapped device label fails run() directly rather than being
-        # silently skipped in selector matching.
+        # Selector-identity validation runs immediately after the effective
+        # resource layout is known and before any lowering/plan step is built.
+        # A foreign ref or a label outside the backend's device universe fails
+        # on this direct-raise path; a legal label unused by this layout remains
+        # a valid no-op.
         self._noise_model._validate_for(
             program, self._legal_device_operands(program, resource_layout)
         )

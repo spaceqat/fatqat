@@ -107,12 +107,52 @@ def test_run_directly_validates_config_and_executes_ideal_program(backend):
 
 
 def test_result_metadata_keeps_common_runtime_facts(backend):
-    result = backend.run(fq.Program(1), result_config={"counts": False}).result()
+    program = fq.Program(1)
+    program.add(ops.RX(0.1), 0)
+    statevector_backend = TransmonEmulator(backend.model, method="statevector")
+    result = statevector_backend.run(program, result_config={"counts": False}).result()
     assert result.metadata["backend_name"] == "TransmonEmulator"
+    assert result.metadata["runtime"] == "qutip"
+    assert result.metadata["runtime_details"] == {
+        "solver": "sesolve",
+        "solver_options": {
+            "nsteps": 100000,
+            "max_step": 0.1,
+        },
+    }
     assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
     assert result.metadata["result_config"] == {
         "counts": False,
         "final_state": True,
+    }
+    assert "solver" not in result.metadata
+
+
+def test_runtime_details_report_every_solver_used_across_dynamic_regions(
+    make_backend,
+):
+    noise = NoiseModel()
+    noise.add(PhaseDamping(rate=0.001), operation=ops.RX)
+    backend = make_backend(noise, method="statevector")
+
+    program = fq.Program(2, 1)
+    program.add(ops.RX(0.1), 0)
+    program.measure(0, 0)
+    program.add(ops.RY(0.1), 0)
+
+    result = backend.run(
+        program,
+        shots=1,
+        simulation_config={"seed": 1},
+        result_config={"counts": True, "final_state": True},
+    ).result()
+
+    assert result.metadata["runtime_details"] == {
+        "solver": ("mcsolve", "sesolve"),
+        "solver_options": {
+            "nsteps": 100000,
+            "max_step": 0.1,
+        },
     }
 
 

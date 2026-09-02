@@ -49,6 +49,7 @@ class PulsePlanFacts:
     """Complete shared facts derived once from a finished pulse plan."""
 
     has_measurement: bool
+    written_clbits: frozenset[int] = frozenset()
     has_reset: bool = False
     has_conditions: bool = False
     has_nonzero_evolution: bool = False
@@ -353,6 +354,12 @@ def _derive_plan_facts(
     )
     return PulsePlanFacts(
         has_measurement=any(isinstance(step, MeasurementStep) for step in plan),
+        written_clbits=frozenset(
+            classical_index
+            for step in plan
+            if isinstance(step, MeasurementStep)
+            for classical_index in step.classical_indices
+        ),
         has_reset=any(isinstance(step, ResetStep) for step in plan),
         has_conditions=any(
             getattr(step, "condition", None) is not None for step in plan

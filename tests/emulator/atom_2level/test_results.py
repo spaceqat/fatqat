@@ -59,6 +59,13 @@ def test_unmeasured_ideal_run_defaults_to_a_pure_statevector(backend):
     assert result.get_statevector().shape == (4,)
     assert np.linalg.norm(result.get_statevector()) == pytest.approx(1.0)
     assert result.metadata["backend_name"] == "Atom2LevelEmulator"
+    assert result.metadata["runtime"] == "qutip"
+    assert result.metadata["runtime_details"] == {
+        "solver": "sesolve",
+        "solver_options": {
+            "nsteps": 100000,
+        },
+    }
 
 
 def test_terminal_measurement_defaults_to_counts_without_final_state(backend):

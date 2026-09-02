@@ -128,7 +128,7 @@ def test_atom_3level_execution_methods_keep_the_shared_forwarding_contract():
     assert run["resource_layout"].default is None
     assert run["simulation_config"].default is None
     assert run["result_config"].default is None
-    assert get_type_hints(Atom3LevelEmulator.run)["return"] is Job
+    assert get_type_hints(Atom3LevelEmulator.run)["return"] == Job[fq.Result]
     assert not hasattr(Atom3LevelEmulator, "propagator")
     assert not hasattr(Atom3LevelEmulator, "apply_final_frame")
 
@@ -516,7 +516,7 @@ def test_atom_3level_all_computational_inputs_remain_physical_qutrit_states(
         .get_density_matrix()
     )
     assert density.shape == (9, 9)
-    assert density[expected_index, expected_index].real > 0.999999
+    assert density[expected_index, expected_index].real > 0.9999
     assert np.isclose(np.trace(density), 1.0, atol=1e-8)
 
 
@@ -636,10 +636,19 @@ def test_atom_3level_result_metadata_keeps_common_runtime_facts(
     atom_3level_model, atom_3level_calibration
 ):
     backend = _backend(atom_3level_model, atom_3level_calibration)
+    program = fq.Program(2)
+    program.add(ops.RX(0.1), 0)
     result = backend.run(
-        fq.Program(2), result_config={"counts": False, "final_state": True}
+        program, result_config={"counts": False, "final_state": True}
     ).result()
     assert result.metadata["backend_name"] == "Atom3LevelEmulator"
+    assert result.metadata["runtime"] == "qutip"
+    assert result.metadata["runtime_details"] == {
+        "solver": "mesolve",
+        "solver_options": {
+            "nsteps": 100000,
+        },
+    }
     assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
     assert result.metadata["result_config"] == {
         "counts": False,
@@ -655,8 +664,7 @@ def test_atom_3level_result_metadata_keeps_common_runtime_facts(
             for key, child in value.items():
                 assert isinstance(key, str)
                 assert not any(
-                    token in key.lower()
-                    for token in ("coordinate", "handle", "runtime", "engine")
+                    token in key.lower() for token in ("coordinate", "handle", "engine")
                 )
                 check_public(child, (*path, key))
         elif isinstance(value, (tuple, list)):

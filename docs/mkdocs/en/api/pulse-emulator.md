@@ -162,8 +162,11 @@ Measurement first samples a physical level, maps `0, 1, 2` to `0, 1, 1`,
 then applies any classical readout-confusion matrix. Reset prepares physical
 `|0>`.
 
-Result metadata includes the effective run and result settings, but not the
-model or calibration documents.
+Result metadata includes the effective run and result settings, identifies
+`runtime="qutip"`, and reports `solver` and `solver_options` inside
+`runtime_details`. `solver` is one solver name for a uniform run or a
+tuple of names when execution used multiple solvers. Metadata does not
+include the model or calibration documents.
 
 `run()` raises validation errors before returning a job. If execution fails
 after a job is returned, `job.result()` raises

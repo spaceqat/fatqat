@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import asdict
@@ -69,6 +70,7 @@ class _PulseBackend(ABC):
     """
 
     _target: _PulseTarget
+    _runtime_name: str = "qutip"
 
     # Families may replace this with a dataclass derived from
     # ``_EmulatorConfig`` for family-specific per-run controls. The normalizer
@@ -255,7 +257,7 @@ class _PulseBackend(ABC):
         resource_layout: ResourceLayout | None = None,
         simulation_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
-    ) -> Job:
+    ) -> Job[Result]:
         """Run a program on this pulse emulator.
 
         The emulator family fixes the initial product state; pulse backends do
@@ -483,6 +485,7 @@ class _PulseBackend(ABC):
         shots: int,
     ) -> Result:
         unitary = None
+        runtime_details = None
         available = frozenset()
         if request.final_state:
             if prepared.plan:
@@ -497,10 +500,13 @@ class _PulseBackend(ABC):
                     engine.propagator(prepared.plan, apply_final_frame=True).full(),
                     dtype=complex,
                 )
+                runtime_details = runner.runtime_details()
             else:
                 unitary = np.eye(self._target.hilbert_dimension, dtype=complex)
             available = frozenset({"unitary"})
         metadata = self._result_metadata(request, simulation, shots)
+        if runtime_details is not None:
+            metadata["runtime_details"] = dict(runtime_details)
         if request.final_state:
             metadata["state_axes"] = _describe_state_axes(
                 prepared.engine_allocation.device_operands,
@@ -543,7 +549,7 @@ class _PulseBackend(ABC):
         return _PulseExecutionSummary(
             outcomes=outcomes,
             final_state_kind=final_state_kind,
-            solver_metadata=runner.solver_metadata(),
+            runtime_details=runner.runtime_details(),
         )
 
     @final
@@ -577,13 +583,24 @@ class _PulseBackend(ABC):
                 statevector = final_state
             else:
                 density_matrix = final_state
+        if request.counts and not request.final_state:
+            n_clbits = prepared.classical_allocation.n_clbits
+            if any(
+                classical_index not in prepared.facts.written_clbits
+                for classical_index in range(n_clbits)
+            ):
+                warnings.warn(
+                    "counts contain clbits that were never measured; "
+                    "returning zero-filled counts",
+                    stacklevel=4,
+                )
         metadata = self._result_metadata(request, simulation, shots)
         if request.final_state:
             metadata["state_axes"] = _describe_state_axes(
                 prepared.engine_allocation.device_operands,
                 prepared.resource_layout,
             )
-        metadata["solver"] = dict(summary.solver_metadata)
+        metadata["runtime_details"] = dict(summary.runtime_details)
         return Result(
             counts=counts,
             statevector=statevector,
@@ -603,6 +620,11 @@ class _PulseBackend(ABC):
         return {
             "backend_name": self._backend_name(),
             "method": request.method,
+            "runtime": self._runtime_name,
+            "runtime_details": {
+                "solver": "none",
+                "solver_options": {},
+            },
             "shots": shots,
             "simulation_config": asdict(simulation),
             "result_config": {
