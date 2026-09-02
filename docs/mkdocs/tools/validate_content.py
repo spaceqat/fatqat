@@ -1,4 +1,4 @@
-"""Validate every active MkDocs locale and its shared content contracts."""
+"""Validate the English MkDocs content and its generated files."""
 
 from __future__ import annotations
 
@@ -9,11 +9,7 @@ from urllib.parse import unquote, urlsplit
 import yaml
 
 MKDOCS_ROOT = Path(__file__).resolve().parents[1]
-LOCALE_REGISTRY = MKDOCS_ROOT / "locales.yml"
-_LOCALE_DATA = yaml.safe_load(LOCALE_REGISTRY.read_text(encoding="utf-8"))
-CANONICAL_LOCALE = _LOCALE_DATA["canonical"]
-LOCALES = tuple(_LOCALE_DATA["locales"])
-LOCALE_ROOTS = {locale: MKDOCS_ROOT / locale for locale in LOCALES}
+DOCS_ROOT = MKDOCS_ROOT / "en"
 
 MARKDOWN_DESTINATION = re.compile(
     r"\[!\[[^\]]*\]\((?P<linked_image>[^)\n]+)\)"
@@ -28,10 +24,6 @@ HOME_TEMPLATE_DESTINATION = re.compile(
 )
 HOME_TEMPLATE_HERO_KEY = re.compile(r"\bhero\.([a-z_][a-z0-9_]*)\b")
 GENERATED_ASSET_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
-TUTORIAL_CODE_BLOCK = re.compile(
-    r'^```python title="[^"\n]*? (?P<number>\d+)"\n' r"(?P<code>.*?)^```$",
-    re.DOTALL | re.MULTILINE,
-)
 
 
 def _relative_files(root: Path, *, suffixes: set[str]) -> set[Path]:
@@ -40,10 +32,6 @@ def _relative_files(root: Path, *, suffixes: set[str]) -> set[Path]:
         for path in root.rglob("*")
         if path.is_file() and path.suffix.lower() in suffixes
     }
-
-
-def _describe_paths(paths: set[Path]) -> str:
-    return ", ".join(path.as_posix() for path in sorted(paths))
 
 
 def _markdown_destination(raw_destination: str) -> str:
@@ -55,7 +43,7 @@ def _markdown_destination(raw_destination: str) -> str:
     return re.split(r"\s+[\"']", destination, maxsplit=1)[0]
 
 
-def _local_target_exists(page: Path, locale_root: Path, destination: str) -> bool:
+def _local_target_exists(page: Path, destination: str) -> bool:
     split = urlsplit(unquote(destination))
     if split.scheme or split.netloc or not split.path:
         return True
@@ -71,24 +59,13 @@ def _local_target_exists(page: Path, locale_root: Path, destination: str) -> boo
     return any(candidate.is_file() for candidate in candidates)
 
 
-def _tutorial_code_cells(page: Path) -> list[tuple[int, str]]:
-    """Return numbered Python cells while ignoring their localized titles."""
-
-    return [
-        (int(match.group("number")), match.group("code"))
-        for match in TUTORIAL_CODE_BLOCK.finditer(page.read_text(encoding="utf-8"))
-    ]
-
-
 def _markdown_destination_locations(text: str) -> list[tuple[int, str]]:
     """Return offsets and destinations, including both halves of linked images."""
 
     destinations: list[tuple[int, str]] = []
     for match in MARKDOWN_DESTINATION.finditer(text):
         if linked_image := match.group("linked_image"):
-            destinations.append(
-                (match.start(), _markdown_destination(linked_image))
-            )
+            destinations.append((match.start(), _markdown_destination(linked_image)))
             destinations.append(
                 (match.start(), _markdown_destination(match.group("linked_target")))
             )
@@ -97,17 +74,6 @@ def _markdown_destination_locations(text: str) -> list[tuple[int, str]]:
                 (match.start(), _markdown_destination(match.group("destination")))
             )
     return destinations
-
-
-def _markdown_destinations(page: Path) -> list[str]:
-    """Return ordered inline-link and image destinations from one page."""
-
-    return [
-        destination
-        for _, destination in _markdown_destination_locations(
-            page.read_text(encoding="utf-8")
-        )
-    ]
 
 
 def _front_matter(page: Path) -> dict[str, object]:
@@ -125,201 +91,80 @@ def _front_matter(page: Path) -> dict[str, object]:
 
 def validate() -> list[str]:
     errors: list[str] = []
-    canonical_root = LOCALE_ROOTS[CANONICAL_LOCALE]
-    translated_locales = tuple(
-        locale for locale in LOCALES if locale != CANONICAL_LOCALE
-    )
-
-    markdown_paths = {
-        locale: _relative_files(root, suffixes={".md"})
-        for locale, root in LOCALE_ROOTS.items()
-    }
-    canonical_markdown = markdown_paths[CANONICAL_LOCALE]
-    for locale in translated_locales:
-        if missing := canonical_markdown - markdown_paths[locale]:
-            errors.append(
-                f"{locale} Markdown pages are missing: {_describe_paths(missing)}"
-            )
-        if extra := markdown_paths[locale] - canonical_markdown:
-            errors.append(
-                f"{locale}-only Markdown pages exist: {_describe_paths(extra)}"
-            )
-
-    for folder, suffixes in (
-        ("assets", GENERATED_ASSET_SUFFIXES),
-        ("downloads", {".ipynb", ".py"}),
-    ):
-        localized = {
-            locale: _relative_files(root / folder, suffixes=suffixes)
-            for locale, root in LOCALE_ROOTS.items()
-        }
-        canonical_files = localized[CANONICAL_LOCALE]
-        for locale in translated_locales:
-            if missing := canonical_files - localized[locale]:
-                errors.append(
-                    f"{locale} {folder} are missing: {_describe_paths(missing)}"
-                )
-            if extra := localized[locale] - canonical_files:
-                errors.append(
-                    f"{locale}-only {folder} exist: {_describe_paths(extra)}"
-                )
-
-    for download in _relative_files(
-        canonical_root / "downloads", suffixes={".py"}
-    ):
-        canonical_download = canonical_root / "downloads" / download
-        for locale in translated_locales:
-            localized_download = LOCALE_ROOTS[locale] / "downloads" / download
-            if (
-                localized_download.is_file()
-                and canonical_download.read_bytes() != localized_download.read_bytes()
-            ):
-                errors.append(
-                    f"{locale} Python download differs from {CANONICAL_LOCALE}: "
-                    f"{download.as_posix()}"
-                )
-
-    tutorial_asset_root = Path("assets/generated/tutorials")
-    for asset in _relative_files(
-        canonical_root / tutorial_asset_root, suffixes=GENERATED_ASSET_SUFFIXES
-    ):
-        canonical_asset = canonical_root / tutorial_asset_root / asset
-        for locale in translated_locales:
-            localized_asset = LOCALE_ROOTS[locale] / tutorial_asset_root / asset
-            if (
-                localized_asset.is_file()
-                and canonical_asset.read_bytes() != localized_asset.read_bytes()
-            ):
-                errors.append(
-                    f"Captured tutorial figure differs for {locale}: "
-                    f"{asset.as_posix()}"
-                )
-
-    for relative in sorted(canonical_markdown):
-        if relative.parts[:1] != ("tutorials",) or relative.name == "index.md":
-            continue
-        canonical_cells = _tutorial_code_cells(canonical_root / relative)
-        for locale in translated_locales:
-            localized_page = LOCALE_ROOTS[locale] / relative
-            if localized_page.is_file() and canonical_cells != _tutorial_code_cells(
-                localized_page
-            ):
-                errors.append(
-                    f"{locale} tutorial code differs from {CANONICAL_LOCALE}: "
-                    f"{relative.as_posix()}"
-                )
-
-    for relative, label in (
-        (Path("index.md"), "Homepage"),
-        (Path("guide/index.md"), "Guide index"),
-        (Path("tutorials/index.md"), "Tutorial index"),
-    ):
-        canonical_page = canonical_root / relative
-        if not canonical_page.is_file():
-            continue
-        canonical_destinations = _markdown_destinations(canonical_page)
-        for locale in translated_locales:
-            localized_page = LOCALE_ROOTS[locale] / relative
-            if localized_page.is_file() and canonical_destinations != (
-                _markdown_destinations(localized_page)
-            ):
-                errors.append(
-                    f"{label} link and image destinations differ for {locale}"
-                )
+    markdown_paths = _relative_files(DOCS_ROOT, suffixes={".md"})
 
     home_template = MKDOCS_ROOT / "overrides" / "home.html"
     template_text = home_template.read_text(encoding="utf-8")
     template_hero_keys = set(HOME_TEMPLATE_HERO_KEY.findall(template_text))
-    homepage_heroes: dict[str, dict[str, object]] = {}
-    for locale, root in LOCALE_ROOTS.items():
-        homepage = root / "index.md"
-        if not homepage.is_file():
-            errors.append(f"{locale} homepage is missing")
-            continue
+    homepage = DOCS_ROOT / "index.md"
+    if not homepage.is_file():
+        errors.append("en homepage is missing")
+    else:
         try:
             metadata = _front_matter(homepage)
         except (ValueError, yaml.YAMLError) as error:
-            errors.append(f"Invalid {locale} homepage front matter: {error}")
-            continue
-        if metadata.get("template") != "home.html":
-            errors.append(f"{locale} homepage must select template: home.html")
-        hero = metadata.get("hero")
-        if not isinstance(hero, dict):
-            errors.append(f"{locale} homepage hero metadata must be a mapping")
-            continue
-        empty = sorted(
-            key
-            for key, value in hero.items()
-            if not isinstance(value, str) or not value.strip()
-        )
-        if empty:
-            errors.append(
-                f"{locale} homepage hero values must be non-empty strings: "
-                + ", ".join(empty)
-            )
-        if set(hero) != template_hero_keys:
-            missing = template_hero_keys - set(hero)
-            extra = set(hero) - template_hero_keys
-            details = []
-            if missing:
-                details.append("missing " + ", ".join(sorted(missing)))
-            if extra:
-                details.append("unused " + ", ".join(sorted(extra)))
-            errors.append(
-                f"{locale} homepage hero metadata does not match home.html: "
-                + "; ".join(details)
-            )
-        homepage_heroes[locale] = hero
-
-    canonical_hero = homepage_heroes.get(CANONICAL_LOCALE)
-    if canonical_hero is not None:
-        for locale in translated_locales:
-            localized_hero = homepage_heroes.get(locale)
-            if localized_hero is not None and set(canonical_hero) != set(
-                localized_hero
-            ):
-                errors.append(f"Homepage hero metadata keys differ for {locale}")
+            errors.append(f"Invalid en homepage front matter: {error}")
+        else:
+            if metadata.get("template") != "home.html":
+                errors.append("en homepage must select template: home.html")
+            hero = metadata.get("hero")
+            if not isinstance(hero, dict):
+                errors.append("en homepage hero metadata must be a mapping")
+            else:
+                empty = sorted(
+                    key
+                    for key, value in hero.items()
+                    if not isinstance(value, str) or not value.strip()
+                )
+                if empty:
+                    errors.append(
+                        "en homepage hero values must be non-empty strings: "
+                        + ", ".join(empty)
+                    )
+                if set(hero) != template_hero_keys:
+                    missing = template_hero_keys - set(hero)
+                    extra = set(hero) - template_hero_keys
+                    details = []
+                    if missing:
+                        details.append("missing " + ", ".join(sorted(missing)))
+                    if extra:
+                        details.append("unused " + ", ".join(sorted(extra)))
+                    errors.append(
+                        "en homepage hero metadata does not match home.html: "
+                        + "; ".join(details)
+                    )
 
     template_destinations = HOME_TEMPLATE_DESTINATION.findall(template_text)
     if not template_destinations:
         errors.append("Homepage template exposes no local CTA or image destinations")
-    for locale, root in LOCALE_ROOTS.items():
-        homepage = root / "index.md"
-        if not homepage.is_file():
-            continue
+    if homepage.is_file():
         for destination in template_destinations:
-            if not _local_target_exists(homepage, root, destination):
+            if not _local_target_exists(homepage, destination):
                 errors.append(
-                    f"Broken local template destination for {locale}: {destination}"
+                    f"Broken local template destination for en: {destination}"
                 )
 
-    for locale, root in LOCALE_ROOTS.items():
-        for relative in sorted(markdown_paths[locale]):
-            page = root / relative
-            text = page.read_text(encoding="utf-8")
-            for offset, destination in _markdown_destination_locations(text):
-                if not _local_target_exists(page, root, destination):
-                    line = text.count("\n", 0, offset) + 1
-                    errors.append(
-                        f"Broken local link in {locale}/{relative.as_posix()}:{line}: "
-                        f"{destination}"
-                    )
+    for relative in sorted(markdown_paths):
+        page = DOCS_ROOT / relative
+        text = page.read_text(encoding="utf-8")
+        for offset, destination in _markdown_destination_locations(text):
+            if not _local_target_exists(page, destination):
+                line = text.count("\n", 0, offset) + 1
+                errors.append(
+                    f"Broken local link in en/{relative.as_posix()}:{line}: "
+                    f"{destination}"
+                )
 
     if not errors:
-        locale_summary = ", ".join(LOCALES)
         asset_count = len(
-            _relative_files(
-                canonical_root / "assets", suffixes=GENERATED_ASSET_SUFFIXES
-            )
+            _relative_files(DOCS_ROOT / "assets", suffixes=GENERATED_ASSET_SUFFIXES)
         )
         download_count = len(
-            _relative_files(
-                canonical_root / "downloads", suffixes={".ipynb", ".py"}
-            )
+            _relative_files(DOCS_ROOT / "downloads", suffixes={".ipynb", ".py"})
         )
         print(
-            f"Validated documentation content for {locale_summary}: "
-            f"{len(canonical_markdown)} Markdown pages, "
+            f"Validated English documentation content: {len(markdown_paths)} "
+            "Markdown pages, "
             f"{asset_count} assets, and {download_count} downloads."
         )
     return errors

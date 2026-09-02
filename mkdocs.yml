@@ -1,12 +1,27 @@
-INHERIT: mkdocs.base.yml
+# yaml-language-server: $schema=https://squidfunk.github.io/mkdocs-material/schema.json
 
-site_url: !ENV [FATQAT_MKDOCS_EN_SITE_URL, "http://127.0.0.1:8000/en/"]
+site_name: FatQat
+site_description: Model quantum programs from logical circuits to physical dynamics
+site_author: FatQat contributors
+copyright: Copyright &copy; 2026 FatQat contributors
+
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, "http://127.0.0.1:8000/"]
+repo_name: BoxiLi/fatqat
+repo_url: https://github.com/BoxiLi/fatqat
 edit_uri: edit/main/docs/mkdocs/en/
-docs_dir: en
-site_dir: site/en
+
+docs_dir: docs/mkdocs/en
+site_dir: docs/mkdocs/site
+use_directory_urls: true
 
 theme:
+  name: material
+  custom_dir: docs/mkdocs/overrides
   language: en
+  font: false
+  icon:
+    logo: material/atom-variant
+    repo: fontawesome/brands/github
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -22,12 +37,99 @@ theme:
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.prune
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
 
+# Keep autorefs before mkdocstrings.
 plugins:
   search:
     lang: en
+  autorefs: {}
   mkdocstrings:
+    default_handler: python
     locale: en
+    handlers:
+      python:
+        paths:
+          - src
+        options:
+          # Keep parameters, attributes, returns, and raises in the traditional
+          # vertical definition-list form instead of compressed data tables.
+          docstring_section_style: list
+          docstring_style: google
+          docstring_options:
+            warn_missing_types: false
+          extensions:
+            - docs/mkdocs/extensions/docstring_roles.py:DocstringRolesExtension
+          filters: public
+          inherited_members: true
+          members_order: source
+          merge_init_into_class: true
+          separate_signature: true
+          show_root_full_path: false
+          show_root_heading: true
+          show_signature_annotations: true
+          show_source: false
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          signature_crossrefs: true
+          unwrap_annotated: true
+
+markdown_extensions:
+  abbr: {}
+  admonition: {}
+  attr_list: {}
+  def_list: {}
+  footnotes: {}
+  md_in_html: {}
+  toc:
+    permalink: true
+    slugify: !!python/object/apply:pymdownx.slugs.slugify
+      kwds:
+        case: lower
+  pymdownx.arithmatex:
+    generic: true
+  pymdownx.details: {}
+  pymdownx.emoji:
+    emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    emoji_index: !!python/name:material.extensions.emoji.twemoji
+  pymdownx.highlight:
+    pygments_lang_class: true
+  pymdownx.inlinehilite: {}
+  pymdownx.snippets:
+    check_paths: true
+  pymdownx.superfences: {}
+  pymdownx.tabbed:
+    alternate_style: true
+    slugify: !!python/object/apply:pymdownx.slugs.slugify
+      kwds:
+        case: lower
+
+hooks:
+  - docs/mkdocs/hooks.py
+
+watch:
+  - src/fatqat
+  - docs/mkdocs/tutorial-sources
+  - docs/mkdocs/figure-sources
 
 nav:
   - Home: index.md
