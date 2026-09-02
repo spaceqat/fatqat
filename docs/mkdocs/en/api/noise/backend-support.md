@@ -35,7 +35,8 @@ profiles may impose additional operation, placement, and dimension limits.
 | --- | --- |
 | [`Depolarizing`][fatqat.noise.Depolarizing] `(p)` | **Built in.** Applies jointly to the selected operands after a matching operation. |
 | [`PauliChannel`][fatqat.noise.PauliChannel] | **Built in.** The string width must equal the number of selected qubit operands. |
-| [`AmplitudeDamping`][fatqat.noise.AmplitudeDamping] `(p)` | **Built in.** Applies to one selected operand; dimension $d$ requires $d-1$ adjacent-transition probabilities. |
+| [`AmplitudeDamping`][fatqat.noise.AmplitudeDamping] `(p)` | **Built in for qubits.** Applies the conventional finite amplitude-damping channel to one selected operand. |
+| [`TransitionRelaxation`][fatqat.noise.TransitionRelaxation] `(p)` | **Built in.** Applies one explicit local jump; matching declarations are applied sequentially in registration order. |
 | [`PhaseDamping`][fatqat.noise.PhaseDamping] `(p)` | **Built in.** Applies to one selected operand of any finite local dimension. |
 | Built-in rate forms and [`ThermalRelaxation`][fatqat.noise.ThermalRelaxation] | **Unsupported.** Simulators have no physical timeline and do not convert rates or times into a channel application. |
 | [`ReadoutConfusion`][fatqat.noise.ReadoutConfusion] | **Built in.** Applies universally or to one measured operand. The matrix size must equal the reported digit dimension; the superconducting profiles therefore require `2 x 2`. |
@@ -79,8 +80,8 @@ are unsupported. Each emulator family owns its continuous-noise realizations.
 
 | Backend | Built-in Lindblad-operator behavior | Readout and limits |
 | --- | --- | --- |
-| [`TransmonEmulator`][fatqat.emulator.TransmonEmulator] | Background or operation scope: [`AmplitudeDamping`][fatqat.noise.AmplitudeDamping] `(rate)` with two rates for the three-level model, [`PhaseDamping`][fatqat.noise.PhaseDamping] `(rate or t_phi)`, [`ThermalRelaxation`][fatqat.noise.ThermalRelaxation], and [`Depolarizing`][fatqat.noise.Depolarizing] `(rate)` over the full qutrit. | Readout confusion is built in and binary. Construction and [`validate_noise_model`][fatqat.emulator.TransmonEmulator.validate_noise_model] require a `2 x 2` matrix. |
-| [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator] | Background scope: [`Depolarizing`][fatqat.noise.Depolarizing] `(rate)`, [`AmplitudeDamping`][fatqat.noise.AmplitudeDamping] `(rate)` with one rate, [`PhaseDamping`][fatqat.noise.PhaseDamping] `(rate or t_phi)`, and [`ThermalRelaxation`][fatqat.noise.ThermalRelaxation]. | Operation-scoped continuous noise is unsupported. Readout confusion is built in and `2 x 2` only. |
+| [`TransmonEmulator`][fatqat.emulator.TransmonEmulator] | Background or operation scope: [`TransitionRelaxation`][fatqat.noise.TransitionRelaxation] `(rate)` with explicit coefficients, [`PhaseDamping`][fatqat.noise.PhaseDamping] `(rate or t_phi)`, and [`Depolarizing`][fatqat.noise.Depolarizing] `(rate)` over the full qutrit. | Readout confusion is built in and binary. Construction and [`validate_noise_model`][fatqat.emulator.TransmonEmulator.validate_noise_model] require a `2 x 2` matrix. |
+| [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator] | Background scope: qubit [`AmplitudeDamping`][fatqat.noise.AmplitudeDamping] `(rate)`, explicit [`TransitionRelaxation`][fatqat.noise.TransitionRelaxation] `(rate)`, [`PhaseDamping`][fatqat.noise.PhaseDamping] `(rate or t_phi)`, qubit [`ThermalRelaxation`][fatqat.noise.ThermalRelaxation], and [`Depolarizing`][fatqat.noise.Depolarizing] `(rate)`. | Operation-scoped continuous noise is unsupported. Readout confusion is built in and `2 x 2` only. |
 
 Each supported background declaration selects one site. Transmon
 operation-scoped noise is active only during matching pulse windows. Readout
@@ -88,7 +89,7 @@ confusion may apply to every measurement or one operand; correlated
 multi-operand readout is not supported.
 
 Rates use the inverse of the model's time unit. `t_phi`, `t1`, and `t2`
-use that unit directly. The reference
+use that unit directly on families that accept them. The reference
 [`time_unit`][fatqat.emulator.TransmonModel.time_unit] is nanoseconds,
 while [`time_unit`][fatqat.emulator.Atom2LevelModel.time_unit] is microseconds. Read
 the chosen model's `time_unit` rather than guessing from a value's magnitude.

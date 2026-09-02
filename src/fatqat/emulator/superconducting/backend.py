@@ -6,18 +6,16 @@ from typing import Any
 
 from ...errors import BackendValidationError
 from ...noise import (
-    AmplitudeDamping,
     Depolarizing,
     NoiseModel,
     PhaseDamping,
-    ThermalRelaxation,
+    TransitionRelaxation,
 )
 from ...noise.lindblad import (
     LindbladImplementationMap,
-    amplitude_damping_lindblad_rule,
     depolarizing_lindblad_rule,
     phase_damping_lindblad_rule,
-    thermal_relaxation_lindblad_rule,
+    transition_relaxation_lindblad_rule,
 )
 from .._core.backend import _PulseBackend
 from .._core.config import _EmulatorConfig
@@ -37,9 +35,11 @@ from .target import _LOCAL_DIMENSION, _TransmonTarget
 def _default_lindblad_map() -> LindbladImplementationMap:
     """Return a fresh Transmon continuous-noise catalog."""
     implementations = LindbladImplementationMap()
-    implementations.add(AmplitudeDamping, amplitude_damping_lindblad_rule)
+    implementations.add(
+        TransitionRelaxation,
+        transition_relaxation_lindblad_rule,
+    )
     implementations.add(PhaseDamping, phase_damping_lindblad_rule)
-    implementations.add(ThermalRelaxation, thermal_relaxation_lindblad_rule)
     implementations.add(Depolarizing, depolarizing_lindblad_rule)
     return implementations
 

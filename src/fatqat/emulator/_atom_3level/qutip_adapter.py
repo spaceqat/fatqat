@@ -39,6 +39,7 @@ from .._qutip_boundaries import (
     _apply_qutip_reset,
     _expand_qutip_local,
     _sample_projective_qutip_state,
+    _solve_one_qutip_trajectory,
 )
 from .._core.target import _PreparedControlBinding
 from .._qutip_runtime import _qutip_runtime_details
@@ -64,7 +65,7 @@ class _Atom3LevelQutipAdapter:
             raise BackendValidationError("atom adapter requires an atom target")
         if type(retain_final_state) is not bool:
             raise BackendValidationError("retain_final_state must be a bool")
-        if execution_mode not in ("statevector", "density_matrix"):
+        if execution_mode not in ("statevector", "density_matrix", "trajectory"):
             raise BackendValidationError(
                 f"unknown three-level atom execution mode {execution_mode!r}"
             )
@@ -142,7 +143,7 @@ class _Atom3LevelQutipAdapter:
             raise TypeError(
                 "three-level atom density-matrix runner requires an operator"
             )
-        if self._execution_mode == "statevector" and not state.isket:
+        if self._execution_mode != "density_matrix" and not state.isket:
             raise TypeError("three-level atom statevector runner requires a ket")
 
     def interaction_drift(self) -> Qobj:
@@ -235,11 +236,24 @@ class _Atom3LevelQutipAdapter:
                     c_ops=collapse_operators,
                     options=_SOLVER_OVERRIDES,
                 )
-            else:
-                if collapse_operators:
+                solver_state = result.states[-1]
+            elif collapse_operators:
+                if self._execution_mode != "trajectory":
                     raise BackendValidationError(
-                        "Atom3LevelEmulator does not support continuous trajectories"
+                        "three-level atom statevector execution requires coherent "
+                        "dynamics"
                     )
+                self._solvers_used.add("mcsolve")
+                solver_state = _solve_one_qutip_trajectory(
+                    bound.hamiltonian,
+                    collapse_operators,
+                    solver_state,
+                    start_time=context.time,
+                    end_time=run.end_time,
+                    rng=context.rng,
+                    solver_options=_SOLVER_OVERRIDES,
+                )
+            else:
                 self._solvers_used.add("sesolve")
                 result = sesolve(
                     bound.hamiltonian,
@@ -247,7 +261,7 @@ class _Atom3LevelQutipAdapter:
                     [context.time, run.end_time],
                     options=_SOLVER_OVERRIDES,
                 )
-            solver_state = result.states[-1]
+                solver_state = result.states[-1]
         context.state = solver_state
         context.frame_angles.clear()
         context.frame_angles.update(bound.output_frames)
@@ -314,12 +328,16 @@ class _Atom3LevelQutipAdapter:
         final_state = None
         if self._retain_final_state:
             array = np.asarray(context.state.full(), dtype=complex)
-            if self._execution_mode == "statevector":
+            if self._execution_mode != "density_matrix":
                 array = array.reshape(-1)
             final_state = np.array(array, dtype=complex, copy=True)
         return _PulseShotOutcome(
             final_state=final_state,
-            final_state_kind=self._execution_mode,
+            final_state_kind=(
+                "density_matrix"
+                if self._execution_mode == "density_matrix"
+                else "statevector"
+            ),
             classical_digits=tuple(context.classical_memory),
         )
 

@@ -30,6 +30,7 @@ from ..noise import (
     ChannelImplementationMap,
     Depolarizing,
     PhaseDamping,
+    TransitionRelaxation,
     NoiseModel,
     Loss,
     ThermalRelaxation,
@@ -1256,8 +1257,9 @@ class Simulator:
         supported built-in descriptors. Custom descriptors need a matching
         channel rule. Background sources, built-in damping descriptors in rate
         form, and ``ThermalRelaxation`` are rejected. For a matrix simulator,
-        declare probability-form ``AmplitudeDamping`` and ``PhaseDamping``
-        channels instead. Only ``AtomArraySimulator`` accepts ``Loss``.
+        declare finite ``AmplitudeDamping`` or probability-form
+        ``TransitionRelaxation`` and ``PhaseDamping`` channels instead. Only
+        ``AtomArraySimulator`` accepts ``Loss``.
 
         This validates the model as a whole, not its selectors against a
         program, concrete target dimensions, or method-specific restrictions.
@@ -1285,14 +1287,15 @@ class Simulator:
         for channel, operation in noise_model._noise_sources():
             channel_type = type(channel)
             background = operation is None
-            built_in_damping = channel_type in (
+            built_in_dual_form = channel_type in (
                 AmplitudeDamping,
+                TransitionRelaxation,
                 PhaseDamping,
                 Depolarizing,
             )
-            rate_mode = built_in_damping and channel.rate is not None
+            rate_mode = built_in_dual_form and channel.rate is not None
             qualifiers: list[str] = []
-            if built_in_damping:
+            if built_in_dual_form:
                 qualifiers.append("rate" if rate_mode else "p")
             if background:
                 qualifiers.append("background")
@@ -1315,8 +1318,8 @@ class Simulator:
                     f"{label} is rejected by matrix-family policy because it "
                     "is a generator/time declaration; a registered channel "
                     "implementation does not override that policy. Declare "
-                    "probability-form AmplitudeDamping and PhaseDamping "
-                    "channels instead",
+                    "finite AmplitudeDamping or probability-form "
+                    "TransitionRelaxation and PhaseDamping channels instead",
                 )
             elif self._channel_map.get(channel_type) is None:
                 rejection_reasons.append(

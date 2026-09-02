@@ -125,31 +125,16 @@ def test_depolarizing_lindblad_rule_matches_dimension_generic_generator(dim):
 
 def test_amplitude_damping_qubit_decay():
     gamma = 0.4
-    kraus_ops = amplitude_damping_rule(AmplitudeDamping(p=(gamma,)), targets=_refs(2))
+    kraus_ops = amplitude_damping_rule(AmplitudeDamping(p=gamma), targets=_refs(2))
 
     _assert_cptp(kraus_ops, 2)
     excited = np.diag([0.0, 1.0]).astype(complex)
     assert np.allclose(_apply(kraus_ops, excited), np.diag([gamma, 1 - gamma]))
 
 
-def test_amplitude_damping_scalar_p_matches_one_element_tuple():
-    assert AmplitudeDamping(p=0.4) == AmplitudeDamping(p=(0.4,))
-    assert AmplitudeDamping(rate=0.1) == AmplitudeDamping(rate=(0.1,))
-
-
-def test_amplitude_damping_qutrit_ladder_decays_one_level():
-    kraus_ops = amplitude_damping_rule(AmplitudeDamping(p=(0.2, 0.5)), targets=_refs(3))
-
-    _assert_cptp(kraus_ops, 3)
-    # Level 2 population moves only to level 1 (ladder), never straight to 0.
-    top = np.diag([0.0, 0.0, 1.0]).astype(complex)
-    out = _apply(kraus_ops, top)
-    assert np.allclose(np.diag(out), [0.0, 0.5, 0.5])
-
-
-def test_amplitude_damping_value_count_must_match_dimension():
-    with pytest.raises(BackendValidationError, match="p value"):
-        amplitude_damping_rule(AmplitudeDamping(p=(0.1,)), targets=_refs(3))
+def test_amplitude_damping_rejects_non_qubit_target():
+    with pytest.raises(BackendValidationError, match="qubits only"):
+        amplitude_damping_rule(AmplitudeDamping(p=0.1), targets=_refs(3))
 
 
 def test_amplitude_damping_rejects_positional_construction():
@@ -162,11 +147,16 @@ def test_phase_damping_rejects_positional_construction():
         PhaseDamping(0.1)  # noqa: pyright-ignore - deliberately positional
 
 
-def test_amplitude_damping_requires_exactly_one_of_p_or_rate():
+def test_amplitude_damping_requires_exactly_one_scalar_mode():
     with pytest.raises(ValueError, match="exactly one"):
         AmplitudeDamping()
     with pytest.raises(ValueError, match="exactly one"):
         AmplitudeDamping(p=0.1, rate=0.1)
+
+
+def test_amplitude_damping_rule_rejects_rate_mode():
+    with pytest.raises(BackendValidationError, match="rate mode"):
+        amplitude_damping_rule(AmplitudeDamping(rate=0.1), targets=_refs(2))
 
 
 def test_phase_damping_requires_exactly_one_parameterization():
@@ -198,7 +188,9 @@ def test_phase_damping_t_phi_validation(bad_t_phi):
         PhaseDamping(t_phi=bad_t_phi)
 
 
-@pytest.mark.parametrize("bad_rate", [-0.1, True, "0.1", float("inf"), float("nan")])
+@pytest.mark.parametrize(
+    "bad_rate", [-0.1, True, "0.1", (0.1,), float("inf"), float("nan")]
+)
 def test_amplitude_damping_rate_validation(bad_rate):
     with pytest.raises(ValueError):
         AmplitudeDamping(rate=bad_rate)
@@ -213,10 +205,10 @@ def test_phase_damping_rate_validation(bad_rate):
 def test_amplitude_damping_as_probability_and_as_rate_round_trip():
     duration = 2.0
     rate = 0.05
-    channel = AmplitudeDamping(rate=(rate,))
-    (p,) = channel.as_probability(duration)
+    channel = AmplitudeDamping(rate=rate)
+    p = channel.as_probability(duration)
     assert p == pytest.approx(1 - np.exp(-rate * duration))
-    (back,) = AmplitudeDamping(p=(p,)).as_rate(duration)
+    back = AmplitudeDamping(p=p).as_rate(duration)
     assert back == pytest.approx(rate)
 
 
@@ -266,7 +258,7 @@ def test_phase_damping_preserves_populations_and_decays_coherence(dim):
 
 def test_amplitude_damping_rejects_multi_target_gates():
     with pytest.raises(BackendValidationError, match="single-subsystem"):
-        amplitude_damping_rule(AmplitudeDamping(p=(0.1,)), targets=_refs(2, 2))
+        amplitude_damping_rule(AmplitudeDamping(p=0.1), targets=_refs(2, 2))
 
 
 def test_phase_damping_rejects_multi_target_gates():
@@ -279,14 +271,9 @@ def test_descriptor_probability_validation(bad_p):
     with pytest.raises(ValueError):
         Depolarizing(p=bad_p)
     with pytest.raises(ValueError):
+        AmplitudeDamping(p=bad_p)
+    with pytest.raises(ValueError):
         PhaseDamping(p=bad_p)
-
-
-def test_amplitude_damping_descriptor_validation():
-    with pytest.raises(ValueError):
-        AmplitudeDamping(p=())
-    with pytest.raises(ValueError):
-        AmplitudeDamping(p=(0.2, 1.4))
 
 
 def test_descriptors_hold_parameters_not_arrays():

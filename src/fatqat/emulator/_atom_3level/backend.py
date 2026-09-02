@@ -8,8 +8,12 @@ from ..atom_arrangement import AtomArrangement
 from ...errors import BackendValidationError
 from ...noise import (
     NoiseModel,
+    TransitionRelaxation,
 )
-from ...noise.lindblad import LindbladImplementationMap
+from ...noise.lindblad import (
+    LindbladImplementationMap,
+    transition_relaxation_lindblad_rule,
+)
 from .._core.backend import _PulseBackend
 from .._core.config import _EmulatorConfig
 from .._core.lindblad import _lindblad_noise_rejection_reasons
@@ -20,6 +24,16 @@ from .calibration import default_atom_3level_calibration
 from .model import Atom3LevelModel
 from .realization import _default_atom_3level_gate_implementation_map
 from .target import _Atom3LevelTarget
+
+
+def _default_lindblad_map() -> LindbladImplementationMap:
+    """Return a fresh Atom3 continuous-noise catalog."""
+    implementations = LindbladImplementationMap()
+    implementations.add(
+        TransitionRelaxation,
+        transition_relaxation_lindblad_rule,
+    )
+    return implementations
 
 
 class Atom3LevelEmulator(_PulseBackend):
@@ -73,7 +87,7 @@ class Atom3LevelEmulator(_PulseBackend):
             method=method,
             noise=noise,
             gate_implementation_map=effective_gate_map,
-            lindblad_implementation_map=LindbladImplementationMap(),
+            lindblad_implementation_map=_default_lindblad_map(),
         )
         self.validate_noise_model(self._noise_model)
         self._set_target(_Atom3LevelTarget(model, arrangement))
@@ -105,10 +119,6 @@ class Atom3LevelEmulator(_PulseBackend):
         retain_final_state: bool,
     ) -> Any:
         del simulation
-        if execution_mode not in ("statevector", "density_matrix"):
-            raise BackendValidationError(
-                "Atom3LevelEmulator does not support continuous trajectories"
-            )
         from .qutip_adapter import _Atom3LevelQutipAdapter
 
         return _Atom3LevelQutipAdapter(

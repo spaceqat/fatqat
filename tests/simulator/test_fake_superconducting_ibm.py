@@ -261,7 +261,7 @@ def test_default_noise_model_is_supported_and_calibrated():
     }
     t1, t2, duration = 60e-6, 48e-6, 20e-9
     assert (
-        x_channels[AmplitudeDamping].p[0],
+        x_channels[AmplitudeDamping].p,
         x_channels[PhaseDamping].p,
     ) == pytest.approx(
         (

@@ -12,6 +12,7 @@ from ...noise import (
     NoiseModel,
     PhaseDamping,
     ThermalRelaxation,
+    TransitionRelaxation,
 )
 from ...noise.lindblad import (
     LindbladImplementationMap,
@@ -19,6 +20,7 @@ from ...noise.lindblad import (
     depolarizing_lindblad_rule,
     phase_damping_lindblad_rule,
     thermal_relaxation_lindblad_rule,
+    transition_relaxation_lindblad_rule,
 )
 from ...operations import Barrier, Measurement, PulseOperation, Reset
 from ...program import Program, _AppliedOperation
@@ -39,6 +41,10 @@ def _default_lindblad_map() -> LindbladImplementationMap:
     implementations.add(
         AmplitudeDamping,
         amplitude_damping_lindblad_rule,
+    )
+    implementations.add(
+        TransitionRelaxation,
+        transition_relaxation_lindblad_rule,
     )
     implementations.add(
         PhaseDamping,

@@ -17,7 +17,7 @@ from fatqat.emulator._core.lindblad import bind_lindblad_operators
 from fatqat.noise.lindblad import (
     LindbladImplementationMap,
     resolve_lindblad_operators,
-    thermal_relaxation_lindblad_rule,
+    transition_relaxation_lindblad_rule,
 )
 from fatqat.emulator.superconducting.qutip_adapter import _TransmonQutipAdapter
 from fatqat.emulator.superconducting.target import _TransmonTarget
@@ -31,7 +31,7 @@ from fatqat.emulator import SampledWaveform
 from fatqat.emulator.superconducting.realization import (
     default_transmon_gate_implementation_map,
 )
-from fatqat.noise import AmplitudeDamping, NoiseModel, ThermalRelaxation
+from fatqat.noise import NoiseModel, TransitionRelaxation
 
 
 @pytest.fixture(name="make_backend")
@@ -184,7 +184,13 @@ def test_seeded_dynamic_replay_is_reproducible(make_backend):
 def test_seeded_noisy_trajectory_continues_across_measurement_regions(model):
     noise = NoiseModel()
     for target in ("q0", "q1"):
-        noise.add(AmplitudeDamping(rate=(1e-5, 1e-5)), targets=target)
+        noise.add(
+            TransitionRelaxation(
+                rate=1e-5,
+                coefficients={(1, 0): 1, (2, 1): 1},
+            ),
+            targets=target,
+        )
     backend = TransmonEmulator(model, method="statevector", noise=noise)
     program = fq.Program(2, 1)
     program.add(ops.RX(pi), 0)
@@ -318,15 +324,21 @@ class _ExcitedAdapter(_TransmonQutipAdapter):
 
 
 def test_false_guard_reserves_noisy_idle_and_skips_controls_and_frames(model):
-    thermal = ThermalRelaxation(t1=5, t2=10)
+    relaxation = TransitionRelaxation(
+        rate=0.2,
+        coefficients={(1, 0): 1, (2, 1): np.sqrt(2)},
+    )
     lindblad_map = LindbladImplementationMap()
-    lindblad_map.add(ThermalRelaxation, thermal_relaxation_lindblad_rule)
+    lindblad_map.add(
+        TransitionRelaxation,
+        transition_relaxation_lindblad_rule,
+    )
     adapter = _adapter(
         model,
         kind=_ExcitedAdapter,
         background_noise=bind_lindblad_operators(
             resolve_lindblad_operators(
-                thermal,
+                relaxation,
                 implementation_map=lindblad_map,
                 physical_dimension=len(model.basis_order),
             ),

@@ -2,10 +2,56 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
-from qutip import Qobj, qeye, tensor
+from qutip import Qobj, mcsolve, qeye, tensor
+
+from ..errors import BackendValidationError
+
+
+def _solve_one_qutip_trajectory(
+    hamiltonian: Any,
+    collapse_operators: Sequence[Qobj],
+    state: Qobj,
+    *,
+    start_time: float,
+    end_time: float,
+    rng: np.random.Generator,
+    solver_options: Mapping[str, Any],
+) -> Qobj:
+    """Solve and validate one retained stochastic trajectory."""
+    seed = int(
+        rng.integers(
+            0,
+            np.iinfo(np.uint64).max,
+            dtype=np.uint64,
+        )
+    )
+    result = mcsolve(
+        hamiltonian,
+        state,
+        [start_time, end_time],
+        c_ops=collapse_operators,
+        ntraj=1,
+        seeds=[seed],
+        options={
+            **solver_options,
+            "store_final_state": True,
+            "keep_runs_results": True,
+            "progress_bar": False,
+        },
+    )
+    final_states = result.runs_final_states
+    if (
+        final_states is None
+        or len(final_states) != 1
+        or not isinstance(final_states[0], Qobj)
+        or not final_states[0].isket
+    ):
+        raise BackendValidationError("mcsolve did not retain one trajectory final ket")
+    return final_states[0].copy()
 
 
 def _expand_qutip_local(dims: Sequence[int], index: int, operator: Qobj) -> Qobj:

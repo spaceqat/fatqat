@@ -25,6 +25,7 @@ from fatqat.noise import (
     PhaseDamping,
     ReadoutConfusion,
     ThermalRelaxation,
+    TransitionRelaxation,
 )
 from fatqat.emulator import SampledWaveform
 
@@ -93,6 +94,7 @@ def _pulse_program(sites=1, *, measured=False, amplitude=0.0, duration=1.0):
     "channel",
     [
         AmplitudeDamping(rate=0.2),
+        TransitionRelaxation(rate=0.2, coefficients={(1, 0): 1}),
         PhaseDamping(rate=0.3),
         ThermalRelaxation(t1=10.0, t2=15.0),
         Depolarizing(rate=0.2),
@@ -110,11 +112,11 @@ def test_support_accepts_builtin_background_generators(model, channel):
         _noise(PhaseDamping(p=0.2)),
         _noise(Depolarizing(p=0.2), operation=ops.X),
         _noise(AmplitudeDamping(rate=0.2), operation=ops.X),
-        _noise(AmplitudeDamping(rate=(0.1, 0.2))),
+        _noise(TransitionRelaxation(rate=0.2, coefficients={(2, 0): 1})),
         _noise(Loss(p=0.2), operation=ops.X),
     ],
 )
-def test_support_rejects_probability_unsupported_scoped_and_wrong_arity_noise(
+def test_support_rejects_finite_unsupported_scoped_and_invalid_transition_noise(
     model, noise
 ):
     with pytest.raises(BackendValidationError, match="not supported"):

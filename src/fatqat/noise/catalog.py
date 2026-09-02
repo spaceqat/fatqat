@@ -58,25 +58,6 @@ def _require_duration(value: float, label: str = "duration") -> None:
         )
 
 
-def _normalize_damping_values(value: object, label: str) -> tuple[float, ...]:
-    """Normalize a scalar or iterable of numbers into a non-empty tuple.
-
-    A bare number becomes a one-element tuple (one transition). A string is
-    rejected even though it is iterable - it is never a legal element
-    sequence here.
-    """
-    if isinstance(value, (int, float)):
-        return (value,)
-    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-        raise ValueError(
-            f"{label} must be a number or an iterable of numbers, got {value!r}"
-        )
-    normalized = tuple(value)
-    if len(normalized) == 0:
-        raise ValueError(f"{label} requires at least one value")
-    return normalized
-
-
 def _p_to_rate(p: float, duration: float) -> float:
     """Convert one simulator-channel probability to a rate over ``duration``.
 
@@ -412,148 +393,89 @@ def pauli_channel_rule(
 
 @dataclass(frozen=True, kw_only=True)
 class AmplitudeDamping(Channel):
-    """Relaxation between adjacent energy levels toward the ground state.
+    """Conventional finite or continuous amplitude damping for one qubit.
 
-    Pass exactly one of p and rate, by keyword. Each may be one real number or
-    a nonempty iterable. For a d-level target, pass ``d - 1`` values ordered as
-    1 -> 0, 2 -> 1, and so on. A scalar therefore works only for a two-level
-    target. FATQAT stores the values as a tuple and checks the length when it
-    knows the target dimension.
-
-    A simulator uses p for one channel application; each value must be an
-    ``int`` or ``float`` other than ``bool`` in ``[0, 1]``. An emulator uses
-    rate in a local ladder-transition Lindblad operator; each value must have
-    the same numeric type, be finite and nonnegative, and use the inverse of
-    the backend's time unit. Backends do not convert between forms. The noise
-    acts on one subsystem.
-
-    The conversion methods convert each transition independently. For more
-    than two levels, that elementwise conversion is not the exact result of
-    multilevel Lindblad-operator evolution, which can undergo more than one
-    adjacent decay during an interval.
+    Supply exactly one scalar ``p`` or ``rate``, by keyword. In probability
+    mode a simulator applies the conventional qubit Kraus channel. In rate
+    mode a compatible pulse emulator uses the collapse operator
+    ``sqrt(rate) |0><1|``. Backends do not convert between the two forms.
 
     Args:
-        p: One simulator decay probability or an iterable of probabilities.
-        rate: One emulator Lindblad-operator rate or an iterable of rates.
+        p: Simulator probability of decay from ``|1>`` to ``|0>`` in one
+            channel application. Must be a finite real scalar in ``[0, 1]``.
+        rate: Pulse-emulator Lindblad decay rate in the inverse of the
+            backend's time unit. Must be a finite nonnegative real scalar.
 
     Raises:
-        ValueError: If both arguments or neither argument is supplied, an
-            iterable is empty, or a value is not in its accepted range.
+        ValueError: If exactly one of p and rate is not supplied, or its value
+            is outside the accepted finite scalar range.
 
     Attributes:
-        p: Normalized probability tuple, or ``None`` in rate mode.
-        rate: Normalized rate tuple, or ``None`` in probability mode.
+        p: The finite-channel probability, or ``None`` in rate mode.
+        rate: The Lindblad decay rate, or ``None`` in probability mode.
 
     Examples:
         >>> import fatqat as fq
         >>> fq.noise.AmplitudeDamping(p=0.01).p
-        (0.01,)
-        >>> fq.noise.AmplitudeDamping(rate=(0.001, 0.002)).rate
-        (0.001, 0.002)
+        0.01
+        >>> fq.noise.AmplitudeDamping(rate=0.02).rate
+        0.02
     """
 
     num_subsystems: ClassVar[int | None] = 1
-    p: float | Iterable[float] | None = None
-    rate: float | Iterable[float] | None = None
+    p: float | None = None
+    rate: float | None = None
 
     def __post_init__(self) -> None:
         if (self.p is None) == (self.rate is None):
             raise ValueError("AmplitudeDamping requires exactly one of p or rate")
         if self.p is not None:
-            values = _normalize_damping_values(self.p, "AmplitudeDamping.p")
-            for k, value in enumerate(values):
-                _require_probability(value, f"AmplitudeDamping.p[{k}]")
-            object.__setattr__(self, "p", values)
+            _require_probability(self.p, "AmplitudeDamping.p")
         else:
-            values = _normalize_damping_values(self.rate, "AmplitudeDamping.rate")
-            for k, value in enumerate(values):
-                _require_rate(value, f"AmplitudeDamping.rate[{k}]")
-            object.__setattr__(self, "rate", values)
+            _require_rate(self.rate, "AmplitudeDamping.rate")
 
-    def as_probability(self, duration: float) -> tuple[float, ...]:
-        """Return per-transition probabilities for an explicit duration.
+    def as_probability(self, duration: float) -> float:
+        """Return the equivalent qubit decay probability for a duration.
 
-        Probability mode returns the normalized p tuple unchanged after
-        validating duration. Rate mode converts each entry with
-        ``1 - exp(-rate * duration)``. The conversion is exact for a two-level
-        channel; for a multilevel channel it is an elementwise utility, not the
-        exact result of evolution under the full ladder-transition Lindblad
-        operator.
-
-        Args:
-            duration: Finite nonnegative ``int`` or ``float`` other than
-                ``bool``, in the same time unit whose inverse is used by rate.
-
-        Returns:
-            One probability per adjacent-level transition.
-
-        Raises:
-            ValueError: If duration is not a finite nonnegative real number.
+        This explicit conversion uses ``1 - exp(-rate * duration)`` and is
+        exact for isolated qubit amplitude damping. No backend calls it
+        implicitly.
         """
         if self.p is not None:
             _require_duration(duration)
-            return cast(tuple[float, ...], self.p)
-        rates = cast(tuple[float, ...], self.rate)
-        return tuple(_rate_to_p(rate, duration) for rate in rates)
+            return self.p
+        return _rate_to_p(self.rate, duration)
 
-    def as_rate(self, duration: float) -> tuple[float, ...]:
-        """Return per-transition rates for an explicit duration.
+    def as_rate(self, duration: float) -> float:
+        """Return the equivalent qubit Lindblad rate for a duration.
 
-        Rate mode returns the normalized rate tuple unchanged after validating
-        duration. Probability mode converts each entry with
-        ``-log(1 - p) / duration``. The conversion is exact for a two-level
-        channel; for a multilevel channel it is an elementwise utility.
-
-        Args:
-            duration: Finite nonnegative ``int`` or ``float`` other than
-                ``bool``, in the time unit for the returned rates.
-
-        Returns:
-            One emulator rate per adjacent-level transition.
-
-        Raises:
-            ValueError: If duration is invalid, any p is 1, or a nonzero p is
-                converted at zero duration.
+        This explicit conversion uses ``-log(1 - p) / duration``. No backend
+        calls it implicitly.
         """
         if self.rate is not None:
             _require_duration(duration)
-            return cast(tuple[float, ...], self.rate)
-        probabilities = cast(tuple[float, ...], self.p)
-        return tuple(_p_to_rate(p, duration) for p in probabilities)
+            return self.rate
+        return _p_to_rate(self.p, duration)
 
 
 def amplitude_damping_rule(
     channel: AmplitudeDamping, *, targets: tuple[RegisterRef, ...]
 ) -> tuple[np.ndarray, ...]:
-    """Resolve `AmplitudeDamping` into its two ladder-decay Kraus operators.
-
-    ``K0`` scales each level's survival amplitude; ``K1`` moves each level one
-    step down. Completeness holds for any probabilities in ``[0, 1]``:
-    ``K0^H K0 + K1^H K1 = I``.
-
-    Raises:
-        BackendValidationError: If the channel is in rate mode (no matrix
-            Kraus implementation exists for a rate without a duration), is
-            applied to more than one subsystem, or its value count does not
-            match the target dimension.
-    """
+    """Resolve `AmplitudeDamping` into its two qubit Kraus operators."""
     _require_channel_arity(channel, targets, "AmplitudeDamping")
+    if targets[0].register.dim != 2:
+        raise BackendValidationError(
+            "AmplitudeDamping is defined on qubits only; use "
+            "TransitionRelaxation for a general finite-dimensional transition"
+        )
     if channel.p is None:
         raise BackendValidationError(
             "AmplitudeDamping in rate mode has no matrix-backend Kraus "
-            "implementation; use probability mode or a duration-aware backend"
+            "implementation; use p mode or a pulse backend"
         )
-    dim = targets[0].register.dim
-    ps = cast(tuple[float, ...], channel.p)
-    if len(ps) != dim - 1:
-        raise BackendValidationError(
-            f"AmplitudeDamping needs {dim - 1} p value(s) for dimension "
-            f"{dim}, got {len(ps)}"
-        )
-    k0 = np.diag([1.0] + [np.sqrt(1 - p) for p in ps]).astype(complex)
-    k1 = np.zeros((dim, dim), dtype=complex)
-    for k in range(1, dim):
-        k1[k - 1, k] = np.sqrt(ps[k - 1])
+    k0 = np.diag([1.0, np.sqrt(1 - channel.p)]).astype(complex)
+    k1 = np.zeros((2, 2), dtype=complex)
+    k1[0, 1] = np.sqrt(channel.p)
     return (k0, k1)
 
 

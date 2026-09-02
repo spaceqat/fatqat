@@ -18,7 +18,7 @@ from fatqat.emulator.superconducting.realization import (
     default_transmon_gate_implementation_map,
 )
 from fatqat.errors import BackendExecutionError, BackendValidationError
-from fatqat.noise import NoiseModel, PhaseDamping, ThermalRelaxation
+from fatqat.noise import NoiseModel, PhaseDamping, TransitionRelaxation
 from fatqat.registers import QuantumRegister
 from fatqat.resource_layout import ResourceLayout
 
@@ -283,8 +283,12 @@ def test_layout_binds_model_ids_while_engine_indices_stay_private(backend):
 def test_common_preparation_owns_target_and_lindblad_binding_once(model, monkeypatch):
     noise = NoiseModel()
     noise.add(PhaseDamping(rate=0.02), operation=ops.RX)
-    noise.add(ThermalRelaxation(t1=100.0, t2=150.0), targets="q0")
-    noise.add(ThermalRelaxation(t1=100.0, t2=150.0), targets="q1")
+    relaxation = TransitionRelaxation(
+        rate=0.01,
+        coefficients={(1, 0): 1, (2, 1): np.sqrt(2)},
+    )
+    noise.add(relaxation, targets="q0")
+    noise.add(relaxation, targets="q1")
     backend = TransmonEmulator(model, method="density_matrix", noise=noise)
     program = fq.Program(1)
     program.add(ops.RX(0.3), 0)

@@ -96,6 +96,7 @@ def test_default_map_covers_catalog():
     assert names == {
         "Depolarizing",
         "AmplitudeDamping",
+        "TransitionRelaxation",
         "PhaseDamping",
         "PauliChannel",
     }

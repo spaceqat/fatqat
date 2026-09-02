@@ -81,9 +81,15 @@ calibration = fq.emulator.TransmonCalibration(calibration_document)
 noise = fq.NoiseModel()
 for subsystem in model.subsystem_ids:
     noise.add(
-        fq.noise.ThermalRelaxation(
-            t1=T1_NANOSECONDS,
-            t2=T2_NANOSECONDS,
+        fq.noise.TransitionRelaxation(
+            rate=1 / T1_NANOSECONDS,
+            coefficients={(1, 0): 1.0, (2, 1): np.sqrt(2.0)},
+        ),
+        targets=subsystem,
+    )
+    noise.add(
+        fq.noise.PhaseDamping(
+            rate=1 / T2_NANOSECONDS - 1 / (2 * T1_NANOSECONDS)
         ),
         targets=subsystem,
     )

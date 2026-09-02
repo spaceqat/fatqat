@@ -189,6 +189,7 @@ nav:
               - Depolarizing: api/noise/depolarizing.md
               - Pauli channel: api/noise/pauli-channel.md
               - Amplitude damping: api/noise/amplitude-damping.md
+              - Transition relaxation: api/noise/transition-relaxation.md
               - Phase damping: api/noise/phase-damping.md
               - Thermal relaxation: api/noise/thermal-relaxation.md
               - Loss: api/noise/loss.md

@@ -22,6 +22,7 @@ from .catalog import (
     PhaseDamping,
 )
 from .relaxation import ThermalRelaxation
+from .transition_relaxation import TransitionRelaxation
 from .model import NoiseModel
 from .registry import default_channel_implementation_map
 from .loss import Loss
@@ -34,6 +35,7 @@ __all__ = [
     "ThermalRelaxation",
     "Depolarizing",
     "AmplitudeDamping",
+    "TransitionRelaxation",
     "PhaseDamping",
     "PauliChannel",
     "NoiseModel",

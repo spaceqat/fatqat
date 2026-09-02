@@ -167,7 +167,13 @@ intuition. Exact state-axis metadata is specified in [Result](result.md).
 
 Matrix simulation has no physical timeline. Built-in damping and depolarizing
 descriptors therefore use their probability form and apply at operation
-boundaries. Rate forms, background sources, and
+boundaries. [`AmplitudeDamping(p=...)`][fatqat.noise.AmplitudeDamping] is the
+conventional finite qubit channel. Use
+[`TransitionRelaxation(p=..., coefficients=...)`](noise/transition-relaxation.md)
+for one explicit finite-dimensional jump. Matching transition descriptors are
+applied sequentially in registration order.
+
+Rate forms, background sources, and
 [`ThermalRelaxation`][fatqat.noise.ThermalRelaxation] are rejected. For a known qubit
 operation duration, add probability-form
 [`AmplitudeDamping`][fatqat.noise.AmplitudeDamping] and

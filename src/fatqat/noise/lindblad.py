@@ -11,6 +11,7 @@ from ..implementation.matrices import clock_matrix, shift_matrix
 from .base import Channel, _ChannelImplementationRegistry
 from .catalog import AmplitudeDamping, Depolarizing, PhaseDamping
 from .relaxation import ThermalRelaxation
+from .transition_relaxation import TransitionRelaxation, transition_operator
 
 
 class LindbladImplementationMap(_ChannelImplementationRegistry):
@@ -30,30 +31,50 @@ class LindbladImplementationMap(_ChannelImplementationRegistry):
     """
 
 
-def _amplitude_lindblad_operator(
-    rates: tuple[float, ...], physical_dimension: int
+def _qubit_amplitude_operator(
+    rate: float,
+    *,
+    physical_dimension: int,
+    label: str,
 ) -> np.ndarray:
-    if len(rates) != physical_dimension - 1:
+    """Build the conventional qubit lowering collapse operator."""
+    if physical_dimension != 2:
         raise BackendValidationError(
-            f"AmplitudeDamping needs {physical_dimension - 1} rate value(s) for "
-            f"dimension {physical_dimension}, got {len(rates)}"
+            f"{label} requires physical dimension 2, got {physical_dimension}"
         )
-    operator = np.zeros((physical_dimension, physical_dimension), dtype=complex)
-    for level, rate in enumerate(rates, start=1):
-        operator[level - 1, level] = sqrt(rate)
+    operator = np.zeros((2, 2), dtype=complex)
+    operator[0, 1] = sqrt(rate)
     return operator
 
 
 def amplitude_damping_lindblad_rule(
     channel: Channel, *, physical_dimension: int
 ) -> tuple[np.ndarray, ...]:
-    """Resolve amplitude damping to its local ladder-jump operator."""
+    """Resolve rate-form qubit amplitude damping to one collapse operator."""
     assert isinstance(channel, AmplitudeDamping)
     if channel.rate is None:
         raise BackendValidationError(
             "AmplitudeDamping requires authored rate mode on a pulse backend"
         )
-    return (_amplitude_lindblad_operator(channel.rate, physical_dimension),)
+    return (
+        _qubit_amplitude_operator(
+            channel.rate,
+            physical_dimension=physical_dimension,
+            label="AmplitudeDamping",
+        ),
+    )
+
+
+def transition_relaxation_lindblad_rule(
+    channel: Channel, *, physical_dimension: int
+) -> tuple[np.ndarray, ...]:
+    """Resolve one authored transition jump to one collapse operator."""
+    assert isinstance(channel, TransitionRelaxation)
+    if channel.rate is None:
+        raise BackendValidationError(
+            "TransitionRelaxation requires authored rate mode on a pulse backend"
+        )
+    return (sqrt(channel.rate) * transition_operator(channel, physical_dimension),)
 
 
 def phase_damping_lindblad_rule(
@@ -109,15 +130,16 @@ def depolarizing_lindblad_rule(
 def thermal_relaxation_lindblad_rule(
     channel: Channel, *, physical_dimension: int
 ) -> tuple[np.ndarray, ...]:
-    """Resolve T1/T2 relaxation into amplitude and residual-dephasing operators."""
+    """Resolve qubit T1/T2 relaxation into its two physical contributions."""
     assert isinstance(channel, ThermalRelaxation)
-    amplitude = _amplitude_lindblad_operator(
-        tuple(level * channel.amplitude_rate for level in range(1, physical_dimension)),
-        physical_dimension,
+    amplitude = _qubit_amplitude_operator(
+        channel.amplitude_rate,
+        physical_dimension=physical_dimension,
+        label="ThermalRelaxation",
     )
     if channel.pure_dephasing_rate == 0.0:
         return (amplitude,)
-    number = np.diag(np.arange(physical_dimension, dtype=float)).astype(complex)
+    number = np.diag(np.arange(2, dtype=float)).astype(complex)
     return amplitude, sqrt(2 * channel.pure_dephasing_rate) * number
 
 

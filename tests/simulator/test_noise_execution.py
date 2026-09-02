@@ -15,6 +15,7 @@ from fatqat.noise import (
     NoiseModel,
     PhaseDamping,
     ThermalRelaxation,
+    TransitionRelaxation,
     default_channel_implementation_map,
 )
 from fatqat.simulator._engine.np import NumpySVEngine
@@ -193,6 +194,45 @@ def test_density_matrix_channel_is_exact():
 
     expected = (1 - p) * np.diag([0.0, 1.0]) + p * np.eye(2) / 2
     assert np.allclose(result.get_density_matrix(), expected)
+
+
+def test_transition_relaxation_distinguishes_sequential_and_shared_jumps():
+    qreg = fq.QuantumRegister(1, dim=3)
+    program = fq.Program([qreg])
+    program.add(ops.Shift(2), qreg[0])
+
+    separate = NoiseModel()
+    separate.add(
+        TransitionRelaxation(p=0.2, coefficients={(2, 0): 1}),
+        operation=ops.Shift,
+    )
+    separate.add(
+        TransitionRelaxation(p=0.3, coefficients={(2, 1): 1}),
+        operation=ops.Shift,
+    )
+    separate_state = (
+        Simulator(method="DM", runtime="numpy", noise=separate)
+        .run(program, result_config={"counts": False, "final_state": True})
+        .result()
+        .get_density_matrix()
+    )
+    # The second channel acts on the 0.8 population left by the first.
+    assert np.allclose(np.diag(separate_state), [0.2, 0.24, 0.56])
+    assert separate_state[0, 1] == pytest.approx(0.0)
+
+    shared = NoiseModel()
+    shared.add(
+        TransitionRelaxation(p=0.2, coefficients={(2, 0): 1, (2, 1): 1j}),
+        operation=ops.Shift,
+    )
+    shared_state = (
+        Simulator(method="DM", runtime="numpy", noise=shared)
+        .run(program, result_config={"counts": False, "final_state": True})
+        .result()
+        .get_density_matrix()
+    )
+    assert np.allclose(np.diag(shared_state), [0.2, 0.2, 0.6])
+    assert shared_state[0, 1] == pytest.approx(-0.2j)
 
 
 def test_statevector_trajectories_match_density_matrix_statistics():
@@ -435,13 +475,16 @@ def test_validate_noise_model_distinguishes_probability_and_rate_modes():
     noise = NoiseModel()
     noise.add(AmplitudeDamping(p=0.1), operation=ops.X)
     noise.add(Depolarizing(p=0.1), operation=ops.Y)
-    noise.add(AmplitudeDamping(rate=0.01), operation=ops.H)
+    noise.add(
+        TransitionRelaxation(rate=0.01, coefficients={(1, 0): 1}),
+        operation=ops.H,
+    )
     noise.add(Depolarizing(rate=0.01), operation=ops.Z)
     with pytest.raises(BackendValidationError) as caught:
         Simulator().validate_noise_model(noise)
 
     message = str(caught.value)
-    assert "AmplitudeDamping(rate)" in message
+    assert "TransitionRelaxation(rate)" in message
     assert "Depolarizing(rate)" in message
 
 
@@ -560,7 +603,10 @@ def test_numba_compiled_multi_shot_matches_numpy_on_a_qudit_dynamic_plan():
 
     def counts_for(runtime):
         noise = NoiseModel()
-        noise.add(AmplitudeDamping(p=(0.2, 0.3)), operation=ops.Shift)
+        noise.add(
+            TransitionRelaxation(p=0.2, coefficients={(1, 0): 1, (2, 1): 1}),
+            operation=ops.Shift,
+        )
         noise.add(PhaseDamping(p=0.15), operation=ops.Shift)
         qreg = fq.QuantumRegister(2, dim=3)
         creg = fq.ClassicalRegister(2, dim=3)
@@ -612,7 +658,10 @@ def test_numba_dm_channel_matches_numpy_on_a_qudit_channel_plan():
     pytest.importorskip("numba")
 
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(p=(0.2, 0.3)), operation=ops.Shift)
+    noise.add(
+        TransitionRelaxation(p=0.2, coefficients={(1, 0): 1, (2, 1): 1}),
+        operation=ops.Shift,
+    )
     noise.add(PhaseDamping(p=0.4), operation=ops.Shift)
     qreg = fq.QuantumRegister(1, dim=3)
 
@@ -638,7 +687,7 @@ def test_scoped_damping_decays_only_the_selected_cz_slot():
         program.add(ops.CZ, (0, 1))
         noise = NoiseModel()
         noise.add(
-            AmplitudeDamping(p=(0.5,)),
+            AmplitudeDamping(p=0.5),
             operation=ops.CZ,
             target_positions=(slot,),
         )

@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from qutip import basis, ket2dm, mesolve, tensor
 
+from fatqat import Program
 from fatqat.emulator import AtomArrangement
 from fatqat._backends.steps import MeasurementStep, ResetStep
 from fatqat._index_allocation import _EngineAllocation
@@ -16,11 +17,12 @@ from fatqat.emulator._core.outcome import _PulseShotOutcome
 from fatqat.emulator._core.pulse import PhaseShift, PulseBlock
 from fatqat.emulator._core.target import _PreparedControlBinding
 from fatqat.emulator._core.scheduling import _ScheduledPulseRun
-from fatqat.emulator._atom_3level import Atom3LevelModel
+from fatqat.emulator._atom_3level import Atom3LevelEmulator, Atom3LevelModel
 from fatqat.emulator._atom_3level.qutip_adapter import _Atom3LevelQutipAdapter
 from fatqat.emulator._atom_3level.target import _Atom3LevelTarget
 from fatqat.errors import BackendValidationError
 from fatqat.emulator import SampledWaveform
+from fatqat.noise import NoiseModel, TransitionRelaxation
 
 
 def _target(model, coordinates):
@@ -250,13 +252,94 @@ def test_engine_allocation_must_match_the_complete_target(atom_3level_model):
         )
 
 
-def test_atom3_adapter_has_no_continuous_trajectory_mode(atom_3level_model):
-    with pytest.raises(BackendValidationError, match="execution mode"):
-        _adapter(
+def test_authored_rydberg_relaxation_preserves_independent_and_shared_jump_physics(
+    atom_3level_model,
+):
+    gamma_0 = 0.3
+    gamma_1 = 0.5
+    duration = 0.7
+
+    def relaxation_runner(*channels):
+        noise = NoiseModel()
+        for channel in channels:
+            noise.add(channel, targets=0)
+        backend = Atom3LevelEmulator(
+            atom_3level_model,
+            arrangement=AtomArrangement.rectangular(1, 1, 1.0),
+            method="density_matrix",
+            noise=noise,
+        )
+        adapter = _adapter(
             atom_3level_model,
             ((0.0, 0.0, 0.0),),
-            execution_mode="trajectory",
+            background_noise=backend._prepare_program(Program(1)).background_noise,
+            execution_mode="density_matrix",
         )
+        idle = _constant(
+            adapter._target.model.control.raman(0),
+            0.0,
+            duration,
+        )
+        return adapter, _run(adapter, (idle,), duration)
+
+    separate_channels = (
+        TransitionRelaxation(rate=gamma_0, coefficients={(2, 0): 1.0}),
+        TransitionRelaxation(rate=gamma_1, coefficients={(2, 1): 1.0}),
+    )
+    separate_adapter, separate_run = relaxation_runner(*separate_channels)
+    separate_context = _ShotContext(
+        ket2dm(basis(3, 2)),
+        [],
+        np.random.default_rng(7),
+    )
+    separate_adapter.evolve(
+        separate_run,
+        separate_context,
+        (True,),
+    )
+
+    total_rate = gamma_0 + gamma_1
+    survival = np.exp(-total_rate * duration)
+    expected_populations = np.array(
+        [
+            gamma_0 / total_rate * (1.0 - survival),
+            gamma_1 / total_rate * (1.0 - survival),
+            survival,
+        ]
+    )
+    assert separate_context.state.diag().real == pytest.approx(
+        expected_populations, abs=2e-7
+    )
+    assert separate_context.state.full()[0, 1] == pytest.approx(0.0, abs=2e-7)
+
+    coefficient_0 = 1.0
+    coefficient_1 = 0.5j
+    shared_rate = 0.4
+    shared_adapter, shared_run = relaxation_runner(
+        TransitionRelaxation(
+            rate=shared_rate,
+            coefficients={(2, 0): coefficient_0, (2, 1): coefficient_1},
+        ),
+    )
+    shared_context = _ShotContext(
+        ket2dm(basis(3, 2)),
+        [],
+        np.random.default_rng(11),
+    )
+    shared_adapter.evolve(
+        shared_run,
+        shared_context,
+        (True,),
+    )
+
+    coefficient_norm = abs(coefficient_0) ** 2 + abs(coefficient_1) ** 2
+    shared_decay = 1.0 - np.exp(-shared_rate * coefficient_norm * duration)
+    expected_coherence = (
+        coefficient_0 * np.conj(coefficient_1) / coefficient_norm * shared_decay
+    )
+    assert shared_context.state.full()[0, 1] == pytest.approx(
+        expected_coherence, abs=2e-7
+    )
 
 
 def test_frame_only_run_preserves_virtual_frame_semantics(atom_3level_model):

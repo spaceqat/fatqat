@@ -15,6 +15,7 @@ from .base import Channel
 from .catalog import Depolarizing
 from .loss import Loss
 from .readout import ReadoutConfusion
+from .transition_relaxation import TransitionRelaxation
 
 _Selector = tuple[RegisterRef, ...] | tuple[DeviceOperand, ...] | None
 _TargetsArg = _Selector | RegisterRef | DeviceOperand
@@ -53,7 +54,9 @@ class NoiseModel:
     a supported single-subsystem ``Channel`` as background noise, and alter
     reported measurements with ``ReadoutConfusion``. Calls to ``add()``
     accumulate. Different noise types combine, while overlapping rules of the
-    same concrete type are rejected.
+    same concrete type are rejected. `TransitionRelaxation` is the one
+    exception because separate declarations represent separate finite channel
+    applications or Lindblad jump operators.
 
     Operation matching uses the exact concrete class. Parameters on an
     operation instance do not narrow the match, and a base class does not
@@ -572,6 +575,8 @@ def _registrations_conflict(
     actual_match: bool = False,
 ) -> bool:
     if type(left.declaration) is not type(right.declaration):
+        return False
+    if type(left.declaration) is TransitionRelaxation:
         return False
     if left.operation is not right.operation:
         return False

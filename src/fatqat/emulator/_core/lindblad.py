@@ -14,8 +14,10 @@ from ...noise import (
     NoiseModel,
     PauliChannel,
     PhaseDamping,
+    TransitionRelaxation,
 )
 from ...noise.lindblad import LindbladImplementationMap
+from ...noise.transition_relaxation import transition_operator
 
 
 @dataclass(frozen=True)
@@ -85,17 +87,19 @@ def _lindblad_noise_rejection_reasons(
             AmplitudeDamping,
             PhaseDamping,
             Depolarizing,
+            TransitionRelaxation,
         )
         finite_mode = built_in_damping and channel.p is not None
         mode = None
         if built_in_damping:
             mode = "p" if finite_mode else "rate"
 
-        invalid_amplitude_arity = channel_type is AmplitudeDamping and (
-            channel.rate is not None and len(channel.rate) != local_dimension - 1
-        )
-        if invalid_amplitude_arity:
-            mode += f"-arity-{len(channel.rate)}"
+        invalid_transition = None
+        if channel_type is TransitionRelaxation:
+            try:
+                transition_operator(channel, local_dimension)
+            except BackendValidationError as exc:
+                invalid_transition = str(exc)
 
         qualifiers: list[str] = []
         if mode is not None:
@@ -112,11 +116,8 @@ def _lindblad_noise_rejection_reasons(
             reason = "carrier occupancy loss is not a Lindblad generator"
         elif authored_arity is not None and authored_arity != 1:
             reason = "pulse Lindblad declarations must be single-subsystem"
-        elif invalid_amplitude_arity:
-            reason = (
-                f"local dimension {local_dimension} requires "
-                f"{local_dimension - 1} damping values"
-            )
+        elif invalid_transition is not None:
+            reason = invalid_transition
         elif finite_mode:
             reason = "finite probability mode is not a pulse generator"
         elif channel_type is PauliChannel:

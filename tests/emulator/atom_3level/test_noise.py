@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import fatqat as fq
+import fatqat.operations as ops
 from fatqat.emulator._atom_3level import Atom3LevelEmulator
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
@@ -13,6 +14,7 @@ from fatqat.noise import (
     PhaseDamping,
     ReadoutConfusion,
     ThermalRelaxation,
+    TransitionRelaxation,
 )
 
 
@@ -33,13 +35,14 @@ def _backend(model, *, noise=None):
 @pytest.mark.parametrize(
     "channel",
     [
-        AmplitudeDamping(rate=(0.1, 0.2)),
+        AmplitudeDamping(rate=0.1),
+        TransitionRelaxation(p=0.1, coefficients={(2, 0): 1.0}),
         PhaseDamping(rate=0.2),
         ThermalRelaxation(t1=10.0, t2=15.0),
         Depolarizing(rate=0.2),
     ],
 )
-def test_atom_3level_rejects_all_continuous_noise_declarations(
+def test_atom_3level_rejects_finite_and_unsupported_noise_declarations(
     atom_3level_model, channel
 ):
     noise = _noise(channel)
@@ -49,6 +52,37 @@ def test_atom_3level_rejects_all_continuous_noise_declarations(
         backend.validate_noise_model(noise)
     with pytest.raises(BackendValidationError, match=type(channel).__name__):
         _backend(atom_3level_model, noise=noise)
+
+
+def test_atom_3level_rejects_transition_levels_outside_the_physical_space(
+    atom_3level_model,
+):
+    noise = _noise(TransitionRelaxation(rate=0.2, coefficients={(3, 0): 1.0}))
+
+    with pytest.raises(BackendValidationError, match="outside physical dimension 3"):
+        _backend(atom_3level_model, noise=noise)
+
+
+def test_atom_3level_default_noisy_statevector_is_a_seeded_trajectory(
+    atom_3level_model,
+):
+    noise = _noise(TransitionRelaxation(rate=0.3, coefficients={(1, 0): 1.0}))
+    backend = _backend(atom_3level_model, noise=noise)
+    program = fq.Program(1)
+    program.add(ops.RX(np.pi), 0)
+    kwargs = {
+        "shots": 1,
+        "simulation_config": {"seed": 29},
+        "result_config": {"counts": False, "final_state": True},
+    }
+
+    first = backend.run(program, **kwargs).result()
+    second = backend.run(program, **kwargs).result()
+
+    assert first.metadata["runtime_details"]["solver"] == "mcsolve"
+    assert first.get_statevector() == pytest.approx(second.get_statevector())
+    assert first.get_statevector().shape == (3,)
+    assert np.linalg.norm(first.get_statevector()) == pytest.approx(1.0)
 
 
 def test_invalid_attached_noise_is_rejected_before_target_construction(

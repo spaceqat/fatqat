@@ -10,7 +10,7 @@ from .base import Channel
 
 @dataclass(frozen=True, kw_only=True)
 class ThermalRelaxation(Channel):
-    """Zero-temperature relaxation specified by T1 and T2.
+    """Zero-temperature qubit relaxation specified by T1 and T2.
 
     T1 is the population-relaxation time and T2 is the total
     transverse-coherence time. They have no intrinsic unit, but both must use
@@ -21,8 +21,9 @@ class ThermalRelaxation(Channel):
 
     The derived amplitude rate is ``1 / t1``. The residual pure-dephasing rate
     is ``1 / t2 - 1 / (2 * t1)``, which avoids counting the coherence loss from
-    population relaxation twice. A time-aware emulator may resolve those rates
-    to local Lindblad operators.
+    population relaxation twice. The built-in realization is qubit-only; use
+    :class:`~fatqat.noise.TransitionRelaxation` to author explicit
+    multilevel jumps.
 
     This is a continuous-time descriptor for emulators. Matrix simulators use
     finite probability-form

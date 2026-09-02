@@ -346,15 +346,15 @@ See [PulseOperation](pulse-control/pulse-operation.md),
 Pass supported declarations through `noise=`. The transmon emulator provides
 the collapse-operator realizations documented in
 [Pulse emulators](noise/backend-support.md#noise-emulator-support), including
-[`AmplitudeDamping`][fatqat.noise.AmplitudeDamping],
-[`PhaseDamping`][fatqat.noise.PhaseDamping], and
-[`ThermalRelaxation`][fatqat.noise.ThermalRelaxation], plus rate-form
-[`Depolarizing`][fatqat.noise.Depolarizing]. Qutrit amplitude damping requires two
-adjacent-level rates. Depolarization acts on the full three-level space and can
-populate `|2>`. Rates use inverse nanoseconds, while `t1`, `t2`, and
-`t_phi` use nanoseconds. The emulator accepts both background declarations and
-declarations scoped to ordinary operations. Finite probability forms, `Loss`,
-and nonlocal declarations are rejected.
+[`TransitionRelaxation`][fatqat.noise.TransitionRelaxation],
+[`PhaseDamping`][fatqat.noise.PhaseDamping], and rate-form
+[`Depolarizing`][fatqat.noise.Depolarizing]. Transition relaxation takes
+explicit level-pair coefficients; FATQAT does not insert a harmonic
+`sqrt(n)` ladder. Depolarization acts on the full three-level space and can
+populate `|2>`. Rates use inverse nanoseconds and `t_phi` uses nanoseconds.
+The emulator accepts both background declarations and declarations scoped to
+ordinary operations. Finite probability forms, `AmplitudeDamping`, `Loss`,
+qubit-only `ThermalRelaxation`, and nonlocal declarations are rejected.
 
 Probability-form channels are not converted to rates. In particular,
 [`PauliChannel`][fatqat.noise.PauliChannel] remains Simulator-only. See

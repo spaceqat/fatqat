@@ -10,7 +10,6 @@ from qutip import (
     basis,
     destroy,
     ket2dm,
-    mcsolve,
     mesolve,
     num,
     propagator as qutip_propagator,
@@ -41,6 +40,7 @@ from .._qutip_boundaries import (
     _apply_qutip_reset,
     _expand_qutip_local,
     _sample_projective_qutip_state,
+    _solve_one_qutip_trajectory,
 )
 from .._qutip_runtime import _qutip_runtime_details
 from .model import angular_rate_from_ghz
@@ -203,12 +203,15 @@ class _TransmonQutipAdapter:
                     raise BackendValidationError(
                         "transmon statevector execution requires coherent dynamics"
                     )
-                state = self._solve_trajectory(
-                    bound,
+                self._solvers_used.add("mcsolve")
+                state = _solve_one_qutip_trajectory(
+                    bound.hamiltonian,
+                    bound.collapse_operators,
                     state,
                     start_time=context.time,
                     end_time=run.end_time,
                     rng=context.rng,
+                    solver_options=_SOLVER_OVERRIDES,
                 )
             else:
                 self._solvers_used.add("sesolve")
@@ -223,50 +226,6 @@ class _TransmonQutipAdapter:
         context.state = state
         context.frame_angles.clear()
         context.frame_angles.update(bound.output_frames)
-
-    def _solve_trajectory(
-        self,
-        bound: _BoundDynamics,
-        state: Qobj,
-        *,
-        start_time: float,
-        end_time: float,
-        rng: np.random.Generator,
-    ) -> Qobj:
-        """Solve one retained stochastic trajectory from the current ket."""
-        seed = int(
-            rng.integers(
-                0,
-                np.iinfo(np.uint64).max,
-                dtype=np.uint64,
-            )
-        )
-        self._solvers_used.add("mcsolve")
-        result = mcsolve(
-            bound.hamiltonian,
-            state,
-            [start_time, end_time],
-            c_ops=bound.collapse_operators,
-            ntraj=1,
-            seeds=[seed],
-            options={
-                **_SOLVER_OVERRIDES,
-                "store_final_state": True,
-                "keep_runs_results": True,
-                "progress_bar": False,
-            },
-        )
-        final_states = result.runs_final_states
-        if (
-            final_states is None
-            or len(final_states) != 1
-            or not isinstance(final_states[0], Qobj)
-            or not final_states[0].isket
-        ):
-            raise BackendValidationError(
-                "mcsolve did not retain one transmon trajectory final ket"
-            )
-        return final_states[0].copy()
 
     def propagator(
         self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True

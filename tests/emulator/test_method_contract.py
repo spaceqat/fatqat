@@ -9,7 +9,7 @@ import fatqat as fq
 import fatqat.operations as ops
 from fatqat.emulator._atom_3level import Atom3LevelEmulator
 from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
-from fatqat.noise import AmplitudeDamping, NoiseModel
+from fatqat.noise import NoiseModel, TransitionRelaxation
 
 
 def _family_case(name, method, atom_3level_model):
@@ -185,7 +185,13 @@ def test_unitary_can_suppress_operator_construction(model, monkeypatch):
 
 def test_noisy_statevector_defaults_to_metadata_and_explicit_shot_is_seeded(model):
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(rate=(0.01, 0.01)), targets="q0")
+    noise.add(
+        TransitionRelaxation(
+            rate=0.01,
+            coefficients={(1, 0): 1, (2, 1): np.sqrt(2)},
+        ),
+        targets="q0",
+    )
     backend = fq.emulator.TransmonEmulator(model, method="statevector", noise=noise)
     program = fq.Program(2)
     program.add(ops.RX(np.pi), 0)

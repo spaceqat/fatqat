@@ -178,14 +178,23 @@ Different noise types may act on the same operation. The same type may also be
 used on disjoint targets or operand positions. Background and operation noise
 are independent, so the same type can appear in both scopes.
 
-FATQAT rejects overlapping rules of the same type for the same operation or
-background scope. A rule for every matching operation overlaps an exact target
-selector, and selecting every operand overlaps a positional selection.
+FATQAT normally rejects overlapping rules of the same type for the same
+operation or background scope. A rule for every matching operation overlaps
+an exact target selector, and selecting every operand overlaps a positional
+selection.
+
+[`TransitionRelaxation`][fatqat.noise.TransitionRelaxation] is the one
+built-in exception because each registration is an additional authored
+channel. On a matrix simulator, matching `p` declarations on the same
+resolved extent are applied sequentially in registration order. On a pulse
+emulator, matching `rate` declarations become separate collapse operators.
 
 Logical and device-label selectors cannot be compared until a resource layout
-is available. They may therefore both be added, but execution raises
+is available. They may therefore both be added, but execution normally raises
 [`BackendValidationError`][fatqat.errors.BackendValidationError] if the layout makes both
-select the same noise type and operands for an actual operation.
+select the same noise type and operands for an actual operation. The
+`TransitionRelaxation` exception above also applies when logical and device
+selectors resolve to the same extent.
 
 Readout is unique per measured operand. Duplicate universal or duplicate exact
 selectors fail during `add`; universal and targeted registrations cannot be

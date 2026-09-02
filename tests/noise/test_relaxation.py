@@ -22,7 +22,7 @@ def test_thermal_relaxation_is_keyword_only_and_exposes_shared_rates():
 def test_explicit_damping_probabilities_reproduce_t2_coherence_decay():
     t1, t2, duration = 60e-6, 90e-6, 5e-6
     relaxation = ThermalRelaxation(t1=t1, t2=t2)
-    (amplitude_p,) = AmplitudeDamping(rate=relaxation.amplitude_rate).as_probability(
+    amplitude_p = AmplitudeDamping(rate=relaxation.amplitude_rate).as_probability(
         duration
     )
     phase_p = PhaseDamping(rate=relaxation.pure_dephasing_rate).as_probability(duration)

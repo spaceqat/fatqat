@@ -1,4 +1,4 @@
-"""Gate-keyed AmplitudeDamping/PhaseDamping lowered into pulse intervals."""
+"""Gate-keyed transition and phase relaxation lowered into pulse intervals."""
 
 from math import sqrt
 
@@ -25,12 +25,11 @@ from fatqat.emulator._core.target import _PreparedControlBinding
 from fatqat.emulator import SampledWaveform
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
-    AmplitudeDamping,
     Depolarizing,
     NoiseModel,
     PauliChannel,
     PhaseDamping,
-    ThermalRelaxation,
+    TransitionRelaxation,
 )
 
 
@@ -96,11 +95,21 @@ def _qutip_tensor(*public_factors):
     return tensor(*public_factors)
 
 
-def _amplitude_term(rates, *, ordinal=0):
+def _transition_term(rates, *, ordinal=0):
     operator = np.zeros((3, 3), dtype=complex)
     for level, rate in enumerate(rates, start=1):
         operator[level - 1, level] = sqrt(rate)
     return ResolvedLindbladTerm(operator, (ordinal,))
+
+
+def _transition(*, rate=None, p=None, coefficients=None):
+    return TransitionRelaxation(
+        rate=rate,
+        p=p,
+        coefficients=(
+            {(1, 0): 1, (2, 1): sqrt(2)} if coefficients is None else coefficients
+        ),
+    )
 
 
 def _phase_term(rate, *, ordinal=0):
@@ -120,39 +129,39 @@ def _evolve(adapter, blocks, context, *, boundary=0.0):
 def test_pulse_backend_accepts_gate_keyed_rate_and_rejects_probability(make_backend):
     noise = NoiseModel()
     noise.add(PhaseDamping(rate=0.001), operation=ops.RX)
-    noise.add(AmplitudeDamping(p=(0.01, 0.02)), operation=ops.RX)
+    noise.add(_transition(p=0.01), operation=ops.RX)
     noise.add(PauliChannel({"X": 0.1}), operation=ops.RX)
 
     with pytest.raises(BackendValidationError) as caught:
         make_backend().validate_noise_model(noise)
 
     message = str(caught.value)
-    assert "AmplitudeDamping(p)" in message
+    assert "TransitionRelaxation(p)" in message
     assert "PauliChannel" in message
 
 
-def test_pulse_backend_rejects_qutrit_amplitude_damping_with_wrong_arity(
-    make_backend,
-):
+def test_pulse_backend_rejects_transition_outside_qutrit_dimension(make_backend):
     invalid = NoiseModel()
-    invalid.add(AmplitudeDamping(rate=(0.1,)), operation=ops.RX)
+    invalid.add(
+        _transition(rate=0.1, coefficients={(3, 0): 1}),
+        operation=ops.RX,
+    )
     with pytest.raises(BackendValidationError) as caught:
         make_backend().validate_noise_model(invalid)
-    assert "AmplitudeDamping(rate-arity-1)" in str(caught.value)
-    assert "requires 2 damping values" in str(caught.value)
+    assert "outside physical dimension 3" in str(caught.value)
 
     valid = NoiseModel()
-    valid.add(AmplitudeDamping(rate=(0.1, 0.2)), operation=ops.RX)
+    valid.add(_transition(rate=0.1), operation=ops.RX)
     assert make_backend().validate_noise_model(valid) is None
 
 
 def test_pulse_backend_accepts_background_rate_and_rejects_probability(make_backend):
     noise = NoiseModel()
     noise.add(PhaseDamping(rate=0.001), targets="q0")
-    noise.add(AmplitudeDamping(p=(0.01, 0.02)), targets="q1")
+    noise.add(_transition(p=0.01), targets="q1")
     with pytest.raises(
         BackendValidationError,
-        match=r"AmplitudeDamping\(p, background\).*finite probability mode",
+        match=r"TransitionRelaxation\(p, background\).*finite probability mode",
     ):
         make_backend().validate_noise_model(noise)
 
@@ -172,9 +181,8 @@ def test_background_rate_lowers_to_the_same_lindblad_term(make_backend):
 @pytest.mark.parametrize(
     "channel",
     [
-        AmplitudeDamping(rate=(0.1, 0.2)),
+        _transition(rate=0.1),
         PhaseDamping(rate=0.1),
-        ThermalRelaxation(t1=10.0, t2=15.0),
         Depolarizing(rate=0.1),
     ],
 )
@@ -200,7 +208,7 @@ def test_pulse_backend_rejects_probability_mode_depolarizing(make_backend):
 
 def test_probability_mode_damping_is_rejected_at_construction(make_backend):
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(p=(0.01, 0.02)), operation=ops.RX)
+    noise.add(_transition(p=0.01), operation=ops.RX)
     with pytest.raises(BackendValidationError, match="finite probability mode"):
         make_backend(noise)
 
@@ -239,7 +247,7 @@ def test_gate_scoped_rate_is_independent_of_the_realized_block_duration(
     implementations = PulseImplementationMap()
     implementations.add(ops.RX, custom_rx)
     noise = NoiseModel()
-    noise.add(AmplitudeDamping(rate=(0.01, 0.02)), operation=ops.RX)
+    noise.add(_transition(rate=0.01), operation=ops.RX)
     backend = TransmonEmulator(
         model,
         noise=noise,
@@ -255,7 +263,7 @@ def test_gate_scoped_rate_is_independent_of_the_realized_block_duration(
     (binding,) = block.noise
     assert np.allclose(
         binding.local_operator,
-        _amplitude_term((0.01, 0.02)).local_operator,
+        _transition_term((0.01, 0.02)).local_operator,
     )
 
 
@@ -278,28 +286,17 @@ def test_generator_rate_on_zero_duration_gate_is_retained_without_conversion(
 # --- collapse-operator physics ----------------------------------------------
 
 
-def test_amplitude_damping_rate_reproduces_exponential_population_decay(model):
+def test_transition_relaxation_rate_reproduces_exponential_population_decay(model):
     adapter = _adapter(model)
     duration = 5.0
     rate = 0.3
-    binding = _amplitude_term((0.0, rate))  # only the 2 -> 1 transition is active
+    binding = _transition_term((0.0, rate))
     block = _idle_block(adapter, "q0", duration=duration, noise=(binding,))
     initial = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
     context = _evolve(adapter, (block,), _context(adapter, initial))
 
     population_2 = context.state.ptrace(0).diag()[2].real
     assert population_2 == pytest.approx(np.exp(-rate * duration), abs=2e-4)
-
-
-def test_amplitude_damping_uses_one_combined_ladder_jump(model):
-    adapter = _adapter(model)
-    t1 = 10.0
-    binding = _amplitude_term((1 / t1, 2 / t1))
-
-    ((jump, _factor_index),) = adapter._lindblad_ops(binding)
-    assert np.allclose(
-        jump.full(), np.sqrt(1 / t1) * adapter._local_annihilation.full()
-    )
 
 
 def test_phase_damping_rate_reproduces_exact_coherence_decay(model):
@@ -335,7 +332,7 @@ def test_probability_and_rate_mode_produce_the_same_collapse_coefficient(model):
 def test_collapse_terms_are_active_only_during_their_own_placed_block(model):
     adapter = _adapter(model)
     rate = 0.3
-    binding = _amplitude_term((0.0, rate))
+    binding = _transition_term((0.0, rate))
     noisy = _idle_block(adapter, "q0", duration=2.0, noise=(binding,))
     # Both blocks claim "q0", so ASAP scheduling serializes `quiet` right
     # after `noisy` without needing an explicit start time.
@@ -353,9 +350,9 @@ def test_disabled_conditional_block_keeps_only_background_noise_active(model):
     background_rate = 0.2
     adapter = _adapter(
         model,
-        background_noise=(_amplitude_term((0.0, background_rate)),),
+        background_noise=(_transition_term((0.0, background_rate)),),
     )
-    binding = _amplitude_term((0.0, local_rate))
+    binding = _transition_term((0.0, local_rate))
     block = _idle_block(
         adapter, "q0", duration=4.0, noise=(binding,), condition=((0, 1),)
     )
@@ -376,8 +373,8 @@ def test_overlapping_disjoint_pulses_each_keep_their_own_noise_binding(model):
     adapter = _adapter(model)
     rate_q0 = 0.4
     rate_q1 = 0.1
-    binding_q0 = _amplitude_term((0.0, rate_q0))
-    binding_q1 = _amplitude_term((0.0, rate_q1), ordinal=1)
+    binding_q0 = _transition_term((0.0, rate_q0))
+    binding_q1 = _transition_term((0.0, rate_q1), ordinal=1)
     duration = 3.0
     block_q0 = _idle_block(adapter, "q0", duration=duration, noise=(binding_q0,))
     block_q1 = _idle_block(adapter, "q1", duration=duration, noise=(binding_q1,))
@@ -401,16 +398,14 @@ def test_operation_scoped_and_background_noise_accumulate_then_idle_is_global_on
 ):
     t1 = 10.0
     rate_gate = 0.2
-    # T2 = 2*T1 carries zero residual dephasing, keeping this test's population
-    # dynamics governed purely by the two T1-type decay channels below.
     noise = NoiseModel()
-    noise.add(ThermalRelaxation(t1=t1, t2=2 * t1), targets="q0")
+    noise.add(_transition(rate=1 / t1), targets="q0")
     backend = make_backend(noise)
     adapter = _adapter(
         model,
         background_noise=backend._prepare_program(fq.Program(1)).background_noise,
     )
-    binding = _amplitude_term((0.0, rate_gate))
+    binding = _transition_term((0.0, rate_gate))
     gated_duration = 2.0
     idle_duration = 3.0
     gated = _idle_block(adapter, "q0", duration=gated_duration, noise=(binding,))
@@ -418,9 +413,8 @@ def test_operation_scoped_and_background_noise_accumulate_then_idle_is_global_on
     initial = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
     context = _evolve(adapter, (gated, idle_after), _context(adapter, initial))
 
-    # The natural annihilation operator's sqrt(n) scaling doubles T1's rate at
-    # level 2 (`a|2> = sqrt(2)|1>`), so the gated interval decays at both
-    # channels' combined rate, and the idle interval at the global rate alone.
+    # The explicitly authored sqrt(2) coefficient doubles the level-2
+    # population decay rate.
     global_rate = 2.0 / t1
     expected = np.exp(-(global_rate + rate_gate) * gated_duration) * np.exp(
         -global_rate * idle_duration

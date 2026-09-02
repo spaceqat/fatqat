@@ -470,7 +470,7 @@ def test_two_qubit_pauli_channel_reverses_label_at_aer_boundary(runtime):
 def test_amplitude_damping_matches_aer(runtime):
     program, circuit = _bell()
     noise = fq.NoiseModel()
-    noise.add(fq.noise.AmplitudeDamping(p=(0.2,)), operation=ops.H)
+    noise.add(fq.noise.AmplitudeDamping(p=0.2), operation=ops.H)
     aer_model = _aer_model(amplitude_damping_error(0.2), ["h"])
 
     _assert_close(
@@ -508,7 +508,7 @@ def test_stacked_channels_compose_in_registration_order(runtime):
     program, circuit = _bell()
     noise = fq.NoiseModel()
     noise.add(fq.noise.Depolarizing(p=p), operation=ops.H)
-    noise.add(fq.noise.AmplitudeDamping(p=(gamma,)), operation=ops.H)
+    noise.add(fq.noise.AmplitudeDamping(p=gamma), operation=ops.H)
     composed = depolarizing_error(p, 1).compose(amplitude_damping_error(gamma))
     aer_model = _aer_model(composed, ["h"])
 

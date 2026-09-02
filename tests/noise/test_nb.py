@@ -12,7 +12,13 @@ pytest.importorskip("numba")
 
 # pylint: disable=wrong-import-position
 import fatqat as fq
-from fatqat.noise import AmplitudeDamping, Depolarizing, PauliChannel, PhaseDamping
+from fatqat.noise import (
+    AmplitudeDamping,
+    Depolarizing,
+    PauliChannel,
+    PhaseDamping,
+    TransitionRelaxation,
+)
 from fatqat.noise.base import _unitary_branch_probabilities
 from fatqat.noise.catalog import (
     amplitude_damping_rule,
@@ -28,6 +34,7 @@ from fatqat.noise.nb import (
     _kraus_superop_kernel,
     _report_digit_kernel,
 )
+from fatqat.noise.transition_relaxation import transition_relaxation_rule
 
 
 def _kraus_for(channel, rule, dim):
@@ -51,7 +58,7 @@ def _branch_stack(weights):
 
 
 def test_kraus_stack_copies_and_normalizes_the_payload():
-    kraus_ops = _kraus_for(AmplitudeDamping(p=(0.3,)), amplitude_damping_rule, 2)
+    kraus_ops = _kraus_for(AmplitudeDamping(p=0.3), amplitude_damping_rule, 2)
     stack = _kraus_stack(kraus_ops)
 
     assert stack.shape == (2, 2, 2)
@@ -69,7 +76,11 @@ def test_kraus_stack_copies_and_normalizes_the_payload():
     [
         (Depolarizing(p=0.3), depolarizing_rule, 2),
         (Depolarizing(p=0.15), depolarizing_rule, 3),
-        (AmplitudeDamping(p=(0.2, 0.4)), amplitude_damping_rule, 3),
+        (
+            TransitionRelaxation(p=0.2, coefficients={(1, 0): 1, (2, 1): np.sqrt(2)}),
+            transition_relaxation_rule,
+            3,
+        ),
         (PhaseDamping(p=0.25), phase_damping_rule, 3),
     ],
 )
@@ -89,7 +100,11 @@ def test_kraus_superop_kernel_equals_the_numpy_kronecker_sum(channel, rule, dim)
 def test_kraus_superop_kernel_reproduces_the_sandwich_on_vectorized_rho():
     # The super-operator's defining property: applied to vec(rho) with the ket
     # group most-significant it equals sum_i K_i rho K_i^dagger.
-    kraus_ops = _kraus_for(AmplitudeDamping(p=(0.3, 0.1)), amplitude_damping_rule, 3)
+    kraus_ops = _kraus_for(
+        TransitionRelaxation(p=0.2, coefficients={(1, 0): 1, (2, 1): 0.5j}),
+        transition_relaxation_rule,
+        3,
+    )
     rng = np.random.default_rng(0)
     ket = rng.normal(size=3) + 1j * rng.normal(size=3)
     rho = np.outer(ket, ket.conj())
@@ -353,7 +368,7 @@ def test_compile_channel_table_lays_out_two_channels_back_to_back():
 def test_compile_channel_table_flags_only_the_scaled_unitary_channels():
     # The decision is per channel, not per plan.
     pauli_ops = _kraus_for(PauliChannel({"X": 0.1, "Z": 0.05}), pauli_channel_rule, 2)
-    damping_ops = _kraus_for(AmplitudeDamping(p=(0.2,)), amplitude_damping_rule, 2)
+    damping_ops = _kraus_for(AmplitudeDamping(p=0.2), amplitude_damping_rule, 2)
     layout = (np.array([0, 1]), np.array([2]), np.array([2]))
     entries = [(pauli_ops, *layout), (damping_ops, *layout)]
 
@@ -380,7 +395,7 @@ def test_compile_channel_table_flags_only_the_scaled_unitary_channels():
 def test_compile_channel_table_flags_a_diagonal_weighing_by_content():
     # Amplitude damping's M_i are diagonal; a channel measuring in a rotated
     # basis is the negative case.
-    damping_ops = _kraus_for(AmplitudeDamping(p=(0.2,)), amplitude_damping_rule, 2)
+    damping_ops = _kraus_for(AmplitudeDamping(p=0.2), amplitude_damping_rule, 2)
     rotated_ops = (
         np.array([[1.0, 1.0], [0.0, 0.0]], dtype=complex) / np.sqrt(2),
         np.array([[1.0, -1.0], [0.0, 0.0]], dtype=complex) / np.sqrt(2),

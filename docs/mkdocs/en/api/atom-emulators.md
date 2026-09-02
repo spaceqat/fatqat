@@ -163,9 +163,10 @@ Binary [`ReadoutConfusion`][fatqat.noise.ReadoutConfusion] is a classical report
 applied only to the reported digit after physical collapse, not a Lindblad
 operator.
 
-The emulator provides built-in amplitude damping, phase damping, thermal
-relaxation, and depolarizing noise. These forms accept background declarations
-only; operation-scoped continuous noise is unsupported.
+The emulator provides built-in qubit amplitude damping, explicit transition
+relaxation, phase damping, qubit thermal relaxation, and depolarizing noise.
+These forms accept background declarations only; operation-scoped continuous
+noise is unsupported.
 
 With `method="statevector"`, resolved Lindblad noise that can act during a
 nonzero-duration block uses seeded trajectories. Because the atom emulator
