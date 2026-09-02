@@ -8,6 +8,12 @@ import fatqat as fq
 import fatqat.operations as ops
 
 
+def test_structural_operation_backing_classes_are_not_public():
+    for name in ("BarrierGate", "ResetGate", "PutGate", "PairGate", "UnpairGate"):
+        assert not hasattr(ops, name)
+        assert name not in ops.__all__
+
+
 def test_waveform_and_pulse_authoring_names_are_namespaced():
     from fatqat.emulator import ControlChannel, PulseControl, SampledWaveform
     from fatqat.operations import PulseOperation

@@ -15,7 +15,7 @@ from fatqat.compiler.dialects.na_zoned import (
     TransferEvent,
     ZonedPlan,
 )
-from fatqat.operations import PutGate
+from fatqat.operations import Put
 from fatqat.simulator import AtomArraySimulator
 
 
@@ -41,12 +41,12 @@ def test_bridge_loads_atoms_once_then_pairs_each_cz_batch():
     put_steps = [
         step
         for step in program._instructions
-        if hasattr(step, "operation") and isinstance(step.operation, PutGate)
+        if hasattr(step, "operation") and isinstance(step.operation, type(Put))
     ]
     assert len(put_steps) == 1
     assert put_steps[0].targets == plan.atoms
     assert not any(
-        isinstance(step.operation, PutGate)
+        isinstance(step.operation, type(Put))
         for step in program._instructions[1:]
         if hasattr(step, "operation")
     )

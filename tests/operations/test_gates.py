@@ -136,6 +136,7 @@ def test_fourier_is_single_subsystem_singleton():
     assert ops.InverseFourier.name == "InverseFourier"
     assert isinstance(ops.InverseFourier, Operation)
     assert not isinstance(ops.InverseFourier, type)
+    assert type(ops.InverseFourier).__name__ == "InverseFourierGate"
 
 
 @pytest.mark.parametrize(

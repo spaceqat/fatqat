@@ -8,14 +8,14 @@ from fatqat.program import _AppliedOperation, Program
 
 
 @pytest.mark.parametrize(
-    "singleton, cls, name",
-    [(ops.Pair, ops.PairGate, "Pair"), (ops.Unpair, ops.UnpairGate, "Unpair")],
+    "singleton,name",
+    [(ops.Pair, "Pair"), (ops.Unpair, "Unpair")],
 )
-def test_singleton_shape(singleton, cls, name):
+def test_singleton_shape(singleton, name):
     assert singleton.name == name
     assert singleton.num_subsystems == 2
-    assert isinstance(singleton, cls)
-    assert singleton == cls()  # frozen value equality
+    assert isinstance(singleton, ops.Operation)
+    assert not isinstance(singleton, type)
 
 
 @pytest.mark.parametrize("op", [ops.Pair, ops.Unpair])

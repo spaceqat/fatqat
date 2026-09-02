@@ -11,6 +11,8 @@ from typing import ClassVar, Mapping, TypeAlias
 
 from ...operations.fixed_gates import CZGate, SwapGate
 from ...operations.parametric_gates import RX, RZ
+
+# Required here as a member of the closed SC instruction type alias.
 from ...operations.reset import ResetGate
 from ...registers import ClassicalRegister, QuantumRegister, RegisterRef
 from ..errors import ValidationError

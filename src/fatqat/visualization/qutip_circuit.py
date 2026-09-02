@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from .. import operations as ops
 from ..errors import UnsupportedOperationError
-from ..operations import BarrierGate, Measurement, PulseOperation, ResetGate
+from ..operations import Measurement, PulseOperation
 from ..registers import RegisterRef, RegisterView, _view_members
 
 if TYPE_CHECKING:
@@ -595,7 +595,7 @@ def _add_operation(
     # renderer (the public to_qubit_circuit contract, or a forwarded renderer
     # name) get a plain box labeled "barrier" instead, so the private marker
     # label never leaks into user-visible output.
-    if isinstance(operation, BarrierGate):
+    if isinstance(operation, type(ops.Barrier)):
         if barrier_markers:
             _add_box(
                 circuit,
@@ -610,7 +610,7 @@ def _add_operation(
         return
 
     # Reset: also no native primitive; draw a small ``|0>`` box per target.
-    if isinstance(operation, ResetGate):
+    if isinstance(operation, type(ops.Reset)):
         for wire in wires:
             _add_box(
                 circuit,

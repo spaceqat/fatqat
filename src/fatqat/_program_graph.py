@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from .operations import BarrierGate, Measurement, PairGate, PutGate, UnpairGate
+from .operations import Barrier, Measurement, Pair, Put, Unpair
 from .registers import RegisterRef, RegisterView, _view_members
 
 if TYPE_CHECKING:
@@ -175,7 +175,7 @@ def _is_hardware_instruction(step: Any) -> bool:
     if isinstance(step, Measurement):
         return False
     operation = step.operation
-    return isinstance(operation, (PutGate, PairGate, UnpairGate)) or bool(
+    return isinstance(operation, (type(Put), type(Pair), type(Unpair))) or bool(
         getattr(operation, "_is_direct_control", False)
     )
 
@@ -227,12 +227,12 @@ def _node_info(
 
     operation = step.operation
     targets = _expanded_targets(step.targets)
-    is_pair = isinstance(operation, PairGate)
-    is_unpair = isinstance(operation, UnpairGate)
-    is_barrier = isinstance(operation, BarrierGate)
+    is_pair = isinstance(operation, type(Pair))
+    is_unpair = isinstance(operation, type(Unpair))
+    is_barrier = isinstance(operation, type(Barrier))
     if is_barrier:
         node_type = "barrier"
-    elif isinstance(operation, PutGate):
+    elif isinstance(operation, type(Put)):
         node_type = "put"
     elif is_pair:
         node_type = "pair"

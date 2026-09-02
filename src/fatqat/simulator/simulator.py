@@ -35,7 +35,7 @@ from ..noise import (
     ThermalRelaxation,
     default_channel_implementation_map,
 )
-from ..operations import BarrierGate, Measurement, ResetGate
+from ..operations import Barrier, Measurement, Reset
 from ..parameters import Parameter, ParameterVector
 from ..program import Program, _AppliedOperation
 from ..registers import RegisterRef
@@ -1134,9 +1134,9 @@ class Simulator:
                     )
                 )
             elif isinstance(step, _AppliedOperation):
-                if isinstance(step.operation, BarrierGate):
+                if isinstance(step.operation, type(Barrier)):
                     continue
-                if isinstance(step.operation, ResetGate):
+                if isinstance(step.operation, type(Reset)):
                     plan.append(
                         planning._lower_reset(
                             step,

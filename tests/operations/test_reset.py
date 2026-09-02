@@ -6,8 +6,8 @@ from fatqat.program import _AppliedOperation, Program
 
 
 def test_reset_is_a_non_callable_singleton():
-    assert isinstance(fq.operations.Reset, ops.ResetGate)
     assert isinstance(fq.operations.Reset, ops.Operation)
+    assert not isinstance(fq.operations.Reset, type)
     assert fq.operations.Reset.name == "Reset"
     assert fq.operations.Reset.num_subsystems is None
     with pytest.raises(TypeError):
@@ -19,7 +19,7 @@ def test_reset_added_to_program_as_applied_operation():
     p.add(ops.Reset, 0)
     (step,) = p._instructions
     assert isinstance(step, _AppliedOperation)
-    assert isinstance(step.operation, ops.ResetGate)
+    assert step.operation is ops.Reset
     assert len(step.targets) == 1
 
 

@@ -20,7 +20,7 @@ from ...noise.lindblad import (
     phase_damping_lindblad_rule,
     thermal_relaxation_lindblad_rule,
 )
-from ...operations import BarrierGate, Measurement, PulseOperation, ResetGate
+from ...operations import Barrier, Measurement, PulseOperation, Reset
 from ...program import Program, _AppliedOperation
 from .._core.backend import _PulseBackend
 from .._core.config import _EmulatorConfig
@@ -145,13 +145,13 @@ class Atom2LevelEmulator(_PulseBackend):
                 raise BackendValidationError(
                     "Atom2LevelEmulator does not support conditioned operations"
                 )
-            if isinstance(instruction.operation, BarrierGate):
+            if isinstance(instruction.operation, type(Barrier)):
                 continue
             if measurement_suffix:
                 raise BackendValidationError(
                     "operations must precede the terminal measurement suffix"
                 )
-            if isinstance(instruction.operation, ResetGate):
+            if isinstance(instruction.operation, type(Reset)):
                 raise BackendValidationError(
                     "Atom2LevelEmulator does not support reset"
                 )

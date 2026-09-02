@@ -7,7 +7,6 @@ import math
 from ... import operations as ops
 from ...operations.fixed_gates import CZGate, SwapGate
 from ...operations.parametric_gates import Phase, RX, RY, RZ
-from ...operations.reset import ResetGate
 from ...registers import RegisterRef
 from ..core import CompileContext
 from ..dialects.logical_gate import (
@@ -181,7 +180,7 @@ def _lower_gate(builder: _SCBuilder, instruction: LogicalGate) -> None:
     if type(operation) in (RX, RZ, CZGate, SwapGate):
         builder.add(operation, qubits, origins)
         return
-    if type(operation) is ResetGate:
+    if type(operation) is type(ops.Reset):
         for qubit in qubits:
             builder.add(ops.Reset, (qubit,), origins)
         return

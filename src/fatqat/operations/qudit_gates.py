@@ -148,7 +148,7 @@ class FourierGate(Operation):
 
 
 @dataclass(frozen=True)
-class FourierdgGate(Operation):
+class InverseFourierGate(Operation):
     """Apply the inverse discrete Fourier transform to one qudit.
 
     This is ``Fourier``'s conjugate transpose and uses the negative exponent.
@@ -161,7 +161,7 @@ class FourierdgGate(Operation):
 
 
 Fourier = FourierGate()
-InverseFourier = FourierdgGate()
+InverseFourier = InverseFourierGate()
 
 
 @dataclass(frozen=True)

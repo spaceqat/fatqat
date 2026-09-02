@@ -193,7 +193,7 @@ class AtomArraySimulator(Simulator):
             target
             for step in operations
             if isinstance(step, _AppliedOperation)
-            and isinstance(step.operation, ops.PutGate)
+            and isinstance(step.operation, type(ops.Put))
             for target in step.targets
         )
 
@@ -202,7 +202,7 @@ class AtomArraySimulator(Simulator):
         segment: list[ProgramInstruction] = []
         for step in operations:
             if isinstance(step, _AppliedOperation) and isinstance(
-                step.operation, (ops.PairGate, ops.UnpairGate)
+                step.operation, (type(ops.Pair), type(ops.Unpair))
             ):
                 plan.extend(
                     self._lower_segment(segment, connectivity, put_targets, context)
@@ -261,7 +261,7 @@ class AtomArraySimulator(Simulator):
 
         for step in segment:
             if isinstance(step, _AppliedOperation) and isinstance(
-                step.operation, ops.PutGate
+                step.operation, type(ops.Put)
             ):
                 flush_ordinary()
                 plan.extend(
@@ -311,11 +311,11 @@ class AtomArraySimulator(Simulator):
         if isinstance(
             step.operation,
             (
-                ops.PutGate,
-                ops.PairGate,
-                ops.UnpairGate,
-                ops.ResetGate,
-                ops.BarrierGate,
+                type(ops.Put),
+                type(ops.Pair),
+                type(ops.Unpair),
+                type(ops.Reset),
+                type(ops.Barrier),
             ),
         ):
             return
@@ -360,6 +360,6 @@ class AtomArraySimulator(Simulator):
                 f"{applied.operation.name} must be unconditional"
             )
         a, b = applied.targets
-        if isinstance(applied.operation, ops.PairGate):
+        if isinstance(applied.operation, type(ops.Pair)):
             return connectivity.pair(a, b)
         return connectivity.unpair(a, b)

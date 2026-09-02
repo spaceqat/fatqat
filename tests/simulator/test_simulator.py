@@ -145,7 +145,7 @@ def test_barrier_is_preserved_in_program_instructions():
     barriers = [
         step
         for step in p._instructions
-        if hasattr(step, "operation") and isinstance(step.operation, ops.BarrierGate)
+        if hasattr(step, "operation") and step.operation is ops.Barrier
     ]
     assert len(barriers) == 2
     assert barriers[0].targets != barriers[1].targets

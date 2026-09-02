@@ -7,7 +7,6 @@ import math
 from ... import operations as ops
 from ...operations.fixed_gates import CZGate, SwapGate
 from ...operations.parametric_gates import Phase, RX, RY, RZ
-from ...operations.reset import ResetGate
 from ...registers import RegisterRef
 from ..core import CompileContext
 from ..dialects.logical_gate import LogicalGate, LogicalMeasure, LogicalProgram
@@ -90,7 +89,7 @@ def _lower_gate(builder: _NABuilder, instruction: LogicalGate) -> None:
     if type(operation) in (RX, RY, RZ, CZGate):
         builder.add_gate(operation, atoms, origin_id)
         return
-    if type(operation) is ResetGate:
+    if type(operation) is type(ops.Reset):
         raise UnsupportedFeatureError("Reset is not supported by NA normalization")
     if operation is ops.I:
         return

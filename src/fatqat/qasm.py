@@ -1024,7 +1024,7 @@ def _lower(op: ops.Operation, dim: int) -> tuple[str, ...]:
         return ("gate", "x", [])
     if name == "FourierGate":
         return ("gate", "h", [])
-    if name == "FourierdgGate":
+    if name == "InverseFourierGate":
         return ("gate", "h", [])
     if name == "SubspaceRX":
         # Symmetric in (j,k) at dim=2 -- see derivation in accompanying notes.
@@ -1044,10 +1044,8 @@ def _lower(op: ops.Operation, dim: int) -> tuple[str, ...]:
             if power == 1
             else ("skip", f"CClock(power={op.power}) is identity at dim=2")
         )
-    # (CClock's class name has no "Gate" suffix, matching Shift/Clock/SwapLevels
-    # above -- fatqat's naming convention here is inconsistent with e.g.
-    # SumGate/FourierGate, so this matcher is intentionally exhaustive rather
-    # than pattern-based.)
+    # Parameter-free gates use ``*Gate`` backing classes; parameterized gates
+    # are bare constructor classes, so this matcher is intentionally explicit.
 
     raise QasmExportError(
         f"no QASM lowering is defined for operation {op.name!r} ({name})"
@@ -1209,7 +1207,7 @@ def to_qasm(program: Program, version: int = 3) -> str:
                 "view-bearing programs are not QASM-exportable"
             )
 
-        if type(op).__name__ == "BarrierGate":
+        if type(op) is type(ops.Barrier):
             # QASM has a native barrier. Like the built-in simulators, export
             # ignores any recorded condition (a conditioned barrier is a no-op
             # either way, and `if` cannot guard a barrier in QASM 2).
@@ -1217,7 +1215,7 @@ def to_qasm(program: Program, version: int = 3) -> str:
             body.append(f"barrier {targets};")
             continue
 
-        if type(op).__name__ == "ResetGate":
+        if type(op) is type(ops.Reset):
             lines = [f"reset {layout.qref(t)};" for t in step.targets]
         else:
             kind, *rest = _lower(op, dim=2)

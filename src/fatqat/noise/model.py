@@ -7,7 +7,7 @@ from typing import Any, overload
 
 from ..errors import BackendValidationError
 from ..implementation._operation_registry import _resolve_operation_class
-from ..operations import BarrierGate, Operation, PutGate, ResetGate
+from ..operations import Barrier, Operation, Put, Reset
 from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView
 from ..resource_layout import DeviceOperand, ResourceLayout
@@ -248,7 +248,7 @@ class NoiseModel:
             positions = None
         else:
             op_cls = _normalize_noise_operation(op_value)
-            if op_cls is PutGate and not isinstance(declaration, Loss):
+            if op_cls is type(Put) and not isinstance(declaration, Loss):
                 raise ValueError("Put accepts only Loss as loading inefficiency")
             selector = _normalize_occurrence_selector(op_cls, targets)
             positions = _normalize_target_positions(
@@ -415,9 +415,9 @@ def _normalize_noise_operation(value: object) -> type[Operation]:
             f"{op_cls.__name__} is a direct-control operation and has no "
             "attachable noise boundary"
         )
-    if op_cls is BarrierGate:
+    if op_cls is type(Barrier):
         raise ValueError("Barrier is a compiler marker with no noise boundary")
-    if op_cls is ResetGate:
+    if op_cls is type(Reset):
         raise ValueError("Reset has no attached-noise realization")
     return op_cls
 

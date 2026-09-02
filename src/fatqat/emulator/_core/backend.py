@@ -33,7 +33,7 @@ from ...errors import (
 from ...job import Job
 from ...noise import NoiseModel
 from ...noise.lindblad import LindbladImplementationMap
-from ...operations import BarrierGate, Measurement, PulseOperation, ResetGate
+from ...operations import Barrier, Measurement, PulseOperation, Reset
 from ...program import Program, _AppliedOperation
 from ...resource_layout import ResourceLayout
 from ...result import (
@@ -213,9 +213,9 @@ class _PulseBackend(ABC):
                     )
                 )
             elif isinstance(step, _AppliedOperation):
-                if isinstance(step.operation, BarrierGate):
+                if isinstance(step.operation, type(Barrier)):
                     continue
-                if isinstance(step.operation, ResetGate):
+                if isinstance(step.operation, type(Reset)):
                     plan.append(
                         planning._lower_reset(
                             step,

@@ -10,8 +10,8 @@ from fatqat.program import _AppliedOperation, Program
 def test_singleton_shape():
     assert ops.Put.name == "Put"
     assert ops.Put.num_subsystems is None  # variable arity, >= 1 target
-    assert isinstance(ops.Put, ops.PutGate)
-    assert ops.Put == ops.PutGate()
+    assert isinstance(ops.Put, ops.Operation)
+    assert not isinstance(ops.Put, type)
     assert ops.Put.accepts_views
 
 

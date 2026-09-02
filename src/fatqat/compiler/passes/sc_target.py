@@ -8,7 +8,6 @@ from collections.abc import Callable
 from ... import operations as ops
 from ...operations.fixed_gates import CZGate, SwapGate
 from ...operations.parametric_gates import RX, RZ
-from ...operations.reset import ResetGate
 from ...simulator import SCQubitGoogleSimulator, SCQubitIBMSimulator
 from ..algorithms import RouteSwap, SabreResult, SiteId, sabre_map
 from ..core import CompileContext
@@ -104,7 +103,7 @@ def _lower_events(
         if type(node.instruction) is MeasureOp:
             deferred_measurements.append((event.node_id, node))
             continue
-        if type(node.instruction) is ResetGate:
+        if type(node.instruction) is type(ops.Reset):
             operations.append(
                 NativeReset(operation_id(), event.sites[0], node.origin_ids)
             )
