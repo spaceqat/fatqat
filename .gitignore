@@ -25,4 +25,3 @@ benchmarks/
 
 # uv is optional, per-user tooling; a local lockfile is a user artifact
 uv.lock
-AGENTS.md
