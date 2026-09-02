@@ -260,7 +260,7 @@ def test_failed_point_job_produces_failed_outer_job_without_partial_list(monkeyp
     program = fq.Program(1)
     program.add(ops.RX(theta), 0)
     backend = Simulator()
-    error = KeyboardInterrupt("point failed")
+    error = RuntimeError("point failed")
 
     def fail_on_second(bound, **_kwargs):
         if bound._instructions[0].operation.theta == 0.2:
@@ -270,8 +270,26 @@ def test_failed_point_job_produces_failed_outer_job_without_partial_list(monkeyp
     monkeypatch.setattr(backend, "run", fail_on_second)
     outer = backend.run_sweep(program, {theta: [0.1, 0.2]})
 
-    with pytest.raises(KeyboardInterrupt, match="point failed") as caught:
+    with pytest.raises(RuntimeError, match="point failed") as caught:
         outer.result()
+    assert caught.value is error
+
+
+def test_point_job_interrupt_propagates_from_sweep(monkeypatch):
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(ops.RX(theta), 0)
+    backend = Simulator()
+    error = KeyboardInterrupt("point interrupted")
+
+    monkeypatch.setattr(
+        backend,
+        "run",
+        lambda *_args, **_kwargs: Job(status="ERROR", error=error),
+    )
+
+    with pytest.raises(KeyboardInterrupt, match="point interrupted") as caught:
+        backend.run_sweep(program, {theta: [0.1]})
     assert caught.value is error
 
 

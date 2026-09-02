@@ -24,7 +24,7 @@ def test_minimal_workflow_from_spec():
     counts = result.get_counts()
 
     assert sum(counts.values()) == 1000
-    assert set(counts) <= {"00", "01"}
+    assert set(counts) <= {"00", "10"}
     # roughly balanced between the two reachable outcomes
     assert all(150 < v < 850 for v in counts.values())
 
@@ -144,16 +144,12 @@ def test_cclock_unequal_dimensions_runs_through_backend():
         .result()
     )
     sv = result.get_statevector()
-    # The engine's global statevector index is little-endian across program
-    # subsystems (subsystem 0 is the least-significant digit, place value
-    # prod(dims[:0])=1; subsystem 1 has place value dims[0]=3) - qt (control,
-    # subsystem 0) contributes i*1, qb (target, subsystem 1) contributes k*3.
-    # This is unrelated to CClock's own local matrix convention (control as
-    # local MSB), which only governs the gate's own target_indices ordering.
+    # Public subsystem 0 is the most-significant digit, so (qutrit, qubit)
+    # digits (1, 1) use index 1 * 2 + 1.
     # omega_2^(1*1*1 mod 2) = exp(i*pi) = -1.
     assert sv.shape == (6,)
     expected = np.zeros(6, dtype=complex)
-    expected[1 * 1 + 1 * 3] = -1.0
+    expected[1 * 2 + 1] = -1.0
     assert np.allclose(sv, expected)
 
 

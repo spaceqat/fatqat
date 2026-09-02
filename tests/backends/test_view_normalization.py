@@ -147,11 +147,11 @@ def test_lower_uses_resource_layout_device_labels_for_lookup_and_engine_indices_
     )
     operations = _break_grouped_operations(program._instructions)
     plan = backend._lower(operations, context)
-    assert _matrix_steps(plan)[0].target_indices == (0, 1)
+    assert _matrix_steps(plan)[0].target_indices == (1, 0)
 
 
 def test_lower_scalar_rotation_emits_one_step():
     program = Program(2)
     program.add(ops.RX(0.3), 1)
     plan, _facts = Simulator()._lower_program(program)
-    assert [step.target_indices for step in _matrix_steps(plan)] == [(1,)]
+    assert [step.target_indices for step in _matrix_steps(plan)] == [(0,)]

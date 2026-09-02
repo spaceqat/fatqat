@@ -1,4 +1,7 @@
 import importlib.util
+import os
+
+os.environ["MPLBACKEND"] = "Agg"
 
 pytest_plugins = "scipy_doctest"
 

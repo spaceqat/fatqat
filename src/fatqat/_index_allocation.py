@@ -13,10 +13,16 @@ from .resource_layout import ResourceLayout
 
 
 def _describe_state_axes(
-    engine_allocation: "_EngineAllocation",
+    public_operands: tuple[DeviceOperand, ...],
     resource_layout: ResourceLayout,
 ) -> list[dict[str, object]]:
-    """Describe canonical least-to-most-significant physical state axes."""
+    """Describe physical state factors in public most-significant-first order.
+
+    Callers pass their public operand order explicitly because matrix-engine
+    allocation is private little-endian while QuTiP already uses public tensor
+    order. Keeping that choice at each backend boundary avoids a conversion
+    layer or an array copy.
+    """
     refs_by_operand = {
         resource_layout.device_label(ref): ref for ref in resource_layout.refs
     }
@@ -25,17 +31,17 @@ def _describe_state_axes(
             "device_operand": device_operand,
             "register_ref": refs_by_operand.get(device_operand),
         }
-        for device_operand in engine_allocation.device_operands
+        for device_operand in public_operands
     ]
 
 
 @dataclass(frozen=True, slots=True)
 class _EngineAllocation:
-    """Modeled device operands in canonical little-endian subsystem order.
+    """Modeled device operands in backend-local subsystem-index order.
 
-    Axis 0 is the least-significant digit of a returned flat basis index.
-    Concrete engines translate these canonical axes to any library-specific
-    tensor-factor order internally.
+    An engine subsystem index is neither universally public order nor
+    necessarily a literal NumPy tensor axis. Each backend supplies the order
+    its storage and kernels expect.
     """
 
     device_operands: tuple[DeviceOperand, ...]
@@ -67,7 +73,7 @@ class _EngineAllocation:
         return len(self.system_dims)
 
     def engine_index(self, device_operand: DeviceOperand) -> int:
-        """Return the canonical physical axis for a modeled device operand."""
+        """Return the engine subsystem index for a modeled device operand."""
         try:
             return self._engine_indices[device_operand]
         except KeyError:

@@ -125,7 +125,7 @@ def test_counts_only_finish_does_not_materialize_a_statevector():
     assert outcome.classical_digits == (1,)
 
 
-def test_measurement_indices_are_canonical_axes_and_state_is_little_endian():
+def test_measurement_indices_follow_public_qutip_factor_order():
     adapter = _adapter(_target())
     context = _ShotContext(
         tensor(basis(2, 0), basis(2, 1)),
@@ -140,7 +140,7 @@ def test_measurement_indices_are_canonical_axes_and_state_is_little_endian():
 
     adapter.execute_boundary(step, context)
 
-    assert context.classical_memory == [1, 0]
+    assert context.classical_memory == [0, 1]
     assert np.asarray(context.state.full()).reshape(-1).tolist() == [0.0, 1.0, 0.0, 0.0]
 
 
@@ -149,6 +149,15 @@ def test_engine_allocation_must_match_the_complete_target():
         _Atom2LevelQutipAdapter(
             _target(), engine_allocation=_EngineAllocation((0,), (2,))
         )
+
+
+def test_interaction_drift_keeps_diagonal_sparse_storage():
+    drift = _adapter(_target(site_count=3, c6=64.0)).interaction_drift
+    stored = drift.data.as_scipy()
+    rows, columns = stored.nonzero()
+
+    assert np.array_equal(rows, columns)
+    assert stored.nnz <= drift.shape[0]
 
 
 def test_terminal_measurement_uses_supplied_rng_and_collapses_the_complete_ket():
@@ -205,15 +214,6 @@ def test_density_evolution_validates_state_without_copying_it(monkeypatch):
     adapter.evolve(run, context, (True,))
 
     assert context.state.isoper
-
-
-def test_interaction_drift_is_one_sparse_diagonal_operator():
-    adapter = _adapter(_target(site_count=3, c6=64.0))
-    drift = adapter.interaction_drift
-
-    assert drift.isherm
-    assert drift.data.__class__.__name__ in {"CSR", "Dia"}
-    assert np.count_nonzero(drift.full() - np.diag(np.diag(drift.full()))) == 0
 
 
 def test_interaction_drift_filters_one_precomputed_pair_table_per_adapter():

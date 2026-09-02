@@ -92,12 +92,13 @@ python -m pip install --editable . --group dev
 python -m pytest
 ```
 
-Build the documentation with warnings treated as errors:
+Before submitting a change, read [Contributing to fatqat](CONTRIBUTING.md),
+including the policy for AI-assisted work. AI tools are permitted, but every
+contributor must understand, own, and lead the work they submit and the project
+conversations around it.
 
-```sh
-python -m pip install --editable . --group docs
-python docs/mkdocs/manage.py build
-```
+For documentation changes, follow the
+[pinned setup and build workflow](docs/mkdocs/README.md).
 
 The main repository directories are:
 

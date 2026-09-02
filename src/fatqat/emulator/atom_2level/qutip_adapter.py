@@ -18,6 +18,7 @@ from qutip import (
     propagator,
     qeye,
     sesolve,
+    tensor,
 )
 from scipy.sparse import diags
 
@@ -31,9 +32,8 @@ from .._core.outcome import ExecutionMode, _PulseShotOutcome
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
 from .._core.waveform import _REQUESTED_SPLINE_DEGREE
-from .._qutip_boundaries import _sample_projective_qutip_state
+from .._qutip_boundaries import _expand_qutip_local, _sample_projective_qutip_state
 from .._qutip_runtime import _qutip_runtime_details
-from .._qutip_space import _QutipTensorSpace
 from .config import _normalize_interaction_cutoff
 from .target import _Atom2LevelInteraction, _Atom2LevelTarget
 
@@ -101,32 +101,26 @@ class _Atom2LevelQutipAdapter:
         self._target = target
         self._interaction_cutoff = _normalize_interaction_cutoff(interaction_cutoff)
         self._engine_allocation = engine_allocation
-        self._qutip_space = _QutipTensorSpace(engine_allocation)
+        # QuTiP factor 0 is already FATQAT public subsystem 0; no factor-order
+        # translation or result permutation belongs in this adapter.
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
         self._solvers_used: set[str] = set()
         self._site_count = engine_allocation.n_subsystems
-        self._dims = list(self._qutip_space.dims)
+        self._dims = list(engine_allocation.system_dims)
         self._projectors: list[tuple[Qobj, ...] | None] = [None] * self._site_count
         self.local_raising = Qobj(np.asarray([[0.0, 0.0], [1.0, 0.0]], complex))
         self.local_number = Qobj(np.diag([0.0, 1.0]))
-        identity = self._qutip_space.full_tensor(
-            [qeye(2) for _ in range(self._site_count)]
-        )
-        self._global_raising = sum(
-            (
-                self._qutip_space.expand_local(site, self.local_raising)
-                for site in range(self._site_count)
-            ),
-            0 * identity,
-        )
-        self._global_number = sum(
-            (
-                self._qutip_space.expand_local(site, self.local_number)
-                for site in range(self._site_count)
-            ),
-            0 * identity,
-        )
+        identity = tensor(*[qeye(2) for _ in range(self._site_count)])
+        self._global_raising = 0 * identity
+        self._global_number = 0 * identity
+        for site in range(self._site_count):
+            self._global_raising += _expand_qutip_local(
+                self._dims, site, self.local_raising
+            )
+            self._global_number += _expand_qutip_local(
+                self._dims, site, self.local_number
+            )
         self._interaction_drift = self._build_interaction_drift()
         self._collapse_operators = self._build_collapse_operators(background_noise)
 
@@ -134,9 +128,7 @@ class _Atom2LevelQutipAdapter:
         return _qutip_runtime_details(self._solvers_used, _SOLVER_OVERRIDES)
 
     def initial_state(self) -> Any:
-        ket = self._qutip_space.full_tensor(
-            [basis(2, 0) for _ in range(self._site_count)]
-        )
+        ket = tensor(*[basis(2, 0) for _ in range(self._site_count)])
         return ket2dm(ket) if self._execution_mode == "density_matrix" else ket
 
     def copy_state(self, state: Any) -> Any:
@@ -374,8 +366,12 @@ class _Atom2LevelQutipAdapter:
                 continue
             first = self._engine_allocation.engine_index(interaction.first)
             second = self._engine_allocation.engine_index(interaction.second)
-            both_occupied = ((basis_indices >> first) & 1) * (
-                (basis_indices >> second) & 1
+            # QuTiP factors run most-significant first, while integer bits are
+            # numbered from the right. This extracts digits; it does not reorder.
+            first_bit = self._site_count - 1 - first
+            second_bit = self._site_count - 1 - second
+            both_occupied = ((basis_indices >> first_bit) & 1) * (
+                (basis_indices >> second_bit) & 1
             )
             diagonal += interaction.signed_strength_rad_per_us * both_occupied
         return Qobj(
@@ -394,7 +390,7 @@ class _Atom2LevelQutipAdapter:
                     raise BackendValidationError(
                         f"unknown two-level Lindblad engine index {engine_index!r}"
                     )
-                result.append(self._qutip_space.expand_local(engine_index, local))
+                result.append(_expand_qutip_local(self._dims, engine_index, local))
         return tuple(result)
 
     def _bind_block_collapse_operators(
@@ -429,7 +425,7 @@ class _Atom2LevelQutipAdapter:
                     result.append(
                         QobjEvo(
                             [
-                                self._qutip_space.expand_local(engine_index, local),
+                                _expand_qutip_local(self._dims, engine_index, local),
                                 coefficient(window, args={}),
                             ]
                         )
@@ -500,15 +496,15 @@ class _Atom2LevelQutipAdapter:
                     raise BackendValidationError("unknown two-level atom control kind")
         return QobjEvo(terms)
 
-    def _measure(self, canonical_axis: int, context: _ShotContext) -> int:
+    def _measure(self, engine_index: int, context: _ShotContext) -> int:
         self._validate_state(context.state)
-        projectors = self._projectors[canonical_axis]
+        projectors = self._projectors[engine_index]
         if projectors is None:
             projectors = tuple(
-                self._qutip_space.expand_local(canonical_axis, basis(2, outcome).proj())
+                _expand_qutip_local(self._dims, engine_index, basis(2, outcome).proj())
                 for outcome in range(2)
             )
-            self._projectors[canonical_axis] = projectors
+            self._projectors[engine_index] = projectors
         outcome, context.state = _sample_projective_qutip_state(
             context.state,
             projectors,

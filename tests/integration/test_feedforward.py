@@ -28,7 +28,7 @@ def test_teleportation_moves_one_state_to_target():
         .result()
         .get_counts()
     )
-    assert all(key[-1] == "1" for key in counts)
+    assert all(key[0] == "1" for key in counts)
 
 
 def test_teleportation_moves_plus_state_to_target():
@@ -41,7 +41,7 @@ def test_teleportation_moves_plus_state_to_target():
         .result()
         .get_counts()
     )
-    assert all(key[-1] == "0" for key in counts)
+    assert all(key[0] == "0" for key in counts)
 
 
 def test_bit_flip_code_corrects_single_x_error():
@@ -63,7 +63,7 @@ def test_bit_flip_code_corrects_single_x_error():
         .result()
         .get_counts()
     )
-    assert all(key[0] == "0" and key[1] == "0" and key[2] == "0" for key in counts)
+    assert all(key[2:] == "000" for key in counts)
 
 
 def test_reset_seed_independence_matches_born_rule():

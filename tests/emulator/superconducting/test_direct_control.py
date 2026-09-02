@@ -141,7 +141,7 @@ def test_direct_drive_propagator_matches_independent_full_hamiltonian(backend):
     )
     annihilation = destroy(len(backend.model.basis_order))
     drift = adapter._drift.get_ideal_qobjevo([3, 3])(0.0)
-    drive = 0.5 * amplitude * tensor(qeye(3), annihilation + annihilation.dag())
+    drive = 0.5 * amplitude * tensor(annihilation + annihilation.dag(), qeye(3))
     expected = (-1j * (drift + drive) * duration).expm().full()
 
     assert np.allclose(actual, expected, atol=2e-7)

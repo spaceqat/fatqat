@@ -91,9 +91,9 @@ def _adapter(model, **kwargs):
     )
 
 
-def _qutip_tensor(*canonical_factors):
-    """Construct a QuTiP value from canonical least-significant-first factors."""
-    return tensor(*reversed(canonical_factors))
+def _qutip_tensor(*public_factors):
+    """Construct a QuTiP value directly in public factor order."""
+    return tensor(*public_factors)
 
 
 def _amplitude_term(rates, *, ordinal=0):
@@ -287,7 +287,7 @@ def test_amplitude_damping_rate_reproduces_exponential_population_decay(model):
     initial = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
     context = _evolve(adapter, (block,), _context(adapter, initial))
 
-    population_2 = context.state.ptrace(1).diag()[2].real
+    population_2 = context.state.ptrace(0).diag()[2].real
     assert population_2 == pytest.approx(np.exp(-rate * duration), abs=2e-4)
 
 
@@ -312,7 +312,7 @@ def test_phase_damping_rate_reproduces_exact_coherence_decay(model):
     initial = ket2dm(_qutip_tensor(plus, basis(3, 0)))
     context = _evolve(adapter, (block,), _context(adapter, initial))
 
-    coherence = context.state.ptrace(1).full()[0, 1]
+    coherence = context.state.ptrace(0).full()[0, 1]
     assert coherence == pytest.approx(0.5 * np.exp(-rate * duration), abs=2e-4)
 
 
@@ -343,7 +343,7 @@ def test_collapse_terms_are_active_only_during_their_own_placed_block(model):
     initial = ket2dm(_qutip_tensor(basis(3, 2), basis(3, 0)))
     context = _evolve(adapter, (noisy, quiet), _context(adapter, initial))
 
-    population_2 = context.state.ptrace(1).diag()[2].real
+    population_2 = context.state.ptrace(0).diag()[2].real
     # Only `noisy`'s own 2.0ns window contributes decay, not the full 5.0ns run.
     assert population_2 == pytest.approx(np.exp(-rate * 2.0), abs=2e-4)
 
@@ -365,7 +365,7 @@ def test_disabled_conditional_block_keeps_only_background_noise_active(model):
 
     adapter.evolve(run, context, (False,))  # condition not met: disabled
 
-    population_2 = context.state.ptrace(1).diag()[2].real
+    population_2 = context.state.ptrace(0).diag()[2].real
     assert population_2 == pytest.approx(
         np.exp(-background_rate * block.duration),
         abs=2e-4,
@@ -385,10 +385,10 @@ def test_overlapping_disjoint_pulses_each_keep_their_own_noise_binding(model):
     context = _evolve(adapter, (block_q0, block_q1), _context(adapter, initial))
 
     state = context.state
-    assert state.ptrace(1).diag()[2].real == pytest.approx(
+    assert state.ptrace(0).diag()[2].real == pytest.approx(
         np.exp(-rate_q0 * duration), abs=2e-4
     )
-    assert state.ptrace(0).diag()[2].real == pytest.approx(
+    assert state.ptrace(1).diag()[2].real == pytest.approx(
         np.exp(-rate_q1 * duration), abs=2e-4
     )
 
@@ -425,5 +425,5 @@ def test_operation_scoped_and_background_noise_accumulate_then_idle_is_global_on
     expected = np.exp(-(global_rate + rate_gate) * gated_duration) * np.exp(
         -global_rate * idle_duration
     )
-    population_2 = context.state.ptrace(1).diag()[2].real
+    population_2 = context.state.ptrace(0).diag()[2].real
     assert population_2 == pytest.approx(expected, abs=2e-4)

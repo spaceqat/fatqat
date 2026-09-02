@@ -90,6 +90,9 @@ results use FATQAT and NumPy types; the public API does not expose QuTiP
 objects or `superop`. Informational QuTiP solver names and options appear
 only in result `runtime_details`.
 
+Results follow arrangement order, with site 0 as the most-significant factor.
+State and unitary results may still use different documented terminal frames.
+
 Measurement and potentially active Lindblad noise make a retained final state
 stochastic. In those cases, the default request returns counts when the
 program contains measurement and otherwise returns metadata only. Request a

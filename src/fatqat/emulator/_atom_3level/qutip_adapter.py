@@ -15,6 +15,7 @@ from qutip import (
     propagator as qutip_propagator,
     qeye,
     sesolve,
+    tensor,
 )
 from qutip_qip.pulse import Pulse
 
@@ -34,9 +35,12 @@ from .._core.outcome import ExecutionMode, _PulseShotOutcome
 from .._core.pulse import PhaseShift, PhaseSwap
 from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
-from .._qutip_boundaries import _apply_qutip_reset, _sample_projective_qutip_state
+from .._qutip_boundaries import (
+    _apply_qutip_reset,
+    _expand_qutip_local,
+    _sample_projective_qutip_state,
+)
 from .._core.target import _PreparedControlBinding
-from .._qutip_space import _QutipTensorSpace
 from .._qutip_runtime import _qutip_runtime_details
 from .target import _Atom3LevelTarget
 
@@ -73,13 +77,14 @@ class _Atom3LevelQutipAdapter:
                 "atom engine allocation must cover the complete target in target order"
             )
         self._engine_allocation = engine_allocation
-        self._qutip_space = _QutipTensorSpace(engine_allocation)
+        # QuTiP factor 0 is already FATQAT public subsystem 0; preserve the
+        # allocation order directly rather than translating tensor factors.
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
         self._solvers_used: set[str] = set()
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
-        self._dims = list(self._qutip_space.dims)
+        self._dims = list(engine_allocation.system_dims)
         self.local_raman_raising = Qobj(
             np.array([[0, 0, 0], [1, 0, 0], [0, 0, 0]], complex)
         )
@@ -89,14 +94,15 @@ class _Atom3LevelQutipAdapter:
         self.local_rydberg_number = Qobj(np.diag([0, 0, 1]))
         self._projectors = tuple(
             tuple(
-                self._qutip_space.expand_local(ordinal, ket2dm(basis(3, level)))
+                _expand_qutip_local(self._dims, ordinal, ket2dm(basis(3, level)))
                 for level in range(3)
             )
             for ordinal in range(engine_allocation.n_subsystems)
         )
         self._reset_operators = tuple(
             tuple(
-                self._qutip_space.expand_local(
+                _expand_qutip_local(
+                    self._dims,
                     ordinal,
                     basis(3, 0) * basis(3, level).dag(),
                 )
@@ -122,9 +128,7 @@ class _Atom3LevelQutipAdapter:
         return Qobj(np.diag([1.0, np.exp(1j * theta), 1.0]))
 
     def initial_state(self) -> Any:
-        ket = self._qutip_space.full_tensor(
-            tuple(basis(dim, 0) for dim in self._engine_allocation.system_dims)
-        )
+        ket = tensor(*tuple(basis(dim, 0) for dim in self._dims))
         return ket2dm(ket) if self._execution_mode == "density_matrix" else ket
 
     @staticmethod
@@ -142,20 +146,16 @@ class _Atom3LevelQutipAdapter:
             raise TypeError("three-level atom statevector runner requires a ket")
 
     def interaction_drift(self) -> Qobj:
-        drift = 0 * self._qutip_space.full_tensor(
-            tuple(qeye(dim) for dim in self._engine_allocation.system_dims)
-        )
+        drift = 0 * tensor(*tuple(qeye(dim) for dim in self._dims))
         for value in self._target.interactions:
-            factors = [qeye(dim) for dim in self._engine_allocation.system_dims]
+            factors = [qeye(dim) for dim in self._dims]
             factors[self._engine_allocation.engine_index(value.first)] = (
                 self.local_rydberg_number
             )
             factors[self._engine_allocation.engine_index(value.second)] = (
                 self.local_rydberg_number
             )
-            drift += value.signed_strength_rad_per_us * self._qutip_space.full_tensor(
-                factors
-            )
+            drift += value.signed_strength_rad_per_us * tensor(*factors)
         return drift
 
     def _bind_child(
@@ -174,7 +174,7 @@ class _Atom3LevelQutipAdapter:
         if len(binding.engine_indices) != 1:
             raise BackendValidationError("atom controls require one engine index")
         engine_index = binding.engine_indices[0]
-        qutip_target = self._qutip_space.target(engine_index)
+        qutip_target = engine_index
         coefficients = np.asarray(child.waveform.values, dtype=complex)
         site = self._engine_allocation.device_operands[engine_index]
         frame_angle = frames.get(self._target.model.frame(site), 0.0)
@@ -264,9 +264,7 @@ class _Atom3LevelQutipAdapter:
             input_frames={},
         )
         if isinstance(bound, _BoundFrames):
-            unitary = self._qutip_space.full_tensor(
-                tuple(qeye(dim) for dim in self._engine_allocation.system_dims)
-            )
+            unitary = tensor(*tuple(qeye(dim) for dim in self._dims))
         else:
             self._solvers_used.add("propagator")
             unitary = qutip_propagator(
@@ -366,7 +364,7 @@ class _Atom3LevelQutipAdapter:
                     raise BackendValidationError(
                         f"unknown atom Lindblad engine index {engine_index!r}"
                     )
-                result.append(self._qutip_space.expand_local(engine_index, local))
+                result.append(_expand_qutip_local(self._dims, engine_index, local))
         return tuple(result)
 
     def _bind_block_collapse_operators(
@@ -448,8 +446,8 @@ class _Atom3LevelQutipAdapter:
         return _BoundDynamics(hamiltonian=hamiltonian, output_frames=frames)
 
     def _frame_unitary(self, frames: dict[Any, float]) -> Qobj:
-        canonical_factors = tuple(
+        public_factors = tuple(
             self.local_frame(frames.get(self._target.model.frame(site), 0.0))
             for site in self._engine_allocation.device_operands
         )
-        return self._qutip_space.full_tensor(canonical_factors)
+        return tensor(*public_factors)

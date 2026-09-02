@@ -57,8 +57,15 @@ def render(output: Path) -> tuple[str, ...]:
     import fatqat as fq
     import fatqat.operations as ops
 
+    couplings = tuple(
+        (site, neighbor)
+        for site in range(12)
+        for neighbor in (site + 1, site + 4)
+        if neighbor < 12 and (neighbor != site + 1 or site % 4 != 3)
+    )
     profile = fq.simulator.SCQubitGoogleSimulator(
-        grid_size=(3, 4),
+        num_qubits=12,
+        couplings=couplings,
         runtime="numpy",
     )
     gate_map = profile.implementation_map

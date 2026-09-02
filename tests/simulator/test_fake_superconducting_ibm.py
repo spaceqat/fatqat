@@ -1,4 +1,4 @@
-"""Tests SCQubitIBMSimulator: native gate set, grid mapping, and noise model."""
+"""Tests SCQubitIBMSimulator: native gates, arbitrary topology, and noise."""
 
 import numpy as np
 import pytest
@@ -14,6 +14,8 @@ from fatqat.noise import AmplitudeDamping, Depolarizing, PhaseDamping
 from fatqat.program import Program
 from fatqat.registers import GridRegister, QuantumRegister
 from fatqat.resource_layout import ResourceLayout
+
+COUPLINGS = ((0, 1), (1, 2), (1, 3), (3, 4))
 
 # --- implementation map -----------------------------------------------------
 
@@ -32,15 +34,16 @@ def test_fake_superconducting_ibm_map_exposes_native_device_operands_for():
     assert (0, 5) not in m.device_operands_for(ops.CZ)
 
 
-def test_fake_superconducting_ibm_grid_size_controls_capacity_and_connectivity():
-    backend = SCQubitIBMSimulator(grid_size=(2, 3))
+def test_fake_superconducting_ibm_accepts_arbitrary_couplings_and_exposes_sites():
+    backend = SCQubitIBMSimulator(num_qubits=5, couplings=COUPLINGS)
     m = backend.implementation_map
-    assert (2, 5) in m.device_operands_for(ops.CZ)
-    assert (0, 3) in m.device_operands_for(ops.CZ)
+    assert backend.device_sites == (0, 1, 2, 3, 4)
+    assert (1, 3) in m.device_operands_for(ops.CZ)
+    assert (3, 1) in m.device_operands_for(ops.CZ)
     assert (0, 4) not in m.device_operands_for(ops.CZ)
 
-    p = Program(7)
-    with pytest.raises(BackendValidationError, match=r"at most 6.*2x3"):
+    p = Program(6)
+    with pytest.raises(BackendValidationError, match=r"at most 5"):
         backend.run(p)
 
 
@@ -175,57 +178,28 @@ def test_fake_backend_allows_measurement_and_reset_on_any_qubit():
     assert result.get_counts()
 
 
-# --- GridRegister-aware mapping ----------------------------------------------
+# --- register mapping --------------------------------------------------------
 
 
-def test_grid_register_binds_top_left_on_4x4_device():
+def test_grid_register_is_flattened_on_arbitrary_topology():
     qubits = GridRegister(2, 3, name="qubits")
     p = Program([qubits])
-    backend = SCQubitIBMSimulator()
+    backend = SCQubitIBMSimulator(num_qubits=6, couplings=((0, 1),))
     resource_layout = backend._resolve_resource_layout(p)
     assert isinstance(resource_layout, ResourceLayout)
-    assert tuple(resource_layout.device_label(qubits[i]) for i in range(6)) == (
-        0,
-        1,
-        2,
-        4,
-        5,
-        6,
+    assert tuple(resource_layout.device_label(qubits[i]) for i in range(6)) == tuple(
+        range(6)
     )
 
 
-def test_grid_register_scalar_ref_uses_grid_binder_device_label_not_identity():
-    qubits = GridRegister(2, 3, name="qubits")
-    p = Program([qubits])
-    backend = SCQubitIBMSimulator()
-    resource_layout = backend._resolve_resource_layout(p)
-    assert resource_layout.device_label(qubits[3]) == 4
-
-
-def test_rejects_grid_register_combined_with_other_quantum_register():
+def test_grid_register_can_be_combined_with_other_quantum_register():
     qubits = GridRegister(2, 2, name="qubits")
     other = QuantumRegister(2, name="q")
     p = Program([qubits, other])
-    backend = SCQubitIBMSimulator()
-    with pytest.raises(BackendValidationError, match="SCQubitIBMSimulator"):
-        backend._resolve_resource_layout(p)
-
-
-def test_rejects_two_grid_registers():
-    atoms1 = GridRegister(2, 2, name="a1")
-    atoms2 = GridRegister(2, 2, name="a2")
-    p = Program([atoms1, atoms2])
-    backend = SCQubitIBMSimulator()
-    with pytest.raises(BackendValidationError, match="SCQubitIBMSimulator"):
-        backend._resolve_resource_layout(p)
-
-
-def test_rejects_grid_that_does_not_fit_device_even_with_enough_total_capacity():
-    qubits = GridRegister(8, 2, name="qubits")
-    p = Program([qubits])
-    backend = SCQubitIBMSimulator()
-    with pytest.raises(BackendValidationError):
-        backend._resolve_resource_layout(p)
+    backend = SCQubitIBMSimulator(num_qubits=6, couplings=((0, 1),))
+    layout = backend._resolve_resource_layout(p)
+    assert tuple(layout.device_label(qubits[i]) for i in range(4)) == (0, 1, 2, 3)
+    assert tuple(layout.device_label(other[i]) for i in range(2)) == (4, 5)
 
 
 def test_naive_scalar_program_still_uses_declaration_order_identity_binding():
@@ -372,4 +346,4 @@ def test_cz_has_scoped_relaxation_before_joint_depolarizing():
 
     assert [
         step.target_indices for step in plan if isinstance(step, ApplyChannelStep)
-    ] == [(0,), (0,), (1,), (1,), (0, 1)]
+    ] == [(1,), (1,), (0,), (0,), (1, 0)]

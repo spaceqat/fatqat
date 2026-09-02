@@ -1,4 +1,4 @@
-"""Tests SCQubitGoogleSimulator: native gate set, grid mapping, and noise model."""
+"""Tests SCQubitGoogleSimulator: native gates, arbitrary topology, and noise."""
 
 import numpy as np
 import pytest
@@ -14,6 +14,8 @@ from fatqat.noise import AmplitudeDamping, Depolarizing, PhaseDamping
 from fatqat.program import Program
 from fatqat.registers import GridRegister, QuantumRegister
 from fatqat.resource_layout import ResourceLayout
+
+COUPLINGS = ((0, 1), (1, 2), (1, 3), (3, 4))
 
 # --- implementation map -----------------------------------------------------
 
@@ -34,12 +36,14 @@ def test_fake_superconducting_google_map_exposes_native_device_operands_for():
         assert (0, 5) not in m.device_operands_for(op)
 
 
-def test_fake_superconducting_google_grid_size_controls_grid_binding():
-    qubits = GridRegister(2, 2, name="qubits")
-    layout = SCQubitGoogleSimulator(grid_size=(2, 3))._resolve_resource_layout(
-        Program([qubits])
-    )
-    assert tuple(layout.device_label(qubits[i]) for i in range(4)) == (0, 1, 3, 4)
+def test_fake_superconducting_google_accepts_arbitrary_couplings_and_exposes_sites():
+    backend = SCQubitGoogleSimulator(num_qubits=5, couplings=COUPLINGS)
+    assert backend.device_sites == (0, 1, 2, 3, 4)
+    for operation in (ops.CZ, ops.iSwap):
+        operands = backend.implementation_map.device_operands_for(operation)
+        assert (1, 3) in operands
+        assert (3, 1) in operands
+        assert (0, 4) not in operands
 
 
 def test_fake_superconducting_google_map_rx_ry_rz_are_uniform():
@@ -182,57 +186,28 @@ def test_fake_backend_allows_measurement_and_reset_on_any_qubit():
     assert result.get_counts()
 
 
-# --- GridRegister-aware mapping ----------------------------------------------
+# --- register mapping --------------------------------------------------------
 
 
-def test_grid_register_binds_top_left_on_4x4_device():
+def test_grid_register_is_flattened_on_arbitrary_topology():
     qubits = GridRegister(2, 3, name="qubits")
     p = Program([qubits])
-    backend = SCQubitGoogleSimulator()
+    backend = SCQubitGoogleSimulator(num_qubits=6, couplings=((0, 1),))
     resource_layout = backend._resolve_resource_layout(p)
     assert isinstance(resource_layout, ResourceLayout)
-    assert tuple(resource_layout.device_label(qubits[i]) for i in range(6)) == (
-        0,
-        1,
-        2,
-        4,
-        5,
-        6,
+    assert tuple(resource_layout.device_label(qubits[i]) for i in range(6)) == tuple(
+        range(6)
     )
 
 
-def test_grid_register_scalar_ref_uses_grid_binder_device_label_not_identity():
-    qubits = GridRegister(2, 3, name="qubits")
-    p = Program([qubits])
-    backend = SCQubitGoogleSimulator()
-    resource_layout = backend._resolve_resource_layout(p)
-    assert resource_layout.device_label(qubits[3]) == 4
-
-
-def test_rejects_grid_register_combined_with_other_quantum_register():
+def test_grid_register_can_be_combined_with_other_quantum_register():
     qubits = GridRegister(2, 2, name="qubits")
     other = QuantumRegister(2, name="q")
     p = Program([qubits, other])
-    backend = SCQubitGoogleSimulator()
-    with pytest.raises(BackendValidationError, match="SCQubitGoogleSimulator"):
-        backend._resolve_resource_layout(p)
-
-
-def test_rejects_two_grid_registers():
-    atoms1 = GridRegister(2, 2, name="a1")
-    atoms2 = GridRegister(2, 2, name="a2")
-    p = Program([atoms1, atoms2])
-    backend = SCQubitGoogleSimulator()
-    with pytest.raises(BackendValidationError, match="SCQubitGoogleSimulator"):
-        backend._resolve_resource_layout(p)
-
-
-def test_rejects_grid_that_does_not_fit_device_even_with_enough_total_capacity():
-    qubits = GridRegister(8, 2, name="qubits")
-    p = Program([qubits])
-    backend = SCQubitGoogleSimulator()
-    with pytest.raises(BackendValidationError):
-        backend._resolve_resource_layout(p)
+    backend = SCQubitGoogleSimulator(num_qubits=6, couplings=((0, 1),))
+    layout = backend._resolve_resource_layout(p)
+    assert tuple(layout.device_label(qubits[i]) for i in range(4)) == (0, 1, 2, 3)
+    assert tuple(layout.device_label(other[i]) for i in range(2)) == (4, 5)
 
 
 def test_naive_scalar_program_still_uses_declaration_order_identity_binding():
@@ -358,4 +333,4 @@ def test_iswap_has_scoped_relaxation_before_joint_depolarizing():
 
     assert [
         step.target_indices for step in plan if isinstance(step, ApplyChannelStep)
-    ] == [(0,), (0,), (1,), (1,), (0, 1)]
+    ] == [(1,), (1,), (0,), (0,), (1, 0)]

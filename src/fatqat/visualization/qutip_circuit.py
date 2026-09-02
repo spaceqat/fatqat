@@ -16,13 +16,13 @@ import functools
 import io
 from typing import TYPE_CHECKING, Any
 
-from . import operations as ops
-from .errors import UnsupportedOperationError
-from .operations import BarrierGate, Measurement, PulseOperation, ResetGate
-from .registers import RegisterRef, RegisterView, _view_members
+from .. import operations as ops
+from ..errors import UnsupportedOperationError
+from ..operations import BarrierGate, Measurement, PulseOperation, ResetGate
+from ..registers import RegisterRef, RegisterView, _view_members
 
 if TYPE_CHECKING:
-    from .program import Program
+    from ..program import Program
 
 # Map exact fatqat built-in operation types to their native QuTiP-QIP gate.
 # Using types instead of public ``Operation.name`` strings prevents a custom
@@ -461,12 +461,7 @@ def _render_text(circuit, **kwargs) -> str:
 def _wire_maps(program: Program) -> tuple[dict, dict]:
     """Assign consecutive global wire indices to every qubit and clbit ref.
 
-    QuTiP's ``QubitCircuit(N)`` numbers wires ``0..N-1``, so each fatqat
-    ``RegisterRef`` needs a single global index. Registers are numbered in
-    declaration order (concatenated), which matches the flat ordering the
-    simulator itself uses - so wire ``k`` in the diagram is subsystem ``k`` in
-    a run. Refs are keyed by ``(id(register), slot)`` because two distinct
-    registers can share a name.
+    QuTiP's ``QubitCircuit(N)`` numbers wires ``0..N-1``, so each fatqat ``RegisterRef`` needs a single global index. Registers are numbered in declaration order (concatenated), which matches the flat ordering the simulator itself uses - so wire ``k`` in the diagram is subsystem ``k`` in a run. Refs are keyed by ``(id(register), slot)`` because two distinct registers can share a name.
     """
     qubit_index: dict[tuple[int, int], int] = {}
     for register in program.quantum_registers:
@@ -487,11 +482,7 @@ def _wire(ref: RegisterRef, index_map: dict) -> int:
 def _expand_targets(targets: tuple) -> tuple[tuple[RegisterRef, ...], ...]:
     """Expand a possibly-grouped target tuple into scalar operand tuples.
 
-    A fatqat operation may target a whole ``RegisterView`` (a broadcast group);
-    a circuit diagram needs one gate per scalar operand, so a view target is
-    expanded the same way the backend expands it for execution - via the
-    library's own ``_view_members``, which defines the deterministic member
-    order. The common case (all targets are plain refs) returns unchanged.
+    A fatqat operation may target a whole ``RegisterView`` (a broadcast group); a circuit diagram needs one gate per scalar operand, so a view target is expanded the same way the backend expands it for execution - via the library's own ``_view_members``, which defines the deterministic member order. The common case (all targets are plain refs) returns unchanged.
     """
     if not any(isinstance(target, RegisterView) for target in targets):
         return (targets,)
@@ -518,21 +509,17 @@ def to_qubit_circuit(program: Program, *, _barrier_markers: bool = False):
     a condition attached to a barrier is not depicted. Register dimensions
     are not shown.
 
-    Use the returned circuit for drawing only. Placeholder gates for non-native
-    operations cannot be simulated with QuTiP-QIP.
+    Use the returned circuit for drawing only. Placeholder gates for non-native operations cannot be simulated with QuTiP-QIP.
 
     Args:
-        program: Program to translate. Qudit registers are accepted, but their
-            dimensions are not visible in the diagram.
+        program: Program to translate. Qudit registers are accepted, but their dimensions are not visible in the diagram.
 
     Returns:
-        A ``qutip_qip.circuit.QubitCircuit`` ready for QuTiP-QIP's drawing
-        methods.
+        A ``qutip_qip.circuit.QubitCircuit`` ready for QuTiP-QIP's drawing methods.
 
     Raises:
         ImportError: If QuTiP-QIP is unavailable.
-        UnsupportedOperationError: If ``program`` contains a
-            :class:`~fatqat.operations.PulseOperation`.
+        UnsupportedOperationError: If ``program`` contains a :class:`~fatqat.operations.PulseOperation`.
     """
     qubit_circuit_cls = _require_qutip()
     qubit_index, clbit_index = _wire_maps(program)
@@ -678,9 +665,10 @@ def _draw_program(program: Program, renderer: str = "matplotlib", **kwargs: Any)
     Args:
         program: The program to draw.
         renderer: ``"matplotlib"`` (default) returns a matplotlib ``Figure`` -
-            save it yourself with ``fig.savefig("circuit.png")``; ``"text"``
-            returns the terminal diagram as a ``str``. Any other renderer name
-            (e.g. ``"latex"``) is forwarded to QuTiP-QIP unchanged.
+            save it yourself with ``fig.savefig("circuit.png")``;
+            ``"text"`` returns the terminal diagram as a ``str``. Any other
+            renderer name (e.g. ``"latex"``) is forwarded to QuTiP-QIP
+            unchanged.
         **kwargs: Forwarded to the QuTiP renderer (e.g. ``dpi``, ``theme``,
             ``title`` for matplotlib).
 
@@ -688,16 +676,13 @@ def _draw_program(program: Program, renderer: str = "matplotlib", **kwargs: Any)
         A matplotlib ``Figure`` for ``"matplotlib"``, a ``str`` for ``"text"``,
         or whatever QuTiP-QIP's ``draw`` returns for any other renderer.
     """
-    if renderer == "text":
+    if renderer in {"text", "matplotlib"}:
         circuit = to_qubit_circuit(program, _barrier_markers=True)
         if _gate_api() == _API_STRING:
             _adapt_legacy_condition_controls(circuit)
-        return _render_text(circuit, **kwargs)
 
-    if renderer == "matplotlib":
-        circuit = to_qubit_circuit(program, _barrier_markers=True)
-        if _gate_api() == _API_STRING:
-            _adapt_legacy_condition_controls(circuit)
+        if renderer == "text":
+            return _render_text(circuit, **kwargs)
         return _render_matplotlib(circuit, **kwargs)
 
     # Foreign renderers receive marker-free circuits; see _add_operation.

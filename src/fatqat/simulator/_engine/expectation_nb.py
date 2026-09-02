@@ -6,6 +6,10 @@ sweep over ``2**n`` amplitudes moves into compiled code. The term loop, the mask
 packing, and the coefficient bookkeeping stay in Python, where they cost
 O(factors) and never touch the state.
 
+Public most-significant-first qubit numbers are translated into the small bit
+masks before these kernels run. The compiled loops retain their private integer
+bit convention and never permute or copy the state.
+
 The win is not "NumPy is slow". It is that the NumPy form has to materialize
 what a loop can consume in flight: per term it allocates the permuted index, the
 popcount, the sign, the projector mask, and the gathered ``state[permuted]`` -

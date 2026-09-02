@@ -23,7 +23,7 @@ class Observable:
     """Represent a Hermitian observable on a fixed number of qubits.
 
     Dense labels use ``I``, ``X``, ``Y``, and ``Z``, with qubit 0 at the
-    right. ``from_sparse`` also supports the ``ZERO`` and ``ONE`` projectors
+    left. ``from_sparse`` also supports the ``ZERO`` and ``ONE`` projectors
     while naming only non-identity factors. Repeated and zero-coefficient terms
     are preserved.
 
@@ -48,13 +48,13 @@ class Observable:
         *,
         num_qubits: int | None = None,
     ) -> None:
-        """Build an observable from dense little-endian labels.
+        """Build an observable from dense labels in public qubit order.
 
         Args:
             data: Either ``[(label, coefficient), ...]`` or, when ``coeffs`` is
                 supplied, an iterable of labels. Every label must be a string
                 over ``I``, ``X``, ``Y``, and ``Z`` with the same width. The
-                rightmost character acts on qubit 0. Every coefficient must
+                leftmost character acts on qubit 0. Every coefficient must
                 have zero imaginary part and is stored as a float.
             coeffs: Coefficients paired with bare labels in ``data``. The two
                 iterables must have the same length.
@@ -88,8 +88,8 @@ class Observable:
         terms = []
         for label, coeff in pairs:
             factors = []
-            # Little-endian: position 0 from the right is qubit 0.
-            for qubit, letter in enumerate(reversed(label)):
+            # Dense labels follow public subsystem order: character q names q.
+            for qubit, letter in enumerate(label):
                 if letter not in _DENSE_LETTERS:
                     raise ValueError(
                         f"unknown letter {letter!r} in label {label!r}; dense "

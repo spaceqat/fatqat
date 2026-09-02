@@ -119,7 +119,7 @@ def test_rate_depolarization_populates_the_full_qutrit_space(model):
         .result()
         .get_density_matrix()
     )
-    q0_state = Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(1)
+    q0_state = Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(0)
 
     expected_population = (1.0 - np.exp(-rate * duration)) / 3.0
     assert q0_state.diag()[2].real == pytest.approx(expected_population, abs=2e-7)

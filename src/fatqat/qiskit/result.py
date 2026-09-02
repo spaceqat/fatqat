@@ -139,5 +139,7 @@ def _expand_counts_to_memory(
 
 
 def _tuple_to_hex(outcome: tuple[int, ...]) -> str:
+    # Qiskit packing is an adapter contract: classical bit i has weight 2**i,
+    # independent of FATQAT's native left-to-right count-string display.
     value = sum(int(bit) << index for index, bit in enumerate(outcome))
     return hex(value)

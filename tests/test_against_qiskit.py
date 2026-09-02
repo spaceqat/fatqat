@@ -14,10 +14,10 @@ shot-for-shot; this axis pins both against a reference that cannot share a bug
 with either. Ideal
 circuits compare against ``qiskit.quantum_info`` exact evolution (Qiskit's
 canonical reference, no transpiler in the loop); noisy circuits compare
-against Aer's density-matrix simulator with native error constructors. Both
-libraries use little-endian flat indexing, and both build the state by
-applying identical gate matrices to ``|0...0>``, so matrices (including
-global phase) must agree elementwise with no permutation.
+against Aer's density-matrix simulator with native error constructors.
+FATQAT exposes public subsystem 0 as the most-significant basis digit, while
+Qiskit exposes qubit 0 as the least-significant bit. Raw Qiskit arrays are
+therefore converted exactly once at this test boundary.
 
 Noise cases attach fatqat catalog channels and Aer's *native* error
 constructors, asserting that fatqat's parameterization means what Aer's
@@ -71,6 +71,33 @@ def _assert_close(ours: np.ndarray, theirs: np.ndarray) -> None:
     theirs = np.asarray(theirs)
     assert ours.shape == theirs.shape
     assert np.allclose(ours, theirs, rtol=0, atol=_ATOL)
+
+
+def _qiskit_indices_for_public_basis(num_qubits):
+    return np.asarray(
+        [
+            sum(((index >> q) & 1) << (num_qubits - 1 - q) for q in range(num_qubits))
+            for index in range(1 << num_qubits)
+        ]
+    )
+
+
+def _qiskit_matrix_in_public_basis(matrix, num_qubits):
+    permutation = _qiskit_indices_for_public_basis(num_qubits)
+    return np.asarray(matrix)[np.ix_(permutation, permutation)]
+
+
+def _qiskit_superop_in_public_basis(superop, num_qubits):
+    permutation = _qiskit_indices_for_public_basis(num_qubits)
+    dim = len(permutation)
+    operator_permutation = np.asarray(
+        [
+            permutation[row] + dim * permutation[column]
+            for column in range(dim)
+            for row in range(dim)
+        ]
+    )
+    return np.asarray(superop)[np.ix_(operator_permutation, operator_permutation)]
 
 
 # --- runners -----------------------------------------------------------------
@@ -264,13 +291,17 @@ _IDEAL_CASES = {
 @pytest.mark.parametrize("build", _IDEAL_CASES.values(), ids=_IDEAL_CASES.keys())
 def test_statevector_matches_qiskit(build, runtime):
     program, circuit = build()
-    _assert_close(_fatqat_state(program, runtime), _qiskit_state(circuit))
+    permutation = _qiskit_indices_for_public_basis(circuit.num_qubits)
+    _assert_close(_fatqat_state(program, runtime), _qiskit_state(circuit)[permutation])
 
 
 @pytest.mark.parametrize("build", _IDEAL_CASES.values(), ids=_IDEAL_CASES.keys())
 def test_density_matrix_matches_qiskit(build, runtime):
     program, circuit = build()
-    _assert_close(_fatqat_rho(program, runtime), _qiskit_rho(circuit))
+    _assert_close(
+        _fatqat_rho(program, runtime),
+        _qiskit_matrix_in_public_basis(_qiskit_rho(circuit), circuit.num_qubits),
+    )
 
 
 # --- operator methods (unitary and super-operator) ---------------------------
@@ -285,7 +316,10 @@ def test_unitary_matches_qiskit(build, runtime):
         .result()
         .get_unitary()
     )
-    _assert_close(ours, np.asarray(Operator(circuit)))
+    _assert_close(
+        ours,
+        _qiskit_matrix_in_public_basis(Operator(circuit), circuit.num_qubits),
+    )
 
 
 @pytest.mark.parametrize("build", _IDEAL_CASES.values(), ids=_IDEAL_CASES.keys())
@@ -297,7 +331,10 @@ def test_superop_matches_qiskit(build, runtime):
         .result()
         .get_superop()
     )
-    _assert_close(ours, np.asarray(SuperOp(circuit)))
+    _assert_close(
+        ours,
+        _qiskit_superop_in_public_basis(SuperOp(circuit), circuit.num_qubits),
+    )
 
 
 def test_noisy_superop_matches_aer(runtime):
@@ -318,7 +355,7 @@ def test_noisy_superop_matches_aer(runtime):
     run = circuit.copy()
     run.save_superop()
     theirs = np.asarray(simulator.run(run).result().data()["superop"])
-    _assert_close(ours, theirs)
+    _assert_close(ours, _qiskit_superop_in_public_basis(theirs, circuit.num_qubits))
 
 
 def test_complex_superop_matches_qiskit_directly(runtime):
@@ -334,6 +371,33 @@ def test_complex_superop_matches_qiskit_directly(runtime):
         .get_superop()
     )
     _assert_close(ours, np.asarray(SuperOp(circuit)))
+
+
+def test_public_basis_conversion_is_non_vacuous_for_asymmetric_arrays(runtime):
+    program, circuit = _parametric_coverage()
+    permutation = _qiskit_indices_for_public_basis(circuit.num_qubits)
+    qiskit_state = _qiskit_state(circuit)
+    qiskit_rho = _qiskit_rho(circuit)
+    qiskit_unitary = np.asarray(Operator(circuit))
+    qiskit_superop = np.asarray(SuperOp(circuit))
+
+    assert not np.allclose(_fatqat_state(program, runtime), qiskit_state)
+    assert not np.allclose(_fatqat_rho(program, runtime), qiskit_rho)
+    ours_unitary = (
+        fq.simulator.Simulator("unitary", runtime=runtime)
+        .run(program)
+        .result()
+        .get_unitary()
+    )
+    ours_superop = (
+        fq.simulator.Simulator("superop", runtime=runtime)
+        .run(program)
+        .result()
+        .get_superop()
+    )
+    assert not np.allclose(ours_unitary, qiskit_unitary)
+    assert not np.allclose(ours_superop, qiskit_superop)
+    _assert_close(_fatqat_state(program, runtime), qiskit_state[permutation])
 
 
 # --- noisy circuits (density matrices; Aer native error constructors) --------
@@ -353,7 +417,9 @@ def test_depolarizing_on_two_qubit_gate_matches_aer(runtime):
 
     _assert_close(
         _fatqat_rho(program, runtime, noise),
-        _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
+        _qiskit_matrix_in_public_basis(
+            _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]), 2
+        ),
     )
 
 
@@ -365,25 +431,39 @@ def test_pauli_channel_matches_aer(runtime):
 
     _assert_close(
         _fatqat_rho(program, runtime, noise),
-        _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
+        _qiskit_matrix_in_public_basis(
+            _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]), 2
+        ),
     )
 
 
-def test_two_qubit_pauli_channel_matches_aer_with_identical_labels(runtime):
-    # fatqat now shares Qiskit's Pauli-string reading (rightmost character is
-    # the first target), so the same label names the same operator on both
-    # sides. The channel is asymmetric across the two qubits so that a
-    # convention mismatch would be observable.
-    program, circuit = _bell()
+def test_two_qubit_pauli_channel_reverses_label_at_aer_boundary(runtime):
+    program = fq.Program(2)
+    program.add(ops.X, 0)
+    program.add(ops.CX, (0, 1))
+    circuit = QuantumCircuit(2)
+    circuit.x(0)
+    circuit.cx(0, 1)
+
     noise = fq.NoiseModel()
-    noise.add(fq.noise.PauliChannel({"IX": 0.09, "ZZ": 0.04}), operation=ops.CX)
-    aer_model = _aer_model(
-        pauli_error([("IX", 0.09), ("ZZ", 0.04), ("II", 0.87)]), ["cx"]
-    )
+    noise.add(fq.noise.PauliChannel({"XI": 1.0}), operation=ops.CX)
+    aer_model = _aer_model(pauli_error([("IX", 1.0)]), ["cx"])
+    unconverted_aer_model = _aer_model(pauli_error([("XI", 1.0)]), ["cx"])
 
+    ours = _fatqat_rho(program, runtime, noise)
     _assert_close(
-        _fatqat_rho(program, runtime, noise),
-        _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
+        ours,
+        _qiskit_matrix_in_public_basis(
+            _aer_rho(circuit, aer_model, basis_gates=["x", "cx"]), 2
+        ),
+    )
+    assert not np.allclose(
+        ours,
+        _qiskit_matrix_in_public_basis(
+            _aer_rho(circuit, unconverted_aer_model, basis_gates=["x", "cx"]), 2
+        ),
+        rtol=0,
+        atol=_ATOL,
     )
 
 
@@ -395,7 +475,9 @@ def test_amplitude_damping_matches_aer(runtime):
 
     _assert_close(
         _fatqat_rho(program, runtime, noise),
-        _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
+        _qiskit_matrix_in_public_basis(
+            _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]), 2
+        ),
     )
 
 
@@ -411,7 +493,9 @@ def test_phase_damping_matches_aer(runtime):
 
     _assert_close(
         _fatqat_rho(program, runtime, noise),
-        _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]),
+        _qiskit_matrix_in_public_basis(
+            _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]), 2
+        ),
     )
 
 
@@ -429,11 +513,18 @@ def test_stacked_channels_compose_in_registration_order(runtime):
     aer_model = _aer_model(composed, ["h"])
 
     ours = _fatqat_rho(program, runtime, noise)
-    _assert_close(ours, _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]))
+    _assert_close(
+        ours,
+        _qiskit_matrix_in_public_basis(
+            _aer_rho(circuit, aer_model, basis_gates=["h", "cx"]), 2
+        ),
+    )
 
     # The reversed composition must differ - otherwise this test could not
     # detect an order-convention mistake in either library.
     reversed_composed = amplitude_damping_error(gamma).compose(depolarizing_error(p, 1))
     reversed_model = _aer_model(reversed_composed, ["h"])
-    reversed_rho = _aer_rho(circuit, reversed_model, basis_gates=["h", "cx"])
+    reversed_rho = _qiskit_matrix_in_public_basis(
+        _aer_rho(circuit, reversed_model, basis_gates=["h", "cx"]), 2
+    )
     assert not np.allclose(ours, reversed_rho, rtol=0, atol=_ATOL)

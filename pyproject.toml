@@ -25,14 +25,6 @@ path = "src/fatqat/__init__.py"
 
 [dependency-groups]
 dev = ["pytest>=8", "scipy-doctest>=1.0"]
-docs = [
-    "mkdocs",
-    "mkdocs-material",
-    "mkdocstrings",
-    "mkdocstrings-python",
-    "nbformat",
-    "scikit-learn",
-]
 # Optional: enables the Qiskit integration and numerical cross-check tests in
 # the full-dependency Ubuntu lane. Never required by the package itself; those
 # modules self-skip when Qiskit or Qiskit Aer is absent.
@@ -44,8 +36,8 @@ test-full = [
     {include-group = "dev"},
     {include-group = "qiskit"},
 ]
-# Formatting (black) and static analysis (pylint). Drives scripts/format.sh,
-# scripts/lint.sh, and the Lint CI workflow. See [tool.black] / [tool.pylint].
+# Formatting (black) and static analysis (pylint). Used by the Lint CI workflow;
+# configuration lives in [tool.black] and [tool.pylint].
 lint = ["black>=24", "pylint>=3"]
 
 [tool.pytest.ini_options]

@@ -98,12 +98,40 @@ def test_simulator_allocate_engine_indices_returns_a_separate_engine_allocation(
     # Two independently-resolved values: not the same object...
     assert resource_layout is not engine_index_allocation
     assert isinstance(engine_index_allocation, _EngineAllocation)
-    # ...but the generic simulator's trivial policy makes their current
-    # numerical values coincide. That coincidence is not an API contract.
+    # This private index reversal is a zero-copy performance contract.
     assert [
         engine_index_allocation.engine_index(resource_layout.device_label(ref))
         for ref in refs
-    ] == [resource_layout.device_label(ref) for ref in refs]
+    ] == [2, 1, 0]
+    assert tuple(
+        zip(
+            engine_index_allocation.device_operands,
+            engine_index_allocation.system_dims,
+            strict=True,
+        )
+    ) == ((2, 2), (1, 2), (0, 2))
+
+
+def test_matrix_result_describes_state_axes_in_public_layout_order():
+    program = Program(2)
+    q0, q1 = (program.quantum_registers[0][index] for index in range(2))
+    layout = ResourceLayout({q0: "site-B", q1: "site-A"})
+
+    result = (
+        Simulator()
+        .run(
+            program,
+            shots=0,
+            resource_layout=layout,
+            result_config={"counts": False, "final_state": True},
+        )
+        .result()
+    )
+
+    assert result.metadata["state_axes"] == [
+        {"device_operand": "site-B", "register_ref": q0},
+        {"device_operand": "site-A", "register_ref": q1},
+    ]
 
 
 def test_supplied_layout_must_cover_unused_declared_quantum_refs():
