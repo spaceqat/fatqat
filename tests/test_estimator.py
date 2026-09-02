@@ -169,7 +169,7 @@ def test_estimator_sweep_failed_point_job_fails_outer_job(monkeypatch):
     program.add(ops.RX(angle), 0)
     observable = Observable([("Z", 1.0)])
     estimator = _estimator()
-    error = KeyboardInterrupt("stored point failure")
+    error = RuntimeError("stored point failure")
 
     def fail_on_second(bound, _observables, **_kwargs):
         if bound._instructions[0].operation.theta == 0.2:
@@ -179,8 +179,27 @@ def test_estimator_sweep_failed_point_job_fails_outer_job(monkeypatch):
     monkeypatch.setattr(estimator, "run", fail_on_second)
     outer = estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
 
-    with pytest.raises(KeyboardInterrupt, match="stored point failure") as caught:
+    with pytest.raises(RuntimeError, match="stored point failure") as caught:
         outer.result()
+    assert caught.value is error
+
+
+def test_estimator_sweep_propagates_point_job_interrupt(monkeypatch):
+    angle = fq.Parameter("angle")
+    program = fq.Program(1)
+    program.add(ops.RX(angle), 0)
+    observable = Observable([("Z", 1.0)])
+    estimator = _estimator()
+    error = KeyboardInterrupt("point interrupted")
+
+    monkeypatch.setattr(
+        estimator,
+        "run",
+        lambda *_args, **_kwargs: Job(status="ERROR", error=error),
+    )
+
+    with pytest.raises(KeyboardInterrupt, match="point interrupted") as caught:
+        estimator.run_sweep(program, observable, {angle: [0.1]})
     assert caught.value is error
 
 
