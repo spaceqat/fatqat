@@ -209,7 +209,7 @@ class Estimator:
             )
             try:
                 results.append(point_job.result())
-            except BaseException as exc:
+            except Exception as exc:
                 return Job(status="ERROR", error=exc)
         return Job(status="DONE", result=results)
 

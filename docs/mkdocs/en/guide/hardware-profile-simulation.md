@@ -40,7 +40,9 @@ gate table into application code:
 
 ```pycon
 >>> profile = fq.simulator.SCQubitGoogleSimulator(
-...     grid_size=(2, 3),
+...     num_qubits=6,
+...     couplings=((0, 1), (1, 2), (3, 4), (4, 5),
+...                (0, 3), (1, 4), (2, 5)),
 ...     runtime="numpy",
 ... )
 >>> profile.implementation_map.supports(ops.H)
@@ -103,7 +105,9 @@ characterizations:
 ```python
 profile_type = fq.simulator.SCQubitGoogleSimulator
 noisy_profile = profile_type(
-    grid_size=(2, 3),
+    num_qubits=6,
+    couplings=((0, 1), (1, 2), (3, 4), (4, 5),
+               (0, 3), (1, 4), (2, 5)),
     runtime="numpy",
     noise=profile_type.default_noise_model(),
 )
@@ -132,9 +136,10 @@ implementation map, then make the Program and layout choices that it requires.
 
 ## Track atom occupancy and pairing { #atom-occupancy-and-pairing }
 
-The atom-array profile asks a different hardware question. It has no fixed
-geometry. Instead, `Put` establishes occupancy and `Pair`/`Unpair` change the
-connectivity on which `CZ` is legal:
+Unlike the superconducting profiles, the atom array has no fixed geometry.
+Program resources define sites that begin empty. `Put` loads
+the atoms, while `Pair` and `Unpair` reshape the connectivity on which `CZ`
+is legal:
 
 ![Two occupied atoms begin separated, move together when Pair applies with depolarizing noise, remain paired for CZ, and separate again when Unpair applies with depolarizing noise.](../assets/generated/guide/atom-pairing-lifecycle.svg)
 
@@ -151,7 +156,7 @@ trajectory. `AtomArraySimulator` records no coordinates or movement duration;
 >>> atoms.add(ops.CZ, (0, 1))
 >>> atoms.add(ops.Unpair, (0, 1))
 >>> atoms.measure_all()
->>> atom_counts = fq.simulator.AtomArraySimulator(num_sites=2).run(
+>>> atom_counts = fq.simulator.AtomArraySimulator().run(
 ...     atoms,
 ...     shots=8,
 ...     simulation_config={"seed": 7},
@@ -174,7 +179,6 @@ instruction occurs:
 ...             target_positions=target_position,
 ...         )
 >>> noisy_atom_backend = fq.simulator.AtomArraySimulator(
-...     num_sites=2,
 ...     noise=movement_noise,
 ... )
 >>> noisy_counts = noisy_atom_backend.run(
@@ -190,11 +194,11 @@ This channel perturbs the quantum state during `Pair` and `Unpair`; it does not
 remove either atom. Use [`Loss`][fatqat.noise.Loss] instead when movement
 should change occupancy.
 
-Omitting `Pair` before `CZ` is a Program error; FatQat does not transport or
-pair atoms automatically. A missing atom is different: an empty site reports
-the erasure digit `2`, while supported gates simply have no atom to act on.
+Omitting `Pair` before `CZ` is a program error; FatQat does not transport or
+pair atoms automatically. A missing atom is different: supported gates find
+nothing to act on, and measurement reports the erasure digit `2`.
 
-For native sets, capacities, and method support, use the
+For native gates, program sizing, and method support, use the
 [hardware-profile API](../api/simulators/index.md). Continue to
 [Hamiltonian emulation](hamiltonian-emulation.md) when pulse duration,
 physical levels, drift, or continuous-time noise becomes relevant.

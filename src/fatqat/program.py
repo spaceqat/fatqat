@@ -195,7 +195,11 @@ class Program:
             self._operations_view = tuple(self._operations)
         return self._operations_view
 
-    def draw(self, renderer: str = "matplotlib", **kwargs: Any) -> Any:
+    def draw(
+        self,
+        renderer: str = "matplotlib",
+        **kwargs: Any,
+    ) -> Any:
         """Render this program as a circuit diagram.
 
         Drawing uses one wire per quantum or classical slot. Register
@@ -208,8 +212,8 @@ class Program:
             renderer: ``"matplotlib"`` (default) for a matplotlib ``Figure``,
                 ``"text"`` for a returned terminal-diagram string, or another
                 renderer name supported by QuTiP-QIP.
-            **kwargs: Renderer options forwarded to QuTiP-QIP. Matplotlib also
-                accepts ``ax`` to draw on an existing axis.
+            **kwargs: Renderer options forwarded to QuTiP-QIP. Matplotlib
+                also accepts ``ax`` to draw on an existing axis.
 
         Returns:
             A matplotlib ``Figure`` for ``"matplotlib"``, a string for
@@ -220,9 +224,38 @@ class Program:
             UnsupportedOperationError: If the program contains a
                 ``PulseOperation``.
         """
-        from .draw import _draw_program
+        if "view" in kwargs:
+            raise TypeError(
+                "Program.draw() only draws circuits; use "
+                "program.interaction_frequency().draw() for the "
+                "interaction frequency graph"
+            )
+
+        from .visualization.qutip_circuit import _draw_program
 
         return _draw_program(self, renderer, **kwargs)
+
+    def dag(self):
+        """Return the hardware-independent logical instruction DAG.
+
+        The returned graph contains logical operations, measurements,
+        conditions, and barriers. Backend directives such as ``Put``,
+        ``Pair``, and ``Unpair`` are intentionally excluded.
+        """
+        from ._program_graph import _build_instruction_dag
+
+        return _build_instruction_dag(self)
+
+    def interaction_frequency(self):
+        """Return the logical-qubit interaction frequency graph.
+
+        The returned graph is an undirected weighted summary of source-level
+        two-qubit interactions. Call ``program.interaction_frequency().draw()``
+        to render it.
+        """
+        from ._program_graph import _build_interaction_frequency_graph
+
+        return _build_interaction_frequency_graph(self)
 
     @staticmethod
     def _coerce_registers(

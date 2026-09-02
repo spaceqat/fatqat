@@ -73,12 +73,13 @@ an arbitrary state `psi`, a matrix acting on every subsystem satisfies
 ## Runtime and execution
 
 
-`runtime` is chosen when the backend is created. `"numba"` is the default
-for [`Simulator`][fatqat.simulator.Simulator] and the superconducting profiles; it compiles kernels
-on first use and supports threaded kernels. `"numpy"` runs directly without
-compilation and is the default for [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator]. Both runtimes
-support all four methods, but need not produce bit-identical floating-point or
-sampled results.
+`runtime` is chosen when the backend is created. `"numba"` is the default for
+[`Simulator`][fatqat.simulator.Simulator] and all three hardware profiles,
+including [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator]. It
+compiles kernels on first use and supports threaded kernels. `"numpy"` runs
+directly without compilation. Both runtimes support the methods offered by
+each backend, but need not produce bit-identical floating-point or sampled
+results.
 
 `simulation_config` changes one call to [`Simulator.run`][fatqat.simulator.Simulator.run]. Its string
 values are case-sensitive.

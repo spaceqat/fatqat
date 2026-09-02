@@ -6,8 +6,8 @@ title: "SCQubitGoogleSimulator"
 
 
 [`SCQubitGoogleSimulator`][fatqat.simulator.SCQubitGoogleSimulator] applies the [`Simulator`][fatqat.simulator.Simulator] execution model
-to a configurable Google-style superconducting grid. Use it to test native
-rotation gates and nearest-neighbour `iSwap`/`CZ` programs. It is not a
+to a configurable Google-style superconducting coupling graph. Use it to test
+native rotation gates and topology-constrained `iSwap`/`CZ` programs. It is not a
 model of a named Google processor and does not transpile, route, schedule, or
 reproduce hardware calibration data.
 
@@ -15,9 +15,9 @@ reproduce hardware calibration data.
 
 | Property | Value |
 | --- | --- |
-| Default device | `grid_size=(4, 4)`; 16 row-major qubits |
+| Default device | `num_qubits=16`; a 4×4 reference coupling graph |
 | Uniform native gates | [`fatqat.operations.RX`][fatqat.operations.RX], [`fatqat.operations.RY`][fatqat.operations.RY], [`fatqat.operations.RZ`][fatqat.operations.RZ] |
-| Connected native gates | [`fatqat.operations.iSwap`][fatqat.operations.iSwap] and [`fatqat.operations.CZ`][fatqat.operations.CZ] on horizontal or vertical neighbours |
+| Connected native gates | [`fatqat.operations.iSwap`][fatqat.operations.iSwap] and [`fatqat.operations.CZ`][fatqat.operations.CZ] on the supplied couplings |
 | Other built-in operations | Measurement and [`fatqat.operations.Reset`][fatqat.operations.Reset] follow the method rules described by [`Simulator`][fatqat.simulator.Simulator] |
 | Methods | All methods supported by [`Simulator`][fatqat.simulator.Simulator]; default `statevector` |
 | Runtime | `numba` by default; `numpy` is also supported |
@@ -35,15 +35,15 @@ Device labels are row-major. On the default grid they are:
 12  13  14  15
 ```
 
-Both operand orders of every grid edge are legal. Thus `iSwap` is accepted
-on device labels `(0, 1)` and `(1, 0)`, but not `(0, 5)`. `CZ` follows
-the same rule for any positive `grid_size=(rows, columns)`.
+Both operand orders of every coupling are legal. Thus `iSwap` is accepted
+on device labels `(0, 1)` and `(1, 0)`, but not `(0, 5)` in the default data.
+`CZ` follows the same rule. The grid is only the default test topology;
+callers may provide any valid undirected coupling graph.
 
-With the automatic layout, an ordinary program maps its qubits to device labels
-`0, 1, ...` in declaration order. One [`GridRegister`][fatqat.GridRegister] instead
-maps into the device's top-left corner while preserving row and column
-coordinates. In this automatic mode, it must be the program's only quantum
-register and must fit along both device axes. An explicit, complete
+With the automatic layout, a program maps all quantum registers to device labels
+`0, 1, ...` in declaration order. A [`GridRegister`][fatqat.GridRegister] is
+flattened in the same order as any other register; frontend geometry does not
+define hardware placement. An explicit, complete
 [`ResourceLayout`][fatqat.ResourceLayout] can place program references differently.
 Capacity and the qubit-only restriction still apply.
 
@@ -56,12 +56,15 @@ and legal operand tuples:
 import fatqat as fq
 import fatqat.operations as ops
 
-backend = fq.simulator.SCQubitGoogleSimulator(grid_size=(2, 3))
+backend = fq.simulator.SCQubitGoogleSimulator(
+    num_qubits=5,
+    couplings=((0, 1), (1, 2), (1, 3), (3, 4)),
+)
 native = backend.implementation_map
 
 assert native.supports(ops.RY)
-assert native.supports(ops.iSwap, device_operands=(1, 4))
-assert not native.supports(ops.iSwap, device_operands=(0, 4))
+assert native.supports(ops.iSwap, device_operands=(1, 3))
+assert not native.supports(ops.iSwap, device_operands=(0, 3))
 ```
 
 `device_operands_for(operation)` returns an empty set for a gate available

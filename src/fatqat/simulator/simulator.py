@@ -679,12 +679,10 @@ class Simulator:
             initial_state=initial_state,
             initial_occupied=initial_occupied,
         )
-        deferred_measurements = facts.deferred_measurements
-        written_clbits = facts.written_clbits
         try:
             raw = self._execute_engine(
                 plan=plan,
-                deferred_measurements=deferred_measurements,
+                deferred_measurements=facts.deferred_measurements,
                 context=execution,
                 policy=policy,
             )
@@ -693,7 +691,7 @@ class Simulator:
                 config=config,
                 simulation=simulation,
                 lowering=lowering,
-                written_clbits=written_clbits,
+                written_clbits=facts.written_clbits,
                 request=request,
                 shots=shots,
             )
@@ -820,7 +818,7 @@ class Simulator:
             )
             try:
                 results.append(point_job.result())
-            except BaseException as exc:
+            except Exception as exc:
                 return Job(status="ERROR", error=exc)
         return Job(status="DONE", result=results)
 
@@ -901,7 +899,10 @@ class Simulator:
             has_measurement=facts.has_measurement,
             stochastic_final_state=stochastic,
         )
-        request = self._request_cls(counts=counts, **{self._state_field: final_state})
+        request = self._request_cls(
+            counts=counts,
+            **{self._state_field: final_state},
+        )
         requested_state = config.final_state is True
 
         # shots is only checked when the result actually depends on it: counts

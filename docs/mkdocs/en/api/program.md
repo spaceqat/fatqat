@@ -141,11 +141,34 @@ Unknown or custom operations appear as labeled boxes. A direct
 [`PulseOperation`][fatqat.operations.PulseOperation] cannot be represented and raises
 [`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError].
 
-Use [`fatqat.draw.to_qubit_circuit`][fatqat.draw.to_qubit_circuit] only for low-level integration with
-QuTiP-QIP's drawing tools. The returned circuit is a rendering adapter, not an
-execution object.
+Use
+[`fatqat.visualization.to_qubit_circuit`][fatqat.visualization.to_qubit_circuit]
+only for low-level integration with QuTiP-QIP's drawing tools:
 
-::: fatqat.draw.to_qubit_circuit
+```python
+from fatqat.visualization import to_qubit_circuit
+
+circuit = to_qubit_circuit(program)
+```
+
+The returned circuit is a rendering adapter, not an execution object. The old
+`fatqat.draw` import path has been removed.
+
+::: fatqat.visualization.to_qubit_circuit
+
+### Logical interaction frequency
+
+Logical interaction frequency is derived separately from circuit drawing:
+
+```python
+interaction_frequency = program.interaction_frequency()
+figure = interaction_frequency.draw()
+```
+
+The graph counts source-level two-target logical operations across the complete
+program. It is not a device connectivity graph and does not include `Put`,
+`Pair`, or `Unpair` directives. See [Visualization](../guide/visualization.md)
+for drawing, styling, embedding, and saving examples.
 
 ## Reference
 

@@ -1952,7 +1952,9 @@ class NumbaSVEngine(NumpySVEngine):
         )
         outcome_keys, outcome_counts = reduce_to_counts(rows)
         return RawResult(
-            outcome_keys=outcome_keys, outcome_counts=outcome_counts, state=None
+            outcome_keys=outcome_keys,
+            outcome_counts=outcome_counts,
+            state=None,
         )
 
     def _compile_dynamic_plan(self, plan: list) -> tuple[tuple, int]:

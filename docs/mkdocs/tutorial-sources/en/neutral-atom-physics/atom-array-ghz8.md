@@ -172,15 +172,16 @@ ghz_program = build_ghz8_program()
 
 ## Sample the eight-atom experiment
 
-We run the measured program on [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator],
-sized to eight trap sites. A fixed seed keeps this page's numbers stable
-across repeated tutorial runs; drop it for independent experimental samples.
-Because the circuit is noiseless, every one of the 2000 shots lands on one of
-the two GHZ branches -- no other bitstring appears.
+We run the measured program on
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator]; its eight quantum
+resources also determine the array size. A fixed seed keeps the numbers stable
+across tutorial runs, while omitting it produces independent samples. Because
+the circuit is noiseless, all 2000 shots land on one of the two GHZ branches
+and no other bitstring appears.
 
 ```python
 shots = 2_000
-backend = fq.simulator.AtomArraySimulator(num_sites=NUM_ATOMS)
+backend = fq.simulator.AtomArraySimulator()
 counts = (
     backend.run(
         ghz_program,
@@ -244,7 +245,7 @@ for i in range(NUM_ATOMS - 1):
     zz_observables.append(fq.Observable([("".join(label), 1.0)]))
 x_parity = fq.Observable([("X" * NUM_ATOMS, 1.0)])
 
-estimator = fq.Estimator(fq.simulator.AtomArraySimulator(num_sites=NUM_ATOMS))
+estimator = fq.Estimator(fq.simulator.AtomArraySimulator())
 values = (
     estimator.run(
         build_ghz8_program(measure=False),
@@ -281,7 +282,7 @@ noise = fq.NoiseModel()
 noise.add(fq.noise.Loss(p=0.01), operation=ops.Pair)
 noise.add(fq.noise.Loss(p=0.01), operation=ops.Unpair)
 
-lossy_backend = fq.simulator.AtomArraySimulator(num_sites=NUM_ATOMS, noise=noise)
+lossy_backend = fq.simulator.AtomArraySimulator(noise=noise)
 lossy_counts = (
     lossy_backend.run(
         ghz_program,
