@@ -24,7 +24,7 @@ If AI tools were used, replace "None" with:
 
 <!-- Make the following checks before ticking them. -->
 - [ ] I have investigated the relevant code and confirmed that the chosen design fits the existing architecture and reuses existing functionality where possible.
-- [ ] - [ ] I have added or updated tests where appropriate and run the relevant checks. I avoided duplicate coverage and unnecessary overtesting.
+- [ ] I have added or updated tests where appropriate and run the relevant checks. I avoided duplicate coverage and unnecessary overtesting.
 - [ ] I have updated the relevant documentation, or confirmed that no changes are needed. The documentation is clear, concise, and avoids repetitive or mechanical wording.
 - [ ] I have run Black (`python -m black --check --diff src tests conftest.py`).
 - [ ] I have run Pylint (`python -m pylint src/fatqat tests conftest.py`).
