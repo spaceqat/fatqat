@@ -42,8 +42,8 @@ least 10, commas make multi-digit outcomes unambiguous: `(10, 3)` renders as
 
 Most other accessors return the value stored in the result. Copy arrays or
 dictionaries before changing them if you need to preserve the original.
-Metadata records the normalized `simulation_config` and `result_config`.
-Backend extensions may add fields. Pulse-emulator metadata records
+Metadata from a direct backend run records the normalized `simulation_config`
+and `result_config`. Backend extensions may add fields. Pulse-emulator metadata records
 `runtime="qutip"` and a `runtime_details` mapping with `solver` and
 `solver_options`. A run that invokes multiple solvers reports their names as
 a tuple. These numerical-runtime details are informational. Keep the
