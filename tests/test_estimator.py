@@ -9,6 +9,7 @@ from fatqat.errors import (
     BackendExecutionError,
     BackendValidationError,
     ResultFieldUnavailableError,
+    UnsupportedOperationError,
 )
 from fatqat.job import Job
 from fatqat.observable import Observable
@@ -32,6 +33,10 @@ def _noise_model():
     noise = fq.NoiseModel()
     noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.CX)
     return noise
+
+
+class _IntSubclass(int):
+    pass
 
 
 def _parameterized_template():
@@ -65,7 +70,7 @@ def test_exact_scalar_parameter_sweep_matches_explicit_runs():
     assert [result.get_expectation() for result in swept] == pytest.approx(
         [result.get_expectation() for result in explicit]
     )
-    assert [result.get_std() for result in swept] == [0.0, 0.0, 0.0]
+    assert [result.get_standard_error() for result in swept] == [0.0, 0.0, 0.0]
 
 
 def test_qnn_shaped_vector_sweep_preserves_multi_observable_shape():
@@ -137,8 +142,8 @@ def test_sampled_sweep_matches_same_seed_repeated_runs_and_forwards_options(
     assert [result.get_expectation() for result in swept] == [
         result.get_expectation() for result in explicit
     ]
-    assert [result.get_std() for result in swept] == pytest.approx(
-        [result.get_std() for result in explicit]
+    assert [result.get_standard_error() for result in swept] == pytest.approx(
+        [result.get_standard_error() for result in explicit]
     )
     assert forwarded == [
         (observable, {"shots": 256, "simulation_config": config}),
@@ -156,7 +161,10 @@ def test_estimator_sweep_direct_inner_failure_propagates(monkeypatch):
     def fail_on_second(bound, _observables, **_kwargs):
         if bound._instructions[0].operation.theta == 0.2:
             raise BackendValidationError("direct point failure")
-        return Job(status="DONE", result=Result(data={"expectation": 1.0, "std": 0.0}))
+        return Job(
+            status="DONE",
+            result=Result(data={"expectation": 1.0, "standard_error": 0.0}),
+        )
 
     monkeypatch.setattr(estimator, "run", fail_on_second)
     with pytest.raises(BackendValidationError, match="direct point failure"):
@@ -174,7 +182,10 @@ def test_estimator_sweep_failed_point_job_fails_outer_job(monkeypatch):
     def fail_on_second(bound, _observables, **_kwargs):
         if bound._instructions[0].operation.theta == 0.2:
             return Job(status="ERROR", error=error)
-        return Job(status="DONE", result=Result(data={"expectation": 1.0, "std": 0.0}))
+        return Job(
+            status="DONE",
+            result=Result(data={"expectation": 1.0, "standard_error": 0.0}),
+        )
 
     monkeypatch.setattr(estimator, "run", fail_on_second)
     outer = estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
@@ -327,12 +338,15 @@ def test_all_observables_share_a_single_evolution():
     assert together == pytest.approx(separately, abs=1e-12)
 
 
-def test_metadata_records_the_request():
+def test_metadata_reports_only_the_matrix_execution_path():
     result = _estimator().run(_bell(), [Observable([("ZZ", 1.0)])]).result()
 
-    assert result.metadata["shots"] == 0
-    assert result.metadata["num_observables"] == 1
-    assert result.metadata["backend_name"] == "Simulator"
+    assert result.metadata == {
+        "backend_name": "Simulator",
+        "method": "statevector",
+        "runtime": "numba",
+        "shots": 0,
+    }
 
 
 # --- rejected programs -------------------------------------------------------
@@ -354,25 +368,54 @@ def test_qudit_program_rejected():
         _estimator().run(program, Observable([("Z", 1.0)]))
 
 
-@pytest.mark.parametrize("shots", [0, 1000])
-def test_noisy_statevector_rejected(shots):
-    # Rejected at shots > 0 too: sampling draws from the final state, and a
-    # trajectory run has no single one. Sampling one branch would report the
-    # statistics of that trajectory rather than of the noisy channel.
+def test_noisy_statevector_exact_request_is_rejected():
     estimator = _estimator("SV", noise=_noise_model())
 
-    with pytest.raises(BackendValidationError, match="no single final state"):
-        estimator.run(_bell(), Observable([("ZZ", 1.0)]), shots=shots)
+    with pytest.raises(UnsupportedOperationError, match="exact statevector"):
+        estimator.run(_bell(), Observable([("ZZ", 1.0)]))
 
 
-@pytest.mark.parametrize("shots", [0, 1000])
-def test_statevector_reset_rejected(shots):
-    program = fq.Program(2)
+def test_noisy_statevector_sampling_uses_native_trajectories():
+    observable = Observable([("ZZ", 1.0)])
+    sampled = (
+        _estimator("SV", noise=_noise_model())
+        .run(_bell(), observable, shots=4_000, simulation_config={"seed": 17})
+        .result()
+    )
+    exact = _estimator("DM", noise=_noise_model()).run(_bell(), observable).result()
+
+    assert sampled.get_expectation() == pytest.approx(
+        exact.get_expectation(), abs=5 * sampled.get_standard_error()
+    )
+
+
+def test_statevector_reset_exact_request_is_rejected():
+    program = fq.Program(1)
     program.add(ops.H, 0)
     program.add(ops.Reset, 0)
 
-    with pytest.raises(BackendValidationError, match="no single final state"):
-        _estimator("SV").run(program, Observable([("ZZ", 1.0)]), shots=shots)
+    with pytest.raises(UnsupportedOperationError, match="exact statevector"):
+        _estimator("SV").run(program, Observable([("Z", 1.0)]))
+
+
+def test_statevector_reset_sampling_uses_native_trajectories():
+    program = fq.Program(1)
+    program.add(ops.H, 0)
+    program.add(ops.Reset, 0)
+
+    result = (
+        _estimator("SV")
+        .run(
+            program,
+            Observable([("Z", 1.0)]),
+            shots=64,
+            simulation_config={"seed": 9},
+        )
+        .result()
+    )
+
+    assert result.get_expectation() == 1.0
+    assert result.get_standard_error() == 0.0
 
 
 def test_noise_that_never_fires_is_accepted():
@@ -390,15 +433,6 @@ def test_noise_that_never_fires_is_accepted():
         .get_expectation()
     )
     assert value == pytest.approx(1.0, abs=1e-12)
-
-
-def test_backend_validation_error_raises_rather_than_failing_the_job():
-    # A validation failure is the caller's to fix, so it surfaces from run()
-    # itself - not deferred into a failed Job that only errors at .result().
-    estimator = _estimator("SV", noise=_noise_model())
-
-    with pytest.raises(BackendValidationError):
-        estimator.run(_bell(), Observable([("ZZ", 1.0)]))
 
 
 def test_density_matrix_reset_is_accepted():
@@ -422,10 +456,19 @@ def test_non_observable_input_rejected():
         _estimator().run(_bell(), ["ZZ"])
 
 
-@pytest.mark.parametrize("shots", [-1, 1.5, "100"])
+@pytest.mark.parametrize("shots", [-1, True, np.int64(1), _IntSubclass(1), 1.5])
 def test_invalid_shots_rejected(shots):
     with pytest.raises(BackendValidationError, match="shots must be"):
         _estimator().run(_bell(), Observable([("ZZ", 1.0)]), shots=shots)
+
+
+def test_simulation_config_must_be_a_dict_or_none():
+    with pytest.raises(TypeError, match="dict or None"):
+        _estimator().run(
+            _bell(),
+            Observable([("ZZ", 1.0)]),
+            simulation_config=[("seed", 1)],
+        )
 
 
 def test_expectation_absent_from_a_plain_backend_run():
@@ -438,7 +481,7 @@ def test_expectation_absent_from_a_plain_backend_run():
     with pytest.raises(ResultFieldUnavailableError, match="Estimator"):
         result.get_expectation()
     with pytest.raises(ResultFieldUnavailableError, match="Estimator"):
-        result.get_std()
+        result.get_standard_error()
 
 
 # --- sampling ----------------------------------------------------------------
@@ -456,9 +499,9 @@ def _sampling_program(num_qubits=3):
 def test_exact_run_reports_zero_standard_error():
     result = _estimator().run(_bell(), Observable([("ZZ", 1.0)])).result()
 
-    assert result.get_std() == 0.0
-    assert result.get_data("std") == 0.0
-    assert result.available_data == frozenset({"expectation", "std"})
+    assert result.get_standard_error() == 0.0
+    assert result.get_data("standard_error") == 0.0
+    assert result.available_data == frozenset({"expectation", "standard_error"})
 
 
 @pytest.mark.parametrize("method", ["SV", "DM"])
@@ -474,7 +517,9 @@ def test_sampled_value_converges_to_the_exact_one(method):
         program, observable, shots=200_000, simulation_config={"seed": 11}
     ).result()
 
-    assert sampled.get_expectation() == pytest.approx(exact, abs=5 * sampled.get_std())
+    assert sampled.get_expectation() == pytest.approx(
+        exact, abs=5 * sampled.get_standard_error()
+    )
 
 
 def test_projector_term_sampling_converges():
@@ -491,7 +536,9 @@ def test_projector_term_sampling_converges():
         program, observable, shots=200_000, simulation_config={"seed": 5}
     ).result()
 
-    assert sampled.get_expectation() == pytest.approx(exact, abs=5 * sampled.get_std())
+    assert sampled.get_expectation() == pytest.approx(
+        exact, abs=5 * sampled.get_standard_error()
+    )
 
 
 def test_standard_error_shrinks_as_one_over_sqrt_shots():
@@ -499,10 +546,12 @@ def test_standard_error_shrinks_as_one_over_sqrt_shots():
     observable = Observable([("XXI", 1.0)])
     estimator = _estimator()
 
-    few = estimator.run(program, observable, shots=1_000).result().get_std()
-    many = estimator.run(program, observable, shots=100_000).result().get_std()
+    few = estimator.run(program, observable, shots=1_000).result().get_standard_error()
+    many = (
+        estimator.run(program, observable, shots=100_000).result().get_standard_error()
+    )
 
-    assert few / many == pytest.approx(10.0, rel=1e-9)
+    assert few / many == pytest.approx(10.0, rel=0.15)
 
 
 def test_deterministic_term_has_no_spread():
@@ -517,9 +566,9 @@ def test_deterministic_term_has_no_spread():
     )
 
     assert result.get_expectation() == pytest.approx(1.0, abs=1e-12)
-    # The variance lands on the rounding floor rather than exactly 0, and std
-    # takes its square root, so ~1e-17 of residue shows up as ~1e-9.
-    assert result.get_std() == pytest.approx(0.0, abs=1e-8)
+    # The variance lands on the rounding floor rather than exactly 0, and the
+    # standard error takes its square root, so ~1e-17 of residue shows up as ~1e-9.
+    assert result.get_standard_error() == pytest.approx(0.0, abs=1e-8)
 
 
 def test_sampling_is_reproducible_under_a_seed():
@@ -550,7 +599,20 @@ def test_sampled_sequence_returns_arrays_for_both_fields():
     )
 
     assert result.get_expectation().shape == (2,)
-    assert result.get_std().shape == (2,)
+    assert result.get_standard_error().shape == (2,)
+
+
+def test_one_shot_sequence_reports_uncertainty_only_for_sampled_terms():
+    observables = [Observable([("II", 2.0)]), Observable([("ZI", 1.0)])]
+
+    result = (
+        _estimator()
+        .run(_bell(), observables, shots=1, simulation_config={"seed": 1})
+        .result()
+    )
+
+    assert result.get_standard_error()[0] == 0.0
+    assert np.isnan(result.get_standard_error()[1])
 
 
 def test_sampling_works_with_a_noisy_density_matrix():
@@ -563,7 +625,9 @@ def test_sampling_works_with_a_noisy_density_matrix():
         program, observable, shots=200_000, simulation_config={"seed": 4}
     ).result()
 
-    assert sampled.get_expectation() == pytest.approx(exact, abs=5 * sampled.get_std())
+    assert sampled.get_expectation() == pytest.approx(
+        exact, abs=5 * sampled.get_standard_error()
+    )
 
 
 def test_sampled_metadata_records_the_shot_count():
@@ -572,30 +636,15 @@ def test_sampled_metadata_records_the_shot_count():
     assert result.metadata["shots"] == 512
 
 
-# --- backends that produce an operator, not a state --------------------------
+# --- backend expectation contract -------------------------------------------
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_operator_backend_rejected_at_construction(method):
-    # Rejected when the estimator is built, not when it is run: the mismatch
-    # is a property of the backend alone, so there is no reason to make the
-    # caller lower and evolve a program before hearing about it.
-    backend = fq.simulator.Simulator(method=method)
+def test_operator_backend_rejected_at_request_time(method):
+    estimator = fq.Estimator(fq.simulator.Simulator(method=method))
 
-    with pytest.raises(BackendValidationError, match="produces a state"):
-        fq.Estimator(backend)
-
-
-@pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_operator_rejection_names_the_method_and_the_fix(method):
-    backend = fq.simulator.Simulator(method=method)
-
-    with pytest.raises(BackendValidationError) as caught:
-        fq.Estimator(backend)
-
-    message = str(caught.value)
-    assert method in message  # says which method it saw
-    assert "statevector" in message and "density_matrix" in message  # and the fix
+    with pytest.raises(UnsupportedOperationError, match="operator"):
+        estimator.run(_bell(), Observable([("ZZ", 1.0)]))
 
 
 @pytest.mark.parametrize("method", ["SV", "DM", "statevector", "density_matrix"])
@@ -603,103 +652,43 @@ def test_state_backends_still_accepted(method):
     assert fq.Estimator(fq.simulator.Simulator(method=method)) is not None
 
 
-def test_backend_without_a_method_property_is_left_alone():
-    # Duck typing is the constructor's only contract, so a backend that
-    # predates the property must not be refused on that basis.
+def test_backend_without_expectation_hook_is_rejected_at_construction():
     class _Bare:
-        def run(self, *args, **kwargs):
-            raise AssertionError("not reached")
+        pass
 
-    assert fq.Estimator(_Bare()) is not None
+    with pytest.raises(BackendValidationError, match="callable.*hook"):
+        fq.Estimator(_Bare())
 
 
-def test_backend_result_without_state_returns_failed_job():
-    class _NoStateBackend:
-        method = "statevector"
+def test_synchronous_backend_capability_error_propagates_unchanged():
+    error = UnsupportedOperationError("unsupported expectation capability")
 
-        def run(self, *_args, **_kwargs):
-            return Job(status="DONE", result=Result(data={"diagnostic": "complete"}))
+    class _RejectingBackend:
+        def _run_expectation(self, *_args, **_kwargs):
+            raise error
 
-    job = fq.Estimator(_NoStateBackend()).run(_bell(), Observable([("ZZ", 1.0)]))
+    with pytest.raises(UnsupportedOperationError) as caught:
+        fq.Estimator(_RejectingBackend()).run(_bell(), Observable([("ZZ", 1.0)]))
+
+    assert caught.value is error
+
+
+def test_failed_backend_job_keeps_the_same_exception_object():
+    error = BackendExecutionError("stored backend failure")
+
+    class _FailedBackend:
+        def _run_expectation(self, *_args, **_kwargs):
+            return Job(status="ERROR", error=error)
+
+    job = fq.Estimator(_FailedBackend()).run(_bell(), Observable([("ZZ", 1.0)]))
 
     assert job.status == "ERROR"
-    with pytest.raises(
-        BackendExecutionError,
-        match="estimator backend returned no final state; expected a "
-        "statevector or density matrix",
-    ):
+    with pytest.raises(BackendExecutionError) as caught:
         job.result()
-
-
-class _FixedStateBackend:
-    def __init__(self, representation, state):
-        self.method = representation
-        self._representation = representation
-        self._state = state
-
-    def run(self, *_args, **_kwargs):
-        return Job(
-            status="DONE",
-            result=Result(
-                **{
-                    self._representation: self._state,
-                    "available": frozenset({self._representation}),
-                }
-            ),
-        )
-
-
-@pytest.mark.parametrize(
-    ("representation", "state", "expected_shape"),
-    [
-        ("statevector", np.zeros(9, dtype=complex), (4,)),
-        ("density_matrix", np.zeros((9, 9), dtype=complex), (4, 4)),
-    ],
-)
-def test_estimator_rejects_nonlogical_result_shapes(
-    representation, state, expected_shape
-):
-    estimator = fq.Estimator(_FixedStateBackend(representation, state))
-
-    with pytest.raises(BackendValidationError) as caught:
-        estimator.run(_bell(), Observable([("ZZ", 1.0)]))
-
-    message = str(caught.value)
-    assert representation in message
-    assert str(expected_shape) in message
-    assert str(state.shape) in message
-
-
-def test_qutrit_density_is_rejected_before_binary_expectation_kernels(
-    monkeypatch,
-):
-    density = np.zeros((9, 9), dtype=complex)
-    density[4, 4] = 1.0
-    estimator = fq.Estimator(_FixedStateBackend("density_matrix", density))
-
-    def kernel_must_not_run(*_args, **_kwargs):
-        raise AssertionError("binary expectation kernel received a qutrit state")
-
-    monkeypatch.setattr(
-        "fatqat.estimator.expectation_statevector",
-        kernel_must_not_run,
-    )
-    monkeypatch.setattr(
-        "fatqat.estimator.expectation_density_matrix",
-        kernel_must_not_run,
-    )
-
-    with pytest.raises(BackendValidationError, match="density_matrix") as caught:
-        estimator.run(_bell(), Observable([("IZ", 1.0), ("ZI", 1.0)]))
-
-    message = str(caught.value)
-    assert "(4, 4)" in message
-    assert "(9, 9)" in message
+    assert caught.value is error
 
 
 def test_unrelated_validation_errors_are_not_rewrapped():
-    from fatqat.errors import UnsupportedOperationError
-
     class Unknown(ops.Operation):
         name = "Unknown"
         num_subsystems = 1

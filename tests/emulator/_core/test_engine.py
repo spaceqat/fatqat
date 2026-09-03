@@ -159,6 +159,29 @@ def test_engine_evolves_static_terminal_measurement_plan_once_then_samples(model
     assert [outcome[-2] for outcome in outcomes] == [(0,), (0,), (0,)]
 
 
+def test_engine_reuses_one_evolution_for_independent_measurement_groups(model):
+    runner = _FakeRunner()
+    measurements = (
+        MeasurementStep((0,), (0,)),
+        MeasurementStep((1,), (1,)),
+    )
+    outcome_groups = PulseEngine(runner).run_terminal_measurement_groups(
+        (_physical_block(model, 1.0),),
+        measurements,
+        shots=2,
+        n_clbits=2,
+        rng=np.random.default_rng(3),
+        measurement_rngs=(np.random.default_rng(5), np.random.default_rng(7)),
+    )
+
+    assert runner.runs == [((0.0,), 1.0, (True,))]
+    assert runner.boundaries == [(MeasurementStep, 1.0)] * 4
+    assert [[outcome[-1] for outcome in group] for group in outcome_groups] == [
+        [1, 1],
+        [1, 1],
+    ]
+
+
 def test_engine_keeps_measurement_followed_by_pulse_dynamic(model):
     runner = _FakeRunner()
     measurement = MeasurementStep((0,), (0,))

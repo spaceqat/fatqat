@@ -14,7 +14,12 @@ from fatqat.emulator.atom_2level import (
     Atom2LevelModel,
     Atom2LevelEmulator,
 )
-from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
+from fatqat.errors import (
+    BackendValidationError,
+    ResultFieldUnavailableError,
+    UnsupportedOperationError,
+)
+from fatqat.noise import ReadoutConfusion
 from fatqat.emulator import SampledWaveform
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "atom_2level_reference.json"
@@ -50,6 +55,33 @@ def _pulse_program(*, measured=False, amplitude=np.pi / 2):
     if measured:
         program.measure((0, 1), (0, 1))
     return program
+
+
+def _single_site_case(*, noise=None):
+    model = Atom2LevelModel.from_document(
+        json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    )
+    backend = Atom2LevelEmulator(
+        model,
+        arrangement=fq.emulator.AtomArrangement.chain(1, spacing=2.0),
+        noise=noise,
+    )
+    program = fq.Program(1)
+    program.add(
+        ops.PulseOperation(
+            1.0,
+            (
+                PulseControl(
+                    model.control.drive(),
+                    SampledWaveform(
+                        (0.0, 1.0),
+                        (1j * np.pi / 2, 1j * np.pi / 2),
+                    ),
+                ),
+            ),
+        )
+    )
+    return backend, program
 
 
 def test_unmeasured_ideal_run_defaults_to_a_pure_statevector(backend):
@@ -176,3 +208,75 @@ def test_terminal_density_matrix_measurement_samples_and_collapses():
     assert posterior.get_counts() == {
         format(int(np.argmax(np.real(np.diag(state)))), "02b"): 1
     }
+
+
+def test_estimator_exact_x_and_sampled_diagonal_projector_execution():
+    backend, program = _single_site_case()
+    estimator = fq.Estimator(backend)
+
+    exact_x = estimator.run(program, fq.Observable([("X", 1.0)])).result()
+    diagonal = fq.Observable.from_sparse(
+        [("Z", (0,), 1.0), ("ONE", (0,), 0.5)],
+        num_qubits=1,
+    )
+    sampled = estimator.run(
+        program,
+        diagonal,
+        shots=1_000,
+        simulation_config={"seed": 19},
+    ).result()
+
+    assert exact_x.get_expectation() == pytest.approx(1.0, abs=1e-5)
+    assert exact_x.get_standard_error() == 0.0
+    assert sampled.get_expectation() == pytest.approx(
+        0.25, abs=6 * sampled.get_standard_error()
+    )
+    assert sampled.metadata == {
+        "backend_name": "Atom2LevelEmulator",
+        "method": "statevector",
+        "runtime": "qutip",
+        "runtime_details": {"solver": "sesolve"},
+        "shots": 1_000,
+    }
+
+
+def test_estimator_pulse_basis_and_exact_readout_capabilities_raise_synchronously():
+    backend, program = _single_site_case()
+
+    with pytest.raises(UnsupportedOperationError, match="X or Y"):
+        fq.Estimator(backend).run(
+            program,
+            fq.Observable([("X", 1.0)]),
+            shots=16,
+        )
+
+    noise = fq.NoiseModel()
+    noise.add(ReadoutConfusion(np.array([[0.0, 1.0], [1.0, 0.0]])))
+    noisy_backend, noisy_program = _single_site_case(noise=noise)
+    with pytest.raises(UnsupportedOperationError, match="readout confusion"):
+        fq.Estimator(noisy_backend).run(
+            noisy_program,
+            fq.Observable([("Z", 1.0)]),
+        )
+
+
+@pytest.mark.parametrize("method", ("statevector", "density_matrix"))
+@pytest.mark.parametrize("shots", (0, 8))
+def test_estimator_rejects_pulse_reset_for_all_state_routes(method, shots):
+    model = Atom2LevelModel.from_document(
+        json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    )
+    backend = Atom2LevelEmulator(
+        model,
+        arrangement=fq.emulator.AtomArrangement.chain(1, spacing=2.0),
+        method=method,
+    )
+    program = fq.Program(1)
+    program.add(ops.Reset, 0)
+
+    with pytest.raises(BackendValidationError, match="does not support reset"):
+        fq.Estimator(backend).run(
+            program,
+            fq.Observable([("Z", 1.0)]),
+            shots=shots,
+        )

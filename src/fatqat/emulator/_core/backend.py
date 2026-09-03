@@ -5,11 +5,20 @@ from __future__ import annotations
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from typing import Any, final
 
 import numpy as np
 
+from ..._expectation import (
+    _ExpectationExecution,
+    _TermOccurrence,
+    _combine_term_statistics,
+    _plan_term_occurrences,
+    _reduce_outcome_counts,
+    expectation_density_matrix,
+    expectation_statevector,
+)
 from ..._parameter_binding import _raise_for_unbound_parameters
 from ..._index_allocation import (
     _ClassicalAllocation,
@@ -26,13 +35,16 @@ from ..._backends.view_normalization import (
     ProgramInstruction,
     _break_grouped_operations,
 )
+from ..._backends.steps import MeasurementStep
 from ...errors import (
     BackendExecutionError,
     BackendValidationError,
+    UnsupportedOperationError,
 )
 from ...job import Job
 from ...noise import NoiseModel
 from ...noise.lindblad import LindbladImplementationMap
+from ...observable import Observable
 from ...operations import Barrier, Measurement, PulseOperation, Reset
 from ...program import Program, _AppliedOperation
 from ...resource_layout import ResourceLayout
@@ -58,6 +70,27 @@ from .outcome import (
     _PulseResultRequest,
 )
 from .target import _PulseTarget
+
+
+@dataclass(frozen=True, slots=True)
+class _BoundPulseExpectation:
+    """One logical term occurrence bound to pulse-engine resources."""
+
+    occurrence: _TermOccurrence
+    engine_factors: tuple[tuple[int, str], ...]
+    scratch_indices: tuple[int, ...]
+    measurement: MeasurementStep | None
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedPulseExpectation:
+    """Validated pulse expectation work before numerical execution."""
+
+    simulation: _EmulatorConfig
+    program: _PreparedPulseProgram
+    constants: tuple[float, ...]
+    bound_occurrences: tuple[_BoundPulseExpectation, ...]
+    execution_mode: ExecutionMode
 
 
 class _PulseBackend(ABC):
@@ -444,29 +477,16 @@ class _PulseBackend(ABC):
             return self._execute_unitary(prepared, request, simulation, shots)
         if request.execution_mode is None:
             raise BackendExecutionError("state execution requires an execution mode")
-        runner = self._create_runner(
-            prepared,
-            simulation=simulation,
-            execution_mode=request.execution_mode,
-            retain_final_state=request.final_state,
-        )
         execution_shots = shots if request.counts else 1
-        engine = PulseEngine(runner, schedule_mode=simulation.schedule_mode)
-        engine_method = (
-            engine.run_trajectories
-            if request.execution_mode == "trajectory"
-            else engine.run
-        )
-        outcomes = engine_method(
-            prepared.plan,
+        summary = self._execute_state(
+            prepared,
+            plan=prepared.plan,
+            execution_mode=request.execution_mode,
+            simulation=simulation,
             shots=execution_shots,
             n_clbits=prepared.classical_allocation.n_clbits,
             rng=np.random.default_rng(simulation.seed),
-        )
-        summary = self._summarize_execution(
-            outcomes,
-            require_final_state=request.final_state,
-            runner=runner,
+            retain_final_state=request.final_state,
         )
         return self._assemble_result(
             prepared,
@@ -475,6 +495,387 @@ class _PulseBackend(ABC):
             shots,
             summary,
         )
+
+    @final
+    def _execute_state(
+        self,
+        prepared: _PreparedPulseProgram,
+        *,
+        plan: tuple[PulsePlanStep, ...],
+        execution_mode: ExecutionMode,
+        simulation: _EmulatorConfig,
+        shots: int,
+        n_clbits: int,
+        rng: np.random.Generator,
+        retain_final_state: bool,
+    ) -> _PulseExecutionSummary:
+        """Execute one state plan through the normal pulse runner and engine."""
+        runner = self._create_runner(
+            prepared,
+            simulation=simulation,
+            execution_mode=execution_mode,
+            retain_final_state=retain_final_state,
+        )
+        engine = PulseEngine(runner, schedule_mode=simulation.schedule_mode)
+        engine_method = (
+            engine.run_trajectories if execution_mode == "trajectory" else engine.run
+        )
+        outcomes = engine_method(
+            plan,
+            shots=shots,
+            n_clbits=n_clbits,
+            rng=rng,
+        )
+        return self._summarize_execution(
+            outcomes,
+            require_final_state=retain_final_state,
+            runner=runner,
+        )
+
+    @final
+    def _run_expectation(
+        self,
+        program: Program,
+        observables: tuple[Observable, ...],
+        *,
+        shots: int,
+        simulation_config: dict[str, Any] | None,
+    ) -> Job[_ExpectationExecution]:
+        """Execute one private exact or sampled pulse expectation request."""
+        prepared = self._prepare_expectation(
+            program,
+            observables,
+            shots=shots,
+            simulation_config=simulation_config,
+        )
+        try:
+            runtime_details = None
+            if not prepared.bound_occurrences:
+                values = prepared.constants
+                standard_errors = (0.0,) * len(values)
+            elif shots == 0:
+                values, runtime_details = self._execute_exact_expectation(prepared)
+                standard_errors = (0.0,) * len(values)
+            else:
+                (
+                    values,
+                    standard_errors,
+                    runtime_details,
+                ) = self._execute_sampled_expectation(prepared, shots=shots)
+            solver = None if runtime_details is None else runtime_details.get("solver")
+            return Job(
+                status="DONE",
+                result=_ExpectationExecution(
+                    values,
+                    standard_errors,
+                    method=self._method,
+                    runtime=self._runtime_name,
+                    solver=solver,
+                ),
+            )
+        except Exception as exc:
+            failure = BackendExecutionError("Pulse backend execution failed")
+            failure.__cause__ = exc
+            return Job(status="ERROR", error=failure)
+
+    def _prepare_expectation(
+        self,
+        program: Program,
+        observables: tuple[Observable, ...],
+        *,
+        shots: int,
+        simulation_config: dict[str, Any] | None,
+    ) -> _PreparedPulseExpectation:
+        """Validate, lower, and bind one pulse expectation request."""
+        simulation = _normalize_config(
+            simulation_config,
+            self._simulation_config_cls,
+            "simulation_config",
+            backend_name=self._backend_name(),
+        )
+        prepared = self._prepare_program(program)
+        if self._method == "unitary":
+            raise UnsupportedOperationError(
+                "pulse unitary execution computes an operator, not a state whose "
+                "expectation can be evaluated"
+            )
+        unsupported_dimensions = tuple(
+            dict.fromkeys(
+                dimension
+                for dimension in prepared.engine_allocation.system_dims
+                if dimension != 2
+            )
+        )
+        if unsupported_dimensions:
+            raise UnsupportedOperationError(
+                f"{self._backend_name()} has no defined qubit-Observable embedding "
+                f"for local dimensions {unsupported_dimensions!r}"
+            )
+        if prepared.facts.has_reset:
+            raise UnsupportedOperationError(
+                "pulse expectation execution does not support reset"
+            )
+        if (
+            shots == 0
+            and self._method == "statevector"
+            and prepared.facts.has_potentially_active_lindblad
+        ):
+            raise UnsupportedOperationError(
+                "an exact statevector expectation is unavailable for potentially "
+                "active Lindblad evolution"
+            )
+        execution_mode = self._execution_mode(prepared.facts)
+        if execution_mode is None:
+            raise UnsupportedOperationError(
+                "pulse expectation execution requires a state method"
+            )
+
+        occurrences, constants = _plan_term_occurrences(observables)
+        bound_occurrences = self._bind_expectation_occurrences(
+            program,
+            prepared,
+            occurrences,
+            shots=shots,
+        )
+        return _PreparedPulseExpectation(
+            simulation=simulation,
+            program=prepared,
+            constants=constants,
+            bound_occurrences=bound_occurrences,
+            execution_mode=execution_mode,
+        )
+
+    def _bind_expectation_occurrences(
+        self,
+        program: Program,
+        prepared: _PreparedPulseProgram,
+        occurrences: tuple[_TermOccurrence, ...],
+        *,
+        shots: int,
+    ) -> tuple[_BoundPulseExpectation, ...]:
+        """Bind logical Pauli factors to pulse-engine resources and readout."""
+        logical_refs = tuple(
+            register[index]
+            for register in program.quantum_registers
+            for index in range(register.size)
+        )
+        scratch_start = prepared.classical_allocation.n_clbits
+        bound_occurrences = []
+        for occurrence in occurrences:
+            factor_refs = tuple(
+                logical_refs[index] for index, _letter in occurrence.logical_factors
+            )
+            engine_factors = tuple(
+                (
+                    prepared.engine_allocation.engine_index(
+                        prepared.resource_layout.device_label(ref)
+                    ),
+                    letter,
+                )
+                for ref, (_index, letter) in zip(
+                    factor_refs,
+                    occurrence.logical_factors,
+                    strict=True,
+                )
+            )
+            if shots > 0 and any(
+                letter in {"X", "Y"} for _index, letter in engine_factors
+            ):
+                raise UnsupportedOperationError(
+                    "sampled pulse expectations do not support X or Y basis factors"
+                )
+
+            if shots == 0:
+                reported_digit_maps = tuple(
+                    self._target.reported_digit_map(
+                        prepared.resource_layout.device_label(ref)
+                    )
+                    for ref in factor_refs
+                )
+                if (
+                    planning._expectation_confusions(
+                        factor_refs,
+                        reported_digit_maps,
+                        prepared.resource_layout,
+                        self._noise_model,
+                    )
+                    is not None
+                ):
+                    raise UnsupportedOperationError(
+                        "an exact pulse expectation cannot apply selected readout "
+                        "confusion"
+                    )
+                measurement = None
+            else:
+                measurement = planning._build_expectation_measurement(
+                    factor_refs,
+                    tuple(index for index, _letter in engine_factors),
+                    scratch_start=scratch_start,
+                    target=self._target,
+                    resource_layout=prepared.resource_layout,
+                    noise_model=self._noise_model,
+                )
+            bound_occurrences.append(
+                _BoundPulseExpectation(
+                    occurrence=occurrence,
+                    engine_factors=engine_factors,
+                    scratch_indices=tuple(
+                        range(scratch_start, scratch_start + len(engine_factors))
+                    ),
+                    measurement=measurement,
+                )
+            )
+        return tuple(bound_occurrences)
+
+    def _execute_exact_expectation(
+        self,
+        prepared: _PreparedPulseExpectation,
+    ) -> tuple[tuple[float, ...], dict[str, Any]]:
+        """Contract every observable against one pulse-evolved state."""
+        program = prepared.program
+        summary = self._execute_state(
+            program,
+            plan=program.plan,
+            execution_mode=prepared.execution_mode,
+            simulation=prepared.simulation,
+            shots=1,
+            n_clbits=program.classical_allocation.n_clbits,
+            rng=np.random.default_rng(prepared.simulation.seed),
+            retain_final_state=True,
+        )
+        state = summary.outcomes[-1].final_state
+        if state is None:
+            raise BackendExecutionError(
+                "pulse expectation execution omitted its final state"
+            )
+        kernel = (
+            expectation_statevector
+            if self._method == "statevector"
+            else expectation_density_matrix
+        )
+        terms_by_observable = [[] for _constant in prepared.constants]
+        for bound in prepared.bound_occurrences:
+            terms_by_observable[bound.occurrence.observable_index].append(
+                (bound.occurrence.coefficient, bound.engine_factors)
+            )
+        values = tuple(
+            constant + kernel(state, tuple(terms))
+            for constant, terms in zip(
+                prepared.constants,
+                terms_by_observable,
+                strict=True,
+            )
+        )
+        return values, dict(summary.runtime_details)
+
+    def _execute_sampled_expectation(
+        self,
+        prepared: _PreparedPulseExpectation,
+        *,
+        shots: int,
+    ) -> tuple[tuple[float, ...], tuple[float, ...], dict[str, Any]]:
+        """Execute native pulse outcomes for each diagonal term occurrence."""
+        assert prepared.bound_occurrences
+        child_seeds = np.random.SeedSequence(prepared.simulation.seed).spawn(
+            len(prepared.bound_occurrences)
+        )
+        if prepared.execution_mode == "trajectory":
+            summaries = tuple(
+                self._execute_state(
+                    prepared.program,
+                    plan=prepared.program.plan
+                    + (self._expectation_measurement(bound),),
+                    execution_mode=prepared.execution_mode,
+                    simulation=prepared.simulation,
+                    shots=shots,
+                    n_clbits=(
+                        prepared.program.classical_allocation.n_clbits
+                        + len(bound.engine_factors)
+                    ),
+                    rng=np.random.default_rng(child_seed),
+                    retain_final_state=False,
+                )
+                for child_seed, bound in zip(
+                    child_seeds,
+                    prepared.bound_occurrences,
+                    strict=True,
+                )
+            )
+        else:
+            runner = self._create_runner(
+                prepared.program,
+                simulation=prepared.simulation,
+                execution_mode=prepared.execution_mode,
+                retain_final_state=False,
+            )
+            engine = PulseEngine(
+                runner,
+                schedule_mode=prepared.simulation.schedule_mode,
+            )
+            outcome_groups = engine.run_terminal_measurement_groups(
+                prepared.program.plan,
+                tuple(
+                    self._expectation_measurement(bound)
+                    for bound in prepared.bound_occurrences
+                ),
+                shots=shots,
+                n_clbits=(
+                    prepared.program.classical_allocation.n_clbits
+                    + max(
+                        len(bound.engine_factors)
+                        for bound in prepared.bound_occurrences
+                    )
+                ),
+                rng=np.random.default_rng(prepared.simulation.seed),
+                measurement_rngs=tuple(
+                    np.random.default_rng(child_seed) for child_seed in child_seeds
+                ),
+            )
+            summaries = tuple(
+                self._summarize_execution(
+                    outcomes,
+                    require_final_state=False,
+                    runner=runner,
+                )
+                for outcomes in outcome_groups
+            )
+
+        statistics = tuple(
+            _reduce_outcome_counts(
+                bound.engine_factors,
+                (
+                    (
+                        tuple(
+                            outcome.classical_digits[index]
+                            for index in bound.scratch_indices
+                        ),
+                        1,
+                    )
+                    for outcome in summary.outcomes
+                ),
+            )
+            for bound, summary in zip(
+                prepared.bound_occurrences,
+                summaries,
+                strict=True,
+            )
+        )
+        values, standard_errors = _combine_term_statistics(
+            prepared.constants,
+            tuple(bound.occurrence for bound in prepared.bound_occurrences),
+            statistics,
+            shots=shots,
+        )
+        return values, standard_errors, dict(summaries[0].runtime_details)
+
+    @staticmethod
+    def _expectation_measurement(
+        bound: _BoundPulseExpectation,
+    ) -> MeasurementStep:
+        """Return the measurement guaranteed by sampled occurrence binding."""
+        if bound.measurement is None:
+            raise RuntimeError("sampled pulse expectation has no measurement")
+        return bound.measurement
 
     @final
     def _execute_unitary(

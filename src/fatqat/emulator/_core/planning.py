@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from ..._backends.backend_utils import (
     _lower_measurement_boundary,
     _lower_reset_boundary,
+    _resolve_confusions,
     _resolve_condition,
 )
 from ..._backends.steps import MeasurementStep, ResetStep
@@ -20,6 +22,7 @@ from ...noise.lindblad import (
 )
 from ...operations.measurement import Measurement
 from ...program import _AppliedOperation
+from ...registers import RegisterRef
 from ...resource_layout import ResourceLayout
 from .engine import PulsePlanStep
 from .lindblad import ResolvedLindbladTerm, bind_lindblad_operators
@@ -102,6 +105,50 @@ def _lower_measurement(
         classical_indices=classical_indices,
         reported_digit_maps=reported_digit_maps,
         confusions=confusions,
+    )
+
+
+def _expectation_confusions(
+    factor_refs: tuple[RegisterRef, ...],
+    reported_digit_maps: tuple[tuple[int, ...], ...],
+    resource_layout: ResourceLayout,
+    noise_model: NoiseModel,
+) -> tuple[Any, ...] | None:
+    """Resolve readout confusion for a pulse expectation measurement."""
+    return _resolve_confusions(
+        factor_refs,
+        reported_digit_maps,
+        resource_layout,
+        noise_model,
+    )
+
+
+def _build_expectation_measurement(
+    factor_refs: tuple[RegisterRef, ...],
+    measured_indices: tuple[int, ...],
+    *,
+    scratch_start: int,
+    target: _PulseTarget,
+    resource_layout: ResourceLayout,
+    noise_model: NoiseModel,
+) -> MeasurementStep:
+    """Build one private terminal readout through normal pulse routing."""
+    reported_digit_maps = tuple(
+        target.reported_digit_map(resource_layout.device_label(ref))
+        for ref in factor_refs
+    )
+    return MeasurementStep(
+        measured_indices=measured_indices,
+        classical_indices=tuple(
+            range(scratch_start, scratch_start + len(measured_indices))
+        ),
+        reported_digit_maps=reported_digit_maps,
+        confusions=_expectation_confusions(
+            factor_refs,
+            reported_digit_maps,
+            resource_layout,
+            noise_model,
+        ),
     )
 
 

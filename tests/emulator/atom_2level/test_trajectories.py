@@ -18,7 +18,7 @@ from fatqat.emulator.atom_2level import (
     Atom2LevelEmulator,
 )
 from fatqat.emulator.atom_2level.qutip_adapter import _Atom2LevelQutipAdapter
-from fatqat.errors import BackendValidationError
+from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import AmplitudeDamping
 from fatqat.emulator import SampledWaveform
 
@@ -128,6 +128,39 @@ def test_real_trajectory_runs_are_reproducible_and_converge_to_mesolve(model):
     # With 400 Bernoulli samples the worst-case standard deviation is 0.025;
     # 0.08 is over three sigma and remains stable for the fixed seed.
     assert observed_excited == pytest.approx(expected_excited, abs=0.08)
+
+
+def test_estimator_trajectories_are_reproducible_and_match_mesolve(model):
+    program = _program(measured=False, amplitude=np.pi, duration=1.0)
+    occupation = fq.Observable.from_sparse(
+        [("ONE", (0,), 1.0)],
+        num_qubits=1,
+    )
+    trajectory = fq.Estimator(_backend(model, rate=0.4))
+    ensemble = fq.Estimator(_backend(model, rate=0.4, method="density_matrix"))
+
+    with pytest.raises(UnsupportedOperationError, match="exact statevector"):
+        trajectory.run(program, occupation)
+
+    first = trajectory.run(
+        program,
+        occupation,
+        shots=400,
+        simulation_config={"seed": 20260807},
+    ).result()
+    second = trajectory.run(
+        program,
+        occupation,
+        shots=400,
+        simulation_config={"seed": 20260807},
+    ).result()
+    exact = ensemble.run(program, occupation).result()
+
+    assert first.get_expectation() == second.get_expectation()
+    assert first.get_standard_error() == second.get_standard_error()
+    assert first.get_expectation() == pytest.approx(
+        exact.get_expectation(), abs=5 * first.get_standard_error()
+    )
 
 
 def test_one_shot_regional_trajectory_continues_and_is_reproducible(model):

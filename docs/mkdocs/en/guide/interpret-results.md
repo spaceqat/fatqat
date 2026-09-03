@@ -146,13 +146,13 @@ request:
 ... ).result()
 >>> bool(abs(sampled.get_expectation()) < 0.2)
 True
->>> sampled.get_std() > 0.0
+>>> sampled.get_standard_error() > 0.0
 True
 ```
 
-The estimate fluctuates around zero, and `get_std()` reports its standard
-error. Increase the shots when statistical precision—not state evolution—is
-the limiting factor.
+The estimate fluctuates around zero, and `get_standard_error()` reports its
+standard error. Increase the shots when statistical precision—not state
+evolution—is the limiting factor.
 
 For formal state-axis, operator-vectorization, and observable-shape contracts,
 use the [Result](../api/result.md), [Simulator](../api/simulator.md), and

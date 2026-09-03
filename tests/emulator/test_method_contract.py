@@ -8,7 +8,11 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.emulator._atom_3level import Atom3LevelEmulator
-from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
+from fatqat.errors import (
+    BackendValidationError,
+    ResultFieldUnavailableError,
+    UnsupportedOperationError,
+)
 from fatqat.noise import NoiseModel, TransitionRelaxation
 
 
@@ -111,6 +115,28 @@ def test_method_selects_one_full_physical_artifact(
     for alternate in {"statevector", "density_matrix", "unitary"} - {field}:
         with pytest.raises(ResultFieldUnavailableError):
             getattr(result, f"get_{alternate}")()
+
+
+@pytest.mark.parametrize("family", ("transmon", "atom3"))
+def test_estimator_rejects_undefined_qutrit_observable_embedding(
+    family, atom_3level_model
+):
+    backend, program, _dimension = _family_case(
+        family, "statevector", atom_3level_model
+    )
+
+    with pytest.raises(UnsupportedOperationError, match="qubit-Observable embedding"):
+        fq.Estimator(backend).run(program, fq.Observable([("ZZ", 1.0)]))
+
+
+def test_estimator_rejects_pulse_unitary_at_request_time(atom_3level_model):
+    backend, program, _dimension = _family_case("atom2", "unitary", atom_3level_model)
+
+    with pytest.raises(
+        UnsupportedOperationError,
+        match="unitary execution computes an operator",
+    ):
+        fq.Estimator(backend).run(program, fq.Observable([("ZZ", 1.0)]))
 
 
 @pytest.mark.parametrize("family", ("transmon", "atom3", "atom2"))

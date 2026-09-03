@@ -6,9 +6,11 @@ title: "Observables and estimation"
 
 
 Use [`Estimator`][fatqat.Estimator] to evaluate one or more
-[`Observable`][fatqat.Observable] values from a backend's final state. The program
-must be unmeasured, fully bound, and qubit-only; the backend must return a
-statevector or density matrix in the program's logical qubit space.
+[`Observable`][fatqat.Observable] values through a backend's native execution
+path. The program must be unmeasured, fully bound, and qubit-only. Built-in
+matrix simulators and the two-level atom pulse emulator implement this
+interface; physical models with higher local dimensions have no implicit
+qubit-observable embedding.
 
 ## Estimate an observable
 
@@ -65,8 +67,13 @@ Pass one observable to receive scalar expectation and standard-error values,
 or a list or tuple to receive arrays in the same order.
 
 `shots=0` computes an exact value. A positive `shots` value samples each
-observable term, and [`get_std`][fatqat.Result.get_std] reports the resulting
-standard error. Set `simulation_config["seed"]` to reproduce a sampled run.
+nonconstant term occurrence independently through the backend's normal
+measurement path, and
+[`get_standard_error`][fatqat.Result.get_standard_error] reports the resulting
+sample standard error. Constant terms need no execution and contribute zero
+standard error; one sample of a nonconstant term has undefined standard error
+and therefore reports `nan`. Set `simulation_config["seed"]` to reproduce a
+sampled run.
 
 Configure the simulation method, runtime, and noise on the backend. Invalid
 programs, observable widths, and shot values raise
@@ -74,21 +81,42 @@ programs, observable widths, and shot values raise
 unsupported observable types raise `TypeError`. Later failures are raised by
 [`result`][fatqat.Job.result].
 
-Use a density-matrix backend when the program resets qubits or channel noise
-applies.
+The Estimator forwards `simulation_config` to the backend and accepts the same
+keys as its normal `run()` path. See the canonical tables for
+[matrix simulators](simulator.md#runtime-and-execution) and
+[the two-level atom emulator](atom-emulators.md#run-configuration-and-results).
+`result_config` is not an Estimator input because the backend chooses the
+internal states or measurements required by the requested observables.
 
-For a program with `N` qubits, the returned statevector must have shape
-`(2**N,)` or the density matrix must have shape `(2**N, 2**N)`. A backend
-state with another shape raises [`BackendValidationError`][fatqat.errors.BackendValidationError]
-before any Pauli expectation kernel runs. In particular, a full physical qutrit
-state returned by a Transmon emulator is not implicitly projected into the
-logical subspace. Inspect that physical state directly with the backend
-[`Result`][fatqat.Result] until explicit leakage-aware observable semantics are
-available.
+Matrix simulators support all observable factors for exact and sampled runs
+with statevector or density-matrix methods. Unitary and superoperator methods
+are rejected with [`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError]
+before a job is returned because they produce maps rather than states. Use a
+density-matrix method for an exact expectation when reset or an applicable
+stochastic channel is present; a statevector method can execute those programs
+with positive shots. Carrier-loss programs are rejected because the current
+observable contract does not define expectations across changing occupancy.
 
-Read estimator results with [`get_expectation`][fatqat.Result.get_expectation] and
-[`get_std`][fatqat.Result.get_std]. Run the backend separately if you also need its
-final state.
+The two-level atom pulse emulator supports exact qubit observables with
+statevector or density-matrix methods. Exact statevector evaluation rejects
+potentially active Lindblad evolution; use density-matrix exact execution or a
+positive-shot trajectory run instead. Positive-shot pulse evaluation currently
+supports diagonal `Z`, `ZERO`, and `ONE` factors. Pulse reset is unsupported.
+Transmon and three-level atom emulators are rejected because their physical
+local dimensions exceed the qubit observable space.
+
+Exact evaluation rejects applicable readout-confusion noise because exact
+readout-noise semantics are not defined. Positive-shot evaluation applies
+readout confusion through the backend's normal measurement routing. On matrix
+simulators, sampled `X` and `Y` factors use ideal Estimator-owned basis changes
+before that routed measurement; those synthetic changes are not user-program
+operations and do not receive operation-scoped noise.
+
+Read estimator results with [`get_expectation`][fatqat.Result.get_expectation]
+and [`get_standard_error`][fatqat.Result.get_standard_error]. Run the backend
+separately if you also need its final state. Estimator metadata is intentionally
+compact: backend name, method, runtime, and shots, plus the pulse solver when an
+actual pulse execution reports one.
 
 ## Parameter sweeps
 
