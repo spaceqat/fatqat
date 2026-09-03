@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, fields, replace
 from math import prod
 from numbers import Real
-from typing import cast
+from typing import Any, cast
 
 from .._index_allocation import _ClassicalAllocation, _EngineAllocation
 from .._parameter_binding import _parameter_field_slots
@@ -17,6 +17,7 @@ from ..errors import (
 )
 from ..implementation import MatrixImplementation, MatrixImplementationMap
 from ..implementation._operation_registry import _select_implementation
+from ..implementation.matrices import _H, _SDG
 from ..noise import ChannelImplementationMap, NoiseModel
 from ..noise.base import _validate_kraus_shapes
 from ..operations import Measurement, Operation, PulseOperation
@@ -28,6 +29,7 @@ from ..resource_layout import ResourceLayout
 from .._backends.backend_utils import (
     _lower_measurement_boundary,
     _lower_reset_boundary,
+    _resolve_confusions,
     _resolve_condition,
 )
 from .._backends.steps import (
@@ -122,6 +124,76 @@ def _lower_measurement(
         # keeps the None default the numba fast path recognizes.
         reported_digit_maps=reported_digit_maps if confusions is not None else None,
     )
+
+
+def _expectation_confusions(
+    factor_refs: tuple[RegisterRef, ...],
+    resource_layout: ResourceLayout,
+    noise_model: NoiseModel,
+) -> tuple[Any, ...] | None:
+    """Resolve readout confusion for a qubit expectation measurement."""
+    return _resolve_confusions(
+        factor_refs,
+        ((0, 1),) * len(factor_refs),
+        resource_layout,
+        noise_model,
+    )
+
+
+def _build_expectation_tail(
+    factor_axes: tuple[tuple[int, str], ...],
+    factor_refs: tuple[RegisterRef, ...],
+    *,
+    scratch_start: int,
+    resource_layout: ResourceLayout,
+    noise_model: NoiseModel,
+) -> tuple[ResolvedStep, ...]:
+    """Build ideal basis changes followed by normally routed readout."""
+    tail: list[ResolvedStep] = []
+    for engine_index, letter in factor_axes:
+        if letter == "X":
+            tail.append(
+                ApplyMatrixStep(
+                    matrix=_H,
+                    target_indices=(engine_index,),
+                    kernel_key=BuiltinKernelKey.H,
+                )
+            )
+        elif letter == "Y":
+            tail.extend(
+                (
+                    ApplyMatrixStep(
+                        matrix=_SDG,
+                        target_indices=(engine_index,),
+                        kernel_key=BuiltinKernelKey.SDG,
+                    ),
+                    ApplyMatrixStep(
+                        matrix=_H,
+                        target_indices=(engine_index,),
+                        kernel_key=BuiltinKernelKey.H,
+                    ),
+                )
+            )
+
+    reported_digit_maps = ((0, 1),) * len(factor_axes)
+    confusions = _expectation_confusions(
+        factor_refs,
+        resource_layout,
+        noise_model,
+    )
+    tail.append(
+        MeasurementStep(
+            measured_indices=tuple(index for index, _letter in factor_axes),
+            classical_indices=tuple(
+                range(scratch_start, scratch_start + len(factor_axes))
+            ),
+            confusions=confusions,
+            reported_digit_maps=(
+                reported_digit_maps if confusions is not None else None
+            ),
+        )
+    )
+    return tuple(tail)
 
 
 def _lower_reset(

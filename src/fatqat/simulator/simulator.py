@@ -8,17 +8,26 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 import numpy as np
 
+from .._expectation import (
+    _ExpectationExecution,
+    _TermOccurrence,
+    _combine_term_statistics,
+    _plan_term_occurrences,
+    _reduce_outcome_counts,
+    expectation_density_matrix,
+    expectation_statevector,
+)
 from .._parameter_binding import (
     _discover_parameters,
     _normalize_parameter_batch,
     _raise_for_unbound_parameters,
 )
-from ..errors import BackendValidationError
+from ..errors import BackendValidationError, UnsupportedOperationError
 from .._index_allocation import (
     _ClassicalAllocation,
     _EngineAllocation,
@@ -37,6 +46,7 @@ from ..noise import (
     ThermalRelaxation,
     default_channel_implementation_map,
 )
+from ..observable import Observable
 from ..operations import Barrier, Measurement, Reset
 from ..parameters import Parameter, ParameterVector
 from ..program import Program, _AppliedOperation
@@ -48,7 +58,7 @@ from ..result import (
     counts_dict_from_arrays,
     reduce_to_counts,
 )
-from ._engine.base import MatrixEngine
+from ._engine.base import MatrixEngine, _shot_seed_sequences
 from ._engine.parallel import _run_shots_in_processes
 from ._engine.np import (
     NumpyDMEngine,
@@ -89,7 +99,9 @@ from .._backends.view_normalization import ProgramInstruction, _break_grouped_op
 from .._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
+    LossStep,
     MeasurementStep,
+    PutStep,
     ResetStep,
     ResolvedStep,
 )
@@ -221,6 +233,38 @@ class _PreparedRun(_PreparedExecution):
     shots: int
     request: _ResultRequest
     execution: _ExecutionContext
+
+
+@dataclass(frozen=True, slots=True)
+class _BoundExpectationOccurrence:
+    """One logical term occurrence bound to matrix-engine resources."""
+
+    occurrence: _TermOccurrence
+    engine_factors: tuple[tuple[int, str], ...]
+    scratch_indices: tuple[int, ...]
+    tail: tuple[ResolvedStep, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedExpectationSample:
+    """One sampled occurrence with its validated execution policy."""
+
+    bound: _BoundExpectationOccurrence
+    execution: _PreparedExecution
+    policy: _ExecutionPolicy
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedExpectation:
+    """Validated matrix expectation work before numerical execution."""
+
+    execution: _PreparedExecution
+    constants: tuple[float, ...]
+    bound_occurrences: tuple[_BoundExpectationOccurrence, ...]
+    state_request: _ResultRequest
+    state_policy: _ExecutionPolicy | None
+    sample_request: _ResultRequest
+    samples: tuple[_PreparedExpectationSample, ...]
 
 
 class Simulator:
@@ -929,6 +973,388 @@ class Simulator:
             simulation=simulation,
             capabilities=capabilities,
             initial_state=initial_state,
+        )
+
+    def _run_expectation(
+        self,
+        program: Program,
+        observables: tuple[Observable, ...],
+        *,
+        shots: int,
+        simulation_config: dict[str, Any] | None,
+    ) -> Job[_ExpectationExecution]:
+        """Execute one private exact or sampled expectation request."""
+        prepared = self._prepare_expectation(
+            program,
+            observables,
+            shots=shots,
+            simulation_config=simulation_config,
+        )
+        metadata = {
+            "backend_name": type(self).__name__,
+            "method": self._state_field,
+            "runtime": self._runtime,
+        }
+        try:
+            if not prepared.bound_occurrences:
+                values = prepared.constants
+                standard_errors = (0.0,) * len(values)
+            elif shots == 0:
+                values = self._execute_exact_expectation(prepared)
+                standard_errors = (0.0,) * len(values)
+            else:
+                values, standard_errors = self._execute_sampled_expectation(
+                    prepared,
+                    shots=shots,
+                )
+            return Job(
+                status="DONE",
+                result=_ExpectationExecution(values, standard_errors, metadata),
+            )
+        except Exception as exc:
+            return Job(status="ERROR", error=exc)
+
+    def _prepare_expectation(
+        self,
+        program: Program,
+        observables: tuple[Observable, ...],
+        *,
+        shots: int,
+        simulation_config: dict[str, Any] | None,
+    ) -> _PreparedExpectation:
+        """Validate, lower, bind, and resolve policies without executing."""
+        simulation = _normalize_config(
+            simulation_config,
+            self._simulation_config_cls,
+            "simulation_config",
+            backend_name=type(self).__name__,
+        )
+        execution = self._prepare_execution(
+            program,
+            resource_layout=None,
+            initial_state=None,
+            simulation=simulation,
+        )
+        plan = execution.plan
+        assert isinstance(plan, tuple), "expectation runs lower bound programs only"
+
+        if self._is_operator:
+            raise UnsupportedOperationError(
+                f"method={self._state_field!r} computes an operator, not a state "
+                "whose expectation can be evaluated"
+            )
+        if any(isinstance(step, LossStep) for step in plan):
+            raise UnsupportedOperationError(
+                "expectation values are undefined for programs containing carrier loss"
+            )
+        if (
+            shots == 0
+            and self._state_field == "statevector"
+            and execution.facts.stochastic_final_state
+        ):
+            raise UnsupportedOperationError(
+                "an exact statevector expectation is unavailable for stochastic "
+                "reset or channel execution; use density_matrix or positive shots"
+            )
+        self._validate_additional_config(
+            config=self._result_config_cls(),
+            simulation=simulation,
+            shots=shots,
+            facts=execution.facts,
+        )
+
+        occurrences, constants = _plan_term_occurrences(observables)
+        bound_occurrences = self._bind_expectation_occurrences(
+            program,
+            execution,
+            occurrences,
+            sampled=shots > 0,
+        )
+        state_request = self._request_cls(
+            counts=False,
+            **{self._state_field: True},
+        )
+        sample_request = self._request_cls(
+            counts=True,
+            **{self._state_field: False},
+        )
+        state_policy = None
+        samples = []
+        if not bound_occurrences:
+            no_result_request = self._request_cls(
+                counts=False,
+                **{self._state_field: False},
+            )
+            self._resolve_plan_policy(
+                plan,
+                execution,
+                request=no_result_request,
+                shots=shots,
+            )
+        elif shots == 0:
+            state_policy = self._resolve_plan_policy(
+                plan,
+                execution,
+                request=state_request,
+                shots=1,
+            )
+        else:
+            if not execution.facts.stochastic_final_state:
+                base_simulation = (
+                    replace(simulation, shot_parallelism="serial")
+                    if simulation.shot_parallelism in {"threads", "processes"}
+                    else simulation
+                )
+                base_execution = replace(execution, simulation=base_simulation)
+                state_policy = self._resolve_plan_policy(
+                    plan,
+                    base_execution,
+                    request=state_request,
+                    shots=1,
+                )
+
+            terminal_occupied = self._terminal_occupancy(execution)
+            for bound in bound_occurrences:
+                if execution.facts.stochastic_final_state:
+                    sample_plan = plan + bound.tail
+                    sample_facts, sample_occupied = self._analyze_lowered_plan(
+                        sample_plan
+                    )
+                else:
+                    sample_plan = bound.tail
+                    sample_facts = self._analyze_common_plan_facts(sample_plan)
+                    sample_occupied = terminal_occupied
+                sample_execution = replace(
+                    execution,
+                    plan=sample_plan,
+                    facts=sample_facts,
+                    initial_occupied=sample_occupied,
+                )
+                samples.append(
+                    _PreparedExpectationSample(
+                        bound=bound,
+                        execution=sample_execution,
+                        policy=self._resolve_plan_policy(
+                            sample_plan,
+                            sample_execution,
+                            request=sample_request,
+                            shots=shots,
+                        ),
+                    )
+                )
+
+        return _PreparedExpectation(
+            execution=execution,
+            constants=constants,
+            bound_occurrences=bound_occurrences,
+            state_request=state_request,
+            state_policy=state_policy,
+            sample_request=sample_request,
+            samples=tuple(samples),
+        )
+
+    def _bind_expectation_occurrences(
+        self,
+        program: Program,
+        execution: _PreparedExecution,
+        occurrences: tuple[_TermOccurrence, ...],
+        *,
+        sampled: bool,
+    ) -> tuple[_BoundExpectationOccurrence, ...]:
+        """Bind logical observable factors to engine and scratch indices."""
+        lowering = execution.lowering
+        logical_refs = tuple(
+            register[index]
+            for register in program.quantum_registers
+            for index in range(register.size)
+        )
+        terminal_occupied = self._terminal_occupancy(execution)
+        scratch_start = lowering.classical_allocation.n_clbits
+        bound_occurrences = []
+        for occurrence in occurrences:
+            factor_refs = tuple(
+                logical_refs[index] for index, _letter in occurrence.logical_factors
+            )
+            engine_factors = tuple(
+                (lowering.engine_index(ref), letter)
+                for ref, (_index, letter) in zip(
+                    factor_refs, occurrence.logical_factors, strict=True
+                )
+            )
+            for ref, (engine_index, letter) in zip(
+                factor_refs, engine_factors, strict=True
+            ):
+                if (
+                    terminal_occupied is not None
+                    and engine_index not in terminal_occupied
+                ):
+                    raise UnsupportedOperationError(
+                        f"observable factor {letter} targets unoccupied atom {ref!r}"
+                    )
+            if sampled:
+                tail = planning._build_expectation_tail(
+                    engine_factors,
+                    factor_refs,
+                    scratch_start=scratch_start,
+                    resource_layout=lowering.resource_layout,
+                    noise_model=self._noise_model,
+                )
+            else:
+                if (
+                    planning._expectation_confusions(
+                        factor_refs,
+                        lowering.resource_layout,
+                        self._noise_model,
+                    )
+                    is not None
+                ):
+                    raise UnsupportedOperationError(
+                        "an exact expectation cannot apply selected readout "
+                        "confusion; use positive shots"
+                    )
+                tail = ()
+            bound_occurrences.append(
+                _BoundExpectationOccurrence(
+                    occurrence=occurrence,
+                    engine_factors=engine_factors,
+                    scratch_indices=tuple(
+                        range(scratch_start, scratch_start + len(engine_factors))
+                    ),
+                    tail=tail,
+                )
+            )
+        return tuple(bound_occurrences)
+
+    @staticmethod
+    def _terminal_occupancy(
+        execution: _PreparedExecution,
+    ) -> frozenset[int] | None:
+        """Return deterministic terminal occupancy for a prepared base plan."""
+        if execution.initial_occupied is None:
+            return None
+        occupied = set(execution.initial_occupied)
+        for step in execution.plan:
+            if isinstance(step, PutStep) and (
+                step.condition is None
+                or all(value == 0 for _clbit, value in step.condition)
+            ):
+                occupied.update(step.target_indices)
+        return frozenset(occupied)
+
+    def _execute_expectation_base(
+        self,
+        prepared: _PreparedExpectation,
+    ) -> np.ndarray:
+        """Execute the prepared base plan once and return its internal state."""
+        execution = prepared.execution
+        plan = execution.plan
+        assert isinstance(plan, tuple)
+        if prepared.state_policy is None:
+            raise RuntimeError("expectation base execution has no resolved policy")
+        context = _ExecutionContext(
+            execution_shape=execution.facts.execution_shape,
+            request=prepared.state_request,
+            system_dims=tuple(execution.lowering.engine_allocation.system_dims),
+            n_clbits=execution.lowering.classical_allocation.n_clbits,
+            shots=1,
+            seed=execution.simulation.seed,
+            initial_state=execution.initial_state,
+            initial_occupied=execution.initial_occupied,
+        )
+        raw = self._execute_engine(
+            plan=plan,
+            deferred_measurements=execution.facts.deferred_measurements,
+            context=context,
+            policy=prepared.state_policy,
+        )
+        if raw.state is None:
+            raise RuntimeError("expectation base execution returned no state")
+        return raw.state
+
+    def _execute_exact_expectation(
+        self,
+        prepared: _PreparedExpectation,
+    ) -> tuple[float, ...]:
+        """Contract every observable against one backend-evolved state."""
+        state = self._execute_expectation_base(prepared)
+        kernel = (
+            expectation_statevector
+            if self._state_field == "statevector"
+            else expectation_density_matrix
+        )
+        allocation = prepared.execution.lowering.engine_allocation
+        terms_by_observable = [[] for _constant in prepared.constants]
+        for bound in prepared.bound_occurrences:
+            kernel_factors = tuple(
+                (allocation.n_subsystems - 1 - engine_index, letter)
+                for engine_index, letter in bound.engine_factors
+            )
+            terms_by_observable[bound.occurrence.observable_index].append(
+                (bound.occurrence.coefficient, kernel_factors)
+            )
+        return tuple(
+            constant + kernel(state, tuple(terms))
+            for constant, terms in zip(
+                prepared.constants,
+                terms_by_observable,
+                strict=True,
+            )
+        )
+
+    def _execute_sampled_expectation(
+        self,
+        prepared: _PreparedExpectation,
+        *,
+        shots: int,
+    ) -> tuple[tuple[float, ...], tuple[float, ...]]:
+        """Execute native outcomes for each independent term occurrence."""
+        base_state = (
+            self._execute_expectation_base(prepared)
+            if prepared.state_policy is not None
+            else None
+        )
+        statistics = []
+        child_seeds = _shot_seed_sequences(
+            prepared.execution.simulation.seed,
+            len(prepared.samples),
+        )
+        for child_seed, sample in zip(child_seeds, prepared.samples, strict=True):
+            execution = sample.execution
+            context = _ExecutionContext(
+                execution_shape=execution.facts.execution_shape,
+                request=prepared.sample_request,
+                system_dims=tuple(execution.lowering.engine_allocation.system_dims),
+                n_clbits=(
+                    execution.lowering.classical_allocation.n_clbits
+                    + len(sample.bound.engine_factors)
+                ),
+                shots=shots,
+                seed=int(child_seed.generate_state(1, dtype=np.uint64)[0]),
+                initial_state=base_state.copy() if base_state is not None else None,
+                initial_occupied=execution.initial_occupied,
+            )
+            plan = execution.plan
+            assert isinstance(plan, tuple)
+            raw = self._execute_engine(
+                plan=plan,
+                deferred_measurements=execution.facts.deferred_measurements,
+                context=context,
+                policy=sample.policy,
+            )
+            if raw.outcome_keys is None or raw.outcome_counts is None:
+                raise RuntimeError("sampled expectation execution returned no outcomes")
+            measured_rows = raw.outcome_keys[:, sample.bound.scratch_indices]
+            statistics.append(
+                _reduce_outcome_counts(
+                    sample.bound.engine_factors,
+                    zip(measured_rows, raw.outcome_counts, strict=True),
+                )
+            )
+        return _combine_term_statistics(
+            prepared.constants,
+            tuple(sample.bound.occurrence for sample in prepared.samples),
+            statistics,
+            shots=shots,
         )
 
     def _execute_plan(
