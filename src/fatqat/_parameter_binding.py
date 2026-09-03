@@ -37,6 +37,40 @@ def _discover_parameters(instructions: Sequence[Any]) -> tuple[Parameter, ...]:
     return tuple(discovered)
 
 
+def _parameter_field_slots(
+    operation: object,
+    param_order: Sequence[Parameter] | None,
+) -> tuple[int, ...] | None:
+    """Return the θ-slot positions of one operation's `Parameter` fields.
+
+    Slots follow dataclass field order, matching the replay-time substitution
+    in ``simulator.planning._materialize_recipe``. Returns ``None``
+    when no direct field holds a `Parameter`, so concrete operations stay on
+    the ordinary lowering path.
+
+    A ``None`` ``param_order`` means the lowering run has no θ vector at all
+    (every non-sweep entry point); those paths reject unbound programs before
+    lowering, so a parameter field reaching this case is an internal routing
+    error and is reported like the public unbound guard.
+    """
+    if not is_dataclass(operation) or isinstance(operation, type):
+        return None
+    parameter_fields = [
+        getattr(operation, field_info.name)
+        for field_info in fields(operation)
+        if isinstance(getattr(operation, field_info.name), Parameter)
+    ]
+    if not parameter_fields:
+        return None
+    if param_order is None:
+        raise BackendValidationError(
+            "program has unbound parameters: "
+            + _format_unbound_parameters(parameter_fields)
+        )
+    positions = {parameter: index for index, parameter in enumerate(param_order)}
+    return tuple(positions[parameter] for parameter in parameter_fields)
+
+
 def _validate_parameter_scalar(value: object) -> Real:
     """Enforce the shared scalar policy without coercing the accepted value.
 

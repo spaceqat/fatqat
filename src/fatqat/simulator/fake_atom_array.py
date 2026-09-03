@@ -36,8 +36,10 @@ if TYPE_CHECKING:
 
     from ..implementation import MatrixImplementation
     from ..operations import Operation
+    from ..parameters import Parameter
     from ..registers import RegisterRef
     from .._backends.backend_utils import _LoweringContext
+    from .planning import _MatrixRecipe
     from .simulator import ProgramInstruction
     from .._backends.steps import ResolvedStep
 
@@ -153,8 +155,12 @@ class AtomArraySimulator(Simulator):
         return super()._resolve_resource_layout(program, supplied_layout)
 
     def _lower(
-        self, operations: Sequence[ProgramInstruction], context: _LoweringContext
-    ) -> list[ResolvedStep]:
+        self,
+        operations: Sequence[ProgramInstruction],
+        context: _LoweringContext,
+        *,
+        param_order: tuple[Parameter, ...] | None = None,
+    ) -> list[ResolvedStep | _MatrixRecipe]:
         """Apply this program's atom lifecycle, then lower normally.
 
         Every site starts empty and `~fatqat.operations.Put` loads a fresh
@@ -198,14 +204,20 @@ class AtomArraySimulator(Simulator):
         )
 
         connectivity = _AtomConnectivity()
-        plan: list[ResolvedStep] = []
+        plan: list[ResolvedStep | _MatrixRecipe] = []
         segment: list[ProgramInstruction] = []
         for step in operations:
             if isinstance(step, _AppliedOperation) and isinstance(
                 step.operation, (type(ops.Pair), type(ops.Unpair))
             ):
                 plan.extend(
-                    self._lower_segment(segment, connectivity, put_targets, context)
+                    self._lower_segment(
+                        segment,
+                        connectivity,
+                        put_targets,
+                        context,
+                        param_order=param_order,
+                    )
                 )
                 segment = []
                 plan.extend(
@@ -222,7 +234,11 @@ class AtomArraySimulator(Simulator):
                 connectivity = self._apply_pairing(connectivity, step)
                 continue
             segment.append(step)
-        plan.extend(self._lower_segment(segment, connectivity, put_targets, context))
+        plan.extend(
+            self._lower_segment(
+                segment, connectivity, put_targets, context, param_order=param_order
+            )
+        )
         return plan
 
     def _initial_occupancy(self) -> frozenset[int]:
@@ -235,7 +251,9 @@ class AtomArraySimulator(Simulator):
         connectivity: _AtomConnectivity,
         put_targets: frozenset[RegisterRef],
         context: _LoweringContext,
-    ) -> list[ResolvedStep]:
+        *,
+        param_order: tuple[Parameter, ...] | None = None,
+    ) -> list[ResolvedStep | _MatrixRecipe]:
         """Lower one inter-pairing segment, rejecting unpaired two-qubit gates.
 
         The layout never changes, so the segment lowers under the unchanged
@@ -250,13 +268,15 @@ class AtomArraySimulator(Simulator):
         for step in segment:
             self._require_pairing(step, connectivity)
 
-        plan: list[ResolvedStep] = []
+        plan: list[ResolvedStep | _MatrixRecipe] = []
         ordinary: list[ProgramInstruction] = []
         lower_common = super()._lower
 
         def flush_ordinary() -> None:
             if ordinary:
-                plan.extend(lower_common(tuple(ordinary), context))
+                plan.extend(
+                    lower_common(tuple(ordinary), context, param_order=param_order)
+                )
                 ordinary.clear()
 
         for step in segment:
@@ -279,7 +299,7 @@ class AtomArraySimulator(Simulator):
                 flush_ordinary()
                 # Reuse canonical lowering for validation, then omit work that
                 # can never execute because at least one target is never loaded.
-                lower_common((step,), context)
+                lower_common((step,), context, param_order=param_order)
             else:
                 ordinary.append(step)
         flush_ordinary()

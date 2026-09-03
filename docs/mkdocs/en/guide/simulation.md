@@ -74,8 +74,9 @@ stored in a Result.
 ## Sweep without rebuilding
 
 [`run_sweep`][fatqat.simulator.Simulator.run_sweep] binds each row of values to
-the same Program structure. Here the state itself is the useful answer, so no
-measurement or sampling is needed:
+the same Program structure. The program is validated and lowered once; each
+row then only rebuilds the matrices of the gates that hold parameters. Here the
+state itself is the useful answer, so no measurement or sampling is needed:
 
 ```pycon
 >>> angles = np.linspace(0.0, 2.0 * np.pi, 9)

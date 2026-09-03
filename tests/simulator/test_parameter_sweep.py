@@ -1,17 +1,40 @@
 """Tests for Simulator parameter sweeps and shared unbound guards."""
 
 import inspect
+import pickle
+import typing
+from dataclasses import dataclass
 from fractions import Fraction
+from typing import ClassVar
 
 import numpy as np
 import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
+from fatqat._backends.backend_utils import _LoweringContext
+from fatqat._backends import steps as steps_module
+from fatqat._backends.steps import ApplyMatrixStep, ResolvedStep
+from fatqat._index_allocation import _ClassicalAllocation
+from fatqat._parameter_binding import _discover_parameters
+from fatqat.errors import BackendValidationError, MatrixImplementationError
+from fatqat.implementation import MatrixImplementationMap
 from fatqat.job import Job
+from fatqat.operations import Operation
 from fatqat.resource_layout import ResourceLayout
 from fatqat.result import Result
 from fatqat.simulator import Simulator
+from fatqat.simulator.planning import _MatrixRecipe, _ParametricPlan
+
+
+def _rx_matrix(angle):
+    half = angle / 2
+    return np.array(
+        [
+            [np.cos(half), -1j * np.sin(half)],
+            [-1j * np.sin(half), np.cos(half)],
+        ]
+    )
 
 
 def _rotation_template():
@@ -108,7 +131,7 @@ def test_small_method_smoke_matches_repeated_runs(method):
     )
 
 
-def test_counts_seed_and_all_options_match_manual_repeated_runs(monkeypatch):
+def test_counts_seed_and_options_match_manual_repeated_runs():
     theta = fq.Parameter("theta")
     program = fq.Program(1, 1)
     program.add(ops.RY(theta), 0)
@@ -122,14 +145,6 @@ def test_counts_seed_and_all_options_match_manual_repeated_runs(monkeypatch):
     }
     result_config = {"counts": True, "final_state": False}
     backend = Simulator("SV")
-    original_run = backend.run
-    forwarded = []
-
-    def record(bound, **kwargs):
-        forwarded.append(kwargs)
-        return original_run(bound, **kwargs)
-
-    monkeypatch.setattr(backend, "run", record)
     values = np.array([0.2, 1.1])
     swept = backend.run_sweep(
         program,
@@ -140,9 +155,8 @@ def test_counts_seed_and_all_options_match_manual_repeated_runs(monkeypatch):
         simulation_config=simulation_config,
         result_config=result_config,
     ).result()
-    monkeypatch.setattr(backend, "run", original_run)
     explicit = [
-        original_run(
+        backend.run(
             program.assign_parameters({theta: value}),
             shots=64,
             resource_layout=layout,
@@ -156,18 +170,6 @@ def test_counts_seed_and_all_options_match_manual_repeated_runs(monkeypatch):
     assert [result.get_counts() for result in swept] == [
         result.get_counts() for result in explicit
     ]
-    assert len(forwarded) == 2
-    assert all(
-        kwargs
-        == {
-            "shots": 64,
-            "resource_layout": layout,
-            "initial_state": initial_state,
-            "simulation_config": simulation_config,
-            "result_config": result_config,
-        }
-        for kwargs in forwarded
-    )
 
 
 def test_batch_validation_finishes_before_row_zero(monkeypatch):
@@ -175,12 +177,12 @@ def test_batch_validation_finishes_before_row_zero(monkeypatch):
     backend = Simulator("SV")
     calls = 0
 
-    def unexpected_run(*_args, **_kwargs):
+    def unexpected_prepare(*_args, **_kwargs):
         nonlocal calls
         calls += 1
-        raise AssertionError("row execution must not begin")
+        raise AssertionError("preparation must not begin")
 
-    monkeypatch.setattr(backend, "run", unexpected_run)
+    monkeypatch.setattr(backend, "_prepare_program", unexpected_prepare)
     with pytest.raises(TypeError, match="real scalars"):
         backend.run_sweep(
             program,
@@ -239,35 +241,43 @@ def test_parameter_free_and_zero_width_batches_are_rejected():
         Simulator().run_sweep(fq.Program(1), {empty: np.empty((2, 0))})
 
 
-def test_direct_inner_run_failure_propagates_without_returning_job(monkeypatch):
+def test_replay_rule_failure_raises_directly_without_returning_job():
     theta = fq.Parameter("theta")
     program = fq.Program(1)
     program.add(ops.RX(theta), 0)
-    backend = Simulator()
 
-    def fail_on_second(bound, **_kwargs):
-        if bound._instructions[0].operation.theta == 0.2:
+    def explosive_rx(op, targets):
+        if op.theta == 0.2:
             raise RuntimeError("direct row failure")
-        return Job(status="DONE", result=Result(metadata={"row": "first"}))
+        return _rx_matrix(op.theta)
 
-    monkeypatch.setattr(backend, "run", fail_on_second)
-    with pytest.raises(RuntimeError, match="direct row failure"):
+    impl_map = MatrixImplementationMap()
+    impl_map.add(ops.RX, explosive_rx)
+    backend = Simulator(implementation_map=impl_map)
+
+    with pytest.raises(MatrixImplementationError, match="direct row failure"):
         backend.run_sweep(program, {theta: [0.1, 0.2]})
 
 
-def test_failed_point_job_produces_failed_outer_job_without_partial_list(monkeypatch):
+def test_failed_point_execution_produces_failed_outer_job_without_partial_list(
+    monkeypatch,
+):
     theta = fq.Parameter("theta")
     program = fq.Program(1)
     program.add(ops.RX(theta), 0)
     backend = Simulator()
     error = RuntimeError("point failed")
+    original_execute = backend._execute_plan
+    calls = 0
 
-    def fail_on_second(bound, **_kwargs):
-        if bound._instructions[0].operation.theta == 0.2:
-            return Job(status="ERROR", error=error)
-        return Job(status="DONE", result=Result(metadata={"row": "first"}))
+    def fail_on_second(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise error
+        return original_execute(*args, **kwargs)
 
-    monkeypatch.setattr(backend, "run", fail_on_second)
+    monkeypatch.setattr(backend, "_execute_plan", fail_on_second)
     outer = backend.run_sweep(program, {theta: [0.1, 0.2]})
 
     with pytest.raises(RuntimeError, match="point failed") as caught:
@@ -284,7 +294,7 @@ def test_point_job_interrupt_propagates_from_sweep(monkeypatch):
 
     monkeypatch.setattr(
         backend,
-        "run",
+        "_execute_plan",
         lambda *_args, **_kwargs: Job(status="ERROR", error=error),
     )
 
@@ -316,3 +326,154 @@ def test_run_sweep_signature_mirrors_run_options():
     sweep_parameters = inspect.signature(Simulator.run_sweep).parameters
 
     assert tuple(sweep_parameters)[3:] == tuple(run_parameters)[2:]
+
+
+def test_sweep_lowers_once_for_the_whole_batch(monkeypatch):
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(ops.H, 0)
+    program.add(ops.RX(theta), 0)
+    backend = Simulator("SV")
+    original_lower = backend._lower
+    lower_calls = 0
+
+    def count_lower(*args, **kwargs):
+        nonlocal lower_calls
+        lower_calls += 1
+        return original_lower(*args, **kwargs)
+
+    monkeypatch.setattr(backend, "_lower", count_lower)
+
+    results = backend.run_sweep(
+        program,
+        {theta: np.linspace(0.0, 1.0, 5)},
+        shots=0,
+        result_config={"counts": False, "final_state": True},
+    ).result()
+
+    assert lower_calls == 1
+    assert len(results) == 5
+
+
+def test_concrete_rules_run_once_and_parametric_rules_run_per_row():
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(ops.H, 0)
+    program.add(ops.RX(theta), 0)
+    calls = {"h": 0, "rx": 0}
+
+    def h_rule(op, targets):
+        calls["h"] += 1
+        return np.array([[1, 1], [1, -1]]) / np.sqrt(2)
+
+    def rx_rule(op, targets):
+        calls["rx"] += 1
+        return _rx_matrix(op.theta)
+
+    impl_map = MatrixImplementationMap()
+    impl_map.add(ops.H, h_rule)
+    impl_map.add(ops.RX, rx_rule)
+    backend = Simulator("SV", implementation_map=impl_map)
+    values = np.linspace(0.0, 1.0, 5)
+
+    swept = backend.run_sweep(
+        program,
+        {theta: values},
+        shots=0,
+        result_config={"counts": False, "final_state": True},
+    ).result()
+
+    assert calls == {"h": 1, "rx": len(values)}
+    explicit = backend.run(
+        program.assign_parameters({theta: values[2]}),
+        shots=0,
+        result_config={"counts": False, "final_state": True},
+    ).result()
+    assert np.allclose(swept[2].get_statevector(), explicit.get_statevector())
+
+
+def test_parametric_program_lowers_to_deferred_picklable_steps():
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(ops.H, 0)
+    program.add(ops.RX(theta), 0)
+    backend = Simulator("SV")
+    layout = backend._resolve_resource_layout(program)
+    param_order = _discover_parameters(program._instructions)
+    context = _LoweringContext(
+        resource_layout=layout,
+        engine_allocation=backend._allocate_engine_indices(program, layout),
+        classical_allocation=_ClassicalAllocation.from_program(program),
+    )
+
+    plan, _facts, _occupied = backend._prepare_parametric_program(
+        program, context=context, param_order=param_order
+    )
+
+    assert isinstance(plan, _ParametricPlan)
+    assert plan.param_order == param_order
+    assert [type(step) for step in plan.steps] == [ApplyMatrixStep, _MatrixRecipe]
+    deferred = plan.steps[1]
+    assert deferred.param_slots == (0,)
+    assert deferred.target_dims == (2,)
+    assert deferred.target_indices == (0,)
+    # Non-parametric steps are shared with the materialized plans, not rebuilt.
+    materialized = plan.materialize((0.3,))
+    assert materialized[0] is plan.steps[0]
+    assert isinstance(materialized[1], ApplyMatrixStep)
+    assert np.allclose(materialized[1].matrix, _rx_matrix(0.3))
+    # The deferred plan is a plain execution payload: it pickles by value.
+    restored = pickle.loads(pickle.dumps(plan))
+    assert np.allclose(restored.materialize((0.3,))[1].matrix, _rx_matrix(0.3))
+
+
+def test_resolved_step_union_holds_only_engine_executable_steps():
+    # ResolvedStep promises every member can be handed to an engine as-is; the
+    # deferred sweep recipe lives in the simulator's private plan type instead.
+    assert _MatrixRecipe not in typing.get_args(ResolvedStep)
+    assert not hasattr(steps_module, "ParametricMatrixStep")
+
+
+def test_replay_validates_realized_matrix_shape():
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(ops.RX(theta), 0)
+
+    def wrong_shape(op, targets):
+        return np.eye(4)
+
+    impl_map = MatrixImplementationMap()
+    impl_map.add(ops.RX, wrong_shape)
+    backend = Simulator(implementation_map=impl_map)
+
+    with pytest.raises(BackendValidationError, match="incompatible with target"):
+        backend.run_sweep(program, {theta: [0.1]})
+
+
+def test_replay_revalidates_targets_after_substitution():
+    # Binding through Program.assign_parameters rebuilds the applied operation
+    # and re-runs validate_targets(); replaying a recipe must not skip it.
+    @dataclass(frozen=True)
+    class NonNegativeRotation(Operation):
+        theta: float | fq.Parameter
+        name: ClassVar[str] = "NonNegativeRotation"
+        num_subsystems: ClassVar[int] = 1
+
+        def validate_targets(self, targets):
+            if not isinstance(self.theta, fq.Parameter) and self.theta < 0:
+                raise ValueError("NonNegativeRotation needs a non-negative angle")
+
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(NonNegativeRotation(theta), 0)
+    impl_map = MatrixImplementationMap()
+    impl_map.add(NonNegativeRotation, lambda op, targets: _rx_matrix(op.theta))
+    backend = Simulator("SV", implementation_map=impl_map)
+
+    with pytest.raises(ValueError, match="non-negative angle"):
+        backend.run_sweep(
+            program,
+            {theta: [0.5, -0.5]},
+            shots=0,
+            result_config={"counts": False, "final_state": True},
+        )

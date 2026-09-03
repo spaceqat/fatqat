@@ -192,8 +192,12 @@ table.
 
 [`Simulator.run_sweep`][fatqat.simulator.Simulator.run_sweep] binds each row of a complete object-keyed
 parameter batch and returns one eager job containing an ordered
-`list[Result]`. Batch and row validation errors raise directly; an execution
-failure produces a failed sweep job, and no partial result list is returned.
+`list[Result]`. The batch is validated once and the program is lowered once;
+each row then only re-realizes the matrices of its parameter-holding gates
+before execution, so layout resolution, implementation selection, and noise
+matching are not repeated per row. Batch and row validation errors raise
+directly; an execution failure produces a failed sweep job, and no partial
+result list is returned.
 It reuses a supplied seed for every row, so sampled errors can be correlated.
 See [Simulate a quantum program](../guide/simulation.md) for a guided sweep. Accepted batch shapes are
 specified above.

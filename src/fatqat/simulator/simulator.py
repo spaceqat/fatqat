@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from .._parameter_binding import (
+    _discover_parameters,
     _normalize_parameter_batch,
     _raise_for_unbound_parameters,
 )
@@ -63,7 +64,12 @@ from .._backends.backend_utils import (
     _validate_result_shots,
 )
 from . import planning
-from ._execution_contract import _ExecutionContext, _ExecutionPolicy, _PlanFacts
+from ._execution_contract import (
+    _EngineCapabilities,
+    _ExecutionContext,
+    _ExecutionPolicy,
+    _PlanFacts,
+)
 from .._backends.engine_contract import (
     RawResult,
     _DensityMatrixResultRequest,
@@ -185,6 +191,29 @@ _METHOD_SPECS: dict[str, _MethodSpec] = {
         executes_nonunitary=True,
     ),
 }
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedRun:
+    """Everything ``run()`` validates and resolves before touching an engine.
+
+    Built once per ``run()`` and once per ``run_sweep()`` batch, on the
+    direct-raise validation path. Nothing here depends on parameter values.
+    ``plan`` is a concrete step tuple for ``run()`` and a
+    `planning._ParametricPlan` for ``run_sweep()``, which materializes it once
+    per row before calling ``Simulator._execute_plan``.
+    """
+
+    plan: tuple[ResolvedStep, ...] | planning._ParametricPlan
+    facts: _PlanFacts
+    initial_occupied: frozenset[int] | None
+    lowering: _LoweringContext
+    config: _ResultConfig
+    simulation: _SimulationConfig
+    shots: int
+    request: _ResultRequest
+    capabilities: _EngineCapabilities
+    execution: _ExecutionContext
 
 
 class Simulator:
@@ -499,6 +528,26 @@ class Simulator:
         facts, initial_occupied = self._analyze_lowered_plan(plan)
         return plan, facts, initial_occupied
 
+    def _prepare_parametric_program(
+        self,
+        program: Program,
+        *,
+        context: _LoweringContext,
+        param_order: tuple[Parameter, ...],
+    ) -> tuple[planning._ParametricPlan, _PlanFacts, frozenset[int] | None]:
+        """Lower once for a sweep, deferring parameter-holding gates.
+
+        The sweep counterpart of ``_prepare_program``: the same single lowering
+        pass and plan-fact analysis, but parameter-holding gates become
+        `planning._MatrixRecipe`s inside a `planning._ParametricPlan` that
+        ``run_sweep`` materializes once per θ row. Plan facts read only step
+        kinds, indices and conditions, so they are valid for every row.
+        """
+        operations = _break_grouped_operations(program._instructions)
+        steps = tuple(self._lower(operations, context, param_order=param_order))
+        facts, initial_occupied = self._analyze_lowered_plan(steps)
+        return planning._ParametricPlan(steps, param_order), facts, initial_occupied
+
     def run(
         self,
         program: Program,
@@ -591,114 +640,17 @@ class Simulator:
                 illegal for this backend.
         """
         _raise_for_unbound_parameters(program._instructions)
-        simulation = _normalize_config(
-            simulation_config,
-            self._simulation_config_cls,
-            "simulation_config",
-            backend_name=type(self).__name__,
-        )
-        config = _normalize_config(
-            result_config,
-            self._result_config_cls,
-            "result_config",
-            backend_name=type(self).__name__,
-        )
-        capabilities = self._engine.capabilities
-        _validate_execution_controls(simulation, capabilities)
-        # Both hooks are resolved exactly once per run, on the direct-raise
-        # validation path, before the execution try block below: capacity,
-        # dimension, grid-fit, and mapping failures must raise directly from
-        # run(), never become a failed Job. The resource layout is the
-        # public-facing effective mapping (available to backend validation);
-        # the engine index allocation stays private to execution preparation. Both
-        # are paired into one private lowering context and threaded through
-        # preparation/lowering unchanged, so lowering never re-resolves either
-        # value.
-        resource_layout = self._resolve_resource_layout(program, resource_layout)
-        engine_allocation = self._allocate_engine_indices(program, resource_layout)
-        classical_allocation = _ClassicalAllocation.from_program(program)
-        initial_state = self._validate_initial_state(
-            initial_state, tuple(reversed(engine_allocation.system_dims))
-        )
-        # Selector-identity validation runs immediately after the effective
-        # resource layout is known and before any lowering/plan step is built.
-        # A foreign ref or a label outside the backend's device universe fails
-        # on this direct-raise path; a legal label unused by this layout remains
-        # a valid no-op.
-        self._noise_model._validate_for(
-            program, self._legal_device_operands(program, resource_layout)
-        )
-        lowering = _LoweringContext(
+        prepared = self._prepare_run(
+            program,
+            shots=shots,
             resource_layout=resource_layout,
-            engine_allocation=engine_allocation,
-            classical_allocation=classical_allocation,
-        )
-        plan, facts, initial_occupied = self._prepare_program(program, context=lowering)
-        request = self._validate(
-            config,
-            shots,
-            facts,
-            initial_occupied=initial_occupied,
-        )
-        self._validate_additional_config(
-            config=config,
-            simulation=simulation,
-            shots=shots,
-            facts=facts,
-        )
-        counts_requested = request.counts
-        state_requested = getattr(request, self._state_field)
-        compiled_multi_shot_compatible = False
-        if _should_probe_compiled_multi_shot(
-            simulation,
-            facts=facts,
-            counts_requested=counts_requested,
-            state_requested=state_requested,
-            initial_occupied=initial_occupied,
-        ):
-            compiled_multi_shot_compatible = (
-                self._engine.compiled_multi_shot_compatible(plan)
-            )
-        policy = _resolve_execution_policy(
-            simulation,
-            facts=facts,
-            counts_requested=counts_requested,
-            state_requested=state_requested,
-            capabilities=capabilities,
-            compiled_multi_shot_compatible=compiled_multi_shot_compatible,
-            shots=shots,
-            initial_occupied=initial_occupied,
-            plan_is_empty=not plan,
-        )
-        execution = _ExecutionContext(
-            execution_shape=facts.execution_shape,
-            request=request,
-            system_dims=tuple(engine_allocation.system_dims),
-            n_clbits=classical_allocation.n_clbits,
-            shots=shots,
-            seed=simulation.seed,
             initial_state=initial_state,
-            initial_occupied=initial_occupied,
+            simulation_config=simulation_config,
+            result_config=result_config,
         )
-        try:
-            raw = self._execute_engine(
-                plan=plan,
-                deferred_measurements=facts.deferred_measurements,
-                context=execution,
-                policy=policy,
-            )
-            result = self._assemble_result(
-                raw=raw,
-                config=config,
-                simulation=simulation,
-                lowering=lowering,
-                written_clbits=facts.written_clbits,
-                request=request,
-                shots=shots,
-            )
-            return Job(status="DONE", result=result)
-        except Exception as exc:  # execution-stage failure
-            return Job(status="ERROR", error=exc)
+        plan = prepared.plan
+        assert isinstance(plan, tuple), "run() lowers fully bound programs only"
+        return self._execute_plan(plan, prepared)
 
     def run_sweep(
         self,
@@ -715,8 +667,13 @@ class Simulator:
 
         Single parameters accept shape ``(N,)`` and parameter vectors of
         length ``M`` accept shape ``(N, M)``. All entries must use the same
-        ``N``. Rows run in input order with the same options. One explicit seed
-        is reused for every row, so sampled row errors can be correlated.
+        ``N``. Rows run in input order with the same options. The batch is
+        validated once and the program is lowered once; every row then replays
+        the lowered plan with its own θ values substituted into the deferred
+        (parameter-holding) gates, so per-row cost is those gates' matrix
+        realizations plus execution - layout resolution, implementation
+        selection, and noise matching are not repeated per row. One explicit
+        seed is reused for every row, so sampled row errors can be correlated.
         Binding and row-validation errors raise directly. If execution fails
         for a row, the returned sweep job is failed and its ``result()`` method
         re-raises the error; no partial list is exposed.
@@ -806,22 +763,194 @@ class Simulator:
             [True, True]
         """
         rows = _normalize_parameter_batch(program._instructions, bindings)
+        # Structural resolution and lowering happen once for the whole batch,
+        # on the same direct-raise validation path as run(): layout,
+        # allocation, noise-selector validation, and rule selection read
+        # operation types and targets only, so they cannot depend on θ values.
+        param_order = _discover_parameters(program._instructions)
+        prepared = self._prepare_run(
+            program,
+            shots=shots,
+            resource_layout=resource_layout,
+            initial_state=initial_state,
+            simulation_config=simulation_config,
+            result_config=result_config,
+            param_order=param_order,
+        )
+        template = prepared.plan
+        assert isinstance(template, planning._ParametricPlan)
         results: list[Result] = []
         for row in rows:
-            bound = program._assign_normalized_parameters(row)
-            point_job = self.run(
-                bound,
-                shots=shots,
-                resource_layout=resource_layout,
-                initial_state=initial_state,
-                simulation_config=simulation_config,
-                result_config=result_config,
-            )
+            theta = tuple(row[parameter] for parameter in param_order)
+            # Rule and shape failures raise directly here, exactly as they
+            # raise directly from lowering in run().
+            point_plan = template.materialize(theta)
             try:
-                results.append(point_job.result())
-            except Exception as exc:
+                results.append(self._execute_plan(point_plan, prepared).result())
+            except Exception as exc:  # execution-stage failure
                 return Job(status="ERROR", error=exc)
         return Job(status="DONE", result=results)
+
+    def _prepare_run(
+        self,
+        program: Program,
+        *,
+        shots: int,
+        resource_layout: ResourceLayout | None,
+        initial_state: Any,
+        simulation_config: dict[str, Any] | None,
+        result_config: dict[str, Any] | None,
+        param_order: tuple[Parameter, ...] | None = None,
+    ) -> _PreparedRun:
+        """Validate options, resolve resources, and lower one program once.
+
+        This is the shared direct-raise path of ``run()`` and ``run_sweep()``:
+        capacity, dimension, grid-fit, mapping, noise-selector, and
+        configuration failures raise from here and never become a failed job.
+        ``param_order`` is a sweep's θ order; when given, lowering goes
+        through ``_prepare_parametric_program`` and parameter-holding gates
+        become recipes that each row materializes later.
+        """
+        simulation = _normalize_config(
+            simulation_config,
+            self._simulation_config_cls,
+            "simulation_config",
+            backend_name=type(self).__name__,
+        )
+        config = _normalize_config(
+            result_config,
+            self._result_config_cls,
+            "result_config",
+            backend_name=type(self).__name__,
+        )
+        capabilities = self._engine.capabilities
+        _validate_execution_controls(simulation, capabilities)
+        # Both hooks are resolved exactly once per run, before any execution
+        # try block: capacity, dimension, grid-fit, and mapping failures must
+        # raise directly, never become a failed Job. The resource layout is the
+        # public-facing effective mapping (available to backend validation);
+        # the engine index allocation stays private to execution preparation.
+        # Both are paired into one private lowering context and threaded
+        # through preparation/lowering unchanged, so lowering never re-resolves
+        # either value.
+        resource_layout = self._resolve_resource_layout(program, resource_layout)
+        engine_allocation = self._allocate_engine_indices(program, resource_layout)
+        classical_allocation = _ClassicalAllocation.from_program(program)
+        initial_state = self._validate_initial_state(
+            initial_state, tuple(reversed(engine_allocation.system_dims))
+        )
+        # Selector-identity validation runs immediately after the effective
+        # resource layout is known and before any lowering/plan step is built.
+        # A foreign ref or a label outside the backend's device universe fails
+        # on this direct-raise path; a legal label unused by this layout remains
+        # a valid no-op.
+        self._noise_model._validate_for(
+            program, self._legal_device_operands(program, resource_layout)
+        )
+        lowering = _LoweringContext(
+            resource_layout=resource_layout,
+            engine_allocation=engine_allocation,
+            classical_allocation=classical_allocation,
+        )
+        plan: tuple[ResolvedStep, ...] | planning._ParametricPlan
+        if param_order is None:
+            plan, facts, initial_occupied = self._prepare_program(
+                program, context=lowering
+            )
+        else:
+            plan, facts, initial_occupied = self._prepare_parametric_program(
+                program, context=lowering, param_order=param_order
+            )
+        request = self._validate(
+            config,
+            shots,
+            facts,
+            initial_occupied=initial_occupied,
+        )
+        self._validate_additional_config(
+            config=config,
+            simulation=simulation,
+            shots=shots,
+            facts=facts,
+        )
+        execution = _ExecutionContext(
+            execution_shape=facts.execution_shape,
+            request=request,
+            system_dims=tuple(engine_allocation.system_dims),
+            n_clbits=classical_allocation.n_clbits,
+            shots=shots,
+            seed=simulation.seed,
+            initial_state=initial_state,
+            initial_occupied=initial_occupied,
+        )
+        return _PreparedRun(
+            plan=plan,
+            facts=facts,
+            initial_occupied=initial_occupied,
+            lowering=lowering,
+            config=config,
+            simulation=simulation,
+            shots=shots,
+            request=request,
+            capabilities=capabilities,
+            execution=execution,
+        )
+
+    def _execute_plan(
+        self, plan: tuple[ResolvedStep, ...], prepared: _PreparedRun
+    ) -> Job[Result]:
+        """Execute one concrete plan under already-validated run settings.
+
+        ``plan`` is ``prepared.plan`` for an ordinary run, or one row's
+        materialized plan in a sweep. The execution policy is resolved per
+        plan because compiled multi-shot compatibility depends on the concrete
+        steps. Execution and result-assembly failures become a failed job.
+        """
+        facts = prepared.facts
+        request = prepared.request
+        counts_requested = request.counts
+        state_requested = getattr(request, self._state_field)
+        compiled_multi_shot_compatible = False
+        if _should_probe_compiled_multi_shot(
+            prepared.simulation,
+            facts=facts,
+            counts_requested=counts_requested,
+            state_requested=state_requested,
+            initial_occupied=prepared.initial_occupied,
+        ):
+            compiled_multi_shot_compatible = (
+                self._engine.compiled_multi_shot_compatible(plan)
+            )
+        policy = _resolve_execution_policy(
+            prepared.simulation,
+            facts=facts,
+            counts_requested=counts_requested,
+            state_requested=state_requested,
+            capabilities=prepared.capabilities,
+            compiled_multi_shot_compatible=compiled_multi_shot_compatible,
+            shots=prepared.shots,
+            initial_occupied=prepared.initial_occupied,
+            plan_is_empty=not plan,
+        )
+        try:
+            raw = self._execute_engine(
+                plan=plan,
+                deferred_measurements=facts.deferred_measurements,
+                context=prepared.execution,
+                policy=policy,
+            )
+            result = self._assemble_result(
+                raw=raw,
+                config=prepared.config,
+                simulation=prepared.simulation,
+                lowering=prepared.lowering,
+                written_clbits=facts.written_clbits,
+                request=request,
+                shots=prepared.shots,
+            )
+            return Job(status="DONE", result=result)
+        except Exception as exc:  # execution-stage failure
+            return Job(status="ERROR", error=exc)
 
     # --- validation (raises directly from run) ---
     def _validate_initial_state(
@@ -1096,7 +1225,9 @@ class Simulator:
         self,
         operations: Sequence[ProgramInstruction],
         context: _LoweringContext,
-    ) -> list[ResolvedStep]:
+        *,
+        param_order: tuple[Parameter, ...] | None = None,
+    ) -> list[ResolvedStep | planning._MatrixRecipe]:
         """Lower a program into an execution plan in one pass.
 
         Dispatches each instruction to matrix-planning helpers, threading this
@@ -1117,11 +1248,16 @@ class Simulator:
         used for every execution index/dimension - `ApplyMatrixStep`/
         `MeasurementStep`/`ResetStep` targets and conditions. Grouped
         frontend operations are expanded before this method is called.
+
+        ``param_order`` is the sweep's θ order. When given, a gate whose
+        fields hold `Parameter`s lowers to a `planning._MatrixRecipe` instead
+        of a concrete `ApplyMatrixStep`; ``None`` (every ordinary run) keeps
+        lowering fully concrete and rejects unbound parameters.
         """
         resource_layout = context.resource_layout
         engine_allocation = context.engine_allocation
         classical_allocation = context.classical_allocation
-        plan: list[ResolvedStep] = []
+        plan: list[ResolvedStep | planning._MatrixRecipe] = []
 
         for step in operations:
             if isinstance(step, Measurement):
@@ -1156,20 +1292,21 @@ class Simulator:
                             self._impl_map,
                             self._noise_model,
                             self._channel_map,
+                            param_order=param_order,
                         )
                     )
 
         return plan
 
     def _analyze_lowered_plan(
-        self, plan: tuple[ResolvedStep, ...]
+        self, plan: Sequence[ResolvedStep | planning._MatrixRecipe]
     ) -> tuple[_PlanFacts, frozenset[int] | None]:
         """Translate one lowered plan into common semantics and occupancy."""
         return self._analyze_common_plan_facts(plan), None
 
     def _analyze_common_plan_facts(
         self,
-        plan: Sequence[ResolvedStep],
+        plan: Sequence[ResolvedStep | planning._MatrixRecipe],
         *,
         claimed_step_types: tuple[type[object], ...] = (),
     ) -> _PlanFacts:
@@ -1212,7 +1349,9 @@ class Simulator:
                 )
                 continue
 
-            if isinstance(step, ApplyMatrixStep):
+            if isinstance(step, (ApplyMatrixStep, planning._MatrixRecipe)):
+                # A deferred (sweep) recipe has the same structural footprint
+                # as the matrix it will materialize into.
                 target_indices = step.target_indices
             elif isinstance(step, ResetStep):
                 has_reset = True
