@@ -194,8 +194,21 @@ _METHOD_SPECS: dict[str, _MethodSpec] = {
 
 
 @dataclass(frozen=True, slots=True)
-class _PreparedRun:
-    """Everything ``run()`` validates and resolves before touching an engine.
+class _PreparedExecution:
+    """Program execution facts shared by every Simulator consumer."""
+
+    plan: tuple[ResolvedStep, ...] | planning._ParametricPlan
+    facts: _PlanFacts
+    initial_occupied: frozenset[int] | None
+    lowering: _LoweringContext
+    simulation: _SimulationConfig
+    capabilities: _EngineCapabilities
+    initial_state: np.ndarray | None
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedRun(_PreparedExecution):
+    """Direct-result settings added to one prepared execution.
 
     Built once per ``run()`` and once per ``run_sweep()`` batch, on the
     direct-raise validation path. Nothing here depends on parameter values.
@@ -204,15 +217,9 @@ class _PreparedRun:
     per row before calling ``Simulator._execute_plan``.
     """
 
-    plan: tuple[ResolvedStep, ...] | planning._ParametricPlan
-    facts: _PlanFacts
-    initial_occupied: frozenset[int] | None
-    lowering: _LoweringContext
     config: _ResultConfig
-    simulation: _SimulationConfig
     shots: int
     request: _ResultRequest
-    capabilities: _EngineCapabilities
     execution: _ExecutionContext
 
 
@@ -823,6 +830,59 @@ class Simulator:
             "result_config",
             backend_name=type(self).__name__,
         )
+        prepared = self._prepare_execution(
+            program,
+            resource_layout=resource_layout,
+            initial_state=initial_state,
+            simulation=simulation,
+            param_order=param_order,
+        )
+        request = self._validate(
+            config,
+            shots,
+            prepared.facts,
+            initial_occupied=prepared.initial_occupied,
+        )
+        self._validate_additional_config(
+            config=config,
+            simulation=simulation,
+            shots=shots,
+            facts=prepared.facts,
+        )
+        execution = _ExecutionContext(
+            execution_shape=prepared.facts.execution_shape,
+            request=request,
+            system_dims=tuple(prepared.lowering.engine_allocation.system_dims),
+            n_clbits=prepared.lowering.classical_allocation.n_clbits,
+            shots=shots,
+            seed=simulation.seed,
+            initial_state=prepared.initial_state,
+            initial_occupied=prepared.initial_occupied,
+        )
+        return _PreparedRun(
+            plan=prepared.plan,
+            facts=prepared.facts,
+            initial_occupied=prepared.initial_occupied,
+            lowering=prepared.lowering,
+            simulation=prepared.simulation,
+            capabilities=prepared.capabilities,
+            initial_state=prepared.initial_state,
+            config=config,
+            shots=shots,
+            request=request,
+            execution=execution,
+        )
+
+    def _prepare_execution(
+        self,
+        program: Program,
+        *,
+        resource_layout: ResourceLayout | None,
+        initial_state: Any,
+        simulation: _SimulationConfig,
+        param_order: tuple[Parameter, ...] | None = None,
+    ) -> _PreparedExecution:
+        """Resolve and lower one program for direct or derived execution."""
         capabilities = self._engine.capabilities
         _validate_execution_controls(simulation, capabilities)
         # Both hooks are resolved exactly once per run, before any execution
@@ -861,39 +921,14 @@ class Simulator:
             plan, facts, initial_occupied = self._prepare_parametric_program(
                 program, context=lowering, param_order=param_order
             )
-        request = self._validate(
-            config,
-            shots,
-            facts,
-            initial_occupied=initial_occupied,
-        )
-        self._validate_additional_config(
-            config=config,
-            simulation=simulation,
-            shots=shots,
-            facts=facts,
-        )
-        execution = _ExecutionContext(
-            execution_shape=facts.execution_shape,
-            request=request,
-            system_dims=tuple(engine_allocation.system_dims),
-            n_clbits=classical_allocation.n_clbits,
-            shots=shots,
-            seed=simulation.seed,
-            initial_state=initial_state,
-            initial_occupied=initial_occupied,
-        )
-        return _PreparedRun(
+        return _PreparedExecution(
             plan=plan,
             facts=facts,
             initial_occupied=initial_occupied,
             lowering=lowering,
-            config=config,
             simulation=simulation,
-            shots=shots,
-            request=request,
             capabilities=capabilities,
-            execution=execution,
+            initial_state=initial_state,
         )
 
     def _execute_plan(
@@ -906,36 +941,17 @@ class Simulator:
         plan because compiled multi-shot compatibility depends on the concrete
         steps. Execution and result-assembly failures become a failed job.
         """
-        facts = prepared.facts
         request = prepared.request
-        counts_requested = request.counts
-        state_requested = getattr(request, self._state_field)
-        compiled_multi_shot_compatible = False
-        if _should_probe_compiled_multi_shot(
-            prepared.simulation,
-            facts=facts,
-            counts_requested=counts_requested,
-            state_requested=state_requested,
-            initial_occupied=prepared.initial_occupied,
-        ):
-            compiled_multi_shot_compatible = (
-                self._engine.compiled_multi_shot_compatible(plan)
-            )
-        policy = _resolve_execution_policy(
-            prepared.simulation,
-            facts=facts,
-            counts_requested=counts_requested,
-            state_requested=state_requested,
-            capabilities=prepared.capabilities,
-            compiled_multi_shot_compatible=compiled_multi_shot_compatible,
+        policy = self._resolve_plan_policy(
+            plan,
+            prepared,
+            request=request,
             shots=prepared.shots,
-            initial_occupied=prepared.initial_occupied,
-            plan_is_empty=not plan,
         )
         try:
             raw = self._execute_engine(
                 plan=plan,
-                deferred_measurements=facts.deferred_measurements,
+                deferred_measurements=prepared.facts.deferred_measurements,
                 context=prepared.execution,
                 policy=policy,
             )
@@ -944,13 +960,47 @@ class Simulator:
                 config=prepared.config,
                 simulation=prepared.simulation,
                 lowering=prepared.lowering,
-                written_clbits=facts.written_clbits,
+                written_clbits=prepared.facts.written_clbits,
                 request=request,
                 shots=prepared.shots,
             )
             return Job(status="DONE", result=result)
         except Exception as exc:  # execution-stage failure
             return Job(status="ERROR", error=exc)
+
+    def _resolve_plan_policy(
+        self,
+        plan: tuple[ResolvedStep, ...],
+        prepared: _PreparedExecution,
+        *,
+        request: _ResultRequest,
+        shots: int,
+    ) -> _ExecutionPolicy:
+        """Resolve execution routing for one concrete prepared plan."""
+        counts_requested = request.counts
+        state_requested = getattr(request, self._state_field)
+        compiled_multi_shot_compatible = False
+        if _should_probe_compiled_multi_shot(
+            prepared.simulation,
+            facts=prepared.facts,
+            counts_requested=counts_requested,
+            state_requested=state_requested,
+            initial_occupied=prepared.initial_occupied,
+        ):
+            compiled_multi_shot_compatible = (
+                self._engine.compiled_multi_shot_compatible(plan)
+            )
+        return _resolve_execution_policy(
+            prepared.simulation,
+            facts=prepared.facts,
+            counts_requested=counts_requested,
+            state_requested=state_requested,
+            capabilities=prepared.capabilities,
+            compiled_multi_shot_compatible=compiled_multi_shot_compatible,
+            shots=shots,
+            initial_occupied=prepared.initial_occupied,
+            plan_is_empty=not plan,
+        )
 
     # --- validation (raises directly from run) ---
     def _validate_initial_state(

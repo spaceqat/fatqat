@@ -444,29 +444,16 @@ class _PulseBackend(ABC):
             return self._execute_unitary(prepared, request, simulation, shots)
         if request.execution_mode is None:
             raise BackendExecutionError("state execution requires an execution mode")
-        runner = self._create_runner(
-            prepared,
-            simulation=simulation,
-            execution_mode=request.execution_mode,
-            retain_final_state=request.final_state,
-        )
         execution_shots = shots if request.counts else 1
-        engine = PulseEngine(runner, schedule_mode=simulation.schedule_mode)
-        engine_method = (
-            engine.run_trajectories
-            if request.execution_mode == "trajectory"
-            else engine.run
-        )
-        outcomes = engine_method(
-            prepared.plan,
+        summary = self._execute_state(
+            prepared,
+            plan=prepared.plan,
+            execution_mode=request.execution_mode,
+            simulation=simulation,
             shots=execution_shots,
             n_clbits=prepared.classical_allocation.n_clbits,
             rng=np.random.default_rng(simulation.seed),
-        )
-        summary = self._summarize_execution(
-            outcomes,
-            require_final_state=request.final_state,
-            runner=runner,
+            retain_final_state=request.final_state,
         )
         return self._assemble_result(
             prepared,
@@ -474,6 +461,42 @@ class _PulseBackend(ABC):
             simulation,
             shots,
             summary,
+        )
+
+    @final
+    def _execute_state(
+        self,
+        prepared: _PreparedPulseProgram,
+        *,
+        plan: tuple[PulsePlanStep, ...],
+        execution_mode: ExecutionMode,
+        simulation: _EmulatorConfig,
+        shots: int,
+        n_clbits: int,
+        rng: np.random.Generator,
+        retain_final_state: bool,
+    ) -> _PulseExecutionSummary:
+        """Execute one state plan through the normal pulse runner and engine."""
+        runner = self._create_runner(
+            prepared,
+            simulation=simulation,
+            execution_mode=execution_mode,
+            retain_final_state=retain_final_state,
+        )
+        engine = PulseEngine(runner, schedule_mode=simulation.schedule_mode)
+        engine_method = (
+            engine.run_trajectories if execution_mode == "trajectory" else engine.run
+        )
+        outcomes = engine_method(
+            plan,
+            shots=shots,
+            n_clbits=n_clbits,
+            rng=rng,
+        )
+        return self._summarize_execution(
+            outcomes,
+            require_final_state=retain_final_state,
+            runner=runner,
         )
 
     @final
