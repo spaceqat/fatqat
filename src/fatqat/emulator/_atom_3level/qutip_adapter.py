@@ -42,11 +42,8 @@ from .._qutip_boundaries import (
     _solve_one_qutip_trajectory,
 )
 from .._core.target import _PreparedControlBinding
-from .._qutip_runtime import _qutip_runtime_details
+from .._qutip_runtime import _QutipRuntime
 from .target import _Atom3LevelTarget
-
-# Use QuTiP's native method and error tolerances; only raise its work ceiling.
-_SOLVER_OVERRIDES = {"nsteps": 100000}
 
 
 class _Atom3LevelQutipAdapter:
@@ -60,6 +57,7 @@ class _Atom3LevelQutipAdapter:
         background_noise: tuple[ResolvedLindbladTerm, ...] = (),
         execution_mode: ExecutionMode = "density_matrix",
         retain_final_state: bool = True,
+        max_step: float | None = None,
     ) -> None:
         if not isinstance(target, _Atom3LevelTarget):
             raise BackendValidationError("atom adapter requires an atom target")
@@ -82,7 +80,7 @@ class _Atom3LevelQutipAdapter:
         # allocation order directly rather than translating tensor factors.
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
-        self._solvers_used: set[str] = set()
+        self._runtime = _QutipRuntime(max_step=max_step)
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
         self._dims = list(engine_allocation.system_dims)
@@ -114,7 +112,7 @@ class _Atom3LevelQutipAdapter:
 
     def runtime_details(self) -> dict[str, Any]:
         """Return public, normalized numerical integration facts."""
-        return _qutip_runtime_details(self._solvers_used, _SOLVER_OVERRIDES)
+        return self._runtime.details()
 
     @staticmethod
     def raman_frame_multiplier(theta: float) -> complex:
@@ -223,18 +221,19 @@ class _Atom3LevelQutipAdapter:
         self._validate_state(context.state)
         solver_state = context.state
         if isinstance(bound, _BoundDynamics):
+            solver_options = self._runtime.options_for(run.blocks)
             collapse_operators = (
                 self._background_collapse_operators()
                 + self._bind_block_collapse_operators(run, enabled)
             )
             if self._execution_mode == "density_matrix":
-                self._solvers_used.add("mesolve")
+                self._runtime.record_solver("mesolve")
                 result = mesolve(
                     bound.hamiltonian,
                     solver_state,
                     [context.time, run.end_time],
                     c_ops=collapse_operators,
-                    options=_SOLVER_OVERRIDES,
+                    options=solver_options,
                 )
                 solver_state = result.states[-1]
             elif collapse_operators:
@@ -243,7 +242,7 @@ class _Atom3LevelQutipAdapter:
                         "three-level atom statevector execution requires coherent "
                         "dynamics"
                     )
-                self._solvers_used.add("mcsolve")
+                self._runtime.record_solver("mcsolve")
                 solver_state = _solve_one_qutip_trajectory(
                     bound.hamiltonian,
                     collapse_operators,
@@ -251,15 +250,15 @@ class _Atom3LevelQutipAdapter:
                     start_time=context.time,
                     end_time=run.end_time,
                     rng=context.rng,
-                    solver_options=_SOLVER_OVERRIDES,
+                    solver_options=solver_options,
                 )
             else:
-                self._solvers_used.add("sesolve")
+                self._runtime.record_solver("sesolve")
                 result = sesolve(
                     bound.hamiltonian,
                     solver_state,
                     [context.time, run.end_time],
-                    options=_SOLVER_OVERRIDES,
+                    options=solver_options,
                 )
                 solver_state = result.states[-1]
         context.state = solver_state
@@ -280,11 +279,11 @@ class _Atom3LevelQutipAdapter:
         if isinstance(bound, _BoundFrames):
             unitary = tensor(*tuple(qeye(dim) for dim in self._dims))
         else:
-            self._solvers_used.add("propagator")
+            self._runtime.record_solver("propagator")
             unitary = qutip_propagator(
                 bound.hamiltonian,
                 run.end_time,
-                options=_SOLVER_OVERRIDES,
+                options=self._runtime.options_for(run.blocks),
             )
         return (
             self._frame_unitary(bound.output_frames) * unitary

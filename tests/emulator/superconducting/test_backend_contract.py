@@ -117,7 +117,7 @@ def test_result_metadata_keeps_common_runtime_facts(backend):
         "solver": "sesolve",
         "solver_options": {
             "nsteps": 100000,
-            "max_step": 0.1,
+            "max_step": 0.078125,
         },
     }
     assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
@@ -151,7 +151,7 @@ def test_runtime_details_report_every_solver_used_across_dynamic_regions(
         "solver": ("mcsolve", "sesolve"),
         "solver_options": {
             "nsteps": 100000,
-            "max_step": 0.1,
+            "max_step": 0.078125,
         },
     }
 

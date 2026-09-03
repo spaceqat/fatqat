@@ -30,6 +30,7 @@ from .._core.lindblad import _lindblad_noise_rejection_reasons
 from .._core.outcome import ExecutionMode
 from .._core.planning import _PreparedPulseProgram
 from .._core.pulse import PulseImplementationMap
+from .._qutip_runtime import _qutip_max_step
 from .config import _Atom2LevelSimulationConfig
 from .model import Atom2LevelModel
 from .target import _Atom2LevelTarget, _LOCAL_DIMENSION
@@ -200,6 +201,7 @@ class Atom2LevelEmulator(_PulseBackend):
             background_noise=prepared.background_noise,
             execution_mode=execution_mode,
             retain_final_state=retain_final_state,
+            max_step=_qutip_max_step(prepared.plan),
         )
 
 

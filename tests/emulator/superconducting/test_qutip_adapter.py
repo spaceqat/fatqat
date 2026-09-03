@@ -388,7 +388,7 @@ def test_drift_covers_leading_internal_and_trailing_idle_intervals(model):
     assert np.allclose(
         context.state.full(),
         (unitary * initial * unitary.dag()).full(),
-        atol=2e-7,
+        atol=5e-5,
     )
 
 

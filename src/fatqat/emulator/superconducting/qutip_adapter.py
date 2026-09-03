@@ -42,15 +42,9 @@ from .._qutip_boundaries import (
     _sample_projective_qutip_state,
     _solve_one_qutip_trajectory,
 )
-from .._qutip_runtime import _qutip_runtime_details
+from .._qutip_runtime import _QutipRuntime
 from .model import angular_rate_from_ghz
 from .target import _TransmonTarget
-
-# Keep native solver accuracy while ensuring shaped pulses cannot be stepped over.
-_SOLVER_OVERRIDES = {
-    "nsteps": 100000,
-    "max_step": 0.1,
-}
 
 
 class _TransmonQutipAdapter:
@@ -75,6 +69,7 @@ class _TransmonQutipAdapter:
         background_noise: tuple[ResolvedLindbladTerm, ...] = (),
         execution_mode: ExecutionMode = "density_matrix",
         retain_final_state: bool = True,
+        max_step: float | None = None,
     ) -> None:
         """Adapt one already-bound physical target to the QuTiP layer.
 
@@ -93,7 +88,7 @@ class _TransmonQutipAdapter:
             )
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
-        self._solvers_used: set[str] = set()
+        self._runtime = _QutipRuntime(max_step=max_step)
         self._background_noise = tuple(background_noise)
         self._collapse_operators: tuple[Any, ...] | None = None
         expected_operands = tuple(self._target.device_labels)
@@ -147,7 +142,7 @@ class _TransmonQutipAdapter:
 
     def runtime_details(self) -> dict[str, Any]:
         """Return normalized QuTiP details for result metadata."""
-        return _qutip_runtime_details(self._solvers_used, _SOLVER_OVERRIDES)
+        return self._runtime.details()
 
     def initial_state(self) -> Any:
         """Create the full-model physical ground state."""
@@ -188,14 +183,15 @@ class _TransmonQutipAdapter:
         self._validate_state(context.state)
         state = context.state
         if isinstance(bound, _BoundDynamics):
+            solver_options = self._runtime.options_for(run.blocks)
             if self._execution_mode == "density_matrix":
-                self._solvers_used.add("mesolve")
+                self._runtime.record_solver("mesolve")
                 result = mesolve(
                     bound.hamiltonian,
                     state,
                     [context.time, run.end_time],
                     c_ops=bound.collapse_operators,
-                    options=_SOLVER_OVERRIDES,
+                    options=solver_options,
                 )
                 state = result.states[-1]
             elif bound.collapse_operators:
@@ -203,7 +199,7 @@ class _TransmonQutipAdapter:
                     raise BackendValidationError(
                         "transmon statevector execution requires coherent dynamics"
                     )
-                self._solvers_used.add("mcsolve")
+                self._runtime.record_solver("mcsolve")
                 state = _solve_one_qutip_trajectory(
                     bound.hamiltonian,
                     bound.collapse_operators,
@@ -211,15 +207,15 @@ class _TransmonQutipAdapter:
                     start_time=context.time,
                     end_time=run.end_time,
                     rng=context.rng,
-                    solver_options=_SOLVER_OVERRIDES,
+                    solver_options=solver_options,
                 )
             else:
-                self._solvers_used.add("sesolve")
+                self._runtime.record_solver("sesolve")
                 result = sesolve(
                     bound.hamiltonian,
                     state,
                     [context.time, run.end_time],
-                    options=_SOLVER_OVERRIDES,
+                    options=solver_options,
                 )
                 state = result.states[-1]
 
@@ -251,11 +247,11 @@ class _TransmonQutipAdapter:
                 "propagator is unavailable for dissipative pulse evolution"
             )
         else:
-            self._solvers_used.add("propagator")
+            self._runtime.record_solver("propagator")
             unitary = qutip_propagator(
                 bound.hamiltonian,
                 run.end_time,
-                options=_SOLVER_OVERRIDES,
+                options=self._runtime.options_for(run.blocks),
             )
         if not apply_final_frame:
             return unitary

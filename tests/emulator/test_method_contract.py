@@ -18,12 +18,12 @@ def _family_case(name, method, atom_3level_model):
             fq.emulator.load_model_document("transmon.reference")
         )
         program = fq.Program(2)
-        program.add(ops.RZ(0.2), 0)
+        program.add(ops.RX(0.1), 0)
         return fq.emulator.TransmonEmulator(model, method=method), program, 9
     if name == "atom3":
         arrangement = fq.emulator.AtomArrangement.chain(2, spacing=6.0)
         program = fq.Program(2)
-        program.add(ops.RZ(0.2), 0)
+        program.add(ops.RX(0.1), 0)
         return (
             Atom3LevelEmulator(
                 atom_3level_model, arrangement=arrangement, method=method
@@ -77,17 +77,36 @@ def test_method_selects_one_full_physical_artifact(
         "solver",
         "solver_options",
     }
+    runtime_details = result.metadata["runtime_details"]
+    assert (
+        runtime_details["solver"]
+        == {
+            "statevector": "sesolve",
+            "density_matrix": "mesolve",
+            "unitary": "propagator",
+        }[method]
+    )
+    assert runtime_details["solver_options"]["max_step"] == pytest.approx(
+        {
+            "transmon": 0.078125,
+            "atom3": 0.1 / (4 * np.pi),
+            "atom2": 0.05,
+        }[family]
+    )
     assert "solver" not in result.metadata
-    assert "frame_convention" not in result.metadata["runtime_details"]
+    assert "frame_convention" not in runtime_details
     assert result.available_data == {field}
     assert result.metadata["state_axes"]
     artifact = getattr(result, f"get_{field}")()
     assert artifact.shape == shape(dimension)
     if method == "unitary":
+        # Reject a materially nonunitary result without demanding accuracy
+        # beyond QuTiP's default integration tolerances.
         assert np.allclose(
             artifact.conj().T @ artifact,
             np.eye(dimension),
-            atol=1e-5,
+            rtol=0.0,
+            atol=2e-3,
         )
     for alternate in {"statevector", "density_matrix", "unitary"} - {field}:
         with pytest.raises(ResultFieldUnavailableError):

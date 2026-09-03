@@ -166,7 +166,12 @@ Result metadata includes the effective run and result settings, identifies
 `runtime="qutip"`, and reports `solver` and `solver_options` inside
 `runtime_details`. `solver` is one solver name for a uniform run or a
 tuple of names when execution used multiple solvers. Metadata does not
-include the model or calibration documents.
+include the model or calibration documents. When a sampled-control run invokes
+a QuTiP solver, the reported `max_step` is derived separately for each program
+as half the smallest adjacent interval in its control-waveform grids. It is
+expressed in the model's native time unit (`ns` for Transmon and `us` for
+the atom emulators). This keeps narrow controls visible to QuTiP's adaptive
+solver without assuming a fixed pulse time scale.
 
 `run()` raises validation errors before returning a job. If execution fails
 after a job is returned, `job.result()` raises

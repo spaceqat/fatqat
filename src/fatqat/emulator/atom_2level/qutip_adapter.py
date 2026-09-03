@@ -33,14 +33,9 @@ from .._core.scheduling import _ScheduledPulseRun
 from .._core.value_validation import TIME_EPSILON
 from .._core.waveform import _REQUESTED_SPLINE_DEGREE
 from .._qutip_boundaries import _expand_qutip_local, _sample_projective_qutip_state
-from .._qutip_runtime import _qutip_runtime_details
+from .._qutip_runtime import _QutipRuntime
 from .config import _normalize_interaction_cutoff
 from .target import _Atom2LevelInteraction, _Atom2LevelTarget
-
-# Use QuTiP's native method and error tolerances; only raise its work ceiling.
-_SOLVER_OVERRIDES = {
-    "nsteps": 100000,
-}
 
 
 def _seed_entropies(values: Iterable[Any]) -> tuple[int, ...]:
@@ -78,6 +73,7 @@ class _Atom2LevelQutipAdapter:
         background_noise: tuple[ResolvedLindbladTerm, ...] = (),
         execution_mode: ExecutionMode = "statevector",
         retain_final_state: bool = True,
+        max_step: float | None = None,
     ) -> None:
         if not isinstance(target, _Atom2LevelTarget):
             raise BackendValidationError(
@@ -105,7 +101,7 @@ class _Atom2LevelQutipAdapter:
         # translation or result permutation belongs in this adapter.
         self._retain_final_state = retain_final_state
         self._execution_mode = execution_mode
-        self._solvers_used: set[str] = set()
+        self._runtime = _QutipRuntime(max_step=max_step)
         self._site_count = engine_allocation.n_subsystems
         self._dims = list(engine_allocation.system_dims)
         self._projectors: list[tuple[Qobj, ...] | None] = [None] * self._site_count
@@ -125,7 +121,7 @@ class _Atom2LevelQutipAdapter:
         self._collapse_operators = self._build_collapse_operators(background_noise)
 
     def runtime_details(self) -> dict[str, Any]:
-        return _qutip_runtime_details(self._solvers_used, _SOLVER_OVERRIDES)
+        return self._runtime.details()
 
     def initial_state(self) -> Any:
         ket = tensor(*[basis(2, 0) for _ in range(self._site_count)])
@@ -180,8 +176,9 @@ class _Atom2LevelQutipAdapter:
             enabled=enabled,
             input_time=context.time,
         )
+        solver_options = self._runtime.options_for(run.blocks)
         if self._execution_mode == "density_matrix":
-            self._solvers_used.add("mesolve")
+            self._runtime.record_solver("mesolve")
             result = mesolve(
                 hamiltonian,
                 context.state,
@@ -190,15 +187,15 @@ class _Atom2LevelQutipAdapter:
                     self._collapse_operators
                     + self._bind_block_collapse_operators(run, enabled)
                 ),
-                options=_SOLVER_OVERRIDES,
+                options=solver_options,
             )
         else:
-            self._solvers_used.add("sesolve")
+            self._runtime.record_solver("sesolve")
             result = sesolve(
                 hamiltonian,
                 context.state,
                 [context.time, run.end_time],
-                options=_SOLVER_OVERRIDES,
+                options=solver_options,
             )
         context.state = result.states[-1]
 
@@ -214,11 +211,11 @@ class _Atom2LevelQutipAdapter:
             enabled=(True,) * len(run.blocks),
             input_time=0.0,
         )
-        self._solvers_used.add("propagator")
+        self._runtime.record_solver("propagator")
         return propagator(
             hamiltonian,
             run.end_time,
-            options=_SOLVER_OVERRIDES,
+            options=self._runtime.options_for(run.blocks),
         )
 
     def execute_boundary(
@@ -312,12 +309,12 @@ class _Atom2LevelQutipAdapter:
             )
         )
         options = {
-            **_SOLVER_OVERRIDES,
+            **self._runtime.options_for(scheduled_run.blocks),
             "store_final_state": True,
             "keep_runs_results": True,
             "progress_bar": False,
         }
-        self._solvers_used.add("mcsolve")
+        self._runtime.record_solver("mcsolve")
         result = mcsolve(
             hamiltonian,
             initial_state,

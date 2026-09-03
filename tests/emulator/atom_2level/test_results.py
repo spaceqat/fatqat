@@ -64,6 +64,7 @@ def test_unmeasured_ideal_run_defaults_to_a_pure_statevector(backend):
         "solver": "sesolve",
         "solver_options": {
             "nsteps": 100000,
+            "max_step": 0.5,
         },
     }
 

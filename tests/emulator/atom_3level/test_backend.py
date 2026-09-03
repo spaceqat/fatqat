@@ -649,6 +649,7 @@ def test_atom_3level_result_metadata_keeps_common_runtime_facts(
         "solver": "mesolve",
         "solver_options": {
             "nsteps": 100000,
+            "max_step": pytest.approx(0.1 / (4 * np.pi)),
         },
     }
     assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
