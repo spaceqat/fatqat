@@ -1,6 +1,6 @@
 """Numba inner kernels for the expectation-value pass.
 
-Same arithmetic as the NumPy kernels in :mod:`.expectation`, same term algebra
+Same arithmetic as the NumPy kernels in :mod:`._expectation`, same term algebra
 (see that module for why a term is a phased permutation) - only the innermost
 sweep over ``2**n`` amplitudes moves into compiled code. The term loop, the mask
 packing, and the coefficient bookkeeping stay in Python, where they cost

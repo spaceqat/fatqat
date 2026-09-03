@@ -12,7 +12,7 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.observable import Observable
-from fatqat.simulator._engine import expectation as ex
+from fatqat import _expectation as ex
 
 pytest.importorskip("numba")
 
@@ -172,7 +172,7 @@ def test_parity_helper_agrees_with_popcount():
     # The kernel needs only popcount & 1, and folds it with XOR shifts rather
     # than counting. Checked against numpy across bit widths, including the
     # high half of a 64-bit mask, where the first fold step matters.
-    from fatqat.simulator._engine.expectation_nb import _odd_parity
+    from fatqat._expectation_nb import _odd_parity
 
     values = [0, 1, 3, 255, 1 << 20, (1 << 33) | 5, (1 << 62) | (1 << 3) | 1]
     for value in values:

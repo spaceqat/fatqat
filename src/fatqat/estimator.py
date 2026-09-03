@@ -24,7 +24,7 @@ from .operations import Measurement
 from .parameters import Parameter, ParameterVector
 from .program import Program
 from .result import Result
-from .simulator._engine.expectation import (
+from ._expectation import (
     expectation_density_matrix,
     expectation_statevector,
     squared_factors,

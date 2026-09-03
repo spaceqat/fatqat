@@ -11,7 +11,7 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.observable import Observable
-from fatqat.simulator._engine.expectation import (
+from fatqat._expectation import (
     expectation_density_matrix,
     expectation_statevector,
 )

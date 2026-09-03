@@ -1,4 +1,4 @@
-"""Expectation-value kernels for observable terms.
+"""Backend-neutral observable planning, statistics, and exact kernels.
 
 Computes ``<psi|O|psi>`` (statevector) and ``Tr(rho O)`` (density matrix) for
 the term form produced by :py:class:`~fatqat.Observable`, without ever building
@@ -34,15 +34,167 @@ index without distinguishing the two groups.
 from __future__ import annotations
 
 import importlib.util
-from collections.abc import Callable
+import math
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any
 
 import numpy as np
+
+from .observable import Observable
 
 # (letter -> contributes to) masks. Y is both a bit flip and a sign, which is
 # exactly the X*Z decomposition above.
 _FLIPS = frozenset({"X", "Y"})
 _SIGNS = frozenset({"Y", "Z"})
 _PROJECTORS = frozenset({"ZERO", "ONE"})
+
+_Factors = tuple[tuple[int, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _TermOccurrence:
+    """One executable term in its stable public order."""
+
+    observable_index: int
+    coefficient: float
+    logical_factors: _Factors
+
+
+@dataclass(frozen=True, slots=True)
+class _ExpectationExecution:
+    """Ordered backend values and uncertainty facts for one request."""
+
+    values: tuple[float, ...]
+    standard_errors: tuple[float, ...]
+    metadata: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "values", tuple(self.values))
+        object.__setattr__(self, "standard_errors", tuple(self.standard_errors))
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+
+
+def _plan_term_occurrences(
+    observables: Sequence[Observable],
+) -> tuple[tuple[_TermOccurrence, ...], tuple[float, ...]]:
+    """Separate exact constants from executable stored term occurrences."""
+    constants = [0.0] * len(observables)
+    occurrences = []
+    for observable_index, observable in enumerate(observables):
+        for coefficient, factors in observable.terms:
+            if coefficient == 0.0:
+                continue
+            if not factors:
+                constants[observable_index] += coefficient
+                continue
+            occurrences.append(_TermOccurrence(observable_index, coefficient, factors))
+    return tuple(occurrences), tuple(constants)
+
+
+def _reconstruct_term_outcome(
+    factors: _Factors,
+    measured_digits: Sequence[int],
+) -> int:
+    """Return the product outcome for factor-aligned binary measurements."""
+    if len(factors) != len(measured_digits):
+        raise ValueError(
+            f"got {len(measured_digits)} measured digits for {len(factors)} factors"
+        )
+
+    outcome = 1
+    for (_, letter), raw_digit in zip(factors, measured_digits, strict=True):
+        if (
+            isinstance(raw_digit, (bool, np.bool_))
+            or not isinstance(raw_digit, (int, np.integer))
+            or raw_digit not in (0, 1)
+        ):
+            raise ValueError(f"measurement digit must be binary, got {raw_digit!r}")
+        digit = int(raw_digit)
+        if letter in {"X", "Y", "Z"}:
+            outcome *= 1 if digit == 0 else -1
+        elif letter == "ZERO":
+            outcome *= 1 if digit == 0 else 0
+        elif letter == "ONE":
+            outcome *= 1 if digit == 1 else 0
+        else:
+            raise ValueError(f"unsupported measured factor {letter!r}")
+    return outcome
+
+
+def _reduce_outcome_counts(
+    factors: _Factors,
+    outcome_counts: Iterable[tuple[Sequence[int], int]],
+) -> tuple[int, int]:
+    """Reduce typed outcome counts to their first and second raw sums."""
+    outcome_sum = 0
+    outcome_sum_squared = 0
+    for measured_digits, raw_count in outcome_counts:
+        count = int(raw_count)
+        if count < 0:
+            raise ValueError(f"outcome count must be nonnegative, got {raw_count!r}")
+        outcome = _reconstruct_term_outcome(factors, measured_digits)
+        outcome_sum += count * outcome
+        outcome_sum_squared += count * outcome * outcome
+    return outcome_sum, outcome_sum_squared
+
+
+def _sample_mean_and_standard_error(
+    outcome_sum: int,
+    outcome_sum_squared: int,
+    *,
+    shots: int,
+) -> tuple[float, float]:
+    """Return a sample mean and its unbiased standard error."""
+    if shots < 1:
+        raise ValueError(f"sample statistics require shots >= 1, got {shots}")
+    mean = outcome_sum / shots
+    if shots == 1:
+        return mean, math.nan
+
+    numerator = shots * outcome_sum_squared - outcome_sum * outcome_sum
+    standard_error = math.sqrt(numerator / (shots * shots * (shots - 1)))
+    return mean, standard_error
+
+
+def _combine_term_statistics(
+    constants: Sequence[float],
+    occurrences: Sequence[_TermOccurrence],
+    statistics: Sequence[tuple[int, int]],
+    *,
+    shots: int,
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Combine independent sampled occurrences into ordered observables."""
+    if shots < 1:
+        raise ValueError(f"sample statistics require shots >= 1, got {shots}")
+    if len(occurrences) != len(statistics):
+        raise ValueError(
+            f"got {len(statistics)} statistics for {len(occurrences)} occurrences"
+        )
+
+    values = list(constants)
+    variances = [0.0] * len(constants)
+    has_executable = [False] * len(constants)
+    for occurrence, (outcome_sum, outcome_sum_squared) in zip(
+        occurrences, statistics, strict=True
+    ):
+        observable_index = occurrence.observable_index
+        has_executable[observable_index] = True
+        mean, standard_error = _sample_mean_and_standard_error(
+            outcome_sum,
+            outcome_sum_squared,
+            shots=shots,
+        )
+        values[observable_index] += occurrence.coefficient * mean
+        if shots > 1:
+            variances[observable_index] += occurrence.coefficient**2 * standard_error**2
+
+    standard_errors = tuple(
+        math.nan if shots == 1 and executable else math.sqrt(variance)
+        for executable, variance in zip(has_executable, variances, strict=True)
+    )
+    return tuple(values), standard_errors
 
 
 def squared_factors(
@@ -160,9 +312,9 @@ def _load_compiled_terms() -> tuple[Callable[..., complex], ...] | None:
     """
     if importlib.util.find_spec("numba") is None:
         return None
-    from . import expectation_nb
+    from . import _expectation_nb
 
-    return expectation_nb.statevector_term, expectation_nb.density_matrix_term
+    return _expectation_nb.statevector_term, _expectation_nb.density_matrix_term
 
 
 _COMPILED = _load_compiled_terms()
