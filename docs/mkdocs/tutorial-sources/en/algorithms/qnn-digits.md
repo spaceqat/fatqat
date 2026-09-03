@@ -157,59 +157,42 @@ figure.set_size_inches(16, 4)
 
 Within one optimizer step the weights are fixed, so they are bound once
 with `assign_parameters`. The batch then sweeps only the features:
-`run_sweep` takes the entire `(N, 16)` feature array as one binding
-and returns an ordered list of results — one ordinary `Result` per
-sample. The parameters have become *data*: plain NumPy arrays flowing
-through one call, instead of circuit structure rebuilt per sample.
+[`Estimator`][fatqat.Estimator] takes the two class observables alongside
+the entire `(N, 16)` feature array and returns an ordered list of results
+— one ordinary [`Result`][fatqat.Result] per sample. Each result contains
+the two expectation values, which a short list comprehension collects into
+the `(N, 2)` logit array. The parameters have become *data*: plain NumPy
+arrays flowing through one call, instead of circuit structure rebuilt per
+sample.
 
 (In this fatqat version `run_sweep` still lowers and executes row by
 row; the win today is the single-template workflow and one-call batch
-interface, which is also where fused batched execution will land. For
-observable-centric workflows, [`fatqat.Estimator`][fatqat.Estimator] offers the
-same batching as `Estimator.run_sweep`; see
-[the simulation guide](../guide/simulation.md).)
+interface, which is also where fused batched execution will land. The
+estimator handles final-state evolution and observable contraction; see
+[interpreting results](../guide/interpret-results.md).)
 
 ```python
-backend = fq.simulator.Simulator(method="SV")
+LOGIT_OBSERVABLES = [
+    fq.Observable.from_sparse(
+        [("Z", (0,), 1.0), ("Z", (1,), 1.0)], num_qubits=NUM_QUBITS
+    ),
+    fq.Observable.from_sparse(
+        [("Z", (2,), 1.0), ("Z", (3,), 1.0)], num_qubits=NUM_QUBITS
+    ),
+]
+estimator = fq.Estimator(fq.simulator.Simulator(method="SV"))
 
 
 def batch_logits(params, X):
     """Map a batch of samples to class logits with one sweep call."""
     bound = template.assign_parameters({WEIGHTS: params})
-    results = backend.run_sweep(
+    results = estimator.run_sweep(
         bound,
+        LOGIT_OBSERVABLES,
         {FEATURES: X},
         shots=0,
-        result_config={"counts": False, "final_state": True},
     ).result()
-    states = np.array([r.get_statevector() for r in results])  # (N, 16)
-    axes = [
-        entry["register_ref"].index for entry in results[0].metadata["state_axes"]
-    ]
-    return z_logits(states, axes)
-
-
-def z_logits(states, axes):
-    """Contract four :math:`\\langle Z_q\\rangle` from final statevectors.
-
-    A C-order reshape puts ``state_axes`` factor ``k`` on quantum axis ``k``.
-    Contracting qubit ``q`` with :math:`(1, -1)` gives
-    :math:`\\langle Z_q\\rangle`, and summing the remaining axes
-    marginalizes them.
-    """
-    probs = np.abs(states) ** 2
-    tensor = probs.reshape(len(states), *([2] * NUM_QUBITS))
-    z = np.array([1.0, -1.0])
-    expectations = np.stack(
-        [
-            np.tensordot(tensor, z, axes=([1 + axes.index(q)], [0])).sum(
-                axis=(1, 2, 3)
-            )
-            for q in range(NUM_QUBITS)
-        ],
-        axis=1,
-    )  # (N, 4): <Z0> .. <Z3>
-    return expectations.reshape(len(states), 2, 2).sum(-1)
+    return np.array([result.get_expectation() for result in results])  # (N, 2)
 ```
 
 A small check with random initial weights: the logits start near
