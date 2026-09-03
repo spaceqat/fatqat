@@ -35,10 +35,8 @@ from __future__ import annotations
 
 import importlib.util
 import math
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from types import MappingProxyType
-from typing import Any
 
 import numpy as np
 
@@ -48,8 +46,6 @@ from .observable import Observable
 # exactly the X*Z decomposition above.
 _FLIPS = frozenset({"X", "Y"})
 _SIGNS = frozenset({"Y", "Z"})
-_PROJECTORS = frozenset({"ZERO", "ONE"})
-
 _Factors = tuple[tuple[int, str], ...]
 
 
@@ -68,12 +64,13 @@ class _ExpectationExecution:
 
     values: tuple[float, ...]
     standard_errors: tuple[float, ...]
-    metadata: Mapping[str, Any]
+    method: str
+    runtime: str
+    solver: str | tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "values", tuple(self.values))
         object.__setattr__(self, "standard_errors", tuple(self.standard_errors))
-        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 
 def _plan_term_occurrences(
@@ -195,23 +192,6 @@ def _combine_term_statistics(
         for executable, variance in zip(has_executable, variances, strict=True)
     )
     return tuple(values), standard_errors
-
-
-def squared_factors(
-    factors: tuple[tuple[int, str], ...],
-) -> tuple[tuple[int, str], ...]:
-    """Return the factors of ``T**2`` for a term ``T``.
-
-    Every Pauli squares to the identity and drops out; both projectors are
-    idempotent and survive unchanged. So ``T**2`` is just the term's projector
-    part, and ``<T**2>`` costs one more pass of the same kernel rather than a
-    separate operator.
-
-    Sampling needs this: a pure Pauli term has eigenvalues ``+-1`` and so
-    ``<T**2> = 1``, but a term carrying a projector has eigenvalues ``{0, +-1}``
-    and its second moment is a property of the state.
-    """
-    return tuple((qubit, letter) for qubit, letter in factors if letter in _PROJECTORS)
 
 
 def _term_masks(

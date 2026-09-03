@@ -35,6 +35,7 @@ from ..._backends.view_normalization import (
     ProgramInstruction,
     _break_grouped_operations,
 )
+from ..._backends.steps import MeasurementStep
 from ...errors import (
     BackendExecutionError,
     BackendValidationError,
@@ -78,7 +79,7 @@ class _BoundPulseExpectation:
     occurrence: _TermOccurrence
     engine_factors: tuple[tuple[int, str], ...]
     scratch_indices: tuple[int, ...]
-    measurement: PulsePlanStep | None
+    measurement: MeasurementStep | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,11 +548,6 @@ class _PulseBackend(ABC):
             shots=shots,
             simulation_config=simulation_config,
         )
-        metadata = {
-            "backend_name": self._backend_name(),
-            "method": self._method,
-            "runtime": self._runtime_name,
-        }
         try:
             runtime_details = None
             if not prepared.bound_occurrences:
@@ -566,11 +562,16 @@ class _PulseBackend(ABC):
                     standard_errors,
                     runtime_details,
                 ) = self._execute_sampled_expectation(prepared, shots=shots)
-            if runtime_details is not None:
-                metadata["runtime_details"] = dict(runtime_details)
+            solver = None if runtime_details is None else runtime_details.get("solver")
             return Job(
                 status="DONE",
-                result=_ExpectationExecution(values, standard_errors, metadata),
+                result=_ExpectationExecution(
+                    values,
+                    standard_errors,
+                    method=self._method,
+                    runtime=self._runtime_name,
+                    solver=solver,
+                ),
             )
         except Exception as exc:
             failure = BackendExecutionError("Pulse backend execution failed")
@@ -684,13 +685,13 @@ class _PulseBackend(ABC):
                     "sampled pulse expectations do not support X or Y basis factors"
                 )
 
-            reported_digit_maps = tuple(
-                self._target.reported_digit_map(
-                    prepared.resource_layout.device_label(ref)
-                )
-                for ref in factor_refs
-            )
             if shots == 0:
+                reported_digit_maps = tuple(
+                    self._target.reported_digit_map(
+                        prepared.resource_layout.device_label(ref)
+                    )
+                    for ref in factor_refs
+                )
                 if (
                     planning._expectation_confusions(
                         factor_refs,
@@ -774,56 +775,107 @@ class _PulseBackend(ABC):
         shots: int,
     ) -> tuple[tuple[float, ...], tuple[float, ...], dict[str, Any]]:
         """Execute native pulse outcomes for each diagonal term occurrence."""
-        statistics = []
-        runtime_details = None
+        assert prepared.bound_occurrences
         child_seeds = np.random.SeedSequence(prepared.simulation.seed).spawn(
             len(prepared.bound_occurrences)
         )
-        for child_seed, bound in zip(
-            child_seeds,
-            prepared.bound_occurrences,
-            strict=True,
-        ):
-            if bound.measurement is None:
-                raise RuntimeError("sampled pulse expectation has no measurement")
-            summary = self._execute_state(
+        if prepared.execution_mode == "trajectory":
+            summaries = tuple(
+                self._execute_state(
+                    prepared.program,
+                    plan=prepared.program.plan
+                    + (self._expectation_measurement(bound),),
+                    execution_mode=prepared.execution_mode,
+                    simulation=prepared.simulation,
+                    shots=shots,
+                    n_clbits=(
+                        prepared.program.classical_allocation.n_clbits
+                        + len(bound.engine_factors)
+                    ),
+                    rng=np.random.default_rng(child_seed),
+                    retain_final_state=False,
+                )
+                for child_seed, bound in zip(
+                    child_seeds,
+                    prepared.bound_occurrences,
+                    strict=True,
+                )
+            )
+        else:
+            runner = self._create_runner(
                 prepared.program,
-                plan=prepared.program.plan + (bound.measurement,),
-                execution_mode=prepared.execution_mode,
                 simulation=prepared.simulation,
+                execution_mode=prepared.execution_mode,
+                retain_final_state=False,
+            )
+            engine = PulseEngine(
+                runner,
+                schedule_mode=prepared.simulation.schedule_mode,
+            )
+            outcome_groups = engine.run_terminal_measurement_groups(
+                prepared.program.plan,
+                tuple(
+                    self._expectation_measurement(bound)
+                    for bound in prepared.bound_occurrences
+                ),
                 shots=shots,
                 n_clbits=(
                     prepared.program.classical_allocation.n_clbits
-                    + len(bound.engine_factors)
+                    + max(
+                        len(bound.engine_factors)
+                        for bound in prepared.bound_occurrences
+                    )
                 ),
-                rng=np.random.default_rng(child_seed),
-                retain_final_state=False,
+                rng=np.random.default_rng(prepared.simulation.seed),
+                measurement_rngs=tuple(
+                    np.random.default_rng(child_seed) for child_seed in child_seeds
+                ),
             )
-            runtime_details = dict(summary.runtime_details)
-            statistics.append(
-                _reduce_outcome_counts(
-                    bound.engine_factors,
-                    (
-                        (
-                            tuple(
-                                outcome.classical_digits[index]
-                                for index in bound.scratch_indices
-                            ),
-                            1,
-                        )
-                        for outcome in summary.outcomes
-                    ),
+            summaries = tuple(
+                self._summarize_execution(
+                    outcomes,
+                    require_final_state=False,
+                    runner=runner,
                 )
+                for outcomes in outcome_groups
             )
+
+        statistics = tuple(
+            _reduce_outcome_counts(
+                bound.engine_factors,
+                (
+                    (
+                        tuple(
+                            outcome.classical_digits[index]
+                            for index in bound.scratch_indices
+                        ),
+                        1,
+                    )
+                    for outcome in summary.outcomes
+                ),
+            )
+            for bound, summary in zip(
+                prepared.bound_occurrences,
+                summaries,
+                strict=True,
+            )
+        )
         values, standard_errors = _combine_term_statistics(
             prepared.constants,
             tuple(bound.occurrence for bound in prepared.bound_occurrences),
             statistics,
             shots=shots,
         )
-        if runtime_details is None:
-            raise RuntimeError("sampled pulse expectation produced no execution")
-        return values, standard_errors, runtime_details
+        return values, standard_errors, dict(summaries[0].runtime_details)
+
+    @staticmethod
+    def _expectation_measurement(
+        bound: _BoundPulseExpectation,
+    ) -> MeasurementStep:
+        """Return the measurement guaranteed by sampled occurrence binding."""
+        if bound.measurement is None:
+            raise RuntimeError("sampled pulse expectation has no measurement")
+        return bound.measurement
 
     @final
     def _execute_unitary(

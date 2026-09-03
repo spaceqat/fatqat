@@ -93,8 +93,8 @@ class Estimator:
             BackendValidationError: If no observables are supplied; ``shots``
                 is not a non-negative integer; the program is measured,
                 unbound, or not qubit-only; an observable has the wrong width;
-                or the backend raises this error for the required final-state
-                request.
+                or the backend raises this error while preparing its native
+                expectation execution.
         """
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
@@ -110,20 +110,18 @@ class Estimator:
         )
         try:
             execution = internal_job.result()
-        except BaseException as exc:
+        except Exception as exc:
             return Job(status="ERROR", error=exc)
 
         def shape(entries: tuple[float, ...]) -> Any:
             return np.asarray(entries) if is_sequence else entries[0]
 
         metadata = {
-            key: execution.metadata[key]
-            for key in ("method", "runtime")
-            if key in execution.metadata
+            "method": execution.method,
+            "runtime": execution.runtime,
         }
-        runtime_details = execution.metadata.get("runtime_details")
-        if isinstance(runtime_details, Mapping) and "solver" in runtime_details:
-            metadata["runtime_details"] = {"solver": runtime_details["solver"]}
+        if execution.solver is not None:
+            metadata["runtime_details"] = {"solver": execution.solver}
         metadata.update(
             {
                 "backend_name": type(self._backend).__name__,
@@ -222,7 +220,7 @@ def _validate_backend(backend: Any) -> None:
     if callable(getattr(backend, "_run_expectation", None)):
         return
     raise BackendValidationError(
-        "an estimator backend must provide a callable expectation-execution hook"
+        "an estimator backend must provide a callable '_run_expectation' hook"
     )
 
 

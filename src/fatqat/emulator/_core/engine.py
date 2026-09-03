@@ -189,6 +189,58 @@ class PulseEngine:
             rng=rng,
         )
 
+    def run_terminal_measurement_groups(
+        self,
+        plan: Iterable[PulseBlock],
+        measurements: Iterable[MeasurementStep],
+        *,
+        shots: int,
+        n_clbits: int,
+        rng: np.random.Generator,
+        measurement_rngs: Iterable[np.random.Generator],
+    ) -> tuple[tuple[Any, ...], ...]:
+        """Evolve once, then sample independent terminal measurements.
+
+        The base plan must contain only deterministic pulse blocks. Each
+        measurement receives its own random stream and fresh copies of the
+        evolved state, so groups remain statistically independent without
+        repeating the Hamiltonian solve.
+        """
+        self._validate_run_request(shots, n_clbits)
+        frozen_plan = tuple(plan)
+        measurement_tuple = tuple(measurements)
+        generators = tuple(measurement_rngs)
+        if len(measurement_tuple) != len(generators):
+            raise BackendValidationError(
+                "terminal measurement groups require one random stream per group"
+            )
+        if any(not isinstance(step, PulseBlock) for step in frozen_plan):
+            raise BackendValidationError(
+                "a shared terminal-measurement base may contain only pulse blocks"
+            )
+
+        context = _ShotContext(
+            state=self._runner.initial_state(),
+            classical_memory=[0] * n_clbits,
+            rng=rng,
+        )
+        self._run_one_shot(frozen_plan, context)
+        return tuple(
+            self._sample_terminal_measurements(
+                context,
+                (measurement,),
+                shots=shots,
+                n_clbits=n_clbits,
+                rng=measurement_rng,
+                preserve_source=True,
+            )
+            for measurement, measurement_rng in zip(
+                measurement_tuple,
+                generators,
+                strict=True,
+            )
+        )
+
     def _run_terminal_batch(
         self,
         blocks: tuple[PulseBlock, ...],
@@ -355,17 +407,34 @@ class PulseEngine:
             rng=rng,
         )
         self._run_one_shot(plan, context, defer_measurements=True)
-
-        source_state = (
-            self._runner.copy_state(context.state)
-            if terminal_measurements and shots > 1
-            else context.state
+        return self._sample_terminal_measurements(
+            context,
+            terminal_measurements,
+            shots=shots,
+            n_clbits=n_clbits,
+            rng=rng,
+            preserve_source=False,
         )
+
+    def _sample_terminal_measurements(
+        self,
+        context: _ShotContext,
+        terminal_measurements: tuple[MeasurementStep, ...],
+        *,
+        shots: int,
+        n_clbits: int,
+        rng: np.random.Generator,
+        preserve_source: bool,
+    ) -> tuple[Any, ...]:
+        """Sample terminal measurements from one evolved shot context."""
+        source_state = context.state
+        if not preserve_source and terminal_measurements and shots > 1:
+            source_state = self._runner.copy_state(context.state)
         outcomes = []
         for shot in range(shots):
             sample_context = (
                 context
-                if shot == 0
+                if shot == 0 and not preserve_source
                 else _ShotContext(
                     state=self._runner.copy_state(source_state),
                     classical_memory=[0] * n_clbits,

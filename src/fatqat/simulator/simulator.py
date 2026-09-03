@@ -990,11 +990,6 @@ class Simulator:
             shots=shots,
             simulation_config=simulation_config,
         )
-        metadata = {
-            "backend_name": type(self).__name__,
-            "method": self._state_field,
-            "runtime": self._runtime,
-        }
         try:
             if not prepared.bound_occurrences:
                 values = prepared.constants
@@ -1009,7 +1004,12 @@ class Simulator:
                 )
             return Job(
                 status="DONE",
-                result=_ExpectationExecution(values, standard_errors, metadata),
+                result=_ExpectationExecution(
+                    values,
+                    standard_errors,
+                    method=self._state_field,
+                    runtime=self._runtime,
+                ),
             )
         except Exception as exc:
             return Job(status="ERROR", error=exc)
@@ -1037,7 +1037,73 @@ class Simulator:
         )
         plan = execution.plan
         assert isinstance(plan, tuple), "expectation runs lower bound programs only"
+        self._validate_expectation_capabilities(execution, shots=shots)
 
+        occurrences, constants = _plan_term_occurrences(observables)
+        bound_occurrences = self._bind_expectation_occurrences(
+            program,
+            execution,
+            occurrences,
+            sampled=shots > 0,
+        )
+        state_request = self._request_cls(
+            counts=False,
+            **{self._state_field: True},
+        )
+        sample_request = self._request_cls(
+            counts=True,
+            **{self._state_field: False},
+        )
+        state_policy = None
+        samples = []
+        if not bound_occurrences:
+            # There is no numerical execution, but explicit engine controls
+            # retain the same validation contract as a direct backend run.
+            no_result_request = self._request_cls(
+                counts=False,
+                **{self._state_field: False},
+            )
+            self._resolve_plan_policy(
+                plan,
+                execution,
+                request=no_result_request,
+                shots=shots,
+            )
+        elif shots == 0:
+            state_policy = self._resolve_plan_policy(
+                plan,
+                execution,
+                request=state_request,
+                shots=1,
+            )
+        else:
+            state_policy, samples = self._prepare_expectation_samples(
+                execution,
+                bound_occurrences,
+                state_request=state_request,
+                sample_request=sample_request,
+                shots=shots,
+            )
+
+        return _PreparedExpectation(
+            execution=execution,
+            constants=constants,
+            bound_occurrences=bound_occurrences,
+            state_request=state_request,
+            state_policy=state_policy,
+            sample_request=sample_request,
+            samples=tuple(samples),
+        )
+
+    def _validate_expectation_capabilities(
+        self,
+        execution: _PreparedExecution,
+        *,
+        shots: int,
+    ) -> None:
+        """Reject expectation requests unsupported by the prepared matrix plan."""
+        plan = execution.plan
+        assert isinstance(plan, tuple)
         if self._is_operator:
             raise UnsupportedOperationError(
                 f"method={self._state_field!r} computes an operator, not a state "
@@ -1058,100 +1124,61 @@ class Simulator:
             )
         self._validate_additional_config(
             config=self._result_config_cls(),
-            simulation=simulation,
+            simulation=execution.simulation,
             shots=shots,
             facts=execution.facts,
         )
 
-        occurrences, constants = _plan_term_occurrences(observables)
-        bound_occurrences = self._bind_expectation_occurrences(
-            program,
-            execution,
-            occurrences,
-            sampled=shots > 0,
-        )
-        state_request = self._request_cls(
-            counts=False,
-            **{self._state_field: True},
-        )
-        sample_request = self._request_cls(
-            counts=True,
-            **{self._state_field: False},
-        )
+    def _prepare_expectation_samples(
+        self,
+        execution: _PreparedExecution,
+        bound_occurrences: tuple[_BoundExpectationOccurrence, ...],
+        *,
+        state_request: _ResultRequest,
+        sample_request: _ResultRequest,
+        shots: int,
+    ) -> tuple[_ExecutionPolicy | None, tuple[_PreparedExpectationSample, ...]]:
+        """Resolve base-state reuse and per-occurrence sampling policies."""
+        plan = execution.plan
+        assert isinstance(plan, tuple)
         state_policy = None
-        samples = []
-        if not bound_occurrences:
-            no_result_request = self._request_cls(
-                counts=False,
-                **{self._state_field: False},
-            )
-            self._resolve_plan_policy(
-                plan,
-                execution,
-                request=no_result_request,
-                shots=shots,
-            )
-        elif shots == 0:
+        if not execution.facts.stochastic_final_state:
             state_policy = self._resolve_plan_policy(
                 plan,
                 execution,
                 request=state_request,
                 shots=1,
             )
-        else:
-            if not execution.facts.stochastic_final_state:
-                base_simulation = (
-                    replace(simulation, shot_parallelism="serial")
-                    if simulation.shot_parallelism in {"threads", "processes"}
-                    else simulation
-                )
-                base_execution = replace(execution, simulation=base_simulation)
-                state_policy = self._resolve_plan_policy(
-                    plan,
-                    base_execution,
-                    request=state_request,
-                    shots=1,
-                )
 
-            terminal_occupied = self._terminal_occupancy(execution)
-            for bound in bound_occurrences:
-                if execution.facts.stochastic_final_state:
-                    sample_plan = plan + bound.tail
-                    sample_facts, sample_occupied = self._analyze_lowered_plan(
-                        sample_plan
-                    )
-                else:
-                    sample_plan = bound.tail
-                    sample_facts = self._analyze_common_plan_facts(sample_plan)
-                    sample_occupied = terminal_occupied
-                sample_execution = replace(
-                    execution,
-                    plan=sample_plan,
-                    facts=sample_facts,
-                    initial_occupied=sample_occupied,
+        terminal_occupied = self._terminal_occupancy(execution)
+        samples = []
+        for bound in bound_occurrences:
+            if execution.facts.stochastic_final_state:
+                sample_plan = plan + bound.tail
+                sample_facts, sample_occupied = self._analyze_lowered_plan(sample_plan)
+            else:
+                sample_plan = bound.tail
+                sample_facts = self._analyze_common_plan_facts(sample_plan)
+                sample_occupied = terminal_occupied
+            sample_execution = replace(
+                execution,
+                plan=sample_plan,
+                facts=sample_facts,
+                initial_occupied=sample_occupied,
+            )
+            samples.append(
+                _PreparedExpectationSample(
+                    bound=bound,
+                    execution=sample_execution,
+                    policy=self._resolve_plan_policy(
+                        sample_plan,
+                        sample_execution,
+                        request=sample_request,
+                        shots=shots,
+                    ),
                 )
-                samples.append(
-                    _PreparedExpectationSample(
-                        bound=bound,
-                        execution=sample_execution,
-                        policy=self._resolve_plan_policy(
-                            sample_plan,
-                            sample_execution,
-                            request=sample_request,
-                            shots=shots,
-                        ),
-                    )
-                )
-
-        return _PreparedExpectation(
-            execution=execution,
-            constants=constants,
-            bound_occurrences=bound_occurrences,
-            state_request=state_request,
-            state_policy=state_policy,
-            sample_request=sample_request,
-            samples=tuple(samples),
-        )
+            )
+        return state_policy, tuple(samples)
 
     def _bind_expectation_occurrences(
         self,
