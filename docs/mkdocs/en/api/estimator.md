@@ -65,7 +65,8 @@ Pass one observable to receive scalar expectation and standard-error values,
 or a list or tuple to receive arrays in the same order.
 
 `shots=0` computes an exact value. A positive `shots` value samples each
-observable term, and [`get_std`][fatqat.Result.get_std] reports the resulting
+observable term, and
+[`get_standard_error`][fatqat.Result.get_standard_error] reports the resulting
 standard error. Set `simulation_config["seed"]` to reproduce a sampled run.
 
 Configure the simulation method, runtime, and noise on the backend. Invalid
@@ -86,9 +87,9 @@ logical subspace. Inspect that physical state directly with the backend
 [`Result`][fatqat.Result] until explicit leakage-aware observable semantics are
 available.
 
-Read estimator results with [`get_expectation`][fatqat.Result.get_expectation] and
-[`get_std`][fatqat.Result.get_std]. Run the backend separately if you also need its
-final state.
+Read estimator results with [`get_expectation`][fatqat.Result.get_expectation]
+and [`get_standard_error`][fatqat.Result.get_standard_error]. Run the backend
+separately if you also need its final state.
 
 ## Parameter sweeps
 

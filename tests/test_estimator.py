@@ -65,7 +65,7 @@ def test_exact_scalar_parameter_sweep_matches_explicit_runs():
     assert [result.get_expectation() for result in swept] == pytest.approx(
         [result.get_expectation() for result in explicit]
     )
-    assert [result.get_std() for result in swept] == [0.0, 0.0, 0.0]
+    assert [result.get_standard_error() for result in swept] == [0.0, 0.0, 0.0]
 
 
 def test_qnn_shaped_vector_sweep_preserves_multi_observable_shape():
@@ -137,8 +137,8 @@ def test_sampled_sweep_matches_same_seed_repeated_runs_and_forwards_options(
     assert [result.get_expectation() for result in swept] == [
         result.get_expectation() for result in explicit
     ]
-    assert [result.get_std() for result in swept] == pytest.approx(
-        [result.get_std() for result in explicit]
+    assert [result.get_standard_error() for result in swept] == pytest.approx(
+        [result.get_standard_error() for result in explicit]
     )
     assert forwarded == [
         (observable, {"shots": 256, "simulation_config": config}),
@@ -156,7 +156,10 @@ def test_estimator_sweep_direct_inner_failure_propagates(monkeypatch):
     def fail_on_second(bound, _observables, **_kwargs):
         if bound._instructions[0].operation.theta == 0.2:
             raise BackendValidationError("direct point failure")
-        return Job(status="DONE", result=Result(data={"expectation": 1.0, "std": 0.0}))
+        return Job(
+            status="DONE",
+            result=Result(data={"expectation": 1.0, "standard_error": 0.0}),
+        )
 
     monkeypatch.setattr(estimator, "run", fail_on_second)
     with pytest.raises(BackendValidationError, match="direct point failure"):
@@ -174,7 +177,10 @@ def test_estimator_sweep_failed_point_job_fails_outer_job(monkeypatch):
     def fail_on_second(bound, _observables, **_kwargs):
         if bound._instructions[0].operation.theta == 0.2:
             return Job(status="ERROR", error=error)
-        return Job(status="DONE", result=Result(data={"expectation": 1.0, "std": 0.0}))
+        return Job(
+            status="DONE",
+            result=Result(data={"expectation": 1.0, "standard_error": 0.0}),
+        )
 
     monkeypatch.setattr(estimator, "run", fail_on_second)
     outer = estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
@@ -438,7 +444,7 @@ def test_expectation_absent_from_a_plain_backend_run():
     with pytest.raises(ResultFieldUnavailableError, match="Estimator"):
         result.get_expectation()
     with pytest.raises(ResultFieldUnavailableError, match="Estimator"):
-        result.get_std()
+        result.get_standard_error()
 
 
 # --- sampling ----------------------------------------------------------------
@@ -456,9 +462,9 @@ def _sampling_program(num_qubits=3):
 def test_exact_run_reports_zero_standard_error():
     result = _estimator().run(_bell(), Observable([("ZZ", 1.0)])).result()
 
-    assert result.get_std() == 0.0
-    assert result.get_data("std") == 0.0
-    assert result.available_data == frozenset({"expectation", "std"})
+    assert result.get_standard_error() == 0.0
+    assert result.get_data("standard_error") == 0.0
+    assert result.available_data == frozenset({"expectation", "standard_error"})
 
 
 @pytest.mark.parametrize("method", ["SV", "DM"])
@@ -474,7 +480,9 @@ def test_sampled_value_converges_to_the_exact_one(method):
         program, observable, shots=200_000, simulation_config={"seed": 11}
     ).result()
 
-    assert sampled.get_expectation() == pytest.approx(exact, abs=5 * sampled.get_std())
+    assert sampled.get_expectation() == pytest.approx(
+        exact, abs=5 * sampled.get_standard_error()
+    )
 
 
 def test_projector_term_sampling_converges():
@@ -491,7 +499,9 @@ def test_projector_term_sampling_converges():
         program, observable, shots=200_000, simulation_config={"seed": 5}
     ).result()
 
-    assert sampled.get_expectation() == pytest.approx(exact, abs=5 * sampled.get_std())
+    assert sampled.get_expectation() == pytest.approx(
+        exact, abs=5 * sampled.get_standard_error()
+    )
 
 
 def test_standard_error_shrinks_as_one_over_sqrt_shots():
@@ -499,8 +509,10 @@ def test_standard_error_shrinks_as_one_over_sqrt_shots():
     observable = Observable([("XXI", 1.0)])
     estimator = _estimator()
 
-    few = estimator.run(program, observable, shots=1_000).result().get_std()
-    many = estimator.run(program, observable, shots=100_000).result().get_std()
+    few = estimator.run(program, observable, shots=1_000).result().get_standard_error()
+    many = (
+        estimator.run(program, observable, shots=100_000).result().get_standard_error()
+    )
 
     assert few / many == pytest.approx(10.0, rel=1e-9)
 
@@ -517,9 +529,9 @@ def test_deterministic_term_has_no_spread():
     )
 
     assert result.get_expectation() == pytest.approx(1.0, abs=1e-12)
-    # The variance lands on the rounding floor rather than exactly 0, and std
-    # takes its square root, so ~1e-17 of residue shows up as ~1e-9.
-    assert result.get_std() == pytest.approx(0.0, abs=1e-8)
+    # The variance lands on the rounding floor rather than exactly 0, and the
+    # standard error takes its square root, so ~1e-17 of residue shows up as ~1e-9.
+    assert result.get_standard_error() == pytest.approx(0.0, abs=1e-8)
 
 
 def test_sampling_is_reproducible_under_a_seed():
@@ -550,7 +562,7 @@ def test_sampled_sequence_returns_arrays_for_both_fields():
     )
 
     assert result.get_expectation().shape == (2,)
-    assert result.get_std().shape == (2,)
+    assert result.get_standard_error().shape == (2,)
 
 
 def test_sampling_works_with_a_noisy_density_matrix():
@@ -563,7 +575,9 @@ def test_sampling_works_with_a_noisy_density_matrix():
         program, observable, shots=200_000, simulation_config={"seed": 4}
     ).result()
 
-    assert sampled.get_expectation() == pytest.approx(exact, abs=5 * sampled.get_std())
+    assert sampled.get_expectation() == pytest.approx(
+        exact, abs=5 * sampled.get_standard_error()
+    )
 
 
 def test_sampled_metadata_records_the_shot_count():

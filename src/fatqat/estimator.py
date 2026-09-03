@@ -128,7 +128,10 @@ class Estimator:
         return Job(
             status="DONE",
             result=Result(
-                data={"expectation": shape(values), "std": shape(deviations)},
+                data={
+                    "expectation": shape(values),
+                    "standard_error": shape(deviations),
+                },
                 metadata={
                     "shots": shots,
                     "backend_name": type(self._backend).__name__,
@@ -328,7 +331,7 @@ def _sample(
     shots: int,
     generator: np.random.Generator,
 ) -> tuple[float, float]:
-    """Draw ``shots`` samples of an observable; return ``(mean, std)``.
+    """Draw ``shots`` samples of an observable; return mean and standard error.
 
     Each term is sampled independently and the results are combined by the
     observable's coefficients. Drawing the outcome *counts* from a multinomial

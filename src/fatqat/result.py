@@ -236,7 +236,7 @@ class Result:
             )
         return self._data["expectation"]
 
-    def get_std(self) -> Any:
+    def get_standard_error(self) -> Any:
         """Return estimator standard errors.
 
         The shape matches ``get_expectation``. An exact run with ``shots=0``
@@ -247,12 +247,12 @@ class Result:
             ResultFieldUnavailableError: If this result did not come from an
                 estimator run.
         """
-        if "std" not in self._data:
+        if "standard_error" not in self._data:
             raise ResultFieldUnavailableError(
-                "std not available in this result; it is produced by "
+                "standard_error not available in this result; it is produced by "
                 "Estimator.run, not by a backend run"
             )
-        return self._data["std"]
+        return self._data["standard_error"]
 
     def get_counts(self) -> dict[str, int]:
         """Return a new counts dictionary with display-string keys.

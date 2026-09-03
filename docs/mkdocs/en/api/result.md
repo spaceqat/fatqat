@@ -20,7 +20,7 @@ use its accessor. An unavailable accessor raises
 | `"density_matrix"` | [`get_density_matrix`][fatqat.Result.get_density_matrix] | A density-matrix run with final-state output enabled |
 | `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | A unitary run with final-state output enabled |
 | `"superop"` | [`get_superop`][fatqat.Result.get_superop] | A super-operator run with final-state output enabled |
-| `"expectation"` and `"std"` | [`get_expectation`][fatqat.Result.get_expectation] and [`get_std`][fatqat.Result.get_std] | An [`Estimator`][fatqat.Estimator] run |
+| `"expectation"` and `"standard_error"` | [`get_expectation`][fatqat.Result.get_expectation] and [`get_standard_error`][fatqat.Result.get_standard_error] | An [`Estimator`][fatqat.Estimator] run |
 | Backend extension name | [`get_data`][fatqat.Result.get_data] | A backend extension |
 
 `"final_state"` is a request name, not an available-data name. A produced
