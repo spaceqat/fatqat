@@ -12,6 +12,11 @@ figure_alts:
 # Recognize handwritten digits with a quantum neural network
 
 
+!!! note "Additional dependency"
+
+    This tutorial requires scikit-learn, which is not installed with FatQat.
+    Install it with `python -m pip install scikit-learn`.
+
 A quantum neural network (QNN) classifier is an ordinary parameterized
 function $f(x;\theta)$ — the twist is that the function is evaluated
 by a quantum circuit. The input features $x$ and the trainable
@@ -59,9 +64,9 @@ $$
 Training minimizes the mean cross-entropy $-\frac{1}{N}\sum_i \log p_i(\text{label}_i)$ with the gradient-free COBYLA optimizer — the
 loss is a black box, so no circuit differentiation is needed.
 
-The data are the 8x8 handwritten digits bundled with scikit-learn: real
-scans, but bundled locally, so this page is fully reproducible with no
-download. Every source of randomness is seeded.
+The data are the 8x8 handwritten digits bundled with scikit-learn. Once that
+package is installed, the dataset is available locally, so the tutorial needs
+no external data download. Every source of randomness is seeded.
 
 ## Data: two classes of small digits
 
