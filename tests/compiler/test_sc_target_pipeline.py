@@ -1,13 +1,17 @@
+from typing import get_type_hints
+
 import pytest
 
 from fatqat.compiler import (
-    compile_qasm_to_google,
-    compile_qasm_to_ibm,
+    compile_qasm_to_sc,
     to_sc_simulator_program,
 )
-from fatqat.compiler.dialects import GoogleProgram, IBMProgram, NativeMeasure
+from fatqat.compiler.dialects import NativeMeasure, SCNativeProgram
+from fatqat.compiler.dialects.sc_native import _RotationNativeProgram
+from fatqat.compiler.pipelines import _compile_qasm_to_sc_rotation
 from fatqat.operations import Measurement
-from fatqat.simulator import SCQubitGoogleSimulator, SCQubitIBMSimulator
+from fatqat.simulator import SCQubitSimulator
+from fatqat.simulator.fake_superconducting import _SCQubitRotationSimulator
 
 TRIANGLE_QASM = """
 OPENQASM 3.0;
@@ -28,16 +32,16 @@ FIVE_SITE_LINE = ((0, 1), (1, 2), (2, 3), (3, 4))
     ("backend", "compile_qasm", "program_type", "pass_name"),
     (
         (
-            SCQubitIBMSimulator(num_qubits=3, couplings=LINE, runtime="numpy"),
-            compile_qasm_to_ibm,
-            IBMProgram,
-            "lower-sc-to-ibm",
+            SCQubitSimulator(num_qubits=3, couplings=LINE, runtime="numpy"),
+            compile_qasm_to_sc,
+            SCNativeProgram,
+            "lower-sc-to-native",
         ),
         (
-            SCQubitGoogleSimulator(num_qubits=3, couplings=LINE, runtime="numpy"),
-            compile_qasm_to_google,
-            GoogleProgram,
-            "lower-sc-to-google",
+            _SCQubitRotationSimulator(num_qubits=3, couplings=LINE, runtime="numpy"),
+            _compile_qasm_to_sc_rotation,
+            _RotationNativeProgram,
+            "lower-sc-to-rotation",
         ),
     ),
 )
@@ -46,7 +50,7 @@ def test_qasm_target_pipeline_preserves_public_order_through_routing(
 ):
     result = compile_qasm(TRIANGLE_QASM, backend, seed=5)
 
-    assert isinstance(result.output, program_type)
+    assert type(result.output) is program_type
     assert result.route == ("parse-qasm", "normalize-sc", pass_name)
 
     program, resource_layout = to_sc_simulator_program(result.output)
@@ -65,10 +69,8 @@ def test_qasm_target_pipeline_preserves_public_order_through_routing(
 
 
 def test_simulator_bridge_uses_fixed_physical_refs_and_original_clbits():
-    backend = SCQubitIBMSimulator(
-        num_qubits=5, couplings=FIVE_SITE_LINE, runtime="numpy"
-    )
-    native = compile_qasm_to_ibm(TRIANGLE_QASM, backend, seed=2).output
+    backend = SCQubitSimulator(num_qubits=5, couplings=FIVE_SITE_LINE, runtime="numpy")
+    native = compile_qasm_to_sc(TRIANGLE_QASM, backend, seed=2).output
 
     program, resource_layout = to_sc_simulator_program(native)
 
@@ -98,3 +100,9 @@ def test_simulator_bridge_uses_fixed_physical_refs_and_original_clbits():
         for output in instruction.outputs
     )
     assert simulator_clbits == native_clbits
+
+
+def test_simulator_bridge_exposes_only_the_canonical_native_type():
+    assert get_type_hints(to_sc_simulator_program)["native"] is SCNativeProgram
+    with pytest.raises(TypeError, match="native must be SCNativeProgram"):
+        to_sc_simulator_program(object())

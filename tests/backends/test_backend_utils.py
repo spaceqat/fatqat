@@ -3,10 +3,8 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.simulator import (
-    SCQubitGoogleSimulator,
-    SCQubitIBMSimulator,
-)
+from fatqat.simulator import SCQubitSimulator
+from fatqat.simulator.fake_superconducting import _SCQubitRotationSimulator
 from fatqat._index_allocation import _ClassicalAllocation, _EngineAllocation
 from fatqat._backends.backend_utils import (
     _lower_measurement_boundary,
@@ -23,7 +21,7 @@ from fatqat.result import _ResultConfig
 
 # Both concrete SC simulators expose the same small constructor contract,
 # while implementing their own target-facing site property.
-_SC_BACKENDS = (SCQubitIBMSimulator, SCQubitGoogleSimulator)
+_SC_BACKENDS = (SCQubitSimulator, _SCQubitRotationSimulator)
 
 
 @pytest.mark.parametrize("backend_cls", _SC_BACKENDS)

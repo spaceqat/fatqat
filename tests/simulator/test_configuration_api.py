@@ -7,7 +7,7 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.simulator import SCQubitIBMSimulator, Simulator
+from fatqat.simulator import SCQubitSimulator, Simulator
 from fatqat._backends.engine_contract import _SimulationConfig
 from fatqat.errors import BackendValidationError
 from fatqat.result import Result, _ResultConfig
@@ -98,7 +98,7 @@ def test_simulation_and_result_configuration_are_separate():
 
 def test_final_state_uses_the_selected_method_and_hardware_backends_expose_it():
     result = (
-        SCQubitIBMSimulator(method="density_matrix")
+        SCQubitSimulator(method="density_matrix")
         .run(
             _measured_superposition(),
             shots=1,

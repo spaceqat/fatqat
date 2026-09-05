@@ -3,13 +3,15 @@ import pytest
 import fatqat as fq
 from fatqat.compiler import ValidationError
 from fatqat.compiler.dialects import (
-    GoogleProgram,
-    IBMProgram,
     NativeGate,
     NativeMeasure,
     NativeReset,
-    verify_google_program,
-    verify_ibm_program,
+    SCNativeProgram,
+    verify_sc_native_program,
+)
+from fatqat.compiler.dialects.sc_native import (
+    _RotationNativeProgram,
+    _verify_rotation_native_program,
 )
 
 
@@ -17,9 +19,9 @@ def _qref():
     return fq.QuantumRegister(1, name="q")[0]
 
 
-def test_ibm_and_google_programs_have_distinct_ir_ids():
-    assert IBMProgram.IR_ID == "sc.ibm.hardware.v1"
-    assert GoogleProgram.IR_ID == "sc.google.hardware.v1"
+def test_canonical_and_rotation_programs_have_distinct_ir_ids():
+    assert SCNativeProgram.IR_ID == "sc.native.v1"
+    assert _RotationNativeProgram.IR_ID == "sc.rotation.native.v1"
 
 
 def test_route_generated_gate_has_generated_by_instead_of_origins():
@@ -37,46 +39,46 @@ def test_native_measure_keeps_original_classical_ref():
     assert measure.clbit is clbit
 
 
-def test_ibm_program_accepts_only_ibm_basis_operations():
+def test_sc_native_program_accepts_only_canonical_basis_operations():
     qubit = _qref()
-    valid = IBMProgram(
+    valid = SCNativeProgram(
         (NativeGate("native.0", fq.operations.SX, (0,), ("logical.0",)),),
         ((qubit, 0),),
         ((qubit, 0),),
     )
-    invalid = IBMProgram(
+    invalid = SCNativeProgram(
         (NativeGate("native.0", fq.operations.RX(0.2), (0,), ("logical.0",)),),
         ((qubit, 0),),
         ((qubit, 0),),
     )
 
-    verify_ibm_program(valid)
-    with pytest.raises(ValidationError, match="IBM native operation"):
-        verify_ibm_program(invalid)
+    verify_sc_native_program(valid)
+    with pytest.raises(ValidationError, match="SC native operation"):
+        verify_sc_native_program(invalid)
 
 
-def test_google_program_accepts_only_google_basis_operations():
+def test_rotation_program_accepts_only_rotation_basis_operations():
     qubit = _qref()
-    valid = GoogleProgram(
+    valid = _RotationNativeProgram(
         (NativeGate("native.0", fq.operations.RX(0.2), (0,), ("logical.0",)),),
         ((qubit, 0),),
         ((qubit, 0),),
     )
-    invalid = GoogleProgram(
+    invalid = _RotationNativeProgram(
         (NativeGate("native.0", fq.operations.SX, (0,), ("logical.0",)),),
         ((qubit, 0),),
         ((qubit, 0),),
     )
 
-    verify_google_program(valid)
-    with pytest.raises(ValidationError, match="Google native operation"):
-        verify_google_program(invalid)
+    _verify_rotation_native_program(valid)
+    with pytest.raises(ValidationError, match="rotation native operation"):
+        _verify_rotation_native_program(invalid)
 
 
 def test_native_program_accepts_measure_and_reset_with_semantic_origins():
     qubit = _qref()
     clbit = fq.ClassicalRegister(1, name="c")[0]
-    program = IBMProgram(
+    program = SCNativeProgram(
         (
             NativeReset("native.reset.0", 0, ("logical.0",)),
             NativeMeasure("native.measure.0", 0, clbit, ("logical.1",)),
@@ -85,4 +87,4 @@ def test_native_program_accepts_measure_and_reset_with_semantic_origins():
         ((qubit, 0),),
     )
 
-    verify_ibm_program(program)
+    verify_sc_native_program(program)

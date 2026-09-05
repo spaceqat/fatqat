@@ -10,15 +10,11 @@ this 4x4 graph:
     8   9  10  11
     12 13  14  15
 
-The grid is only default test data. Both concrete backends accept an arbitrary
-``num_qubits`` plus undirected ``couplings`` and otherwise differ only in
-native gate set and calibration:
-
-- `SCQubitIBMSimulator` - `X`, `SX`, `RZ` (single-qubit, any device
-  labels), and `CZ` (coupled pairs only, both directions stored).
-- `SCQubitGoogleSimulator` - `RX`, `RY`, `RZ` (single-qubit, any device
-  labels), and `iSwap`/`CZ` (coupled pairs only, both directions
-  stored, both two-qubit gates native at once).
+The grid is only default test data. The public `SCQubitSimulator` accepts an
+arbitrary ``num_qubits`` plus undirected ``couplings`` and supports `X`,
+`SX`, `RZ`, and coupled `CZ`. A private rotation profile preserves the
+alternate `RX`, `RY`, `RZ`, `iSwap`, and `CZ` implementation for
+internal use.
 
 Neither is a realistic device model: no routing, no timing, and ideal by
 default unless a noise model is supplied. Each ships a calibration-derived
@@ -29,7 +25,7 @@ profile.
 The native-gate-set restriction applies to unitary operations only.
 Measurement and reset are resolved by `Simulator._lower` before any
 implementation-map lookup happens (see the `isinstance` dispatch there), so
-both backends accept them on any valid device qubit regardless of the
+both profiles accept them on any valid device qubit regardless of the
 implementation map's contents.
 """
 
@@ -69,8 +65,8 @@ _T2 = 48e-6
 _THERMAL_RELAXATION = ThermalRelaxation(t1=_T1, t2=_T2)
 _AMPLITUDE_SOURCE = AmplitudeDamping(rate=_THERMAL_RELAXATION.amplitude_rate)
 _PHASE_SOURCE = PhaseDamping(rate=_THERMAL_RELAXATION.pure_dephasing_rate)
-_SX_DURATION = 20e-9  # IBM-style RZ is virtual (zero duration -> no noise)
-_ROTATION_DURATION = 20e-9  # Google-style RX/RY/RZ: all physical rotations
+_SX_DURATION = 20e-9  # RZ is virtual (zero duration) in the SX profile
+_ROTATION_DURATION = 20e-9  # RX/RY/RZ are physical in the rotation profile
 _CZ_DURATION = 50e-9
 _ISWAP_DURATION = 30e-9
 _CZ_DEPOLARIZING_P = 0.001
@@ -155,13 +151,13 @@ def _require_rule(
     return rule
 
 
-class _SCQubitSimulator(Simulator):
-    """Shared capacity and resource mapping for fake superconducting backends.
+class _SCProfileSimulator(Simulator):
+    """Shared capacity and resource mapping for superconducting profiles.
 
-    Not part of the public API. `SCQubitIBMSimulator` and
-    `SCQubitGoogleSimulator` both subclass this for capacity, declaration-order
-    resource mapping, and implementation-map introspection; each supplies its
-    own native-gate implementation map and `default_noise_model`.
+    Not part of the public API. The canonical and private rotation simulators
+    both subclass this for capacity, declaration-order resource mapping, and
+    implementation-map introspection; each supplies its own native-gate
+    implementation map and `default_noise_model`.
     """
 
     def __init__(
@@ -226,13 +222,13 @@ class _SCQubitSimulator(Simulator):
         return super()._default_resource_layout(program)
 
 
-# --- IBM-style backend: X, SX, RZ, CZ --------------------------------------
+# --- canonical SX profile: X, SX, RZ, CZ -----------------------------------
 
 
-def _fake_superconducting_ibm_implementation_map(
+def _sx_implementation_map(
     couplings: tuple[tuple[int, int], ...] = DEFAULT_COUPLINGS,
 ) -> MatrixImplementationMap:
-    """Build the native gate map for an IBM-style coupling graph.
+    """Build the native gate map for the canonical SX coupling graph.
 
     `X`, `SX`, and `RZ` are legal on any qubit label (registered uniformly
     via `add`); `CZ` is legal only on supplied coupling edges, both
@@ -255,8 +251,8 @@ def _fake_superconducting_ibm_implementation_map(
     return m
 
 
-class SCQubitIBMSimulator(_SCQubitSimulator):
-    """Simulate an IBM-style superconducting hardware profile.
+class SCQubitSimulator(_SCProfileSimulator):
+    """Simulate FatQat's constrained superconducting reference profile.
 
     A thin statevector-method :py:class:`~fatqat.simulator.Simulator`
     specialization: same execution engine, same
@@ -282,7 +278,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         runtime: str = "numba",
         noise: NoiseModel | None = None,
     ) -> None:
-        """Create an IBM-style constrained simulator.
+        """Create a constrained superconducting simulator.
 
         Args:
             num_qubits: Number of integer-labeled device sites.
@@ -306,7 +302,7 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         super().__init__(
             method=method,
             runtime=runtime,
-            implementation_map=_fake_superconducting_ibm_implementation_map(couplings),
+            implementation_map=_sx_implementation_map(couplings),
             num_qubits=num_qubits,
             noise=noise,
         )
@@ -356,13 +352,13 @@ class SCQubitIBMSimulator(_SCQubitSimulator):
         return noise
 
 
-# --- Google-style backend: RX, RY, RZ, iSwap, CZ ---------------------------
+# --- private rotation profile: RX, RY, RZ, iSwap, CZ -----------------------
 
 
-def _fake_superconducting_google_implementation_map(
+def _rotation_implementation_map(
     couplings: tuple[tuple[int, int], ...] = DEFAULT_COUPLINGS,
 ) -> MatrixImplementationMap:
-    """Build the native gate map for a Google-style coupling graph.
+    """Build the native gate map for the private rotation coupling graph.
 
     `RX`, `RY`, and `RZ` are legal on any qubit label (registered uniformly
     via `add`); `iSwap` and `CZ` are legal only on supplied coupling
@@ -387,8 +383,8 @@ def _fake_superconducting_google_implementation_map(
     return m
 
 
-class SCQubitGoogleSimulator(_SCQubitSimulator):
-    """Simulate a Google-style superconducting hardware profile.
+class _SCQubitRotationSimulator(_SCProfileSimulator):
+    """Simulate the private rotation-based superconducting profile.
 
     A thin statevector-method :py:class:`~fatqat.simulator.Simulator`
     specialization: same execution engine, same
@@ -414,7 +410,7 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         runtime: str = "numba",
         noise: NoiseModel | None = None,
     ) -> None:
-        """Create a Google-style constrained simulator.
+        """Create the private rotation-profile simulator.
 
         Args:
             num_qubits: Number of integer-labeled device sites.
@@ -436,9 +432,7 @@ class SCQubitGoogleSimulator(_SCQubitSimulator):
         num_qubits = _validate_num_qubits(num_qubits)
         couplings = _normalize_couplings(num_qubits, couplings)
         super().__init__(
-            implementation_map=_fake_superconducting_google_implementation_map(
-                couplings
-            ),
+            implementation_map=_rotation_implementation_map(couplings),
             num_qubits=num_qubits,
             method=method,
             runtime=runtime,

@@ -5,12 +5,9 @@ from .na import NormalizeNaPass, normalize_na, normalize_na_program
 from .na_zap import ScheduleNaWithZapPass, schedule_na_with_zap, schedule_with_zap
 from .sc import NormalizeScPass, normalize_sc, normalize_sc_program
 from .sc_target import (
-    LowerScToGooglePass,
-    LowerScToIbmPass,
-    lower_sc_to_google,
-    lower_sc_to_google_program,
-    lower_sc_to_ibm,
-    lower_sc_to_ibm_program,
+    LowerScToNativePass,
+    lower_sc_to_native,
+    lower_sc_to_native_program,
 )
 
 __all__ = [
@@ -26,10 +23,7 @@ __all__ = [
     "ParseQasmPass",
     "parse_qasm",
     "snapshot_program",
-    "LowerScToGooglePass",
-    "LowerScToIbmPass",
-    "lower_sc_to_google",
-    "lower_sc_to_google_program",
-    "lower_sc_to_ibm",
-    "lower_sc_to_ibm_program",
+    "LowerScToNativePass",
+    "lower_sc_to_native",
+    "lower_sc_to_native_program",
 ]

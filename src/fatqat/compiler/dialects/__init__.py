@@ -39,14 +39,12 @@ from .sc_gate import (
     verify_sc_program,
 )
 from .sc_native import (
-    GoogleProgram,
-    IBMProgram,
     NativeGate,
     NativeInstruction,
     NativeMeasure,
     NativeReset,
-    verify_google_program,
-    verify_ibm_program,
+    SCNativeProgram,
+    verify_sc_native_program,
 )
 
 __all__ = [
@@ -81,12 +79,10 @@ __all__ = [
     "SCProgram",
     "SCWire",
     "verify_sc_program",
-    "GoogleProgram",
-    "IBMProgram",
     "NativeGate",
     "NativeInstruction",
     "NativeMeasure",
     "NativeReset",
-    "verify_google_program",
-    "verify_ibm_program",
+    "SCNativeProgram",
+    "verify_sc_native_program",
 ]

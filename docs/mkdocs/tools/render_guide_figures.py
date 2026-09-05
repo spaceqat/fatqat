@@ -32,8 +32,8 @@ HOME_SOURCES = (
         ("grover-circuit.png", "grover-general.png"),
     ),
     (
-        FIGURE_SOURCE_ROOT / "home_grover_google.py",
-        ("grover-google-profile.png",),
+        FIGURE_SOURCE_ROOT / "home_grover_sc.py",
+        ("grover-sc-profile.png",),
     ),
     (
         FIGURE_SOURCE_ROOT / "home_grover_transmon.py",

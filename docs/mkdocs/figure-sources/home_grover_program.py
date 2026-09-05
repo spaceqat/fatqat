@@ -1,4 +1,4 @@
-"""Build the one Grover Program shared by all three execution scripts."""
+"""Define Grover gate data and Programs for the homepage examples."""
 
 from collections import Counter
 from math import pi
@@ -41,7 +41,7 @@ FUSED_GATES = (
 
 
 def build_native_program():
-    """Build the fused Program accepted unchanged by all three backends."""
+    """Build the fused rotation Program shared by two execution examples."""
     program = fq.Program(3)
     rotations = {"RX": ops.RX, "RY": ops.RY, "RZ": ops.RZ}
     for gate in FUSED_GATES:

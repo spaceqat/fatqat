@@ -112,15 +112,6 @@ def test_lindblad_realization_registry_is_not_public():
         assert name not in fq.noise.__all__
 
 
-def test_constrained_targets_exported_under_simulator_namespace():
-    from fatqat.simulator import SCQubitGoogleSimulator, SCQubitIBMSimulator
-
-    assert fq.simulator.SCQubitGoogleSimulator is SCQubitGoogleSimulator
-    assert fq.simulator.SCQubitIBMSimulator is SCQubitIBMSimulator
-    assert not hasattr(fq, "SCQubitGoogleSimulator")
-    assert not hasattr(fq, "SCQubitIBMSimulator")
-
-
 def test_transmon_emulator_values_are_namespaced_under_emulator():
     from fatqat.emulator.superconducting import (
         TransmonCalibration,

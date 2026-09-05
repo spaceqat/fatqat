@@ -175,8 +175,7 @@ nav:
           - Simulators:
               - api/simulators/index.md
               - General simulator: api/simulator.md
-              - IBM superconducting profile: api/simulators/sc-qubit-ibm.md
-              - Google superconducting profile: api/simulators/sc-qubit-google.md
+              - Superconducting profile: api/simulators/sc-qubit.md
               - Atom-array profile: api/simulators/atom-array.md
           - Emulators:
               - api/emulators/index.md

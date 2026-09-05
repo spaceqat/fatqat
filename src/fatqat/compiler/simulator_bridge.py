@@ -9,22 +9,22 @@ from ..registers import ClassicalRegister, QuantumRegister
 from ..resource_layout import ResourceLayout
 from .dialects.na_zoned import GateBatch, ZonedPlan, verify_zoned_plan
 from .dialects.sc_native import (
-    GoogleProgram,
-    IBMProgram,
     NativeGate,
     NativeMeasure,
     NativeReset,
+    SCNativeProgram,
+    _RotationNativeProgram,
 )
 from .errors import ValidationError
 
 
 def to_sc_simulator_program(
-    native: IBMProgram | GoogleProgram,
+    native: SCNativeProgram,
 ) -> tuple[Program, ResourceLayout]:
     """Project an SC native program onto fixed simulator site references."""
 
-    if type(native) not in (IBMProgram, GoogleProgram):
-        raise TypeError("native must be IBMProgram or GoogleProgram")
+    if type(native) not in (SCNativeProgram, _RotationNativeProgram):
+        raise TypeError("native must be SCNativeProgram")
 
     sites: list[int | str] = []
 

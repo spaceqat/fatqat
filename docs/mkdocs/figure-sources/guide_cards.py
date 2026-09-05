@@ -63,7 +63,7 @@ def render(output: Path) -> tuple[str, ...]:
         for neighbor in (site + 1, site + 4)
         if neighbor < 12 and (neighbor != site + 1 or site % 4 != 3)
     )
-    profile = fq.simulator.SCQubitGoogleSimulator(
+    profile = fq.simulator.SCQubitSimulator(
         num_qubits=12,
         couplings=couplings,
         runtime="numpy",

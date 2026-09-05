@@ -80,18 +80,20 @@ question in front of you.
 
 </div>
 
-## One Grover Program, three execution models
+## One Grover algorithm, three execution models
 
-This three-qubit Grover `Program` begins with all eight bit strings equally
-likely. Two iterations mark `101` and amplify it. Its fused `RX` / `RY` / `RZ`
-/ `CZ` realization runs unchanged on all three targets below. The two physical
-models share the same `T1 = T2 = 200 µs` coherence assumption.
+This three-qubit Grover algorithm begins with all eight bit strings equally
+likely. Two iterations mark `101` and amplify it. The general simulator and
+Transmon emulator share its fused `RX` / `RY` / `RZ` / `CZ` Program. The
+superconducting profile compiles equivalent QASM into its `X` / `SX` / `RZ`
+/ `CZ` basis. The two noisy paths share the same `T1 = T2 = 200 µs`
+coherence assumption.
 
 <figure markdown="span">
 
 ![A compact three-qubit Grover search uses fused RY and RZ rotations with four logical Toffoli gates to amplify 101.](assets/generated/home/grover-circuit.png){ loading=lazy width=1100 height=318 }
 
-<figcaption>Adjacent single-qubit gates are fused into rotations; Toffoli stays logical. All three backends execute the same fused native Program.</figcaption>
+<figcaption>Adjacent single-qubit gates are fused into rotations; Toffoli stays logical. Each execution path uses a Program appropriate to its target.</figcaption>
 
 </figure>
 
@@ -103,13 +105,13 @@ models share the same `T1 = T2 = 200 µs` coherence assumption.
 
     Circuit-level evolution returns `101` with **94.53%** probability.
 
--   :material-memory:{ .lg .middle } **`SCQubitGoogleSimulator`**
+-   :material-memory:{ .lg .middle } **`SCQubitSimulator`**
 
-    ![The SCQubitGoogleSimulator result gives the target outcome 101 a probability of 86.36 percent with 200-microsecond coherence times and additional CZ depolarizing noise of 0.003 on both edges.](assets/generated/home/grover-google-profile.png){ loading=lazy width=714 height=515 }
+    ![The SCQubitSimulator result gives the target outcome 101 a probability of 86.15 percent with 200-microsecond coherence times and additional CZ depolarizing noise of 0.003 on both edges.](assets/generated/home/grover-sc-profile.png){ loading=lazy width=714 height=515 }
 
     With `T1 = T2 = 200 µs`, we add CZ depolarizing noise with `p = 0.003`
-    on both q0–q1 and q1–q2. Native-gate simulation then returns `101` with
-    **86.36%** probability.
+    on both q0–q1 and q1–q2. Compiled native-gate simulation then returns
+    `101` with **86.15%** probability.
 
 -   :material-sine-wave:{ .lg .middle } **`TransmonEmulator`**
 
@@ -120,10 +122,11 @@ models share the same `T1 = T2 = 200 µs` coherence assumption.
 
 </div>
 
-??? abstract "Shared `Program` — `home_grover_program.py`"
+??? abstract "Shared algorithm source — `home_grover_program.py`"
 
-    The compact logical view and the exact fused native Program live in this one
-    visible source. Every execution script below imports it unchanged.
+    The compact logical view and fused rotation data live in this visible
+    source. The general and Transmon scripts share the rotation Program; the SC
+    script builds equivalent QASM and compiles it to the canonical native basis.
 
     ```python
     --8<-- "docs/mkdocs/figure-sources/home_grover_program.py"
@@ -131,8 +134,9 @@ models share the same `T1 = T2 = 200 µs` coherence assumption.
 
 ??? example "Run each execution model independently"
 
-    Each tab is a top-to-bottom script. It imports the shared Program above,
-    while private plotting details stay out of the execution flow.
+    Each tab is a top-to-bottom script. It uses the algorithm representation
+    appropriate to its target, while private plotting details stay out of the
+    execution flow.
 
     === "General `Simulator`"
 
@@ -140,10 +144,10 @@ models share the same `T1 = T2 = 200 µs` coherence assumption.
         --8<-- "docs/mkdocs/figure-sources/home_grover_general.py"
         ```
 
-    === "`SCQubitGoogleSimulator`"
+    === "`SCQubitSimulator`"
 
         ```python
-        --8<-- "docs/mkdocs/figure-sources/home_grover_google.py"
+        --8<-- "docs/mkdocs/figure-sources/home_grover_sc.py"
         ```
 
     === "`TransmonEmulator`"

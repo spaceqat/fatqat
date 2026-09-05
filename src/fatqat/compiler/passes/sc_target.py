@@ -8,55 +8,58 @@ from collections.abc import Callable
 from ... import operations as ops
 from ...operations.fixed_gates import CZGate, SwapGate
 from ...operations.parametric_gates import RX, RZ
-from ...simulator import SCQubitGoogleSimulator, SCQubitIBMSimulator
+from ...simulator import SCQubitSimulator
+from ...simulator.fake_superconducting import _SCQubitRotationSimulator
 from ..algorithms import RouteSwap, SabreResult, SiteId, sabre_map
 from ..core import CompileContext
 from ..dialects.sc_gate import MeasureOp, SCNode, SCProgram
 from ..dialects.sc_native import (
-    GoogleProgram,
-    IBMProgram,
     NativeGate,
     NativeInstruction,
     NativeMeasure,
     NativeReset,
-    verify_google_program,
-    verify_ibm_program,
+    SCNativeProgram,
+    _RotationNativeProgram,
+    _verify_rotation_native_program,
+    verify_sc_native_program,
 )
 from ..errors import ValidationError
 
 
-def lower_sc_to_ibm_program(
+def lower_sc_to_native_program(
     source: SCProgram,
-    backend: SCQubitIBMSimulator,
+    backend: SCQubitSimulator,
     *,
     seed: int = 0,
-) -> IBMProgram:
-    """Route and lower one SC program to the IBM-style native basis."""
+) -> SCNativeProgram:
+    """Route and lower one SC program to the canonical native basis."""
 
-    if not isinstance(backend, SCQubitIBMSimulator):
-        raise TypeError("IBM lowering requires SCQubitIBMSimulator")
+    if not isinstance(backend, SCQubitSimulator):
+        raise TypeError("SC lowering requires SCQubitSimulator")
     routed = _route(source, backend, seed)
-    operations = _lower_events(source, routed, _lower_ibm_node, _ibm_swap)
-    target = IBMProgram(operations, routed.initial_layout, routed.final_layout)
-    verify_ibm_program(target)
+    operations = _lower_events(source, routed, _lower_sx_node, _sx_swap)
+    target = SCNativeProgram(operations, routed.initial_layout, routed.final_layout)
+    verify_sc_native_program(target)
     _verify_against_backend(target.operations, target.initial_layout, backend)
     return target
 
 
-def lower_sc_to_google_program(
+def _lower_sc_to_rotation_program(
     source: SCProgram,
-    backend: SCQubitGoogleSimulator,
+    backend: _SCQubitRotationSimulator,
     *,
     seed: int = 0,
-) -> GoogleProgram:
-    """Route and lower one SC program to the Google-style native basis."""
+) -> _RotationNativeProgram:
+    """Route and lower one SC program to the private rotation basis."""
 
-    if not isinstance(backend, SCQubitGoogleSimulator):
-        raise TypeError("Google lowering requires SCQubitGoogleSimulator")
+    if not isinstance(backend, _SCQubitRotationSimulator):
+        raise TypeError("rotation lowering requires _SCQubitRotationSimulator")
     routed = _route(source, backend, seed)
-    operations = _lower_events(source, routed, _lower_google_node, _google_swap)
-    target = GoogleProgram(operations, routed.initial_layout, routed.final_layout)
-    verify_google_program(target)
+    operations = _lower_events(source, routed, _lower_rotation_node, _rotation_swap)
+    target = _RotationNativeProgram(
+        operations, routed.initial_layout, routed.final_layout
+    )
+    _verify_rotation_native_program(target)
     _verify_against_backend(target.operations, target.initial_layout, backend)
     return target
 
@@ -131,7 +134,7 @@ def _lower_events(
     return tuple(operations)
 
 
-def _lower_ibm_node(
+def _lower_sx_node(
     node: SCNode, sites: tuple[SiteId, ...]
 ) -> tuple[tuple[object, tuple], ...]:
     instruction = node.instruction
@@ -148,22 +151,22 @@ def _lower_ibm_node(
     if type(instruction) in (RZ, CZGate):
         return ((instruction, sites),)
     if type(instruction) is SwapGate:
-        return _ibm_swap((sites[0], sites[1]))
+        return _sx_swap((sites[0], sites[1]))
     raise ValidationError(f"cannot lower SC instruction {type(instruction).__name__}")
 
 
-def _lower_google_node(
+def _lower_rotation_node(
     node: SCNode, sites: tuple[SiteId, ...]
 ) -> tuple[tuple[object, tuple], ...]:
     instruction = node.instruction
     if type(instruction) in (RX, RZ, CZGate):
         return ((instruction, sites),)
     if type(instruction) is SwapGate:
-        return _google_swap((sites[0], sites[1]))
+        return _rotation_swap((sites[0], sites[1]))
     raise ValidationError(f"cannot lower SC instruction {type(instruction).__name__}")
 
 
-def _ibm_h(site: SiteId) -> tuple[tuple[object, tuple[SiteId, ...]], ...]:
+def _sx_h(site: SiteId) -> tuple[tuple[object, tuple[SiteId, ...]], ...]:
     target = (site,)
     return (
         (ops.RZ(math.pi / 2), target),
@@ -172,7 +175,7 @@ def _ibm_h(site: SiteId) -> tuple[tuple[object, tuple[SiteId, ...]], ...]:
     )
 
 
-def _google_h(site: SiteId) -> tuple[tuple[object, tuple[SiteId, ...]], ...]:
+def _rotation_h(site: SiteId) -> tuple[tuple[object, tuple[SiteId, ...]], ...]:
     target = (site,)
     return (
         (ops.RZ(math.pi / 2), target),
@@ -189,25 +192,25 @@ def _cx(
     return lower_h(target) + ((ops.CZ, (control, target)),) + lower_h(target)
 
 
-def _ibm_swap(
+def _sx_swap(
     sites: tuple[SiteId, SiteId],
 ) -> tuple[tuple[object, tuple[SiteId, ...]], ...]:
     first, second = sites
     return (
-        _cx(first, second, _ibm_h)
-        + _cx(second, first, _ibm_h)
-        + _cx(first, second, _ibm_h)
+        _cx(first, second, _sx_h)
+        + _cx(second, first, _sx_h)
+        + _cx(first, second, _sx_h)
     )
 
 
-def _google_swap(
+def _rotation_swap(
     sites: tuple[SiteId, SiteId],
 ) -> tuple[tuple[object, tuple[SiteId, ...]], ...]:
     first, second = sites
     return (
-        _cx(first, second, _google_h)
-        + _cx(second, first, _google_h)
-        + _cx(first, second, _google_h)
+        _cx(first, second, _rotation_h)
+        + _cx(second, first, _rotation_h)
+        + _cx(first, second, _rotation_h)
     )
 
 
@@ -232,31 +235,31 @@ def _verify_against_backend(operations, initial_layout, backend) -> None:
             raise ValidationError("native instruction names a site outside backend")
 
 
-class LowerScToIbmPass:
-    name = "lower-sc-to-ibm"
+class LowerScToNativePass:
+    name = "lower-sc-to-native"
     source_type = SCProgram
-    target_type = IBMProgram
+    target_type = SCNativeProgram
 
-    def run(self, source: SCProgram, context: CompileContext) -> IBMProgram:
-        return lower_sc_to_ibm_program(
+    def run(self, source: SCProgram, context: CompileContext) -> SCNativeProgram:
+        return lower_sc_to_native_program(
             source,
             context.target,
             seed=context.options.get("seed", 0),
         )
 
 
-class LowerScToGooglePass:
-    name = "lower-sc-to-google"
+class _LowerScToRotationPass:
+    name = "lower-sc-to-rotation"
     source_type = SCProgram
-    target_type = GoogleProgram
+    target_type = _RotationNativeProgram
 
-    def run(self, source: SCProgram, context: CompileContext) -> GoogleProgram:
-        return lower_sc_to_google_program(
+    def run(self, source: SCProgram, context: CompileContext) -> _RotationNativeProgram:
+        return _lower_sc_to_rotation_program(
             source,
             context.target,
             seed=context.options.get("seed", 0),
         )
 
 
-lower_sc_to_ibm = LowerScToIbmPass()
-lower_sc_to_google = LowerScToGooglePass()
+lower_sc_to_native = LowerScToNativePass()
+_lower_sc_to_rotation = _LowerScToRotationPass()

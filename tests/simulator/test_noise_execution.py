@@ -6,7 +6,7 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep
-from fatqat.simulator import SCQubitIBMSimulator, Simulator
+from fatqat.simulator import SCQubitSimulator, Simulator
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     AmplitudeDamping,
@@ -532,7 +532,7 @@ def test_run_succeeds_when_valid_gate_selector_matches_no_occurrence():
     program.add(ops.RZ(0.1), 0)
     noise = NoiseModel()
     noise.add(Depolarizing(p=0.1), operation=ops.Y, targets=(15,))
-    backend = SCQubitIBMSimulator(noise=noise)
+    backend = SCQubitSimulator(noise=noise)
 
     result = backend.run(program).result()
     assert result is not None

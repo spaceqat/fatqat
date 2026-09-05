@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from ..simulator import SCQubitSimulator
 from .core import CompilationResult, CompileContext, Compiler, Pipeline
 from .dialects.logical_gate import LogicalProgram, verify_logical_program
 from .dialects.na_gate import NAProgram, verify_na_program
@@ -11,54 +12,46 @@ from .dialects.na_zoned import ZonedPlan, verify_zoned_plan
 from .dialects.qasm import QasmSource, verify_qasm_source
 from .dialects.sc_gate import SCProgram, verify_sc_program
 from .dialects.sc_native import (
-    GoogleProgram,
-    IBMProgram,
-    verify_google_program,
-    verify_ibm_program,
+    SCNativeProgram,
+    _RotationNativeProgram,
+    _verify_rotation_native_program,
+    verify_sc_native_program,
 )
 from .passes.qasm import parse_qasm
 from .passes.na import normalize_na
 from .passes.na_zap import schedule_with_zap
 from .passes.sc import normalize_sc
-from .passes.sc_target import lower_sc_to_google, lower_sc_to_ibm
+from .passes.sc_target import _lower_sc_to_rotation, lower_sc_to_native
 
-SC_FOUNDATION_PIPELINE = "qasm-to-sc"
-IBM_PIPELINE = "qasm-to-ibm"
-GOOGLE_PIPELINE = "qasm-to-google"
+SC_PIPELINE = "qasm-to-sc"
+_SC_ROTATION_PIPELINE = "qasm-to-sc-rotation"
 NA_PIPELINE = "qasm-to-na-zap"
 
 
 def create_sc_pipeline() -> Compiler:
-    """Create a compiler containing only the explicit QASM-to-SC foundation route."""
+    """Create the QASM-to-native superconducting compiler."""
 
     compiler = Compiler()
     compiler.register_ir(QasmSource, verify_qasm_source)
     compiler.register_ir(LogicalProgram, verify_logical_program)
     compiler.register_ir(SCProgram, verify_sc_program)
+    compiler.register_ir(SCNativeProgram, verify_sc_native_program)
     compiler.register_pipeline(
-        Pipeline(SC_FOUNDATION_PIPELINE, (parse_qasm, normalize_sc))
+        Pipeline(SC_PIPELINE, (parse_qasm, normalize_sc, lower_sc_to_native))
     )
     return compiler
 
 
-def create_ibm_pipeline() -> Compiler:
-    """Create the explicit QASM-to-IBM native pipeline."""
+def _create_sc_rotation_pipeline() -> Compiler:
+    """Create the private QASM-to-rotation-native compiler."""
 
     compiler = create_sc_pipeline()
-    compiler.register_ir(IBMProgram, verify_ibm_program)
+    compiler.register_ir(_RotationNativeProgram, _verify_rotation_native_program)
     compiler.register_pipeline(
-        Pipeline(IBM_PIPELINE, (parse_qasm, normalize_sc, lower_sc_to_ibm))
-    )
-    return compiler
-
-
-def create_google_pipeline() -> Compiler:
-    """Create the explicit QASM-to-Google native pipeline."""
-
-    compiler = create_sc_pipeline()
-    compiler.register_ir(GoogleProgram, verify_google_program)
-    compiler.register_pipeline(
-        Pipeline(GOOGLE_PIPELINE, (parse_qasm, normalize_sc, lower_sc_to_google))
+        Pipeline(
+            _SC_ROTATION_PIPELINE,
+            (parse_qasm, normalize_sc, _lower_sc_to_rotation),
+        )
     )
     return compiler
 
@@ -89,51 +82,35 @@ def _qasm_source(source: str | QasmSource, filename: str | None) -> QasmSource:
 
 def compile_qasm_to_sc(
     source: str | QasmSource,
+    backend: SCQubitSimulator,
     *,
-    emit: str = SCProgram.IR_ID,
-    filename: str | None = None,
-) -> CompilationResult:
-    """Compile numeric, static OpenQASM to the logical or unified SC boundary."""
-
-    qasm_source = _qasm_source(source, filename)
-    return create_sc_pipeline().compile(
-        qasm_source,
-        pipeline=SC_FOUNDATION_PIPELINE,
-        emit=emit,
-    )
-
-
-def compile_qasm_to_ibm(
-    source: str | QasmSource,
-    backend: object,
-    *,
-    emit: str = IBMProgram.IR_ID,
+    emit: str = SCNativeProgram.IR_ID,
     filename: str | None = None,
     seed: int = 0,
 ) -> CompilationResult:
-    """Compile static numeric OpenQASM to IBM native physical-site IR."""
+    """Compile static numeric OpenQASM to canonical SC native IR."""
 
-    return create_ibm_pipeline().compile(
+    return create_sc_pipeline().compile(
         _qasm_source(source, filename),
-        pipeline=IBM_PIPELINE,
+        pipeline=SC_PIPELINE,
         emit=emit,
         context=CompileContext(target=backend, options={"seed": seed}),
     )
 
 
-def compile_qasm_to_google(
+def _compile_qasm_to_sc_rotation(
     source: str | QasmSource,
     backend: object,
     *,
-    emit: str = GoogleProgram.IR_ID,
+    emit: str = _RotationNativeProgram.IR_ID,
     filename: str | None = None,
     seed: int = 0,
 ) -> CompilationResult:
-    """Compile static numeric OpenQASM to Google native physical-site IR."""
+    """Compile static numeric OpenQASM to private rotation-native IR."""
 
-    return create_google_pipeline().compile(
+    return _create_sc_rotation_pipeline().compile(
         _qasm_source(source, filename),
-        pipeline=GOOGLE_PIPELINE,
+        pipeline=_SC_ROTATION_PIPELINE,
         emit=emit,
         context=CompileContext(target=backend, options={"seed": seed}),
     )

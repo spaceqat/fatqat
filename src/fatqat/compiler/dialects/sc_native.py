@@ -1,4 +1,4 @@
-"""Physical-site IBM and Google native compiler IR."""
+"""Physical-site native compiler IR for superconducting targets."""
 
 from __future__ import annotations
 
@@ -41,8 +41,10 @@ NativeInstruction: TypeAlias = NativeGate | NativeMeasure | NativeReset
 
 
 @dataclass(frozen=True, slots=True)
-class IBMProgram:
-    IR_ID: ClassVar[str] = "sc.ibm.hardware.v1"
+class SCNativeProgram:
+    """Canonical physical-site program for the public SC target."""
+
+    IR_ID: ClassVar[str] = "sc.native.v1"
 
     operations: tuple[NativeInstruction, ...]
     initial_layout: LayoutSnapshot
@@ -50,35 +52,37 @@ class IBMProgram:
 
 
 @dataclass(frozen=True, slots=True)
-class GoogleProgram:
-    IR_ID: ClassVar[str] = "sc.google.hardware.v1"
+class _RotationNativeProgram:
+    """Physical-site program for the private rotation target."""
+
+    IR_ID: ClassVar[str] = "sc.rotation.native.v1"
 
     operations: tuple[NativeInstruction, ...]
     initial_layout: LayoutSnapshot
     final_layout: LayoutSnapshot
 
 
-def verify_ibm_program(program: object) -> None:
+def verify_sc_native_program(program: object) -> None:
     _verify_native_program(
         program,
-        IBMProgram,
+        SCNativeProgram,
         (XGate, SXGate, RZ, CZGate),
-        "IBM",
+        "SC",
     )
 
 
-def verify_google_program(program: object) -> None:
+def _verify_rotation_native_program(program: object) -> None:
     _verify_native_program(
         program,
-        GoogleProgram,
+        _RotationNativeProgram,
         (RX, RY, RZ, iSwapGate, CZGate),
-        "Google",
+        "rotation",
     )
 
 
 def _verify_native_program(
     program: object,
-    program_type: type[IBMProgram] | type[GoogleProgram],
+    program_type: type[SCNativeProgram] | type[_RotationNativeProgram],
     gate_types: tuple[type[Operation], ...],
     label: str,
 ) -> None:

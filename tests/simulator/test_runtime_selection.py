@@ -6,6 +6,7 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.simulator import Simulator
+from fatqat.simulator.fake_superconducting import _SCQubitRotationSimulator
 from fatqat.errors import BackendValidationError
 
 
@@ -36,8 +37,8 @@ def test_default_runtime_is_numba_for_every_method(method, engine_name):
     "backend_cls",
     [
         fq.simulator.AtomArraySimulator,
-        fq.simulator.SCQubitIBMSimulator,
-        fq.simulator.SCQubitGoogleSimulator,
+        fq.simulator.SCQubitSimulator,
+        _SCQubitRotationSimulator,
     ],
 )
 def test_fake_simulator_defaults_to_numba(backend_cls):

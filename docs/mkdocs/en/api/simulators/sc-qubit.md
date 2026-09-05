@@ -1,23 +1,22 @@
 ---
-title: "SCQubitGoogleSimulator"
+title: "SCQubitSimulator"
 ---
 
-# SCQubitGoogleSimulator
+# SCQubitSimulator
 
 
-[`SCQubitGoogleSimulator`][fatqat.simulator.SCQubitGoogleSimulator] applies the [`Simulator`][fatqat.simulator.Simulator] execution model
-to a configurable Google-style superconducting coupling graph. Use it to test
-native rotation gates and topology-constrained `iSwap`/`CZ` programs. It is not a
-model of a named Google processor and does not transpile, route, schedule, or
-reproduce hardware calibration data.
+[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] applies the [`Simulator`][fatqat.simulator.Simulator] execution model to
+a configurable synthetic superconducting coupling graph. Use it when native
+gates, capacity, and target connectivity matter. It does not transpile, route,
+schedule, or reproduce a named processor.
 
 **Hardware profile**
 
 | Property | Value |
 | --- | --- |
 | Default device | `num_qubits=16`; a 4×4 reference coupling graph |
-| Uniform native gates | [`fatqat.operations.RX`][fatqat.operations.RX], [`fatqat.operations.RY`][fatqat.operations.RY], [`fatqat.operations.RZ`][fatqat.operations.RZ] |
-| Connected native gates | [`fatqat.operations.iSwap`][fatqat.operations.iSwap] and [`fatqat.operations.CZ`][fatqat.operations.CZ] on the supplied couplings |
+| Uniform native gates | [`fatqat.operations.X`][fatqat.operations.X], [`fatqat.operations.SX`][fatqat.operations.SX], [`fatqat.operations.RZ`][fatqat.operations.RZ] |
+| Connected native gate | [`fatqat.operations.CZ`][fatqat.operations.CZ] on the supplied couplings |
 | Other built-in operations | Measurement and [`fatqat.operations.Reset`][fatqat.operations.Reset] follow the method rules described by [`Simulator`][fatqat.simulator.Simulator] |
 | Methods | All methods supported by [`Simulator`][fatqat.simulator.Simulator]; default `statevector` |
 | Runtime | `numba` by default; `numpy` is also supported |
@@ -26,7 +25,7 @@ reproduce hardware calibration data.
 ## Native gates and layout
 
 
-Device labels are row-major. On the default grid they are:
+The default row-major numbering is:
 
 ```text
  0   1   2   3
@@ -35,10 +34,10 @@ Device labels are row-major. On the default grid they are:
 12  13  14  15
 ```
 
-Both operand orders of every coupling are legal. Thus `iSwap` is accepted
-on device labels `(0, 1)` and `(1, 0)`, but not `(0, 5)` in the default data.
-`CZ` follows the same rule. The grid is only the default test topology;
-callers may provide any valid undirected coupling graph.
+Both operand orders of every coupling are legal, so `CZ` is accepted on
+device labels `(0, 1)` and `(1, 0)`, but not `(0, 5)` in the default data.
+The grid is only the default test topology; callers may provide any valid
+undirected coupling graph.
 
 With the automatic layout, a program maps all quantum registers to device labels
 `0, 1, ...` in declaration order. A [`GridRegister`][fatqat.GridRegister] is
@@ -47,24 +46,24 @@ define hardware placement. An explicit, complete
 [`ResourceLayout`][fatqat.ResourceLayout] can place program references differently.
 Capacity and the qubit-only restriction still apply.
 
-The backend does not decompose non-native operations. In particular,
-[`fatqat.operations.CX`][fatqat.operations.CX] and [`fatqat.operations.SX`][fatqat.operations.SX] are rejected.
-Inspect [`SCQubitGoogleSimulator.implementation_map`][fatqat.simulator.SCQubitGoogleSimulator.implementation_map] to see the gate set
-and legal operand tuples:
+The backend executes only programs already written in its native gate set.
+For example, [`fatqat.operations.CX`][fatqat.operations.CX] is rejected even on neighbouring
+qubits. Inspect [`SCQubitSimulator.implementation_map`][fatqat.simulator.SCQubitSimulator.implementation_map] instead of
+hard-coding these rules:
 
 ```python
 import fatqat as fq
 import fatqat.operations as ops
 
-backend = fq.simulator.SCQubitGoogleSimulator(
+backend = fq.simulator.SCQubitSimulator(
     num_qubits=5,
     couplings=((0, 1), (1, 2), (1, 3), (3, 4)),
 )
 native = backend.implementation_map
 
-assert native.supports(ops.RY)
-assert native.supports(ops.iSwap, device_operands=(1, 3))
-assert not native.supports(ops.iSwap, device_operands=(0, 3))
+assert native.supports(ops.SX)
+assert native.supports(ops.CZ, device_operands=(0, 1))
+assert not native.supports(ops.CZ, device_operands=(0, 3))
 ```
 
 `device_operands_for(operation)` returns an empty set for a gate available
@@ -79,7 +78,7 @@ built-in profile, request it explicitly:
 ```python
 import fatqat as fq
 
-Sim = fq.simulator.SCQubitGoogleSimulator
+Sim = fq.simulator.SCQubitSimulator
 backend = Sim(noise=Sim.default_noise_model())
 ```
 
@@ -91,23 +90,22 @@ simulator.
 
 | Operation | Duration | Noise |
 | --- | --- | --- |
-| `RX`, `RY`, `RZ` | 20 ns | T1/T2-derived amplitude and phase damping |
-| `iSwap` | 30 ns | Relaxation on each qubit, followed by joint depolarizing noise with `p = 0.001` |
+| `X`, `SX` | 20 ns | T1/T2-derived amplitude and phase damping |
+| `RZ` | 0 ns (virtual) | None |
 | `CZ` | 50 ns | Relaxation on each qubit, followed by joint depolarizing noise with `p = 0.001` |
 | Measurement | — | `P(report 1 \| true 0) = 0.02` and `P(report 0 \| true 1) = 0.04` |
 
-Unlike the IBM-style profile, `RZ` is a physical, noisy 20 ns rotation in
-this profile. See [Noise](../noise.md) for method-dependent channel execution.
+See [Noise](../noise.md) for how the selected simulation method applies this model.
 
 ## API
 
 
-[`Simulator.method`][fatqat.simulator.Simulator.method], [`SCQubitGoogleSimulator.implementation_map`][fatqat.simulator.SCQubitGoogleSimulator.implementation_map],
+[`Simulator.method`][fatqat.simulator.Simulator.method], [`SCQubitSimulator.implementation_map`][fatqat.simulator.SCQubitSimulator.implementation_map],
 [`Simulator.run`][fatqat.simulator.Simulator.run], [`Simulator.run_sweep`][fatqat.simulator.Simulator.run_sweep], and
 [`Simulator.validate_noise_model`][fatqat.simulator.Simulator.validate_noise_model] follow the general Simulator API and are
 included below for a complete class reference.
 
-::: fatqat.simulator.SCQubitGoogleSimulator
+::: fatqat.simulator.SCQubitSimulator
     options:
       inherited_members: true
       show_bases: false

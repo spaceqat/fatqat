@@ -9,12 +9,11 @@ loss. Pulse-resolved models are available from ``fatqat.emulator``.
 from __future__ import annotations
 
 from .fake_atom_array import AtomArraySimulator
-from .fake_superconducting import SCQubitGoogleSimulator, SCQubitIBMSimulator
+from .fake_superconducting import SCQubitSimulator
 from .simulator import Simulator
 
 __all__ = [
     "Simulator",
     "AtomArraySimulator",
-    "SCQubitGoogleSimulator",
-    "SCQubitIBMSimulator",
+    "SCQubitSimulator",
 ]

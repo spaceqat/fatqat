@@ -5,8 +5,8 @@ means by “run this.” The general simulator follows logical circuit evolution
 a hardware profile adds device rules; an emulator follows a physical model in
 time.
 
-The distinction is easiest to see when the `Program` does not change. This
-single-qubit rotation is understood by all three examples below:
+The distinction is easiest to see with equivalent single-qubit rotations.
+Each execution level uses the representation appropriate to its target:
 
 ```pycon
 >>> import numpy as np
@@ -38,17 +38,19 @@ single-qubit rotation is understood by all three examples below:
 === "Hardware profile"
 
     A hardware-profile simulator still evolves gates at circuit level, but first
-    checks that the program is native and physically placeable. `RX` is native to
-    the Google-style profile used here:
+    checks that the program is native and physically placeable. The canonical
+    superconducting profile expresses this half rotation as `SX`:
 
     ```pycon
-    >>> profile = fq.simulator.SCQubitGoogleSimulator(
+    >>> profile_program = fq.Program(1)
+    >>> profile_program.add(ops.SX, 0)
+    >>> profile = fq.simulator.SCQubitSimulator(
     ...     num_qubits=1,
     ...     couplings=(),
     ...     runtime="numpy",
     ... )
     >>> profile_result = profile.run(
-    ...     program,
+    ...     profile_program,
     ...     shots=0,
     ...     result_config={"final_state": True},
     ... ).result()
@@ -97,7 +99,8 @@ rules or continuous-time physics only when those details affect the result.
 ## Expect different capability checks
 
 All three paths accept a `Program`, return a `Job`, and expose data through a
-`Result`, but they do not accept the same instruction set.
+`Result`, but equivalent algorithms may require target-appropriate Programs
+because they do not accept the same instruction set.
 
 For example, the general simulator supports logical qudits and registers with
 mixed local dimensions. Current hardware profiles and pulse emulators accept

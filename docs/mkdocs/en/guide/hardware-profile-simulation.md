@@ -34,12 +34,12 @@ Bell Program uses convenient logical gates and has no device placement yet:
 True
 ```
 
-Now ask a Google-style superconducting profile about the same Program. The
+Now ask the constrained superconducting profile about the same Program. The
 profile can report whether it supports `H`, so you do not need to copy its
 gate table into application code:
 
 ```pycon
->>> profile = fq.simulator.SCQubitGoogleSimulator(
+>>> profile = fq.simulator.SCQubitSimulator(
 ...     num_qubits=6,
 ...     couplings=((0, 1), (1, 2), (3, 4), (4, 5),
 ...                (0, 3), (1, 4), (2, 5)),
@@ -70,8 +70,8 @@ a diagonal `CZ` that the grid does not provide:
 ```pycon
 >>> qubits = fq.QuantumRegister(2, name="q")
 >>> native = fq.Program([qubits])
->>> native.add(ops.RX(np.pi), qubits[0])
->>> native.add(ops.RX(np.pi), qubits[1])
+>>> native.add(ops.X, qubits[0])
+>>> native.add(ops.X, qubits[1])
 >>> native.add(ops.CZ, (qubits[0], qubits[1]))
 >>> bad_layout = fq.ResourceLayout({qubits[0]: 0, qubits[1]: 4})
 >>> try:
@@ -98,12 +98,12 @@ pulse dynamics require a physical emulator.
 
 ## Add reference noise deliberately
 
-The superconducting profiles are ideal unless a noise model is passed. Their
-packaged models are useful comparison baselines, not current hardware
-characterizations:
+The superconducting profile is ideal unless a noise model is passed. Its
+packaged model is a useful comparison baseline, not a current hardware
+characterization:
 
 ```python
-profile_type = fq.simulator.SCQubitGoogleSimulator
+profile_type = fq.simulator.SCQubitSimulator
 noisy_profile = profile_type(
     num_qubits=6,
     couplings=((0, 1), (1, 2), (3, 4), (4, 5),
@@ -113,8 +113,8 @@ noisy_profile = profile_type(
 )
 
 measured_native = fq.Program(2, 2)
-measured_native.add(ops.RX(np.pi), 0)
-measured_native.add(ops.RX(np.pi), 1)
+measured_native.add(ops.X, 0)
+measured_native.add(ops.X, 1)
 measured_native.add(ops.CZ, (0, 1))
 measured_native.measure_all()
 noisy_counts = noisy_profile.run(
@@ -130,13 +130,12 @@ question. `AtomArraySimulator` has no packaged reference noise model; pass a
 [`NoiseModel`][fatqat.NoiseModel] of your own when loading, loss, or other
 effects belong in the experiment.
 
-[`SCQubitIBMSimulator`][fatqat.simulator.SCQubitIBMSimulator] follows the same workflow
-with a different native gate family. Inspect the selected profile's
-implementation map, then make the Program and layout choices that it requires.
+Inspect the selected profile's implementation map, then make the Program and
+layout choices that it requires.
 
 ## Track atom occupancy and pairing { #atom-occupancy-and-pairing }
 
-Unlike the superconducting profiles, the atom array has no fixed geometry.
+Unlike the superconducting profile, the atom array has no fixed geometry.
 Program resources define sites that begin empty. `Put` loads
 the atoms, while `Pair` and `Unpair` reshape the connectivity on which `CZ`
 is legal:
