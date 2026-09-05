@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections import Counter
 from html.parser import HTMLParser
 
-from docs.mkdocs.tools import build_tutorials
-from docs.mkdocs.tools import render_guide_figures
-from docs.mkdocs.tools import validate_content
+from tools import build_tutorials
+from tools import render_guide_figures
+from tools import validate_content
 
 
 class _IdParser(HTMLParser):

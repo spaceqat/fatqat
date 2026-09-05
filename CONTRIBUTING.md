@@ -88,10 +88,11 @@ outweigh its likely benefit to the project.
 
 ## Code changes and validation
 
-Install fatqat in editable mode with the development and lint tools:
+Install fatqat in editable mode with the full test and lint environment:
 
 ```sh
-python -m pip install --editable . --group dev --group lint
+python -m pip install --upgrade pip
+python -m pip install --editable . --group test-full --group lint
 ```
 
 Run the narrowest relevant tests while developing a change. Before requesting
