@@ -49,7 +49,7 @@ print(result.get_counts())
 
 Only `00` and `11` appear: the measured bits agree because the two qubits are
 entangled. The
-[quickstart](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/quickstart/)
+[quickstart](https://fatqat.readthedocs.io/en/latest/guide/quickstart/)
 draws this Program, runs it, and turns the counts into a plot.
 
 ## Grow the same authoring model
@@ -61,27 +61,27 @@ features stay together instead of splitting into separate circuit and pulse
 languages.
 
 The
-[Program guide](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/program/)
+[Program guide](https://fatqat.readthedocs.io/en/latest/guide/program/)
 builds those ideas step by step.
-[Choose how much physics to model](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/execution-models/)
+[Choose how much physics to model](https://fatqat.readthedocs.io/en/latest/guide/execution-models/)
 then runs one unchanged rotation through all three execution levels.
 
 From there:
 
-- [Simulate a quantum program](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/simulation/) for states,
+- [Simulate a quantum program](https://fatqat.readthedocs.io/en/latest/guide/simulation/) for states,
   sampling, and parameter sweeps.
-- [Ask questions of a run](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/interpret-results/) for counts,
+- [Ask questions of a run](https://fatqat.readthedocs.io/en/latest/guide/interpret-results/) for counts,
   states, maps, and observables.
-- [Compare ideal and noisy execution](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/ideal-and-noisy/).
-- [Measure performance and scaling](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/performance/).
-- [Test a hardware profile](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/hardware-profile-simulation/).
-- [Follow a Program into physical dynamics](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/hamiltonian-emulation/),
+- [Compare ideal and noisy execution](https://fatqat.readthedocs.io/en/latest/guide/ideal-and-noisy/).
+- [Measure performance and scaling](https://fatqat.readthedocs.io/en/latest/guide/performance/).
+- [Test a hardware profile](https://fatqat.readthedocs.io/en/latest/guide/hardware-profile-simulation/).
+- [Follow a Program into physical dynamics](https://fatqat.readthedocs.io/en/latest/guide/hamiltonian-emulation/),
   then continue with the transmon or neutral-atom workflow.
-- [Connect OpenQASM and Qiskit](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/interoperability/).
+- [Connect OpenQASM and Qiskit](https://fatqat.readthedocs.io/en/latest/guide/interoperability/).
 
-The [tutorial gallery](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/tutorials/)
+The [tutorial gallery](https://fatqat.readthedocs.io/en/latest/tutorials/)
 contains longer algorithm and physics case studies. The
-[API reference](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/api/)
+[API reference](https://fatqat.readthedocs.io/en/latest/api/)
 contains the exact signatures, supported operations, shapes, units, and
 validation contracts.
 
