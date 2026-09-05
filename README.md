@@ -48,8 +48,9 @@ print(result.get_counts())
 ```
 
 Only `00` and `11` appear: the measured bits agree because the two qubits are
-entangled. The [quickstart](docs/mkdocs/en/guide/quickstart.md) draws this
-Program, runs it, and turns the counts into a plot.
+entangled. The
+[quickstart](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/quickstart/)
+draws this Program, runs it, and turns the counts into a plot.
 
 ## Grow the same authoring model
 
@@ -59,27 +60,30 @@ mixed local dimensions, circuit drawing, and direct physical controls. These
 features stay together instead of splitting into separate circuit and pulse
 languages.
 
-The [Program guide](docs/mkdocs/en/guide/program.md) builds those ideas step by
-step. [Choose how much physics to model](docs/mkdocs/en/guide/execution-models.md)
+The
+[Program guide](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/program/)
+builds those ideas step by step.
+[Choose how much physics to model](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/execution-models/)
 then runs one unchanged rotation through all three execution levels.
 
 From there:
 
-- [Simulate a quantum program](docs/mkdocs/en/guide/simulation.md) for states,
+- [Simulate a quantum program](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/simulation/) for states,
   sampling, and parameter sweeps.
-- [Ask questions of a run](docs/mkdocs/en/guide/interpret-results.md) for counts,
+- [Ask questions of a run](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/interpret-results/) for counts,
   states, maps, and observables.
-- [Compare ideal and noisy execution](docs/mkdocs/en/guide/ideal-and-noisy.md).
-- [Measure performance and scaling](docs/mkdocs/en/guide/performance.md).
-- [Test a hardware profile](docs/mkdocs/en/guide/hardware-profile-simulation.md).
-- [Follow a Program into physical dynamics](docs/mkdocs/en/guide/hamiltonian-emulation.md),
+- [Compare ideal and noisy execution](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/ideal-and-noisy/).
+- [Measure performance and scaling](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/performance/).
+- [Test a hardware profile](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/hardware-profile-simulation/).
+- [Follow a Program into physical dynamics](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/hamiltonian-emulation/),
   then continue with the transmon or neutral-atom workflow.
-- [Connect OpenQASM and Qiskit](docs/mkdocs/en/guide/interoperability.md).
+- [Connect OpenQASM and Qiskit](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/guide/interoperability/).
 
-The [tutorial sources](docs/mkdocs/tutorial-sources/en/) are longer algorithm
-and physics case studies assembled into the MkDocs gallery. The
-[API reference](docs/mkdocs/en/api/index.md) contains the exact signatures,
-supported operations, shapes, units, and validation contracts.
+The [tutorial gallery](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/tutorials/)
+contains longer algorithm and physics case studies. The
+[API reference](https://fatqat-fatqat.readthedocs-hosted.com/en/latest/api/)
+contains the exact signatures, supported operations, shapes, units, and
+validation contracts.
 
 ## Development
 
@@ -92,13 +96,14 @@ python -m pip install --editable . --group dev
 python -m pytest
 ```
 
-Before submitting a change, read [Contributing to fatqat](CONTRIBUTING.md),
+Before submitting a change, read
+[Contributing to FatQat](https://github.com/BoxiLi/fatqat/blob/main/CONTRIBUTING.md),
 including the policy for AI-assisted work. AI tools are permitted, but every
 contributor must understand, own, and lead the work they submit and the project
 conversations around it.
 
 For documentation changes, follow the
-[pinned setup and build workflow](docs/mkdocs/README.md).
+[pinned setup and build workflow](https://github.com/BoxiLi/fatqat/blob/main/docs/mkdocs/README.md).
 
 The main repository directories are:
 
