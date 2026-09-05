@@ -6,8 +6,8 @@ site_author: FatQat contributors
 copyright: Copyright &copy; 2026 FatQat contributors
 
 site_url: !ENV [READTHEDOCS_CANONICAL_URL, "http://127.0.0.1:8000/"]
-repo_name: BoxiLi/fatqat
-repo_url: https://github.com/BoxiLi/fatqat
+repo_name: spaceqat/fatqat
+repo_url: https://github.com/spaceqat/fatqat
 edit_uri: edit/main/docs/mkdocs/en/
 
 docs_dir: docs/mkdocs/en

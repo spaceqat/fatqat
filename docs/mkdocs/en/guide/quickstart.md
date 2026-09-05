@@ -10,7 +10,7 @@ FatQat is not yet published on PyPI. Clone the repository, create an isolated
 environment, and install the checkout:
 
 ```bash
-git clone https://github.com/BoxiLi/fatqat.git
+git clone https://github.com/spaceqat/fatqat.git
 cd fatqat
 python -m venv .venv
 ```

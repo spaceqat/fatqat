@@ -20,7 +20,7 @@ FatQat requires Python 3.12 or newer and is not yet published on PyPI. Install
 it from a source checkout:
 
 ```sh
-git clone https://github.com/BoxiLi/fatqat.git
+git clone https://github.com/spaceqat/fatqat.git
 cd fatqat
 python -m pip install .
 ```
@@ -97,13 +97,13 @@ python -m pytest
 ```
 
 Before submitting a change, read
-[Contributing to FatQat](https://github.com/BoxiLi/fatqat/blob/main/CONTRIBUTING.md),
+[Contributing to FatQat](https://github.com/spaceqat/fatqat/blob/main/CONTRIBUTING.md),
 including the policy for AI-assisted work. AI tools are permitted, but every
 contributor must understand, own, and lead the work they submit and the project
 conversations around it.
 
 For documentation changes, follow the
-[pinned setup and build workflow](https://github.com/BoxiLi/fatqat/blob/main/docs/mkdocs/README.md).
+[pinned setup and build workflow](https://github.com/spaceqat/fatqat/blob/main/docs/mkdocs/README.md).
 
 The main repository directories are:
 
