@@ -1,8 +1,29 @@
 [project]
 name = "fatqat"
 dynamic = ["version"]
-description = "Quantum noisy simulator (MVP Phase 1)"
+readme = "README.md"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "FatQat contributors"}]
+keywords = [
+    "quantum computing",
+    "quantum simulation",
+    "quantum circuits",
+    "quantum noise",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
     "numpy>=1.26",
     "numba>=0.59",
