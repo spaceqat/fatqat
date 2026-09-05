@@ -96,8 +96,6 @@ coherence assumption.
 
 ![A compact three-qubit Grover search uses fused RY and RZ rotations with four logical Toffoli gates to amplify 101.](assets/generated/home/grover-circuit.png){ loading=lazy width=1100 height=318 }
 
-<figcaption>Adjacent single-qubit gates are fused into rotations; Toffoli stays logical. Each execution path uses a Program appropriate to its target.</figcaption>
-
 </figure>
 
 <div class="grid cards" markdown>
