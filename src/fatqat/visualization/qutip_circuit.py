@@ -420,6 +420,40 @@ def _render_text(circuit, **kwargs) -> str:
         _barrier_parts = (" ┊ ", "─┊─", " ┊ ")
         _barrier_width = len(_barrier_parts[0])
 
+        def _update_qbridge(self, gate, wire_list_control, width, is_top):
+            has_virtual_classical_wire = any(wire < 0 for wire in wire_list_control)
+            if _gate_api() != _API_STRING or not has_virtual_classical_wire:
+                super()._update_qbridge(gate, wire_list_control, width, is_top)
+                return
+
+            left_width = width // 2
+            right_width = width // 2 - 1
+            vertical = " " * left_width + "║" + " " * right_width
+            quantum_bridge = "─" * left_width + "║" + "─" * right_width
+            classical_bridge = "═" * left_width + "║" + "═" * right_width
+            quantum_node = "─" * left_width + "█" + "─" * right_width
+            classical_node = "═" * left_width + "█" + "═" * right_width
+
+            for wire in wire_list_control:
+                if wire in gate.targets:
+                    continue
+                if wire in gate.controls:
+                    node = classical_node if wire < 0 else quantum_node
+                    self._render_strs["mid_frame"][wire] += node
+                    self._render_strs["top_frame"][wire] += (
+                        vertical if not is_top else " " * width
+                    )
+                    self._render_strs["bot_frame"][wire] += (
+                        vertical if is_top else " " * width
+                    )
+                    continue
+
+                self._render_strs["top_frame"][wire] += vertical
+                self._render_strs["mid_frame"][wire] += (
+                    classical_bridge if wire < 0 else quantum_bridge
+                )
+                self._render_strs["bot_frame"][wire] += vertical
+
         def _draw_singleq_gate(self, gate_name):
             if gate_name == _BARRIER_RENDER_LABEL:
                 return self._barrier_parts, self._barrier_width

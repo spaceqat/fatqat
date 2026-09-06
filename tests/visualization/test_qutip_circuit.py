@@ -246,6 +246,23 @@ def test_text_renderer_draws_feedforward_condition():
     assert "█" in classical_line
 
 
+def test_text_renderer_preserves_classical_wires_across_a_condition():
+    program = fq.Program(1, 3)
+    program.add(ops.X, 0, condition=(0, 1))
+
+    text = program.draw("text")
+    classical_lines = {
+        line.lstrip().split(" ", maxsplit=1)[0]: line
+        for line in text.splitlines()
+        if line.lstrip().startswith(("c0 ", "c1 ", "c2 "))
+    }
+
+    assert "█" in classical_lines["c0"]
+    assert "║" in classical_lines["c1"]
+    assert "║" in classical_lines["c2"]
+    assert all("═" in line and "─" not in line for line in classical_lines.values())
+
+
 def test_matplotlib_renderer_returns_a_savable_figure():
     figure = _bell().draw()
     try:

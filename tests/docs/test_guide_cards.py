@@ -23,6 +23,17 @@ def _load_figure_renderer():
 figure_renderer = _load_figure_renderer()
 
 
+def test_inline_text_output_is_captured_verbatim(tmp_path):
+    figure_renderer._render_inline_example(
+        "output",
+        "example.txt",
+        'print("generated output", end="")',
+        tmp_path,
+    )
+
+    assert (tmp_path / "example.txt").read_text(encoding="utf-8") == "generated output"
+
+
 def test_guide_card_renderer_runs_against_current_simulator_api(tmp_path):
     rendered = figure_renderer._load_card_renderer()(tmp_path)
 

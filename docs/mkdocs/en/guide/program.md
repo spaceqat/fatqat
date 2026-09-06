@@ -209,18 +209,24 @@ print(diagram)
 ```
 
 ```text
-                      ┌───────────┐           ┌───┐
- q1 :─────────────────┤ X if c0=1 ├───────────┤ M ├───
-                      └─────┬─────┘           └─╥─┘
-        ┌───┐  ┌───┐        │        ┌─────┐    ║
- q0 :───┤ H ├──┤ M ├────────│────────┤ |0> ├────║─────
-        └───┘  └─╥─┘        │        └─────┘    ║
-                 ║          │                   ║
- c1 :════════════║═══───────│──────═════════════╩═════
-                 ║          │
-                 ║          │
- c0 :════════════╩═══───────█──────═══════════════════
+--8<-- "docs/mkdocs/en/assets/generated/guide/program-drawing.txt"
 ```
+
+??? example "Reproduce this output"
+
+    ```python
+    import fatqat as fq
+    import fatqat.operations as ops
+
+    program = fq.Program(2, 2)
+    program.add(ops.H, 0)
+    program.measure(0, 0)
+    program.add(ops.X, 1, condition=(0, 1))
+    program.add(ops.Reset, 0)
+    program.measure(1, 1)
+
+    print(program.draw("text"), end="")
+    ```
 
 The condition appears directly on `X`, and the vertical connector shows that
 classical bit 0 controls whether the gate is applied.
