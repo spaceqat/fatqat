@@ -199,6 +199,43 @@ perturb the state or remove an atom from the array.
     print(counts)  # {'10': 8}
     ```
 
+[`Loss`][fatqat.noise.Loss] models the second outcome. It removes a present atom
+after a matched operation. Occupancy is tracked independently for every shot,
+and measuring an empty site returns the erasure digit `2`.
+
+<figure markdown="span">
+
+![An occupied atom undergoes a matched operation, after which Loss either leaves it present with probability one minus p or removes it with probability p; measurement of the empty site returns 2.](assets/generated/guide/atom-loss-lifecycle.svg){ loading=lazy width=960 height=306 }
+
+<figcaption>Loss is sampled after the matched operation and changes per-shot occupancy.</figcaption>
+
+</figure>
+
+??? example "Simulate atom loss"
+
+    `Loss(p=0.1)` is sampled after `RX`. Surviving atoms return `1`; lost
+    atoms return `2`.
+
+    ```python
+    import numpy as np
+    import fatqat as fq
+    import fatqat.operations as ops
+
+    loss_model = fq.NoiseModel()
+    loss_model.add(fq.noise.Loss(p=0.1), operation=ops.RX)
+
+    lossy_atoms = fq.Program(1, 1)
+    lossy_atoms.add(ops.Put, 0)
+    lossy_atoms.add(ops.RX(np.pi), 0)
+    lossy_atoms.measure_all()
+
+    lossy_counts = fq.simulator.AtomArraySimulator(noise=loss_model).run(
+        lossy_atoms,
+        shots=100,
+        simulation_config={"seed": 7},
+    ).result().get_counts()
+    print(lossy_counts)  # {'1': 86, '2': 14}
+    ```
 [:octicons-arrow-right-24: Track occupancy, pairing, and loss](guide/hardware-profile-simulation.md#atom-occupancy-and-pairing)
 
 ## Explore the documentation

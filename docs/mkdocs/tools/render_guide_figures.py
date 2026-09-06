@@ -25,6 +25,10 @@ GUIDE_SOURCES = (
         FIGURE_SOURCE_ROOT / "atom_pairing_lifecycle.py",
         ("atom-pairing-lifecycle.svg",),
     ),
+    (
+        FIGURE_SOURCE_ROOT / "atom_loss_lifecycle.py",
+        ("atom-loss-lifecycle.svg",),
+    ),
 )
 HOME_SOURCES = (
     (
