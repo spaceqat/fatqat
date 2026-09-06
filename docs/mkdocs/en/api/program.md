@@ -17,10 +17,10 @@ dimensions, placement, and feedforward.
 import fatqat as fq
 import fatqat.operations as ops
 
-bell = fq.Program(2, 2, metadata={"name": "bell"})
-bell.add(ops.H, 0)
-bell.add(ops.CX, (0, 1))
-bell.measure_all()
+program = fq.Program(2, 2, metadata={"name": "bell"})
+program.add(ops.H, 0)
+program.add(ops.CX, (0, 1))
+program.measure_all()
 ```
 
 ## Registers

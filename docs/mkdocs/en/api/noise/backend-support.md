@@ -25,9 +25,10 @@ limits when it runs a concrete program.
 ## Simulators
 
 
-[`Simulator`][fatqat.simulator.Simulator], the two superconducting profiles, and
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] share these channel rules. The
-profiles may impose additional operation, placement, and dimension limits.
+[`Simulator`][fatqat.simulator.Simulator],
+[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator], and
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] share these channel rules. The two hardware profiles may impose
+additional operation, placement, and dimension limits.
 
 **Built-in simulator channels**
 
@@ -39,7 +40,7 @@ profiles may impose additional operation, placement, and dimension limits.
 | [`TransitionRelaxation`][fatqat.noise.TransitionRelaxation] `(p)` | **Built in.** Applies one explicit local jump; matching declarations are applied sequentially in registration order. |
 | [`PhaseDamping`][fatqat.noise.PhaseDamping] `(p)` | **Built in.** Applies to one selected operand of any finite local dimension. |
 | Built-in rate forms and [`ThermalRelaxation`][fatqat.noise.ThermalRelaxation] | **Unsupported.** Simulators have no physical timeline and do not convert rates or times into a channel application. |
-| [`ReadoutConfusion`][fatqat.noise.ReadoutConfusion] | **Built in.** Applies universally or to one measured operand. The matrix size must equal the reported digit dimension; the superconducting profiles therefore require `2 x 2`. |
+| [`ReadoutConfusion`][fatqat.noise.ReadoutConfusion] | **Built in.** Applies universally or to one measured operand. The matrix size must equal the reported digit dimension; [`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] therefore requires `2 x 2`. |
 
 [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] also supports
 [`Loss`][fatqat.noise.Loss], sampling each selected carrier that is present
