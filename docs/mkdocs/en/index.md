@@ -5,24 +5,24 @@ hide:
   - toc
 description: Build one FatQat Program and choose the physical detail each quantum study needs.
 hero:
-  eyebrow: Quantum SDK
+  eyebrow: Model and execute quantum programs
   title: One Program. Three levels of physical detail.
   summary: >-
-    Write a quantum computation once. Then study logical behavior, test device
-    constraints, or follow time-dependent physical dynamics without changing
-    authoring models.
+    Write a quantum program once.
+    Use the same Program to explore algorithm behavior,
+    test device constraints, or follow time-dependent physical dynamics.
   primary_action: Build your first Program
   secondary_action: Compare execution levels
   install_action: Install from source
-  structure_alt: One FatQat Program runs through general simulation, a hardware profile, or Hamiltonian emulation, with every path returning a Result.
+  structure_alt: One FatQat Program runs through general simulation, hardware-profile simulation, or Hamiltonian emulation, with every path returning a Result.
   choice_label: Choose one execution level
   general_title: General simulation
   general_detail: states · counts · noise
-  hardware_title: Hardware profile
-  hardware_detail: native gates · topology
+  hardware_title: Hardware-profile simulation
+  hardware_detail: native gates · connectivity
   hamiltonian_title: Hamiltonian emulation
   hamiltonian_detail: pulses · leakage · dynamics
-  visual_note: Author once, then choose the detail at run time.
+  visual_note: Start with one Program, then choose the physical detail at run time.
 ---
 
 > **Development status:** FatQat is under active development, and its interfaces
@@ -32,7 +32,7 @@ hero:
 
 <div class="grid cards" markdown>
 
--   :material-code-braces-box:{ .lg .middle } **One authoring model**
+-   :material-code-braces-box:{ .lg .middle } **One quantum program**
 
     Keep gates, measurements, conditions, parameters, qudits, and direct
     controls in a single `Program`.
@@ -44,7 +44,7 @@ hero:
 
 -   :material-transit-connection-variant:{ .lg .middle } **One execution workflow**
 
-    Every target accepts a `Program` and uses the same `Job` / `Result`
+    Every backend accepts a `Program` and uses the same `Result`
     interface, while validating what it can realize.
 
 </div>
@@ -61,7 +61,7 @@ question in front of you.
 
     ---
 
-    Inspect states, counts, and noise when logical behavior is the question.
+    Inspect states, counts, and channel noise when algorithm behavior is the question.
 
     [:octicons-arrow-right-24: Study simulation](guide/simulation.md)
 
@@ -69,7 +69,7 @@ question in front of you.
 
     ---
 
-    Add native gates and topology when device constraints matter.
+    Add native gates and connectivity when device constraints matter.
 
     [:octicons-arrow-right-24: Model a hardware profile](guide/hardware-profile-simulation.md)
 
@@ -77,24 +77,23 @@ question in front of you.
 
     ---
 
-    Follow pulses, leakage, and dynamics when physical behavior matters.
+    Follow pulse dynamics, leakage, crosstalk, and non-Markovian effects when
+    physical behavior matters.
 
     [:octicons-arrow-right-24: Follow physical dynamics](guide/hamiltonian-emulation.md)
 
 </div>
 
-## One Grover algorithm, three execution models
+## One Grover algorithm, three execution levels
 
-This three-qubit Grover algorithm begins with all eight bit strings equally
-likely. Two iterations mark `101` and amplify it. The general simulator and
-Transmon emulator share its fused `RX` / `RY` / `RZ` / `CZ` Program. The
-superconducting profile compiles equivalent QASM into its `X` / `SX` / `RZ`
-/ `CZ` basis. The two noisy paths share the same `T1 = T2 = 200 µs`
-coherence assumption.
+This three-qubit Grover search begins with all eight bit strings equally
+likely. Two iterations mark `101` and amplify it. The results below show how
+three execution levels change the outcome as hardware constraints and physical
+dynamics are introduced.
 
 <figure markdown="span">
 
-![A compact three-qubit Grover search uses fused RY and RZ rotations with four logical Toffoli gates to amplify 101.](assets/generated/home/grover-circuit.png){ loading=lazy width=1100 height=318 }
+![A compact three-qubit Grover search uses fused RY and RZ rotations with four Toffoli gates to amplify 101.](assets/generated/home/grover-circuit.png){ loading=lazy width=1100 height=318 }
 
 </figure>
 
@@ -110,8 +109,7 @@ coherence assumption.
 
     ![The SCQubitSimulator result gives the target outcome 101 a probability of 86.15 percent with 200-microsecond coherence times and additional CZ depolarizing noise of 0.003 on both edges.](assets/generated/home/grover-sc-profile.png){ loading=lazy width=714 height=515 }
 
-    With `T1 = T2 = 200 µs`, we add CZ depolarizing noise with `p = 0.003`
-    on both q0–q1 and q1–q2. Compiled native-gate simulation then returns
+    With `T1 = T2 = 200 µs`, we add CZ depolarizing noise with `p = 0.003`. Compiled native-gate simulation then returns
     `101` with **86.15%** probability.
 
 -   :material-sine-wave:{ .lg .middle } **`TransmonEmulator`**
@@ -120,12 +118,13 @@ coherence assumption.
 
     Calibrated pulses, three physical levels, and the same coherence times
     return `101` with about **68.5%** probability; physical leakage is **0.0446%**.
+    Most of the error comes from imperfect `iSWAP` gates.
 
 </div>
 
 ??? abstract "Shared algorithm source — `home_grover_program.py`"
 
-    The compact logical view and fused rotation data live in this visible
+    The compact circuit view and fused rotation data live in this visible
     source. The general and Transmon scripts share the rotation Program; the SC
     script builds equivalent QASM and compiles it to the canonical native basis.
 
@@ -157,13 +156,17 @@ coherence assumption.
         --8<-- "docs/mkdocs/figure-sources/home_grover_transmon.py"
         ```
 
-## Program a reconfigurable atom array
+## Encode hardware behavior when needed
 
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] brings explicit
-loading and reconfigurable connectivity into the `Program` model. Sites begin
-empty, so `Put` loads the atoms; `Pair` then makes native `CZ` available, and
-`Unpair` closes that connection again. Optional movement noise can follow the
-pairing operations.
+Algorithm developers can stay with general simulation. When their work requires
+more detail, compiler and hardware developers can add device-specific operations
+to a `Program`. The backend validates when those operations are allowed and
+tracks their effects.
+
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] provides one example.
+Sites begin empty, so `Put` loads the atoms; `Pair` makes native `CZ` available,
+and `Unpair` removes that connection. Noise attached to these operations can
+perturb the state or remove an atom from the array.
 
 <figure markdown="span">
 

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://squidfunk.github.io/mkdocs-material/schema.json
 
 site_name: FatQat
-site_description: Model quantum programs from logical circuits to physical dynamics
+site_description: Model quantum programs across simulation, hardware constraints, and physical dynamics
 site_author: FatQat contributors
 copyright: Copyright &copy; 2026 FatQat contributors
 
