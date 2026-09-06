@@ -27,7 +27,9 @@ index:
 category_order:
   - foundations
   - algorithms
+  - optimization
   - neutral-atom-physics
+  - power-systems
 
 categories:
   foundations:
@@ -42,9 +44,21 @@ categories:
       description: >-
         Use parameterized programs, optimizers, sweeps, and estimators to answer
         chemistry and machine-learning questions.
+  optimization:
+    en:
+      title: Optimization
+      description: >-
+        Model a constrained combinatorial problem as a QUBO, map it onto a
+        Hamiltonian, and solve it variationally.
   neutral-atom-physics:
     en:
       title: Neutral-atom physics
       description: >-
         Move from programmable connectivity to continuous-time Rydberg dynamics and
         constrained many-body evolution.
+  power-systems:
+    en:
+      title: Power systems
+      description: >-
+        Apply the QUBO and QAOA machinery to grid operation problems, where the
+        encoding decides whether a network fits on the device at all.
