@@ -95,6 +95,10 @@ python -m pip install --upgrade pip
 python -m pip install --editable . --group test-full --group lint
 ```
 
+The `test-full` group includes the core `dev` tests and optional integration
+dependencies. Use `dev` alone only for lightweight local work that does not need
+those integrations.
+
 Run the narrowest relevant tests while developing a change. Before requesting
 review, run the full test and lint checks:
 
