@@ -6,10 +6,6 @@
 
 <!-- Link related items. Use "Fixes #1184" when the PR should close an issue. -->
 
-## Validation
-
-<!-- List the tests or checks performed and their results. -->
-
 ## AI Tools Usage Disclosure
 
 **AI tools used:** `None`
