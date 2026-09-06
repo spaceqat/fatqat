@@ -74,7 +74,7 @@ an arbitrary state `psi`, a matrix acting on every subsystem satisfies
 
 
 `runtime` is chosen when the backend is created. `"numba"` is the default for
-[`Simulator`][fatqat.simulator.Simulator] and all three hardware profiles,
+[`Simulator`][fatqat.simulator.Simulator] and both hardware profiles,
 including [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator]. It
 compiles kernels on first use and supports threaded kernels. `"numpy"` runs
 directly without compilation. Both runtimes support the methods offered by

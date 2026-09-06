@@ -34,6 +34,12 @@ dependencies = [
     "scipy>=1.12,<2",
 ]
 
+[project.urls]
+Homepage = "https://github.com/spaceqat/fatqat"
+Documentation = "https://fatqat.readthedocs.io/en/latest/"
+Repository = "https://github.com/spaceqat/fatqat"
+Issues = "https://github.com/spaceqat/fatqat/issues"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -104,10 +104,10 @@ structure; it does not run the Program.
 ## Run it
 
 The general-purpose simulator follows the Program's logical circuit
-evolution. `run()` submits the Program and returns a
-[`job`][fatqat.Job]. Calling `job.result()` waits for completion and
-gives you a [`Result`][fatqat.Result] containing the requested
-outputs:
+evolution. `run()` executes the Program and returns a completed
+[`Job`][fatqat.Job]. Calling `job.result()` returns a
+[`Result`][fatqat.Result] containing the requested outputs, or raises the
+recorded execution error:
 
 ```pycon
 >>> backend = fq.simulator.Simulator()

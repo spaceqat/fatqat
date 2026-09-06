@@ -4,6 +4,9 @@ FatQat is a quantum-computing toolkit built around one authoring interface:
 `Program`. Write the computation once, then choose how closely to model the
 machine beneath it.
 
+> **Development status:** FatQat is under active development, and its interfaces
+> may change between releases. Pin an exact version when reproducibility matters.
+
 | Execution level | Start here when you want to… |
 | --- | --- |
 | General simulation | study logical states, samples, observables, noise, or parameter sweeps |
