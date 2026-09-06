@@ -1,20 +1,19 @@
 # Write quantum computations with Program
 
-[`Program`][fatqat.Program] is the object you build and pass to every FatQat
-backend. If you are used to a `Circuit` class, this is the object you are
-looking for. FatQat uses the broader name because a Program can describe more
-than circuit gates: measurements and classical conditions, symbolic
-parameters, qubits and qudits, and direct physical controls. It records the
-logical system and its instructions in execution order without choosing how a
-backend will execute them.
+[`Program`][fatqat.Program] is what you build and pass to every FatQat
+backend. If you are used to a `Circuit` class, this is FatQat's broader
+equivalent: it can contain circuit gates, measurements, classical conditions,
+symbolic parameters, qubits and qudits, and direct physical controls. A Program
+records its resources and ordered instructions without deciding how a backend
+will execute them.
 
-Start with a familiar qubit circuit, then add registers, feedforward,
-parameters, mixed local dimensions, drawing, and direct controls without
-changing the authoring pattern.
+This chapter begins with a small qubit circuit, then introduces registers,
+feedforward, reusable parameters, mixed local dimensions, drawing, and direct
+controls.
 
-## Declare the logical system
+## Declare the program's resources
 
-For a small qubit circuit, counts are convenient shorthand:
+For a small program, pass the number of quantum and classical slots directly:
 
 ```python
 import fatqat as fq
@@ -22,8 +21,8 @@ import fatqat as fq
 program = fq.Program(2, 2)  # two qubits and two classical bits
 ```
 
-Explicit registers give resources useful names and become necessary when a
-Program contains more than one register:
+As a Program grows, explicit registers give its resources useful names and let
+it contain more than one quantum or classical register:
 
 ```pycon
 >>> import fatqat as fq
@@ -33,13 +32,13 @@ Program contains more than one register:
 >>> program = fq.Program([data], [readout])
 ```
 
-Indexing a register returns a reference to one of its slots. Explicit
-references such as `data[0]` remain unambiguous as the Program grows; a bare
-integer is only convenient when there is exactly one register of that kind.
+Indexing a register identifies one of its slots. Explicit references such as
+`data[0]` remain unambiguous as the Program grows. Use a bare integer only
+when the Program has a single register of that kind.
 
 !!! tip "Need rows and columns?"
 
-    A [`GridRegister`][fatqat.GridRegister] adds logical row and column selections:
+    A [`GridRegister`][fatqat.GridRegister] adds row and column views:
 
     ```pycon
     >>> grid = fq.GridRegister(2, 3, name="grid")
@@ -47,9 +46,9 @@ integer is only convenient when there is exactly one register of that kind.
     >>> grid_program.add(ops.RX(0.2), grid.row(1))
     ```
 
-    The row is a grouped target for this operation. It describes logical
-    structure, not a placement on physical hardware; placement is chosen when the
-    Program is executed.
+    The row view groups several targets for one operation. It describes
+    structure inside the Program, not placement on a physical device. Choose
+    physical placement when executing the Program.
 
 ## Compose operations in order
 
@@ -61,19 +60,19 @@ Add operations in the order they should occur:
 >>> program.add(ops.CX, (data[0], data[1]))
 ```
 
-Fixed gates such as `H` and `CX` are ready-to-use values. Parameterized gates
-such as `RY` are created with their numeric argument. A multi-target operation
-receives one tuple in operand order; for `CX`, the control comes first and the
-target second.
+Fixed gates such as `H` and `CX` can be added directly. Create a
+parameterized gate such as `RY` by passing its angle. For an operation with
+several targets, pass one tuple in operand order. For `CX`, the control comes
+first and the target second.
 
 These few operations illustrate the calling pattern. The
 [operations API reference](../api/operations.md) lists the complete
 operation set and exact definitions.
 
-## Observe and react inside a Program
+## Use mid-circuit measurement and feedforward
 
-Measurement is another ordered instruction. It can finish a circuit, or it
-can supply a classical value to a later condition:
+A measurement is an ordered Program instruction, just like a gate. It can end
+a circuit or store a value that controls a later operation:
 
 ```pycon
 >>> dynamic = fq.Program(2, 2)
@@ -84,10 +83,10 @@ can supply a classical value to a later condition:
 >>> dynamic.measure(1, 1)
 ```
 
-On each shot, the `X` acts on qubit 1 only if the earlier measurement wrote
-`1` to classical bit 0. Reset then prepares qubit 0 in `|0>` without erasing
-the stored classical value. The final measurement shows that classical bit 1
-follows bit 0:
+On each shot, the first measurement writes the result from qubit 0 to
+classical bit 0. When that value is `1`, `X` flips qubit 1. Reset then returns
+qubit 0 to `|0>` without changing the stored value. The final measurement
+writes qubit 1 to classical bit 1, so the two classical bits agree:
 
 ```pycon
 >>> counts = (
@@ -102,15 +101,19 @@ follows bit 0:
 100
 ```
 
-Backends decide whether they can preserve this mid-program behavior. A
-backend that does not support measurement, reset, or classical feedforward
-rejects the Program rather than silently changing it.
+Not every backend supports this mid-program behavior. If measurement, reset,
+or classical feedforward is unavailable, the backend rejects the Program
+rather than silently changing it.
 
-## Make a reusable template
+Mid-circuit measurement can make execution dynamic because later operations
+may depend on a sampled outcome. Estimating the resulting distribution
+therefore requires repeated shots of the same Program.
 
-A [`Parameter`][fatqat.Parameter] stands in for a numeric operation argument.
-Binding returns a new Program, leaving the template available for another
-value:
+## Reuse a parameterized Program
+
+A [`Parameter`][fatqat.Parameter] acts as a placeholder for a numeric
+operation argument. Calling `assign_parameters` returns a new Program, so the
+original template remains available for other values:
 
 ```pycon
 >>> import numpy as np
@@ -128,17 +131,19 @@ value:
 1.0
 ```
 
-Bindings use the parameter object, not its display name. Reuse one object in
-several gates when they should share a value; use
-[`ParameterVector`][fatqat.ParameterVector] for an explicitly ordered group. The
-[simulation chapter](simulation.md) executes a whole batch of values without
-rebuilding the template.
+The binding map uses the parameter object, as in `{theta: value}`, rather
+than its display name. Reuse one object in several gates when they should share
+a value. Use [`ParameterVector`][fatqat.ParameterVector] for an explicitly
+ordered group. The [simulation chapter](simulation.md) shows how
+[`run_sweep`][fatqat.simulator.Simulator.run_sweep] evaluates a batch of
+parameter values from the same template without rebuilding the Program.
 
 ## Mix qubits and qutrits
 
-A register's `dim` is the number of local basis states. The default `2`
-creates a qubit or bit; `dim=3` creates a qutrit or three-valued classical
-digit. Different dimensions can coexist in one hybrid Program:
+A register's `dim` gives the number of states available to each slot. With
+the default `dim=2`, a quantum slot is a qubit and a classical slot is a bit.
+Setting `dim=3` creates a qutrit or a classical trit. Registers with different
+dimensions can coexist in one Program:
 
 ```pycon
 >>> qubit = fq.QuantumRegister(1, name="qubit")
@@ -170,24 +175,85 @@ classical slot of the same dimension:
 {'12': 20}
 ```
 
-Tuple keys put the flattened classical slots in declaration order, making the
-qubit value `1` and qutrit value `2` explicit. Native strings use the same
-left-to-right slot order. Operations decide which local
-dimensions they accept, so use the [qudit operation reference](../api/operations/qudit-gates.md) when you move beyond `Shift`.
+Tuple keys list the flattened classical slots in declaration order, making
+the qubit value `1` and qutrit value `2` explicit. String keys use the same
+left-to-right order. Each operation determines which local dimensions it
+accepts, so consult the [qudit operation reference](../api/operations/qudit-gates.md)
+when you move beyond `Shift`.
 
-## Inspect what was written
+## Draw a Program
 
-Call `draw()` whenever a visual check is useful:
+Drawing lets you check the instruction order and classical conditions before
+execution. Under the hood, FatQat adapts the Program to QuTiP-QIP's
+circuit-drawing tools. The examples below use this Program:
 
 ```python
-diagram = dynamic.draw("text")
+import fatqat as fq
+import fatqat.operations as ops
+
+program = fq.Program(2, 2)
+program.add(ops.H, 0)
+program.measure(0, 0)
+program.add(ops.X, 1, condition=(0, 1))
+program.add(ops.Reset, 0)
+program.measure(1, 1)
+```
+
+### Text renderer
+
+Pass `"text"` to return a terminal-friendly string, then print it:
+
+```python
+diagram = program.draw("text")
 print(diagram)
 ```
 
-The Matplotlib renderer is the default; the text renderer returns a string.
-Both show instruction structure rather than execution. In this example, the
-conditional operation is labeled `X if c0=1`, making the feedforward visible
-before you run it. The [quickstart](quickstart.md) shows the Matplotlib output.
+```text
+                      ┌───────────┐           ┌───┐
+ q1 :─────────────────┤ X if c0=1 ├───────────┤ M ├───
+                      └─────┬─────┘           └─╥─┘
+        ┌───┐  ┌───┐        │        ┌─────┐    ║
+ q0 :───┤ H ├──┤ M ├────────│────────┤ |0> ├────║─────
+        └───┘  └─╥─┘        │        └─────┘    ║
+                 ║          │                   ║
+ c1 :════════════║═══───────│──────═════════════╩═════
+                 ║          │
+                 ║          │
+ c0 :════════════╩═══───────█──────═══════════════════
+```
+
+The condition appears directly on `X`, and the vertical connector shows that
+classical bit 0 controls whether the gate is applied.
+
+### Matplotlib renderer
+
+With no renderer argument, `draw()` returns a Matplotlib figure:
+
+```python
+figure = program.draw()
+figure.show()
+```
+
+![Circuit drawing of a two-qubit Program with measurement, classical feedforward, reset, and final measurement.](../assets/generated/guide/program-drawing.png)
+
+??? example "Reproduce this figure"
+
+    ```python
+    import fatqat as fq
+    import fatqat.operations as ops
+
+    program = fq.Program(2, 2)
+    program.add(ops.H, 0)
+    program.measure(0, 0)
+    program.add(ops.X, 1, condition=(0, 1))
+    program.add(ops.Reset, 0)
+    program.measure(1, 1)
+
+    figure = program.draw()
+    ```
+
+Both renderers show the instructions recorded in the Program, not the result
+of executing them.
 
 !!! important
 
@@ -197,19 +263,21 @@ before you run it. The [quickstart](quickstart.md) shows the Matplotlib output.
     [`PulseOperation`][fatqat.operations.PulseOperation] cannot be represented by this
     circuit renderer.
 
-Direct physical controls still enter the same Program as a `PulseOperation`,
-added without logical targets because its control channels identify physical
-resources. The [Hamiltonian-emulation chapter](hamiltonian-emulation.md)
-visualizes those controls as waveforms and timelines instead.
+A Program can also contain direct physical controls. Add them as
+`PulseOperation` instructions without quantum targets; their control channels
+identify the physical resources. The
+[Hamiltonian-emulation chapter](hamiltonian-emulation.md) visualizes these
+controls as waveforms and timelines instead.
 
-## What Program validates
+## Understand validation
 
-`Program` checks structural questions while you write: whether references
-belong to it, target counts match, and measured quantum/classical dimensions
-agree. The selected backend later answers a different question: whether it
-can realize those operations, dimensions, controls, and classical behavior.
+`Program` validates structure as you build it: references must belong to the
+Program, each operation must receive the expected number of targets, and
+measured quantum and classical dimensions must agree. The selected backend
+then checks whether it supports those operations, dimensions, controls, and
+classical behavior.
 
-Continue with [Choose how much physics to model](execution-models.md) to see
-how one authoring interface leads to FatQat's different execution paths. Use
-the [Program API](../api/program.md) when you need exact accepted forms or
+Continue with [choose how much physics to model](execution-models.md) to see
+how different backends interpret a Program. Use the
+[Program API](../api/program.md) when you need exact accepted forms or
 validation behavior.
