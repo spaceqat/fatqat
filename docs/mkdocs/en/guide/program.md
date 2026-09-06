@@ -230,8 +230,10 @@ classical bit 0 controls whether the gate is applied.
 With no renderer argument, `draw()` returns a Matplotlib figure:
 
 ```python
+import matplotlib.pyplot as plt
+
 figure = program.draw()
-figure.show()
+plt.show()
 ```
 
 ![Circuit drawing of a two-qubit Program with measurement, classical feedforward, reset, and final measurement.](../assets/generated/guide/program-drawing.png)
@@ -241,6 +243,7 @@ figure.show()
     ```python
     import fatqat as fq
     import fatqat.operations as ops
+    import matplotlib.pyplot as plt
 
     program = fq.Program(2, 2)
     program.add(ops.H, 0)
@@ -250,6 +253,7 @@ figure.show()
     program.measure(1, 1)
 
     figure = program.draw()
+    plt.show()
     ```
 
 Both renderers show the instructions recorded in the Program, not the result

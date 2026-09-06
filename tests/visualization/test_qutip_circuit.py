@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 import matplotlib
+import matplotlib.pyplot as plt
 import pytest
 
 import fatqat as fq
@@ -247,7 +248,23 @@ def test_text_renderer_draws_feedforward_condition():
 
 def test_matplotlib_renderer_returns_a_savable_figure():
     figure = _bell().draw()
-    assert isinstance(figure, matplotlib.figure.Figure)
+    try:
+        assert isinstance(figure, matplotlib.figure.Figure)
+        assert figure in [plt.figure(number) for number in plt.get_fignums()]
+    finally:
+        plt.close(figure)
+
+
+def test_matplotlib_renderer_draws_on_a_supplied_axis():
+    figure, axis = plt.subplots()
+    existing_figures = tuple(plt.get_fignums())
+    try:
+        returned = _bell().draw(ax=axis)
+
+        assert returned is figure
+        assert tuple(plt.get_fignums()) == existing_figures
+    finally:
+        plt.close(figure)
 
 
 def test_matplotlib_renderer_balances_wire_around_outer_gates():

@@ -4,6 +4,7 @@ description: "Train a data-reuploading circuit to distinguish handwritten 3s and
 icon: material-brain
 figure_alts:
   - "Average-pooled handwritten digit inputs"
+  - "Four-qubit data-reuploading QNN template"
   - "COBYLA training-loss trace"
   - "Held-out handwritten digit predictions after training"
 ---

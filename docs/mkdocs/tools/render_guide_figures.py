@@ -104,25 +104,24 @@ def _render_inline_example(name: str, code: str, output: Path) -> None:
     import matplotlib.pyplot as plt
 
     plt.close("all")
-    namespace = {"__name__": "__main__", "__package__": None}
-    exec(compile(code, f"<documentation figure {name}>", "exec"), namespace)
-    figures = [plt.figure(number) for number in plt.get_fignums()]
-    for value in namespace.values():
-        if isinstance(value, matplotlib.figure.Figure) and all(
-            value is not figure for figure in figures
-        ):
-            figures.append(value)
-    if len(figures) != 1:
-        raise ValueError(f"{name}: reproduction example created {len(figures)} figures")
-    figures[0].savefig(
+    exec(
+        compile(code, f"<documentation figure {name}>", "exec"),
+        {"__name__": "__main__", "__package__": None},
+    )
+    figure_numbers = plt.get_fignums()
+    if len(figure_numbers) != 1:
+        raise ValueError(
+            f"{name}: reproduction example created {len(figure_numbers)} figures"
+        )
+    figure = plt.figure(figure_numbers[0])
+    figure.savefig(
         output / name,
         dpi=DEFAULT_FIGURE_DPI,
         bbox_inches="tight",
         facecolor="white",
         metadata=_figure_metadata(name),
     )
-    plt.close(figures[0])
-    plt.close("all")
+    plt.close(figure)
 
 
 def _render_labeled_sources(

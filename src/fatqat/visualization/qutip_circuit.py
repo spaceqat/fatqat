@@ -332,16 +332,13 @@ def _adapt_legacy_condition_controls(circuit) -> None:
 
 
 def _render_matplotlib(circuit, **kwargs):
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
-    from matplotlib.figure import Figure
+    import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
     axis = kwargs.pop("ax", None)
     owns_figure = axis is None
     if owns_figure:
-        figure = Figure()
-        FigureCanvasAgg(figure)
-        axis = figure.add_subplot(111)
+        figure, axis = plt.subplots()
     else:
         figure = axis.get_figure()
 
@@ -402,8 +399,6 @@ def _render_matplotlib(circuit, **kwargs):
 
     # QuTiP hard-codes pyplot layout/show calls. Keep them figure-local and
     # non-interactive while its renderer runs, then restore them immediately.
-    import matplotlib.pyplot as plt
-
     original_tight_layout = plt.tight_layout
     original_show = plt.show
     plt.tight_layout = figure.tight_layout
