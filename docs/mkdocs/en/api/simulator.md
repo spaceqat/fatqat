@@ -73,9 +73,10 @@ an arbitrary state `psi`, a matrix acting on every subsystem satisfies
 ## Runtime and execution
 
 
-`runtime` is chosen when the backend is created. `"numba"` is the default for
-[`Simulator`][fatqat.simulator.Simulator] and both hardware profiles,
-including [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator]. It
+Choose `runtime` when creating the backend. `"numba"` is the default for
+[`Simulator`][fatqat.simulator.Simulator],
+[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator], and
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator]. It
 compiles kernels on first use and supports threaded kernels. `"numpy"` runs
 directly without compilation. Both runtimes support the methods offered by
 each backend, but need not produce bit-identical floating-point or sampled
@@ -199,8 +200,9 @@ matching are not repeated per row. Batch and row validation errors raise
 directly; an execution failure produces a failed sweep job, and no partial
 result list is returned.
 It reuses a supplied seed for every row, so sampled errors can be correlated.
-See [Simulate a quantum program](../guide/simulation.md) for a guided sweep. Accepted batch shapes are
-specified above.
+See [Simulate a quantum program](../guide/simulation.md) for a guided example.
+Accepted batch shapes and validation rules are listed in the [`run_sweep`][fatqat.simulator.Simulator.run_sweep]
+reference below.
 
 ## API
 

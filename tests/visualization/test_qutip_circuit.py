@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 import matplotlib
+import matplotlib.pyplot as plt
 import pytest
 
 import fatqat as fq
@@ -245,9 +246,42 @@ def test_text_renderer_draws_feedforward_condition():
     assert "█" in classical_line
 
 
+def test_text_renderer_preserves_classical_wires_across_a_condition():
+    program = fq.Program(1, 3)
+    program.add(ops.X, 0, condition=(0, 1))
+
+    text = program.draw("text")
+    classical_lines = {
+        line.lstrip().split(" ", maxsplit=1)[0]: line
+        for line in text.splitlines()
+        if line.lstrip().startswith(("c0 ", "c1 ", "c2 "))
+    }
+
+    assert "█" in classical_lines["c0"]
+    assert "║" in classical_lines["c1"]
+    assert "║" in classical_lines["c2"]
+    assert all("═" in line and "─" not in line for line in classical_lines.values())
+
+
 def test_matplotlib_renderer_returns_a_savable_figure():
     figure = _bell().draw()
-    assert isinstance(figure, matplotlib.figure.Figure)
+    try:
+        assert isinstance(figure, matplotlib.figure.Figure)
+        assert figure in [plt.figure(number) for number in plt.get_fignums()]
+    finally:
+        plt.close(figure)
+
+
+def test_matplotlib_renderer_draws_on_a_supplied_axis():
+    figure, axis = plt.subplots()
+    existing_figures = tuple(plt.get_fignums())
+    try:
+        returned = _bell().draw(ax=axis)
+
+        assert returned is figure
+        assert tuple(plt.get_fignums()) == existing_figures
+    finally:
+        plt.close(figure)
 
 
 def test_matplotlib_renderer_balances_wire_around_outer_gates():

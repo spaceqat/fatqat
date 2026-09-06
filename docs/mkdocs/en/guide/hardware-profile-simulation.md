@@ -193,6 +193,26 @@ This channel perturbs the quantum state during `Pair` and `Unpair`; it does not
 remove either atom. Use [`Loss`][fatqat.noise.Loss] instead when movement
 should change occupancy.
 
+![An occupied atom undergoes a matched operation, after which Loss either leaves it present with probability one minus p or removes it with probability p; measurement of the empty site returns 2.](../assets/generated/guide/atom-loss-lifecycle.svg)
+
+Loss can be attached to any supported operation. Here it is sampled after `RX`,
+so surviving atoms return `1`, while lost atoms return `2`:
+
+```pycon
+>>> loss_model = fq.NoiseModel()
+>>> loss_model.add(fq.noise.Loss(p=0.1), operation=ops.RX)
+>>> lossy_atoms = fq.Program(1, 1)
+>>> lossy_atoms.add(ops.Put, 0)
+>>> lossy_atoms.add(ops.RX(np.pi), 0)
+>>> lossy_atoms.measure_all()
+>>> lossy_counts = fq.simulator.AtomArraySimulator(noise=loss_model).run(
+...     lossy_atoms,
+...     shots=100,
+...     simulation_config={"seed": 7},
+... ).result().get_counts()
+>>> lossy_counts
+{'1': 86, '2': 14}
+```
 Omitting `Pair` before `CZ` is a program error; FatQat does not transport or
 pair atoms automatically. A missing atom is different: supported gates find
 nothing to act on, and measurement reports the erasure digit `2`.

@@ -90,14 +90,23 @@ validation contracts.
 
 ## Development
 
-Install the source tree in editable mode with the development dependencies,
-then run the tests:
+For basic local development, install the source tree with the core test
+dependencies:
 
 ```sh
 python -m pip install --upgrade pip
 python -m pip install --editable . --group dev
 python -m pytest
 ```
+
+Before preparing a contribution, install the full test and lint environment:
+
+```sh
+python -m pip install --editable . --group test-full --group lint
+```
+
+`test-full` includes the `dev` dependencies and the optional Qiskit integration
+dependencies. `lint` adds Black and Pylint.
 
 Before submitting a change, read
 [Contributing to FatQat](https://github.com/spaceqat/fatqat/blob/main/CONTRIBUTING.md),

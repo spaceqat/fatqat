@@ -332,16 +332,13 @@ def _adapt_legacy_condition_controls(circuit) -> None:
 
 
 def _render_matplotlib(circuit, **kwargs):
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
-    from matplotlib.figure import Figure
+    import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
     axis = kwargs.pop("ax", None)
     owns_figure = axis is None
     if owns_figure:
-        figure = Figure()
-        FigureCanvasAgg(figure)
-        axis = figure.add_subplot(111)
+        figure, axis = plt.subplots()
     else:
         figure = axis.get_figure()
 
@@ -402,8 +399,6 @@ def _render_matplotlib(circuit, **kwargs):
 
     # QuTiP hard-codes pyplot layout/show calls. Keep them figure-local and
     # non-interactive while its renderer runs, then restore them immediately.
-    import matplotlib.pyplot as plt
-
     original_tight_layout = plt.tight_layout
     original_show = plt.show
     plt.tight_layout = figure.tight_layout
@@ -424,6 +419,40 @@ def _render_text(circuit, **kwargs) -> str:
 
         _barrier_parts = (" ┊ ", "─┊─", " ┊ ")
         _barrier_width = len(_barrier_parts[0])
+
+        def _update_qbridge(self, gate, wire_list_control, width, is_top):
+            has_virtual_classical_wire = any(wire < 0 for wire in wire_list_control)
+            if _gate_api() != _API_STRING or not has_virtual_classical_wire:
+                super()._update_qbridge(gate, wire_list_control, width, is_top)
+                return
+
+            left_width = width // 2
+            right_width = width // 2 - 1
+            vertical = " " * left_width + "║" + " " * right_width
+            quantum_bridge = "─" * left_width + "║" + "─" * right_width
+            classical_bridge = "═" * left_width + "║" + "═" * right_width
+            quantum_node = "─" * left_width + "█" + "─" * right_width
+            classical_node = "═" * left_width + "█" + "═" * right_width
+
+            for wire in wire_list_control:
+                if wire in gate.targets:
+                    continue
+                if wire in gate.controls:
+                    node = classical_node if wire < 0 else quantum_node
+                    self._render_strs["mid_frame"][wire] += node
+                    self._render_strs["top_frame"][wire] += (
+                        vertical if not is_top else " " * width
+                    )
+                    self._render_strs["bot_frame"][wire] += (
+                        vertical if is_top else " " * width
+                    )
+                    continue
+
+                self._render_strs["top_frame"][wire] += vertical
+                self._render_strs["mid_frame"][wire] += (
+                    classical_bridge if wire < 0 else quantum_bridge
+                )
+                self._render_strs["bot_frame"][wire] += vertical
 
         def _draw_singleq_gate(self, gate_name):
             if gate_name == _BARRIER_RENDER_LABEL:

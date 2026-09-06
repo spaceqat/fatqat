@@ -188,6 +188,10 @@ complete two-level workflow, see
       members:
         - "chain"
         - "rectangular"
+        - "rows"
+        - "cols"
+        - "spacing"
+        - "coordinates"
         - "num_sites"
         - "distance_unit"
       inherited_members: true

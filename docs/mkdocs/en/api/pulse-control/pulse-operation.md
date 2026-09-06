@@ -29,8 +29,12 @@ Background noise selected by target or device label still applies.
 ## Support
 
 
-The three pulse emulators listed in [Pulse control](index.md) support
-`PulseOperation`. [Matrix simulators and their device profiles](../simulators/index.md) do not; neither do circuit drawing or OpenQASM export.
+Direct `PulseOperation` blocks run on
+[`TransmonEmulator`][fatqat.emulator.TransmonEmulator] and
+[`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator].
+[Pulse control](index.md) compares their channels and units. [Matrix simulators
+and their device profiles](../simulators/index.md) do not accept direct pulse
+blocks, and neither circuit drawing nor OpenQASM export can represent them.
 
 ## Reference
 

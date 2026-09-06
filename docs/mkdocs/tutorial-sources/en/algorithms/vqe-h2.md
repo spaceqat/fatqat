@@ -3,6 +3,7 @@ title: "Find the ground-state energy of H₂ with VQE"
 description: "Run exact, finite-shot, and noisy VQE loops for molecular hydrogen and make the variational bound and sampling uncertainty explicit."
 icon: material-chart-bell-curve-cumulative
 figure_alts:
+  - "Parameterized two-qubit VQE ansatz"
   - "Exact VQE convergence trace"
   - "Finite-shot VQE traces with statistical uncertainty"
   - "Noiseless and depolarizing-noise VQE energy traces"

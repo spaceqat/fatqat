@@ -6,18 +6,31 @@ shots, and see why only `00` and `11` appear. The computation will live in a
 
 ## Install FatQat from source
 
-FatQat is not yet published on PyPI. Clone the repository, create an isolated
-environment, and install the checkout:
+FatQat requires Python 3.12 or later and is not yet published on PyPI. Clone
+the repository first:
 
 ```bash
 git clone https://github.com/spaceqat/fatqat.git
 cd fatqat
-python -m venv .venv
 ```
 
-Activate the environment with the command for your platform:
+We recommend [uv](https://docs.astral.sh/uv/) for local projects because it
+records the selected Python minor version in `.python-version`. This keeps the
+interpreter choice explicit and makes the environment easier to reproduce:
 
 ```bash
+uv python pin 3.12
+uv venv
+uv pip install .
+```
+
+Keep `.python-version` with the project so later `uv` commands select the same
+Python minor version. If you prefer the standard library tools, create and
+activate a virtual environment instead:
+
+```bash
+python -m venv .venv
+
 # macOS or Linux
 source .venv/bin/activate
 
@@ -25,7 +38,7 @@ source .venv/bin/activate
 .venv\Scripts\Activate.ps1
 ```
 
-Then install FatQat:
+Then install FatQat with `pip`:
 
 ```bash
 python -m pip install --upgrade pip
@@ -34,8 +47,8 @@ python -m pip install .
 
 ## Write a Bell-state Program
 
-A `Program` records the logical resources and instructions in execution
-order. This one prepares two qubits in a Bell state and measures both of them:
+A `Program` records quantum and classical resources together with the instructions
+that act on them. This one prepares two qubits in a Bell state and measures both:
 
 ```pycon
 >>> import fatqat as fq
@@ -52,7 +65,10 @@ target. The final instruction writes both quantum outcomes to the classical
 bits.
 
 The Program describes *what* should happen. It has not selected a simulator
-or performed any evolution yet.
+or performed any evolution yet. FatQat is also extensible: users can define
+operations and provide the backend implementations that execute them. Built-in
+operations such as `Put`, `Pair`, and `Unpair` show how `AtomArraySimulator` can
+represent workflows beyond standard quantum gates.
 
 ## Inspect the Program
 
@@ -79,22 +95,9 @@ default renderer returns a Matplotlib figure that you can display or save:
     program.add(ops.H, 0)
     program.add(ops.CX, (0, 1))
     program.measure_all()
-    fig, ax = plt.subplots(figsize=(8, 3))
-    for qubit in range(2):
-        ax.plot((0, 4), (qubit, qubit), color="0.45", linewidth=1.2)
-    ax.text(0.7, 0, "H", ha="center", va="center", color="white",
-            bbox={"boxstyle": "round,pad=.35", "fc": "C0", "ec": "C0"})
-    ax.scatter(1.8, 0, s=42, color="C3", zorder=3)
-    ax.plot((1.8, 1.8), (0, 1), color="C3", linewidth=1.5)
-    ax.scatter(1.8, 1, s=160, facecolor="white", edgecolor="C3", linewidth=1.5)
-    ax.text(1.8, 1, "+", ha="center", va="center", color="C3", fontsize=13)
-    for qubit in range(2):
-        ax.text(3.1, qubit, "M", ha="center", va="center", color="white",
-                bbox={"boxstyle": "round,pad=.32", "fc": "C2", "ec": "C2"})
-        ax.text(-0.12, qubit, f"q{qubit}", ha="right", va="center")
-    ax.set(xlim=(-0.4, 4.1), ylim=(1.55, -0.55))
-    ax.axis("off")
-    fig.tight_layout()
+
+    figure, axis = plt.subplots()
+    program.draw(ax=axis)
     ```
 
 For a terminal-friendly version, `program.draw("text")` returns a string
@@ -103,8 +106,8 @@ structure; it does not run the Program.
 
 ## Run it
 
-The general-purpose simulator follows the Program's logical circuit
-evolution. `run()` executes the Program and returns a completed
+The general-purpose simulator evolves the Program as a quantum circuit.
+`run()` executes the Program and returns a completed
 [`Job`][fatqat.Job]. Calling `job.result()` returns a
 [`Result`][fatqat.Result] containing the requested outputs, or raises the
 recorded execution error:
@@ -127,9 +130,10 @@ recorded execution error:
 Each shot ends as either `00` or `11`: the two measured bits agree because
 the qubits are entangled. Their counts are close rather than exactly equal
 because measurement samples the state. The fixed seed makes this particular
-run reproducible.
+run reproducible. `Result.draw()` provides a built-in chart for these counts,
+so no custom Matplotlib styling is needed.
 
-![Bar chart containing only 00 and 11 Bell-state outcomes](../assets/generated/guide/quickstart-counts.png)
+![Bell-state measurement counts with nearly equal bars for 00 and 11](../assets/generated/guide/quickstart-counts.png)
 
 ??? example "Reproduce this figure"
 
@@ -143,30 +147,20 @@ run reproducible.
     program.add(ops.CX, (0, 1))
     program.measure_all()
 
-    counts = (
+    result = (
         fq.simulator.Simulator(runtime="numpy")
         .run(program, shots=1000, simulation_config={"seed": 7})
         .result()
-        .get_counts()
     )
+    counts = result.get_counts()
     assert sorted(counts) == ["00", "11"]
     assert sum(counts.values()) == 1000
 
-    outcomes = sorted(counts)
-    fig, ax = plt.subplots(figsize=(5.2, 3.2))
-    bars = ax.bar(
-        outcomes,
-        [counts[outcome] for outcome in outcomes],
-        color="#4c78a8",
-    )
-    ax.bar_label(bars, padding=3)
-    ax.set(
-        xlabel="measured bit string",
-        ylabel="shots",
+    figure, axis = plt.subplots(figsize=(5.2, 3.2))
+    result.draw(
+        ax=axis,
         title="Bell-state outcomes",
     )
-    ax.set_ylim(0, max(counts.values()) * 1.15)
-    fig.tight_layout()
     ```
 
 ## Read basis indices
@@ -177,7 +171,7 @@ Public subsystem 0 is the most-significant factor. The two-qubit basis is
 index 1. Count strings use the same left-to-right public slot order: measuring
 those states into `(c0, c1)` produces `"10"` and `"01"`, respectively.
 
-Keep this `Program`: the next chapters change the backend to explore logical
+Keep this `Program`: the next chapters change the backend to explore circuit
 behavior, hardware constraints, and physical dynamics.
 
 ## Continue

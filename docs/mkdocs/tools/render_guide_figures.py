@@ -1,8 +1,10 @@
-"""Render documentation figures from their tracked, executable sources."""
+"""Render documentation figures and text from tracked, executable sources."""
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 from pathlib import Path
 import re
 import runpy
@@ -25,6 +27,10 @@ GUIDE_SOURCES = (
         FIGURE_SOURCE_ROOT / "atom_pairing_lifecycle.py",
         ("atom-pairing-lifecycle.svg",),
     ),
+    (
+        FIGURE_SOURCE_ROOT / "atom_loss_lifecycle.py",
+        ("atom-loss-lifecycle.svg",),
+    ),
 )
 HOME_SOURCES = (
     (
@@ -45,10 +51,13 @@ HOME_FIGURES = tuple(
 )
 
 IMAGE = re.compile(
-    r"!\[[^]]*]\(\.\./assets/generated/guide/" r"(?P<name>[a-z0-9-]+\.(?:png|svg))\)"
+    r"!\[[^]]*]\(\.\./assets/generated/guide/" + r"(?P<name>[a-z0-9-]+\.(?:png|svg))\)"
+)
+TEXT_OUTPUT = re.compile(
+    r'--8<-- "docs/mkdocs/en/assets/generated/guide/(?P<name>[a-z0-9-]+\.txt)"'
 )
 REPRODUCTION = re.compile(
-    r'(?ms)^\?\?\? example "Reproduce this figure"\s*\n\s*'
+    r'(?ms)^\?\?\? example "Reproduce this (?P<kind>figure|output)"\s*\n\s*'
     r"^    ```python\s*\n(?P<code>.*?)^    ```"
 )
 
@@ -73,26 +82,41 @@ def _figure_metadata(name: str) -> dict[str, object]:
     return {"Software": creator}
 
 
-def _page_examples(page: Path) -> list[tuple[str, str]]:
-    """Pair each inline reproduction block with the preceding guide image."""
+def _page_examples(page: Path) -> list[tuple[str, str, str]]:
+    """Pair reproduction blocks with their preceding generated outputs."""
 
     text = page.read_text(encoding="utf-8")
-    examples: list[tuple[str, str]] = []
+    examples: list[tuple[str, str, str]] = []
     previous_end = 0
+    references = {"figure": IMAGE, "output": TEXT_OUTPUT}
     for match in REPRODUCTION.finditer(text):
+        kind = match.group("kind")
         prefix = text[previous_end : match.start()]
-        images = list(IMAGE.finditer(prefix))
-        if not images:
-            raise ValueError(f"{page}: reproduction block has no preceding figure")
-        name = images[-1].group("name")
+        outputs = list(references[kind].finditer(prefix))
+        if not outputs:
+            raise ValueError(
+                f"{page}: reproduction block has no preceding generated {kind}"
+            )
+        name = outputs[-1].group("name")
         code = textwrap.dedent(match.group("code"))
-        examples.append((name, code))
+        examples.append((kind, name, code))
         previous_end = match.end()
     return examples
 
 
-def _render_inline_example(name: str, code: str, output: Path) -> None:
-    """Execute one documented example and save its single Matplotlib figure."""
+def _render_inline_example(kind: str, name: str, code: str, output: Path) -> None:
+    """Execute one documented example and save its generated output."""
+
+    namespace = {"__name__": "__main__", "__package__": None}
+    compiled = compile(code, f"<documentation {kind} {name}>", "exec")
+    if kind == "output":
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            exec(compiled, namespace)  # pylint: disable=exec-used
+        (output / name).write_text(buffer.getvalue(), encoding="utf-8", newline="\n")
+        return
+    if kind != "figure":
+        raise ValueError(f"{name}: unknown documentation output kind {kind!r}")
 
     import matplotlib
 
@@ -100,21 +124,26 @@ def _render_inline_example(name: str, code: str, output: Path) -> None:
     import matplotlib.pyplot as plt
 
     plt.close("all")
-    namespace = {"__name__": "__main__", "__package__": None}
-    exec(compile(code, f"<documentation figure {name}>", "exec"), namespace)
+    original_show = plt.show
+    plt.show = lambda *args, **kwargs: None
+    try:
+        exec(compiled, namespace)  # pylint: disable=exec-used
+    finally:
+        plt.show = original_show
     figure_numbers = plt.get_fignums()
     if len(figure_numbers) != 1:
         raise ValueError(
             f"{name}: reproduction example created {len(figure_numbers)} figures"
         )
-    plt.figure(figure_numbers[0]).savefig(
+    figure = plt.figure(figure_numbers[0])
+    figure.savefig(
         output / name,
         dpi=DEFAULT_FIGURE_DPI,
         bbox_inches="tight",
         facecolor="white",
         metadata=_figure_metadata(name),
     )
-    plt.close("all")
+    plt.close(figure)
 
 
 def _render_labeled_sources(
@@ -232,21 +261,22 @@ def render_all() -> None:
             raise ValueError(f"duplicate guide figure source for {sorted(duplicates)}")
         rendered.update(sourced)
         for page in sorted(GUIDE_ROOT.glob("*.md")):
-            for name, code in _page_examples(page):
+            for kind, name, code in _page_examples(page):
                 if name in rendered:
-                    raise ValueError(f"duplicate guide figure source for {name}")
+                    raise ValueError(f"duplicate guide output source for {name}")
                 print(f"Rendering {name} from {page.relative_to(MKDOCS_ROOT)}")
-                _render_inline_example(name, code, temporary_guide)
+                _render_inline_example(kind, name, code, temporary_guide)
                 rendered.add(name)
 
         referenced = {
             match.group("name")
             for page in GUIDE_ROOT.glob("*.md")
-            for match in IMAGE.finditer(page.read_text(encoding="utf-8"))
+            for pattern in (IMAGE, TEXT_OUTPUT)
+            for match in pattern.finditer(page.read_text(encoding="utf-8"))
         }
         if rendered != referenced:
             raise ValueError(
-                "guide figure sources do not match references: "
+                "guide output sources do not match references: "
                 f"missing={sorted(referenced - rendered)}, "
                 f"unreferenced={sorted(rendered - referenced)}"
             )
@@ -263,7 +293,7 @@ def render_all() -> None:
             temporary_guide,
             GUIDE_OUTPUT,
             rendered,
-            suffixes={".png", ".svg"},
+            suffixes={".png", ".svg", ".txt"},
         )
         _sync_rendered(
             temporary_home,
@@ -272,7 +302,7 @@ def render_all() -> None:
             suffixes={".png"},
         )
 
-    print(f"Rendered {len(rendered)} English guide figures.")
+    print(f"Rendered {len(rendered)} English guide outputs.")
     print(f"Rendered {len(HOME_FIGURES)} English homepage figures.")
 
 
