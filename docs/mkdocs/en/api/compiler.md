@@ -5,8 +5,10 @@ title: "Compiler"
 # Compiler
 
 [`LogicalProgram`][fatqat.LogicalProgram] is the editable Python frontend for
-FatQat's static gate compiler. Its gate helpers mutate the circuit and return
-the same object, so both line-by-line and chained construction are supported.
+FatQat's static gate compiler. It is a restricted [`Program`][fatqat.Program]
+subclass, so it reuses the public register model and can also run directly on a
+general simulator. Its gate helpers mutate the circuit and return the same
+object, so both line-by-line and chained construction are supported.
 
 ```python
 import fatqat as fq

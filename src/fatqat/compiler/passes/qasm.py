@@ -6,7 +6,7 @@ from ...logical_program import LogicalProgram
 from ...operations import Measurement
 from ...program import Program, _AppliedOperation
 from ...qasm import from_qasm
-from ...registers import RegisterRef, RegisterView
+from ...registers import RegisterRef, RegisterView, _view_members
 from ..core import CompileContext
 from ..dialects.logical_gate import (
     LogicalGate,
@@ -28,7 +28,7 @@ def _freeze_logical_program(program: LogicalProgram) -> LogicalIR:
     """Freeze an editable compiler frontend into immutable logical IR."""
     if type(program) is not LogicalProgram:
         raise TypeError("freeze pass expects an exact LogicalProgram")
-    return _snapshot_program(program._program)
+    return _snapshot_program(program)
 
 
 def _snapshot_program(program: Program) -> LogicalIR:
@@ -42,20 +42,14 @@ def _snapshot_program(program: Program) -> LogicalIR:
                 raise UnsupportedFeatureError(
                     "classical condition is not supported by static logical IR v0.1"
                 )
-            if any(
-                isinstance(item, RegisterView) for item in frontend_instruction.targets
-            ):
-                raise UnsupportedFeatureError(
-                    "RegisterView operations must be expanded before compiler snapshot"
+            for operands in _expanded_operands(frontend_instruction.targets):
+                instructions.append(
+                    LogicalGate(
+                        operation_id=f"logical.{len(instructions)}",
+                        operation=frontend_instruction.operation,
+                        operands=operands,
+                    )
                 )
-            operands = tuple(frontend_instruction.targets)
-            instructions.append(
-                LogicalGate(
-                    operation_id=f"logical.{len(instructions)}",
-                    operation=frontend_instruction.operation,
-                    operands=operands,
-                )
-            )
             continue
 
         if type(frontend_instruction) is not Measurement:
@@ -74,6 +68,15 @@ def _snapshot_program(program: Program) -> LogicalIR:
             )
 
     return LogicalIR(qubits, clbits, tuple(instructions))
+
+
+def _expanded_operands(targets) -> tuple[tuple[RegisterRef, ...], ...]:
+    """Expand Program register views into scalar logical gate occurrences."""
+    values = tuple(targets)
+    if not any(isinstance(target, RegisterView) for target in values):
+        return (values,)
+    groups = tuple(_view_members(target) for target in values)
+    return tuple(zip(*groups, strict=True))
 
 
 def _declared_refs(registers) -> tuple[RegisterRef, ...]:

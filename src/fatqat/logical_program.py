@@ -3,65 +3,128 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, ClassVar, Self
+from typing import ClassVar, Self
 
 from . import operations as ops
 from .operations import Operation
 from .parameters import Parameter, ParameterVector
-from .program import Program
-from .registers import ClassicalRegister, QuantumRegister, RegisterRef
+from .program import ConditionInput, Program
+from .registers import RegisterRef, RegisterView
 
 __all__ = ["LogicalProgram"]
 
-QuantumRegisters = int | list[QuantumRegister] | tuple[QuantumRegister, ...]
-ClassicalRegisters = int | list[ClassicalRegister] | tuple[ClassicalRegister, ...]
-Qubit = int | RegisterRef
+ScalarQubit = int | RegisterRef
+Qubit = ScalarQubit | RegisterView
 Clbit = int | RegisterRef
 
+_LOGICAL_OPERATION_TYPES = frozenset(
+    {
+        type(ops.I),
+        type(ops.H),
+        type(ops.S),
+        type(ops.Sdg),
+        type(ops.SX),
+        type(ops.T),
+        type(ops.Tdg),
+        type(ops.X),
+        type(ops.Y),
+        type(ops.Z),
+        type(ops.CX),
+        type(ops.CZ),
+        type(ops.Swap),
+        type(ops.CY),
+        type(ops.CS),
+        type(ops.iSwap),
+        type(ops.CCX),
+        type(ops.CSwap),
+        ops.RX,
+        ops.RY,
+        ops.RZ,
+        ops.Phase,
+        ops.U,
+        ops.U1,
+        ops.U2,
+        ops.U3,
+        ops.CPhase,
+        type(ops.Reset),
+        type(ops.Barrier),
+        ops.Shift,
+        ops.Clock,
+        type(ops.Sum),
+        ops.SwapLevels,
+        type(ops.Fourier),
+        type(ops.InverseFourier),
+        ops.SubspaceRX,
+        ops.SubspaceRY,
+        ops.SubspaceRZ,
+        ops.CClock,
+    }
+)
 
-class LogicalProgram:  # pylint: disable=too-many-public-methods
-    """Build a gate-level program that can be compiled to a hardware family.
 
-    The object is mutable for convenient Python construction. Compilation
-    freezes it into the compiler's immutable logical IR before any lowering
-    runs.
+class LogicalProgram(Program):  # pylint: disable=too-many-public-methods
+    """Build a device-independent circuit for compilation or simulation.
+
+    This specialized `Program` keeps the same registers and instruction
+    storage while rejecting device operations such as atom placement,
+    pairing, and direct pulse controls. Classical conditions remain valid for
+    direct simulation; the current static compiler reports them as unsupported
+    when the circuit is frozen.
     """
 
     IR_ID: ClassVar[str] = "gate.logical.source.v1"
 
-    def __init__(
+    def add(  # pylint: disable=arguments-differ
         self,
-        quantum_registers: QuantumRegisters,
-        classical_registers: ClassicalRegisters = 0,
-        *,
-        metadata: Mapping[str, Any] | None = None,
-    ) -> None:
-        self._program = Program(
-            quantum_registers,
-            classical_registers,
-            metadata=metadata,
-        )
+        operation: Operation,
+        *qubits: Qubit | tuple[Qubit, ...],
+        condition: ConditionInput = None,
+    ) -> Self:
+        """Append one device-independent operation.
 
-    @property
-    def quantum_registers(self) -> tuple[QuantumRegister, ...]:
-        """Return quantum registers in declaration order."""
-        return self._program.quantum_registers
+        Built-in circuit gates, reset, and barriers are accepted. Device
+        operations and custom Operation subclasses are rejected. Conditions
+        use the same classical-register syntax as Program.add.
 
-    @property
-    def classical_registers(self) -> tuple[ClassicalRegister, ...]:
-        """Return classical registers in declaration order."""
-        return self._program.classical_registers
+        Args:
+            operation: Built-in device-independent operation to append.
+            *qubits: One or more scalar targets, or compatible register views.
+            condition: Optional classical condition.
 
-    @property
-    def metadata(self) -> dict[str, Any]:
-        """Return mutable application metadata."""
-        return self._program.metadata
+        Returns:
+            This program, for chained construction.
 
-    def add(self, operation: Operation, *qubits: Qubit | tuple[Qubit, ...]) -> Self:
-        """Append an operation using separate or grouped qubit operands."""
+        Raises:
+            TypeError: If operation, a target, or a condition has an invalid
+                type.
+            ValueError: If the operation is not logical, or inherited target
+                or condition validation fails.
+            IndexError: If an integer operand is outside its register.
+        """
         targets = qubits[0] if len(qubits) == 1 else qubits
-        self._program.add(operation, targets)
+        if not isinstance(operation, Operation):
+            # Preserve Program's detailed error for invalid values, including
+            # the dedicated Measurement guidance.
+            super().add(operation, targets, condition=condition)
+        if type(operation) not in _LOGICAL_OPERATION_TYPES:
+            name = getattr(operation, "name", type(operation).__name__)
+            raise ValueError(f"{name} is not a logical operation")
+        super().add(operation, targets, condition=condition)
         return self
+
+    def _new_copy(self) -> LogicalProgram:
+        return LogicalProgram.__new__(LogicalProgram)
+
+    def copy(self) -> Self:
+        """Return an independently editable logical-program copy."""
+        return super().copy()
+
+    def assign_parameters(
+        self,
+        values: Mapping[Parameter | ParameterVector, object],
+    ) -> Self:
+        """Return a logical-program copy with selected parameters bound."""
+        return super().assign_parameters(values)
 
     def i(self, qubit: Qubit) -> Self:
         return self.add(ops.I, qubit)
@@ -119,39 +182,14 @@ class LogicalProgram:  # pylint: disable=too-many-public-methods
 
     def measure(
         self,
-        qubits: Qubit | tuple[Qubit, ...],
-        clbits: Clbit | tuple[Clbit, ...],
+        targets: ScalarQubit | tuple[ScalarQubit, ...],
+        outputs: Clbit | tuple[Clbit, ...],
     ) -> Self:
-        """Measure qubits into classical slots."""
-        self._program.measure(qubits, clbits)
+        """Measure qubits into classical slots and return this program."""
+        super().measure(targets, outputs)
         return self
 
     def measure_all(self) -> Self:
-        """Measure every declared qubit into the corresponding classical slot."""
-        self._program.measure_all()
+        """Measure every qubit into its corresponding classical slot."""
+        super().measure_all()
         return self
-
-    def copy(self) -> LogicalProgram:
-        """Return an independently editable copy."""
-        return type(self)._from_program(self._program.copy())
-
-    def assign_parameters(
-        self,
-        values: Mapping[Parameter | ParameterVector, object],
-    ) -> LogicalProgram:
-        """Return a copy with selected symbolic parameters bound."""
-        return type(self)._from_program(self._program.assign_parameters(values))
-
-    @classmethod
-    def _from_program(cls, program: Program) -> LogicalProgram:
-        copied = cls.__new__(cls)
-        copied._program = program
-        return copied
-
-    def draw(self, renderer: str = "matplotlib", **kwargs: Any) -> Any:
-        """Draw the logical circuit using the existing Program renderer."""
-        return self._program.draw(renderer, **kwargs)
-
-    def dag(self):
-        """Return the hardware-independent instruction DAG."""
-        return self._program.dag()

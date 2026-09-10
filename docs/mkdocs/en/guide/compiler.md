@@ -13,10 +13,14 @@ circuit.cx(0, 1)
 circuit.measure_all()
 ```
 
-`LogicalProgram` is distinct from [`Program`][fatqat.Program]. A
-`LogicalProgram` is input to the compiler. A `Program` is the general container
-accepted by simulators and emulators, including direct controls and dynamic
-behavior that the current compiler does not lower.
+`LogicalProgram` is a restricted [`Program`][fatqat.Program] subclass. It
+uses the same quantum registers, classical registers, references, and
+instruction storage, so a general simulator can run it directly. Its authoring
+interface rejects device operations such as atom placement, pairing, and
+direct pulse controls. Its generic `add()` method accepts FatQat's built-in
+device-independent operations; custom operations remain available through the
+broader `Program` interface. The compiler accepts `LogicalProgram`, not the
+broader `Program`.
 
 ## Compile and run on an SC profile
 
@@ -80,9 +84,10 @@ remain available when advanced callers construct or modify final IR directly.
 
 The v0.3 compiler accepts static, numeric gate circuits. Measurements must be
 terminal. Bind symbolic parameters with `assign_parameters()` before
-compilation; mid-circuit
-measurement, conditions, feed-forward, and general control flow are not yet
-compiler inputs.
+compilation; mid-circuit measurement, conditions, feed-forward, and general
+control flow are not yet compiler inputs. A `LogicalProgram` may still contain
+conditions and run directly on the general simulator; compilation reports that
+unsupported boundary explicitly.
 
 ```python
 theta = fq.Parameter("theta")
@@ -95,6 +100,11 @@ normalization reports unsupported combinations: in particular, the current NA
 route rejects `sx()` and `reset()`. Such a failure is reported as a
 [`PassError`][fatqat.compiler.PassError] naming the pass and the underlying
 unsupported operation.
+
+Register views are a construction convenience inherited from `Program`.
+Freezing a logical program expands a view into scalar gate occurrences before
+creating immutable logical IR; compiler IR continues to use the same
+`RegisterRef` identities rather than introducing separate IR qubit objects.
 
 OpenQASM remains an equal frontend through
 [`compile_qasm_to_sc`][fatqat.compiler.compile_qasm_to_sc] and

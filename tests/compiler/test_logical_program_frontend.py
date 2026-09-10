@@ -31,6 +31,7 @@ def test_top_level_fatqat_loads_the_compiler_only_when_requested():
 def test_logical_program_builds_a_circuit_with_gate_helpers():
     program = fq.LogicalProgram(2, 2)
 
+    assert isinstance(program, fq.Program)
     assert program.h(0) is program
     assert program.cx(0, 1) is program
     assert program.measure_all() is program
@@ -43,6 +44,74 @@ def test_logical_program_builds_a_circuit_with_gate_helpers():
     )
     assert tuple(ref.index for ref in dag.nodes[1].targets) == (0, 1)
     assert tuple(ref.index for ref in dag.nodes[2].outputs) == (0, 1)
+
+
+def test_logical_program_accepts_conditions_and_runs_on_the_general_simulator():
+    program = fq.LogicalProgram(2, 2)
+    program.x(0)
+    program.measure(0, 0)
+    program.add(fq.operations.X, 1, condition=(0, 1))
+    program.measure(1, 1)
+
+    counts = (
+        fq.simulator.Simulator("SV", runtime="numpy")
+        .run(program, shots=8, simulation_config={"seed": 3})
+        .result()
+        .get_counts_as_tuples()
+    )
+
+    assert counts == {(1, 1): 8}
+
+
+def test_static_compiler_reports_a_logical_program_condition():
+    from fatqat.compiler import PassError, compile_to_sc
+    from fatqat.compiler.dialects import LogicalIR
+
+    program = fq.LogicalProgram(1, 1)
+    program.add(fq.operations.X, 0, condition=(0, 0))
+
+    with pytest.raises(PassError, match="classical condition is not supported"):
+        compile_to_sc(
+            program,
+            fq.simulator.SCQubitSimulator(),
+            emit=LogicalIR.IR_ID,
+        )
+
+
+@pytest.mark.parametrize(
+    ("operation", "targets"),
+    [
+        (fq.operations.Put, (0, 1)),
+        (fq.operations.Pair, (0, 1)),
+        (fq.operations.Unpair, (0, 1)),
+    ],
+)
+def test_logical_program_rejects_device_operations(operation, targets):
+    program = fq.LogicalProgram(2)
+
+    with pytest.raises(ValueError, match="not a logical operation"):
+        program.add(operation, targets)
+
+
+def test_logical_program_views_are_expanded_when_frozen():
+    from fatqat.compiler import compile_to_sc
+    from fatqat.compiler.dialects import LogicalIR
+
+    qubits = fq.QuantumRegister(2, name="q")
+    program = fq.LogicalProgram([qubits])
+    program.h(qubits.all())
+
+    logical = compile_to_sc(
+        program,
+        fq.simulator.SCQubitSimulator(),
+        emit=LogicalIR.IR_ID,
+    ).output
+
+    assert tuple(item.operation.name for item in logical.instructions) == ("H", "H")
+    assert tuple(item.operands for item in logical.instructions) == (
+        (qubits[0],),
+        (qubits[1],),
+    )
 
 
 @pytest.mark.parametrize(
@@ -131,6 +200,7 @@ def test_logical_program_parameters_can_be_bound_before_compilation():
     ).output
 
     assert bound is not template
+    assert type(bound) is fq.LogicalProgram
     assert logical.instructions[0].operation.theta == 0.25
     with pytest.raises(ValidationError, match="finite real number"):
         compile_to_sc(
@@ -174,6 +244,16 @@ def test_compile_to_sc_runs_the_logical_frontend_route():
         "normalize-sc",
         "lower-sc-to-native",
     )
+
+
+def test_compile_to_sc_rejects_a_general_program():
+    from fatqat.compiler import ValidationError, compile_to_sc
+
+    program = fq.Program(1)
+    program.add(fq.operations.H, 0)
+
+    with pytest.raises(ValidationError, match="expects LogicalProgram"):
+        compile_to_sc(program, fq.simulator.SCQubitSimulator())
 
 
 def test_logical_freeze_is_deterministic_and_does_not_edit_the_source():

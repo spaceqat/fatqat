@@ -600,13 +600,17 @@ class Program:
         metadata dictionary keep the returned program independent without
         rebuilding registers through the public constructor.
         """
-        new = Program.__new__(Program)
+        new = self._new_copy()
         new.quantum_registers = tuple(self.quantum_registers)
         new.classical_registers = tuple(self.classical_registers)
         new._operations = list(operations)
         new._operations_view = tuple(new._operations)
         new.metadata = dict(self.metadata)
         return new
+
+    def _new_copy(self) -> "Program":
+        """Create an uninitialized instance for the trusted copy path."""
+        return Program.__new__(Program)
 
     def assign_parameters(
         self,
