@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from ..logical_program import LogicalProgram
-from ..operations import Measurement
-from ..program import Program
 from ..simulator import SCQubitSimulator
 from .core import (
     CompilationResult,
@@ -44,26 +42,6 @@ LOGICAL_NA_PIPELINE = "logical-to-na"
 def _verify_logical_source(program: object) -> None:
     if type(program) is not LogicalProgram:
         raise ValidationError("expected LogicalProgram")
-
-
-def _logical_source(source: Program | LogicalProgram) -> LogicalProgram:
-    if type(source) not in (Program, LogicalProgram):
-        raise ValidationError("source must be an exact Program or LogicalProgram")
-    if type(source) is LogicalProgram:
-        return source
-    logical = LogicalProgram(
-        source.quantum_registers, source.classical_registers, metadata=source.metadata
-    )
-    for instruction in source._instructions:
-        if isinstance(instruction, Measurement):
-            logical.measure(instruction.targets, instruction.outputs)
-        else:
-            logical.add(
-                instruction.operation,
-                instruction.targets,
-                condition=instruction.condition,
-            )
-    return logical
 
 
 def create_sc_pipeline() -> Compiler:
@@ -177,13 +155,13 @@ def compile_qasm_to_sc(
 
 
 def compile_to_sc(
-    source: Program | LogicalProgram,
+    source: LogicalProgram,
     backend: SCQubitSimulator,
     *,
     emit: str = SCNativeProgram.IR_ID,
     seed: int = 0,
 ) -> CompilationResult:
-    """Compile a Program or LogicalProgram to an executable superconducting result.
+    """Compile a LogicalProgram to an executable superconducting result.
 
     Lowering snapshots the source without editing it. Bind symbolic parameters
     before compiling; measurements must be terminal, and classical conditions
@@ -191,7 +169,7 @@ def compile_to_sc(
     scalar gates when frozen.
 
     Args:
-        source: An exact Program or LogicalProgram containing static numeric gates.
+        source: An exact LogicalProgram containing static numeric gates.
         backend: SCQubitSimulator supplying the capacity and coupling graph.
         emit: Representation to return; defaults to SCNativeProgram.IR_ID.
             Supported values are LogicalProgram.IR_ID, LogicalIR.IR_ID,
@@ -201,14 +179,10 @@ def compile_to_sc(
     Returns:
         ExecutableCompilationResult at the final boundary; CompilationResult
         for earlier boundaries. Emitting LogicalProgram.IR_ID runs no passes:
-        a LogicalProgram input is returned unchanged, while a Program input
-        is converted to an independently editable LogicalProgram. Register
-        identity is preserved; nested metadata values remain shared. Conversion
-        rejects device and custom operations; static gate and target validation
-        begins at later boundaries.
+        the LogicalProgram input is returned unchanged. Static gate and target
+        validation begins at later boundaries.
 
     Raises:
-        ValueError: If a Program input contains a device or custom operation.
         ValidationError: If the source type or an IR boundary is invalid.
         EmitNotFoundError: If emit is not a boundary of the selected route.
         PassError: If snapshotting or target lowering fails.
@@ -216,7 +190,7 @@ def compile_to_sc(
 
     return _package_sc_result(
         create_sc_pipeline().compile(
-            _logical_source(source),
+            source,
             pipeline=LOGICAL_SC_PIPELINE,
             emit=emit,
             context=CompileContext(target=backend, options={"seed": seed}),
@@ -264,12 +238,12 @@ def compile_qasm_to_na(
 
 
 def compile_to_na(
-    source: Program | LogicalProgram,
+    source: LogicalProgram,
     architecture: Mapping[str, object],
     *,
     emit: str = ZonedPlan.IR_ID,
 ) -> CompilationResult:
-    """Compile a Program or LogicalProgram to an executable neutral-atom result.
+    """Compile a LogicalProgram to an executable neutral-atom result.
 
     Lowering snapshots the source without editing it. Bind symbolic parameters
     before compiling; measurements must be terminal, and classical conditions
@@ -278,7 +252,7 @@ def compile_to_na(
     NA lowering rejects SX and Reset operations.
 
     Args:
-        source: An exact Program or LogicalProgram containing static numeric gates.
+        source: An exact LogicalProgram containing static numeric gates.
         architecture: ZAP architecture mapping, as returned by load_architecture.
         emit: Representation to return; defaults to ZonedPlan.IR_ID.
             Supported values are LogicalProgram.IR_ID, LogicalIR.IR_ID,
@@ -287,14 +261,10 @@ def compile_to_na(
     Returns:
         ExecutableCompilationResult at the final boundary; CompilationResult
         for earlier boundaries. Emitting LogicalProgram.IR_ID runs no passes:
-        a LogicalProgram input is returned unchanged, while a Program input
-        is converted to an independently editable LogicalProgram. Register
-        identity is preserved; nested metadata values remain shared. Conversion
-        rejects device and custom operations; static gate and target validation
-        begins at later boundaries.
+        the LogicalProgram input is returned unchanged. Static gate and target
+        validation begins at later boundaries.
 
     Raises:
-        ValueError: If a Program input contains a device or custom operation.
         ValidationError: If the source type or an IR boundary is invalid.
         EmitNotFoundError: If emit is not a boundary of the selected route.
         PassError: If snapshotting or target lowering fails.
@@ -302,7 +272,7 @@ def compile_to_na(
 
     return _package_na_result(
         create_na_pipeline().compile(
-            _logical_source(source),
+            source,
             pipeline=LOGICAL_NA_PIPELINE,
             emit=emit,
             context=CompileContext(target=architecture),

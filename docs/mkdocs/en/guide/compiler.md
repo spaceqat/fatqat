@@ -6,23 +6,27 @@
     supported behavior may change between releases. Pin an exact FatQat
     version when reproducibility matters.
 
-Build a [`Program`][fatqat.Program] and compile it when you want FatQat to
-choose a hardware-family instruction set, map logical qubits, and route
-two-qubit gates. Use the same authoring interface as for direct simulation:
+Build a [`LogicalProgram`][fatqat.LogicalProgram] when you want FatQat to choose
+a hardware-family instruction set, map logical qubits, and route two-qubit
+gates. It uses the same authoring interface as [`Program`][fatqat.Program] for
+direct simulation:
 
 ```python
 import fatqat as fq
 
-circuit = fq.Program(2, 2)
+circuit = fq.LogicalProgram(2, 2)
 circuit.add(fq.operations.H, 0)
 circuit.add(fq.operations.CX, (0, 1))
 circuit.measure_all()
 ```
 
-Compilation snapshots the Program without editing it, so the same source can
+Compilation snapshots the LogicalProgram without editing it, so the same source can
 still be simulated directly or compiled for another target. The compiler
 accepts the static, numeric gate subset described below; direct simulation
-continues to support broader Program behavior.
+continues to support conditions on LogicalProgram and the broader Program
+operation set. The Python compiler entry points accept only an exact
+LogicalProgram; an ordinary Program remains an execution representation and is
+not converted implicitly.
 
 ## Compile and run on an SC profile
 
@@ -92,7 +96,7 @@ compiler inputs.
 
 ```python
 theta = fq.Parameter("theta")
-template = fq.Program(1)
+template = fq.LogicalProgram(1)
 template.add(fq.operations.RX(theta), 0)
 bound = template.assign_parameters({theta: 0.25})
 ```
@@ -101,11 +105,11 @@ Each classical slot may be written at most once. Register views are expanded
 into scalar gate occurrences when the source is frozen, preserving register
 identity and operand order.
 
-A `Program` input is converted to `LogicalProgram` before any passes run.
-Device operations and custom operation classes raise `ValueError` during
-this conversion, even when emitting the editable logical source. Built-in
-logical operations are checked for static compiler and target support at
-later boundaries.
+`LogicalProgram` rejects device operations and custom operation classes while
+the circuit is authored. Built-in logical operations are checked for static
+compiler and target support at later boundaries. Passing an ordinary `Program`
+to a Python compiler entry point raises `ValidationError` instead of silently
+changing its meaning or operation set.
 
 Target normalization reports unsupported combinations: in particular, the
 current NA route rejects `SX` and `Reset`. Such a failure is reported as a

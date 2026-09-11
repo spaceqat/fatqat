@@ -1,16 +1,12 @@
 import math
 import subprocess
 import sys
+from typing import get_type_hints
 
 import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-
-
-@pytest.fixture(name="program_type", params=[fq.Program, fq.LogicalProgram])
-def source_program_type(request):
-    return request.param
 
 
 def test_top_level_fatqat_loads_the_compiler_only_when_requested():
@@ -114,20 +110,32 @@ def test_logical_program_copy_can_be_edited_independently():
     assert copied.metadata == {"branch": "copy"}
 
 
-def test_logical_program_parameters_can_be_bound_before_compilation(program_type):
+def test_logical_program_and_compiler_entry_points_preserve_public_types():
+    from fatqat.compiler import compile_to_na, compile_to_sc
+
+    assert get_type_hints(fq.LogicalProgram.copy)["return"] is fq.LogicalProgram
+    assert (
+        get_type_hints(fq.LogicalProgram.assign_parameters)["return"]
+        is fq.LogicalProgram
+    )
+    assert get_type_hints(compile_to_sc)["source"] is fq.LogicalProgram
+    assert get_type_hints(compile_to_na)["source"] is fq.LogicalProgram
+
+
+def test_logical_program_parameters_can_be_bound_before_compilation():
     from fatqat.compiler import ValidationError, compile_to_sc
     from fatqat.compiler.dialects import LogicalIR
 
     backend = fq.simulator.SCQubitSimulator()
 
     theta = fq.Parameter("theta")
-    template = program_type(1)
+    template = fq.LogicalProgram(1)
     template.add(ops.RX(theta), 0)
 
     bound = template.assign_parameters({theta: 0.25})
     logical = compile_to_sc(bound, backend, emit=LogicalIR.IR_ID).output
 
-    assert type(bound) is program_type
+    assert type(bound) is fq.LogicalProgram
     assert bound is not template
     assert logical.instructions[0].operation.theta == 0.25
     with pytest.raises(ValidationError, match="finite real number"):
@@ -152,19 +160,19 @@ c = measure q;
 """
 
 
-def _bell_program(program_type):
-    program = program_type(2, 2)
+def _bell_program():
+    program = fq.LogicalProgram(2, 2)
     program.add(ops.H, 0)
     program.add(ops.CX, (0, 1))
     program.measure_all()
     return program
 
 
-def test_logical_freeze_is_deterministic_and_does_not_edit_the_source(program_type):
+def test_logical_freeze_is_deterministic_and_does_not_edit_the_source():
     from fatqat.compiler import compile_to_sc
     from fatqat.compiler.dialects import LogicalIR
 
-    program = _bell_program(program_type)
+    program = _bell_program()
     before = tuple(node.name for node in program.dag().nodes)
 
     first = compile_to_sc(
@@ -193,14 +201,12 @@ def test_logical_freeze_is_deterministic_and_does_not_edit_the_source(program_ty
     assert len(first.output.instructions) == 4
 
 
-def test_python_and_qasm_frontends_produce_the_same_logical_ir(program_type):
+def test_python_and_qasm_frontends_produce_the_same_logical_ir():
     from fatqat.compiler import compile_qasm_to_sc, compile_to_sc
     from fatqat.compiler.dialects import LogicalIR
 
     backend = fq.simulator.SCQubitSimulator()
-    python_ir = compile_to_sc(
-        _bell_program(program_type), backend, emit=LogicalIR.IR_ID
-    ).output
+    python_ir = compile_to_sc(_bell_program(), backend, emit=LogicalIR.IR_ID).output
     qasm_ir = compile_qasm_to_sc(_BELL_QASM, backend, emit=LogicalIR.IR_ID).output
 
     def semantic_facts(logical):
@@ -229,13 +235,13 @@ def test_python_and_qasm_frontends_produce_the_same_logical_ir(program_type):
 
 @pytest.mark.parametrize("operation", [ops.SX, ops.Reset])
 def test_compile_to_na_reports_a_target_specific_unsupported_gate(
-    program_type, operation
+    operation,
 ):
     from fatqat.compiler import PassError, compile_to_na
     from fatqat.compiler.algorithms.zap import load_architecture
     from fatqat.compiler.dialects import NAProgram
 
-    program = program_type(1)
+    program = fq.LogicalProgram(1)
     program.add(operation, 0)
     with pytest.raises(PassError, match=f"{operation.name}.*not supported"):
         compile_to_na(
@@ -245,13 +251,13 @@ def test_compile_to_na_reports_a_target_specific_unsupported_gate(
         )
 
 
-def test_logical_program_runs_end_to_end_on_the_sc_simulator(program_type):
+def test_logical_program_runs_end_to_end_on_the_sc_simulator():
     backend = fq.simulator.SCQubitSimulator(
         num_qubits=2,
         couplings=((0, 1),),
         runtime="numpy",
     )
-    compiled = fq.compiler.compile_to_sc(_bell_program(program_type), backend)
+    compiled = fq.compiler.compile_to_sc(_bell_program(), backend)
     assert compiled.route == ("freeze-logical", "normalize-sc", "lower-sc-to-native")
 
     counts = (
@@ -268,12 +274,10 @@ def test_logical_program_runs_end_to_end_on_the_sc_simulator(program_type):
     assert sum(counts.values()) == 32
 
 
-def test_logical_program_runs_end_to_end_on_the_na_simulator(program_type):
+def test_logical_program_runs_end_to_end_on_the_na_simulator():
     from fatqat.compiler.algorithms.zap import load_architecture
 
-    compiled = fq.compiler.compile_to_na(
-        _bell_program(program_type), load_architecture("default")
-    )
+    compiled = fq.compiler.compile_to_na(_bell_program(), load_architecture("default"))
     assert compiled.route == ("freeze-logical", "normalize-na", "schedule-with-zap")
     backend = fq.simulator.AtomArraySimulator(runtime="numpy")
 
@@ -291,25 +295,19 @@ def test_logical_program_runs_end_to_end_on_the_na_simulator(program_type):
     assert sum(counts.values()) == 32
 
 
-def test_program_conversion_preserves_source_and_register_identity():
-    from fatqat.compiler import compile_to_sc
+@pytest.mark.parametrize("target", ["sc", "na"])
+def test_compiler_rejects_plain_program(target):
+    from fatqat.compiler import ValidationError, compile_to_na, compile_to_sc
+    from fatqat.compiler.algorithms.zap import load_architecture
 
-    backend = fq.simulator.SCQubitSimulator()
-    program = fq.Program(1, 1, metadata={"label": "source", "nested": []})
+    program = fq.Program(1)
     program.add(ops.H, 0)
-    program.measure_all()
-    logical = compile_to_sc(program, backend, emit=fq.LogicalProgram.IR_ID).output
 
-    assert type(logical) is fq.LogicalProgram
-    assert tuple(node.name for node in logical.dag().nodes) == ("H", "Measurement")
-    assert logical.quantum_registers[0] is program.quantum_registers[0]
-    assert logical.classical_registers[0] is program.classical_registers[0]
-    logical.add(ops.X, 0)
-    logical.metadata["label"] = "converted"
-    program.metadata["nested"].append("shared")
-    assert tuple(node.name for node in program.dag().nodes) == ("H", "Measurement")
-    assert program.metadata["label"] == "source"
-    assert logical.metadata["nested"] == ["shared"]
+    with pytest.raises(ValidationError, match="expects LogicalProgram, got Program"):
+        if target == "sc":
+            compile_to_sc(program, fq.simulator.SCQubitSimulator())
+        else:
+            compile_to_na(program, load_architecture("default"))
 
 
 class CustomRX(ops.RX):
@@ -361,11 +359,11 @@ def test_logical_program_preserves_invalid_operation_guidance(operation):
     assert not program.dag().nodes
 
 
-def test_conditions_run_directly_but_are_rejected_by_the_static_compiler(program_type):
+def test_conditions_run_directly_but_are_rejected_by_the_static_compiler():
     from fatqat.compiler import PassError, compile_to_sc
     from fatqat.compiler.dialects import LogicalIR
 
-    program = program_type(2, 2)
+    program = fq.LogicalProgram(2, 2)
     program.add(ops.X, 0)
     program.measure(0, 0)
     program.add(ops.X, 1, condition=(0, 1))
@@ -383,16 +381,16 @@ def test_conditions_run_directly_but_are_rejected_by_the_static_compiler(program
         compile_to_sc(program, fq.simulator.SCQubitSimulator(), emit=LogicalIR.IR_ID)
 
 
-def test_register_views_compile_like_scalar_gates(program_type):
+def test_register_views_compile_like_scalar_gates():
     from fatqat.compiler import compile_to_sc
     from fatqat.compiler.dialects import LogicalIR
 
     first = fq.QuantumRegister(2, name="first")
     second = fq.QuantumRegister(2, name="second")
-    grouped = program_type([first, second])
+    grouped = fq.LogicalProgram([first, second])
     grouped.add(ops.H, first.all())
     grouped.add(ops.CX, (first.all(), second.all()))
-    scalar = program_type([first, second])
+    scalar = fq.LogicalProgram([first, second])
     for index in range(2):
         scalar.add(ops.H, first[index])
     for index in range(2):
@@ -409,25 +407,6 @@ def test_register_views_compile_like_scalar_gates(program_type):
         (first[0], second[0]),
         (first[1], second[1]),
     )
-
-
-@pytest.mark.parametrize("target", ["sc", "na"])
-def test_program_conversion_rejects_custom_operations(target):
-    from fatqat.compiler import compile_to_na, compile_to_sc
-    from fatqat.compiler.algorithms.zap import load_architecture
-
-    program = fq.Program(1)
-    program.add(CustomRX(0.25), 0)
-
-    with pytest.raises(ValueError, match="not a logical operation"):
-        if target == "sc":
-            compile_to_sc(
-                program, fq.simulator.SCQubitSimulator(), emit=fq.LogicalProgram.IR_ID
-            )
-        else:
-            compile_to_na(
-                program, load_architecture("default"), emit=fq.LogicalProgram.IR_ID
-            )
 
 
 def test_logical_program_accepts_builtin_qudit_operations():
