@@ -142,7 +142,29 @@ def compile_qasm_to_sc(
     filename: str | None = None,
     seed: int = 0,
 ) -> CompilationResult:
-    """Compile OpenQASM to an executable SC result at the final boundary."""
+    """Compile OpenQASM for a superconducting target.
+
+    Args:
+        source: OpenQASM 2 or 3 text, or an existing QasmSource.
+        backend: SCQubitSimulator supplying capacity and connectivity.
+        emit: Representation to return; defaults to SCNativeProgram.IR_ID.
+            Supported values are QasmSource.IR_ID, LogicalIR.IR_ID,
+            SCProgram.IR_ID, and SCNativeProgram.IR_ID.
+        filename: Optional source label retained on the QasmSource boundary.
+            It cannot be supplied when source is already a QasmSource.
+        seed: Routing seed, default 0.
+
+    Returns:
+        ExecutableCompilationResult at the final native boundary;
+        CompilationResult for an earlier emit boundary.
+
+    Raises:
+        TypeError: If source is neither text nor an exact QasmSource.
+        ValueError: If filename accompanies an existing QasmSource.
+        ValidationError: If an IR boundary is invalid.
+        EmitNotFoundError: If emit is not a boundary of the SC route.
+        PassError: If parsing, normalization, routing, or lowering fails.
+    """
 
     return _package_sc_result(
         create_sc_pipeline().compile(
@@ -225,7 +247,29 @@ def compile_qasm_to_na(
     emit: str = ZonedPlan.IR_ID,
     filename: str | None = None,
 ) -> CompilationResult:
-    """Compile OpenQASM to an executable ZAP-scheduled result at the final boundary."""
+    """Compile OpenQASM for a neutral-atom architecture.
+
+    Args:
+        source: OpenQASM 2 or 3 text, or an existing QasmSource.
+        architecture: ZAP architecture mapping, as returned by
+            load_architecture.
+        emit: Representation to return; defaults to ZonedPlan.IR_ID.
+            Supported values are QasmSource.IR_ID, LogicalIR.IR_ID,
+            NAProgram.IR_ID, and ZonedPlan.IR_ID.
+        filename: Optional source label retained on the QasmSource boundary.
+            It cannot be supplied when source is already a QasmSource.
+
+    Returns:
+        ExecutableCompilationResult at the final zoned-plan boundary;
+        CompilationResult for an earlier emit boundary.
+
+    Raises:
+        TypeError: If source is neither text nor an exact QasmSource.
+        ValueError: If filename accompanies an existing QasmSource.
+        ValidationError: If an IR boundary is invalid.
+        EmitNotFoundError: If emit is not a boundary of the NA route.
+        PassError: If parsing, normalization, or ZAP scheduling fails.
+    """
 
     return _package_na_result(
         create_na_pipeline().compile(

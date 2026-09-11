@@ -160,6 +160,7 @@ nav:
       - api/index.md
       - Build programs:
           - Program: api/program.md
+          - LogicalProgram: api/logical-program.md
           - Compiler: api/compiler.md
           - Registers: api/registers.md
           - Operations:

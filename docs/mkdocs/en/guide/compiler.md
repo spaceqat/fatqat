@@ -20,13 +20,25 @@ circuit.add(fq.operations.CX, (0, 1))
 circuit.measure_all()
 ```
 
-Compilation snapshots the LogicalProgram without editing it, so the same source can
-still be simulated directly or compiled for another target. The compiler
-accepts the static, numeric gate subset described below; direct simulation
-continues to support conditions on LogicalProgram and the broader Program
-operation set. The Python compiler entry points accept only an exact
-LogicalProgram; an ordinary Program remains an execution representation and is
-not converted implicitly.
+Compilation snapshots the LogicalProgram without editing it, so the same
+source can still be simulated directly or compiled for another target. The
+compiler accepts the static, numeric gate subset described below; direct
+simulation continues to support conditions on LogicalProgram and the broader
+Program operation set. The Python compiler entry points accept only an exact
+LogicalProgram; an ordinary Program remains an execution representation and
+is not converted implicitly.
+
+Python and OpenQASM meet at the same immutable logical IR before target
+lowering:
+
+```text
+LogicalProgram ── freeze ──┐
+                           ├─ LogicalIR ─┬─ SCProgram ─ SABRE ─ SCNativeProgram
+OpenQASM ─────── parse ────┘             └─ NAProgram ── ZAP ── ZonedPlan
+```
+
+The source objects remain user-editable. Every later representation is an
+immutable compiler boundary that can be requested with `emit`.
 
 ## Compile and run on an SC profile
 
@@ -42,11 +54,11 @@ sc_backend = fq.simulator.SCQubitSimulator(
     runtime="numpy",
 )
 
-compiled = fq.compiler.compile_to_sc(circuit, sc_backend, seed=7)
+sc_compiled = fq.compiler.compile_to_sc(circuit, sc_backend, seed=7)
 
 counts = (
     sc_backend.run(
-        compiled,
+        sc_compiled,
         shots=100,
         simulation_config={"seed": 7},
     )
@@ -65,19 +77,21 @@ is not part of the public compiler contract.
 The neutral-atom route uses the bundled ZAP scheduler:
 
 ```python
-from fatqat.compiler.algorithms.zap import load_architecture
+from fatqat.compiler.algorithms import load_architecture
 
 architecture = load_architecture("default")
-compiled = fq.compiler.compile_to_na(circuit, architecture)
+na_compiled = fq.compiler.compile_to_na(circuit, architecture)
 na_backend = fq.simulator.AtomArraySimulator(runtime="numpy")
 
-counts = na_backend.run(compiled, shots=100).result().get_counts()
+counts = na_backend.run(na_compiled, shots=100).result().get_counts()
 ```
+
+## Inspect and run compilation results
 
 Both target compilers return an executable result at their default final
 boundary. Pass that result directly to the matching simulator. The final
-compiler IR remains available as `compiled.output`: an `SCNativeProgram` for
-SC or a `ZonedPlan` for NA. `compiled.route` records the passes that ran.
+compiler IR remains available as `.output`: an `SCNativeProgram` for SC or a
+`ZonedPlan` for NA. `.route` records the passes that ran.
 
 An explicit intermediate `emit` returns an inspectable
 [`CompilationResult`][fatqat.compiler.CompilationResult] rather than an
@@ -86,13 +100,23 @@ executable result. The low-level
 [`to_na_simulator_program`][fatqat.compiler.to_na_simulator_program] functions
 remain available when advanced callers construct or modify final IR directly.
 
+For an NA result, animate the scheduled transfers, movements, gate batches,
+and crosstalk events from its `ZonedPlan`:
+
+```python
+animation = fq.compiler.create_na_animation(na_compiled.output, architecture)
+fq.compiler.save_na_animation(animation, "na-schedule.mp4")
+```
+
+`create_na_animation()` returns a Matplotlib animation. Saving an MP4 requires
+FFmpeg on `PATH`; creating and displaying the animation does not.
+
 ## Supported source behavior
 
-The v0.3 compiler accepts static, numeric gate circuits. Measurements must be
-terminal. Bind symbolic parameters with `assign_parameters()` before
-compilation; mid-circuit
-measurement, conditions, feed-forward, and general control flow are not yet
-compiler inputs.
+The current experimental compiler accepts static, numeric gate circuits.
+Measurements must be terminal. Bind symbolic parameters with
+`assign_parameters()` before compilation; mid-circuit measurement, conditions,
+feed-forward, and general control flow are not yet compiler inputs.
 
 ```python
 theta = fq.Parameter("theta")
@@ -116,7 +140,7 @@ current NA route rejects `SX` and `Reset`. Such a failure is reported as a
 [`PassError`][fatqat.compiler.PassError] naming the pass and the underlying
 unsupported operation.
 
-OpenQASM remains an equal frontend through
+OpenQASM 2 and 3 remain equal frontends through
 [`compile_qasm_to_sc`][fatqat.compiler.compile_qasm_to_sc] and
 [`compile_qasm_to_na`][fatqat.compiler.compile_qasm_to_na]. Python and QASM
 inputs converge at the same immutable logical IR, so all later lowering is

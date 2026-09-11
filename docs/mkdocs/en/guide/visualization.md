@@ -121,6 +121,21 @@ figure = result.draw(number_to_keep=20, sort="count")
 
     1. `stat="frequencies"` divides each count by the total number of shots; omit it to show raw counts.
 
+## Animate a compiled neutral-atom plan
+
+A final NA compilation retains its physical `ZonedPlan` in `.output`. Animate
+that plan with the same architecture used for compilation:
+
+```python
+animation = fq.compiler.create_na_animation(na_compiled.output, architecture)
+fq.compiler.save_na_animation(animation, "na-schedule.mp4")
+```
+
+The animation shows transfers, atom movements, gate batches, and crosstalk
+events without changing the plan. Creating it requires Matplotlib; saving MP4
+requires FFmpeg on `PATH`. The [compiler guide](compiler.md) shows how to
+produce `na_compiled` and load `architecture`.
+
 ## Embed, style, and save figures
 
 Pass `ax=` to draw into an existing Matplotlib axis:

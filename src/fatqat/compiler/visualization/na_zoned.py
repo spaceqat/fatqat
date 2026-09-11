@@ -51,7 +51,22 @@ def create_na_animation(
     *,
     fps: int = 30,
 ) -> FuncAnimation:
-    """Construct a read-only animation of a verified neutral-atom plan."""
+    """Animate a compiled neutral-atom zoned plan without modifying it.
+
+    Args:
+        plan: Verified ZonedPlan, normally ``compiled.output`` from a final NA
+            compilation.
+        architecture: The same architecture mapping used for compilation.
+        fps: Positive integer frames per second, default 30.
+
+    Returns:
+        A Matplotlib FuncAnimation showing transfers, movements, gate batches,
+        and crosstalk events.
+
+    Raises:
+        ValidationError: If plan violates the ZonedPlan contract.
+        ValueError: If fps is not positive or the architecture has no sites.
+    """
 
     verify_zoned_plan(plan)
     _verify_fps(fps)
@@ -62,7 +77,21 @@ def save_na_animation(
     animation: FuncAnimation,
     output_path: str | Path,
 ) -> None:
-    """Save a neutral-atom animation to an explicitly requested MP4 path."""
+    """Save a neutral-atom animation to an MP4 file.
+
+    Args:
+        animation: Animation returned by create_na_animation.
+        output_path: Destination path ending in ``.mp4``. Its parent directory
+            must already exist.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: If output_path does not end in ``.mp4``.
+        FileNotFoundError: If the destination directory does not exist.
+        UnsupportedFeatureError: If FFmpeg is unavailable on ``PATH``.
+    """
 
     path = Path(output_path)
     if path.suffix.lower() != ".mp4":

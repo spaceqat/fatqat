@@ -15,7 +15,8 @@ map and lower it for a superconducting or neutral-atom target. Compilation
 snapshots the source without editing it. Ordinary [`Program`][fatqat.Program]
 instances remain valid simulator inputs but are not accepted by the Python
 compiler entry points. See the [compiler guide](../guide/compiler.md) for
-supported source behavior and complete execution examples.
+supported source behavior and complete execution examples, and see
+[LogicalProgram](logical-program.md) for the authoring contract.
 
 ```python
 import fatqat as fq
@@ -37,6 +38,18 @@ circuit.measure_all()
 ::: fatqat.compiler.compile_qasm_to_sc
 
 ::: fatqat.compiler.compile_qasm_to_na
+
+## Neutral-atom architecture and visualization
+
+Load a bundled architecture for the NA compiler, then visualize the final
+`ZonedPlan` returned in `compiled.output`. Creating an animation requires only
+Matplotlib; saving it as MP4 additionally requires FFmpeg on `PATH`.
+
+::: fatqat.compiler.algorithms.load_architecture
+
+::: fatqat.compiler.create_na_animation
+
+::: fatqat.compiler.save_na_animation
 
 ## Results
 
@@ -60,6 +73,40 @@ simulator.
 
 ::: fatqat.compiler.to_na_simulator_program
 
+## Explicit pipeline construction
+
+The high-level compile functions above are the normal user interface. These
+objects support advanced callers that need to construct or run an explicit
+typed pipeline.
+
+::: fatqat.compiler.Compiler
+
+::: fatqat.compiler.CompileContext
+
+::: fatqat.compiler.Pipeline
+
+::: fatqat.compiler.TranslationPass
+
+::: fatqat.compiler.create_sc_pipeline
+
+::: fatqat.compiler.create_na_pipeline
+
+::: fatqat.compiler.IRRegistry
+
+::: fatqat.compiler.IRDefinition
+
+::: fatqat.compiler.IRProgram
+
 ## Errors
 
+::: fatqat.compiler.CompilerError
+
+::: fatqat.compiler.ValidationError
+
 ::: fatqat.compiler.PassError
+
+::: fatqat.compiler.EmitNotFoundError
+
+::: fatqat.compiler.PipelineNotFoundError
+
+::: fatqat.compiler.UnsupportedFeatureError

@@ -4,11 +4,17 @@ title: "LogicalProgram"
 
 # LogicalProgram
 
+!!! warning "Compiler under development"
+
+    LogicalProgram is the Python frontend for the experimental compiler. Its
+    supported operation set may change between releases. Pin an exact FatQat
+    version when reproducibility matters.
+
 [`LogicalProgram`][fatqat.LogicalProgram] is a restricted
 [`Program`](program.md) for device-independent circuits. It uses the same
 constructor and authoring interface; `add()`, `measure()`, and `measure_all()`
-mutate in place and return `None`. Use LogicalProgram, rather than its Program
-base class, with `compile_to_sc()` and `compile_to_na()`.
+mutate in place and return `None`. Use `LogicalProgram`, rather than its
+`Program` base class, with `compile_to_sc()` and `compile_to_na()`.
 
 `add()` accepts the built-in qubit and qudit circuit gates, reset, and
 barriers. It rejects device operations (including atom placement, pairing,
