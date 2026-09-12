@@ -170,6 +170,44 @@ def test_one_backend_applies_interaction_cutoff_independently_per_run(model):
     assert nearest_again.get_unitary() == pytest.approx(nearest_unitary)
 
 
+@pytest.mark.parametrize(
+    "coordinates",
+    [
+        ((2, 3), (0, 0), (0, 3)),
+        ((2, 3, 0), (0, 0, 0), (0, 3, 0)),
+        ((0, 3, 2), (0, 0, 0), (0, 3, 0)),
+    ],
+    ids=("2d", "3d-planar", "3d-z-separated"),
+)
+def test_coordinate_arrangement_preserves_pair_phases_and_site_order(coordinates):
+    document = json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    document["parameters"]["c6"] = 64.0
+    model = Atom2LevelModel.from_document(document)
+    backend = Atom2LevelEmulator(
+        model,
+        arrangement=fq.emulator.AtomArrangement.from_coordinates(coordinates),
+        method="unitary",
+    )
+    duration = 0.3
+    # The waveform grid caps integration steps for the analytic phase check.
+    idle = SampledWaveform(np.linspace(0.0, duration, 1001), np.zeros(1001))
+    program = fq.Program(3)
+    program.add(
+        ops.PulseOperation(duration, (PulseControl(model.control.drive(), idle),))
+    )
+
+    actual = backend.run(program).result().get_unitary()
+
+    # In input order, distances (0, 1), (0, 2), (1, 2) are sqrt(13), 2, 3.
+    energies = np.zeros(8)
+    energies[3] = 64.0 / 3**6  # |011>
+    energies[5] = 64.0 / 2**6  # |101>
+    energies[6] = 64.0 / 13**3  # |110>
+    energies[7] = energies[3] + energies[5] + energies[6]
+    expected = np.diag(np.exp(-1j * duration * energies))
+    assert actual == pytest.approx(expected, abs=1e-6)
+
+
 def test_removed_interaction_policy_keyword_and_property_are_absent(model):
     arrangement = fq.emulator.AtomArrangement.rectangular(1, 2, 2.0)
     with pytest.raises(TypeError, match="interaction_policy"):
