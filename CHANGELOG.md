@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0a1 (unreleased)
+## 0.1.0a1
 
 First alpha release of FatQat, a quantum-computing toolkit built around
 the `Program` authoring interface.
