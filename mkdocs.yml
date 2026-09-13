@@ -138,7 +138,7 @@ nav:
       - Start with one program:
           - Quickstart: guide/quickstart.md
           - Programs and registers: guide/program.md
-          - Compile a logical circuit: guide/compiler.md
+          - Compile and run a logical circuit: guide/compiler.md
           - Execution models: guide/execution-models.md
       - Run and analyze programs:
           - Simulation: guide/simulation.md
