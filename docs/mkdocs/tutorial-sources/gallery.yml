@@ -18,9 +18,9 @@ index:
       category folder.
     tip_title: Choose a path
     tip: >-
-      Begin with the Bell state if you are new to FatQat. The algorithms reuse the
-      same execution model, while the neutral-atom track moves progressively closer
-      to many-body hardware physics.
+      In Foundations, borrow a qutrit's third level to build and verify a Toffoli
+      gate. The algorithms reuse the same execution model, while the neutral-atom
+      track moves progressively closer to many-body hardware physics.
     open: Open tutorial
 
 # Change this list to choose the gallery order. Unlisted folders follow alphabetically.
@@ -35,8 +35,8 @@ categories:
     en:
       title: Foundations
       description: >-
-        Start with a compact circuit whose state, samples, and visual interpretation
-        can all be checked by hand.
+        Learn to build, run, and interpret compact quantum experiments, from
+        circuits and measurement to control pulses.
   algorithms:
     en:
       title: Algorithms

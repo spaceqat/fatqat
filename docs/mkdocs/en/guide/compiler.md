@@ -93,6 +93,11 @@ boundary. Pass that result directly to the matching simulator. The final
 compiler IR remains available as `.output`: an `SCNativeProgram` for SC or a
 `ZonedPlan` for NA. `.route` records the passes that ran.
 
+Compiled programs retain classical registers in source declaration order,
+including unused registers and unwritten slots within measured registers.
+Measurement order does not change count-key positions. Counts follow the
+usual [ordering and zero-fill rules](../api/result.md#ordering-and-mutable-values).
+
 An explicit intermediate `emit` returns an inspectable
 [`CompilationResult`][fatqat.compiler.CompilationResult] rather than an
 executable result. The low-level

@@ -8,6 +8,7 @@ from collections.abc import Callable
 from ... import operations as ops
 from ...operations.fixed_gates import CZGate, SwapGate
 from ...operations.parametric_gates import RX, RZ
+from ...registers import ClassicalRegister
 from ...simulator import SCQubitSimulator
 from ...simulator.fake_superconducting import _SCQubitRotationSimulator
 from ..algorithms import RouteSwap, SabreResult, SiteId, sabre_map
@@ -38,7 +39,12 @@ def lower_sc_to_native_program(
         raise TypeError("SC lowering requires SCQubitSimulator")
     routed = _route(source, backend, seed)
     operations = _lower_events(source, routed, _lower_sx_node, _sx_swap)
-    target = SCNativeProgram(operations, routed.initial_layout, routed.final_layout)
+    target = SCNativeProgram(
+        operations,
+        routed.initial_layout,
+        routed.final_layout,
+        classical_registers=_declared_classical_registers(source),
+    )
     verify_sc_native_program(target)
     _verify_against_backend(target.operations, target.initial_layout, backend)
     return target
@@ -57,11 +63,25 @@ def _lower_sc_to_rotation_program(
     routed = _route(source, backend, seed)
     operations = _lower_events(source, routed, _lower_rotation_node, _rotation_swap)
     target = _RotationNativeProgram(
-        operations, routed.initial_layout, routed.final_layout
+        operations,
+        routed.initial_layout,
+        routed.final_layout,
+        classical_registers=_declared_classical_registers(source),
     )
     _verify_rotation_native_program(target)
     _verify_against_backend(target.operations, target.initial_layout, backend)
     return target
+
+
+def _declared_classical_registers(source: SCProgram) -> tuple[ClassicalRegister, ...]:
+    registers: list[ClassicalRegister] = []
+    seen: set[int] = set()
+    for clbit in source.clbits:
+        register = clbit.register
+        if id(register) not in seen:
+            seen.add(id(register))
+            registers.append(register)
+    return tuple(registers)
 
 
 def _route(source: SCProgram, backend, seed: int) -> SabreResult:

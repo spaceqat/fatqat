@@ -69,6 +69,23 @@ These functions project manually created or modified final IR. Normal callers
 can pass the result of a final-target compile helper directly to the matching
 simulator.
 
+SC native programs can declare `classical_registers` as a keyword-only tuple
+of the original register objects in output order. The bridge retains all slots,
+including unwritten slots and entirely unused registers. Distinct registers may
+share a name; declaring the same object twice is invalid. Measurement outputs
+must belong to declared registers. The bridge and native verifier raise
+`ValidationError` for invalid explicit declarations.
+
+The default `None` preserves compatibility with native programs constructed
+without declarations: the bridge discovers registers in first measurement
+occurrence order. This fallback cannot recover original declaration order or
+registers with no measurements. Use `()` to declare no classical registers;
+it does not request inference. Compiler-generated native programs always carry
+explicit declarations. Adding this field preserves the existing three positional
+constructor arguments; it also participates in dataclass equality and reflection.
+
+::: fatqat.compiler.dialects.SCNativeProgram
+
 ::: fatqat.compiler.to_sc_simulator_program
 
 ::: fatqat.compiler.to_na_simulator_program

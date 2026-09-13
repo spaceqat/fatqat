@@ -1,4 +1,7 @@
+from dataclasses import replace
+
 import numpy as np
+import pytest
 
 import fatqat as fq
 from fatqat.compiler.dialects import (
@@ -6,6 +9,7 @@ from fatqat.compiler.dialects import (
     NativeMeasure,
     NativeReset,
     SCNativeProgram,
+    verify_sc_program,
 )
 from fatqat.compiler.dialects.sc_native import _RotationNativeProgram
 from fatqat.compiler.passes import (
@@ -179,3 +183,28 @@ def test_fixed_seed_repeats_operations_and_layouts():
     second = lower_sc_to_native_program(source, backend, seed=11)
 
     assert second == first
+
+
+@pytest.mark.parametrize(
+    ("backend_type", "lower"),
+    (
+        (SCQubitSimulator, lower_sc_to_native_program),
+        (_SCQubitRotationSimulator, _lower_sc_to_rotation_program),
+    ),
+)
+def test_lowering_retains_partial_interleaved_classical_declarations(
+    backend_type, lower
+):
+    qubits = fq.QuantumRegister(1, name="q")
+    first = fq.ClassicalRegister(3, name="a")
+    second = fq.ClassicalRegister(2, name="b")
+    program = fq.Program([qubits], [first, second])
+    program.add(fq.operations.X, qubits[0])
+    source = normalize_sc_program(snapshot_program(program))
+    source = replace(source, clbits=(first[2], second[1], first[0]))
+    verify_sc_program(source)
+
+    native = lower(source, backend_type(num_qubits=1, couplings=()))
+    bridged, _layout = fq.compiler.to_sc_simulator_program(native)
+
+    assert bridged.classical_registers == (first, second)

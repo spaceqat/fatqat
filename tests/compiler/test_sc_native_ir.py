@@ -1,7 +1,7 @@
 import pytest
 
 import fatqat as fq
-from fatqat.compiler import ValidationError
+from fatqat.compiler import ValidationError, to_sc_simulator_program
 from fatqat.compiler.dialects import (
     NativeGate,
     NativeMeasure,
@@ -88,3 +88,90 @@ def test_native_program_accepts_measure_and_reset_with_semantic_origins():
     )
 
     verify_sc_native_program(program)
+
+
+@pytest.fixture(
+    name="native_api",
+    params=(
+        (SCNativeProgram, verify_sc_native_program),
+        (_RotationNativeProgram, _verify_rotation_native_program),
+    ),
+)
+def _native_api(request):
+    return request.param
+
+
+@pytest.mark.parametrize("explicit", (False, True))
+def test_native_bridge_respects_explicit_or_legacy_register_order(native_api, explicit):
+    native_type, verify = native_api
+    qubit = _qref()
+    first = fq.ClassicalRegister(1, name="c")
+    second = fq.ClassicalRegister(1, name="c")
+    unused = fq.ClassicalRegister(2, name="unused")
+    declarations = (first, second, unused)
+    options = {"classical_registers": declarations} if explicit else {}
+    native = native_type(
+        (
+            NativeMeasure("m.0", 0, second[0], ("logical.0",)),
+            NativeMeasure("m.1", 0, first[0], ("logical.1",)),
+        ),
+        ((qubit, 0),),
+        ((qubit, 0),),
+        **options,
+    )
+
+    verify(native)
+    program, _layout = to_sc_simulator_program(native)
+
+    assert program.classical_registers == (
+        declarations if explicit else (second, first)
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    (
+        ("list", "classical registers must be a tuple"),
+        ("wrong-kind", "ClassicalRegister"),
+        ("duplicate", "duplicate native classical register"),
+        ("undeclared", "undeclared classical register"),
+        ("explicit-empty", "undeclared classical register"),
+        ("wrong-output", "measurement output must be a clbit"),
+    ),
+)
+def test_native_declarations_are_validated_by_verifier_and_bridge(
+    native_api, case, message
+):
+    native_type, verify = native_api
+    qubit = _qref()
+    bits = fq.ClassicalRegister(1, name="c")
+    declarations = {
+        "list": [bits],
+        "wrong-kind": (qubit.register,),
+        "duplicate": (bits, bits),
+        "undeclared": (fq.ClassicalRegister(1, name="c"),),
+        "explicit-empty": (),
+        "wrong-output": (bits,),
+    }[case]
+    output = qubit if case == "wrong-output" else bits[0]
+    native = native_type(
+        (NativeMeasure("m.0", 0, output, ("logical.0",)),),
+        ((qubit, 0),),
+        ((qubit, 0),),
+        classical_registers=declarations,
+    )
+
+    for check in (verify, to_sc_simulator_program):
+        with pytest.raises(ValidationError, match=message):
+            check(native)
+
+
+def test_native_explicit_empty_declarations_without_measurement(native_api):
+    native_type, verify = native_api
+    qubit = _qref()
+    native = native_type((), ((qubit, 0),), ((qubit, 0),), classical_registers=())
+
+    verify(native)
+    program, _layout = to_sc_simulator_program(native)
+
+    assert program.classical_registers == ()

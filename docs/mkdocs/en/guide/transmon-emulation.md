@@ -155,6 +155,9 @@ corrections. Those differences account for the changed populations and the
 reported `|2>` leakage. Both pulses use fixed analytic values rather than
 numerical calibration.
 
+For a complete amplitude scan, parameter selection, and checks on other input
+states, follow [Calibrating a quantum gate](../tutorials/pulse-calibration.md).
+
 `SampledWaveform` uses the endpoint values you provide. It does not taper a
 waveform or require it to start and finish at zero; this example does both
 explicitly through the envelope.

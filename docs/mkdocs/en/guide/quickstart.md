@@ -4,10 +4,17 @@ In about ten minutes, you will create a Bell pair, draw its circuit, run 1,000
 shots, and see why only `00` and `11` appear. The computation will live in a
 [`Program`][fatqat.Program] from start to finish.
 
-## Install FatQat from source
+## Install FatQat
 
-FatQat requires Python 3.12 or later and is not yet published on PyPI. Clone
-the repository first:
+FatQat requires Python 3.12 or later. In a virtual environment, install FatQat:
+
+```bash
+python -m pip install fatqat
+```
+
+### Install the development version from source
+
+To work with the latest source instead, clone the repository:
 
 ```bash
 git clone https://github.com/spaceqat/fatqat.git

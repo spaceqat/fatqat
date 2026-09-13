@@ -1,5 +1,6 @@
 [project]
 name = "fatqat"
+description = "A quantum computing toolkit for building, compiling, and executing quantum programs."
 dynamic = ["version"]
 readme = "README.md"
 requires-python = ">=3.12"

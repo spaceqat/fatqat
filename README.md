@@ -19,8 +19,13 @@ physically or mathematically realize.
 
 ## Installation
 
-FatQat requires Python 3.12 or newer and is not yet published on PyPI. Install
-it from a source checkout:
+FatQat requires Python 3.12 or newer. Install FatQat:
+
+```sh
+python -m pip install fatqat
+```
+
+To work on the development version, install from a source checkout:
 
 ```sh
 git clone https://github.com/spaceqat/fatqat.git
@@ -87,6 +92,9 @@ contains longer algorithm and physics case studies. The
 [API reference](https://fatqat.readthedocs.io/en/latest/api/)
 contains the exact signatures, supported operations, shapes, units, and
 validation contracts.
+
+Release notes are in the
+[changelog](https://github.com/spaceqat/fatqat/blob/main/CHANGELOG.md).
 
 ## Development
 

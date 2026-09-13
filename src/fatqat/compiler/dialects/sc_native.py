@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar, TypeAlias
 
 from ...operations import Operation
@@ -42,13 +42,35 @@ NativeInstruction: TypeAlias = NativeGate | NativeMeasure | NativeReset
 
 @dataclass(frozen=True, slots=True)
 class SCNativeProgram:
-    """Canonical physical-site program for the public SC target."""
+    """Canonical physical-site program for the public SC target.
+
+    Args:
+        operations: Native gates, measurements, and resets in execution order.
+        initial_layout: Logical qubit to physical site pairs before routing.
+        final_layout: Logical qubit to physical site pairs after routing.
+        classical_registers: Keyword-only tuple of original classical register
+            objects in output declaration order, including unused registers.
+            Each register contributes all slots in increasing index order.
+            The default ``None`` lets the simulator bridge infer registers
+            from first measurement occurrence for legacy native programs;
+            that fallback cannot recover unused registers or source order.
+            ``()`` explicitly declares no classical registers. Compiler
+            lowering always supplies a tuple.
+
+    The native verifier and simulator bridge validate supplied declarations:
+    register objects must be distinct ClassicalRegister instances, and every
+    measurement destination must belong to a declared register. Names need
+    not be unique. Construction itself does not perform this validation.
+    """
 
     IR_ID: ClassVar[str] = "sc.native.v1"
 
     operations: tuple[NativeInstruction, ...]
     initial_layout: LayoutSnapshot
     final_layout: LayoutSnapshot
+    classical_registers: tuple[ClassicalRegister, ...] | None = field(
+        default=None, kw_only=True
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +82,9 @@ class _RotationNativeProgram:
     operations: tuple[NativeInstruction, ...]
     initial_layout: LayoutSnapshot
     final_layout: LayoutSnapshot
+    classical_registers: tuple[ClassicalRegister, ...] | None = field(
+        default=None, kw_only=True
+    )
 
 
 def verify_sc_native_program(program: object) -> None:
@@ -126,6 +151,40 @@ def _verify_native_program(
             or not isinstance(instruction.clbit.register, ClassicalRegister)
         ):
             raise ValidationError("native measurement output must be a clbit")
+
+    _verify_native_classical_registers(program)
+
+
+def _verify_native_classical_registers(
+    program: SCNativeProgram | _RotationNativeProgram,
+) -> None:
+    """Validate explicit output declarations without changing legacy inference."""
+    registers = program.classical_registers
+    if registers is None:
+        return
+    if not isinstance(registers, tuple):
+        raise ValidationError("native classical registers must be a tuple")
+    seen: set[int] = set()
+    for register in registers:
+        if not isinstance(register, ClassicalRegister):
+            raise ValidationError(
+                "native classical registers must be ClassicalRegister instances"
+            )
+        if id(register) in seen:
+            raise ValidationError("duplicate native classical register")
+        seen.add(id(register))
+
+    for instruction in program.operations:
+        if not isinstance(instruction, NativeMeasure):
+            continue
+        if type(instruction.clbit) is not RegisterRef or not isinstance(
+            instruction.clbit.register, ClassicalRegister
+        ):
+            raise ValidationError("native measurement output must be a clbit")
+        if id(instruction.clbit.register) not in seen:
+            raise ValidationError(
+                "native measurement references an undeclared classical register"
+            )
 
 
 def _verify_operation_id(operation_id: str, seen: set[str]) -> None:

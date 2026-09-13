@@ -14,6 +14,7 @@ from .dialects.sc_native import (
     NativeReset,
     SCNativeProgram,
     _RotationNativeProgram,
+    _verify_native_classical_registers,
 )
 from .errors import ValidationError
 
@@ -21,10 +22,28 @@ from .errors import ValidationError
 def to_sc_simulator_program(
     native: SCNativeProgram,
 ) -> tuple[Program, ResourceLayout]:
-    """Project an SC native program onto fixed simulator site references."""
+    """Project an SC native program onto fixed simulator site references.
+
+    Args:
+        native: SC native program. Explicit ``classical_registers`` preserve
+            register objects, declaration order, and unused slots. If omitted
+            (``None``), infer registers in first measurement occurrence order;
+            unmentioned registers cannot be recovered. An empty tuple declares
+            no classical registers and does not enable inference.
+
+    Returns:
+        A simulator Program and its physical ResourceLayout.
+
+    Raises:
+        TypeError: If native is not an SCNativeProgram.
+        ValidationError: If explicit classical declarations are not a tuple of
+            distinct ClassicalRegister objects, or a measurement destination
+            is not a classical reference belonging to a declared register.
+    """
 
     if type(native) not in (SCNativeProgram, _RotationNativeProgram):
         raise TypeError("native must be SCNativeProgram")
+    _verify_native_classical_registers(native)
 
     sites: list[int | str] = []
 
@@ -35,14 +54,18 @@ def to_sc_simulator_program(
     for layout in (native.initial_layout, native.final_layout):
         for _logical, site in layout:
             remember(site)
-    classical_registers: list[ClassicalRegister] = []
+    classical_registers = (
+        [] if native.classical_registers is None else list(native.classical_registers)
+    )
     for instruction in native.operations:
         if isinstance(instruction, NativeGate):
             for site in instruction.sites:
                 remember(site)
         else:
             remember(instruction.site)
-        if isinstance(instruction, NativeMeasure):
+        if native.classical_registers is None and isinstance(
+            instruction, NativeMeasure
+        ):
             register = instruction.clbit.register
             if all(register is not existing for existing in classical_registers):
                 classical_registers.append(register)
