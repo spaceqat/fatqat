@@ -40,7 +40,23 @@ for name in ("default", "scale_to_100", "scale_to_500"):
 """
 
 
+def _ensure_pip() -> None:
+    """Bootstrap pip into the active venv when missing (e.g. uv-created venvs)."""
+    probe = subprocess.run(
+        [sys.executable, "-m", "pip", "--version"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if probe.returncode != 0:
+        subprocess.run(
+            [sys.executable, "-m", "ensurepip", "--upgrade"],
+            check=True,
+        )
+
+
 def _build_wheel(wheel_dir: Path) -> Path:
+    _ensure_pip()
     subprocess.run(
         [
             sys.executable,
