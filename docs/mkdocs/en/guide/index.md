@@ -79,6 +79,7 @@ target, continue with [Compile a logical circuit](compiler.md).
     ---
 
     [OpenQASM and Qiskit](interoperability.md) ·
+    [LQCloud hardware](lqcloud.md) ·
     [Troubleshooting](troubleshooting.md)
 
 </div>

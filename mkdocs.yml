@@ -153,6 +153,7 @@ nav:
           - Neutral-atom emulation: guide/neutral-atom-emulation.md
       - Connect and diagnose:
           - Interoperability: guide/interoperability.md
+          - LQCloud hardware: guide/lqcloud.md
           - Troubleshooting: guide/troubleshooting.md
   - Tutorials:
       - tutorials/index.md
@@ -206,6 +207,7 @@ nav:
               - api/interoperability/index.md
               - OpenQASM: api/interoperability/openqasm.md
               - Qiskit: api/interoperability/qiskit.md
+              - LQCloud QEC17: api/interoperability/lqcloud.md
           - Implementation maps: api/implementation.md
       - Errors and stability:
           - Exceptions: api/exceptions.md

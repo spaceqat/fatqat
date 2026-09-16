@@ -13,9 +13,9 @@ machine beneath it.
 | Hardware-profile simulation | check native operations, placement, connectivity, capacity, or atom occupancy |
 | Hamiltonian emulation | follow pulses, coupling, leakage, timing, and continuous-time noise |
 
-The execution targets accept the same `Program` type and return results through
-the same `Job`/`Result` workflow. Each target still validates what it can
-physically or mathematically realize.
+These simulation and emulation targets accept the same `Program` type and
+return results through the same `Job`/`Result` workflow. Each target still
+validates what it can physically or mathematically realize.
 
 ## Installation
 
@@ -86,6 +86,8 @@ From there:
 - [Follow a Program into physical dynamics](https://fatqat.readthedocs.io/en/latest/guide/hamiltonian-emulation/),
   then continue with the transmon or neutral-atom workflow.
 - [Connect OpenQASM and Qiskit](https://fatqat.readthedocs.io/en/latest/guide/interoperability/).
+- [Run native circuits on LQCloud hardware](https://fatqat.readthedocs.io/en/latest/guide/lqcloud/)
+  using the optional SDK and its asynchronous job and result workflow.
 
 The [tutorial gallery](https://fatqat.readthedocs.io/en/latest/tutorials/)
 contains longer algorithm and physics case studies. The

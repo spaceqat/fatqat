@@ -46,8 +46,8 @@ hero:
 
 -   :material-transit-connection-variant:{ .lg .middle } **One execution workflow**
 
-    Every backend accepts a `Program` and uses the same `Result`
-    interface, while validating what it can realize.
+    Simulators and emulators accept a `Program` and use the same `Result`
+    interface, while validating what they can realize.
 
 </div>
 
@@ -85,6 +85,10 @@ question in front of you.
     [:octicons-arrow-right-24: Follow physical dynamics](guide/hamiltonian-emulation.md)
 
 </div>
+
+To submit a native circuit to real quantum hardware, use the optional
+[LQCloud adapter](guide/lqcloud.md). It accepts a `Program` and returns the
+LQCloud SDK's asynchronous job and result objects.
 
 ## One Grover algorithm, three execution levels
 

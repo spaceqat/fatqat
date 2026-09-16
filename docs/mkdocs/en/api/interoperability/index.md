@@ -11,3 +11,5 @@ for the guided workflows.
 
 - [OpenQASM](openqasm.md)
 - [Qiskit](qiskit.md)
+- [LQCloud QEC17](lqcloud.md): submit native Programs to quantum hardware;
+  start with the [LQCloud hardware guide](../../guide/lqcloud.md).

@@ -10,8 +10,10 @@ T = TypeVar("T")
 class Job(Generic[T]):
     """Hold the result of a completed submission.
 
-    Jobs returned by current backends and estimators are already terminal.
+    Jobs returned by simulators, emulators, and estimators are already terminal.
     ``result()`` returns the result value or raises the execution error.
+
+    The optional LQCloud adapter returns its SDK's asynchronous job instead.
 
     Attributes:
         status: ``"DONE"`` for a successful submission or ``"ERROR"`` for a

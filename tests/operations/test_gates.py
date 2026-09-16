@@ -12,12 +12,24 @@ from fatqat.operations import Operation
     [
         (ops.I, "I", 1),
         (ops.H, "H", 1),
+        (ops.HY, "HY", 1),
         (ops.S, "S", 1),
         (ops.Sdg, "Sdg", 1),
         (ops.SX, "SX", 1),
         (ops.X, "X", 1),
+        (ops.MX, "MX", 1),
         (ops.Y, "Y", 1),
+        (ops.MY, "MY", 1),
         (ops.Z, "Z", 1),
+        (ops.MZ, "MZ", 1),
+        (ops.XHalf, "XHalf", 1),
+        (ops.MXHalf, "MXHalf", 1),
+        (ops.YHalf, "YHalf", 1),
+        (ops.MYHalf, "MYHalf", 1),
+        (ops.XYHalf, "XYHalf", 1),
+        (ops.MXYHalf, "MXYHalf", 1),
+        (ops.MXMYHalf, "MXMYHalf", 1),
+        (ops.XMYHalf, "XMYHalf", 1),
         (ops.T, "T", 1),
         (ops.Tdg, "Tdg", 1),
         (ops.CX, "CX", 2),
@@ -43,6 +55,30 @@ def test_parametric_gate_is_class_storing_theta():
     assert g.num_subsystems == 1
     assert ops.RY(0.3).name == "RY"
     assert ops.RZ(0.4).name == "RZ"
+
+
+def test_su2_copies_to_an_immutable_unitary_value():
+    import numpy as np
+
+    matrix = np.array([[0, 1], [1, 0]], dtype=complex)
+    gate = ops.SU2(matrix)
+    matrix[0, 0] = 3
+
+    assert gate.name == "SU2"
+    assert gate.num_subsystems == 1
+    assert gate.matrix == ((0j, (1 + 0j)), ((1 + 0j), 0j))
+
+
+@pytest.mark.parametrize(
+    "matrix,match",
+    [
+        ([[1, 0, 0], [0, 1, 0]], "2 x 2"),
+        ([[1, 1], [0, 1]], "not unitary"),
+    ],
+)
+def test_su2_rejects_invalid_matrices(matrix, match):
+    with pytest.raises(ValueError, match=match):
+        ops.SU2(matrix)
 
 
 @pytest.mark.parametrize(

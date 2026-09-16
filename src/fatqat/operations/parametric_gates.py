@@ -24,6 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
+import numpy as np
+
 from .._parameter_binding import _validate_parameter_scalar
 from ..parameters import Parameter
 from .base import Operation
@@ -118,6 +120,50 @@ class RZ(Operation):
 
     def __post_init__(self) -> None:
         _validate_angles(self, theta=self.theta)
+
+
+@dataclass(frozen=True, init=False)
+class SU2(Operation):
+    """Apply an arbitrary 2 x 2 unitary as one native single-qubit gate.
+
+    The immutable nested-tuple representation keeps operation values safe to
+    copy, compare, and use in implementation/noise registries. Input accepts
+    any array-like object that NumPy can convert to a complex 2 x 2 matrix.
+    The matrix's global phase is retained; its determinant need not be one.
+
+    Args:
+        matrix: A 2 x 2 unitary matrix.
+
+    Raises:
+        ValueError: If the matrix is not 2 x 2 or is not unitary within the
+            elementwise tolerances ``atol=1e-6`` and ``rtol=1e-5`` when
+            comparing ``matrix @ matrix.conj().T`` with the identity.
+    """
+
+    matrix: tuple[tuple[complex, complex], tuple[complex, complex]]
+    name: ClassVar[str] = "SU2"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+    def __init__(self, matrix: object) -> None:
+        converted = np.asarray(matrix, dtype=complex)
+        if converted.shape != (2, 2):
+            raise ValueError(
+                f"SU2 requires a 2 x 2 matrix, got shape {converted.shape}"
+            )
+        identity = np.eye(2, dtype=complex)
+        product = converted @ converted.conj().T
+        if not np.allclose(product, identity, atol=1e-6, rtol=1e-5):
+            difference = np.linalg.norm(product - identity)
+            raise ValueError(
+                "SU2 matrix is not unitary "
+                f"(||M M^dagger - I||={difference:.2e}, atol=1e-6)"
+            )
+        frozen = tuple(
+            tuple(complex(converted[row, column]) for column in range(2))
+            for row in range(2)
+        )
+        object.__setattr__(self, "matrix", frozen)
 
 
 @dataclass(frozen=True)

@@ -35,6 +35,28 @@ matrices use `|0>, |1>` basis order.
 | [`T`][fatqat.operations.T] | Maps $\|1\rangle$ to $e^{i\pi/4}\|1\rangle$. |
 | [`Tdg`][fatqat.operations.Tdg] | Maps $\|1\rangle$ to $e^{-i\pi/4}\|1\rangle$. |
 
+The following values use the native instruction names accepted by the
+[LQCloud adapter](../interoperability/lqcloud.md). They also run on the general
+[`Simulator`][fatqat.simulator.Simulator]. Other backends and exchange formats
+have their own supported operation sets.
+
+| Value | Definition |
+| --- | --- |
+| [`HY`][fatqat.operations.HY] | $YH$: apply H, then Y. |
+| [`MX`][fatqat.operations.MX] / [`MY`][fatqat.operations.MY] / [`MZ`][fatqat.operations.MZ] | $-X$, $-Y$, and $-Z$, respectively. |
+| [`XHalf`][fatqat.operations.XHalf] / [`MXHalf`][fatqat.operations.MXHalf] | A $\pi/2$ rotation about the $+X$ / $-X$ axis. |
+| [`YHalf`][fatqat.operations.YHalf] / [`MYHalf`][fatqat.operations.MYHalf] | A $\pi/2$ rotation about the $+Y$ / $-Y$ axis. |
+| [`XYHalf`][fatqat.operations.XYHalf] | A $\pi/2$ rotation about $(X+Y)/\sqrt{2}$. |
+| [`MXYHalf`][fatqat.operations.MXYHalf] | A $\pi/2$ rotation about $(-X+Y)/\sqrt{2}$. |
+| [`MXMYHalf`][fatqat.operations.MXMYHalf] | A $\pi/2$ rotation about $(-X-Y)/\sqrt{2}$. |
+| [`XMYHalf`][fatqat.operations.XMYHalf] | A $\pi/2$ rotation about $(X-Y)/\sqrt{2}$. |
+
+For a normalized XY-plane axis $A=a_xX+a_yY$, each half rotation above has
+matrix $(I-iA)/\sqrt{2}$. In particular, `XHalf` and `SX` differ by a global
+phase and are distinct operations. The minus-Pauli values also remain distinct
+from their positive counterparts so the cloud adapter preserves their native
+instruction names.
+
 For the multi-qubit values below, targets are ordered exactly as shown.
 
 **Fixed multi-qubit gates**
@@ -190,6 +212,15 @@ All angles are in radians and are not normalized. Every angle field accepts a
 | [`U3`][fatqat.operations.U3] `(theta, phi, lam)` | One scalar or one view | Same matrix as `U(theta, phi, lam)`; retained for Qiskit compatibility. |
 | [`CPhase`][fatqat.operations.CPhase] `(theta)` | `(control, target)` scalars or compatible views | Multiplies $\|11\rangle$ by $e^{i\theta}$. |
 
+[`SU2`][fatqat.operations.SU2] `(matrix)` carries an arbitrary numeric 2 × 2
+unitary matrix as one single-qubit operation. It accepts a scalar target or a
+register view. Despite its name, it does not require determinant one and
+preserves global phase. The constructor copies the values into immutable
+nested tuples and rejects wrong shapes or non-unitary matrices. Matrix entries
+must be numeric; symbolic [`Parameter`][fatqat.Parameter] values are unsupported.
+Unitarity is checked by comparing $MM^\dagger$ to the identity with elementwise
+tolerances `atol=1e-6` and `rtol=1e-5`.
+
 ### Matrix definitions
 
 
@@ -281,6 +312,10 @@ Common operation properties are documented on the [Operations overview](../opera
     options:
       show_attribute_values: false
 
+::: fatqat.operations.HY
+    options:
+      show_attribute_values: false
+
 ::: fatqat.operations.X
     options:
       show_attribute_values: false
@@ -290,6 +325,50 @@ Common operation properties are documented on the [Operations overview](../opera
       show_attribute_values: false
 
 ::: fatqat.operations.Z
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MX
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MY
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MZ
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.XHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MXHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.YHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MYHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.XYHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MXYHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MXMYHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.XMYHalf
     options:
       show_attribute_values: false
 
@@ -365,6 +444,14 @@ Common operation properties are documented on the [Operations overview](../opera
         - "!^_"
 
 ::: fatqat.operations.RZ
+    options:
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.SU2
     options:
       inherited_members: false
       show_bases: true

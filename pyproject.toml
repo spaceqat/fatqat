@@ -57,12 +57,15 @@ dev = ["pytest>=8", "scipy-doctest>=1.0"]
 # the full-dependency Ubuntu lane. Never required by the package itself; those
 # modules self-skip when Qiskit or Qiskit Aer is absent.
 qiskit = ["qiskit>=1.0", "qiskit-aer>=0.17"]
+# Optional SDK used by the LQCloud adapter and its offline serialization tests.
+lqcloud = ["lqcloud==0.4.2"]
 # Complete test environment for one reference CI lane. Add future optional
 # integration groups here so the full suite and installed-package doctests
 # collect every supported extension without burdening the platform matrix.
 test-full = [
     {include-group = "dev"},
     {include-group = "qiskit"},
+    {include-group = "lqcloud"},
 ]
 # Formatting (black) and static analysis (pylint). Used by the Lint CI workflow;
 # configuration lives in [tool.black] and [tool.pylint].

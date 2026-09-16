@@ -187,6 +187,26 @@ _SDG = np.array([[1, 0], [0, -1j]], dtype=complex)
 _SX = 0.5 * np.array([[1 + 1j, 1 - 1j], [1 - 1j, 1 + 1j]], dtype=complex)
 _T = np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]], dtype=complex)
 _TDG = np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]], dtype=complex)
+_HY = _Y @ _H
+_MX = -_X
+_MY = -_Y
+_MZ = -_Z
+
+
+def _half_rotation(axis_x: float, axis_y: float) -> np.ndarray:
+    """Return a pi/2 rotation about a normalized axis in the XY plane."""
+    axis = axis_x * _X + axis_y * _Y
+    return (_I - 1j * axis) / np.sqrt(2)
+
+
+_X_HALF = _half_rotation(1.0, 0.0)
+_MX_HALF = _half_rotation(-1.0, 0.0)
+_Y_HALF = _half_rotation(0.0, 1.0)
+_MY_HALF = _half_rotation(0.0, -1.0)
+_XY_HALF = _half_rotation(1 / np.sqrt(2), 1 / np.sqrt(2))
+_MXY_HALF = _half_rotation(-1 / np.sqrt(2), 1 / np.sqrt(2))
+_MXMY_HALF = _half_rotation(-1 / np.sqrt(2), -1 / np.sqrt(2))
+_XMY_HALF = _half_rotation(1 / np.sqrt(2), -1 / np.sqrt(2))
 # 2-qubit fixed gates (see module docstring for the control/target convention).
 _CX = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=complex)
 _CZ = np.diag([1, 1, 1, -1]).astype(complex)
@@ -229,6 +249,11 @@ def _rz(op: ops.RZ) -> np.ndarray:
     return np.array(
         [[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=complex
     )
+
+
+def _su2(op: ops.SU2) -> np.ndarray:
+    """Return the validated unitary carried by an SU2 operation."""
+    return np.asarray(op.matrix, dtype=complex)
 
 
 def _phase(op: ops.Phase) -> np.ndarray:

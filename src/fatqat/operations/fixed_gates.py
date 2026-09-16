@@ -42,6 +42,15 @@ class HGate(Operation):
 
 
 @dataclass(frozen=True)
+class HYGate(Operation):
+    """Apply the LQCloud-native ``Y H`` single-qubit operation."""
+
+    name: ClassVar[str] = "HY"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
 class IGate(Operation):
     """Leave one qubit unchanged.
 
@@ -126,6 +135,15 @@ class XGate(Operation):
 
 
 @dataclass(frozen=True)
+class MXGate(Operation):
+    """Apply minus Pauli-X, the negative of the X matrix."""
+
+    name: ClassVar[str] = "MX"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
 class YGate(Operation):
     """Apply the Pauli-Y bit-and-phase flip to one qubit.
 
@@ -138,6 +156,15 @@ class YGate(Operation):
 
 
 @dataclass(frozen=True)
+class MYGate(Operation):
+    """Apply minus Pauli-Y, the negative of the Y matrix."""
+
+    name: ClassVar[str] = "MY"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
 class ZGate(Operation):
     """Negate the ``|1>`` amplitude of one qubit.
 
@@ -145,6 +172,87 @@ class ZGate(Operation):
     """
 
     name: ClassVar[str] = "Z"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
+class MZGate(Operation):
+    """Apply minus Pauli-Z, equivalent to ``RZ(-pi)`` up to phase."""
+
+    name: ClassVar[str] = "MZ"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
+class XHalfGate(Operation):
+    """Rotate by ``pi/2`` about the positive X axis."""
+
+    name: ClassVar[str] = "XHalf"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
+class MXHalfGate(Operation):
+    """Rotate by ``pi/2`` about the negative X axis."""
+
+    name: ClassVar[str] = "MXHalf"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
+class YHalfGate(Operation):
+    """Rotate by ``pi/2`` about the positive Y axis."""
+
+    name: ClassVar[str] = "YHalf"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
+class MYHalfGate(Operation):
+    """Rotate by ``pi/2`` about the negative Y axis."""
+
+    name: ClassVar[str] = "MYHalf"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
+class XYHalfGate(Operation):
+    """Rotate by ``pi/2`` about ``(X + Y) / sqrt(2)``."""
+
+    name: ClassVar[str] = "XYHalf"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
+class MXYHalfGate(Operation):
+    """Rotate by ``pi/2`` about ``(-X + Y) / sqrt(2)``."""
+
+    name: ClassVar[str] = "MXYHalf"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
+class MXMYHalfGate(Operation):
+    """Rotate by ``pi/2`` about ``(-X - Y) / sqrt(2)``."""
+
+    name: ClassVar[str] = "MXMYHalf"
+    num_subsystems: ClassVar[int] = 1
+    _accepts_views: ClassVar[bool] = True
+
+
+@dataclass(frozen=True)
+class XMYHalfGate(Operation):
+    """Rotate by ``pi/2`` about ``(X - Y) / sqrt(2)``."""
+
+    name: ClassVar[str] = "XMYHalf"
     num_subsystems: ClassVar[int] = 1
     _accepts_views: ClassVar[bool] = True
 
@@ -254,6 +362,7 @@ class CSwapGate(Operation):
 # Public fixed-gate instances
 # ---------------------------------------------------------------------------
 H = HGate()
+HY = HYGate()
 I = IGate()
 S = SGate()
 Sdg = SdgGate()
@@ -261,8 +370,19 @@ SX = SXGate()
 T = TGate()
 Tdg = TdgGate()
 X = XGate()
+MX = MXGate()
 Y = YGate()
+MY = MYGate()
 Z = ZGate()
+MZ = MZGate()
+XHalf = XHalfGate()
+MXHalf = MXHalfGate()
+YHalf = YHalfGate()
+MYHalf = MYHalfGate()
+XYHalf = XYHalfGate()
+MXYHalf = MXYHalfGate()
+MXMYHalf = MXMYHalfGate()
+XMYHalf = XMYHalfGate()
 CX = CXGate()
 CZ = CZGate()
 Swap = SwapGate()
