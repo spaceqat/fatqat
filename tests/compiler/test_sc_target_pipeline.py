@@ -1,6 +1,9 @@
+import sys
 import warnings
+from dataclasses import replace
 from typing import get_type_hints
 
+import numpy as np
 import pytest
 
 import fatqat as fq
@@ -20,11 +23,14 @@ from fatqat.compiler import (
 from fatqat.compiler.dialects import (
     NativeGate,
     NativeMeasure,
+    NativeReset,
     QasmSource,
     SCNativeProgram,
+    verify_sc_native_program,
 )
 from fatqat.compiler.dialects.sc_native import _RotationNativeProgram
 from fatqat.compiler.pipelines import _compile_qasm_to_sc_rotation
+from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.operations import Measurement
 from fatqat.simulator import SCQubitSimulator
 from fatqat.simulator.fake_superconducting import _SCQubitRotationSimulator
@@ -460,6 +466,10 @@ def test_qasm_target_matches_simulator_by_declaration_position():
     assert _qasm_declaration_facts(actual.output) == _qasm_declaration_facts(
         legacy.output
     )
+    # Within one parse the executable keeps the very same register objects.
+    _assert_same_objects(
+        actual.program.classical_registers, actual.output.classical_registers
+    )
 
 
 def test_target_compilation_runs_on_a_compatible_simulator():
@@ -508,3 +518,319 @@ def test_canonical_and_rotation_routes_do_not_accept_each_others_target(
         compile_with(TRIANGLE_QASM, backend)
 
     assert type(error.value.__cause__) is TypeError
+
+
+def test_compilation_result_does_not_keep_the_target_alive():
+    target = SCTarget(num_qubits=3, couplings=LINE)
+    references = sys.getrefcount(target)
+
+    result = compile_to_sc(_logical_circuit(), target, seed=7)
+
+    # Neither the result nor any compiler cache may hold the target.
+    assert sys.getrefcount(target) == references
+    assert type(result) is ExecutableCompilationResult
+
+
+# Three logical qubits on a four-site ring: routing must borrow the idle site,
+# so the initial and final embeddings differ and the unused subspace is nonempty.
+RING = ((0, 1), (1, 2), (2, 3), (3, 0))
+RING_PAIRS = (
+    (2, 0),
+    (0, 1),
+    (2, 0),
+    (1, 2),
+    (1, 0),
+    (0, 2),
+    (1, 0),
+    (1, 2),
+    (1, 0),
+    (0, 1),
+)
+
+
+def _has_route_swap_provenance(instruction):
+    return (instruction.generated_by or "").startswith("route.swap.")
+
+
+def _has_route_swap(native):
+    return any(
+        isinstance(instruction, NativeGate) and _has_route_swap_provenance(instruction)
+        for instruction in native.operations
+    )
+
+
+def _basis_rows(layout, logical_refs, axes):
+    # Physical basis index of every logical basis state (both MSB-first).
+    placement = dict(layout)
+    width = len(logical_refs)
+    return [
+        sum(
+            ((row >> (width - 1 - position)) & 1)
+            << (len(axes) - 1 - axes.index(placement[ref]))
+            for position, ref in enumerate(logical_refs)
+        )
+        for row in range(2**width)
+    ]
+
+
+def _routed_ring_unitaries():
+    source = fq.LogicalProgram(3)
+    for index in range(3):
+        source.add(fq.operations.RX(0.17 + 0.13 * index), index)
+    for pair in RING_PAIRS:
+        source.add(fq.operations.CX, pair)
+    compiled = compile_to_sc(source, SCTarget(num_qubits=4, couplings=RING), seed=0)
+
+    assert _has_route_swap(compiled.output)
+    physical = compiled.program.quantum_registers[0]
+    axes = [compiled.resource_layout.device_label(ref) for ref in physical]
+    assert len(axes) == 4
+    refs = [source.quantum_registers[0][index] for index in range(3)]
+    initial = _basis_rows(compiled.output.initial_layout, refs, axes)
+    final = _basis_rows(compiled.output.final_layout, refs, axes)
+    outside = sorted(set(range(2 ** len(axes))) - set(final))
+    assert initial != final
+    assert len(outside) == 8
+
+    # The reference runs the logical circuit and never touches SC lowering.
+    logical = (
+        fq.simulator.Simulator(method="unitary", runtime="numpy")
+        .run(source)
+        .result()
+        .get_unitary()
+    )
+    actual = (
+        SCQubitSimulator(
+            num_qubits=4, couplings=RING, method="unitary", runtime="numpy"
+        )
+        .run(compiled)
+        .result()
+        .get_unitary()
+    )
+    return logical, actual, initial, final, outside
+
+
+def _assert_embeds(logical, actual, initial, final, outside):
+    aligned = actual[np.ix_(final, initial)]
+    overlap = np.vdot(logical.ravel(), aligned.ravel())
+    assert abs(overlap) > 0
+    np.testing.assert_allclose(
+        aligned, overlap / abs(overlap) * logical, atol=1e-10, rtol=1e-10
+    )
+    leakage = float(np.linalg.norm(actual[np.ix_(outside, initial)]))
+    assert leakage < 1e-10, f"leakage {leakage}"
+
+
+def test_routed_target_compilation_preserves_the_logical_unitary():
+    _assert_embeds(*_routed_ring_unitaries())
+
+
+@pytest.mark.parametrize(
+    ("corruption", "message"),
+    (
+        ("row-phase", "Not equal to tolerance"),
+        ("reversed-final-embedding", "Not equal to tolerance"),
+        ("idle-subspace-amplitude", "leakage"),
+    ),
+)
+def test_unitary_oracle_rejects_a_corrupted_embedding(corruption, message):
+    logical, actual, initial, final, outside = _routed_ring_unitaries()
+    corrupted = actual.copy()
+    if corruption == "row-phase":
+        corrupted[final[0], :] *= -1
+    elif corruption == "reversed-final-embedding":
+        final = final[::-1]
+    else:
+        corrupted[outside[0], initial[0]] += 0.125
+
+    with pytest.raises(AssertionError, match=message):
+        _assert_embeds(logical, corrupted, initial, final, outside)
+
+
+def _assert_same_objects(actual, expected):
+    assert len(actual) == len(expected)
+    assert all(left is right for left, right in zip(actual, expected))
+
+
+def _reset_occupants(native):
+    # Replay swap provenance from the initial layout, independently of lowering.
+    occupant = {site: ref for ref, site in native.initial_layout}
+    applied, occupants = set(), []
+    for instruction in native.operations:
+        if isinstance(instruction, NativeReset):
+            occupants.append(occupant[instruction.site])
+        elif (
+            isinstance(instruction, NativeGate)
+            and len(instruction.sites) == 2
+            and _has_route_swap_provenance(instruction)
+            and instruction.generated_by not in applied
+        ):
+            applied.add(instruction.generated_by)
+            left, right = instruction.sites
+            occupant[left], occupant[right] = occupant.get(right), occupant.get(left)
+    placed = {site: ref for site, ref in occupant.items() if ref is not None}
+    assert placed == {site: ref for ref, site in native.final_layout}
+    return occupants
+
+
+def _routed_identity_case():
+    qubits = fq.QuantumRegister(3, name="q")
+    first = fq.ClassicalRegister(2, name="same")
+    second = fq.ClassicalRegister(2, name="same")
+    unused = fq.ClassicalRegister(1, name="unused")
+    source = fq.LogicalProgram([qubits], [first, second, unused])
+    source.add(fq.operations.X, qubits[0])
+    source.add(fq.operations.Reset, qubits[2])
+    for pair in ((0, 1), (0, 2), (1, 2)):
+        source.add(fq.operations.CZ, (qubits[pair[0]], qubits[pair[1]]))
+    source.measure(qubits[2], second[1])
+    source.measure(qubits[0], first[1])
+    return source, compile_to_sc(source, SCTarget(num_qubits=3, couplings=LINE), seed=7)
+
+
+def _seeded_counts(program, **run_options):
+    backend = SCQubitSimulator(num_qubits=3, couplings=LINE, runtime="numpy")
+    return (
+        backend.run(program, shots=16, simulation_config={"seed": 7}, **run_options)
+        .result()
+        .get_counts()
+    )
+
+
+def test_routed_target_compilation_preserves_classical_identity():
+    source, compiled = _routed_identity_case()
+    qubits = source.quantum_registers[0]
+    first, second, _unused = source.classical_registers
+    final = dict(compiled.output.final_layout)
+
+    for registers in (
+        compiled.output.classical_registers,
+        compiled.program.classical_registers,
+    ):
+        _assert_same_objects(registers, source.classical_registers)
+    measures = [
+        instruction
+        for instruction in compiled.output.operations
+        if isinstance(instruction, NativeMeasure)
+    ]
+    assert [(m.site, m.clbit.index) for m in measures] == [
+        (final[qubits[2]], 1),
+        (final[qubits[0]], 1),
+    ]
+    assert measures[0].clbit.register is second
+    assert measures[1].clbit.register is first
+    assert _reset_occupants(compiled.output) == [qubits[2]]
+    with pytest.warns(UserWarning, match="never measured"):
+        assert _seeded_counts(compiled) == {"01000": 16}
+
+
+def test_identity_check_rejects_an_equal_shaped_replacement_register():
+    source, compiled = _routed_identity_case()
+    first, second, _unused = source.classical_registers
+    # Swap only the unmeasured register; order and measurement refs are kept.
+    candidate = replace(
+        compiled.output,
+        classical_registers=(first, second, fq.ClassicalRegister(1, name="unused")),
+    )
+    verify_sc_native_program(candidate)
+    program, layout = to_sc_simulator_program(candidate)
+
+    with pytest.warns(UserWarning, match="never measured"):
+        assert _seeded_counts(program, resource_layout=layout) == {"01000": 16}
+    with pytest.raises(AssertionError):
+        _assert_same_objects(program.classical_registers, source.classical_registers)
+
+
+def _routed_reset_case():
+    source = fq.LogicalProgram(3, 3)
+    source.add(fq.operations.X, 0)
+    source.add(fq.operations.X, 1)
+    for pair in ((0, 1), (0, 2), (1, 2)):
+        source.add(fq.operations.CZ, pair)
+    source.add(fq.operations.Reset, 0)
+    source.measure_all()
+    return source, compile_to_sc(source, SCTarget(num_qubits=3, couplings=LINE), seed=7)
+
+
+def test_routed_reset_returns_an_excited_qubit_to_zero():
+    source, compiled = _routed_reset_case()
+    assert _has_route_swap(compiled.output)
+    assert _reset_occupants(compiled.output) == [source.quantum_registers[0][0]]
+    assert _seeded_counts(compiled) == {"010": 16}
+
+
+def test_reset_check_rejects_a_dropped_reset():
+    _source, compiled = _routed_reset_case()
+    candidate = replace(
+        compiled.output,
+        operations=tuple(
+            instruction
+            for instruction in compiled.output.operations
+            if not isinstance(instruction, NativeReset)
+        ),
+    )
+    verify_sc_native_program(candidate)
+    program, layout = to_sc_simulator_program(candidate)
+
+    assert _seeded_counts(program, resource_layout=layout) != {"010": 16}
+
+
+def _excite_and_entangle_all(num_qubits=3):
+    logical = fq.LogicalProgram(num_qubits, num_qubits)
+    logical.add(fq.operations.X, 0)
+    for pair in FULL:
+        logical.add(fq.operations.CZ, pair)
+    logical.measure_all()
+    return logical
+
+
+# Program and layout validation raise from run(); only execution-time errors
+# are deferred to Job.result(). Each rejection must happen in run() itself.
+def test_simulator_run_rejects_a_target_result_using_sites_it_lacks():
+    compiled = compile_to_sc(
+        _excite_and_entangle_all(),
+        SCTarget(num_qubits=5, couplings=FIVE_SITE_LINE),
+        seed=7,
+    )
+    assert max(site for _ref, site in compiled.output.initial_layout) >= 3
+    backend = SCQubitSimulator(num_qubits=3, couplings=LINE, runtime="numpy")
+
+    with pytest.raises(
+        BackendValidationError,
+        match="resource layout names a device operand outside this backend",
+    ):
+        backend.run(compiled)
+
+
+def test_simulator_run_rejects_a_target_result_needing_an_absent_coupling():
+    compiled = compile_to_sc(
+        _excite_and_entangle_all(), SCTarget(num_qubits=3, couplings=FULL), seed=7
+    )
+    cz_edges = {
+        frozenset(instruction.sites)
+        for instruction in compiled.output.operations
+        if isinstance(instruction, NativeGate) and len(instruction.sites) == 2
+    }
+    assert frozenset((0, 2)) in cz_edges
+    backend = SCQubitSimulator(num_qubits=3, couplings=LINE, runtime="numpy")
+
+    with pytest.raises(
+        UnsupportedOperationError,
+        match=r"CZGate is not supported on device operands \((0, 2|2, 0)\)",
+    ):
+        backend.run(compiled)
+
+
+def test_a_larger_compatible_simulator_runs_a_target_result():
+    compiled = compile_to_sc(
+        _excite_and_entangle_all(), SCTarget(num_qubits=3, couplings=LINE), seed=7
+    )
+    backend = SCQubitSimulator(num_qubits=5, couplings=FIVE_SITE_LINE, runtime="numpy")
+
+    counts = (
+        backend.run(compiled, shots=16, simulation_config={"seed": 7})
+        .result()
+        .get_counts()
+    )
+
+    assert counts == {"100": 16}
