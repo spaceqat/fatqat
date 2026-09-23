@@ -5,7 +5,7 @@ import numpy as np
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.compiler import compile_qasm_to_sc
+from fatqat.compiler import SCTarget, compile_qasm_to_sc
 
 from _home_grover_plot import draw_distribution
 from home_grover_program import FUSED_GATES, TARGET, TARGET_INDEX
@@ -36,12 +36,8 @@ def build_sc_qasm():
 SC_QASM = build_sc_qasm()
 
 COUPLINGS = ((0, 1), (1, 2))
-compiler_backend = fq.simulator.SCQubitSimulator(
-    num_qubits=3,
-    couplings=COUPLINGS,
-    runtime="numpy",
-)
-compiled = compile_qasm_to_sc(SC_QASM, compiler_backend)
+compiler_target = SCTarget(num_qubits=3, couplings=COUPLINGS)
+compiled = compile_qasm_to_sc(SC_QASM, compiler_target)
 resource_layout = compiled.resource_layout
 noise = fq.NoiseModel()
 

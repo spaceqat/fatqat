@@ -172,7 +172,9 @@ nav:
       - Build programs:
           - Program: api/program.md
           - LogicalProgram: api/logical-program.md
-          - Compiler: api/compiler.md
+          - Compiler:
+              - api/compiler.md
+              - SC target: api/sc-target.md
           - Registers: api/registers.md
           - Operations:
               - api/operations.md

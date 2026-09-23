@@ -28,19 +28,28 @@ more than one target.
 
 ## Run on a superconducting profile
 
-Create an [`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] with the
+Describe the device with an [`SCTarget`][fatqat.compiler.SCTarget]: the
 number of physical qubits and their allowed two-qubit connections. The
 compiler maps the logical qubits to this topology and adds routing operations
 where they are needed.
 
 ```python
+target = fq.compiler.SCTarget(num_qubits=3, couplings=((0, 1), (1, 2)))
+sc_compiled = fq.compiler.compile_to_sc(circuit, target, seed=7)
+```
+
+The target describes only the device's qubits and connections. Choose how to
+run the result separately: create an
+[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] that provides the
+qubits and connections the result uses, and select its runtime, simulation
+method, and noise model there.
+
+```python
 sc_backend = fq.simulator.SCQubitSimulator(
     num_qubits=3,
-    couplings=((0, 1), (1, 2)),
+    couplings=target.couplings,
     runtime="numpy",
 )
-
-sc_compiled = fq.compiler.compile_to_sc(circuit, sc_backend, seed=7)
 result = sc_backend.run(
     sc_compiled,
     shots=100,
@@ -50,9 +59,23 @@ result = sc_backend.run(
 counts = result.get_counts()
 ```
 
+A simulator with more qubits or additional connections can run the same
+result. If the simulator lacks a qubit or connection that the result uses,
+`run()` raises an error immediately; the
+[SCTarget reference](../api/sc-target.md#when-errors-are-raised) lists these
+errors.
+
 `couplings` can describe any valid graph; the topology does not need to be a
 grid. The current public SC profile uses X, SX, RZ, and CZ as its native gate
 set.
+
+Code that passes a simulator to the compiler continues to work. The compiler
+then uses the simulator's qubits and connections, and also checks the emitted
+gates against its implementation map:
+
+```python
+sc_compiled = fq.compiler.compile_to_sc(circuit, sc_backend, seed=7)
+```
 
 ## Run on a neutral-atom architecture
 
@@ -89,7 +112,7 @@ cx q[0], q[1];
 c = measure q;
 """
 
-sc_compiled = fq.compiler.compile_qasm_to_sc(qasm_source, sc_backend)
+sc_compiled = fq.compiler.compile_qasm_to_sc(qasm_source, target)
 sc_result = sc_backend.run(sc_compiled).result()
 
 na_compiled = fq.compiler.compile_qasm_to_na(qasm_source, architecture)
@@ -140,7 +163,7 @@ template = fq.LogicalProgram(1)
 template.add(fq.operations.RX(theta), 0)
 
 circuit = template.assign_parameters({theta: 0.25})
-compiled = fq.compiler.compile_to_sc(circuit, sc_backend)
+compiled = fq.compiler.compile_to_sc(circuit, target)
 ```
 
 `assign_parameters()` returns a new `LogicalProgram`; the template remains
