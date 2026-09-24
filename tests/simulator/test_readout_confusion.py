@@ -193,6 +193,11 @@ def test_reused_qubit_evolves_from_the_true_state():
 
 
 def test_threaded_compiled_shots_match_serial_with_readout_confusion():
+    pytest.importorskip("numba")
+    from fatqat.simulator._engine import nb
+
+    if nb._MAX_THREADS < 2:
+        pytest.skip("Numba exposes no parallel thread capacity")
     noise = _readout_model(_FLIP_30)
     program = fq.Program(1, 2)
     program.measure(0, 0)
