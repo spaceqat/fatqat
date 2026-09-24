@@ -69,7 +69,7 @@ class SCTarget:
     input. Equality, hashing and serialization are not part of this
     contract.
 
-    Example:
+    Examples:
         >>> from fatqat.compiler import SCTarget
         >>> target = SCTarget(num_qubits=3, couplings=[(1, 0), (1, 2), (0, 1)])
         >>> target.num_qubits
