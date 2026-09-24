@@ -38,6 +38,7 @@ def test_default_runtime_is_numba_for_every_method(method, engine_name):
     [
         fq.simulator.AtomArraySimulator,
         fq.simulator.SCQubitSimulator,
+        fq.simulator.SCQubitQEC17Simulator,
         _SCQubitRotationSimulator,
     ],
 )

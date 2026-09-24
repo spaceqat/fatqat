@@ -75,7 +75,8 @@ an arbitrary state `psi`, a matrix acting on every subsystem satisfies
 
 Choose `runtime` when creating the backend. `"numba"` is the default for
 [`Simulator`][fatqat.simulator.Simulator],
-[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator], and
+[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator],
+[`SCQubitQEC17Simulator`][fatqat.simulator.SCQubitQEC17Simulator], and
 [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator]. It
 compiles kernels on first use and supports threaded kernels. `"numpy"` runs
 directly without compilation. Both runtimes support the methods offered by

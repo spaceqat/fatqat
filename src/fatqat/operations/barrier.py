@@ -12,10 +12,12 @@ from .base import Operation
 class BarrierGate(Operation):
     """Mark a compiler boundary without changing the quantum state.
 
-    A barrier has no matrix, measurement result, or noise boundary. Built-in
-    simulators ignore it, including any recorded condition, so it has no effect
-    on states or counts. Selecting ``ops.Barrier`` in `fatqat.NoiseModel.add`
-    raises `ValueError`.
+    A barrier has no matrix, measurement result, or attached noise boundary.
+    Simulator, SCQubitSimulator, and AtomArraySimulator ignore it.
+    SCQubitQEC17Simulator uses it to synchronize target qubits when idle noise
+    is enabled, which can change idle decoherence. Any recorded condition is
+    ignored. Selecting ``ops.Barrier`` in `fatqat.NoiseModel.add` raises
+    `ValueError`.
 
     `fatqat.Program.draw` shows a barrier as a dashed vertical separator across
     its targets rather than as an executable gate box.

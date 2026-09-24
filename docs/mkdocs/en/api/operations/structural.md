@@ -52,9 +52,11 @@ operation or noise boundary. Add it with [`fatqat.Program.add`][fatqat.Program.a
 or more distinct scalar targets. It rejects an empty target tuple, duplicate
 targets, and [`RegisterView`](../registers.md#fatqat.RegisterView).
 
-Built-in simulators ignore barriers, including any condition recorded by
-[`add`][fatqat.Program.add], so barriers do not change states or counts. A
-barrier cannot be bound to noise: using it as the `operation=` selector in
+`Simulator`, `SCQubitSimulator`, and `AtomArraySimulator` ignore barriers.
+The [QEC17 simulator](../simulators/qec17.md#idle-scheduling-and-limits) uses
+them to synchronize target qubits when idle noise is enabled, which can change
+idle decoherence. Any condition recorded by [`add`][fatqat.Program.add] is
+ignored. A barrier cannot be bound to noise: using it as the `operation=` selector in
 [`fatqat.NoiseModel.add`][fatqat.NoiseModel.add] raises [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError).
 
 ::: fatqat.operations.Barrier
