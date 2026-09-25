@@ -16,11 +16,12 @@ arbitrary ``num_qubits`` plus undirected ``couplings`` and supports `X`,
 alternate `RX`, `RY`, `RZ`, `iSwap`, and `CZ` implementation for
 internal use.
 
-Neither is a realistic device model: no routing, no timing, and ideal by
+These two profiles have no routing or timing and are ideal by
 default unless a noise model is supplied. Each ships a calibration-derived
 `default_noise_model()` on demand - the Qiskit ``NoiseModel.from_backend``
 workflow - see each class's own docstring for its gate set and noise
-profile.
+profile. `SCQubitQEC17Simulator` adds the fixed QZ01 topology, native gates,
+and an optional per-qubit/per-coupler calibration model with idle scheduling.
 
 The native-gate-set restriction applies to unitary operations only.
 Measurement and reset are resolved by `Simulator._lower` before any
@@ -31,9 +32,14 @@ implementation map's contents.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 
 from .. import operations as ops
+from .._backends.backend_utils import _LoweringContext
+from .._backends.steps import ResolvedStep
+from .._backends.view_normalization import ProgramInstruction
 from ..errors import BackendValidationError
 from ..implementation import (
     MatrixImplementationMap,
@@ -49,8 +55,18 @@ from ..noise import (
     ThermalRelaxation,
 )
 from ..operations import Operation
+from ..parameters import Parameter
 from ..program import Program
 from ..resource_layout import DeviceOperand, ResourceLayout
+from . import planning
+from ._qec17_calibration import (
+    _QEC17_COUPLER_CALIBRATIONS,
+    _QEC17_QUBIT_CALIBRATIONS,
+)
+from ._qec17_scheduling import (
+    _QEC17_TICK_DURATION_SECONDS,
+    _schedule_qec17_asap,
+)
 from .simulator import Simulator
 
 DEFAULT_NUM_QUBITS = 16
@@ -490,3 +506,206 @@ class _SCQubitRotationSimulator(_SCProfileSimulator):
             )
         )
         return noise
+
+
+# --- fixed QEC17 profile --------------------------------------------------
+
+_QEC17_NUM_QUBITS = 17
+
+_QEC17_DRIVEN_SINGLE_QUBIT_OPERATIONS = (
+    ops.H,
+    ops.HY,
+    ops.X,
+    ops.MX,
+    ops.Y,
+    ops.MY,
+    ops.XHalf,
+    ops.MXHalf,
+    ops.YHalf,
+    ops.MYHalf,
+    ops.XYHalf,
+    ops.MXYHalf,
+    ops.MXMYHalf,
+    ops.XMYHalf,
+    ops.SU2,
+)
+_QEC17_VIRTUAL_Z_OPERATIONS = (
+    ops.Z,
+    ops.MZ,
+    ops.S,
+    ops.Sdg,
+    ops.T,
+    ops.RZ,
+)
+_QEC17_UNIFORM_NATIVE_OPERATIONS = (
+    ops.I,
+    *_QEC17_DRIVEN_SINGLE_QUBIT_OPERATIONS,
+    *_QEC17_VIRTUAL_Z_OPERATIONS,
+)
+
+
+def _qec17_operation_duration_ticks(operation: Operation) -> int | None:
+    """Return the fixed QEC17 duration, or ``None`` for an extension gate."""
+
+    def matches(candidate: Operation | type[Operation]) -> bool:
+        candidate_type = candidate if isinstance(candidate, type) else type(candidate)
+        return type(operation) is candidate_type
+
+    if matches(ops.I) or any(
+        matches(candidate) for candidate in _QEC17_DRIVEN_SINGLE_QUBIT_OPERATIONS
+    ):
+        return 1
+    if any(matches(candidate) for candidate in _QEC17_VIRTUAL_Z_OPERATIONS):
+        return 0
+    if matches(ops.CZ):
+        return 2
+    return None
+
+
+def _qec17_implementation_map() -> MatrixImplementationMap:
+    defaults = default_matrix_implementation_map()
+    native = MatrixImplementationMap()
+    for operation in _QEC17_UNIFORM_NATIVE_OPERATIONS:
+        native.add(operation, _require_rule(defaults, operation))
+    couplings = tuple(item.edge for item in _QEC17_COUPLER_CALIBRATIONS)
+    for edge in _directed_couplings(couplings):
+        native.add(ops.CZ, _require_rule(defaults, ops.CZ), device_operands=edge)
+    return native
+
+
+class SCQubitQEC17Simulator(_SCProfileSimulator):
+    """Simulate native circuits on the fixed 17-qubit QZ01 coupling graph.
+
+    Uses the ordinary Simulator execution, result, and resource-layout rules.
+    Physical labels are 0 through 16; a program may select a subset through
+    ResourceLayout. Registers, including GridRegister, flatten in declaration
+    order when no layout is supplied. No compilation or routing is performed.
+
+    The backend is ideal unless ``noise`` is supplied. ``default_noise_model()``
+    returns individual qubit and coupler noise from the 2026-09-12 snapshot.
+    With I-scoped noise, fixed-duration ASAP scheduling inserts idle channels
+    without modifying the Program: driven single-qubit gates and I take 20 ns,
+    CZ takes 40 ns, and Z/MZ/S/Sdg/T/RZ take zero time. Barriers synchronize
+    their targets; measurements and resets synchronize all declared qubits at
+    zero modeled latency. All declared qubits synchronize at the end.
+    Executable classical conditions and unknown operation durations are
+    rejected when idle scheduling is enabled, rather than omitting idle noise.
+    """
+
+    def __init__(
+        self,
+        *,
+        method: str = "statevector",
+        runtime: str = "numba",
+        noise: NoiseModel | None = None,
+    ) -> None:
+        """Create a QEC17 backend with an optional explicit noise model.
+
+        Args:
+            method: State representation: ``"statevector"`` (default),
+                ``"density_matrix"``, ``"unitary"``, or ``"superop"``.
+                Simulator's method aliases and restrictions also apply.
+            runtime: ``"numba"`` (default) or ``"numpy"``. Both support noise
+                on methods that admit nonunitary evolution.
+            noise: NoiseModel or None (default, ideal). Pass the model from
+                ``default_noise_model()`` to enable individual qubit/edge
+                calibration noise. The model is copied at construction.
+
+        Raises:
+            BackendValidationError: If the method, runtime, or noise model is
+                unsupported, including quantum channels with ``"unitary"``.
+        """
+        super().__init__(
+            _qec17_implementation_map(),
+            num_qubits=_QEC17_NUM_QUBITS,
+            method=method,
+            runtime=runtime,
+            noise=noise,
+        )
+
+    @property
+    def device_sites(self) -> tuple[int, ...]:
+        """Return physical qubit labels 0 through 16, including unused sites."""
+        return tuple(range(self._num_qubits))
+
+    @classmethod
+    def default_noise_model(cls) -> NoiseModel:
+        """Return a fresh per-qubit, per-coupler QZ01 noise model.
+
+        Uses the 2026-09-12 calibration snapshot without chip averaging.
+        Each driven one-qubit gate gets its physical qubit's XEB-derived
+        depolarizing channel. Each CZ gets its edge's joint depolarizing
+        channel, in either operand order. Reported fidelities are interpreted
+        as average gate fidelities: ``p = d * (1 - F) / (d - 1)``.
+
+        Each explicit or scheduled I receives 20 ns of its physical qubit's
+        T1/T2E relaxation. No separate active-gate relaxation is added on top
+        of the fidelity-derived errors. Z/MZ/S/Sdg/T/RZ are noiseless in this
+        model. Readout uses each qubit's own F00/F11 confusion matrix, with
+        rows indexing reported values and columns indexing true values.
+
+        Returns:
+            An independent NoiseModel whose selectors use physical device
+            labels, so noise follows ResourceLayout rather than logical order.
+            Pass it explicitly via ``noise=`` to enable it.
+        """
+        noise = NoiseModel()
+        for calibration in _QEC17_QUBIT_CALIBRATIONS:
+            target = calibration.qubit
+            for operation in _QEC17_DRIVEN_SINGLE_QUBIT_OPERATIONS:
+                noise.add(
+                    Depolarizing(p=calibration.rotation_depolarizing_p),
+                    operation=operation,
+                    targets=target,
+                )
+            relaxation = ThermalRelaxation(t1=calibration.t1, t2=calibration.t2_echo)
+            damping = AmplitudeDamping(rate=relaxation.amplitude_rate)
+            dephasing = PhaseDamping(rate=relaxation.pure_dephasing_rate)
+            noise.add(
+                AmplitudeDamping(
+                    p=damping.as_probability(_QEC17_TICK_DURATION_SECONDS)
+                ),
+                operation=ops.I,
+                targets=target,
+            )
+            noise.add(
+                PhaseDamping(p=dephasing.as_probability(_QEC17_TICK_DURATION_SECONDS)),
+                operation=ops.I,
+                targets=target,
+            )
+            noise.add(
+                ReadoutConfusion(
+                    [
+                        [calibration.f00, calibration.readout_p10],
+                        [calibration.readout_p01, calibration.f11],
+                    ]
+                ),
+                targets=target,
+            )
+        for calibration in _QEC17_COUPLER_CALIBRATIONS:
+            for edge in (calibration.edge, calibration.edge[::-1]):
+                noise.add(
+                    Depolarizing(p=calibration.cz_depolarizing_p),
+                    operation=ops.CZ,
+                    targets=edge,
+                )
+        return noise
+
+    def _lower(
+        self,
+        operations: Sequence[ProgramInstruction],
+        context: _LoweringContext,
+        *,
+        param_order: tuple[Parameter, ...] | None = None,
+    ) -> list[ResolvedStep | planning._MatrixRecipe]:
+        if any(
+            operation is type(ops.I)
+            for _declaration, operation in self._noise_model._noise_sources()
+        ):
+            qubits = sorted(
+                context.resource_layout.refs, key=context.engine_index, reverse=True
+            )
+            operations = _schedule_qec17_asap(
+                operations, qubits, _qec17_operation_duration_ticks
+            )
+        return super()._lower(operations, context, param_order=param_order)

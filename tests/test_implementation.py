@@ -86,6 +86,51 @@ def test_sx_matrix_squares_to_x():
     assert np.allclose(sx.conj().T @ sx, np.eye(2))
 
 
+@pytest.mark.parametrize(
+    "gate,angle",
+    [
+        (ops.XHalf, 0),
+        (ops.MXHalf, np.pi),
+        (ops.YHalf, np.pi / 2),
+        (ops.MYHalf, -np.pi / 2),
+        (ops.XYHalf, np.pi / 4),
+        (ops.MXYHalf, 3 * np.pi / 4),
+        (ops.MXMYHalf, -3 * np.pi / 4),
+        (ops.XMYHalf, -np.pi / 4),
+    ],
+)
+def test_native_half_pulses_match_rotation_axis(gate, angle):
+    implementations = default_matrix_implementation_map()
+    matrix = implementations.implementation_for(gate)(gate)
+    rz = implementations.implementation_for(ops.RZ)
+    rx = implementations.implementation_for(ops.RX)
+    expected = rz(ops.RZ(angle)) @ rx(ops.RX(np.pi / 2)) @ rz(ops.RZ(-angle))
+    np.testing.assert_allclose(matrix, expected, atol=1e-14)
+
+
+@pytest.mark.parametrize(
+    "gate,original", [(ops.MX, ops.X), (ops.MY, ops.Y), (ops.MZ, ops.Z)]
+)
+def test_native_negative_paulis_preserve_their_matrix_phase(gate, original):
+    implementations = default_matrix_implementation_map()
+    np.testing.assert_allclose(
+        implementations.implementation_for(gate)(gate),
+        -implementations.implementation_for(original)(original),
+    )
+
+
+def test_native_hy_and_su2_matrix_implementation():
+    implementations = default_matrix_implementation_map()
+    hy = implementations.implementation_for(ops.HY)(ops.HY)
+    y = implementations.implementation_for(ops.Y)(ops.Y)
+    h = implementations.implementation_for(ops.H)(ops.H)
+    np.testing.assert_allclose(hy, y @ h)
+    gate = ops.SU2(np.exp(0.2j) * hy)
+    np.testing.assert_allclose(
+        implementations.implementation_for(gate)(gate), gate.matrix
+    )
+
+
 # --- Parametric rules read their operation's theta --------------------------
 # Unlike the fixed gates above, these are not tautologies: they verify the rule
 # reads `op.theta` off the bare Operation and builds the matrix from it.

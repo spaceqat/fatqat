@@ -26,8 +26,9 @@ limits when it runs a concrete program.
 
 
 [`Simulator`][fatqat.simulator.Simulator],
-[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator], and
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] share these channel rules. The two hardware profiles may impose
+[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator],
+[`SCQubitQEC17Simulator`][fatqat.simulator.SCQubitQEC17Simulator], and
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] share these channel rules. Hardware profiles may impose
 additional operation, placement, and dimension limits.
 
 **Built-in simulator channels**

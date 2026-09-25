@@ -191,6 +191,7 @@ nav:
               - api/simulators/index.md
               - General simulator: api/simulator.md
               - Superconducting profile: api/simulators/sc-qubit.md
+              - QEC17 simulator: api/simulators/qec17.md
               - Atom-array profile: api/simulators/atom-array.md
           - Emulators:
               - api/emulators/index.md

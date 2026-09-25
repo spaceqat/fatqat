@@ -118,6 +118,7 @@ The legal device-label set is backend-specific:
 | Generic [`Simulator`][fatqat.simulator.Simulator] | Labels in the effective resource layout |
 | [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] | Labels in the effective resource layout; the program defines the sites |
 | [`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] | Every configured device label |
+| [`SCQubitQEC17Simulator`][fatqat.simulator.SCQubitQEC17Simulator] | Physical labels `0` through `16`, including sites unused by the program |
 | Pulse emulators | Every label in the configured model or atom arrangement |
 
 **Accepted `targets` forms**

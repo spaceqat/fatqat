@@ -37,6 +37,23 @@ matrices use `|0>, |1>` basis order.
 
 For the multi-qubit values below, targets are ordered exactly as shown.
 
+The [QEC17 profile](../simulators/qec17.md) also uses these fixed one-qubit
+instructions. They have distinct operation identities for native-gate and
+noise selection, even when their matrices differ from another gate only by
+global phase.
+
+| Values | Matrix definition |
+| --- | --- |
+| [`HY`][fatqat.operations.HY] | `Y @ H`, applying H first |
+| [`MX`][fatqat.operations.MX], [`MY`][fatqat.operations.MY], [`MZ`][fatqat.operations.MZ] | `-X`, `-Y`, `-Z`, respectively |
+| [`XHalf`][fatqat.operations.XHalf], [`MXHalf`][fatqat.operations.MXHalf] | `RX(pi/2)`, `RX(-pi/2)` |
+| [`YHalf`][fatqat.operations.YHalf], [`MYHalf`][fatqat.operations.MYHalf] | `RY(pi/2)`, `RY(-pi/2)` |
+| [`XYHalf`][fatqat.operations.XYHalf], [`MXYHalf`][fatqat.operations.MXYHalf], [`MXMYHalf`][fatqat.operations.MXMYHalf], [`XMYHalf`][fatqat.operations.XMYHalf] | Positive pi/2 rotation about `(X+Y)/sqrt(2)`, `(-X+Y)/sqrt(2)`, `(-X-Y)/sqrt(2)`, `(X-Y)/sqrt(2)`, respectively |
+
+For an XY-plane unit axis `(nx, ny)`, the half-rotation matrix is
+`(I - 1j * (nx*X + ny*Y)) / sqrt(2)`.
+`XHalf` differs from `SX` by global phase: `SX = exp(1j*pi/4) * XHalf`.
+
 **Fixed multi-qubit gates**
 
 | Value | Target order | Basis action |
@@ -265,6 +282,28 @@ $$
 \end{pmatrix}
 $$
 
+## Matrix-valued single-qubit instruction
+
+[`SU2(matrix)`][fatqat.operations.SU2] records a numeric 2-by-2 unitary as one
+operation. It accepts one scalar target or a unary register view. The input
+matrix is copied into immutable tuples; later changes to the caller's array
+do not change the operation. Entries must be finite, and `matrix @ matrix.H`
+must equal identity within absolute tolerance `1e-6` and zero relative
+tolerance. Invalid shape, nonfinite entries, or nonunitarity raise `ValueError`.
+Symbolic matrix entries are not supported.
+
+`SU2` retains the QZ01 instruction name but accepts U(2), including global
+phase; it does not require determinant one. A generic Simulator applies its
+matrix directly. The QEC17 profile models it as one driven 20 ns gate and
+applies that physical qubit's gate noise.
+
+```python
+import numpy as np
+import fatqat.operations as ops
+
+gate = ops.SU2(np.array([[1, -1j], [-1j, 1]]) / np.sqrt(2))
+```
+
 ## API reference
 
 
@@ -417,5 +456,63 @@ Common operation properties are documented on the [Operations overview](../opera
       inherited_members: false
       show_bases: true
       merge_init_into_class: false
+      filters:
+        - "!^_"
+
+### QEC17 native instructions
+
+::: fatqat.operations.HY
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MX
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MY
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MZ
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.XHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MXHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.YHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MYHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.XYHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MXYHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.MXMYHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.XMYHalf
+    options:
+      show_attribute_values: false
+
+::: fatqat.operations.SU2
+    options:
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: true
       filters:
         - "!^_"

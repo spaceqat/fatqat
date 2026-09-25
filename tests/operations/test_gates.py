@@ -1,5 +1,6 @@
 """Tests operation objects, gate metadata, and immutability."""
 
+import numpy as np
 import pytest
 
 import fatqat.operations as ops
@@ -11,6 +12,18 @@ from fatqat.operations import Operation
     "gate,name,n_subsystems",
     [
         (ops.I, "I", 1),
+        (ops.HY, "HY", 1),
+        (ops.MX, "MX", 1),
+        (ops.MY, "MY", 1),
+        (ops.MZ, "MZ", 1),
+        (ops.XHalf, "XHalf", 1),
+        (ops.MXHalf, "MXHalf", 1),
+        (ops.YHalf, "YHalf", 1),
+        (ops.MYHalf, "MYHalf", 1),
+        (ops.XYHalf, "XYHalf", 1),
+        (ops.MXYHalf, "MXYHalf", 1),
+        (ops.MXMYHalf, "MXMYHalf", 1),
+        (ops.XMYHalf, "XMYHalf", 1),
         (ops.H, "H", 1),
         (ops.S, "S", 1),
         (ops.Sdg, "Sdg", 1),
@@ -80,6 +93,33 @@ def test_phase_gate_is_class_storing_theta():
 def test_operations_are_frozen():
     with pytest.raises(Exception):
         ops.RX(0.1).theta = 9.0
+
+
+def test_su2_copies_input_and_preserves_global_phase():
+    matrix = np.exp(0.3j) * np.array([[1, -1j], [-1j, 1]]) / np.sqrt(2)
+    gate = ops.SU2(matrix)
+    expected = matrix.copy()
+    matrix[:] = 0
+    np.testing.assert_allclose(gate.matrix, expected)
+    assert gate == ops.SU2(expected)
+    assert hash(gate) == hash(ops.SU2(expected))
+    with pytest.raises(AttributeError):
+        gate.matrix = ((0, 0), (0, 0))
+
+
+@pytest.mark.parametrize(
+    "matrix",
+    [
+        np.eye(3),
+        np.zeros((2, 2)),
+        [[np.nan, 0], [0, 1]],
+        [[np.inf, 0], [0, 1]],
+        np.diag([1.000003, 1]),
+    ],
+)
+def test_su2_rejects_invalid_matrices(matrix):
+    with pytest.raises(ValueError, match="SU2"):
+        ops.SU2(matrix)
 
 
 def test_cphase_gate_is_class_storing_theta():
@@ -206,8 +246,6 @@ class TestAngleValidationAtConstruction:
     """Angles follow the assign_parameters scalar policy from construction."""
 
     def test_scalars_and_parameters_accepted(self):
-        import numpy as np
-
         import fatqat as fq
 
         ops.RX(1)
