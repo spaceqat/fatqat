@@ -107,14 +107,17 @@ python -m pip install --editable . --group dev
 python -m pytest
 ```
 
-Before preparing a contribution, install the full test and lint environment:
+Before preparing a contribution, use Python 3.12 and install the full test
+and lint environment:
 
 ```sh
 python -m pip install --editable . --group test-full --group lint
 ```
 
-`test-full` includes the `dev` dependencies and the optional Qiskit integration
-dependencies. `lint` adds Black and Pylint.
+`test-full` includes the `dev` dependencies and the optional Qiskit and
+LogicalQubit Cloud integration dependencies. The cloud SDK requires Python
+3.12 in FatQat; the core package also supports newer Python versions.
+`lint` adds Black and Pylint.
 
 Before submitting a change, read
 [Contributing to FatQat](https://github.com/spaceqat/fatqat/blob/main/CONTRIBUTING.md),

@@ -25,6 +25,7 @@ from ..dialects.sc_native import (
     verify_sc_native_program,
 )
 from ..errors import ValidationError
+from ..targets import _SCTarget, _simulator_target
 
 
 def lower_sc_to_native_program(
@@ -37,7 +38,7 @@ def lower_sc_to_native_program(
 
     if not isinstance(backend, SCQubitSimulator):
         raise TypeError("SC lowering requires SCQubitSimulator")
-    routed = _route(source, backend, seed)
+    routed = _route(source, _simulator_target(backend, "sx"), seed)
     operations = _lower_events(source, routed, _lower_sx_node, _sx_swap)
     target = SCNativeProgram(
         operations,
@@ -60,7 +61,7 @@ def _lower_sc_to_rotation_program(
 
     if not isinstance(backend, _SCQubitRotationSimulator):
         raise TypeError("rotation lowering requires _SCQubitRotationSimulator")
-    routed = _route(source, backend, seed)
+    routed = _route(source, _simulator_target(backend, "rotation"), seed)
     operations = _lower_events(source, routed, _lower_rotation_node, _rotation_swap)
     target = _RotationNativeProgram(
         operations,
@@ -84,10 +85,8 @@ def _declared_classical_registers(source: SCProgram) -> tuple[ClassicalRegister,
     return tuple(registers)
 
 
-def _route(source: SCProgram, backend, seed: int) -> SabreResult:
-    implementation_map = backend.implementation_map
-    couplings = implementation_map.device_operands_for(ops.CZ)
-    return sabre_map(source, backend.device_sites, couplings, seed=seed)
+def _route(source: SCProgram, target: _SCTarget, seed: int) -> SabreResult:
+    return sabre_map(source, target.sites, target.couplings, seed=seed)
 
 
 NodeLowerer = Callable[[SCNode, tuple[SiteId, ...]], tuple[tuple[object, tuple], ...]]

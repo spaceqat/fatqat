@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from .. import lqcloud
 from ..logical_program import LogicalProgram
 from ..simulator import SCQubitSimulator
 from .core import (
@@ -136,9 +137,9 @@ def _package_na_result(result: CompilationResult) -> CompilationResult:
 
 def compile_qasm_to_sc(
     source: str | QasmSource,
-    backend: SCQubitSimulator,
+    backend: SCQubitSimulator | lqcloud.LQCloudBackend,
     *,
-    emit: str = SCNativeProgram.IR_ID,
+    emit: str | None = None,
     filename: str | None = None,
     seed: int = 0,
 ) -> CompilationResult:
@@ -146,17 +147,19 @@ def compile_qasm_to_sc(
 
     Args:
         source: OpenQASM 2 or 3 text, or an existing QasmSource.
-        backend: SCQubitSimulator supplying capacity and connectivity.
-        emit: Representation to return; defaults to SCNativeProgram.IR_ID.
+        backend: SCQubitSimulator or LQCloudBackend supplying capacity and
+            connectivity.
+        emit: Representation to return. None selects the backend's final
+            native boundary: sc.native.v1 or sc.lqcloud.native.v1.
             Supported values are QasmSource.IR_ID, LogicalIR.IR_ID,
-            SCProgram.IR_ID, and SCNativeProgram.IR_ID.
+            SCProgram.IR_ID, and the selected final native IR identifier.
         filename: Optional source label retained on the QasmSource boundary.
             It cannot be supplied when source is already a QasmSource.
         seed: Routing seed, default 0.
 
     Returns:
-        ExecutableCompilationResult at the final native boundary;
-        CompilationResult for an earlier emit boundary.
+        ExecutableCompilationResult for the simulator, LQCloudCompilationResult
+        for the cloud, or CompilationResult for an earlier emit boundary.
 
     Raises:
         TypeError: If source is neither text nor an exact QasmSource.
@@ -166,11 +169,13 @@ def compile_qasm_to_sc(
         PassError: If parsing, normalization, routing, or lowering fails.
     """
 
+    if isinstance(backend, lqcloud.LQCloudBackend):
+        return _compile_lq(_qasm_source(source, filename), backend, emit, seed)
     return _package_sc_result(
         create_sc_pipeline().compile(
             _qasm_source(source, filename),
             pipeline=SC_PIPELINE,
-            emit=emit,
+            emit=SCNativeProgram.IR_ID if emit is None else emit,
             context=CompileContext(target=backend, options={"seed": seed}),
         )
     )
@@ -178,9 +183,9 @@ def compile_qasm_to_sc(
 
 def compile_to_sc(
     source: LogicalProgram,
-    backend: SCQubitSimulator,
+    backend: SCQubitSimulator | lqcloud.LQCloudBackend,
     *,
-    emit: str = SCNativeProgram.IR_ID,
+    emit: str | None = None,
     seed: int = 0,
 ) -> CompilationResult:
     """Compile a LogicalProgram to an executable superconducting result.
@@ -192,15 +197,18 @@ def compile_to_sc(
 
     Args:
         source: An exact LogicalProgram containing static numeric gates.
-        backend: SCQubitSimulator supplying the capacity and coupling graph.
-        emit: Representation to return; defaults to SCNativeProgram.IR_ID.
+        backend: SCQubitSimulator or LQCloudBackend supplying the capacity
+            and coupling graph.
+        emit: Representation to return. None selects the backend's final
+            native boundary: sc.native.v1 or sc.lqcloud.native.v1.
             Supported values are LogicalProgram.IR_ID, LogicalIR.IR_ID,
-            SCProgram.IR_ID, and SCNativeProgram.IR_ID.
+            SCProgram.IR_ID, and the selected final native IR identifier.
         seed: Routing seed, default 0.
 
     Returns:
-        ExecutableCompilationResult at the final boundary; CompilationResult
-        for earlier boundaries. Emitting LogicalProgram.IR_ID runs no passes:
+        ExecutableCompilationResult for the simulator, LQCloudCompilationResult
+        for the cloud, or CompilationResult for earlier boundaries.
+        Emitting LogicalProgram.IR_ID runs no passes:
         the LogicalProgram input is returned unchanged. Static gate and target
         validation begins at later boundaries.
 
@@ -210,14 +218,41 @@ def compile_to_sc(
         PassError: If snapshotting or target lowering fails.
     """
 
+    if isinstance(backend, lqcloud.LQCloudBackend):
+        return _compile_lq(source, backend, emit, seed)
     return _package_sc_result(
         create_sc_pipeline().compile(
             source,
             pipeline=LOGICAL_SC_PIPELINE,
-            emit=emit,
+            emit=SCNativeProgram.IR_ID if emit is None else emit,
             context=CompileContext(target=backend, options={"seed": seed}),
         )
     )
+
+
+def _compile_lq(source, backend, emit, seed):
+    from .dialects.lq_native import LQNativeProgram, verify_lq_native_program
+    from .passes.lq_target import lower_sc_to_lq
+    from ..lqcloud.converter import _prepare_lq_result
+
+    compiler = create_sc_pipeline()
+    compiler.register_ir(LQNativeProgram, verify_lq_native_program)
+    if type(source) is QasmSource:
+        route = Pipeline("qasm-to-lqcloud", (parse_qasm, normalize_sc, lower_sc_to_lq))
+    else:
+        route = Pipeline(
+            "logical-to-lqcloud", (freeze_logical, normalize_sc, lower_sc_to_lq)
+        )
+    compiler.register_pipeline(route)
+    result = compiler.compile(
+        source,
+        pipeline=route.name,
+        emit=LQNativeProgram.IR_ID if emit is None else emit,
+        context=CompileContext(target=backend.target, options={"seed": seed}),
+    )
+    if type(result.output) is LQNativeProgram:
+        return _prepare_lq_result(result, backend.target)
+    return result
 
 
 def _compile_qasm_to_sc_rotation(

@@ -163,6 +163,7 @@ nav:
           - Transmon emulation: guide/transmon-emulation.md
           - Neutral-atom emulation: guide/neutral-atom-emulation.md
       - Connect and diagnose:
+          - LogicalQubit Cloud: guide/lqcloud.md
           - Interoperability: guide/interoperability.md
           - Troubleshooting: guide/troubleshooting.md
   - Tutorials:
@@ -217,6 +218,7 @@ nav:
               - api/interoperability/index.md
               - OpenQASM: api/interoperability/openqasm.md
               - Qiskit: api/interoperability/qiskit.md
+              - LogicalQubit Cloud: api/interoperability/lqcloud.md
           - Implementation maps: api/implementation.md
       - Errors and stability:
           - Exceptions: api/exceptions.md

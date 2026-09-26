@@ -159,7 +159,43 @@ def test_adjacent_cz_gates_cancel_only_when_adjacent_on_both_wires():
 
 def test_unsupported_logical_operation_fails_loudly():
     program = fq.Program(2)
-    program.add(fq.operations.iSwap, (0, 1))
+    program.add(fq.operations.Fourier, 0)
 
-    with pytest.raises(UnsupportedFeatureError, match="iSwap"):
+    with pytest.raises(UnsupportedFeatureError, match="Fourier"):
         _normalize(program)
+
+
+@pytest.mark.parametrize(
+    "gate",
+    [
+        fq.operations.CX,
+        fq.operations.Swap,
+        fq.operations.CCX,
+        fq.operations.iSwap,
+        fq.operations.CY,
+        fq.operations.CS,
+        fq.operations.CPhase(0.37),
+        fq.operations.CPhase(-1.2),
+        fq.operations.CSwap,
+    ],
+)
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("qasm", [False, True])
+def test_composite_gates_preserve_entire_unitary(gate, reverse, qasm):
+    source = fq.Program(gate.num_subsystems)
+    operands = tuple(range(gate.num_subsystems))
+    source.add(gate, operands[::-1] if reverse else operands)
+    normalized_source = fq.qasm.from_qasm(fq.qasm.to_qasm(source)) if qasm else source
+    sc = _normalize(normalized_source)
+    lowered = fq.Program(normalized_source.quantum_registers)
+    for node_id in topological_order(sc):
+        node = sc.nodes[node_id]
+        lowered.add(node.instruction, node.qubits)
+    simulator = fq.simulator.Simulator("unitary", runtime="numpy")
+    expected = simulator.run(source).result().get_unitary()
+    actual = simulator.run(lowered).result().get_unitary()
+    phase = np.vdot(expected, actual) / expected.shape[0]
+    assert np.isclose(abs(phase), 1)
+    assert np.allclose(actual, phase * expected, atol=1e-10)
+    if not qasm:
+        assert all(node.origin_ids == ("logical.0",) for node in sc.nodes)

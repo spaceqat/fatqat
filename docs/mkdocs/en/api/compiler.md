@@ -6,7 +6,7 @@ title: "Compiler"
 
 Use the compiler to prepare a device-independent circuit for a superconducting
 or neutral-atom target. A final compilation can be passed directly to the
-matching simulator.
+matching simulator or LogicalQubit Cloud backend.
 
 Choose an entry point from the source and target you have:
 
@@ -52,7 +52,9 @@ uses the same execution interface as a compiled `LogicalProgram`.
 ## Compilation results
 
 At the final target boundary, the compile functions return an
-`ExecutableCompilationResult`. Pass it to the matching simulator, inspect the
+`ExecutableCompilationResult` for simulators or
+[`LQCloudCompilationResult`](interoperability/lqcloud.md) for LogicalQubit Cloud.
+Pass it to the matching backend, inspect the
 target representation through `.output`, or review the stages through
 `.route`.
 

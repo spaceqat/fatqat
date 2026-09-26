@@ -41,6 +41,9 @@ Documentation = "https://fatqat.readthedocs.io/en/latest/"
 Repository = "https://github.com/spaceqat/fatqat"
 Issues = "https://github.com/spaceqat/fatqat/issues"
 
+[project.optional-dependencies]
+lqcloud = ["lqcloud==0.5.0; python_version < '3.13'"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -63,7 +66,9 @@ qiskit = ["qiskit>=1.0", "qiskit-aer>=0.17"]
 test-full = [
     {include-group = "dev"},
     {include-group = "qiskit"},
+    {include-group = "lqcloud"},
 ]
+lqcloud = ["lqcloud==0.5.0; python_version < '3.13'"]
 # Formatting (black) and static analysis (pylint). Used by the Lint CI workflow;
 # configuration lives in [tool.black] and [tool.pylint].
 lint = ["black>=24", "pylint>=3"]
@@ -74,7 +79,7 @@ addopts = "--import-mode=importlib"
 
 [tool.black]
 line-length = 88
-target-version = ["py312", "py313"]
+target-version = ["py312"]
 
 [tool.pylint.main]
 py-version = "3.12"

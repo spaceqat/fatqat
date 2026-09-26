@@ -1,11 +1,11 @@
 # Compile and run a logical circuit
 
-FatQat can prepare the same logical circuit for a superconducting simulator or
-a neutral-atom simulator. The normal workflow has three steps:
+FatQat can prepare the same logical circuit for a superconducting simulator,
+a neutral-atom simulator, or LogicalQubit Cloud hardware. The normal workflow has three steps:
 
 1. Build a [`LogicalProgram`][fatqat.LogicalProgram].
 2. Compile it for a target.
-3. Run the compiled result on the matching simulator.
+3. Run the compiled result on the matching backend.
 
 ## Build a circuit
 
@@ -74,6 +74,13 @@ The architecture describes the zones and movement constraints used to create
 the neutral-atom schedule. FatQat also includes `scale_to_100` and
 `scale_to_500` profiles for larger studies.
 
+## Run on LogicalQubit Cloud
+
+The SC entry points also accept an `LQCloudBackend` for `AGate-100`,
+`QZ01-surface_code`, or `MQ02`. Compilation uses the device's topology and
+prepares its native circuit. Follow the [cloud hardware guide](lqcloud.md)
+to connect, compile and submit a task.
+
 ## Compile OpenQASM
 
 OpenQASM 2 and OpenQASM 3 can be compiled without first creating a
@@ -102,10 +109,11 @@ by the target compilation route.
 ## Inspect a compilation
 
 The default compile functions return a result that is ready for the matching
-simulator. It also keeps two useful views of the compilation:
+backend. It also keeps two useful views of the compilation:
 
 - `compiled.output` is the final compiler representation: an
-  `SCNativeProgram` for SC or a `ZonedPlan` for NA.
+  `SCNativeProgram` for the SC simulator, `LQNativeProgram` for LogicalQubit
+  Cloud, or a `ZonedPlan` for NA.
 - `compiled.route` lists the compiler stages that ran.
 
 Compiled programs keep classical registers in source declaration order,
@@ -150,12 +158,13 @@ available for another set of values.
 
 The compiler currently handles static circuits with numeric parameters. Both
 targets support I, H, X, Y, Z, S, Sdg, T, Tdg, RX, RY, RZ, Phase, U, U1, U2,
-U3, CX, CZ, and Swap. The SC route also supports SX and Reset. Measurements
+U3, CX, CZ, and Swap. The SC routes also support SX, Reset, CCX (Toffoli),
+iSwap, CY, CS, CPhase and CSwap (Fredkin). Measurements
 belong at the end of the circuit, and each classical slot can receive one
 measurement result.
 
 Other operations available to `LogicalProgram`, including classical
-conditions, feed-forward, mid-circuit measurement, multi-controlled gates,
+conditions, feed-forward, mid-circuit measurement, general multi-controlled gates,
 and qudit gates, can still be used in direct simulation but are not compiled
 yet. If a circuit uses an operation unavailable on its chosen target,
 compilation raises a [`PassError`][fatqat.compiler.PassError] that identifies

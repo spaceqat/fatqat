@@ -249,9 +249,62 @@ def _lower_gate(builder: _SCBuilder, instruction: LogicalGate) -> None:
         builder.add(ops.CZ, (control, target), origins)
         _add_h(builder, target, origins)
         return
+    decomposition = _decompose_controlled_gate(operation, qubits)
+    if decomposition is not None:
+        for gate, operands in decomposition:
+            _lower_gate(builder, LogicalGate(instruction.operation_id, gate, operands))
+        return
     raise UnsupportedFeatureError(
         f"operation {operation.name} is not supported by sc.gate.v1 normalization"
     )
+
+
+def _decompose_controlled_gate(operation, qubits):
+    """Exact composite identities in execution order (no auxiliary qubits)."""
+    if operation is ops.CY:
+        control, target = qubits
+        return ((ops.Sdg, (target,)), (ops.CX, (control, target)), (ops.S, (target,)))
+    if operation is ops.CS or type(operation) is ops.CPhase:
+        control, target = qubits
+        theta = math.pi / 2 if operation is ops.CS else operation.theta
+        return (
+            (ops.Phase(theta / 2), (control,)),
+            (ops.CX, qubits),
+            (ops.Phase(-theta / 2), (target,)),
+            (ops.CX, qubits),
+            (ops.Phase(theta / 2), (target,)),
+        )
+    if operation is ops.iSwap:
+        first, second = qubits
+        return (
+            (ops.Swap, qubits),
+            (ops.CZ, qubits),
+            (ops.S, (first,)),
+            (ops.S, (second,)),
+        )
+    if operation is ops.CSwap:
+        control, first, second = qubits
+        return ((ops.CX, (second, first)), (ops.CCX, qubits), (ops.CX, (second, first)))
+    if operation is ops.CCX:
+        first, second, target = qubits
+        return (
+            (ops.H, (target,)),
+            (ops.CX, (second, target)),
+            (ops.Tdg, (target,)),
+            (ops.CX, (first, target)),
+            (ops.T, (target,)),
+            (ops.CX, (second, target)),
+            (ops.Tdg, (target,)),
+            (ops.CX, (first, target)),
+            (ops.T, (second,)),
+            (ops.T, (target,)),
+            (ops.H, (target,)),
+            (ops.CX, (first, second)),
+            (ops.T, (first,)),
+            (ops.Tdg, (second,)),
+            (ops.CX, (first, second)),
+        )
+    return None
 
 
 def _add_h(builder: _SCBuilder, qubit: RegisterRef, origins: tuple[str, ...]) -> None:
