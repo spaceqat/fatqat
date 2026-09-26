@@ -121,6 +121,26 @@ binding and execution contracts are specified here and in [Simulator](simulator.
 [`measure_all`][fatqat.Program.measure_all] update the current program and return
 `None`.
 
+## Read instructions
+
+Use [`Program.instructions`][fatqat.Program.instructions] to read a program's
+instructions in insertion order. It returns a read-only snapshot containing
+[`OperationInstruction`][fatqat.program.OperationInstruction] and
+[`Measurement`][fatqat.operations.Measurement] records.
+
+```python
+from fatqat.program import OperationInstruction
+
+for instruction in program.instructions:
+    if isinstance(instruction, OperationInstruction):
+        print(instruction.operation, instruction.targets, instruction.condition)
+```
+
+Backends and other program readers should use this interface instead of
+depending on FatQat's private instruction representation.
+
+::: fatqat.program.OperationInstruction
+
 ## Draw
 
 
