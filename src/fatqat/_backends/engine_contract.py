@@ -114,3 +114,5 @@ class RawResult:
     outcome_keys: np.ndarray | None = None
     outcome_counts: np.ndarray | None = None
     state: np.ndarray | None = None
+    loss_events: tuple[tuple[tuple[int, int], ...], ...] | None = None
+    shot_outcomes: tuple[tuple[int, ...], ...] | None = None

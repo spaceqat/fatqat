@@ -132,11 +132,18 @@ def _dispatch_execution(
     assert context.execution_shape == "per_shot"
     assert context.request.counts and not state_requested
     snapshots = _run_shots_in_processes(type(engine), context, payload, policy)
+    loss_events = shot_outcomes = None
+    if context.capture_loss_events:
+        loss_events = tuple(events for _, events in snapshots)
+        snapshots = [row for row, _ in snapshots]
+        shot_outcomes = tuple(snapshots)
     rows = np.asarray(snapshots, dtype=int).reshape((len(snapshots), context.n_clbits))
     outcome_keys, outcome_counts = reduce_to_counts(rows)
     return RawResult(
         outcome_keys=outcome_keys,
         outcome_counts=outcome_counts,
+        loss_events=loss_events,
+        shot_outcomes=shot_outcomes,
     )
 
 
@@ -917,6 +924,7 @@ class Simulator:
             seed=simulation.seed,
             initial_state=prepared.initial_state,
             initial_occupied=prepared.initial_occupied,
+            capture_loss_events=getattr(config, "loss_events", False),
         )
         return _PreparedRun(
             plan=prepared.plan,
@@ -1692,6 +1700,15 @@ class Simulator:
                     stacklevel=3,
                 )
 
+        if raw.loss_events is not None:
+            operands = engine_allocation.device_operands
+            raw = replace(
+                raw,
+                loss_events=tuple(
+                    tuple((opportunity, operands[index]) for opportunity, index in shot)
+                    for shot in raw.loss_events
+                ),
+            )
         extra_data = self._additional_result_data(
             config=config,
             simulation=simulation,
