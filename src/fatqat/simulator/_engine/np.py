@@ -74,6 +74,7 @@ from ..._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
     LossStep,
+    OccupancyCheckStep,
     MeasurementStep,
     ResetStep,
     PutStep,
@@ -502,6 +503,11 @@ class _NumpyMatrixEngine(MatrixEngine):
                         if index not in occupied:
                             occupied.add(index)
                             self.reset_subsystems([index], rng)
+            elif isinstance(step, OccupancyCheckStep):
+                for site, output in zip(
+                    step.site_indices, step.classical_indices, strict=True
+                ):
+                    clbits[output] = int(site in occupied)
             elif isinstance(step, MeasurementStep):
                 bits = self.measure_subsystems(step.measured_indices, rng)
                 confusions = step.confusions or (None,) * len(bits)

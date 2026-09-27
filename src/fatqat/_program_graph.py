@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from .operations import Barrier, Measurement, Pair, Put, Unpair
+from .operations import Barrier, Measurement, OccupancyCheck, Pair, Put, Unpair
 from .registers import RegisterRef, RegisterView, _view_members
 
 if TYPE_CHECKING:
@@ -172,7 +172,7 @@ def _ref_key(ref: RegisterRef) -> tuple[int, int]:
 
 def _is_hardware_instruction(step: Any) -> bool:
     """Return whether an instruction belongs to a backend-specific timeline."""
-    if isinstance(step, Measurement):
+    if isinstance(step, (Measurement, OccupancyCheck)):
         return False
     operation = step.operation
     return isinstance(operation, (type(Put), type(Pair), type(Unpair))) or bool(
@@ -216,12 +216,12 @@ def _node_info(
     tuple[RegisterRef, ...],
 ]:
     """Extract normalized display and dependency facts from one instruction."""
-    if isinstance(step, Measurement):
+    if isinstance(step, (Measurement, OccupancyCheck)):
         return (
-            "Measurement",
+            type(step).__name__,
             tuple(step.targets),
             None,
-            "measurement",
+            "measurement" if isinstance(step, Measurement) else "occupancy_check",
             tuple(step.outputs),
         )
 

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from .. import operations as ops
 from ..errors import UnsupportedOperationError
-from ..operations import Measurement, PulseOperation
+from ..operations import Measurement, OccupancyCheck, PulseOperation
 from ..registers import RegisterRef, RegisterView, _view_members
 from ._style import (
     _OUTLINE_LINEWIDTH,
@@ -616,6 +616,10 @@ def to_qubit_circuit(program: Program, *, _barrier_markers: bool = False):
     circuit = qubit_circuit_cls(len(qubit_index), num_cbits=len(clbit_index))
 
     for step in program._instructions:
+        if isinstance(step, OccupancyCheck):
+            raise UnsupportedOperationError(
+                "occupancy checks are not supported by circuit drawing"
+            )
         # Measurement is distinct from the private applied-operation record;
         # emit one QuTiP measurement per (qubit -> clbit) pair.
         if isinstance(step, Measurement):

@@ -48,7 +48,7 @@ from ..noise import (
     default_channel_implementation_map,
 )
 from ..observable import Observable
-from ..operations import Barrier, Measurement, Reset
+from ..operations import Barrier, Measurement, OccupancyCheck, Reset
 from ..parameters import Parameter, ParameterVector
 from ..program import Program, _AppliedOperation
 from ..registers import RegisterRef
@@ -102,6 +102,7 @@ from .._backends.steps import (
     ApplyMatrixStep,
     LossStep,
     MeasurementStep,
+    OccupancyCheckStep,
     PutStep,
     ResetStep,
     ResolvedStep,
@@ -1788,6 +1789,10 @@ class Simulator:
                         self._noise_model,
                     )
                 )
+            elif isinstance(step, OccupancyCheck):
+                raise UnsupportedOperationError(
+                    "occupancy checks require AtomArraySimulator"
+                )
             elif isinstance(step, _AppliedOperation):
                 if isinstance(step.operation, type(Barrier)):
                     continue
@@ -1865,6 +1870,12 @@ class Simulator:
                 deferred_measurements.extend(
                     zip(step.measured_indices, step.classical_indices)
                 )
+                continue
+
+            if isinstance(step, OccupancyCheckStep):
+                has_measurement = True
+                written_clbits.update(step.classical_indices)
+                require_per_shot()
                 continue
 
             if isinstance(step, (ApplyMatrixStep, planning._MatrixRecipe)):

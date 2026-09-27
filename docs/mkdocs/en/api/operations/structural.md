@@ -31,6 +31,33 @@ the reported digit, not the collapsed physical outcome.
       filters:
         - "!^_"
 
+## Atom occupancy checks
+
+Use [`Program.check_occupancy`][fatqat.Program.check_occupancy] with
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] to record whether
+each site contains an atom without measuring its quantum state. It writes `1`
+for a present atom and `0` for an empty site to a dimension-2 classical slot.
+Later operations can use that slot in a classical condition. The check is
+ideal: `ReadoutConfusion` applies to quantum measurements, not occupancy
+checks.
+
+Pass site/output pairs in the same order as `measure`. Each check overwrites
+its output slots; use separate slots to retain a history. The simulator
+executes attached `Loss` immediately after its operation, so a check placed
+next in the program sees that loss. Checks after every loss-bearing operation
+identify the first absent checkpoint at operation granularity. Less frequent
+checks locate loss only between checkpoints. A check does not reveal the
+continuous-time loss instant or distinguish multiple loss sources attached to
+one operation.
+
+::: fatqat.operations.OccupancyCheck
+    options:
+      inherited_members: false
+      show_bases: false
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
 Add [`Reset`][fatqat.operations.Reset] with [`fatqat.Program.add`][fatqat.Program.add]. It accepts one or more
 distinct scalar targets and can carry a condition when the backend supports
 feedforward. It rejects an empty target tuple, duplicate targets, and

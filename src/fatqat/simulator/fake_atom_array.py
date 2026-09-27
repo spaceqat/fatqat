@@ -24,6 +24,7 @@ from ..program import Program, _AppliedOperation
 from ..resource_layout import ResourceLayout
 from .._backends.steps import (
     LossStep,
+    OccupancyCheckStep,
     PutStep,
 )
 from ._connectivity import _AtomConnectivity
@@ -78,6 +79,8 @@ class AtomArraySimulator(Simulator):
     - Occupancy: every declared site starts empty. ``Put`` loads an atom;
       supported, correctly paired gates and reset do nothing on an empty site,
       which measures as the erasure digit ``2``.
+      ``Program.check_occupancy`` reports presence as ``1`` or ``0`` without
+      measuring the atom's state.
     - Methods: atom occupancy requires ``statevector`` or ``density_matrix``.
 
     The simulator validates the program as written; it does not transport,
@@ -280,7 +283,23 @@ class AtomArraySimulator(Simulator):
                 ordinary.clear()
 
         for step in segment:
-            if isinstance(step, _AppliedOperation) and isinstance(
+            if isinstance(step, ops.OccupancyCheck):
+                flush_ordinary()
+                plan.append(
+                    OccupancyCheckStep(
+                        site_indices=tuple(
+                            context.engine_allocation.engine_index(
+                                context.resource_layout.device_label(target)
+                            )
+                            for target in step.targets
+                        ),
+                        classical_indices=tuple(
+                            context.classical_allocation.classical_index(output)
+                            for output in step.outputs
+                        ),
+                    )
+                )
+            elif isinstance(step, _AppliedOperation) and isinstance(
                 step.operation, type(ops.Put)
             ):
                 flush_ordinary()

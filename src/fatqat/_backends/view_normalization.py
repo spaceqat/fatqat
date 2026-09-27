@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ..operations import Measurement
+from ..operations import Measurement, OccupancyCheck
 from ..program import _AppliedOperation
 from ..registers import RegisterView, _view_members
 
-ProgramInstruction = _AppliedOperation | Measurement
+ProgramInstruction = _AppliedOperation | Measurement | OccupancyCheck
 
 
 def _expand_grouped_operation(

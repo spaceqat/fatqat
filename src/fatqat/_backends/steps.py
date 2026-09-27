@@ -172,6 +172,14 @@ class LossStep:
 
 
 @dataclass(frozen=True)
+class OccupancyCheckStep:
+    """Write current atom presence to classical slots without state collapse."""
+
+    site_indices: tuple[int, ...]
+    classical_indices: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class MeasurementStep:
     """Resolved measurement: flat subsystem indices into matching flat clbit indices.
 
@@ -283,6 +291,7 @@ ResolvedStep = (
     ApplyMatrixStep
     | ApplyChannelStep
     | LossStep
+    | OccupancyCheckStep
     | MeasurementStep
     | ResetStep
     | PutStep

@@ -30,6 +30,7 @@ from .fixed_gates import (
     iSwap,
 )
 from .measurement import Measurement
+from .occupancy import OccupancyCheck
 from .pairing import Pair, Unpair
 from .parametric_gates import CPhase, Phase, RX, RY, RZ, U, U1, U2, U3
 from .put import Put
@@ -83,6 +84,7 @@ __all__ = [
     "Pair",
     "Unpair",
     "Measurement",
+    "OccupancyCheck",
     "Shift",
     "Clock",
     "Sum",

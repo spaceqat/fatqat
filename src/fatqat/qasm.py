@@ -1195,6 +1195,9 @@ def to_qasm(program: Program, version: int = 3) -> str:
                     body.append(f"measure {layout.qref(qref)} -> {layout.cref(cref)};")
             continue
 
+        if isinstance(step, ops.OccupancyCheck):
+            raise QasmExportError("occupancy checks are not supported by QASM export")
+
         assert isinstance(step, _AppliedOperation)
         op = step.operation
 

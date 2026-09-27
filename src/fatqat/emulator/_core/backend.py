@@ -45,7 +45,7 @@ from ...job import Job
 from ...noise import NoiseModel
 from ...noise.lindblad import LindbladImplementationMap
 from ...observable import Observable
-from ...operations import Barrier, Measurement, PulseOperation, Reset
+from ...operations import Barrier, Measurement, OccupancyCheck, PulseOperation, Reset
 from ...program import Program, _AppliedOperation
 from ...resource_layout import ResourceLayout
 from ...result import (
@@ -244,6 +244,10 @@ class _PulseBackend(ABC):
                         classical_allocation,
                         self._noise_model,
                     )
+                )
+            elif isinstance(step, OccupancyCheck):
+                raise UnsupportedOperationError(
+                    "occupancy checks require AtomArraySimulator"
                 )
             elif isinstance(step, _AppliedOperation):
                 if isinstance(step.operation, type(Barrier)):

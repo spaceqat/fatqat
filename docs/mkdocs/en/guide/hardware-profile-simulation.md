@@ -211,6 +211,34 @@ so surviving atoms return `1`, while lost atoms return `2`:
 >>> lossy_counts
 {'1': 86, '2': 14}
 ```
+
+To locate loss during a program, place non-destructive occupancy checks at
+chosen checkpoints. They write `1` for an occupied site and `0` for an empty
+one without collapsing the atom's quantum state. Use separate classical slots
+to keep earlier observations:
+
+```pycon
+>>> tracked = fq.Program(1, 3)
+>>> tracked.check_occupancy(0, 0)  # initially empty
+>>> tracked.add(ops.Put, 0)
+>>> tracked.check_occupancy(0, 1)  # loaded
+>>> tracked.add(ops.RX(np.pi), 0)  # Loss is sampled after RX
+>>> tracked.check_occupancy(0, 2)
+>>> certain_loss = fq.NoiseModel()
+>>> certain_loss.add(fq.noise.Loss(p=1), operation=ops.RX)
+>>> fq.simulator.AtomArraySimulator(noise=certain_loss).run(
+...     tracked, shots=4, simulation_config={"seed": 7}
+... ).result().get_counts()
+{'010': 4}
+```
+
+The last two checks bracket the loss to the `RX` operation. Checking after
+each operation that can cause loss gives an operation-level reference record;
+checking less often leaves a wider possible interval. A later operation can
+use an occupancy output in `condition=`; writing the same classical slot
+again keeps only its latest value. Occupancy checks are ideal in this model
+and are supported only by `AtomArraySimulator`.
+
 Omitting `Pair` before `CZ` is a program error; FatQat does not transport or
 pair atoms automatically. A missing atom is different: supported gates find
 nothing to act on, and measurement reports the erasure digit `2`.

@@ -10,7 +10,7 @@ from ._parameter_binding import (
     _normalize_parameter_mapping,
     _replace_parameterized_instructions,
 )
-from .operations import Measurement, Operation
+from .operations import Measurement, OccupancyCheck, Operation
 from .parameters import Parameter, ParameterVector
 from .registers import (
     QuantumRegister,
@@ -178,15 +178,19 @@ class Program:
         self.classical_registers: tuple[ClassicalRegister, ...] = tuple(
             self._coerce_registers(classical_registers, ClassicalRegister, "c")
         )
-        self._operations: list[_AppliedOperation | Measurement] = []
-        self._operations_view: tuple[_AppliedOperation | Measurement, ...] | None = ()
+        self._operations: list[_AppliedOperation | Measurement | OccupancyCheck] = []
+        self._operations_view: (
+            tuple[_AppliedOperation | Measurement | OccupancyCheck, ...] | None
+        ) = ()
         # `is not None` (not truthiness): a falsy non-mapping like 0 or ""
         # must fail the dict copy below, exactly as Register.__post_init__
         # does, instead of silently becoming {}.
         self.metadata: dict[str, Any] = dict(metadata) if metadata is not None else {}
 
     @property
-    def _instructions(self) -> tuple[_AppliedOperation | Measurement, ...]:
+    def _instructions(
+        self,
+    ) -> tuple[_AppliedOperation | Measurement | OccupancyCheck, ...]:
         """Return the cached instruction snapshot in insertion order.
 
         A previously returned tuple remains unchanged after later mutation.
@@ -205,8 +209,8 @@ class Program:
         Drawing uses one wire per quantum or classical slot. Register
         dimensions are not depicted. Built-in gates use native QuTiP-QIP
         symbols where available; other operations are labeled boxes. Direct
-        `fatqat.operations.PulseOperation` controls cannot be represented by
-        the circuit renderer.
+        `fatqat.operations.PulseOperation` controls and occupancy checks cannot
+        be represented by the circuit renderer.
 
         Args:
             renderer: ``"matplotlib"`` (default) for a matplotlib ``Figure``,
@@ -222,7 +226,7 @@ class Program:
         Raises:
             ImportError: If QuTiP-QIP is unavailable.
             UnsupportedOperationError: If the program contains a
-                ``PulseOperation``.
+                ``PulseOperation`` or occupancy check.
         """
         if "view" in kwargs:
             raise TypeError(
@@ -430,6 +434,11 @@ class Program:
                     "Measurement cannot be added with Program.add; use "
                     "program.measure(targets, outputs) instead"
                 )
+            if op is OccupancyCheck or isinstance(op, OccupancyCheck):
+                raise TypeError(
+                    "OccupancyCheck cannot be added with Program.add; use "
+                    "program.check_occupancy(targets, outputs) instead"
+                )
             raise TypeError(
                 f"op must be an Operation instance, got {type(op)!r} "
                 "(did you forget to call a parametric gate, e.g. ops.RX(0.2)?)"
@@ -549,6 +558,42 @@ class Program:
         self._operations.append(Measurement(targets=target_refs, outputs=output_refs))
         self._operations_view = None
 
+    def check_occupancy(
+        self,
+        targets: int | RegisterRef | tuple[int | RegisterRef, ...],
+        outputs: int | RegisterRef | tuple[int | RegisterRef, ...],
+    ) -> None:
+        """Append a non-destructive atom-presence check.
+
+        Each target writes ``1`` when occupied and ``0`` when empty to its
+        paired dimension-2 classical slot. Later conditions can read these
+        values. Use different output slots to retain successive checkpoints;
+        writing the same slot again replaces its previous value. The selected
+        backend validates support when the program runs.
+
+        Args:
+            targets: One or more quantum sites, in output order.
+            outputs: The same number of dimension-2 classical slots.
+
+        Raises:
+            TypeError: If a target or output is not a valid register reference.
+            ValueError: If either sequence is empty, their lengths differ, or
+                a classical output has dimension other than 2.
+            IndexError: If an integer operand is outside its register.
+        """
+        q_operands = (
+            tuple(targets) if isinstance(targets, (tuple, list)) else (targets,)
+        )
+        c_operands = (
+            tuple(outputs) if isinstance(outputs, (tuple, list)) else (outputs,)
+        )
+        target_refs = tuple(self._resolve_quantum_ref(q) for q in q_operands)
+        output_refs = tuple(self._resolve_classical_ref(c) for c in c_operands)
+        self._operations.append(
+            OccupancyCheck(targets=target_refs, outputs=output_refs)
+        )
+        self._operations_view = None
+
     def measure_all(self) -> None:
         """Append one measurement pairing all quantum and classical slots.
 
@@ -579,8 +624,9 @@ class Program:
     def copy(self) -> "Program":
         """Return a copy that can be edited independently.
 
-        Later ``add()`` and ``measure()`` calls and top-level metadata changes
-        are independent. Values nested inside metadata remain shared.
+        Later ``add()``, ``measure()``, and ``check_occupancy()`` calls and
+        top-level metadata changes are independent. Values nested inside
+        metadata remain shared.
 
         Returns:
             A new program with the same instructions.
@@ -590,8 +636,8 @@ class Program:
     def _copy_with_operations(
         self,
         operations: (
-            tuple[_AppliedOperation | Measurement, ...]
-            | list[_AppliedOperation | Measurement]
+            tuple[_AppliedOperation | Measurement | OccupancyCheck, ...]
+            | list[_AppliedOperation | Measurement | OccupancyCheck]
         ),
     ) -> "Program":
         """Copy program structure and metadata around trusted instructions.

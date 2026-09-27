@@ -19,7 +19,7 @@ from ._parameter_binding import (
 from .errors import BackendValidationError
 from .job import Job
 from .observable import Observable
-from .operations import Measurement
+from .operations import Measurement, OccupancyCheck
 from .parameters import Parameter, ParameterVector
 from .program import Program
 from .result import Result
@@ -284,6 +284,11 @@ def _validate_program(
                 f"{register.name!r} has dim={register.dim}"
             )
 
+    if any(isinstance(step, OccupancyCheck) for step in program._instructions):
+        raise BackendValidationError(
+            "a program with an occupancy check cannot be estimated; "
+            "use backend.run for classical outcomes"
+        )
     if any(isinstance(step, Measurement) for step in program._instructions):
         raise BackendValidationError(
             "a program with a measurement has no well-defined expectation "

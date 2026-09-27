@@ -61,6 +61,12 @@ loaded—or after it is lost—supported gates and reset have no effect there,
 while measurement reports erasure digit `2`. A later `Put` can refill the
 site, and pairing instructions continue to update connectivity throughout.
 
+[`Program.check_occupancy`][fatqat.Program.check_occupancy] writes `1` for a
+present atom or `0` for an empty site without collapsing the atom's quantum
+state. Place checks after chosen operations to retain an occupancy history in
+classical slots. These ideal reports can drive later classical conditions;
+`ReadoutConfusion` does not affect them.
+
 Occupancy is tracked outside the quantum-state representation. Final
 statevectors, density matrices, and [`Estimator`][fatqat.Estimator]
 calculations still include one qubit subsystem per declared site, whether or

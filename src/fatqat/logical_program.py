@@ -151,5 +151,13 @@ class LogicalProgram(Program):
             raise ValueError(f"{op.name} is not a logical operation")
         super().add(op, targets, condition=condition)
 
+    def check_occupancy(
+        self,
+        targets: int | RegisterRef | tuple[int | RegisterRef, ...],
+        outputs: int | RegisterRef | tuple[int | RegisterRef, ...],
+    ) -> None:
+        """Reject a device-specific occupancy check in a logical program."""
+        raise ValueError("occupancy checks require Program, not LogicalProgram")
+
     def _new_copy(self) -> LogicalProgram:
         return LogicalProgram.__new__(LogicalProgram)
