@@ -4,7 +4,6 @@ description: "Build a surface-code memory-Z experiment on a simulated supercondu
 icon: material-shield-check-outline
 figure_alts:
   - "Seventeen-qubit surface-code patch with nine data qubits, four X checks, four Z checks, and the logical Z support"
-  - "Z-check detection-event frequencies during nine noisy QEC cycles and the final data readout"
   - "Decoded logical error versus QEC cycles, with 128 shots per point, symmetric one-standard-error bars, and a fitted logical error probability per cycle"
 ---
 
@@ -23,8 +22,13 @@ The parity of the final data qubits on the logical Z operator gives one logical 
 per shot. A classical decoder uses the Z-stabilizer syndrome history, including
 the final checks reconstructed from data readout, to predict whether that
 logical bit should be flipped. We report the decoded failure probability as
-**logical error**, using 128 shots each at 2, 3, 5, 7, and 9 QEC cycles,
+**logical error**, using 128 shots each at 3, 6, 9, 12, 15, and 18 QEC cycles,
 and fit an effective logical error probability per cycle.
+
+The figures use saved results from a completed simulation. Section 6 includes
+the recorded data and commented sampling code for repeating the experiment.
+Running the tutorial uses the saved data to recreate the fit without
+repeating the simulation.
 
 This is a gate-level study using 9 data qubits and 8 ancilla qubits.
 The simulator's coupling graph and noise parameters are based on calibration
@@ -627,69 +631,91 @@ recovery is applied through classical post-processing of the measurement
 record. The value stored as `logical_error` is the fraction of shots that
 have an incorrect decoded logical readout.
 
+The following data are the decoded failure counts from a completed run
+with base seed `20260925`, 128 shots per point, and four shot workers.
+They are stored explicitly so the fit can be reproduced without sampling.
+
 ```python
-from time import perf_counter
-
-
-def logical_flip(correction_mask):
-    """Return the logical-Z sign flip predicted by a data-X correction mask."""
-    return sum((int(correction_mask) >> q) & 1 for q in LOGICAL_Z) % 2
-
-
-RUN_CONFIG = {"shot_parallelism": "threads", "kernel_parallelism": "serial",
-              "max_workers": 4}
 SHOTS = 128
-QEC_CYCLES = (2, 3, 5, 7, 9)
-noisy_backend = make_qec17_backend()
-summaries = []
-experiment_started = perf_counter()
-for cycles in QEC_CYCLES:
-    decoder = SpaceTimeDecoder(cycles)
-    sampling_started = perf_counter()
-    seed = int(np.random.SeedSequence([20260928, cycles]).generate_state(1)[0])
-    result = noisy_backend.run(
-        build_memory_z(cycles), shots=SHOTS,
-        simulation_config={**RUN_CONFIG, "seed": seed},
-        result_config={"counts": True, "final_state": False},
-    ).result()
-    counts = result.get_counts_as_tuples()
-    assert sum(counts.values()) == SHOTS
-    sampling_seconds = perf_counter() - sampling_started
-    decoding_started = perf_counter()
-    logical_errors = 0
-    event_totals = np.zeros((cycles + 1, 4))
-    for record, frequency in counts.items():
-        detectors, measured_logical = unpack_record(record, cycles)
-        # Prediction uses syndrome information, never measured_logical.
-        predicted_flip = logical_flip(decoder.decode(detectors))
-        logical_errors += frequency * (measured_logical ^ predicted_flip)
-        event_totals += frequency * detectors
-    decoding_seconds = perf_counter() - decoding_started
-    summaries.append({
-        "cycles": cycles,
-        "logical_errors": logical_errors,
-        "logical_error": logical_errors / SHOTS,
-        "detector_rates": event_totals / SHOTS,
-        "sampling_seconds": sampling_seconds,
-        "decoding_seconds": decoding_seconds,
-    })
-    print(f"QEC cycles={cycles}, shots={SHOTS}: "
-          f"logical error={logical_errors}/{SHOTS} ({logical_errors / SHOTS:.5f}), "
-          f"sampling={sampling_seconds:.1f} s, decoding={decoding_seconds:.3f} s")
-experiment_seconds = perf_counter() - experiment_started
-print(f"Sampling and decoding all {len(QEC_CYCLES) * SHOTS} shots: "
-      f"{experiment_seconds:.1f} s ({experiment_seconds / 60:.2f} min)")
+QEC_CYCLES = (3, 6, 9, 12, 15, 18)
+BASE_SEED = 20260925
+
+# Recorded decoded failures from 128 shots at each cycle count.
+recorded_errors = (17, 23, 32, 37, 41, 46)
+summaries = [
+    {"cycles": cycles, "logical_errors": errors, "logical_error": errors / SHOTS}
+    for cycles, errors in zip(QEC_CYCLES, recorded_errors)
+]
+for summary in summaries:
+    print(f"QEC cycles={summary['cycles']}, shots={SHOTS}: "
+          f"logical error={summary['logical_errors']}/{SHOTS} "
+          f"({summary['logical_error']:.5f})")
 ```
 
-Each cycle count uses 128 independent noisy shots. Each measurement record
-contributes according to its observed frequency. The simulation requests
-measurement counts only. Up to four workers sample independent shots, with
-serial numerical kernels within each shot. Use `shot_parallelism="serial"`
-when only one worker is available.
-Fixed seeds reproduce counts for the same runtime, parallelism settings, and
-result requests. The five points require 640 shots in total. The reported
-execution times separate circuit setup and sampling from classical decoding,
-and depend on the machine and Numba compilation state.
+To generate new measurement records, uncomment and run the next cell, then
+rerun the plotting cells. It replaces `summaries` with the new results.
+The six points require 768 shots. The recorded run took about 30 minutes
+on the contributor's computer, and runtime depends on the machine and
+Numba compilation state.
+
+```python
+# from time import perf_counter
+#
+#
+# def logical_flip(correction_mask):
+#     """Return the logical-Z sign flip predicted by a data-X correction mask."""
+#     return sum((int(correction_mask) >> q) & 1 for q in LOGICAL_Z) % 2
+#
+#
+# RUN_CONFIG = {"shot_parallelism": "threads", "kernel_parallelism": "serial",
+#               "max_workers": 4}
+# noisy_backend = make_qec17_backend()
+# summaries = []
+# experiment_started = perf_counter()
+# for cycles in QEC_CYCLES:
+#     decoder = SpaceTimeDecoder(cycles)
+#     sampling_started = perf_counter()
+#     seed = int(np.random.SeedSequence([BASE_SEED, cycles]).generate_state(1)[0])
+#     result = noisy_backend.run(
+#         build_memory_z(cycles), shots=SHOTS,
+#         simulation_config={**RUN_CONFIG, "seed": seed},
+#         result_config={"counts": True, "final_state": False},
+#     ).result()
+#     counts = result.get_counts_as_tuples()
+#     assert sum(counts.values()) == SHOTS
+#     sampling_seconds = perf_counter() - sampling_started
+#     decoding_started = perf_counter()
+#     logical_errors = 0
+#     event_totals = np.zeros((cycles + 1, 4))
+#     for record, frequency in counts.items():
+#         detectors, measured_logical = unpack_record(record, cycles)
+#         # Prediction uses syndrome information, never measured_logical.
+#         predicted_flip = logical_flip(decoder.decode(detectors))
+#         logical_errors += frequency * (measured_logical ^ predicted_flip)
+#         event_totals += frequency * detectors
+#     decoding_seconds = perf_counter() - decoding_started
+#     summaries.append({
+#         "cycles": cycles,
+#         "logical_errors": logical_errors,
+#         "logical_error": logical_errors / SHOTS,
+#         "detector_rates": event_totals / SHOTS,
+#         "sampling_seconds": sampling_seconds,
+#         "decoding_seconds": decoding_seconds,
+#     })
+#     print(f"QEC cycles={cycles}, shots={SHOTS}: "
+#           f"logical error={logical_errors}/{SHOTS} ({logical_errors / SHOTS:.5f}), "
+#           f"sampling={sampling_seconds:.1f} s, decoding={decoding_seconds:.3f} s")
+# experiment_seconds = perf_counter() - experiment_started
+# print(f"Sampling and decoding all {len(QEC_CYCLES) * SHOTS} shots: "
+#       f"{experiment_seconds:.1f} s ({experiment_seconds / 60:.2f} min)")
+```
+
+When rerunning the simulation, each cycle count uses 128 independent noisy
+shots. Each measurement record contributes according to its observed
+frequency. Up to four workers sample shots, with serial numerical kernels
+within each shot. Use `shot_parallelism="serial"` when only one worker is
+available. Fixed seeds reproduce counts for the same runtime, parallelism
+settings, and result requests.
 
 
 ## 7. Fit logical error per cycle
@@ -701,24 +727,32 @@ are measured in every QEC cycle, but this decoder uses only the Z-check
 history. Pauli-Z corrections commute with $Z_L$ and do not change its
 measurement outcome.
 
+This detector map was saved from the same run as the failure counts above.
+
+![Z-check detection-event frequencies during eighteen noisy QEC cycles and the final data readout](../assets/tutorials/surface-code-memory/detector-map.png)
+
+To regenerate the map, first run the optional sampling cell, then uncomment
+and run the following plotting cell. The saved failure counts alone do not
+contain the detector history.
+
 ```python
-last = summaries[-1]
-rates = last["detector_rates"].T
-figure, axis = plt.subplots(figsize=(11, 4.5))
-maximum = max(0.05, float(rates.max()))
-display = axis.imshow(rates, vmin=0, vmax=maximum, cmap="Blues", aspect="auto")
-axis.set(xticks=range(last["cycles"] + 1),
-         xticklabels=[str(t + 1) for t in range(last["cycles"])] + ["Final"],
-         yticks=range(4), yticklabels=[f"Z check {q}" for q in Z_CHECKS],
-         xlabel="QEC cycle / final data readout", title="Z-check detection events")
-for row in range(4):
-    for column in range(last["cycles"] + 1):
-        value = rates[row, column]
-        axis.text(column, row, f"{value:.2f}", ha="center", va="center", fontsize=8,
-                  color="white" if value > maximum * 0.55 else "black")
-figure.colorbar(display, ax=axis, label="Detection probability")
-figure.tight_layout()
-plt.show()
+# last = summaries[-1]
+# rates = last["detector_rates"].T
+# figure, axis = plt.subplots(figsize=(11, 4.5))
+# maximum = max(0.05, float(rates.max()))
+# display = axis.imshow(rates, vmin=0, vmax=maximum, cmap="Blues", aspect="auto")
+# axis.set(xticks=range(last["cycles"] + 1),
+#          xticklabels=[str(t + 1) for t in range(last["cycles"])] + ["Final"],
+#          yticks=range(4), yticklabels=[f"Z check {q}" for q in Z_CHECKS],
+#          xlabel="QEC cycle / final data readout", title="Z-check detection events")
+# for row in range(4):
+#     for column in range(last["cycles"] + 1):
+#         value = rates[row, column]
+#         axis.text(column, row, f"{value:.2f}", ha="center", va="center", fontsize=8,
+#                   color="white" if value > maximum * 0.55 else "black")
+# figure.colorbar(display, ax=axis, label="Detection probability")
+# figure.tight_layout()
+# plt.show()
 ```
 
 The data points estimate the logical error probability after $R$ cycles.
