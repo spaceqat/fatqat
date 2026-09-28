@@ -518,7 +518,7 @@ def _render_index(tutorials: tuple[Tutorial, ...]) -> str:
                 "",
                 description,
                 "",
-                '<div class="grid cards fatqat-tutorial-gallery" markdown>',
+                '<div class="grid cards" markdown>',
                 "",
             )
         )

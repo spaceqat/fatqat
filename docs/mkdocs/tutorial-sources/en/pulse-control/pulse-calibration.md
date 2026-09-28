@@ -16,7 +16,7 @@ select the one that best transfers population from \(|0\rangle\) to
 it implements the desired operation.
 
 You need basic Python, qubit states, and X rotations. The
-[Bell-state tutorial](bell-state.md) introduces the program and result workflow.
+[quickstart](../guide/quickstart.md) introduces the program and result workflow.
 We use FatQat's supplied single-transmon model, which includes an extra energy
 level \(|2\rangle\) beyond the two qubit states. Population can enter this
 level during a pulse; we call it **leakage**. All calibration results here

@@ -1,7 +1,3 @@
-.md-typeset .grid.cards.fatqat-tutorial-gallery {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
-}
-
 .md-typeset .grid.cards.fatqat-guide-paths {
   grid-template-columns: minmax(0, 1fr);
 }

@@ -58,6 +58,17 @@ theme:
     - content.tabs.link
     - content.tooltips
 
+# Shared by the English build and translation repositories that inherit this file.
+extra:
+  documentation_version: !ENV [READTHEDOCS_VERSION, latest]
+  alternate:
+    - name: English
+      link: https://fatqat.readthedocs.io/en/
+      lang: en
+    - name: 简体中文
+      link: https://fatqat.readthedocs.io/zh-cn/
+      lang: zh-CN
+
 # Keep autorefs before mkdocstrings.
 plugins:
   search:
@@ -198,6 +209,7 @@ nav:
               - Loss: api/noise/loss.md
               - Readout confusion: api/noise/readout-confusion.md
               - Custom implementations: api/noise/custom-implementations.md
+          - Backend: api/backend.md
           - Estimator: api/estimator.md
           - Job: api/job.md
           - Result: api/result.md

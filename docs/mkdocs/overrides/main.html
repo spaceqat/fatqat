@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 
+{# Translation builds share this template but replace the English hooks.
+   Copy the config so the version is appended once per page. #}
+{% set alternate = [] %}
+{% for language in config.extra.alternate %}
+  {% set _ = alternate.append(dict(language,
+    link=language.link ~ config.extra.documentation_version ~ "/")) %}
+{% endfor %}
+{% set config = dict(config, extra=dict(config.extra, alternate=alternate)) %}
+
 {% block styles %}
   {{ super() }}
   <link rel="stylesheet" href="{{ 'assets/stylesheets/site.css' | url }}">
