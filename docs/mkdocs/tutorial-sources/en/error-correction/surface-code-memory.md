@@ -1,10 +1,10 @@
 ---
 title: "Run a surface-code memory-Z experiment"
-description: "Run a noisy 17-qubit surface-code memory-Z experiment and fit the decoded logical error per cycle from 128 shots at 3, 6, 9, 12, 15, and 18 QEC cycles."
+description: "Build a surface-code memory-Z experiment on a simulated superconducting processor, then decode repeated stabilizer measurements and estimate the logical error rate per cycle."
 icon: material-shield-check-outline
 figure_alts:
   - "Seventeen-qubit surface-code patch with nine data qubits, four X checks, four Z checks, and the logical Z support"
-  - "Z-check detection-event frequencies during eighteen noisy QEC cycles and the final data readout"
+  - "Z-check detection-event frequencies during nine noisy QEC cycles and the final data readout"
   - "Decoded logical error versus QEC cycles, with 128 shots per point, symmetric one-standard-error bars, and a fitted logical error probability per cycle"
 ---
 
@@ -23,7 +23,7 @@ The parity of the final data qubits on the logical Z operator gives one logical 
 per shot. A classical decoder uses the Z-stabilizer syndrome history, including
 the final checks reconstructed from data readout, to predict whether that
 logical bit should be flipped. We report the decoded failure probability as
-**logical error**, using 128 shots each at 3, 6, 9, 12, 15 and 18 QEC cycles,
+**logical error**, using 128 shots each at 2, 3, 5, 7, and 9 QEC cycles,
 and fit an effective logical error probability per cycle.
 
 This is a gate-level study using 9 data qubits and 8 ancilla qubits.
@@ -639,14 +639,14 @@ def logical_flip(correction_mask):
 RUN_CONFIG = {"shot_parallelism": "threads", "kernel_parallelism": "serial",
               "max_workers": 4}
 SHOTS = 128
-QEC_CYCLES = (3, 6, 9, 12, 15, 18)
+QEC_CYCLES = (2, 3, 5, 7, 9)
 noisy_backend = make_qec17_backend()
 summaries = []
 experiment_started = perf_counter()
 for cycles in QEC_CYCLES:
     decoder = SpaceTimeDecoder(cycles)
     sampling_started = perf_counter()
-    seed = int(np.random.SeedSequence([20260925, cycles]).generate_state(1)[0])
+    seed = int(np.random.SeedSequence([20260928, cycles]).generate_state(1)[0])
     result = noisy_backend.run(
         build_memory_z(cycles), shots=SHOTS,
         simulation_config={**RUN_CONFIG, "seed": seed},
@@ -687,7 +687,7 @@ measurement counts only. Up to four workers sample independent shots, with
 serial numerical kernels within each shot. Use `shot_parallelism="serial"`
 when only one worker is available.
 Fixed seeds reproduce counts for the same runtime, parallelism settings, and
-result requests. The six points require 768 shots in total. The reported
+result requests. The five points require 640 shots in total. The reported
 execution times separate circuit setup and sampling from classical decoding,
 and depend on the machine and Numba compilation state.
 
