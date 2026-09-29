@@ -4,6 +4,7 @@ description: "Build a surface-code memory-Z experiment on a simulated supercondu
 icon: material-shield-check-outline
 figure_alts:
   - "Seventeen-qubit surface-code patch with nine data qubits, four X checks, four Z checks, and the logical Z support"
+  - "Z-check detection-event frequencies during eighteen noisy QEC cycles and the final data readout"
   - "Decoded logical error versus QEC cycles, with 128 shots per point, symmetric one-standard-error bars, and a fitted logical error probability per cycle"
 ---
 
@@ -27,7 +28,7 @@ and fit an effective logical error probability per cycle.
 
 The figures use saved results from a completed simulation. Section 6 includes
 the recorded data and commented sampling code for repeating the experiment.
-Running the tutorial uses the saved data to recreate the fit without
+Running the tutorial uses the saved data to recreate the plots and fit without
 repeating the simulation.
 
 This is a gate-level study using 9 data qubits and 8 ancilla qubits.
@@ -631,9 +632,10 @@ recovery is applied through classical post-processing of the measurement
 record. The value stored as `logical_error` is the fraction of shots that
 have an incorrect decoded logical readout.
 
-The following data are the decoded failure counts from a completed run
-with base seed `20260925`, 128 shots per point, and four shot workers.
-They are stored explicitly so the fit can be reproduced without sampling.
+The following data are the decoded failure counts and the Z-check
+detection-event counts from a simulation with base seed `20260925`,
+128 shots per point, and four shot workers. They are stored explicitly
+so the plots and fit can be reproduced without sampling.
 
 ```python
 SHOTS = 128
@@ -646,6 +648,33 @@ summaries = [
     {"cycles": cycles, "logical_errors": errors, "logical_error": errors / SHOTS}
     for cycles, errors in zip(QEC_CYCLES, recorded_errors)
 ]
+
+# Detection-event counts for the 18-cycle experiment.
+# Rows: cycles 1 through 18, then final data readout.
+# Columns: Z-check ancillas 9, 12, 13, 15, in Z_CHECKS order.
+recorded_detector_counts = np.array([
+    [6, 2, 3, 3],
+    [16, 17, 7, 13],
+    [17, 10, 9, 9],
+    [17, 18, 7, 12],
+    [16, 12, 11, 10],
+    [16, 15, 11, 14],
+    [10, 15, 3, 6],
+    [20, 16, 5, 7],
+    [16, 24, 14, 6],
+    [11, 21, 10, 6],
+    [22, 20, 13, 8],
+    [22, 15, 9, 5],
+    [7, 15, 8, 5],
+    [13, 18, 8, 7],
+    [15, 24, 8, 14],
+    [18, 14, 11, 7],
+    [18, 20, 12, 12],
+    [16, 20, 8, 10],
+    [17, 24, 3, 14],
+], dtype=int)
+summaries[-1]["detector_rates"] = recorded_detector_counts / SHOTS
+
 for summary in summaries:
     print(f"QEC cycles={summary['cycles']}, shots={SHOTS}: "
           f"logical error={summary['logical_errors']}/{SHOTS} "
@@ -727,32 +756,26 @@ are measured in every QEC cycle, but this decoder uses only the Z-check
 history. Pauli-Z corrections commute with $Z_L$ and do not change its
 measurement outcome.
 
-This detector map was saved from the same run as the failure counts above.
-
-![Z-check detection-event frequencies during eighteen noisy QEC cycles and the final data readout](../assets/tutorials/surface-code-memory/detector-map.png)
-
-To regenerate the map, first run the optional sampling cell, then uncomment
-and run the following plotting cell. The saved failure counts alone do not
-contain the detector history.
+The detection probabilities are the event counts divided by the number of shots.
 
 ```python
-# last = summaries[-1]
-# rates = last["detector_rates"].T
-# figure, axis = plt.subplots(figsize=(11, 4.5))
-# maximum = max(0.05, float(rates.max()))
-# display = axis.imshow(rates, vmin=0, vmax=maximum, cmap="Blues", aspect="auto")
-# axis.set(xticks=range(last["cycles"] + 1),
-#          xticklabels=[str(t + 1) for t in range(last["cycles"])] + ["Final"],
-#          yticks=range(4), yticklabels=[f"Z check {q}" for q in Z_CHECKS],
-#          xlabel="QEC cycle / final data readout", title="Z-check detection events")
-# for row in range(4):
-#     for column in range(last["cycles"] + 1):
-#         value = rates[row, column]
-#         axis.text(column, row, f"{value:.2f}", ha="center", va="center", fontsize=8,
-#                   color="white" if value > maximum * 0.55 else "black")
-# figure.colorbar(display, ax=axis, label="Detection probability")
-# figure.tight_layout()
-# plt.show()
+last = summaries[-1]
+rates = last["detector_rates"].T
+figure, axis = plt.subplots(figsize=(11, 4.5))
+maximum = max(0.05, float(rates.max()))
+display = axis.imshow(rates, vmin=0, vmax=maximum, cmap="Blues", aspect="auto")
+axis.set(xticks=range(last["cycles"] + 1),
+         xticklabels=[str(t + 1) for t in range(last["cycles"])] + ["Final"],
+         yticks=range(4), yticklabels=[f"Z check {q}" for q in Z_CHECKS],
+         xlabel="QEC cycle / final data readout", title="Z-check detection events")
+for row in range(4):
+    for column in range(last["cycles"] + 1):
+        value = rates[row, column]
+        axis.text(column, row, f"{value:.2f}", ha="center", va="center", fontsize=8,
+                  color="white" if value > maximum * 0.55 else "black")
+figure.colorbar(display, ax=axis, label="Detection probability")
+figure.tight_layout()
+plt.show()
 ```
 
 The data points estimate the logical error probability after $R$ cycles.
