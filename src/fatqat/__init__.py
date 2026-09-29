@@ -33,7 +33,7 @@ from .registers import (
 from .resource_layout import DeviceOperand, ResourceLayout
 from .result import Result
 
-__version__ = "0.1.0a1"
+__version__ = "0.1.0a2"
 
 
 def __getattr__(name: str):

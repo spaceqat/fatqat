@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.0a2
+
+This alpha updates the documentation and examples, and includes the changes
+merged to `main` since 0.1.0a1.
+
+- Expand the compiler guide, add a dedicated `LogicalProgram` reference, and
+  compile the homepage Grover example from one shared logical circuit. The SC
+  compiler now decomposes Toffoli (`CCX`) gates before routing.
+- Add tutorials on atom-loss erasure, Rydberg CZ pulse control, and quantum
+  circuit search for molecular-property prediction. Organize tutorials by
+  topic, add suggested reading paths, and add a version-aware language menu.
+- Expose the `Backend` protocol for custom execution backends, read-only
+  program instruction snapshots, and simulator discovery through versioned
+  plugin entry points.
+
+**Compatibility change:** `compile_to_sc()` and `compile_to_na()` now require
+an exact `LogicalProgram` input. In 0.1.0a1 they also accepted `Program` and
+converted it automatically. Construct a `LogicalProgram` before calling either
+compiler entry point. OpenQASM compiler entry points remain available.
+
+Requires Python 3.12 or newer. This is an alpha release; pin the exact version
+for reproducible studies.
+
 ## 0.1.0a1
 
 First alpha release of FatQat, a quantum-computing toolkit built around
