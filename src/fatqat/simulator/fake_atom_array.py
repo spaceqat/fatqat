@@ -9,8 +9,8 @@ pulse timing, transport, or Hamiltonian dynamics.
 
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any
 
 from .. import operations as ops
 from .._backends.backend_utils import _canonicalize_method
@@ -22,6 +22,7 @@ from ..implementation import (
 from ..noise import NoiseModel
 from ..program import Program, _AppliedOperation
 from ..resource_layout import ResourceLayout
+from ..result import _ResultConfig
 from .._backends.steps import (
     LossStep,
     PutStep,
@@ -42,6 +43,19 @@ if TYPE_CHECKING:
     from .planning import _MatrixRecipe
     from .simulator import ProgramInstruction
     from .._backends.steps import ResolvedStep
+    from .._backends.engine_contract import RawResult, _SimulationConfig
+
+
+@dataclass(frozen=True)
+class _AtomArrayResultConfig(_ResultConfig):
+    """Optional per-shot diagnostics for the atom-array simulator."""
+
+    loss_events: bool = False
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if type(self.loss_events) is not bool:
+            raise BackendValidationError("loss_events must be bool")
 
 
 def _fake_atom_array_implementation_map() -> MatrixImplementationMap:
@@ -80,11 +94,50 @@ class AtomArraySimulator(Simulator):
       which measures as the erasure digit ``2``.
     - Methods: atom occupancy requires ``statevector`` or ``density_matrix``.
 
+    Set ``result_config={"loss_events": True}`` to export a per-shot oracle
+    for offline analysis. ``result.get_data("loss_events")`` contains, for each
+    shot, ``(loss_opportunity, device_label)`` pairs for actual losses. The
+    opportunity is zero-based among ordered loss declarations in the execution
+    plan, including ones that did not cause loss. ``shot_outcomes`` contains
+    the corresponding classical output tuple for each shot. This diagnostic
+    does not change program execution or in-program conditions.
+
     The simulator validates the program as written; it does not transport,
     pair, route, or transpile atoms automatically.
     """
 
     _supports_loss = True
+    _result_config_cls = _AtomArrayResultConfig
+
+    def _validate_additional_config(
+        self,
+        *,
+        config: _AtomArrayResultConfig,
+        simulation: _SimulationConfig,
+        shots: int,
+        facts: _PlanFacts,
+    ) -> None:
+        super()._validate_additional_config(
+            config=config, simulation=simulation, shots=shots, facts=facts
+        )
+        if config.loss_events and (type(shots) is not int or shots < 1):
+            raise BackendValidationError("loss_events requires shots > 0")
+
+    def _additional_result_data(
+        self,
+        *,
+        config: _AtomArrayResultConfig,
+        simulation: _SimulationConfig,
+        raw: RawResult,
+    ) -> dict[str, Any]:
+        if not config.loss_events:
+            return {}
+        assert raw.loss_events is not None
+        assert raw.shot_outcomes is not None
+        return {
+            "shot_outcomes": raw.shot_outcomes,
+            "loss_events": raw.loss_events,
+        }
 
     def __init__(
         self,

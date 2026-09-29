@@ -394,13 +394,23 @@ class _NumpyMatrixEngine(MatrixEngine):
         """Replay dynamic trajectories locally under an already-resolved policy."""
         request = context.request
         state_requested = getattr(request, self._state_field)
-        n_iters = context.shots if request.counts else (1 if state_requested else 0)
+        n_iters = (
+            context.shots
+            if request.counts or context.capture_loss_events
+            else (1 if state_requested else 0)
+        )
         snapshots = self._run_shot_seed_batch(
             plan,
             _shot_seed_sequences(context.seed, n_iters),
             context.initial_occupied,
             context.initial_state,
+            capture_loss_events=context.capture_loss_events,
         )
+        loss_events = shot_outcomes = None
+        if context.capture_loss_events:
+            loss_events = tuple(events for _, events in snapshots)
+            snapshots = [row for row, _ in snapshots]
+            shot_outcomes = tuple(snapshots)
 
         outcome_keys = outcome_counts = state = None
         if request.counts:
@@ -411,7 +421,11 @@ class _NumpyMatrixEngine(MatrixEngine):
         if state_requested:
             state = self.export_state()
         return RawResult(
-            outcome_keys=outcome_keys, outcome_counts=outcome_counts, state=state
+            outcome_keys=outcome_keys,
+            outcome_counts=outcome_counts,
+            state=state,
+            loss_events=loss_events,
+            shot_outcomes=shot_outcomes,
         )
 
     def _run_shot_seed_batch(
@@ -420,7 +434,9 @@ class _NumpyMatrixEngine(MatrixEngine):
         seed_sequences: Sequence[np.random.SeedSequence],
         initial_occupied: frozenset[int] | None,
         initial_state: np.ndarray | None,
-    ) -> list[tuple[int, ...]]:
+        *,
+        capture_loss_events: bool = False,
+    ) -> list:
         snapshots = []
         for seed_sequence in seed_sequences:
             self.initialize(
@@ -428,11 +444,11 @@ class _NumpyMatrixEngine(MatrixEngine):
                 self._n_clbits,
                 initial_state=initial_state,
             )
-            snapshots.append(
-                self._run_one_shot(
-                    plan, np.random.default_rng(seed_sequence), initial_occupied
-                )
+            events: list[tuple[int, int]] | None = [] if capture_loss_events else None
+            row = self._run_one_shot(
+                plan, np.random.default_rng(seed_sequence), initial_occupied, events
             )
+            snapshots.append((row, tuple(events)) if events is not None else row)
         return snapshots
 
     def execute_shot_batch(
@@ -453,6 +469,7 @@ class _NumpyMatrixEngine(MatrixEngine):
                 seed_batch,
                 context.initial_occupied,
                 context.initial_state,
+                capture_loss_events=context.capture_loss_events,
             )
 
     def _run_one_shot(
@@ -460,6 +477,7 @@ class _NumpyMatrixEngine(MatrixEngine):
         plan: Sequence[ResolvedStep],
         rng: np.random.Generator,
         initial_occupied: frozenset[int] | None = None,
+        loss_events: list[tuple[int, int]] | None = None,
     ) -> tuple[int, ...]:
         """Run one dynamic-path shot and return its final clbit snapshot.
 
@@ -479,6 +497,7 @@ class _NumpyMatrixEngine(MatrixEngine):
             if initial_occupied is None
             else set(initial_occupied)
         )
+        loss_opportunity = 0
         for step in plan:
             if isinstance(step, ApplyMatrixStep) and all(
                 t in occupied for t in step.target_indices
@@ -492,10 +511,10 @@ class _NumpyMatrixEngine(MatrixEngine):
                     self.apply_channel(step, rng)
             elif isinstance(step, LossStep):
                 if _condition_matches(step.condition, clbits):
-                    for index in step.target_indices:
-                        if index in occupied and rng.random() < step.p:
-                            occupied.discard(index)
-                            self.reset_subsystems([index], rng)
+                    self._apply_loss_step(
+                        step, occupied, rng, loss_events, loss_opportunity
+                    )
+                loss_opportunity += 1
             elif isinstance(step, PutStep):
                 if _condition_matches(step.condition, clbits):
                     for index in step.target_indices:
@@ -527,6 +546,22 @@ class _NumpyMatrixEngine(MatrixEngine):
                 ):
                     self.reset_subsystems(step.reset_indices, rng)
         return tuple(clbits)
+
+    def _apply_loss_step(
+        self,
+        step: LossStep,
+        occupied: set[int],
+        rng: np.random.Generator,
+        events: list[tuple[int, int]] | None,
+        opportunity: int,
+    ) -> None:
+        """Remove present targets hit by one loss declaration."""
+        for index in step.target_indices:
+            if index in occupied and rng.random() < step.p:
+                occupied.discard(index)
+                self.reset_subsystems([index], rng)
+                if events is not None:
+                    events.append((opportunity, index))
 
 
 # --- statevector engine ---

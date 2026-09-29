@@ -498,6 +498,109 @@ def test_atom_loss_ejects_the_atom(runtime):
     assert counts == {"2": 10}
 
 
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_loss_events_record_repeated_loss_after_refill(runtime):
+    noise = NoiseModel()
+    noise.add(Loss(p=1.0), operation=ops.RX)
+    program = Program(1, 1)
+    program.add(ops.Put, 0)
+    program.add(ops.RX(0.0), 0)
+    program.add(ops.RX(0.0), 0)  # no atom left to lose
+    program.add(ops.Put, 0)
+    program.add(ops.RX(0.0), 0)
+    program.measure(0, 0)
+
+    result = (
+        AtomArraySimulator(runtime=runtime, noise=noise)
+        .run(program, shots=2, result_config={"loss_events": True})
+        .result()
+    )
+    assert result.get_counts() == {"2": 2}
+    assert result.get_data("shot_outcomes") == ((2,), (2,))
+    assert result.get_data("loss_events") == (
+        ((0, 0), (2, 0)),
+        ((0, 0), (2, 0)),
+    )
+
+
+def test_loss_events_use_device_labels_and_can_run_without_measurement():
+    noise = NoiseModel()
+    noise.add(Loss(p=1.0), operation=ops.RX)
+    program = Program(3)
+    program.add(ops.Put, 2)
+    program.add(ops.RX(0.0), 2)
+
+    result = (
+        AtomArraySimulator(runtime="numpy", noise=noise)
+        .run(
+            program,
+            shots=3,
+            result_config={"counts": False, "loss_events": True},
+        )
+        .result()
+    )
+    assert result.available_data == frozenset({"loss_events", "shot_outcomes"})
+    assert result.get_data("shot_outcomes") == ((),) * 3
+    assert result.get_data("loss_events") == (((0, 2),),) * 3
+
+
+def test_never_loaded_site_is_not_reported_as_a_loss_event():
+    program = Program(1, 1)
+    program.measure(0, 0)
+    result = (
+        AtomArraySimulator(runtime="numpy")
+        .run(program, shots=2, result_config={"loss_events": True})
+        .result()
+    )
+    assert result.get_data("shot_outcomes") == ((2,), (2,))
+    assert result.get_data("loss_events") == ((), ())
+
+
+def test_loss_events_match_between_serial_and_process_shots():
+    noise = NoiseModel()
+    noise.add(Loss(p=0.5), operation=ops.RX)
+    program = Program(1, 1)
+    program.add(ops.Put, 0)
+    program.add(ops.RX(0.0), 0)
+    program.measure(0, 0)
+    backend = AtomArraySimulator(runtime="numpy", noise=noise)
+    common = {"seed": 17}
+    serial = backend.run(
+        program,
+        shots=12,
+        result_config={"loss_events": True},
+        simulation_config={**common, "shot_parallelism": "serial"},
+    ).result()
+    parallel = backend.run(
+        program,
+        shots=12,
+        result_config={"loss_events": True},
+        simulation_config={
+            **common,
+            "shot_parallelism": "processes",
+            "max_workers": 2,
+        },
+    ).result()
+    assert parallel.get_counts() == serial.get_counts()
+    assert parallel.get_data("loss_events") == serial.get_data("loss_events")
+    assert parallel.get_data("shot_outcomes") == serial.get_data("shot_outcomes")
+    for outcome, events in zip(
+        serial.get_data("shot_outcomes"),
+        serial.get_data("loss_events"),
+        strict=True,
+    ):
+        assert (outcome == (2,)) == bool(events)
+
+
+def test_loss_events_require_positive_shots():
+    with pytest.raises(BackendValidationError, match="loss_events requires shots > 0"):
+        AtomArraySimulator().run(
+            Program(1),
+            shots=0,
+            result_config={"counts": False, "loss_events": True},
+        )
+
+
 def test_atom_loss_rejected_by_a_non_atom_backend():
     noise = NoiseModel()
     noise.add(Loss(p=0.1), operation=ops.RX)

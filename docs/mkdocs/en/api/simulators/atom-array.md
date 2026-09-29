@@ -81,6 +81,46 @@ Because an empty site produces no physical readout digit, its erasure value
 stochastic, so `final_state=True` requires `shots == 1`. A measured lossy run
 returns counts by default rather than one arbitrary trajectory's final state.
 
+### Offline loss oracle
+
+Use `result_config={"loss_events": True}` to retain the actual loss events in
+each simulated shot. This result option does not insert a program instruction
+or make the events available to classical conditions during execution. It
+requires a positive shot count and works without a measurement instruction.
+
+```python
+import fatqat as fq
+import fatqat.operations as ops
+
+program = fq.Program(1, 1)
+program.add(ops.Put, 0)
+program.add(ops.RY(0.0), 0)
+program.measure(0, 0)
+noise = fq.NoiseModel()
+noise.add(fq.noise.Loss(p=0.01), operation=ops.RY)
+backend = fq.simulator.AtomArraySimulator(noise=noise)
+result = backend.run(
+    program, shots=1000, result_config={"loss_events": True}
+).result()
+outcomes = result.get_data("shot_outcomes")
+events = result.get_data("loss_events")
+```
+
+The two sequences have one entry per shot in the same order. Each
+`shot_outcomes[i]` is a tuple of classical digits in flat register order;
+unwritten slots remain `0`, and a measurement of an empty site reports `2`.
+Each `loss_events[i]` is an ordered tuple of
+`(loss_opportunity, device_label)` pairs. A loss opportunity is the zero-based
+position of a `Loss` step among the ordered loss steps in the executed plan,
+including steps that did not cause a loss. A site can appear more than once if
+it is refilled and lost again. The opportunity locates loss at the granularity
+of gate-level noise applications; it gives no time within a gate pulse. Sites
+that were never loaded are empty but do not create loss events.
+
+The ordinary `counts` field remains an aggregate histogram. It does not pair
+individual outcomes with loss events, so use `shot_outcomes` for offline
+decoder studies. The extra data is returned only when `loss_events=True`.
+
 ## Example
 
 
