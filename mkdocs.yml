@@ -58,6 +58,17 @@ theme:
     - content.tabs.link
     - content.tooltips
 
+# Shared by the English build and translation repositories that inherit this file.
+extra:
+  documentation_version: !ENV [READTHEDOCS_VERSION, latest]
+  alternate:
+    - name: English
+      link: https://fatqat.readthedocs.io/en/
+      lang: en
+    - name: 简体中文
+      link: https://fatqat.readthedocs.io/zh-cn/
+      lang: zh-CN
+
 # Keep autorefs before mkdocstrings.
 plugins:
   search:
@@ -138,7 +149,7 @@ nav:
       - Start with one program:
           - Quickstart: guide/quickstart.md
           - Programs and registers: guide/program.md
-          - Compile a logical circuit: guide/compiler.md
+          - Compile and run a logical circuit: guide/compiler.md
           - Execution models: guide/execution-models.md
       - Run and analyze programs:
           - Simulation: guide/simulation.md
@@ -160,6 +171,7 @@ nav:
       - api/index.md
       - Build programs:
           - Program: api/program.md
+          - LogicalProgram: api/logical-program.md
           - Compiler: api/compiler.md
           - Registers: api/registers.md
           - Operations:
@@ -197,6 +209,7 @@ nav:
               - Loss: api/noise/loss.md
               - Readout confusion: api/noise/readout-confusion.md
               - Custom implementations: api/noise/custom-implementations.md
+          - Backend: api/backend.md
           - Estimator: api/estimator.md
           - Job: api/job.md
           - Result: api/result.md

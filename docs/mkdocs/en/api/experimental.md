@@ -12,9 +12,9 @@ cover your integration.
 ## Compiler
 
 The [compiler](compiler.md) is under development; its interfaces and supported
-behavior may change. The optional [LogicalProgram](compiler.md#logicalprogram)
-subclass accepts built-in device-independent operations while its compiler
-support continues to evolve.
+behavior may change. Its [LogicalProgram](logical-program.md) frontend accepts
+built-in device-independent operations and is required by the Python compiler
+entry points.
 
 ## Direct construction
 

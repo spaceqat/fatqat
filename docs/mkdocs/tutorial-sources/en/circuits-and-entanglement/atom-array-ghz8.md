@@ -12,7 +12,7 @@ figure_alts:
 
 This tutorial builds an eight-atom Greenberger-Horne-Zeilinger (GHZ) state on
 [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator], fatqat's neutral-atom execution
-target. It is a step up from the two-qubit Bell tutorial in two ways: the state
+target. It builds on the [quickstart](../guide/quickstart.md) in two ways: the state
 spans eight atoms instead of two, and the circuit runs on a backend whose
 two-qubit-gate connectivity is *reconfigured mid-circuit* rather than fixed.
 

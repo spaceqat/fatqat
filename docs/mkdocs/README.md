@@ -129,7 +129,7 @@ python -m pip install jupytext
 jupytext --to md --output converted.md source.ipynb
 
 # Markdown to a temporary notebook
-jupytext --to ipynb --output preview.ipynb docs/mkdocs/tutorial-sources/en/algorithms/my-tutorial.md
+jupytext --to ipynb --output preview.ipynb docs/mkdocs/tutorial-sources/en/quantum-simulation/my-tutorial.md
 ```
 
 Use Jupytext's plain `md` format, not `md:myst`. Notebook outputs are not kept

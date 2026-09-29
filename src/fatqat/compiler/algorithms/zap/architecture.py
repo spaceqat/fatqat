@@ -10,7 +10,19 @@ _BUILTIN_ARCHITECTURES = frozenset(("default", "scale_to_100", "scale_to_500"))
 
 
 def load_architecture(name: str = "default") -> dict[str, object]:
-    """Load one built-in architecture profile as a fresh JSON value."""
+    """Load a built-in neutral-atom architecture profile.
+
+    Args:
+        name: Profile name. Accepted values are ``"default"``,
+            ``"scale_to_100"``, and ``"scale_to_500"``; default
+            ``"default"``.
+
+    Returns:
+        A fresh mutable architecture mapping. Calls never share nested values.
+
+    Raises:
+        ValueError: If name is not a built-in profile.
+    """
     if name not in _BUILTIN_ARCHITECTURES:
         raise ValueError(f"unknown ZAP architecture {name!r}")
     resource = resources.files(__package__).joinpath("architectures", f"{name}.json")

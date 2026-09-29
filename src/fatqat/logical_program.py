@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, Mapping, cast
 
 from . import operations as ops
 from .operations import Operation
+from .parameters import Parameter, ParameterVector
 from .program import ConditionInput, Program
 from .registers import RegisterRef, RegisterView
 
@@ -66,14 +67,51 @@ class LogicalProgram(Program):
     Operation subclasses are rejected. Use measure() for measurements.
 
     Conditions remain valid for direct simulation. Static compiler and target
-    restrictions apply when compiling. The inherited copy() and
-    assign_parameters() methods preserve LogicalProgram.
+    restrictions apply when compiling. The copy() and assign_parameters()
+    methods preserve LogicalProgram.
 
     Attributes:
         IR_ID: Compiler identity for this editable source representation.
     """
 
     IR_ID: ClassVar[str] = "gate.logical.source.v1"
+
+    def copy(self) -> LogicalProgram:
+        """Return an independently editable LogicalProgram copy.
+
+        Later add() and measure() calls and top-level metadata changes are
+        independent. Values nested inside metadata remain shared.
+
+        Returns:
+            A LogicalProgram with the same instructions.
+        """
+        return cast(LogicalProgram, super().copy())
+
+    def assign_parameters(
+        self,
+        values: Mapping[Parameter | ParameterVector, object],
+    ) -> LogicalProgram:
+        """Return a LogicalProgram with selected parameters replaced.
+
+        Matching uses object identity rather than names. Binding may be
+        partial or empty and never mutates the template. Scalar and vector
+        values follow Program.assign_parameters() validation, including vector
+        length and duplicate-assignment checks.
+
+        Args:
+            values: Parameter keys map to real numeric scalars. ParameterVector
+                keys map to matching-length one-dimensional numeric iterables.
+
+        Returns:
+            A LogicalProgram containing the selected numeric values.
+
+        Raises:
+            TypeError: If the mapping, a key, a value container, or a scalar
+                has the wrong type.
+            ValueError: If a parameter is absent, a vector binding is invalid,
+                or the same parameter is assigned more than once.
+        """
+        return cast(LogicalProgram, super().assign_parameters(values))
 
     def add(
         self,
