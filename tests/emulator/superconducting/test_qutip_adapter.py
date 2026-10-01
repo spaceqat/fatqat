@@ -257,6 +257,22 @@ def test_constant_drive_matches_an_independent_full_model_hamiltonian(model):
     assert np.allclose(context.state.full(), expected.full(), atol=2e-7)
 
 
+def test_sequential_constant_drive_blocks_compose_without_extrapolation(model):
+    adapter = _adapter(model)
+    block = _drive_block(
+        adapter._target,
+        "q0",
+        duration=0.8,
+        coefficients=(0.07, 0.07),
+    )
+    single = adapter.propagator(schedule_pulse_run((block,), boundary_time=0.0))
+    sequential = adapter.propagator(
+        schedule_pulse_run((block, block), boundary_time=0.0)
+    )
+
+    assert np.allclose(sequential.full(), (single * single).full(), atol=2e-7)
+
+
 def test_exchange_keeps_both_qutrit_leakage_paths_and_matches_reference(model):
     adapter = _adapter(model)
     amplitude = 0.12

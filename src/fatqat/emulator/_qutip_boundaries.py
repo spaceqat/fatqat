@@ -6,9 +6,18 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
-from qutip import Qobj, mcsolve, qeye, tensor
+from qutip import Qobj, coefficient, mcsolve, qeye, tensor
 
 from ..errors import BackendValidationError
+
+
+def _qutip_time_window(start_time: float, end_time: float) -> Any:
+    """Return a QuTiP coefficient that is active only in one time window."""
+
+    def window(time: float, _args: dict[str, Any] | None = None) -> float:
+        return float(start_time <= time <= end_time)
+
+    return coefficient(window, args={})
 
 
 def _solve_one_qutip_trajectory(

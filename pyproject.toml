@@ -115,6 +115,7 @@ disable = [
     "too-many-statements",
     "too-many-boolean-expressions",
     "too-many-lines",
+    "abstract-method",               # mixin engines and optional backend APIs intentionally leave unsupported operations abstract
     # pylint's static inference is unreliable on numpy arrays and on the
     # deliberate "assert this misuse raises" test patterns (calling a gate
     # singleton, mutating an immutable tuple view, capturing a None return),
