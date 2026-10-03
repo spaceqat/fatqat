@@ -2,8 +2,7 @@
 
 ## 0.1.0a2 - 2026-10-04
 
-This alpha updates the documentation and examples, and includes the changes
-merged to `main` since 0.1.0a1.
+This alpha updates the documentation and examples.
 
 - Expand the compiler guide, add a dedicated `LogicalProgram` reference, and
   compile the homepage Grover example from one shared logical circuit. The SC
