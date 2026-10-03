@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0a2
+## 0.1.0a2 - 2026-10-04
 
 This alpha updates the documentation and examples, and includes the changes
 merged to `main` since 0.1.0a1.
@@ -23,7 +23,7 @@ compiler entry point. OpenQASM compiler entry points remain available.
 Requires Python 3.12 or newer. This is an alpha release; pin the exact version
 for reproducible studies.
 
-## 0.1.0a1
+## 0.1.0a1 - 2026-09-12
 
 First alpha release of FatQat, a quantum-computing toolkit built around
 the `Program` authoring interface.
