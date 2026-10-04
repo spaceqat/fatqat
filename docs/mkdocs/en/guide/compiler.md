@@ -52,7 +52,8 @@ counts = result.get_counts()
 
 `couplings` can describe any valid graph; the topology does not need to be a
 grid. The current public SC profile uses X, SX, RZ, and CZ as its native gate
-set.
+set. Toffoli (`CCX`) gates are decomposed into one- and two-qubit gates before
+routing.
 
 ## Run on a neutral-atom architecture
 
