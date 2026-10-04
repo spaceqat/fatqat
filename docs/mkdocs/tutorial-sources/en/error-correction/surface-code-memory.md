@@ -10,32 +10,15 @@ figure_alts:
 
 # Run a surface-code memory-Z experiment
 
-Initialize the nine data qubits in $|0\rangle^{\otimes9}$, run repeated
-syndrome extraction cycles, and measure whether their logical Z value survives.
-This physical product state has Z-stabilizer and logical $Z_L$ eigenvalues
-$+1$, but is not the fully encoded logical state $|0_L\rangle$.
+A surface code uses data qubits to store information and ancilla qubits to
+detect errors through stabilizer measurements. In this tutorial, we use FatQat
+to study a distance-three surface-code memory-Z experiment with nine data
+qubits and eight ancilla qubits.
 
-The experiment includes repeated noisy measurements of both stabilizer
-types and a final Z-basis measurement of all nine data
-qubits. Each cycle includes a 600 ns ancilla measurement, during which the
-data qubits idle, followed by an instantaneous, error-free ancilla reset.
-The parity of the final data qubits on the logical Z operator gives one logical readout bit
-per shot. A classical decoder uses the Z-stabilizer syndrome history, including
-the final checks reconstructed from data readout, to predict whether that
-logical bit should be flipped. We report the decoded failure probability as
-**logical error**, using 128 shots each at 3, 6, 9, 12, 15, and 18 QEC cycles,
-and fit an effective logical error probability per cycle.
-
-The figures use saved results from a completed simulation. Section 6 includes
-the recorded data and commented sampling code for repeating the experiment.
-Running the tutorial uses the saved data to recreate the plots and fit without
-repeating the simulation.
-
-This is a gate-level study using 9 data qubits and 8 ancilla qubits.
-The simulator's coupling graph and noise parameters are based on calibration
-data from real superconducting hardware. This tutorial uses device-averaged
-parameters to construct a local noise model.
-The circuit and decoder below are self-contained and use FatQat's public interfaces.
+We will show how repeated stabilizer measurements provide information for
+decoding the final logical Z readout. You will learn how to construct a noisy
+syndrome-extraction circuit, interpret detection events, and apply a classical
+decoder. Finally, we will examine how the decoded logical error rate changes with the number of QEC cycles and fit an effective error rate per cycle.
 
 ## 1. Specify the code and initial state
 
@@ -120,7 +103,9 @@ plt.show()
 The simulator starts every shot with all 17 qubits in the computational
 zero state. The data therefore start in $|0\rangle^{\otimes9}$ and all
 ancillas in $|0\rangle$. The initial Z-check parities and logical Z parity
-are zero. X stabilizers commute with the Z stabilizers and $Z_L$, so
+are zero. This product state is not the fully encoded logical state
+$|0_L\rangle$, since it is not an eigenstate of all X stabilizers.
+X stabilizers commute with the Z stabilizers and $Z_L$, so
 they preserve the initial logical Z value. This experiment tracks that
 value without requiring all X-check signs to be $+1$.
 
@@ -142,11 +127,10 @@ print("Initial data: |0>^9; initial Z checks and logical Z have eigenvalue +1")
 
 ## 2. Construct the backend and noise model
 
-The calibration snapshot contains separate values for 17 qubits and
-24 coupled pairs. Here we use the arithmetic mean over qubits for the
-single-qubit fidelity, $T_1$, $T_2^{\mathrm{echo}}$, $F_{00}$, and $F_{11}$, and the arithmetic mean over
-coupled pairs for CZ fidelity. Every qubit therefore shares the same
-single-qubit, idle, and readout parameters, and every CZ shares the same fidelity.
+We use illustrative noise parameters to model gate errors, relaxation,
+dephasing, and readout errors. All qubits share the same coherence times and
+readout probabilities, and gates of each type share the same fidelity.
+We set $T_1=40\,\mu\mathrm{s}$ and $T_2=10\,\mu\mathrm{s}$.
 
 
 Here we use a $d$-dimensional depolarizing channel
@@ -170,13 +154,12 @@ ancilla measurement.
 ```python
 from fatqat.implementation import default_matrix_implementation_map
 
-CALIBRATION_DATE = "2026-09-12"
-ONE_QUBIT_FIDELITY = 0.9992652941176471
-CZ_FIDELITY = 0.9945941666666667
-T1_SECONDS = 38.37705882352941e-6
-T2_ECHO_SECONDS = 9.894117647058823e-6
-F00 = 0.995764705882353
-F11 = 0.9794705882352941
+ONE_QUBIT_FIDELITY = 0.9993
+CZ_FIDELITY = 0.995
+T1_SECONDS = 40e-6
+T2_SECONDS = 10e-6
+F00 = 0.996
+F11 = 0.980
 IDLE_SECONDS = 20e-9
 CZ_IDLE_TICKS = 2
 MEASUREMENT_SECONDS = 600e-9
@@ -195,8 +178,8 @@ def make_qec17_noise_model():
     noise.add(fq.noise.Depolarizing(p=cz_p), operation=ops.CZ)
 
     # Convert rates explicitly: gate-level simulators accept finite channels.
-    # The residual phase rate subtracts T1's contribution to T2echo.
-    relaxation = fq.noise.ThermalRelaxation(t1=T1_SECONDS, t2=T2_ECHO_SECONDS)
+    # The residual phase rate subtracts T1's contribution to T2.
+    relaxation = fq.noise.ThermalRelaxation(t1=T1_SECONDS, t2=T2_SECONDS)
     amplitude = fq.noise.AmplitudeDamping(rate=relaxation.amplitude_rate)
     phase = fq.noise.PhaseDamping(rate=relaxation.pure_dephasing_rate)
     noise.add(
@@ -238,9 +221,8 @@ def make_qec17_backend(*, noisy=True):
     )
 ```
 
-The model uses device-averaged calibration parameters, applied uniformly across qubits and coupled pairs. The X and SX rotations are assigned the same gate fidelity, while virtual RZ gates are noiseless. Idle decoherence is modeled as Markovian amplitude damping and pure dephasing, with rates derived from $T_1$ and $T_2^{\mathrm{echo}}$.
-Ancilla measurement takes 600 ns and retains the calibrated readout errors.
-Reset prepares every ancilla in $|0\rangle$ with zero duration and no error,
+Idle decoherence is modeled as Markovian amplitude damping and pure dephasing,
+with rates derived from $T_1$ and $T_2$. We assume a 600 ns ancilla readout time. A true outcome of 0 is reported as 1 with probability $1-F_{00}$, while a true outcome of 1 is reported as 0 with probability $1-F_{11}$. Reset prepares every ancilla in $|0\rangle$ with zero duration and no error,
 independently of its reported measurement bit. The measurement window adds
 decoherence only to the data qubits. Leakage, crosstalk, and dynamical decoupling are not included.
 Initialization is ideal, so no additional state-preparation error is applied
@@ -643,7 +625,7 @@ QEC_CYCLES = (3, 6, 9, 12, 15, 18)
 BASE_SEED = 20260925
 
 # Recorded decoded failures from 128 shots at each cycle count.
-recorded_errors = (17, 23, 32, 37, 41, 46)
+recorded_errors = (15, 28, 31, 36, 36, 44)
 summaries = [
     {"cycles": cycles, "logical_errors": errors, "logical_error": errors / SHOTS}
     for cycles, errors in zip(QEC_CYCLES, recorded_errors)
@@ -653,25 +635,25 @@ summaries = [
 # Rows: cycles 1 through 18, then final data readout.
 # Columns: Z-check ancillas 9, 12, 13, 15, in Z_CHECKS order.
 recorded_detector_counts = np.array([
-    [6, 2, 3, 3],
-    [16, 17, 7, 13],
-    [17, 10, 9, 9],
-    [17, 18, 7, 12],
-    [16, 12, 11, 10],
-    [16, 15, 11, 14],
-    [10, 15, 3, 6],
-    [20, 16, 5, 7],
-    [16, 24, 14, 6],
-    [11, 21, 10, 6],
-    [22, 20, 13, 8],
-    [22, 15, 9, 5],
-    [7, 15, 8, 5],
-    [13, 18, 8, 7],
-    [15, 24, 8, 14],
-    [18, 14, 11, 7],
-    [18, 20, 12, 12],
-    [16, 20, 8, 10],
-    [17, 24, 3, 14],
+    [6, 2, 2, 4],
+    [13, 14, 7, 12],
+    [15, 12, 9, 10],
+    [16, 18, 8, 10],
+    [17, 11, 11, 11],
+    [16, 18, 11, 13],
+    [9, 18, 3, 7],
+    [15, 14, 6, 5],
+    [15, 22, 14, 5],
+    [14, 20, 11, 7],
+    [20, 18, 11, 8],
+    [21, 14, 10, 4],
+    [7, 14, 7, 5],
+    [14, 19, 8, 6],
+    [14, 22, 10, 13],
+    [15, 14, 13, 6],
+    [18, 13, 12, 11],
+    [15, 16, 7, 10],
+    [16, 26, 3, 14],
 ], dtype=int)
 summaries[-1]["detector_rates"] = recorded_detector_counts / SHOTS
 
@@ -683,7 +665,7 @@ for summary in summaries:
 
 To generate new measurement records, uncomment and run the next cell, then
 rerun the plotting cells. It replaces `summaries` with the new results.
-The six points require 768 shots. The recorded run took about 30 minutes
+The six points require 768 shots. The recorded run took about 27 minutes
 on the contributor's computer, and runtime depends on the machine and
 Numba compilation state.
 
