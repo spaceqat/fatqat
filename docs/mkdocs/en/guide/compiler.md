@@ -61,7 +61,7 @@ counts = result.get_counts()
 
 A simulator with more qubits or additional connections can run the same
 result. If the simulator lacks a qubit or connection that the result uses,
-`run()` raises an error immediately; the
+`run()` raises an error immediately. The
 [SCTarget reference](../api/sc-target.md#when-errors-are-raised) lists these
 errors.
 

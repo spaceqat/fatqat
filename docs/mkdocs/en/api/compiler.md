@@ -39,7 +39,7 @@ backend = fq.simulator.SCQubitSimulator(num_qubits=3, couplings=target.couplings
 result = backend.run(compiled, shots=100).result()
 ```
 
-An `SCQubitSimulator` is also accepted in place of the target. The compiler
+You can also pass an `SCQubitSimulator` in place of the target. The compiler
 then uses its sites and couplings and checks the emitted gates against its
 implementation map.
 

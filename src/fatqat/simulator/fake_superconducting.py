@@ -286,14 +286,14 @@ class SCQubitSimulator(_SCProfileSimulator):
     def get_compiler_target(self) -> SCTarget:
         """Return this backend's construction constraints for the compiler.
 
-        The snapshot carries the site count and the undirected `CZ` edges
-        this simulator was built with, and nothing else. Gate rules stay
-        behind the implementation map, so a program that fits the target's
-        capacity and edges can still be rejected here at execution time.
+        The target holds only the site count and the undirected `CZ` edges
+        that this simulator was built with. The implementation map keeps the
+        gate rules. This simulator can therefore still reject, at execution
+        time, a program that fits the capacity and edges of the target.
 
-        The same object is returned on every call; it is immutable and safe
-        to share. It carries no reference back to this simulator, so
-        compiling against it says nothing about where the result will run.
+        Every call returns the same immutable object, which is safe to share.
+        The target holds no reference to this simulator. Compiling against it
+        therefore does not determine where the result runs.
 
         Returns:
             The cached :py:class:`~fatqat.compiler.SCTarget` describing this

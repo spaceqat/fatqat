@@ -147,8 +147,8 @@ def compile_qasm_to_sc(
 
     Args:
         source: OpenQASM 2 or 3 text, or an existing QasmSource.
-        backend: SCTarget, or SCQubitSimulator whose gate rules also apply,
-            supplying capacity and connectivity.
+        backend: SCTarget or SCQubitSimulator that supplies capacity and
+            connectivity. The gate rules of an SCQubitSimulator also apply.
         emit: Representation to return; defaults to SCNativeProgram.IR_ID.
             Supported values are QasmSource.IR_ID, LogicalIR.IR_ID,
             SCProgram.IR_ID, and SCNativeProgram.IR_ID.
@@ -194,8 +194,8 @@ def compile_to_sc(
 
     Args:
         source: An exact LogicalProgram containing static numeric gates.
-        backend: SCTarget, or SCQubitSimulator whose gate rules also apply,
-            supplying the capacity and coupling graph.
+        backend: SCTarget or SCQubitSimulator that supplies the capacity and
+            coupling graph. The gate rules of an SCQubitSimulator also apply.
         emit: Representation to return; defaults to SCNativeProgram.IR_ID.
             Supported values are LogicalProgram.IR_ID, LogicalIR.IR_ID,
             SCProgram.IR_ID, and SCNativeProgram.IR_ID.

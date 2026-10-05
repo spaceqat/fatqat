@@ -36,10 +36,10 @@ def lower_sc_to_native_program(
 ) -> SCNativeProgram:
     """Route and lower one SC program to the canonical native basis.
 
-    An SCTarget supplies only capacity and undirected CZ edges. An
-    SCQubitSimulator routes on its construction target, limited to the CZ
-    operands its implementation map names, and every emitted gate is still
-    checked against that map's ordered operands.
+    An SCTarget supplies only capacity and undirected CZ edges. For an
+    SCQubitSimulator, routing uses its construction target, limited to the CZ
+    operands that its implementation map names. Lowering also checks every
+    emitted gate against the ordered operands of that map.
     """
 
     if isinstance(backend, SCTarget):

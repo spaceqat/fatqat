@@ -1,12 +1,12 @@
 """Construction constraints shared by the SC compiler and the SC simulator.
 
-`fatqat.compiler` already depends on `fatqat.simulator`: lowering reads a
-backend's device sites. Defining the target inside the compiler and importing
-it back from the simulator would close that cycle and break both import
-orders, so the value object and its validation live here, at the top level,
-where both packages can reach them. `fatqat.compiler` re-exports the class;
-the public path is ``fatqat.compiler.SCTarget``. This module deliberately
-depends on the standard library only.
+`fatqat.compiler` already depends on `fatqat.simulator` because lowering reads
+a backend's device sites. If the compiler defined the target and the simulator
+imported it, the import cycle would close and both import orders would fail.
+The value object and its validation therefore live here, at the top level,
+where both packages can import them. `fatqat.compiler` re-exports the class.
+The public path is ``fatqat.compiler.SCTarget``. Keep this module dependent on
+the standard library only.
 """
 
 from __future__ import annotations
@@ -45,29 +45,29 @@ def _normalize_couplings(
 
 
 class SCTarget:
-    """Describe what a superconducting device offers a compiler.
+    """Describe the sites and `CZ` couplings that a compiler can use.
 
-    A target carries exactly two things: how many integer-labeled sites
-    exist, and which undirected pairs of them support `CZ`. It has no gate
-    set, no implementation map, no noise model and no way to run anything -
-    a :py:class:`~fatqat.simulator.SCQubitSimulator` still owns all of that.
-    Compiling against a target therefore says nothing about which backend
-    will execute the result.
+    A target holds two values only: the number of integer-labeled sites, and
+    the undirected site pairs that support `CZ`. It has no gate set, no
+    implementation map, and no noise model, and it cannot run a program. A
+    :py:class:`~fatqat.simulator.SCQubitSimulator` owns those parts.
+    Compiling against a target therefore does not determine which backend
+    runs the result.
 
-    Both fields are keyword-only and required; neither has a default, so no
-    grid topology is ever assumed on the caller's behalf. Couplings are read
-    once during construction, which makes any iterable - including a
-    one-shot generator - safe to pass and leaves the target unaffected by
-    later edits to the container. Each edge is stored as ``(low, high)``,
-    with reversed and repeated edges merged into the first canonical
-    occurrence. An empty ``couplings`` means the device has no `CZ` edge at
-    all, which is a valid target; whether a given program can be routed on
-    it is decided later, during lowering.
+    Both arguments are keyword-only and required. Neither has a default, so
+    the target never assumes a grid topology. The constructor reads the
+    couplings once. You can therefore pass any iterable, including a
+    one-shot generator, and later changes to the container do not affect the
+    target. The target stores each edge as ``(low, high)`` and merges
+    reversed and repeated edges into their first canonical occurrence. An
+    empty ``couplings`` means that the device has no `CZ` edge. It is a
+    valid target. Lowering decides later whether the compiler can route a
+    given program on it.
 
-    Targets are immutable and reusable: one instance can back any number of
-    compilations, concurrently, and holds no reference to the caller's
-    input. Equality, hashing and serialization are not part of this
-    contract.
+    Targets are immutable and reusable. One instance can serve any number of
+    compilations, including concurrent ones, and it holds no reference to
+    the caller's input. Equality, hashing, and serialization are not part of
+    this contract.
 
     Examples:
         >>> from fatqat.compiler import SCTarget
@@ -87,8 +87,9 @@ class SCTarget:
 
         Args:
             num_qubits: Number of integer-labeled device sites. Must be a
-                strict Python ``int`` greater than zero; ``bool``, ``float``
-                and NumPy integers are rejected rather than coerced.
+                strict Python ``int`` greater than zero. The constructor
+                rejects ``bool``, ``float``, and NumPy integers and does not
+                convert them.
             couplings: Finite iterable of undirected pairs of connected
                 device sites. Each element must be a two-element ``tuple``
                 of strict ``int`` endpoints in ``range(num_qubits)``.
@@ -96,8 +97,9 @@ class SCTarget:
         Raises:
             TypeError: If the site count or coupling endpoints are not
                 integers, or a coupling is not a two-element tuple.
-            ValueError: If the site count is not positive, or a coupling
-                endpoint is out of range or repeats its own site.
+            ValueError: If the site count is not positive, a coupling
+                endpoint is out of range, or a coupling connects a site to
+                itself.
         """
         self._num_qubits = _validate_num_qubits(num_qubits)
         self._couplings = _normalize_couplings(self._num_qubits, couplings)
