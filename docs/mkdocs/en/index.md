@@ -109,26 +109,36 @@ dynamics are introduced.
 
 -   :material-memory:{ .lg .middle } **`SCQubitSimulator`**
 
-    ![The SCQubitSimulator result gives the target outcome 101 a probability of 86.15 percent with 200-microsecond coherence times and additional CZ depolarizing noise of 0.003 on both edges.](assets/generated/home/grover-sc-profile.png){ loading=lazy width=714 height=515 }
+    ![The SCQubitSimulator result gives the target outcome 101 a probability of 81.65 percent with 200-microsecond coherence times and additional CZ depolarizing noise of 0.003 on both edges.](assets/generated/home/grover-sc-profile.png){ loading=lazy width=714 height=515 }
 
     With `T1 = T2 = 200 µs`, we add CZ depolarizing noise with `p = 0.003`. Compiled native-gate simulation then returns
-    `101` with **86.15%** probability.
+    `101` with **81.65%** probability.
 
 -   :material-sine-wave:{ .lg .middle } **`TransmonEmulator`**
 
-    ![The three-level TransmonEmulator result gives the target outcome 101 a probability of about 68.5 percent with the same coherence times.](assets/generated/home/grover-transmon.png){ loading=lazy width=714 height=515 }
+    ![The three-level TransmonEmulator result gives the target outcome 101 a probability of about 64.05 percent with the same coherence times.](assets/generated/home/grover-transmon.png){ loading=lazy width=714 height=515 }
 
     Calibrated pulses, three physical levels, and the same coherence times
-    return `101` with about **68.5%** probability; physical leakage is **0.0446%**.
-    Most of the error comes from imperfect `iSWAP` gates.
+    return `101` with about **64.05%** probability; physical leakage is **0.0649%**.
+    This run realizes the compiled X/SX/RZ/CZ gates with calibrated pulses.
 
 </div>
 
+With the fixed routing seed, compilation produces **51 CZ**, **172 SX**, and
+**383 RZ** gates. These results use the same compiled circuit for both hardware
+models; the SC noise channels and the Transmon pulse dynamics model different
+physical effects. The Transmon model also uses 60 ns CZ pulses, while the SC
+coherence channels use a 50 ns CZ duration. Compilation preserves ideal
+algorithm behavior, but the gate decomposition and routing affect noisy results.
+
 ??? abstract "Shared algorithm source — `home_grover_program.py`"
 
-    The compact circuit view and fused rotation data live in this visible
-    source. The general and Transmon scripts share the rotation Program; the SC
-    script builds equivalent QASM and compiles it to the canonical native basis.
+    All three scripts start from the same compact `LogicalProgram` shown above.
+    General simulation runs it directly; the SC and Transmon scripts use
+    `compile_to_sc()` to decompose its Toffoli gates and route the circuit onto
+    the three-site line. The routing seed is fixed for reproducible results.
+    The shared axis helper restores logical qubit order when reading a
+    compiled final state.
 
     ```python
     --8<-- "docs/mkdocs/figure-sources/home_grover_program.py"
@@ -136,9 +146,10 @@ dynamics are introduced.
 
 ??? example "Run each execution model independently"
 
-    Each tab is a top-to-bottom script. It uses the algorithm representation
-    appropriate to its target, while private plotting details stay out of the
-    execution flow.
+    Each tab is a top-to-bottom script. The general script also verifies that
+    ideal compiled execution matches the source state up to a global phase.
+    The Transmon script binds compiled sites to model subsystems and supplies
+    X/SX pulse definitions using its calibrated RX recipe.
 
     === "General `Simulator`"
 

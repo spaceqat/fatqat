@@ -11,47 +11,65 @@ ui:
 index:
   en:
     title: Tutorials
-    description: Executable FatQat case studies, from first circuits to many-body dynamics.
+    description: Executable FatQat case studies in circuits, control, error correction, simulation, optimization, and machine learning.
     introduction: >-
-      Go beyond the task-focused user guide with complete, executable case studies.
-      Every card and runtime panel is discovered from the Markdown sources in its
-      category folder.
+      Explore complete, executable case studies grouped by topic. If you are new
+      to FatQat, start with the [quickstart](../guide/quickstart.md) to learn how
+      to build, run, and inspect a program.
     tip_title: Choose a path
     tip: >-
-      In Foundations, borrow a qutrit's third level to build and verify a Toffoli
-      gate. The algorithms reuse the same execution model, while the neutral-atom
-      track moves progressively closer to many-body hardware physics.
+      Follow [eight-atom GHZ preparation](atom-array-ghz8.md) with
+      [atom-loss error correction](atom-loss-erasure.md), or move from
+      [gate calibration](pulse-calibration.md) to
+      [Rydberg CZ pulse design](optimal-cz-control.md). For optimization, work
+      through [QUBO and QAOA](qubo-qaoa.md),
+      [the islanding model](islanding-model.md), and
+      [islanding with QAOA](islanding-qaoa.md).
     open: Open tutorial
 
 # Change this list to choose the gallery order. Unlisted folders follow alphabetically.
 category_order:
-  - foundations
-  - algorithms
-  - neutral-atom-physics
-  - power-systems
+  - circuits-and-entanglement
+  - error-correction
+  - quantum-simulation
+  - combinatorial-optimization
+  - quantum-machine-learning
+  - pulse-control
 
 categories:
-  foundations:
+  circuits-and-entanglement:
     en:
-      title: Foundations
+      title: Circuits and entanglement
       description: >-
-        Learn to build, run, and interpret compact quantum experiments, from
-        circuits and measurement to control pulses.
-  algorithms:
+        Construct and verify quantum gates and entangled states using mixed
+        qubit-qutrit registers and reconfigurable atom-array connectivity.
+  error-correction:
     en:
-      title: Algorithms
+      title: Error correction
       description: >-
-        Use parameterized programs, optimizers, sweeps, and estimators to answer
-        chemistry and machine-learning questions.
-  neutral-atom-physics:
+        Study repetition-code memories, parity checks, and decoding with
+        information about atom loss.
+  quantum-simulation:
     en:
-      title: Neutral-atom physics
+      title: Quantum simulation
       description: >-
-        Move from programmable connectivity to continuous-time Rydberg dynamics and
-        constrained many-body evolution.
-  power-systems:
+        Estimate molecular ground-state energies and explore correlations,
+        revivals, and entanglement in interacting quantum systems.
+  combinatorial-optimization:
     en:
-      title: Power systems
+      title: Combinatorial optimization
       description: >-
-        Apply the QUBO and QAOA machinery to grid operation problems, where the
-        encoding decides whether a network fits on the device at all.
+        Encode constraints as QUBOs, solve them with QAOA, and apply the workflow
+        to controlled power-grid islanding.
+  quantum-machine-learning:
+    en:
+      title: Quantum machine learning
+      description: >-
+        Train parameterized circuits and search circuit structures for
+        classification and regression with batched parameter sweeps.
+  pulse-control:
+    en:
+      title: Pulse control and calibration
+      description: >-
+        Design and calibrate control pulses, then check their action on quantum
+        states in transmon and Rydberg models.

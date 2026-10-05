@@ -57,6 +57,25 @@ def test_sc_normalization_lowers_qasm_u_family_without_changing_semantics(operat
     _assert_same_up_to_global_phase(_statevector(lowered), _statevector(source))
 
 
+@pytest.mark.parametrize("targets", ((0, 1, 2), (2, 0, 1), (1, 2, 0)))
+def test_ccx_normalization_preserves_the_full_unitary(targets):
+    source = fq.Program(3)
+    source.add(fq.operations.CCX, targets)
+    normalized = _normalize(source)
+    lowered = fq.Program(source.quantum_registers)
+    for node_id in topological_order(normalized):
+        node = normalized.nodes[node_id]
+        lowered.add(node.instruction, node.qubits)
+
+    simulator = fq.simulator.Simulator(method="unitary", runtime="numpy")
+    expected = simulator.run(source).result().get_unitary()
+    actual = simulator.run(lowered).result().get_unitary()
+    # A truth-table check alone would miss incorrect relative phases.
+    phase = np.vdot(expected.ravel(), actual.ravel()) / 8
+    assert abs(phase) == pytest.approx(1.0)
+    assert np.allclose(actual, phase * expected, atol=1e-12, rtol=0)
+
+
 def test_direct_sc_operations_and_semantic_swap_are_preserved():
     program = fq.Program(2, 1)
     program.add(fq.operations.RX(0.2), 0)

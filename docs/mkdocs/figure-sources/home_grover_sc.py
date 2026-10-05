@@ -1,14 +1,21 @@
-"""Compile and run an equivalent Grover program on SCQubitSimulator."""
+"""Compile the shared Grover Program and run it on SCQubitSimulator."""
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.compiler import SCTarget, compile_qasm_to_sc
+from fatqat.compiler import SCTarget, compile_to_sc
 
 from _home_grover_plot import draw_distribution
-from home_grover_program import FUSED_GATES, TARGET, TARGET_INDEX
+from home_grover_program import (
+    COMPILER_SEED,
+    COUPLINGS,
+    TARGET,
+    TARGET_INDEX,
+    build_logical_program,
+    logical_axis_order,
+)
 
 PROFILE_FIGURE = "grover-sc-profile.png"
 T1_SECONDS = 200e-6
@@ -21,24 +28,8 @@ EDGE_CZ_DEPOLARIZING_P = {
 }
 
 
-def build_sc_qasm():
-    """Build equivalent QASM for the canonical SC compiler route."""
-    statements = ["OPENQASM 3.0;", "qubit[3] q;"]
-    for gate in FUSED_GATES:
-        if gate[0] == "CZ":
-            statements.append(f"cz q[{gate[1]}], q[{gate[2]}];")
-            continue
-        name, target, quarter_turns = gate
-        statements.append(f"{name.lower()}({quarter_turns} * pi / 4) q[{target}];")
-    return "\n".join(statements)
-
-
-SC_QASM = build_sc_qasm()
-
-COUPLINGS = ((0, 1), (1, 2))
 compiler_target = SCTarget(num_qubits=3, couplings=COUPLINGS)
-compiled = compile_qasm_to_sc(SC_QASM, compiler_target)
-resource_layout = compiled.resource_layout
+compiled = compile_to_sc(build_logical_program(), compiler_target, seed=COMPILER_SEED)
 noise = fq.NoiseModel()
 
 
@@ -63,16 +54,16 @@ for target_position in (0, 1):
     noise.add(damping, operation=ops.CZ, target_positions=(target_position,))
     noise.add(dephasing, operation=ops.CZ, target_positions=(target_position,))
 
-refs_by_site = {resource_layout.device_label(ref): ref for ref in resource_layout.refs}
-# Add explicit depolarizing noise on top of the T1/T2 channels.
+# Noise target tuples are ordered; routing can use either CZ orientation.
 for edge, depolarizing_p in EDGE_CZ_DEPOLARIZING_P.items():
-    noise.add(
-        fq.noise.Depolarizing(p=depolarizing_p),
-        operation=ops.CZ,
-        targets=tuple(refs_by_site[site] for site in edge),
-    )
+    for ordered_edge in (edge, edge[::-1]):
+        noise.add(
+            fq.noise.Depolarizing(p=depolarizing_p),
+            operation=ops.CZ,
+            targets=ordered_edge,
+        )
 
-density_matrix = (
+result = (
     fq.simulator.SCQubitSimulator(
         num_qubits=3,
         couplings=COUPLINGS,
@@ -86,14 +77,19 @@ density_matrix = (
         result_config={"counts": False, "final_state": True},
     )
     .result()
-    .get_density_matrix()
 )
+density_matrix = result.get_density_matrix()
 probabilities = np.clip(np.real(np.diag(density_matrix)), 0.0, None)
+probabilities = (
+    probabilities.reshape((2, 2, 2))
+    .transpose(logical_axis_order(compiled, result))
+    .ravel()
+)
 probabilities /= probabilities.sum()
 
 assert np.isclose(probabilities.sum(), 1.0)
 assert np.argmax(probabilities) == TARGET_INDEX
-assert np.isclose(probabilities[TARGET_INDEX], 0.8615386277, atol=5e-7)
+assert np.isclose(probabilities[TARGET_INDEX], 0.8164862609, atol=5e-7)
 
 print(f"SCQubitSimulator P({TARGET}) = {probabilities[TARGET_INDEX]:.8%}")
 draw_distribution(PROFILE_FIGURE, probabilities)

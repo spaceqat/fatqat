@@ -211,6 +211,7 @@ nav:
               - Loss: api/noise/loss.md
               - Readout confusion: api/noise/readout-confusion.md
               - Custom implementations: api/noise/custom-implementations.md
+          - Backend: api/backend.md
           - Estimator: api/estimator.md
           - Job: api/job.md
           - Result: api/result.md

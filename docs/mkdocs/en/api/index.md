@@ -29,6 +29,7 @@ workflow.
 
 ## Integrate and extend
 
+- [Backend](backend.md)
 - [Interoperability](interoperability/index.md)
 - [Matrix implementations](implementation.md)
 

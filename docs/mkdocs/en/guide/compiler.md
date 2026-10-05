@@ -67,7 +67,8 @@ errors.
 
 `couplings` can describe any valid graph; the topology does not need to be a
 grid. The current public SC profile uses X, SX, RZ, and CZ as its native gate
-set.
+set. Toffoli (`CCX`) gates are decomposed into one- and two-qubit gates before
+routing.
 
 Code that passes a simulator to the compiler continues to work. The compiler
 then uses the simulator's qubits and connections, and also checks the emitted
