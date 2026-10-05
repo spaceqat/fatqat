@@ -81,6 +81,54 @@ Because an empty site produces no physical readout digit, its erasure value
 stochastic, so `final_state=True` requires `shots == 1`. A measured lossy run
 returns counts by default rather than one arbitrary trajectory's final state.
 
+### Offline occupancy trace
+
+Use `result_config={"occupancy_trace": True}` to retain each site's occupancy
+at the start and after every program operation. A checkpoint follows the
+operation **and all of its attached noise**, including loss. The recorder only
+reads occupancy: it makes no random draw, does not change the quantum state,
+and does not expose its observations to classical conditions during execution.
+The trace is available only in the completed result for offline oracle studies.
+This option requires `shots > 0` and works without a measurement instruction.
+
+```python
+import fatqat as fq
+import fatqat.operations as ops
+
+program = fq.Program(1, 1)
+program.add(ops.Put, 0)
+program.add(ops.RY(0.0), 0)
+program.measure(0, 0)
+noise = fq.NoiseModel()
+noise.add(fq.noise.Loss(p=0.01), operation=ops.RY)
+backend = fq.simulator.AtomArraySimulator(noise=noise)
+result = backend.run(
+    program, shots=1000, result_config={"occupancy_trace": True}
+).result()
+trace = result.get_data("occupancy_trace")
+sites = trace["sites"]
+checkpoints = trace["checkpoints"]
+occupied = trace["occupied"]
+outcomes = trace["outcomes"]
+```
+
+`sites` lists device labels in program declaration order. `checkpoints` starts
+with `(None, "initial", ())`, then contains one `(index, operation_name,
+target_labels)` entry for each scalar instruction after grouped operations are
+expanded; indices are zero-based in that order. `occupied[shot][checkpoint]`
+is a tuple of booleans aligned with `sites`. A `True` to `False` transition
+locates a loss between adjacent checkpoints, while `False` to `True` records a
+reload. A site that was never loaded remains `False`; a loss and reload within
+one operation cannot be distinguished by its end-of-operation snapshot. The
+trace gives no time within a gate pulse.
+
+`outcomes[shot]` is the corresponding final classical output tuple. Unwritten
+slots remain `0`, and measurement of an empty site reports `2`. The ordinary
+`counts` field remains an aggregate histogram; the trace pairs each shot's
+occupancy history with its final output. The extra data is returned only when
+`occupancy_trace=True`. Storage grows with the number of shots, checkpoints,
+and sites, so enable it only for runs that need offline diagnostics.
+
 ## Example
 
 

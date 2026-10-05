@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 from ..errors import BackendValidationError
+from .steps import OccupancyCheckpointStep
 
 _SHOT_PARALLELISM_NAMES = frozenset({"auto", "serial", "threads", "processes"})
 _KERNEL_PARALLELISM_NAMES = frozenset({"auto", "serial", "threads"})
@@ -114,3 +115,6 @@ class RawResult:
     outcome_keys: np.ndarray | None = None
     outcome_counts: np.ndarray | None = None
     state: np.ndarray | None = None
+    occupancy_trace: tuple[tuple[tuple[bool, ...], ...], ...] | None = None
+    occupancy_checkpoints: tuple[OccupancyCheckpointStep, ...] | None = None
+    shot_outcomes: tuple[tuple[int, ...], ...] | None = None

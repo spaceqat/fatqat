@@ -498,6 +498,204 @@ def test_atom_loss_ejects_the_atom(runtime):
     assert counts == {"2": 10}
 
 
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_occupancy_trace_records_loss_and_refill_after_operations(runtime):
+    noise = NoiseModel()
+    noise.add(Loss(p=1.0), operation=ops.RX)
+    program = Program(1, 1)
+    program.add(ops.Put, 0)
+    program.add(ops.RX(0.0), 0)
+    program.add(ops.RX(0.0), 0)  # no atom left to lose
+    program.add(ops.Put, 0)
+    program.add(ops.RX(0.0), 0)
+    program.measure(0, 0)
+
+    result = (
+        AtomArraySimulator(runtime=runtime, noise=noise)
+        .run(program, shots=2, result_config={"occupancy_trace": True})
+        .result()
+    )
+    assert result.get_counts() == {"2": 2}
+    trace = result.get_data("occupancy_trace")
+    assert trace["sites"] == (0,)
+    assert trace["checkpoints"] == (
+        (None, "initial", ()),
+        (0, "Put", (0,)),
+        (1, "RX", (0,)),
+        (2, "RX", (0,)),
+        (3, "Put", (0,)),
+        (4, "RX", (0,)),
+        (5, "Measurement", (0,)),
+    )
+    assert (
+        trace["occupied"]
+        == (((False,), (True,), (False,), (False,), (True,), (False,), (False,)),) * 2
+    )
+    assert trace["outcomes"] == ((2,), (2,))
+
+
+def test_occupancy_trace_uses_device_labels_without_measurement():
+    noise = NoiseModel()
+    noise.add(Loss(p=1.0), operation=ops.RX)
+    program = Program(3)
+    program.add(ops.Put, 2)
+    program.add(ops.RX(0.0), 2)
+
+    result = (
+        AtomArraySimulator(runtime="numpy", noise=noise)
+        .run(
+            program,
+            shots=3,
+            result_config={"counts": False, "occupancy_trace": True},
+        )
+        .result()
+    )
+    assert result.available_data == frozenset({"occupancy_trace"})
+    trace = result.get_data("occupancy_trace")
+    assert trace["sites"] == (0, 1, 2)
+    assert trace["checkpoints"] == (
+        (None, "initial", ()),
+        (0, "Put", (2,)),
+        (1, "RX", (2,)),
+    )
+    assert (
+        trace["occupied"]
+        == (((False, False, False), (False, False, True), (False, False, False)),) * 3
+    )
+    assert trace["outcomes"] == ((),) * 3
+
+
+def test_occupancy_trace_places_checkpoint_after_noisy_cz():
+    noise = NoiseModel()
+    noise.add(Loss(p=1.0), operation=ops.CZ, target_positions=1)
+    program = Program(2, 2)
+    program.add(ops.Put, (0, 1))
+    program.add(ops.Pair, (0, 1))
+    program.add(ops.CZ, (0, 1))
+    program.add(ops.Unpair, (0, 1))
+    program.measure_all()
+    trace = (
+        AtomArraySimulator(runtime="numpy", noise=noise)
+        .run(program, shots=1, result_config={"occupancy_trace": True})
+        .result()
+        .get_data("occupancy_trace")
+    )
+    assert trace["checkpoints"] == (
+        (None, "initial", ()),
+        (0, "Put", (0, 1)),
+        (1, "Pair", (0, 1)),
+        (2, "CZ", (0, 1)),
+        (3, "Unpair", (0, 1)),
+        (4, "Measurement", (0, 1)),
+    )
+    assert trace["occupied"] == (
+        (
+            (False, False),
+            (True, True),
+            (True, True),
+            (True, False),
+            (True, False),
+            (True, False),
+        ),
+    )
+    assert trace["outcomes"] == ((0, 2),)
+
+
+def test_occupancy_trace_never_loaded_site_stays_empty():
+    program = Program(1, 1)
+    program.measure(0, 0)
+    result = (
+        AtomArraySimulator(runtime="numpy")
+        .run(program, shots=2, result_config={"occupancy_trace": True})
+        .result()
+    )
+    trace = result.get_data("occupancy_trace")
+    assert trace["occupied"] == (((False,), (False,)),) * 2
+    assert trace["outcomes"] == ((2,), (2,))
+
+
+def test_occupancy_trace_matches_between_serial_and_process_shots():
+    noise = NoiseModel()
+    noise.add(Loss(p=0.5), operation=ops.RX)
+    program = Program(1, 1)
+    program.add(ops.Put, 0)
+    program.add(ops.RX(0.0), 0)
+    program.measure(0, 0)
+    backend = AtomArraySimulator(runtime="numpy", noise=noise)
+    common = {"seed": 17}
+    serial = backend.run(
+        program,
+        shots=12,
+        result_config={"occupancy_trace": True},
+        simulation_config={**common, "shot_parallelism": "serial"},
+    ).result()
+    parallel = backend.run(
+        program,
+        shots=12,
+        result_config={"occupancy_trace": True},
+        simulation_config={
+            **common,
+            "shot_parallelism": "processes",
+            "max_workers": 2,
+        },
+    ).result()
+    assert parallel.get_counts() == serial.get_counts()
+    assert parallel.get_data("occupancy_trace") == serial.get_data("occupancy_trace")
+    trace = serial.get_data("occupancy_trace")
+    for outcome, occupancy in zip(
+        trace["outcomes"],
+        trace["occupied"],
+        strict=True,
+    ):
+        assert (outcome == (2,)) == (occupancy[-1] == (False,))
+
+
+def test_occupancy_trace_requires_positive_shots():
+    with pytest.raises(
+        BackendValidationError, match="occupancy_trace requires shots > 0"
+    ):
+        AtomArraySimulator().run(
+            Program(1),
+            shots=0,
+            result_config={"counts": False, "occupancy_trace": True},
+        )
+
+
+def test_occupancy_trace_does_not_change_sampled_results():
+    noise = NoiseModel()
+    noise.add(Loss(p=0.35), operation=ops.RX)
+    program = Program(1, 1)
+    program.add(ops.Put, 0)
+    program.add(ops.RX(0.0), 0)
+    program.measure(0, 0)
+    backend = AtomArraySimulator(runtime="numpy", noise=noise)
+    plain = backend.run(program, shots=30, simulation_config={"seed": 42}).result()
+    traced = backend.run(
+        program,
+        shots=30,
+        simulation_config={"seed": 42},
+        result_config={"occupancy_trace": True},
+    ).result()
+    assert traced.get_counts() == plain.get_counts()
+    assert "occupancy_trace" not in plain.available_data
+
+
+def test_occupancy_trace_of_empty_program_has_initial_checkpoint():
+    result = (
+        AtomArraySimulator(runtime="numpy")
+        .run(
+            Program(1),
+            shots=2,
+            result_config={"counts": False, "occupancy_trace": True},
+        )
+        .result()
+    )
+    trace = result.get_data("occupancy_trace")
+    assert trace["sites"] == (0,)
+    assert trace["checkpoints"] == ((None, "initial", ()),)
+    assert trace["occupied"] == (((False,),),) * 2
+
+
 def test_atom_loss_rejected_by_a_non_atom_backend():
     noise = NoiseModel()
     noise.add(Loss(p=0.1), operation=ops.RX)

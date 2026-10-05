@@ -58,3 +58,4 @@ class _ExecutionContext:
     seed: int | None
     initial_state: np.ndarray | None
     initial_occupied: frozenset[int] | None
+    capture_occupancy_trace: bool = False

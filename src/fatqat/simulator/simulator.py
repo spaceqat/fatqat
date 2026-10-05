@@ -102,6 +102,7 @@ from .._backends.steps import (
     ApplyMatrixStep,
     LossStep,
     MeasurementStep,
+    OccupancyCheckpointStep,
     PutStep,
     ResetStep,
     ResolvedStep,
@@ -132,11 +133,22 @@ def _dispatch_execution(
     assert context.execution_shape == "per_shot"
     assert context.request.counts and not state_requested
     snapshots = _run_shots_in_processes(type(engine), context, payload, policy)
+    occupancy_trace = shot_outcomes = occupancy_checkpoints = None
+    if context.capture_occupancy_trace:
+        occupancy_trace = tuple(trace for _, trace in snapshots)
+        snapshots = [row for row, _ in snapshots]
+        shot_outcomes = tuple(snapshots)
+        occupancy_checkpoints = tuple(
+            step for step in payload[0] if isinstance(step, OccupancyCheckpointStep)
+        )
     rows = np.asarray(snapshots, dtype=int).reshape((len(snapshots), context.n_clbits))
     outcome_keys, outcome_counts = reduce_to_counts(rows)
     return RawResult(
         outcome_keys=outcome_keys,
         outcome_counts=outcome_counts,
+        occupancy_trace=occupancy_trace,
+        occupancy_checkpoints=occupancy_checkpoints,
+        shot_outcomes=shot_outcomes,
     )
 
 
@@ -895,6 +907,7 @@ class Simulator:
             initial_state=initial_state,
             simulation=simulation,
             param_order=param_order,
+            capture_occupancy_trace=getattr(config, "occupancy_trace", False),
         )
         request = self._validate(
             config,
@@ -917,6 +930,7 @@ class Simulator:
             seed=simulation.seed,
             initial_state=prepared.initial_state,
             initial_occupied=prepared.initial_occupied,
+            capture_occupancy_trace=getattr(config, "occupancy_trace", False),
         )
         return _PreparedRun(
             plan=prepared.plan,
@@ -940,6 +954,7 @@ class Simulator:
         initial_state: Any,
         simulation: _SimulationConfig,
         param_order: tuple[Parameter, ...] | None = None,
+        capture_occupancy_trace: bool = False,
     ) -> _PreparedExecution:
         """Resolve and lower one program for direct or derived execution."""
         capabilities = self._engine.capabilities
@@ -970,6 +985,7 @@ class Simulator:
             resource_layout=resource_layout,
             engine_allocation=engine_allocation,
             classical_allocation=classical_allocation,
+            capture_occupancy_trace=capture_occupancy_trace,
         )
         plan: tuple[ResolvedStep, ...] | planning._ParametricPlan
         if param_order is None:
