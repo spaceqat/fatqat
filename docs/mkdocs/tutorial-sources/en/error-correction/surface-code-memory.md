@@ -1,14 +1,16 @@
 ---
 title: "Run a surface-code memory-Z experiment"
-description: "Build a surface-code memory-Z experiment on a simulated superconducting processor, then decode repeated stabilizer measurements and estimate the logical error rate per cycle."
+description: "Build a noisy surface-code memory-Z experiment with SCQubitSimulator, decode repeated stabilizer measurements, and fit the logical error rate per cycle."
 icon: material-shield-check-outline
 figure_alts:
   - "Seventeen-qubit surface-code patch with nine data qubits, four X checks, four Z checks, and the logical Z support"
   - "Z-check detection-event frequencies during eighteen noisy QEC cycles and the final data readout"
-  - "Decoded logical error versus QEC cycles, with 128 shots per point, symmetric one-standard-error bars, and a fitted logical error probability per cycle"
+  - "Decoded logical error versus QEC cycles, with 128 shots per point, symmetric one-standard-error bars, and a fitted logical error rate per cycle"
 ---
 
 # Run a surface-code memory-Z experiment
+
+Written by Zhi ZENG, The Chinese University of Hong Kong.
 
 A surface code uses data qubits to store information and ancilla qubits to
 detect errors through stabilizer measurements. In this tutorial, we use FatQat
@@ -93,7 +95,7 @@ logical_positions = np.array([POSITIONS[q] for q in LOGICAL_Z])
 axis.plot(*logical_positions.T, color="#16a34a", linewidth=6,
           alpha=0.65, label="Logical Z", zorder=2)
 axis.set(aspect="equal", xlim=(-0.9, 2.9), ylim=(2.9, -0.9),
-         title="Distance-three surface code: 9 data + 8 ancillas")
+         title="Distance-three rotated surface code")
 axis.axis("off")
 axis.legend(loc="upper center", bbox_to_anchor=(0.5, -0.02), ncol=4)
 figure.tight_layout()
@@ -665,9 +667,6 @@ for summary in summaries:
 
 To generate new measurement records, uncomment and run the next cell, then
 rerun the plotting cells. It replaces `summaries` with the new results.
-The six points require 768 shots. The recorded run took about 27 minutes
-on the contributor's computer, and runtime depends on the machine and
-Numba compilation state.
 
 ```python
 # from time import perf_counter
@@ -760,7 +759,7 @@ figure.tight_layout()
 plt.show()
 ```
 
-The data points estimate the logical error probability after $R$ cycles.
+The data points estimate the logical error rate after $R$ cycles.
 To extract a rate per cycle, assume that each cycle independently flips
 the logical Z value with probability $\epsilon_L$. An odd number of flips
 reverses the stored value, while an even number leaves it unchanged. Thus
