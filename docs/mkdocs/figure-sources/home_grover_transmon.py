@@ -1,4 +1,4 @@
-"""Run the fused Grover Program on a three-level TransmonEmulator."""
+"""Run the compiled Grover Program on a three-level TransmonEmulator."""
 
 from itertools import product
 
@@ -6,12 +6,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import fatqat as fq
+import fatqat.operations as ops
 
 from _home_grover_plot import draw_distribution
 from home_grover_program import (
     TARGET,
     TARGET_INDEX,
-    build_native_program,
+    COMPILER_SEED,
+    COUPLINGS,
+    build_logical_program,
+    logical_axis_order,
 )
 
 TRANSMON_FIGURE = "grover-transmon.png"
@@ -71,7 +75,7 @@ calibration_document = {
                         "park_detuning_ghz": 0.24,
                         "branch_tolerance_ghz": 1e-12,
                     },
-                }
+                },
             ],
         },
     },
@@ -88,35 +92,53 @@ for subsystem in model.subsystem_ids:
         targets=subsystem,
     )
     noise.add(
-        fq.noise.PhaseDamping(
-            rate=1 / T2_NANOSECONDS - 1 / (2 * T1_NANOSECONDS)
-        ),
+        fq.noise.PhaseDamping(rate=1 / T2_NANOSECONDS - 1 / (2 * T1_NANOSECONDS)),
         targets=subsystem,
     )
 
-program = build_native_program()
+compiler_backend = fq.simulator.SCQubitSimulator(
+    num_qubits=3, couplings=COUPLINGS, runtime="numpy"
+)
+compiled = fq.compiler.compile_to_sc(
+    build_logical_program(), compiler_backend, seed=COMPILER_SEED
+)
+# Bind the compiler's integer sites to this model's named transmons.
+resource_layout = fq.ResourceLayout(
+    {
+        ref: model.subsystem_ids[compiled.resource_layout.device_label(ref)]
+        for ref in compiled.resource_layout.refs
+    }
+)
+implementations = fq.emulator.default_transmon_gate_implementation_map(
+    model=model,
+    calibration=calibration,
+)
+# Realize the canonical X/SX gates with the calibrated RX pulse recipe.
+rx_pulse = implementations.implementation_for(ops.RX)
+for subsystem in model.subsystem_ids:
+    for gate, angle in ((ops.X, np.pi), (ops.SX, np.pi / 2)):
+        implementations.add(
+            gate,
+            rx_pulse(ops.RX(angle), device_operands=(subsystem,)),
+            device_operands=(subsystem,),
+        )
 emulator = fq.emulator.TransmonEmulator(
     model,
     method="density_matrix",
     noise=noise,
-    gate_implementation_map=fq.emulator.default_transmon_gate_implementation_map(
-        model=model,
-        calibration=calibration,
-    ),
+    gate_implementation_map=implementations,
 )
-density_matrix = (
-    emulator.run(
-        program,
-        shots=0,
-        result_config={"counts": False, "final_state": True},
-    )
-    .result()
-    .get_density_matrix()
-)
+result = emulator.run(
+    compiled.program,
+    resource_layout=resource_layout,
+    shots=0,
+    result_config={"counts": False, "final_state": True},
+).result()
 
+density_matrix = result.get_density_matrix()
 physical = np.clip(np.real(np.diag(density_matrix)), 0.0, None)
 physical /= physical.sum()
-physical = physical.reshape((3, 3, 3))
+physical = physical.reshape((3, 3, 3)).transpose(logical_axis_order(compiled, result))
 binary = np.zeros(8)
 leakage = 0.0
 for levels in product(range(3), repeat=3):
@@ -131,8 +153,8 @@ for levels in product(range(3), repeat=3):
 probabilities = binary / binary.sum()
 assert np.isclose(probabilities.sum(), 1.0)
 assert np.argmax(probabilities) == TARGET_INDEX
-assert np.isclose(probabilities[TARGET_INDEX], 0.68591064, atol=1e-3)
-assert np.isclose(leakage, 0.0004458410, atol=5e-7)
+assert np.isclose(probabilities[TARGET_INDEX], 0.64046294, atol=1e-3)
+assert np.isclose(leakage, 0.0006491483, atol=5e-7)
 
 print(
     f"TransmonEmulator P({TARGET}) = {probabilities[TARGET_INDEX]:.8%}; "

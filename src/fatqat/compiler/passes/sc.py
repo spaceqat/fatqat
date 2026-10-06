@@ -245,13 +245,50 @@ def _lower_gate(builder: _SCBuilder, instruction: LogicalGate) -> None:
         return
     if operation is ops.CX:
         control, target = qubits
-        _add_h(builder, target, origins)
-        builder.add(ops.CZ, (control, target), origins)
-        _add_h(builder, target, origins)
+        _add_cx(builder, control, target, origins)
+        return
+    if operation is ops.CCX:
+        _add_ccx(builder, *qubits, origins)
         return
     raise UnsupportedFeatureError(
         f"operation {operation.name} is not supported by sc.gate.v1 normalization"
     )
+
+
+def _add_cx(
+    builder: _SCBuilder,
+    control: RegisterRef,
+    target: RegisterRef,
+    origins: tuple[str, ...],
+) -> None:
+    _add_h(builder, target, origins)
+    builder.add(ops.CZ, (control, target), origins)
+    _add_h(builder, target, origins)
+
+
+def _add_ccx(
+    builder: _SCBuilder,
+    first: RegisterRef,
+    second: RegisterRef,
+    target: RegisterRef,
+    origins: tuple[str, ...],
+) -> None:
+    """Lower an exact Toffoli using six CX gates and T-phase rotations."""
+    _add_h(builder, target, origins)
+    _add_cx(builder, second, target, origins)
+    builder.add(ops.RZ(-math.pi / 4), (target,), origins)
+    _add_cx(builder, first, target, origins)
+    builder.add(ops.RZ(math.pi / 4), (target,), origins)
+    _add_cx(builder, second, target, origins)
+    builder.add(ops.RZ(-math.pi / 4), (target,), origins)
+    _add_cx(builder, first, target, origins)
+    builder.add(ops.RZ(math.pi / 4), (second,), origins)
+    builder.add(ops.RZ(math.pi / 4), (target,), origins)
+    _add_h(builder, target, origins)
+    _add_cx(builder, first, second, origins)
+    builder.add(ops.RZ(math.pi / 4), (first,), origins)
+    builder.add(ops.RZ(-math.pi / 4), (second,), origins)
+    _add_cx(builder, first, second, origins)
 
 
 def _add_h(builder: _SCBuilder, qubit: RegisterRef, origins: tuple[str, ...]) -> None:

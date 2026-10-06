@@ -75,6 +75,7 @@ from ..._backends.steps import (
     ApplyMatrixStep,
     LossStep,
     MeasurementStep,
+    OccupancyCheckpointStep,
     ResetStep,
     PutStep,
     ResolvedStep,
@@ -396,7 +397,7 @@ class _NumpyMatrixEngine(MatrixEngine):
         state_requested = getattr(request, self._state_field)
         n_iters = (
             context.shots
-            if request.counts or context.capture_loss_events
+            if request.counts or context.capture_occupancy_trace
             else (1 if state_requested else 0)
         )
         snapshots = self._run_shot_seed_batch(
@@ -404,13 +405,16 @@ class _NumpyMatrixEngine(MatrixEngine):
             _shot_seed_sequences(context.seed, n_iters),
             context.initial_occupied,
             context.initial_state,
-            capture_loss_events=context.capture_loss_events,
+            capture_occupancy_trace=context.capture_occupancy_trace,
         )
-        loss_events = shot_outcomes = None
-        if context.capture_loss_events:
-            loss_events = tuple(events for _, events in snapshots)
+        occupancy_trace = shot_outcomes = occupancy_checkpoints = None
+        if context.capture_occupancy_trace:
+            occupancy_trace = tuple(trace for _, trace in snapshots)
             snapshots = [row for row, _ in snapshots]
             shot_outcomes = tuple(snapshots)
+            occupancy_checkpoints = tuple(
+                step for step in plan if isinstance(step, OccupancyCheckpointStep)
+            )
 
         outcome_keys = outcome_counts = state = None
         if request.counts:
@@ -424,7 +428,8 @@ class _NumpyMatrixEngine(MatrixEngine):
             outcome_keys=outcome_keys,
             outcome_counts=outcome_counts,
             state=state,
-            loss_events=loss_events,
+            occupancy_trace=occupancy_trace,
+            occupancy_checkpoints=occupancy_checkpoints,
             shot_outcomes=shot_outcomes,
         )
 
@@ -435,7 +440,7 @@ class _NumpyMatrixEngine(MatrixEngine):
         initial_occupied: frozenset[int] | None,
         initial_state: np.ndarray | None,
         *,
-        capture_loss_events: bool = False,
+        capture_occupancy_trace: bool = False,
     ) -> list:
         snapshots = []
         for seed_sequence in seed_sequences:
@@ -444,11 +449,13 @@ class _NumpyMatrixEngine(MatrixEngine):
                 self._n_clbits,
                 initial_state=initial_state,
             )
-            events: list[tuple[int, int]] | None = [] if capture_loss_events else None
-            row = self._run_one_shot(
-                plan, np.random.default_rng(seed_sequence), initial_occupied, events
+            trace: list[tuple[bool, ...]] | None = (
+                [] if capture_occupancy_trace else None
             )
-            snapshots.append((row, tuple(events)) if events is not None else row)
+            row = self._run_one_shot(
+                plan, np.random.default_rng(seed_sequence), initial_occupied, trace
+            )
+            snapshots.append((row, tuple(trace)) if trace is not None else row)
         return snapshots
 
     def execute_shot_batch(
@@ -469,7 +476,7 @@ class _NumpyMatrixEngine(MatrixEngine):
                 seed_batch,
                 context.initial_occupied,
                 context.initial_state,
-                capture_loss_events=context.capture_loss_events,
+                capture_occupancy_trace=context.capture_occupancy_trace,
             )
 
     def _run_one_shot(
@@ -477,7 +484,7 @@ class _NumpyMatrixEngine(MatrixEngine):
         plan: Sequence[ResolvedStep],
         rng: np.random.Generator,
         initial_occupied: frozenset[int] | None = None,
-        loss_events: list[tuple[int, int]] | None = None,
+        occupancy_trace: list[tuple[bool, ...]] | None = None,
     ) -> tuple[int, ...]:
         """Run one dynamic-path shot and return its final clbit snapshot.
 
@@ -497,7 +504,6 @@ class _NumpyMatrixEngine(MatrixEngine):
             if initial_occupied is None
             else set(initial_occupied)
         )
-        loss_opportunity = 0
         for step in plan:
             if isinstance(step, ApplyMatrixStep) and all(
                 t in occupied for t in step.target_indices
@@ -511,10 +517,10 @@ class _NumpyMatrixEngine(MatrixEngine):
                     self.apply_channel(step, rng)
             elif isinstance(step, LossStep):
                 if _condition_matches(step.condition, clbits):
-                    self._apply_loss_step(
-                        step, occupied, rng, loss_events, loss_opportunity
-                    )
-                loss_opportunity += 1
+                    for index in step.target_indices:
+                        if index in occupied and rng.random() < step.p:
+                            occupied.discard(index)
+                            self.reset_subsystems([index], rng)
             elif isinstance(step, PutStep):
                 if _condition_matches(step.condition, clbits):
                     for index in step.target_indices:
@@ -545,23 +551,15 @@ class _NumpyMatrixEngine(MatrixEngine):
                     t in occupied for t in step.reset_indices
                 ):
                     self.reset_subsystems(step.reset_indices, rng)
+            elif isinstance(step, OccupancyCheckpointStep):
+                if occupancy_trace is not None:
+                    occupancy_trace.append(
+                        tuple(
+                            index in occupied
+                            for index in range(len(self._dims) - 1, -1, -1)
+                        )
+                    )
         return tuple(clbits)
-
-    def _apply_loss_step(
-        self,
-        step: LossStep,
-        occupied: set[int],
-        rng: np.random.Generator,
-        events: list[tuple[int, int]] | None,
-        opportunity: int,
-    ) -> None:
-        """Remove present targets hit by one loss declaration."""
-        for index in step.target_indices:
-            if index in occupied and rng.random() < step.p:
-                occupied.discard(index)
-                self.reset_subsystems([index], rng)
-                if events is not None:
-                    events.append((opportunity, index))
 
 
 # --- statevector engine ---
@@ -909,7 +907,12 @@ class _NumpyOperatorEngine(_NumpyMatrixEngine):
         )
 
 
-class NumpyUnitaryEngine(_NumpyOperatorEngine, NumpySVEngine):
+# Pylint treats the inherited probabilities/collapse methods, which deliberately
+# raise NotImplementedError, as abstract. Operator engines reuse state kernels
+# but intentionally do not support sampling or measurement.
+class NumpyUnitaryEngine(  # pylint: disable=abstract-method
+    _NumpyOperatorEngine, NumpySVEngine
+):
     """Unitary engine: evolves ``U`` as a ``(size, size)`` operator matrix.
 
     Column ``j`` of ``U`` is the statevector ``U|j>``, so the whole operator is
@@ -939,7 +942,11 @@ class NumpyUnitaryEngine(_NumpyOperatorEngine, NumpySVEngine):
         return _contract_local(m, tensor, target_axes, n + 1, k).reshape(state.shape)
 
 
-class NumpySuperopEngine(_NumpyOperatorEngine, NumpyDMEngine):
+# As for NumpyUnitaryEngine, the inherited sampling methods are unsupported,
+# rather than missing implementations in this concrete operator engine.
+class NumpySuperopEngine(  # pylint: disable=abstract-method
+    _NumpyOperatorEngine, NumpyDMEngine
+):
     """Super-operator engine: evolves ``S`` as a ``(size**2, size**2)`` matrix.
 
     Internally, column ``b`` of ``S`` is the row-stacked image of basis matrix

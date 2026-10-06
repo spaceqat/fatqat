@@ -81,12 +81,15 @@ Because an empty site produces no physical readout digit, its erasure value
 stochastic, so `final_state=True` requires `shots == 1`. A measured lossy run
 returns counts by default rather than one arbitrary trajectory's final state.
 
-### Offline loss oracle
+### Offline occupancy trace
 
-Use `result_config={"loss_events": True}` to retain the actual loss events in
-each simulated shot. This result option does not insert a program instruction
-or make the events available to classical conditions during execution. It
-requires a positive shot count and works without a measurement instruction.
+Use `result_config={"occupancy_trace": True}` to retain each site's occupancy
+at the start and after every program operation. A checkpoint follows the
+operation **and all of its attached noise**, including loss. The recorder only
+reads occupancy: it makes no random draw, does not change the quantum state,
+and does not expose its observations to classical conditions during execution.
+The trace is available only in the completed result for offline oracle studies.
+This option requires `shots > 0` and works without a measurement instruction.
 
 ```python
 import fatqat as fq
@@ -100,26 +103,31 @@ noise = fq.NoiseModel()
 noise.add(fq.noise.Loss(p=0.01), operation=ops.RY)
 backend = fq.simulator.AtomArraySimulator(noise=noise)
 result = backend.run(
-    program, shots=1000, result_config={"loss_events": True}
+    program, shots=1000, result_config={"occupancy_trace": True}
 ).result()
-outcomes = result.get_data("shot_outcomes")
-events = result.get_data("loss_events")
+trace = result.get_data("occupancy_trace")
+sites = trace["sites"]
+checkpoints = trace["checkpoints"]
+occupied = trace["occupied"]
+outcomes = trace["outcomes"]
 ```
 
-The two sequences have one entry per shot in the same order. Each
-`shot_outcomes[i]` is a tuple of classical digits in flat register order;
-unwritten slots remain `0`, and a measurement of an empty site reports `2`.
-Each `loss_events[i]` is an ordered tuple of
-`(loss_opportunity, device_label)` pairs. A loss opportunity is the zero-based
-position of a `Loss` step among the ordered loss steps in the executed plan,
-including steps that did not cause a loss. A site can appear more than once if
-it is refilled and lost again. The opportunity locates loss at the granularity
-of gate-level noise applications; it gives no time within a gate pulse. Sites
-that were never loaded are empty but do not create loss events.
+`sites` lists device labels in program declaration order. `checkpoints` starts
+with `(None, "initial", ())`, then contains one `(index, operation_name,
+target_labels)` entry for each scalar instruction after grouped operations are
+expanded; indices are zero-based in that order. `occupied[shot][checkpoint]`
+is a tuple of booleans aligned with `sites`. A `True` to `False` transition
+locates a loss between adjacent checkpoints, while `False` to `True` records a
+reload. A site that was never loaded remains `False`; a loss and reload within
+one operation cannot be distinguished by its end-of-operation snapshot. The
+trace gives no time within a gate pulse.
 
-The ordinary `counts` field remains an aggregate histogram. It does not pair
-individual outcomes with loss events, so use `shot_outcomes` for offline
-decoder studies. The extra data is returned only when `loss_events=True`.
+`outcomes[shot]` is the corresponding final classical output tuple. Unwritten
+slots remain `0`, and measurement of an empty site reports `2`. The ordinary
+`counts` field remains an aggregate histogram; the trace pairs each shot's
+occupancy history with its final output. The extra data is returned only when
+`occupancy_trace=True`. Storage grows with the number of shots, checkpoints,
+and sites, so enable it only for runs that need offline diagnostics.
 
 ## Example
 

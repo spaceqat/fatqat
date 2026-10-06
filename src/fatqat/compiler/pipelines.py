@@ -185,10 +185,10 @@ def compile_to_sc(
 ) -> CompilationResult:
     """Compile a LogicalProgram to an executable superconducting result.
 
-    Lowering snapshots the source without editing it. Bind symbolic parameters
-    before compiling; measurements must be terminal, and classical conditions
-    and direct physical controls are unsupported. Register views expand into
-    scalar gates when frozen.
+    Lowering snapshots the source without editing it. The SC route decomposes
+    Toffoli (CCX) gates before routing. Bind symbolic parameters before compiling;
+    measurements must be terminal, and classical conditions and direct physical
+    controls are unsupported. Register views expand into scalar gates when frozen.
 
     Args:
         source: An exact LogicalProgram containing static numeric gates.

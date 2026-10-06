@@ -499,7 +499,7 @@ def test_atom_loss_ejects_the_atom(runtime):
 
 
 @pytest.mark.parametrize("runtime", ["numpy", "numba"])
-def test_loss_events_record_repeated_loss_after_refill(runtime):
+def test_occupancy_trace_records_loss_and_refill_after_operations(runtime):
     noise = NoiseModel()
     noise.add(Loss(p=1.0), operation=ops.RX)
     program = Program(1, 1)
@@ -512,18 +512,29 @@ def test_loss_events_record_repeated_loss_after_refill(runtime):
 
     result = (
         AtomArraySimulator(runtime=runtime, noise=noise)
-        .run(program, shots=2, result_config={"loss_events": True})
+        .run(program, shots=2, result_config={"occupancy_trace": True})
         .result()
     )
     assert result.get_counts() == {"2": 2}
-    assert result.get_data("shot_outcomes") == ((2,), (2,))
-    assert result.get_data("loss_events") == (
-        ((0, 0), (2, 0)),
-        ((0, 0), (2, 0)),
+    trace = result.get_data("occupancy_trace")
+    assert trace["sites"] == (0,)
+    assert trace["checkpoints"] == (
+        (None, "initial", ()),
+        (0, "Put", (0,)),
+        (1, "RX", (0,)),
+        (2, "RX", (0,)),
+        (3, "Put", (0,)),
+        (4, "RX", (0,)),
+        (5, "Measurement", (0,)),
     )
+    assert (
+        trace["occupied"]
+        == (((False,), (True,), (False,), (False,), (True,), (False,), (False,)),) * 2
+    )
+    assert trace["outcomes"] == ((2,), (2,))
 
 
-def test_loss_events_use_device_labels_and_can_run_without_measurement():
+def test_occupancy_trace_uses_device_labels_without_measurement():
     noise = NoiseModel()
     noise.add(Loss(p=1.0), operation=ops.RX)
     program = Program(3)
@@ -535,28 +546,75 @@ def test_loss_events_use_device_labels_and_can_run_without_measurement():
         .run(
             program,
             shots=3,
-            result_config={"counts": False, "loss_events": True},
+            result_config={"counts": False, "occupancy_trace": True},
         )
         .result()
     )
-    assert result.available_data == frozenset({"loss_events", "shot_outcomes"})
-    assert result.get_data("shot_outcomes") == ((),) * 3
-    assert result.get_data("loss_events") == (((0, 2),),) * 3
+    assert result.available_data == frozenset({"occupancy_trace"})
+    trace = result.get_data("occupancy_trace")
+    assert trace["sites"] == (0, 1, 2)
+    assert trace["checkpoints"] == (
+        (None, "initial", ()),
+        (0, "Put", (2,)),
+        (1, "RX", (2,)),
+    )
+    assert (
+        trace["occupied"]
+        == (((False, False, False), (False, False, True), (False, False, False)),) * 3
+    )
+    assert trace["outcomes"] == ((),) * 3
 
 
-def test_never_loaded_site_is_not_reported_as_a_loss_event():
+def test_occupancy_trace_places_checkpoint_after_noisy_cz():
+    noise = NoiseModel()
+    noise.add(Loss(p=1.0), operation=ops.CZ, target_positions=1)
+    program = Program(2, 2)
+    program.add(ops.Put, (0, 1))
+    program.add(ops.Pair, (0, 1))
+    program.add(ops.CZ, (0, 1))
+    program.add(ops.Unpair, (0, 1))
+    program.measure_all()
+    trace = (
+        AtomArraySimulator(runtime="numpy", noise=noise)
+        .run(program, shots=1, result_config={"occupancy_trace": True})
+        .result()
+        .get_data("occupancy_trace")
+    )
+    assert trace["checkpoints"] == (
+        (None, "initial", ()),
+        (0, "Put", (0, 1)),
+        (1, "Pair", (0, 1)),
+        (2, "CZ", (0, 1)),
+        (3, "Unpair", (0, 1)),
+        (4, "Measurement", (0, 1)),
+    )
+    assert trace["occupied"] == (
+        (
+            (False, False),
+            (True, True),
+            (True, True),
+            (True, False),
+            (True, False),
+            (True, False),
+        ),
+    )
+    assert trace["outcomes"] == ((0, 2),)
+
+
+def test_occupancy_trace_never_loaded_site_stays_empty():
     program = Program(1, 1)
     program.measure(0, 0)
     result = (
         AtomArraySimulator(runtime="numpy")
-        .run(program, shots=2, result_config={"loss_events": True})
+        .run(program, shots=2, result_config={"occupancy_trace": True})
         .result()
     )
-    assert result.get_data("shot_outcomes") == ((2,), (2,))
-    assert result.get_data("loss_events") == ((), ())
+    trace = result.get_data("occupancy_trace")
+    assert trace["occupied"] == (((False,), (False,)),) * 2
+    assert trace["outcomes"] == ((2,), (2,))
 
 
-def test_loss_events_match_between_serial_and_process_shots():
+def test_occupancy_trace_matches_between_serial_and_process_shots():
     noise = NoiseModel()
     noise.add(Loss(p=0.5), operation=ops.RX)
     program = Program(1, 1)
@@ -568,13 +626,13 @@ def test_loss_events_match_between_serial_and_process_shots():
     serial = backend.run(
         program,
         shots=12,
-        result_config={"loss_events": True},
+        result_config={"occupancy_trace": True},
         simulation_config={**common, "shot_parallelism": "serial"},
     ).result()
     parallel = backend.run(
         program,
         shots=12,
-        result_config={"loss_events": True},
+        result_config={"occupancy_trace": True},
         simulation_config={
             **common,
             "shot_parallelism": "processes",
@@ -582,23 +640,60 @@ def test_loss_events_match_between_serial_and_process_shots():
         },
     ).result()
     assert parallel.get_counts() == serial.get_counts()
-    assert parallel.get_data("loss_events") == serial.get_data("loss_events")
-    assert parallel.get_data("shot_outcomes") == serial.get_data("shot_outcomes")
-    for outcome, events in zip(
-        serial.get_data("shot_outcomes"),
-        serial.get_data("loss_events"),
+    assert parallel.get_data("occupancy_trace") == serial.get_data("occupancy_trace")
+    trace = serial.get_data("occupancy_trace")
+    for outcome, occupancy in zip(
+        trace["outcomes"],
+        trace["occupied"],
         strict=True,
     ):
-        assert (outcome == (2,)) == bool(events)
+        assert (outcome == (2,)) == (occupancy[-1] == (False,))
 
 
-def test_loss_events_require_positive_shots():
-    with pytest.raises(BackendValidationError, match="loss_events requires shots > 0"):
+def test_occupancy_trace_requires_positive_shots():
+    with pytest.raises(
+        BackendValidationError, match="occupancy_trace requires shots > 0"
+    ):
         AtomArraySimulator().run(
             Program(1),
             shots=0,
-            result_config={"counts": False, "loss_events": True},
+            result_config={"counts": False, "occupancy_trace": True},
         )
+
+
+def test_occupancy_trace_does_not_change_sampled_results():
+    noise = NoiseModel()
+    noise.add(Loss(p=0.35), operation=ops.RX)
+    program = Program(1, 1)
+    program.add(ops.Put, 0)
+    program.add(ops.RX(0.0), 0)
+    program.measure(0, 0)
+    backend = AtomArraySimulator(runtime="numpy", noise=noise)
+    plain = backend.run(program, shots=30, simulation_config={"seed": 42}).result()
+    traced = backend.run(
+        program,
+        shots=30,
+        simulation_config={"seed": 42},
+        result_config={"occupancy_trace": True},
+    ).result()
+    assert traced.get_counts() == plain.get_counts()
+    assert "occupancy_trace" not in plain.available_data
+
+
+def test_occupancy_trace_of_empty_program_has_initial_checkpoint():
+    result = (
+        AtomArraySimulator(runtime="numpy")
+        .run(
+            Program(1),
+            shots=2,
+            result_config={"counts": False, "occupancy_trace": True},
+        )
+        .result()
+    )
+    trace = result.get_data("occupancy_trace")
+    assert trace["sites"] == (0,)
+    assert trace["checkpoints"] == ((None, "initial", ()),)
+    assert trace["occupied"] == (((False,),),) * 2
 
 
 def test_atom_loss_rejected_by_a_non_atom_backend():

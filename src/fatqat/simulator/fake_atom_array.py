@@ -25,6 +25,7 @@ from ..resource_layout import ResourceLayout
 from ..result import _ResultConfig
 from .._backends.steps import (
     LossStep,
+    OccupancyCheckpointStep,
     PutStep,
 )
 from ._connectivity import _AtomConnectivity
@@ -50,12 +51,12 @@ if TYPE_CHECKING:
 class _AtomArrayResultConfig(_ResultConfig):
     """Optional per-shot diagnostics for the atom-array simulator."""
 
-    loss_events: bool = False
+    occupancy_trace: bool = False
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        if type(self.loss_events) is not bool:
-            raise BackendValidationError("loss_events must be bool")
+        if type(self.occupancy_trace) is not bool:
+            raise BackendValidationError("occupancy_trace must be bool")
 
 
 def _fake_atom_array_implementation_map() -> MatrixImplementationMap:
@@ -94,13 +95,12 @@ class AtomArraySimulator(Simulator):
       which measures as the erasure digit ``2``.
     - Methods: atom occupancy requires ``statevector`` or ``density_matrix``.
 
-    Set ``result_config={"loss_events": True}`` to export a per-shot oracle
-    for offline analysis. ``result.get_data("loss_events")`` contains, for each
-    shot, ``(loss_opportunity, device_label)`` pairs for actual losses. The
-    opportunity is zero-based among ordered loss declarations in the execution
-    plan, including ones that did not cause loss. ``shot_outcomes`` contains
-    the corresponding classical output tuple for each shot. This diagnostic
-    does not change program execution or in-program conditions.
+    Set ``result_config={"occupancy_trace": True}`` with ``shots > 0`` to
+    export per-shot occupancy after each normalized program operation for
+    offline analysis. The option defaults to ``False``. Read the trace with
+    ``result.get_data("occupancy_trace")``; it also retains each shot's final
+    classical output. Recording does not change program execution or make
+    occupancy available to in-program conditions.
 
     The simulator validates the program as written; it does not transport,
     pair, route, or transpile atoms automatically.
@@ -120,8 +120,8 @@ class AtomArraySimulator(Simulator):
         super()._validate_additional_config(
             config=config, simulation=simulation, shots=shots, facts=facts
         )
-        if config.loss_events and (type(shots) is not int or shots < 1):
-            raise BackendValidationError("loss_events requires shots > 0")
+        if config.occupancy_trace and (type(shots) is not int or shots < 1):
+            raise BackendValidationError("occupancy_trace requires shots > 0")
 
     def _additional_result_data(
         self,
@@ -130,13 +130,21 @@ class AtomArraySimulator(Simulator):
         simulation: _SimulationConfig,
         raw: RawResult,
     ) -> dict[str, Any]:
-        if not config.loss_events:
+        if not config.occupancy_trace:
             return {}
-        assert raw.loss_events is not None
+        assert raw.occupancy_trace is not None
+        assert raw.occupancy_checkpoints is not None
         assert raw.shot_outcomes is not None
         return {
-            "shot_outcomes": raw.shot_outcomes,
-            "loss_events": raw.loss_events,
+            "occupancy_trace": {
+                "sites": raw.occupancy_checkpoints[0].site_labels,
+                "checkpoints": tuple(
+                    (step.operation_index, step.operation_name, step.target_labels)
+                    for step in raw.occupancy_checkpoints
+                ),
+                "occupied": raw.occupancy_trace,
+                "outcomes": raw.shot_outcomes,
+            }
         }
 
     def __init__(
@@ -259,7 +267,10 @@ class AtomArraySimulator(Simulator):
         connectivity = _AtomConnectivity()
         plan: list[ResolvedStep | _MatrixRecipe] = []
         segment: list[ProgramInstruction] = []
-        for step in operations:
+        segment_start = 0
+        if context.capture_occupancy_trace:
+            plan.append(self._occupancy_checkpoint(None, None, context))
+        for operation_index, step in enumerate(operations):
             if isinstance(step, _AppliedOperation) and isinstance(
                 step.operation, (type(ops.Pair), type(ops.Unpair))
             ):
@@ -270,9 +281,11 @@ class AtomArraySimulator(Simulator):
                         put_targets,
                         context,
                         param_order=param_order,
+                        start_index=segment_start,
                     )
                 )
                 segment = []
+                segment_start = operation_index + 1
                 plan.extend(
                     _lower_channels(
                         type(step.operation),
@@ -285,14 +298,42 @@ class AtomArraySimulator(Simulator):
                     )
                 )
                 connectivity = self._apply_pairing(connectivity, step)
+                if context.capture_occupancy_trace:
+                    plan.append(
+                        self._occupancy_checkpoint(operation_index, step, context)
+                    )
                 continue
             segment.append(step)
         plan.extend(
             self._lower_segment(
-                segment, connectivity, put_targets, context, param_order=param_order
+                segment,
+                connectivity,
+                put_targets,
+                context,
+                param_order=param_order,
+                start_index=segment_start,
             )
         )
         return plan
+
+    @staticmethod
+    def _occupancy_checkpoint(
+        operation_index: int | None,
+        step: ProgramInstruction | None,
+        context: _LoweringContext,
+    ) -> OccupancyCheckpointStep:
+        """Describe one static read-only observation of all declared sites."""
+        resource_layout = context.resource_layout
+        site_labels = tuple(reversed(context.engine_allocation.device_operands))
+        if step is None:
+            return OccupancyCheckpointStep(None, "initial", (), site_labels)
+        name = (
+            step.operation.name
+            if isinstance(step, _AppliedOperation)
+            else "Measurement"
+        )
+        targets = tuple(resource_layout.device_label(ref) for ref in step.targets)
+        return OccupancyCheckpointStep(operation_index, name, targets, site_labels)
 
     def _initial_occupancy(self) -> frozenset[int]:
         """Return the empty per-shot occupancy seed for this atom array."""
@@ -306,6 +347,7 @@ class AtomArraySimulator(Simulator):
         context: _LoweringContext,
         *,
         param_order: tuple[Parameter, ...] | None = None,
+        start_index: int = 0,
     ) -> list[ResolvedStep | _MatrixRecipe]:
         """Lower one inter-pairing segment, rejecting unpaired two-qubit gates.
 
@@ -332,7 +374,7 @@ class AtomArraySimulator(Simulator):
                 )
                 ordinary.clear()
 
-        for step in segment:
+        for offset, step in enumerate(segment):
             if isinstance(step, _AppliedOperation) and isinstance(
                 step.operation, type(ops.Put)
             ):
@@ -355,6 +397,11 @@ class AtomArraySimulator(Simulator):
                 lower_common((step,), context, param_order=param_order)
             else:
                 ordinary.append(step)
+            if context.capture_occupancy_trace:
+                flush_ordinary()
+                plan.append(
+                    self._occupancy_checkpoint(start_index + offset, step, context)
+                )
         flush_ordinary()
         return plan
 
@@ -413,7 +460,7 @@ class AtomArraySimulator(Simulator):
         """Translate atom lifecycle semantics into common plan consequences."""
         common = self._analyze_common_plan_facts(
             plan,
-            claimed_step_types=(LossStep, PutStep),
+            claimed_step_types=(LossStep, PutStep, OccupancyCheckpointStep),
         )
         has_loss = any(isinstance(step, LossStep) for step in plan)
         translated = replace(
