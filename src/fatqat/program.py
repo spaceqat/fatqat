@@ -21,7 +21,7 @@ from .registers import (
     _view_members,
 )
 
-__all__ = ["Program"]
+__all__ = ["Program", "OperationInstruction"]
 
 ConditionTerm = tuple[RegisterRef, int]
 Condition = tuple[ConditionTerm, ...] | None
@@ -36,6 +36,15 @@ RegisterT = TypeVar("RegisterT", QuantumRegister, ClassicalRegister)
 # `RegisterView` selecting multiple members of one `QuantumRegister`.
 # See `_AppliedOperation.targets` and `Program.add`.
 QuantumTarget = RegisterRef | RegisterView
+
+
+@dataclass(frozen=True)
+class OperationInstruction:
+    """Public read-only representation of an operation instruction"""
+
+    operation: Operation
+    targets: tuple[RegisterRef | RegisterView, ...]
+    condition: Condition = None
 
 
 @dataclass(frozen=True)
@@ -184,6 +193,22 @@ class Program:
         # must fail the dict copy below, exactly as Register.__post_init__
         # does, instead of silently becoming {}.
         self.metadata: dict[str, Any] = dict(metadata) if metadata is not None else {}
+
+    @property
+    def instructions(self) -> tuple[OperationInstruction | Measurement, ...]:
+        """Return instructions in insertion order as a read-only snapshot."""
+        return tuple(
+            (
+                instruction
+                if isinstance(instruction, Measurement)
+                else OperationInstruction(
+                    operation=instruction.operation,
+                    targets=instruction.targets,
+                    condition=instruction.condition,
+                )
+            )
+            for instruction in self._instructions
+        )
 
     @property
     def _instructions(self) -> tuple[_AppliedOperation | Measurement, ...]:

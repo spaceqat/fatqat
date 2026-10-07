@@ -50,6 +50,11 @@ them, so loss attached to `Put` can model a loading failure. Other simulators
 reject `Loss`. Because an empty site produces no physical readout digit, its
 erasure value `2` bypasses readout confusion.
 
+`AtomArraySimulator` accepts only single-subsystem finite channels. Use
+`target_positions` to select an operand of a multi-subsystem operation; see
+[occupancy and loss](../simulators/atom-array.md#occupancy-and-loss) for an example
+and behavior when an atom is absent.
+
 Attach every supported probability-form channel above to an operation; matrix
 backends reject background channels.
 A custom [`ChannelImplementationMap`][fatqat.noise.ChannelImplementationMap] can add a finite

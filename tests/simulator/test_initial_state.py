@@ -241,8 +241,11 @@ def test_operator_methods_reject_an_initial_state(method):
 # --- the paths where a mistake would be silent ---------------------------
 
 
-@pytest.mark.parametrize("runtime", _RUNTIMES)
-def test_every_shot_of_a_dynamic_run_starts_from_the_state(runtime):
+@pytest.mark.parametrize(
+    ("runtime", "shot_parallelism"),
+    [("numpy", "serial"), ("numba", "serial"), ("numba", "threads")],
+)
+def test_every_shot_of_a_dynamic_run_starts_from_the_state(runtime, shot_parallelism):
     # Per-shot replay re-initializes between shots. If the state were applied
     # once rather than held, only the first shot would start from it and the
     # counts would quietly be a mixture of two different experiments.
@@ -251,16 +254,21 @@ def test_every_shot_of_a_dynamic_run_starts_from_the_state(runtime):
     # whole trajectory into one kernel that builds its own per-shot buffer, so
     # a state honoured on the NumPy path can be ignored on that one - which is
     # a wrong answer, not an error.
+    if runtime == "numba":
+        pytest.importorskip("numba")
+    start = np.array([0, 1, 0, 0], dtype=complex)
+    untouched = start.copy()
     counts = (
         Simulator(method="SV", runtime=runtime)
         .run(
             _dynamic_program(),
             shots=400,
-            initial_state=[0, 1, 0, 0],
+            initial_state=start,
             simulation_config={
                 "seed": 7,
-                "shot_parallelism": "serial",
+                "shot_parallelism": shot_parallelism,
                 "kernel_parallelism": "serial",
+                "max_workers": 2 if shot_parallelism == "threads" else 1,
             },
         )
         .result()
@@ -270,6 +278,7 @@ def test_every_shot_of_a_dynamic_run_starts_from_the_state(runtime):
     # Qubit 1 starts set; the feedforward X clears it exactly when clbit 0 read
     # 1. Starting from zero instead would give '00'/'11'.
     assert set(counts) == {"10", "01"}
+    assert np.array_equal(start, untouched)
 
 
 def test_numba_process_workers_preserve_initial_state():
@@ -311,11 +320,13 @@ def test_numba_process_workers_preserve_initial_state():
     assert parallel == serial
 
 
-def test_the_callers_array_is_not_evolved_in_place():
+@pytest.mark.parametrize("runtime", _RUNTIMES)
+@pytest.mark.parametrize("method", ["SV", "DM"])
+def test_the_callers_array_is_not_evolved_in_place(runtime, method):
     start = np.array([0, 0, 1, 0], dtype=complex)
     untouched = start.copy()
 
-    Simulator(method="SV").run(
+    Simulator(method=method, runtime=runtime).run(
         _cx_program(), shots=0, initial_state=start, result_config=_STATE_ONLY
     ).result()
 

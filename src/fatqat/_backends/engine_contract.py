@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 import numpy as np
 
 from ..errors import BackendValidationError
+
+StateDataT = TypeVar("StateDataT")
 
 _SHOT_PARALLELISM_NAMES = frozenset({"auto", "serial", "threads", "processes"})
 _KERNEL_PARALLELISM_NAMES = frozenset({"auto", "serial", "threads"})
@@ -108,9 +110,13 @@ _ResultRequest = (
 
 
 @dataclass(frozen=True)
-class RawResult:
-    """Engine-produced execution data before public Result packaging."""
+class RawResult(Generic[StateDataT]):
+    """Engine output before public result assembly.
+
+    State uses runtime-native storage and may borrow engine data. Consumers copy
+    or transfer it when needed. Count arrays remain NumPy arrays.
+    """
 
     outcome_keys: np.ndarray | None = None
     outcome_counts: np.ndarray | None = None
-    state: np.ndarray | None = None
+    state: StateDataT | None = None

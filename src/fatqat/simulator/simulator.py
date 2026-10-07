@@ -78,7 +78,6 @@ from . import planning
 from ._execution_contract import (
     _EngineCapabilities,
     _ExecutionContext,
-    _ExecutionPolicy,
     _PlanFacts,
 )
 from .._backends.engine_contract import (
@@ -91,6 +90,7 @@ from .._backends.engine_contract import (
     _UnitaryResultRequest,
 )
 from ._execution_policy import (
+    _ExecutionPolicy,
     _materialization_policy,
     _resolve_execution_policy,
     _should_probe_compiled_multi_shot,
@@ -113,7 +113,7 @@ def _dispatch_execution(
     context: _ExecutionContext,
     payload: Any,
     policy: _ExecutionPolicy,
-) -> RawResult:
+) -> RawResult[np.ndarray]:
     """Dispatch one prepared execution without leaking routes into engines."""
     state_requested = any(
         getattr(context.request, field, False)
@@ -150,20 +150,11 @@ class _MethodSpec:
         numba_engine_name: The `fatqat.simulator._engine.nb` attribute naming
             the ``runtime="numba"`` twin, held as a name so the module is
             resolved lazily.
-        nonunitary_is_stochastic: Whether non-unitary maps (reset, channel
-            noise) make execution stochastic for this representation.
-        is_operator: Whether the method computes the program's map rather than
-            a state under it.
-        executes_nonunitary: Whether the representation can apply a non-unitary
-            map at all.
     """
 
     request_cls: type
     numpy_engine: type[MatrixEngine]
     numba_engine_name: str
-    nonunitary_is_stochastic: bool
-    is_operator: bool
-    executes_nonunitary: bool
 
 
 _METHOD_SPECS: dict[str, _MethodSpec] = {
@@ -171,37 +162,21 @@ _METHOD_SPECS: dict[str, _MethodSpec] = {
         request_cls=_StateVectorResultRequest,
         numpy_engine=NumpySVEngine,
         numba_engine_name="NumbaSVEngine",
-        # nonunitary_is_stochastic: channel and reset
-        # A pure state must sample one branch of any non-unitary map.
-        nonunitary_is_stochastic=True,
-        is_operator=False,
-        executes_nonunitary=True,
     ),
     "density_matrix": _MethodSpec(
         request_cls=_DensityMatrixResultRequest,
         numpy_engine=NumpyDMEngine,
         numba_engine_name="NumbaDMEngine",
-        # A density matrix holds the full ensemble, so only measurement is
-        # stochastic.
-        nonunitary_is_stochastic=False,
-        is_operator=False,
-        executes_nonunitary=True,
     ),
     "unitary": _MethodSpec(
         request_cls=_UnitaryResultRequest,
         numpy_engine=NumpyUnitaryEngine,
         numba_engine_name="NumbaUnitaryEngine",
-        nonunitary_is_stochastic=True,  # reject by validation, not implemented.
-        is_operator=True,
-        executes_nonunitary=False,
     ),
     "superop": _MethodSpec(
         request_cls=_SuperopResultRequest,
         numpy_engine=NumpySuperopEngine,
         numba_engine_name="NumbaSuperopEngine",
-        nonunitary_is_stochastic=False,
-        is_operator=True,
-        executes_nonunitary=True,
     ),
 }
 
@@ -366,14 +341,9 @@ class Simulator:
             raise BackendValidationError(
                 f"unsupported runtime={runtime!r}; expected 'numpy' or 'numba'"
             )
-        # The single dispatch point; the canonical method name doubles as the
-        # native result field name.
+        # Select implementations here; execution support belongs to the engine.
         spec = _METHOD_SPECS[normalized]
-        self._state_field = normalized
         self._request_cls = spec.request_cls
-        self._nonunitary_is_stochastic = spec.nonunitary_is_stochastic
-        self._is_operator = spec.is_operator
-        self._executes_nonunitary = spec.executes_nonunitary
         self._engine_cls: type[MatrixEngine] = spec.numpy_engine
         if normalized_runtime == "numba":
             try:
@@ -403,6 +373,7 @@ class Simulator:
         # reused, while every execution allocates or resets evolving state.
         # A backend instance is not safe for concurrent run() calls.
         self._engine = self._engine_cls()
+        self._state_field = self._engine.capabilities.quantum.representation
 
     @property
     def method(self) -> str:
@@ -943,7 +914,7 @@ class Simulator:
     ) -> _PreparedExecution:
         """Resolve and lower one program for direct or derived execution."""
         capabilities = self._engine.capabilities
-        _validate_execution_controls(simulation, capabilities)
+        _validate_execution_controls(simulation, capabilities.kernels)
         # Both hooks are resolved exactly once per run, before any execution
         # try block: capacity, dimension, grid-fit, and mapping failures must
         # raise directly, never become a failed Job. The resource layout is the
@@ -1119,7 +1090,7 @@ class Simulator:
         """Reject expectation requests unsupported by the prepared matrix plan."""
         plan = execution.plan
         assert isinstance(plan, tuple)
-        if self._is_operator:
+        if self._engine.capabilities.quantum.is_operator:
             raise UnsupportedOperationError(
                 f"method={self._state_field!r} computes an operator, not a state "
                 "whose expectation can be evaluated"
@@ -1136,6 +1107,15 @@ class Simulator:
             raise UnsupportedOperationError(
                 "an exact statevector expectation is unavailable for stochastic "
                 "reset or channel execution; use density_matrix or positive shots"
+            )
+        self._validate_method_support(
+            self._result_config_cls(),
+            execution.facts,
+            initial_occupied=execution.initial_occupied,
+        )
+        if shots > 0 and not execution.capabilities.supports_classical_register:
+            raise UnsupportedOperationError(
+                "sampled expectations require an engine with a classical register"
             )
         self._validate_additional_config(
             config=self._result_config_cls(),
@@ -1463,7 +1443,7 @@ class Simulator:
             facts=prepared.facts,
             counts_requested=counts_requested,
             state_requested=state_requested,
-            capabilities=prepared.capabilities,
+            capabilities=prepared.capabilities.kernels,
             compiled_multi_shot_compatible=compiled_multi_shot_compatible,
             shots=shots,
             initial_occupied=prepared.initial_occupied,
@@ -1497,7 +1477,7 @@ class Simulator:
         """
         if initial_state is None:
             return None
-        if self._is_operator:
+        if self._engine.capabilities.quantum.is_operator:
             raise BackendValidationError(
                 f"initial_state is not meaningful for method={self._state_field!r}, "
                 "which computes the program's map rather than a state evolving "
@@ -1557,12 +1537,13 @@ class Simulator:
         # always sample per shot, and a stochastic state export needs shots==1
         # below. A non-stochastic state-only request ignores shots entirely
         # (see the engine's per-shot path), so any value - including 0 - is fine.
+        quantum = self._engine.capabilities.quantum
         common_stochastic = facts.has_measurement or (
-            self._nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
+            quantum.nonunitary_is_stochastic and (facts.has_reset or facts.has_channel)
         )
         if stochastic and (not common_stochastic or not facts.has_measurement):
             stochastic_sources = "stochastic execution"
-        elif self._nonunitary_is_stochastic:
+        elif quantum.nonunitary_is_stochastic:
             stochastic_sources = "measurement, reset, or channel noise"
         else:
             stochastic_sources = "measurement"
@@ -1593,32 +1574,48 @@ class Simulator:
             BackendValidationError: If the lowered program or the result
                 request uses something this method cannot execute.
         """
-        if not self._is_operator:
-            return
+        capabilities = self._engine.capabilities
         method = self._state_field
-        if facts.has_measurement:
+        if facts.has_measurement and not capabilities.supports_classical_register:
+            if not capabilities.quantum.is_operator:
+                raise BackendValidationError(
+                    f"method={method!r} cannot execute a measurement; the selected "
+                    "engine has no classical register for reported outcomes"
+                )
             raise BackendValidationError(
                 f"method={method!r} cannot execute a measurement; it computes "
                 "the program's operator, which no measurement outcome is part "
                 "of (use method='statevector' or 'density_matrix' to sample "
                 "outcomes)"
             )
-        if facts.has_condition:
+        if facts.has_condition and not capabilities.supports_classical_register:
             raise BackendValidationError(
                 f"method={method!r} cannot execute a feedforward condition; it "
                 "has no classical register to evaluate one against"
             )
-        if config.counts is True:
+        if config.counts is True and capabilities.quantum.is_operator:
             raise BackendValidationError(
                 f"method={method!r} cannot produce counts; it computes the "
                 "program's operator rather than sampling outcomes from it"
             )
-        if not self._executes_nonunitary and (facts.has_reset or facts.has_channel):
+        if not capabilities.quantum.supports_nonunitary and (
+            facts.has_reset or facts.has_channel
+        ):
             source = "reset" if facts.has_reset else "channel noise"
+            if not capabilities.quantum.is_operator:
+                raise BackendValidationError(
+                    f"method={method!r} cannot execute {source}; the selected "
+                    "engine does not support non-unitary maps"
+                )
             raise BackendValidationError(
                 f"method={method!r} cannot execute {source}; a unitary cannot "
                 "represent a non-unitary map (use method='superop' for the "
                 "program's channel)"
+            )
+        if initial_occupied is not None and not capabilities.supports_occupancy:
+            raise BackendValidationError(
+                f"method={method!r} cannot track carrier occupancy; the selected "
+                "engine has no occupancy state"
             )
 
     def _validate_additional_config(
@@ -1645,7 +1642,7 @@ class Simulator:
         deferred_measurements: tuple[tuple[int, int], ...],
         context: _ExecutionContext,
         policy: _ExecutionPolicy,
-    ) -> RawResult:
+    ) -> RawResult[np.ndarray]:
         """Materialize once in the parent, then dispatch the opaque payload."""
         local_policy = _materialization_policy(policy)
         payload = self._engine.materialize_execution(
@@ -1660,7 +1657,7 @@ class Simulator:
     def _assemble_result(
         self,
         *,
-        raw: RawResult,
+        raw: RawResult[np.ndarray],
         config: _ResultConfig,
         simulation: _SimulationConfig,
         lowering: _LoweringContext,
@@ -1729,7 +1726,7 @@ class Simulator:
         *,
         config: _ResultConfig,
         simulation: _SimulationConfig,
-        raw: RawResult,
+        raw: RawResult[np.ndarray],
     ) -> Mapping[str, Any]:
         """Return backend-specific result artifacts for this completed run.
 
@@ -1829,9 +1826,10 @@ class Simulator:
         claimed_step_types: tuple[type[object], ...] = (),
     ) -> _PlanFacts:
         """Exhaustively derive runtime-independent matrix execution semantics."""
-        execution_shape = "operator" if self._is_operator else "single_pass"
+        quantum = self._engine.capabilities.quantum
+        execution_shape = "operator" if quantum.is_operator else "single_pass"
         state_nonunitary_uses_trajectories = (
-            not self._is_operator and self._nonunitary_is_stochastic
+            not quantum.is_operator and quantum.nonunitary_is_stochastic
         )
         measured_indices: set[int] = set()
         deferred_measurements: list[tuple[int, int]] = []
@@ -1844,7 +1842,7 @@ class Simulator:
 
         def require_per_shot() -> None:
             nonlocal execution_shape
-            if not self._is_operator:
+            if not quantum.is_operator:
                 execution_shape = "per_shot"
 
         for step in plan:
@@ -1876,14 +1874,14 @@ class Simulator:
                 target_indices = step.reset_indices
                 if state_nonunitary_uses_trajectories:
                     require_per_shot()
-                if self._nonunitary_is_stochastic:
+                if quantum.nonunitary_is_stochastic:
                     stochastic_final_state = True
             elif isinstance(step, ApplyChannelStep):
                 has_channel = True
                 target_indices = step.target_indices
                 if state_nonunitary_uses_trajectories:
                     require_per_shot()
-                if self._nonunitary_is_stochastic:
+                if quantum.nonunitary_is_stochastic:
                     stochastic_final_state = True
             else:
                 raise TypeError(
