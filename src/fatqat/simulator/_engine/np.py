@@ -874,7 +874,12 @@ class _NumpyOperatorEngine(_NumpyMatrixEngine):
         )
 
 
-class NumpyUnitaryEngine(_NumpyOperatorEngine, NumpySVEngine):
+# Pylint treats the inherited probabilities/collapse methods, which deliberately
+# raise NotImplementedError, as abstract. Operator engines reuse state kernels
+# but intentionally do not support sampling or measurement.
+class NumpyUnitaryEngine(  # pylint: disable=abstract-method
+    _NumpyOperatorEngine, NumpySVEngine
+):
     """Unitary engine: evolves ``U`` as a ``(size, size)`` operator matrix.
 
     Column ``j`` of ``U`` is the statevector ``U|j>``, so the whole operator is
@@ -904,7 +909,11 @@ class NumpyUnitaryEngine(_NumpyOperatorEngine, NumpySVEngine):
         return _contract_local(m, tensor, target_axes, n + 1, k).reshape(state.shape)
 
 
-class NumpySuperopEngine(_NumpyOperatorEngine, NumpyDMEngine):
+# As for NumpyUnitaryEngine, the inherited sampling methods are unsupported,
+# rather than missing implementations in this concrete operator engine.
+class NumpySuperopEngine(  # pylint: disable=abstract-method
+    _NumpyOperatorEngine, NumpyDMEngine
+):
     """Super-operator engine: evolves ``S`` as a ``(size**2, size**2)`` matrix.
 
     Internally, column ``b`` of ``S`` is the row-stacked image of basis matrix

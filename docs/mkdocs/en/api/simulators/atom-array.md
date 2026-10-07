@@ -73,8 +73,13 @@ use measurements and counts for that distinction.
 loss during `Pair` and `Unpair`. Its selector runs only after a matching
 operation; `p=0` removes nothing and leaves the loading rule unchanged. No
 other gate-level simulator accepts `Loss`. If an otherwise-valid paired `CZ`
-finds a missing atom, it does nothing for that shot; an unpaired `CZ` still
+finds a missing atom, the entangling gate is skipped; an unpaired `CZ` still
 fails before execution.
+
+Noise channels can act on only one qubit. For a two-qubit operation, add noise
+for each qubit separately, using `target_positions` to select it. If one atom
+is missing, the gate is skipped, but noise still applies to the remaining
+atom. `Loss` can act on multiple atoms.
 
 Because an empty site produces no physical readout digit, its erasure value
 `2` bypasses readout-confusion noise. Atom loss also makes the final state

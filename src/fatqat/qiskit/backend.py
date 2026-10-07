@@ -88,6 +88,16 @@ class FatqatBackend(BackendV2):
         """Return ``None``; circuits are not restricted to a coupling map."""
         return None
 
+    @property
+    def dtm(self) -> float:
+        """Raise ``NotImplementedError``; output signal timing is unsupported."""
+        raise NotImplementedError
+
+    @property
+    def meas_map(self) -> list[list[int]]:
+        """Raise ``NotImplementedError``; pulse measurement mapping is unsupported."""
+        raise NotImplementedError
+
     @classmethod
     def _default_options(cls) -> Options:
         options = Options(

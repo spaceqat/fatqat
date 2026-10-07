@@ -23,6 +23,7 @@ from ..noise import NoiseModel
 from ..program import Program, _AppliedOperation
 from ..resource_layout import ResourceLayout
 from .._backends.steps import (
+    ApplyChannelStep,
     LossStep,
     PutStep,
 )
@@ -78,6 +79,9 @@ class AtomArraySimulator(Simulator):
     - Occupancy: every declared site starts empty. ``Put`` loads an atom;
       supported, correctly paired gates and reset do nothing on an empty site,
       which measures as the erasure digit ``2``.
+    - Noise: finite channels select one subsystem; a present atom's channel
+      runs even when another gate operand is absent. ``Loss`` may select
+      multiple subsystems and samples each present atom independently.
     - Methods: atom occupancy requires ``statevector`` or ``density_matrix``.
 
     The simulator validates the program as written; it does not transport,
@@ -102,7 +106,10 @@ class AtomArraySimulator(Simulator):
                 execution). See ``Simulator`` for runtime-specific
                 execution controls.
             noise: Optional ``NoiseModel``. ``None`` keeps the backend ideal;
-                this class has no built-in reference noise model.
+                this class has no built-in reference noise model. Finite
+                channels must select one subsystem; use ``target_positions``
+                on multi-subsystem operations. This limit is checked when
+                running a program; ``Loss`` may select multiple subsystems.
 
         Raises:
             BackendValidationError: If ``method`` or ``runtime`` is invalid,
@@ -167,8 +174,8 @@ class AtomArraySimulator(Simulator):
         ``|0>`` atom into its targets. Operation support and pairing are
         validated independently of occupancy. After validation, gates and
         resets targeting a site that is never named in any ``Put`` are omitted
-        from the execution plan; a valid operation on a site emptied by loss
-        has no effect for that shot.
+        from the execution plan. Their finite noise channels are retained to
+        act on surviving selected operands, including after stochastic loss.
 
         Two-qubit-gate legality follows the connectivity graph, not a fixed
         topology. Connectivity starts empty and evolves at each
@@ -192,7 +199,8 @@ class AtomArraySimulator(Simulator):
         Raises:
             BackendValidationError: If a ``Pair`` or ``Unpair`` carries a
                 condition, or if a two-qubit gate targets a pair that is not
-                currently paired (see :py:meth:`_require_pairing`).
+                currently paired (see :py:meth:`_require_pairing`), or a
+                finite noise channel selects more than one subsystem.
         """
         resource_layout = context.resource_layout
         put_targets = frozenset(
@@ -239,6 +247,15 @@ class AtomArraySimulator(Simulator):
                 segment, connectivity, put_targets, context, param_order=param_order
             )
         )
+        if any(
+            isinstance(step, ApplyChannelStep) and len(step.target_indices) != 1
+            for step in plan
+        ):
+            raise BackendValidationError(
+                "AtomArraySimulator only supports single-subsystem noise channels; "
+                "use target_positions to register a separate channel on each "
+                "operand of a multi-subsystem operation"
+            )
         return plan
 
     def _initial_occupancy(self) -> frozenset[int]:
@@ -263,7 +280,7 @@ class AtomArraySimulator(Simulator):
         here (see :py:meth:`_require_pairing`), distinct from a per-shot atom
         loss, which the engine drops silently. Operations on sites that no
         ``Put`` can load still pass through common lowering for validation;
-        their resolved work is then omitted from the execution plan.
+        their gates are omitted while finite channels are retained for survivors.
         """
         for step in segment:
             self._require_pairing(step, connectivity)
@@ -297,9 +314,9 @@ class AtomArraySimulator(Simulator):
                 target not in put_targets for target in step.targets
             ):
                 flush_ordinary()
-                # Reuse canonical lowering for validation, then omit work that
-                # can never execute because at least one target is never loaded.
-                lower_common((step,), context, param_order=param_order)
+                # Validate the gate, retaining channels that can affect survivors.
+                lowered = lower_common((step,), context, param_order=param_order)
+                plan.extend(s for s in lowered if isinstance(s, ApplyChannelStep))
             else:
                 ordinary.append(step)
         flush_ordinary()

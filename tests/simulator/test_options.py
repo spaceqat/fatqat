@@ -345,6 +345,30 @@ def test_execution_policy_decision_table(
     )
 
 
+def test_process_worker_capacity_follows_the_cpu_affinity_mask(monkeypatch):
+    # Before Python 3.13 there is no os.process_cpu_count, and os.cpu_count
+    # counts every core of the machine even when the process may use only a
+    # few (taskset, container CPU limits).
+    module = "fatqat.simulator._execution_policy.os"
+    monkeypatch.delattr(f"{module}.process_cpu_count", raising=False)
+    monkeypatch.setattr(f"{module}.cpu_count", lambda: 192)
+    monkeypatch.setattr(
+        f"{module}.sched_getaffinity", lambda pid: {4, 5, 6}, raising=False
+    )
+    policy = _resolve_execution_policy(
+        _SimulationConfig(shot_parallelism="processes", kernel_parallelism="serial"),
+        facts=_facts("per_shot"),
+        counts_requested=True,
+        state_requested=False,
+        capabilities=_EngineCapabilities(True, 8, True),
+        compiled_multi_shot_compatible=False,
+        shots=64,
+        initial_occupied=None,
+    )
+
+    assert policy.worker_limit == 3
+
+
 @pytest.mark.parametrize(
     (
         "simulation",

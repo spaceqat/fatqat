@@ -9,7 +9,14 @@ import fatqat.operations as ops
 from fatqat._backends.steps import ApplyMatrixStep, LossStep, PutStep
 from fatqat.simulator import AtomArraySimulator, Simulator
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
-from fatqat.noise import Loss, NoiseModel, ReadoutConfusion
+from fatqat.noise import (
+    AmplitudeDamping,
+    Depolarizing,
+    Loss,
+    NoiseModel,
+    PauliChannel,
+    ReadoutConfusion,
+)
 from fatqat.program import Program
 from fatqat.registers import QuantumRegister
 
@@ -479,6 +486,77 @@ def test_process_workers_preserve_initial_atom_occupancy():
 
 
 # --- atom loss ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+@pytest.mark.parametrize("method", ["statevector", "density_matrix"])
+@pytest.mark.parametrize("survivor", [0, 1])
+@pytest.mark.parametrize("lost", [False, True])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_cz_local_relaxation_with_absent_partner(
+    runtime, method, survivor, lost, enabled
+):
+    noise = NoiseModel()
+    noise.add(Loss(p=1), operation=ops.RY)
+    for position in (0, 1):
+        noise.add(AmplitudeDamping(p=1), operation=ops.CZ, target_positions=position)
+    program = Program(2, 2)
+    program.add(ops.Put, survivor)
+    program.add(ops.RX(np.pi), survivor)
+    if lost:
+        program.add(ops.Put, 1 - survivor)
+        program.add(ops.RY(0), 1 - survivor)
+    program.add(ops.Pair, (0, 1))
+    program.add(ops.CZ, (0, 1), condition=(0, 0 if enabled else 1))
+    program.measure(survivor, 0)
+    program.measure(1 - survivor, 1)
+    counts = (
+        AtomArraySimulator(runtime=runtime, method=method, noise=noise)
+        .run(program, shots=8, simulation_config={"seed": 23})
+        .result()
+        .get_counts()
+    )
+    assert counts == {"02" if enabled else "12": 8}
+
+
+@pytest.mark.parametrize("operation", [ops.CZ, ops.Pair, ops.Unpair])
+@pytest.mark.parametrize("channel", [Depolarizing(p=0.1), PauliChannel({"XX": 0.1})])
+@pytest.mark.parametrize("loaded", [False, True])
+def test_atom_array_rejects_joint_channels(operation, channel, loaded):
+    noise = NoiseModel()
+    noise.add(channel, operation=operation)
+    program = Program(2)
+    if loaded:
+        program.add(ops.Put, 0)
+        program.add(ops.Put, 1)
+    program.add(ops.Pair, (0, 1))
+    if operation is not ops.Pair:
+        program.add(operation, (0, 1))
+    with pytest.raises(
+        BackendValidationError, match="single-subsystem.*target_positions"
+    ):
+        AtomArraySimulator(noise=noise).run(program).result()
+
+
+@pytest.mark.parametrize("channel", [Depolarizing(p=1), PauliChannel({"X": 1})])
+def test_atom_array_accepts_local_channels_on_cz(channel):
+    noise = NoiseModel()
+    noise.add(channel, operation=ops.CZ, target_positions=1)
+    program = Program(2, 1)
+    program.add(ops.Put, 1)
+    program.add(ops.Pair, (0, 1))
+    program.add(ops.CZ, (0, 1))
+    program.measure(1, 0)
+    counts = (
+        AtomArraySimulator(noise=noise)
+        .run(program, shots=64, simulation_config={"seed": 23})
+        .result()
+        .get_counts()
+    )
+    if isinstance(channel, PauliChannel):
+        assert counts == {"1": 64}
+    else:
+        assert set(counts) == {"0", "1"}
 
 
 @pytest.mark.parametrize("runtime", ["numpy", "numba"])

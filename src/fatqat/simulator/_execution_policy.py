@@ -19,8 +19,14 @@ def _process_worker_ceiling(requested: int | None) -> int:
     """Resolve the stable size of the reusable process executor."""
     if requested is not None:
         return requested
-    cpu_count = getattr(os, "process_cpu_count", os.cpu_count)
-    return max(1, cpu_count() or 1)
+    if hasattr(os, "process_cpu_count"):
+        return max(1, os.process_cpu_count() or 1)
+    # Before Python 3.13, os.cpu_count counts every core the system has,
+    # ignoring the process's affinity mask: a pinned or container-limited
+    # process would start more workers than it may run.
+    if hasattr(os, "sched_getaffinity"):
+        return max(1, len(os.sched_getaffinity(0)))
+    return max(1, os.cpu_count() or 1)
 
 
 def _explicit_thread_worker_ceiling(
