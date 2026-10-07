@@ -327,14 +327,12 @@ class _TransmonQutipAdapter:
                 raise BackendValidationError(
                     "ideal pulse binding unexpectedly produced collapse terms"
                 )
-            if (
-                start_time <= input_time + TIME_EPSILON
-                and end_time >= run.end_time - TIME_EPSILON
-            ):
-                hamiltonian += contribution
-                continue
-
-            hamiltonian += contribution * _qutip_time_window(start_time, end_time)
+            hamiltonian += contribution * _qutip_time_window(
+                start_time,
+                end_time,
+                run_start_time=input_time,
+                run_end_time=run.end_time,
+            )
         local_collapse: list[Any] = []
         for noise_pulse in noise_pulses:
             _zero, collapse = noise_pulse.get_noisy_qobjevo(self._dims)

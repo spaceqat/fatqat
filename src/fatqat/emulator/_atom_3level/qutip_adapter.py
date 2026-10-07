@@ -464,14 +464,12 @@ class _Atom3LevelQutipAdapter:
                 raise BackendValidationError(
                     "atom coherent pulse binding produced collapse terms"
                 )
-            if (
-                start_time <= input_time + TIME_EPSILON
-                and end_time >= run.end_time - TIME_EPSILON
-            ):
-                hamiltonian += contribution
-                continue
-
-            hamiltonian += contribution * _qutip_time_window(start_time, end_time)
+            hamiltonian += contribution * _qutip_time_window(
+                start_time,
+                end_time,
+                run_start_time=input_time,
+                run_end_time=run.end_time,
+            )
         return _BoundDynamics(hamiltonian=hamiltonian, output_frames=frames)
 
     def _frame_unitary(self, frames: dict[Any, float]) -> Qobj:
