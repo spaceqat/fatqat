@@ -288,6 +288,7 @@ class OccupancyCheckpointStep:
     operation_name: str
     target_labels: tuple[Hashable, ...]
     site_labels: tuple[Hashable, ...]
+    condition: None = None
 
 
 ResolvedStep = (

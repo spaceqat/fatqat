@@ -120,8 +120,11 @@ from ...noise.nb import (
 from ...result import reduce_to_counts
 from .._execution_contract import (
     _ExecutionContext as ExecutionContext,
-    _ExecutionPolicy as ExecutionPolicy,
+    _KernelCapabilities,
+    _QuantumCapabilities,
+    _TrajectoryCapabilities,
 )
+from .._execution_policy import _ExecutionPolicy as ExecutionPolicy
 from .base import _shot_seed_sequences
 from .np import (
     _NumpyOperatorEngine,
@@ -130,6 +133,7 @@ from .np import (
     NumpySVEngine,
     NumpyUnitaryEngine,
 )
+from .state import NumbaEvolutionState
 
 # Numba fixes the launch pool's capacity at import time. ``set_num_threads``
 # changes only the active mask, so policy ceilings clamp to this configured
@@ -1503,6 +1507,19 @@ def _reset_step(
     return state
 
 
+@njit(cache=True, inline="always")
+def _initialize_shot_state(start, state_size, custom_start, n_clbits):
+    """Allocate one shot's quantum and classical buffers without sharing them."""
+    if custom_start:
+        # A supplied template must survive unchanged to seed every trajectory.
+        quantum = start.copy()
+    else:
+        # Construct |0...0> directly, without an O(D) template to copy.
+        quantum = np.zeros(state_size, dtype=np.complex128)
+        quantum[0] = 1.0 + 0.0j
+    return NumbaEvolutionState(quantum, np.zeros(n_clbits, dtype=np.int64))
+
+
 @njit(cache=True, parallel=True)
 def _run_shots_kernel(
     # per-step sequencer (one entry per plan step, in program order)
@@ -1569,7 +1586,7 @@ def _run_shots_kernel(
 ) -> np.ndarray:  # pragma: no cover - compiled by Numba
     """Run ``shots`` independent dynamic trajectories in parallel.
 
-    Each shot (a `prange` iteration) owns a private state and classical register
+    Each shot (a `prange` iteration) owns a local `NumbaEvolutionState`
     and interprets the compiled plan: conditioned gate application, projective
     measurement with readout confusion, conditioned reset, and conditioned channel
     noise. Uniforms are pre-drawn per shot in execution order (slice
@@ -1581,28 +1598,22 @@ def _run_shots_kernel(
     num_steps = step_kind.shape[0]
     results = np.zeros((shots, n_clbits), dtype=np.int64)
     for shot in prange(shots):  # pylint: disable=not-an-iterable
-        if custom_start:
-            # A caller-supplied state must survive unchanged to seed every
-            # trajectory, so each shot necessarily gets its own copy.
-            state = start.copy()
-        else:
-            # Keep the original zero-state fast path: initialize the private
-            # shot buffer directly instead of first reading a full template
-            # only to copy it.
-            state = np.zeros(state_size, dtype=np.complex128)
-            state[0] = 1.0 + 0.0j
-        clbits = np.zeros(n_clbits, dtype=np.int64)
+        evolution = _initialize_shot_state(start, state_size, custom_start, n_clbits)
         draw = shot * max_draws
 
         for st in range(num_steps):
             kind = step_kind[st]
             passes = _condition_passes(
-                clbits, cond_clbit, cond_value, step_cond_ptr[st], step_cond_len[st]
+                evolution.classical,
+                cond_clbit,
+                cond_value,
+                step_cond_ptr[st],
+                step_cond_len[st],
             )
             if kind == 1:  # measurement (unconditional)
-                state, draw = _measure_step(
-                    state,
-                    clbits,
+                quantum, draw = _measure_step(
+                    evolution.quantum,
+                    evolution.classical,
                     step_data[st],
                     me_ptr,
                     me_len,
@@ -1614,9 +1625,10 @@ def _run_shots_kernel(
                     uniforms,
                     draw,
                 )
+                evolution = NumbaEvolutionState(quantum, evolution.classical)
             elif kind == 0 and passes:  # gate
                 _apply_step(
-                    state,
+                    evolution.quantum,
                     step_data[st],
                     ap_mat_ptr,
                     ap_dim,
@@ -1633,8 +1645,8 @@ def _run_shots_kernel(
                     state_size,
                 )
             elif kind == 2 and passes:  # reset
-                state = _reset_step(
-                    state,
+                quantum = _reset_step(
+                    evolution.quantum,
                     step_data[st],
                     rs_ptr,
                     rs_len,
@@ -1642,10 +1654,11 @@ def _run_shots_kernel(
                     rs_dim,
                     uniforms[draw],
                 )
+                evolution = NumbaEvolutionState(quantum, evolution.classical)
                 draw += 1
             elif kind == 3 and passes:  # channel noise (applied in place)
                 _channel_step(
-                    state,
+                    evolution.quantum,
                     step_data[st],
                     ch_kra_ptr,
                     ch_num_kraus,
@@ -1668,7 +1681,7 @@ def _run_shots_kernel(
                 draw += 1
 
         for c in range(n_clbits):
-            results[shot, c] = clbits[c]
+            results[shot, c] = evolution.classical[c]
     return results
 
 
@@ -1706,8 +1719,17 @@ def _plan_compilable(plan: Sequence[ResolvedStep]) -> bool:
 class NumbaSVEngine(NumpySVEngine):
     """State-vector engine with Numba-jitted numeric kernels."""
 
-    _supports_kernel_threads = True
-    _thread_capacity = _MAX_THREADS
+    _quantum_capabilities = _QuantumCapabilities(
+        "statevector", supports_nonunitary=True, nonunitary_is_stochastic=True
+    )
+    _trajectory_capabilities = _TrajectoryCapabilities(
+        classical_register=True, occupancy=True
+    )
+    _kernel_capabilities = _KernelCapabilities(
+        supports_kernel_threads=True,
+        thread_capacity=_MAX_THREADS,
+        supports_fusion=False,
+    )
 
     def compiled_multi_shot_compatible(self, plan: Sequence[ResolvedStep]) -> bool:
         """Return whether the compiled outer loop can encode this exact plan."""
@@ -1799,7 +1821,7 @@ class NumbaSVEngine(NumpySVEngine):
         context: ExecutionContext,
         payload,
         policy: ExecutionPolicy,
-    ) -> RawResult:
+    ) -> RawResult[np.ndarray]:
         self.configure_system(context.system_dims, context.n_clbits)
         self._apply_plans = dict(payload[3])
         if not policy.use_compiled_multi_shot_kernel:
@@ -1927,7 +1949,7 @@ class NumbaSVEngine(NumpySVEngine):
         self,
         context: ExecutionContext,
         compiled,
-    ) -> RawResult:
+    ) -> RawResult[np.ndarray]:
         """Execute a materialized counts plan in one compiled multi-shot call."""
         plan_arrays, max_draws = compiled
         shots = context.shots
@@ -2259,9 +2281,8 @@ class NumbaDMEngine(NumpyDMEngine):
     """Density-matrix engine with Numba-jitted, key-driven numeric kernels.
 
     Overrides the numeric kernels of `NumpyDMEngine` and materializes the
-    optional gate/channel rewrite once. Capability classification,
-    ``measure_subsystems``, and fast/per-shot orchestration are inherited and
-    route through the Numba kernels under the resolved thread scope.
+    optional gate/channel rewrite once. Inherited measurement and execution
+    helpers call the Numba kernels within the resolved thread scope.
     ``reset_subsystems`` stays the inherited NumPy partial-trace channel (see
     the module docstring).
 
@@ -2271,9 +2292,15 @@ class NumbaDMEngine(NumpyDMEngine):
     per plan step, key-aware for gates, content-scanned for channels.
     """
 
-    _supports_kernel_threads = True
-    _thread_capacity = _MAX_THREADS
-    _supports_fusion = True
+    _quantum_capabilities = _QuantumCapabilities(
+        "density_matrix", supports_nonunitary=True, nonunitary_is_stochastic=False
+    )
+    _trajectory_capabilities = _TrajectoryCapabilities(
+        classical_register=True, occupancy=True
+    )
+    _kernel_capabilities = _KernelCapabilities(
+        supports_kernel_threads=True, thread_capacity=_MAX_THREADS, supports_fusion=True
+    )
 
     def __init__(self, name: str = "numba-dm"):
         super().__init__(name)
@@ -2348,7 +2375,7 @@ class NumbaDMEngine(NumpyDMEngine):
         context: ExecutionContext,
         payload,
         policy: ExecutionPolicy,
-    ) -> RawResult:
+    ) -> RawResult[np.ndarray]:
         self.configure_system(context.system_dims, context.n_clbits)
         self._sandwich_plans = dict(payload[2])
         return super().execute_local(context, payload, policy)
@@ -2791,12 +2818,9 @@ def _fuse_operator_payloads(payloads: list[tuple], dims: Sequence[int]) -> list[
 class _NumbaOperatorRunMixin(_NumpyOperatorEngine):
     """Compiled whole-plan execution for the Numba operator engines.
 
-    Leaves supply `_operator_row_dims` and `_operator_payloads`.
+    Leaves declare their capabilities and supply `_operator_row_dims` and
+    `_operator_payloads`.
     """
-
-    _supports_kernel_threads = True
-    _thread_capacity = _MAX_THREADS
-    _supports_fusion = True
 
     def materialize_execution(
         self,
@@ -2835,7 +2859,7 @@ class _NumbaOperatorRunMixin(_NumpyOperatorEngine):
         context: ExecutionContext,
         payload,
         policy: ExecutionPolicy,
-    ) -> RawResult:
+    ) -> RawResult[np.ndarray]:
         """Execute one already-packed operator payload without replanning."""
         assert policy.shot_strategy == "none"
         assert context.execution_shape == "operator"
@@ -2882,6 +2906,17 @@ class NumbaUnitaryEngine(  # pylint: disable=too-many-ancestors
     ``U`` is ``size`` statevector columns over a row index that decomposes into
     the plain system dims; every step is a gate.
     """
+
+    _quantum_capabilities = _QuantumCapabilities(
+        # Retain the SV branch classification; non-unitary plans are rejected.
+        "unitary",
+        supports_nonunitary=False,
+        nonunitary_is_stochastic=True,
+    )
+    _trajectory_capabilities = _TrajectoryCapabilities()
+    _kernel_capabilities = _KernelCapabilities(
+        supports_kernel_threads=True, thread_capacity=_MAX_THREADS, supports_fusion=True
+    )
 
     def __init__(self, name: str = "numba-unitary"):
         super().__init__(name)
@@ -2946,6 +2981,14 @@ class NumbaSuperopEngine(  # pylint: disable=too-many-ancestors
     into the doubled ``bra + ket`` dims. Every step - gate, channel, or reset -
     resolves to one super-operator on the combined ket+bra super-target.
     """
+
+    _quantum_capabilities = _QuantumCapabilities(
+        "superop", supports_nonunitary=True, nonunitary_is_stochastic=False
+    )
+    _trajectory_capabilities = _TrajectoryCapabilities()
+    _kernel_capabilities = _KernelCapabilities(
+        supports_kernel_threads=True, thread_capacity=_MAX_THREADS, supports_fusion=True
+    )
 
     def __init__(self, name: str = "numba-superop"):
         super().__init__(name)

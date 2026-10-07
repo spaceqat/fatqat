@@ -192,8 +192,8 @@ def test_measurement_feedforward_and_reset_keep_public_targets(runtime, method):
     program = Program(2, 2)
     program.add(ops.X, 0)
     program.measure(0, 0)
-    program.add(ops.X, 1, condition=(0, 1))
     program.add(ops.Reset, 0)
+    program.add(ops.X, 1, condition=(0, 1))
     program.measure(1, 1)
 
     backend = Simulator(method, runtime=runtime)
@@ -213,6 +213,26 @@ def test_measurement_feedforward_and_reset_keep_public_targets(runtime, method):
         expected = np.zeros((4, 4), dtype=complex)
         expected[1, 1] = 1.0
         assert np.allclose(final.get_density_matrix(), expected)
+
+
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+@pytest.mark.parametrize("method", ["SV", "DM"])
+def test_classical_feedback_starts_fresh_on_each_shot_and_run(runtime, method):
+    backend = Simulator(method, runtime=runtime)
+    program = Program(1, 1)
+    program.add(ops.X, 0, condition=(0, 0))
+    program.measure(0, 0)
+    program.add(ops.Reset, 0)
+
+    # The previous shot ends with c0=1. Each shot must still start with c0=0.
+    counts = backend.run(program, shots=8, simulation_config={"seed": 0})
+    assert counts.result().get_counts() == {"1": 8}
+
+    next_program = Program(1, 1)
+    next_program.add(ops.X, 0, condition=(0, 1))
+    next_program.measure(0, 0)
+    counts = backend.run(next_program, shots=8, simulation_config={"seed": 0})
+    assert counts.result().get_counts() == {"0": 8}
 
 
 def test_condition_only_statevector_default_at_many_shots():

@@ -1,11 +1,11 @@
 """NumPy engines for the matrix backend family.
 
 `NumpySVEngine` (statevector) and `NumpyDMEngine` (density matrix) are the
-two *state* `MatrixEngine` implementations. They share static capabilities,
-one-time plan materialization, the fast single-evolution path, local per-shot
+two *state* `MatrixEngine` implementations. They share one-time plan
+materialization, the fast single-evolution path, local per-shot
 replay, ``initialize``, and ``measure_subsystems`` through
 `_NumpyMatrixEngine`. Each leaf class contributes only its numeric kernels
-(allocate / apply / probabilities / collapse / reset) and result field;
+(allocate / apply / probabilities / collapse / reset) and explicit capabilities;
 simulator-owned facts decide the semantic execution shape before this layer.
 
 `NumpyUnitaryEngine` and `NumpySuperopEngine` are the two *operator* engines:
@@ -60,7 +60,6 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from collections.abc import Sequence
-from contextlib import nullcontext
 from math import prod
 from typing import Any
 
@@ -85,8 +84,11 @@ from ...noise.base import _sampled_unitary_branches
 from ...result import _decode_engine_indices_to_clbit_rows, reduce_to_counts
 from .._execution_contract import (
     _ExecutionContext as ExecutionContext,
-    _ExecutionPolicy as ExecutionPolicy,
+    _KernelCapabilities,
+    _QuantumCapabilities,
+    _TrajectoryCapabilities,
 )
+from .._execution_policy import _ExecutionPolicy as ExecutionPolicy
 from .base import MatrixEngine, _shot_seed_sequences
 
 # What `_sampled_unitary_branches` resolves a channel step to: branch
@@ -164,10 +166,13 @@ def _measured_keep_mask(
 
 
 def _condition_matches(
-    condition: tuple[tuple[int, int], ...] | None, clbits: list[int]
+    condition: tuple[tuple[int, int], ...] | None, clbits: list[int] | None
 ) -> bool:
     """Return whether a lowered feedforward condition passes."""
-    return condition is None or all(clbits[c] == v for c, v in condition)
+    if not condition:
+        return True
+    assert clbits is not None, "feedforward requires initialized classical digits"
+    return all(clbits[c] == v for c, v in condition)
 
 
 def _map_physical_digit(physical_digit: int, reported_digit_map) -> int:
@@ -238,18 +243,14 @@ def _apply_measurement_reporting(
 # --- shared orchestration ---
 
 
-class _NumpyMatrixEngine(MatrixEngine):
+class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
     """Semantics-agnostic execution for the NumPy matrix-family engines.
 
     Owns local materialization and semantic execution through abstract kernels.
     Subclasses supply ``_allocate``, ``apply``, ``apply_channel``,
-    ``probabilities``, ``collapse``, ``reset_subsystems`` and one class knob:
-
-    - ``_state_field``: the request/result state field this engine populates
-      (``"statevector"`` or ``"density_matrix"``).
+    ``probabilities``, ``collapse``, ``reset_subsystems`` and their
+    capability declarations. The quantum representation names the result field.
     """
-
-    _state_field: str
 
     def initialize(
         self,
@@ -307,16 +308,16 @@ class _NumpyMatrixEngine(MatrixEngine):
         Engines without step caches have nothing to prune.
         """
 
-    def _execution_scope(self, policy: ExecutionPolicy):
-        """Return this runtime's local numeric-execution scope."""
-        return nullcontext()
+    def sample_indices(self, shots: int, rng: np.random.Generator) -> np.ndarray:
+        """Sample flat basis-state indices from the NumPy quantum buffer."""
+        return rng.choice(self.state.shape[0], size=shots, p=self.probabilities())
 
     def execute_local(
         self,
         context: ExecutionContext,
         payload: Any,
         policy: ExecutionPolicy,
-    ) -> RawResult:
+    ) -> RawResult[np.ndarray]:
         """Execute one materialized state plan without dispatching."""
         assert policy.shot_strategy != "processes"
         self.configure_system(context.system_dims, context.n_clbits)
@@ -342,7 +343,7 @@ class _NumpyMatrixEngine(MatrixEngine):
         rng: np.random.Generator,
         request: ResultRequest,
         initial_state: np.ndarray | None,
-    ) -> RawResult:
+    ) -> RawResult[np.ndarray]:
         """Evolve once, optionally sample counts, optionally export the state.
 
         The ``ResetStep`` and ``ApplyChannelStep`` branches are only reachable
@@ -391,7 +392,7 @@ class _NumpyMatrixEngine(MatrixEngine):
         self,
         plan: Sequence[ResolvedStep],
         context: ExecutionContext,
-    ) -> RawResult:
+    ) -> RawResult[np.ndarray]:
         """Replay dynamic trajectories locally under an already-resolved policy."""
         request = context.request
         state_requested = getattr(request, self._state_field)
@@ -492,42 +493,55 @@ class _NumpyMatrixEngine(MatrixEngine):
         the state only through the interface methods (reset consumes rng only
         under statevector semantics).
 
+        Populate the initialized evolution's classical container. Quantum
+        kernels can replace its buffer while classical reports and occupancy
+        remain available throughout this shot.
+
         ``initial_occupied`` is the atom simulator's per-shot starting
         occupancy, supplied at run initialization rather than as a plan step:
         ``None`` means every subsystem is present (the plain-backend default),
         while an explicit set seeds only those subsystems as occupied so
         `~fatqat.operations.Put` fills the rest.
         """
-        clbits = [0] * self._n_clbits
-        occupied = (
-            set(range(len(self._dims)))
-            if initial_occupied is None
-            else set(initial_occupied)
-        )
+        assert self._evolution_state is not None
+        classical = self._evolution_state.classical
+        classical.clbits = None
+        classical.occupied = None if initial_occupied is None else set(initial_occupied)
+        clbits = classical.clbits
+        occupied = classical.occupied
         for step in plan:
-            if isinstance(step, ApplyMatrixStep) and all(
-                t in occupied for t in step.target_indices
+            if clbits is None and (
+                isinstance(step, MeasurementStep) or step.condition is not None
+            ):
+                clbits = [0] * self._n_clbits
+                classical.clbits = clbits
+            if isinstance(step, ApplyMatrixStep) and (
+                occupied is None or all(t in occupied for t in step.target_indices)
             ):
                 if _condition_matches(step.condition, clbits):
                     self.apply(step)
-            elif isinstance(step, ApplyChannelStep) and all(
-                t in occupied for t in step.target_indices
+            elif isinstance(step, ApplyChannelStep) and (
+                occupied is None or all(t in occupied for t in step.target_indices)
             ):
                 if _condition_matches(step.condition, clbits):
                     self.apply_channel(step, rng)
             elif isinstance(step, LossStep):
                 if _condition_matches(step.condition, clbits):
+                    if occupied is None:
+                        occupied = set(range(len(self._dims)))
+                        classical.occupied = occupied
                     for index in step.target_indices:
                         if index in occupied and rng.random() < step.p:
                             occupied.discard(index)
                             self.reset_subsystems([index], rng)
             elif isinstance(step, PutStep):
-                if _condition_matches(step.condition, clbits):
+                if _condition_matches(step.condition, clbits) and occupied is not None:
                     for index in step.target_indices:
                         if index not in occupied:
                             occupied.add(index)
                             self.reset_subsystems([index], rng)
             elif isinstance(step, MeasurementStep):
+                assert clbits is not None, "measurement requires classical digits"
                 bits = self.measure_subsystems(step.measured_indices, rng)
                 confusions = step.confusions or (None,) * len(bits)
                 maps = step.reported_digit_maps or (None,) * len(bits)
@@ -540,26 +554,27 @@ class _NumpyMatrixEngine(MatrixEngine):
                     maps,
                     confusions,
                 ):
-                    if m not in occupied:
+                    if occupied is not None and m not in occupied:
                         clbits[c] = ERASURE_DIGIT
                     else:
                         clbits[c] = _report_digit(
                             _map_physical_digit(bit, reported_map), confusion, rng
                         )
             elif isinstance(step, ResetStep):
-                if _condition_matches(step.condition, clbits) and all(
-                    t in occupied for t in step.reset_indices
+                if _condition_matches(step.condition, clbits) and (
+                    occupied is None or all(t in occupied for t in step.reset_indices)
                 ):
                     self.reset_subsystems(step.reset_indices, rng)
             elif isinstance(step, OccupancyCheckpointStep):
                 if occupancy_trace is not None:
                     occupancy_trace.append(
                         tuple(
-                            index in occupied
+                            occupied is None or index in occupied
                             for index in range(len(self._dims) - 1, -1, -1)
                         )
                     )
-        return tuple(clbits)
+        # Unwritten report digits are zero even when no register was needed.
+        return tuple(clbits) if clbits is not None else (0,) * self._n_clbits
 
 
 # --- statevector engine ---
@@ -568,7 +583,15 @@ class _NumpyMatrixEngine(MatrixEngine):
 class NumpySVEngine(_NumpyMatrixEngine):
     """State-vector engine: evolves ``|psi>`` as a flat little-endian array."""
 
-    _state_field = "statevector"
+    _quantum_capabilities = _QuantumCapabilities(
+        "statevector", supports_nonunitary=True, nonunitary_is_stochastic=True
+    )
+    _trajectory_capabilities = _TrajectoryCapabilities(
+        classical_register=True, occupancy=True
+    )
+    _kernel_capabilities = _KernelCapabilities(
+        supports_kernel_threads=False, thread_capacity=1, supports_fusion=False
+    )
 
     def __init__(self, name: str = "numpy-sv"):
         super().__init__(name, state_semantics="sv")
@@ -719,7 +742,15 @@ class NumpySVEngine(_NumpyMatrixEngine):
 class NumpyDMEngine(_NumpyMatrixEngine):
     """Density-matrix engine: evolves ``rho`` as a ``(size, size)`` matrix."""
 
-    _state_field = "density_matrix"
+    _quantum_capabilities = _QuantumCapabilities(
+        "density_matrix", supports_nonunitary=True, nonunitary_is_stochastic=False
+    )
+    _trajectory_capabilities = _TrajectoryCapabilities(
+        classical_register=True, occupancy=True
+    )
+    _kernel_capabilities = _KernelCapabilities(
+        supports_kernel_threads=False, thread_capacity=1, supports_fusion=False
+    )
 
     def __init__(self, name: str = "numpy-dm"):
         super().__init__(name, state_semantics="dm")
@@ -849,7 +880,7 @@ class _NumpyOperatorEngine(_NumpyMatrixEngine):
         context: ExecutionContext,
         payload: Any,
         policy: ExecutionPolicy,
-    ) -> RawResult:
+    ) -> RawResult[np.ndarray]:
         """Evolve one already-materialized operator plan in this process."""
         assert policy.shot_strategy == "none"
         assert context.execution_shape == "operator"
@@ -870,7 +901,7 @@ class _NumpyOperatorEngine(_NumpyMatrixEngine):
         plan: Sequence[ResolvedStep],
         rng: np.random.Generator,
         request: ResultRequest,
-    ) -> RawResult:
+    ) -> RawResult[np.ndarray]:
         for step in plan:
             assert not isinstance(
                 step, MeasurementStep
@@ -919,7 +950,16 @@ class NumpyUnitaryEngine(  # pylint: disable=abstract-method
     the statevector kernel run on ``size`` columns at once.
     """
 
-    _state_field = "unitary"
+    _quantum_capabilities = _QuantumCapabilities(
+        # Retain the SV branch classification; non-unitary plans are rejected.
+        "unitary",
+        supports_nonunitary=False,
+        nonunitary_is_stochastic=True,
+    )
+    _trajectory_capabilities = _TrajectoryCapabilities()
+    _kernel_capabilities = _KernelCapabilities(
+        supports_kernel_threads=False, thread_capacity=1, supports_fusion=False
+    )
 
     def __init__(self, name: str = "numpy-unitary"):
         super().__init__(name)
@@ -956,7 +996,13 @@ class NumpySuperopEngine(  # pylint: disable=abstract-method
     convention.
     """
 
-    _state_field = "superop"
+    _quantum_capabilities = _QuantumCapabilities(
+        "superop", supports_nonunitary=True, nonunitary_is_stochastic=False
+    )
+    _trajectory_capabilities = _TrajectoryCapabilities()
+    _kernel_capabilities = _KernelCapabilities(
+        supports_kernel_threads=False, thread_capacity=1, supports_fusion=False
+    )
 
     def __init__(self, name: str = "numpy-superop"):
         super().__init__(name)
@@ -967,14 +1013,14 @@ class NumpySuperopEngine(  # pylint: disable=abstract-method
         assert initial_state is None, "operator execution has no initial state"
         return np.eye(size * size, dtype=complex)
 
-    def export_state(self) -> np.ndarray:
-        """Export the super-operator in the public column-stacking convention.
+    def _export_state_data(self, data: np.ndarray) -> np.ndarray:
+        """Convert NumPy super-operator data to public column stacking.
 
         This existing vectorization conversion does not reorder subsystems.
         """
         size = prod(self._dims) if self._dims else 1
-        internal = self.state.reshape((size,) * 4)
-        exported = np.empty_like(self.state, order="C")
+        internal = data.reshape((size,) * 4)
+        exported = np.empty_like(data, order="C")
         exported.reshape((size,) * 4)[...] = internal.transpose(1, 0, 3, 2)
         return exported
 

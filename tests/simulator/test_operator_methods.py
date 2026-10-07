@@ -718,38 +718,42 @@ def test_backend_instance_is_reusable_across_system_sizes(runtime):
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_measurement_is_rejected(method):
+def test_measurement_is_rejected(method, runtime):
     program = Program(2, 2)
     program.add(ops.H, 0)
     program.measure((0, 1), (0, 1))
     with pytest.raises(BackendValidationError, match="cannot execute a measurement"):
-        Simulator(method).run(program)
+        Simulator(method, runtime=runtime).run(program)
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_counts_request_is_rejected(method):
+def test_counts_request_is_rejected(method, runtime):
     with pytest.raises(BackendValidationError, match="cannot produce counts"):
-        Simulator(method).run(_ghz_program(2), result_config={"counts": True})
+        Simulator(method, runtime=runtime).run(
+            _ghz_program(2), result_config={"counts": True}
+        )
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_feedforward_condition_is_rejected(method):
+def test_feedforward_condition_is_rejected(method, runtime):
     program = Program(1, 1)
     program.add(ops.X, 0, condition=(program.classical_registers[0][0], 0))
     with pytest.raises(BackendValidationError, match="feedforward condition"):
-        Simulator(method).run(program)
+        Simulator(method, runtime=runtime).run(program)
 
 
-def test_unitary_rejects_reset():
+def test_unitary_rejects_reset(runtime):
     program = _ghz_program(2)
     program.add(ops.Reset, 0)
     with pytest.raises(BackendValidationError, match="cannot execute reset"):
-        Simulator("unitary").run(program)
+        Simulator("unitary", runtime=runtime).run(program)
 
 
-def test_unitary_rejects_channel_noise():
+def test_unitary_rejects_channel_noise(runtime):
     with pytest.raises(BackendValidationError, match="cannot execute channel noise"):
-        Simulator("unitary", noise=_depolarizing_noise()).run(_noisy_program())
+        Simulator("unitary", runtime=runtime, noise=_depolarizing_noise()).run(
+            _noisy_program()
+        )
 
 
 def test_unitary_accepts_a_noise_model_that_never_fires():

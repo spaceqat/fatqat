@@ -1,8 +1,8 @@
 """Private numerical execution layer for the gate-level `Simulator`.
 
-`MatrixEngine` and its NumPy/Numba subclasses own the quantum state and the
-numerics; the `Simulator` above them owns validation, lowering, and result
-assembly. A `Simulator` constructs one engine and drives it.
+`MatrixEngine` and its NumPy/Numba subclasses own evolving quantum and classical
+state and the numerics; the `Simulator` above them owns validation, lowering,
+and result assembly. A `Simulator` constructs one engine and drives it.
 
 This layer is private and deliberately re-exports nothing. A run crosses the
 boundary as one immutable simulator-owned execution context and one resolved

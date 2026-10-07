@@ -14,16 +14,10 @@ class Loss:
     Loss changes occupancy rather than damping a carrier within the modeled
     Hilbert space. An occupancy-aware backend samples p independently for each
     selected carrier that is present after a matched operation. A hit removes
-    that carrier and its correlations. Gates and reset that require an absent
-    carrier have no effect; measurement reports erasure, pairing still changes
-    connectivity, and Put can load a fresh ground-state carrier.
+    that carrier and its correlations.
 
     Loss can act on any number of operands selected from the matching
-    operation. AtomArraySimulator is currently the only backend that supports
-    it. Every site on that simulator starts empty and requires ``Put``,
-    regardless of whether a ``Loss`` source is registered. ``Loss`` attached
-    to ``Put`` is sampled after loading, so it models loading failure or
-    immediate post-load loss.
+    operation. A condition on the operation also controls its attached loss.
 
     Args:
         p: Per-carrier probability each time a matching operation runs. Must
