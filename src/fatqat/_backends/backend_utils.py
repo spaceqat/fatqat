@@ -77,6 +77,7 @@ class _LoweringContext:
     resource_layout: ResourceLayout
     engine_allocation: _EngineAllocation
     classical_allocation: _ClassicalAllocation
+    capture_occupancy_trace: bool = False
 
     def engine_index(self, ref: RegisterRef) -> int:
         """Resolve a program ref to its backend-local subsystem index."""

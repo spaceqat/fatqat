@@ -74,6 +74,7 @@ from ..._backends.steps import (
     ApplyMatrixStep,
     LossStep,
     MeasurementStep,
+    OccupancyCheckpointStep,
     ResetStep,
     PutStep,
     ResolvedStep,
@@ -395,13 +396,26 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         """Replay dynamic trajectories locally under an already-resolved policy."""
         request = context.request
         state_requested = getattr(request, self._state_field)
-        n_iters = context.shots if request.counts else (1 if state_requested else 0)
+        n_iters = (
+            context.shots
+            if request.counts or context.capture_occupancy_trace
+            else (1 if state_requested else 0)
+        )
         snapshots = self._run_shot_seed_batch(
             plan,
             _shot_seed_sequences(context.seed, n_iters),
             context.initial_occupied,
             context.initial_state,
+            capture_occupancy_trace=context.capture_occupancy_trace,
         )
+        occupancy_trace = shot_outcomes = occupancy_checkpoints = None
+        if context.capture_occupancy_trace:
+            occupancy_trace = tuple(trace for _, trace in snapshots)
+            snapshots = [row for row, _ in snapshots]
+            shot_outcomes = tuple(snapshots)
+            occupancy_checkpoints = tuple(
+                step for step in plan if isinstance(step, OccupancyCheckpointStep)
+            )
 
         outcome_keys = outcome_counts = state = None
         if request.counts:
@@ -412,7 +426,12 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         if state_requested:
             state = self.export_state()
         return RawResult(
-            outcome_keys=outcome_keys, outcome_counts=outcome_counts, state=state
+            outcome_keys=outcome_keys,
+            outcome_counts=outcome_counts,
+            state=state,
+            occupancy_trace=occupancy_trace,
+            occupancy_checkpoints=occupancy_checkpoints,
+            shot_outcomes=shot_outcomes,
         )
 
     def _run_shot_seed_batch(
@@ -421,7 +440,9 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         seed_sequences: Sequence[np.random.SeedSequence],
         initial_occupied: frozenset[int] | None,
         initial_state: np.ndarray | None,
-    ) -> list[tuple[int, ...]]:
+        *,
+        capture_occupancy_trace: bool = False,
+    ) -> list:
         snapshots = []
         for seed_sequence in seed_sequences:
             self.initialize(
@@ -429,11 +450,13 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
                 self._n_clbits,
                 initial_state=initial_state,
             )
-            snapshots.append(
-                self._run_one_shot(
-                    plan, np.random.default_rng(seed_sequence), initial_occupied
-                )
+            trace: list[tuple[bool, ...]] | None = (
+                [] if capture_occupancy_trace else None
             )
+            row = self._run_one_shot(
+                plan, np.random.default_rng(seed_sequence), initial_occupied, trace
+            )
+            snapshots.append((row, tuple(trace)) if trace is not None else row)
         return snapshots
 
     def execute_shot_batch(
@@ -454,6 +477,7 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
                 seed_batch,
                 context.initial_occupied,
                 context.initial_state,
+                capture_occupancy_trace=context.capture_occupancy_trace,
             )
 
     def _run_one_shot(
@@ -461,6 +485,7 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         plan: Sequence[ResolvedStep],
         rng: np.random.Generator,
         initial_occupied: frozenset[int] | None = None,
+        occupancy_trace: list[tuple[bool, ...]] | None = None,
     ) -> tuple[int, ...]:
         """Run one dynamic-path shot and return its final clbit snapshot.
 
@@ -540,6 +565,14 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
                     occupied is None or all(t in occupied for t in step.reset_indices)
                 ):
                     self.reset_subsystems(step.reset_indices, rng)
+            elif isinstance(step, OccupancyCheckpointStep):
+                if occupancy_trace is not None:
+                    occupancy_trace.append(
+                        tuple(
+                            occupied is None or index in occupied
+                            for index in range(len(self._dims) - 1, -1, -1)
+                        )
+                    )
         # Unwritten report digits are zero even when no register was needed.
         return tuple(clbits) if clbits is not None else (0,) * self._n_clbits
 

@@ -8,6 +8,7 @@ from typing import Any, Generic, TypeVar
 import numpy as np
 
 from ..errors import BackendValidationError
+from .steps import OccupancyCheckpointStep
 
 StateDataT = TypeVar("StateDataT")
 
@@ -120,3 +121,6 @@ class RawResult(Generic[StateDataT]):
     outcome_keys: np.ndarray | None = None
     outcome_counts: np.ndarray | None = None
     state: StateDataT | None = None
+    occupancy_trace: tuple[tuple[tuple[bool, ...], ...], ...] | None = None
+    occupancy_checkpoints: tuple[OccupancyCheckpointStep, ...] | None = None
+    shot_outcomes: tuple[tuple[int, ...], ...] | None = None

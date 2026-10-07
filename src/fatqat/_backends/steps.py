@@ -14,6 +14,7 @@ backend and every engine can import it without depending on one another.
 from __future__ import annotations
 
 import enum
+from collections.abc import Hashable
 from dataclasses import dataclass
 
 import numpy as np
@@ -279,6 +280,17 @@ class PutStep:
     condition: tuple[tuple[int, int], ...] | None = None
 
 
+@dataclass(frozen=True)
+class OccupancyCheckpointStep:
+    """Read-only atom occupancy snapshot after a normalized program operation."""
+
+    operation_index: int | None
+    operation_name: str
+    target_labels: tuple[Hashable, ...]
+    site_labels: tuple[Hashable, ...]
+    condition: None = None
+
+
 ResolvedStep = (
     ApplyMatrixStep
     | ApplyChannelStep
@@ -286,4 +298,5 @@ ResolvedStep = (
     | MeasurementStep
     | ResetStep
     | PutStep
+    | OccupancyCheckpointStep
 )
