@@ -22,9 +22,11 @@ give a linear curve, three give a quadratic curve, and four or more give a
 cubic curve.
 
 `Atom2LevelEmulator` uses zero outside the sample interval.
-`TransmonEmulator` holds the nearest endpoint, so use zero first and last
-samples when a control should be off outside its grid. This behavior does not
-change the operation's duration.
+`TransmonEmulator` holds the nearest endpoint within the enclosing pulse
+block, so use zero first and last samples when a control should be off outside
+its grid. Every control is zero outside its block, allowing sequential pulse
+operations to compose without one block contributing during another. These
+rules do not change the operation's duration.
 
 A spline can exceed the supplied sample values between points. If a model has
 amplitude limits, the emulator checks the interpolated curve as well as the

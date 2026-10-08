@@ -548,6 +548,28 @@ def test_atom_3level_superposition_and_final_frame_unitary(
     assert not np.allclose(final, np.eye(9))
 
 
+@pytest.mark.parametrize("count", (1, 2, 3, 4))
+def test_atom_3level_sequential_rotations_compose_by_pulse_area(
+    atom_3level_model, atom_3level_calibration, count
+):
+    backend = _backend(
+        atom_3level_model,
+        atom_3level_calibration,
+        method="unitary",
+    )
+    program = fq.Program(2)
+    for _ in range(count):
+        program.add(ops.RX(np.pi / 2), 0)
+
+    unitary = backend.run(program).result().get_unitary()
+    computational = unitary[np.ix_([0, 1, 3, 4], [0, 1, 3, 4])]
+
+    assert np.diag(computational) == pytest.approx(
+        np.full(4, np.cos(count * np.pi / 4)),
+        abs=2e-5,
+    )
+
+
 def test_atom_3level_measurement_returns_the_physical_single_shot_posterior_before_reset(
     atom_3level_model, atom_3level_calibration
 ):

@@ -38,6 +38,7 @@ from .._core.value_validation import TIME_EPSILON
 from .._qutip_boundaries import (
     _apply_qutip_reset,
     _expand_qutip_local,
+    _qutip_time_window,
     _sample_projective_qutip_state,
     _solve_one_qutip_trajectory,
 )
@@ -425,7 +426,7 @@ class _Atom3LevelQutipAdapter:
             raise BackendValidationError("placed pulse runs must be time ordered")
 
         frames = dict(input_frames)
-        pulses: list[Pulse] = []
+        pulses: list[tuple[Pulse, float, float]] = []
         pending_actions: list[tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]] = (
             []
         )
@@ -438,7 +439,11 @@ class _Atom3LevelQutipAdapter:
             if not enabled[source_index]:
                 continue
             pulses.extend(
-                self._bind_child(child, binding, start_time, frames)
+                (
+                    self._bind_child(child, binding, start_time, frames),
+                    start_time,
+                    start_time + block.duration,
+                )
                 for child, binding in zip(block.controls, block.control_bindings)
             )
             pending_actions.append(
@@ -453,13 +458,18 @@ class _Atom3LevelQutipAdapter:
             return _BoundFrames(output_frames=frames)
 
         hamiltonian = self.interaction_drift()
-        for pulse in pulses:
+        for pulse, start_time, end_time in pulses:
             contribution, collapse = pulse.get_noisy_qobjevo(self._dims)
             if collapse:
                 raise BackendValidationError(
                     "atom coherent pulse binding produced collapse terms"
                 )
-            hamiltonian += contribution
+            hamiltonian += contribution * _qutip_time_window(
+                start_time,
+                end_time,
+                run_start_time=input_time,
+                run_end_time=run.end_time,
+            )
         return _BoundDynamics(hamiltonian=hamiltonian, output_frames=frames)
 
     def _frame_unitary(self, frames: dict[Any, float]) -> Qobj:
