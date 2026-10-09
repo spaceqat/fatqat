@@ -160,7 +160,8 @@ class Estimator:
             bindings: Complete object-keyed batch. A ``Parameter`` maps to a
                 rank-1 batch. A length-M ``ParameterVector`` maps to a rank-2
                 batch with shape ``(N, M)``. All batches must have the same
-                positive leading length.
+                positive leading length. Each value keeps its scalar type, as
+                in ``Program.assign_parameters``.
             shots: Non-negative integer. ``0`` computes exact values; a
                 positive value draws this many samples per observable term.
             simulation_config: Backend and sampling options reused for every
