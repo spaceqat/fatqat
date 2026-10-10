@@ -660,7 +660,11 @@ class Simulator:
         Args:
             program: Parameterized template program.
             bindings: Complete mapping from each ``Parameter`` or
-                ``ParameterVector`` in the program to its batch values.
+                ``ParameterVector`` in the program to its batch values. Each
+                value keeps its scalar type, as in
+                ``Program.assign_parameters``, so a ``float32`` batch binds
+                ``float32`` angles; convert the batch first to bind another
+                type.
             shots: Number of repetitions forwarded to every row.
             resource_layout: Complete, one-to-one assignment of program
                 quantum references to compatible device labels, reused for
