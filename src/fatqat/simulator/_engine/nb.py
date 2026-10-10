@@ -97,6 +97,7 @@ from numba import get_num_threads, njit, prange, set_num_threads
 
 from .._execution_contract import (
     RawResult,
+    _InitialEvolutionState as InitialEvolutionState,
     _ExecutionContext as ExecutionContext,
     _KernelCapabilities,
     _QuantumCapabilities,
@@ -131,7 +132,7 @@ from .np import (
     NumpySVEngine,
     NumpyUnitaryEngine,
 )
-from .state import NumbaEvolutionState
+from .state import NumbaClassicalState, NumbaEvolutionState, NumbaQuantumState
 
 # Numba fixes the launch pool's capacity at import time. ``set_num_threads``
 # changes only the active mask, so policy ceilings clamp to this configured
@@ -1506,7 +1507,7 @@ def _reset_step(
 
 
 @njit(cache=True, inline="always")
-def _initialize_shot_state(start, state_size, custom_start, n_clbits):
+def _initialize_shot_state(start, state_size, custom_start, n_clbits, clbits_start):
     """Allocate one shot's quantum and classical buffers without sharing them."""
     if custom_start:
         # A supplied template must survive unchanged to seed every trajectory.
@@ -1515,7 +1516,10 @@ def _initialize_shot_state(start, state_size, custom_start, n_clbits):
         # Construct |0...0> directly, without an O(D) template to copy.
         quantum = np.zeros(state_size, dtype=np.complex128)
         quantum[0] = 1.0 + 0.0j
-    return NumbaEvolutionState(quantum, np.zeros(n_clbits, dtype=np.int64))
+    clbits = (
+        clbits_start.copy() if clbits_start.size else np.zeros(n_clbits, dtype=np.int64)
+    )
+    return NumbaEvolutionState(NumbaQuantumState(quantum), NumbaClassicalState(clbits))
 
 
 @njit(cache=True, parallel=True)
@@ -1577,6 +1581,7 @@ def _run_shots_kernel(
     start,  # custom-state template; empty when the default state is requested
     state_size,  # flat state width, kept explicit when `start` is empty
     custom_start,  # whether each shot must copy `start` rather than build |0...0>
+    clbits_start,  # initial report digits; empty for zero initialization
     n_clbits,  # classical-register width: per-shot clbits and result columns
     shots,  # number of independent trajectories - the `prange` extent
     uniforms,  # pre-drawn uniforms, shots*max_draws in execution order
@@ -1596,13 +1601,15 @@ def _run_shots_kernel(
     num_steps = step_kind.shape[0]
     results = np.zeros((shots, n_clbits), dtype=np.int64)
     for shot in prange(shots):  # pylint: disable=not-an-iterable
-        evolution = _initialize_shot_state(start, state_size, custom_start, n_clbits)
+        evolution = _initialize_shot_state(
+            start, state_size, custom_start, n_clbits, clbits_start
+        )
         draw = shot * max_draws
 
         for st in range(num_steps):
             kind = step_kind[st]
             passes = _condition_passes(
-                evolution.classical,
+                evolution.classical.clbits,
                 cond_clbit,
                 cond_value,
                 step_cond_ptr[st],
@@ -1610,8 +1617,8 @@ def _run_shots_kernel(
             )
             if kind == 1:  # measurement (unconditional)
                 quantum, draw = _measure_step(
-                    evolution.quantum,
-                    evolution.classical,
+                    evolution.quantum.data,
+                    evolution.classical.clbits,
                     step_data[st],
                     me_ptr,
                     me_len,
@@ -1623,10 +1630,12 @@ def _run_shots_kernel(
                     uniforms,
                     draw,
                 )
-                evolution = NumbaEvolutionState(quantum, evolution.classical)
+                evolution = NumbaEvolutionState(
+                    NumbaQuantumState(quantum), evolution.classical
+                )
             elif kind == 0 and passes:  # gate
                 _apply_step(
-                    evolution.quantum,
+                    evolution.quantum.data,
                     step_data[st],
                     ap_mat_ptr,
                     ap_dim,
@@ -1644,7 +1653,7 @@ def _run_shots_kernel(
                 )
             elif kind == 2 and passes:  # reset
                 quantum = _reset_step(
-                    evolution.quantum,
+                    evolution.quantum.data,
                     step_data[st],
                     rs_ptr,
                     rs_len,
@@ -1652,11 +1661,13 @@ def _run_shots_kernel(
                     rs_dim,
                     uniforms[draw],
                 )
-                evolution = NumbaEvolutionState(quantum, evolution.classical)
+                evolution = NumbaEvolutionState(
+                    NumbaQuantumState(quantum), evolution.classical
+                )
                 draw += 1
             elif kind == 3 and passes:  # channel noise (applied in place)
                 _channel_step(
-                    evolution.quantum,
+                    evolution.quantum.data,
                     step_data[st],
                     ch_kra_ptr,
                     ch_num_kraus,
@@ -1679,7 +1690,7 @@ def _run_shots_kernel(
                 draw += 1
 
         for c in range(n_clbits):
-            results[shot, c] = evolution.classical[c]
+            results[shot, c] = evolution.classical.clbits[c]
     return results
 
 
@@ -1773,14 +1784,12 @@ class NumbaSVEngine(NumpySVEngine):
         *,
         system_dims: tuple[int, ...],
         n_clbits: int,
-        deferred_measurements: tuple[tuple[int, int], ...],
         policy: ExecutionPolicy,
     ):
         base = super().materialize_execution(
             plan,
             system_dims=system_dims,
             n_clbits=n_clbits,
-            deferred_measurements=deferred_measurements,
             policy=policy,
         )
         execution_plan = base[0]
@@ -1820,13 +1829,19 @@ class NumbaSVEngine(NumpySVEngine):
         context: ExecutionContext,
         payload,
         policy: ExecutionPolicy,
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         self.configure_system(context.system_dims, context.n_clbits)
         self._apply_plans = dict(payload[3])
         if not policy.use_compiled_multi_shot_kernel:
-            return super().execute_local(context, payload, policy)
+            return super().execute_local(
+                context, payload, policy, initial_state=initial_state
+            )
         with self._execution_scope(policy):
-            return self._run_compiled_multi_shot(context, payload[2])
+            return self._run_compiled_multi_shot(
+                context, payload[2], initial_state=initial_state
+            )
 
     def execute_shot_batch(
         self,
@@ -1834,10 +1849,14 @@ class NumbaSVEngine(NumpySVEngine):
         payload,
         seed_batch: list[np.random.SeedSequence],
         policy: ExecutionPolicy,
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> list[tuple[int, ...]]:
         self.configure_system(context.system_dims, context.n_clbits)
         self._apply_plans = dict(payload[3])
-        return super().execute_shot_batch(context, payload, seed_batch, policy)
+        return super().execute_shot_batch(
+            context, payload, seed_batch, policy, initial_state=initial_state
+        )
 
     def _resolve_structure(
         self, step: ApplyMatrixStep
@@ -1948,6 +1967,8 @@ class NumbaSVEngine(NumpySVEngine):
         self,
         context: ExecutionContext,
         compiled,
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         """Execute a materialized counts plan in one compiled multi-shot call."""
         plan_arrays, max_draws = compiled
@@ -1959,23 +1980,26 @@ class NumbaSVEngine(NumpySVEngine):
             ).random(max_draws)
 
         state_size = prod(self._dims) if self._dims else 1
-        custom_start = context.initial_state is not None
+        custom_start = initial_state.quantum is not None
         # The custom template is read-only: each shot takes the private copy it
         # evolves. `ascontiguousarray` therefore aliases the validated common
         # case and copies only when layout or dtype requires it. The default
         # path passes no O(D) template at all.
         start = (
-            np.ascontiguousarray(context.initial_state, dtype=np.complex128).reshape(
+            np.ascontiguousarray(initial_state.quantum, dtype=np.complex128).reshape(
                 state_size
             )
             if custom_start
             else np.empty(0, dtype=np.complex128)
         )
+        clbits = initial_state.classical.clbits
+        clbits_start = np.asarray(clbits if clbits is not None else (), dtype=np.int64)
         rows = _run_shots_kernel(
             *plan_arrays,
             start,
             state_size,
             custom_start,
+            clbits_start,
             self._n_clbits,
             shots,
             uniforms,
@@ -2340,16 +2364,18 @@ class NumbaDMEngine(NumpyDMEngine):
         *,
         system_dims: tuple[int, ...],
         n_clbits: int,
-        deferred_measurements: tuple[tuple[int, int], ...],
         policy: ExecutionPolicy,
     ):
         """Apply the optional gate/channel rewrite exactly once."""
-        self.configure_system(system_dims, n_clbits)
         execution_plan = (
             tuple(_fuse_gate_channels(list(plan))) if policy.fusion else plan
         )
-        # Fusion can replace gates with new channel steps; retain those identities.
-        self._retain_step_caches(execution_plan)
+        execution_plan, measurements = super().materialize_execution(
+            execution_plan,
+            system_dims=system_dims,
+            n_clbits=n_clbits,
+            policy=policy,
+        )
         targets = {
             tuple(step.target_indices)
             for step in execution_plan
@@ -2366,7 +2392,7 @@ class NumbaDMEngine(NumpyDMEngine):
         }
         return (
             execution_plan,
-            deferred_measurements,
+            measurements,
             tuple(self._sandwich_plans.items()),
         )
 
@@ -2375,10 +2401,14 @@ class NumbaDMEngine(NumpyDMEngine):
         context: ExecutionContext,
         payload,
         policy: ExecutionPolicy,
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         self.configure_system(context.system_dims, context.n_clbits)
         self._sandwich_plans = dict(payload[2])
-        return super().execute_local(context, payload, policy)
+        return super().execute_local(
+            context, payload, policy, initial_state=initial_state
+        )
 
     def execute_shot_batch(
         self,
@@ -2386,10 +2416,14 @@ class NumbaDMEngine(NumpyDMEngine):
         payload,
         seed_batch: list[np.random.SeedSequence],
         policy: ExecutionPolicy,
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> list[tuple[int, ...]]:
         self.configure_system(context.system_dims, context.n_clbits)
         self._sandwich_plans = dict(payload[2])
-        return super().execute_shot_batch(context, payload, seed_batch, policy)
+        return super().execute_shot_batch(
+            context, payload, seed_batch, policy, initial_state=initial_state
+        )
 
     def _sandwich_plan(self, targets: tuple[int, ...]) -> tuple:
         """Super-operator apply plan for ``targets`` over the doubled dims.
@@ -2828,11 +2862,9 @@ class _NumbaOperatorRunMixin(_NumpyOperatorEngine):
         *,
         system_dims: tuple[int, ...],
         n_clbits: int,
-        deferred_measurements: tuple[tuple[int, int], ...],
         policy: ExecutionPolicy,
     ):
         """Resolve, optionally fuse, and pack the operator plan once."""
-        del deferred_measurements
         self.configure_system(system_dims, n_clbits)
         execution_plan = self._operator_execution_plan(plan, policy)
         self._retain_step_caches(execution_plan)
@@ -2859,17 +2891,19 @@ class _NumbaOperatorRunMixin(_NumpyOperatorEngine):
         context: ExecutionContext,
         payload,
         policy: ExecutionPolicy,
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         """Execute one already-packed operator payload without replanning."""
         assert policy.shot_strategy == "none"
-        assert context.execution_shape == "operator"
+        assert policy.execution_path == "operator"
         self.configure_system(context.system_dims, context.n_clbits)
         packed, scratch_rows, n_columns, n_chunks = payload
         with self._execution_scope(policy):
             self.initialize(
                 self._dims,
                 self._n_clbits,
-                initial_state=context.initial_state,
+                initial_state=initial_state,
             )
             if packed is not None:
                 operator = np.ascontiguousarray(self.state, dtype=np.complex128)

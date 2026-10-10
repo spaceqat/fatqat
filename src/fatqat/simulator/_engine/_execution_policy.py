@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 from .._execution_contract import (
+    _InitialEvolutionState as InitialEvolutionState,
     _SimulationConfig as SimulationConfig,
     _KernelCapabilities as KernelCapabilities,
-    _PlanFacts as PlanFacts,
 )
 from ...errors import BackendValidationError
 
@@ -18,6 +18,7 @@ from ...errors import BackendValidationError
 class _ExecutionPolicy:
     """Final implementation and routing decisions for one execution."""
 
+    execution_path: Literal["operator", "single_pass", "per_shot"]
     shot_strategy: Literal["none", "serial", "threads", "processes"]
     kernel_strategy: Literal["serial", "adaptive", "threads"]
     worker_limit: int | None
@@ -69,6 +70,7 @@ def _materialization_policy(parent: _ExecutionPolicy) -> _ExecutionPolicy:
     if parent.shot_strategy != "processes":
         return parent
     return _ExecutionPolicy(
+        execution_path=parent.execution_path,
         shot_strategy="serial",
         kernel_strategy="serial",
         worker_limit=1,
@@ -81,6 +83,7 @@ def _process_child_policy(parent: _ExecutionPolicy) -> _ExecutionPolicy:
     """Revoke dispatch and preparation authority in a process child."""
     assert parent.shot_strategy == "processes"
     return _ExecutionPolicy(
+        execution_path=parent.execution_path,
         shot_strategy="serial",
         kernel_strategy="serial",
         worker_limit=1,
@@ -93,10 +96,10 @@ def _process_child_policy(parent: _ExecutionPolicy) -> _ExecutionPolicy:
 def _should_probe_compiled_multi_shot(
     simulation: SimulationConfig,
     *,
-    facts: PlanFacts,
+    execution_path: Literal["operator", "single_pass", "per_shot"],
     counts_requested: bool,
     state_requested: bool,
-    initial_occupied: frozenset[int] | None,
+    initial_state: InitialEvolutionState,
 ) -> bool:
     """Whether cheap prerequisites justify exact-plan compatibility analysis."""
     shot_request = simulation.shot_parallelism
@@ -108,10 +111,10 @@ def _should_probe_compiled_multi_shot(
     )
     return (
         can_select_compiled
-        and facts.execution_shape == "per_shot"
+        and execution_path == "per_shot"
         and counts_requested
         and not state_requested
-        and initial_occupied is None
+        and initial_state.classical.occupied is None
     )
 
 
@@ -135,21 +138,23 @@ def _adaptive_kernel_policy(
 def _resolve_execution_policy(
     simulation: SimulationConfig,
     *,
-    facts: PlanFacts,
+    execution_path: Literal["operator", "single_pass", "per_shot"],
     counts_requested: bool,
     state_requested: bool,
     capabilities: KernelCapabilities,
     compiled_multi_shot_compatible: bool,
     supports_process_shots: bool,
     shots: int,
-    initial_occupied: frozenset[int] | None,
+    initial_state: InitialEvolutionState,
     plan_is_empty: bool = False,
 ) -> _ExecutionPolicy:
     """Resolve validated controls and semantic facts into one final policy."""
-    execution_has_shots = facts.execution_shape == "per_shot"
+    execution_has_shots = execution_path == "per_shot"
     shot_shardable = execution_has_shots and counts_requested and not state_requested
     compiled_eligible = (
-        shot_shardable and initial_occupied is None and compiled_multi_shot_compatible
+        shot_shardable
+        and initial_state.classical.occupied is None
+        and compiled_multi_shot_compatible
     )
     shot_request = simulation.shot_parallelism
     kernel_request = simulation.kernel_parallelism
@@ -264,6 +269,7 @@ def _resolve_execution_policy(
 
     assert not use_compiled or kernel_strategy == "serial"
     return _ExecutionPolicy(
+        execution_path=execution_path,
         shot_strategy=shot_strategy,
         kernel_strategy=kernel_strategy,
         worker_limit=worker_limit,

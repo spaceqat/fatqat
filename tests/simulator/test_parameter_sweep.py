@@ -406,7 +406,7 @@ def test_parametric_program_lowers_to_deferred_picklable_steps():
         classical_allocation=_ClassicalAllocation.from_program(program),
     )
 
-    plan, _facts, _occupied = backend._prepare_parametric_program(
+    plan, _facts = backend._prepare_parametric_program(
         program, context=context, param_order=param_order
     )
 

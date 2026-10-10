@@ -1,19 +1,20 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from contextlib import AbstractContextManager, nullcontext
-from typing import Any, Generic
+from typing import Any, Generic, Literal
 
 import numpy as np
 
 from .._execution_contract import (
     RawResult,
+    _InitialClassicalState as InitialClassicalState,
+    _InitialEvolutionState as InitialEvolutionState,
     _SimulationConfig as SimulationConfig,
     _EngineCapabilities,
     _KernelCapabilities,
     _QuantumCapabilities,
     _TrajectoryCapabilities,
     _ExecutionContext as ExecutionContext,
-    _PlanFacts as PlanFacts,
 )
 from ..._backends.steps import ApplyMatrixStep, ResolvedStep
 from ._execution_policy import (
@@ -108,35 +109,44 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         plan: Sequence[ResolvedStep],
         simulation: SimulationConfig,
         *,
-        facts: PlanFacts,
         counts_requested: bool,
         state_requested: bool,
         shots: int,
-        initial_occupied: frozenset[int] | None,
+        initial_state: InitialEvolutionState[QuantumDataT],
     ) -> ExecutionPolicy:
         """Choose execution paths for a plan using this engine's support."""
+        execution_path = self._select_execution_path(plan, initial_state=initial_state)
         compiled_multi_shot_compatible = False
         if _should_probe_compiled_multi_shot(
             simulation,
-            facts=facts,
+            execution_path=execution_path,
             counts_requested=counts_requested,
             state_requested=state_requested,
-            initial_occupied=initial_occupied,
+            initial_state=initial_state,
         ):
             compiled_multi_shot_compatible = self.compiled_multi_shot_compatible(plan)
         capabilities = self.capabilities
         return _resolve_execution_policy(
             simulation,
-            facts=facts,
+            execution_path=execution_path,
             counts_requested=counts_requested,
             state_requested=state_requested,
             capabilities=capabilities.kernels,
             supports_process_shots=capabilities.supports_process_shots,
             compiled_multi_shot_compatible=compiled_multi_shot_compatible,
             shots=shots,
-            initial_occupied=initial_occupied,
+            initial_state=initial_state,
             plan_is_empty=not plan,
         )
+
+    @abstractmethod
+    def _select_execution_path(
+        self,
+        plan: Sequence[ResolvedStep],
+        *,
+        initial_state: InitialEvolutionState[QuantumDataT],
+    ) -> Literal["operator", "single_pass", "per_shot"]:
+        """Select a supported execution path."""
 
     def configure_system(self, system_dims: Sequence[int], n_clbits: int = 0) -> None:
         """Configure dimensions without allocating an evolving state."""
@@ -150,9 +160,9 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         system_dims: Sequence[int],
         n_clbits: int = 0,
         *,
-        initial_state: np.ndarray | QuantumDataT | None = None,
+        initial_state: InitialEvolutionState[QuantumDataT] | None = None,
     ) -> None:
-        """Allocate fresh storage, leaving host or native initial state unchanged."""
+        """Initialize owned quantum and classical storage from validated input."""
 
     def _set_dims(self, system_dims: Sequence[int]) -> None:
         """Set ``_dims`` and its cached reverse together, so they never drift apart."""
@@ -166,7 +176,6 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         *,
         system_dims: tuple[int, ...],
         n_clbits: int,
-        deferred_measurements: tuple[tuple[int, int], ...],
         policy: ExecutionPolicy,
     ) -> Any:
         """Build the engine-owned immutable payload outside execution scope.
@@ -197,8 +206,8 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         plan: tuple[ResolvedStep, ...],
         *,
         context: ExecutionContext,
-        deferred_measurements: tuple[tuple[int, int], ...],
         policy: ExecutionPolicy,
+        initial_state: InitialEvolutionState[QuantumDataT],
     ) -> RawResult[QuantumDataT]:
         """Materialize and execute a plan under the resolved execution policy."""
 
@@ -208,6 +217,8 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         context: ExecutionContext,
         payload: Any,
         policy: ExecutionPolicy,
+        *,
+        initial_state: InitialEvolutionState[QuantumDataT],
     ) -> RawResult[QuantumDataT]:
         """Execute a materialized payload locally without dispatching."""
 
@@ -217,6 +228,8 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         payload: Any,
         seed_batch: list[np.random.SeedSequence],
         policy: ExecutionPolicy,
+        *,
+        initial_state: InitialEvolutionState[QuantumDataT],
     ) -> list[tuple[int, ...]]:
         """Execute one ordered shot batch on engines that support it."""
         raise NotImplementedError
@@ -283,6 +296,28 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
     def _export_state_data(self, data: QuantumDataT) -> QuantumDataT:
         """Convert representation when required, retaining runtime storage."""
         return data
+
+    def _export_evolution_state(self) -> InitialEvolutionState[QuantumDataT]:
+        """Export completed local evolution as reusable initialization.
+
+        Quantum data is borrowed in runtime-native storage. Classical values
+        are frozen so later execution cannot change the saved initialization.
+        Each consumer initializes its own mutable state before evolving it.
+        """
+        if self._evolution_state is None:
+            raise RuntimeError("MatrixEngine state has not been initialized.")
+        classical = self._evolution_state.classical
+        return InitialEvolutionState(
+            quantum=self.export_state(),
+            classical=InitialClassicalState(
+                clbits=None if classical.clbits is None else tuple(classical.clbits),
+                occupied=(
+                    None
+                    if classical.occupied is None
+                    else frozenset(classical.occupied)
+                ),
+            ),
+        )
 
     @abstractmethod
     def sample_indices(self, shots: int, rng: np.random.Generator) -> np.ndarray:

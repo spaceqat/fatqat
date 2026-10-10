@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Generic, Literal, TypeVar
 
 import numpy as np
@@ -122,15 +122,10 @@ class RawResult(Generic[StateDataT]):
     state: StateDataT | None = None
 
 
-ExecutionShape = Literal["operator", "single_pass", "per_shot"]
-
-
 @dataclass(frozen=True, slots=True)
 class _PlanFacts:
     """Runtime-independent semantic facts derived from one lowered plan."""
 
-    execution_shape: ExecutionShape
-    deferred_measurements: tuple[tuple[int, int], ...]
     written_clbits: frozenset[int]
     stochastic_final_state: bool
     has_measurement: bool
@@ -206,15 +201,72 @@ class _EngineCapabilities:
 
 
 @dataclass(frozen=True, slots=True)
-class _ExecutionContext(Generic[StateDataT]):
-    """Semantic and numerical values executed under a resolved policy."""
+class _InitialClassicalState:
+    """Optional classical values used to initialize each trajectory.
 
-    execution_shape: ExecutionShape
+    Fields are always present. None requests default behavior without requiring
+    support or storage for that component. Any supplied value, including an
+    empty tuple or set, requires engine support; unsupported values are rejected.
+    Simulator validates support and register width before execution. Direct
+    engine callers must provide equally validated input. Engines only copy
+    supplied values into their own mutable execution state.
+    """
+
+    # None keeps zero initialization lazy. Digits include qudit and erasure reports.
+    clbits: tuple[int, ...] | None = None
+    # None leaves occupancy implicit; an empty set means no carriers.
+    occupied: frozenset[int] | None = None
+
+    def __post_init__(self) -> None:
+        if self.clbits is not None:
+            if any(
+                not isinstance(digit, (int, np.integer))
+                or isinstance(digit, bool)
+                or not 0 <= digit <= np.iinfo(np.int64).max
+                for digit in self.clbits
+            ):
+                raise BackendValidationError(
+                    "initial classical digits must be non-negative int64 integers"
+                )
+            object.__setattr__(
+                self, "clbits", tuple(int(digit) for digit in self.clbits)
+            )
+
+    def validate(self, *, capabilities: _EngineCapabilities, n_clbits: int) -> None:
+        """Check initialization against the complete engine and register width.
+
+        Compiled-path eligibility is checked separately from fallback support.
+        """
+        if self.clbits is not None and not capabilities.supports_classical_register:
+            raise BackendValidationError(
+                "engine does not support initial classical digits"
+            )
+        if self.occupied is not None and not capabilities.supports_occupancy:
+            raise BackendValidationError(
+                f"method={capabilities.quantum.representation!r} cannot track carrier "
+                "occupancy; the selected engine has no occupancy state"
+            )
+
+        if self.clbits is not None and len(self.clbits) != n_clbits:
+            raise BackendValidationError(
+                f"initial classical register has {len(self.clbits)} digits; expected {n_clbits}"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class _InitialEvolutionState(Generic[StateDataT]):
+    """Borrowed initial values; engines create their own mutable storage."""
+
+    quantum: np.ndarray | StateDataT | None = None
+    classical: _InitialClassicalState = field(default_factory=_InitialClassicalState)
+
+
+@dataclass(frozen=True, slots=True)
+class _ExecutionContext:
+    """System dimensions, requested outputs, and sampling controls."""
+
     request: _ResultRequest
     system_dims: tuple[int, ...]
     n_clbits: int
     shots: int
     seed: int | None
-    # Normalized host input or borrowed native state; execution owns its copy.
-    initial_state: np.ndarray | StateDataT | None
-    initial_occupied: frozenset[int] | None

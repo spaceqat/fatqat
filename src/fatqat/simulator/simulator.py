@@ -75,15 +75,14 @@ from ._execution_contract import (
     _StateVectorResultRequest,
     _SuperopResultRequest,
     _UnitaryResultRequest,
+    _InitialEvolutionState,
 )
 from ._engine._execution_policy import _ExecutionPolicy
 from .._backends.view_normalization import ProgramInstruction, _break_grouped_operations
 from .._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
-    LossStep,
     MeasurementStep,
-    PutStep,
     ResetStep,
     ResolvedStep,
 )
@@ -134,10 +133,9 @@ class _PreparedExecution:
 
     plan: tuple[ResolvedStep, ...] | planning._ParametricPlan
     facts: _PlanFacts
-    initial_occupied: frozenset[int] | None
     lowering: _LoweringContext
     simulation: _SimulationConfig
-    initial_state: np.ndarray | None
+    initial_state: _InitialEvolutionState[np.ndarray]
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +152,7 @@ class _PreparedRun(_PreparedExecution):
     config: _ResultConfig
     shots: int
     request: _ResultRequest
-    execution: _ExecutionContext
+    context: _ExecutionContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -471,20 +469,15 @@ class Simulator:
         through unchanged, so lowering never re-resolves either. When omitted
         (standalone use, e.g. in tests), both are resolved once here.
         """
-        plan, facts, _initial_occupied = self._prepare_program(program, context=context)
-        return plan, facts
+        return self._prepare_program(program, context=context)
 
     def _prepare_program(
         self,
         program: Program,
         *,
         context: _LoweringContext | None = None,
-    ) -> tuple[
-        tuple[ResolvedStep, ...],
-        _PlanFacts,
-        frozenset[int] | None,
-    ]:
-        """Lower and freeze once, then derive common facts and occupancy."""
+    ) -> tuple[tuple[ResolvedStep, ...], _PlanFacts]:
+        """Lower and freeze once, then derive common plan facts."""
         if context is None:
             resource_layout = self._resolve_resource_layout(program)
             context = _LoweringContext(
@@ -496,8 +489,7 @@ class Simulator:
             )
         operations = _break_grouped_operations(program._instructions)
         plan = tuple(self._lower(operations, context))
-        facts, initial_occupied = self._analyze_lowered_plan(plan)
-        return plan, facts, initial_occupied
+        return plan, self._analyze_lowered_plan(plan)
 
     def _prepare_parametric_program(
         self,
@@ -505,7 +497,7 @@ class Simulator:
         *,
         context: _LoweringContext,
         param_order: tuple[Parameter, ...],
-    ) -> tuple[planning._ParametricPlan, _PlanFacts, frozenset[int] | None]:
+    ) -> tuple[planning._ParametricPlan, _PlanFacts]:
         """Lower once for a sweep, deferring parameter-holding gates.
 
         The sweep counterpart of ``_prepare_program``: the same single lowering
@@ -516,8 +508,9 @@ class Simulator:
         """
         operations = _break_grouped_operations(program._instructions)
         steps = tuple(self._lower(operations, context, param_order=param_order))
-        facts, initial_occupied = self._analyze_lowered_plan(steps)
-        return planning._ParametricPlan(steps, param_order), facts, initial_occupied
+        return planning._ParametricPlan(steps, param_order), self._analyze_lowered_plan(
+            steps
+        )
 
     def run(
         self,
@@ -625,13 +618,14 @@ class Simulator:
             raise TypeError("program must be a Program or ExecutableProgram")
 
         _raise_for_unbound_parameters(program._instructions)
-        prepared = self._prepare_run(
+        execution = self._prepare_execution(
             program,
-            shots=shots,
             resource_layout=resource_layout,
             initial_state=initial_state,
             simulation_config=simulation_config,
-            result_config=result_config,
+        )
+        prepared = self._prepare_run(
+            execution, shots=shots, result_config=result_config
         )
         plan = prepared.plan
         assert isinstance(plan, tuple), "run() lowers fully bound programs only"
@@ -753,14 +747,15 @@ class Simulator:
         # allocation, noise-selector validation, and rule selection read
         # operation types and targets only, so they cannot depend on θ values.
         param_order = _discover_parameters(program._instructions)
-        prepared = self._prepare_run(
+        execution = self._prepare_execution(
             program,
-            shots=shots,
             resource_layout=resource_layout,
             initial_state=initial_state,
             simulation_config=simulation_config,
-            result_config=result_config,
             param_order=param_order,
+        )
+        prepared = self._prepare_run(
+            execution, shots=shots, result_config=result_config
         )
         template = prepared.plan
         assert isinstance(template, planning._ParametricPlan)
@@ -778,77 +773,36 @@ class Simulator:
 
     def _prepare_run(
         self,
-        program: Program,
+        prepared: _PreparedExecution,
         *,
         shots: int,
-        resource_layout: ResourceLayout | None,
-        initial_state: Any,
-        simulation_config: dict[str, Any] | None,
         result_config: dict[str, Any] | None,
-        param_order: tuple[Parameter, ...] | None = None,
     ) -> _PreparedRun:
-        """Validate options, resolve resources, and lower one program once.
-
-        This is the shared direct-raise path of ``run()`` and ``run_sweep()``:
-        capacity, dimension, grid-fit, mapping, noise-selector, and
-        configuration failures raise from here and never become a failed job.
-        ``param_order`` is a sweep's θ order; when given, lowering goes
-        through ``_prepare_parametric_program`` and parameter-holding gates
-        become recipes that each row materializes later.
-        """
-        simulation = _normalize_config(
-            simulation_config,
-            self._simulation_config_cls,
-            "simulation_config",
-            backend_name=type(self).__name__,
-        )
+        """Resolve direct results and shot requirements for an already lowered program."""
         config = _normalize_config(
             result_config,
             self._result_config_cls,
             "result_config",
             backend_name=type(self).__name__,
         )
-        prepared = self._prepare_execution(
-            program,
-            resource_layout=resource_layout,
-            initial_state=initial_state,
-            simulation=simulation,
-            param_order=param_order,
-        )
-        request = self._validate(
-            config,
-            shots,
-            prepared.facts,
-            simulation_config=simulation,
-            initial_occupied=prepared.initial_occupied,
-        )
-        self._validate_additional_config(
-            config=config,
-            simulation=simulation,
-            shots=shots,
-            facts=prepared.facts,
-        )
-        execution = _ExecutionContext(
-            execution_shape=prepared.facts.execution_shape,
+        request = self._validate_run_request(config, shots, prepared.facts)
+        context = _ExecutionContext(
             request=request,
             system_dims=tuple(prepared.lowering.engine_allocation.system_dims),
             n_clbits=prepared.lowering.classical_allocation.n_clbits,
             shots=shots,
-            seed=simulation.seed,
-            initial_state=prepared.initial_state,
-            initial_occupied=prepared.initial_occupied,
+            seed=prepared.simulation.seed,
         )
         return _PreparedRun(
             plan=prepared.plan,
             facts=prepared.facts,
-            initial_occupied=prepared.initial_occupied,
             lowering=prepared.lowering,
             simulation=prepared.simulation,
             initial_state=prepared.initial_state,
             config=config,
             shots=shots,
             request=request,
-            execution=execution,
+            context=context,
         )
 
     def _prepare_execution(
@@ -857,10 +811,16 @@ class Simulator:
         *,
         resource_layout: ResourceLayout | None,
         initial_state: Any,
-        simulation: _SimulationConfig,
+        simulation_config: dict[str, Any] | None,
         param_order: tuple[Parameter, ...] | None = None,
     ) -> _PreparedExecution:
         """Resolve and lower one program for direct or derived execution."""
+        simulation = _normalize_config(
+            simulation_config,
+            self._simulation_config_cls,
+            "simulation_config",
+            backend_name=type(self).__name__,
+        )
         # Both hooks are resolved exactly once per run, before any execution
         # try block: capacity, dimension, grid-fit, and mapping failures must
         # raise directly, never become a failed Job. The resource layout is the
@@ -890,21 +850,26 @@ class Simulator:
         )
         plan: tuple[ResolvedStep, ...] | planning._ParametricPlan
         if param_order is None:
-            plan, facts, initial_occupied = self._prepare_program(
-                program, context=lowering
-            )
+            plan, facts = self._prepare_program(program, context=lowering)
         else:
-            plan, facts, initial_occupied = self._prepare_parametric_program(
+            plan, facts = self._prepare_parametric_program(
                 program, context=lowering, param_order=param_order
             )
-        return _PreparedExecution(
+        prepared = _PreparedExecution(
             plan=plan,
             facts=facts,
-            initial_occupied=initial_occupied,
             lowering=lowering,
             simulation=simulation,
-            initial_state=initial_state,
+            initial_state=self._prepare_initial_state(initial_state),
         )
+        self._validate_engine_support(prepared)
+        return prepared
+
+    def _prepare_initial_state(
+        self, quantum: np.ndarray | None
+    ) -> _InitialEvolutionState[np.ndarray]:
+        """Wrap normalized quantum input; subclasses supply classical components."""
+        return _InitialEvolutionState(quantum=quantum)
 
     def _run_expectation(
         self,
@@ -915,11 +880,14 @@ class Simulator:
         simulation_config: dict[str, Any] | None,
     ) -> Job[_ExpectationExecution]:
         """Execute one private exact or sampled expectation request."""
-        prepared = self._prepare_expectation(
+        execution = self._prepare_execution(
             program,
-            observables,
-            shots=shots,
+            resource_layout=None,
+            initial_state=None,
             simulation_config=simulation_config,
+        )
+        prepared = self._prepare_expectation(
+            execution, program, observables, shots=shots
         )
         try:
             if not prepared.bound_occurrences:
@@ -947,28 +915,34 @@ class Simulator:
 
     def _prepare_expectation(
         self,
+        execution: _PreparedExecution,
         program: Program,
         observables: tuple[Observable, ...],
         *,
         shots: int,
-        simulation_config: dict[str, Any] | None,
     ) -> _PreparedExpectation:
-        """Validate, lower, bind, and resolve policies without executing."""
-        simulation = _normalize_config(
-            simulation_config,
-            self._simulation_config_cls,
-            "simulation_config",
-            backend_name=type(self).__name__,
-        )
-        execution = self._prepare_execution(
-            program,
-            resource_layout=None,
-            initial_state=None,
-            simulation=simulation,
-        )
+        """Bind observables and prepare expectation work from a lowered program."""
         plan = execution.plan
         assert isinstance(plan, tuple), "expectation runs lower bound programs only"
-        self._validate_expectation_capabilities(execution, shots=shots)
+        if self._engine.capabilities.quantum.is_operator:
+            raise UnsupportedOperationError(
+                f"method={self._state_field!r} computes an operator, not a state "
+                "whose expectation can be evaluated"
+            )
+        if (
+            shots == 0
+            and self._state_field == "statevector"
+            and execution.facts.stochastic_final_state
+        ):
+            raise UnsupportedOperationError(
+                "an exact statevector expectation is unavailable for stochastic "
+                "reset or channel execution; use density_matrix or positive shots"
+            )
+        if shots > 0 and not self._engine.capabilities.supports_classical_register:
+            raise UnsupportedOperationError(
+                "sampled expectations require an engine with a classical register"
+            )
+        state_request = self._request_cls(counts=False, **{self._state_field: True})
 
         occurrences, constants = _plan_term_occurrences(observables)
         bound_occurrences = self._bind_expectation_occurrences(
@@ -976,10 +950,6 @@ class Simulator:
             execution,
             occurrences,
             sampled=shots > 0,
-        )
-        state_request = self._request_cls(
-            counts=False,
-            **{self._state_field: True},
         )
         sample_request = self._request_cls(
             counts=True,
@@ -1026,50 +996,6 @@ class Simulator:
             samples=tuple(samples),
         )
 
-    def _validate_expectation_capabilities(
-        self,
-        execution: _PreparedExecution,
-        *,
-        shots: int,
-    ) -> None:
-        """Reject expectation requests unsupported by the prepared matrix plan."""
-        plan = execution.plan
-        assert isinstance(plan, tuple)
-        if self._engine.capabilities.quantum.is_operator:
-            raise UnsupportedOperationError(
-                f"method={self._state_field!r} computes an operator, not a state "
-                "whose expectation can be evaluated"
-            )
-        if any(isinstance(step, LossStep) for step in plan):
-            raise UnsupportedOperationError(
-                "expectation values are undefined for programs containing carrier loss"
-            )
-        if (
-            shots == 0
-            and self._state_field == "statevector"
-            and execution.facts.stochastic_final_state
-        ):
-            raise UnsupportedOperationError(
-                "an exact statevector expectation is unavailable for stochastic "
-                "reset or channel execution; use density_matrix or positive shots"
-            )
-        self._validate_engine_support(
-            self._result_config_cls(),
-            execution.facts,
-            simulation_config=execution.simulation,
-            initial_occupied=execution.initial_occupied,
-        )
-        if shots > 0 and not self._engine.capabilities.supports_classical_register:
-            raise UnsupportedOperationError(
-                "sampled expectations require an engine with a classical register"
-            )
-        self._validate_additional_config(
-            config=self._result_config_cls(),
-            simulation=execution.simulation,
-            shots=shots,
-            facts=execution.facts,
-        )
-
     def _prepare_expectation_samples(
         self,
         execution: _PreparedExecution,
@@ -1091,21 +1017,18 @@ class Simulator:
                 shots=1,
             )
 
-        terminal_occupied = self._terminal_occupancy(execution)
         samples = []
         for bound in bound_occurrences:
             if execution.facts.stochastic_final_state:
                 sample_plan = plan + bound.tail
-                sample_facts, sample_occupied = self._analyze_lowered_plan(sample_plan)
+                sample_facts = self._analyze_lowered_plan(sample_plan)
             else:
                 sample_plan = bound.tail
                 sample_facts = self._analyze_common_plan_facts(sample_plan)
-                sample_occupied = terminal_occupied
             sample_execution = replace(
                 execution,
                 plan=sample_plan,
                 facts=sample_facts,
-                initial_occupied=sample_occupied,
             )
             samples.append(
                 _PreparedExpectationSample(
@@ -1136,7 +1059,6 @@ class Simulator:
             for register in program.quantum_registers
             for index in range(register.size)
         )
-        terminal_occupied = self._terminal_occupancy(execution)
         scratch_start = lowering.classical_allocation.n_clbits
         bound_occurrences = []
         for occurrence in occurrences:
@@ -1149,16 +1071,6 @@ class Simulator:
                     factor_refs, occurrence.logical_factors, strict=True
                 )
             )
-            for ref, (engine_index, letter) in zip(
-                factor_refs, engine_factors, strict=True
-            ):
-                if (
-                    terminal_occupied is not None
-                    and engine_index not in terminal_occupied
-                ):
-                    raise UnsupportedOperationError(
-                        f"observable factor {letter} targets unoccupied atom {ref!r}"
-                    )
             if sampled:
                 tail = planning._build_expectation_tail(
                     engine_factors,
@@ -1193,51 +1105,32 @@ class Simulator:
             )
         return tuple(bound_occurrences)
 
-    @staticmethod
-    def _terminal_occupancy(
-        execution: _PreparedExecution,
-    ) -> frozenset[int] | None:
-        """Return deterministic terminal occupancy for a prepared base plan."""
-        if execution.initial_occupied is None:
-            return None
-        occupied = set(execution.initial_occupied)
-        for step in execution.plan:
-            if isinstance(step, PutStep) and (
-                step.condition is None
-                or all(value == 0 for _clbit, value in step.condition)
-            ):
-                occupied.update(step.target_indices)
-        return frozenset(occupied)
-
     def _execute_expectation_base(
         self,
         prepared: _PreparedExpectation,
-    ) -> Any:
-        """Execute the base plan once and borrow its runtime-native state."""
+    ) -> _InitialEvolutionState:
+        """Execute once and retain quantum and classical initialization together."""
         execution = prepared.execution
         plan = execution.plan
         assert isinstance(plan, tuple)
         if prepared.state_policy is None:
             raise RuntimeError("expectation base execution has no resolved policy")
         context = _ExecutionContext(
-            execution_shape=execution.facts.execution_shape,
             request=prepared.state_request,
             system_dims=tuple(execution.lowering.engine_allocation.system_dims),
             n_clbits=execution.lowering.classical_allocation.n_clbits,
             shots=1,
             seed=execution.simulation.seed,
-            initial_state=execution.initial_state,
-            initial_occupied=execution.initial_occupied,
         )
         raw = self._engine.execute(
             plan=plan,
-            deferred_measurements=execution.facts.deferred_measurements,
             context=context,
             policy=prepared.state_policy,
+            initial_state=execution.initial_state,
         )
         if raw.state is None:
             raise RuntimeError("expectation base execution returned no state")
-        return raw.state
+        return self._engine._export_evolution_state()
 
     def _execute_exact_expectation(
         self,
@@ -1251,7 +1144,7 @@ class Simulator:
                 (bound.occurrence.coefficient, bound.engine_factors)
             )
         values = self._engine._expectation_values(
-            state,
+            state.quantum,
             tuple(tuple(terms) for terms in terms_by_observable),
             policy=prepared.state_policy,
         )
@@ -1279,8 +1172,17 @@ class Simulator:
         )
         for child_seed, sample in zip(child_seeds, prepared.samples, strict=True):
             execution = sample.execution
+            initial = base_state if base_state is not None else execution.initial_state
+            clbits = initial.classical.clbits
+            if clbits is not None:
+                initial = replace(
+                    initial,
+                    classical=replace(
+                        initial.classical,
+                        clbits=clbits + (0,) * len(sample.bound.engine_factors),
+                    ),
+                )
             context = _ExecutionContext(
-                execution_shape=execution.facts.execution_shape,
                 request=prepared.sample_request,
                 system_dims=tuple(execution.lowering.engine_allocation.system_dims),
                 n_clbits=(
@@ -1289,16 +1191,14 @@ class Simulator:
                 ),
                 shots=shots,
                 seed=int(child_seed.generate_state(1, dtype=np.uint64)[0]),
-                initial_state=base_state,
-                initial_occupied=execution.initial_occupied,
             )
             plan = execution.plan
             assert isinstance(plan, tuple)
             raw = self._engine.execute(
                 plan=plan,
-                deferred_measurements=execution.facts.deferred_measurements,
                 context=context,
                 policy=sample.policy,
+                initial_state=initial,
             )
             if raw.outcome_keys is None or raw.outcome_counts is None:
                 raise RuntimeError("sampled expectation execution returned no outcomes")
@@ -1336,8 +1236,8 @@ class Simulator:
         try:
             raw = self._engine.execute(
                 plan=plan,
-                deferred_measurements=prepared.facts.deferred_measurements,
-                context=prepared.execution,
+                context=prepared.context,
+                initial_state=prepared.initial_state,
                 policy=policy,
             )
             result = self._assemble_result(
@@ -1365,11 +1265,10 @@ class Simulator:
         return self._engine.resolve_execution_policy(
             plan,
             prepared.simulation,
-            facts=prepared.facts,
             counts_requested=request.counts,
             state_requested=getattr(request, self._state_field),
             shots=shots,
-            initial_occupied=prepared.initial_occupied,
+            initial_state=prepared.initial_state,
         )
 
     # --- validation (raises directly from run) ---
@@ -1425,26 +1324,15 @@ class Simulator:
             )
         return state
 
-    def _validate(
-        self,
-        config: _ResultConfig,
-        shots: int,
-        facts: _PlanFacts,
-        *,
-        simulation_config: _SimulationConfig,
-        initial_occupied: frozenset[int] | None,
+    def _validate_run_request(
+        self, config: _ResultConfig, shots: int, facts: _PlanFacts
     ) -> _ResultRequest:
-        """Validate result-config / shots constraints against the lowered program.
-
-        Operation support, stochasticity, and semantic execution shape were
-        already translated into common facts by the selected backend.
-        """
-        self._validate_engine_support(
-            config,
-            facts,
-            simulation_config=simulation_config,
-            initial_occupied=initial_occupied,
-        )
+        """Resolve result fields and validate their shot requirements."""
+        if config.counts is True and self._engine.capabilities.quantum.is_operator:
+            raise BackendValidationError(
+                f"method={self._state_field!r} cannot produce counts; it computes the "
+                "program's operator rather than sampling outcomes from it"
+            )
         stochastic = facts.stochastic_final_state
         counts, final_state = _resolve_result_flags(
             config,
@@ -1485,20 +1373,10 @@ class Simulator:
         )
         return request
 
-    def _validate_engine_support(
-        self,
-        config: _ResultConfig,
-        facts: _PlanFacts,
-        *,
-        simulation_config: _SimulationConfig,
-        initial_occupied: frozenset[int] | None,
-    ) -> None:
-        """Check the lowered program and controls against engine capabilities.
-
-        Raises:
-            BackendValidationError: If the lowered program or the result
-                request or controls require unsupported engine capabilities.
-        """
+    def _validate_engine_support(self, execution: _PreparedExecution) -> None:
+        """Check the lowered program, controls and initial state against the engine."""
+        facts = execution.facts
+        simulation_config = execution.simulation
         capabilities = self._engine.capabilities
         # Engine execution support, such as kernel threads, fusion, and process shots.
         if (
@@ -1540,11 +1418,6 @@ class Simulator:
                 f"method={method!r} cannot execute a feedforward condition; it "
                 "has no classical register to evaluate one against"
             )
-        if config.counts is True and capabilities.quantum.is_operator:
-            raise BackendValidationError(
-                f"method={method!r} cannot produce counts; it computes the "
-                "program's operator rather than sampling outcomes from it"
-            )
         if not capabilities.quantum.supports_nonunitary and (
             facts.has_reset or facts.has_channel
         ):
@@ -1559,27 +1432,10 @@ class Simulator:
                 "represent a non-unitary map (use method='superop' for the "
                 "program's channel)"
             )
-        if initial_occupied is not None and not capabilities.supports_occupancy:
-            raise BackendValidationError(
-                f"method={method!r} cannot track carrier occupancy; the selected "
-                "engine has no occupancy state"
-            )
-
-    def _validate_additional_config(
-        self,
-        *,
-        config: _ResultConfig,
-        simulation: _SimulationConfig,
-        shots: int,
-        facts: _PlanFacts,
-    ) -> None:
-        """Validate backend-specific configuration against this program run.
-
-        Subclasses use this pre-execution hook for constraints that depend on
-        the result request, simulation controls, shot count, or lowered
-        program facts. Raise ``BackendValidationError`` with a user-facing
-        explanation when a declared configuration is incompatible.
-        """
+        execution.initial_state.classical.validate(
+            capabilities=capabilities,
+            n_clbits=execution.lowering.classical_allocation.n_clbits,
+        )
 
     # --- execution ---
     def _assemble_result(
@@ -1743,9 +1599,9 @@ class Simulator:
 
     def _analyze_lowered_plan(
         self, plan: Sequence[ResolvedStep | planning._MatrixRecipe]
-    ) -> tuple[_PlanFacts, frozenset[int] | None]:
-        """Translate one lowered plan into common semantics and occupancy."""
-        return self._analyze_common_plan_facts(plan), None
+    ) -> _PlanFacts:
+        """Translate one lowered plan into common execution semantics."""
+        return self._analyze_common_plan_facts(plan)
 
     def _analyze_common_plan_facts(
         self,
@@ -1755,12 +1611,6 @@ class Simulator:
     ) -> _PlanFacts:
         """Exhaustively derive runtime-independent matrix execution semantics."""
         quantum = self._engine.capabilities.quantum
-        execution_shape = "operator" if quantum.is_operator else "single_pass"
-        state_nonunitary_uses_trajectories = (
-            not quantum.is_operator and quantum.nonunitary_is_stochastic
-        )
-        measured_indices: set[int] = set()
-        deferred_measurements: list[tuple[int, int]] = []
         written_clbits: set[int] = set()
         stochastic_final_state = False
         has_measurement = False
@@ -1768,15 +1618,9 @@ class Simulator:
         has_channel = False
         has_condition = False
 
-        def require_per_shot() -> None:
-            nonlocal execution_shape
-            if not quantum.is_operator:
-                execution_shape = "per_shot"
-
         for step in plan:
             if getattr(step, "condition", None) is not None:
                 has_condition = True
-                require_per_shot()
 
             if claimed_step_types and isinstance(step, claimed_step_types):
                 continue
@@ -1784,47 +1628,23 @@ class Simulator:
             if isinstance(step, MeasurementStep):
                 has_measurement = True
                 stochastic_final_state = True
-                if measured_indices.intersection(step.measured_indices):
-                    require_per_shot()
-                measured_indices.update(step.measured_indices)
                 written_clbits.update(step.classical_indices)
-                deferred_measurements.extend(
-                    zip(step.measured_indices, step.classical_indices)
-                )
                 continue
 
             if isinstance(step, (ApplyMatrixStep, planning._MatrixRecipe)):
-                # A deferred (sweep) recipe has the same structural footprint
-                # as the matrix it will materialize into.
-                target_indices = step.target_indices
-            elif isinstance(step, ResetStep):
+                continue
+            if isinstance(step, ResetStep):
                 has_reset = True
-                target_indices = step.reset_indices
-                if state_nonunitary_uses_trajectories:
-                    require_per_shot()
-                if quantum.nonunitary_is_stochastic:
-                    stochastic_final_state = True
+                stochastic_final_state |= quantum.nonunitary_is_stochastic
             elif isinstance(step, ApplyChannelStep):
                 has_channel = True
-                target_indices = step.target_indices
-                if state_nonunitary_uses_trajectories:
-                    require_per_shot()
-                if quantum.nonunitary_is_stochastic:
-                    stochastic_final_state = True
+                stochastic_final_state |= quantum.nonunitary_is_stochastic
             else:
                 raise TypeError(
                     f"unknown resolved execution step {type(step).__name__}"
                 )
 
-            if measured_indices.intersection(target_indices):
-                require_per_shot()
-
-        if execution_shape != "single_pass":
-            deferred_measurements = []
-
         return _PlanFacts(
-            execution_shape=execution_shape,
-            deferred_measurements=tuple(deferred_measurements),
             written_clbits=frozenset(written_clbits),
             stochastic_final_state=stochastic_final_state,
             has_measurement=has_measurement,

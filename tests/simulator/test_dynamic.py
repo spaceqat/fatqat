@@ -18,9 +18,12 @@ def test_lower_terminal_measurement_is_not_dynamic():
     p.add(ops.CZ, (0, 1))
     p.measure(0, 0)
     p.measure(1, 1)
-    _plan, facts = Simulator("SV")._lower_program(p)
-    assert facts.execution_shape == "single_pass"
-    assert facts.deferred_measurements == ((1, 0), (0, 1))
+    backend = Simulator("SV")
+    _plan, facts = backend._lower_program(p)
+    execution_path = backend._engine._select_execution_path(
+        _plan, initial_state=backend._prepare_initial_state(None)
+    )
+    assert execution_path == "single_pass"
     assert facts.written_clbits == frozenset({0, 1})
     assert facts.stochastic_final_state is True
     assert facts.has_measurement is True
@@ -33,9 +36,12 @@ def test_lower_measure_then_gate_on_disjoint_qubit_is_not_dynamic():
     p.measure(0, 0)
     p.add(ops.X, 1)  # different qubit -> still fast path
     p.measure(1, 1)
-    _plan, facts = Simulator("SV")._lower_program(p)
-    assert facts.execution_shape == "single_pass"
-    assert facts.deferred_measurements == ((1, 0), (0, 1))
+    backend = Simulator("SV")
+    _plan, _facts = backend._lower_program(p)
+    execution_path = backend._engine._select_execution_path(
+        _plan, initial_state=backend._prepare_initial_state(None)
+    )
+    assert execution_path == "single_pass"
 
 
 def test_lower_gate_on_measured_qubit_is_dynamic():
@@ -43,9 +49,12 @@ def test_lower_gate_on_measured_qubit_is_dynamic():
     p.add(ops.H, 0)
     p.measure(0, 0)
     p.add(ops.X, 0)  # gate on already-measured qubit
-    _plan, facts = Simulator("SV")._lower_program(p)
-    assert facts.execution_shape == "per_shot"
-    assert facts.deferred_measurements == ()
+    backend = Simulator("SV")
+    _plan, _facts = backend._lower_program(p)
+    execution_path = backend._engine._select_execution_path(
+        _plan, initial_state=backend._prepare_initial_state(None)
+    )
+    assert execution_path == "per_shot"
 
 
 def test_repeated_measurement_of_one_subsystem_is_per_shot():
@@ -53,18 +62,25 @@ def test_repeated_measurement_of_one_subsystem_is_per_shot():
     program.measure(0, 0)
     program.measure(0, 1)
 
-    _plan, facts = Simulator("SV")._lower_program(program)
+    backend = Simulator("SV")
+    _plan, facts = backend._lower_program(program)
+    execution_path = backend._engine._select_execution_path(
+        _plan, initial_state=backend._prepare_initial_state(None)
+    )
 
-    assert facts.execution_shape == "per_shot"
-    assert facts.deferred_measurements == ()
+    assert execution_path == "per_shot"
     assert facts.written_clbits == frozenset({0, 1})
 
 
 def test_lower_condition_is_dynamic_and_resolves_indices():
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 1))
-    plan, facts = Simulator("SV")._lower_program(p)
-    assert facts.execution_shape == "per_shot"
+    backend = Simulator("SV")
+    plan, facts = backend._lower_program(p)
+    execution_path = backend._engine._select_execution_path(
+        plan, initial_state=backend._prepare_initial_state(None)
+    )
+    assert execution_path == "per_shot"
     assert facts.stochastic_final_state is False
     assert facts.has_condition is True
     gate = plan[0]
@@ -95,11 +111,13 @@ def test_nonunitary_semantics_are_method_owned(
         noise = fq.NoiseModel()
         noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.X)
 
-    _plan, facts = Simulator(method, runtime="numpy", noise=noise)._lower_program(
-        program
+    backend = Simulator(method, runtime="numpy", noise=noise)
+    _plan, facts = backend._lower_program(program)
+    execution_path = backend._engine._select_execution_path(
+        _plan, initial_state=backend._prepare_initial_state(None)
     )
 
-    assert facts.execution_shape == expected_shape
+    assert execution_path == expected_shape
     assert facts.stochastic_final_state is expected_stochastic
     assert facts.has_reset is (step_kind == "reset")
     assert facts.has_channel is (step_kind == "channel")
@@ -110,10 +128,13 @@ def test_per_shot_trigger_does_not_stop_later_fact_collection():
     program.add(ops.X, 1, condition=(0, 0))
     program.measure(0, 1)
 
-    _plan, facts = Simulator("SV")._lower_program(program)
+    backend = Simulator("SV")
+    _plan, facts = backend._lower_program(program)
+    execution_path = backend._engine._select_execution_path(
+        _plan, initial_state=backend._prepare_initial_state(None)
+    )
 
-    assert facts.execution_shape == "per_shot"
-    assert facts.deferred_measurements == ()
+    assert execution_path == "per_shot"
     assert facts.written_clbits == frozenset({1})
     assert facts.has_condition is True
     assert facts.has_measurement is True
@@ -305,10 +326,14 @@ def test_lower_grouped_measurement_emits_one_grouped_step():
     p = Program(3, 3)
     p.measure((0, 2), (1, 0))
 
-    plan, facts = Simulator("SV")._lower_program(p)
+    backend = Simulator("SV")
+    plan, facts = backend._lower_program(p)
+    execution_path = backend._engine._select_execution_path(
+        plan, initial_state=backend._prepare_initial_state(None)
+    )
 
     assert facts.has_measurement is True
-    assert facts.execution_shape == "single_pass"
+    assert execution_path == "single_pass"
     assert plan == (MeasurementStep(measured_indices=(2, 0), classical_indices=(1, 0)),)
 
 
@@ -317,9 +342,13 @@ def test_lower_adjacent_single_measurements_stay_separate_steps():
     p.measure(0, 0)
     p.measure(1, 1)
 
-    plan, facts = Simulator("SV")._lower_program(p)
+    backend = Simulator("SV")
+    plan, _facts = backend._lower_program(p)
+    execution_path = backend._engine._select_execution_path(
+        plan, initial_state=backend._prepare_initial_state(None)
+    )
 
-    assert facts.execution_shape == "single_pass"
+    assert execution_path == "single_pass"
     assert plan == (
         MeasurementStep(measured_indices=(1,), classical_indices=(0,)),
         MeasurementStep(measured_indices=(0,), classical_indices=(1,)),
@@ -330,9 +359,13 @@ def test_lower_grouped_reset_uses_all_targets():
     p = Program(3)
     p.add(ops.Reset, (0, 2))
 
-    plan, facts = Simulator("SV")._lower_program(p)
+    backend = Simulator("SV")
+    plan, facts = backend._lower_program(p)
+    execution_path = backend._engine._select_execution_path(
+        plan, initial_state=backend._prepare_initial_state(None)
+    )
 
-    assert facts.execution_shape == "per_shot"
+    assert execution_path == "per_shot"
     assert facts.has_reset is True
     assert plan == (ResetStep(reset_indices=(2, 0)),)
 

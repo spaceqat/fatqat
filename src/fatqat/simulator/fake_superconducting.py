@@ -262,8 +262,7 @@ class SCQubitSimulator(_SCProfileSimulator):
     :py:data:`~fatqat.operations.SX`, :py:class:`~fatqat.operations.RZ`, and
     coupled :py:data:`~fatqat.operations.CZ`), rejecting programs
     with too many qubits or any non-qubit-dimension register, and
-    declaration-order resource mapping (see
-    `_resolve_resource_layout`). Qubits here are always "on" - there is no
+    declaration-order resource mapping. Qubits here are always "on" - there is no
     atom-loading concept, unlike :py:class:`~fatqat.simulator.AtomArraySimulator`.
     The simulator validates the program as written; it does not decompose,
     route, or schedule operations.

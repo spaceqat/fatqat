@@ -87,11 +87,13 @@ def test_dimension_mismatch_rejected_at_lowering():
 
 def test_readout_confusion_keeps_single_pass_shape():
     program = _measured_program()
-    _plan, facts = Simulator(
-        "statevector", noise=_readout_model(_FLIP_30)
-    )._lower_program(program)
+    backend = Simulator("statevector", noise=_readout_model(_FLIP_30))
+    _plan, _facts = backend._lower_program(program)
+    execution_path = backend._engine._select_execution_path(
+        _plan, initial_state=backend._prepare_initial_state(None)
+    )
 
-    assert facts.execution_shape == "single_pass"
+    assert execution_path == "single_pass"
 
 
 # --- execution: fast path ---

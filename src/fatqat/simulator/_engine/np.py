@@ -62,7 +62,7 @@ from abc import abstractmethod
 from collections.abc import Callable, Sequence
 from functools import partial
 from math import prod
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -70,6 +70,7 @@ from ..._expectation import expectation_density_matrix, expectation_statevector
 from .._execution_contract import (
     _ResultRequest as ResultRequest,
     RawResult,
+    _InitialEvolutionState as InitialEvolutionState,
     _ExecutionContext as ExecutionContext,
     _KernelCapabilities,
     _QuantumCapabilities,
@@ -93,6 +94,7 @@ from ._execution_policy import (
 )
 from .base import MatrixEngine, _shot_seed_sequences
 from .parallel import _run_shots_in_processes
+from .state import ClassicalState, EvolutionState, QuantumState
 
 # What `_sampled_unitary_branches` resolves a channel step to: branch
 # probabilities, unit-norm operators, identity flags - or None for a channel
@@ -260,12 +262,21 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         system_dims: Sequence[int],
         n_clbits: int = 0,
         *,
-        initial_state: np.ndarray | None = None,
+        initial_state: InitialEvolutionState[np.ndarray] | None = None,
     ) -> None:
         self.configure_system(system_dims, n_clbits)
-        self._state = self._allocate(
-            prod(self._dims) if self._dims else 1,
-            initial_state,
+        initial = (
+            initial_state if initial_state is not None else InitialEvolutionState()
+        )
+        quantum = self._allocate(prod(self._dims) if self._dims else 1, initial.quantum)
+        clbits = initial.classical.clbits
+        occupied = initial.classical.occupied
+        self._evolution_state = EvolutionState(
+            QuantumState(quantum, self._state_field),
+            ClassicalState(
+                clbits=None if clbits is None else list(clbits),
+                occupied=None if occupied is None else set(occupied),
+            ),
         )
 
     def _expectation_values(
@@ -316,20 +327,64 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         flat = self.collapse(indices, rng)
         return tuple(_digit(flat, index, self._dims) for index in indices)
 
+    def _select_execution_path(
+        self,
+        plan: Sequence[ResolvedStep],
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
+    ) -> Literal["operator", "single_pass", "per_shot"]:
+        quantum = self.capabilities.quantum
+        if quantum.is_operator:
+            return "operator"
+        # Only the trajectory executor handles occupancy and erasure reports.
+        if initial_state.classical.occupied is not None:
+            return "per_shot"
+        measured: set[int] = set()
+        for step in plan:
+            if getattr(step, "condition", None) is not None or isinstance(
+                step, (PutStep, LossStep)
+            ):
+                return "per_shot"
+            if isinstance(step, MeasurementStep):
+                if measured.intersection(step.measured_indices):
+                    return "per_shot"
+                measured.update(step.measured_indices)
+                continue
+            if isinstance(step, ResetStep):
+                targets = step.reset_indices
+            else:
+                targets = step.target_indices
+            if (
+                isinstance(step, (ResetStep, ApplyChannelStep))
+                and quantum.nonunitary_is_stochastic
+            ):
+                return "per_shot"
+            if measured.intersection(targets):
+                return "per_shot"
+        return "single_pass"
+
     def materialize_execution(
         self,
         plan: tuple[ResolvedStep, ...],
         *,
         system_dims: tuple[int, ...],
         n_clbits: int,
-        deferred_measurements: tuple[tuple[int, int], ...],
         policy: ExecutionPolicy,
     ) -> tuple[tuple[ResolvedStep, ...], tuple[tuple[int, int], ...]]:
         """Retain the canonical plan and finalized deferred measurements."""
-        del policy
         self.configure_system(system_dims, n_clbits)
         self._retain_step_caches(plan)
-        return plan, deferred_measurements
+        measurements = (
+            tuple(
+                pair
+                for step in plan
+                if isinstance(step, MeasurementStep)
+                for pair in zip(step.measured_indices, step.classical_indices)
+            )
+            if policy.execution_path == "single_pass"
+            else ()
+        )
+        return plan, measurements
 
     def _retain_step_caches(self, plan: tuple[ResolvedStep, ...]) -> None:
         """Retain only the effective plan's identity-keyed step resolutions.
@@ -348,24 +403,25 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         plan: tuple[ResolvedStep, ...],
         *,
         context: ExecutionContext,
-        deferred_measurements: tuple[tuple[int, int], ...],
         policy: ExecutionPolicy,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         """Materialize and dispatch a plan through local or CPU process execution."""
         payload = self.materialize_execution(
             plan,
             system_dims=context.system_dims,
             n_clbits=context.n_clbits,
-            deferred_measurements=deferred_measurements,
             policy=_materialization_policy(policy),
         )
         if policy.shot_strategy in ("none", "serial", "threads"):
-            return self.execute_local(context, payload, policy)
+            return self.execute_local(
+                context, payload, policy, initial_state=initial_state
+            )
 
         if policy.shot_strategy != "processes":
             raise RuntimeError(f"Unknown shot strategy: {policy.shot_strategy!r}")
         snapshots = _run_shots_in_processes(
-            self._process_engine_factory(), context, payload, policy
+            self._process_engine_factory(), context, payload, policy, initial_state
         )
         rows = np.asarray(snapshots, dtype=int).reshape(
             (len(snapshots), context.n_clbits)
@@ -388,22 +444,26 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         context: ExecutionContext,
         payload: Any,
         policy: ExecutionPolicy,
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         """Execute one materialized state plan without dispatching."""
         assert policy.shot_strategy != "processes"
         self.configure_system(context.system_dims, context.n_clbits)
         plan, measurements = payload[:2]
         with self._execution_scope(policy):
-            if context.execution_shape == "per_shot":
-                return self._run_per_shot_local(plan, context)
-            assert context.execution_shape == "single_pass"
+            if policy.execution_path == "per_shot":
+                return self._run_per_shot_local(
+                    plan, context, initial_state=initial_state
+                )
+            assert policy.execution_path == "single_pass"
             return self._run_fast(
                 plan,
                 measurements,
                 context.shots,
                 np.random.default_rng(context.seed),
                 context.request,
-                context.initial_state,
+                initial_state,
             )
 
     def _run_fast(
@@ -413,7 +473,7 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         shots: int,
         rng: np.random.Generator,
         request: ResultRequest,
-        initial_state: np.ndarray | None,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         """Evolve once, optionally sample counts, optionally export the state.
 
@@ -451,6 +511,11 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
             rows = _decode_engine_indices_to_clbit_rows(
                 indices, measurements, self._dims, self._n_clbits
             )
+            if initial_state.classical.clbits is not None:
+                written = {clbit for _subsystem, clbit in measurements}
+                for clbit, digit in enumerate(initial_state.classical.clbits):
+                    if clbit not in written:
+                        rows[:, clbit] = digit
             _apply_measurement_reporting(rows, _reporting_by_clbit(plan), rng)
             outcome_keys, outcome_counts = reduce_to_counts(rows)
         if state_requested:
@@ -463,6 +528,8 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         self,
         plan: Sequence[ResolvedStep],
         context: ExecutionContext,
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         """Replay dynamic trajectories locally under an already-resolved policy."""
         request = context.request
@@ -471,8 +538,7 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         snapshots = self._run_shot_seed_batch(
             plan,
             _shot_seed_sequences(context.seed, n_iters),
-            context.initial_occupied,
-            context.initial_state,
+            initial_state,
         )
 
         outcome_keys = outcome_counts = state = None
@@ -491,8 +557,7 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         self,
         plan: Sequence[ResolvedStep],
         seed_sequences: Sequence[np.random.SeedSequence],
-        initial_occupied: frozenset[int] | None,
-        initial_state: np.ndarray | None,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> list[tuple[int, ...]]:
         snapshots = []
         for seed_sequence in seed_sequences:
@@ -502,9 +567,7 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
                 initial_state=initial_state,
             )
             snapshots.append(
-                self._run_one_shot(
-                    plan, np.random.default_rng(seed_sequence), initial_occupied
-                )
+                self._run_one_shot(plan, np.random.default_rng(seed_sequence))
             )
         return snapshots
 
@@ -514,6 +577,8 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         payload: Any,
         seed_batch: list[np.random.SeedSequence],
         policy: ExecutionPolicy,
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> list[tuple[int, ...]]:
         """Non-dispatching worker entry for one ordered batch of shots."""
         assert policy.shot_strategy == "serial"
@@ -524,15 +589,13 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
             return self._run_shot_seed_batch(
                 plan,
                 seed_batch,
-                context.initial_occupied,
-                context.initial_state,
+                initial_state,
             )
 
     def _run_one_shot(
         self,
         plan: Sequence[ResolvedStep],
         rng: np.random.Generator,
-        initial_occupied: frozenset[int] | None = None,
     ) -> tuple[int, ...]:
         """Run one dynamic-path shot and return its final clbit snapshot.
 
@@ -540,20 +603,11 @@ class _NumpyMatrixEngine(MatrixEngine[np.ndarray]):
         the state only through the interface methods (reset consumes rng only
         under statevector semantics).
 
-        Populate the initialized evolution's classical container. Quantum
-        kernels can replace its buffer while classical reports and occupancy
-        remain available throughout this shot.
-
-        ``initial_occupied`` is the atom simulator's per-shot starting
-        occupancy, supplied at run initialization rather than as a plan step:
-        ``None`` means every subsystem is present (the plain-backend default),
-        while an explicit set seeds only those subsystems as occupied so
-        `~fatqat.operations.Put` fills the rest.
+        Classical storage was initialized with the quantum state. Allocate
+        report digits only when a measurement or condition needs them.
         """
         assert self._evolution_state is not None
         classical = self._evolution_state.classical
-        classical.clbits = None
-        classical.occupied = None if initial_occupied is None else set(initial_occupied)
         clbits = classical.clbits
         occupied = classical.occupied
         for step in plan:
@@ -921,17 +975,19 @@ class _NumpyOperatorEngine(_NumpyMatrixEngine):
         context: ExecutionContext,
         payload: Any,
         policy: ExecutionPolicy,
+        *,
+        initial_state: InitialEvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         """Evolve one already-materialized operator plan in this process."""
         assert policy.shot_strategy == "none"
-        assert context.execution_shape == "operator"
+        assert policy.execution_path == "operator"
         self.configure_system(context.system_dims, context.n_clbits)
         plan = payload[0]
         with self._execution_scope(policy):
             self.initialize(
                 self._dims,
                 self._n_clbits,
-                initial_state=context.initial_state,
+                initial_state=initial_state,
             )
             rng = np.random.default_rng(context.seed)
             request = context.request

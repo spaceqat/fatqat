@@ -19,7 +19,10 @@ from fatqat.noise import (
     default_channel_implementation_map,
 )
 from fatqat.simulator._engine.np import NumpySVEngine
-from fatqat.simulator._execution_contract import _ExecutionContext
+from fatqat.simulator._execution_contract import (
+    _ExecutionContext,
+    _InitialEvolutionState,
+)
 from fatqat.simulator._engine._execution_policy import _ExecutionPolicy
 
 
@@ -151,17 +154,23 @@ def test_reset_attached_channels_reject_at_admission():
 def test_unconditional_channel_keeps_density_matrix_on_fast_path():
     backend = Simulator(method="DM", noise=_depolarized_x_model())
     program = _x_program(with_measurement=True)
-    _plan, facts = backend._lower_program(program)
+    _plan, _facts = backend._lower_program(program)
+    execution_path = backend._engine._select_execution_path(
+        _plan, initial_state=backend._prepare_initial_state(None)
+    )
 
-    assert facts.execution_shape == "single_pass"
+    assert execution_path == "single_pass"
 
 
 def test_channel_forces_statevector_onto_dynamic_path():
     backend = Simulator(method="SV", noise=_depolarized_x_model())
     program = _x_program(with_measurement=True)
-    _plan, facts = backend._lower_program(program)
+    _plan, _facts = backend._lower_program(program)
+    execution_path = backend._engine._select_execution_path(
+        _plan, initial_state=backend._prepare_initial_state(None)
+    )
 
-    assert facts.execution_shape == "per_shot"
+    assert execution_path == "per_shot"
 
 
 def test_statevector_export_with_noise_requires_single_shot():
@@ -552,7 +561,7 @@ def test_numba_compiled_multi_shot_plan_matches_numpy_channels():
     program = fq.Program(1, 1)
     program.add(ops.X, 0)
     program.measure(0, 0)
-    plan, facts = backend._lower_program(program)
+    plan, _facts = backend._lower_program(program)
     assert _plan_compilable(plan) is True
 
     # Direct engine execution below supplies an explicit private serial policy.
@@ -564,16 +573,17 @@ def test_numba_compiled_multi_shot_plan_matches_numpy_channels():
         start = np.array([0, 1], dtype=complex)
         untouched = start.copy()
         context = _ExecutionContext(
-            execution_shape=facts.execution_shape,
             request=request,
             system_dims=(2,),
             n_clbits=1,
             shots=shots,
             seed=7,
-            initial_state=start,
-            initial_occupied=None,
+        )
+        execution_path = simulator._select_execution_path(
+            plan, initial_state=_InitialEvolutionState(quantum=start)
         )
         policy = _ExecutionPolicy(
+            execution_path=execution_path,
             shot_strategy="serial",
             kernel_strategy="serial",
             worker_limit=1,
@@ -584,10 +594,14 @@ def test_numba_compiled_multi_shot_plan_matches_numpy_channels():
             tuple(plan),
             system_dims=context.system_dims,
             n_clbits=context.n_clbits,
-            deferred_measurements=facts.deferred_measurements,
             policy=policy,
         )
-        raw = simulator.execute_local(context, payload, policy)
+        raw = simulator.execute_local(
+            context,
+            payload,
+            policy,
+            initial_state=_InitialEvolutionState(quantum=start),
+        )
         assert raw.state is None
         assert np.array_equal(start, untouched)
         if cls is NumbaSVEngine:

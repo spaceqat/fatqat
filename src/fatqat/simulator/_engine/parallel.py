@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .._execution_contract import _ExecutionContext as ExecutionContext
+from .._execution_contract import (
+    _ExecutionContext as ExecutionContext,
+    _InitialEvolutionState as InitialEvolutionState,
+)
 from ._execution_policy import (
     _ExecutionPolicy as ExecutionPolicy,
     _process_child_policy,
@@ -25,6 +28,8 @@ if TYPE_CHECKING:
             payload: Any,
             seed_batch: list[np.random.SeedSequence],
             policy: ExecutionPolicy,
+            *,
+            initial_state: InitialEvolutionState,
         ) -> list[tuple[int, ...]]: ...
 
 
@@ -63,9 +68,12 @@ def _run_shot_batch(
     payload: Any,
     seed_batch: list[np.random.SeedSequence],
     child_policy: ExecutionPolicy,
+    initial_state: InitialEvolutionState,
 ) -> list[tuple[int, ...]]:
     engine = engine_factory()
-    return engine.execute_shot_batch(context, payload, seed_batch, child_policy)
+    return engine.execute_shot_batch(
+        context, payload, seed_batch, child_policy, initial_state=initial_state
+    )
 
 
 def _loky_executor(max_workers: int):
@@ -82,6 +90,7 @@ def _run_shots_in_processes(
     context: ExecutionContext,
     payload: Any,
     policy: ExecutionPolicy,
+    initial_state: InitialEvolutionState,
 ) -> list[tuple[int, ...]]:
     """Run shot batches in real child processes under a serial child policy."""
     assert policy.shot_strategy == "processes"
@@ -99,5 +108,6 @@ def _run_shots_in_processes(
         repeat(payload),
         batches,
         repeat(child),
+        repeat(initial_state),
     )
     return [snapshot for batch in results for snapshot in batch]

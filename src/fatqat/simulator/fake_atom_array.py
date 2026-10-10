@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from .. import operations as ops
 from .._backends.backend_utils import _canonicalize_method
-from ..errors import BackendValidationError
+from ..errors import BackendValidationError, UnsupportedOperationError
 from ..implementation import (
     MatrixImplementationMap,
     default_matrix_implementation_map,
@@ -28,20 +28,27 @@ from .._backends.steps import (
     PutStep,
 )
 from ._connectivity import _AtomConnectivity
-from ._execution_contract import _PlanFacts
+from ._execution_contract import (
+    _InitialClassicalState,
+    _InitialEvolutionState,
+    _PlanFacts,
+)
 from .planning import _lower_channels, _lower_put
 from .simulator import Simulator
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    import numpy as np
+
     from ..implementation import MatrixImplementation
     from ..operations import Operation
     from ..parameters import Parameter
     from ..registers import RegisterRef
+    from ..observable import Observable
     from .._backends.backend_utils import _LoweringContext
     from .planning import _MatrixRecipe
-    from .simulator import ProgramInstruction
+    from .simulator import ProgramInstruction, _PreparedExecution, _PreparedExpectation
     from .._backends.steps import ResolvedStep
 
 
@@ -191,7 +198,7 @@ class AtomArraySimulator(Simulator):
 
         Occupancy is seeded empty and ``Put`` then fills its targets per shot.
         That empty seed is not a plan step - it is an initialization input the
-        engine receives at run start (see ``_initial_occupancy``), because
+        engine receives at run start, because
         seeding occupancy is the atom simulator's own setup, not an operation.
         ``Measurement`` always lowers normally; an empty (never-``Put``) site
         measures the erasure digit ``2`` under the occupancy guard.
@@ -199,7 +206,7 @@ class AtomArraySimulator(Simulator):
         Raises:
             BackendValidationError: If a ``Pair`` or ``Unpair`` carries a
                 condition, or if a two-qubit gate targets a pair that is not
-                currently paired (see :py:meth:`_require_pairing`), or a
+                currently paired, or a
                 finite noise channel selects more than one subsystem.
         """
         resource_layout = context.resource_layout
@@ -258,9 +265,52 @@ class AtomArraySimulator(Simulator):
             )
         return plan
 
-    def _initial_occupancy(self) -> frozenset[int]:
-        """Return the empty per-shot occupancy seed for this atom array."""
-        return frozenset()
+    def _prepare_initial_state(
+        self, quantum: np.ndarray | None
+    ) -> _InitialEvolutionState[np.ndarray]:
+        """Start each trajectory with the atom array's initial occupancy."""
+        return _InitialEvolutionState(
+            quantum=quantum,
+            classical=_InitialClassicalState(occupied=frozenset()),
+        )
+
+    def _prepare_expectation(
+        self,
+        execution: _PreparedExecution,
+        program: Program,
+        observables: tuple[Observable, ...],
+        *,
+        shots: int,
+    ) -> _PreparedExpectation:
+        if any(isinstance(step, LossStep) for step in execution.plan):
+            raise UnsupportedOperationError(
+                "expectation values are undefined for programs containing carrier loss"
+            )
+        prepared = super()._prepare_expectation(
+            execution, program, observables, shots=shots
+        )
+        classical = execution.initial_state.classical
+        if classical.occupied is not None:
+            occupied = set(classical.occupied)
+            # Estimator programs have no measurements or loss, so Put guards
+            # depend only on the initial classical digits.
+            for step in execution.plan:
+                if isinstance(step, PutStep) and all(
+                    (0 if classical.clbits is None else classical.clbits[index])
+                    == value
+                    for index, value in (step.condition or ())
+                ):
+                    occupied.update(step.target_indices)
+            lowering = execution.lowering
+            for bound in prepared.bound_occurrences:
+                for index, letter in bound.engine_factors:
+                    if index not in occupied:
+                        operand = lowering.engine_allocation.device_operands[index]
+                        ref = lowering.resource_layout._ref_for_label(operand)
+                        raise UnsupportedOperationError(
+                            f"observable factor {letter} targets unoccupied atom {ref!r}"
+                        )
+        return prepared
 
     def _lower_segment(
         self,
@@ -277,7 +327,7 @@ class AtomArraySimulator(Simulator):
         context. A two-qubit gate whose pair is not currently paired is a
         program-construction error - the pairing graph is fixed at compile time
         by ``Pair``/``Unpair``, independent of any shot - so it is rejected
-        here (see :py:meth:`_require_pairing`), distinct from a per-shot atom
+        here, distinct from a per-shot atom
         loss, which the engine drops silently. Operations on sites that no
         ``Put`` can load still pass through common lowering for validation;
         their gates are omitted while finite channels are retained for survivors.
@@ -371,22 +421,17 @@ class AtomArraySimulator(Simulator):
                 "silently per shot."
             )
 
-    def _analyze_lowered_plan(
-        self, plan: tuple[ResolvedStep, ...]
-    ) -> tuple[_PlanFacts, frozenset[int] | None]:
+    def _analyze_lowered_plan(self, plan: tuple[ResolvedStep, ...]) -> _PlanFacts:
         """Translate atom lifecycle semantics into common plan consequences."""
         common = self._analyze_common_plan_facts(
             plan,
             claimed_step_types=(LossStep, PutStep),
         )
         has_loss = any(isinstance(step, LossStep) for step in plan)
-        translated = replace(
+        return replace(
             common,
-            execution_shape="per_shot",
-            deferred_measurements=(),
             stochastic_final_state=common.stochastic_final_state or has_loss,
         )
-        return translated, self._initial_occupancy()
 
     def _apply_pairing(
         self, connectivity: _AtomConnectivity, applied: _AppliedOperation

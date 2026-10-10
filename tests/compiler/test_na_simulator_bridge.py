@@ -175,7 +175,6 @@ def test_bridge_runs_bell_state_with_initial_atom_load():
 
     program, layout = to_na_simulator_program(plan)
     backend = AtomArraySimulator()
-    _lowered, _facts, initial_occupied = backend._prepare_program(program)
     counts = (
         backend.run(
             program,
@@ -189,7 +188,6 @@ def test_bridge_runs_bell_state_with_initial_atom_load():
 
     assert set(counts) <= {"00", "11"}
     assert counts
-    assert initial_occupied == frozenset()
 
 
 def _two_independent_cz_plan():

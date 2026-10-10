@@ -50,12 +50,20 @@ class EvolutionState(Generic[QuantumDataT]):
     classical: ClassicalState = field(default_factory=ClassicalState)
 
 
+class NumbaQuantumState(NamedTuple):
+    """Quantum data for a compiled statevector shot."""
+
+    data: np.ndarray
+
+
+class NumbaClassicalState(NamedTuple):
+    """Classical report digits for a compiled shot; occupancy remains implicit."""
+
+    clbits: np.ndarray
+
+
 class NumbaEvolutionState(NamedTuple):
-    """Quantum and classical arrays owned by one compiled statevector shot.
+    """Quantum and classical storage owned by one compiled statevector shot."""
 
-    This path assumes full occupancy. Replacing the record swaps array
-    references without copying data or discarding classical digits.
-    """
-
-    quantum: np.ndarray
-    classical: np.ndarray
+    quantum: NumbaQuantumState
+    classical: NumbaClassicalState
