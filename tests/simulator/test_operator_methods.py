@@ -598,7 +598,8 @@ def test_gate_fusion_leaves_a_sparse_step_alone():
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
 def test_serial_and_threaded_numba_give_identical_operators(method):
-    _numba_engines()
+    if _numba_engines()._MAX_THREADS < 2:
+        pytest.skip("Numba exposes no parallel thread capacity")
     program = _mixed_program()
     backend = Simulator(method, runtime="numba")
     read = f"get_{method}"

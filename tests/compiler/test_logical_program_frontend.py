@@ -416,3 +416,67 @@ def test_logical_program_accepts_builtin_qudit_operations():
     program.add(ops.Sum, (register[0], register[1]))
 
     assert tuple(node.name for node in program.dag().nodes) == ("Fourier", "Sum")
+
+
+def _sc_backend(kind):
+    class UnreadableSCSimulator(fq.simulator.SCQubitSimulator):
+        @property
+        def implementation_map(self):
+            raise RuntimeError("constraint-read")
+
+    class NoSXSimulator(fq.simulator.SCQubitSimulator):
+        @property
+        def implementation_map(self):
+            result = super().implementation_map
+            result.remove(ops.SX)
+            return result
+
+    return {
+        "object": object,
+        "unreadable": lambda: UnreadableSCSimulator(num_qubits=2, couplings=((0, 1),)),
+        "target": lambda: fq.compiler.SCTarget(num_qubits=2, couplings=((0, 1),)),
+        "small-target": lambda: fq.compiler.SCTarget(num_qubits=1, couplings=()),
+        "missing-sx": lambda: NoSXSimulator(num_qubits=2, couplings=((0, 1),)),
+    }[kind]()
+
+
+@pytest.mark.parametrize("backend_kind", ("object", "unreadable", "target"))
+@pytest.mark.parametrize(
+    ("boundary", "route"),
+    (
+        (fq.LogicalProgram.IR_ID, ()),
+        (fq.compiler.dialects.LogicalIR.IR_ID, ("freeze-logical",)),
+        (fq.compiler.dialects.SCProgram.IR_ID, ("freeze-logical", "normalize-sc")),
+    ),
+    ids=("source", "logical-ir", "sc-program"),
+)
+def test_logical_early_emit_does_not_read_the_backend(backend_kind, boundary, route):
+    source = _bell_program()
+
+    result = fq.compiler.compile_to_sc(source, _sc_backend(backend_kind), emit=boundary)
+
+    assert type(result) is fq.compiler.CompilationResult
+    assert result.route == route
+    assert type(result.output).IR_ID == boundary
+    if not route:
+        assert result.output is source
+
+
+@pytest.mark.parametrize(
+    ("backend_kind", "cause_type", "message"),
+    (
+        ("object", TypeError, "SC lowering requires SCTarget or SCQubitSimulator"),
+        ("unreadable", RuntimeError, "constraint-read"),
+        ("small-target", ValueError, "not enough physical sites for SC program qubits"),
+        ("missing-sx", fq.compiler.ValidationError, "native operation SX is illegal"),
+    ),
+)
+def test_logical_native_failures_keep_the_lowering_stage_and_cause(
+    backend_kind, cause_type, message
+):
+    with pytest.raises(fq.compiler.PassError) as error:
+        fq.compiler.compile_to_sc(_bell_program(), _sc_backend(backend_kind))
+
+    assert error.value.pass_name == "lower-sc-to-native"
+    assert type(error.value.__cause__) is cause_type
+    assert str(error.value.__cause__).startswith(message)

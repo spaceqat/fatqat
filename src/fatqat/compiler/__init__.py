@@ -1,5 +1,6 @@
 """FatQat's lightweight, Python-native compiler framework."""
 
+from .._sc_target import SCTarget
 from .core import (
     CompilationResult,
     CompileContext,
@@ -33,6 +34,7 @@ from .simulator_bridge import to_na_simulator_program, to_sc_simulator_program
 from .visualization import create_na_animation, save_na_animation
 
 __all__ = [
+    "SCTarget",
     "CompilationResult",
     "ExecutableCompilationResult",
     "CompileContext",

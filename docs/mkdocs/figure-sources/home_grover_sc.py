@@ -5,7 +5,7 @@ import numpy as np
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.compiler import compile_to_sc
+from fatqat.compiler import SCTarget, compile_to_sc
 
 from _home_grover_plot import draw_distribution
 from home_grover_program import (
@@ -28,12 +28,8 @@ EDGE_CZ_DEPOLARIZING_P = {
 }
 
 
-compiler_backend = fq.simulator.SCQubitSimulator(
-    num_qubits=3,
-    couplings=COUPLINGS,
-    runtime="numpy",
-)
-compiled = compile_to_sc(build_logical_program(), compiler_backend, seed=COMPILER_SEED)
+compiler_target = SCTarget(num_qubits=3, couplings=COUPLINGS)
+compiled = compile_to_sc(build_logical_program(), compiler_target, seed=COMPILER_SEED)
 noise = fq.NoiseModel()
 
 

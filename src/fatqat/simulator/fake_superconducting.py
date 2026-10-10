@@ -34,6 +34,7 @@ from __future__ import annotations
 import numpy as np
 
 from .. import operations as ops
+from .._sc_target import SCTarget, _normalize_couplings, _validate_num_qubits
 from ..errors import BackendValidationError
 from ..implementation import (
     MatrixImplementationMap,
@@ -99,36 +100,6 @@ def _grid_couplings(rows: int, cols: int) -> tuple[tuple[int, int], ...]:
 
 
 DEFAULT_COUPLINGS = _grid_couplings(4, 4)
-
-
-def _validate_num_qubits(num_qubits: int) -> int:
-    if type(num_qubits) is not int:
-        raise TypeError("num_qubits must be an integer")
-    if num_qubits <= 0:
-        raise ValueError("num_qubits must be a positive integer")
-    return num_qubits
-
-
-def _normalize_couplings(
-    num_qubits: int, couplings: tuple[tuple[int, int], ...]
-) -> tuple[tuple[int, int], ...]:
-    normalized: list[tuple[int, int]] = []
-    seen: set[tuple[int, int]] = set()
-    for edge in couplings:
-        if not isinstance(edge, tuple) or len(edge) != 2:
-            raise TypeError("couplings must contain two-integer tuples")
-        first, second = edge
-        if type(first) is not int or type(second) is not int:
-            raise TypeError("coupling endpoints must be integers")
-        if not 0 <= first < num_qubits or not 0 <= second < num_qubits:
-            raise ValueError("coupling endpoint is outside device_sites")
-        if first == second:
-            raise ValueError("coupling endpoints must be distinct")
-        canonical = (min(first, second), max(first, second))
-        if canonical not in seen:
-            seen.add(canonical)
-            normalized.append(canonical)
-    return tuple(normalized)
 
 
 def _directed_couplings(
@@ -296,20 +267,38 @@ class SCQubitSimulator(_SCProfileSimulator):
             TypeError: If the site count or coupling endpoints are not integers.
             ValueError: If the site count or coupling endpoints are invalid.
         """
-        num_qubits = _validate_num_qubits(num_qubits)
-        couplings = _normalize_couplings(num_qubits, couplings)
+        target = SCTarget(num_qubits=num_qubits, couplings=couplings)
         super().__init__(
             method=method,
             runtime=runtime,
-            implementation_map=_sx_implementation_map(couplings),
-            num_qubits=num_qubits,
+            implementation_map=_sx_implementation_map(target.couplings),
+            num_qubits=target.num_qubits,
             noise=noise,
         )
+        self._compiler_target = target
 
     @property
     def device_sites(self) -> tuple[int, ...]:
         """Return every integer-labeled physical qubit on this target."""
         return tuple(range(self._num_qubits))
+
+    def get_compiler_target(self) -> SCTarget:
+        """Return this backend's construction constraints for the compiler.
+
+        The target holds only the site count and the undirected `CZ` edges
+        that this simulator was built with. The implementation map keeps the
+        gate rules. This simulator can therefore still reject, at execution
+        time, a program that fits the capacity and edges of the target.
+
+        Every call returns the same immutable object, which is safe to share.
+        The target holds no reference to this simulator. Compiling against it
+        therefore does not determine where the result runs.
+
+        Returns:
+            The cached :py:class:`~fatqat.compiler.SCTarget` describing this
+            backend's sites and couplings.
+        """
+        return self._compiler_target
 
     @classmethod
     def default_noise_model(cls) -> NoiseModel:

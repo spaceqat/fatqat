@@ -106,6 +106,10 @@ def _dynamic_program():
 
 def test_serial_and_threaded_compiled_shots_are_identical():
     pytest.importorskip("numba")
+    from fatqat.simulator._engine import nb
+
+    if nb._MAX_THREADS < 2:
+        pytest.skip("Numba exposes no parallel thread capacity")
 
     def counts_for(shot_parallelism, max_workers):
         return (

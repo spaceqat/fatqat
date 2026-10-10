@@ -344,6 +344,11 @@ def test_seeded_noisy_runs_are_reproducible():
 
 
 def test_threaded_compiled_shots_match_serial_with_channels():
+    pytest.importorskip("numba")
+    from fatqat.simulator._engine import nb
+
+    if nb._MAX_THREADS < 2:
+        pytest.skip("Numba exposes no parallel thread capacity")
     noise = _depolarized_x_model()
     program = _x_program(with_measurement=True)
     serial = (
