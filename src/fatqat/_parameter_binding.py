@@ -199,16 +199,34 @@ def _normalize_parameter_mapping(
     }
 
 
+def _object_elements(value: object) -> object:
+    """Return a numeric array as an object array of its own NumPy scalars.
+
+    ``np.asarray(array, dtype=object)`` converts each element to the matching
+    built-in type (a ``float32`` becomes a ``float``), which would give batch
+    rows a different scalar type than ``assign_parameters`` keeps for the same
+    value. Other values pass through unchanged.
+    """
+    if isinstance(value, np.ndarray) and value.dtype != object:
+        return np.fromiter(value.flat, dtype=object, count=value.size).reshape(
+            value.shape
+        )
+    return value
+
+
 def _materialize_batch_array(value: object, *, expected_ndim: int) -> np.ndarray:
     """Materialize one batch value and enforce its rank and positive length.
 
     Object dtype permits element-wise use of the shared scalar validator.
-    Width and cross-column length checks belong to the batch normalizer, which
-    has the necessary parameter context.
+    Elements keep their scalar types, as in single-point binding. Width and
+    cross-column length checks belong to the batch normalizer, which has the
+    necessary parameter context.
     """
     if isinstance(value, (str, bytes, Mapping)):
         raise TypeError("parameter batch values must be array-like containers")
-    if isinstance(value, np.ndarray) or np.isscalar(value):
+    if isinstance(value, np.ndarray):
+        array = _object_elements(value)
+    elif np.isscalar(value):
         array = np.asarray(value, dtype=object)
     else:
         try:
@@ -218,7 +236,9 @@ def _materialize_batch_array(value: object, *, expected_ndim: int) -> np.ndarray
                 "parameter batch values must be array-like containers"
             ) from exc
         try:
-            array = np.asarray(materialized, dtype=object)
+            array = np.asarray(
+                [_object_elements(item) for item in materialized], dtype=object
+            )
         except ValueError as exc:
             raise ValueError(
                 "parameter batch values must form a rectangular container"

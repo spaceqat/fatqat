@@ -131,6 +131,37 @@ def test_small_method_smoke_matches_repeated_runs(method):
     )
 
 
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda v: np.asarray(v, dtype=np.float32),
+        lambda v: np.asarray(v, dtype=np.float16),
+        lambda v: [np.asarray(row, dtype=np.float32) for row in v],
+    ],
+    ids=["float32-array", "float16-array", "list-of-float32-rows"],
+)
+def test_batch_values_keep_scalar_types_like_explicit_binding(build):
+    # A rule computes in its value's own type, so binding a float32 angle
+    # realizes a float32-precision matrix. A batch holding the same values
+    # must bind them the same way instead of widening them to float.
+    angles = fq.ParameterVector("angles", 2)
+    program = fq.Program(1)
+    program.add(ops.RX(angles[0]), 0)
+    program.add(ops.RY(angles[1]), 0)
+    batch = build([[0.2, 1.3], [2.9, -0.7]])
+    options = {"shots": 0, "result_config": {"counts": False, "final_state": True}}
+    backend = Simulator("SV")
+
+    swept = backend.run_sweep(program, {angles: batch}, **options).result()
+    explicit = [
+        backend.run(program.assign_parameters({angles: row}), **options).result()
+        for row in batch
+    ]
+
+    for left, right in zip(swept, explicit, strict=True):
+        assert np.array_equal(left.get_statevector(), right.get_statevector())
+
+
 def test_counts_seed_and_options_match_manual_repeated_runs():
     theta = fq.Parameter("theta")
     program = fq.Program(1, 1)
