@@ -270,3 +270,106 @@ def _cphase(op: ops.CPhase) -> np.ndarray:
     """Build the CPhase matrix from the operation's angle."""
     theta = op.theta
     return np.diag([1, 1, 1, np.exp(1j * theta)]).astype(complex)
+
+
+# Batched twins of the parametric built-in rules, for sweep replay. Each takes
+# its angle fields as scalars or equal-length 1-D arrays and returns an
+# ``(N, d, d)`` stack whose row ``i`` is the scalar builder's matrix for row
+# ``i``'s values. The arithmetic mirrors the scalar builder term by term, so
+# the scalar builder stays the single source of truth for the matrix.
+
+
+def _matrix_stack(dim: int, *fields: object, identity: bool = False) -> np.ndarray:
+    """Allocate the ``(N, dim, dim)`` output for the broadcast field rows."""
+    (rows,) = np.broadcast_shapes(*(np.shape(field) for field in fields))
+    stack = np.zeros((rows, dim, dim), dtype=complex)
+    if identity:
+        stack[:] = np.eye(dim, dtype=complex)
+    return stack
+
+
+def _rx_batch(theta: np.ndarray) -> np.ndarray:
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    m = _matrix_stack(2, theta)
+    m[:, 0, 0] = c
+    m[:, 0, 1] = -1j * s
+    m[:, 1, 0] = -1j * s
+    m[:, 1, 1] = c
+    return m
+
+
+def _ry_batch(theta: np.ndarray) -> np.ndarray:
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    m = _matrix_stack(2, theta)
+    m[:, 0, 0] = c
+    m[:, 0, 1] = -s
+    m[:, 1, 0] = s
+    m[:, 1, 1] = c
+    return m
+
+
+def _rz_batch(theta: np.ndarray) -> np.ndarray:
+    m = _matrix_stack(2, theta)
+    m[:, 0, 0] = np.exp(-1j * theta / 2)
+    m[:, 1, 1] = np.exp(1j * theta / 2)
+    return m
+
+
+def _phase_batch(theta: np.ndarray) -> np.ndarray:
+    m = _matrix_stack(2, theta)
+    m[:, 0, 0] = 1
+    m[:, 1, 1] = np.exp(1j * theta)
+    return m
+
+
+def _u_matrix_batch(theta: object, phi: object, lam: object) -> np.ndarray:
+    c = np.cos(theta / 2)
+    s = np.sin(theta / 2)
+    m = _matrix_stack(2, theta, phi, lam)
+    m[:, 0, 0] = c
+    m[:, 0, 1] = -np.exp(1j * lam) * s
+    m[:, 1, 0] = np.exp(1j * phi) * s
+    m[:, 1, 1] = np.exp(1j * (phi + lam)) * c
+    return m
+
+
+def _cphase_batch(theta: np.ndarray) -> np.ndarray:
+    m = _matrix_stack(4, theta, identity=True)
+    m[:, 3, 3] = np.exp(1j * theta)
+    return m
+
+
+def _subspace_rx_batch(
+    dim: int, subspace: tuple[int, int], theta: np.ndarray
+) -> np.ndarray:
+    j, k = subspace
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    m = _matrix_stack(dim, theta, identity=True)
+    m[:, j, j] = c
+    m[:, k, k] = c
+    m[:, j, k] = -1j * s
+    m[:, k, j] = -1j * s
+    return m
+
+
+def _subspace_ry_batch(
+    dim: int, subspace: tuple[int, int], theta: np.ndarray
+) -> np.ndarray:
+    j, k = subspace
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    m = _matrix_stack(dim, theta, identity=True)
+    m[:, j, j] = c
+    m[:, k, k] = c
+    m[:, j, k] = -s
+    m[:, k, j] = s
+    return m
+
+
+def _subspace_rz_batch(
+    dim: int, subspace: tuple[int, int], theta: np.ndarray
+) -> np.ndarray:
+    j, k = subspace
+    m = _matrix_stack(dim, theta, identity=True)
+    m[:, j, j] = np.exp(-1j * theta / 2)
+    m[:, k, k] = np.exp(1j * theta / 2)
+    return m

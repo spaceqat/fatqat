@@ -24,6 +24,7 @@ from fatqat.operations import Operation
 from fatqat.resource_layout import ResourceLayout
 from fatqat.result import Result
 from fatqat.simulator import Simulator
+from fatqat.simulator import planning
 from fatqat.simulator.planning import _MatrixRecipe, _ParametricPlan
 
 
@@ -170,6 +171,120 @@ def test_counts_seed_and_options_match_manual_repeated_runs():
     assert [result.get_counts() for result in swept] == [
         result.get_counts() for result in explicit
     ]
+
+
+_STATE_ONLY = {"shots": 0, "result_config": {"counts": False, "final_state": True}}
+
+
+@pytest.mark.parametrize(
+    ("arity", "build", "targets", "dim"),
+    [
+        (1, lambda p: ops.RX(p[0]), 0, 2),
+        (1, lambda p: ops.RY(p[0]), 0, 2),
+        (1, lambda p: ops.RZ(p[0]), 0, 2),
+        (1, lambda p: ops.Phase(p[0]), 0, 2),
+        (2, lambda p: ops.U(p[0], p[1], 0.7), 0, 2),
+        (1, lambda p: ops.U1(p[0]), 0, 2),
+        (1, lambda p: ops.U2(0.3, p[0]), 0, 2),
+        (3, lambda p: ops.U3(p[0], p[1], p[2]), 0, 2),
+        (1, lambda p: ops.CPhase(p[0]), (0, 1), 2),
+        (1, lambda p: ops.SubspaceRX(p[0], (0, 2)), 0, 3),
+        (1, lambda p: ops.SubspaceRY(p[0], (1, 2)), 0, 3),
+        (1, lambda p: ops.SubspaceRZ(p[0], (0, 2)), 0, 3),
+    ],
+    ids=[
+        "RX",
+        "RY",
+        "RZ",
+        "Phase",
+        "U-mixed",
+        "U1",
+        "U2",
+        "U3",
+        "CPhase",
+        "SubspaceRX",
+        "SubspaceRY",
+        "SubspaceRZ",
+    ],
+)
+def test_every_builtin_parametric_gate_matches_explicit_loop(
+    arity, build, targets, dim
+):
+    params = [fq.Parameter(f"p{index}") for index in range(arity)]
+    program = fq.Program([fq.QuantumRegister(2, dim=dim)])
+    for qudit in range(2):
+        program.add(ops.H if dim == 2 else ops.Fourier, qudit)
+    program.add(build(params), targets)
+    values = np.random.default_rng(11).uniform(-7.0, 7.0, size=(5, arity))
+    backend = Simulator("SV")
+
+    swept = backend.run_sweep(
+        program,
+        {param: values[:, index] for index, param in enumerate(params)},
+        **_STATE_ONLY,
+    ).result()
+    explicit = [
+        backend.run(program.assign_parameters(dict(zip(params, row))), **_STATE_ONLY)
+        .result()
+        .get_statevector()
+        for row in values
+    ]
+
+    for result, expected in zip(swept, explicit, strict=True):
+        np.testing.assert_allclose(
+            result.get_statevector(), expected, rtol=0, atol=1e-12
+        )
+
+
+def test_counts_match_explicit_loop_across_replay_chunks(monkeypatch):
+    # Room for three 2x2 complex matrices per chunk: 7 rows take 3 chunks.
+    monkeypatch.setattr(planning, "_REPLAY_CHUNK_BYTES", 3 * 4 * 16)
+    theta = fq.Parameter("theta")
+    program = fq.Program(1, 1)
+    program.add(ops.RY(theta), 0)
+    program.measure(0, 0)
+    values = np.linspace(0.0, np.pi, 7)
+    backend = Simulator("SV")
+    options = {"shots": 16, "simulation_config": {"seed": 5}}
+
+    swept = backend.run_sweep(program, {theta: values}, **options).result()
+    explicit = [
+        backend.run(program.assign_parameters({theta: value}), **options)
+        .result()
+        .get_counts()
+        for value in values
+    ]
+
+    assert [result.get_counts() for result in swept] == explicit
+
+
+def test_replay_chunks_are_sized_by_matrix_bytes(monkeypatch):
+    # Room for two 3x3 complex matrices per chunk: 5 rows take chunks 2, 2, 1.
+    monkeypatch.setattr(planning, "_REPLAY_CHUNK_BYTES", 2 * 9 * 16)
+    chunk_sizes = []
+    build = planning._build_gate_matrix_batch
+
+    def recording_build(recipe, builder, thetas):
+        chunk_sizes.append(len(thetas))
+        return build(recipe, builder, thetas)
+
+    monkeypatch.setattr(planning, "_build_gate_matrix_batch", recording_build)
+    theta = fq.Parameter("theta")
+    program = fq.Program([fq.QuantumRegister(1, dim=3)])
+    program.add(ops.SubspaceRX(theta, (0, 2)), 0)
+
+    Simulator("SV").run_sweep(program, {theta: np.linspace(0, 1, 5)}, **_STATE_ONLY)
+
+    assert chunk_sizes == [2, 2, 1]
+
+
+def test_batched_builder_failure_raises_matrix_implementation_error():
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(ops.U(theta, 10**400, 0), 0)
+
+    with pytest.raises(MatrixImplementationError, match="implementation for U"):
+        Simulator("SV").run_sweep(program, {theta: [0.1, 0.2]})
 
 
 def test_batch_validation_finishes_before_row_zero(monkeypatch):
@@ -417,14 +532,15 @@ def test_parametric_program_lowers_to_deferred_picklable_steps():
     assert deferred.param_slots == (0,)
     assert deferred.target_dims == (2,)
     assert deferred.target_indices == (0,)
-    # Non-parametric steps are shared with the materialized plans, not rebuilt.
-    materialized = plan.materialize((0.3,))
-    assert materialized[0] is plan.steps[0]
-    assert isinstance(materialized[1], ApplyMatrixStep)
-    assert np.allclose(materialized[1].matrix, _rx_matrix(0.3))
+    # Non-parametric steps are shared with the resolved plans, not rebuilt.
+    (resolved,) = plan.resolve_rows([(0.3,)])
+    assert resolved[0] is plan.steps[0]
+    assert isinstance(resolved[1], ApplyMatrixStep)
+    assert np.allclose(resolved[1].matrix, _rx_matrix(0.3))
     # The deferred plan is a plain execution payload: it pickles by value.
     restored = pickle.loads(pickle.dumps(plan))
-    assert np.allclose(restored.materialize((0.3,))[1].matrix, _rx_matrix(0.3))
+    (resolved,) = restored.resolve_rows([(0.3,)])
+    assert np.allclose(resolved[1].matrix, _rx_matrix(0.3))
 
 
 def test_resolved_step_union_holds_only_engine_executable_steps():

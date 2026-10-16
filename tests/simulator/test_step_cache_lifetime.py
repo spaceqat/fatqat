@@ -196,3 +196,22 @@ def test_next_plan_releases_cache_data_after_execution_failure(monkeypatch):
     result = backend.run(fq.Program(1)).result().get_statevector()
     assert np.array_equal(result, [1, 0])
     _assert_released(observed)
+
+
+def test_reused_engine_layouts_follow_system_dims():
+    pytest.importorskip("numba")
+    backend = Simulator("SV", runtime="numba")
+    options = {"shots": 0, "result_config": {"counts": False, "final_state": True}}
+    for width, kernel in ((2, "serial"), (3, "serial"), (3, "threads"), (2, "threads")):
+        program = fq.Program(width)
+        for qubit in range(width):
+            program.add(ops.H, qubit)
+        program.add(ops.CX, (0, width - 1))
+        program.add(ops.RY(0.3), width - 1)
+        result = backend.run(
+            program,
+            simulation_config={"kernel_parallelism": kernel},
+            **options,
+        ).result()
+        reference = Simulator("SV", runtime="numpy").run(program, **options).result()
+        assert np.allclose(result.get_statevector(), reference.get_statevector())

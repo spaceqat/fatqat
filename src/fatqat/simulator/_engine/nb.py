@@ -1751,6 +1751,12 @@ class NumbaSVEngine(NumpySVEngine):
         # The layout depends only on targets and the fixed system dims, so it is
         # reused across gates and shots; `initialize` clears it when dims change.
         self._apply_plans: dict[tuple[int, ...], tuple] = {}
+        # Materialized layouts keyed by (targets, kernel workers, forced
+        # parallelism), carried from one materialization to the next so
+        # replaying the same structure (a sweep row, a repeated run) reuses
+        # them. Each materialization keeps only its own plan's entries;
+        # `configure_system` clears them when the dims change.
+        self._layout_cache: dict[tuple[tuple[int, ...], int, bool], tuple] = {}
         # Per-step resolved structure (code/columns/values), keyed by id(step)
         # with the step pinned in the value so a recycled id can never alias.
         # Structure is a property of the step's frozen matrix alone - not of
@@ -1774,6 +1780,7 @@ class NumbaSVEngine(NumpySVEngine):
         super().configure_system(system_dims, n_clbits)
         if dims_changed:
             self._apply_plans = {}
+            self._layout_cache = {}
 
     def _execution_scope(self, policy: ExecutionPolicy):
         return _thread_scope(policy)
@@ -1811,13 +1818,19 @@ class NumbaSVEngine(NumpySVEngine):
             for index in step.target_indices
         )
         workers = _kernel_thread_workers(policy)
+        force_parallel = policy.kernel_strategy == "threads"
+        layouts = {}
+        for target in targets:
+            key = (target, workers, force_parallel)
+            layout = self._layout_cache.get(key)
+            if layout is None:
+                layout = self._build_apply_plan(
+                    target, max_workers=workers, force_parallel=force_parallel
+                )
+            layouts[key] = layout
+        self._layout_cache = layouts
         self._apply_plans = {
-            target: self._build_apply_plan(
-                target,
-                max_workers=workers,
-                force_parallel=policy.kernel_strategy == "threads",
-            )
-            for target in targets
+            target: layout for (target, _, _), layout in layouts.items()
         }
         compiled = None
         if policy.use_compiled_multi_shot_kernel:

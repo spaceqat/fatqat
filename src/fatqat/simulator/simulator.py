@@ -759,12 +759,11 @@ class Simulator:
         )
         template = prepared.plan
         assert isinstance(template, planning._ParametricPlan)
+        thetas = [tuple(row[parameter] for parameter in param_order) for row in rows]
         results: list[Result] = []
-        for row in rows:
-            theta = tuple(row[parameter] for parameter in param_order)
-            # Rule and shape failures raise directly here, exactly as they
-            # raise directly from lowering in run().
-            point_plan = template.materialize(theta)
+        # Rule and shape failures raise directly from the iteration, exactly
+        # as they raise directly from lowering in run().
+        for point_plan in template.resolve_rows(thetas):
             try:
                 results.append(self._execute_plan(point_plan, prepared).result())
             except Exception as exc:  # execution-stage failure

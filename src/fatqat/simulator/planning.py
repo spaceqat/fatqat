@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, fields, replace
 from math import prod
 from numbers import Real
 from typing import Any, cast
+
+import numpy as np
 
 from .._index_allocation import _ClassicalAllocation, _EngineAllocation
 from .._parameter_binding import _parameter_field_slots
@@ -17,9 +19,22 @@ from ..errors import (
 )
 from ..implementation import MatrixImplementation, MatrixImplementationMap
 from ..implementation._operation_registry import _select_implementation
-from ..implementation.matrices import _H, _SDG
+from ..implementation.matrices import (
+    _H,
+    _SDG,
+    _cphase_batch,
+    _phase_batch,
+    _rx_batch,
+    _ry_batch,
+    _rz_batch,
+    _subspace_rx_batch,
+    _subspace_ry_batch,
+    _subspace_rz_batch,
+    _u_matrix_batch,
+)
 from ..noise import ChannelImplementationMap, NoiseModel
 from ..noise.base import _validate_kraus_shapes
+from .. import operations as ops
 from ..operations import Measurement, Operation, PulseOperation
 from ..noise.loss import Loss
 from ..parameters import Parameter
@@ -51,8 +66,8 @@ class _MatrixRecipe:
     Not a `ResolvedStep`: an engine never receives one. A recipe records
     everything lowering resolved structurally - rule selection, engine
     indices, condition, kernel identity, expected shape - and defers only the
-    numeric matrix to sweep replay, when `_ParametricPlan.materialize`
-    substitutes one θ vector and turns it into an ordinary `ApplyMatrixStep`.
+    numeric matrix to sweep replay, when `_ParametricPlan.resolve_rows`
+    substitutes each θ vector and turns it into an ordinary `ApplyMatrixStep`.
 
     The fields form two halves. ``kernel_key``, ``param_slots``,
     ``target_indices``, ``target_dims`` and ``condition`` are plain data an
@@ -441,14 +456,122 @@ def _materialize_recipe(
     )
 
 
+# Built-in parametric rules with a batched twin in `implementation.matrices`.
+# A recipe takes the batched path only when its kernel identity is listed here
+# and its operation is exactly the listed class: only canonical registrations
+# carry a kernel key, but a keyed rule can be re-registered for another class,
+# which may override `validate_targets` or the fields a builder reads. The
+# listed classes validate targets without reading their angles, and the
+# template was validated when it joined the program, so replay has nothing to
+# re-check. A builder receives a field accessor (a θ column for a `Parameter`
+# field, the declared value otherwise) and the targets.
+_BatchedBuilder = Callable[[Callable[[str], Any], tuple[RegisterRef, ...]], np.ndarray]
+_BATCHED_RULES: dict[BuiltinKernelKey, tuple[type[Operation], _BatchedBuilder]] = {
+    BuiltinKernelKey.RX: (ops.RX, lambda field, _: _rx_batch(field("theta"))),
+    BuiltinKernelKey.RY: (ops.RY, lambda field, _: _ry_batch(field("theta"))),
+    BuiltinKernelKey.RZ: (ops.RZ, lambda field, _: _rz_batch(field("theta"))),
+    BuiltinKernelKey.PHASE: (
+        ops.Phase,
+        lambda field, _: _phase_batch(field("theta")),
+    ),
+    BuiltinKernelKey.U: (
+        ops.U,
+        lambda field, _: _u_matrix_batch(field("theta"), field("phi"), field("lam")),
+    ),
+    BuiltinKernelKey.U1: (ops.U1, lambda field, _: _phase_batch(field("lam"))),
+    BuiltinKernelKey.U2: (
+        ops.U2,
+        lambda field, _: _u_matrix_batch(np.pi / 2, field("phi"), field("lam")),
+    ),
+    BuiltinKernelKey.U3: (
+        ops.U3,
+        lambda field, _: _u_matrix_batch(field("theta"), field("phi"), field("lam")),
+    ),
+    BuiltinKernelKey.CPHASE: (
+        ops.CPhase,
+        lambda field, _: _cphase_batch(field("theta")),
+    ),
+    BuiltinKernelKey.SUBSPACE_RX: (
+        ops.SubspaceRX,
+        lambda field, targets: _subspace_rx_batch(
+            targets[0].register.dim, field("subspace"), field("theta")
+        ),
+    ),
+    BuiltinKernelKey.SUBSPACE_RY: (
+        ops.SubspaceRY,
+        lambda field, targets: _subspace_ry_batch(
+            targets[0].register.dim, field("subspace"), field("theta")
+        ),
+    ),
+    BuiltinKernelKey.SUBSPACE_RZ: (
+        ops.SubspaceRZ,
+        lambda field, targets: _subspace_rz_batch(
+            targets[0].register.dim, field("subspace"), field("theta")
+        ),
+    ),
+}
+
+# Bytes of batched gate matrices held at once during replay. A chunk takes as
+# many rows as fit, and at least one, so a high-dimensional gate never holds
+# more matrices at once than per-row replay would.
+_REPLAY_CHUNK_BYTES = 64 * 2**20
+
+
+def _batched_builder(recipe: _MatrixRecipe) -> _BatchedBuilder | None:
+    """Return the recipe's batched builder, or ``None`` if it has no twin."""
+    entry = _BATCHED_RULES.get(recipe.kernel_key)  # type: ignore[arg-type]
+    if entry is None or type(recipe.operation_template) is not entry[0]:
+        return None
+    return entry[1]
+
+
+def _build_gate_matrix_batch(
+    recipe: _MatrixRecipe,
+    builder: _BatchedBuilder,
+    thetas: Sequence[Sequence[Real]],
+) -> np.ndarray:
+    """Build one recipe's read-only ``(rows, d, d)`` matrix stack for ``thetas``.
+
+    θ columns are evaluated in float64, the package's working precision.
+    Builder failures raise `MatrixImplementationError` and a wrong-shaped
+    stack raises `BackendValidationError`, as per-row replay would.
+    """
+    template = recipe.operation_template
+    values: dict[str, Any] = {}
+    slot_index = 0
+    try:
+        for field_info in fields(template):
+            value = getattr(template, field_info.name)
+            if isinstance(value, Parameter):
+                slot = recipe.param_slots[slot_index]
+                value = np.array([theta[slot] for theta in thetas], dtype=np.float64)
+                slot_index += 1
+            values[field_info.name] = value
+        stack = builder(values.__getitem__, recipe.targets)
+    except Exception as exc:
+        raise MatrixImplementationError(
+            f"implementation for {type(template).__name__} raised: {exc}"
+        ) from exc
+    expected = prod(recipe.target_dims)
+    if stack.shape[1:] != (expected, expected):
+        raise BackendValidationError(
+            f"{type(template).__name__} resolved to a "
+            f"{stack.shape[1:]} matrix, incompatible with target "
+            f"dimensions {recipe.target_dims} (expected "
+            f"{(expected, expected)})"
+        )
+    stack.flags.writeable = False
+    return stack
+
+
 @dataclass(frozen=True)
 class _ParametricPlan:
     """A lowered plan whose parameter-holding gates are still recipes.
 
     The sweep counterpart of a ``tuple[ResolvedStep, ...]``, kept as its own
     type so the `ResolvedStep` contract ("an engine can execute every member")
-    stays true. Structural lowering happened once; ``materialize`` turns the
-    plan into an engine-ready step tuple for one θ vector. Non-parametric
+    stays true. Structural lowering happened once; ``resolve_rows`` turns the
+    plan into an engine-ready step tuple per θ vector. Non-parametric
     steps are shared by reference across rows (their payloads are frozen).
 
     Attributes:
@@ -461,13 +584,51 @@ class _ParametricPlan:
     steps: tuple[ResolvedStep | _MatrixRecipe, ...]
     param_order: tuple[Parameter, ...]
 
-    def materialize(self, theta: Sequence[Real]) -> tuple[ResolvedStep, ...]:
-        """Return the concrete, engine-ready plan for one θ vector."""
-        return tuple(
-            (
-                _materialize_recipe(step, theta)
-                if isinstance(step, _MatrixRecipe)
-                else step
-            )
+    def resolve_rows(
+        self, thetas: Sequence[Sequence[Real]]
+    ) -> Iterator[tuple[ResolvedStep, ...]]:
+        """Yield the concrete, engine-ready plan for each θ vector in order.
+
+        Built-in parametric gates get their matrices for a chunk of rows at
+        once from the batched twins of their rules, so a failure there raises
+        when its chunk is reached. Every other recipe calls its rule per row
+        and raises when its row is reached, after the earlier rows were
+        yielded.
+        """
+        builders = [
+            _batched_builder(step) if isinstance(step, _MatrixRecipe) else None
             for step in self.steps
+        ]
+        row_bytes = sum(
+            prod(step.target_dims) ** 2 * np.dtype(complex).itemsize
+            for step, builder in zip(self.steps, builders)
+            if builder is not None
         )
+        chunk_rows = max(1, _REPLAY_CHUNK_BYTES // row_bytes) if row_bytes else 1
+        for start in range(0, len(thetas), chunk_rows):
+            chunk = thetas[start : start + chunk_rows]
+            stacks = [
+                (
+                    None
+                    if builder is None
+                    else _build_gate_matrix_batch(step, builder, chunk)
+                )
+                for step, builder in zip(self.steps, builders)
+            ]
+            for row, theta in enumerate(chunk):
+                resolved: list[ResolvedStep] = []
+                for step, stack in zip(self.steps, stacks):
+                    if not isinstance(step, _MatrixRecipe):
+                        resolved.append(step)
+                    elif stack is None:
+                        resolved.append(_materialize_recipe(step, theta))
+                    else:
+                        resolved.append(
+                            ApplyMatrixStep(
+                                matrix=stack[row],
+                                target_indices=step.target_indices,
+                                condition=step.condition,
+                                kernel_key=step.kernel_key,
+                            )
+                        )
+                yield tuple(resolved)
