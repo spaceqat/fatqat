@@ -1,3 +1,4 @@
+
 name: GPU Tests
 
 on:
@@ -6,9 +7,46 @@ on:
 permissions:
   contents: read
 
+# Only one workflow may control this GPU instance at a time.
+concurrency:
+  group: fatqat-hai-gpu
+  cancel-in-progress: false
+  queue: max
+
 jobs:
+  start-gpu:
+    name: Start HAI GPU
+    runs-on: ubuntu-latest
+    timeout-minutes: 145
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Tencent Cloud SDK
+        run: |
+          python -m pip install \
+            "tencentcloud-sdk-python-common==3.1.121" \
+            "tencentcloud-sdk-python-hai==3.1.121"
+
+      - name: Start instance and wait for runner
+        env:
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          HAI_REGION: ${{ vars.HAI_REGION }}
+          HAI_INSTANCE_ID: ${{ vars.HAI_INSTANCE_ID }}
+          HAI_RUNNER_NAME: ${{ vars.HAI_RUNNER_NAME }}
+          GH_RUNNER_READ_TOKEN: ${{ secrets.GH_RUNNER_READ_TOKEN }}
+        run: python -u .github/scripts/hai_power.py start
+
   gpu-tests:
     name: CuPy GPU smoke test
+    needs: start-gpu
     runs-on: [self-hosted, linux, x64, gpu]
     timeout-minutes: 10
 
@@ -33,3 +71,33 @@ jobs:
           "$PYTHON" -c "import cupy; cupy.show_config()"
 
           "$PYTHON" -m pytest tests/gpu_tests --confcutdir=tests/gpu_tests -v
+
+  stop-gpu:
+    name: Stop HAI GPU
+    needs: [start-gpu, gpu-tests]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Tencent Cloud SDK
+        run: |
+          python -m pip install \
+            "tencentcloud-sdk-python-common==3.1.121" \
+            "tencentcloud-sdk-python-hai==3.1.121"
+
+      - name: Stop GPU and verify state
+        env:
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          HAI_REGION: ${{ vars.HAI_REGION }}
+          HAI_INSTANCE_ID: ${{ vars.HAI_INSTANCE_ID }}
+        run: python -u .github/scripts/hai_power.py stop
