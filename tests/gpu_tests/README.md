@@ -1,28 +1,41 @@
 # GPU CI runner setup
 
-Setup guide for the manually triggered [GPU Tests workflow](../../.github/workflows/gpu.yml). It runs only `tests/gpu_tests/` on a self-hosted NVIDIA GPU runner. The runner environment is provisioned once; the workflow does not install dependencies or start/stop cloud instances.
+The manually triggered [GPU Tests workflow](../../.github/workflows/gpu.yml)
+starts an existing Tencent Cloud HAI instance, waits for its GitHub runner,
+runs only `tests/gpu_tests/`, and requests shutdown with `STOP_CHARGE`.
+The GPU environment is provisioned once and reused; the GPU job does not
+install dependencies. The two control jobs run on GitHub-hosted CPU runners.
 
-## 1. Validated environment
+## 1. Validated configuration
 
-The following configuration passed the [CuPy smoke test](test_cupy.py) through GitHub Actions on **2026-10-15** ([successful run](https://github.com/zengzhphy/fatqat/actions/runs/38685866785)). These are observed versions, not minimum hardware requirements.
+[GPU Tests #6](https://github.com/zengzhphy/fatqat/actions/runs/39364530125)
+passed on **2026-10-20**, using commit
+`79764d01aa980840b83cd065cee9d45c9b65337a` in `zengzhphy/fatqat`.
+The run started from `STOPPED_NO_CHARGE`, executed the
+[CuPy smoke test](test_cupy.py), and finished at `STOPPED_NO_CHARGE`.
+All three jobs passed; total elapsed time was about 2 minutes 45 seconds.
+These observations validate this run, not future GPU availability.
 
 | Component | Validated configuration |
 | --- | --- |
-| Cloud instance | Tencent Cloud HAI GPU Basic, one NVIDIA Tesla T4 |
-| Operating system / user | Ubuntu 20.04, x86_64 / `ubuntu` |
+| Cloud instance | Tencent Cloud HAI GPU Basic, Shanghai, NVIDIA Tesla T4 |
+| Operating system / service user | Ubuntu 20.04, x86_64 / `ubuntu` |
 | NVIDIA driver | 525.105.17 |
 | System CUDA Toolkit | 12.0 at `/usr/local/cuda-12.0` |
 | Python | 3.12.15 at `$HOME/fatqat-ci-venv/bin/python` |
 | Python packages | `numpy==2.5.3`, `cupy-cuda12x==13.6.0`, `pytest==8.4.2` |
-| GitHub runner | 2.337.0, installed at `$HOME/actions-runner` |
+| GitHub runner | 2.337.0 at `$HOME/actions-runner`, name `fatqat-t4` |
 
-Provision a Linux GPU instance with an NVIDIA driver and CUDA Toolkit already installed. Confirm `nvidia-smi` works and the toolkit path exists before proceeding. `nvidia-smi` alone does not verify that the toolkit or Python GPU libraries are usable. If the image uses another CUDA version or location, adapt both this setup and the workflow and repeat the GPU test; the recipe below assumes the configuration above. See [CuPy's installation requirements](https://docs.cupy.dev/en/v13.6.0/install.html).
+These are observed versions, not minimum requirements. A replacement host
+must be validated separately. Confirm `nvidia-smi` works and the toolkit is
+installed; `nvidia-smi` alone does not validate Python GPU computation.
+Adapt both this guide and the workflow if the CUDA path or service user changes.
 
-## 2. Prepare the Python environment
+## 2. Provision the GPU environment once
 
-Run these commands **on the cloud host as the non-root user that will run the service** (`ubuntu` here). Keep the environment outside the runner's checkout directory. Do not replace the system Python.
-
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and create the environment on a new host:
+Run as the non-root service user on a new GPU host. Keep this environment
+outside the runner checkout directory and do not replace the system Python.
+On an existing configured host, reuse it instead of recreating it.
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh
@@ -30,11 +43,12 @@ curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$HOME/.local/bi
 UV_HTTP_TIMEOUT=300 "$HOME/.local/bin/uv" pip install --python "$HOME/fatqat-ci-venv/bin/python" "numpy==2.5.3" "cupy-cuda12x==13.6.0" "pytest==8.4.2" --index-url https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-The final command uses the Tsinghua PyPI mirror used during setup. Omit `--index-url` to use PyPI instead. On an already configured host, reuse the environment rather than recreating it. These top-level pins record the validated versions; they are not a complete dependency lock.
+The last command uses the mirror used during setup; omit `--index-url` to
+use PyPI. These top-level pins are not a full dependency lock. PyTorch is
+not required for this test. Do not install another CuPy distribution
+alongside `cupy-cuda12x`.
 
-PyTorch was used for an initial hardware check but is **not required by this CuPy test**. Do not install another CuPy distribution (`cupy` or `cupy-cuda11x`) alongside `cupy-cuda12x`.
-
-Set the [CUDA lookup paths](https://docs.cupy.dev/en/v13.6.0/install.html#working-with-custom-cuda-installation), then verify actual GPU execution:
+Set CUDA lookup paths and verify actual GPU execution:
 
 ```bash
 export CUDA_PATH=/usr/local/cuda-12.0
@@ -55,19 +69,25 @@ print("CUPY_TEST_PASSED, result =", result)
 PY
 ```
 
-Expected: `CUPY_TEST_PASSED, result = 14.0`. These exports affect only this shell; the workflow sets them again for its job. The existing-host test passed; a clean replacement host must pass the same checks before use.
+Expected: `CUPY_TEST_PASSED, result = 14.0`. The workflow sets the CUDA paths
+again; shell exports do not configure an already running system service.
+See [CuPy installation](https://docs.cupy.dev/en/v13.6.0/install.html) and
+[uv installation](https://docs.astral.sh/uv/getting-started/installation/).
 
-## 3. Register and start the GitHub runner
+## 3. Register the runner in the target repository
 
-In the **target repository**, enable Actions if necessary, then open **Settings → Actions → Runners → New self-hosted runner → Linux / x64**. Repository administration permission is required.
+Open **Settings → Actions → Runners → New self-hosted runner → Linux / x64**
+in the repository that will execute the workflow. Follow its current Download
+instructions in `$HOME/actions-runner`, including SHA-256 verification.
+The recorded runner version is not a permanent version pin.
 
-In `$HOME/actions-runner`, follow the page's Download commands, verify its SHA-256 checksum, and extract the archive. Use the current supported runner provided by GitHub; 2.337.0 is the version used for the recorded run, not a permanent pin.
+Run the page's `./config.sh --url ... --token ...` command as `ubuntu`, without
+`sudo`. Use name `fatqat-t4`, the default group and `_work` directory, and add
+label `gpu`. The workflow matches `self-hosted`, `linux`, `x64`, and `gpu`.
+Use the same name in `HAI_RUNNER_NAME` below. Keep only one matching dedicated
+GPU runner for this deployment, or tighten the workflow's labels.
 
-Run the page's `./config.sh --url ... --token ...` command as `ubuntu`, without `sudo`. Select the default group and `_work` directory, give the runner a unique name (for example `fatqat-t4`), and add the label **`gpu`**. The optional `tencent-hai` label is descriptive; the workflow requires `self-hosted`, `linux`, `x64`, and `gpu`.
-
-Use a fresh registration token, which expires after one hour. Never commit tokens, passwords, private keys, or runner credential files. See [GitHub's registration instructions](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners).
-
-After registration, install and start the [system service](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/configure-the-application):
+After registration, install the service:
 
 ```bash
 cd "$HOME/actions-runner"
@@ -76,29 +96,141 @@ sudo ./svc.sh start
 sudo ./svc.sh status
 ```
 
-Expect `active (running)` and an online, idle runner in GitHub. Do not also run `./run.sh` in parallel. The service runs independently of the SSH session.
+Confirm the service is active and the runner is online and idle in GitHub.
+Do not also run `./run.sh`. The service runs independently of SSH and must
+reconnect after the instance restarts.
 
-**Network fallback:** if GitHub release downloads fail on the cloud host, download the same official Linux archive on a local computer, upload it to `$HOME/actions-runner` using SCP/SFTP, and verify its checksum on the host before extracting. This solves package transfer only: the host still needs outbound HTTPS access to GitHub Actions and code-download endpoints. Follow [GitHub's endpoint requirements](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).
+If release downloads fail on the cloud host, download the official Linux
+archive locally, upload with SCP/SFTP, and verify its checksum on the host.
+This only solves file transfer: outbound HTTPS connectivity to GitHub Actions
+and code-download endpoints is still required.
 
-## 4. Run and maintain the tests
+References: [runner registration](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners),
+[service management](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/configure-the-application),
+[network requirements](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).
 
-Keep the workflow on the repository's default branch, then select **Actions → GPU Tests → Run workflow**. Expected output:
+## 4. Configure cloud access and repository settings
 
-```text
-tests/gpu_tests/test_cupy.py::test_cupy_sum_of_squares PASSED
-1 passed
-```
+Create a CI-only Tencent Cloud CAM user with programmatic access. Authorize
+`hai:DescribeInstances`, `hai:StartInstance`, and `hai:StopInstance` for the
+dedicated HAI instance, using the narrowest effective resource scope.
+Keep its SecretId and SecretKey out of source control and the GPU host.
 
-For a local rerun on the GPU host, from a checkout's **repository root**, use the environment and CUDA exports from section 2:
+**Authorization issue observed during setup:** a resource-scoped
+`StopInstance` call was denied, with an error resource containing the literal
+`{InstanceId}`. A temporary `hai:StopInstance` policy with `resource: "*"`
+was proposed for diagnosis. Run #6 proves that its effective credentials
+could stop the instance; it does not establish which CAM policy was active.
+Before handoff, the operator must inspect the effective policies. If wildcard
+shutdown access remains necessary, disclose and obtain approval for that
+broader scope; do not describe it as single-instance access. Resolve the
+resource-scoping issue with Tencent Cloud and narrow the policy when possible.
+
+In the **target repository**, open **Settings → Secrets and variables → Actions**:
+
+| Type | Name | Value / purpose |
+| --- | --- | --- |
+| Secret | `TENCENTCLOUD_SECRET_ID` | CI-only CAM user's SecretId |
+| Secret | `TENCENTCLOUD_SECRET_KEY` | Matching SecretKey |
+| Secret | `GH_RUNNER_READ_TOKEN` | Token authorized to list this repository's runners |
+| Variable | `HAI_REGION` | `ap-shanghai` for the current deployment |
+| Variable | `HAI_INSTANCE_ID` | Actual `hai-...` instance ID, not an IP address |
+| Variable | `HAI_RUNNER_NAME` | `fatqat-t4` |
+
+For `GH_RUNNER_READ_TOKEN`, an authorized repository administrator can create
+a fine-grained PAT with the target repository owner, only the target
+repository, and **Administration: read-only**. Organization approval may be
+required. This token is separate from the short-lived runner registration
+token and the Tencent Cloud API credentials. Track its expiration.
+
+The workflow provides cloud credentials only to the CPU control steps, not
+to the GPU test step. Its controller is
+[`.github/scripts/hai_power.py`](../../.github/scripts/hai_power.py).
+Each CPU control job installs the pinned Tencent Cloud SDK packages; they
+do not need to be installed on the GPU host.
+
+References: [GitHub secrets](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets),
+[runner API permissions](https://docs.github.com/en/rest/actions/self-hosted-runners),
+[HAI CAM permissions](https://cloud.tencent.com/document/product/598/99248),
+[StartInstance](https://cloud.tencent.com/document/product/1721/102449),
+[StopInstance](https://cloud.tencent.com/document/product/1721/102448).
+
+## 5. Execute and verify
+
+With the workflow on the default branch, select
+**Actions → GPU Tests → Run workflow → main**. Start from a stopped instance
+to validate the complete cycle; do not manually power it on first.
+
+| Job | Required observation |
+| --- | --- |
+| Start HAI GPU | Start request accepted; instance becomes `RUNNING`; named runner becomes online and idle |
+| CuPy GPU smoke test | `tests/gpu_tests/test_cupy.py::test_cupy_sum_of_squares PASSED` and `1 passed` |
+| Stop HAI GPU | Stop request accepted from a running instance; final state is `STOPPED_NO_CHARGE` |
+
+Also confirm the final instance state in the HAI console. A green stop job
+when the instance was already stopped does not test shutdown authorization.
+The controller currently accepts both `STOPPED` and `STOPPED_NO_CHARGE` as
+stopped; verify `STOPPED_NO_CHARGE` when validating release of compute.
+
+The controller retries recognized startup errors, including capacity
+shortages, within a two-hour startup window. Runner readiness has 30 polling
+attempts, with 20-second sleeps and API request time added. Shutdown has a
+15-minute controller window. The workflow serializes runs within this
+repository; it is not a cross-repository lock.
+
+For a local GPU test, use the environment and exports in section 2, then run
+from a checkout's repository root:
 
 ```bash
 "$HOME/fatqat-ci-venv/bin/python" -m pytest tests/gpu_tests --confcutdir=tests/gpu_tests -v
 ```
 
-The [CPU workflow](../../.github/workflows/tests.yml) uses `python -m pytest --ignore=tests/gpu_tests`. The [Lint workflow](../../.github/workflows/lint.yml) installs `cupy-cuda12x==13.6.0` for import checks but does not execute GPU computations. A plain `python -m pytest` still collects GPU files, so use the exclusion on non-GPU machines. `--confcutdir` prevents this standalone smoke test from loading parent `conftest.py` files, including the root's `scipy_doctest` dependency; see [pytest's reference](https://docs.pytest.org/en/stable/reference/reference.html).
+The [CPU workflow](../../.github/workflows/tests.yml) excludes this directory
+with `python -m pytest --ignore=tests/gpu_tests`. A plain `python -m pytest`
+still collects GPU files. The [Lint workflow](../../.github/workflows/lint.yml)
+installs CuPy for import checks but does not execute GPU computations.
+`--confcutdir` keeps the standalone GPU test from loading parent `conftest.py`
+files, including the root's `scipy_doctest` dependency.
 
-**Current scope:** manual triggering only; no automatic PR trigger, cloud startup, shutdown, or ephemeral isolation. Use this persistent runner for trusted code only. Before enabling external PR execution, arrange appropriate approval and isolation; `persist-credentials: false` is not a sandbox.
+## 6. Upstream handoff and operating limits
 
-**Upstream handoff:** a repository-scoped runner registered to a fork cannot accept upstream jobs. A maintainer must arrange upstream registration and matching labels/environment. Merging the workflow does not transfer runner registration.
+Merging a PR transfers files, not runner registration, repository settings,
+PAT permissions, or ownership of the Tencent Cloud account. For upstream use:
 
-**Cost control:** closing SSH or stopping the runner service does not stop cloud-instance billing. When no job is running and the host is no longer needed, shut down the instance through the HAI console; retained storage can still incur charges. See [HAI billing](https://cloud.tencent.com/document/product/1721/101029). After powering it on again, confirm the service and GPU are available before triggering another job.
+1. Have a maintainer approve the deployment, billing owner and effective CAM
+   policy. Populate the upstream Secrets and Variables. The runner-read token
+   must target `spaceqat/fatqat`, not just the personal fork.
+2. Disable the fork's GPU workflow and wait for all its runs, including
+   cleanup, to finish before migrating the shared instance.
+3. On the GPU host, stop and uninstall the old runner service. Use the fork's
+   runner removal instructions, register the existing installation to the
+   upstream repository, and reinstall/start its service as `ubuntu`.
+   Reuse the CUDA and Python environment.
+4. Once the files are merged and configuration is ready, validate the full
+   stopped → test → stopped cycle from the upstream repository. Do not enable
+   simultaneous control of this instance from both repositories.
+
+**Scope:** manually dispatched trusted-code tests, with automatic instance
+startup/shutdown. There is no automatic external-PR trigger or PR-selection
+input. Running on `main` tests `main`, not an unmerged contributor's PR.
+Approval, explicit selection of the reviewed revision, and suitable isolation
+must be designed before executing external PR code. Cloud shutdown does not
+wipe the persistent runner; `persist-credentials: false` is not a sandbox.
+
+**Failure handling:** the cleanup job uses `always()`, but there is no
+independent shutdown watchdog. Do not treat this as a guarantee against
+orphaned running instances. If cleanup fails, or a run is force-cancelled,
+inspect the HAI console and stop the dedicated instance when no valid job
+is using it. Failure-path and cancellation recovery are not validated by the
+successful run #6 alone.
+
+**Capacity and cost:** stopping releases compute while retaining the cloud
+disk. Restart can fail when capacity is unavailable, and the public IP may
+change. This workflow reuses a fixed instance ID; it does not guarantee the
+same physical GPU or a bounded capacity wait. Closing SSH or stopping the
+runner service does not stop cloud billing; retained storage may be charged.
+See [HAI shutdown behavior](https://cloud.tencent.com/document/product/1721/102027).
+
+Do not commit credentials, passwords, private keys or runner credential files.
+Keep saved keys and account ownership available through an approved handoff
+process, rather than public documentation.
