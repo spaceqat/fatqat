@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 
-# Only one workflow may control this GPU instance at a time.
+# Only one workflow in this repository may control the instance at a time.
 concurrency:
   group: fatqat-hai-gpu
   cancel-in-progress: false
@@ -49,6 +49,8 @@ jobs:
     needs: start-gpu
     runs-on: [self-hosted, linux, x64, gpu]
     timeout-minutes: 10
+    env:
+      CUDA_PATH: /usr/local/cuda-12.0
 
     steps:
       - name: Check out repository
@@ -56,21 +58,46 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run GPU tests only
+      - name: Verify CUDA before pytest
         shell: bash
-        env:
-          CUDA_PATH: /usr/local/cuda-12.0
         run: |
+          set -euo pipefail
           export PATH="$CUDA_PATH/bin:$PATH"
           export LD_LIBRARY_PATH="$CUDA_PATH/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-
           PYTHON="$HOME/fatqat-ci-venv/bin/python"
 
           "$PYTHON" --version
           nvidia-smi
-          "$PYTHON" -c "import cupy; cupy.show_config()"
 
-          "$PYTHON" -m pytest tests/gpu_tests --confcutdir=tests/gpu_tests -v
+          "$PYTHON" - <<'PY'
+          import cupy as cp
+
+          cp.show_config()
+          device_count = cp.cuda.runtime.getDeviceCount()
+          if device_count < 1:
+              raise RuntimeError("GPU CI requires an available CUDA GPU")
+
+          with cp.cuda.Device(0):
+              probe = cp.asarray([1.0, 2.0, 3.0], dtype=cp.float32)
+              result_gpu = probe + 1.0
+              cp.cuda.get_current_stream().synchronize()
+              result = result_gpu.get().tolist()
+
+          if result != [2.0, 3.0, 4.0]:
+              raise RuntimeError(f"CUDA preflight returned an incorrect result: {result}")
+
+          print(f"CUDA_PREFLIGHT_PASSED: {device_count} device(s)")
+          PY
+
+      - name: Run GPU tests only
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$CUDA_PATH/bin:$PATH"
+          export LD_LIBRARY_PATH="$CUDA_PATH/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          PYTHON="$HOME/fatqat-ci-venv/bin/python"
+
+          "$PYTHON" -m pytest tests/gpu_tests --confcutdir=tests/gpu_tests -v -rs
 
   stop-gpu:
     name: Stop HAI GPU

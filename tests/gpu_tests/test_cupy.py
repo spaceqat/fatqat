@@ -1,6 +1,20 @@
-"""Smoke tests that require a working CUDA GPU."""
+"""CuPy smoke tests; skip this module when CuPy or CUDA is unavailable."""
 
-import cupy as cp
+import pytest
+
+try:
+    import cupy as cp
+except ImportError as exc:
+    pytest.skip(f"CuPy is unavailable: {exc}", allow_module_level=True)
+
+# Only availability checks may skip. Computation failures below must fail.
+try:
+    _device_count = cp.cuda.runtime.getDeviceCount()
+except (cp.cuda.runtime.CUDARuntimeError, OSError) as exc:
+    pytest.skip(f"CUDA is unavailable: {exc}", allow_module_level=True)
+
+if _device_count < 1:
+    pytest.skip("No CUDA GPU detected", allow_module_level=True)
 
 
 def test_cupy_sum_of_squares() -> None:

@@ -45,7 +45,7 @@ jobs:
           python -m pip install . --group ${{ matrix.dependency_group }}
 
       - name: Run tests
-        run: python -m pytest --ignore=tests/gpu_tests
+        run: python -m pytest
 
       - name: Run doctests
         if: matrix.run_doctests
