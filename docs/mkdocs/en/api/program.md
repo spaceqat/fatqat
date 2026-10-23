@@ -82,11 +82,37 @@ outputs positionally. Both sides must be non-empty, have the same length, and
 have matching dimensions at every position. Repeated operands are processed
 in pair order; see [Measurement and structural operations](operations/structural.md) for measurement behavior.
 
-[`measure_all`][fatqat.Program.measure_all] flattens all registers and their members
-in declaration order and appends one grouped measurement. It requires equal,
-non-zero quantum and classical counts and matching dimensions at every
-position. Read [Write quantum computations with Program](../guide/program.md) for a mid-program measurement and
-feedforward workflow.
+[`measure_all`][fatqat.Program.measure_all] flattens all quantum registers
+and their members in declaration order and appends one grouped measurement.
+The optional `outputs` argument specifies the classical destinations.
+
+When `outputs` is `None`, the first N classical slots in flattened declaration
+order are used, where N is the number of quantum slots. Additional classical
+slots are left unused. Explicit outputs must contain one destination per
+quantum slot and follow the same operand rules as
+[`measure`][fatqat.Program.measure]. Bare integer outputs require exactly one
+classical register; with multiple classical registers, explicit
+[`RegisterRef`][fatqat.RegisterRef] objects are required.
+
+Every target/output pair must have matching dimensions. Insufficient classical
+storage, mismatched output counts, or incompatible dimensions raise
+`ValueError`. Ambiguous integer outputs raise `TypeError`. Repeated calls
+append separate measurements, allowing different measurement rounds to
+use different classical destinations. No classical storage is allocated
+automatically.
+
+For example, two measurement rounds can write to separate classical slots:
+
+```python
+import fatqat as fq
+
+program = fq.Program(2, 4)
+program.measure_all(outputs=(0, 1))
+program.measure_all(outputs=(2, 3))
+```
+
+Read [Write quantum computations with Program](../guide/program.md) for
+a mid-program measurement and feedforward workflow.
 
 <a id="program-templates"></a>
 

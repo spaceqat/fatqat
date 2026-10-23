@@ -574,31 +574,53 @@ class Program:
         self._operations.append(Measurement(targets=target_refs, outputs=output_refs))
         self._operations_view = None
 
-    def measure_all(self) -> None:
-        """Append one measurement pairing all quantum and classical slots.
+    def measure_all(
+        self,
+        outputs: (
+            int
+            | RegisterRef
+            | tuple[int | RegisterRef, ...]
+            | list[int | RegisterRef]
+            | None
+        ) = None,
+    ) -> None:
+        """Append one measurement pairing all quantum slots with classical outputs.
 
-        Registers and their members are flattened in declaration order. The
-        new measurement does not replace earlier measurements.
+        Registers and their members are flattened in declaration order.
+        If outputs is None, the first N classical slots are used, where N
+        is the number of quantum slots. Explicit outputs are forwarded to
+        measure(). The new measurement does not replace earlier measurements.
+
+        Args:
+            outputs: Optional classical output position(s). If None, use the
+                first N classical slots in declaration order. Explicit outputs
+                follow measure() operand rules: bare integers require exactly
+                one classical register; otherwise use explicit RegisterRef objects.
 
         Returns:
-            ``None``.
+            None.
 
         Raises:
-            ValueError: If either flattened side is empty, their counts differ,
-                or any position pairs registers with different dimensions.
+            TypeError: If explicit output operands have invalid types or are
+                ambiguous.
+            ValueError: If either side is empty, the counts differ, or any
+                paired quantum and classical positions have different dimensions.
+            IndexError: If an integer output position is out of range.
         """
         targets = tuple(
             ref
             for reg in self.quantum_registers
             for ref in (reg[i] for i in range(reg.size))
         )
-        outputs = tuple(
-            ref
-            for reg in self.classical_registers
-            for ref in (reg[i] for i in range(reg.size))
-        )
-        # Equal-count and non-empty invariants are enforced once in
-        # Measurement.__post_init__, reached through measure.
+
+        if outputs is None:
+            classical_refs = tuple(
+                ref
+                for reg in self.classical_registers
+                for ref in (reg[i] for i in range(reg.size))
+            )
+            outputs = classical_refs[: len(targets)]
+
         self.measure(targets, outputs)
 
     def copy(self) -> "Program":
