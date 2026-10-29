@@ -24,6 +24,9 @@ tuple-specific entry may also be a fixed definition or a callable that only
 accepts `operation`. The tuple contains ordered physical labels such as
 `("q0", "q1")`, not program register references.
 
+Both modes accept `num_subsystems=None`; device-specific tuples may then have
+different lengths. Otherwise, each tuple must match the declared target count.
+
 ## Definitions
 
 

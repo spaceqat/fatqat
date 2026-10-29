@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from collections.abc import Sequence
+from copy import deepcopy
 from math import prod
 
 import numpy as np
 
 from ...._expectation import expectation_density_matrix, expectation_statevector
-from ..._execution_contract import _InitialEvolutionState as InitialEvolutionState
 from .._execution_policy import _ExecutionPolicy as ExecutionPolicy
-from ..state import ClassicalState, EvolutionState
+from ..state import EvolutionState
 from .base import MatrixEngine
 
 
@@ -27,22 +27,13 @@ class _NdarrayEngine(MatrixEngine[np.ndarray]):
         system_dims: Sequence[int],
         n_clbits: int = 0,
         *,
-        initial_state: InitialEvolutionState[np.ndarray] | None = None,
+        initial_state: EvolutionState[np.ndarray] | None = None,
     ) -> None:
         self.configure_system(system_dims, n_clbits)
-        initial = (
-            initial_state if initial_state is not None else InitialEvolutionState()
-        )
+        initial = initial_state if initial_state is not None else EvolutionState()
         quantum = self._allocate(prod(self._dims) if self._dims else 1, initial.quantum)
-        clbits = initial.classical.clbits
-        occupied = initial.classical.occupied
-        self._evolution_state = EvolutionState(
-            quantum,
-            ClassicalState(
-                clbits=None if clbits is None else list(clbits),
-                occupied=None if occupied is None else set(occupied),
-            ),
-        )
+        classical = deepcopy(initial.classical)
+        self._evolution_state = EvolutionState(quantum, classical)
 
     def _expectation_values(
         self,

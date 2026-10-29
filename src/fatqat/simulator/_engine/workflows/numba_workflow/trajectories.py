@@ -22,8 +22,7 @@ from ....._backends.steps import (
 from .....noise.base import _sampled_unitary_branches
 from ._reporting import _report_digit_kernel
 from ...._execution_contract import (
-    _ExecutionContext as ExecutionContext,
-    _InitialEvolutionState as InitialEvolutionState,
+    _RunContext,
 )
 from ...numerics.numba_kernels._apply import _DENSE, _apply_resolved_range
 from ...numerics.numba_kernels._channel import _apply_channel_step, _kraus_stack
@@ -33,7 +32,7 @@ from ...numerics.numba_kernels._measurement import (
     _project_statevector_strided,
     _sv_reset_kernel,
 )
-from ...state import NumbaClassicalState, NumbaEvolutionState
+from ...state import EvolutionState, NumbaClassicalState, NumbaEvolutionState
 
 
 class _NumbaTrajectoryExecution(NamedTuple):
@@ -380,11 +379,64 @@ def _compile_dynamic_plan(
     return _NumbaTrajectoryExecution(plan_arrays, max_draws)
 
 
+# Positions in `_compile_dynamic_plan`'s ``plan_arrays`` that hold gate
+# matrices and their resolved structure; col/val share the offsets pointer.
+_AP_MAT_PTR, _AP_DIM, _AP_OFF_PTR, _AP_CODE = 6, 7, 8, 11
+_MAT_FLAT, _COL_FLAT, _VAL_FLAT = 12, 14, 15
+
+
+def _patch_gate_matrices(
+    packed: _NumbaTrajectoryExecution,
+    plan: Sequence[ResolvedStep],
+    positions: Sequence[int],
+    resolve_structure: Callable[[ApplyMatrixStep], tuple],
+) -> _NumbaTrajectoryExecution:
+    """Repack only the gate matrices at ``positions`` of a structurally equal plan.
+
+    ``packed`` came from `_compile_dynamic_plan` for a plan with the same step
+    kinds, targets, and conditions as ``plan``; only the gates at
+    ``positions`` may hold different matrices. Their matrix entries and
+    structure codes are written into copies of the affected arrays, so
+    ``packed`` itself is never modified and every other array is shared.
+    """
+    arrays = list(packed.plan_arrays)
+    mat_ptr, dims, off_ptr = (arrays[i] for i in (_AP_MAT_PTR, _AP_DIM, _AP_OFF_PTR))
+    codes, matrices, columns, values = (
+        arrays[i].copy() for i in (_AP_CODE, _MAT_FLAT, _COL_FLAT, _VAL_FLAT)
+    )
+    targets = set(positions)
+    gate = 0
+    for position, step in enumerate(plan):
+        if not isinstance(step, ApplyMatrixStep):
+            continue
+        if position in targets:
+            d = dims[gate]
+            start = mat_ptr[gate]
+            matrices[start : start + d * d] = np.ascontiguousarray(
+                step.matrix, dtype=np.complex128
+            ).ravel()
+            code, step_columns, step_values = resolve_structure(step)
+            codes[gate] = code
+            start = off_ptr[gate]
+            if code == _DENSE:
+                columns[start : start + d] = 0
+                values[start : start + d] = 0
+            else:
+                columns[start : start + d] = step_columns
+                values[start : start + d] = step_values
+        gate += 1
+    for index, array in zip(
+        (_AP_CODE, _MAT_FLAT, _COL_FLAT, _VAL_FLAT), (codes, matrices, columns, values)
+    ):
+        arrays[index] = array
+    return packed._replace(plan_arrays=tuple(arrays))
+
+
 def _execute_sv_trajectories(
-    context: ExecutionContext,
+    context: _RunContext,
     compiled: _NumbaTrajectoryExecution,
     *,
-    initial_state: InitialEvolutionState[np.ndarray],
+    initial_state: EvolutionState[np.ndarray],
 ) -> np.ndarray:
     """Return classical shot rows from one compiled multi-shot call."""
     max_draws = compiled.max_draws

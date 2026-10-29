@@ -7,14 +7,13 @@ import fatqat as fq
 import fatqat.operations as ops
 from fatqat._backends.steps import LossStep, MeasurementStep, ResetStep
 from fatqat.simulator._execution_contract import (
-    _ExecutionContext,
+    _RunContext,
     _ResultRequest,
     _SimulationConfig,
     _TrajectoryCapabilities,
-    _InitialEvolutionState,
 )
 from fatqat.errors import BackendValidationError
-from fatqat.simulator import Simulator
+from fatqat.simulator import EvolutionState, Simulator
 
 
 @pytest.mark.parametrize(
@@ -131,7 +130,7 @@ def test_execution_error_handling(monkeypatch, mode, request_kind):
     def fail(*_args, **_kwargs):
         raise error
 
-    monkeypatch.setattr(backend._engine, "materialize_execution", fail)
+    monkeypatch.setattr(backend._engine, "prepare_payload", fail)
     config = {} if mode is None else {"error_handling": mode}
     program = fq.Program(1)
     theta = fq.Parameter("theta")
@@ -250,9 +249,9 @@ def test_numba_trajectory_workflow_selection(shots, first_step, expected_workflo
     from fatqat.simulator._engine.engines.numba_engine import NumbaSVEngine
 
     # Numerical results alone cannot detect accidentally disabling compilation.
-    policy = NumbaSVEngine()._plan_execution(
+    policy = NumbaSVEngine()._select_policy(
         (first_step, MeasurementStep((0,), (0,))),
-        context=_ExecutionContext(
+        context=_RunContext(
             request=_ResultRequest(counts=True, final_state=False),
             system_dims=(2,),
             n_clbits=1,
@@ -260,7 +259,7 @@ def test_numba_trajectory_workflow_selection(shots, first_step, expected_workflo
             seed=None,
         ),
         simulation_config=_SimulationConfig(max_workers=1),
-        initial_state=_InitialEvolutionState(),
+        initial_state=EvolutionState(),
     )
 
     assert policy.workflow == expected_workflow
@@ -276,9 +275,9 @@ def test_process_worker_capacity_follows_the_cpu_affinity_mask(monkeypatch):
     monkeypatch.setattr(
         f"{module}.sched_getaffinity", lambda pid: {4, 5, 6}, raising=False
     )
-    policy = NumpySVEngine()._plan_execution(
+    policy = NumpySVEngine()._select_policy(
         (ResetStep((0,)), MeasurementStep((0,), (0,))),
-        context=_ExecutionContext(
+        context=_RunContext(
             request=_ResultRequest(counts=True, final_state=False),
             system_dims=(2,),
             n_clbits=1,
@@ -288,7 +287,7 @@ def test_process_worker_capacity_follows_the_cpu_affinity_mask(monkeypatch):
         simulation_config=_SimulationConfig(
             shot_parallelism="processes", kernel_parallelism="serial"
         ),
-        initial_state=_InitialEvolutionState(),
+        initial_state=EvolutionState(),
     )
 
     assert policy.worker_limit == 3

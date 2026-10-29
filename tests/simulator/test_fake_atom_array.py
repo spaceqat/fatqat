@@ -295,7 +295,7 @@ def test_atom_measurement_uses_per_shot_execution():
     program.measure(0, 0)
 
     backend = AtomArraySimulator()
-    _plan, facts = backend._lower_program(program)
+    _plan, _facts = backend._lower_program(program)
     execution_path = _select_execution_path(
         _plan,
         quantum_capabilities=backend._engine.capabilities.quantum,
@@ -303,7 +303,6 @@ def test_atom_measurement_uses_per_shot_execution():
     )
 
     assert execution_path == "per_shot"
-    assert facts.written_clbits == frozenset({0})
 
 
 @pytest.mark.parametrize("runtime", ["numpy", "numba"])
@@ -392,7 +391,7 @@ def test_empty_site_erasure_is_not_encoded_in_final_state():
     assert np.allclose(result.get_statevector(), [1, 0])
 
 
-def test_never_loaded_operations_do_not_change_default_final_state():
+def test_never_loaded_operations_do_not_change_final_state():
     backend = AtomArraySimulator()
 
     def final_state(*, include_empty_site_operations):
@@ -402,7 +401,11 @@ def test_never_loaded_operations_do_not_change_default_final_state():
         if include_empty_site_operations:
             program.add(ops.RX(np.pi), 1)
             program.add(ops.Reset, 1)
-        return backend.run(program).result().get_statevector()
+        return (
+            backend.run(program, shots=1, result_config={"final_state": True})
+            .result()
+            .get_statevector()
+        )
 
     assert np.allclose(
         final_state(include_empty_site_operations=True),
@@ -712,6 +715,18 @@ def test_put_only_final_state_remains_deterministic_for_any_shots():
         .get_statevector()
     )
     assert np.allclose(np.abs(state), [0, 1])
+
+
+def test_final_classical_state_reports_occupancy_after_put():
+    program = Program(2)
+    program.add(ops.Put, (0, 1))
+    classical = (
+        AtomArraySimulator()
+        .run(program, shots=10, result_config={"final_classical_state": True})
+        .result()
+        .get_classical_state()
+    )
+    assert classical.occupied == {0, 1}
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])

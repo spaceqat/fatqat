@@ -3,12 +3,12 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from fatqat import Program
+from fatqat.simulator import Simulator, EvolutionState, ClassicalState
 from fatqat.simulator._execution_contract import (
     _ResultRequest,
     _SimulationConfig,
-    _ExecutionContext,
-    _InitialEvolutionState,
-    _InitialClassicalState,
+    _RunContext,
 )
 from fatqat._backends.steps import (
     ApplyMatrixStep,
@@ -40,7 +40,7 @@ def _context(
     request,
     seed=0,
 ):
-    return _ExecutionContext(
+    return _RunContext(
         request=request,
         system_dims=(2,),
         n_clbits=n_clbits,
@@ -57,18 +57,18 @@ def _run(
     policy=_SERIAL,
     initial_state=None,
 ):
-    payload = engine.materialize_execution(
+    payload = engine.prepare_payload(
         tuple(plan),
         system_dims=context.system_dims,
         n_clbits=context.n_clbits,
         policy=policy,
     )
-    return engine.execute_in_process(
+    return engine.execute_payload(
         context,
         payload,
         policy,
         initial_state=(
-            initial_state if initial_state is not None else _InitialEvolutionState()
+            initial_state if initial_state is not None else EvolutionState()
         ),
     )
 
@@ -94,14 +94,14 @@ def test_execution_survives_layout_changes(density_matrix):
         ((2, 3, 2), (0, 2), _SERIAL),
         ((2, 3, 2), (0, 2), threaded),
     ):
-        context = _ExecutionContext(
+        context = _RunContext(
             request=_ResultRequest(counts=False, final_state=True),
             system_dims=dims,
             n_clbits=0,
             shots=1,
             seed=0,
         )
-        payload = engine.materialize_execution(
+        payload = engine.prepare_payload(
             (ApplyMatrixStep(matrix, targets),),
             system_dims=dims,
             n_clbits=0,
@@ -115,8 +115,8 @@ def test_execution_survives_layout_changes(density_matrix):
 
     # Old payloads must remain usable after both cache reuse and pruning.
     for context, payload, policy, expected in reversed(executions):
-        result = engine.execute_in_process(
-            context, payload, policy, initial_state=_InitialEvolutionState()
+        result = engine.execute_payload(
+            context, payload, policy, initial_state=EvolutionState()
         )
         np.testing.assert_allclose(result.state, expected)
 
@@ -130,13 +130,13 @@ def test_numba_trajectory_execution_handles_supported_and_fallback_plans(with_lo
         plan += (LossStep((0,), p=1.0),)
     plan += (MeasurementStep((0,), (0,)),)
     engine = NumbaSVEngine()
-    initial = _InitialEvolutionState()
+    initial = EvolutionState()
     context = _context(
         n_clbits=1,
         shots=4,
         request=_ResultRequest(counts=True, final_state=False),
     )
-    result = engine.execute(
+    (result,) = engine.execute(
         plan,
         context=context,
         simulation_config=_SimulationConfig(
@@ -188,7 +188,7 @@ def test_engine_fast_counts_and_state_share_collapse_event():
 @pytest.mark.parametrize("runtime", ["numpy", "numba"])
 @pytest.mark.parametrize(
     ("occupied", "reported"),
-    [(None, 1), (frozenset(), 0), (frozenset({0}), 1)],
+    [(None, 1), (set(), 0), ({0}, 1)],
 )
 def test_occupancy_loss_reload_and_feedback_start_fresh(runtime, occupied, reported):
     if runtime == "numba":
@@ -213,9 +213,7 @@ def test_occupancy_loss_reload_and_feedback_start_fresh(runtime, occupied, repor
         shots=4,
         request=_ResultRequest(counts=True, final_state=False),
     )
-    initial = _InitialEvolutionState(
-        classical=_InitialClassicalState(occupied=occupied)
-    )
+    initial = EvolutionState(classical=ClassicalState(occupied=occupied))
     policy = _ExecutionPolicy(
         execution_path="per_shot",
         shot_strategy="serial",
@@ -255,9 +253,9 @@ def test_initial_register_drives_feedback_and_is_fresh_per_shot(mode):
         from fatqat.simulator._engine.engines.numba_engine import NumbaSVEngine
 
         engine = NumbaSVEngine()
-    initial = _InitialEvolutionState(
+    initial = EvolutionState(
         quantum=np.array([0, 1], dtype=complex),
-        classical=_InitialClassicalState(clbits=(1, 2)),
+        classical=ClassicalState(clbits=[1, 2]),
     )
     x = np.array([[0, 1], [1, 0]], dtype=complex)
     plan = [ApplyMatrixStep(x, (0,), condition=((0, 1),)), MeasurementStep((0,), (0,))]
@@ -266,7 +264,7 @@ def test_initial_register_drives_feedback_and_is_fresh_per_shot(mode):
         shots=8,
         request=_ResultRequest(counts=True, final_state=False),
     )
-    result = engine.execute(
+    (result,) = engine.execute(
         tuple(plan),
         context=context,
         simulation_config=_SimulationConfig(
@@ -279,13 +277,13 @@ def test_initial_register_drives_feedback_and_is_fresh_per_shot(mode):
 
     assert result.outcome_keys.tolist() == [[0, 2]]
     assert result.outcome_counts.tolist() == [8]
-    assert initial.classical.clbits == (1, 2)
+    assert initial.classical.clbits == [1, 2]
     np.testing.assert_array_equal(initial.quantum, [0, 1])
 
 
 @pytest.mark.parametrize("measure", [False, True])
 def test_fast_counts_preserve_unwritten_initial_digits(measure):
-    initial = _InitialEvolutionState(classical=_InitialClassicalState(clbits=(1, 2)))
+    initial = EvolutionState(classical=ClassicalState(clbits=[1, 2]))
     context = _context(
         n_clbits=2,
         shots=4,
@@ -304,47 +302,32 @@ def test_fast_counts_preserve_unwritten_initial_digits(measure):
     assert result.outcome_counts.tolist() == [4]
 
 
-@pytest.mark.parametrize("digits", [(-1,), (1.5,), (True,), (2**63,)])
+@pytest.mark.parametrize("digits", [[-1], [1.5], [True], [2**63]])
 def test_initial_register_rejects_invalid_digits(digits):
     with pytest.raises(BackendValidationError, match="non-negative int64"):
-        _InitialClassicalState(clbits=digits)
+        Simulator().run(
+            Program(1, 1),
+            initial_state=EvolutionState(classical=ClassicalState(clbits=digits)),
+        )
 
 
-@pytest.mark.parametrize("digits", [(), (1, 2)])
+@pytest.mark.parametrize("digits", [[], [1, 2]])
 def test_initial_register_requires_matching_width(digits):
-    initial = _InitialEvolutionState(classical=_InitialClassicalState(clbits=digits))
+    initial = EvolutionState(classical=ClassicalState(clbits=digits))
     with pytest.raises(BackendValidationError, match="expected 1"):
-        initial.classical.validate(
-            capabilities=NumpySVEngine().capabilities, n_clbits=1
-        )
+        Simulator().run(Program(1, 1), initial_state=initial)
 
 
-@pytest.mark.parametrize(
-    ("classical", "message"),
-    [
-        (_InitialClassicalState(clbits=()), "does not support"),
-        (_InitialClassicalState(clbits=(0,)), "does not support"),
-        (
-            _InitialClassicalState(occupied=frozenset()),
-            "cannot track carrier occupancy",
-        ),
-        (
-            _InitialClassicalState(occupied=frozenset({0})),
-            "cannot track carrier occupancy",
-        ),
-    ],
-)
-def test_initial_classical_components_require_engine_support(classical, message):
-    initial = _InitialEvolutionState(classical=classical)
-    with pytest.raises(BackendValidationError, match=message):
-        initial.classical.validate(
-            capabilities=NumpyUnitaryEngine().capabilities, n_clbits=1
-        )
+@pytest.mark.parametrize("method", ["unitary", "superop"])
+def test_operator_methods_reject_initial_evolution_state(method):
+    initial = EvolutionState()
+    with pytest.raises(BackendValidationError, match="not meaningful"):
+        Simulator(method=method).run(Program(1, 1), initial_state=initial)
 
 
 def test_operator_engine_accepts_absent_classical_components():
     engine = NumpyUnitaryEngine()
-    engine.initialize((2,), initial_state=_InitialEvolutionState())
+    engine.initialize((2,), initial_state=EvolutionState())
     np.testing.assert_array_equal(engine.export_state(), np.eye(2))
 
 
@@ -353,15 +336,13 @@ def test_numba_initial_occupancy_preserves_erased_measurement():
 
     engine = NumbaSVEngine()
     plan = (ResetStep((0,)), MeasurementStep((0,), (0,)))
-    initial = _InitialEvolutionState(
-        classical=_InitialClassicalState(occupied=frozenset())
-    )
+    initial = EvolutionState(classical=ClassicalState(occupied=set()))
     context = _context(
         n_clbits=1,
         shots=4,
         request=_ResultRequest(counts=True, final_state=False),
     )
-    result = engine.execute(
+    (result,) = engine.execute(
         plan,
         context=context,
         simulation_config=_SimulationConfig(

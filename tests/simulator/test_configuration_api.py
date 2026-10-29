@@ -8,13 +8,16 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.simulator import SCQubitSimulator, Simulator
-from fatqat.simulator._execution_contract import _SimulationConfig
+from fatqat.simulator._execution_contract import (
+    _SimulationConfig,
+    _SimulatorResultConfig,
+)
 from fatqat.errors import BackendValidationError
-from fatqat.result import Result, _ResultConfig
+from fatqat.result import Result
 
 
 @dataclass(frozen=True)
-class _ExtendedResultConfig(_ResultConfig):
+class _ExtendedResultConfig(_SimulatorResultConfig):
     hardware_trace: bool | None = None
 
     def __post_init__(self) -> None:
@@ -90,6 +93,7 @@ def test_simulation_and_result_configuration_are_separate():
     assert result.metadata["result_config"] == {
         "counts": True,
         "final_state": True,
+        "final_classical_state": False,
     }
     assert result.metadata["simulation_config"] == {
         "seed": 4,

@@ -701,8 +701,8 @@ class Program:
     ) -> "Program":
         """Bind one trusted sweep row without repeating public validation.
 
-        ``_normalize_parameter_batch`` guarantees complete identity-keyed
-        scalar rows before this method is called. Keeping this seam separate
+        ``_normalize_parameter_batch`` and ``_parameter_batch_rows`` guarantee
+        complete identity-keyed scalar rows before this method is called. Keeping this seam separate
         prevents every sweep point from rechecking the same batch contract.
         """
         operations = _replace_parameterized_instructions(self._instructions, values)

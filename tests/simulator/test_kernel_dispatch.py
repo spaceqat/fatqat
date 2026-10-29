@@ -10,13 +10,12 @@ from fatqat.simulator._engine._execution_policy import _select_execution_path
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.simulator import Simulator
+from fatqat.simulator import EvolutionState, Simulator
 from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep, BuiltinKernelKey
 from fatqat.implementation import default_matrix_implementation_map
 from fatqat.simulator._execution_contract import (
     _ResultRequest,
-    _ExecutionContext,
-    _InitialEvolutionState,
+    _RunContext,
 )
 from fatqat.simulator._engine._execution_policy import _ExecutionPolicy
 
@@ -127,7 +126,7 @@ def test_kernel_specs_agree_with_content_classification():
 
 def _counts(engine_cls, plan, dims, n_clbits, shots, seed, request):
     simulator = engine_cls()
-    context = _ExecutionContext(
+    context = _RunContext(
         request=request,
         system_dims=tuple(dims),
         n_clbits=n_clbits,
@@ -137,7 +136,7 @@ def _counts(engine_cls, plan, dims, n_clbits, shots, seed, request):
     execution_path = _select_execution_path(
         plan,
         quantum_capabilities=simulator.capabilities.quantum,
-        initial_state=_InitialEvolutionState(),
+        initial_state=EvolutionState(),
     )
     policy = _ExecutionPolicy(
         execution_path=execution_path,
@@ -146,17 +145,17 @@ def _counts(engine_cls, plan, dims, n_clbits, shots, seed, request):
         worker_limit=1,
         fusion=False,
     )
-    payload = simulator.materialize_execution(
+    payload = simulator.prepare_payload(
         tuple(plan),
         system_dims=context.system_dims,
         n_clbits=context.n_clbits,
         policy=policy,
     )
-    raw = simulator.execute_in_process(
+    raw = simulator.execute_payload(
         context,
         payload,
         policy,
-        initial_state=_InitialEvolutionState(),
+        initial_state=EvolutionState(),
     )
     return list(zip(raw.outcome_keys.tolist(), raw.outcome_counts.tolist()))
 

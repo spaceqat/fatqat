@@ -194,12 +194,64 @@ def test_pulse_block_return_is_rejected():
         _invoke_pulse_rule(rule, ops.X, device_operands=("q0",))
 
 
-def test_shared_registry_rejections_keep_family_neutral_wording():
+def test_variable_arity_registration_still_rejects_an_invalid_pulse_rule():
     class VariableGate(ops.Operation):
         name = "VariableGate"
         num_subsystems = None
 
     implementations = PulseImplementationMap()
-    with pytest.raises(TypeError, match="implementation maps only support") as excinfo:
+    with pytest.raises(TypeError, match="PulseDefinition|callable"):
         implementations.add(VariableGate, "not a rule")
-    assert "matrix implementation map" not in str(excinfo.value)
+
+
+@pytest.mark.parametrize("device_specific", [False, True])
+def test_variable_arity_pulse_rules_receive_each_registered_width(
+    model, device_specific
+):
+    class DriveAll(ops.Operation):
+        name = "DriveAll"
+        num_subsystems = None
+
+    def drive_all(operation, *, device_operands):
+        del operation
+        return PulseDefinition(
+            1.0,
+            tuple(
+                _definition(model, operand).controls[0] for operand in device_operands
+            ),
+        )
+
+    implementations = PulseImplementationMap()
+    operands = [("q0",), ("q1", "q0")]
+    if device_specific:
+        for targets in operands:
+            implementations.add(DriveAll, drive_all, device_operands=targets)
+        assert (
+            implementations.implementation_for(DriveAll, device_operands=("q0", "q1"))
+            is None
+        )
+    else:
+        implementations.add(DriveAll, drive_all)
+    for targets in operands:
+        rule = implementations.implementation_for(DriveAll, device_operands=targets)
+        result = _invoke_pulse_rule(rule, DriveAll(), device_operands=targets)
+        assert tuple(control.channel for control in result.controls) == tuple(
+            model.control.drive(operand) for operand in targets
+        )
+
+
+@pytest.mark.parametrize("device_operands", [None, ()])
+def test_pulse_map_still_rejects_direct_control(model, device_operands):
+    definition = _definition(model)
+    operation = ops.PulseOperation(definition.duration, definition.controls)
+    with pytest.raises(TypeError, match="direct-control"):
+        PulseImplementationMap().add(
+            operation, definition, device_operands=device_operands
+        )
+
+
+def test_pulse_map_still_checks_fixed_arity(model):
+    with pytest.raises(ValueError, match="expects 1 device operand"):
+        PulseImplementationMap().add(
+            ops.X, _definition(model), device_operands=("q0", "q1")
+        )

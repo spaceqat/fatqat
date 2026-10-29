@@ -1,6 +1,6 @@
-"""Matrix rules and device-aware rule maps.
+"""Matrix, channel, and custom-operation rules with device-aware lookup.
 
-A rule receives an applied operation and its ordered program targets, then
+A matrix rule receives an applied operation and its ordered program targets, then
 returns the operation's local matrix. A map can register one rule for every
 device target or separate rules for specific ordered device labels.
 
@@ -12,19 +12,38 @@ control-first target order.
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Callable
+from math import prod
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
-from ..operations import Operation
+from ..errors import BackendValidationError, MatrixImplementationError
+from ..operations import CustomOperation, Operation
+from .custom import CustomOperationImplementation
 from ..registers import RegisterRef
-from ._operation_registry import (
+from .base_map import (
     DeviceOperands,
-    _OperationRuleRegistry,
+    _BaseImplementationMap,
 )
 
 if TYPE_CHECKING:
     from .._backends.steps import BuiltinKernelKey
+    from ..noise.base import Channel
+
+
+def _resolve_implementation_class(
+    descriptor: Operation | Channel | type[Operation] | type[Channel],
+) -> type[Operation] | type[Channel]:
+    """Normalize a simulator implementation key without coupling pulse maps to noise."""
+    # Noise descriptors also use implementation.matrices; import after module setup.
+    from ..noise.base import Channel
+
+    cls = descriptor if isinstance(descriptor, type) else type(descriptor)
+    if not issubclass(cls, (Operation, Channel)):
+        raise TypeError(
+            f"expected an Operation or Channel instance or subclass, got {descriptor!r}"
+        )
+    return cls
 
 
 class MatrixImplementation:
@@ -66,6 +85,21 @@ class MatrixImplementation:
         """
         return None
 
+    def _batch_builder(self, op: Operation) -> "_BatchedBuilder | None":
+        """Return a vectorized builder for sweeps of ``op``, or ``None``.
+
+        ``None`` (the default for every rule) means sweep replay calls the
+        rule once per row. Only canonical built-in registrations override
+        this, via `_KeyedImplementation`.
+        """
+        return None
+
+
+# A batched builder receives a field accessor (a float64 column for a
+# `Parameter` field, the declared value otherwise) and the program targets,
+# and returns an ``(rows, d, d)`` matrix stack.
+_BatchedBuilder = Callable[[Callable[[str], Any], tuple[RegisterRef, ...]], np.ndarray]
+
 
 class _KeyedImplementation(MatrixImplementation):
     """Delegating wrapper that attaches canonical kernel identity to a rule.
@@ -73,12 +107,28 @@ class _KeyedImplementation(MatrixImplementation):
     Applied only by ``default_matrix_implementation_map()`` at registration
     time. The wrapped rule keeps full ownership of matrix production; this
     wrapper adds exactly one fact - the `BuiltinKernelKey` naming which
-    canonical implementation the caller selected.
+    canonical implementation the caller selected - plus, for a parametric
+    gate, the batched twin of its rule used by sweep replay.
+
+    The batched twin applies only to exactly ``op_cls``. A keyed rule can be
+    re-registered for another class, which may override `validate_targets`
+    or the fields the builder reads. The built-in classes validate targets
+    without reading their angles, and a template is validated when it joins
+    a program, so batched replay has nothing to re-check.
     """
 
-    def __init__(self, rule: MatrixImplementation, key: "BuiltinKernelKey") -> None:
+    def __init__(
+        self,
+        rule: MatrixImplementation,
+        key: "BuiltinKernelKey",
+        *,
+        op_cls: type[Operation] | None = None,
+        batch: _BatchedBuilder | None = None,
+    ) -> None:
         self._rule = rule
         self._key = key
+        self._op_cls = op_cls
+        self._batch = batch
 
     def __call__(
         self, op: Operation, *, targets: tuple[RegisterRef, ...] = ()
@@ -89,6 +139,46 @@ class _KeyedImplementation(MatrixImplementation):
         self, op: Operation, *, targets: tuple[RegisterRef, ...]
     ) -> "BuiltinKernelKey | None":
         return self._key
+
+    def _batch_builder(self, op: Operation) -> _BatchedBuilder | None:
+        if self._batch is None or type(op) is not self._op_cls:
+            return None
+        return self._batch
+
+
+def _validate_matrix_shape(
+    shape: tuple[int, ...], op: Operation, target_dims: tuple[int, ...]
+) -> None:
+    """Check a resolved local matrix shape against its target dimensions."""
+    expected = prod(target_dims)
+    if shape != (expected, expected):
+        raise BackendValidationError(
+            f"{type(op).__name__} resolved to a {shape} matrix, incompatible "
+            f"with target dimensions {target_dims} (expected "
+            f"{(expected, expected)})"
+        )
+
+
+def _build_matrix(
+    rule: MatrixImplementation,
+    op: Operation,
+    *,
+    targets: tuple[RegisterRef, ...],
+    target_dims: tuple[int, ...],
+) -> np.ndarray:
+    """Call a matrix rule for one applied operation and validate its shape.
+
+    Rule failures raise `MatrixImplementationError` naming the operation; a
+    wrongly shaped matrix raises `BackendValidationError`.
+    """
+    try:
+        matrix = rule(op, targets=targets)
+    except Exception as exc:
+        raise MatrixImplementationError(
+            f"implementation for {type(op).__name__} raised: {exc}"
+        ) from exc
+    _validate_matrix_shape(matrix.shape, op, target_dims)
+    return matrix
 
 
 def _validate_square_matrix(matrix: np.ndarray) -> None:
@@ -204,18 +294,18 @@ class _CallableMatrixImplementation(MatrixImplementation):
 
 
 def _wrap_rule(
-    op_cls: type[Operation],
-    rule: "MatrixImplementation | Callable | np.ndarray",
-) -> MatrixImplementation:
-    """Normalize an `add()` implementation argument into a `MatrixImplementation`.
+    op_cls: type[Operation] | type[Channel],
+    rule: "MatrixImplementation | CustomOperationImplementation | Callable | np.ndarray",
+) -> MatrixImplementation | CustomOperationImplementation | Callable:
+    """Normalize matrix rules and retain channel or custom-operation rules.
 
     Accepts an already-built `MatrixImplementation` (returned as-is, e.g. a
     `FixedMatrix` or `_DimMatrix`), a plain `np.ndarray` (wrapped in
     `FixedMatrix`, which only requires it be square with side length >= 2,
     see `_validate_square_matrix`), or a bare `f(op)`/`f(op, targets)`
-    callable (wrapped). Every stored rule is a `MatrixImplementation`
-    instance, so `implementation_for()` always returns a uniform type regardless of how the
-    rule was registered.
+    callable (wrapped). These become MatrixImplementation instances. CustomOperation
+    classes instead require CustomOperationImplementation, retained unchanged.
+    Channel classes require a callable, also retained unchanged.
 
     A callable is not arity-checked at registration: a rule that cannot be
     called in its detected `f(op)`/`f(op, targets)` shape raises the first
@@ -228,6 +318,18 @@ def _wrap_rule(
             object), checked explicitly here so the error names the
             operation and the bad value.
     """
+    if not issubclass(op_cls, Operation):
+        if not callable(rule):
+            raise TypeError(
+                f"rule for {op_cls.__name__} must be callable, got {rule!r}"
+            )
+        return rule
+    if issubclass(op_cls, CustomOperation):
+        if not isinstance(rule, CustomOperationImplementation):
+            raise TypeError("CustomOperation requires a CustomOperationImplementation")
+        return rule
+    if isinstance(rule, CustomOperationImplementation):
+        raise TypeError("custom implementations require a CustomOperation class")
     if isinstance(rule, MatrixImplementation):
         return rule
     if isinstance(rule, np.ndarray):
@@ -240,49 +342,58 @@ def _wrap_rule(
     return _CallableMatrixImplementation(rule, _callable_wants_targets(rule))
 
 
-class MatrixImplementationMap:
-    """Map fixed-arity operation families to local matrix rules.
+class MatrixImplementationMap(
+    _BaseImplementationMap[
+        MatrixImplementation | CustomOperationImplementation | Callable
+    ]
+):
+    """Map operation and channel classes to simulator implementations.
 
+    Registration and lookup accept operation or channel instances and classes.
     A new map is empty. Register either one uniform rule or one or more
     device-specific rules for an operation family; the two registration modes
-    cannot be mixed for the same operation.
+    cannot be mixed for the same operation. ``CustomOperation`` classes require
+    ``CustomOperationImplementation`` objects. Channel rules return Kraus matrices.
     """
 
     def __init__(self) -> None:
         """Create an empty implementation map."""
-        self._registry: _OperationRuleRegistry[MatrixImplementation] = (
-            _OperationRuleRegistry()
-        )
+        super().__init__(_resolve_implementation_class)
 
     def add(
         self,
-        op: Operation | type[Operation],
-        implementation: "MatrixImplementation | Callable | np.ndarray",
+        op: Operation | Channel | type[Operation] | type[Channel],
+        implementation: "MatrixImplementation | CustomOperationImplementation | Callable | np.ndarray",
         *,
         device_operands: DeviceOperands | None = None,
     ) -> None:
-        """Add a uniform or device-specific matrix rule.
+        """Add a uniform or device-specific operation or channel implementation.
 
         Matrix rows and columns follow program target order: `targets[0]` is
         the most-significant local factor and the last target changes fastest.
         For controlled operations, controls come before targets.
 
         Args:
-            op: Operation instance, such as `ops.X`, or a fixed-arity
-                `Operation` subclass. Instances and their classes select the
-                same operation family.
-            implementation: A `MatrixImplementation`, a NumPy array, or a
-                callable. An array becomes a `FixedMatrix`. A callable is
-                called as `rule(op)` unless it accepts a `targets=` keyword or
-                `**kwargs`; in that case FATQAT calls it as
-                `rule(op, targets=targets)`.
+            op: Operation or Channel instance or subclass.
+                Instances and their classes select the same operation family.
+            implementation: The rule for the registered operation or channel:
+
+                - Matrix operation: a `MatrixImplementation`, a NumPy array,
+                  or a callable. Arrays become `FixedMatrix` rules. Callables
+                  receive `rule(op)`, or `rule(op, targets=targets)` if they
+                  accept a `targets=` keyword or `**kwargs`.
+                - Channel: a callable receiving `rule(channel, targets=targets)`
+                  and returning a nonempty tuple of Kraus matrices.
+                - Custom operation: a `CustomOperationImplementation` object
+                  defining `execute(operation, state, context)`.
             device_operands: Ordered, hashable device labels for one physical
-                target tuple. Its length must equal the operation arity. Omit
-                it to make the rule apply uniformly.
+                target tuple. Its length must match a fixed integer
+                ``num_subsystems``. Instance-dependent and variable widths match
+                the exact registered tuple when applied. Omit for a uniform rule.
 
         Raises:
-            TypeError: If `op` is not an operation instance or subclass, the
-                operation has variable arity or is a direct-control operation,
+            TypeError: If `op` is not an operation or channel instance or subclass,
+                the operation is a direct-control operation,
                 `implementation` has an unsupported form, or a device label is
                 not hashable.
             ValueError: If an array is not square with side length at least
@@ -294,99 +405,25 @@ class MatrixImplementationMap:
         only when a backend first uses the rule.
         """
         if device_operands is not None:
-            self._registry.add_device_operands(
+            self._add_device_operands(
                 op,
                 device_operands,
                 lambda op_cls: _wrap_rule(op_cls, implementation),
             )
             return
-        self._registry.add_unconstrained(
-            op, lambda op_cls: _wrap_rule(op_cls, implementation)
+        self._add_unconstrained(
+            op,
+            lambda op_cls: _wrap_rule(op_cls, implementation),
         )
-
-    def supports(
-        self,
-        op: Operation | type[Operation],
-        *,
-        device_operands: DeviceOperands | None = None,
-    ) -> bool:
-        """Return whether the operation has a matching rule.
-
-        With `device_operands` omitted, this reports whether the operation
-        family has any uniform or device-specific registration. With device
-        operands supplied, it reports whether that exact tuple is supported;
-        a uniform rule supports every tuple.
-
-        Args:
-            op: Operation instance or subclass.
-            device_operands: Optional ordered device-label tuple.
-        """
-        if device_operands is not None:
-            return (
-                self.implementation_for(op, device_operands=device_operands) is not None
-            )
-        return self._registry.supports(op)
-
-    def implementation_for(
-        self,
-        op: Operation | type[Operation],
-        *,
-        device_operands: DeviceOperands | None = None,
-    ) -> MatrixImplementation | None:
-        """Return the matrix implementation selected for an operation.
-
-        The return value is always a `MatrixImplementation`, including when an
-        array or callable was originally registered.
-
-        Without `device_operands`, only a uniform rule is returned; a family
-        that has only device-specific rules returns `None`. With a tuple,
-        FATQAT returns its exact device-specific rule when that registration
-        mode is in use, or falls back to the family's uniform rule. `None`
-        means no rule matches the requested lookup.
-
-        Args:
-            op: Operation instance or subclass.
-            device_operands: Ordered device labels. Omit to look up only the
-                uniform rule.
-
-        Returns:
-            The selected rule, or `None` when none matches.
-        """
-        return self._registry.get(op, device_operands=device_operands)
 
     def supported_operations(self) -> frozenset[type[Operation]]:
         """Return operation classes that have at least one registered rule."""
-        return self._registry.supported_operations()
+        return frozenset(
+            cls for cls in self._registered_types() if issubclass(cls, Operation)
+        )
 
-    def device_operands_for(
-        self, op: Operation | type[Operation]
-    ) -> frozenset[DeviceOperands]:
-        """Return every explicitly registered device-label tuple for `op`.
-
-        The result is empty both for an unsupported operation and for an
-        operation with a uniform rule. Use `supports(op)` to distinguish
-        those cases.
-        """
-        return self._registry.device_operands_for(op)
-
-    def remove(self, op: Operation | type[Operation]) -> None:
-        """Remove all rules for an operation family, if present.
-
-        This removes either the uniform rule or every device-specific rule.
-        Removing an unregistered operation is a no-op.
-
-        Args:
-            op: Operation instance or subclass.
-        """
-        self._registry.remove(op)
-
-    def copy(self) -> "MatrixImplementationMap":
-        """Return a map whose registrations can be edited independently.
-
-        Adding or removing rules on either map does not affect the other.
-        Registered rule objects are shared rather than deep-copied, so a
-        stateful custom rule remains the same object in both maps.
-        """
-        clone = MatrixImplementationMap()
-        clone._registry = self._registry.copy()
-        return clone
+    def supported_channels(self) -> frozenset[type[Channel]]:
+        """Return channel classes that have at least one registered rule."""
+        return frozenset(
+            cls for cls in self._registered_types() if not issubclass(cls, Operation)
+        )

@@ -1,10 +1,13 @@
 """Estimator: exact expectation values, result shape, and rejected programs."""
 
+import tracemalloc
+
 import numpy as np
 import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
+import fatqat.simulator.simulator as simulator_module
 from fatqat.errors import (
     BackendExecutionError,
     BackendValidationError,
@@ -13,7 +16,6 @@ from fatqat.errors import (
 )
 from fatqat.job import Job
 from fatqat.observable import Observable
-from fatqat.result import Result
 
 
 def _bell(measured=False):
@@ -103,23 +105,26 @@ def test_qnn_shaped_vector_sweep_preserves_multi_observable_shape():
     )
 
 
-def test_sampled_sweep_matches_same_seed_repeated_runs_and_forwards_options(
-    monkeypatch,
-):
+@pytest.mark.parametrize(
+    "noisy, chunk_bytes",
+    [(False, None), (False, 1), (True, None)],
+    ids=["deterministic", "deterministic-row-chunks", "stochastic"],
+)
+def test_sampled_sweep_matches_same_seed_repeated_runs(monkeypatch, noisy, chunk_bytes):
+    # Noise makes a statevector run stochastic, so every term reruns the plan.
+    # A tiny state budget samples deterministic base states one row at a time.
+    if chunk_bytes is not None:
+        monkeypatch.setattr(simulator_module, "_SAMPLED_BASE_STATE_BYTES", chunk_bytes)
     angle = fq.Parameter("angle")
     program = fq.Program(1)
     program.add(ops.RY(angle), 0)
     observable = Observable([("X", 1.0)])
     values = np.array([0.2, 0.9])
-    estimator = _estimator()
-    original_run = estimator.run
-    forwarded = []
-
-    def record(bound, supplied_observables, **kwargs):
-        forwarded.append((supplied_observables, kwargs))
-        return original_run(bound, supplied_observables, **kwargs)
-
-    monkeypatch.setattr(estimator, "run", record)
+    noise = None
+    if noisy:
+        noise = fq.NoiseModel()
+        noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.RY)
+    estimator = _estimator(noise=noise)
     config = {"seed": 23}
     swept = estimator.run_sweep(
         program,
@@ -128,9 +133,8 @@ def test_sampled_sweep_matches_same_seed_repeated_runs_and_forwards_options(
         shots=256,
         simulation_config=config,
     ).result()
-    monkeypatch.setattr(estimator, "run", original_run)
     explicit = [
-        original_run(
+        estimator.run(
             program.assign_parameters({angle: value}),
             observable,
             shots=256,
@@ -145,72 +149,59 @@ def test_sampled_sweep_matches_same_seed_repeated_runs_and_forwards_options(
     assert [result.get_standard_error() for result in swept] == pytest.approx(
         [result.get_standard_error() for result in explicit]
     )
-    assert forwarded == [
-        (observable, {"shots": 256, "simulation_config": config}),
-        (observable, {"shots": 256, "simulation_config": config}),
-    ]
 
 
-def test_estimator_sweep_direct_inner_failure_propagates(monkeypatch):
+def test_exact_sweep_keeps_one_evolved_state_at_a_time():
+    # Exact values need each row's state only until it is contracted.
+    n_qubits, rows = 8, 64
+    angles = [fq.Parameter(f"angle{i}") for i in range(n_qubits)]
+    program = fq.Program(n_qubits)
+    for qubit, angle in enumerate(angles):
+        program.add(ops.RY(angle), qubit)
+    observable = Observable([("Z" * n_qubits, 1.0)])
+    values = {angle: np.linspace(0.0, 1.0, rows) for angle in angles}
+    estimator = _estimator("density_matrix")
+    estimator.run_sweep(program, observable, values, shots=0).result()
+
+    tracemalloc.start()
+    try:
+        estimator.run_sweep(program, observable, values, shots=0).result()
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    state_bytes = 16 * 4**n_qubits
+    assert peak < 8 * state_bytes
+
+
+@pytest.mark.parametrize(
+    "error, fails_job",
+    [
+        (BackendValidationError("direct backend failure"), False),
+        (RuntimeError("stored backend failure"), True),
+        (KeyboardInterrupt("backend interrupted"), False),
+    ],
+    ids=["raised", "failed-job", "interrupt"],
+)
+def test_estimator_sweep_backend_failure_keeps_the_same_exception(
+    monkeypatch, error, fails_job
+):
     angle = fq.Parameter("angle")
     program = fq.Program(1)
     program.add(ops.RX(angle), 0)
     observable = Observable([("Z", 1.0)])
     estimator = _estimator()
 
-    def fail_on_second(bound, _observables, **_kwargs):
-        if bound._instructions[0].operation.theta == 0.2:
-            raise BackendValidationError("direct point failure")
-        return Job(
-            status="DONE",
-            result=Result(data={"expectation": 1.0, "standard_error": 0.0}),
-        )
-
-    monkeypatch.setattr(estimator, "run", fail_on_second)
-    with pytest.raises(BackendValidationError, match="direct point failure"):
-        estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
-
-
-def test_estimator_sweep_failed_point_job_fails_outer_job(monkeypatch):
-    angle = fq.Parameter("angle")
-    program = fq.Program(1)
-    program.add(ops.RX(angle), 0)
-    observable = Observable([("Z", 1.0)])
-    estimator = _estimator()
-    error = RuntimeError("stored point failure")
-
-    def fail_on_second(bound, _observables, **_kwargs):
-        if bound._instructions[0].operation.theta == 0.2:
+    def fail(*_args, **_kwargs):
+        if fails_job:
             return Job(status="ERROR", error=error)
-        return Job(
-            status="DONE",
-            result=Result(data={"expectation": 1.0, "standard_error": 0.0}),
-        )
+        raise error
 
-    monkeypatch.setattr(estimator, "run", fail_on_second)
-    outer = estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
-
-    with pytest.raises(RuntimeError, match="stored point failure") as caught:
+    monkeypatch.setattr(estimator._backend, "_run_expectation", fail)
+    with pytest.raises(type(error)) as caught:
+        outer = estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
+        assert outer.status == "ERROR"
         outer.result()
-    assert caught.value is error
-
-
-def test_estimator_sweep_propagates_point_job_interrupt(monkeypatch):
-    angle = fq.Parameter("angle")
-    program = fq.Program(1)
-    program.add(ops.RX(angle), 0)
-    observable = Observable([("Z", 1.0)])
-    estimator = _estimator()
-    error = KeyboardInterrupt("point interrupted")
-
-    monkeypatch.setattr(
-        estimator,
-        "run",
-        lambda *_args, **_kwargs: Job(status="ERROR", error=error),
-    )
-
-    with pytest.raises(KeyboardInterrupt, match="point interrupted") as caught:
-        estimator.run_sweep(program, observable, {angle: [0.1]})
     assert caught.value is error
 
 

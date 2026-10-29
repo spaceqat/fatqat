@@ -101,43 +101,17 @@ class Estimator:
         _validate_simulation_config(simulation_config)
         _validate_program(program, observable_list)
         _raise_for_unbound_parameters(program._instructions)
-
-        internal_job = self._backend._run_expectation(
+        job = self._evaluate(
             program,
-            tuple(observable_list),
+            observable_list,
+            is_sequence,
             shots=shots,
             simulation_config=simulation_config,
         )
-        try:
-            execution = internal_job.result()
-        except Exception as exc:
-            return Job(status="ERROR", error=exc)
-
-        def shape(entries: tuple[float, ...]) -> Any:
-            return np.asarray(entries) if is_sequence else entries[0]
-
-        metadata = {
-            "method": execution.method,
-            "runtime": execution.runtime,
-        }
-        if execution.solver is not None:
-            metadata["runtime_details"] = {"solver": execution.solver}
-        metadata.update(
-            {
-                "backend_name": type(self._backend).__name__,
-                "shots": shots,
-            }
-        )
-        return Job(
-            status="DONE",
-            result=Result(
-                data={
-                    "expectation": shape(execution.values),
-                    "standard_error": shape(execution.standard_errors),
-                },
-                metadata=metadata,
-            ),
-        )
+        if job.status != "DONE":
+            return job
+        (result,) = job.result()
+        return Job(status="DONE", result=result)
 
     def run_sweep(
         self,
@@ -198,20 +172,67 @@ class Estimator:
             >>> [round(result.get_expectation(), 6) for result in results]
             [1.0, 0.540302]
         """
-        rows = _normalize_parameter_batch(program._instructions, bindings)
-        results: list[Result] = []
-        for row in rows:
-            bound = program._assign_normalized_parameters(row)
-            point_job = self.run(
-                bound,
-                observables,
-                shots=shots,
-                simulation_config=simulation_config,
+        columns = _normalize_parameter_batch(program._instructions, bindings)
+        observable_list, is_sequence = _normalize_observables(observables)
+        _validate_shots(shots)
+        _validate_simulation_config(simulation_config)
+        _validate_program(program, observable_list)
+        return self._evaluate(
+            program,
+            observable_list,
+            is_sequence,
+            shots=shots,
+            simulation_config=simulation_config,
+            parameter_values=columns,
+        )
+
+    def _evaluate(
+        self,
+        program: Program,
+        observable_list: list[Observable],
+        is_sequence: bool,
+        *,
+        shots: int,
+        simulation_config: dict[str, Any] | None,
+        parameter_values: Mapping[Parameter, np.ndarray] | None = None,
+    ) -> Job[list[Result]]:
+        """Run the backend's expectation hook once and shape each entry's result.
+
+        A failed backend job keeps its exception object; no partial list is
+        exposed.
+        """
+        internal_job = self._backend._run_expectation(
+            program,
+            tuple(observable_list),
+            shots=shots,
+            simulation_config=simulation_config,
+            parameter_values=parameter_values,
+        )
+        try:
+            executions = internal_job.result()
+        except Exception as exc:
+            return Job(status="ERROR", error=exc)
+
+        def shape(entries: tuple[float, ...]) -> Any:
+            return np.asarray(entries) if is_sequence else entries[0]
+
+        results = []
+        for execution in executions:
+            metadata = {"method": execution.method, "runtime": execution.runtime}
+            if execution.solver is not None:
+                metadata["runtime_details"] = {"solver": execution.solver}
+            metadata.update(
+                {"backend_name": type(self._backend).__name__, "shots": shots}
             )
-            try:
-                results.append(point_job.result())
-            except Exception as exc:
-                return Job(status="ERROR", error=exc)
+            results.append(
+                Result(
+                    data={
+                        "expectation": shape(execution.values),
+                        "standard_error": shape(execution.standard_errors),
+                    },
+                    metadata=metadata,
+                )
+            )
         return Job(status="DONE", result=results)
 
 

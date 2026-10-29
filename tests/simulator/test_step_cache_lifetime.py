@@ -112,44 +112,32 @@ def test_sweep_keeps_fixed_resolutions_and_releases_replaced_rows(monkeypatch, m
         else backend._engine._superoperators
     )
     observed = _observe_resolutions(monkeypatch, cache, "resolve")
-    execute = backend._engine.execute
-    rows_checked = 0
-    fixed_resolution = None
-    previous_parameterized = []
-
-    def check_row(**kwargs):
-        nonlocal rows_checked, fixed_resolution, previous_parameterized
-        start = len(observed)
-        raw = execute(**kwargs)
-        # Identify the operations, not their resolution order or call count.
-        current = observed[start:]
-        fixed = [item for item in current if item[0]().kernel_key == BuiltinKernelKey.H]
-        parameterized = [
-            item for item in current if item[0]().kernel_key == BuiltinKernelKey.RY
-        ]
-        assert fixed and parameterized
-        if fixed_resolution is None:
-            fixed_resolution = fixed[0]
-        for item in fixed:
-            assert item[0]() is fixed_resolution[0]()
-            # Reusing arrays avoids rebuilding fixed numerical data per sweep row.
-            assert all(
-                before() is not None and before() is after()
-                for before, after in zip(fixed_resolution[2], item[2], strict=True)
-            )
-        _assert_released(previous_parameterized)
-        previous_parameterized = parameterized
-        rows_checked += 1
-        return raw
-
-    monkeypatch.setattr(backend._engine, "execute", check_row)
     theta = fq.Parameter("theta")
     program = fq.Program(1)
     program.add(ops.H, 0)
     program.add(ops.RY(theta), 0)
     angles = [0.1, 0.1, 0.6]
     swept = backend.run_sweep(program, {theta: angles}).result()
-    assert rows_checked == len(angles)
+
+    # Identify operations, not the resolution order or call count of a
+    # particular execution path.
+    gc.collect()
+    alive = [item for item in observed if item[0]() is not None]
+    fixed = [item for item in alive if item[0]().kernel_key == BuiltinKernelKey.H]
+    parameterized = {
+        id(item[0]()) for item in alive if item[0]().kernel_key == BuiltinKernelKey.RY
+    }
+    assert fixed
+    for item in fixed:
+        assert item[0]() is fixed[0][0]()
+        # Reusing arrays avoids rebuilding fixed numerical data per entry.
+        assert all(
+            before() is not None and before() is after()
+            for before, after in zip(fixed[0][2], item[2], strict=True)
+        )
+    # Only the last parametric step may stay cached for the next plan.
+    assert len(parameterized) <= 1
+    _assert_released([item for item in observed if item[0]() is None])
     for angle, result in zip(angles, swept, strict=True):
         reference = (
             Simulator(method, runtime="numpy")

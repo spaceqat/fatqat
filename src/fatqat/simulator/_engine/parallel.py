@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from .state import EvolutionState
 from .._execution_contract import (
-    _ExecutionContext as ExecutionContext,
-    _InitialEvolutionState as InitialEvolutionState,
+    _RunContext,
 )
 from ..._backends.steps import ResolvedStep
 from ._execution_policy import (
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from typing import Protocol
 
     class _ProcessEngine(Protocol):
-        def materialize_execution(
+        def prepare_payload(
             self,
             plan: tuple[ResolvedStep, ...],
             *,
@@ -31,14 +31,14 @@ if TYPE_CHECKING:
             policy: ExecutionPolicy,
         ) -> Any: ...
 
-        def execute_shot_batch(
+        def execute_worker_shots(
             self,
-            context: ExecutionContext,
+            context: _RunContext,
             payload: Any,
             seed_batch: list[np.random.SeedSequence],
             policy: ExecutionPolicy,
             *,
-            initial_state: InitialEvolutionState,
+            initial_state: EvolutionState,
         ) -> list[tuple[int, ...]]: ...
 
 
@@ -73,22 +73,22 @@ def _split_into_batches(
 
 def _run_shot_batch(
     engine_factory: Callable[[], _ProcessEngine],
-    context: ExecutionContext,
+    context: _RunContext,
     plan: tuple[ResolvedStep, ...],
     seed_batch: list[np.random.SeedSequence],
     child_policy: ExecutionPolicy,
-    initial_state: InitialEvolutionState,
+    initial_state: EvolutionState,
 ) -> list[tuple[int, ...]]:
     engine = engine_factory()
     # Bind worker-local numerical resources once for the whole batch. No parent
     # callbacks, caches, or device allocations cross the process boundary.
-    payload = engine.materialize_execution(
+    payload = engine.prepare_payload(
         plan,
         system_dims=context.system_dims,
         n_clbits=context.n_clbits,
         policy=child_policy,
     )
-    return engine.execute_shot_batch(
+    return engine.execute_worker_shots(
         context, payload, seed_batch, child_policy, initial_state=initial_state
     )
 
@@ -104,10 +104,10 @@ def _loky_executor(max_workers: int):
 
 def _run_shots_in_processes(
     engine_factory: Callable[[], _ProcessEngine],
-    context: ExecutionContext,
+    context: _RunContext,
     plan: tuple[ResolvedStep, ...],
     policy: ExecutionPolicy,
-    initial_state: InitialEvolutionState,
+    initial_state: EvolutionState,
 ) -> list[tuple[int, ...]]:
     """Run shot batches in real child processes under a serial child policy."""
     assert policy.shot_strategy == "processes"

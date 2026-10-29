@@ -6,8 +6,8 @@ and result assembly. A `Simulator` constructs one engine and drives it.
 
 This layer is private and deliberately re-exports nothing. A run crosses the
 boundary as one immutable simulator-owned execution context and one resolved
-policy. The engine configures dimensions, materializes an engine-specific
-payload, and executes that payload only through local or shot-batch entry
+policy. The engine configures dimensions, prepares an engine-specific
+payload, and executes that payload only through local or worker-shot entry
 points. Engines select execution policies and dispatch routes; the `Simulator`
 assembles public results. Engines remain private rather than a supported
 extension point; users reach simulation through

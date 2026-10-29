@@ -1,17 +1,18 @@
-"""Factory for FATQAT's built-in gate-matrix rules."""
+"""Built-in matrix and channel implementation rules."""
 
 from __future__ import annotations
 
 from .. import operations as ops
 from .._backends.steps import BuiltinKernelKey as K
-from .base import (
+from .matrix_map import (
     FixedMatrix,
     MatrixImplementationMap,
     _DimMatrix,
+    _BatchedBuilder,
     _KeyedImplementation,
     _wrap_rule,
 )
-from ._operation_registry import _resolve_operation_class
+from .base_map import _resolve_operation_class
 from .matrices import (
     _CCX,
     _CS,
@@ -49,6 +50,17 @@ from .matrices import (
     _subspace_ry_rule,
     _subspace_rz_rule,
     _swap_levels_rule,
+    _cphase_batch_rule,
+    _phase_batch_rule,
+    _rx_batch_rule,
+    _ry_batch_rule,
+    _rz_batch_rule,
+    _subspace_rx_batch_rule,
+    _subspace_ry_batch_rule,
+    _subspace_rz_batch_rule,
+    _u_batch_rule,
+    _u1_batch_rule,
+    _u2_batch_rule,
     sum_matrix,
 )
 
@@ -93,19 +105,68 @@ _DEFAULT_RULES = (
     (ops.CClock, _cclock_rule, K.CCLOCK),
 )
 
+# Batched twins of the parametric built-in rules, used by sweep replay. Each
+# reads the same fields as its scalar rule in `_DEFAULT_RULES`.
+_BATCHED_RULES: dict[type[ops.Operation], _BatchedBuilder] = {
+    ops.RX: _rx_batch_rule,
+    ops.RY: _ry_batch_rule,
+    ops.RZ: _rz_batch_rule,
+    ops.Phase: _phase_batch_rule,
+    ops.U: _u_batch_rule,
+    ops.U1: _u1_batch_rule,
+    ops.U2: _u2_batch_rule,
+    ops.U3: _u_batch_rule,
+    ops.CPhase: _cphase_batch_rule,
+    ops.SubspaceRX: _subspace_rx_batch_rule,
+    ops.SubspaceRY: _subspace_ry_batch_rule,
+    ops.SubspaceRZ: _subspace_rz_batch_rule,
+}
+
 
 def default_matrix_implementation_map() -> MatrixImplementationMap:
-    """Return a new map containing FATQAT's built-in matrix gate rules.
+    """Return a new map containing built-in matrix gates and finite channel rules.
 
     Each call returns an independent map. Add, replace, or remove rules on the
     returned value without changing later calls or another backend's map.
 
     Returns:
-        A matrix implementation map covering the built-in matrix operations
-        exported by `fatqat.operations`.
+        An implementation map covering built-in matrix operations and the
+        Depolarizing, AmplitudeDamping, PhaseDamping, PauliChannel, and
+        TransitionRelaxation channels.
     """
     m = MatrixImplementationMap()
+    _add_default_channel_rules(m)
     for op, rule, key in _DEFAULT_RULES:
         op_cls = _resolve_operation_class(op)
-        m.add(op, _KeyedImplementation(_wrap_rule(op_cls, rule), key))
+        implementation = _KeyedImplementation(
+            _wrap_rule(op_cls, rule),
+            key,
+            op_cls=op_cls,
+            batch=_BATCHED_RULES.get(op_cls),
+        )
+        m.add(op, implementation)
     return m
+
+
+def _add_default_channel_rules(implementations: MatrixImplementationMap) -> None:
+    """Include the standard finite channels in a simulator profile's map."""
+    from ..noise.catalog import (
+        AmplitudeDamping,
+        Depolarizing,
+        PauliChannel,
+        PhaseDamping,
+        amplitude_damping_rule,
+        depolarizing_rule,
+        pauli_channel_rule,
+        phase_damping_rule,
+    )
+    from ..noise.transition_relaxation import (
+        TransitionRelaxation,
+        transition_relaxation_rule,
+    )
+
+    implementations.add(Depolarizing, depolarizing_rule)
+    implementations.add(AmplitudeDamping, amplitude_damping_rule)
+    implementations.add(PhaseDamping, phase_damping_rule)
+    implementations.add(PauliChannel, pauli_channel_rule)
+    implementations.add(TransitionRelaxation, transition_relaxation_rule)

@@ -36,6 +36,7 @@ import numpy as np
 from .. import operations as ops
 from .._sc_target import SCTarget, _normalize_couplings, _validate_num_qubits
 from ..errors import BackendValidationError
+from ..implementation.registry import _add_default_channel_rules
 from ..implementation import (
     MatrixImplementationMap,
     MatrixImplementation,
@@ -214,6 +215,7 @@ def _sx_implementation_map(
     cz_rule = _require_rule(defaults, ops.CZ)
 
     m = MatrixImplementationMap()
+    _add_default_channel_rules(m)
     m.add(ops.X, x_rule)
     m.add(ops.RZ, rz_rule)
     m.add(ops.SX, sx_rule)
@@ -362,6 +364,7 @@ def _rotation_implementation_map(
     cz_rule = _require_rule(defaults, ops.CZ)
 
     m = MatrixImplementationMap()
+    _add_default_channel_rules(m)
     m.add(ops.RX, rx_rule)
     m.add(ops.RY, ry_rule)
     m.add(ops.RZ, rz_rule)

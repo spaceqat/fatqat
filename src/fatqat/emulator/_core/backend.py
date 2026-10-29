@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any, final
 
@@ -19,7 +19,10 @@ from ..._expectation import (
     expectation_density_matrix,
     expectation_statevector,
 )
-from ..._parameter_binding import _raise_for_unbound_parameters
+from ..._parameter_binding import (
+    _parameter_batch_rows,
+    _raise_for_unbound_parameters,
+)
 from ..._index_allocation import (
     _ClassicalAllocation,
     _EngineAllocation,
@@ -45,6 +48,7 @@ from ...job import Job
 from ...noise import NoiseModel
 from ...noise.lindblad import LindbladImplementationMap
 from ...observable import Observable
+from ...parameters import Parameter
 from ...operations import Barrier, Measurement, PulseOperation, Reset
 from ...program import Program, _AppliedOperation
 from ...resource_layout import ResourceLayout
@@ -540,8 +544,27 @@ class _PulseBackend(ABC):
         *,
         shots: int,
         simulation_config: dict[str, Any] | None,
-    ) -> Job[_ExpectationExecution]:
-        """Execute one private exact or sampled pulse expectation request."""
+        parameter_values: Mapping[Parameter, np.ndarray] | None = None,
+    ) -> Job[list[_ExpectationExecution]]:
+        """Execute a private exact or sampled pulse expectation request per entry.
+
+        ``parameter_values`` are a sweep's validated columns; each entry binds
+        and runs the program on its own. Without them the program is one fully
+        bound entry.
+        """
+        if parameter_values is not None:
+            executions: list[_ExpectationExecution] = []
+            for row in _parameter_batch_rows(parameter_values):
+                job = self._run_expectation(
+                    program._assign_normalized_parameters(row),
+                    observables,
+                    shots=shots,
+                    simulation_config=simulation_config,
+                )
+                if job.status != "DONE":
+                    return job
+                executions.extend(job.result())
+            return Job(status="DONE", result=executions)
         prepared = self._prepare_expectation(
             program,
             observables,
@@ -565,13 +588,15 @@ class _PulseBackend(ABC):
             solver = None if runtime_details is None else runtime_details.get("solver")
             return Job(
                 status="DONE",
-                result=_ExpectationExecution(
-                    values,
-                    standard_errors,
-                    method=self._method,
-                    runtime=self._runtime_name,
-                    solver=solver,
-                ),
+                result=[
+                    _ExpectationExecution(
+                        values,
+                        standard_errors,
+                        method=self._method,
+                        runtime=self._runtime_name,
+                        solver=solver,
+                    )
+                ],
             )
         except Exception as exc:
             failure = BackendExecutionError("Pulse backend execution failed")

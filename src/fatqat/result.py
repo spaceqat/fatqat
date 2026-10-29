@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 import numpy as np
 
 from .errors import BackendValidationError, ResultFieldUnavailableError
+
+if TYPE_CHECKING:
+    from .simulator import ClassicalState
 
 
 @dataclass(frozen=True)
@@ -69,8 +72,13 @@ def _decode_engine_indices_to_clbit_rows(
 
 def reduce_to_counts(
     rows: Iterable[Sequence[int]] | np.ndarray,
+    row_counts: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Reduce per-shot clbit rows to distinct rows and counts."""
+    """Reduce clbit rows to distinct rows and counts.
+
+    ``row_counts`` gives the number of shots each row stands for; by default
+    every row is one shot.
+    """
     row_array = np.asarray(rows, dtype=int)
     if row_array.ndim == 1:
         row_array = (
@@ -80,7 +88,19 @@ def reduce_to_counts(
         )
     if row_array.shape[0] == 0:
         return row_array, np.zeros(0, dtype=int)
-    return np.unique(row_array, axis=0, return_counts=True)
+    # Row-wise `np.unique` compares rows field by field. Viewing each row of
+    # one-byte digits as a single byte string gives the same lexicographic
+    # order while sorting a flat array. Keys come from the original rows.
+    if row_array.size == 0 or row_array.min() < 0 or row_array.max() > 255:
+        _keys, first, inverse = np.unique(
+            row_array, axis=0, return_index=True, return_inverse=True
+        )
+    else:
+        digits = np.ascontiguousarray(row_array, dtype=np.uint8)
+        keys = digits.view(np.dtype((np.void, digits.shape[1]))).ravel()
+        _keys, first, inverse = np.unique(keys, return_index=True, return_inverse=True)
+    counts = np.bincount(inverse.ravel(), weights=row_counts, minlength=len(first))
+    return row_array[first], counts.astype(int)
 
 
 def counts_dict_from_arrays(
@@ -89,8 +109,8 @@ def counts_dict_from_arrays(
 ) -> dict[tuple[int, ...], int]:
     """Package engine count arrays into the public tuple-keyed dict shape."""
     return {
-        tuple(int(k) for k in row): int(count)
-        for row, count in zip(outcome_keys, outcome_counts)
+        tuple(row): count
+        for row, count in zip(outcome_keys.tolist(), outcome_counts.tolist())
     }
 
 
@@ -147,6 +167,7 @@ class Result:
         unitary: np.ndarray | None = None,
         superop: np.ndarray | None = None,
         data: Mapping[str, Any] | None = None,
+        classical_state: ClassicalState | None = None,
     ) -> None:
         """Create a result from produced fields.
 
@@ -168,17 +189,19 @@ class Result:
             data: Additional named fields. These names are added to
                 ``available_data`` automatically and are read with
                 ``get_data`` or a dedicated accessor.
+            classical_state: Final classical state of one shot, if produced.
 
         Raises:
             BackendValidationError: If ``data`` uses ``"counts"``,
-                ``"final_state"``, ``"statevector"``, ``"density_matrix"``,
-                ``"unitary"``, or ``"superop"``, which are reserved for core
-                fields.
+                ``"final_state"``, ``"classical_state"``, ``"statevector"``,
+                ``"density_matrix"``, ``"unitary"``, or ``"superop"``, which
+                are reserved for core fields.
         """
         self._data = dict(data) if data is not None else {}
         reserved = {
             "counts",
             "final_state",
+            "classical_state",
             "statevector",
             "density_matrix",
             "unitary",
@@ -195,6 +218,7 @@ class Result:
         self._density_matrix = density_matrix
         self._unitary = unitary
         self._superop = superop
+        self._classical_state = classical_state
         self.available_data = frozenset(available) | frozenset(self._data)
         self.metadata = dict(metadata) if metadata is not None else {}
         self._classical_dims = tuple(classical_dims)
@@ -429,3 +453,38 @@ class Result:
         if "superop" not in self.available_data:
             raise ResultFieldUnavailableError("superop not available in this result")
         return self._superop
+
+    def get_classical_state(self) -> ClassicalState:
+        """Return the classical state at the end of the run.
+
+        Simulators produce it when ``result_config`` requests
+        ``"final_classical_state"``. It holds one shot's register digits in
+        ``clbits`` and its site occupancy in ``occupied``, where ``None``
+        means every site is occupied.
+
+        Returns:
+            A ``fatqat.simulator.ClassicalState``.
+
+        Raises:
+            ResultFieldUnavailableError: If a final classical state was not
+                produced.
+
+        Examples:
+            >>> import fatqat as fq
+            >>> import fatqat.operations as ops
+            >>> program = fq.Program(1, 1)
+            >>> program.add(ops.X, 0)
+            >>> program.measure(0, 0)
+            >>> result = fq.simulator.Simulator("SV").run(
+            ...     program,
+            ...     shots=1,
+            ...     result_config={"final_classical_state": True},
+            ... ).result()
+            >>> result.get_classical_state().clbits
+            [1]
+        """
+        if "classical_state" not in self.available_data:
+            raise ResultFieldUnavailableError(
+                "classical_state not available in this result"
+            )
+        return self._classical_state

@@ -194,6 +194,7 @@ nav:
               - General simulator: api/simulator.md
               - Superconducting profile: api/simulators/sc-qubit.md
               - Atom-array profile: api/simulators/atom-array.md
+              - Custom operations: api/simulators/custom-operations.md
           - Emulators:
               - api/emulators/index.md
               - Transmon emulator: api/pulse-emulator.md

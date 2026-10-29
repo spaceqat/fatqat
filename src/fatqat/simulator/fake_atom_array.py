@@ -1,7 +1,7 @@
 """Neutral-atom simulator with occupancy and dynamic pairing.
 
-The backend has a fixed native gate set but no fixed geometry. Every site
-declared by the program starts empty, and ``Put`` loads atoms explicitly.
+The backend has a default native gate set but no fixed geometry. Sites start
+empty unless initial occupancy is supplied; ``Put`` loads atoms explicitly.
 
 This simulator is intended for program and compiler testing. It does not model
 pulse timing, transport, or Hamiltonian dynamics.
@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from .. import operations as ops
 from .._backends.backend_utils import _canonicalize_method
 from ..errors import BackendValidationError, UnsupportedOperationError
+from ..implementation.registry import _add_default_channel_rules
 from ..implementation import (
     MatrixImplementationMap,
     default_matrix_implementation_map,
@@ -27,10 +28,9 @@ from .._backends.steps import (
     LossStep,
     PutStep,
 )
+from ._engine.state import EvolutionState
 from ._connectivity import _AtomConnectivity
 from ._execution_contract import (
-    _InitialClassicalState,
-    _InitialEvolutionState,
     _PlanFacts,
 )
 from .planning import _lower_channels, _lower_put
@@ -43,11 +43,9 @@ if TYPE_CHECKING:
 
     from ..implementation import MatrixImplementation
     from ..operations import Operation
-    from ..parameters import Parameter
     from ..registers import RegisterRef
     from ..observable import Observable
     from .._backends.backend_utils import _LoweringContext
-    from .planning import _MatrixRecipe
     from .simulator import (
         ProgramInstruction,
         _PreparedExecution,
@@ -70,6 +68,7 @@ def _fake_atom_array_implementation_map() -> MatrixImplementationMap:
     cz_rule = defaults.implementation_for(ops.CZ)
 
     m = MatrixImplementationMap()
+    _add_default_channel_rules(m)
     m.add(ops.RX, rx_rule)
     m.add(ops.RY, ry_rule)
     m.add(ops.RZ, rz_rule)
@@ -87,9 +86,9 @@ class AtomArraySimulator(Simulator):
       is legal only while its atoms are paired. There is no fixed geometry.
     - Layout: the program declares the site count, and registers map to flat
       labels in declaration order.
-    - Occupancy: every declared site starts empty. ``Put`` loads an atom;
-      supported, correctly paired gates and reset do nothing on an empty site,
-      which measures as the erasure digit ``2``.
+    - Occupancy: sites start empty unless initial occupancy is supplied.
+      ``Put`` loads an atom; supported, correctly paired gates and reset do
+      nothing on an empty site, which measures as the erasure digit ``2``.
     - Noise: finite channels select one subsystem; a present atom's channel
       runs even when another gate operand is absent. ``Loss`` may select
       multiple subsystems and samples each present atom independently.
@@ -107,6 +106,7 @@ class AtomArraySimulator(Simulator):
         method: str = "statevector",
         runtime: str = "numba",
         noise: NoiseModel | None = None,
+        implementation_map: MatrixImplementationMap | None = None,
     ) -> None:
         """Create a constrained neutral-atom simulator.
 
@@ -121,6 +121,9 @@ class AtomArraySimulator(Simulator):
                 channels must select one subsystem; use ``target_positions``
                 on multi-subsystem operations. This limit is checked when
                 running a program; ``Loss`` may select multiple subsystems.
+            implementation_map: Operation implementations. None uses RX/RY/RZ/CZ.
+                To extend the default, add rules to the independent map returned
+                by ``simulator.implementation_map`` and pass it here.
 
         Raises:
             BackendValidationError: If ``method`` or ``runtime`` is invalid,
@@ -137,7 +140,11 @@ class AtomArraySimulator(Simulator):
         super().__init__(
             method=canonical_method,
             runtime=runtime,
-            implementation_map=_fake_atom_array_implementation_map(),
+            implementation_map=(
+                _fake_atom_array_implementation_map()
+                if implementation_map is None
+                else implementation_map
+            ),
             noise=noise,
         )
 
@@ -176,17 +183,15 @@ class AtomArraySimulator(Simulator):
         self,
         operations: Sequence[ProgramInstruction],
         context: _LoweringContext,
-        *,
-        param_order: tuple[Parameter, ...] | None = None,
-    ) -> list[ResolvedStep | _MatrixRecipe]:
+    ) -> list[ResolvedStep]:
         """Apply this program's atom lifecycle, then lower normally.
 
-        Every site starts empty and `~fatqat.operations.Put` loads a fresh
+        By default sites start empty; `~fatqat.operations.Put` loads a fresh
         ``|0>`` atom into its targets. Operation support and pairing are
         validated independently of occupancy. After validation, gates and
-        resets targeting a site that is never named in any ``Put`` are omitted
-        from the execution plan. Their finite noise channels are retained to
-        act on surviving selected operands, including after stochastic loss.
+        resets are retained and guarded by runtime occupancy. Initial evolution
+        data or a custom implementation can populate sites without ``Put``.
+        Finite noise channels act on surviving selected operands.
 
         Two-qubit-gate legality follows the connectivity graph, not a fixed
         topology. Connectivity starts empty and evolves at each
@@ -200,11 +205,11 @@ class AtomArraySimulator(Simulator):
         noise. The resource layout carries no coordinates and never changes, so
         every segment lowers under the same layout.
 
-        Occupancy is seeded empty and ``Put`` then fills its targets per shot.
+        Occupancy defaults to empty, or uses supplied initial evolution data.
         That empty seed is not a plan step - it is an initialization input the
         engine receives at run start, because
         seeding occupancy is the atom simulator's own setup, not an operation.
-        ``Measurement`` always lowers normally; an empty (never-``Put``) site
+        ``Measurement`` always lowers normally; an empty site
         measures the erasure digit ``2`` under the occupancy guard.
 
         Raises:
@@ -214,30 +219,14 @@ class AtomArraySimulator(Simulator):
                 finite noise channel selects more than one subsystem.
         """
         resource_layout = context.resource_layout
-        put_targets = frozenset(
-            target
-            for step in operations
-            if isinstance(step, _AppliedOperation)
-            and isinstance(step.operation, type(ops.Put))
-            for target in step.targets
-        )
-
         connectivity = _AtomConnectivity()
-        plan: list[ResolvedStep | _MatrixRecipe] = []
+        plan: list[ResolvedStep] = []
         segment: list[ProgramInstruction] = []
         for step in operations:
             if isinstance(step, _AppliedOperation) and isinstance(
                 step.operation, (type(ops.Pair), type(ops.Unpair))
             ):
-                plan.extend(
-                    self._lower_segment(
-                        segment,
-                        connectivity,
-                        put_targets,
-                        context,
-                        param_order=param_order,
-                    )
-                )
+                plan.extend(self._lower_segment(segment, connectivity, context))
                 segment = []
                 plan.extend(
                     _lower_channels(
@@ -247,17 +236,13 @@ class AtomArraySimulator(Simulator):
                         resource_layout,
                         context.engine_allocation,
                         self._noise_model,
-                        self._channel_map,
+                        self._impl_map,
                     )
                 )
                 connectivity = self._apply_pairing(connectivity, step)
                 continue
             segment.append(step)
-        plan.extend(
-            self._lower_segment(
-                segment, connectivity, put_targets, context, param_order=param_order
-            )
-        )
+        plan.extend(self._lower_segment(segment, connectivity, context))
         if any(
             isinstance(step, ApplyChannelStep) and len(step.target_indices) != 1
             for step in plan
@@ -269,12 +254,12 @@ class AtomArraySimulator(Simulator):
             )
         return plan
 
-    def _prepare_initial_state(self, quantum: Any) -> _InitialEvolutionState[Any]:
+    def _prepare_initial_state(self, initial: Any) -> EvolutionState[Any]:
         """Start each trajectory with the atom array's initial occupancy."""
-        return _InitialEvolutionState(
-            quantum=quantum,
-            classical=_InitialClassicalState(occupied=frozenset()),
-        )
+        initial = super()._prepare_initial_state(initial)
+        if initial.classical.occupied is None:
+            initial.classical.occupied = set()
+        return initial
 
     def _prepare_expectation(
         self,
@@ -318,11 +303,8 @@ class AtomArraySimulator(Simulator):
         self,
         segment: Sequence[ProgramInstruction],
         connectivity: _AtomConnectivity,
-        put_targets: frozenset[RegisterRef],
         context: _LoweringContext,
-        *,
-        param_order: tuple[Parameter, ...] | None = None,
-    ) -> list[ResolvedStep | _MatrixRecipe]:
+    ) -> list[ResolvedStep]:
         """Lower one inter-pairing segment, rejecting unpaired two-qubit gates.
 
         The layout never changes, so the segment lowers under the unchanged
@@ -330,22 +312,20 @@ class AtomArraySimulator(Simulator):
         program-construction error - the pairing graph is fixed at compile time
         by ``Pair``/``Unpair``, independent of any shot - so it is rejected
         here, distinct from a per-shot atom
-        loss, which the engine drops silently. Operations on sites that no
-        ``Put`` can load still pass through common lowering for validation;
-        their gates are omitted while finite channels are retained for survivors.
+        loss, which the engine drops silently. Initial occupancy and custom
+        operations can populate sites without ``Put``, so occupancy guards stay
+        in the runtime rather than being inferred from the circuit.
         """
         for step in segment:
             self._require_pairing(step, connectivity)
 
-        plan: list[ResolvedStep | _MatrixRecipe] = []
+        plan: list[ResolvedStep] = []
         ordinary: list[ProgramInstruction] = []
         lower_common = super()._lower
 
         def flush_ordinary() -> None:
             if ordinary:
-                plan.extend(
-                    lower_common(tuple(ordinary), context, param_order=param_order)
-                )
+                plan.extend(lower_common(tuple(ordinary), context))
                 ordinary.clear()
 
         for step in segment:
@@ -362,13 +342,6 @@ class AtomArraySimulator(Simulator):
                         self._noise_model,
                     )
                 )
-            elif isinstance(step, _AppliedOperation) and any(
-                target not in put_targets for target in step.targets
-            ):
-                flush_ordinary()
-                # Validate the gate, retaining channels that can affect survivors.
-                lowered = lower_common((step,), context, param_order=param_order)
-                plan.extend(s for s in lowered if isinstance(s, ApplyChannelStep))
             else:
                 ordinary.append(step)
         flush_ordinary()
@@ -396,6 +369,8 @@ class AtomArraySimulator(Simulator):
                 atoms are not currently paired.
         """
         if not isinstance(step, _AppliedOperation):
+            return
+        if isinstance(step.operation, ops.CustomOperation):
             return
         if isinstance(
             step.operation,

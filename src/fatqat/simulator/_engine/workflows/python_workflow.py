@@ -17,14 +17,16 @@ import numpy as np
 from ...._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
+    CustomOperationStep,
     LossStep,
     MeasurementStep,
     PutStep,
     ResetStep,
     ResolvedStep,
 )
-from ....result import _decode_engine_indices_to_clbit_rows
-from ..._execution_contract import _ExecutionContext as ExecutionContext
+from ....result import _decode_engine_indices_to_clbit_rows, reduce_to_counts
+from ..._execution_contract import _RunContext
+from ...custom_operations import ExecutionContext
 from ..state import EvolutionState, QuantumDataT
 from ._reporting import (
     ERASURE_DIGIT,
@@ -157,12 +159,12 @@ def _condition_matches(
 def _run_single_pass(
     execution: _PythonExecution,
     state: EvolutionState[QuantumDataT],
-    context: ExecutionContext,
+    context: _RunContext,
     rng: np.random.Generator,
     *,
     state_requested: bool,
-) -> np.ndarray | None:
-    """Evolve initialized storage once and return requested classical samples.
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Evolve initialized storage once and return requested outcome counts.
 
     The ``ResetStep`` and ``ApplyChannelStep`` branches are only reachable
     under density-matrix semantics, where both are deterministic channels;
@@ -195,36 +197,46 @@ def _run_single_pass(
             rng,
         )
 
-    rows = None
-    if context.request.counts:
-        if not measurements:
-            indices = np.zeros(context.shots, dtype=int)
-        elif collapsed_index is not None:
-            indices = np.array([collapsed_index], dtype=int)
-        else:
-            indices = _sample_indices(state, execution.measurement, context.shots, rng)
-        rows = _decode_engine_indices_to_clbit_rows(
-            indices, measurements, context.system_dims, context.n_clbits
-        )
-        if classical.clbits is not None:
-            written = {clbit for _subsystem, clbit in measurements}
-            for clbit, digit in enumerate(classical.clbits):
-                if clbit not in written:
-                    rows[:, clbit] = digit
-        _apply_measurement_reporting(rows, _reporting_by_clbit(execution.plan), rng)
-    return rows
+    if not context.request.counts:
+        return None
+    if not measurements:
+        indices = np.zeros(context.shots, dtype=int)
+    elif collapsed_index is not None:
+        indices = np.array([collapsed_index], dtype=int)
+    else:
+        indices = _sample_indices(state, execution.measurement, context.shots, rng)
+    reporting = _reporting_by_clbit(execution.plan)
+    # Without readout confusion, shots with the same sampled index report the
+    # same digits, so decode each distinct index once. This is faster when
+    # outcomes repeat (many shots, few measured subsystems); when nearly every
+    # shot is unique it costs one extra sort. Confusion draws per shot.
+    index_counts = None
+    if all(confusion is None for _map, confusion in reporting.values()):
+        indices, index_counts = np.unique(indices, return_counts=True)
+    rows = _decode_engine_indices_to_clbit_rows(
+        indices, measurements, context.system_dims, context.n_clbits
+    )
+    if classical.clbits is not None:
+        written = {clbit for _subsystem, clbit in measurements}
+        for clbit, digit in enumerate(classical.clbits):
+            if clbit not in written:
+                rows[:, clbit] = digit
+    _apply_measurement_reporting(rows, reporting, rng)
+    # Indices differing only in unmeasured subsystems report the same key;
+    # weighting by index counts merges them.
+    return reduce_to_counts(rows, index_counts)
 
 
 def _run_one_shot(
     execution: _PythonExecution,
     state: EvolutionState[QuantumDataT],
-    context: ExecutionContext,
+    context: _RunContext,
     rng: np.random.Generator,
-) -> tuple[int, ...]:
-    """Run one dynamic-path shot and return its final clbit snapshot.
+) -> EvolutionState[QuantumDataT]:
+    """Run one dynamic-path shot and return its final evolution state.
 
-    Shared by local and process-worker batches. Quantum state is accessed only
-    through numerical operations (reset consumes rng only under SV semantics).
+    Shared by local and process-worker batches. Custom implementations may
+    replace the state; built-in operations use the execution's numerical functions.
 
     Classical storage was initialized with the quantum state. Allocate
     report digits only when a measurement or condition needs them.
@@ -234,11 +246,26 @@ def _run_one_shot(
     occupied = classical.occupied
     for step in execution.plan:
         if clbits is None and (
-            isinstance(step, MeasurementStep) or step.condition is not None
+            isinstance(step, (MeasurementStep, CustomOperationStep))
+            or step.condition is not None
         ):
             clbits = [0] * context.n_clbits
             classical.clbits = clbits
-        if isinstance(step, ApplyMatrixStep) and (
+        if isinstance(step, CustomOperationStep):
+            if _condition_matches(step.condition, clbits):
+                custom_context = ExecutionContext(
+                    targets=step.target_indices,
+                    system_dims=context.system_dims,
+                    rng=rng,
+                )
+                state = step.implementation.execute(
+                    step.operation, state, custom_context
+                )
+                # Returned containers can replace every field; do not keep stale aliases.
+                classical = state.classical
+                clbits = classical.clbits
+                occupied = classical.occupied
+        elif isinstance(step, ApplyMatrixStep) and (
             occupied is None or all(t in occupied for t in step.target_indices)
         ):
             if _condition_matches(step.condition, clbits):
@@ -304,8 +331,7 @@ def _run_one_shot(
                 _reset_subsystems(
                     state, execution.reset, context.system_dims, step.reset_indices, rng
                 )
-    # Unwritten report digits are zero even when no register was needed.
-    return tuple(clbits) if clbits is not None else (0,) * context.n_clbits
+    return state
 
 
 def _run_operator_plan(

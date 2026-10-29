@@ -22,7 +22,7 @@ class _ChannelRouteCache:
 
     Entries pin their source steps to prevent recycled identities from aliasing.
     Routes depend only on frozen Kraus operators, not dimensions or live state.
-    Materializing a new plan retains shared steps and releases replaced ones.
+    Preparing a new payload retains shared steps and releases replaced ones.
     """
 
     def __init__(self):

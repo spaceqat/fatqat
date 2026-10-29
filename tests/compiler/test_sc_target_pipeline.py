@@ -1,5 +1,4 @@
 import sys
-import warnings
 from dataclasses import replace
 from typing import get_type_hints
 
@@ -138,39 +137,31 @@ def test_simulator_bridge_exposes_only_the_canonical_native_type():
         to_sc_simulator_program(object())
 
 
-def _assert_classical_counts(backend, executable, expected, unwritten, **run_options):
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        result = backend.run(
-            executable,
-            shots=4,
-            simulation_config={"seed": 7, "shot_parallelism": "serial"},
-            **run_options,
-        ).result()
+def _assert_classical_counts(backend, executable, expected, **run_options):
+    result = backend.run(
+        executable,
+        shots=4,
+        simulation_config={"seed": 7, "shot_parallelism": "serial"},
+        **run_options,
+    ).result()
 
     assert result.get_counts() == {expected: 4}
     assert result.get_counts_as_tuples() == {tuple(map(int, expected)): 4}
-    assert [str(warning.message) for warning in caught] == (
-        ["counts contain clbits that were never measured; returning zero-filled counts"]
-        if unwritten
-        else []
-    )
-    assert all(warning.category is UserWarning for warning in caught)
 
 
 @pytest.mark.parametrize(
-    ("declarations", "measurements", "expected", "unwritten"),
+    ("declarations", "measurements", "expected"),
     (
-        ((("a", 1), ("b", 1), ("unused", 1)), ((1, 1, 0), (0, 0, 0)), "100", True),
-        ((("a", 1), ("b", 1)), ((1, 1, 0), (0, 0, 0)), "10", False),
-        ((("a", 1), ("unused", 1)), ((0, 0, 0),), "10", True),
-        ((("a", 2), ("b", 2), ("unused", 1)), ((1, 1, 1), (0, 0, 1)), "01000", True),
-        ((("c", 1), ("c", 1)), ((1, 1, 0), (0, 0, 0)), "10", False),
+        ((("a", 1), ("b", 1), ("unused", 1)), ((1, 1, 0), (0, 0, 0)), "100"),
+        ((("a", 1), ("b", 1)), ((1, 1, 0), (0, 0, 0)), "10"),
+        ((("a", 1), ("unused", 1)), ((0, 0, 0),), "10"),
+        ((("a", 2), ("b", 2), ("unused", 1)), ((1, 1, 1), (0, 0, 1)), "01000"),
+        ((("c", 1), ("c", 1)), ((1, 1, 0), (0, 0, 0)), "10"),
     ),
     ids=("combined", "reversed", "unused", "partially-measured", "same-name"),
 )
 def test_logical_compilation_preserves_classical_output(
-    declarations, measurements, expected, unwritten
+    declarations, measurements, expected
 ):
     qubits = fq.QuantumRegister(2, name="q")
     registers = tuple(
@@ -185,12 +176,10 @@ def test_logical_compilation_preserves_classical_output(
     compiled = fq.compiler.compile_to_sc(logical, backend, seed=7)
 
     assert compiled.program.classical_registers == registers
-    _assert_classical_counts(backend, compiled, expected, unwritten)
+    _assert_classical_counts(backend, compiled, expected)
     bridged, layout = to_sc_simulator_program(compiled.output)
     assert bridged.classical_registers == registers
-    _assert_classical_counts(
-        backend, bridged, expected, unwritten, resource_layout=layout
-    )
+    _assert_classical_counts(backend, bridged, expected, resource_layout=layout)
 
 
 @pytest.mark.parametrize(
@@ -222,10 +211,10 @@ def test_qasm_compilation_and_bridge_preserve_classical_declarations(
         "b",
         "unused",
     ]
-    _assert_classical_counts(backend, compiled, "100", True)
+    _assert_classical_counts(backend, compiled, "100")
     bridged, layout = to_sc_simulator_program(compiled.output)
     assert bridged.classical_registers == compiled.program.classical_registers
-    _assert_classical_counts(backend, bridged, "100", True, resource_layout=layout)
+    _assert_classical_counts(backend, bridged, "100", resource_layout=layout)
 
 
 @pytest.mark.parametrize("has_declarations", (False, True))
@@ -244,7 +233,6 @@ def test_compilation_preserves_declarations_without_measurements(has_declaration
         backend,
         compiled,
         "00" if has_declarations else "",
-        has_declarations,
         result_config={"counts": True, "final_state": False},
     )
 
@@ -275,7 +263,6 @@ def test_qasm_compilation_preserves_declarations_without_measurements(
         backend,
         compiled,
         "00" if has_declarations else "",
-        has_declarations,
         result_config={"counts": True, "final_state": False},
     )
 
@@ -720,8 +707,7 @@ def test_routed_target_compilation_preserves_classical_identity():
     assert measures[0].clbit.register is second
     assert measures[1].clbit.register is first
     assert _reset_occupants(compiled.output) == [qubits[2]]
-    with pytest.warns(UserWarning, match="never measured"):
-        assert _seeded_counts(compiled) == {"01000": 16}
+    assert _seeded_counts(compiled) == {"01000": 16}
 
 
 def test_identity_check_rejects_an_equal_shaped_replacement_register():
@@ -735,8 +721,7 @@ def test_identity_check_rejects_an_equal_shaped_replacement_register():
     verify_sc_native_program(candidate)
     program, layout = to_sc_simulator_program(candidate)
 
-    with pytest.warns(UserWarning, match="never measured"):
-        assert _seeded_counts(program, resource_layout=layout) == {"01000": 16}
+    assert _seeded_counts(program, resource_layout=layout) == {"01000": 16}
     with pytest.raises(AssertionError):
         _assert_same_objects(program.classical_registers, source.classical_registers)
 

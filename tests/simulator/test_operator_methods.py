@@ -21,7 +21,7 @@ import fatqat as fq
 import fatqat.operations as ops
 from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
 from fatqat.implementation import MatrixImplementationMap
-from fatqat.noise import Channel, ChannelImplementationMap
+from fatqat.noise import Channel
 from fatqat.program import Program
 from fatqat.simulator import Simulator
 
@@ -323,8 +323,9 @@ def test_nonadjacent_channel_and_superop_use_public_target_positions(runtime, fu
 
     matrix_map = MatrixImplementationMap()
     matrix_map.add(Carrier, np.eye(4, dtype=complex))
-    channel_map = ChannelImplementationMap()
-    channel_map.add(EmbeddedChannel, lambda _channel, *, targets: (kraus,))
+    matrix_map.add(
+        EmbeddedChannel, lambda _channel, *, targets: (kraus,), device_operands=(2, 0)
+    )
     noise = fq.NoiseModel()
     noise.add(EmbeddedChannel(), operation=Carrier)
     program = Program(3)
@@ -332,7 +333,6 @@ def test_nonadjacent_channel_and_superop_use_public_target_positions(runtime, fu
     kwargs = {
         "runtime": runtime,
         "implementation_map": matrix_map,
-        "channel_implementation_map": channel_map,
         "noise": noise,
     }
     config = {"fusion": fusion}

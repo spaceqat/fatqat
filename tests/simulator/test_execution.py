@@ -97,13 +97,12 @@ def test_condition_now_runs():
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 0))
     p.measure(1, 1)
-    with pytest.warns(UserWarning, match="clbits that were never measured"):
-        counts = (
-            Simulator("SV")
-            .run(p, shots=16, simulation_config={"seed": 0})
-            .result()
-            .get_counts()
-        )
+    counts = (
+        Simulator("SV")
+        .run(p, shots=16, simulation_config={"seed": 0})
+        .result()
+        .get_counts()
+    )
     assert counts == {"01": 16}  # c0=0, c1=1
 
 

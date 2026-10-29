@@ -11,9 +11,14 @@ from __future__ import annotations
 from .fake_atom_array import AtomArraySimulator
 from .fake_superconducting import SCQubitSimulator
 from .simulator import Simulator
+from .custom_operations import ExecutionContext
+from ._engine.state import ClassicalState, EvolutionState
 
 __all__ = [
     "Simulator",
+    "ExecutionContext",
+    "ClassicalState",
+    "EvolutionState",
     "AtomArraySimulator",
     "SCQubitSimulator",
 ]

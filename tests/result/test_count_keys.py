@@ -1,6 +1,7 @@
 import json
 
 import numpy as np
+import pytest
 
 from fatqat.result import (
     _decode_engine_indices_to_clbit_rows,
@@ -139,3 +140,29 @@ def test_high_quantum_dim_low_classical_stays_plain():
     program.measure(qb[0], cb[0])
     result = fq.simulator.Simulator("SV").run(program, shots=4).result()
     assert result.get_counts() == {"1": 4}  # plain string; classical dims are all <= 9
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        np.random.default_rng(1).integers(0, 3, (500, 4)),  # mixed-radix digits
+        np.random.default_rng(2).integers(0, 2, (200, 300)),  # many classical bits
+        np.random.default_rng(3).integers(250, 260, (100, 3)),  # beyond one byte
+        np.zeros((5, 0), dtype=int),  # no classical bits
+    ],
+    ids=["digits", "wide", "multi-byte", "empty-key"],
+)
+def test_reduce_to_counts_matches_row_wise_unique(rows):
+    keys, counts = reduce_to_counts(rows)
+    expected_keys, expected_counts = np.unique(rows, axis=0, return_counts=True)
+    assert np.array_equal(keys, expected_keys)
+    assert np.array_equal(counts, expected_counts)
+
+
+def test_reduce_to_counts_merges_weighted_rows():
+    # Distinct sampled outcomes can report the same key, e.g. when they differ
+    # only in unmeasured subsystems; their shot counts must add up.
+    rows = np.array([[1, 0], [0, 1], [1, 0]])
+    keys, counts = reduce_to_counts(rows, np.array([3, 2, 4]))
+    assert keys.tolist() == [[0, 1], [1, 0]]
+    assert counts.tolist() == [2, 7]

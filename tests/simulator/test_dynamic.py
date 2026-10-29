@@ -28,7 +28,6 @@ def test_lower_terminal_measurement_is_not_dynamic():
         initial_state=backend._prepare_initial_state(None),
     )
     assert execution_path == "single_pass"
-    assert facts.written_clbits == frozenset({0, 1})
     assert facts.stochastic_final_state is True
     assert facts.has_measurement is True
     assert facts.has_reset is False
@@ -71,7 +70,7 @@ def test_repeated_measurement_of_one_subsystem_is_per_shot():
     program.measure(0, 1)
 
     backend = Simulator("SV")
-    _plan, facts = backend._lower_program(program)
+    _plan, _facts = backend._lower_program(program)
     execution_path = _select_execution_path(
         _plan,
         quantum_capabilities=backend._engine.capabilities.quantum,
@@ -79,7 +78,6 @@ def test_repeated_measurement_of_one_subsystem_is_per_shot():
     )
 
     assert execution_path == "per_shot"
-    assert facts.written_clbits == frozenset({0, 1})
 
 
 def test_lower_condition_is_dynamic_and_resolves_indices():
@@ -151,7 +149,6 @@ def test_per_shot_trigger_does_not_stop_later_fact_collection():
     )
 
     assert execution_path == "per_shot"
-    assert facts.written_clbits == frozenset({1})
     assert facts.has_condition is True
     assert facts.has_measurement is True
 

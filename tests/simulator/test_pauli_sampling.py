@@ -9,6 +9,8 @@ kernel and the serial fallback.
 import numpy as np
 import pytest
 
+from fatqat.implementation import default_matrix_implementation_map
+
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.noise import (
@@ -18,7 +20,6 @@ from fatqat.noise import (
     NoiseModel,
     PauliChannel,
     PhaseDamping,
-    default_channel_implementation_map,
 )
 from fatqat.noise.base import _unitary_branch_probabilities
 from fatqat.noise.catalog import (
@@ -264,7 +265,7 @@ def test_a_custom_non_unitary_channel_rule_still_runs():
             np.array([[0.0, np.sqrt(0.5)], [0.0, 0.0]], dtype=complex),
         )
 
-    channel_map = default_channel_implementation_map()
+    channel_map = default_matrix_implementation_map()
     channel_map.add(_Leak, _leak_rule)
     assert _unitary_branch_probabilities(_leak_rule(_Leak(), targets=())) is None
 
@@ -275,7 +276,7 @@ def test_a_custom_non_unitary_channel_rule_still_runs():
     program.measure(0, 0)
 
     counts = (
-        Simulator("SV", noise=noise, channel_implementation_map=channel_map)
+        Simulator("SV", noise=noise, implementation_map=channel_map)
         .run(program, shots=512, simulation_config={"seed": 3})
         .result()
         .get_counts()

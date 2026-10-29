@@ -57,7 +57,7 @@ and behavior when an atom is absent.
 
 Attach every supported probability-form channel above to an operation; matrix
 backends reject background channels.
-A custom [`ChannelImplementationMap`][fatqat.noise.ChannelImplementationMap] can add a finite
+A custom [`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap] can add a finite
 channel type or replace the rule for an existing one. It cannot override the
 rejection of built-in rate forms, background channels, or
 `ThermalRelaxation`. A custom type's parameter names are interpreted by its

@@ -90,7 +90,7 @@ class _MatrixStructureCache:
     Structure depends only on the step's frozen matrix, not system dimensions.
     Trajectory initialization deliberately keeps these entries: the dynamic
     workflow initializes each shot and must reuse its once-per-plan resolutions.
-    Materializing the next plan prunes steps it no longer uses through ``retain``.
+    Preparing the next payload prunes steps it no longer uses through ``retain``.
     """
 
     def __init__(self):
@@ -140,7 +140,7 @@ class _SuperoperatorCache:
     ``id(step)`` and pin the source step so recycled identities cannot alias.
     Resolutions depend only on frozen gate/channel payloads, not system dimensions.
     Trajectory initialization deliberately keeps them so each shot reuses the
-    once-per-plan construction and classification. Materializing the next plan
+    once-per-plan construction and classification. Preparing the next payload
     prunes steps it no longer uses through ``retain``.
     """
 

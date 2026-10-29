@@ -7,7 +7,7 @@ from __future__ import annotations
 
 # Prefer Barrier, Reset, Put, Pair, and Unpair over their backing `*Gate`
 # classes, which are internal implementation details.
-from .base import Operation
+from .base import CustomOperation, Operation
 from .barrier import Barrier
 from .fixed_gates import (
     CCX,
@@ -50,6 +50,7 @@ from .reset import Reset
 
 __all__ = [
     "Operation",
+    "CustomOperation",
     "I",
     "H",
     "S",

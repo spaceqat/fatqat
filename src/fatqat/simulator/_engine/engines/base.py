@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from functools import partial
 from typing import Any, Generic
@@ -12,15 +14,14 @@ import numpy as np
 
 from ..._execution_contract import (
     RawResult,
-    _InitialClassicalState as InitialClassicalState,
-    _InitialEvolutionState as InitialEvolutionState,
     _SimulationConfig as SimulationConfig,
     _EngineCapabilities,
-    _ExecutionContext as ExecutionContext,
+    _RunContext,
 )
 from ...._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
+    ApplyParametricMatrixStep,
     MeasurementStep,
     ResolvedStep,
 )
@@ -28,6 +29,7 @@ from ....result import reduce_to_counts
 from .._execution_policy import (
     _ExecutionPolicy as ExecutionPolicy,
 )
+from ..binding import _bind_parameter_batch
 from ..parallel import _run_shots_in_processes
 from ..state import EvolutionState, QuantumDataT
 from ..workflows.python_workflow import (
@@ -98,13 +100,13 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         return self._capabilities
 
     @abstractmethod
-    def _plan_execution(
+    def _select_policy(
         self,
         plan: Sequence[ResolvedStep],
         *,
-        context: ExecutionContext,
+        context: _RunContext,
         simulation_config: SimulationConfig,
-        initial_state: InitialEvolutionState[QuantumDataT],
+        initial_state: EvolutionState[QuantumDataT],
     ) -> ExecutionPolicy:
         """Validate the request and choose its workflow and scheduling.
 
@@ -124,19 +126,19 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         system_dims: Sequence[int],
         n_clbits: int = 0,
         *,
-        initial_state: InitialEvolutionState[QuantumDataT] | None = None,
+        initial_state: EvolutionState[QuantumDataT] | None = None,
     ) -> None:
         """Initialize owned quantum and classical storage from validated input."""
 
     def _retain_step_caches(self, plan: tuple[ResolvedStep, ...]) -> None:
         """Retain only the effective plan's identity-keyed step resolutions.
 
-        Materialization calls this before resolving or compiling the plan.
+        Payload preparation calls this before resolving or compiling the plan.
         Shot initialization leaves these entries intact for trajectory reuse.
         Engines without step caches have nothing to prune.
         """
 
-    def materialize_execution(
+    def prepare_payload(
         self,
         plan: tuple[ResolvedStep, ...],
         *,
@@ -201,61 +203,134 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         self,
         plan: tuple[ResolvedStep, ...],
         *,
-        context: ExecutionContext,
+        context: _RunContext,
         simulation_config: SimulationConfig,
-        initial_state: InitialEvolutionState[QuantumDataT],
-    ) -> RawResult[QuantumDataT]:
-        """Plan, materialize, and execute one requested evolution."""
-        policy = self._plan_execution(
-            plan,
+        initial_state: EvolutionState[QuantumDataT],
+    ) -> Iterator[RawResult[QuantumDataT]]:
+        """Bind and execute a plan for every entry of its parameter batch.
+
+        A plan without parametric steps is a batch of one; a value-injected
+        sweep plan has one entry per set of parameter values. Results are
+        yielded in batch order as each entry finishes, so a caller that
+        consumes them one at a time keeps one entry's state alive. The policy
+        reads only step kinds and run settings, so it is planned once from the
+        first entry; each bound plan then executes like an ordinary plan.
+        """
+        policy: ExecutionPolicy | None = None
+        for bound in _bind_parameter_batch(plan, context.system_dims):
+            if policy is None:
+                policy = self._select_policy(
+                    bound,
+                    context=context,
+                    simulation_config=simulation_config,
+                    initial_state=initial_state,
+                )
+            yield self._dispatch_by_shot_strategy(bound, context, policy, initial_state)
+
+    def continue_from_states(
+        self,
+        tail: tuple[ResolvedStep, ...],
+        states: Sequence[EvolutionState[QuantumDataT]],
+        *,
+        context: _RunContext,
+        simulation_config: SimulationConfig,
+    ) -> list[RawResult[QuantumDataT]]:
+        """Continue already-evolved states with one shared concrete tail.
+
+        Sampled expectations evolve each batch entry once, then run every
+        term's measurement tail from those states. The tail is the same for
+        all states, so its policy is selected once from the first state and
+        its payload prepared once. ``tail`` has no parametric steps, and
+        ``states`` come from one plan, so they share their classical layout.
+        The selected policy is followed as in any run: a tail that needs
+        per-shot evolution (from states with atom occupancy) may run its shots
+        in worker processes, which prepare their own payloads per state.
+        """
+        policy = self._select_policy(
+            tail,
             context=context,
             simulation_config=simulation_config,
-            initial_state=initial_state,
+            initial_state=states[0],
         )
-        return self._execute_plan(plan, context, policy, initial_state)
+        if policy.shot_strategy == "processes":
+            return [
+                self._dispatch_by_shot_strategy(tail, context, policy, state)
+                for state in states
+            ]
+        payload = self.prepare_payload(
+            tail,
+            system_dims=context.system_dims,
+            n_clbits=context.n_clbits,
+            policy=policy,
+        )
+        return [
+            self.execute_payload(context, payload, policy, initial_state=state)
+            for state in states
+        ]
 
-    def execute_expectation(
+    def expectation_values(
         self,
         plan: tuple[ResolvedStep, ...],
         observables: Sequence[tuple[tuple[float, tuple[tuple[int, str], ...]], ...]],
         *,
-        context: ExecutionContext,
+        context: _RunContext,
         simulation_config: SimulationConfig,
-        initial_state: InitialEvolutionState[QuantumDataT],
-    ) -> tuple[float, ...]:
-        """Evolve and contract Pauli sums within the selected runtime policy.
+        initial_state: EvolutionState[QuantumDataT],
+    ) -> list[tuple[float, ...]]:
+        """Evolve every parameter entry and contract Pauli sums on its state.
 
-        Empty observables validate execution controls without evolving a state.
+        Returns one tuple of values per entry, in batch order. Empty
+        observables validate execution controls without evolving a state.
         """
-        policy = self._plan_execution(
+        policy = self._select_policy(
             plan,
             context=context,
             simulation_config=simulation_config,
             initial_state=initial_state,
         )
         if not observables:
-            return ()
-        raw = self._execute_plan(plan, context, policy, initial_state)
-        if raw.state is None:
-            raise RuntimeError("expectation execution returned no state")
-        return self._expectation_values(raw.state, observables, policy=policy)
+            return []
+        values = []
+        # Contract each entry as it is yielded, so only one evolved state is
+        # alive at a time; the caller keeps only the scalar values. Unlike
+        # `Simulator._execute_plan`, which collects every entry first, this
+        # interleaves engine runs with contraction, which measured ~10-20%
+        # slower for small (6-qubit) states.
+        for raw in self.execute(
+            plan,
+            context=context,
+            simulation_config=simulation_config,
+            initial_state=initial_state,
+        ):
+            if raw.state is None:
+                raise RuntimeError("expectation execution returned no state")
+            values.append(
+                self._expectation_values(raw.state, observables, policy=policy)
+            )
+        return values
 
-    def _execute_plan(
+    def _dispatch_by_shot_strategy(
         self,
         plan: tuple[ResolvedStep, ...],
-        context: ExecutionContext,
+        context: _RunContext,
         policy: ExecutionPolicy,
-        initial_state: InitialEvolutionState[QuantumDataT],
+        initial_state: EvolutionState[QuantumDataT],
     ) -> RawResult[QuantumDataT]:
-        """Materialize and dispatch an engine-selected execution policy."""
+        """Execute a plan under ``policy``: here or in worker processes.
+
+        In-process shot strategies prepare a payload and execute it here; the
+        process strategy runs shots in workers and reduces their rows.
+        """
+        if any(isinstance(step, ApplyParametricMatrixStep) for step in plan):
+            raise RuntimeError("parametric steps must be bound before execution")
         if policy.shot_strategy in ("none", "serial", "threads"):
-            payload = self.materialize_execution(
+            payload = self.prepare_payload(
                 plan,
                 system_dims=context.system_dims,
                 n_clbits=context.n_clbits,
                 policy=policy,
             )
-            return self.execute_in_process(
+            return self.execute_payload(
                 context, payload, policy, initial_state=initial_state
             )
 
@@ -284,27 +359,31 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         """
         return partial(type(self), name=self.name)
 
-    def execute_in_process(
+    def execute_payload(
         self,
-        context: ExecutionContext,
+        context: _RunContext,
         payload: Any,
         policy: ExecutionPolicy,
         *,
-        initial_state: InitialEvolutionState[QuantumDataT],
+        initial_state: EvolutionState[QuantumDataT],
     ) -> RawResult[QuantumDataT]:
-        """Execute a materialized state or operator plan through Python."""
+        """Execute a prepared state or operator payload here through Python."""
         assert policy.shot_strategy != "processes"
         self.configure_system(context.system_dims, context.n_clbits)
         with self._execution_scope(policy):
             state_requested = context.request.final_state
-            rows = None
+            outcomes = None
             if policy.execution_path == "per_shot":
                 rows = self._run_per_shot(
                     payload,
                     context,
                     initial_state,
-                    state_requested=state_requested,
+                    state_requested=(
+                        context.request.final_state
+                        or context.request.final_classical_state
+                    ),
                 )
+                outcomes = reduce_to_counts(rows) if rows is not None else None
             else:
                 rng = np.random.default_rng(context.seed)
                 self.initialize(
@@ -324,29 +403,37 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
                 else:
                     assert policy.execution_path == "single_pass"
                     assert self._evolution_state is not None
-                    rows = _run_single_pass(
+                    outcomes = _run_single_pass(
                         payload,
                         self._evolution_state,
                         context,
                         rng,
                         state_requested=state_requested,
                     )
-            outcome_keys, outcome_counts = (
-                reduce_to_counts(rows) if rows is not None else (None, None)
-            )
+            outcome_keys, outcome_counts = outcomes or (None, None)
             state = self.export_state() if state_requested else None
+            classical_state = None
+            if context.request.final_classical_state:
+                # Copy so later execution cannot change the returned digits.
+                assert self._evolution_state is not None
+                classical_state = deepcopy(self._evolution_state.classical)
+                if classical_state.clbits is None:
+                    classical_state.clbits = [0] * context.n_clbits
             return RawResult(
-                outcome_keys=outcome_keys, outcome_counts=outcome_counts, state=state
+                outcome_keys=outcome_keys,
+                outcome_counts=outcome_counts,
+                state=state,
+                classical_state=classical_state,
             )
 
-    def execute_shot_batch(
+    def execute_worker_shots(
         self,
-        context: ExecutionContext,
+        context: _RunContext,
         payload: Any,
         seed_batch: list[np.random.SeedSequence],
         policy: ExecutionPolicy,
         *,
-        initial_state: InitialEvolutionState[QuantumDataT],
+        initial_state: EvolutionState[QuantumDataT],
     ) -> list[tuple[int, ...]]:
         """Non-dispatching worker entry for one ordered batch of shots."""
         assert policy.shot_strategy == "serial"
@@ -358,8 +445,8 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
     def _run_per_shot(
         self,
         payload: _PythonExecution,
-        context: ExecutionContext,
-        initial_state: InitialEvolutionState[QuantumDataT],
+        context: _RunContext,
+        initial_state: EvolutionState[QuantumDataT],
         *,
         state_requested: bool,
     ) -> np.ndarray | None:
@@ -380,14 +467,14 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
     def _run_shot_batch(
         self,
         payload: _PythonExecution,
-        context: ExecutionContext,
+        context: _RunContext,
         seed_sequences: Sequence[np.random.SeedSequence],
-        initial_state: InitialEvolutionState[QuantumDataT],
+        initial_state: EvolutionState[QuantumDataT],
     ) -> list[tuple[int, ...]]:
         """Initialize each trajectory within the caller's active runtime scope.
 
         Local and process entries share this lifecycle. The workflow borrows the
-        current evolution container; the engine retains its lifetime and caches.
+        current evolution container and may replace it; the engine adopts the result.
         """
         snapshots = []
         for seed_sequence in seed_sequences:
@@ -397,13 +484,15 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
                 initial_state=initial_state,
             )
             assert self._evolution_state is not None
+            self._evolution_state = _run_one_shot(
+                payload,
+                self._evolution_state,
+                context,
+                np.random.default_rng(seed_sequence),
+            )
+            clbits = self._evolution_state.classical.clbits
             snapshots.append(
-                _run_one_shot(
-                    payload,
-                    self._evolution_state,
-                    context,
-                    np.random.default_rng(seed_sequence),
-                )
+                tuple(clbits) if clbits is not None else (0,) * context.n_clbits
             )
         return snapshots
 
@@ -439,25 +528,3 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         transfer the result when they need independent storage or host data.
         """
         return self.state
-
-    def _export_evolution_state(self) -> InitialEvolutionState[QuantumDataT]:
-        """Export completed local evolution as reusable initialization.
-
-        Quantum data is borrowed in runtime-native storage. Classical values
-        are frozen so later execution cannot change the saved initialization.
-        Each consumer initializes its own mutable state before evolving it.
-        """
-        if self._evolution_state is None:
-            raise RuntimeError("MatrixEngine state has not been initialized.")
-        classical = self._evolution_state.classical
-        return InitialEvolutionState(
-            quantum=self.export_state(),
-            classical=InitialClassicalState(
-                clbits=None if classical.clbits is None else tuple(classical.clbits),
-                occupied=(
-                    None
-                    if classical.occupied is None
-                    else frozenset(classical.occupied)
-                ),
-            ),
-        )

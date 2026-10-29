@@ -125,9 +125,8 @@ start from $|g\ldots g\rangle$ and only offer global controls, so a
 quench from $|Z_2\rangle$ is simply not expressible there; the
 gate-level [`Simulator`][fatqat.simulator.Simulator], on the other hand, happily
 accepts an `initial_state`. Second, no native gate set contains a PXP
-term -- but that is exactly what fatqat's custom-operation extension point
-is for: [`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap] resolves any
-fixed-arity operation family to a local matrix at execution time.
+term, so we use [`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap]
+to supply a local matrix for each PXP operation.
 
 The exponentials we need are easy to write down. With $M=PXP$ and
 $M^2=P\otimes I\otimes P$,

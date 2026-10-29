@@ -19,6 +19,7 @@ def test_statevector_default_attached_when_no_measurement():
     assert result.metadata["result_config"] == {
         "counts": False,
         "final_state": True,
+        "final_classical_state": False,
     }
 
 
@@ -35,7 +36,7 @@ def test_result_metadata_records_backend_shots_and_config():
     p = Program(1, 1)
     p.add(ops.X, 0)
     p.measure(0, 0)
-    config = {"counts": True, "final_state": False}
+    config = {"counts": True, "final_state": False, "final_classical_state": False}
 
     result = (
         Simulator("SV")
@@ -65,7 +66,11 @@ def test_run_accepts_result_config_as_dict():
     )
 
     assert result.get_counts() == {"1": 7}
-    assert result.metadata["result_config"] == {"counts": True, "final_state": False}
+    assert result.metadata["result_config"] == {
+        "counts": True,
+        "final_state": False,
+        "final_classical_state": False,
+    }
 
 
 def test_run_rejects_unknown_result_config_keys():
@@ -114,16 +119,35 @@ def test_statevector_with_measurement_and_many_shots_rejected():
         )
 
 
-def test_unmeasured_clbit_emits_user_warning_when_counts_only_and_no_state():
-    p = Program(1, 1)  # has a clbit, never measured
+def test_final_classical_state_reports_written_clbits():
+    p = Program(1, 2)
+    p.add(ops.X, 0)
+    p.measure(0, 1)
+    backend = Simulator("SV")
+
+    requested = backend.run(
+        p, shots=1, result_config={"final_classical_state": True}
+    ).result()
+    default = backend.run(p, shots=1).result()
+
+    assert requested.get_classical_state().clbits == [0, 1]
+    with pytest.raises(fq.errors.ResultFieldUnavailableError):
+        default.get_classical_state()
+
+
+def test_stochastic_final_classical_state_requires_one_shot():
+    p = Program(1, 1)
     p.add(ops.H, 0)
-    with pytest.warns(UserWarning, match="clbits that were never measured"):
-        Simulator("SV").run(
-            p,
-            shots=10,
-            simulation_config={"seed": 0},
-            result_config={"counts": True, "final_state": False},
-        ).result()
+    p.measure(0, 0)
+    with pytest.raises(BackendValidationError, match="shots == 1"):
+        Simulator("SV").run(p, shots=2, result_config={"final_classical_state": True})
+
+
+def test_operator_methods_reject_final_classical_state():
+    p = Program(1)
+    p.add(ops.H, 0)
+    with pytest.raises(BackendValidationError, match="final classical state"):
+        Simulator("unitary").run(p, result_config={"final_classical_state": True})
 
 
 def test_dim2_gate_on_qutrit_raises_at_lowering_not_frontend():

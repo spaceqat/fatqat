@@ -1,8 +1,8 @@
-"""Public descriptors and implementation maps for quantum-channel noise."""
+"""Public descriptors and callable rules for quantum-channel noise."""
 
 from __future__ import annotations
 
-from typing import Callable, ClassVar, Self
+from typing import ClassVar
 
 import numpy as np
 
@@ -14,7 +14,7 @@ class Channel:
     """Base class for backend-independent quantum noise.
 
     A channel stores parameters such as probabilities, rates, and times. A
-    simulator resolves its exact type through a `ChannelImplementationMap`;
+    simulator resolves its exact type through a `fatqat.implementation.MatrixImplementationMap`;
     pulse emulators use family-owned Lindblad realizations. Registering a rule
     for a base class does not implement its subclasses.
 
@@ -54,7 +54,7 @@ class Channel:
 class ChannelImplementation:
     """Optional base class for a simulator channel rule.
 
-    A matrix rule is called as ``rule(channel, *, targets=targets)``. The
+    A channel rule is called as ``rule(channel, *, targets=targets)``. The
     ordered ``targets`` are the matched program ``RegisterRef`` objects, so a
     rule can use their register dimensions to build its operators. The rule
     returns a nonempty tuple of NumPy Kraus matrices. Each matrix must have
@@ -83,81 +83,6 @@ class ChannelImplementation:
                 subclass must implement the rule.
         """
         raise NotImplementedError
-
-
-class _ChannelImplementationRegistry:
-    """Shared class-keyed registration mechanics for channel implementations."""
-
-    def __init__(self) -> None:
-        self._rules: dict[type[Channel], ChannelImplementation | Callable] = {}
-
-    def add(
-        self,
-        channel_type: type[Channel],
-        rule: ChannelImplementation | Callable,
-    ) -> None:
-        """Register or replace the rule for one exact channel type.
-
-        Lookup uses the concrete channel type and never searches its base
-        classes. The callable is stored by reference and its signature is
-        checked only when a backend invokes it.
-
-        Args:
-            channel_type: `Channel` subclass used as the exact lookup key.
-            rule: Backend-specific callable. Adding the same type again
-                replaces its previous rule.
-
-        Raises:
-            TypeError: If ``channel_type`` is not a `Channel` subclass or
-                ``rule`` is not callable.
-        """
-        if not (isinstance(channel_type, type) and issubclass(channel_type, Channel)):
-            raise TypeError(f"expected a Channel subclass, got {channel_type!r}")
-        if not callable(rule):
-            raise TypeError(
-                f"rule for {channel_type.__name__} must be callable, got {rule!r}"
-            )
-        self._rules[channel_type] = rule
-
-    def get(
-        self, channel_type: type[Channel]
-    ) -> ChannelImplementation | Callable | None:
-        """Return the rule registered for exactly ``channel_type``.
-
-        The lookup does not fall back to a registered base class.
-
-        Args:
-            channel_type: Exact channel type to look up.
-
-        Returns:
-            The stored callable, or ``None`` when the type is not registered.
-        """
-        return self._rules.get(channel_type)
-
-    def supported_channels(self) -> frozenset[type[Channel]]:
-        """Return an immutable snapshot of the registered channel types."""
-        return frozenset(self._rules)
-
-    def copy(self) -> Self:
-        """Return a map whose registrations can be changed independently."""
-        clone = type(self)()
-        clone._rules = dict(self._rules)
-        return clone
-
-
-class ChannelImplementationMap(_ChannelImplementationRegistry):
-    """Map exact channel types to simulator rules.
-
-    A registered rule has the call shape ``rule(channel, *, targets=targets)``
-    and returns a nonempty tuple of Kraus matrices. For targets with combined
-    dimension ``D``, every result must be a NumPy array of shape ``(D, D)``.
-    FATQAT validates these structural requirements but does not check that a
-    custom rule is completely positive or trace preserving.
-
-    A registered rule does not by itself guarantee backend support. A backend
-    may still reject the channel's parameter form, scope, target dimensions,
-    or execution method.
-    """
 
 
 # Round-off slack when testing ``K^H K`` for a multiple of the identity.

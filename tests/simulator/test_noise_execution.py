@@ -3,6 +3,8 @@
 import numpy as np
 import pytest
 
+from fatqat.implementation import default_matrix_implementation_map
+
 from fatqat.simulator._engine._execution_policy import _select_execution_path
 
 import fatqat as fq
@@ -18,13 +20,12 @@ from fatqat.noise import (
     PhaseDamping,
     ThermalRelaxation,
     TransitionRelaxation,
-    default_channel_implementation_map,
 )
 from fatqat.simulator._engine.engines.numpy_engine import NumpySVEngine
+from fatqat.simulator import EvolutionState
 from fatqat.simulator._execution_contract import (
     _ResultRequest,
-    _ExecutionContext,
-    _InitialEvolutionState,
+    _RunContext,
 )
 from fatqat.simulator._engine._execution_policy import _ExecutionPolicy
 
@@ -102,11 +103,11 @@ def test_mis_shaped_rule_rejected_but_non_cptp_accepted():
     class Custom(Channel):
         pass
 
-    channel_map = default_channel_implementation_map()
+    channel_map = default_matrix_implementation_map()
     channel_map.add(Custom, lambda channel, *, targets: (np.eye(3, dtype=complex),))
     noise = NoiseModel()
     noise.add(Custom(), operation=ops.X)
-    backend = Simulator(noise=noise, channel_implementation_map=channel_map)
+    backend = Simulator(noise=noise, implementation_map=channel_map)
     program = _x_program()
     with pytest.raises(BackendValidationError, match="shape"):
         backend._lower_program(program)
@@ -114,7 +115,7 @@ def test_mis_shaped_rule_rejected_but_non_cptp_accepted():
     channel_map.add(
         Custom, lambda channel, *, targets: (0.5 * np.eye(2, dtype=complex),)
     )
-    backend = Simulator(noise=noise, channel_implementation_map=channel_map)
+    backend = Simulator(noise=noise, implementation_map=channel_map)
     plan, _ = backend._lower_program(program)
     assert any(isinstance(step, ApplyChannelStep) for step in plan)
 
@@ -449,7 +450,7 @@ def test_matrix_custom_finite_channels_are_map_driven_not_field_name_driven():
     class CustomFinite(Channel):
         rate = "a finite-channel calibration label, not a generator mode"
 
-    channel_map = default_channel_implementation_map()
+    channel_map = default_matrix_implementation_map()
     channel_map.add(
         CustomFinite,
         lambda channel, *, targets: (np.eye(2, dtype=complex),),
@@ -457,14 +458,11 @@ def test_matrix_custom_finite_channels_are_map_driven_not_field_name_driven():
     noise = NoiseModel()
     noise.add(CustomFinite(), operation=ops.X)
 
-    assert (
-        Simulator(channel_implementation_map=channel_map).validate_noise_model(noise)
-        is None
-    )
+    assert Simulator(implementation_map=channel_map).validate_noise_model(noise) is None
 
 
 def test_matrix_rejects_thermal_relaxation_even_with_a_registered_kraus_rule():
-    channel_map = default_channel_implementation_map()
+    channel_map = default_matrix_implementation_map()
     channel_map.add(
         ThermalRelaxation,
         lambda channel, *, targets: (np.eye(2, dtype=complex),),
@@ -473,7 +471,7 @@ def test_matrix_rejects_thermal_relaxation_even_with_a_registered_kraus_rule():
     noise.add(ThermalRelaxation(t1=60e-6, t2=80e-6), operation=ops.X)
 
     with pytest.raises(BackendValidationError) as caught:
-        Simulator(channel_implementation_map=channel_map).validate_noise_model(noise)
+        Simulator(implementation_map=channel_map).validate_noise_model(noise)
 
     message = str(caught.value)
     assert "ThermalRelaxation" in message
@@ -583,7 +581,7 @@ def test_numba_compiled_multi_shot_plan_matches_numpy_channels():
         simulator = cls()
         start = np.array([0, 1], dtype=complex)
         untouched = start.copy()
-        context = _ExecutionContext(
+        context = _RunContext(
             request=request,
             system_dims=(2,),
             n_clbits=1,
@@ -593,7 +591,7 @@ def test_numba_compiled_multi_shot_plan_matches_numpy_channels():
         execution_path = _select_execution_path(
             plan,
             quantum_capabilities=simulator.capabilities.quantum,
-            initial_state=_InitialEvolutionState(quantum=start),
+            initial_state=EvolutionState(quantum=start),
         )
         policy = _ExecutionPolicy(
             execution_path=execution_path,
@@ -603,17 +601,17 @@ def test_numba_compiled_multi_shot_plan_matches_numpy_channels():
             fusion=False,
             workflow="numba_trajectories" if cls is NumbaSVEngine else "python",
         )
-        payload = simulator.materialize_execution(
+        payload = simulator.prepare_payload(
             tuple(plan),
             system_dims=context.system_dims,
             n_clbits=context.n_clbits,
             policy=policy,
         )
-        raw = simulator.execute_in_process(
+        raw = simulator.execute_payload(
             context,
             payload,
             policy,
-            initial_state=_InitialEvolutionState(quantum=start),
+            initial_state=EvolutionState(quantum=start),
         )
         assert raw.state is None
         assert np.array_equal(start, untouched)

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Generic, Literal, TypeVar
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 import numpy as np
 
 from ..errors import BackendValidationError
+from ..result import _ResultConfig
+
+if TYPE_CHECKING:
+    from ._engine.state import ClassicalState
 
 StateDataT = TypeVar("StateDataT")
 
@@ -79,11 +83,27 @@ class _SimulationConfig:
 
 
 @dataclass(frozen=True)
+class _SimulatorResultConfig(_ResultConfig):
+    """Result requests accepted by gate-level simulators."""
+
+    final_classical_state: bool = False
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if type(self.final_classical_state) is not bool:
+            raise BackendValidationError(
+                "final_classical_state must be a bool, got "
+                f"{self.final_classical_state!r}"
+            )
+
+
+@dataclass(frozen=True)
 class _ResultRequest:
     """Resolved outputs requested from an engine in its own representation."""
 
     counts: bool
     final_state: bool
+    final_classical_state: bool = False
 
 
 @dataclass(frozen=True)
@@ -97,13 +117,14 @@ class RawResult(Generic[StateDataT]):
     outcome_keys: np.ndarray | None = None
     outcome_counts: np.ndarray | None = None
     state: StateDataT | None = None
+    # An independent copy with allocated register digits.
+    classical_state: ClassicalState | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class _PlanFacts:
     """Runtime-independent semantic facts derived from one lowered plan."""
 
-    written_clbits: frozenset[int]
     stochastic_final_state: bool
     has_measurement: bool
     has_reset: bool
@@ -178,69 +199,8 @@ class _EngineCapabilities:
 
 
 @dataclass(frozen=True, slots=True)
-class _InitialClassicalState:
-    """Optional classical values used to initialize each trajectory.
-
-    Fields are always present. None requests default behavior without requiring
-    support or storage for that component. Any supplied value, including an
-    empty tuple or set, requires engine support; unsupported values are rejected.
-    Simulator validates support and register width before execution. Direct
-    engine callers must provide equally validated input. Engines only copy
-    supplied values into their own mutable execution state.
-    """
-
-    # None keeps zero initialization lazy. Digits include qudit and erasure reports.
-    clbits: tuple[int, ...] | None = None
-    # None leaves occupancy implicit; an empty set means no carriers.
-    occupied: frozenset[int] | None = None
-
-    def __post_init__(self) -> None:
-        if self.clbits is not None:
-            if any(
-                not isinstance(digit, (int, np.integer))
-                or isinstance(digit, bool)
-                or not 0 <= digit <= np.iinfo(np.int64).max
-                for digit in self.clbits
-            ):
-                raise BackendValidationError(
-                    "initial classical digits must be non-negative int64 integers"
-                )
-            object.__setattr__(
-                self, "clbits", tuple(int(digit) for digit in self.clbits)
-            )
-
-    def validate(self, *, capabilities: _EngineCapabilities, n_clbits: int) -> None:
-        """Check initialization against the complete engine and register width.
-
-        Compiled-path eligibility is checked separately from fallback support.
-        """
-        if self.clbits is not None and not capabilities.supports_classical_register:
-            raise BackendValidationError(
-                "engine does not support initial classical digits"
-            )
-        if self.occupied is not None and not capabilities.supports_occupancy:
-            raise BackendValidationError(
-                f"method={capabilities.quantum.representation!r} cannot track carrier "
-                "occupancy; the selected engine has no occupancy state"
-            )
-
-        if self.clbits is not None and len(self.clbits) != n_clbits:
-            raise BackendValidationError(
-                f"initial classical register has {len(self.clbits)} digits; expected {n_clbits}"
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class _InitialEvolutionState(Generic[StateDataT]):
-    """Borrowed initial values; engines create their own mutable storage."""
-
-    quantum: np.ndarray | StateDataT | None = None
-    classical: _InitialClassicalState = field(default_factory=_InitialClassicalState)
-
-
-@dataclass(frozen=True, slots=True)
-class _ExecutionContext:
-    """System dimensions, requested outputs, and sampling controls."""
+class _RunContext:
+    """System dimensions, requested outputs, and sampling controls for a run."""
 
     request: _ResultRequest
     system_dims: tuple[int, ...]

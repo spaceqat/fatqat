@@ -1,7 +1,7 @@
 """Numba matrix-family engines.
 
 `NumbaSVEngine` (statevector) and `NumbaDMEngine` (density matrix) reuse
-shared materialization and Python execution from ``MatrixEngine`` and
+shared payload preparation and Python execution from ``MatrixEngine`` and
 ndarray initialization and expectations from ``_NdarrayEngine``,
 while replacing numeric kernels with Numba-jitted loops. `NumbaUnitaryEngine`
 and `NumbaSuperopEngine` then reuse *those* kernels for the operator
@@ -83,17 +83,17 @@ mapping twice and allocate an unnecessary full-result copy.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from math import prod
+from dataclasses import replace
 from functools import partial
 
 import numpy as np
 
 from ..._execution_contract import (
     RawResult,
-    _InitialEvolutionState as InitialEvolutionState,
     _SimulationConfig as SimulationConfig,
-    _ExecutionContext as ExecutionContext,
+    _RunContext,
     _KernelCapabilities,
     _EngineCapabilities,
     _QuantumCapabilities,
@@ -102,6 +102,8 @@ from ..._execution_contract import (
 from ...._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
+    ApplyParametricMatrixStep,
+    MeasurementStep,
     ResetStep,
     ResolvedStep,
 )
@@ -137,6 +139,7 @@ from ..numerics.numba_kernels._matrix_cache import (
 )
 from ..numerics.numba_kernels._layouts import (
     _MAX_THREADS,
+    _MIN_SIZE_TO_THREAD,
     _ApplyLayoutCache,
     _build_unitary_apply_layout,
     _build_superoperator_apply_layout,
@@ -150,6 +153,8 @@ from ..numerics.numba_kernels._channel import (
     _apply_channel_density_matrix,
 )
 from ..numerics.numpy_kernels._reset import _reset_density_matrix, _reset_superoperator
+from ..binding import _bind_parameter_batch
+from ..state import EvolutionState
 from .ndarray_engine import _NdarrayEngine
 from ..numerics.numpy_kernels._state import (
     _allocate_statevector,
@@ -167,12 +172,22 @@ from ..workflows.numba_workflow.operators import (
     _NumbaOperatorExecution,
     _execute_operator_plan,
 )
+from ..workflows.numba_workflow.single_pass import (
+    _NumbaSinglePassExecution,
+    _evolve_sv_batch,
+    _pack_sv_batch,
+    _placeholder_plan,
+)
 from ..workflows.numba_workflow.trajectories import (
     _NumbaTrajectoryExecution,
     _compile_dynamic_plan,
     _execute_sv_trajectories,
+    _patch_gate_matrices,
     _plan_compilable,
 )
+
+# Bytes of evolved statevectors held at once by a compiled single-pass batch.
+_BATCH_STATE_BYTES = 256 * 2**20
 
 
 class NumbaSVEngine(_NdarrayEngine):
@@ -191,30 +206,47 @@ class NumbaSVEngine(_NdarrayEngine):
         supports_process_shots=True,
     )
 
-    def _plan_execution(
+    def _select_policy(
         self,
         plan: Sequence[ResolvedStep],
         *,
-        context: ExecutionContext,
+        context: _RunContext,
         simulation_config: SimulationConfig,
-        initial_state: InitialEvolutionState[np.ndarray],
+        initial_state: EvolutionState[np.ndarray],
     ) -> ExecutionPolicy:
-        """Choose compiled trajectories or Python sequencing with Numba kernels.
+        """Choose a compiled workflow or Python sequencing with Numba kernels.
 
         Eligible repeated trajectories use the compiled loop with serial inner
-        kernels and serial or threaded shots. Other requests use shared Python
+        kernels and serial or threaded shots. A parameter batch on the
+        single-pass path, too small for threaded kernels, whose parametric
+        gates all have compiled formulas, evolves its entries in a compiled
+        call and is sampled by the Python workflow; packing costs more than it
+        saves for a single plan. Other requests use shared Python
         scheduling, including process replay and threading within kernels.
+        ``plan`` may hold parametric steps; it is judged as its placeholder plan.
         """
+        # Only exactly-registered built-in gates have compiled formulas.
+        parametric = [
+            step for step in plan if isinstance(step, ApplyParametricMatrixStep)
+        ]
+        compiled_batch = bool(parametric) and all(
+            step.implementation._batch_builder(step.operation) is not None
+            for step in parametric
+        )
+        plan = _placeholder_plan(plan, context.system_dims)
         execution_path = _select_execution_path(
             plan,
             quantum_capabilities=self.capabilities.quantum,
             initial_state=initial_state,
+            classical_requested=context.request.final_classical_state,
         )
         _validate_shot_parallelism(
             simulation_config,
             execution_path=execution_path,
             counts_requested=context.request.counts,
-            state_requested=context.request.final_state,
+            state_requested=(
+                context.request.final_state or context.request.final_classical_state
+            ),
             shots=context.shots,
         )
         shot_request = simulation_config.shot_parallelism
@@ -230,19 +262,32 @@ class NumbaSVEngine(_NdarrayEngine):
             != "per_shot"  # Plan not supported by compiled trajectories.
             or not context.request.counts
             or context.request.final_state
+            or context.request.final_classical_state
             or initial_state.classical.occupied is not None
             or not _plan_compilable(plan)
         )
         if use_python:
-            return _resolve_python_workflow_scheduling(
+            policy = _resolve_python_workflow_scheduling(
                 simulation_config,
                 execution_path=execution_path,
                 counts_requested=context.request.counts,
-                state_requested=context.request.final_state,
+                state_requested=(
+                    context.request.final_state or context.request.final_classical_state
+                ),
                 capabilities=self.capabilities.kernels,
                 supports_process_shots=self.capabilities.supports_process_shots,
                 shots=context.shots,
             )
+            if (
+                compiled_batch
+                and execution_path == "single_pass"
+                and policy.shot_strategy != "processes"
+                and policy.kernel_strategy != "threads"
+                and prod(context.system_dims) < _MIN_SIZE_TO_THREAD
+                and _plan_compilable(plan)
+            ):
+                return replace(policy, workflow="numba_single_pass")
+            return policy
 
         # This compiled workflow owns the shot loop and calls serial kernels.
         # Auto prefers this loop even when the worker ceiling makes it serial.
@@ -346,18 +391,36 @@ class NumbaSVEngine(_NdarrayEngine):
     def _execution_scope(self, policy: ExecutionPolicy):
         return _thread_scope(policy)
 
-    def materialize_execution(
+    def prepare_payload(
         self,
         plan: tuple[ResolvedStep, ...],
         *,
         system_dims: tuple[int, ...],
         n_clbits: int,
         policy: ExecutionPolicy,
-    ) -> _PythonExecution | _NumbaTrajectoryExecution:
+    ) -> _PythonExecution | _NumbaTrajectoryExecution | _NumbaSinglePassExecution:
         if policy.workflow == "python":
-            return super().materialize_execution(
+            return super().prepare_payload(
                 plan, system_dims=system_dims, n_clbits=n_clbits, policy=policy
             )
+        if policy.workflow == "numba_single_pass":
+            template = _placeholder_plan(plan, system_dims)
+            # Prepare sampling first, so packing leaves the gate caches in place.
+            sampling = super().prepare_payload(
+                tuple(step for step in template if isinstance(step, MeasurementStep)),
+                system_dims=system_dims,
+                n_clbits=n_clbits,
+                policy=policy,
+            )
+            self._retain_step_caches(template)
+            batch = _pack_sv_batch(
+                plan,
+                template,
+                self._dims,
+                self._build_apply_layout,
+                self._matrix_structures.resolve,
+            )
+            return _NumbaSinglePassExecution(batch, sampling)
         self.configure_system(system_dims, n_clbits)
         self._retain_step_caches(plan)
         return _compile_dynamic_plan(
@@ -367,16 +430,16 @@ class NumbaSVEngine(_NdarrayEngine):
             self._matrix_structures.resolve,
         )
 
-    def execute_in_process(
+    def execute_payload(
         self,
-        context: ExecutionContext,
+        context: _RunContext,
         payload: _PythonExecution | _NumbaTrajectoryExecution,
         policy: ExecutionPolicy,
         *,
-        initial_state: InitialEvolutionState[np.ndarray],
+        initial_state: EvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         if policy.workflow == "python":
-            return super().execute_in_process(
+            return super().execute_payload(
                 context, payload, policy, initial_state=initial_state
             )
         self.configure_system(context.system_dims, context.n_clbits)
@@ -386,6 +449,94 @@ class NumbaSVEngine(_NdarrayEngine):
             )
             outcome_keys, outcome_counts = reduce_to_counts(rows)
             return RawResult(outcome_keys=outcome_keys, outcome_counts=outcome_counts)
+
+    def execute(
+        self,
+        plan: tuple[ResolvedStep, ...],
+        *,
+        context: _RunContext,
+        simulation_config: SimulationConfig,
+        initial_state: EvolutionState[np.ndarray],
+    ) -> Iterator[RawResult[np.ndarray]]:
+        """Execute a parameter batch, packing compiled workflows only once.
+
+        Batch entries differ only in their parametric gate matrices, so the
+        policy is planned once from a placeholder plan. A single-pass batch
+        too small for threaded kernels, whose parametric gates all have
+        compiled formulas, binds and evolves its entries inside one compiled
+        call per chunk; the Python single-pass workflow samples each state.
+        On the compiled trajectory workflow the first entry is packed as
+        usual and later entries replace only their gate matrices. Other
+        batches execute entry by entry. Results are yielded in batch order,
+        as in `MatrixEngine.execute`.
+        """
+        positions = tuple(
+            index
+            for index, step in enumerate(plan)
+            if isinstance(step, ApplyParametricMatrixStep)
+        )
+        policy = self._select_policy(
+            plan,
+            context=context,
+            simulation_config=simulation_config,
+            initial_state=initial_state,
+        )
+        # Compiled single pass: evolve blocks of entries in one compiled call,
+        # then sample and yield each entry's state; a block is freed once all
+        # of its entries are consumed.
+        if policy.workflow == "numba_single_pass":
+            payload = self.prepare_payload(
+                plan,
+                system_dims=context.system_dims,
+                n_clbits=context.n_clbits,
+                policy=policy,
+            )
+            n_entries = payload.batch.values.shape[0]
+            chunk = max(1, _BATCH_STATE_BYTES // (16 * prod(context.system_dims)))
+            for start in range(0, n_entries, chunk):
+                with self._execution_scope(policy):
+                    states = _evolve_sv_batch(
+                        payload.batch,
+                        slice(start, start + chunk),
+                        context,
+                        initial_state=initial_state,
+                    )
+                for state in states:
+                    yield super().execute_payload(
+                        context,
+                        payload.sampling,
+                        policy,
+                        initial_state=EvolutionState(state, initial_state.classical),
+                    )
+            return
+
+        # Every other workflow binds and runs one entry at a time, yielding each
+        # result before the next entry starts. Compiled trajectories pack the
+        # first entry and patch later entries' gate matrices; the Python
+        # workflow executes each bound plan like an ordinary run.
+        packed: _NumbaTrajectoryExecution | None = None
+        for bound in _bind_parameter_batch(plan, context.system_dims):
+            if policy.workflow != "numba_trajectories":
+                yield self._dispatch_by_shot_strategy(
+                    bound, context, policy, initial_state
+                )
+                continue
+            if packed is None:
+                payload = packed = self.prepare_payload(
+                    bound,
+                    system_dims=context.system_dims,
+                    n_clbits=context.n_clbits,
+                    policy=policy,
+                )
+            else:
+                # Release the previous entry's gate steps before resolving these.
+                self._retain_step_caches(bound)
+                payload = _patch_gate_matrices(
+                    packed, bound, positions, self._matrix_structures.resolve
+                )
+            yield self.execute_payload(
+                context, payload, policy, initial_state=initial_state
+            )
 
     def _build_apply_layout(
         self,
@@ -432,13 +583,13 @@ class NumbaDMEngine(_NdarrayEngine):
 
     _allocate = staticmethod(_allocate_density_matrix)
 
-    def _plan_execution(
+    def _select_policy(
         self,
         plan: Sequence[ResolvedStep],
         *,
-        context: ExecutionContext,
+        context: _RunContext,
         simulation_config: SimulationConfig,
-        initial_state: InitialEvolutionState[np.ndarray],
+        initial_state: EvolutionState[np.ndarray],
     ) -> ExecutionPolicy:
         return _plan_python_execution(
             plan,
@@ -525,13 +676,13 @@ class _NumbaOperatorRunMixin:
     `_operator_payloads`.
     """
 
-    def _plan_execution(
+    def _select_policy(
         self,
         plan: Sequence[ResolvedStep],
         *,
-        context: ExecutionContext,
+        context: _RunContext,
         simulation_config: SimulationConfig,
-        initial_state: InitialEvolutionState[np.ndarray],
+        initial_state: EvolutionState[np.ndarray],
     ) -> ExecutionPolicy:
         """Choose compiled operator sequencing with serial or threaded kernels.
 
@@ -560,7 +711,7 @@ class _NumbaOperatorRunMixin:
             workflow="numba_operator",
         )
 
-    def materialize_execution(
+    def prepare_payload(
         self,
         plan: tuple[ResolvedStep, ...],
         *,
@@ -591,13 +742,13 @@ class _NumbaOperatorRunMixin:
         del policy
         return plan
 
-    def execute_in_process(
+    def execute_payload(
         self,
-        context: ExecutionContext,
+        context: _RunContext,
         payload: _NumbaOperatorExecution,
         policy: ExecutionPolicy,
         *,
-        initial_state: InitialEvolutionState[np.ndarray],
+        initial_state: EvolutionState[np.ndarray],
     ) -> RawResult[np.ndarray]:
         """Execute one already-packed operator payload without replanning."""
         assert policy.workflow == "numba_operator"

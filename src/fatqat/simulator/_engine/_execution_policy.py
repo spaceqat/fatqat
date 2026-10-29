@@ -11,17 +11,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from .state import EvolutionState
+
 from .._execution_contract import (
     _SimulationConfig as SimulationConfig,
-    _ExecutionContext as ExecutionContext,
+    _RunContext,
     _EngineCapabilities as EngineCapabilities,
     _QuantumCapabilities as QuantumCapabilities,
-    _InitialEvolutionState as InitialEvolutionState,
     _KernelCapabilities as KernelCapabilities,
 )
 from ...errors import BackendValidationError
 from ..._backends.steps import (
     ApplyChannelStep,
+    CustomOperationStep,
     LossStep,
     MeasurementStep,
     PutStep,
@@ -53,9 +55,14 @@ def _select_execution_path(
     plan: Sequence[ResolvedStep],
     *,
     quantum_capabilities: QuantumCapabilities,
-    initial_state: InitialEvolutionState,
+    initial_state: EvolutionState,
+    classical_requested: bool = False,
 ) -> Literal["operator", "single_pass", "per_shot"]:
-    """Classify the required evolution shape from plan and engine semantics."""
+    """Classify the required evolution shape from plan and engine semantics.
+
+    Single-pass sampling defers measurements and never writes their digits, so
+    a requested final classical state with measurements needs a trajectory.
+    """
     if quantum_capabilities.is_operator:
         return "operator"
     # Only the trajectory executor handles occupancy and erasure reports.
@@ -64,11 +71,11 @@ def _select_execution_path(
     measured: set[int] = set()
     for step in plan:
         if getattr(step, "condition", None) is not None or isinstance(
-            step, (PutStep, LossStep)
+            step, (PutStep, LossStep, CustomOperationStep)
         ):
             return "per_shot"
         if isinstance(step, MeasurementStep):
-            if measured.intersection(step.measured_indices):
+            if classical_requested or measured.intersection(step.measured_indices):
                 return "per_shot"
             measured.update(step.measured_indices)
             continue
@@ -180,9 +187,9 @@ def _resolve_kernel_scheduling(
 def _plan_python_execution(
     plan: Sequence[ResolvedStep],
     *,
-    context: ExecutionContext,
+    context: _RunContext,
     simulation_config: SimulationConfig,
-    initial_state: InitialEvolutionState,
+    initial_state: EvolutionState,
     capabilities: EngineCapabilities,
 ) -> _ExecutionPolicy:
     """Classify and schedule execution after an engine selects Python sequencing.
@@ -194,19 +201,24 @@ def _plan_python_execution(
         plan,
         quantum_capabilities=capabilities.quantum,
         initial_state=initial_state,
+        classical_requested=context.request.final_classical_state,
     )
     _validate_shot_parallelism(
         simulation_config,
         execution_path=execution_path,
         counts_requested=context.request.counts,
-        state_requested=context.request.final_state,
+        state_requested=(
+            context.request.final_state or context.request.final_classical_state
+        ),
         shots=context.shots,
     )
     return _resolve_python_workflow_scheduling(
         simulation_config,
         execution_path=execution_path,
         counts_requested=context.request.counts,
-        state_requested=context.request.final_state,
+        state_requested=(
+            context.request.final_state or context.request.final_classical_state
+        ),
         capabilities=capabilities.kernels,
         supports_process_shots=capabilities.supports_process_shots,
         shots=context.shots,

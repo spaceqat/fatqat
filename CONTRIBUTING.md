@@ -1,5 +1,7 @@
 # Contributing to fatqat
 
+English | [简体中文](CONTRIBUTING.zh-CN.md)
+
 Contributions to fatqat are welcome. Development setup and test commands are
 documented in the [README](README.md#development). Contributors should discuss
 substantial features or architectural changes with the maintainers before

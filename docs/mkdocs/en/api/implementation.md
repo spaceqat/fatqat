@@ -1,29 +1,31 @@
 ---
-title: "Matrix implementations"
+title: "Implementation maps"
 ---
 
-# Matrix implementations
+# Implementation maps
 
 
 Use [`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap] to add custom
-matrix operations to a simulator or choose gate rules by physical target. Pass
+operations and channels to a simulator, or choose rules by physical target. Pass
 the map as `implementation_map=` when constructing the backend. Built-in
-gates work without a custom map.
+gates and channels work without a custom map. Noise placement is still defined
+by `NoiseModel`; the map supplies how each matched channel acts.
 
 ## Choose a map
 
 
 [`default_matrix_implementation_map`][fatqat.implementation.default_matrix_implementation_map] returns a
-fresh map containing FATQAT's built-in matrix gates. Editing it does not affect
+fresh map containing FATQAT's built-in matrix gates and finite channel rules. Editing it does not affect
 another map or a later call. Construct
 [`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap] directly when the
-backend should support only rules you add.
+backend should support only rules you add. A supplied map replaces both the
+gate and channel registrations; start with the default map to retain built-ins.
 
 ## Choose a rule
 
 
 [`MatrixImplementationMap.add`][fatqat.implementation.MatrixImplementationMap.add] accepts an operation
-instance or class and one of three rule forms:
+or channel instance or class. Matrix operations accept these rule forms:
 
 **Matrix rule forms**
 
@@ -32,6 +34,12 @@ instance or class and one of three rule forms:
 | Two-dimensional NumPy array | One constant matrix | The array; FATQAT copies it, so later changes do not affect the rule |
 | Callable | A matrix that depends on operation parameters or target dimensions | `rule(op)` by default. If the callable accepts a `targets=` keyword or `**kwargs`, FATQAT calls `rule(op, targets=targets)`. |
 | [`MatrixImplementation`][fatqat.implementation.MatrixImplementation] | A configured or stateful rule object | Override `__call__(op, *, targets)`. |
+
+Channel rules are callables returning Kraus matrices; see
+[Custom noise implementations](noise/custom-implementations.md). For operations
+that update quantum and classical state together, the same map
+accepts `CustomOperationImplementation` objects. See
+[Custom operations](simulators/custom-operations.md).
 
 `op` is the applied operation value, so it contains parameters such as a
 rotation angle. `targets` contains scalar program
@@ -69,11 +77,15 @@ register references. One operation family uses exactly one registration mode:
 Call [`remove`][fatqat.implementation.MatrixImplementationMap.remove] before
 switching a family between these modes.
 
+Both modes accept `num_subsystems=None` and instance-dependent channel widths.
+Their device-specific tuples may have different lengths. A fixed integer
+`num_subsystems` requires that many labels.
+
 ## Validation timing
 
 
 `add` rejects an invalid registration immediately with `TypeError` or
-`ValueError`. Callables run when a backend prepares a program. A rule that
+`ValueError`. Matrix and channel rules run when a backend prepares a program. A matrix rule that
 raises produces [`MatrixImplementationError`][fatqat.errors.MatrixImplementationError], an array
 with the wrong target shape produces
 [`BackendValidationError`][fatqat.errors.BackendValidationError], and a missing rule produces
@@ -92,7 +104,7 @@ Alias for an ordered tuple of hashable backend-defined physical labels.
 ::: fatqat.implementation.MatrixImplementationMap
     options:
       inherited_members: true
-      show_bases: true
+      show_bases: false
       merge_init_into_class: false
       filters:
         - "!^_"

@@ -51,12 +51,6 @@ class _TransmonPulseImplementationMap(PulseImplementationMap):
         super().__init__()
         self._transmon_compatibility = compatibility
 
-    def copy(self) -> "_TransmonPulseImplementationMap":
-        """Return an independent map while retaining compatibility facts."""
-        clone = _TransmonPulseImplementationMap(self._transmon_compatibility)
-        clone._registry = self._registry.copy()
-        return clone
-
 
 def _canonical_model_edges(model: TransmonModel) -> tuple[_CanonicalEdge, ...]:
     return tuple(

@@ -1,13 +1,16 @@
-"""Channel registry (`ChannelImplementationMap`) and Kraus shape validation."""
+"""Channel registry (`MatrixImplementationMap`) and Kraus shape validation."""
 
 import numpy as np
 import pytest
 
+from fatqat.implementation import (
+    default_matrix_implementation_map,
+    MatrixImplementationMap,
+)
+
 from fatqat.errors import BackendValidationError
 from fatqat.noise import (
     Channel,
-    ChannelImplementationMap,
-    default_channel_implementation_map,
 )
 from fatqat.noise.base import _validate_kraus_shapes
 from fatqat.noise.catalog import Depolarizing
@@ -59,39 +62,39 @@ def _identity_rule(channel, *, targets):
 
 
 def test_add_is_the_only_public_registration_verb_and_roundtrips():
-    channel_map = ChannelImplementationMap()
+    channel_map = MatrixImplementationMap()
     assert channel_map.add(_CustomChannel, _identity_rule) is None
 
-    assert channel_map.get(_CustomChannel) is _identity_rule
-    assert channel_map.get(Depolarizing) is None
+    assert channel_map.implementation_for(_CustomChannel) is _identity_rule
+    assert channel_map.implementation_for(Depolarizing) is None
     assert channel_map.supported_channels() == frozenset({_CustomChannel})
     assert not hasattr(channel_map, "register")
 
 
-def test_add_rejects_non_channel_type():
-    channel_map = ChannelImplementationMap()
+def test_add_rejects_invalid_descriptor_type():
+    channel_map = MatrixImplementationMap()
     with pytest.raises(TypeError):
         channel_map.add(int, _identity_rule)
 
 
 def test_add_rejects_non_callable_rule():
-    channel_map = ChannelImplementationMap()
+    channel_map = MatrixImplementationMap()
     with pytest.raises(TypeError):
         channel_map.add(_CustomChannel, "not a rule")
 
 
 def test_copy_is_independent():
-    channel_map = ChannelImplementationMap()
+    channel_map = MatrixImplementationMap()
     channel_map.add(_CustomChannel, _identity_rule)
     clone = channel_map.copy()
     clone.add(Depolarizing, _identity_rule)
 
-    assert channel_map.get(Depolarizing) is None
-    assert clone.get(_CustomChannel) is _identity_rule
+    assert channel_map.implementation_for(Depolarizing) is None
+    assert clone.implementation_for(_CustomChannel) is _identity_rule
 
 
 def test_default_map_covers_catalog():
-    channel_map = default_channel_implementation_map()
+    channel_map = default_matrix_implementation_map()
     names = {c.__name__ for c in channel_map.supported_channels()}
     assert names == {
         "Depolarizing",

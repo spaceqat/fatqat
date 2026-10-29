@@ -1,7 +1,7 @@
 """Concrete matrix builders: fixed-gate constants, rotation/phase gates, and
 dimension-generic (qudit) gate families.
 
-See `implementation.base` for the local-matrix convention every builder here
+See `implementation.matrix_map` for the local-matrix convention every builder here
 follows (target/control operand ordering, MSB/LSB layout).
 
 Adding a new gate's rule (registered in `implementation.registry`):
@@ -373,3 +373,59 @@ def _subspace_rz_batch(
     m[:, j, j] = np.exp(-1j * theta / 2)
     m[:, k, k] = np.exp(1j * theta / 2)
     return m
+
+
+# Batched rules for sweep replay, registered beside the scalar rules in
+# `registry`. Each receives a field accessor (a float64 column for a
+# `Parameter` field, the declared value otherwise) and the program targets.
+# They are module-level functions so implementation maps stay picklable.
+
+
+def _rx_batch_rule(field, _targets) -> np.ndarray:
+    return _rx_batch(field("theta"))
+
+
+def _ry_batch_rule(field, _targets) -> np.ndarray:
+    return _ry_batch(field("theta"))
+
+
+def _rz_batch_rule(field, _targets) -> np.ndarray:
+    return _rz_batch(field("theta"))
+
+
+def _phase_batch_rule(field, _targets) -> np.ndarray:
+    return _phase_batch(field("theta"))
+
+
+def _u_batch_rule(field, _targets) -> np.ndarray:
+    return _u_matrix_batch(field("theta"), field("phi"), field("lam"))
+
+
+def _u1_batch_rule(field, _targets) -> np.ndarray:
+    return _phase_batch(field("lam"))
+
+
+def _u2_batch_rule(field, _targets) -> np.ndarray:
+    return _u_matrix_batch(np.pi / 2, field("phi"), field("lam"))
+
+
+def _cphase_batch_rule(field, _targets) -> np.ndarray:
+    return _cphase_batch(field("theta"))
+
+
+def _subspace_rx_batch_rule(field, targets) -> np.ndarray:
+    return _subspace_rx_batch(
+        targets[0].register.dim, field("subspace"), field("theta")
+    )
+
+
+def _subspace_ry_batch_rule(field, targets) -> np.ndarray:
+    return _subspace_ry_batch(
+        targets[0].register.dim, field("subspace"), field("theta")
+    )
+
+
+def _subspace_rz_batch_rule(field, targets) -> np.ndarray:
+    return _subspace_rz_batch(
+        targets[0].register.dim, field("subspace"), field("theta")
+    )
