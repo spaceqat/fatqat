@@ -82,7 +82,7 @@ For the runner-read token, select the target owner and repository and grant
 access; organization approval may be required. Track token expiration.
 This is not the short-lived runner registration token.
 
-The runner-read token remains limited to runner-readiness GET requests.
+This workflow uses `GH_RUNNER_READ_TOKEN` only to query runner readiness.
 PR/run metadata and commit statuses use job-scoped `GITHUB_TOKEN` permissions.
 The CPU control jobs install the Tencent Cloud SDK and run
 [`hai_power.py`](../../.github/scripts/hai_power.py). Cloud credentials are
@@ -120,7 +120,7 @@ tests. It imports CuPy, requires a visible GPU, performs a GPU computation,
 and checks the result without pytest or skip handling. Any failure stops
 the GPU job before test execution.
 
-After preflight succeeds, the workflow runs only:
+For manual smoke tests, the workflow runs:
 
 ```bash
 "$HOME/fatqat-ci-venv/bin/python" -m pytest tests/gpu_tests --confcutdir=tests/gpu_tests -v -rs
@@ -189,14 +189,19 @@ run the CUDA preflight, and execute `tests/gpu_tests`. Manual dispatch on the
 default branch continues to use `$HOME/fatqat-ci-venv` and the original smoke
 test. The HAI controller and single-instance concurrency group are shared.
 
+A run awaiting GPU approval occupies the shared GPU workflow concurrency
+slot. Approve, reject or cancel outdated requests to allow later GPU runs
+to proceed.
+
 The `GPU tests` status on the PR head commit links to the GPU workflow run.
 Pending is posted only after approval and revalidation, during startup.
 Rejected, cancelled or stale GPU requests report error if reporting can run;
 unrelated PRs receive no GPU status. Success requires the start job, entire GPU job,
 pytest step and stop job all to succeed. Failed pytest reports failure when
 startup and shutdown succeed and the GPU job is not cancelled; installation,
-preflight, skipped tests, cancellation, post-job or shutdown failures report
-error. If GitHub rejects a status update, the reporting
+preflight, a skipped pytest step, cancellation, post-job or shutdown failures
+report error. This refers to the workflow step, not individual pytest test cases.
+If GitHub rejects a status update, the reporting
 job fails visibly; operators must inspect the run rather than assume a pending
 status means tests are still running.
 
@@ -243,6 +248,25 @@ billing; retained storage may still be charged.
 | Run the standalone preflight with no visible CUDA GPU | Preflight exits with an error before pytest starts |
 | A GPU computation raises an error or returns an incorrect result | The check or test fails; the error is not converted into a skip |
 
+### Validate PR selection and GPU approval
+
+Use an open PR and check the following cases. These are acceptance
+criteria, not a record of completed runs.
+
+| Scenario | Expected behavior |
+| --- | --- |
+| Ordinary Tests fails | No GPU approval request or HAI startup |
+| Tests passes and only unrelated files change | No GPU approval, cloud calls or pending GPU status |
+| Tests passes with GPU-related changes, but approval is pending | GPU execution waits; no HAI startup |
+| GPU approval is rejected or the run is cancelled before startup | No HAI start or stop call |
+| The selected revision changes while awaiting approval | The old approval cannot start tests for the new revision |
+| Approved GPU tests pass | CUDA preflight and pytest execute, the result is reported, and shutdown completes |
+| Approved GPU tests fail | The PR receives a failing result and shutdown is still requested |
+| Manual default-branch smoke test | No PR approval is required; preflight, tests and shutdown execute |
+
+Actual Environment approval, cancellation and runner scheduling must be
+verified on GitHub; local mocked tests do not validate those services.
+
 ## 6. Handoff and security
 
 Merging the PR does not transfer Secrets, Variables, PAT permissions, runner
@@ -257,7 +281,7 @@ Reuse the CUDA/Python environment and verify the full lifecycle upstream.
 Do not let both repositories control the instance: workflow concurrency is
 scoped to one repository.
 
-### Accepted persistent-runner risk
+### Persistent-runner execution
 
 This design deliberately executes PR code directly on the existing persistent
 self-hosted runner after successful CPU CI and separate `gpu-ci` approval.
@@ -266,8 +290,10 @@ an explicit maintainer-reviewed choice, not a security isolation mechanism.
 A fresh Python virtual environment and `persist-credentials: false` do not
 isolate that code from the host. Malicious PR code can alter host files, retain
 processes, access runner credentials, or compromise later jobs; CPU test success
-and environment approval do not prove that code is safe. Administrators accept this
-risk and must review approved external code and reimage a suspect runner.
+and environment approval do not prove that code is safe.
+Maintainers must approve this execution model before enabling PR runs,
+review external code before approving GPU execution, and reimage a
+suspect runner.
 
 Tencent Cloud secrets and `GH_RUNNER_READ_TOKEN` are supplied only to trusted
 GitHub-hosted control jobs. The GPU job receives read-only repository, Actions

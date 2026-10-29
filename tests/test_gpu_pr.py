@@ -597,6 +597,39 @@ def test_workflow_cannot_start_pr_without_successful_gpu_approval():
     assert "needs.prepare.outputs.needs_gpu == 'true'" in report
 
 
+@pytest.mark.parametrize(
+    "start_result,ready,cancelled,expected",
+    [
+        pytest.param("success", "true", False, True, id="manual-approve-skipped"),
+        ("failure", "true", False, False),
+        ("skipped", "true", False, False),
+        ("cancelled", "true", False, False),
+        ("success", "false", False, False),
+        ("success", "", False, False),
+        ("success", "true", True, False),
+    ],
+)
+def test_gpu_job_explicitly_requires_successful_ready_start(
+    start_result, ready, cancelled, expected
+):
+    gpu = workflow_job("gpu-tests")
+    condition = re.search(r"^    if: (.+)$", gpu, re.M)[1]
+    assert condition == (
+        "${{ !cancelled() && needs.start-gpu.result == 'success' && "
+        "needs.start-gpu.outputs.ready == 'true' }}"
+    )
+    # A skipped manual approval must not block a successful start's GPU job.
+    # PR approval remains enforced by the start-gpu gate checked above.
+    assert "needs: start-gpu" in gpu
+    # Evaluate only these predicates locally, not GitHub's scheduler.
+    predicates = {
+        "!cancelled()": not cancelled,
+        "needs.start-gpu.result == 'success'": start_result == "success",
+        "needs.start-gpu.outputs.ready == 'true'": ready == "true",
+    }
+    assert all(predicates[part] for part in condition[4:-3].split(" && ")) == expected
+
+
 def test_workflow_reports_job_result_separately_from_pytest_outcome():
     gpu, report = workflow_job("gpu-tests"), workflow_job("report")
     assert "test_result: ${{ steps.tests.outcome }}" in gpu
