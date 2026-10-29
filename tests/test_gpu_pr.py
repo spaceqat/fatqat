@@ -42,6 +42,7 @@ def controller_case(tmp_path, monkeypatch):
         "head": {"sha": SHA, "ref": "feature", "repo": {"id": 30}},
         "mergeable": True,
         "merge_commit_sha": MERGE,
+        "changed_files": 1,
     }
     merge = {"sha": MERGE, "parents": [{"sha": BASE}, {"sha": SHA}]}
     event = {
@@ -57,9 +58,19 @@ def controller_case(tmp_path, monkeypatch):
         "GITHUB_RUN_ID": "99",
         "GITHUB_EVENT_PATH": str(tmp_path / "event.json"),
         "GITHUB_OUTPUT": str(tmp_path / "output"),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
         "GH_TOKEN": "job-token",
     }
     calls, pages = [], [[pr]]
+    file_pages = [[{"filename": "tests/gpu_tests/test_cupy.py", "status": "modified"}]]
+    protection = {
+        "protection_rules": [
+            {
+                "type": "required_reviewers",
+                "reviewers": [{"type": "User", "reviewer": {"id": 1}}],
+            }
+        ]
+    }
 
     def request(_api, path, payload=None):
         calls.append((path, payload))
@@ -69,6 +80,8 @@ def controller_case(tmp_path, monkeypatch):
             return copy.deepcopy(run)
         if path == "/actions/workflows/tests.yml":
             return {"id": 20}
+        if path == "/environments/gpu-ci":
+            return copy.deepcopy(protection)
         if path == f"/git/commits/{pr['merge_commit_sha']}":
             return copy.deepcopy(merge)
         if path.startswith("/pulls?"):
@@ -76,6 +89,10 @@ def controller_case(tmp_path, monkeypatch):
             assert query["state"] == ["open"]
             assert query["head"] == [f"contributor:{run['head_branch']}"]
             return copy.deepcopy(pages[int(query["page"][0]) - 1])
+        if path.startswith("/pulls/42/files?"):
+            query = parse_qs(urlsplit(path).query)
+            assert query["per_page"] == ["100"]
+            return copy.deepcopy(file_pages[int(query["page"][0]) - 1])
         if path.startswith("/pulls/"):
             result = copy.deepcopy(pr)
             result["number"] = int(path.rsplit("/", 1)[1])
@@ -96,6 +113,8 @@ def controller_case(tmp_path, monkeypatch):
         "env": env,
         "calls": calls,
         "pages": pages,
+        "file_pages": file_pages,
+        "protection": protection,
         "invoke": invoke,
     }
 
@@ -135,6 +154,162 @@ def test_fork_lookup_paginates_and_url_encodes_branch(case):
     assert case["invoke"]() == 0
     assert outputs(case)["ready"] == "true"
     assert sum(path.startswith("/pulls?") for path, _ in case["calls"]) == 2
+
+
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out"])
+def test_failed_cpu_tests_do_not_inspect_paths_or_request_gpu(case, conclusion):
+    case["run"]["conclusion"] = conclusion
+    case["event"]["workflow_run"]["conclusion"] = conclusion
+    assert case["invoke"]("prepare") == 0
+    assert outputs(case) == {}
+    assert not any(
+        "/files?" in path or "/environments/" in path for path, _ in case["calls"]
+    )
+
+
+@pytest.mark.parametrize(
+    "path,required",
+    [
+        ("tests/gpu_tests/test_cupy.py", True),
+        ("tests/gpu_tests/data/input.npy", True),
+        ("tests/test_gpu_pr.py", True),
+        (".github/workflows/gpu.yml", True),
+        (".github/scripts/gpu_pr.py", True),
+        (".github/scripts/hai_power.py", True),
+        ("pyproject.toml", True),
+        ("tests/gpu_tests/README.md", False),
+        ("tests/gpu_tests/notes.rst", False),
+        ("docs/mkdocs/en/gpu.md", False),
+        ("README.md", False),
+        ("src/fatqat/simulator/simulator.py", False),
+        ("tests/simulator/test_execution.py", False),
+        (".github/workflows/tests.yml", False),
+        (".github/workflows/lint.yml", False),
+    ],
+)
+@pytest.mark.parametrize("status", ["added", "modified", "removed"])
+def test_gpu_selection_uses_changed_paths_not_repository_contents(
+    case, path, required, status
+):
+    case["file_pages"][:] = [[{"filename": path, "status": status}]]
+    assert case["invoke"]("prepare") == 0
+    assert outputs(case)["needs_gpu"] == str(required).lower()
+    assert any(path == "/environments/gpu-ci" for path, _ in case["calls"]) == required
+    assert all(payload is None for _, payload in case["calls"])
+    summary = Path(case["env"]["GITHUB_STEP_SUMMARY"]).read_text(encoding="utf-8")
+    assert "PR #42" in summary
+    assert all(sha in summary for sha in (SHA, BASE, MERGE))
+
+
+@pytest.mark.parametrize(
+    "old,new,required",
+    [
+        ("tests/gpu_tests/test_old.py", "tests/cpu/test_old.py", True),
+        ("tests/cpu/test_old.py", "tests/gpu_tests/test_new.py", True),
+        ("docs/old.md", "docs/new.md", False),
+        ("tests/gpu_tests/README.md", "docs/gpu.md", False),
+    ],
+)
+def test_renames_check_both_old_and_new_paths(case, old, new, required):
+    case["file_pages"][:] = [
+        [{"filename": new, "previous_filename": old, "status": "renamed"}]
+    ]
+    assert case["invoke"]("prepare") == 0
+    assert outputs(case)["needs_gpu"] == str(required).lower()
+
+
+def test_file_pagination_includes_gpu_change_on_later_page(case):
+    case["pr"]["changed_files"] = 101
+    case["file_pages"].insert(
+        0, [{"filename": f"docs/{i}.md", "status": "modified"} for i in range(100)]
+    )
+    assert case["invoke"]("prepare") == 0
+    assert outputs(case)["needs_gpu"] == "true"
+    assert sum("/files?" in path for path, _ in case["calls"]) == 2
+
+
+@pytest.mark.parametrize(
+    "path", ["/pulls/42/files?per_page=100&page=1", "/environments/gpu-ci"]
+)
+def test_file_or_environment_api_failure_never_means_no_gpu_needed(
+    case, monkeypatch, path
+):
+    request = gpu_pr.GitHub.request
+
+    def fail(api, endpoint, payload=None):
+        if endpoint == path:
+            raise gpu_pr.APIError("Unavailable")
+        return request(api, endpoint, payload)
+
+    monkeypatch.setattr(gpu_pr.GitHub, "request", fail)
+    assert case["invoke"]("prepare") == 1
+    assert outputs(case) == {}
+
+
+@pytest.mark.parametrize("count", [2, 3001, None])
+def test_incomplete_or_uninspectable_file_lists_fail_closed(case, count):
+    case["pr"]["changed_files"] = count
+    assert case["invoke"]("prepare") == 1
+    assert outputs(case) == {}
+
+
+@pytest.mark.parametrize(
+    "rules",
+    [[], [{"type": "required_reviewers", "reviewers": []}], [{"type": "wait_timer"}]],
+)
+def test_missing_required_reviewers_cannot_request_approval(case, rules, capsys):
+    case["protection"]["protection_rules"] = rules
+    assert case["invoke"]("prepare") == 1
+    assert outputs(case) == {}
+    assert "Required reviewers" in capsys.readouterr().err
+
+
+def test_version_change_during_file_query_cannot_produce_selection(case, monkeypatch):
+    request = gpu_pr.GitHub.request
+
+    def change_head(api, path, payload=None):
+        result = request(api, path, payload)
+        if "/files?" in path:
+            case["pr"]["head"]["sha"] = "e" * 40
+        return result
+
+    monkeypatch.setattr(gpu_pr.GitHub, "request", change_head)
+    assert case["invoke"]("prepare") == 0
+    assert outputs(case) == {}
+
+
+@pytest.mark.parametrize("changed", [None, "head", "base", "merge", "closed"])
+def test_post_approval_recheck_keeps_the_prepared_revision(case, changed):
+    assert case["invoke"]("prepare") == 0
+    prepared = outputs(case)
+    Path(case["env"]["GITHUB_OUTPUT"]).unlink()
+    case["env"].update(
+        EXPECTED_PR=prepared["pr_number"],
+        EXPECTED_HEAD_SHA=prepared["head_sha"],
+        EXPECTED_BASE_SHA=prepared["base_sha"],
+        EXPECTED_MERGE_SHA=prepared["merge_sha"],
+    )
+    if changed in {"head", "base"}:
+        case["pr"][changed]["sha"] = "e" * 40
+        case["merge"]["parents"][changed == "head"]["sha"] = "e" * 40
+    elif changed == "merge":
+        case["pr"]["merge_commit_sha"] = case["merge"]["sha"] = "e" * 40
+    elif changed == "closed":
+        case["pr"]["state"] = "closed"
+    assert case["invoke"]() == 0
+    assert (outputs(case).get("ready") == "true") == (changed is None)
+
+
+def test_environment_protection_is_rechecked_before_power(case):
+    case["env"].update(
+        EXPECTED_PR="42",
+        EXPECTED_HEAD_SHA=SHA,
+        EXPECTED_BASE_SHA=BASE,
+        EXPECTED_MERGE_SHA=MERGE,
+    )
+    case["protection"]["protection_rules"] = []
+    assert case["invoke"]() == 1
+    assert outputs(case) == {}
 
 
 @pytest.mark.parametrize(
@@ -291,9 +466,10 @@ def test_stale_recheck_skips_tests_and_reports_error_on_original_head(case):
     assert payload["state"] == "error"
 
 
-def test_manual_default_branch_needs_no_pr_or_api_queries(case):
+@pytest.mark.parametrize("action", ["prepare", "select"])
+def test_manual_default_branch_needs_no_pr_or_api_queries(case, action):
     case["env"]["GITHUB_EVENT_NAME"] = "workflow_dispatch"
-    assert case["invoke"]() == 0
+    assert case["invoke"](action) == 0
     assert outputs(case) == {
         "mode": "manual",
         "ready": "true",
@@ -379,13 +555,53 @@ def test_workflow_cleanup_covers_start_and_gpu_failures_only_after_attempt():
         'echo "attempted=true" >> "$GITHUB_OUTPUT"\n          python -u .github/scripts/hai_power.py start'
         in power
     )
+    assert "environment:" not in stop
+
+
+def test_workflow_requests_environment_approval_only_for_gpu_relevant_prs():
+    prepare, approve = workflow_job("prepare"), workflow_job("approve")
+    assert "github.event.workflow_run.conclusion == 'success'" in prepare
+    assert "gpu_pr.py prepare" in prepare
+    assert "secrets." not in prepare
+    assert "pip install" not in prepare
+    assert "environment:" not in prepare
+    assert re.search(r"^    if: (.+)$", approve, re.M)[1] == (
+        "needs.prepare.outputs.mode == 'pr' && needs.prepare.outputs.needs_gpu == 'true'"
+    )
+    assert "needs: prepare" in approve
+    assert "environment:\n      name: gpu-ci" in approve
+    assert "permissions: {}" in approve
+    assert "hai_power.py" not in approve
+    assert "secrets." not in approve
+
+
+def test_workflow_cannot_start_pr_without_successful_gpu_approval():
+    start = workflow_job("start-gpu")
+    condition = re.search(r"^    if: >-\n(.*?)(?=^    \w)", start, re.M | re.S)[1]
+    assert " ".join(condition.split()) == (
+        "always() && !cancelled() && needs.prepare.result == 'success' && "
+        "needs.prepare.outputs.ready == 'true' && "
+        "(needs.prepare.outputs.mode == 'manual' || "
+        "(needs.prepare.outputs.mode == 'pr' && needs.prepare.outputs.needs_gpu == 'true' && "
+        "needs.approve.result == 'success'))"
+    )
+    assert "needs: [prepare, approve]" in start
+    for field in ("head_sha", "base_sha", "merge_sha"):
+        assert (
+            f"EXPECTED_{field.upper()}: ${{{{ needs.prepare.outputs.{field} }}}}"
+            in start
+        )
+    assert "EXPECTED_PR: ${{ needs.prepare.outputs.pr_number }}" in start
+    assert start.index("gpu_pr.py select") < start.index("hai_power.py start")
+    report = workflow_job("report")
+    assert "needs.prepare.outputs.needs_gpu == 'true'" in report
 
 
 def test_workflow_reports_job_result_separately_from_pytest_outcome():
     gpu, report = workflow_job("gpu-tests"), workflow_job("report")
     assert "test_result: ${{ steps.tests.outcome }}" in gpu
     for key, expression in {
-        "PR_HEAD_SHA": "needs.start-gpu.outputs.head_sha",
+        "PR_HEAD_SHA": "needs.prepare.outputs.head_sha",
         "START_RESULT": "needs.start-gpu.result",
         "GPU_JOB_RESULT": "needs.gpu-tests.result",
         "TEST_RESULT": "needs.gpu-tests.outputs.test_result",
@@ -413,7 +629,7 @@ def test_unsafe_checkout_is_only_for_pinned_pr_merge_and_verification_precedes_i
     assert "pip install" not in verification
     assert "secrets." not in gpu
     assert ": write" not in gpu
-    for name in ("start-gpu", "stop-gpu", "report"):
+    for name in ("prepare", "start-gpu", "stop-gpu", "report"):
         control = workflow_job(name)
         assert "runs-on: ubuntu-latest" in control
         assert "ref: ${{ github.sha }}" in control

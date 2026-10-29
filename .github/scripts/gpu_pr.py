@@ -9,6 +9,17 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+# Keep this list narrow: the current GPU suite exercises CuPy, not CPU engines.
+# Extend it when GPU implementations or their build/dependency files are added.
+GPU_PATHS = (
+    "tests/gpu_tests/",
+    "tests/test_gpu_pr.py",
+    ".github/workflows/gpu.yml",
+    ".github/scripts/gpu_pr.py",
+    ".github/scripts/hai_power.py",
+    "pyproject.toml",
+)
+
 
 class Ineligible(ValueError):
     """The completed run no longer identifies one eligible PR revision."""
@@ -155,7 +166,47 @@ def select_pr(api, event):
     }
 
 
-def select(api, event):
+def needs_gpu(api, pr_number):
+    """Inspect the complete PR file list, including both sides of renames."""
+    pr = api.request(f"/pulls/{pr_number}")
+    count = pr["changed_files"]
+    if type(count) is not int or not 0 <= count <= 3000:
+        raise APIError("Cannot inspect the complete PR file list (GitHub limit: 3000)")
+    files = []
+    for page in range(1, (count + 99) // 100 + 1):
+        batch = api.request(f"/pulls/{pr_number}/files?per_page=100&page={page}")
+        if not isinstance(batch, list):
+            raise APIError("Unexpected PR file list")
+        files.extend(batch)
+    if len(files) != count or len({item["filename"] for item in files}) != count:
+        raise APIError("Incomplete or changing PR file list")
+    required = False
+    for item in files:
+        paths = [item["filename"]]
+        if item["status"] == "renamed":
+            paths.append(item["previous_filename"])
+        for path in paths:
+            if not isinstance(path, str) or not path:
+                raise APIError("Invalid changed-file path")
+            if not path.lower().endswith((".md", ".rst")) and any(
+                path.startswith(rule) if rule.endswith("/") else path == rule
+                for rule in GPU_PATHS
+            ):
+                required = True
+    return required
+
+
+def check_gpu_environment(api):
+    """Fail closed if gpu-ci has no Required reviewers or cannot be queried."""
+    environment = api.request("/environments/gpu-ci")
+    if not any(
+        rule.get("type") == "required_reviewers" and rule.get("reviewers")
+        for rule in environment["protection_rules"]
+    ):
+        raise APIError("Configure Required reviewers on the gpu-ci Environment")
+
+
+def select(api, event, prepare=False):
     environment = api.environment
     default_branch = event["repository"]["default_branch"]
     if environment["GITHUB_REF"] != f"refs/heads/{default_branch}":
@@ -177,6 +228,30 @@ def select(api, event):
             "Selected PR head, base or merge changed while waiting for GPU"
         )
     if selected["mode"] == "pr":
+        if prepare:
+            required = needs_gpu(api, selected["pr_number"])
+            # The file API describes a moving PR. Confirm the pinned version again
+            # after pagination, including when deciding that GPU is unnecessary.
+            if select_pr(api, event) != {
+                k: v for k, v in selected.items() if k != "mode"
+            }:
+                raise Ineligible("PR version changed while inspecting changed files")
+            selected["needs_gpu"] = str(required).lower()
+            if required:
+                check_gpu_environment(api)
+            with Path(environment["GITHUB_STEP_SUMMARY"]).open(
+                "a", encoding="utf-8"
+            ) as stream:
+                stream.write(
+                    f"## GPU selection: PR #{selected['pr_number']}\n\n"
+                    f"GPU required: **{'yes; review gpu-ci' if required else 'no'}**\n\n"
+                    f"- Head: `{selected['head_sha']}`\n"
+                    f"- Base: `{selected['base_sha']}`\n"
+                    f"- Merge to test: `{selected['merge_sha']}`\n\n"
+                    "This current merge is not verified as the merge tested by CPU Tests.\n"
+                )
+        elif environment.get("EXPECTED_PR"):
+            check_gpu_environment(api)
         print(
             f"Selected PR #{selected['pr_number']}: head={selected['head_sha']}, "
             f"base={selected['base_sha']}, merge={selected['merge_sha']}. "
@@ -211,21 +286,24 @@ def main(arguments=None, environment=None):
     environment = os.environ if environment is None else environment
     try:
         api = GitHub(environment)
-        if arguments == ["select"]:
+        if arguments in (["prepare"], ["select"]):
             event = json.loads(
                 Path(environment["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8")
             )
-            select(api, event)
+            select(api, event, prepare=arguments == ["prepare"])
         elif arguments == ["pending"]:
             api.status(environment["PR_HEAD_SHA"], "pending")
         elif arguments == ["report"]:
             report(api)
         else:
-            raise ValueError("Usage: gpu_pr.py select|pending|report")
+            raise ValueError("Usage: gpu_pr.py prepare|select|pending|report")
     except Ineligible as exc:
         print(f"GPU request skipped: {exc}")
-        return 0 if arguments == ["select"] else 1
-    except (APIError, OSError, KeyError, TypeError, ValueError, AttributeError):
+        return 0 if arguments in (["prepare"], ["select"]) else 1
+    except APIError as exc:
+        print(f"GPU control failed: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, KeyError, TypeError, ValueError, AttributeError):
         print(
             "GPU control failed; check GitHub availability and event metadata",
             file=sys.stderr,

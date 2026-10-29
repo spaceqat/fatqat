@@ -5,7 +5,7 @@ Tencent Cloud HAI instance, waits for its runner, checks CUDA independently
 of pytest, runs `tests/gpu_tests/`, and requests shutdown with `STOP_CHARGE`.
 Start/stop jobs use GitHub-hosted CPU runners; the GPU job reuses a prepared
 Python environment for manual main-branch smoke tests. Successful PR runs of
-the existing `Tests` workflow also trigger GPU tests automatically.
+`Tests` start GPU selection; relevant changes require separate GPU approval.
 
 ## 1. Prepare the GPU host
 
@@ -88,6 +88,18 @@ The CPU control jobs install the Tencent Cloud SDK and run
 [`hai_power.py`](../../.github/scripts/hai_power.py). Cloud credentials are
 passed only to their control steps, not to the GPU test job.
 
+For automatic PR GPU tests, a repository administrator must create the
+**Settings → Environments → `gpu-ci`** environment and configure **Required
+reviewers** with the maintainers who approve GPU execution. Allow the default
+branch under any deployment branch restrictions. Disabling administrator
+bypass is recommended. The workflow checks that reviewers are configured;
+missing protection or an API error blocks the PR path. No new PAT is needed.
+See [GitHub's environment configuration](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
+
+Keep the existing cloud secrets at repository scope: `gpu-ci` protects only
+the approval job, while automatic shutdown must run without a second review.
+The manual default-branch smoke test does not require this environment.
+
 ## 4. Run tests
 
 For the normal test suite, use the usual development environment and command:
@@ -128,11 +140,29 @@ files. The Lint workflow installs CuPy for static import checks only.
 
 ### Automatic PR GPU tests
 
-Contributors open ordinary PRs. Keep the repository's native GitHub Actions
-fork-workflow approval policy: when approval is required, a maintainer approves
-`Tests` through GitHub. GPU Tests runs after that PR workflow completes
-successfully, without an additional contributor command or approval step.
-Push, failed, cancelled and incomplete runs do not start a GPU.
+Contributors open ordinary PRs. `Tests` and `Lint` keep their existing triggers
+and fork-workflow policy; no GPU approval is added to CPU testing. Only a
+successful PR run of `Tests` proceeds to GPU selection. Failed, cancelled,
+incomplete and non-PR runs stop without GPU approval or cloud calls.
+
+The trusted prepare job queries this PR's changed files, including additions,
+modifications, deletions and both paths of renames. The centralized `GPU_PATHS`
+rules in [`gpu_pr.py`](../../.github/scripts/gpu_pr.py) cover `tests/gpu_tests/`,
+the GPU workflow, `gpu_pr.py`, `hai_power.py`, `tests/test_gpu_pr.py` and
+`pyproject.toml`. Markdown/reStructuredText documents are excluded. The current
+suite is a CuPy smoke test: ordinary CPU implementation/tests and documentation
+changes do not request GPU. Extend the rules when adding GPU implementations
+or dependency files. Selection uses the diff, not the existence of GPU tests.
+File queries are paginated and checked for completeness; errors, changed
+versions or GitHub's 3,000-file limit stop selection rather than imply no GPU.
+
+Unrelated PRs end without approval, cloud operations or a pending GPU status.
+Relevant PRs wait at the `gpu-ci` Environment for **Approve and deploy** from
+a required reviewer. The selection job summary shows the PR number and full
+head/base/merge SHAs. Rejection or cancellation before approval does not start
+or stop HAI. After approval, the controller revalidates that fixed version
+before any startup call; changed versions cannot reuse the approval. The
+remaining startup, preflight, tests, cleanup and status reporting are automatic.
 
 The GPU workflow and `gpu_pr.py` must be present on the target repository's
 default branch for `workflow_run` to trigger. The controller checks the source
@@ -144,7 +174,8 @@ conflicting or unconfirmed PRs are skipped. A new head must pass `Tests` first.
 Selection pins three separate values: the PR head SHA for eligibility and
 commit statuses, the current target branch's base SHA, and the current test
 merge SHA returned by GitHub. The merge must have exactly the base and head
-as its parents. After the runner becomes available, selection runs again;
+as its parents. After approval and again when the runner becomes available,
+selection runs again;
 changes to any of these SHAs skip testing. Checkout fetches the pinned merge
 SHA and verifies both `HEAD` and its parents before installation or execution.
 This tests the merged result, like ordinary PR Tests. It does **not** prove
@@ -159,7 +190,9 @@ default branch continues to use `$HOME/fatqat-ci-venv` and the original smoke
 test. The HAI controller and single-instance concurrency group are shared.
 
 The `GPU tests` status on the PR head commit links to the GPU workflow run.
-It is pending during startup. Success requires the start job, entire GPU job,
+Pending is posted only after approval and revalidation, during startup.
+Rejected, cancelled or stale GPU requests report error if reporting can run;
+unrelated PRs receive no GPU status. Success requires the start job, entire GPU job,
 pytest step and stop job all to succeed. Failed pytest reports failure when
 startup and shutdown succeed and the GPU job is not cancelled; installation,
 preflight, skipped tests, cancellation, post-job or shutdown failures report
@@ -167,7 +200,9 @@ error. If GitHub rejects a status update, the reporting
 job fails visibly; operators must inspect the run rather than assume a pending
 status means tests are still running.
 
-Local controller tests mock GitHub and do not start any cloud resources:
+Local tests mock GitHub and check workflow gating without starting cloud
+resources. Environment review/rejection, cancellation and the HAI lifecycle
+still require GitHub/real-runner acceptance testing:
 
 ```bash
 python -m pytest tests/test_gpu_pr.py
@@ -225,13 +260,13 @@ scoped to one repository.
 ### Accepted persistent-runner risk
 
 This design deliberately executes PR code directly on the existing persistent
-self-hosted runner after successful CPU CI under GitHub's fork-approval policy.
+self-hosted runner after successful CPU CI and separate `gpu-ci` approval.
 Only the PR-code checkout enables `allow-unsafe-pr-checkout: true`: this is
 an explicit maintainer-reviewed choice, not a security isolation mechanism.
 A fresh Python virtual environment and `persist-credentials: false` do not
 isolate that code from the host. Malicious PR code can alter host files, retain
 processes, access runner credentials, or compromise later jobs; CPU test success
-and native approval do not prove that code is safe. Administrators accept this
+and environment approval do not prove that code is safe. Administrators accept this
 risk and must review approved external code and reimage a suspect runner.
 
 Tencent Cloud secrets and `GH_RUNNER_READ_TOKEN` are supplied only to trusted
