@@ -4,7 +4,8 @@ The [GPU Tests workflow](../../.github/workflows/gpu.yml) starts an existing
 Tencent Cloud HAI instance, waits for its runner, checks CUDA independently
 of pytest, runs `tests/gpu_tests/`, and requests shutdown with `STOP_CHARGE`.
 Start/stop jobs use GitHub-hosted CPU runners; the GPU job reuses a prepared
-Python environment. The workflow is manually dispatched.
+Python environment for manual main-branch smoke tests. Successful PR runs of
+the existing `Tests` workflow also trigger GPU tests automatically.
 
 ## 1. Prepare the GPU host
 
@@ -81,6 +82,8 @@ For the runner-read token, select the target owner and repository and grant
 access; organization approval may be required. Track token expiration.
 This is not the short-lived runner registration token.
 
+The runner-read token remains limited to runner-readiness GET requests.
+PR/run metadata and commit statuses use job-scoped `GITHUB_TOKEN` permissions.
 The CPU control jobs install the Tencent Cloud SDK and run
 [`hai_power.py`](../../.github/scripts/hai_power.py). Cloud credentials are
 passed only to their control steps, not to the GPU test job.
@@ -123,6 +126,53 @@ export LD_LIBRARY_PATH="$CUDA_PATH/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 `--confcutdir` isolates this standalone smoke test from parent `conftest.py`
 files. The Lint workflow installs CuPy for static import checks only.
 
+### Automatic PR GPU tests
+
+Contributors open ordinary PRs. Keep the repository's native GitHub Actions
+fork-workflow approval policy: when approval is required, a maintainer approves
+`Tests` through GitHub. GPU Tests runs after that PR workflow completes
+successfully, without an additional contributor command or approval step.
+Push, failed, cancelled and incomplete runs do not start a GPU.
+
+The GPU workflow and `gpu_pr.py` must be present on the target repository's
+default branch for `workflow_run` to trigger. The controller checks the source
+workflow ID, run attempt, successful conclusion and current PR head. For fork
+runs with no `pull_requests` entries, it queries open PRs by fork owner and
+branch, then matches repository ID and head SHA. Missing, closed, ambiguous,
+conflicting or unconfirmed PRs are skipped. A new head must pass `Tests` first.
+
+Selection pins three separate values: the PR head SHA for eligibility and
+commit statuses, the current target branch's base SHA, and the current test
+merge SHA returned by GitHub. The merge must have exactly the base and head
+as its parents. After the runner becomes available, selection runs again;
+changes to any of these SHAs skip testing. Checkout fetches the pinned merge
+SHA and verifies both `HEAD` and its parents before installation or execution.
+This tests the merged result, like ordinary PR Tests. It does **not** prove
+that the selected current merge is the exact merge commit tested by the
+preceding CPU run; the base branch may have advanced. Selection logs state
+this limitation and record all three SHAs.
+
+PR tests create a fresh virtual environment under `RUNNER_TEMP`, install the
+selected FATQAT checkout with its `test-full` dependencies and pinned CuPy,
+run the CUDA preflight, and execute `tests/gpu_tests`. Manual dispatch on the
+default branch continues to use `$HOME/fatqat-ci-venv` and the original smoke
+test. The HAI controller and single-instance concurrency group are shared.
+
+The `GPU tests` status on the PR head commit links to the GPU workflow run.
+It is pending during startup. Success requires the start job, entire GPU job,
+pytest step and stop job all to succeed. Failed pytest reports failure when
+startup and shutdown succeed and the GPU job is not cancelled; installation,
+preflight, skipped tests, cancellation, post-job or shutdown failures report
+error. If GitHub rejects a status update, the reporting
+job fails visibly; operators must inspect the run rather than assume a pending
+status means tests are still running.
+
+Local controller tests mock GitHub and do not start any cloud resources:
+
+```bash
+python -m pytest tests/test_gpu_pr.py
+```
+
 ## 5. Verify the lifecycle and handle failures
 
 Start a validation run with the instance stopped. Confirm all of the following:
@@ -139,8 +189,13 @@ stopped instance does not verify permission to shut down a running one.
 Capacity shortages are retried within a two-hour startup window, but
 capacity is not reserved while the instance is stopped.
 
-The cleanup job uses `always()`, but there is no independent shutdown
-watchdog. After cleanup failure or force-cancellation, check the instance
+The start step records `attempted=true` before invoking HAI. Cleanup uses
+`always()` and that flag, so startup errors and later installation, CUDA,
+pytest or timeout failures still request shutdown. Ineligible requests that
+never attempt startup do not call either cloud control command. Local tests
+check these conditions; they cannot prove cleanup completes after GitHub
+force-cancellation. There is no independent shutdown watchdog.
+After cleanup failure or force-cancellation, check the instance
 and stop it when no valid job is using it. Closing SSH does not stop cloud
 billing; retained storage may still be charged.
 
@@ -167,8 +222,22 @@ Reuse the CUDA/Python environment and verify the full lifecycle upstream.
 Do not let both repositories control the instance: workflow concurrency is
 scoped to one repository.
 
-Run only trusted code on this persistent runner. Shutdown does not wipe its
-disk, and `persist-credentials: false` is not an isolation boundary. External
-PR execution requires a separate approval and isolation design. This workflow
-has no automatic PR trigger or PR-selection input; selecting `main` tests
-`main`, not an unmerged PR.
+### Accepted persistent-runner risk
+
+This design deliberately executes PR code directly on the existing persistent
+self-hosted runner after successful CPU CI under GitHub's fork-approval policy.
+Only the PR-code checkout enables `allow-unsafe-pr-checkout: true`: this is
+an explicit maintainer-reviewed choice, not a security isolation mechanism.
+A fresh Python virtual environment and `persist-credentials: false` do not
+isolate that code from the host. Malicious PR code can alter host files, retain
+processes, access runner credentials, or compromise later jobs; CPU test success
+and native approval do not prove that code is safe. Administrators accept this
+risk and must review approved external code and reimage a suspect runner.
+
+Tencent Cloud secrets and `GH_RUNNER_READ_TOKEN` are supplied only to trusted
+GitHub-hosted control jobs. The GPU job receives read-only repository, Actions
+and PR permissions, with no status-write permission or cloud secrets. Status
+reporting runs separately on a GitHub-hosted runner using default-branch code.
+Do not store cloud credentials on the self-hosted machine. Shutdown preserves
+its disk, and forced cancellation or runner loss can still require manual
+shutdown; the existing workflow has no independent watchdog.
