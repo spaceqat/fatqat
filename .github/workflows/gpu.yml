@@ -2,9 +2,8 @@ name: GPU Tests
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: [Tests]
-    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
 
 permissions: {}
 
@@ -16,12 +15,10 @@ concurrency:
 
 jobs:
   prepare:
-    name: Select PR revision and GPU need
+    name: Prepare PR revision for GPU approval
     if: >-
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event.workflow_run.event == 'pull_request' &&
-        github.event.workflow_run.conclusion == 'success'))
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request_target')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -35,9 +32,9 @@ jobs:
       base_sha: ${{ steps.select.outputs.base_sha }}
       merge_sha: ${{ steps.select.outputs.merge_sha }}
       pr_number: ${{ steps.select.outputs.pr_number }}
-      needs_gpu: ${{ steps.select.outputs.needs_gpu }}
 
     steps:
+      # pull_request_target uses the upstream default-branch control commit.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
@@ -47,7 +44,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Select revision and inspect changed files
+      - name: Prepare revision and approval summary
         id: select
         env:
           GH_TOKEN: ${{ github.token }}
@@ -56,7 +53,7 @@ jobs:
   approve:
     name: "Approve GPU for PR #${{ needs.prepare.outputs.pr_number }}"
     needs: prepare
-    if: needs.prepare.outputs.mode == 'pr' && needs.prepare.outputs.needs_gpu == 'true'
+    if: needs.prepare.outputs.mode == 'pr'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -74,8 +71,7 @@ jobs:
       always() && !cancelled() && needs.prepare.result == 'success' &&
       needs.prepare.outputs.ready == 'true' &&
       (needs.prepare.outputs.mode == 'manual' ||
-       (needs.prepare.outputs.mode == 'pr' && needs.prepare.outputs.needs_gpu == 'true' &&
-        needs.approve.result == 'success'))
+       (needs.prepare.outputs.mode == 'pr' && needs.approve.result == 'success'))
     runs-on: ubuntu-latest
     timeout-minutes: 145
     permissions:
@@ -281,7 +277,7 @@ jobs:
   report:
     name: Report PR commit status
     needs: [prepare, start-gpu, gpu-tests, stop-gpu]
-    if: ${{ always() && needs.prepare.outputs.mode == 'pr' && needs.prepare.outputs.needs_gpu == 'true' }}
+    if: ${{ always() && needs.prepare.outputs.mode == 'pr' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

@@ -1,28 +1,17 @@
-"""Select a current PR after successful CPU CI and report its GPU result."""
+"""Pin a PR event revision for GPU approval and report its GPU result."""
 
 import json
 import os
 from pathlib import Path
 import re
 import sys
+from time import sleep
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
-
-# Keep this list narrow: the current GPU suite exercises CuPy, not CPU engines.
-# Extend it when GPU implementations or their build/dependency files are added.
-GPU_PATHS = (
-    "tests/gpu_tests/",
-    "tests/test_gpu_pr.py",
-    ".github/workflows/gpu.yml",
-    ".github/scripts/gpu_pr.py",
-    ".github/scripts/hai_power.py",
-    "pyproject.toml",
-)
 
 
 class Ineligible(ValueError):
-    """The completed run no longer identifies one eligible PR revision."""
+    """The PR event no longer identifies an eligible revision."""
 
 
 class APIError(RuntimeError):
@@ -76,7 +65,7 @@ class GitHub:
             raise APIError(f"GitHub returned HTTP {exc.code}") from exc
         except (URLError, OSError, ValueError) as exc:
             raise APIError("GitHub request failed") from exc
-        if not isinstance(data, (dict, list)):
+        if not isinstance(data, dict):
             raise APIError("Unexpected GitHub response")
         return data
 
@@ -94,63 +83,34 @@ class GitHub:
 
 
 def select_pr(api, event):
-    """Re-fetch run and PR metadata; never trust a PR number alone."""
-    source = event["workflow_run"]
-    run = api.request(f"/actions/runs/{number(source['id'])}")
-    workflow = api.request("/actions/workflows/tests.yml")
+    """Match the current PR to this event's head, then pin its merge commit."""
+    source = event["pull_request"]
+    pr_number = number(event["number"])
+    head_sha = full_sha(source["head"]["sha"])
     if (
-        event.get("action") != "completed"
-        or source.get("event") != "pull_request"
-        or source.get("conclusion") != "success"
-        or run.get("id") != source["id"]
-        or run.get("run_attempt") != source["run_attempt"]
-        or run.get("workflow_id") != workflow["id"]
-        or run.get("event") != "pull_request"
-        or run.get("status") != "completed"
-        or run.get("conclusion") != "success"
-        or run["repository"]["full_name"].lower() != api.repository.lower()
-        or full_sha(run["head_sha"]) != full_sha(source["head_sha"])
+        event.get("action") not in {"opened", "synchronize", "reopened"}
+        or number(source["number"]) != pr_number
     ):
-        raise Ineligible("Not the completed successful PR attempt of Tests")
-
-    head_sha = full_sha(run["head_sha"])
-    fork_id = number(run["head_repository"]["id"])
-    candidates = run.get("pull_requests") or []
-    if not candidates:
-        # Fork runs can have an empty pull_requests array. Query open PRs by
-        # fork owner/branch, then check the repository ID and SHA as well.
-        head = f"{run['head_repository']['owner']['login']}:{run['head_branch']}"
-        page = 1
-        while True:
-            query = urlencode(
-                {"state": "open", "head": head, "per_page": 100, "page": page}
-            )
-            batch = api.request(f"/pulls?{query}")
-            if not isinstance(batch, list):
-                raise APIError("Unexpected PR list")
-            candidates.extend(batch)
-            if len(batch) < 100:
-                break
-            page += 1
-
-    matches = []
-    for pr_number in {number(pr["number"]) for pr in candidates}:
+        raise Ineligible("Not a supported PR event")
+    for attempt in range(5):
         pr = api.request(f"/pulls/{pr_number}")
-        head = pr.get("head") or {}
         if (
-            pr.get("state") == "open"
-            and number(pr["number"]) == pr_number
-            and pr["base"]["repo"]["full_name"].lower() == api.repository.lower()
-            and head.get("sha") == head_sha
-            and str((head.get("repo") or {}).get("id")) == fork_id
-            and head.get("ref") == run["head_branch"]
+            pr.get("state") != "open"
+            or number(pr["number"]) != pr_number
+            or pr["base"]["repo"]["full_name"].lower() != api.repository.lower()
+            or full_sha(pr["head"]["sha"]) != head_sha
         ):
-            matches.append(pr)
-    if len(matches) != 1:
-        raise Ineligible("No unique open PR at the successful Tests revision")
-    pr = matches[0]
+            raise Ineligible("PR is closed or no longer matches the event revision")
+        if pr.get("mergeable") is not None:
+            break
+        if attempt < 4:
+            sleep(2)
+    else:
+        raise APIError(
+            "PR mergeability is still unknown after 5 queries; rerun the GPU workflow"
+        )
     if pr.get("mergeable") is not True:
-        raise Ineligible("PR has conflicts or mergeability is not yet known")
+        raise Ineligible("PR has merge conflicts")
     base_sha = full_sha(pr["base"]["sha"])
     merge_sha = full_sha(pr["merge_commit_sha"])
     commit = api.request(f"/git/commits/{merge_sha}")
@@ -164,36 +124,6 @@ def select_pr(api, event):
         "base_sha": base_sha,
         "merge_sha": merge_sha,
     }
-
-
-def needs_gpu(api, pr_number):
-    """Inspect the complete PR file list, including both sides of renames."""
-    pr = api.request(f"/pulls/{pr_number}")
-    count = pr["changed_files"]
-    if type(count) is not int or not 0 <= count <= 3000:
-        raise APIError("Cannot inspect the complete PR file list (GitHub limit: 3000)")
-    files = []
-    for page in range(1, (count + 99) // 100 + 1):
-        batch = api.request(f"/pulls/{pr_number}/files?per_page=100&page={page}")
-        if not isinstance(batch, list):
-            raise APIError("Unexpected PR file list")
-        files.extend(batch)
-    if len(files) != count or len({item["filename"] for item in files}) != count:
-        raise APIError("Incomplete or changing PR file list")
-    required = False
-    for item in files:
-        paths = [item["filename"]]
-        if item["status"] == "renamed":
-            paths.append(item["previous_filename"])
-        for path in paths:
-            if not isinstance(path, str) or not path:
-                raise APIError("Invalid changed-file path")
-            if not path.lower().endswith((".md", ".rst")) and any(
-                path.startswith(rule) if rule.endswith("/") else path == rule
-                for rule in GPU_PATHS
-            ):
-                required = True
-    return required
 
 
 def check_gpu_environment(api):
@@ -213,7 +143,7 @@ def select(api, event, prepare=False):
         raise Ineligible("GPU control must run from the default branch")
     if environment["GITHUB_EVENT_NAME"] == "workflow_dispatch":
         selected = {"mode": "manual"}
-    elif environment["GITHUB_EVENT_NAME"] == "workflow_run":
+    elif environment["GITHUB_EVENT_NAME"] == "pull_request_target":
         selected = {"mode": "pr", **select_pr(api, event)}
     else:
         raise Ineligible("Unsupported GPU trigger")
@@ -228,35 +158,21 @@ def select(api, event, prepare=False):
             "Selected PR head, base or merge changed while waiting for GPU"
         )
     if selected["mode"] == "pr":
+        check_gpu_environment(api)
         if prepare:
-            required = needs_gpu(api, selected["pr_number"])
-            # The file API describes a moving PR. Confirm the pinned version again
-            # after pagination, including when deciding that GPU is unnecessary.
-            if select_pr(api, event) != {
-                k: v for k, v in selected.items() if k != "mode"
-            }:
-                raise Ineligible("PR version changed while inspecting changed files")
-            selected["needs_gpu"] = str(required).lower()
-            if required:
-                check_gpu_environment(api)
             with Path(environment["GITHUB_STEP_SUMMARY"]).open(
                 "a", encoding="utf-8"
             ) as stream:
                 stream.write(
                     f"## GPU selection: PR #{selected['pr_number']}\n\n"
-                    f"GPU required: **{'yes; review gpu-ci' if required else 'no'}**\n\n"
                     f"- Head: `{selected['head_sha']}`\n"
                     f"- Base: `{selected['base_sha']}`\n"
                     f"- Merge to test: `{selected['merge_sha']}`\n\n"
-                    "This current merge is not verified as the merge tested by CPU Tests.\n"
+                    "Review this fixed revision in the gpu-ci Environment.\n"
                 )
-        elif environment.get("EXPECTED_PR"):
-            check_gpu_environment(api)
         print(
             f"Selected PR #{selected['pr_number']}: head={selected['head_sha']}, "
-            f"base={selected['base_sha']}, merge={selected['merge_sha']}. "
-            "This is the current merge commit, not verified as the merge commit "
-            "tested by the preceding CPU Tests run."
+            f"base={selected['base_sha']}, merge={selected['merge_sha']}."
         )
     with Path(environment["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
         for key, value in {**selected, "ready": "true"}.items():
