@@ -62,7 +62,7 @@ from .._backends.backend_utils import (
     _validate_result_shots,
 )
 from . import planning
-from ._engine.state import EvolutionState
+from ._engine.state import BasisState, EvolutionState, _LoweredBasisState
 from ._execution_contract import (
     _RunContext,
     _PlanFacts,
@@ -189,6 +189,10 @@ class Simulator:
     # silently ignoring it; AtomArraySimulator sets it True.
     _supports_loss: bool = False
 
+    # Methods this backend accepts. Subclasses may add methods whose engines
+    # only make sense for their programs, such as LOSimulator's fixed photon.
+    _method_specs: Mapping[str, _MethodSpec] = _METHOD_SPECS
+
     def __init__(
         self,
         method: str = "statevector",
@@ -222,12 +226,16 @@ class Simulator:
                 be imported, or the captured noise model contains a source
                 this backend cannot execute.
         """
-        normalized = _canonicalize_method(method, _METHOD_SPECS)
+        normalized = _canonicalize_method(method, self._method_specs)
         if normalized is None:
+            names = ["'statevector'/'SV'", "'density_matrix'/'DM'"] + [
+                repr(name)
+                for name in self._method_specs
+                if name not in ("statevector", "density_matrix")
+            ]
             raise BackendValidationError(
                 f"unsupported method={method!r}; expected one of "
-                "'statevector'/'SV', 'density_matrix'/'DM', 'unitary', or "
-                "'superop'"
+                f"{', '.join(names[:-1])}, or {names[-1]}"
             )
         normalized_runtime = str(runtime).lower()
         if normalized_runtime not in ("numpy", "numba"):
@@ -235,7 +243,7 @@ class Simulator:
                 f"unsupported runtime={runtime!r}; expected 'numpy' or 'numba'"
             )
         # Select implementations here; execution support belongs to the engine.
-        spec = _METHOD_SPECS[normalized]
+        spec = self._method_specs[normalized]
         if normalized_runtime == "numba":
             try:
                 from ._engine.engines import numba_engine as engine_module
@@ -484,14 +492,16 @@ class Simulator:
                 to a device label. It must be complete, one-to-one, and
                 compatible with the backend. The documented backend default
                 is used when omitted.
-            initial_state: Quantum array or ``EvolutionState`` supplying quantum
-                and classical data for every shot. None selects the ground state;
-                see ``EvolutionState`` for classical defaults and shot independence.
-                Statevector execution accepts shape ``(D,)``; density-matrix
-                execution accepts ``(D, D)`` or a ``(D,)`` ket. Arrays use public
-                most-significant-first basis order. Only the quantum shape is
-                validated, not normalization or physical validity. Operator
-                methods reject an initial state.
+            initial_state: Quantum array, ``BasisState``, or ``EvolutionState``
+                supplying quantum and classical data for every shot. None selects
+                the ground state; see ``EvolutionState`` for classical defaults
+                and shot independence. Statevector execution accepts shape
+                ``(D,)``; density-matrix execution accepts ``(D, D)`` or a
+                ``(D,)`` ket. Arrays use public most-significant-first basis
+                order. Only the quantum shape is validated, not normalization or
+                physical validity. A ``BasisState`` names one level per
+                subsystem instead, and density-matrix execution starts from its
+                pure state. Operator methods reject an initial state.
                 Shape errors raise directly. Runtime array-conversion failures
                 follow ``error_handling``.
             simulation_config: Optional per-run execution controls. String
@@ -619,8 +629,9 @@ class Simulator:
             resource_layout: Complete, one-to-one assignment of program
                 quantum references to compatible device labels, reused for
                 every row. The backend default is used when omitted.
-            initial_state: Quantum array or ``EvolutionState`` used to initialize
-                every shot in every row, following the same rules as ``run()``.
+            initial_state: Quantum array, ``BasisState``, or ``EvolutionState``
+                used to initialize every shot in every row, following the same
+                rules as ``run()``.
             simulation_config: Controls reused for every row. Accepted keys:
 
                 - ``"seed"`` (``int | None``, default ``None``): Use a
@@ -754,6 +765,12 @@ class Simulator:
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
     ) -> _PreparedExecution:
         """Resolve and lower one program for direct or derived execution."""
+        registers = program.quantum_registers + program.classical_registers
+        if any(register.dim is None for register in registers):
+            raise BackendValidationError(
+                f"{type(self).__name__} needs fixed register dimensions; run "
+                "ModeRegister and CountRegister programs on LOSimulator"
+            )
         simulation = _normalize_config(
             simulation_config,
             self._simulation_config_cls,
@@ -772,6 +789,17 @@ class Simulator:
         engine_allocation = self._allocate_engine_indices(program, resource_layout)
         classical_allocation = _ClassicalAllocation.from_program(program)
         initial_state = self._prepare_initial_state(initial_state)
+        quantum = initial_state.quantum
+        # Engines get the ground state in the same form as any basis state;
+        # operator methods have no initial state at all.
+        if quantum is None and not self._engine.capabilities.quantum.is_operator:
+            quantum = BasisState({})
+        if isinstance(quantum, BasisState):
+            # Refs resolve to engine subsystems like gate targets; the engine
+            # builds the state in its own layout and array type.
+            initial_state.quantum = _lower_basis_state(
+                quantum, program, resource_layout, engine_allocation
+            )
         self._validate_initial_state(
             initial_state,
             tuple(reversed(engine_allocation.system_dims)),
@@ -1249,7 +1277,7 @@ class Simulator:
                     "initial occupancy contains an invalid subsystem index"
                 )
         quantum = initial_state.quantum
-        if quantum is None:
+        if quantum is None or isinstance(quantum, _LoweredBasisState):
             return
         shape = getattr(quantum, "shape", None)
         if shape is None:
@@ -1685,3 +1713,33 @@ class Simulator:
                     "Kraus implementation on this backend",
                 )
         return tuple(dict.fromkeys(rejection_reasons))
+
+
+def _lower_basis_state(
+    basis: BasisState,
+    program: Program,
+    resource_layout: ResourceLayout,
+    engine_allocation: _EngineAllocation,
+) -> _LoweredBasisState:
+    """Lower a basis state to one level per engine subsystem."""
+    refs = {
+        register[index]
+        for register in program.quantum_registers
+        for index in range(register.size)
+    }
+    unknown = set(basis.levels) - refs
+    if unknown:
+        raise BackendValidationError(
+            f"BasisState names {sorted(map(str, unknown))}, which are not "
+            "quantum references of this program"
+        )
+    levels = [0] * engine_allocation.n_subsystems
+    for ref, level in basis.levels.items():
+        index = engine_allocation.engine_index(resource_layout.device_label(ref))
+        dim = engine_allocation.system_dims[index]
+        if level >= dim:
+            raise BackendValidationError(
+                f"BasisState level {level} on {ref} is outside its dimension {dim}"
+            )
+        levels[index] = level
+    return _LoweredBasisState(tuple(levels))

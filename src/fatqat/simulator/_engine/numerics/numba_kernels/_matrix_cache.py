@@ -55,6 +55,7 @@ _KERNEL_SPECS: dict[BuiltinKernelKey, int] = {
     _K.CLOCK: _DIAGONAL,
     _K.CCLOCK: _DIAGONAL,
     _K.SUBSPACE_RZ: _DIAGONAL,
+    _K.PHASE_SHIFTER: _DIAGONAL,
     # exactly one nonzero per row, for every parameter value
     _K.X: _PERMUTATION,
     _K.Y: _PERMUTATION,
@@ -79,6 +80,7 @@ _KERNEL_SPECS: dict[BuiltinKernelKey, int] = {
     _K.FOURIERDG: _DENSE,
     _K.SUBSPACE_RX: _DENSE,
     _K.SUBSPACE_RY: _DENSE,
+    _K.BEAM_SPLITTER: _DENSE,
 }
 
 

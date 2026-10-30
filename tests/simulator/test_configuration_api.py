@@ -166,7 +166,8 @@ def test_result_assembly_error_handling(mode):
 
 
 @pytest.mark.parametrize(
-    "name", ["counts", "final_state", "statevector", "density_matrix"]
+    "name",
+    ["counts", "final_state", "statevector", "density_matrix", "fixed_photon_state"],
 )
 def test_result_rejects_reserved_backend_artifact_names(name):
     with pytest.raises(BackendValidationError, match="reserved field"):

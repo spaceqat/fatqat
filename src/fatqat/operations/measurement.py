@@ -13,9 +13,10 @@ class Measurement:
 
     Each quantum target is paired with the classical output at the same tuple
     position. Their local dimensions must match, so a qudit outcome is written
-    to a classical slot of the same dimension. Create measurements with
-    `fatqat.Program.measure` or `fatqat.Program.measure_all`, not
-    `fatqat.Program.add`. Measurements cannot carry a ``condition=`` argument.
+    to a classical slot of the same dimension. A `fatqat.ModeRegister` slot,
+    which has no fixed dimension, pairs with a `fatqat.CountRegister` slot.
+    Create measurements with `fatqat.Program.measure` or
+    `fatqat.Program.measure_all`, not `fatqat.Program.add`. Measurements cannot carry a ``condition=`` argument.
 
     Repeated targets and outputs are accepted and processed in tuple order. A
     repeated target reports its already-collapsed outcome, with reporting noise
@@ -49,6 +50,14 @@ class Measurement:
         if len(self.targets) < 1:
             raise ValueError("measurement requires at least one target/output pair")
         for pos, (q, c) in enumerate(zip(self.targets, self.outputs)):
+            # A register without a fixed dimension gets one from the backend
+            # per run, so it can only pair with another such register.
+            if (q.register.dim is None) != (c.register.dim is None):
+                raise ValueError(
+                    f"measurement operand {pos}: a register without a fixed "
+                    "dimension (such as ModeRegister) pairs only with another "
+                    "such register (such as CountRegister)"
+                )
             if q.register.dim != c.register.dim:
                 raise ValueError(
                     f"measurement operand {pos}: quantum dim {q.register.dim} "

@@ -24,7 +24,9 @@ from .parameters import Parameter, ParameterVector
 from .program import Program
 from .registers import (
     ClassicalRegister,
+    CountRegister,
     GridRegister,
+    ModeRegister,
     QuantumRegister,
     Register,
     RegisterRef,
@@ -69,6 +71,8 @@ __all__ = [
     "Register",
     "QuantumRegister",
     "ClassicalRegister",
+    "ModeRegister",
+    "CountRegister",
     "RegisterRef",
     "GridRegister",
     "RegisterView",

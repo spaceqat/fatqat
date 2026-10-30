@@ -5,7 +5,13 @@ import pytest
 from fatqat.program import Program
 from fatqat.operations import Measurement
 import fatqat.operations as ops
-from fatqat.registers import GridRegister, QuantumRegister, ClassicalRegister
+from fatqat.registers import (
+    ClassicalRegister,
+    CountRegister,
+    GridRegister,
+    ModeRegister,
+    QuantumRegister,
+)
 
 
 def test_measure_appends_measurement():
@@ -146,6 +152,19 @@ def test_measure_matching_dims_ok():
     ct = ClassicalRegister(1, dim=3)
     program = Program([qt], [ct])
     program.measure(qt[0], ct[0])  # no raise
+
+
+def test_mode_measures_only_into_count_register():
+    modes = ModeRegister(1)
+    qutrit = QuantumRegister(1, dim=3)
+    counts = CountRegister(1)
+    trits = ClassicalRegister(1, dim=3)
+    program = Program([modes, qutrit], [counts, trits])
+    program.measure(modes[0], counts[0])  # no raise
+    with pytest.raises(ValueError, match="CountRegister"):
+        program.measure(modes[0], trits[0])
+    with pytest.raises(ValueError, match="CountRegister"):
+        program.measure(qutrit[0], counts[0])
 
 
 def test_measure_rejects_register_view_target():

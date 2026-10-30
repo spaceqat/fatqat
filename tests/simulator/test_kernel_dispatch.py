@@ -11,6 +11,7 @@ from fatqat.simulator._engine._execution_policy import _select_execution_path
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.simulator import EvolutionState, Simulator
+from fatqat.simulator._engine.state import _LoweredBasisState
 from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep, BuiltinKernelKey
 from fatqat.implementation import default_matrix_implementation_map
 from fatqat.simulator._execution_contract import (
@@ -89,6 +90,8 @@ _GATE_CASES = [
     (ops.SubspaceRY(0.3, (0, 1)), (_QUTRIT[0],)),
     (ops.SubspaceRZ(0.3, (0, 1)), (_QUTRIT[0],)),
     (ops.CClock(1), (_QUTRIT[0], _QUTRIT[1])),
+    (ops.PhaseShifter(0.3), (_QUTRIT[0],)),
+    (ops.BeamSplitter(0.3, 0.4), (_QUTRIT[0], _QUTRIT[1])),
 ]
 
 
@@ -155,7 +158,7 @@ def _counts(engine_cls, plan, dims, n_clbits, shots, seed, request):
         context,
         payload,
         policy,
-        initial_state=EvolutionState(),
+        initial_state=EvolutionState(_LoweredBasisState((0,) * len(dims))),
     )
     return list(zip(raw.outcome_keys.tolist(), raw.outcome_counts.tolist()))
 

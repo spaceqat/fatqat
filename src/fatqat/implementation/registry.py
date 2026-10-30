@@ -32,12 +32,14 @@ from .matrices import (
     _X,
     _Y,
     _Z,
+    _beam_splitter_rule,
     _cclock_rule,
     _clock_rule,
     _cphase,
     _fourier_rule,
     _fourierdg_rule,
     _phase,
+    _phase_shifter_rule,
     _u,
     _u1,
     _u2,
@@ -103,6 +105,8 @@ _DEFAULT_RULES = (
     (ops.SubspaceRY, _subspace_ry_rule, K.SUBSPACE_RY),
     (ops.SubspaceRZ, _subspace_rz_rule, K.SUBSPACE_RZ),
     (ops.CClock, _cclock_rule, K.CCLOCK),
+    (ops.PhaseShifter, _phase_shifter_rule, K.PHASE_SHIFTER),
+    (ops.BeamSplitter, _beam_splitter_rule, K.BEAM_SPLITTER),
 )
 
 # Batched twins of the parametric built-in rules, used by sweep replay. Each

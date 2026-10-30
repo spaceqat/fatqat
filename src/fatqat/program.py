@@ -105,7 +105,7 @@ class _AppliedOperation:
                 _validate_view_pair(first, second, op_name=self.operation.name)
             member_groups = tuple(_view_members(view) for view in views)
             for targets in zip(*member_groups, strict=True):
-                self.operation.validate_targets(targets)
+                _validate_targets(self.operation, targets)
             return
 
         seen: set[tuple[int, int]] = set()
@@ -116,7 +116,18 @@ class _AppliedOperation:
                     f"{self.operation.name}: target qubit {t!r} appears more than once"
                 )
             seen.add(key)
-        self.operation.validate_targets(self.targets)
+        _validate_targets(self.operation, self.targets)
+
+
+def _validate_targets(operation: Operation, targets: tuple[RegisterRef, ...]) -> None:
+    """Run an operation's target checks once every target dimension is known.
+
+    A dimensionless `ModeRegister` target defers dimension-dependent checks to
+    the backend that resolves its dimension and rebuilds the instruction.
+    """
+    if any(target.register.dim is None for target in targets):
+        return
+    operation.validate_targets(targets)
 
 
 class Program:
@@ -509,7 +520,11 @@ class Program:
                     f"condition literal must be int, got {type(literal).__name__!r}"
                 )
             value = int(literal)
-            if not 0 <= value < ref.register.dim:
+            if ref.register.dim is None:
+                # A CountRegister's range is chosen per run by the backend.
+                if value < 0:
+                    raise ValueError(f"condition literal {value} must be non-negative")
+            elif not 0 <= value < ref.register.dim:
                 raise ValueError(
                     f"condition literal {value} out of range for clbit dim "
                     f"{ref.register.dim} (must be 0 <= literal < dim)"

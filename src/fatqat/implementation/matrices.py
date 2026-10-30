@@ -20,6 +20,7 @@ Adding a new gate's rule (registered in `implementation.registry`):
 from __future__ import annotations
 
 import numpy as np
+import scipy.linalg
 
 from .. import operations as ops
 from ..registers import RegisterRef
@@ -174,6 +175,39 @@ def cclock_matrix(dims: tuple[int, int], power: int) -> np.ndarray:
 def _cclock_rule(op: "ops.CClock", targets: tuple[RegisterRef, ...]) -> np.ndarray:
     dims = (targets[0].register.dim, targets[1].register.dim)
     return cclock_matrix(dims, op.power)
+
+
+def phase_shifter_matrix(dim: int, phi: float) -> np.ndarray:
+    """Photon-number phase ``diag(exp(i*n*phi))`` for ``n = 0 .. dim - 1``."""
+    return np.diag(np.exp(1j * phi * np.arange(dim)))
+
+
+def beam_splitter_matrix(dim: int, theta: float, phi: float) -> np.ndarray:
+    """Two-mode beam splitter truncated to ``dim`` levels per mode.
+
+    Returns ``expm(theta * (exp(i*phi) a1^dag a0 - exp(-i*phi) a0^dag a1))``
+    on the ``dim**2`` local space, where mode 0 (the first target) is the MSB.
+    The generator stays anti-Hermitian and commutes with the total photon
+    number after truncation, so the result is unitary and number conserving.
+    """
+    annihilation = np.diag(np.sqrt(np.arange(1, dim)), 1).astype(complex)
+    identity = np.eye(dim, dtype=complex)
+    a0 = np.kron(annihilation, identity)
+    a1 = np.kron(identity, annihilation)
+    hop = np.exp(1j * phi) * a1.conj().T @ a0
+    return scipy.linalg.expm(theta * (hop - hop.conj().T))
+
+
+def _phase_shifter_rule(
+    op: "ops.PhaseShifter", targets: tuple[RegisterRef, ...]
+) -> np.ndarray:
+    return phase_shifter_matrix(targets[0].register.dim, float(op.phi))
+
+
+def _beam_splitter_rule(
+    op: "ops.BeamSplitter", targets: tuple[RegisterRef, ...]
+) -> np.ndarray:
+    return beam_splitter_matrix(targets[0].register.dim, float(op.theta), float(op.phi))
 
 
 # Module-level constant matrices (reused; do not rebuild per call).

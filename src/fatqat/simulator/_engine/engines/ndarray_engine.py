@@ -9,13 +9,12 @@ from __future__ import annotations
 from abc import abstractmethod
 from collections.abc import Sequence
 from copy import deepcopy
-from math import prod
 
 import numpy as np
 
 from ...._expectation import expectation_density_matrix, expectation_statevector
 from .._execution_policy import _ExecutionPolicy as ExecutionPolicy
-from ..state import EvolutionState
+from ..state import EvolutionState, _LoweredBasisState
 from .base import MatrixEngine
 
 
@@ -30,9 +29,17 @@ class _NdarrayEngine(MatrixEngine[np.ndarray]):
         initial_state: EvolutionState[np.ndarray] | None = None,
     ) -> None:
         self.configure_system(system_dims, n_clbits)
-        initial = initial_state if initial_state is not None else EvolutionState()
-        quantum = self._allocate(prod(self._dims) if self._dims else 1, initial.quantum)
-        classical = deepcopy(initial.classical)
+        operator = self.capabilities.quantum.is_operator
+        if initial_state is None:
+            # Direct callers get the same start Simulator would pass.
+            ground = None if operator else _LoweredBasisState((0,) * len(self._dims))
+            initial_state = EvolutionState(ground)
+        # Operator allocators check their own side: no initial state.
+        assert (
+            operator or initial_state.quantum is not None
+        ), "state methods start from a lowered basis state or an array"
+        quantum = self._allocate(self._dims, initial_state.quantum)
+        classical = deepcopy(initial_state.classical)
         self._evolution_state = EvolutionState(quantum, classical)
 
     def _expectation_values(
@@ -64,5 +71,7 @@ class _NdarrayEngine(MatrixEngine[np.ndarray]):
         return tuple(values)
 
     @abstractmethod
-    def _allocate(self, size: int, initial_state: np.ndarray | None) -> np.ndarray:
-        """Return a fresh owned state over ``size`` basis states."""
+    def _allocate(
+        self, dims: Sequence[int], start: np.ndarray | _LoweredBasisState | None
+    ) -> np.ndarray:
+        """Return a fresh owned state over ``dims`` from the engine's start."""

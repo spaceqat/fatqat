@@ -30,6 +30,7 @@ from .fixed_gates import (
     iSwap,
 )
 from .measurement import Measurement
+from .optical_gates import BeamSplitter, PhaseShifter
 from .pairing import Pair, Unpair
 from .parametric_gates import CPhase, Phase, RX, RY, RZ, U, U1, U2, U3
 from .put import Put
@@ -94,5 +95,7 @@ __all__ = [
     "SubspaceRY",
     "SubspaceRZ",
     "CClock",
+    "PhaseShifter",
+    "BeamSplitter",
     "PulseOperation",
 ]

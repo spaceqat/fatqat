@@ -212,6 +212,8 @@ _STATE_ONLY = {"shots": 0, "result_config": {"counts": False, "final_state": Tru
         (1, lambda p: ops.SubspaceRX(p[0], (0, 2)), 0, 3),
         (1, lambda p: ops.SubspaceRY(p[0], (1, 2)), 0, 3),
         (1, lambda p: ops.SubspaceRZ(p[0], (0, 2)), 0, 3),
+        (1, lambda p: ops.PhaseShifter(p[0]), 0, 3),
+        (2, lambda p: ops.BeamSplitter(p[0], p[1]), (0, 1), 3),
     ],
     ids=[
         "RX",
@@ -226,6 +228,8 @@ _STATE_ONLY = {"shots": 0, "result_config": {"counts": False, "final_state": Tru
         "SubspaceRX",
         "SubspaceRY",
         "SubspaceRZ",
+        "PhaseShifter",
+        "BeamSplitter",
     ],
 )
 def test_every_builtin_parametric_gate_matches_explicit_loop(

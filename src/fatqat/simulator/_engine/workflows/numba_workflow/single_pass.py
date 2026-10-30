@@ -31,6 +31,7 @@ from .trajectories import (
     _NumbaTrajectoryExecution,
     _apply_matrix_step,
     _compile_dynamic_plan,
+    _start_template,
 )
 
 
@@ -149,13 +150,8 @@ def _evolve_sv_batch(
     """
     arrays = batch.packed.plan_arrays
     state_size = prod(context.system_dims) if context.system_dims else 1
-    custom_start = initial_state.quantum is not None
-    start = (
-        np.ascontiguousarray(initial_state.quantum, dtype=np.complex128).reshape(
-            state_size
-        )
-        if custom_start
-        else np.empty(0, dtype=np.complex128)
+    start, custom_start, start_index = _start_template(
+        initial_state, context.system_dims
     )
     # Positions follow `_compile_dynamic_plan`'s ``plan_arrays`` order: the step
     # sequencer (0-1) and the gate table with its backing pools (6-17).
@@ -171,6 +167,7 @@ def _evolve_sv_batch(
         start,
         state_size,
         custom_start,
+        start_index,
     )
 
 
@@ -196,9 +193,10 @@ def _run_sv_batch(
     pg_constant,
     pg_levels,
     values,  # (entries, columns) parameter values of these entries
-    start,  # custom-state template; empty when the default state is requested
+    start,  # custom-state template; empty when a basis state is requested
     state_size,
     custom_start,
+    start_index,  # basis state built when `custom_start` is false
 ) -> np.ndarray:  # pragma: no cover - compiled by Numba
     """Bind each entry's parametric gates, then evolve it; entries run in parallel.
 
@@ -237,7 +235,7 @@ def _run_sv_batch(
             state = start.copy()
         else:
             state = np.zeros(state_size, dtype=np.complex128)
-            state[0] = 1.0 + 0.0j
+            state[start_index] = 1.0 + 0.0j
         for st in range(step_kind.shape[0]):
             if step_kind[st] == 0:
                 _apply_matrix_step(

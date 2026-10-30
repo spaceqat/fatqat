@@ -23,6 +23,7 @@ from fatqat.simulator._engine.engines.numpy_engine import (
 )
 from fatqat.errors import BackendValidationError
 from fatqat.simulator._engine._execution_policy import _ExecutionPolicy
+from fatqat.simulator._engine.state import _LoweredBasisState
 
 _SERIAL = _ExecutionPolicy(
     execution_path="single_pass",
@@ -31,6 +32,11 @@ _SERIAL = _ExecutionPolicy(
     worker_limit=1,
     fusion=False,
 )
+
+
+def _ground_state(dims, **fields):
+    """Return the engine-level ground state, as Simulator lowers it."""
+    return EvolutionState(_LoweredBasisState((0,) * len(dims)), **fields)
 
 
 def _context(
@@ -68,7 +74,9 @@ def _run(
         payload,
         policy,
         initial_state=(
-            initial_state if initial_state is not None else EvolutionState()
+            initial_state
+            if initial_state is not None
+            else _ground_state(context.system_dims)
         ),
     )
 
@@ -116,7 +124,10 @@ def test_execution_survives_layout_changes(density_matrix):
     # Old payloads must remain usable after both cache reuse and pruning.
     for context, payload, policy, expected in reversed(executions):
         result = engine.execute_payload(
-            context, payload, policy, initial_state=EvolutionState()
+            context,
+            payload,
+            policy,
+            initial_state=_ground_state(context.system_dims),
         )
         np.testing.assert_allclose(result.state, expected)
 
@@ -130,7 +141,7 @@ def test_numba_trajectory_execution_handles_supported_and_fallback_plans(with_lo
         plan += (LossStep((0,), p=1.0),)
     plan += (MeasurementStep((0,), (0,)),)
     engine = NumbaSVEngine()
-    initial = EvolutionState()
+    initial = _ground_state((2,))
     context = _context(
         n_clbits=1,
         shots=4,
@@ -213,7 +224,7 @@ def test_occupancy_loss_reload_and_feedback_start_fresh(runtime, occupied, repor
         shots=4,
         request=_ResultRequest(counts=True, final_state=False),
     )
-    initial = EvolutionState(classical=ClassicalState(occupied=occupied))
+    initial = _ground_state((2,), classical=ClassicalState(occupied=occupied))
     policy = _ExecutionPolicy(
         execution_path="per_shot",
         shot_strategy="serial",
@@ -283,7 +294,7 @@ def test_initial_register_drives_feedback_and_is_fresh_per_shot(mode):
 
 @pytest.mark.parametrize("measure", [False, True])
 def test_fast_counts_preserve_unwritten_initial_digits(measure):
-    initial = EvolutionState(classical=ClassicalState(clbits=[1, 2]))
+    initial = _ground_state((2,), classical=ClassicalState(clbits=[1, 2]))
     context = _context(
         n_clbits=2,
         shots=4,
@@ -336,7 +347,7 @@ def test_numba_initial_occupancy_preserves_erased_measurement():
 
     engine = NumbaSVEngine()
     plan = (ResetStep((0,)), MeasurementStep((0,), (0,)))
-    initial = EvolutionState(classical=ClassicalState(occupied=set()))
+    initial = _ground_state((2,), classical=ClassicalState(occupied=set()))
     context = _context(
         n_clbits=1,
         shots=4,

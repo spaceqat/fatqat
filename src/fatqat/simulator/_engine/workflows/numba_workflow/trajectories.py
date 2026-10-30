@@ -32,7 +32,13 @@ from ...numerics.numba_kernels._measurement import (
     _project_statevector_strided,
     _sv_reset_kernel,
 )
-from ...state import EvolutionState, NumbaClassicalState, NumbaEvolutionState
+from ...state import (
+    EvolutionState,
+    NumbaClassicalState,
+    NumbaEvolutionState,
+    _LoweredBasisState,
+)
+from ...numerics.numpy_kernels._state import _basis_index
 
 
 class _NumbaTrajectoryExecution(NamedTuple):
@@ -450,17 +456,8 @@ def _execute_sv_trajectories(
         ).random(max_draws)
 
     state_size = prod(context.system_dims) if context.system_dims else 1
-    custom_start = initial_state.quantum is not None
-    # The custom template is read-only: each shot takes the private copy it
-    # evolves. `ascontiguousarray` therefore aliases the validated common
-    # case and copies only when layout or dtype requires it. The default
-    # path passes no O(D) template at all.
-    start = (
-        np.ascontiguousarray(initial_state.quantum, dtype=np.complex128).reshape(
-            state_size
-        )
-        if custom_start
-        else np.empty(0, dtype=np.complex128)
+    start, custom_start, start_index = _start_template(
+        initial_state, context.system_dims
     )
     clbits = initial_state.classical.clbits
     clbits_start = np.asarray(clbits if clbits is not None else (), dtype=np.int64)
@@ -469,6 +466,7 @@ def _execute_sv_trajectories(
         start,
         state_size,
         custom_start,
+        start_index,
         clbits_start,
         context.n_clbits,
         shots,
@@ -595,16 +593,36 @@ def _reset_step(
     )
 
 
+def _start_template(
+    initial_state: EvolutionState, system_dims: Sequence[int]
+) -> tuple[np.ndarray, bool, int]:
+    """Return the compiled start arguments: template, whether to copy it, index."""
+    quantum = initial_state.quantum
+    if isinstance(quantum, _LoweredBasisState):
+        # Basis states, the ground state included, pass no O(D) template.
+        index = _basis_index(quantum.levels, system_dims)
+        return np.empty(0, dtype=np.complex128), False, index
+    assert quantum is not None, "Simulator lowers the ground state"
+    state_size = prod(system_dims) if system_dims else 1
+    # The custom template is read-only: each shot takes the private copy it
+    # evolves. `ascontiguousarray` therefore aliases the validated common
+    # case and copies only when layout or dtype requires it.
+    template = np.ascontiguousarray(quantum, dtype=np.complex128).reshape(state_size)
+    return template, True, 0
+
+
 @njit(cache=True, inline="always")
-def _initialize_shot_state(start, state_size, custom_start, n_clbits, clbits_start):
+def _initialize_shot_state(
+    start, state_size, custom_start, start_index, n_clbits, clbits_start
+):
     """Allocate one shot's quantum and classical buffers without sharing them."""
     if custom_start:
         # A supplied template must survive unchanged to seed every trajectory.
         quantum = start.copy()
     else:
-        # Construct |0...0> directly, without an O(D) template to copy.
+        # Construct the basis state directly, without an O(D) template to copy.
         quantum = np.zeros(state_size, dtype=np.complex128)
-        quantum[0] = 1.0 + 0.0j
+        quantum[start_index] = 1.0 + 0.0j
     clbits = (
         clbits_start.copy() if clbits_start.size else np.zeros(n_clbits, dtype=np.int64)
     )
@@ -667,9 +685,10 @@ def _run_sv_trajectories(
     ch_comp_dim_flat,  # concatenated complement dimensions
     ch_cdf_flat,  # concatenated scaled-unitary branch cdfs, normalized (float64)
     ch_ident_flat,  # 1 where that branch is the identity, so the draw is a no-op
-    start,  # custom-state template; empty when the default state is requested
+    start,  # custom-state template; empty when a basis state is requested
     state_size,  # flat state width, kept explicit when `start` is empty
-    custom_start,  # whether each shot must copy `start` rather than build |0...0>
+    custom_start,  # whether each shot must copy `start`, not build a basis state
+    start_index,  # basis state each shot builds when `custom_start` is false
     clbits_start,  # initial report digits; empty for zero initialization
     n_clbits,  # classical-register width: per-shot clbits and result columns
     shots,  # number of independent trajectories - the `prange` extent
@@ -691,7 +710,7 @@ def _run_sv_trajectories(
     results = np.zeros((shots, n_clbits), dtype=np.int64)
     for shot in prange(shots):  # pylint: disable=not-an-iterable
         evolution = _initialize_shot_state(
-            start, state_size, custom_start, n_clbits, clbits_start
+            start, state_size, custom_start, start_index, n_clbits, clbits_start
         )
         draw = shot * max_draws
 

@@ -128,7 +128,13 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         *,
         initial_state: EvolutionState[QuantumDataT] | None = None,
     ) -> None:
-        """Initialize owned quantum and classical storage from validated input."""
+        """Initialize owned quantum and classical storage from validated input.
+
+        For state methods, ``initial_state.quantum`` is a `_LoweredBasisState`
+        (``Simulator`` lowers the ground state to one too) or a validated dense
+        array; the engine builds a basis state itself, in its own layout and
+        array type. Operator methods receive None: they have no initial state.
+        """
 
     def _retain_step_caches(self, plan: tuple[ResolvedStep, ...]) -> None:
         """Retain only the effective plan's identity-keyed step resolutions.

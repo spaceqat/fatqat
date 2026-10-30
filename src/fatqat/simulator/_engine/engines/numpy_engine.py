@@ -8,6 +8,9 @@ and runtime-selected numerical functions. Each leaf contributes its numerical
 operations and explicit capabilities. Engine-owned selection determines the
 semantic execution shape.
 
+`NumpyFixedPhotonEngine` evolves a state of one total photon number, storing
+only the occupations with that total; `LOSimulator` alone selects it.
+
 `NumpyUnitaryEngine` and `NumpySuperopEngine` are the two *operator* engines:
 they compute the program's map rather than a state under it. Each is its state
 twin evolved on many columns at once - a unitary is ``size`` statevector
@@ -59,6 +62,7 @@ Semantics differences:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from copy import deepcopy
 from functools import partial
 
 import numpy as np
@@ -78,7 +82,9 @@ from .._execution_policy import (
     _ExecutionPolicy as ExecutionPolicy,
     _plan_python_execution,
 )
-from ..state import EvolutionState
+from ....errors import UnsupportedOperationError
+from ..state import EvolutionState, _LoweredBasisState
+from .base import MatrixEngine
 from .ndarray_engine import _NdarrayEngine
 from ..numerics.numpy_kernels._measurement import (
     _statevector_probabilities,
@@ -111,6 +117,14 @@ from ..numerics.numpy_kernels._apply import (
     _apply_matrix_density_matrix,
     _apply_matrix_unitary,
     _apply_matrix_superoperator,
+)
+from ..numerics.numpy_kernels._fixed_photon import (
+    _FixedPhotonState,
+    _allocate_fixed_photon,
+    _apply_matrix_fixed_photon,
+    _fixed_photon_levels,
+    _fixed_photon_probabilities,
+    _project_fixed_photon,
 )
 from ..workflows.python_workflow import _MeasurementKernels, _PythonExecution
 
@@ -233,6 +247,99 @@ class NumpyDMEngine(_NdarrayEngine):
                 _sample_basis_indices,
             ),
             reset=_reset_density_matrix,
+        )
+
+
+# --- fixed-photon engine ---
+
+
+class NumpyFixedPhotonEngine(MatrixEngine[_FixedPhotonState]):
+    """Fixed-photon engine: one amplitude per occupation with the start's total.
+
+    Only gates that conserve the photon number keep a state in its sector, so
+    reset and channels are unsupported, and each gate matrix is checked as it
+    is applied. Measurement keeps the total, so it and feedforward work. The
+    state is not an ndarray, so expectations are not supported yet.
+    """
+
+    _capabilities = _EngineCapabilities(
+        quantum=_QuantumCapabilities(
+            "fixed_photon_state",
+            supports_nonunitary=False,
+            nonunitary_is_stochastic=True,
+        ),
+        trajectory=_TrajectoryCapabilities(classical_register=True),
+        kernels=_KernelCapabilities(
+            supports_kernel_threads=False, thread_capacity=1, supports_fusion=False
+        ),
+    )
+
+    def _select_policy(
+        self,
+        plan: Sequence[ResolvedStep],
+        *,
+        context: _RunContext,
+        simulation_config: SimulationConfig,
+        initial_state: EvolutionState[_FixedPhotonState],
+    ) -> ExecutionPolicy:
+        return _plan_python_execution(
+            plan,
+            context=context,
+            simulation_config=simulation_config,
+            initial_state=initial_state,
+            capabilities=self.capabilities,
+        )
+
+    def __init__(self, name: str = "numpy-fixed-photon"):
+        super().__init__(name)
+
+    def initialize(
+        self,
+        system_dims: Sequence[int],
+        n_clbits: int = 0,
+        *,
+        initial_state: EvolutionState[_FixedPhotonState] | None = None,
+    ) -> None:
+        self.configure_system(system_dims, n_clbits)
+        if initial_state is None:
+            # Direct callers get the same start Simulator would pass.
+            initial_state = EvolutionState(_LoweredBasisState((0,) * len(self._dims)))
+        quantum = _allocate_fixed_photon(self._dims, initial_state.quantum)
+        self._evolution_state = EvolutionState(
+            quantum, deepcopy(initial_state.classical)
+        )
+
+    def _expectation_values(
+        self,
+        state: _FixedPhotonState,
+        observables: Sequence[tuple[tuple[float, tuple[tuple[int, str], ...]], ...]],
+        *,
+        policy: ExecutionPolicy,
+    ) -> tuple[float, ...]:
+        # LOSimulator rejects these requests before execution.
+        raise UnsupportedOperationError(
+            "fixed-photon expectations are not supported yet"
+        )
+
+    def _bind_kernels_to_python_workflow(
+        self,
+        plan: tuple[ResolvedStep, ...],
+        measurements: tuple[tuple[int, int], ...] = (),
+        *,
+        policy: ExecutionPolicy | None = None,
+    ) -> _PythonExecution:
+        return _PythonExecution(
+            plan=plan,
+            deferred_measurements=measurements,
+            apply_matrix=_apply_matrix_fixed_photon,
+            apply_channel=None,
+            measurement=_MeasurementKernels(
+                _fixed_photon_probabilities,
+                _project_fixed_photon,
+                _sample_basis_indices,
+                _fixed_photon_levels,
+            ),
+            reset=None,
         )
 
 

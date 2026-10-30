@@ -168,6 +168,7 @@ class Result:
         superop: np.ndarray | None = None,
         data: Mapping[str, Any] | None = None,
         classical_state: ClassicalState | None = None,
+        fixed_photon_state: np.ndarray | None = None,
     ) -> None:
         """Create a result from produced fields.
 
@@ -190,12 +191,13 @@ class Result:
                 ``available_data`` automatically and are read with
                 ``get_data`` or a dedicated accessor.
             classical_state: Final classical state of one shot, if produced.
+            fixed_photon_state: Fixed-photon amplitudes, if produced.
 
         Raises:
             BackendValidationError: If ``data`` uses ``"counts"``,
                 ``"final_state"``, ``"classical_state"``, ``"statevector"``,
-                ``"density_matrix"``, ``"unitary"``, or ``"superop"``, which
-                are reserved for core fields.
+                ``"density_matrix"``, ``"unitary"``, ``"superop"``, or
+                ``"fixed_photon_state"``, which are reserved for core fields.
         """
         self._data = dict(data) if data is not None else {}
         reserved = {
@@ -206,6 +208,7 @@ class Result:
             "density_matrix",
             "unitary",
             "superop",
+            "fixed_photon_state",
         }
         collisions = reserved & self._data.keys()
         if collisions:
@@ -218,6 +221,7 @@ class Result:
         self._density_matrix = density_matrix
         self._unitary = unitary
         self._superop = superop
+        self._fixed_photon_state = fixed_photon_state
         self._classical_state = classical_state
         self.available_data = frozenset(available) | frozenset(self._data)
         self.metadata = dict(metadata) if metadata is not None else {}
@@ -453,6 +457,31 @@ class Result:
         if "superop" not in self.available_data:
             raise ResultFieldUnavailableError("superop not available in this result")
         return self._superop
+
+    def get_fixed_photon_state(self) -> np.ndarray:
+        """Return the produced fixed-photon state.
+
+        A fixed-photon state is not a product of subsystem spaces: it holds
+        one amplitude for each occupation with the run's total photon number,
+        ``metadata["num_photons"]``. Rows list the occupations, in
+        ``metadata["state_axes"]`` order, lexicographically: the statevector
+        basis order, so the amplitudes equal a statevector's entries for those
+        occupations. `fatqat.simulator.fixed_photon_index` and
+        `fatqat.simulator.fixed_photon_occupation` convert between rows and
+        occupations.
+
+        Returns:
+            A length-``D`` array, where ``D`` is the number of occupations.
+
+        Raises:
+            ResultFieldUnavailableError: If a fixed-photon state was not
+                produced.
+        """
+        if "fixed_photon_state" not in self.available_data:
+            raise ResultFieldUnavailableError(
+                "fixed_photon_state not available in this result"
+            )
+        return self._fixed_photon_state
 
     def get_classical_state(self) -> ClassicalState:
         """Return the classical state at the end of the run.

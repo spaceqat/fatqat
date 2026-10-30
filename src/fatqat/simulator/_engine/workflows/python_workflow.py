@@ -46,11 +46,18 @@ class _MeasurementKernels(Generic[QuantumDataT]):
     generator, preserving each runtime's existing sampling algorithm and draws.
     ``shots=None`` requests one integer outcome; otherwise it returns an array.
     Compiled workflows call their kernels directly, without this Python bundle.
+
+    Sampled outcomes are flat little-endian basis indices unless ``levels`` is
+    given: then they are the representation's own indices, and ``levels``
+    returns the measured subsystems' levels, one row per outcome.
     """
 
     probabilities: Callable[[QuantumDataT], np.ndarray]
     project: Callable[[QuantumDataT, int, Sequence[int], Sequence[int]], QuantumDataT]
     sample: Callable[[np.ndarray, np.random.Generator, int | None], int | np.ndarray]
+    levels: Callable[[QuantumDataT, np.ndarray, Sequence[int]], np.ndarray] | None = (
+        None
+    )
 
 
 # Reset consumes randomness only for statevectors. The numerical function owns
@@ -127,6 +134,10 @@ def _measure_subsystems(
     """Collapse one grouped event and decode its physical subsystem digits."""
     assert len(indices) >= 1, "measure_subsystems requires at least one index"
     flat = _collapse(state, kernels, dims, indices, rng)
+    if kernels.levels is not None:
+        return tuple(
+            int(level) for level in kernels.levels(state.quantum, [flat], indices)[0]
+        )
     return tuple((flat // prod(dims[:index])) % dims[index] for index in indices)
 
 
@@ -213,9 +224,17 @@ def _run_single_pass(
     index_counts = None
     if all(confusion is None for _map, confusion in reporting.values()):
         indices, index_counts = np.unique(indices, return_counts=True)
-    rows = _decode_engine_indices_to_clbit_rows(
-        indices, measurements, context.system_dims, context.n_clbits
-    )
+    levels = execution.measurement.levels if execution.measurement else None
+    if levels is None or not measurements:
+        rows = _decode_engine_indices_to_clbit_rows(
+            indices, measurements, context.system_dims, context.n_clbits
+        )
+    else:
+        rows = np.zeros((len(indices), context.n_clbits), dtype=int)
+        measured = levels(state.quantum, indices, [q for q, _ in measurements])
+        # In program order, so a later write to a clbit replaces an earlier one.
+        for column, (_subsystem, clbit) in enumerate(measurements):
+            rows[:, clbit] = measured[:, column]
     if classical.clbits is not None:
         written = {clbit for _subsystem, clbit in measurements}
         for clbit, digit in enumerate(classical.clbits):

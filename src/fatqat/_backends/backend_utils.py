@@ -33,6 +33,7 @@ def _canonicalize_method(
         "dm": "density_matrix",
         "unitary": "unitary",
         "superop": "superop",
+        "fixed_photon_state": "fixed_photon_state",
     }.get(str(method).lower())
     if canonical is None or canonical not in allowed:
         return None

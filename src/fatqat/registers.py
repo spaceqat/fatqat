@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, ClassVar, Mapping
 
 
 @dataclass(frozen=True, eq=False)
@@ -48,19 +48,24 @@ class Register:
     size: int
     name: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
-    dim: int = 2
+    dim: int | None = 2
+
+    # Dimensionless registers (`ModeRegister`, `CountRegister`) leave the
+    # local dimension to the backend that runs them.
+    _fixed_dim: ClassVar[bool] = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.size, int) or isinstance(self.size, bool):
             raise TypeError(f"register size must be int, got {type(self.size)!r}")
         if self.size <= 0:
             raise ValueError(f"register size must be positive, got {self.size}")
-        if not isinstance(self.dim, int) or isinstance(self.dim, bool):
-            raise TypeError(f"register dim must be int, got {type(self.dim)!r}")
-        if self.dim < 2:
-            raise ValueError(
-                f"register dim must be >= 2 (a nontrivial system), got {self.dim}"
-            )
+        if self._fixed_dim:
+            if not isinstance(self.dim, int) or isinstance(self.dim, bool):
+                raise TypeError(f"register dim must be int, got {type(self.dim)!r}")
+            if self.dim < 2:
+                raise ValueError(
+                    f"register dim must be >= 2 (a nontrivial system), got {self.dim}"
+                )
         # Copy metadata so a caller's later mutation can't reach into this frozen
         # value object.
         object.__setattr__(self, "metadata", dict(self.metadata))
@@ -123,6 +128,39 @@ class QuantumRegister(Register):
 
 
 @dataclass(frozen=True, eq=False)
+class ModeRegister(QuantumRegister):
+    """Fixed-size register of optical modes with no fixed local dimension.
+
+    Each slot is one bosonic mode. The number of photons a mode can hold is a
+    simulation approximation rather than part of the program, so ``dim`` is
+    ``None`` and the backend chooses the truncation for each run;
+    `fatqat.simulator.LOSimulator` reads it from
+    ``simulation_config["cutoff"]``. Backends that need a fixed dimension,
+    including the generic `fatqat.simulator.Simulator`, reject this register.
+    Measure a mode into a `CountRegister`.
+
+    Args:
+        size: Positive number of modes. Must be an integer, not ``bool``.
+        name: Optional display label; it does not determine register identity.
+        metadata: String-keyed application metadata (default empty).
+
+    Raises:
+        TypeError: If ``size`` is not an integer, or ``metadata`` cannot be
+            copied into a dictionary.
+        ValueError: If ``size`` is not positive.
+
+    Examples:
+        >>> import fatqat as fq
+        >>> modes = fq.ModeRegister(2, name="modes")
+        >>> modes.dim is None
+        True
+    """
+
+    dim: None = field(default=None, init=False, repr=False)
+    _fixed_dim: ClassVar[bool] = False
+
+
+@dataclass(frozen=True, eq=False)
 class ClassicalRegister(Register):
     """Fixed-size register for measurement results and conditions.
 
@@ -143,6 +181,31 @@ class ClassicalRegister(Register):
             cannot be copied into a dictionary.
         ValueError: If ``size`` is not positive or ``dim`` is less than ``2``.
     """
+
+
+@dataclass(frozen=True, eq=False)
+class CountRegister(ClassicalRegister):
+    """Fixed-size register for photon counts, with no fixed digit range.
+
+    Measuring a `ModeRegister` slot writes its photon count here. A count
+    slot holds values from ``0`` up to the per-run truncation the backend
+    chooses, so ``dim`` is ``None``. A `ModeRegister` measures only into a
+    `CountRegister`, and a `CountRegister` records only mode measurements.
+
+    Args:
+        size: Positive number of count slots. Must be an integer, not
+            ``bool``.
+        name: Optional display label; it does not determine register identity.
+        metadata: String-keyed application metadata (default empty).
+
+    Raises:
+        TypeError: If ``size`` is not an integer, or ``metadata`` cannot be
+            copied into a dictionary.
+        ValueError: If ``size`` is not positive.
+    """
+
+    dim: None = field(default=None, init=False, repr=False)
+    _fixed_dim: ClassVar[bool] = False
 
 
 @dataclass(frozen=True)
