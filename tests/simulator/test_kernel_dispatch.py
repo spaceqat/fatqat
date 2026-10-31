@@ -369,6 +369,118 @@ def test_coset_chunking_is_bit_identical_across_chunk_counts():
     assert np.array_equal(serial, parallel)
 
 
+def _phases(rng, size):
+    return np.exp(1j * rng.uniform(0, 2 * np.pi, size))
+
+
+@pytest.mark.parametrize(
+    ("dims", "targets", "kind"),
+    [
+        ((2,) * 8, (3,), "dense"),  # shortest qubit run that takes the run walk
+        ((2,) * 8, (6, 4), "dense"),  # unordered targets, inner target between
+        ((2,) * 8, (3, 6), "diagonal"),  # bit-reversed offsets
+        ((2,) * 8, (3, 6), "permutation"),  # also checked in address order
+        ((256, 64), (1,), "permutation"),  # wide gate: tiles narrower than runs
+        ((3, 3, 2, 3, 2), (2,), "dense"),  # mixed-radix run of 9
+        ((2, 2, 2, 3, 3), (3, 4), "diagonal"),
+    ],
+)
+def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
+    # The run walk must match the coset-by-coset walk exactly, including when
+    # thread chunks start or end inside a run, and for permutations relabelled
+    # into address order.
+    from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
+        _build_apply_layout,
+    )
+    from fatqat.simulator._engine.numerics.numba_kernels._apply import (
+        _apply_dense_range,
+        _apply_diagonal_range,
+        _apply_permutation_range,
+        _apply_resolved_parallel,
+        _apply_resolved_serial,
+        _reorder_permutation,
+    )
+
+    rng = np.random.default_rng(3)
+    size = int(np.prod(dims))
+    local_dim = int(np.prod([dims[t] for t in targets]))
+    state = rng.standard_normal(size) + 1j * rng.standard_normal(size)
+    if kind == "diagonal":
+        matrix = np.diag(_phases(rng, local_dim))
+    elif kind == "permutation":
+        matrix = np.eye(local_dim)[rng.permutation(local_dim)] * _phases(rng, local_dim)
+    else:
+        matrix = rng.standard_normal((local_dim,) * 2) + 1j * rng.standard_normal(
+            (local_dim,) * 2
+        )
+    matrix = np.ascontiguousarray(matrix, dtype=np.complex128)
+    columns = np.empty(local_dim, dtype=np.int64)
+    values = np.empty(local_dim, dtype=np.complex128)
+    code = int(_classify_matrix(matrix, columns, values))
+    offsets, comp_strides, comp_dims, num_cosets, _ = _build_apply_layout(dims, targets)
+    layout = (offsets, comp_strides, comp_dims)
+
+    expected = state.copy()
+    if kind == "diagonal":
+        _apply_diagonal_range(expected, values, *layout, 0, num_cosets)
+    elif kind == "permutation":
+        _apply_permutation_range(expected, columns, values, *layout, 0, num_cosets)
+    else:
+        _apply_dense_range(expected, matrix, *layout, 0, num_cosets)
+
+    operand_sets = [(offsets, columns, values)]
+    if kind == "permutation":  # prepared permutations may arrive reordered
+        order = np.argsort(offsets)
+        operand_sets.append(_reorder_permutation(order, offsets, columns, values))
+    for gate_offsets, gate_columns, gate_values in operand_sets:
+        args = (code, matrix, gate_columns, gate_values, gate_offsets)
+        args += (comp_strides, comp_dims, num_cosets)
+        assert np.array_equal(_apply_resolved_serial(state.copy(), *args), expected)
+        for n_chunks in (3, 7, 32):  # 32 leaves ranges too short for runs
+            parallel = _apply_resolved_parallel(state.copy(), *args, n_chunks)
+            assert np.array_equal(parallel, expected)
+
+
+@pytest.mark.parametrize("swap_first", [True, False])
+def test_sweep_patch_repacks_offsets_for_the_new_structure(swap_first):
+    # Packed offsets follow a gate's structure: permutation rows are put in
+    # address order, dense rows are not. A sweep entry that changes the
+    # structure must repack to exactly what a fresh compile produces.
+    from functools import partial
+
+    from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
+        _build_apply_layout,
+    )
+    from fatqat.simulator._engine.numerics.numba_kernels._matrix_cache import (
+        _MatrixStructureCache,
+    )
+    from fatqat.simulator._engine.workflows.numba_workflow.trajectories import (
+        _compile_dynamic_plan,
+        _patch_gate_matrices,
+    )
+
+    dims = (2,) * 16
+    rng = np.random.default_rng(4)
+    swap = ApplyMatrixStep(
+        matrix=np.eye(4, dtype=complex)[[0, 2, 1, 3]], target_indices=(3, 6)
+    )
+    dense = ApplyMatrixStep(
+        matrix=rng.standard_normal((4, 4)) + 1j * rng.standard_normal((4, 4)),
+        target_indices=(3, 6),
+    )
+    first, second = (swap, dense) if swap_first else (dense, swap)
+    layouts = partial(_build_apply_layout, dims)
+    resolve = _MatrixStructureCache().resolve
+
+    packed = _compile_dynamic_plan([first], dims, layouts, resolve)
+    assert packed.gate_rows[0][1] is not None  # the swap's rows get reordered
+    patched = _patch_gate_matrices(packed, [second], [0], resolve)
+    fresh = _compile_dynamic_plan([second], dims, layouts, resolve)
+
+    for got, want in zip(patched.plan_arrays, fresh.plan_arrays, strict=True):
+        assert np.array_equal(got, want)
+
+
 def test_fuse_gate_channels_leaves_unfusable_pairs_untouched():
     # Only exact-adjacent, identically-targeted, unconditional pairs merge; a
     # differently-targeted or conditioned neighbor passes through by identity.

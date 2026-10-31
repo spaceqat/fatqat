@@ -326,12 +326,12 @@ def test_pauli_sampling_does_not_change_the_per_shot_draw_budget():
     program = _ghz_program()
     plan, _ = backend._lower_program(program)
     dims = (2, 2, 2)
-    _, max_draws = _compile_dynamic_plan(
+    max_draws = _compile_dynamic_plan(
         plan,
         dims,
         partial(_build_apply_layout, dims),
         _MatrixStructureCache().resolve,
-    )
+    ).max_draws
 
     # One draw per measurement plus one per channel occurrence (3 gates) - the
     # same budget the general jump path needs.
