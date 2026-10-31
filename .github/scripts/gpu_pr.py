@@ -62,7 +62,8 @@ class GitHub:
                 "Authorization": f"Bearer {self.environment['GH_TOKEN']}",
                 "Accept": "application/vnd.github+json",
                 "Content-Type": "application/json",
-                "X-GitHub-Api-Version": "2026-03-10",
+                # PR revision selection relies on merge_commit_sha.
+                "X-GitHub-Api-Version": "2022-11-28",
             },
         )
         try:
