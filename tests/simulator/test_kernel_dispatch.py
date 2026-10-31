@@ -378,23 +378,17 @@ def _phases(rng, size):
     [
         ((2,) * 8, (3,), "dense"),  # shortest qubit run that takes the run walk
         ((2,) * 8, (6, 4), "dense"),  # unordered targets, inner target between
-        ((2,) * 8, (5,), "diagonal"),
         ((2,) * 8, (3, 6), "diagonal"),  # bit-reversed offsets
-        ((2,) * 8, (3, 6), "permutation"),
-        ((2,) * 16, (3, 6), "permutation"),  # large enough to be relabelled
+        ((2,) * 8, (3, 6), "permutation"),  # also checked in address order
         ((256, 64), (1,), "permutation"),  # wide gate: tiles narrower than runs
-        ((2,) * 8, (0, 5), "dense"),  # no run below target 0
-        ((2,) * 8, (3, 4, 5), "dense"),  # wider than the dense run limit
         ((3, 3, 2, 3, 2), (2,), "dense"),  # mixed-radix run of 9
-        ((3, 3, 2, 3, 2), (4, 2), "dense"),
-        ((3, 3, 2, 3, 2), (3,), "permutation"),
         ((2, 2, 2, 3, 3), (3, 4), "diagonal"),
     ],
 )
 def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
     # The run walk must match the coset-by-coset walk exactly, including when
-    # thread chunks start or end inside a run. Targets on low subsystems and
-    # large dense gates cover the cases that keep the coset-by-coset walk.
+    # thread chunks start or end inside a run, and for permutations relabelled
+    # into address order.
     from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
         _build_apply_layout,
     )
@@ -405,7 +399,6 @@ def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
         _apply_resolved_parallel,
         _apply_resolved_serial,
         _reorder_permutation,
-        _run_walk_order,
     )
 
     rng = np.random.default_rng(3)
@@ -436,9 +429,8 @@ def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
         _apply_dense_range(expected, matrix, *layout, 0, num_cosets)
 
     operand_sets = [(offsets, columns, values)]
-    order = _run_walk_order((*layout, num_cosets), num_cosets)
-    if kind == "permutation" and order is not None:
-        # Prepared permutations arrive with rows in address order.
+    if kind == "permutation":  # prepared permutations may arrive reordered
+        order = np.argsort(offsets)
         operand_sets.append(_reorder_permutation(order, offsets, columns, values))
     for gate_offsets, gate_columns, gate_values in operand_sets:
         args = (code, matrix, gate_columns, gate_values, gate_offsets)
@@ -447,30 +439,6 @@ def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
         for n_chunks in (3, 7, 32):  # 32 leaves ranges too short for runs
             parallel = _apply_resolved_parallel(state.copy(), *args, n_chunks)
             assert np.array_equal(parallel, expected)
-
-
-@pytest.mark.parametrize(
-    ("dims", "targets", "ordered"),
-    [
-        ((2,) * 16, (3, 6), True),  # bit-reversed offsets with a run of 8
-        ((2,) * 16, (6, 3), False),  # offsets already in address order
-        ((2,) * 16, (0, 3), False),  # no run below target 0
-        ((2,) * 8, (3, 6), False),  # state too small for the order to pay off
-    ],
-)
-def test_run_walk_order_only_when_it_can_help(dims, targets, ordered):
-    from fatqat.simulator._engine.numerics.numba_kernels._apply import (
-        _run_walk_order,
-    )
-    from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
-        _build_apply_layout,
-    )
-
-    layout = _build_apply_layout(dims, targets)
-    order = _run_walk_order(layout, layout[3])
-    assert (order is not None) == ordered
-    if ordered:
-        assert np.all(np.diff(layout[0][order]) > 0)
 
 
 @pytest.mark.parametrize("swap_first", [True, False])

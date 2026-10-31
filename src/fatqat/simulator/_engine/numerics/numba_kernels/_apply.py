@@ -148,25 +148,31 @@ def _apply_permutation_range(
 #   in either walk, so for larger ``D`` the arithmetic dominates and the extra
 #   scratch traffic no longer pays off.
 # - `_RUN_TILE`: runs are split into tiles of at most this many cosets.
-# - `_RUN_SCRATCH`: wider permutations narrow their tiles so the ``D`` scratch
-#   rows hold about this many amplitudes, but keep at least `_MIN_RUN_LENGTH`
-#   cosets, so gates wider than ``_RUN_SCRATCH / _MIN_RUN_LENGTH`` use more.
-#   Diagonal gates have no scratch and are not narrowed.
-# - `_RUN_SMALL_SCRATCH`: the walk is chosen per range, since each thread
-#   allocates and touches its own scratch. A tile whose scratch exceeds this
-#   many amplitudes (32 KiB) needs a range of at least two tiles to pay for
-#   it; one-tile ranges of wide gates lost to the coset walk in review
-#   benchmarks. Smaller scratch costs little even for a single tile.
+# - `_RUN_ORDER_MIN_SIZE`: permutations are relabelled into address order
+#   (`_run_walk_order`) only for states of at least this many amplitudes
+#   (1 MiB). Larger states stream from memory, where in-order rows of adjacent
+#   multi-qubit targets were up to 1.7x faster; at 16384 amplitudes and below
+#   the order made no difference.
+#
+# The walk is chosen per range, since each thread allocates and touches its own
+# scratch; the per-range cost of these checks is a few integer operations.
+#
+# - `_RUN_SCRATCH`: a tile's ``D`` scratch rows hold at most this many
+#   amplitudes (128 KiB), so wider permutations use narrower tiles. A gate too
+#   wide for a tile of `_MIN_RUN_LENGTH`, more than 1024 rows (over 10 qubits),
+#   keeps the coset walk: its scratch would not fit, and short ranges of such
+#   gates lost to the coset walk in review benchmarks. Diagonal gates have no
+#   scratch and are not narrowed.
+# - `_RUN_SMALL_SCRATCH`: a tile whose scratch exceeds this many amplitudes
+#   (4 KiB) needs a range of at least two tiles to pay for it. One-tile ranges
+#   with 32 KiB of scratch, such as a three-qubit gate on 14 qubits split over
+#   eight threads, were slower than the coset walk in review benchmarks.
 _MIN_RUN_LENGTH = 8
 _MAX_RUN_DENSE_DIM = 6
 _RUN_TILE = 256
-_RUN_SCRATCH = 8192
-_RUN_SMALL_SCRATCH = 2048
-# Permutations are relabelled into address order (`_run_walk_order`) only for
-# states of at least this many amplitudes (1 MiB). Larger states stream from
-# memory, where in-order rows were up to 1.7x faster; at 16384 amplitudes and
-# below the order made no difference, so relabelling would only add overhead.
 _RUN_ORDER_MIN_SIZE = 1 << 16
+_RUN_SCRATCH = 8192
+_RUN_SMALL_SCRATCH = 256
 
 
 @njit(cache=True)
@@ -194,11 +200,11 @@ def _run_tile(
     """Return the run walk's tile width and the shortest range that may use it.
 
     ``scratch_rows`` is ``D``, or 0 for a diagonal gate. Both values are in
-    cosets. Kept branch-free: computing the tile under an ``if`` made LLVM
+    cosets; a tile below `_MIN_RUN_LENGTH` means the run walk is not used.
+    Kept branch-free: computing the tile under an ``if`` made LLVM
     compile the tile loops about twice as slow for runs of 8.
     """
-    budget = max(_MIN_RUN_LENGTH, _RUN_SCRATCH // max(1, scratch_rows))
-    tile = min(run_length, _RUN_TILE, budget)
+    tile = min(run_length, _RUN_TILE, _RUN_SCRATCH // max(1, scratch_rows))
     small = scratch_rows * tile <= _RUN_SMALL_SCRATCH
     return tile, _MIN_RUN_LENGTH if small else 2 * tile
 
@@ -286,7 +292,8 @@ def _apply_contiguous_range(
     Coset ``k`` sits ``k % run_length`` positions after the start of run
     ``k // run_length``. The odometer only steps over the complement subsystems
     above the run. ``start`` and ``end`` may fall inside a run, so the result
-    does not depend on how the cosets are split between threads.
+    does not depend on how the cosets are split between threads. ``tile`` comes
+    from `_run_tile` and is narrowed further to the range.
     """
     outer_strides = comp_strides[run_subsystems:]
     outer_dims = comp_dims[run_subsystems:]
@@ -483,6 +490,9 @@ def _apply_sparse_range(
         base = _advance_base(base, comp_strides, comp_dims, counter)
 
 
+# --- run-walk preparation (host side, once per gate and layout) ---
+
+
 def _run_walk_order(layout: tuple, cosets_per_range: int) -> np.ndarray | None:
     """Return the row order that puts a permutation's offsets in address order.
 
@@ -521,23 +531,7 @@ def _reorder_permutation(
     return offsets[order], rank[columns[order]], values[order]
 
 
-def _run_walk_operands(
-    code: int, layout: tuple, columns: np.ndarray, values: np.ndarray
-) -> tuple[tuple, np.ndarray, np.ndarray]:
-    """Return the layout and operands to apply a resolved gate with.
-
-    A permutation whose rows are out of address order, and whose ranges can
-    take the run walk, gets relabelled offsets, columns, and values; every
-    other gate keeps its own. Callers cache the result per gate and layout.
-    """
-    if code != _PERMUTATION:
-        return layout, columns, values
-    offsets, _, _, num_cosets, n_chunks = layout
-    order = _run_walk_order(layout, num_cosets // max(1, n_chunks))
-    if order is None:
-        return layout, columns, values
-    offsets, columns, values = _reorder_permutation(order, offsets, columns, values)
-    return (offsets, *layout[1:]), columns, values
+# --- Python-facing matrix operations ---
 
 
 def _apply_matrix(

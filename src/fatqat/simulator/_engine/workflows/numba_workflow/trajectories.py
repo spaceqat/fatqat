@@ -52,7 +52,7 @@ class _NumbaTrajectoryExecution(NamedTuple):
     max_draws: int
     # Per gate: its layout offsets and run-walk row order (or None), kept so a
     # sweep patch can repack a gate without rebuilding its layout.
-    gate_rows: tuple[tuple[np.ndarray, np.ndarray | None], ...] = ()
+    gate_rows: tuple[tuple[np.ndarray, np.ndarray | None], ...]
 
 
 def _plan_compilable(plan: Sequence[ResolvedStep]) -> bool:
@@ -240,16 +240,16 @@ def _packed_gate_operands(
     order: np.ndarray | None,
     columns: np.ndarray,
     values: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray | int, np.ndarray | complex]:
     """Return one gate's packed offsets, columns, and values.
 
     A permutation with a run-walk row ``order`` is relabelled into address
-    order here, once per plan rather than on every shot. A dense gate keeps
-    its offsets and stores zero padding the kernel never reads.
+    order here, once per plan or sweep entry rather than on every shot. A dense
+    gate keeps its offsets and packs zero columns and values, which the kernel
+    never reads; they are returned as scalars to broadcast.
     """
     if code == _DENSE:
-        padding = np.zeros(offsets.shape[0], dtype=np.int64)
-        return offsets, padding, padding.astype(np.complex128)
+        return offsets, 0, 0j
     if code == _PERMUTATION and order is not None:
         return _reorder_permutation(order, offsets, columns, values)
     return offsets, columns, values
@@ -326,13 +326,14 @@ def _compile_dynamic_plan(
             # col/val ride the same per-gate pointer as the offsets.
             code, columns, values = resolve_structure(step)
             ap_code.append(code)
+            local_dim = offsets.shape[0]
             gate_offsets, columns, values = _packed_gate_operands(
                 code, offsets, order, columns, values
             )
-            col_flat.extend(int(c) for c in columns)
-            val_flat.extend(complex(v) for v in values)
+            col_flat.extend(np.broadcast_to(columns, local_dim).tolist())
+            val_flat.extend(np.broadcast_to(values, local_dim).tolist())
             ap_off_ptr.append(len(off_flat))
-            off_flat.extend(int(o) for o in gate_offsets)
+            off_flat.extend(gate_offsets.tolist())
             ap_comp_ptr.append(len(comp_stride_flat))
             ap_comp_len.append(comp_strides.shape[0])
             comp_stride_flat.extend(int(s) for s in comp_strides)
@@ -452,12 +453,9 @@ def _patch_gate_matrices(
             codes[gate] = code
             start = off_ptr[gate]
             gate_offsets, order = packed.gate_rows[gate]
-            if code == _DENSE:
-                step_columns, step_values = 0, 0
-            elif code == _PERMUTATION and order is not None:
-                gate_offsets, step_columns, step_values = _reorder_permutation(
-                    order, gate_offsets, step_columns, step_values
-                )
+            gate_offsets, step_columns, step_values = _packed_gate_operands(
+                code, gate_offsets, order, step_columns, step_values
+            )
             if order is not None:
                 if offsets is arrays[_OFF_FLAT]:
                     offsets = offsets.copy()
