@@ -148,13 +148,16 @@ def _apply_permutation_range(
 #   in either walk, so for larger ``D`` the arithmetic dominates and the extra
 #   scratch traffic no longer pays off.
 # - `_RUN_TILE`: runs are split into tiles of at most this many cosets.
-# - `_RUN_SCRATCH`: a tile's ``D`` scratch rows hold at most this many
-#   amplitudes, so wide permutations use narrower tiles. A tile never drops
-#   below `_MIN_RUN_LENGTH` cosets, where per-row overhead would dominate.
+# - `_RUN_SCRATCH`: wide permutations and dense gates narrow their tiles so the
+#   ``D`` scratch rows hold about this many amplitudes. A tile keeps at least
+#   `_MIN_RUN_LENGTH` cosets, where per-row overhead would dominate, so gates
+#   wider than ``_RUN_SCRATCH / _MIN_RUN_LENGTH`` use somewhat more. Diagonal
+#   gates have no scratch and are not narrowed.
 #
-# A tile also never exceeds the cosets in the range. Each thread allocates and
-# touches its own scratch, so sizing it for a full tile when a thread's chunk
-# holds only a few cosets costs more than the chunk's work.
+# The walk is chosen per range, not per gate: a thread whose range holds fewer
+# than `_MIN_RUN_LENGTH` cosets keeps the coset walk. A tile also never exceeds
+# the cosets in the range, since each thread allocates and touches its own
+# scratch.
 _MIN_RUN_LENGTH = 8
 _MAX_RUN_DENSE_DIM = 6
 _RUN_TILE = 256
@@ -180,23 +183,28 @@ def _contiguous_run(
 
 
 @njit(cache=True)
-def _rows_in_address_order(
+def _address_ordered_operands(
     offsets, columns, values
 ):  # pragma: no cover - compiled by Numba
     """Relabel a diagonal or permutation gate so its rows run in address order.
 
     Qubit targets give bit-reversed offsets (0, 128, 64, ...), which make a
-    tile jump back and forth through memory. Each output is still the same
-    factor times the same input, so results are unchanged. Relabelling once
-    keeps the tile loops plain ``range`` loops; iterating an index array
-    inside them was measurably slower for small gates.
+    run-walk tile jump back and forth through memory. Each output is still the
+    same factor times the same input, so either walk gives unchanged results.
+    Operands already in order are returned as they are.
+
+    Callers relabel once per prepared gate, not per range: the sort and the
+    new arrays would otherwise cost more than a small gate's arithmetic.
+    Dense gates are never relabelled, since their rows sum columns in a fixed
+    order.
     """
     local_dim = offsets.shape[0]
-    order = np.arange(local_dim)
     for r in range(1, local_dim):
         if offsets[r] < offsets[r - 1]:
-            order = np.argsort(offsets)
             break
+    else:
+        return offsets, columns, values
+    order = np.argsort(offsets)
     rank = np.empty(local_dim, np.int64)
     for i in range(local_dim):
         rank[order[i]] = i
@@ -294,18 +302,16 @@ def _apply_contiguous_range(
     outer_dims = comp_dims[run_subsystems:]
     counter = np.empty(outer_strides.shape[0], dtype=np.int64)
     local_dim = offsets.shape[0]
+    # Kept branch-free: computing the tile under an ``if`` made LLVM compile
+    # the tile loops about twice as slow for runs of 8.
+    scratch_rows = 0 if code == _DIAGONAL else local_dim
     tile = min(
         run_length,
         _RUN_TILE,
         end - start,
-        max(_MIN_RUN_LENGTH, _RUN_SCRATCH // local_dim),
+        max(_MIN_RUN_LENGTH, _RUN_SCRATCH // max(1, scratch_rows)),
     )
-    scratch = np.empty((0 if code == _DIAGONAL else local_dim, tile), state.dtype)
-    row_offsets, row_columns, row_values = offsets, columns, values
-    if code != _DENSE:  # dense rows sum their columns in a fixed order
-        row_offsets, row_columns, row_values = _rows_in_address_order(
-            offsets, columns, values
-        )
+    scratch = np.empty((scratch_rows, tile), state.dtype)
     outer = start // run_length
     position = start - outer * run_length
     base = _spread_base(outer, outer_strides, outer_dims, counter)
@@ -316,19 +322,13 @@ def _apply_contiguous_range(
             width = min(tile, stop - position)
             first = base + position
             if code == _DIAGONAL:
-                _apply_diagonal_tile(state, row_values, row_offsets, first, width)
+                _apply_diagonal_tile(state, values, offsets, first, width)
             elif code == _PERMUTATION:
                 _apply_permutation_tile(
-                    state,
-                    row_columns,
-                    row_values,
-                    row_offsets,
-                    scratch,
-                    first,
-                    width,
+                    state, columns, values, offsets, scratch, first, width
                 )
             else:
-                _apply_dense_tile(state, matrix, row_offsets, scratch, first, width)
+                _apply_dense_tile(state, matrix, offsets, scratch, first, width)
             position += width
             remaining -= width
         if remaining > 0:
@@ -360,14 +360,15 @@ def _apply_resolved_range(
     per output row. CSR uses ``columns`` and ``values`` for its nonzero entries,
     with ``indptr`` delimiting rows. Non-CSR representations omit ``indptr``;
     each kernel ignores operands it does not use. Diagonal, permutation, and
-    small dense gates whose cosets form long enough runs use
-    `_apply_contiguous_range` instead, which gives the same amplitudes.
+    small dense gates whose cosets form long enough runs, in a range holding
+    enough cosets, use `_apply_contiguous_range` instead, which gives the same
+    amplitudes.
     """
     if (
         code in (_DIAGONAL, _PERMUTATION)
         or code == _DENSE
         and offsets.shape[0] <= _MAX_RUN_DENSE_DIM
-    ):
+    ) and end - start >= _MIN_RUN_LENGTH:
         run_subsystems, run_length = _contiguous_run(comp_strides, comp_dims)
         if run_length >= _MIN_RUN_LENGTH:
             _apply_contiguous_range(
@@ -526,6 +527,13 @@ def _apply_matrix(
         indptr, columns, values = sparse
     else:
         matrix = np.ascontiguousarray(matrix, dtype=np.complex128)
+        # Address order only helps the run walk, which needs enough cosets in
+        # each thread's range; otherwise skip the sort.
+        run_ranges = num_cosets >= _MIN_RUN_LENGTH * max(1, n_chunks)
+        if code in (_DIAGONAL, _PERMUTATION) and run_ranges:
+            offsets, columns, values = _address_ordered_operands(
+                offsets, columns, values
+            )
     if n_chunks <= 1:
         result = _apply_resolved_serial(
             flat,

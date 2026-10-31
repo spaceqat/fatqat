@@ -24,7 +24,11 @@ from ._reporting import _report_digit_kernel
 from ...._execution_contract import (
     _RunContext,
 )
-from ...numerics.numba_kernels._apply import _DENSE, _apply_resolved_range
+from ...numerics.numba_kernels._apply import (
+    _DENSE,
+    _address_ordered_operands,
+    _apply_resolved_range,
+)
 from ...numerics.numba_kernels._channel import _apply_channel_step, _kraus_stack
 from ...numerics.numba_kernels._measurement import (
     _sample_index_kernel,
@@ -225,6 +229,21 @@ def _compile_readout_table(entries: Sequence[tuple]) -> tuple:
     )
 
 
+def _packed_gate_operands(
+    offsets: np.ndarray, code: int, columns: np.ndarray, values: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return one gate's packed offsets, columns, and values.
+
+    Diagonal and permutation rows are put in address order here, once per
+    plan, rather than on every shot. A dense gate keeps its offsets and stores
+    zero padding the kernel never reads.
+    """
+    if code == _DENSE:
+        padding = np.zeros(offsets.shape[0], dtype=np.int64)
+        return offsets, padding, padding.astype(np.complex128)
+    return _address_ordered_operands(offsets, columns, values)
+
+
 def _compile_dynamic_plan(
     plan: Sequence[ResolvedStep],
     dims: tuple[int, ...],
@@ -290,19 +309,16 @@ def _compile_dynamic_plan(
             mat_flat.extend(matrix.ravel().tolist())
             # Structure resolved once at compile time (declared key or a
             # single content scan) instead of per gate per shot in-kernel.
-            # col/val ride the same per-gate pointer as the offsets; a
-            # dense gate stores zero padding the kernel never reads.
+            # col/val ride the same per-gate pointer as the offsets.
             code, columns, values = resolve_structure(step)
             ap_code.append(code)
-            local_dim = offsets.shape[0]
-            if code == _DENSE:
-                col_flat.extend([0] * local_dim)
-                val_flat.extend([0j] * local_dim)
-            else:
-                col_flat.extend(int(c) for c in columns)
-                val_flat.extend(complex(v) for v in values)
+            gate_offsets, columns, values = _packed_gate_operands(
+                offsets, code, columns, values
+            )
+            col_flat.extend(int(c) for c in columns)
+            val_flat.extend(complex(v) for v in values)
             ap_off_ptr.append(len(off_flat))
-            off_flat.extend(int(o) for o in offsets)
+            off_flat.extend(int(o) for o in gate_offsets)
             ap_comp_ptr.append(len(comp_stride_flat))
             ap_comp_len.append(comp_strides.shape[0])
             comp_stride_flat.extend(int(s) for s in comp_strides)
@@ -382,28 +398,29 @@ def _compile_dynamic_plan(
 # Positions in `_compile_dynamic_plan`'s ``plan_arrays`` that hold gate
 # matrices and their resolved structure; col/val share the offsets pointer.
 _AP_MAT_PTR, _AP_DIM, _AP_OFF_PTR, _AP_CODE = 6, 7, 8, 11
-_MAT_FLAT, _COL_FLAT, _VAL_FLAT = 12, 14, 15
+_MAT_FLAT, _OFF_FLAT, _COL_FLAT, _VAL_FLAT = 12, 13, 14, 15
 
 
 def _patch_gate_matrices(
     packed: _NumbaTrajectoryExecution,
     plan: Sequence[ResolvedStep],
     positions: Sequence[int],
+    build_apply_layout: Callable[[tuple[int, ...]], tuple],
     resolve_structure: Callable[[ApplyMatrixStep], tuple],
 ) -> _NumbaTrajectoryExecution:
     """Repack only the gate matrices at ``positions`` of a structurally equal plan.
 
     ``packed`` came from `_compile_dynamic_plan` for a plan with the same step
     kinds, targets, and conditions as ``plan``; only the gates at
-    ``positions`` may hold different matrices. Their matrix entries and
-    structure codes are written into copies of the affected arrays, so
-    ``packed`` itself is never modified and every other array is shared.
+    ``positions`` may hold different matrices. Their matrix entries, structure
+    codes, and packed operands are written into copies of the affected arrays,
+    so ``packed`` itself is never modified and every other array is shared. A
+    gate's offsets are repacked too, since their order depends on its code.
     """
+    patched = (_AP_CODE, _MAT_FLAT, _OFF_FLAT, _COL_FLAT, _VAL_FLAT)
     arrays = list(packed.plan_arrays)
     mat_ptr, dims, off_ptr = (arrays[i] for i in (_AP_MAT_PTR, _AP_DIM, _AP_OFF_PTR))
-    codes, matrices, columns, values = (
-        arrays[i].copy() for i in (_AP_CODE, _MAT_FLAT, _COL_FLAT, _VAL_FLAT)
-    )
+    codes, matrices, offsets, columns, values = (arrays[i].copy() for i in patched)
     targets = set(positions)
     gate = 0
     for position, step in enumerate(plan):
@@ -418,16 +435,18 @@ def _patch_gate_matrices(
             code, step_columns, step_values = resolve_structure(step)
             codes[gate] = code
             start = off_ptr[gate]
-            if code == _DENSE:
-                columns[start : start + d] = 0
-                values[start : start + d] = 0
-            else:
-                columns[start : start + d] = step_columns
-                values[start : start + d] = step_values
+            (
+                offsets[start : start + d],
+                columns[start : start + d],
+                values[start : start + d],
+            ) = _packed_gate_operands(
+                build_apply_layout(step.target_indices)[0],
+                code,
+                step_columns,
+                step_values,
+            )
         gate += 1
-    for index, array in zip(
-        (_AP_CODE, _MAT_FLAT, _COL_FLAT, _VAL_FLAT), (codes, matrices, columns, values)
-    ):
+    for index, array in zip(patched, (codes, matrices, offsets, columns, values)):
         arrays[index] = array
     return packed._replace(plan_arrays=tuple(arrays))
 
