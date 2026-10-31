@@ -379,7 +379,9 @@ def _phases(rng, size):
         ((2,) * 8, (3,), "dense"),  # shortest qubit run that takes the run walk
         ((2,) * 8, (6, 4), "dense"),  # unordered targets, inner target between
         ((2,) * 8, (5,), "diagonal"),
+        ((2,) * 8, (3, 6), "diagonal"),  # rows relabelled into address order
         ((2,) * 8, (3, 6), "permutation"),
+        ((256, 64), (1,), "permutation"),  # wide gate: tiles narrower than runs
         ((2,) * 8, (0, 5), "dense"),  # no run below target 0
         ((2,) * 8, (3, 4, 5), "dense"),  # wider than the dense run limit
         ((3, 3, 2, 3, 2), (2,), "dense"),  # mixed-radix run of 9

@@ -147,11 +147,18 @@ def _apply_permutation_range(
 # - `_MAX_RUN_DENSE_DIM`: a dense row costs ``D`` multiply-adds per amplitude
 #   in either walk, so for larger ``D`` the arithmetic dominates and the extra
 #   scratch traffic no longer pays off.
-# - `_RUN_TILE`: runs are split into tiles of at most this many cosets, so each
-#   tile's ``D`` scratch rows stay in L1.
+# - `_RUN_TILE`: runs are split into tiles of at most this many cosets.
+# - `_RUN_SCRATCH`: a tile's ``D`` scratch rows hold at most this many
+#   amplitudes, so wide permutations use narrower tiles. A tile never drops
+#   below `_MIN_RUN_LENGTH` cosets, where per-row overhead would dominate.
+#
+# A tile also never exceeds the cosets in the range. Each thread allocates and
+# touches its own scratch, so sizing it for a full tile when a thread's chunk
+# holds only a few cosets costs more than the chunk's work.
 _MIN_RUN_LENGTH = 8
 _MAX_RUN_DENSE_DIM = 6
 _RUN_TILE = 256
+_RUN_SCRATCH = 8192
 
 
 @njit(cache=True)
@@ -170,6 +177,33 @@ def _contiguous_run(
         run *= comp_dims[count]
         count += 1
     return count, run
+
+
+@njit(cache=True)
+def _rows_in_address_order(
+    offsets, columns, values
+):  # pragma: no cover - compiled by Numba
+    """Relabel a diagonal or permutation gate so its rows run in address order.
+
+    Qubit targets give bit-reversed offsets (0, 128, 64, ...), which make a
+    tile jump back and forth through memory. Each output is still the same
+    factor times the same input, so results are unchanged. Relabelling once
+    keeps the tile loops plain ``range`` loops; iterating an index array
+    inside them was measurably slower for small gates.
+    """
+    local_dim = offsets.shape[0]
+    order = np.arange(local_dim)
+    for r in range(1, local_dim):
+        if offsets[r] < offsets[r - 1]:
+            order = np.argsort(offsets)
+            break
+    rank = np.empty(local_dim, np.int64)
+    for i in range(local_dim):
+        rank[order[i]] = i
+    row_columns = np.empty(local_dim, np.int64)
+    for i in range(local_dim):
+        row_columns[i] = rank[columns[order[i]]]
+    return offsets[order], row_columns, values[order]
 
 
 @njit(cache=True, inline="always")
@@ -259,10 +293,19 @@ def _apply_contiguous_range(
     outer_strides = comp_strides[run_subsystems:]
     outer_dims = comp_dims[run_subsystems:]
     counter = np.empty(outer_strides.shape[0], dtype=np.int64)
-    tile = min(run_length, _RUN_TILE)
-    scratch = np.empty(
-        (0 if code == _DIAGONAL else offsets.shape[0], tile), state.dtype
+    local_dim = offsets.shape[0]
+    tile = min(
+        run_length,
+        _RUN_TILE,
+        end - start,
+        max(_MIN_RUN_LENGTH, _RUN_SCRATCH // local_dim),
     )
+    scratch = np.empty((0 if code == _DIAGONAL else local_dim, tile), state.dtype)
+    row_offsets, row_columns, row_values = offsets, columns, values
+    if code != _DENSE:  # dense rows sum their columns in a fixed order
+        row_offsets, row_columns, row_values = _rows_in_address_order(
+            offsets, columns, values
+        )
     outer = start // run_length
     position = start - outer * run_length
     base = _spread_base(outer, outer_strides, outer_dims, counter)
@@ -273,13 +316,19 @@ def _apply_contiguous_range(
             width = min(tile, stop - position)
             first = base + position
             if code == _DIAGONAL:
-                _apply_diagonal_tile(state, values, offsets, first, width)
+                _apply_diagonal_tile(state, row_values, row_offsets, first, width)
             elif code == _PERMUTATION:
                 _apply_permutation_tile(
-                    state, columns, values, offsets, scratch, first, width
+                    state,
+                    row_columns,
+                    row_values,
+                    row_offsets,
+                    scratch,
+                    first,
+                    width,
                 )
             else:
-                _apply_dense_tile(state, matrix, offsets, scratch, first, width)
+                _apply_dense_tile(state, matrix, row_offsets, scratch, first, width)
             position += width
             remaining -= width
         if remaining > 0:
