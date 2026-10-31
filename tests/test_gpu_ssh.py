@@ -10,6 +10,7 @@ import runpy
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 from types import SimpleNamespace
 
@@ -206,19 +207,47 @@ def test_large_local_process_output_is_streamed_in_bounded_chunks(
     assert output.largest_write <= 8192
 
 
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_local_process_receives_binary_file_stdin(ssh_environment, tmp_path, exit_code):
+    gpu_ssh.configure(ssh_environment)
+    payload = tmp_path / "payload"
+    payload.write_bytes(bytes(range(256)) * 4096)
+    received = tmp_path / "received"
+    arguments = [
+        sys.executable,
+        "-c",
+        "import pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(sys.stdin.buffer.read()); "
+        "sys.exit(int(sys.argv[2]))",
+        str(received),
+        str(exit_code),
+    ]
+    with payload.open("rb") as stream:
+        assert (
+            gpu_ssh.SSH(ssh_environment).execute(arguments, timeout=10, stdin=stream)
+            == exit_code
+        )
+    assert received.read_bytes() == payload.read_bytes()
+
+
 def test_local_process_timeout_kills_client_and_restores_command_parsing(
-    ssh_environment, capsys
+    ssh_environment, tmp_path, capsys
 ):
     gpu_ssh.configure(ssh_environment)
+    payload = tmp_path / "payload"
+    payload.write_bytes(bytes(range(256)))
     arguments = [
         sys.executable,
         "-u",
         "-c",
-        "import time; print('before-timeout', flush=True); time.sleep(10)",
+        "import sys, time; assert sys.stdin.buffer.read() == bytes(range(256)); "
+        "print('before-timeout', flush=True); time.sleep(10)",
     ]
     started = time.monotonic()
-    with pytest.raises(gpu_ssh.SSHFailure, match="TCP/SSH operation timed out"):
-        gpu_ssh.SSH(ssh_environment).execute(arguments, timeout=1)
+    with (
+        payload.open("rb") as stream,
+        pytest.raises(gpu_ssh.SSHFailure, match="TCP/SSH operation timed out"),
+    ):
+        gpu_ssh.SSH(ssh_environment).execute(arguments, timeout=1, stdin=stream)
     assert time.monotonic() - started < 5
     text = capsys.readouterr().out
     marker = re.search(r"::stop-commands::([0-9a-f]{64})", text)[1]
@@ -230,6 +259,9 @@ def test_local_process_timeout_kills_client_and_restores_command_parsing(
 def ssh_case(ssh_environment, monkeypatch):
     environment = ssh_environment
     gpu_ssh.configure(environment)
+    (Path(environment["RUNNER_TEMP"]) / "fatqat-gpu-source.tar").write_bytes(
+        b"opaque source archive\x00\xff\r\n"
+    )
     calls = []
     results = []
     clock = [0.0]
@@ -470,35 +502,99 @@ def test_remote_output_cannot_write_actions_commands_or_environment(connection, 
     )
 
 
-def test_upload_transfers_only_archive_and_trusted_driver(connection):
+def test_upload_transfers_only_archive_and_trusted_driver(connection, capsys):
     connection.ssh.upload(connection.env)
-    uploads = [command for command, _ in connection.calls if command[0] == "scp"]
-    assert len(uploads) == 2
-    assert Path(uploads[0][-2]).name == "fatqat-gpu-source.tar"
-    assert Path(uploads[1][-2]).name == "run.sh"
-    assert Path(uploads[1][-2]).read_text(encoding="utf-8") == gpu_ssh.REMOTE_SCRIPT
-    assert all(
-        re.fullmatch(
-            r"ubuntu@8.8.8.8:/home/ubuntu/fatqat-gpu\.[0-9a-f]{32}/(source.tar|run.sh)",
-            command[-1],
+    uploads = [
+        (command, kwargs)
+        for command, kwargs in connection.calls
+        if kwargs["stdin"] != subprocess.DEVNULL
+    ]
+    assert len(uploads) == 1
+    command, kwargs = uploads[0]
+    assert all(command[0] == "ssh" for command, _ in connection.calls)
+    assert "StrictHostKeyChecking=yes" in command
+    assert command[-1].endswith("/payload.tar.gz.part")
+    assert kwargs["stdin"].mode == "rb"
+    payload = Path(kwargs["stdin"].name)
+    assert payload.name == "payload.tar.gz"
+    with tarfile.open(payload, "r:gz") as archive:
+        assert archive.getnames() == ["source.tar", "run.sh"]
+        assert all(member.isfile() for member in archive.getmembers())
+        assert (
+            archive.extractfile("source.tar").read()
+            == (
+                Path(connection.env["RUNNER_TEMP"]) / "fatqat-gpu-source.tar"
+            ).read_bytes()
         )
-        for command in uploads
-    )
+        assert archive.extractfile("run.sh").read() == gpu_ssh.REMOTE_SCRIPT.encode()
     assert all("canary" not in str(command) for command, _ in connection.calls)
     assert "_work" not in str(connection.calls)
+    output = capsys.readouterr().out
+    assert f"Payload size: {payload.stat().st_size} bytes" in output
+    assert "Starting payload upload" in output
+    assert "Payload upload elapsed:" in output
+    assert "canary" not in output
 
 
-@pytest.mark.parametrize("failed_upload", [0, 1, None])
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_payload_checksum_controls_extraction(
+    ssh_environment, tmp_path, monkeypatch, ssh_tools, capsys, corrupt
+):
+    gpu_ssh.configure(ssh_environment)
+    source = tmp_path / "fatqat-gpu-source.tar"
+    source.write_bytes(b"opaque source archive\x00\xff\r\n")
+    bash = (
+        str(Path(ssh_tools).with_name("bash.exe"))
+        if os.name == "nt"
+        else shutil.which("bash")
+    )
+    popen = subprocess.Popen
+    workspace = tmp_path / "workspace"
+
+    def local_ssh(arguments, **kwargs):
+        assert arguments[0] == "ssh"
+        remote = (gpu_ssh.local_directory(ssh_environment) / "remote_dir").read_text()
+        if "sha256sum" in arguments[-1] and corrupt:
+            (workspace / "payload.tar.gz.part").write_bytes(b"corrupted transfer")
+        # Run exactly the generated remote shell command, entirely locally.
+        command = arguments[-1].replace(remote, "workspace")
+        return popen([bash, "-c", command], cwd=tmp_path, **kwargs)
+
+    monkeypatch.setattr(gpu_ssh.subprocess, "Popen", local_ssh)
+    assert gpu_ssh.main(["upload"], ssh_environment) == int(corrupt)
+    output = capsys.readouterr()
+    if corrupt:
+        assert "Payload SHA-256 verification failed" in output.out
+        assert "Remote command/test failed" in output.err
+        assert not (workspace / "source.tar").exists()
+        assert not (workspace / "run.sh").exists()
+    else:
+        assert "Payload SHA-256 verified" in output.out
+        assert (workspace / "source.tar").read_bytes() == source.read_bytes()
+        assert (workspace / "run.sh").read_bytes() == gpu_ssh.REMOTE_SCRIPT.encode()
+    assert not (workspace / "source").exists()
+
+
+@pytest.mark.parametrize("failed_upload", [0, 1, "timeout", None])
 def test_cleanup_targets_recorded_workspace_after_upload(connection, failed_upload):
     if failed_upload is None:
         connection.ssh.upload(connection.env)
     else:
-        connection.results.extend(
-            [(0, b"", b"")] * (failed_upload + 1) + [(1, b"", b"upload failed")]
+        failure = (
+            subprocess.TimeoutExpired(["ssh"], 180)
+            if failed_upload == "timeout"
+            else (1, b"", b"upload failed")
         )
-        with pytest.raises(gpu_ssh.SSHFailure, match="upload failed"):
+        connection.results.extend(
+            [(0, b"", b"")] * (2 if failed_upload == 1 else 1) + [failure]
+        )
+        with pytest.raises(
+            gpu_ssh.SSHFailure, match="timed out|Remote command/test failed"
+        ):
             connection.ssh.upload(connection.env)
-    assert not any("timeout --signal" in command[-1] for command, _ in connection.calls)
+        if failed_upload != 1:
+            assert len(connection.calls) == 2  # No checksum/extraction after failure.
+    assert not any("rm -rf" in command[-1] for command, _ in connection.calls)
     remote = (connection.ssh.directory / "remote_dir").read_text(encoding="utf-8")
     assert gpu_ssh.main(["cleanup"], connection.env) == 0
     assert connection.calls[-1][0][-1] == (

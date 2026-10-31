@@ -3,6 +3,7 @@
 import base64
 import binascii
 import codecs
+import hashlib
 import ipaddress
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import secrets
 import shlex
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 
@@ -165,7 +167,6 @@ class SSH:
         ):
             raise ValueError("HAI did not supply a public IP")
         self.host = f"{user}@{address}"
-        self.scp_host = f"{user}@[{address}]" if address.version == 6 else self.host
         self.directory = local_directory(environment)
         self.port = port
         self.options = [
@@ -204,7 +205,7 @@ class SSH:
         ]
         self.environment = process_environment(environment)
 
-    def execute(self, arguments, timeout):
+    def execute(self, arguments, timeout, stdin=subprocess.DEVNULL):
         """Stream both output channels; retain only an 8 KiB diagnostic tail."""
         marker = secrets.token_hex(32)  # Local only; never sent to the process.
         print(f"::stop-commands::{marker}", flush=True)
@@ -224,7 +225,7 @@ class SSH:
                     with subprocess.Popen(
                         arguments,
                         env=self.environment,
-                        stdin=subprocess.DEVNULL,
+                        stdin=stdin,
                         stdout=writer,
                         stderr=subprocess.STDOUT,
                     ) as process:
@@ -272,13 +273,15 @@ class SSH:
             raise SSHFailure("SSH public-key authentication failed")
         return result
 
-    def command(self, command, timeout=60):
+    def command(self, command, timeout=60, stdin=subprocess.DEVNULL):
         return self.execute(
-            ["ssh", "-T", *self.options, "-p", self.port, self.host, command], timeout
+            ["ssh", "-T", *self.options, "-p", self.port, self.host, command],
+            timeout,
+            stdin=stdin,
         )
 
-    def require(self, command, timeout=60):
-        result = self.command(command, timeout)
+    def require(self, command, timeout=60, stdin=subprocess.DEVNULL):
+        result = self.command(command, timeout, stdin=stdin)
         if result == 255:
             raise SSHFailure("TCP/SSH connection failed")
         if result in {124, 137}:
@@ -311,36 +314,42 @@ class SSH:
         (self.directory / "remote_dir").write_text(remote, encoding="utf-8")
         driver = self.directory / "run.sh"
         driver.write_text(REMOTE_SCRIPT, encoding="utf-8", newline="\n")
-        self.require(f"umask 077 && mkdir -- {shlex.quote(remote)}")
         source = Path(environment["RUNNER_TEMP"]) / "fatqat-gpu-source.tar"
-        result = self.execute(
-            [
-                "scp",
-                "-B",
-                *self.options,
-                "-P",
-                self.port,
-                str(source),
-                f"{self.scp_host}:{remote}/source.tar",
-            ],
-            timeout=180,
+        payload = self.directory / "payload.tar.gz"
+        with tarfile.open(payload, "w:gz") as archive:
+            archive.add(source, arcname="source.tar", recursive=False)
+            archive.add(driver, arcname="run.sh", recursive=False)
+        with payload.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        print(f"Payload size: {payload.stat().st_size} bytes", flush=True)
+        self.require(f"umask 077 && mkdir -- {shlex.quote(remote)}")
+        print("Starting payload upload over SSH stdin", flush=True)
+        started = time.monotonic()
+        try:
+            with payload.open("rb") as stream:
+                self.require(
+                    "umask 077 && timeout --signal=TERM --kill-after=5s 170s "
+                    f"cat > {shlex.quote(remote)}/payload.tar.gz.part",
+                    timeout=180,
+                    stdin=stream,
+                )
+        finally:
+            print(
+                f"Payload upload elapsed: {time.monotonic() - started:.1f}s", flush=True
+            )
+        verify_and_extract = (
+            f"set -e; cd -- {shlex.quote(remote)}; "
+            f"printf '%s\\n' '{digest}  payload.tar.gz.part' | "
+            "sha256sum --check --status || "
+            "{ echo 'Payload SHA-256 verification failed' >&2; exit 1; }; "
+            "echo 'Payload SHA-256 verified'; "
+            "tar -xzf payload.tar.gz.part -- source.tar run.sh"
         )
-        if result:
-            raise SSHFailure(f"SCP source upload failed (exit {result})")
-        result = self.execute(
-            [
-                "scp",
-                "-B",
-                *self.options,
-                "-P",
-                self.port,
-                str(driver),
-                f"{self.scp_host}:{remote}/run.sh",
-            ],
+        self.require(
+            "timeout --signal=TERM --kill-after=5s 50s sh -c "
+            + shlex.quote(verify_and_extract),
             timeout=60,
         )
-        if result:
-            raise SSHFailure(f"SCP trusted driver upload failed (exit {result})")
 
     def cleanup(self):
         record = self.directory / "remote_dir"
