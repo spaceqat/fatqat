@@ -379,8 +379,9 @@ def _phases(rng, size):
         ((2,) * 8, (3,), "dense"),  # shortest qubit run that takes the run walk
         ((2,) * 8, (6, 4), "dense"),  # unordered targets, inner target between
         ((2,) * 8, (5,), "diagonal"),
-        ((2,) * 8, (3, 6), "diagonal"),  # rows relabelled into address order
+        ((2,) * 8, (3, 6), "diagonal"),  # bit-reversed offsets
         ((2,) * 8, (3, 6), "permutation"),
+        ((2,) * 16, (3, 6), "permutation"),  # large enough to be relabelled
         ((256, 64), (1,), "permutation"),  # wide gate: tiles narrower than runs
         ((2,) * 8, (0, 5), "dense"),  # no run below target 0
         ((2,) * 8, (3, 4, 5), "dense"),  # wider than the dense run limit
@@ -398,12 +399,13 @@ def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
         _build_apply_layout,
     )
     from fatqat.simulator._engine.numerics.numba_kernels._apply import (
-        _address_ordered_operands,
         _apply_dense_range,
         _apply_diagonal_range,
         _apply_permutation_range,
         _apply_resolved_parallel,
         _apply_resolved_serial,
+        _reorder_permutation,
+        _run_walk_order,
     )
 
     rng = np.random.default_rng(3)
@@ -434,8 +436,10 @@ def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
         _apply_dense_range(expected, matrix, *layout, 0, num_cosets)
 
     operand_sets = [(offsets, columns, values)]
-    if kind != "dense":  # prepared gates arrive with rows in address order
-        operand_sets.append(_address_ordered_operands(offsets, columns, values))
+    order = _run_walk_order((*layout, num_cosets), num_cosets)
+    if kind == "permutation" and order is not None:
+        # Prepared permutations arrive with rows in address order.
+        operand_sets.append(_reorder_permutation(order, offsets, columns, values))
     for gate_offsets, gate_columns, gate_values in operand_sets:
         args = (code, matrix, gate_columns, gate_values, gate_offsets)
         args += (comp_strides, comp_dims, num_cosets)
@@ -445,11 +449,35 @@ def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
             assert np.array_equal(parallel, expected)
 
 
+@pytest.mark.parametrize(
+    ("dims", "targets", "ordered"),
+    [
+        ((2,) * 16, (3, 6), True),  # bit-reversed offsets with a run of 8
+        ((2,) * 16, (6, 3), False),  # offsets already in address order
+        ((2,) * 16, (0, 3), False),  # no run below target 0
+        ((2,) * 8, (3, 6), False),  # state too small for the order to pay off
+    ],
+)
+def test_run_walk_order_only_when_it_can_help(dims, targets, ordered):
+    from fatqat.simulator._engine.numerics.numba_kernels._apply import (
+        _run_walk_order,
+    )
+    from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
+        _build_apply_layout,
+    )
+
+    layout = _build_apply_layout(dims, targets)
+    order = _run_walk_order(layout, layout[3])
+    assert (order is not None) == ordered
+    if ordered:
+        assert np.all(np.diff(layout[0][order]) > 0)
+
+
 @pytest.mark.parametrize("swap_first", [True, False])
 def test_sweep_patch_repacks_offsets_for_the_new_structure(swap_first):
-    # Packed offsets follow a gate's structure: diagonal and permutation rows
-    # are put in address order, dense rows are not. A sweep entry that changes
-    # the structure must repack to exactly what a fresh compile produces.
+    # Packed offsets follow a gate's structure: permutation rows are put in
+    # address order, dense rows are not. A sweep entry that changes the
+    # structure must repack to exactly what a fresh compile produces.
     from functools import partial
 
     from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
@@ -463,7 +491,7 @@ def test_sweep_patch_repacks_offsets_for_the_new_structure(swap_first):
         _patch_gate_matrices,
     )
 
-    dims = (2,) * 8
+    dims = (2,) * 16
     rng = np.random.default_rng(4)
     swap = ApplyMatrixStep(
         matrix=np.eye(4, dtype=complex)[[0, 2, 1, 3]], target_indices=(3, 6)
@@ -477,7 +505,8 @@ def test_sweep_patch_repacks_offsets_for_the_new_structure(swap_first):
     resolve = _MatrixStructureCache().resolve
 
     packed = _compile_dynamic_plan([first], dims, layouts, resolve)
-    patched = _patch_gate_matrices(packed, [second], [0], layouts, resolve)
+    assert packed.gate_rows[0][1] is not None  # the swap's rows get reordered
+    patched = _patch_gate_matrices(packed, [second], [0], resolve)
     fresh = _compile_dynamic_plan([second], dims, layouts, resolve)
 
     for got, want in zip(patched.plan_arrays, fresh.plan_arrays, strict=True):

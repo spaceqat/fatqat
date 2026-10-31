@@ -532,11 +532,7 @@ class NumbaSVEngine(_NdarrayEngine):
                 # Release the previous entry's gate steps before resolving these.
                 self._retain_step_caches(bound)
                 payload = _patch_gate_matrices(
-                    packed,
-                    bound,
-                    positions,
-                    self._build_apply_layout,
-                    self._matrix_structures.resolve,
+                    packed, bound, positions, self._matrix_structures.resolve
                 )
             yield self.execute_payload(
                 context, payload, policy, initial_state=initial_state

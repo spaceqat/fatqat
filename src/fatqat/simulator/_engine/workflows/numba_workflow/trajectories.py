@@ -26,8 +26,10 @@ from ...._execution_contract import (
 )
 from ...numerics.numba_kernels._apply import (
     _DENSE,
-    _address_ordered_operands,
+    _PERMUTATION,
     _apply_resolved_range,
+    _reorder_permutation,
+    _run_walk_order,
 )
 from ...numerics.numba_kernels._channel import _apply_channel_step, _kraus_stack
 from ...numerics.numba_kernels._measurement import (
@@ -48,6 +50,9 @@ class _NumbaTrajectoryExecution(NamedTuple):
 
     plan_arrays: tuple[np.ndarray, ...]
     max_draws: int
+    # Per gate: its layout offsets and run-walk row order (or None), kept so a
+    # sweep patch can repack a gate without rebuilding its layout.
+    gate_rows: tuple[tuple[np.ndarray, np.ndarray | None], ...] = ()
 
 
 def _plan_compilable(plan: Sequence[ResolvedStep]) -> bool:
@@ -230,18 +235,24 @@ def _compile_readout_table(entries: Sequence[tuple]) -> tuple:
 
 
 def _packed_gate_operands(
-    offsets: np.ndarray, code: int, columns: np.ndarray, values: np.ndarray
+    code: int,
+    offsets: np.ndarray,
+    order: np.ndarray | None,
+    columns: np.ndarray,
+    values: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return one gate's packed offsets, columns, and values.
 
-    Diagonal and permutation rows are put in address order here, once per
-    plan, rather than on every shot. A dense gate keeps its offsets and stores
-    zero padding the kernel never reads.
+    A permutation with a run-walk row ``order`` is relabelled into address
+    order here, once per plan rather than on every shot. A dense gate keeps
+    its offsets and stores zero padding the kernel never reads.
     """
     if code == _DENSE:
         padding = np.zeros(offsets.shape[0], dtype=np.int64)
         return offsets, padding, padding.astype(np.complex128)
-    return _address_ordered_operands(offsets, columns, values)
+    if code == _PERMUTATION and order is not None:
+        return _reorder_permutation(order, offsets, columns, values)
+    return offsets, columns, values
 
 
 def _compile_dynamic_plan(
@@ -277,6 +288,7 @@ def _compile_dynamic_plan(
     mat_flat, off_flat, comp_stride_flat, comp_dim_flat = [], [], [], []
     col_flat: list[int] = []
     val_flat: list[complex] = []
+    gate_rows: list[tuple[np.ndarray, np.ndarray | None]] = []
     me_ptr, me_len, me_classical, me_stride, me_dim = [], [], [], [], []
     rs_ptr, rs_len, rs_stride, rs_dim = [], [], [], []
     # Noise payloads, flattened in one pass below by the noise package:
@@ -297,9 +309,11 @@ def _compile_dynamic_plan(
 
     for step in plan:
         if isinstance(step, ApplyMatrixStep):
-            offsets, comp_strides, comp_dims, _, _ = build_apply_layout(
-                step.target_indices
-            )
+            layout = build_apply_layout(step.target_indices)
+            offsets, comp_strides, comp_dims, num_cosets, _ = layout
+            # Shots apply each gate serially, as one range over every coset.
+            order = _run_walk_order(layout, num_cosets)
+            gate_rows.append((offsets, order))
             step_kind.append(0)
             step_data.append(len(ap_dim))
             add_condition(step.condition)
@@ -313,7 +327,7 @@ def _compile_dynamic_plan(
             code, columns, values = resolve_structure(step)
             ap_code.append(code)
             gate_offsets, columns, values = _packed_gate_operands(
-                offsets, code, columns, values
+                code, offsets, order, columns, values
             )
             col_flat.extend(int(c) for c in columns)
             val_flat.extend(complex(v) for v in values)
@@ -392,7 +406,7 @@ def _compile_dynamic_plan(
     )
     num_confusions = int(np.count_nonzero(me_conf_ptr >= 0))
     max_draws = num_measurements + num_confusions + num_resets + len(channel_entries)
-    return _NumbaTrajectoryExecution(plan_arrays, max_draws)
+    return _NumbaTrajectoryExecution(plan_arrays, max_draws, tuple(gate_rows))
 
 
 # Positions in `_compile_dynamic_plan`'s ``plan_arrays`` that hold gate
@@ -405,7 +419,6 @@ def _patch_gate_matrices(
     packed: _NumbaTrajectoryExecution,
     plan: Sequence[ResolvedStep],
     positions: Sequence[int],
-    build_apply_layout: Callable[[tuple[int, ...]], tuple],
     resolve_structure: Callable[[ApplyMatrixStep], tuple],
 ) -> _NumbaTrajectoryExecution:
     """Repack only the gate matrices at ``positions`` of a structurally equal plan.
@@ -414,13 +427,16 @@ def _patch_gate_matrices(
     kinds, targets, and conditions as ``plan``; only the gates at
     ``positions`` may hold different matrices. Their matrix entries, structure
     codes, and packed operands are written into copies of the affected arrays,
-    so ``packed`` itself is never modified and every other array is shared. A
-    gate's offsets are repacked too, since their order depends on its code.
+    so ``packed`` itself is never modified and every other array is shared.
+    A gate with a run-walk row order also has its offsets repacked, since
+    they are relabelled only while it is a permutation.
     """
-    patched = (_AP_CODE, _MAT_FLAT, _OFF_FLAT, _COL_FLAT, _VAL_FLAT)
     arrays = list(packed.plan_arrays)
     mat_ptr, dims, off_ptr = (arrays[i] for i in (_AP_MAT_PTR, _AP_DIM, _AP_OFF_PTR))
-    codes, matrices, offsets, columns, values = (arrays[i].copy() for i in patched)
+    codes, matrices, columns, values = (
+        arrays[i].copy() for i in (_AP_CODE, _MAT_FLAT, _COL_FLAT, _VAL_FLAT)
+    )
+    offsets = arrays[_OFF_FLAT]  # copied only if a patched gate has a row order
     targets = set(positions)
     gate = 0
     for position, step in enumerate(plan):
@@ -435,18 +451,24 @@ def _patch_gate_matrices(
             code, step_columns, step_values = resolve_structure(step)
             codes[gate] = code
             start = off_ptr[gate]
-            (
-                offsets[start : start + d],
-                columns[start : start + d],
-                values[start : start + d],
-            ) = _packed_gate_operands(
-                build_apply_layout(step.target_indices)[0],
-                code,
-                step_columns,
-                step_values,
-            )
+            gate_offsets, order = packed.gate_rows[gate]
+            if code == _DENSE:
+                step_columns, step_values = 0, 0
+            elif code == _PERMUTATION and order is not None:
+                gate_offsets, step_columns, step_values = _reorder_permutation(
+                    order, gate_offsets, step_columns, step_values
+                )
+            if order is not None:
+                if offsets is arrays[_OFF_FLAT]:
+                    offsets = offsets.copy()
+                offsets[start : start + d] = gate_offsets
+            columns[start : start + d] = step_columns
+            values[start : start + d] = step_values
         gate += 1
-    for index, array in zip(patched, (codes, matrices, offsets, columns, values)):
+    for index, array in zip(
+        (_AP_CODE, _MAT_FLAT, _OFF_FLAT, _COL_FLAT, _VAL_FLAT),
+        (codes, matrices, offsets, columns, values),
+    ):
         arrays[index] = array
     return packed._replace(plan_arrays=tuple(arrays))
 

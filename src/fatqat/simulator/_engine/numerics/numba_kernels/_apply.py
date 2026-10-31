@@ -143,25 +143,30 @@ def _apply_permutation_range(
 # the odometer advances once per run instead of once per coset, and LLVM
 # vectorizes the inner loops.
 #
-# - `_MIN_RUN_LENGTH`: shorter runs leave too little work to vectorize.
+# - `_MIN_RUN_LENGTH`: shorter tiles leave too little work to vectorize.
 # - `_MAX_RUN_DENSE_DIM`: a dense row costs ``D`` multiply-adds per amplitude
 #   in either walk, so for larger ``D`` the arithmetic dominates and the extra
 #   scratch traffic no longer pays off.
 # - `_RUN_TILE`: runs are split into tiles of at most this many cosets.
-# - `_RUN_SCRATCH`: wide permutations and dense gates narrow their tiles so the
-#   ``D`` scratch rows hold about this many amplitudes. A tile keeps at least
-#   `_MIN_RUN_LENGTH` cosets, where per-row overhead would dominate, so gates
-#   wider than ``_RUN_SCRATCH / _MIN_RUN_LENGTH`` use somewhat more. Diagonal
-#   gates have no scratch and are not narrowed.
-#
-# The walk is chosen per range, not per gate: a thread whose range holds fewer
-# than `_MIN_RUN_LENGTH` cosets keeps the coset walk. A tile also never exceeds
-# the cosets in the range, since each thread allocates and touches its own
-# scratch.
+# - `_RUN_SCRATCH`: wider permutations narrow their tiles so the ``D`` scratch
+#   rows hold about this many amplitudes, but keep at least `_MIN_RUN_LENGTH`
+#   cosets, so gates wider than ``_RUN_SCRATCH / _MIN_RUN_LENGTH`` use more.
+#   Diagonal gates have no scratch and are not narrowed.
+# - `_RUN_SMALL_SCRATCH`: the walk is chosen per range, since each thread
+#   allocates and touches its own scratch. A tile whose scratch exceeds this
+#   many amplitudes (32 KiB) needs a range of at least two tiles to pay for
+#   it; one-tile ranges of wide gates lost to the coset walk in review
+#   benchmarks. Smaller scratch costs little even for a single tile.
 _MIN_RUN_LENGTH = 8
 _MAX_RUN_DENSE_DIM = 6
 _RUN_TILE = 256
 _RUN_SCRATCH = 8192
+_RUN_SMALL_SCRATCH = 2048
+# Permutations are relabelled into address order (`_run_walk_order`) only for
+# states of at least this many amplitudes (1 MiB). Larger states stream from
+# memory, where in-order rows were up to 1.7x faster; at 16384 amplitudes and
+# below the order made no difference, so relabelling would only add overhead.
+_RUN_ORDER_MIN_SIZE = 1 << 16
 
 
 @njit(cache=True)
@@ -182,36 +187,20 @@ def _contiguous_run(
     return count, run
 
 
-@njit(cache=True)
-def _address_ordered_operands(
-    offsets, columns, values
-):  # pragma: no cover - compiled by Numba
-    """Relabel a diagonal or permutation gate so its rows run in address order.
+@njit(cache=True, inline="always")
+def _run_tile(
+    scratch_rows, run_length
+) -> tuple[int, int]:  # pragma: no cover - compiled by Numba
+    """Return the run walk's tile width and the shortest range that may use it.
 
-    Qubit targets give bit-reversed offsets (0, 128, 64, ...), which make a
-    run-walk tile jump back and forth through memory. Each output is still the
-    same factor times the same input, so either walk gives unchanged results.
-    Operands already in order are returned as they are.
-
-    Callers relabel once per prepared gate, not per range: the sort and the
-    new arrays would otherwise cost more than a small gate's arithmetic.
-    Dense gates are never relabelled, since their rows sum columns in a fixed
-    order.
+    ``scratch_rows`` is ``D``, or 0 for a diagonal gate. Both values are in
+    cosets. Kept branch-free: computing the tile under an ``if`` made LLVM
+    compile the tile loops about twice as slow for runs of 8.
     """
-    local_dim = offsets.shape[0]
-    for r in range(1, local_dim):
-        if offsets[r] < offsets[r - 1]:
-            break
-    else:
-        return offsets, columns, values
-    order = np.argsort(offsets)
-    rank = np.empty(local_dim, np.int64)
-    for i in range(local_dim):
-        rank[order[i]] = i
-    row_columns = np.empty(local_dim, np.int64)
-    for i in range(local_dim):
-        row_columns[i] = rank[columns[order[i]]]
-    return offsets[order], row_columns, values[order]
+    budget = max(_MIN_RUN_LENGTH, _RUN_SCRATCH // max(1, scratch_rows))
+    tile = min(run_length, _RUN_TILE, budget)
+    small = scratch_rows * tile <= _RUN_SMALL_SCRATCH
+    return tile, _MIN_RUN_LENGTH if small else 2 * tile
 
 
 @njit(cache=True, inline="always")
@@ -288,6 +277,7 @@ def _apply_contiguous_range(
     comp_dims,
     run_subsystems,
     run_length,
+    tile,
     start,
     end,
 ) -> None:  # pragma: no cover - compiled by Numba
@@ -301,16 +291,8 @@ def _apply_contiguous_range(
     outer_strides = comp_strides[run_subsystems:]
     outer_dims = comp_dims[run_subsystems:]
     counter = np.empty(outer_strides.shape[0], dtype=np.int64)
-    local_dim = offsets.shape[0]
-    # Kept branch-free: computing the tile under an ``if`` made LLVM compile
-    # the tile loops about twice as slow for runs of 8.
-    scratch_rows = 0 if code == _DIAGONAL else local_dim
-    tile = min(
-        run_length,
-        _RUN_TILE,
-        end - start,
-        max(_MIN_RUN_LENGTH, _RUN_SCRATCH // max(1, scratch_rows)),
-    )
+    tile = min(tile, end - start)
+    scratch_rows = 0 if code == _DIAGONAL else offsets.shape[0]
     scratch = np.empty((scratch_rows, tile), state.dtype)
     outer = start // run_length
     position = start - outer * run_length
@@ -360,17 +342,18 @@ def _apply_resolved_range(
     per output row. CSR uses ``columns`` and ``values`` for its nonzero entries,
     with ``indptr`` delimiting rows. Non-CSR representations omit ``indptr``;
     each kernel ignores operands it does not use. Diagonal, permutation, and
-    small dense gates whose cosets form long enough runs, in a range holding
-    enough cosets, use `_apply_contiguous_range` instead, which gives the same
-    amplitudes.
+    small dense gates whose runs allow a full tile, in a range long enough for
+    it, use `_apply_contiguous_range` instead, which gives the same amplitudes.
     """
     if (
         code in (_DIAGONAL, _PERMUTATION)
         or code == _DENSE
         and offsets.shape[0] <= _MAX_RUN_DENSE_DIM
-    ) and end - start >= _MIN_RUN_LENGTH:
+    ):
         run_subsystems, run_length = _contiguous_run(comp_strides, comp_dims)
-        if run_length >= _MIN_RUN_LENGTH:
+        scratch_rows = 0 if code == _DIAGONAL else offsets.shape[0]
+        tile, shortest = _run_tile(scratch_rows, run_length)
+        if tile >= _MIN_RUN_LENGTH and end - start >= shortest:
             _apply_contiguous_range(
                 state,
                 code,
@@ -382,6 +365,7 @@ def _apply_resolved_range(
                 comp_dims,
                 run_subsystems,
                 run_length,
+                tile,
                 start,
                 end,
             )
@@ -499,6 +483,63 @@ def _apply_sparse_range(
         base = _advance_base(base, comp_strides, comp_dims, counter)
 
 
+def _run_walk_order(layout: tuple, cosets_per_range: int) -> np.ndarray | None:
+    """Return the row order that puts a permutation's offsets in address order.
+
+    Qubit targets give bit-reversed offsets (0, 128, 64, ...), which make a
+    run-walk tile jump back and forth through memory. Returns ``None`` when the
+    state is smaller than `_RUN_ORDER_MIN_SIZE`, when the offsets are already in
+    order, or when ranges of ``cosets_per_range`` cannot take the run walk
+    (`_apply_resolved_range` applies the same rule), so callers skip
+    relabelling that cannot help. Gates are relabelled when they are prepared,
+    never per application.
+    """
+    offsets, comp_strides, comp_dims, num_cosets = layout[:4]
+    if offsets.shape[0] * num_cosets < _RUN_ORDER_MIN_SIZE:
+        return None
+    _, run_length = _contiguous_run(comp_strides, comp_dims)
+    tile, shortest = _run_tile(offsets.shape[0], run_length)
+    if tile < _MIN_RUN_LENGTH or cosets_per_range < shortest:
+        return None
+    if np.all(offsets[1:] > offsets[:-1]):
+        return None
+    return np.argsort(offsets)
+
+
+def _reorder_permutation(
+    order: np.ndarray, offsets: np.ndarray, columns: np.ndarray, values: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Relabel a permutation's rows in ``order``.
+
+    Each output is still the same factor times the same input, so either walk
+    gives unchanged results. Only permutations are relabelled: dense rows sum
+    their columns in a fixed order, and the single-pass batch kernel writes
+    diagonal values in matrix row order.
+    """
+    rank = np.empty_like(order)
+    rank[order] = np.arange(order.shape[0])
+    return offsets[order], rank[columns[order]], values[order]
+
+
+def _run_walk_operands(
+    code: int, layout: tuple, columns: np.ndarray, values: np.ndarray
+) -> tuple[tuple, np.ndarray, np.ndarray]:
+    """Return the layout and operands to apply a resolved gate with.
+
+    A permutation whose rows are out of address order, and whose ranges can
+    take the run walk, gets relabelled offsets, columns, and values; every
+    other gate keeps its own. Callers cache the result per gate and layout.
+    """
+    if code != _PERMUTATION:
+        return layout, columns, values
+    offsets, _, _, num_cosets, n_chunks = layout
+    order = _run_walk_order(layout, num_cosets // max(1, n_chunks))
+    if order is None:
+        return layout, columns, values
+    offsets, columns, values = _reorder_permutation(order, offsets, columns, values)
+    return (offsets, *layout[1:]), columns, values
+
+
 def _apply_matrix(
     state: np.ndarray,
     matrix: np.ndarray,
@@ -527,13 +568,6 @@ def _apply_matrix(
         indptr, columns, values = sparse
     else:
         matrix = np.ascontiguousarray(matrix, dtype=np.complex128)
-        # Address order only helps the run walk, which needs enough cosets in
-        # each thread's range; otherwise skip the sort.
-        run_ranges = num_cosets >= _MIN_RUN_LENGTH * max(1, n_chunks)
-        if code in (_DIAGONAL, _PERMUTATION) and run_ranges:
-            offsets, columns, values = _address_ordered_operands(
-                offsets, columns, values
-            )
     if n_chunks <= 1:
         result = _apply_resolved_serial(
             flat,

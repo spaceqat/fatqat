@@ -15,7 +15,13 @@ from ....._backends.steps import (
     ResolvedStep,
 )
 from ._channel import _kraus_stack, _kraus_superop_kernel
-from ._apply import _DENSE, _DIAGONAL, _PERMUTATION, _classify_matrix
+from ._apply import (
+    _DENSE,
+    _DIAGONAL,
+    _PERMUTATION,
+    _classify_matrix,
+    _run_walk_operands,
+)
 
 # Declared structure per canonical gate identity: the key-to-kernel table.
 # The numerical runtime owns these declarations; the key carries only identity.
@@ -95,6 +101,7 @@ class _MatrixStructureCache:
 
     def __init__(self):
         self._entries: dict[int, tuple] = {}
+        self._prepared: dict[int, tuple] = {}
 
     def retain(self, plan: tuple[ResolvedStep, ...]) -> None:
         """Keep only resolutions used by the next effective plan."""
@@ -102,6 +109,11 @@ class _MatrixStructureCache:
         self._entries = {
             step_id: entry
             for step_id, entry in self._entries.items()
+            if step_id in active_ids
+        }
+        self._prepared = {
+            step_id: entry
+            for step_id, entry in self._prepared.items()
             if step_id in active_ids
         }
 
@@ -132,6 +144,26 @@ class _MatrixStructureCache:
         self._entries[id(step)] = (step, resolved)
         return resolved
 
+    def prepare(
+        self, step: ApplyMatrixStep, layout: tuple
+    ) -> tuple[int, tuple, np.ndarray, np.ndarray]:
+        """Return a step's code with the layout and operands to apply it with.
+
+        Adds the run walk's row order (`_run_walk_operands`) to a resolved
+        permutation, once per step and layout rather than per application. The
+        entry pins both, so a new layout for the same step is prepared again.
+        Other structures are applied with the layout as it is.
+        """
+        code, columns, values = self.resolve(step)
+        if code != _PERMUTATION:
+            return code, layout, columns, values
+        cached = self._prepared.get(id(step))
+        if cached is not None and cached[0] is step and cached[1] is layout:
+            return cached[2]
+        prepared = (code, *_run_walk_operands(code, layout, columns, values))
+        self._prepared[id(step)] = (step, layout, prepared)
+        return prepared
+
 
 class _SuperoperatorCache:
     """Prepare gate/channel superoperators independently of workflow packing.
@@ -146,6 +178,7 @@ class _SuperoperatorCache:
 
     def __init__(self):
         self._entries: dict[int, tuple] = {}
+        self._prepared: dict[int, tuple] = {}
 
     def retain(self, plan: tuple[ResolvedStep, ...]) -> None:
         """Keep only resolutions used by the next effective plan."""
@@ -153,6 +186,11 @@ class _SuperoperatorCache:
         self._entries = {
             step_id: entry
             for step_id, entry in self._entries.items()
+            if step_id in active_ids
+        }
+        self._prepared = {
+            step_id: entry
+            for step_id, entry in self._prepared.items()
             if step_id in active_ids
         }
 
@@ -195,6 +233,25 @@ class _SuperoperatorCache:
         resolved = (superop, code, columns, values, sparse)
         self._entries[id(step)] = (step, resolved)
         return resolved
+
+    def prepare(
+        self, step: ApplyMatrixStep | ApplyChannelStep, layout: tuple
+    ) -> tuple[np.ndarray, int, tuple, np.ndarray, np.ndarray, tuple | None]:
+        """Return a step's super-operator resolution with the layout to apply it.
+
+        Adds the run walk's row order (`_run_walk_operands`) once per step and
+        layout, as `_MatrixStructureCache.prepare` does for gates.
+        """
+        superop, code, columns, values, sparse = self.resolve(step)
+        if code != _PERMUTATION:
+            return superop, code, layout, columns, values, sparse
+        cached = self._prepared.get(id(step))
+        if cached is not None and cached[0] is step and cached[1] is layout:
+            return cached[2]
+        operands = _run_walk_operands(code, layout, columns, values)
+        prepared = (superop, code, *operands, sparse)
+        self._prepared[id(step)] = (step, layout, prepared)
+        return prepared
 
 
 # Walk a super-operator sparsely only when its nonzero fraction is below this,
