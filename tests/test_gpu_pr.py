@@ -469,7 +469,7 @@ def test_workflow_orders_shutdown_and_reporting_after_every_failure():
     stop = text[text.index("      - name: Stop HAI") :]
     assert "hai_power.py stop" in stop
     assert "STEP_RESULTS: ${{ toJSON(steps) }}" in stop
-    assert "RUN_CANCELLED: ${{ cancelled() }}" in stop
+    assert "RUN_CANCELLED: ${{ job.status == 'cancelled' }}" in stop
     assert stop.index("id: cleanup") < stop.index("gpu_pr.py report")
     assert "always() && github.event_name == 'pull_request_target'" in stop
     assert (

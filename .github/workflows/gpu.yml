@@ -176,6 +176,6 @@ jobs:
         timeout-minutes: 2
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_CANCELLED: ${{ cancelled() }}
+          RUN_CANCELLED: ${{ job.status == 'cancelled' }}
           STEP_RESULTS: ${{ toJSON(steps) }}
         run: python .github/scripts/gpu_pr.py report
