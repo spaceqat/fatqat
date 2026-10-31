@@ -246,7 +246,7 @@ def _packed_gate_operands(
     A permutation with a run-walk row ``order`` is relabelled into address
     order here, once per plan or sweep entry rather than on every shot. A dense
     gate keeps its offsets and packs zero columns and values, which the kernel
-    never reads; they are returned as scalars to broadcast.
+    never reads; they are returned as scalars to repeat per row.
     """
     if code == _DENSE:
         return offsets, 0, 0j
@@ -330,8 +330,12 @@ def _compile_dynamic_plan(
             gate_offsets, columns, values = _packed_gate_operands(
                 code, offsets, order, columns, values
             )
-            col_flat.extend(np.broadcast_to(columns, local_dim).tolist())
-            val_flat.extend(np.broadcast_to(values, local_dim).tolist())
+            if code == _DENSE:
+                col_flat.extend([columns] * local_dim)
+                val_flat.extend([values] * local_dim)
+            else:
+                col_flat.extend(columns.tolist())
+                val_flat.extend(values.tolist())
             ap_off_ptr.append(len(off_flat))
             off_flat.extend(gate_offsets.tolist())
             ap_comp_ptr.append(len(comp_stride_flat))
