@@ -540,14 +540,23 @@ def test_upload_transfers_only_archive_and_trusted_driver(connection, capsys):
 def test_payload_checksum_controls_extraction(
     ssh_environment, tmp_path, monkeypatch, ssh_tools, capsys, corrupt
 ):
+    subprocess_path = gpu_ssh.process_environment(ssh_environment)["PATH"]
+    bash = shutil.which(
+        str(Path(ssh_tools).with_name("bash.exe")) if os.name == "nt" else "bash",
+        path=subprocess_path,
+    )
+    missing = [
+        tool
+        for tool in ("timeout", "sha256sum", "tar")
+        if shutil.which(tool, path=subprocess_path) is None
+    ]
+    if bash is None:
+        missing.insert(0, "bash")
+    if missing:
+        pytest.skip(f"Local payload shell test is missing tools: {', '.join(missing)}")
     gpu_ssh.configure(ssh_environment)
     source = tmp_path / "fatqat-gpu-source.tar"
     source.write_bytes(b"opaque source archive\x00\xff\r\n")
-    bash = (
-        str(Path(ssh_tools).with_name("bash.exe"))
-        if os.name == "nt"
-        else shutil.which("bash")
-    )
     popen = subprocess.Popen
     workspace = tmp_path / "workspace"
 
