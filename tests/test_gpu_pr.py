@@ -1,4 +1,4 @@
-"""Offline PR pinning, source transfer boundaries, workflow and status tests."""
+"""Offline PR pinning, source transfer boundaries and workflow tests."""
 
 import base64
 import copy
@@ -20,7 +20,6 @@ SPEC = importlib.util.spec_from_file_location(
 gpu_pr = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(gpu_pr)
 SHA, TRUSTED, BASE, MERGE = (character * 40 for character in "abcd")
-REQUIRED = "configure select sdk pending power ssh identity source upload current tests stop cleanup".split()
 
 
 @pytest.fixture(name="case")
@@ -45,13 +44,11 @@ def controller_case(tmp_path, monkeypatch):
         "GITHUB_EVENT_NAME": "pull_request_target",
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_SHA": TRUSTED,
-        "GITHUB_RUN_ID": "99",
         "GITHUB_EVENT_PATH": str(tmp_path / "event.json"),
         "GITHUB_OUTPUT": str(tmp_path / "output"),
         "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
         "RUNNER_TEMP": str(tmp_path),
         "GH_TOKEN": "job-token",
-        "RUN_CANCELLED": "false",
     }
     calls, waits = [], []
     protection = {
@@ -64,10 +61,8 @@ def controller_case(tmp_path, monkeypatch):
     }
     manual_protection = {"protection_rules": []}
 
-    def request(_api, path, payload=None):
-        calls.append((path, payload))
-        if payload is not None:
-            return {}
+    def request(_api, path):
+        calls.append(path)
         if path == "/environments/gpu-ci":
             return copy.deepcopy(protection)
         if path == "/environments/gpu-ci-manual":
@@ -155,17 +150,19 @@ def test_unexpected_exception_redacts_credentials_in_its_message(
 
 
 @pytest.mark.parametrize("title", ["docs: update README", "fix: core simulator"])
-def test_all_prs_selected_without_cpu_file_or_runner_queries(case, title):
+def test_all_prs_selected_without_cpu_file_or_runner_queries(case, title, capsys):
     case["event"]["pull_request"]["title"] = title
     assert case["invoke"]() == 0
     assert case["calls"] == [
-        ("/pulls/42", None),
-        (f"/git/commits/{MERGE}", None),
-        ("/environments/gpu-ci", None),
+        "/pulls/42",
+        f"/git/commits/{MERGE}",
+        "/environments/gpu-ci",
     ]
     summary = Path(case["env"]["GITHUB_STEP_SUMMARY"]).read_text(encoding="utf-8")
     assert "after gpu-ci approval" in summary
     assert all(sha in summary for sha in (SHA, BASE, MERGE))
+    log = capsys.readouterr().out
+    assert all(sha in log for sha in (SHA, BASE, MERGE))
 
 
 @pytest.mark.parametrize(
@@ -174,10 +171,10 @@ def test_all_prs_selected_without_cpu_file_or_runner_queries(case, title):
 def test_api_failure_blocks_start(case, monkeypatch, path):
     request = gpu_pr.GitHub.request
 
-    def fail(api, endpoint, payload=None):
+    def fail(api, endpoint):
         if endpoint == path:
             raise gpu_pr.APIError("HTTP 403")
-        return request(api, endpoint, payload)
+        return request(api, endpoint)
 
     monkeypatch.setattr(gpu_pr.GitHub, "request", fail)
     assert case["invoke"]() == 1
@@ -306,7 +303,7 @@ def test_manual_pins_default_branch_event_commit_and_uses_manual_environment(cas
     case["env"]["GITHUB_EVENT_NAME"] = "workflow_dispatch"
     assert case["invoke"]() == 0
     assert outputs(case) == {"mode": "manual", "merge_sha": TRUSTED}
-    assert case["calls"] == [("/environments/gpu-ci-manual", None)]
+    assert case["calls"] == ["/environments/gpu-ci-manual"]
     case["manual_protection"].update(case["protection"])
     assert case["invoke"]("recheck") == 1
 
@@ -318,45 +315,6 @@ def test_non_default_branch_and_other_events_fail(case, field, value):
     case["env"][field] = value
     assert case["invoke"]() == 1
     assert not case["calls"]
-
-
-def test_pending_links_to_event_head(case):
-    assert case["invoke"]("pending") == 0
-    path, payload = case["calls"][0]
-    assert path == f"/statuses/{SHA}"
-    assert payload["state"] == "pending"
-    assert payload["target_url"] == "https://github.com/upstream/fatqat/actions/runs/99"
-
-
-@pytest.mark.parametrize("step", REQUIRED)
-@pytest.mark.parametrize(
-    "outcome", ["success", "failure", "skipped", "cancelled", None]
-)
-def test_report_requires_every_required_step_and_uses_event_head(case, step, outcome):
-    outcomes = {name: {"outcome": "success"} for name in REQUIRED}
-    outcomes[step] = {"outcome": outcome}
-    case["env"]["STEP_RESULTS"] = json.dumps(outcomes)
-    case["pr"]["head"]["sha"] = TRUSTED
-    assert case["invoke"]("report") == 0
-    path, payload = case["calls"][-1]
-    assert path == f"/statuses/{SHA}"
-    expected = (
-        "success"
-        if outcome == "success"
-        else "failure" if step == "tests" and outcome == "failure" else "error"
-    )
-    assert payload["state"] == expected
-
-
-@pytest.mark.parametrize("test_outcome", ["success", "failure", "skipped"])
-def test_cancelled_run_reports_error_even_if_steps_succeeded(case, test_outcome):
-    outcomes = {name: {"outcome": "success"} for name in REQUIRED}
-    outcomes["tests"]["outcome"] = test_outcome
-    case["env"].update(RUN_CANCELLED="true", STEP_RESULTS=json.dumps(outcomes))
-    assert case["invoke"]("report") == 0
-    path, payload = case["calls"][-1]
-    assert path == f"/statuses/{SHA}"
-    assert payload["state"] == "error"
 
 
 @pytest.mark.parametrize(
@@ -423,8 +381,12 @@ def test_workflow_has_one_hosted_job_and_environment_selected_before_all_steps()
         "name: ${{ github.event_name == 'pull_request_target' && 'gpu-ci' || 'gpu-ci-manual' }}"
         in text
     )
-    assert text.count("github.event.pull_request.head.sha || github.sha") == 2
-    assert text.count("format('PR #{0}', github.event.number)") == 2
+    display_name = (
+        "${{ github.event_name == 'pull_request_target' && "
+        "format('GPU PR #{0}', github.event.number) || 'GPU manual' }}"
+    )
+    assert text.startswith(f"name: GPU Tests\nrun-name: >-\n  {display_name}\n")
+    assert f"    name: >-\n      {display_name}\n" in text
     assert (
         "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)"
         in text
@@ -440,6 +402,12 @@ def test_workflow_has_one_hosted_job_and_environment_selected_before_all_steps()
         "paths:",
         "workflow_run:",
         "continue-on-error",
+        "|| true",
+        "statuses:",
+        "STEP_RESULTS",
+        "RUN_CANCELLED",
+        "gpu_pr.py pending",
+        "gpu_pr.py report",
         "allow-unsafe-pr-checkout",
     ):
         assert forbidden not in text
@@ -447,10 +415,15 @@ def test_workflow_has_one_hosted_job_and_environment_selected_before_all_steps()
     assert "/actions/runners" not in hai and "GH_RUNNER_READ_TOKEN" not in hai
 
 
-def test_workflow_orders_shutdown_and_reporting_after_every_failure():
+def test_workflow_orders_shutdown_and_cleanup_after_failure():
     text = workflow()
     step_ids = re.findall(r"^        id: (\w+)$", text, re.M)
-    assert step_ids == ["control", *REQUIRED]
+    assert (
+        step_ids
+        == (
+            "control configure select sdk power ssh identity source upload current tests stop cleanup"
+        ).split()
+    )
     assert (
         'echo "attempted=true" >> "$GITHUB_OUTPUT"\n          python -u .github/scripts/hai_power.py start'
         in text
@@ -466,12 +439,10 @@ def test_workflow_orders_shutdown_and_reporting_after_every_failure():
         in remote_cleanup
     )
     assert "gpu_ssh.py cleanup" in remote_cleanup
+    assert text.index("id: tests") < text.index("      - name: Clean remote workspace")
     stop = text[text.index("      - name: Stop HAI") :]
     assert "hai_power.py stop" in stop
-    assert "STEP_RESULTS: ${{ toJSON(steps) }}" in stop
-    assert "RUN_CANCELLED: ${{ job.status == 'cancelled' }}" in stop
-    assert stop.index("id: cleanup") < stop.index("gpu_pr.py report")
-    assert "always() && github.event_name == 'pull_request_target'" in stop
+    assert stop.index("hai_power.py stop") < stop.index("id: cleanup")
     assert (
         "if: always()" in stop
         and 'rm -f -- "$RUNNER_TEMP/fatqat-gpu-ssh/id_ed25519"' in stop
@@ -524,12 +495,14 @@ def test_transport_errors_log_method_path_without_credentials(
     assert "secret" not in output and "job-token" not in output
 
 
-def test_transport_reads_metadata_posts_status_and_rejects_redirects(monkeypatch):
+def test_transport_only_reads_metadata_with_pinned_api_and_rejects_redirects(
+    monkeypatch,
+):
     requests = []
 
     def respond(_opener, request, timeout):
         requests.append(request)
-        return io.BytesIO(b'{"number": 42}' if request.data is None else b"{}")
+        return io.BytesIO(b'{"number": 42}')
 
     monkeypatch.setattr(
         gpu_pr, "build_opener", lambda *_: type("Opener", (), {"open": respond})()
@@ -538,13 +511,12 @@ def test_transport_reads_metadata_posts_status_and_rejects_redirects(monkeypatch
         {
             "GITHUB_REPOSITORY": "upstream/fatqat",
             "GH_TOKEN": "job-token",
-            "GITHUB_RUN_ID": "99",
         }
     )
     assert api.request("/pulls/42") == {"number": 42}
-    api.status(SHA, "success")
-    assert requests[-1].get_method() == "POST"
-    assert json.loads(requests[-1].data)["state"] == "success"
+    assert requests[-1].get_method() == "GET"
+    assert requests[-1].data is None
+    assert requests[-1].get_header("X-github-api-version") == "2022-11-28"
     assert (
         gpu_pr.NoRedirect().redirect_request(
             None, None, 302, "", {}, "https://other.example"

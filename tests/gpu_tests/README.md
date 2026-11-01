@@ -8,9 +8,10 @@ PR events are `opened`, `synchronize` and `reopened`; there are no file filters.
 CPU `Tests` and `Lint` run independently and are not changed or queried.
 
 PR jobs use the `gpu-ci` Environment with Required reviewers. Approval happens
-before **any step** runs. The run and job names show the PR number and event
-head SHA; review that head before approving. After approval, the controller
-selects the current merge revision and records its head, base and merge SHAs.
+before **any step** runs. The run and job names are `GPU PR #<number>` or
+`GPU manual`. Review the event's PR head before approving. After approval, the
+controller selects the current merge revision and records the full head, base
+and merge SHAs in the logs and run summary.
 The tested base is the merge commit's first parent; the second must be the
 approved event head. A later PR head cannot reuse approval of an earlier event.
 
@@ -18,7 +19,7 @@ Manual dispatch uses `gpu-ci-manual`, without Required reviewers, and is
 restricted to the default branch. Its source is the dispatch event's fixed
 commit. Both modes share `fatqat-hai-gpu`, with `cancel-in-progress: false`
 and `queue: max`. Resolve outdated approval requests so the queue can proceed.
-A rejected approval starts no steps and posts no custom commit status.
+A rejected approval starts no steps.
 
 ## Repository configuration
 
@@ -52,7 +53,7 @@ Configure **Settings > Environments** with `gpu-ci` requiring reviewers and
 `gpu-ci-manual` having none; allow the default branch in deployment restrictions.
 The controller validates both configurations and fails explicitly on inaccessible
 or malformed Environment data. Its job token needs `contents: read`,
-`actions: read`, `pull-requests: read` and `statuses: write` (declared in YAML).
+`actions: read` and `pull-requests: read` (declared in YAML).
 
 Place the workflow and control scripts on the upstream default branch.
 No new PAT is needed. `GH_RUNNER_READ_TOKEN`, `HAI_RUNNER_NAME` and the old
@@ -74,7 +75,7 @@ Package downloads require outbound HTTPS from HAI.
 
 1. Check out trusted upstream control code into `control/`, check configuration
    and pin the test revision after Environment approval.
-2. Install the pinned Tencent Cloud SDK and post pending status for PR runs.
+2. Install the pinned Tencent Cloud SDK.
 3. Record the startup attempt, start HAI and query its current public IP.
 4. Wait for SSH with strict host-key verification, then print `hostname`,
    `whoami` and `nvidia-smi`.
@@ -84,8 +85,7 @@ Package downloads require outbound HTTPS from HAI.
    `/home/ubuntu/fatqat-gpu.*` directory, then recheck before installation.
 7. Prepare the remote environment, run independent CUDA preflight, then pytest.
 8. Request `STOP_CHARGE` through HAI API and verify `STOPPED_NO_CHARGE`.
-9. Remove local SSH key and known-hosts files even after failure, then report
-   cancellation and all required step outcomes on the event's PR head.
+9. Remove local SSH key and known-hosts files even after failure.
 
 PR runs create a separate venv using the existing Python, install the uploaded
 FATQAT source and `test-full` dependencies, and pin CuPy to `13.6.0`.
@@ -110,8 +110,10 @@ suspended; only an 8 KiB diagnostic tail stays in memory.
 
 ## Troubleshooting
 
-Follow the `GPU tests` commit status to the run. Success requires revision
-checks, transfer, preflight, pytest, shutdown and local key cleanup to succeed.
+View the GitHub Actions GPU check or open the `GPU Tests` workflow run and its
+`GPU PR #<number>` or `GPU manual` job. Success requires revision checks,
+transfer, preflight, pytest, shutdown and local key cleanup to succeed. A failed
+required step remains a job failure even if cleanup succeeds.
 Cancellation, tests not run or all skipped cannot succeed. A plain `STOPPED`
 state fails shutdown because no-charge status is unconfirmed; CI never restarts
 the instance to resolve that state. GitHub API errors include method/path;

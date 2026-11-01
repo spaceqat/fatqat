@@ -1,4 +1,4 @@
-"""Pin approved event revisions, archive source without executing it, and report."""
+"""Pin approved event revisions and archive source without executing it."""
 
 import base64
 import json
@@ -19,7 +19,7 @@ class Ineligible(ValueError):
 
 
 class APIError(RuntimeError):
-    """GitHub could not confirm or record the run."""
+    """GitHub could not confirm the run metadata."""
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -51,17 +51,14 @@ class GitHub:
             raise Ineligible("Invalid repository")
         self.opener = build_opener(NoRedirect())
 
-    def request(self, path, payload=None):
-        method = "GET" if payload is None else "POST"
-        location = f"{method} /repos/{self.repository}{path}"
+    def request(self, path):
+        location = f"GET /repos/{self.repository}{path}"
         print(f"GitHub API: {location}", flush=True)
         request = Request(
             f"https://api.github.com/repos/{self.repository}{path}",
-            data=None if payload is None else json.dumps(payload).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {self.environment['GH_TOKEN']}",
                 "Accept": "application/vnd.github+json",
-                "Content-Type": "application/json",
                 # PR revision selection relies on merge_commit_sha.
                 "X-GitHub-Api-Version": "2022-11-28",
             },
@@ -80,18 +77,6 @@ class GitHub:
         if not isinstance(data, dict):
             raise APIError(f"{location}: expected a JSON object")
         return data
-
-    def status(self, sha, state):
-        run_id = number(self.environment["GITHUB_RUN_ID"])
-        self.request(
-            f"/statuses/{full_sha(sha)}",
-            {
-                "state": state,
-                "context": "GPU tests",
-                "description": f"GPU tests: {state}; see workflow for test and shutdown results",
-                "target_url": f"https://github.com/{self.repository}/actions/runs/{run_id}",
-            },
-        )
 
 
 def select_pr(api, event):
@@ -299,37 +284,6 @@ def archive(api):
     recheck(api)
 
 
-def report(api):
-    steps = json.loads(api.environment["STEP_RESULTS"])
-    required = (
-        "configure",
-        "select",
-        "sdk",
-        "pending",
-        "power",
-        "ssh",
-        "identity",
-        "source",
-        "upload",
-        "current",
-        "tests",
-        "stop",
-        "cleanup",
-    )
-    outcomes = {name: steps.get(name, {}).get("outcome") for name in required}
-    if api.environment.get("RUN_CANCELLED") == "true":
-        state = "error"
-    elif all(value == "success" for value in outcomes.values()):
-        state = "success"
-    elif outcomes["tests"] == "failure" and all(
-        value == "success" for name, value in outcomes.items() if name != "tests"
-    ):
-        state = "failure"
-    else:
-        state = "error"
-    api.status(read_event(api.environment)["pull_request"]["head"]["sha"], state)
-
-
 def main(arguments=None, environment=None):
     arguments = sys.argv[1:] if arguments is None else arguments
     environment = os.environ if environment is None else environment
@@ -349,14 +303,8 @@ def main(arguments=None, environment=None):
             recheck(api)
         elif arguments == ["archive"]:
             archive(api)
-        elif arguments == ["pending"]:
-            api.status(
-                read_event(environment)["pull_request"]["head"]["sha"], "pending"
-            )
-        elif arguments == ["report"]:
-            report(api)
         else:
-            raise ValueError("Usage: gpu_pr.py prepare|recheck|archive|pending|report")
+            raise ValueError("Usage: gpu_pr.py prepare|recheck|archive")
     except Ineligible as exc:
         print(f"GPU request rejected: {exc}", file=sys.stderr)
         return 1
