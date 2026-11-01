@@ -161,12 +161,12 @@ def _apply_permutation_range(
 #   amplitudes (128 KiB), so wider permutations use narrower tiles. A gate too
 #   wide for a tile of `_MIN_RUN_LENGTH`, more than 1024 rows (over 10 qubits),
 #   keeps the coset walk: its scratch would not fit, and short ranges of such
-#   gates lost to the coset walk in review benchmarks. Diagonal gates have no
+#   gates lost to the coset walk in benchmarks. Diagonal gates have no
 #   scratch and are not narrowed.
 # - `_RUN_SMALL_SCRATCH`: a tile whose scratch exceeds this many amplitudes
 #   (4 KiB) needs a range of at least two tiles to pay for it. One-tile ranges
 #   with 32 KiB of scratch, such as a three-qubit gate on 14 qubits split over
-#   eight threads, were slower than the coset walk in review benchmarks.
+#   eight threads, were slower than the coset walk in benchmarks.
 _MIN_RUN_LENGTH = 8
 _MAX_RUN_DENSE_DIM = 6
 _RUN_TILE = 256

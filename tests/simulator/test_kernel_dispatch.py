@@ -2,6 +2,8 @@
 
 import gc
 import weakref
+from dataclasses import dataclass
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -13,6 +15,7 @@ import fatqat.operations as ops
 from fatqat.simulator import EvolutionState, Simulator
 from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep, BuiltinKernelKey
 from fatqat.implementation import default_matrix_implementation_map
+from fatqat.operations import Operation
 from fatqat.simulator._execution_contract import (
     _ResultRequest,
     _RunContext,
@@ -441,44 +444,74 @@ def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
             assert np.array_equal(parallel, expected)
 
 
-@pytest.mark.parametrize("swap_first", [True, False])
-def test_sweep_patch_repacks_offsets_for_the_new_structure(swap_first):
-    # Packed offsets follow a gate's structure: permutation rows are put in
-    # address order, dense rows are not. A sweep entry that changes the
-    # structure must repack to exactly what a fresh compile produces.
-    from functools import partial
+@pytest.mark.parametrize(
+    ("method", "num_qubits"), [("statevector", 16), ("density_matrix", 8)]
+)
+def test_reordered_permutations_match_numpy_runtime(method, num_qubits):
+    # Large enough that permutations on bit-reversed targets are prepared
+    # with their rows in address order; the result must not change.
+    rng = np.random.default_rng(5)
+    program = fq.Program(num_qubits)
+    for q in range(num_qubits):
+        program.add(ops.U(*rng.uniform(0, 2 * np.pi, 3)), q)
+    program.add(ops.Swap, (4, 1))
+    program.add(ops.CX, (1, 4))
+    program.add(ops.CCX, (0, 4, 1))
+    options = {
+        "shots": 0,
+        "result_config": {"counts": False, "final_state": True},
+        "simulation_config": {"kernel_parallelism": "serial"},
+    }
+    results = [
+        getattr(
+            Simulator(method, runtime=runtime).run(program, **options).result(),
+            f"get_{method}",
+        )()
+        for runtime in ("numpy", "numba")
+    ]
+    np.testing.assert_allclose(results[1], results[0], rtol=0, atol=1e-12)
 
-    from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
-        _build_apply_layout,
-    )
-    from fatqat.simulator._engine.numerics.numba_kernels._matrix_cache import (
-        _MatrixStructureCache,
-    )
-    from fatqat.simulator._engine.workflows.numba_workflow.trajectories import (
-        _compile_dynamic_plan,
-        _patch_gate_matrices,
-    )
 
-    dims = (2,) * 16
-    rng = np.random.default_rng(4)
-    swap = ApplyMatrixStep(
-        matrix=np.eye(4, dtype=complex)[[0, 2, 1, 3]], target_indices=(3, 6)
-    )
-    dense = ApplyMatrixStep(
-        matrix=rng.standard_normal((4, 4)) + 1j * rng.standard_normal((4, 4)),
-        target_indices=(3, 6),
-    )
-    first, second = (swap, dense) if swap_first else (dense, swap)
-    layouts = partial(_build_apply_layout, dims)
-    resolve = _MatrixStructureCache().resolve
+@pytest.mark.parametrize("permutation_first", [True, False])
+def test_sweep_changing_gate_structure_matches_explicit_runs(permutation_first):
+    # A sweep repacks only the gates that change. TwoTilt is CX at zero and
+    # dense otherwise; on 16 qubits its permutation rows are reordered, so each
+    # row must repack its offsets for the structure it has.
+    @dataclass(frozen=True)
+    class TwoTilt(Operation):
+        theta: float | fq.Parameter
+        name: ClassVar[str] = "TwoTilt"
+        num_subsystems: ClassVar[int] = 2
 
-    packed = _compile_dynamic_plan([first], dims, layouts, resolve)
-    assert packed.gate_rows[0][1] is not None  # the swap's rows get reordered
-    patched = _patch_gate_matrices(packed, [second], [0], resolve)
-    fresh = _compile_dynamic_plan([second], dims, layouts, resolve)
+    def two_tilt(op):
+        cos, sin = np.cos(op.theta / 2), np.sin(op.theta / 2)
+        rx = np.array([[cos, -1j * sin], [-1j * sin, cos]])
+        ry = np.array([[cos, -sin], [sin, cos]])
+        return np.kron(rx, ry) @ np.eye(4)[[0, 1, 3, 2]]
 
-    for got, want in zip(patched.plan_arrays, fresh.plan_arrays, strict=True):
-        assert np.array_equal(got, want)
+    tau = fq.Parameter("tau")
+    program = fq.Program(16, 2)
+    program.add(ops.H, 3)
+    program.add(ops.RY(0.4), 6)
+    program.add(TwoTilt(tau), (6, 3))
+    program.measure((6, 3), (0, 1))
+    impl_map = default_matrix_implementation_map()
+    impl_map.add(TwoTilt, two_tilt)
+    noise = fq.NoiseModel()
+    noise.add(Depolarizing(p=0.05), operation=ops.H)
+    backend = Simulator("SV", runtime="numba", implementation_map=impl_map, noise=noise)
+    values = [0.0, 1.2, 0.0] if permutation_first else [1.2, 0.0, 0.7]
+    options = {"shots": 64, "simulation_config": {"seed": 3}}
+
+    swept = backend.run_sweep(program, {tau: values}, **options).result()
+
+    explicit = [
+        backend.run(program.assign_parameters({tau: value}), **options)
+        .result()
+        .get_counts()
+        for value in values
+    ]
+    assert [result.get_counts() for result in swept] == explicit
 
 
 def test_fuse_gate_channels_leaves_unfusable_pairs_untouched():
