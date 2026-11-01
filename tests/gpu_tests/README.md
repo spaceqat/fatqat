@@ -5,7 +5,7 @@
 [GPU Tests](../../.github/workflows/gpu.yml) has one `ubuntu-latest` job.
 It uses system OpenSSH to run tests on the existing Tencent Cloud HAI instance.
 PR events are `opened`, `synchronize` and `reopened`; there are no file filters.
-CPU `Tests` and `Lint` run independently and are not changed or queried.
+CPU `Tests` and `Lint` run independently; the GPU workflow does not query them.
 
 PR jobs use the `gpu-ci` Environment with Required reviewers. Approval happens
 before **any step** runs. The run and job names are `GPU PR #<number>` or
@@ -135,5 +135,11 @@ step budgets combined. Shutdown runs after every attempted startup, independentl
 of SSH. After forced cancellation, manually verify HAI is stopped and stop it
 if needed; forced cancellation can interrupt cleanup.
 
-Run offline controller tests with:
-`python -m pytest tests/test_gpu_pr.py tests/test_gpu_ssh.py tests/test_hai_power.py`.
+Offline GPU CI infrastructure tests live in `.github/ci_tests`, outside the
+default `tests/` collection. Ordinary `python -m pytest` runs FATQAT tests and
+does not collect these controller tests. Run them explicitly from the repo root:
+`python -m pytest .github/ci_tests -v`.
+They mock GitHub, HAI and SSH connections, require no Secrets or GPU, and use
+local OpenSSH tools plus Bash, `timeout`, `sha256sum` and `tar` for shell tests.
+The existing Ubuntu `Tests` job runs this suite separately; Windows and macOS
+keep the FATQAT test suite. Black and Pylint also check `.github/ci_tests`.

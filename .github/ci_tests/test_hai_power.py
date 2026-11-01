@@ -83,7 +83,7 @@ def fake_hai(monkeypatch):
     modules["tencentcloud.hai.v20230812.hai_client"].HaiClient = lambda *_: client
     spec = importlib.util.spec_from_file_location(
         "hai_power",
-        Path(__file__).resolve().parents[1] / ".github/scripts/hai_power.py",
+        Path(__file__).resolve().parents[2] / ".github/scripts/hai_power.py",
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

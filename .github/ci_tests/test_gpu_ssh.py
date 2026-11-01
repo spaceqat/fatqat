@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
     "gpu_ssh", ROOT / ".github/scripts/gpu_ssh.py"
 )
