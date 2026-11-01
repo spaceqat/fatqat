@@ -38,7 +38,7 @@ jobs:
           python -m pip install "cupy-cuda12x==13.6.0"
 
       - name: Check formatting (black)
-        run: python -m black --check --diff src tests conftest.py
+        run: python -m black --check --diff src tests .github/ci_tests conftest.py
 
       - name: Static analysis (pylint)
-        run: python -m pylint src/fatqat tests conftest.py
+        run: python -m pylint src/fatqat tests .github/ci_tests conftest.py
