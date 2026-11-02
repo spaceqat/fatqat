@@ -60,6 +60,7 @@ class Estimator:
         observables: Observable | list[Observable] | tuple[Observable, ...],
         *,
         shots: int = 0,
+        initial_state: Any = None,
         simulation_config: dict[str, Any] | None = None,
     ) -> Job[Result]:
         """Evaluate one or more observables on a program.
@@ -78,9 +79,12 @@ class Estimator:
             shots: Non-negative integer. ``0`` computes exact values. A
                 positive value draws this many independent samples for each
                 term and reports the resulting statistical standard error.
+            initial_state: Starting state for every shot, or ``None`` for the
+                ground state. Available only for simulators; see
+                :meth:`fatqat.simulator.Simulator.run` for the accepted forms.
             simulation_config: Backend options for this execution, or
-                ``None``. The dictionary is forwarded without interpreting
-                its keys or values.
+                ``None``, forwarded unchanged; see the backend's ``run`` method
+                for the accepted keys.
 
         Returns:
             A completed ``Job``. A successful job contains a ``Result``; a
@@ -108,6 +112,7 @@ class Estimator:
             observable_list,
             is_sequence,
             shots=shots,
+            initial_state=initial_state,
             simulation_config=simulation_config,
         )
         if job.status != "DONE":
@@ -122,6 +127,7 @@ class Estimator:
         bindings: Mapping[Parameter | ParameterVector, object],
         *,
         shots: int = 0,
+        initial_state: Any = None,
         simulation_config: dict[str, Any] | None = None,
     ) -> Job[list[Result]]:
         """Evaluate a complete parameter batch in input order.
@@ -139,8 +145,10 @@ class Estimator:
                 positive leading length.
             shots: Non-negative integer. ``0`` computes exact values; a
                 positive value draws this many samples per observable term.
-            simulation_config: Backend and sampling options reused for every
-                row. Reusing a seed can correlate sampled row errors.
+            initial_state: Starting state for every shot in every row, as in
+                :meth:`run`. Available only for simulators.
+            simulation_config: Backend options reused for every row, as in
+                :meth:`run`. Reusing a seed can correlate sampled row errors.
 
         Returns:
             A completed ``Job`` containing one ``Result`` per row, in batch
@@ -184,6 +192,7 @@ class Estimator:
             observable_list,
             is_sequence,
             shots=shots,
+            initial_state=initial_state,
             simulation_config=simulation_config,
             parameter_values=columns,
         )
@@ -195,6 +204,7 @@ class Estimator:
         is_sequence: bool,
         *,
         shots: int,
+        initial_state: Any,
         simulation_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
     ) -> Job[list[Result]]:
@@ -207,6 +217,7 @@ class Estimator:
             program,
             tuple(observable_list),
             shots=shots,
+            initial_state=initial_state,
             simulation_config=simulation_config,
             parameter_values=parameter_values,
         )

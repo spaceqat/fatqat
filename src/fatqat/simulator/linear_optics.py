@@ -242,6 +242,7 @@ class LOSimulator(Simulator):
         shots: int,
         simulation_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
+        initial_state: Any = None,
     ) -> Job:
         """Run an expectation like `Simulator`; fixed photon has none yet."""
         if self._state_field == "fixed_photon_state":
@@ -254,6 +255,7 @@ class LOSimulator(Simulator):
             shots=shots,
             simulation_config=simulation_config,
             parameter_values=parameter_values,
+            initial_state=initial_state,
         )
 
     def _assemble_result(self, *, raw: RawResult, **kwargs: Any) -> Result:

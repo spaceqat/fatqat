@@ -499,8 +499,6 @@ class Simulator:
                 physical validity. A ``BasisState`` names one level per
                 subsystem instead, and density-matrix execution starts from its
                 pure state. Operator methods reject an initial state.
-                Shape errors raise directly. Runtime array-conversion failures
-                follow ``error_handling``.
             simulation_config: Optional per-run execution controls. String
                 choices are case-sensitive. Accepted keys are:
 
@@ -852,6 +850,7 @@ class Simulator:
         shots: int,
         simulation_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
+        initial_state: Any = None,
     ) -> Job[list[_ExpectationExecution]]:
         """Execute a private exact or sampled expectation request per entry.
 
@@ -864,7 +863,7 @@ class Simulator:
         execution = self._prepare_execution(
             program,
             resource_layout=None,
-            initial_state=None,
+            initial_state=initial_state,
             simulation_config=simulation_config,
             parameter_values=parameter_values,
         )
