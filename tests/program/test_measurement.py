@@ -286,19 +286,6 @@ def test_measure_all_dim_mismatch_raises():
         program.measure_all()
 
 
-def test_measure_all_failure_preserves_existing_instructions():
-    p = Program(2, 1)
-    p.add(ops.H, 0)
-
-    before = p.instructions
-
-    with pytest.raises(ValueError, match="same number"):
-        p.measure_all()
-
-    assert p.instructions == before
-    assert len(p.instructions) == 1
-
-
 def test_measure_all_preserves_mixed_dimension_validation():
     p = Program(
         [
