@@ -278,7 +278,6 @@ program only once and evaluates every quantity against the same final state.
 site_occupations = [
     fq.Observable.from_sparse(
         [("ONE", (site,), 1.0)],
-        num_qubits=NUM_SITES,
     )
     for site in range(NUM_SITES)
 ]
@@ -290,7 +289,6 @@ pair_indices = [
 pair_occupations = [
     fq.Observable.from_sparse(
         [(["ONE", "ONE"], pair, 1.0)],
-        num_qubits=NUM_SITES,
     )
     for pair in pair_indices
 ]
@@ -311,7 +309,6 @@ staggered_order_squared = fq.Observable.from_sparse(
         for first in range(NUM_SITES)
         for second in range(first + 1, NUM_SITES)
     ],
-    num_qubits=NUM_SITES,
 )
 observables = site_occupations + pair_occupations + [staggered_order_squared]
 ```

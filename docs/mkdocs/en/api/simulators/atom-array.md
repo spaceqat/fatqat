@@ -21,7 +21,7 @@ timing, transport, or physical interactions, use the
 | Connectivity | No fixed topology; `CZ` is legal only while its two atoms are paired |
 | Dimensions | Qubits only |
 | Methods | `statevector` and `density_matrix` |
-| Runtime | `numba` by default; `numpy` is also supported |
+| Runtime | Global default (`numba` unless configured); explicit `numpy` or `numba` overrides it |
 | Noise | Ideal by default; no built-in reference model |
 
 ## Program size, mapping, and native operations

@@ -1,174 +1,145 @@
-# GPU CI runner setup
+# GPU CI over SSH
 
-The [GPU Tests workflow](../../.github/workflows/gpu.yml) starts an existing
-Tencent Cloud HAI instance, waits for its runner, checks CUDA independently
-of pytest, runs `tests/gpu_tests/`, and requests shutdown with `STOP_CHARGE`.
-Start/stop jobs use GitHub-hosted CPU runners; the GPU job reuses a prepared
-Python environment. The workflow is manually dispatched.
+## Workflow and approval
 
-## 1. Prepare the GPU host
+[GPU Tests](../../.github/workflows/gpu.yml) has one `ubuntu-latest` job.
+It uses system OpenSSH to run tests on the existing Tencent Cloud HAI instance.
+PR events are `opened`, `synchronize` and `reopened`; there are no file filters.
+CPU `Tests` and `Lint` run independently; the GPU workflow does not query them.
 
-Use a dedicated Linux x86_64 instance with an NVIDIA GPU, a compatible driver,
-and the CUDA Toolkit installed. The commands below assume user `ubuntu`,
-CUDA 12.0 at `/usr/local/cuda-12.0`, and Python 3.12. Adapt the workflow too
-if these paths change. Check `nvidia-smi` before proceeding.
+PR jobs use the `gpu-ci` Environment with Required reviewers. Approval happens
+before **any step** runs. The run and job names are `GPU PR #<number>` or
+`GPU manual`. Review the event's PR head before approving. After approval, the
+controller selects the current merge revision and records the full head, base
+and merge SHAs in the logs and run summary.
+The tested base is the merge commit's first parent; the second must be the
+approved event head. A later PR head cannot reuse approval of an earlier event.
 
-On a new host, create the environment as the service user:
+Manual dispatch uses `gpu-ci-manual`, without Required reviewers, and is
+restricted to the default branch. Its source is the dispatch event's fixed
+commit. Both modes share `fatqat-hai-gpu`, with `cancel-in-progress: false`
+and `queue: max`. Resolve outdated approval requests so the queue can proceed.
+A rejected approval starts no steps.
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh
-"$HOME/.local/bin/uv" venv --python 3.12 "$HOME/fatqat-ci-venv"
-UV_HTTP_TIMEOUT=300 "$HOME/.local/bin/uv" pip install --python "$HOME/fatqat-ci-venv/bin/python" "numpy==2.5.3" "cupy-cuda12x==13.6.0" "pytest==8.4.2" --index-url https://pypi.tuna.tsinghua.edu.cn/simple
-```
+## Repository configuration
 
-Reuse an existing configured environment rather than recreating it. Keep it
-outside the runner checkout directory. The mirror is optional; omit
-`--index-url` to use PyPI. PyTorch is not required. Do not install multiple
-CuPy distributions in the same environment. See the
-[CuPy installation guide](https://docs.cupy.dev/en/v13.6.0/install.html).
-
-## 2. Register the runner
-
-In the target repository, open **Settings → Actions → Runners → New
-self-hosted runner → Linux / x64**. Follow the download and checksum
-instructions in `$HOME/actions-runner`. Run the registration command as
-`ubuntu`, without `sudo`; use a fresh token from that repository.
-
-Use runner name `fatqat-t4`, add label `gpu`, and accept the default group
-and work directory. Keep one dedicated runner matching
-`self-hosted`, `linux`, `x64`, and `gpu`, or tighten the workflow labels.
-
-```bash
-cd "$HOME/actions-runner"
-sudo ./svc.sh install ubuntu
-sudo ./svc.sh start
-sudo ./svc.sh status
-```
-
-Confirm the service is active and the runner is online in GitHub. It must
-reconnect automatically after a reboot; do not also start `./run.sh`.
-If release downloads fail, upload the official archive using SCP/SFTP and
-verify its checksum on the host. The host still needs outbound HTTPS access
-to GitHub Actions. See [runner setup](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners).
-
-## 3. Configure cloud access and repository settings
-
-Create a CI-only CAM user with programmatic access. Grant
-`hai:DescribeInstances`, `hai:StartInstance`, and `hai:StopInstance` for the
-CI instance using the narrowest effective resource scope. Verify both start
-and stop authorization. Keep cloud credentials out of the repository and
-off the GPU host.
-
-Inspect all attached policies before deployment. A temporary
-`hai:StopInstance` permission with `resource: "*"` is not restricted to the
-CI instance and requires explicit maintainer approval. Do not retain a
-wildcard debugging policy without review; resolve resource-scoped
-authorization with Tencent Cloud and narrow the permission when possible.
-
-Under **Settings → Secrets and variables → Actions**, configure:
+Configure these under **Settings > Secrets and variables > Actions**:
 
 | Type | Name | Value |
 | --- | --- | --- |
-| Secret | `TENCENTCLOUD_SECRET_ID` | CI CAM user's SecretId |
+| Secret | `TENCENTCLOUD_SECRET_ID` | Existing CI CAM user's SecretId |
 | Secret | `TENCENTCLOUD_SECRET_KEY` | Matching SecretKey |
-| Secret | `GH_RUNNER_READ_TOKEN` | Token authorized to list this repository's runners |
-| Variable | `HAI_REGION` | Instance region, e.g. `ap-shanghai` |
-| Variable | `HAI_INSTANCE_ID` | Existing `hai-...` instance ID, not an IP address |
-| Variable | `HAI_RUNNER_NAME` | Registered runner name, e.g. `fatqat-t4` |
+| Secret | `GPU_SSH_PRIVATE_KEY` | CI SSH private key, without a passphrase |
+| Secret | `GPU_SSH_KNOWN_HOSTS` | Verified server host key, as shown below |
+| Variable | `HAI_REGION` | Existing instance region |
+| Variable | `HAI_INSTANCE_ID` | Existing HAI instance ID |
+| Variable | `GPU_SSH_USER` | `ubuntu` |
+| Variable | `GPU_SSH_PORT` | `22` |
 
-For the runner-read token, select the target owner and repository and grant
-**Administration: read-only**. The creator needs the corresponding repository
-access; organization approval may be required. Track token expiration.
-This is not the short-lived runner registration token.
+The known-hosts secret must contain exactly one ed25519 entry:
 
-The CPU control jobs install the Tencent Cloud SDK and run
-[`hai_power.py`](../../.github/scripts/hai_power.py). Cloud credentials are
-passed only to their control steps, not to the GPU test job.
-
-## 4. Run tests
-
-For the normal test suite, use the usual development environment and command:
-
-```bash
-python -m pytest
+```text
+fatqat-hai-gpu ssh-ed25519 <server-host-public-key>
 ```
 
-The CuPy test module skips itself if CuPy cannot be imported, CUDA device
-detection reports an unavailable runtime, or no device is visible. Once a
-test runs, computation errors and failed assertions remain failures. New
-GPU-only test modules should implement an availability guard or share one;
-do not add GPU exclusions to the normal CPU workflow.
+Verify the host key through the HAI console or another trusted channel.
+The alias remains fixed when the public IP changes. The controller queries
+`PublicIpAddresses` for the configured instance after it reaches `RUNNING`;
+missing or invalid addresses fail the run without a cached-IP fallback.
 
-To run GPU CI, select **Actions → GPU Tests → Run workflow → main**. The
-`Verify CUDA before pytest` step uses the same Python and CUDA paths as the
-tests. It imports CuPy, requires a visible GPU, performs a GPU computation,
-and checks the result without pytest or skip handling. Any failure stops
-the GPU job before test execution.
+Grant CAM `hai:DescribeInstances`, `hai:StartInstance` and `hai:StopInstance`
+for this instance. No security-group write permission is needed.
+Configure **Settings > Environments** with `gpu-ci` requiring reviewers and
+`gpu-ci-manual` having none; allow the default branch in deployment restrictions.
+The controller validates both configurations and fails explicitly on inaccessible
+or malformed Environment data. Its job token needs `contents: read`,
+`actions: read` and `pull-requests: read` (declared in YAML).
 
-After preflight succeeds, the workflow runs only:
+Place the workflow and control scripts on the upstream default branch.
+No new PAT is needed. `GH_RUNNER_READ_TOKEN`, `HAI_RUNNER_NAME` and the old
+self-hosted runner registration are unused and are not automatically removed.
+Before startup, CI normalizes private-key line endings and uses local
+`ssh-keygen` to verify it is readable without a passphrase, without printing keys.
+
+## HAI prerequisites
+
+The existing `ubuntu` account must accept the CI public key in `authorized_keys`.
+SSH must already be reachable on the configured port; CI does not open ports.
+The NVIDIA Tesla T4 driver must pass `nvidia-smi`, with CUDA installed at
+`/usr/local/cuda-12.0` and Python at `/home/ubuntu/fatqat-ci-venv/bin/python`.
+That existing environment must support venv creation and the manual CuPy/pytest
+smoke test. Use `cupy-cuda12x==13.6.0`; do not install multiple CuPy distributions.
+Package downloads require outbound HTTPS from HAI.
+
+## Execution
+
+1. Check out trusted upstream control code into `control/`, check configuration
+   and pin the test revision after Environment approval.
+2. Install the pinned Tencent Cloud SDK.
+3. Record the startup attempt, start HAI and query its current public IP.
+4. Wait for SSH with strict host-key verification, then print `hostname`,
+   `whoami` and `nvidia-smi`.
+5. Fetch the fixed source into a separate bare Git repository. Verify the PR
+   merge ref, commit and parents, archive it, and recheck the PR revision.
+6. Upload only the archive and trusted test driver into a fresh
+   `/home/ubuntu/fatqat-gpu.*` directory, then recheck before installation.
+7. Prepare the remote environment, run independent CUDA preflight, then pytest.
+8. Request `STOP_CHARGE` through HAI API and verify `STOPPED_NO_CHARGE`.
+9. Remove local SSH key and known-hosts files even after failure.
+
+PR runs create a separate venv using the existing Python, install the uploaded
+FATQAT source and `test-full` dependencies, and pin CuPy to `13.6.0`.
+Manual default-branch runs reuse the existing venv for the original smoke test,
+but use test files from this run's selected source. Both modes explicitly set
+`CUDA_PATH`, `PATH` and `LD_LIBRARY_PATH`. Preflight requires a visible GPU and
+checks an actual CuPy computation outside pytest before running:
 
 ```bash
-"$HOME/fatqat-ci-venv/bin/python" -m pytest tests/gpu_tests --confcutdir=tests/gpu_tests -v -rs
+python -m pytest tests/gpu_tests --confcutdir=tests/gpu_tests -v -rs
 ```
 
-For a local GPU run, first set these paths and run the command above from
-the repository root:
+A JUnit report ensures at least one test executed: partial skips are allowed,
+but no tests or all tests skipped cannot succeed. The remote working directory
+is removed when the driver exits. Upload or subsequent PR recheck failure also
+triggers a bounded SSH cleanup of this run's directory before shutdown. If SSH
+cleanup fails, HAI API shutdown still runs. No old runner `_work` directory is used.
+Cloud credentials, GitHub tokens and the SSH private key stay on GitHub's host.
+Only trusted control scripts execute there; PR installation and tests run on HAI.
+Remote output streams through temporary disk files with Actions command parsing
+suspended; only an 8 KiB diagnostic tail stays in memory.
 
-```bash
-export CUDA_PATH=/usr/local/cuda-12.0
-export PATH="$CUDA_PATH/bin:$PATH"
-export LD_LIBRARY_PATH="$CUDA_PATH/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-```
+## Troubleshooting
 
-`--confcutdir` isolates this standalone smoke test from parent `conftest.py`
-files. The Lint workflow installs CuPy for static import checks only.
+View the GitHub Actions GPU check or open the `GPU Tests` workflow run and its
+`GPU PR #<number>` or `GPU manual` job. Success requires revision checks,
+transfer, preflight, pytest, shutdown and local key cleanup to succeed. A failed
+required step remains a job failure even if cleanup succeeds.
+Cancellation, tests not run or all skipped cannot succeed. A plain `STOPPED`
+state fails shutdown because no-charge status is unconfirmed; CI never restarts
+the instance to resolve that state. GitHub API errors include method/path;
+unexpected controller errors include a traceback without environment dumps.
+Unknown mergeability is retried five times, two seconds apart; rerun if it
+remains unknown. A closed, conflicting or changed PR stops the run.
 
-## 5. Verify the lifecycle and handle failures
+`TCP/SSH readiness timed out` means the ten-minute readiness budget expired.
+Check the current IP, existing network rules and sshd. `public-key authentication
+failed` points to the private key, username or `authorized_keys`. `host key
+mismatch` requires verifying the server identity before updating the secret.
+`Remote command/test failed` and `Remote GPU test deadline exceeded` identify
+remote execution failures; inspect the installation, CUDA and pytest output.
 
-Start a validation run with the instance stopped. Confirm all of the following:
+Startup retains its two-hour retry budget. Remote setup and tests share a
+30-minute deadline, with a separate SSH client timeout. Shutdown has a 15-minute
+API polling budget and a 17-minute step limit; the 240-minute job exceeds all
+step budgets combined. Shutdown runs after every attempted startup, independently
+of SSH. After forced cancellation, manually verify HAI is stopped and stop it
+if needed; forced cancellation can interrupt cleanup.
 
-| Stage | Expected result |
-| --- | --- |
-| Start HAI GPU | Instance becomes `RUNNING`; the named runner becomes online and idle |
-| Verify CUDA before pytest | `CUDA_PREFLIGHT_PASSED` |
-| Run GPU tests only | `test_cupy_sum_of_squares PASSED`, not skipped |
-| Stop HAI GPU | Stop request accepted; final state `STOPPED_NO_CHARGE` |
-
-Confirm the final state in HAI too. A successful stop job on an already
-stopped instance does not verify permission to shut down a running one.
-Capacity shortages are retried within a two-hour startup window, but
-capacity is not reserved while the instance is stopped.
-
-The cleanup job uses `always()`, but there is no independent shutdown
-watchdog. After cleanup failure or force-cancellation, check the instance
-and stop it when no valid job is using it. Closing SSH does not stop cloud
-billing; retained storage may still be charged.
-
-### Validate both available and unavailable GPU environments
-
-| Scenario | Expected behavior |
-| --- | --- |
-| Run the normal test suite without CuPy or a visible CUDA GPU | The GPU module skips; other tests continue |
-| Run the GPU workflow with a working CUDA environment | Preflight succeeds and GPU tests execute rather than skip |
-| Run the standalone preflight with no visible CUDA GPU | Preflight exits with an error before pytest starts |
-| A GPU computation raises an error or returns an incorrect result | The check or test fails; the error is not converted into a skip |
-
-## 6. Handoff and security
-
-Merging the PR does not transfer Secrets, Variables, PAT permissions, runner
-registration, or cloud-account ownership. Configure these in the target
-repository and confirm the billing owner and CAM permissions.
-
-Before migrating the same instance, disable the fork's GPU workflow and
-wait for all its runs, including cleanup, to finish. Stop and uninstall the
-old runner service, remove its registration using the fork's instructions,
-register it to the upstream repository, and reinstall/start the service.
-Reuse the CUDA/Python environment and verify the full lifecycle upstream.
-Do not let both repositories control the instance: workflow concurrency is
-scoped to one repository.
-
-Run only trusted code on this persistent runner. Shutdown does not wipe its
-disk, and `persist-credentials: false` is not an isolation boundary. External
-PR execution requires a separate approval and isolation design. This workflow
-has no automatic PR trigger or PR-selection input; selecting `main` tests
-`main`, not an unmerged PR.
+Offline GPU CI infrastructure tests live in `.github/ci_tests`, outside the
+default `tests/` collection. Ordinary `python -m pytest` runs FATQAT tests and
+does not collect these controller tests. Run them explicitly from the repo root:
+`python -m pytest .github/ci_tests -v`.
+They mock GitHub, HAI and SSH connections, require no Secrets or GPU, and use
+local OpenSSH tools plus Bash, `timeout`, `sha256sum` and `tar` for shell tests.
+The existing Ubuntu `Tests` job runs this suite separately; Windows and macOS
+keep the FATQAT test suite. Black and Pylint also check `.github/ci_tests`.

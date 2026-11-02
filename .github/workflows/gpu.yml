@@ -1,130 +1,161 @@
-
 name: GPU Tests
+run-name: >-
+  ${{ github.event_name == 'pull_request_target' && format('GPU PR #{0}', github.event.number) || 'GPU manual' }}
 
 on:
   workflow_dispatch:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
 
-permissions:
-  contents: read
+permissions: {}
 
-# Only one workflow in this repository may control the instance at a time.
 concurrency:
   group: fatqat-hai-gpu
   cancel-in-progress: false
   queue: max
 
 jobs:
-  start-gpu:
-    name: Start HAI GPU
+  gpu:
+    name: >-
+      ${{ github.event_name == 'pull_request_target' && format('GPU PR #{0}', github.event.number) || 'GPU manual' }}
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request_target')
     runs-on: ubuntu-latest
-    timeout-minutes: 145
+    # Phase limits total less than 240 minutes, including 17 minutes for shutdown.
+    timeout-minutes: 240
+    environment:
+      name: ${{ github.event_name == 'pull_request_target' && 'gpu-ci' || 'gpu-ci-manual' }}
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: control
+    env:
+      GPU_SSH_USER: ${{ vars.GPU_SSH_USER }}
+      GPU_SSH_PORT: ${{ vars.GPU_SSH_PORT }}
 
     steps:
+      # Every step runs after Environment approval. This is upstream control code.
       - uses: actions/checkout@v7
+        id: control
+        timeout-minutes: 5
         with:
+          ref: ${{ github.sha }}
+          path: control
           persist-credentials: false
 
       - uses: actions/setup-python@v6
+        timeout-minutes: 3
         with:
           python-version: "3.12"
 
-      - name: Install Tencent Cloud SDK
-        run: |
-          python -m pip install \
-            "tencentcloud-sdk-python-common==3.1.121" \
-            "tencentcloud-sdk-python-hai==3.1.121"
-
-      - name: Start instance and wait for runner
+      - name: Check configuration and create local SSH files
+        id: configure
+        timeout-minutes: 1
         env:
           TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
           HAI_REGION: ${{ vars.HAI_REGION }}
           HAI_INSTANCE_ID: ${{ vars.HAI_INSTANCE_ID }}
-          HAI_RUNNER_NAME: ${{ vars.HAI_RUNNER_NAME }}
-          GH_RUNNER_READ_TOKEN: ${{ secrets.GH_RUNNER_READ_TOKEN }}
-        run: python -u .github/scripts/hai_power.py start
+          GPU_SSH_PRIVATE_KEY: ${{ secrets.GPU_SSH_PRIVATE_KEY }}
+          GPU_SSH_KNOWN_HOSTS: ${{ secrets.GPU_SSH_KNOWN_HOSTS }}
+        run: python .github/scripts/gpu_ssh.py configure
 
-  gpu-tests:
-    name: CuPy GPU smoke test
-    needs: start-gpu
-    runs-on: [self-hosted, linux, x64, gpu]
-    timeout-minutes: 10
-    env:
-      CUDA_PATH: /usr/local/cuda-12.0
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Verify CUDA before pytest
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$CUDA_PATH/bin:$PATH"
-          export LD_LIBRARY_PATH="$CUDA_PATH/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          PYTHON="$HOME/fatqat-ci-venv/bin/python"
-
-          "$PYTHON" --version
-          nvidia-smi
-
-          "$PYTHON" - <<'PY'
-          import cupy as cp
-
-          cp.show_config()
-          device_count = cp.cuda.runtime.getDeviceCount()
-          if device_count < 1:
-              raise RuntimeError("GPU CI requires an available CUDA GPU")
-
-          with cp.cuda.Device(0):
-              probe = cp.asarray([1.0, 2.0, 3.0], dtype=cp.float32)
-              result_gpu = probe + 1.0
-              cp.cuda.get_current_stream().synchronize()
-              result = result_gpu.get().tolist()
-
-          if result != [2.0, 3.0, 4.0]:
-              raise RuntimeError(f"CUDA preflight returned an incorrect result: {result}")
-
-          print(f"CUDA_PREFLIGHT_PASSED: {device_count} device(s)")
-          PY
-
-      - name: Run GPU tests only
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$CUDA_PATH/bin:$PATH"
-          export LD_LIBRARY_PATH="$CUDA_PATH/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          PYTHON="$HOME/fatqat-ci-venv/bin/python"
-
-          "$PYTHON" -m pytest tests/gpu_tests --confcutdir=tests/gpu_tests -v -rs
-
-  stop-gpu:
-    name: Stop HAI GPU
-    needs: [start-gpu, gpu-tests]
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
+      - name: Pin event head and select merge/base after approval
+        id: select
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .github/scripts/gpu_pr.py prepare
 
       - name: Install Tencent Cloud SDK
+        id: sdk
+        timeout-minutes: 3
         run: |
           python -m pip install \
             "tencentcloud-sdk-python-common==3.1.121" \
             "tencentcloud-sdk-python-hai==3.1.121"
 
-      - name: Stop GPU and verify state
+      - name: Start HAI and read its current public IP
+        id: power
+        timeout-minutes: 123
+        env:
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          HAI_REGION: ${{ vars.HAI_REGION }}
+          HAI_INSTANCE_ID: ${{ vars.HAI_INSTANCE_ID }}
+        run: |
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          python -u .github/scripts/hai_power.py start
+
+      - name: Wait for verified SSH connection
+        id: ssh
+        timeout-minutes: 12
+        env:
+          GPU_PUBLIC_IP: ${{ steps.power.outputs.public_ip }}
+        run: python -u .github/scripts/gpu_ssh.py wait
+
+      - name: Verify remote hostname, user and GPU
+        id: identity
+        timeout-minutes: 2
+        env:
+          GPU_PUBLIC_IP: ${{ steps.power.outputs.public_ip }}
+        run: python -u .github/scripts/gpu_ssh.py identity
+
+      - name: Fetch pinned source into bare Git and recheck revision
+        id: source
+        timeout-minutes: 7
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -u .github/scripts/gpu_pr.py archive
+
+      - name: Upload source and trusted driver to a new remote directory
+        id: upload
+        timeout-minutes: 6
+        env:
+          GPU_PUBLIC_IP: ${{ steps.power.outputs.public_ip }}
+        run: python -u .github/scripts/gpu_ssh.py upload
+
+      - name: Recheck pinned revision immediately before remote installation
+        id: current
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -u .github/scripts/gpu_pr.py recheck
+
+      - name: Remote environment, CUDA preflight and GPU pytest
+        id: tests
+        timeout-minutes: 33
+        env:
+          GPU_PUBLIC_IP: ${{ steps.power.outputs.public_ip }}
+          GPU_MODE: ${{ steps.select.outputs.mode }}
+        run: python -u .github/scripts/gpu_ssh.py run "$GPU_MODE"
+
+      - name: Clean remote workspace after upload or revision failure
+        if: ${{ always() && (steps.upload.outcome == 'failure' || steps.current.outcome == 'failure') }}
+        timeout-minutes: 2
+        env:
+          GPU_PUBLIC_IP: ${{ steps.power.outputs.public_ip }}
+        run: python -u .github/scripts/gpu_ssh.py cleanup
+
+      - name: Stop HAI and verify final state
+        id: stop
+        if: ${{ always() && steps.power.outputs.attempted == 'true' }}
+        timeout-minutes: 17
         env:
           TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
           HAI_REGION: ${{ vars.HAI_REGION }}
           HAI_INSTANCE_ID: ${{ vars.HAI_INSTANCE_ID }}
         run: python -u .github/scripts/hai_power.py stop
+
+      - name: Remove local SSH key and known_hosts
+        id: cleanup
+        if: always()
+        timeout-minutes: 1
+        working-directory: ${{ runner.temp }}
+        run: rm -f -- "$RUNNER_TEMP/fatqat-gpu-ssh/id_ed25519" "$RUNNER_TEMP/fatqat-gpu-ssh/known_hosts"

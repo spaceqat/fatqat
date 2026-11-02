@@ -179,12 +179,8 @@ estimator handles final-state evolution and observable contraction; see
 
 ```python
 LOGIT_OBSERVABLES = [
-    fq.Observable.from_sparse(
-        [("Z", (0,), 1.0), ("Z", (1,), 1.0)], num_qubits=NUM_QUBITS
-    ),
-    fq.Observable.from_sparse(
-        [("Z", (2,), 1.0), ("Z", (3,), 1.0)], num_qubits=NUM_QUBITS
-    ),
+    fq.Observable.from_sparse([("Z", (0,), 1.0), ("Z", (1,), 1.0)]),
+    fq.Observable.from_sparse([("Z", (2,), 1.0), ("Z", (3,), 1.0)]),
 ]
 estimator = fq.Estimator(fq.simulator.Simulator(method="SV"))
 

@@ -134,7 +134,6 @@ def test_estimator_trajectories_are_reproducible_and_match_mesolve(model):
     program = _program(measured=False, amplitude=np.pi, duration=1.0)
     occupation = fq.Observable.from_sparse(
         [("ONE", (0,), 1.0)],
-        num_qubits=1,
     )
     trajectory = fq.Estimator(_backend(model, rate=0.4))
     ensemble = fq.Estimator(_backend(model, rate=0.4, method="density_matrix"))

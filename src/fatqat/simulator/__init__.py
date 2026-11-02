@@ -15,8 +15,11 @@ from .linear_optics import LOSimulator, fixed_photon_index, fixed_photon_occupat
 from .simulator import Simulator
 from .custom_operations import ExecutionContext
 from ._engine.state import BasisState, ClassicalState, EvolutionState
+from ._runtime import get_default_runtime, set_default_runtime
 
 __all__ = [
+    "get_default_runtime",
+    "set_default_runtime",
     "Simulator",
     "LOSimulator",
     "fixed_photon_index",

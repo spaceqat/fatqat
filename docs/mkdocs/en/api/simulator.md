@@ -5,10 +5,10 @@ title: "Simulator"
 # Simulator
 
 
-[`Simulator`][fatqat.simulator.Simulator] runs gate-level programs with matrix operations and finite
-noise channels. It supports qubits, qudits, mixed register dimensions, and
-custom implementation maps. It runs the program as written; it does not
-transpile or route it.
+[`Simulator`][fatqat.simulator.Simulator] runs gate-level programs with matrix
+operations and finite noise channels. It supports qubits, qudits, mixed register
+dimensions, and custom implementation maps. Programs run as written, without
+transpilation or routing.
 
 ## Quick start
 
@@ -36,8 +36,6 @@ State methods also support measurement, reset, and classical conditions.
 Method names are case-insensitive. `SV` and `DM` are aliases; the
 read-only [`Simulator.method`][fatqat.simulator.Simulator.method] property returns the full name. If the
 program's Hilbert-space dimension is `D`:
-
-**Simulation methods**
 
 | Method | Result | Reset and finite channels | Restrictions |
 | --- | --- | --- | --- |
@@ -73,19 +71,12 @@ an arbitrary state `psi`, a matrix acting on every subsystem satisfies
 ## Runtime and execution
 
 
-Choose `runtime` when creating the backend. `"numba"` is the default for
-[`Simulator`][fatqat.simulator.Simulator],
-[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator], and
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator]. It
-compiles kernels on first use and supports threaded kernels. `"numpy"` runs
-directly without compilation. Both runtimes support the methods offered by
-each backend, but need not produce bit-identical floating-point or sampled
-results.
+`runtime` accepts `"numpy"` or `"numba"` (case-insensitive). `None` (default)
+uses the current simulator default, initially `"numba"`. See
+[Simulation](../guide/simulation.md) to set the default for a script or notebook.
 
 `simulation_config` changes one call to [`Simulator.run`][fatqat.simulator.Simulator.run]. Its string
 values are case-sensitive.
-
-**Simulation controls**
 
 | Key | Default | Accepted values and effect |
 | --- | --- | --- |
@@ -96,31 +87,24 @@ values are case-sensitive.
 | `error_handling` | `"raise"` | `"raise"` or `"capture"`; see the error-handling contract in [`Simulator.run`][fatqat.simulator.Simulator.run]. |
 | `fusion` | `False` | A `bool`. `True` combines compatible adjacent operations and is supported by Numba for `unitary` and `superop`. Statevector and density-matrix evolution do not support fusion. |
 
-Automatic selection uses at most one parallel axis. An explicit unsupported
-choice raises an error instead of falling back. A run is eligible for explicit
-shot parallelism only when it requests counts and must evolve shots
-independently—for example, because it contains mid-circuit measurement, reset,
-conditions, or stochastic channels. A circuit that evolves once and samples
-only terminal measurements is not eligible. Threaded shots require a Numba
-statevector run and do not support the atom-occupancy lifecycle; processes are
-the alternative for other eligible workloads.
+Shot parallelism requires counts and independent shot evolution, such as a
+program with mid-circuit measurement, reset, conditions, or stochastic channels.
+Programs with only terminal measurement sampling are not eligible. Threaded
+shots require a Numba statevector run without atom-occupancy operations;
+processes support other eligible workloads. Automatic selection uses at most
+one parallel axis. Unsupported explicit choices raise an error.
 
-A fixed non-negative `seed` reproduces sampled results only when the Program,
-complete configuration, FatQat version, and execution environment are also the
-same. Changing the runtime or parallel execution mode can change random-number
-consumption. Deterministic results do not depend on the seed and follow normal
-floating-point tolerances.
+A fixed `seed` reproduces sampled results when the program, configuration,
+FatQat version, and execution environment are the same. Different runtimes or
+parallel modes may produce different samples. Deterministic results are
+independent of the seed and subject to floating-point tolerances.
 
-See
-[Performance and scaling](../guide/performance.md) for a practical benchmarking workflow; the table
-above is the canonical configuration contract.
+See [Performance and scaling](../guide/performance.md) for benchmarking guidance.
 
 ## Customize the backend
 
 
 The constructor also accepts:
-
-**Backend options**
 
 | Argument | Meaning |
 | --- | --- |
@@ -131,8 +115,6 @@ The constructor also accepts:
 
 
 Besides `simulation_config`, [`Simulator.run`][fatqat.simulator.Simulator.run] accepts:
-
-**Run inputs**
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
@@ -149,8 +131,6 @@ Hermiticity and positivity.
 `True`, `False`, or `None`; an omitted or `None` value uses the default shown.
 `final_classical_state` accepts only `True` or `False`.
 
-**Result fields**
-
 | Key | Default | Constraint |
 | --- | --- | --- |
 | `counts` | Enabled when the program measures | Requires an integer `shots > 0` |
@@ -164,8 +144,8 @@ The concrete final-state field is named `statevector`, `density_matrix`,
 `unitary`, or `superop`. Check `fatqat.Result.available_data` before
 reading a field that may not have been requested.
 
-`run()` returns an eager [`Job`][fatqat.Job]. Program and option validation
-errors raise directly. Execution and result-assembly errors follow
+`run()` completes execution before returning a [`Job`][fatqat.Job]. Program and
+option validation errors raise directly. Execution errors follow
 `error_handling`, as specified in [`Simulator.run`][fatqat.simulator.Simulator.run]. See
 [Result](result.md) for available fields, accessors, count ordering, and
 state-axis metadata.
@@ -198,21 +178,22 @@ table.
 ## Sweeps
 
 
-[`Simulator.run_sweep`][fatqat.simulator.Simulator.run_sweep] binds each row of a complete object-keyed
-parameter batch and returns one eager job containing an ordered
-`list[Result]`. The batch is validated once and the program is lowered once;
-each row then only re-realizes the matrices of its parameter-holding gates
-before execution, so layout resolution, implementation selection, and noise
-matching are not repeated per row. Batch and row validation errors raise
-directly; execution errors follow `error_handling`, and no partial
-result list is returned.
-It reuses a supplied seed for every row, so sampled errors can be correlated.
-See [Simulate a quantum program](../guide/simulation.md) for a guided example.
-Accepted batch shapes and validation rules are listed in the [`run_sweep`][fatqat.simulator.Simulator.run_sweep]
-reference below.
+[`Simulator.run_sweep`][fatqat.simulator.Simulator.run_sweep] runs a program for
+each row of a parameter batch. It completes before returning a job containing
+a `list[Result]` in row order. Batch and row validation errors raise directly;
+execution errors follow `error_handling`. A failed sweep returns no partial
+result list. A supplied seed is reused for every row, so sampled errors can be
+correlated.
+
+See [Simulate a quantum program](../guide/simulation.md) for an example and
+[`run_sweep`][fatqat.simulator.Simulator.run_sweep] for accepted batch shapes.
 
 ## API
 
+
+::: fatqat.simulator.get_default_runtime
+
+::: fatqat.simulator.set_default_runtime
 
 ::: fatqat.simulator.Simulator
     options:

@@ -3,7 +3,7 @@
 Use [`Estimator`][fatqat.Estimator] to calculate expectation values, such as
 spin correlations or energies. Define the quantity with an
 [`Observable`][fatqat.Observable], then supply a Program and a
-[compatible simulator or emulator](../api/estimator.md#exact-and-sampled-results).
+[compatible simulator or emulator](../api/estimator.md#backend-support).
 You can calculate the expectation directly from the state or estimate it
 from a finite number of measurement shots.
 
@@ -62,14 +62,14 @@ agree for the original Bell state and are always opposite for the
 phase-flipped state.
 
 Each tuple in an `Observable` contains a Pauli label and its real coefficient.
-For example, `("ZZ", 1.0)` represents Z on both qubits with coefficient 1.
 Labels follow qubit order from left to right, and `I` is the identity:
 `ZI` measures Z on qubit 0 alone. To calculate a weighted sum, such as an
-energy, include its terms in the same `Observable`.
+energy, include its terms in the same `Observable`. The
+[Estimator API](../api/estimator.md#construct-an-observable) describes the
+other ways to write an observable.
 
-By default, `Estimator.run` uses `shots=0` to calculate the expectation
-directly from the state. The Program must be unmeasured; the estimator adds
-the required measurements when you request sampling.
+`Estimator.run` uses `shots=0` by default, which calculates the expectation
+directly from the state.
 
 ## Estimate from samples
 

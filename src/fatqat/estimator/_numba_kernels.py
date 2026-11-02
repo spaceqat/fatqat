@@ -1,14 +1,15 @@
 """Numba inner kernels for the expectation-value pass.
 
-Same arithmetic as the NumPy kernels in :mod:`._expectation`, same term algebra
-(see that module for why a term is a phased permutation) - only the innermost
+Same arithmetic as the NumPy kernels in :mod:`._numpy_kernels`, same term algebra
+(see :mod:`._exact` for why a term is a phased permutation) - only the innermost
 sweep over ``2**n`` amplitudes moves into compiled code. The term loop, the mask
 packing, and the coefficient bookkeeping stay in Python, where they cost
 O(factors) and never touch the state.
 
-Public most-significant-first qubit numbers are translated into the small bit
-masks before these kernels run. The compiled loops retain their private integer
-bit convention and never permute or copy the state.
+The caller's per-subsystem place values are translated into the small bit
+masks (or passed as strides) before these kernels run, so the compiled loops
+never need to know which subsystem is most significant and never permute or
+copy the state.
 
 The win is not "NumPy is slow". It is that the NumPy form has to materialize
 what a loop can consume in flight: per term it allocates the permuted index, the
@@ -57,7 +58,7 @@ _BLOCK = 1024
 
 
 @njit(cache=True)
-def statevector_term(
+def qubit_statevector_term(
     state: np.ndarray,
     x_mask: int,
     z_mask: int,
@@ -87,8 +88,90 @@ def statevector_term(
     return total
 
 
+@njit(cache=True, inline="always")
+def _digit_partner_and_weight(
+    j: int,
+    strides: np.ndarray,
+    dims: np.ndarray,
+    kinds: np.ndarray,
+    levels: np.ndarray,
+) -> tuple[int, float]:
+    """Return basis state ``j``'s flip partner and the term's weight on ``j``.
+
+    Kinds 0, 1, 2 are X, Y, Z (on qubits), 3 a projector onto ``levels[f]``,
+    and 4 the number operator.
+    """
+    partner = j
+    weight = 1.0
+    for f in range(kinds.shape[0]):
+        digit = (j // strides[f]) % dims[f]
+        kind = kinds[f]
+        if kind <= 1:
+            partner += strides[f] * (1 - 2 * digit)
+        if kind in (1, 2):
+            if digit == 1:
+                weight = -weight
+        elif kind == 3:
+            if digit != levels[f]:
+                return partner, 0.0
+        elif kind == 4:
+            weight *= digit
+    return partner, weight
+
+
+@njit(cache=True)
+def statevector_term(
+    state: np.ndarray,
+    strides: np.ndarray,
+    dims: np.ndarray,
+    kinds: np.ndarray,
+    levels: np.ndarray,
+) -> complex:
+    """Return ``<psi|T|psi>`` for one term on a mixed-dimension state.
+
+    Mirrors ``_digit_term_numpy``:
+    ``sum_k conj(psi_{p(k)}) * weight(k) * psi_k``.
+    """
+    size = state.shape[0]
+    total = 0.0 + 0.0j
+    for start in range(0, size, _BLOCK):
+        stop = min(start + _BLOCK, size)
+        block = 0.0 + 0.0j
+        for k in range(start, stop):
+            partner, weight = _digit_partner_and_weight(k, strides, dims, kinds, levels)
+            if weight != 0.0:
+                block += weight * np.conj(state[partner]) * state[k]
+        total += block
+    return total
+
+
 @njit(cache=True)
 def density_matrix_term(
+    rho: np.ndarray,
+    strides: np.ndarray,
+    dims: np.ndarray,
+    kinds: np.ndarray,
+    levels: np.ndarray,
+) -> complex:
+    """Return ``Tr(rho T)`` for one term on a mixed-dimension state.
+
+    Mirrors ``_digit_term_numpy``: ``sum_j rho[j, p(j)] * weight(j)``.
+    """
+    size = rho.shape[0]
+    total = 0.0 + 0.0j
+    for start in range(0, size, _BLOCK):
+        stop = min(start + _BLOCK, size)
+        block = 0.0 + 0.0j
+        for j in range(start, stop):
+            partner, weight = _digit_partner_and_weight(j, strides, dims, kinds, levels)
+            if weight != 0.0:
+                block += weight * rho[j, partner]
+        total += block
+    return total
+
+
+@njit(cache=True)
+def qubit_density_matrix_term(
     rho: np.ndarray,
     x_mask: int,
     z_mask: int,

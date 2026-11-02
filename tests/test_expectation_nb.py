@@ -6,13 +6,22 @@ separately: the value must match the NumPy form, and the *error* must not grow
 with the state size, which is what the blocked summation is for.
 """
 
+import math
+
 import numpy as np
 import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.observable import Observable
-from fatqat import _expectation as ex
+from fatqat.observable import NumberOperator, Observable, Projector
+from fatqat.estimator import _exact as ex
+from fatqat.estimator import _numpy_kernels as npk
+
+
+def _msb_strides(dims):
+    """Place values with subsystem 0 most significant."""
+    return [math.prod(dims[index + 1 :]) for index in range(len(dims))]
+
 
 pytest.importorskip("numba")
 
@@ -80,8 +89,9 @@ _TERMS = {
 def _masks(letters, qubits, num_qubits):
     if not qubits:
         return (0, 0, 0, 0)
-    observable = Observable.from_sparse([(letters, qubits, 1.0)], num_qubits=num_qubits)
-    return ex._term_masks(observable.terms[0][1], num_qubits)[:4]
+    observable = Observable.from_sparse([(letters, qubits, 1.0)])
+    strides = _msb_strides((2,) * num_qubits)
+    return ex._term_masks(observable.terms[0][1], strides)[:4]
 
 
 @pytest.mark.parametrize("case", _TERMS.values(), ids=_TERMS.keys())
@@ -91,7 +101,7 @@ def test_statevector_kernel_matches_numpy(case):
     masks = _masks(*case, 6)
 
     compiled = ex._COMPILED[0](state, *masks)
-    reference = ex._statevector_term_numpy(state, index, *masks)
+    reference = npk.qubit_statevector_term(state, index, *masks)
 
     assert compiled == pytest.approx(reference, abs=1e-14)
 
@@ -103,7 +113,7 @@ def test_density_matrix_kernel_matches_numpy(case):
     masks = _masks(*case, 5)
 
     compiled = ex._COMPILED[1](rho, *masks)
-    reference = ex._density_matrix_term_numpy(rho, index, *masks)
+    reference = npk.qubit_density_matrix_term(rho, index, *masks)
 
     assert compiled == pytest.approx(reference, abs=1e-14)
 
@@ -125,7 +135,7 @@ def test_agreement_does_not_degrade_with_state_size(num_qubits):
             worst,
             abs(
                 ex._COMPILED[0](state, *masks)
-                - ex._statevector_term_numpy(state, index, *masks)
+                - npk.qubit_statevector_term(state, index, *masks)
             ),
         )
 
@@ -137,8 +147,7 @@ def test_estimator_values_are_unchanged_by_the_compiled_path():
     # the same one the dense reference gives.
     program = _program(4)
     observable = Observable.from_sparse(
-        [("ZZ", (0, 1), 1.5), ("XY", (1, 3), -0.5), (["ONE", "Z"], (2, 0), 0.25)],
-        num_qubits=4,
+        [("ZZ", (0, 1), 1.5), ("XY", (1, 3), -0.5), (["ONE", "Z"], (2, 0), 0.25)]
     )
     state = _statevector(4)
 
@@ -153,12 +162,12 @@ def test_estimator_values_are_unchanged_by_the_compiled_path():
         "X": np.array([[0, 1], [1, 0]], dtype=complex),
         "Y": np.array([[0, -1j], [1j, 0]]),
         "Z": np.diag([1, -1]).astype(complex),
-        "ONE": np.diag([0, 1]).astype(complex),
+        "P1": np.diag([0, 1]).astype(complex),
         "I": np.eye(2, dtype=complex),
     }
     dense = np.zeros((16, 16), dtype=complex)
     for coefficient, factors in observable.terms:
-        letters = dict(factors)
+        letters = {qubit: str(factor) for qubit, factor in factors}
         operator = local[letters.get(0, "I")]
         for qubit in (1, 2, 3):
             operator = np.kron(operator, local[letters.get(qubit, "I")])
@@ -168,11 +177,44 @@ def test_estimator_values_are_unchanged_by_the_compiled_path():
     assert from_estimator == pytest.approx(reference, abs=1e-12)
 
 
+# Mixed dimensions (3, 2, 4): one case per digit-kernel factor kind, alone and
+# combined with a flip.
+_DIGIT_TERMS = {
+    "number": ([NumberOperator()], (2,)),
+    "projector": ([Projector(2)], (0,)),
+    "x_with_projector": (["X", Projector(3)], (1, 2)),
+    "y_with_number": ([NumberOperator(), "Y"], (0, 1)),
+    "z_with_number": (["Z", NumberOperator()], (1, 2)),
+}
+
+
+@pytest.mark.parametrize("case", _DIGIT_TERMS.values(), ids=_DIGIT_TERMS.keys())
+def test_digit_kernels_match_numpy(case):
+    dims = (3, 2, 4)
+    rng = np.random.default_rng(3)
+    state = rng.normal(size=24) + 1j * rng.normal(size=24)
+    rho = np.outer(state, state.conj())
+    index = np.arange(24)
+    observable = Observable.from_sparse([(*case, 1.0)])
+    *arrays, _n_y = ex._term_digits(
+        observable.terms[0][1],
+        dims,
+        _msb_strides(dims),
+    )
+
+    assert ex._COMPILED[2](state, *arrays) == pytest.approx(
+        npk.digit_term(state, index, *arrays, density=False), abs=1e-12
+    )
+    assert ex._COMPILED[3](rho, *arrays) == pytest.approx(
+        npk.digit_term(rho, index, *arrays, density=True), abs=1e-12
+    )
+
+
 def test_parity_helper_agrees_with_popcount():
     # The kernel needs only popcount & 1, and folds it with XOR shifts rather
     # than counting. Checked against numpy across bit widths, including the
     # high half of a 64-bit mask, where the first fold step matters.
-    from fatqat._expectation_nb import _odd_parity
+    from fatqat.estimator._numba_kernels import _odd_parity
 
     values = [0, 1, 3, 255, 1 << 20, (1 << 33) | 5, (1 << 62) | (1 << 3) | 1]
     for value in values:

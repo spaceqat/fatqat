@@ -12,9 +12,14 @@ from copy import deepcopy
 
 import numpy as np
 
-from ...._expectation import expectation_density_matrix, expectation_statevector
+from ....estimator._exact import (
+    expectation_density_matrix,
+    expectation_statevector,
+)
+from ....observable import _Factors
 from .._execution_policy import _ExecutionPolicy as ExecutionPolicy
 from ..state import EvolutionState, _LoweredBasisState
+from ..numerics.numpy_kernels._measurement import _strides
 from .base import MatrixEngine
 
 
@@ -45,7 +50,7 @@ class _NdarrayEngine(MatrixEngine[np.ndarray]):
     def _expectation_values(
         self,
         state: np.ndarray,
-        observables: Sequence[tuple[tuple[float, tuple[tuple[int, str], ...]], ...]],
+        observables: Sequence[tuple[tuple[float, _Factors], ...]],
         *,
         policy: ExecutionPolicy,
     ) -> tuple[float, ...]:
@@ -54,20 +59,12 @@ class _NdarrayEngine(MatrixEngine[np.ndarray]):
             if self._state_field == "statevector"
             else expectation_density_matrix
         )
+        dims = tuple(self._dims)
+        strides = _strides(dims)  # the engine is little-endian
         values = []
         with self._execution_scope(policy):
             for terms in observables:
-                kernel_terms = tuple(
-                    (
-                        coefficient,
-                        tuple(
-                            (self.n_subsystems - 1 - index, letter)
-                            for index, letter in factors
-                        ),
-                    )
-                    for coefficient, factors in terms
-                )
-                values.append(kernel(state, kernel_terms))
+                values.append(kernel(state, terms, dims, strides))
         return tuple(values)
 
     @abstractmethod

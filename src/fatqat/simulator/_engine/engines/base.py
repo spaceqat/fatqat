@@ -25,6 +25,7 @@ from ...._backends.steps import (
     MeasurementStep,
     ResolvedStep,
 )
+from ....observable import _Factors
 from ....result import reduce_to_counts
 from .._execution_policy import (
     _ExecutionPolicy as ExecutionPolicy,
@@ -277,7 +278,7 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
     def expectation_values(
         self,
         plan: tuple[ResolvedStep, ...],
-        observables: Sequence[tuple[tuple[float, tuple[tuple[int, str], ...]], ...]],
+        observables: Sequence[tuple[tuple[float, _Factors], ...]],
         *,
         context: _RunContext,
         simulation_config: SimulationConfig,
@@ -515,7 +516,7 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
     def _expectation_values(
         self,
         state: QuantumDataT,
-        observables: Sequence[tuple[tuple[float, tuple[tuple[int, str], ...]], ...]],
+        observables: Sequence[tuple[tuple[float, _Factors], ...]],
         *,
         policy: ExecutionPolicy,
     ) -> tuple[float, ...]:
