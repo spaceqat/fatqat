@@ -183,7 +183,7 @@ def test_cutoff_inference_accounts_for_fixed_dimension_registers():
     program.add(ops.BeamSplitter(math.pi / 2), (modes[0], modes[1]))
     initial = np.kron([1.0, 0.0], _fock(2, 1, 0))
 
-    state = LOSimulator().run(program, initial_state=initial, **_STATE_ONLY)
+    state = LOSimulator("SV").run(program, initial_state=initial, **_STATE_ONLY)
 
     expected = np.kron([1.0, 0.0], _fock(2, 0, 1))
     np.testing.assert_allclose(
@@ -199,7 +199,7 @@ def test_basis_state_cutoff_counts_only_mode_photons():
     # The qubit's level is not a photon, so the inferred cutoff is 1.
     initial = EvolutionState(quantum=BasisState({qubit[0]: 1, modes[0]: 1}))
 
-    state = LOSimulator().run(program, initial_state=initial, **_STATE_ONLY)
+    state = LOSimulator("SV").run(program, initial_state=initial, **_STATE_ONLY)
 
     expected = np.kron([0.0, 1.0], _fock(1, 0, 1))
     np.testing.assert_allclose(
@@ -214,13 +214,13 @@ def test_explicit_cutoff_below_the_photon_total_warns():
     options = {"initial_state": basis, **_STATE_ONLY}
 
     with pytest.warns(UserWarning, match="below the 2 photons"):
-        LOSimulator().run(program, simulation_config={"cutoff": 1}, **options)
+        LOSimulator("SV").run(program, simulation_config={"cutoff": 1}, **options)
     # A mode level above the cutoff cannot be represented at all.
     with (
         pytest.warns(UserWarning),
         pytest.raises(BackendValidationError, match="outside its dimension 2"),
     ):
-        LOSimulator().run(
+        LOSimulator("SV").run(
             program,
             initial_state=BasisState({modes[0]: 2}),
             simulation_config={"cutoff": 1},
@@ -231,20 +231,22 @@ def test_explicit_cutoff_below_the_photon_total_warns():
 def test_cutoff_must_be_given_without_an_initial_state():
     program = _two_mode_program(ops.PhaseShifter(0.1))
     with pytest.raises(BackendValidationError, match="cutoff"):
-        LOSimulator().run(program, **_STATE_ONLY)
+        LOSimulator("SV").run(program, **_STATE_ONLY)
 
 
 def test_cutoff_cannot_be_inferred_from_a_mismatched_length():
     program = _two_mode_program(ops.PhaseShifter(0.1))
     with pytest.raises(BackendValidationError, match="cannot infer cutoff"):
-        LOSimulator().run(program, initial_state=np.ones(8), **_STATE_ONLY)
+        LOSimulator("SV").run(program, initial_state=np.ones(8), **_STATE_ONLY)
 
 
 @pytest.mark.parametrize("cutoff", [0, True, 1.0])
 def test_invalid_cutoff_is_rejected(cutoff):
     program = _two_mode_program(ops.PhaseShifter(0.1))
     with pytest.raises(BackendValidationError, match="cutoff"):
-        LOSimulator().run(program, simulation_config={"cutoff": cutoff}, **_STATE_ONLY)
+        LOSimulator("SV").run(
+            program, simulation_config={"cutoff": cutoff}, **_STATE_ONLY
+        )
 
 
 def test_supplied_resource_layout_names_mode_refs():
@@ -253,9 +255,9 @@ def test_supplied_resource_layout_names_mode_refs():
     layout = fq.ResourceLayout({modes[0]: "left", modes[1]: "right"})
     options = {"initial_state": _fock(1, 1, 0), **_STATE_ONLY}
 
-    placed = LOSimulator().run(program, resource_layout=layout, **options).result()
+    placed = LOSimulator("SV").run(program, resource_layout=layout, **options).result()
 
-    default = LOSimulator().run(program, **options).result()
+    default = LOSimulator("SV").run(program, **options).result()
     np.testing.assert_allclose(
         placed.get_statevector(), default.get_statevector(), rtol=0, atol=1e-12
     )
@@ -275,8 +277,8 @@ def test_level_checks_on_modes_run_once_the_cutoff_is_known():
     program.add(ops.SwapLevels(0, 3), modes[0])  # no dimension to check yet
 
     with pytest.raises(ValueError, match="invalid for target dimension 3"):
-        LOSimulator().run(program, simulation_config={"cutoff": 2}, **_STATE_ONLY)
-    LOSimulator().run(program, simulation_config={"cutoff": 3}, **_STATE_ONLY)
+        LOSimulator("SV").run(program, simulation_config={"cutoff": 2}, **_STATE_ONLY)
+    LOSimulator("SV").run(program, simulation_config={"cutoff": 3}, **_STATE_ONLY)
 
 
 def test_generic_simulator_rejects_dimensionless_registers():
@@ -300,7 +302,7 @@ def test_run_sweep_matches_explicit_loop():
         ops.BeamSplitter(math.pi / 4),
     )
     values = np.linspace(0.0, math.pi, 4)
-    backend = LOSimulator()
+    backend = LOSimulator("SV")
     modes = program.quantum_registers[0]
     options = {"initial_state": BasisState({modes[0]: 1}), **_STATE_ONLY}
 

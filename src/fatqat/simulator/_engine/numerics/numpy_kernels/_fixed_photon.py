@@ -200,7 +200,7 @@ def _gate_blocks(
     if np.abs(matrix[leaks]).max(initial=0.0) > _LEAK_TOLERANCE:
         raise BackendValidationError(
             "method='fixed_photon_state' needs gates that conserve the photon number; "
-            "a gate matrix changes it"
+            "a gate matrix changes it; use method='statevector' or 'density_matrix'"
         )
     # Local index order within each s; levels above the photon number never occur.
     local = np.flatnonzero(local_photons <= photons)

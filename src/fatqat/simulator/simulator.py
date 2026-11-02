@@ -1423,7 +1423,8 @@ class Simulator:
             if not capabilities.quantum.is_operator:
                 raise BackendValidationError(
                     f"method={method!r} cannot execute {source}; the selected "
-                    "engine does not support non-unitary maps"
+                    "engine does not support non-unitary maps; use "
+                    "method='statevector' or 'density_matrix'"
                 )
             raise BackendValidationError(
                 f"method={method!r} cannot execute {source}; a unitary cannot "

@@ -13,6 +13,8 @@ from .._backends.backend_utils import _normalize_config
 from .._backends.steps import CustomOperationStep
 from ..errors import BackendValidationError, UnsupportedOperationError
 from ..estimator._planning import _validate_observable_targets
+from ..implementation import MatrixImplementationMap
+from ..noise import NoiseModel
 from ..observable import Observable
 from ..operations import Measurement
 from ..parameters import Parameter
@@ -62,78 +64,69 @@ class _LOSimulationConfig(_SimulationConfig):
 
 
 class LOSimulator(Simulator):
-    """Run linear-optical programs on modes truncated to a per-run cutoff.
+    """Simulate photons in optical modes.
 
-    A `fatqat.ModeRegister` has no fixed dimension. For each run, this
-    backend gives every mode ``cutoff + 1`` levels (``0`` to ``cutoff``
-    photons) and every `fatqat.CountRegister` slot the same range, then runs
-    the program exactly as `Simulator` would. Methods, runtimes, noise,
-    results, and ``run_sweep`` follow `Simulator`. Programs without a
-    `fatqat.ModeRegister` or `fatqat.CountRegister` run unchanged.
+    Use this backend for Programs with a `fatqat.ModeRegister`. A mode can
+    hold any number of photons, so each run limits it to ``cutoff`` photons
+    (levels ``0`` to ``cutoff``); `fatqat.CountRegister` slots get the same
+    range. Otherwise it runs, returns results, and handles noise and sweeps
+    like `Simulator`.
+
+    The default method, ``"fixed_photon_state"``, keeps only the states with
+    the number of photons you sent in, so it reaches many more modes than a
+    statevector. It needs:
+
+    - every quantum register to be a `fatqat.ModeRegister`;
+    - a `BasisState` as ``initial_state`` (or none, for the vacuum);
+    - operations that keep the photon number, such as
+      `fatqat.operations.BeamSplitter` and `fatqat.operations.PhaseShifter`.
+      Reset, noise channels, and custom operations are rejected.
+
+    For anything else, choose ``"statevector"`` or ``"density_matrix"``; every
+    `Simulator` method is available. Read the final state with
+    ``Result.get_fixed_photon_state()``: one amplitude per arrangement of the
+    photons, in the order of `fixed_photon_index`. ``metadata["num_photons"]``
+    gives the photon number.
 
     ``simulation_config`` accepts every `Simulator` key plus:
 
-    - ``"cutoff"`` (``int | None``, default ``None``): Maximum photon number
-      per mode, a positive integer. ``None`` infers it from ``initial_state``.
-      For a `BasisState` it is the total photon number in the modes (at least
-      1), so passive gates are exact. For a dense array its length must equal
-      ``(cutoff + 1)`` to the power of the number of modes, times the
-      dimensions of any other quantum registers. Without an ``initial_state``
-      the cutoff must be given.
+    - ``"cutoff"`` (``int | None``, default ``None``): the most photons one
+      mode can hold. ``None`` chooses it from ``initial_state``: the total
+      photon number of a `BasisState` (at least 1), which is exact for
+      beam splitters and phase shifters, or the size of a dense array, which
+      must have ``(cutoff + 1)`` entries per mode multiplied together (times
+      the dimensions of any other registers). Give it explicitly when there
+      is no ``initial_state``. A smaller cutoff than the photon number is an
+      approximation and warns; a `BasisState` level above it raises.
 
-    Truncation is an approximation: `fatqat.operations.BeamSplitter` is exact
-    only while the two modes it mixes hold at most ``cutoff`` photons in
-    total. Choose a cutoff at least the largest photon number the program can
-    bring into one pair of modes. The backend warns when an explicit cutoff is
-    below the photon total of a `BasisState`; it does not inspect dense
-    arrays. A mode level above the cutoff does not fit and raises.
+    A noise model selects modes by device label, not by
+    `fatqat.ModeRegister` reference.
 
-    Noise selectors that name a `fatqat.ModeRegister` reference are not
-    supported; select those modes by device label instead.
-
-    Method ``"fixed_photon_state"`` uses that passive gates keep the total
-    photon number ``N`` of the starting `BasisState`: it stores one amplitude
-    per occupation summing to ``N``, ``C(M + N - 1, N)`` for ``M`` modes
-    instead of ``(cutoff + 1)**M``, so it reaches systems a statevector cannot
-    hold. Every quantum register must be a `fatqat.ModeRegister`, and the
-    cutoff is at least ``N``, so the method is exact. It returns that state
-    with ``Result.get_fixed_photon_state()``, never expanded, and
-    ``metadata["num_photons"]``. Rows ascend like the statevector basis: by
-    occupation, in ``metadata["state_axes"]`` order, lexicographically. So
-    the amplitudes equal the statevector's entries for those occupations.
-    `fixed_photon_index` and `fixed_photon_occupation` convert between rows
-    and occupations without storing a table. Measurement, feedforward, counts
-    and ``run_sweep`` work as usual. It rejects dense initial states, gates
-    that change the photon number, reset, channel noise and custom operations.
-
-    `fatqat.Estimator` runs on every state method, exact and sampled; pass
-    the photons as its ``initial_state``. On a mode it accepts
-    `fatqat.observable.NumberOperator` and `fatqat.observable.Projector` up
-    to level ``cutoff``; Pauli operators are for qubits and are rejected on
-    modes at any cutoff.
+    `fatqat.Estimator` works with every state method. Pass the photons as its
+    ``initial_state``. On a mode, use `fatqat.observable.NumberOperator` or
+    `fatqat.observable.Projector` up to level ``cutoff``; Pauli operators
+    apply to qubits only.
 
     Examples:
-        Two photons meeting on a balanced beam splitter leave together
-        (Hong-Ou-Mandel interference):
+        Two photons meeting on a balanced beam splitter always leave
+        together (Hong-Ou-Mandel interference):
 
         >>> import math
         >>> import numpy as np
         >>> import fatqat as fq
         >>> import fatqat.operations as ops
+        >>> from fatqat.simulator import BasisState, LOSimulator
         >>> modes = fq.ModeRegister(2)
         >>> program = fq.Program([modes])
         >>> program.add(ops.BeamSplitter(math.pi / 4), (modes[0], modes[1]))
-        >>> one_one = fq.simulator.BasisState({modes[0]: 1, modes[1]: 1})
-        >>> state = (  # the inferred cutoff is 2, one level per photon
-        ...     fq.simulator.LOSimulator("SV")
-        ...     .run(program, initial_state=one_one)
+        >>> state = (
+        ...     LOSimulator()
+        ...     .run(program, initial_state=BasisState({modes[0]: 1, modes[1]: 1}))
         ...     .result()
-        ...     .get_statevector()
+        ...     .get_fixed_photon_state()
         ... )
-        >>> np.round(np.abs(state) ** 2, 3).reshape(3, 3)
-        array([[0. , 0. , 0.5],
-               [0. , 0. , 0. ],
-               [0.5, 0. , 0. ]])
+        >>> np.round(np.abs(state) ** 2, 3)  # (0, 2), (1, 1), (2, 0)
+        array([0.5, 0. , 0.5])
     """
 
     _simulation_config_cls = _LOSimulationConfig
@@ -144,6 +137,41 @@ class LOSimulator(Simulator):
             numba_engine_name="NumbaFixedPhotonEngine",
         ),
     }
+
+    def __init__(
+        self,
+        method: str = "fixed_photon_state",
+        *,
+        runtime: str | None = None,
+        implementation_map: MatrixImplementationMap | None = None,
+        noise: NoiseModel | None = None,
+    ) -> None:
+        """Create a linear-optics simulator.
+
+        Args:
+            method: ``"fixed_photon_state"`` (default), or any `Simulator`
+                method. The default stores only the photon number sent in;
+                choose ``"statevector"`` or ``"density_matrix"`` for qubit
+                registers, dense initial states, noise, or reset.
+            runtime: ``"numpy"`` or ``"numba"``, ``None`` (default) uses
+                the current simulator default.
+            implementation_map: Matrix, channel, and custom-operation implementations.
+                ``None`` uses ``default_matrix_implementation_map()``.
+            noise: Noise model applied to every run. ``None`` means ideal
+                execution. The model is copied at construction.
+
+        Raises:
+            BackendValidationError: If ``method`` or ``runtime`` is not one
+                of the supported names, the required numba dependency cannot
+                be imported, or the captured noise model contains a source
+                this backend cannot execute.
+        """
+        super().__init__(
+            method,
+            runtime=runtime,
+            implementation_map=implementation_map,
+            noise=noise,
+        )
 
     def _prepare_execution(
         self,
@@ -242,7 +270,8 @@ class LOSimulator(Simulator):
             isinstance(step, CustomOperationStep) for step in execution.plan
         ):
             raise UnsupportedOperationError(
-                "custom operations are not supported by method='fixed_photon_state'"
+                "custom operations are not supported by method='fixed_photon_state'; "
+                "use method='statevector' or 'density_matrix'"
             )
 
     def _prepare_expectation(
@@ -318,27 +347,27 @@ class LOSimulator(Simulator):
 
 
 def fixed_photon_index(occupation: Any) -> int | np.ndarray:
-    """Return the row of an occupation in a ``"fixed_photon_state"`` result.
+    """Return the position of a photon arrangement in a fixed-photon state.
 
-    Rows list every occupation with one total photon number lexicographically,
-    the order of `LOSimulator`'s ``"fixed_photon_state"`` amplitudes. The row
-    is computed from binomial counts; no table of occupations is built.
+    ``Result.get_fixed_photon_state()`` lists one amplitude for each way of
+    placing the photons in the modes. The arrangements are sorted in
+    ascending order, comparing photon counts mode by mode; for two photons in
+    three modes the order is ``(0, 0, 2)``, ``(0, 1, 1)``, ``(0, 2, 0)``,
+    ``(1, 0, 1)``, ``(1, 1, 0)``, ``(2, 0, 0)``.
 
     Args:
-        occupation: Photon numbers per mode, in ``metadata["state_axes"]``
-            order, as non-negative integers. The total photon number is their
-            sum. An array of shape ``(..., M)`` gives one row per occupation.
+        occupation: Photon count of each mode, in ``metadata["state_axes"]``
+            order (the Program's mode order). An array of shape ``(..., M)``
+            gives one position per arrangement.
 
     Returns:
-        The row as an ``int`` for one occupation, else an ``int64`` array of
-        shape ``(...)``.
+        The position as an ``int``, or an ``int64`` array of shape ``(...)``.
 
     Raises:
-        ValueError: If ``occupation`` is empty or not non-negative integers.
+        ValueError: If ``occupation`` is empty or holds anything but
+            non-negative integers.
 
     Examples:
-        Rows of two photons in three modes start ``(0, 0, 2)``, ``(0, 1, 1)``:
-
         >>> from fatqat.simulator import fixed_photon_index
         >>> fixed_photon_index((0, 1, 1))
         1
@@ -363,24 +392,24 @@ def fixed_photon_index(occupation: Any) -> int | np.ndarray:
 def fixed_photon_occupation(
     index: Any, num_modes: int, num_photons: int
 ) -> tuple[int, ...] | np.ndarray:
-    """Return the occupation of a row in a ``"fixed_photon_state"`` result.
+    """Return the photon arrangement at a position in a fixed-photon state.
 
-    The inverse of `fixed_photon_index` for ``num_photons`` photons in
-    ``num_modes`` modes, such as ``metadata["num_photons"]`` photons in the
-    modes of ``metadata["state_axes"]``.
+    The inverse of `fixed_photon_index`. Pass the number of modes and
+    ``metadata["num_photons"]`` of the result.
 
     Args:
-        index: A row, ``0 <= index < C(num_modes + num_photons - 1,
-            num_photons)``, or an array of rows.
+        index: A position in ``Result.get_fixed_photon_state()``, or an array
+            of positions.
         num_modes: Number of modes, at least 1.
         num_photons: Total photon number, at least 0.
 
     Returns:
-        The occupation as a tuple, in ``metadata["state_axes"]`` order, for
-        one row, else an ``int64`` array of shape ``index.shape + (num_modes,)``.
+        The photon count of each mode, in ``metadata["state_axes"]`` order,
+        as a tuple, or an ``int64`` array of shape ``index.shape +
+        (num_modes,)``.
 
     Raises:
-        ValueError: If an argument is out of range or not an integer.
+        ValueError: If an argument is not an integer or is out of range.
 
     Examples:
         >>> from fatqat.simulator import fixed_photon_occupation
@@ -417,7 +446,8 @@ def _check_fixed_photon_program(program: Program, quantum: Any) -> None:
         # state gives it without scanning a dense array.
         raise BackendValidationError(
             "method='fixed_photon_state' starts from a BasisState or the ground "
-            "state, not a dense initial_state"
+            "state, not a dense initial_state; use method='statevector' or "
+            "'density_matrix' for one"
         )
     if not program.quantum_registers or any(
         register.dim is not None for register in program.quantum_registers
@@ -425,7 +455,8 @@ def _check_fixed_photon_program(program: Program, quantum: Any) -> None:
         # A qubit's levels would count as photons in the sector.
         raise BackendValidationError(
             "method='fixed_photon_state' runs programs whose quantum registers "
-            "are all ModeRegisters"
+            "are all ModeRegisters; use method='statevector' or "
+            "'density_matrix' for other registers"
         )
 
 
