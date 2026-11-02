@@ -104,7 +104,7 @@ class AtomArraySimulator(Simulator):
         self,
         *,
         method: str = "statevector",
-        runtime: str = "numba",
+        runtime: str | None = None,
         noise: NoiseModel | None = None,
         implementation_map: MatrixImplementationMap | None = None,
     ) -> None:
@@ -113,9 +113,8 @@ class AtomArraySimulator(Simulator):
         Args:
             method: ``"statevector"`` (or ``"SV"``), ``"density_matrix"``
                 (or ``"DM"``). Names are case-insensitive.
-            runtime: ``"numba"`` (default, lazy JIT) or ``"numpy"`` (direct
-                execution). See ``Simulator`` for runtime-specific
-                execution controls.
+            runtime: ``"numpy"`` or ``"numba"``, ``None`` (default) uses
+                the current simulator default.
             noise: Optional ``NoiseModel``. ``None`` keeps the backend ideal;
                 this class has no built-in reference noise model. Finite
                 channels must select one subsystem; use ``target_positions``

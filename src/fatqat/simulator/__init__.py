@@ -13,8 +13,11 @@ from .fake_superconducting import SCQubitSimulator
 from .simulator import Simulator
 from .custom_operations import ExecutionContext
 from ._engine.state import ClassicalState, EvolutionState
+from ._runtime import get_default_runtime, set_default_runtime
 
 __all__ = [
+    "get_default_runtime",
+    "set_default_runtime",
     "Simulator",
     "ExecutionContext",
     "ClassicalState",

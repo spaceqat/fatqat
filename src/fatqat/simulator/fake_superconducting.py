@@ -138,7 +138,7 @@ class _SCProfileSimulator(Simulator):
         *,
         num_qubits: int,
         method: str = "statevector",
-        runtime: str = "numba",
+        runtime: str | None = None,
         noise: NoiseModel | None = None,
     ) -> None:
         self._num_qubits = num_qubits
@@ -247,7 +247,7 @@ class SCQubitSimulator(_SCProfileSimulator):
         num_qubits: int = DEFAULT_NUM_QUBITS,
         couplings: tuple[tuple[int, int], ...] = DEFAULT_COUPLINGS,
         method: str = "statevector",
-        runtime: str = "numba",
+        runtime: str | None = None,
         noise: NoiseModel | None = None,
     ) -> None:
         """Create a constrained superconducting simulator.
@@ -257,8 +257,8 @@ class SCQubitSimulator(_SCProfileSimulator):
             couplings: Undirected pairs of connected device sites.
             method: State representation, exactly as on
                 :py:class:`~fatqat.simulator.Simulator`.
-            runtime: Numeric execution runtime, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`.
+            runtime: ``"numpy"`` or ``"numba"``, ``None`` (default) uses
+                the current simulator default.
             noise: Optional :py:class:`~fatqat.NoiseModel`, exactly as on
                 :py:class:`~fatqat.simulator.Simulator`. ``None`` (the
                 default) keeps the backend ideal; pass
@@ -398,7 +398,7 @@ class _SCQubitRotationSimulator(_SCProfileSimulator):
         num_qubits: int = DEFAULT_NUM_QUBITS,
         couplings: tuple[tuple[int, int], ...] = DEFAULT_COUPLINGS,
         method: str = "statevector",
-        runtime: str = "numba",
+        runtime: str | None = None,
         noise: NoiseModel | None = None,
     ) -> None:
         """Create the private rotation-profile simulator.
@@ -408,8 +408,8 @@ class _SCQubitRotationSimulator(_SCProfileSimulator):
             couplings: Undirected pairs of connected device sites.
             method: State representation, exactly as on
                 :py:class:`~fatqat.simulator.Simulator`.
-            runtime: Numeric execution runtime, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`.
+            runtime: ``"numpy"`` or ``"numba"``, ``None`` (default) uses
+                the current simulator default.
             noise: Optional :py:class:`~fatqat.NoiseModel`, exactly as on
                 :py:class:`~fatqat.simulator.Simulator`. ``None`` (the
                 default) keeps the backend ideal; pass

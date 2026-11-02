@@ -16,6 +16,14 @@ from fatqat.errors import (
 from fatqat.noise import NoiseModel, TransitionRelaxation
 
 
+@pytest.fixture
+def numpy_simulator_default():
+    previous = fq.simulator.get_default_runtime()
+    fq.simulator.set_default_runtime("numpy")
+    yield
+    fq.simulator.set_default_runtime(previous)
+
+
 def _family_case(name, method, atom_3level_model):
     if name == "transmon":
         model = fq.emulator.TransmonModel.from_document(
@@ -58,6 +66,7 @@ def _family_case(name, method, atom_3level_model):
     )
 
 
+@pytest.mark.usefixtures("numpy_simulator_default")
 @pytest.mark.parametrize("family", ("transmon", "atom3", "atom2"))
 @pytest.mark.parametrize(
     ("method", "field", "shape"),
