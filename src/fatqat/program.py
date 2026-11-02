@@ -586,10 +586,9 @@ class Program:
     ) -> None:
         """Append one measurement pairing all quantum slots with classical outputs.
 
-        Registers and their members are flattened in declaration order.
-        If outputs is None, the first N classical slots are used, where N
-        is the number of quantum slots. Explicit outputs are forwarded to
-        measure(). The new measurement does not replace earlier measurements.
+        Quantum registers and their members are flattened in declaration order. By
+        default, the first N classical slots are used, where N is the number of
+        quantum slots.
 
         Args:
             outputs: Optional classical output position(s). If None, use the
@@ -598,7 +597,7 @@ class Program:
                 one classical register; otherwise use explicit RegisterRef objects.
 
         Returns:
-            None.
+            ``None``.
 
         Raises:
             TypeError: If explicit output operands have invalid types or are
