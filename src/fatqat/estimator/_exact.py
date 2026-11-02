@@ -85,9 +85,11 @@ def _term_masks(
                 z_mask |= bit
             if factor.letter == "Y":
                 n_y += 1
-        elif isinstance(factor, NumberOperator) or factor == Projector(1):
+        elif isinstance(factor, NumberOperator):
             one_mask |= bit
-        elif factor == Projector(0):
+        elif isinstance(factor, Projector) and factor.level == 1:
+            one_mask |= bit
+        elif isinstance(factor, Projector) and factor.level == 0:
             zero_mask |= bit
         else:
             raise ValueError(f"factor {factor!r} has no qubit form")
