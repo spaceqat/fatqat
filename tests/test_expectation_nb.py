@@ -11,7 +11,7 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.observable import Observable
+from fatqat.observable import NumberOperator, Observable, Projector
 from fatqat import _expectation as ex
 
 pytest.importorskip("numba")
@@ -80,7 +80,7 @@ _TERMS = {
 def _masks(letters, qubits, num_qubits):
     if not qubits:
         return (0, 0, 0, 0)
-    observable = Observable.from_sparse([(letters, qubits, 1.0)], num_qubits=num_qubits)
+    observable = Observable.from_sparse([(letters, qubits, 1.0)])
     return ex._term_masks(observable.terms[0][1], num_qubits)[:4]
 
 
@@ -137,8 +137,7 @@ def test_estimator_values_are_unchanged_by_the_compiled_path():
     # the same one the dense reference gives.
     program = _program(4)
     observable = Observable.from_sparse(
-        [("ZZ", (0, 1), 1.5), ("XY", (1, 3), -0.5), (["ONE", "Z"], (2, 0), 0.25)],
-        num_qubits=4,
+        [("ZZ", (0, 1), 1.5), ("XY", (1, 3), -0.5), (["ONE", "Z"], (2, 0), 0.25)]
     )
     state = _statevector(4)
 
@@ -153,12 +152,12 @@ def test_estimator_values_are_unchanged_by_the_compiled_path():
         "X": np.array([[0, 1], [1, 0]], dtype=complex),
         "Y": np.array([[0, -1j], [1j, 0]]),
         "Z": np.diag([1, -1]).astype(complex),
-        "ONE": np.diag([0, 1]).astype(complex),
+        "P1": np.diag([0, 1]).astype(complex),
         "I": np.eye(2, dtype=complex),
     }
     dense = np.zeros((16, 16), dtype=complex)
     for coefficient, factors in observable.terms:
-        letters = dict(factors)
+        letters = {qubit: str(factor) for qubit, factor in factors}
         operator = local[letters.get(0, "I")]
         for qubit in (1, 2, 3):
             operator = np.kron(operator, local[letters.get(qubit, "I")])
@@ -166,6 +165,35 @@ def test_estimator_values_are_unchanged_by_the_compiled_path():
     reference = complex(np.vdot(state, dense @ state)).real
 
     assert from_estimator == pytest.approx(reference, abs=1e-12)
+
+
+# Mixed dimensions (3, 2, 4): one case per digit-kernel factor kind, alone and
+# combined with a flip.
+_DIGIT_TERMS = {
+    "number": ([NumberOperator()], (2,)),
+    "projector": ([Projector(2)], (0,)),
+    "x_with_projector": (["X", Projector(3)], (1, 2)),
+    "y_with_number": ([NumberOperator(), "Y"], (0, 1)),
+    "z_with_number": (["Z", NumberOperator()], (1, 2)),
+}
+
+
+@pytest.mark.parametrize("case", _DIGIT_TERMS.values(), ids=_DIGIT_TERMS.keys())
+def test_digit_kernels_match_numpy(case):
+    dims = (3, 2, 4)
+    rng = np.random.default_rng(3)
+    state = rng.normal(size=24) + 1j * rng.normal(size=24)
+    rho = np.outer(state, state.conj())
+    index = np.arange(24)
+    observable = Observable.from_sparse([(*case, 1.0)])
+    *arrays, _n_y = ex._term_digits(observable.terms[0][1], dims)
+
+    assert ex._COMPILED[2](state, *arrays) == pytest.approx(
+        ex._digit_term_numpy(state, index, *arrays, density=False), abs=1e-12
+    )
+    assert ex._COMPILED[3](rho, *arrays) == pytest.approx(
+        ex._digit_term_numpy(rho, index, *arrays, density=True), abs=1e-12
+    )
 
 
 def test_parity_helper_agrees_with_popcount():

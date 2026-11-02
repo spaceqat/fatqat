@@ -175,7 +175,7 @@ candidates = [generate_candidate(100 + i) for i in range(NUM_CANDIDATES)]
 ideal_backend = fq.simulator.Simulator(method="statevector", runtime="numpy")
 estimator = fq.Estimator(ideal_backend)
 BLOCH = [
-    fq.Observable.from_sparse([(axis, (0,), 1.0)], num_qubits=NUM_QUBITS)
+    fq.Observable.from_sparse([(axis, (0,), 1.0)])
     for axis in ("X", "Y", "Z")
 ]
 

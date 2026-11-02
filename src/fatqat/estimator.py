@@ -1,4 +1,4 @@
-"""Evaluate qubit observables through backend-owned expectation execution.
+"""Evaluate observables through backend-owned expectation execution.
 
 An estimator validates the backend-neutral request, then delegates exact or
 sampled term execution to the selected backend. Noise, trajectories, readout,
@@ -69,11 +69,12 @@ class Estimator:
         error-handling policy.
 
         Args:
-            program: Fully bound, measurement-free program containing only
-                dimension-2 quantum registers.
+            program: Fully bound, measurement-free program.
             observables: One ``Observable`` or a non-empty list or tuple of
-                them. Every observable must span all program qubits. A list or
-                tuple preserves its order in the returned arrays.
+                them. Every factor must name a program subsystem: Pauli factors
+                need a qubit, and a projector level must be below its
+                subsystem's dimension. Unnamed subsystems carry the identity.
+                A list or tuple preserves its order in the returned arrays.
             shots: Non-negative integer. ``0`` computes exact values. A
                 positive value draws this many independent samples for each
                 term and reports the resulting statistical standard error.
@@ -91,15 +92,16 @@ class Estimator:
             TypeError: If ``observables`` is not an ``Observable`` or a
                 supported collection containing only ``Observable`` values.
             BackendValidationError: If no observables are supplied; ``shots``
-                is not a non-negative integer; the program is measured,
-                unbound, or not qubit-only; an observable has the wrong width;
-                or the backend raises this error while preparing its native
-                expectation execution.
+                is not a non-negative integer; the program is measured or
+                unbound; a factor names a subsystem the program lacks, a Pauli
+                factor targets a non-qubit, or a projector level is not below
+                its subsystem's dimension; or the backend raises this error
+                while preparing its native expectation execution.
         """
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
         _validate_simulation_config(simulation_config)
-        _validate_program(program, observable_list)
+        _validate_program(program)
         _raise_for_unbound_parameters(program._instructions)
         job = self._evaluate(
             program,
@@ -176,7 +178,7 @@ class Estimator:
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
         _validate_simulation_config(simulation_config)
-        _validate_program(program, observable_list)
+        _validate_program(program)
         return self._evaluate(
             program,
             observable_list,
@@ -265,11 +267,6 @@ def _normalize_observables(
     return observable_list, True
 
 
-def _program_width(program: Program) -> int:
-    """Total number of quantum subsystems in the program."""
-    return sum(register.size for register in program.quantum_registers)
-
-
 def _validate_shots(shots: int) -> None:
     if type(shots) is not int:
         raise BackendValidationError(f"shots must be an int, got {shots!r}")
@@ -287,23 +284,15 @@ def _validate_simulation_config(
         )
 
 
-def _validate_program(
-    program: Program,
-    observables: list[Observable],
-) -> None:
+def _validate_program(program: Program) -> None:
     """Reject what the estimator can decide from the public program alone.
 
-    Backend-specific execution and capability checks remain with the backend's
-    expectation hook.
+    Subsystem dimensions may only be known once a backend resolves them, so
+    each backend's expectation hook checks observable factors against the
+    program, along with its own execution and capability checks.
     """
     if not isinstance(program, Program):
         raise BackendValidationError("program must be a Program")
-    for register in program.quantum_registers:
-        if register.dim != 2:
-            raise BackendValidationError(
-                "observables are defined on qubits only; register "
-                f"{register.name!r} has dim={register.dim}"
-            )
 
     if any(isinstance(step, Measurement) for step in program._instructions):
         raise BackendValidationError(
@@ -311,11 +300,3 @@ def _validate_program(
             "value: the measurement collapses the state. Remove the "
             "measurement, or use backend.run for counts"
         )
-
-    width = _program_width(program)
-    for observable in observables:
-        if observable.num_qubits != width:
-            raise BackendValidationError(
-                f"observable is defined on {observable.num_qubits} qubit(s) but "
-                f"the program has {width}"
-            )

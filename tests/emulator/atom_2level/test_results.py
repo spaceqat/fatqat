@@ -216,8 +216,12 @@ def test_estimator_exact_x_and_sampled_diagonal_projector_execution():
 
     exact_x = estimator.run(program, fq.Observable([("X", 1.0)])).result()
     diagonal = fq.Observable.from_sparse(
-        [("Z", (0,), 1.0), ("ONE", (0,), 0.5)],
-        num_qubits=1,
+        [
+            ("Z", (0,), 1.0),
+            ("ONE", (0,), 0.5),
+            # On a qubit the number operator is the ONE projector.
+            (fq.observable.NumberOperator(), (0,), 0.25),
+        ],
     )
     sampled = estimator.run(
         program,
@@ -229,7 +233,7 @@ def test_estimator_exact_x_and_sampled_diagonal_projector_execution():
     assert exact_x.get_expectation() == pytest.approx(1.0, abs=1e-5)
     assert exact_x.get_standard_error() == 0.0
     assert sampled.get_expectation() == pytest.approx(
-        0.25, abs=6 * sampled.get_standard_error()
+        0.375, abs=6 * sampled.get_standard_error()
     )
     assert sampled.metadata == {
         "backend_name": "Atom2LevelEmulator",

@@ -14,6 +14,7 @@ from math import prod
 import numpy as np
 
 from ...._expectation import expectation_density_matrix, expectation_statevector
+from ....observable import _Factors
 from .._execution_policy import _ExecutionPolicy as ExecutionPolicy
 from ..state import EvolutionState
 from .base import MatrixEngine
@@ -38,7 +39,7 @@ class _NdarrayEngine(MatrixEngine[np.ndarray]):
     def _expectation_values(
         self,
         state: np.ndarray,
-        observables: Sequence[tuple[tuple[float, tuple[tuple[int, str], ...]], ...]],
+        observables: Sequence[tuple[tuple[float, _Factors], ...]],
         *,
         policy: ExecutionPolicy,
     ) -> tuple[float, ...]:
@@ -47,6 +48,9 @@ class _NdarrayEngine(MatrixEngine[np.ndarray]):
             if self._state_field == "statevector"
             else expectation_density_matrix
         )
+        # Kernel axis 0 is the most significant place, the reverse of the
+        # engine's little-endian subsystem order.
+        kernel_dims = tuple(reversed(self._dims))
         values = []
         with self._execution_scope(policy):
             for terms in observables:
@@ -54,13 +58,13 @@ class _NdarrayEngine(MatrixEngine[np.ndarray]):
                     (
                         coefficient,
                         tuple(
-                            (self.n_subsystems - 1 - index, letter)
-                            for index, letter in factors
+                            (self.n_subsystems - 1 - index, factor)
+                            for index, factor in factors
                         ),
                     )
                     for coefficient, factors in terms
                 )
-                values.append(kernel(state, kernel_terms))
+                values.append(kernel(state, kernel_terms, kernel_dims))
         return tuple(values)
 
     @abstractmethod

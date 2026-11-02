@@ -29,6 +29,14 @@ basis-state probabilities, so diagonal observables need no special case.
 Every qubit carries at most one factor per term, so the projector qubits and the
 X/Y qubits are disjoint. That is why the masks may be evaluated on the permuted
 index without distinguishing the two groups.
+
+The same algebra holds when subsystems have other dimensions. Paulis still act
+only on qubits, and projector and number factors are diagonal on any
+subsystem, so a term remains a phased permutation with a diagonal weight. Only
+the index arithmetic changes: a mixed-radix digit replaces a bit, and flipping
+a qubit adds or subtracts its place value instead of XOR-ing a mask. Programs
+made only of qubits keep the bitmask kernels; any other dimension uses the
+digit kernels.
 """
 
 from __future__ import annotations
@@ -37,16 +45,20 @@ import importlib.util
 import math
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .observable import Observable
+from .errors import BackendValidationError
+from .observable import NumberOperator, Observable, Projector, _Factors, _Pauli
+
+if TYPE_CHECKING:
+    from .program import Program
 
 # (letter -> contributes to) masks. Y is both a bit flip and a sign, which is
 # exactly the X*Z decomposition above.
 _FLIPS = frozenset({"X", "Y"})
 _SIGNS = frozenset({"Y", "Z"})
-_Factors = tuple[tuple[int, str], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,29 +106,37 @@ def _reconstruct_term_outcome(
     factors: _Factors,
     measured_digits: Sequence[int],
 ) -> int:
-    """Return the product outcome for factor-aligned binary measurements."""
+    """Return the product outcome for factor-aligned level measurements.
+
+    A Pauli factor is measured in its eigenbasis, so its digit is binary; a
+    projector or number factor reads the measured level directly.
+    """
     if len(factors) != len(measured_digits):
         raise ValueError(
             f"got {len(measured_digits)} measured digits for {len(factors)} factors"
         )
 
     outcome = 1
-    for (_, letter), raw_digit in zip(factors, measured_digits, strict=True):
+    for (_, factor), raw_digit in zip(factors, measured_digits, strict=True):
         if (
             isinstance(raw_digit, (bool, np.bool_))
             or not isinstance(raw_digit, (int, np.integer))
-            or raw_digit not in (0, 1)
+            or raw_digit < 0
         ):
-            raise ValueError(f"measurement digit must be binary, got {raw_digit!r}")
+            raise ValueError(
+                f"measurement digit must be a non-negative integer, got {raw_digit!r}"
+            )
         digit = int(raw_digit)
-        if letter in {"X", "Y", "Z"}:
+        if isinstance(factor, _Pauli):
+            if digit not in (0, 1):
+                raise ValueError(f"measurement digit must be binary, got {digit!r}")
             outcome *= 1 if digit == 0 else -1
-        elif letter == "ZERO":
-            outcome *= 1 if digit == 0 else 0
-        elif letter == "ONE":
-            outcome *= 1 if digit == 1 else 0
+        elif isinstance(factor, Projector):
+            outcome *= 1 if digit == factor.level else 0
+        elif isinstance(factor, NumberOperator):
+            outcome *= digit
         else:
-            raise ValueError(f"unsupported measured factor {letter!r}")
+            raise ValueError(f"unsupported measured factor {factor!r}")
     return outcome
 
 
@@ -194,31 +214,110 @@ def _combine_term_statistics(
     return tuple(values), standard_errors
 
 
-def _term_masks(
-    factors: tuple[tuple[int, str], ...], num_qubits: int
-) -> tuple[int, int, int, int, int]:
-    """Pack one term's factors into bit masks.
+def _validate_observable_targets(
+    observables: Sequence[Observable], program: Program
+) -> None:
+    """Check every factor against the program subsystem it names.
+
+    Observables carry no width or dimension, so this is where an index past
+    the program, a Pauli on a non-qubit, or a projector level the subsystem
+    cannot hold is rejected.
+    """
+    subsystem_dims = tuple(
+        register.dim
+        for register in program.quantum_registers
+        for _ in range(register.size)
+    )
+    width = len(subsystem_dims)
+    for observable in observables:
+        for _, factors in observable.terms:
+            for index, factor in factors:
+                if index >= width:
+                    raise BackendValidationError(
+                        f"observable names subsystem {index}, but the program "
+                        f"has {width} subsystem(s)"
+                    )
+                dim = subsystem_dims[index]
+                if isinstance(factor, _Pauli) and dim != 2:
+                    raise BackendValidationError(
+                        f"observable factor {factor} on subsystem {index} is "
+                        f"defined on qubits only; the subsystem has dim={dim}"
+                    )
+                if isinstance(factor, Projector) and factor.level >= dim:
+                    raise BackendValidationError(
+                        f"observable factor {factor!r} on subsystem {index} needs "
+                        f"dim > {factor.level}, but the subsystem has dim={dim}"
+                    )
+
+
+def _term_masks(factors: _Factors, num_qubits: int) -> tuple[int, int, int, int, int]:
+    """Pack one qubit term's factors into bit masks.
 
     Returns ``(x_mask, z_mask, zero_mask, one_mask, n_y)``. Only the qubits the
     term actually names are visited, so this is O(factors), not O(num_qubits).
+    On a qubit the number operator is the ``ONE`` projector.
     """
     x_mask = z_mask = zero_mask = one_mask = n_y = 0
-    for qubit, letter in factors:
+    for qubit, factor in factors:
         # Public factors run most-significant first, while integer bit positions
         # count from the right. Translating these small masks avoids permuting or
         # copying the state array.
         bit = 1 << (num_qubits - 1 - qubit)
-        if letter in _FLIPS:
-            x_mask |= bit
-        if letter in _SIGNS:
-            z_mask |= bit
-        if letter == "Y":
-            n_y += 1
-        elif letter == "ZERO":
-            zero_mask |= bit
-        elif letter == "ONE":
+        if isinstance(factor, _Pauli):
+            if factor.letter in _FLIPS:
+                x_mask |= bit
+            if factor.letter in _SIGNS:
+                z_mask |= bit
+            if factor.letter == "Y":
+                n_y += 1
+        elif isinstance(factor, NumberOperator) or factor == Projector(1):
             one_mask |= bit
+        elif factor == Projector(0):
+            zero_mask |= bit
+        else:
+            raise ValueError(f"factor {factor!r} has no qubit form")
     return x_mask, z_mask, zero_mask, one_mask, n_y
+
+
+# Digit-kernel factor kinds. Y flips like X and signs like Z.
+_KIND_X, _KIND_Y, _KIND_Z, _KIND_PROJECTOR, _KIND_NUMBER = range(5)
+
+
+def _term_digits(
+    factors: _Factors, dims: Sequence[int]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+    """Pack one term's factors into per-factor digit-kernel arrays.
+
+    Returns ``(strides, dims, kinds, levels, n_y)``. Axis 0 is the most
+    significant place, matching the bitmask convention, so a factor's place
+    value is the product of the dimensions after its axis.
+    """
+    strides = []
+    factor_dims = []
+    kinds = []
+    levels = []
+    n_y = 0
+    for axis, factor in factors:
+        strides.append(math.prod(dims[axis + 1 :]))
+        factor_dims.append(dims[axis])
+        level = 0
+        if isinstance(factor, _Pauli):
+            kind = {"X": _KIND_X, "Y": _KIND_Y, "Z": _KIND_Z}[factor.letter]
+            n_y += factor.letter == "Y"
+        elif isinstance(factor, Projector):
+            kind = _KIND_PROJECTOR
+            level = factor.level
+        else:
+            kind = _KIND_NUMBER
+        kinds.append(kind)
+        levels.append(level)
+    return (
+        np.array(strides, dtype=np.int64),
+        np.array(factor_dims, dtype=np.int64),
+        np.array(kinds, dtype=np.int64),
+        np.array(levels, dtype=np.int64),
+        n_y,
+    )
 
 
 def _weights(
@@ -276,6 +375,40 @@ def _density_matrix_term_numpy(
     return complex(np.sum(weight * shifted_diagonal))
 
 
+def _digit_term_numpy(
+    data: np.ndarray,
+    index: np.ndarray,
+    strides: np.ndarray,
+    dims: np.ndarray,
+    kinds: np.ndarray,
+    levels: np.ndarray,
+    *,
+    density: bool,
+) -> complex:
+    """Return one term's value on a mixed-dimension state, as array operations.
+
+    A term maps basis state ``j`` to ``w(j) |p(j)>``, where ``p(j)`` flips the
+    X/Y qubits and ``w(j)`` collects the diagonal factors, read on ``j``. So
+    ``<psi|T|psi> = sum_j conj(psi_{p(j)}) w(j) psi_j`` and
+    ``Tr(rho T) = sum_j rho[j, p(j)] w(j)`` share one weight.
+    """
+    partner = index.copy()
+    weight = np.ones(index.shape[0])
+    for stride, dim, kind, level in zip(strides, dims, kinds, levels):
+        digit = (index // stride) % dim
+        if kind in (_KIND_X, _KIND_Y):
+            partner += stride * (1 - 2 * digit)
+        if kind in (_KIND_Y, _KIND_Z):
+            weight = weight * np.where(digit == 1, -1.0, 1.0)
+        elif kind == _KIND_PROJECTOR:
+            weight = weight * (digit == level)
+        elif kind == _KIND_NUMBER:
+            weight = weight * digit
+    if density:
+        return complex(np.sum(weight * data[index, partner]))
+    return complex(np.vdot(data[partner], weight * data))
+
+
 def _load_compiled_terms() -> tuple[Callable[..., complex], ...] | None:
     """Return the compiled per-term kernels, or ``None`` when numba is absent.
 
@@ -294,7 +427,12 @@ def _load_compiled_terms() -> tuple[Callable[..., complex], ...] | None:
         return None
     from . import _expectation_nb
 
-    return _expectation_nb.statevector_term, _expectation_nb.density_matrix_term
+    return (
+        _expectation_nb.qubit_statevector_term,
+        _expectation_nb.qubit_density_matrix_term,
+        _expectation_nb.statevector_term,
+        _expectation_nb.density_matrix_term,
+    )
 
 
 _COMPILED = _load_compiled_terms()
@@ -319,43 +457,78 @@ def _bind_term_evaluator(
     return lambda *masks: fallback(state, index, *masks)
 
 
-def expectation_statevector(
-    state: np.ndarray, terms: tuple[tuple[float, tuple[tuple[int, str], ...]], ...]
+def _bind_digit_evaluator(
+    data: np.ndarray, *, density: bool
+) -> Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], complex]:
+    """Return ``arrays -> value`` for one mixed-dimension state."""
+    if _COMPILED is not None:
+        kernel = _COMPILED[3 if density else 2]
+        return lambda *arrays: kernel(data, *arrays)
+    index = np.arange(data.shape[0])
+    return lambda *arrays: _digit_term_numpy(data, index, *arrays, density=density)
+
+
+def _expectation(
+    data: np.ndarray,
+    terms: tuple[tuple[float, _Factors], ...],
+    dims: Sequence[int],
+    *,
+    density: bool,
 ) -> float:
-    """Return ``<psi|O|psi>`` for a statevector and a term list.
-
-    The state is read, never modified or copied. Terms are evaluated against
-    the same state in turn, which is the whole point of evaluating a
-    many-term observable in one place: the evolution is paid for once.
-    """
-    term_value = _bind_term_evaluator(state, 0, _statevector_term_numpy)
-    num_qubits = state.shape[0].bit_length() - 1
+    """Sum one observable's terms on a statevector or density matrix."""
     total = 0.0 + 0.0j
-    for coefficient, factors in terms:
-        if coefficient == 0.0:
-            continue  # a zero coefficient contributes nothing; skip the pass
-        x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors, num_qubits)
-        value = term_value(x_mask, z_mask, zero_mask, one_mask)
-        total += coefficient * value * (1j**n_y)
-    return float(total.real)
+    if all(dim == 2 for dim in dims):
+        term_value = _bind_term_evaluator(
+            data,
+            1 if density else 0,
+            _density_matrix_term_numpy if density else _statevector_term_numpy,
+        )
+        for coefficient, factors in terms:
+            if coefficient == 0.0:
+                continue  # a zero coefficient contributes nothing; skip the pass
+            x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors, len(dims))
+            value = term_value(x_mask, z_mask, zero_mask, one_mask)
+            total += coefficient * value * (1j**n_y)
+        return float(total.real)
 
-
-def expectation_density_matrix(
-    rho: np.ndarray, terms: tuple[tuple[float, tuple[tuple[int, str], ...]], ...]
-) -> float:
-    """Return ``Tr(rho O)`` for a density matrix and a term list.
-
-    ``Tr(rho T) = sum_j rho[j, j XOR x_mask] * phase(j) * keep(j)`` - the term
-    picks out one shifted diagonal of ``rho``, so only ``2**n`` entries are
-    read per term rather than the full ``4**n`` matrix.
-    """
-    term_value = _bind_term_evaluator(rho, 1, _density_matrix_term_numpy)
-    num_qubits = rho.shape[0].bit_length() - 1
-    total = 0.0 + 0.0j
+    digit_value = _bind_digit_evaluator(data, density=density)
     for coefficient, factors in terms:
         if coefficient == 0.0:
             continue
-        x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors, num_qubits)
-        value = term_value(x_mask, z_mask, zero_mask, one_mask)
-        total += coefficient * value * (1j**n_y)
+        *arrays, n_y = _term_digits(factors, dims)
+        total += coefficient * digit_value(*arrays) * (1j**n_y)
     return float(total.real)
+
+
+def expectation_statevector(
+    state: np.ndarray,
+    terms: tuple[tuple[float, _Factors], ...],
+    dims: Sequence[int],
+) -> float:
+    """Return ``<psi|O|psi>`` for a statevector and a term list.
+
+    ``<psi|T|psi> = sum_k conj(psi[p(k)]) * w(k) * psi[k]``, where ``p(k)`` is
+    the basis state the term's X/Y factors flip ``k`` to and ``w(k)`` is its
+    diagonal weight. The state is read, never modified or copied. Terms are
+    evaluated against the same state in turn, which is the whole point of
+    evaluating a many-term observable in one place: the evolution is paid for
+    once. ``dims`` lists the subsystem dimensions with axis 0 most significant.
+    """
+    return _expectation(state, terms, dims, density=False)
+
+
+def expectation_density_matrix(
+    rho: np.ndarray,
+    terms: tuple[tuple[float, _Factors], ...],
+    dims: Sequence[int],
+) -> float:
+    """Return ``Tr(rho O)`` for a density matrix and a term list.
+
+    ``Tr(rho T) = sum_j rho[j, p(j)] * w(j)``, where ``p(j)`` is the basis
+    state the term's X/Y factors flip ``j`` to and ``w(j)`` is its diagonal
+    weight. The term picks out one shifted diagonal of ``rho``, so only one
+    entry per row is read rather than the full square. On qubits ``p(j)`` is
+    ``j XOR x_mask``. ``dims`` lists the subsystem dimensions with axis 0 most
+    significant.
+    """
+    return _expectation(rho, terms, dims, density=True)

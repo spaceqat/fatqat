@@ -21,6 +21,7 @@ from .._expectation import (
     _combine_term_statistics,
     _plan_term_occurrences,
     _reduce_outcome_counts,
+    _validate_observable_targets,
 )
 from .._parameter_binding import (
     _normalize_parameter_batch,
@@ -44,7 +45,7 @@ from ..noise import (
     Loss,
     ThermalRelaxation,
 )
-from ..observable import Observable
+from ..observable import Observable, _Factors
 from ..operations import Barrier, CustomOperation, Measurement, Reset
 from ..parameters import Parameter, ParameterVector
 from ..program import Program, _AppliedOperation
@@ -136,7 +137,7 @@ class _BoundExpectationOccurrence:
     """One logical term occurrence bound to matrix-engine resources."""
 
     occurrence: _TermOccurrence
-    engine_factors: tuple[tuple[int, str], ...]
+    engine_factors: _Factors
     scratch_indices: tuple[int, ...]
     tail: tuple[ResolvedStep, ...]
 
@@ -831,6 +832,7 @@ class Simulator:
         every entry evolves in one engine call; sampled values then run each
         term's measurement tail from every entry's state.
         """
+        _validate_observable_targets(observables, program)
         execution = self._prepare_execution(
             program,
             resource_layout=None,
@@ -939,18 +941,23 @@ class Simulator:
         bound_occurrences = []
         for occurrence in occurrences:
             factor_refs = tuple(
-                logical_refs[index] for index, _letter in occurrence.logical_factors
+                logical_refs[index] for index, _factor in occurrence.logical_factors
             )
             engine_factors = tuple(
-                (lowering.engine_index(ref), letter)
-                for ref, (_index, letter) in zip(
+                (lowering.engine_index(ref), factor)
+                for ref, (_index, factor) in zip(
                     factor_refs, occurrence.logical_factors, strict=True
                 )
+            )
+            factor_dims = tuple(
+                lowering.engine_allocation.system_dims[index]
+                for index, _factor in engine_factors
             )
             if sampled:
                 tail = planning._build_expectation_tail(
                     engine_factors,
                     factor_refs,
+                    factor_dims,
                     scratch_start=scratch_start,
                     resource_layout=lowering.resource_layout,
                     noise_model=self._noise_model,
@@ -959,6 +966,7 @@ class Simulator:
                 if (
                     planning._expectation_confusions(
                         factor_refs,
+                        factor_dims,
                         lowering.resource_layout,
                         self._noise_model,
                     )

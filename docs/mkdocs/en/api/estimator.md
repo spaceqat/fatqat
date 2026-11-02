@@ -7,10 +7,10 @@ title: "Observables and estimation"
 
 Use [`Estimator`][fatqat.Estimator] to evaluate one or more
 [`Observable`][fatqat.Observable] values through a backend's native execution
-path. The program must be unmeasured, fully bound, and qubit-only. Built-in
-matrix simulators and the two-level atom pulse emulator implement this
-interface; physical models with higher local dimensions have no implicit
-qubit-observable embedding.
+path. The program must be unmeasured and fully bound. Built-in matrix
+simulators evaluate observables on qubit and qudit programs; the two-level atom
+pulse emulator evaluates them on its qubit programs. Physical models with
+higher local dimensions have no implicit qubit-observable embedding.
 
 ## Estimate an observable
 
@@ -34,31 +34,51 @@ For a guided workflow, see [Estimate observables](../guide/interpret-results.md)
 ## Construct an observable
 
 
-Dense labels run left to right in public qubit order: the character at
-position `q` acts on qubit `q`. They accept `I`, `X`, `Y`, and `Z`. These
-forms are equivalent:
+An observable is a sum of real coefficients times products of
+single-subsystem factors:
+
+- the Pauli factors `X`, `Y`, and `Z`, which act on qubits only;
+- [`Projector(level)`][fatqat.observable.Projector], the projector onto one
+  level, with `ZERO` and `ONE` as names for `Projector(0)` and `Projector(1)`;
+- [`NumberOperator()`][fatqat.observable.NumberOperator], `diag(0, 1, ..., d-1)`
+  on a subsystem of dimension `d`: the mean level of a qudit, or `ONE` on a
+  qubit.
+
+Dense labels run left to right in public subsystem order: the character at
+position `q` acts on subsystem `q`. They accept `I`, `X`, `Y`, and `Z`, and
+subsystems past the end of the label carry the identity. These forms are
+equivalent:
 
 ```python
 fq.Observable([("ZZ", 1.5)])
 fq.Observable(["ZZ"], coeffs=[1.5])
 ```
 
-[`from_sparse`][fatqat.Observable.from_sparse] names each non-identity factor and its
-qubit explicitly. It also supports `ZERO` and `ONE` projectors:
+[`from_sparse`][fatqat.Observable.from_sparse] names each non-identity factor
+and its subsystem explicitly. Each term's factors are a letter string such as
+`"XY"`, one factor, or a sequence that mixes names and factor objects:
 
 ```python
+from fatqat.observable import NumberOperator, Projector
+
+fq.Observable.from_sparse([(["ONE", "Z"], (5, 3), 1.5)])
 fq.Observable.from_sparse(
-    [(["ONE", "Z"], (5, 3), 1.5)],
-    num_qubits=6,
+    [([NumberOperator(), NumberOperator()], (0, 1), 1.0)]  # <n0 n1>
 )
+fq.Observable.from_sparse([([Projector(2), "X"], (0, 1), 0.5)])
 ```
 
 Coefficients must be real.
 
 For example, `"XI"` means `X(q0) tensor I(q1)`. On public state `|10>`,
 `<ZI> = -1` and `<IZ> = +1`. Dense labels therefore match an explicit
-left-to-right Kronecker product; sparse labels retain the qubit associations
-written in their `qubits` tuple.
+left-to-right Kronecker product; sparse labels retain the subsystem
+associations written in their index tuple.
+
+An observable has no width or subsystem dimensions of its own. The backend
+checks each factor against the program when it runs: every index must name a
+program subsystem, Pauli factors need a qubit, and a projector level must be
+below its subsystem's dimension.
 
 ## Exact and sampled results
 
@@ -76,7 +96,8 @@ and therefore reports `nan`. Set `simulation_config["seed"]` to reproduce a
 sampled run.
 
 Configure the simulation method, runtime, and noise on the backend. Invalid
-programs, observable widths, and shot values raise
+programs, factors that do not fit the program's subsystems, and invalid shot
+values raise
 [`BackendValidationError`][fatqat.errors.BackendValidationError] before a job is returned;
 unsupported observable types raise `TypeError`. Execution errors follow the
 backend's error-handling policy.
@@ -97,11 +118,13 @@ stochastic channel is present; a statevector method can execute those programs
 with positive shots. Carrier-loss programs are rejected because the current
 observable contract does not define expectations across changing occupancy.
 
-The two-level atom pulse emulator supports exact qubit observables with
-statevector or density-matrix methods. Exact statevector evaluation rejects
+The two-level atom pulse emulator supports exact observables on its qubit
+programs with statevector or density-matrix methods; there, `NumberOperator()`
+equals `ONE`, and only levels 0 and 1 are valid projector levels. Exact statevector evaluation rejects
 potentially active Lindblad evolution; use density-matrix exact execution or a
 positive-shot trajectory run instead. Positive-shot pulse evaluation currently
-supports diagonal `Z`, `ZERO`, and `ONE` factors. Pulse reset is unsupported.
+supports the diagonal factors `Z`, `Projector(0)`, `Projector(1)`, and
+`NumberOperator()`. Pulse reset is unsupported.
 Transmon and three-level atom emulators are rejected because their physical
 local dimensions exceed the qubit observable space.
 
@@ -134,6 +157,20 @@ shapes and seed behavior are specified here.
     options:
       inherited_members: true
       show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.observable.NumberOperator
+    options:
+      show_bases: false
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.observable.Projector
+    options:
+      show_bases: false
       merge_init_into_class: false
       filters:
         - "!^_"
