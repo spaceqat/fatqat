@@ -9,6 +9,7 @@ import fatqat as fq
 import fatqat.operations as ops
 from fatqat.errors import BackendValidationError
 from fatqat.noise import Depolarizing
+from fatqat.observable import NumberOperator, Projector
 from fatqat.simulator import BasisState, EvolutionState, LOSimulator, Simulator
 
 _STATE_ONLY = {"shots": 0, "result_config": {"counts": False, "final_state": True}}
@@ -107,6 +108,72 @@ def test_hong_ou_mandel_photons_leave_together(method):
     observed = result.get_counts()
     assert set(observed) == {"20", "02"}
     assert observed["20"] == pytest.approx(1000, abs=100)
+
+
+@pytest.mark.parametrize(
+    "method", ["statevector", "density_matrix", "fixed_photon_state"]
+)
+def test_hong_ou_mandel_expectations(method):
+    program = _two_mode_program(ops.BeamSplitter(math.pi / 4))
+    modes = program.quantum_registers[0]
+    observables = [
+        fq.Observable.from_sparse([(NumberOperator(), (0,), 1.0)]),
+        fq.Observable.from_sparse([(Projector(2), (0,), 1.0)]),
+        # Coincidences: one photon in each mode never happens.
+        fq.Observable.from_sparse([([Projector(1), Projector(1)], (0, 1), 1.0)]),
+    ]
+
+    result = (
+        fq.Estimator(LOSimulator(method))
+        .run(
+            program,
+            observables,
+            initial_state=BasisState({modes[0]: 1, modes[1]: 1}),
+        )
+        .result()
+    )
+
+    np.testing.assert_allclose(result.get_expectation(), [1.0, 0.5, 0.0], atol=1e-12)
+
+
+def test_estimator_rejects_paulis_on_modes_at_any_cutoff():
+    modes = fq.ModeRegister(1)
+    qubits = fq.QuantumRegister(1)
+    program = fq.Program([modes, qubits])
+    estimator = fq.Estimator(LOSimulator("SV"))
+    config = {"cutoff": 1}  # two levels per mode, like a qubit
+
+    with pytest.raises(BackendValidationError, match="no fixed dimension"):
+        estimator.run(program, fq.Observable([("Z", 1.0)]), simulation_config=config)
+
+    # A qubit register in the same program keeps its Paulis.
+    value = estimator.run(
+        program, fq.Observable([("IZ", 1.0)]), simulation_config=config
+    ).result()
+    assert value.get_expectation() == pytest.approx(1.0)
+
+
+def test_projector_levels_are_checked_against_the_cutoff():
+    program = _two_mode_program(ops.BeamSplitter(math.pi / 4))
+    modes = program.quantum_registers[0]
+    start = BasisState({modes[0]: 1, modes[1]: 1})
+    estimator = fq.Estimator(LOSimulator("fixed_photon_state"))
+
+    with pytest.raises(BackendValidationError, match="needs dim > 3"):
+        estimator.run(
+            program,
+            fq.Observable.from_sparse([(Projector(3), (0,), 1.0)]),
+            initial_state=start,
+        )
+
+    # Above the photon number but within the cutoff, the level is empty.
+    value = estimator.run(
+        program,
+        fq.Observable.from_sparse([(Projector(3), (0,), 1.0)]),
+        initial_state=start,
+        simulation_config={"cutoff": 3},
+    ).result()
+    assert value.get_expectation() == pytest.approx(0.0, abs=1e-12)
 
 
 def test_cutoff_inference_accounts_for_fixed_dimension_registers():

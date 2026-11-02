@@ -30,6 +30,7 @@ import numpy as np
 
 from ....._backends.steps import ApplyMatrixStep
 from .....errors import BackendValidationError
+from .....observable import NumberOperator, Projector, _Factors
 from ...state import _LoweredBasisState
 
 # Entries this small in a conserving gate's off-sector blocks are round-off.
@@ -60,6 +61,11 @@ class _FixedPhotonState(NamedTuple):
 
     amplitudes: np.ndarray
     sector: _FixedPhotonSector
+
+    @property
+    def nbytes(self) -> int:
+        """Return the amplitudes' size, which bounds batches of saved states."""
+        return self.amplitudes.nbytes
 
 
 def _sector_counts(num_modes: int, photons: int) -> np.ndarray:
@@ -297,3 +303,41 @@ def _fixed_photon_levels(
     sector = state.sector
     columns = [sector.num_modes - 1 - q for q in subsystems]
     return _unrank(sector, np.asarray(rows, dtype=np.int64))[:, columns]
+
+
+def _fixed_photon_expectations(
+    state: _FixedPhotonState,
+    observables: Sequence[tuple[tuple[float, _Factors], ...]],
+) -> tuple[float, ...]:
+    """Return weighted sums of diagonal terms over the sector's rows.
+
+    Number operators and projectors are diagonal in the occupation basis, so
+    each term is its occupation weight summed with the row probabilities.
+    Rows are decoded a chunk at a time, up to the last column a term names.
+    """
+    sector = state.sector
+    columns = [
+        sector.num_modes - 1 - index
+        for terms in observables
+        for _, factors in terms
+        for index, _ in factors
+    ]
+    num_columns = max(columns, default=-1) + 1
+    values = np.zeros(len(observables))
+    for start in _chunks(sector.size):
+        rows = np.arange(start, min(start + _CHUNK_ROWS, sector.size))
+        probabilities = np.abs(state.amplitudes[rows]) ** 2
+        levels = _unrank(sector, rows, num_columns)
+        for i, terms in enumerate(observables):
+            for coefficient, factors in terms:
+                weights = np.ones(len(rows))
+                for index, factor in factors:
+                    level = levels[:, sector.num_modes - 1 - index]
+                    if isinstance(factor, NumberOperator):
+                        weights *= level
+                    elif isinstance(factor, Projector):
+                        weights *= level == factor.level
+                    else:
+                        raise ValueError(f"unsupported local operator {factor!r}")
+                values[i] += coefficient * (probabilities @ weights)
+    return tuple(float(value) for value in values)

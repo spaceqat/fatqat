@@ -11,6 +11,7 @@ import fatqat.operations as ops
 from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
 from fatqat.implementation import MatrixImplementationMap
 from fatqat.noise import Depolarizing
+from fatqat.observable import NumberOperator, Projector
 from fatqat.simulator import (
     BasisState,
     LOSimulator,
@@ -100,6 +101,68 @@ def test_fixed_photon_counts_match_statevector_with_feedforward(runtime):
     # Same probabilities in the same order draw the same outcomes.
     assert fixed.result().get_counts() == dense.result().get_counts()
     assert all(sum(map(int, key)) == 3 for key in fixed.result().get_counts())
+
+
+def _mesh_observables():
+    return [
+        fq.Observable.from_sparse([(NumberOperator(), (i,), 1.0)]) for i in range(4)
+    ] + [
+        fq.Observable.from_sparse(
+            [
+                ([Projector(1), Projector(2)], (0, 3), 0.5),
+                ([NumberOperator(), NumberOperator()], (1, 2), -1.5),
+                (Projector(0), (2,), 2.0),
+            ]
+        ),
+    ]
+
+
+def test_fixed_photon_expectations_match_the_statevector():
+    program, modes, _counts = _mesh(4)
+    start = BasisState({modes[0]: 1, modes[1]: 2})
+    observables = _mesh_observables()
+
+    def expectations(method, shots=0):
+        return (
+            fq.Estimator(LOSimulator(method))
+            .run(
+                program,
+                observables,
+                shots=shots,
+                initial_state=start,
+                simulation_config={"seed": 3},
+            )
+            .result()
+        )
+
+    expected = expectations("SV").get_expectation()
+    fixed = expectations("fixed_photon_state")
+    np.testing.assert_allclose(fixed.get_expectation(), expected, atol=1e-12)
+
+    sampled = expectations("fixed_photon_state", shots=4000)
+    errors = sampled.get_standard_error()
+    assert np.all(errors > 0)
+    assert np.all(np.abs(sampled.get_expectation() - expected) <= 5 * errors)
+
+
+def test_fixed_photon_expectation_sweep_matches_explicit_runs():
+    angle = fq.Parameter("angle")
+    modes = fq.ModeRegister(2)
+    program = fq.Program([modes])
+    program.add(ops.BeamSplitter(angle), (modes[0], modes[1]))
+    start = BasisState({modes[0]: 2})
+    observable = fq.Observable.from_sparse([(NumberOperator(), (1,), 1.0)])
+    estimator = fq.Estimator(LOSimulator("fixed_photon_state"))
+    angles = [0.0, 0.4, math.pi / 2]
+
+    swept = estimator.run_sweep(
+        program, observable, {angle: angles}, initial_state=start
+    ).result()
+
+    # Each photon is reflected with probability sin(angle)**2.
+    assert [result.get_expectation() for result in swept] == pytest.approx(
+        [2 * math.sin(a) ** 2 for a in angles], abs=1e-12
+    )
 
 
 def test_fixed_photon_runs_where_a_statevector_cannot_be_stored():

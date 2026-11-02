@@ -82,7 +82,7 @@ from .._execution_policy import (
     _ExecutionPolicy as ExecutionPolicy,
     _plan_python_execution,
 )
-from ....errors import UnsupportedOperationError
+from ....observable import _Factors
 from ..state import EvolutionState, _LoweredBasisState
 from .base import MatrixEngine
 from .ndarray_engine import _NdarrayEngine
@@ -122,6 +122,7 @@ from ..numerics.numpy_kernels._fixed_photon import (
     _FixedPhotonState,
     _allocate_fixed_photon,
     _apply_matrix_fixed_photon,
+    _fixed_photon_expectations,
     _fixed_photon_levels,
     _fixed_photon_probabilities,
     _project_fixed_photon,
@@ -258,8 +259,10 @@ class NumpyFixedPhotonEngine(MatrixEngine[_FixedPhotonState]):
 
     Only gates that conserve the photon number keep a state in its sector, so
     reset and channels are unsupported, and each gate matrix is checked as it
-    is applied. Measurement keeps the total, so it and feedforward work. The
-    state is not an ndarray, so expectations are not supported yet.
+    is applied. Measurement keeps the total, so it and feedforward work.
+    Expectations take diagonal factors (number operators, projectors), and a
+    fixed-photon state may also start a run, as a sampled expectation's
+    measurement tail does.
     """
 
     _capabilities = _EngineCapabilities(
@@ -304,7 +307,12 @@ class NumpyFixedPhotonEngine(MatrixEngine[_FixedPhotonState]):
         if initial_state is None:
             # Direct callers get the same start Simulator would pass.
             initial_state = EvolutionState(_LoweredBasisState((0,) * len(self._dims)))
-        quantum = _allocate_fixed_photon(self._dims, initial_state.quantum)
+        quantum = initial_state.quantum
+        if isinstance(quantum, _FixedPhotonState):
+            # Gates update amplitudes in place; keep the caller's state intact.
+            quantum = quantum._replace(amplitudes=quantum.amplitudes.copy())
+        else:
+            quantum = _allocate_fixed_photon(self._dims, quantum)
         self._evolution_state = EvolutionState(
             quantum, deepcopy(initial_state.classical)
         )
@@ -312,14 +320,11 @@ class NumpyFixedPhotonEngine(MatrixEngine[_FixedPhotonState]):
     def _expectation_values(
         self,
         state: _FixedPhotonState,
-        observables: Sequence[tuple[tuple[float, tuple[tuple[int, str], ...]], ...]],
+        observables: Sequence[tuple[tuple[float, _Factors], ...]],
         *,
         policy: ExecutionPolicy,
     ) -> tuple[float, ...]:
-        # LOSimulator rejects these requests before execution.
-        raise UnsupportedOperationError(
-            "fixed-photon expectations are not supported yet"
-        )
+        return _fixed_photon_expectations(state, observables)
 
     def _bind_kernels_to_python_workflow(
         self,

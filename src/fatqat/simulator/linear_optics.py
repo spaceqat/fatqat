@@ -12,6 +12,7 @@ import numpy as np
 from .._backends.backend_utils import _normalize_config
 from .._backends.steps import CustomOperationStep
 from ..errors import BackendValidationError, UnsupportedOperationError
+from ..estimator._planning import _validate_observable_targets
 from ..observable import Observable
 from ..operations import Measurement
 from ..parameters import Parameter
@@ -23,7 +24,6 @@ from ..registers import (
     RegisterRef,
     RegisterView,
 )
-from ..job import Job
 from ..resource_layout import ResourceLayout
 from ..result import Result
 from ._engine.numerics.numpy_kernels._fixed_photon import (
@@ -34,7 +34,13 @@ from ._engine.numerics.numpy_kernels._fixed_photon import (
 )
 from ._engine.state import BasisState, EvolutionState
 from ._execution_contract import RawResult, _SimulationConfig
-from .simulator import _METHOD_SPECS, Simulator, _MethodSpec, _PreparedExecution
+from .simulator import (
+    _METHOD_SPECS,
+    Simulator,
+    _BoundExpectationOccurrence,
+    _MethodSpec,
+    _PreparedExecution,
+)
 
 __all__ = ["LOSimulator", "fixed_photon_index", "fixed_photon_occupation"]
 
@@ -98,8 +104,13 @@ class LOSimulator(Simulator):
     `fixed_photon_index` and `fixed_photon_occupation` convert between rows
     and occupations without storing a table. Measurement, feedforward, counts
     and ``run_sweep`` work as usual. It rejects dense initial states, gates
-    that change the photon number, reset, channel noise, custom operations
-    and expectations.
+    that change the photon number, reset, channel noise and custom operations.
+
+    `fatqat.Estimator` runs on every state method, exact and sampled; pass
+    the photons as its ``initial_state``. On a mode it accepts
+    `fatqat.observable.NumberOperator` and `fatqat.observable.Projector` up
+    to level ``cutoff``; Pauli operators are for qubits and are rejected on
+    modes at any cutoff.
 
     Examples:
         Two photons meeting on a balanced beam splitter leave together
@@ -234,28 +245,32 @@ class LOSimulator(Simulator):
                 "custom operations are not supported by method='fixed_photon_state'"
             )
 
-    def _run_expectation(
+    def _prepare_expectation(
         self,
+        execution: _PreparedExecution,
         program: Program,
         observables: tuple[Observable, ...],
         *,
         shots: int,
-        simulation_config: dict[str, Any] | None,
-        parameter_values: Mapping[Parameter, np.ndarray] | None = None,
-        initial_state: Any = None,
-    ) -> Job:
-        """Run an expectation like `Simulator`; fixed photon has none yet."""
-        if self._state_field == "fixed_photon_state":
-            raise UnsupportedOperationError(
-                "method='fixed_photon_state' does not support expectations yet"
-            )
-        return super()._run_expectation(
-            program,
+    ) -> tuple[tuple[float, ...], tuple[_BoundExpectationOccurrence, ...]]:
+        """Check projector levels against the cutoff, then bind like `Simulator`.
+
+        `Simulator` checks observables before modes have a dimension, so
+        Paulis on modes are rejected there and projector levels here.
+        """
+        lowering = execution.lowering
+        dims = lowering.engine_allocation.system_dims
+        _validate_observable_targets(
             observables,
-            shots=shots,
-            simulation_config=simulation_config,
-            parameter_values=parameter_values,
-            initial_state=initial_state,
+            program,
+            tuple(
+                dims[lowering.engine_index(register[index])]
+                for register in program.quantum_registers
+                for index in range(register.size)
+            ),
+        )
+        return super()._prepare_expectation(
+            execution, program, observables, shots=shots
         )
 
     def _assemble_result(self, *, raw: RawResult, **kwargs: Any) -> Result:
