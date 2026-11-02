@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
@@ -10,14 +11,14 @@ from typing import Any, final
 
 import numpy as np
 
-from ..._expectation import (
+from ...estimator._exact import expectation_density_matrix, expectation_statevector
+from ...estimator._planning import (
     _ExpectationExecution,
     _TermOccurrence,
     _combine_term_statistics,
     _plan_term_occurrences,
     _reduce_outcome_counts,
-    expectation_density_matrix,
-    expectation_statevector,
+    _validate_observable_targets,
 )
 from ..._parameter_binding import (
     _parameter_batch_rows,
@@ -47,7 +48,7 @@ from ...errors import (
 from ...job import Job
 from ...noise import NoiseModel
 from ...noise.lindblad import LindbladImplementationMap
-from ...observable import Observable
+from ...observable import Observable, _Factors
 from ...parameters import Parameter
 from ...operations import Barrier, Measurement, PulseOperation, Reset
 from ...program import Program, _AppliedOperation
@@ -81,7 +82,7 @@ class _BoundPulseExpectation:
     """One logical term occurrence bound to pulse-engine resources."""
 
     occurrence: _TermOccurrence
-    engine_factors: tuple[tuple[int, str], ...]
+    engine_factors: _Factors
     scratch_indices: tuple[int, ...]
     measurement: MeasurementStep | None
 
@@ -612,6 +613,7 @@ class _PulseBackend(ABC):
         simulation_config: dict[str, Any] | None,
     ) -> _PreparedPulseExpectation:
         """Validate, lower, and bind one pulse expectation request."""
+        _validate_observable_targets(observables, program)
         simulation = _normalize_config(
             simulation_config,
             self._simulation_config_cls,
@@ -688,26 +690,26 @@ class _PulseBackend(ABC):
         bound_occurrences = []
         for occurrence in occurrences:
             factor_refs = tuple(
-                logical_refs[index] for index, _letter in occurrence.logical_factors
+                logical_refs[index] for index, _factor in occurrence.logical_factors
             )
             engine_factors = tuple(
                 (
                     prepared.engine_allocation.engine_index(
                         prepared.resource_layout.device_label(ref)
                     ),
-                    letter,
+                    factor,
                 )
-                for ref, (_index, letter) in zip(
+                for ref, (_index, factor) in zip(
                     factor_refs,
                     occurrence.logical_factors,
                     strict=True,
                 )
             )
-            if shots > 0 and any(
-                letter in {"X", "Y"} for _index, letter in engine_factors
+            if shots > 0 and not all(
+                factor._is_diagonal for _index, factor in engine_factors
             ):
                 raise UnsupportedOperationError(
-                    "sampled pulse expectations do not support X or Y basis factors"
+                    "sampled pulse expectations do not support X or Y operators"
                 )
 
             if shots == 0:
@@ -734,7 +736,7 @@ class _PulseBackend(ABC):
             else:
                 measurement = planning._build_expectation_measurement(
                     factor_refs,
-                    tuple(index for index, _letter in engine_factors),
+                    tuple(index for index, _factor in engine_factors),
                     scratch_start=scratch_start,
                     target=self._target,
                     resource_layout=prepared.resource_layout,
@@ -783,8 +785,11 @@ class _PulseBackend(ABC):
             terms_by_observable[bound.occurrence.observable_index].append(
                 (bound.occurrence.coefficient, bound.engine_factors)
             )
+        # QuTiP-ordered engine: index 0 is the most significant subsystem.
+        dims = tuple(program.engine_allocation.system_dims)
+        strides = tuple(math.prod(dims[index + 1 :]) for index in range(len(dims)))
         values = tuple(
-            constant + kernel(state, tuple(terms))
+            constant + kernel(state, tuple(terms), dims, strides)
             for constant, terms in zip(
                 prepared.constants,
                 terms_by_observable,

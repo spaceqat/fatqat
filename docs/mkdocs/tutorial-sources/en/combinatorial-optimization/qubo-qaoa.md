@@ -307,7 +307,7 @@ than only its mean.
 terms = [("I", (0,), offset)]
 terms += [("Z", (index,), value) for index, value in enumerate(field) if value != 0.0]
 terms += [("ZZ", (i, j), value) for (i, j), value in coupling.items()]
-hamiltonian = fq.Observable.from_sparse(terms, num_qubits=N)
+hamiltonian = fq.Observable.from_sparse(terms)
 
 simulator = fq.simulator.Simulator(method="statevector")
 estimator = fq.Estimator(simulator)

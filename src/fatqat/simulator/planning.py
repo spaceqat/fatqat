@@ -21,6 +21,7 @@ from ..noise.base import _validate_kraus_shapes
 from .. import operations as ops
 from ..operations import Measurement, PulseOperation
 from ..noise.loss import Loss
+from ..observable import _Factors, _Pauli
 from ..parameters import Parameter
 from ..program import _AppliedOperation
 from ..registers import RegisterRef
@@ -85,29 +86,36 @@ def _lower_measurement(
 
 def _expectation_confusions(
     factor_refs: tuple[RegisterRef, ...],
+    factor_dims: tuple[int, ...],
     resource_layout: ResourceLayout,
     noise_model: NoiseModel,
 ) -> tuple[Any, ...] | None:
-    """Resolve readout confusion for a qubit expectation measurement."""
+    """Resolve readout confusion for an expectation measurement of every level."""
     return _resolve_confusions(
         factor_refs,
-        ((0, 1),) * len(factor_refs),
+        tuple(tuple(range(dim)) for dim in factor_dims),
         resource_layout,
         noise_model,
     )
 
 
 def _build_expectation_tail(
-    factor_axes: tuple[tuple[int, str], ...],
+    factor_axes: _Factors,
     factor_refs: tuple[RegisterRef, ...],
+    factor_dims: tuple[int, ...],
     *,
     scratch_start: int,
     resource_layout: ResourceLayout,
     noise_model: NoiseModel,
 ) -> tuple[ResolvedStep, ...]:
-    """Build ideal basis changes followed by normally routed readout."""
+    """Build ideal basis changes followed by normally routed readout.
+
+    Pauli factors rotate their qubit into the Z basis; projector and number
+    factors read the measured level directly.
+    """
     tail: list[ResolvedStep] = []
-    for engine_index, letter in factor_axes:
+    for engine_index, factor in factor_axes:
+        letter = factor.letter if isinstance(factor, _Pauli) else None
         if letter == "X":
             tail.append(
                 ApplyMatrixStep(
@@ -132,15 +140,16 @@ def _build_expectation_tail(
                 )
             )
 
-    reported_digit_maps = ((0, 1),) * len(factor_axes)
+    reported_digit_maps = tuple(tuple(range(dim)) for dim in factor_dims)
     confusions = _expectation_confusions(
         factor_refs,
+        factor_dims,
         resource_layout,
         noise_model,
     )
     tail.append(
         MeasurementStep(
-            measured_indices=tuple(index for index, _letter in factor_axes),
+            measured_indices=tuple(index for index, _factor in factor_axes),
             classical_indices=tuple(
                 range(scratch_start, scratch_start + len(factor_axes))
             ),

@@ -29,7 +29,7 @@ def test_sweep_normalizes_once_and_never_calls_public_binding(monkeypatch, famil
             )
 
     else:
-        from fatqat import estimator as family_module
+        from fatqat.estimator import _estimator as family_module
 
         executor = fq.Estimator(fq.simulator.Simulator("SV"))
         observable = Observable([("Z", 1.0)])

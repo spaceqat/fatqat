@@ -15,7 +15,7 @@ from fatqat.errors import (
     UnsupportedOperationError,
 )
 from fatqat.job import Job
-from fatqat.observable import Observable
+from fatqat.observable import Observable, Projector
 
 
 def _bell(measured=False):
@@ -272,7 +272,7 @@ def test_identity_term_contributes_its_coefficient():
 
 def test_occupation_via_one_projector():
     # Bell state: each qubit is |1> half the time.
-    occupation = Observable.from_sparse([("ONE", (0,), 1.0)], num_qubits=2)
+    occupation = Observable.from_sparse([("ONE", (0,), 1.0)])
 
     value = _estimator().run(_bell(), occupation).result().get_expectation()
     assert value == pytest.approx(0.5, abs=1e-12)
@@ -348,15 +348,24 @@ def test_measured_program_rejected():
         _estimator().run(_bell(measured=True), Observable([("ZZ", 1.0)]))
 
 
-def test_observable_width_must_match_the_program():
-    with pytest.raises(BackendValidationError, match="3 qubit"):
+def test_observable_factors_must_name_program_subsystems():
+    with pytest.raises(BackendValidationError, match="names subsystem 2"):
         _estimator().run(_bell(), Observable([("ZZZ", 1.0)]))
+    # Unnamed subsystems carry the identity: Z on qubit 0 of a Bell pair.
+    shorter = _estimator().run(_bell(), Observable([("Z", 1.0)])).result()
+    assert shorter.get_expectation() == pytest.approx(0.0, abs=1e-12)
 
 
-def test_qudit_program_rejected():
+def test_factors_are_checked_against_subsystem_dimensions():
     program = fq.Program([fq.QuantumRegister(1, dim=3)])
     with pytest.raises(BackendValidationError, match="qubits only"):
         _estimator().run(program, Observable([("Z", 1.0)]))
+    with pytest.raises(BackendValidationError, match="needs dim > 3"):
+        _estimator().run(program, Observable.from_sparse([(Projector(3), (0,), 1.0)]))
+    with pytest.raises(BackendValidationError, match="needs dim > 2"):
+        _estimator("DM").run(
+            _bell(), Observable.from_sparse([(Projector(2), (0,), 1.0)]), shots=8
+        )
 
 
 def test_noisy_statevector_exact_request_is_rejected():
@@ -518,7 +527,7 @@ def test_projector_term_sampling_converges():
     # the term's second moment, so a Pauli-only sampler would be biased here.
     program = _sampling_program()
     observable = Observable.from_sparse(
-        [("ONE", (0,), 1.0), (["ONE", "Z"], (1, 2), 0.5)], num_qubits=3
+        [("ONE", (0,), 1.0), (["ONE", "Z"], (1, 2), 0.5)]
     )
     estimator = _estimator()
 

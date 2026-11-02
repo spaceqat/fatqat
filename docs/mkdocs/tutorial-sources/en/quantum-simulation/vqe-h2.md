@@ -124,10 +124,10 @@ NUM_QUBITS = 2
 NUM_ROUNDS = 2
 
 OBSERVABLES = [
-    fq.Observable.from_sparse([("Z", (1,), 1.0)], num_qubits=NUM_QUBITS),    # IZ
-    fq.Observable.from_sparse([("Z", (0,), 1.0)], num_qubits=NUM_QUBITS),    # ZI
-    fq.Observable.from_sparse([("ZZ", (0, 1), 1.0)], num_qubits=NUM_QUBITS),
-    fq.Observable.from_sparse([("XX", (0, 1), 1.0)], num_qubits=NUM_QUBITS),
+    fq.Observable.from_sparse([("Z", (1,), 1.0)]),    # IZ
+    fq.Observable.from_sparse([("Z", (0,), 1.0)]),    # ZI
+    fq.Observable.from_sparse([("ZZ", (0, 1), 1.0)]),
+    fq.Observable.from_sparse([("XX", (0, 1), 1.0)]),
 ]
 ```
 
