@@ -13,7 +13,10 @@ from math import prod
 
 import numpy as np
 
-from ...._expectation import expectation_density_matrix, expectation_statevector
+from ....estimator._exact import (
+    expectation_density_matrix,
+    expectation_statevector,
+)
 from ....observable import _Factors
 from .._execution_policy import _ExecutionPolicy as ExecutionPolicy
 from ..state import EvolutionState

@@ -14,7 +14,8 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.observable import NumberOperator, Observable, Projector
-from fatqat import _expectation as ex
+from fatqat.estimator import _exact as ex
+from fatqat.estimator import _numpy_kernels as npk
 
 
 def _msb_strides(dims):
@@ -100,7 +101,7 @@ def test_statevector_kernel_matches_numpy(case):
     masks = _masks(*case, 6)
 
     compiled = ex._COMPILED[0](state, *masks)
-    reference = ex._statevector_term_numpy(state, index, *masks)
+    reference = npk.qubit_statevector_term(state, index, *masks)
 
     assert compiled == pytest.approx(reference, abs=1e-14)
 
@@ -112,7 +113,7 @@ def test_density_matrix_kernel_matches_numpy(case):
     masks = _masks(*case, 5)
 
     compiled = ex._COMPILED[1](rho, *masks)
-    reference = ex._density_matrix_term_numpy(rho, index, *masks)
+    reference = npk.qubit_density_matrix_term(rho, index, *masks)
 
     assert compiled == pytest.approx(reference, abs=1e-14)
 
@@ -134,7 +135,7 @@ def test_agreement_does_not_degrade_with_state_size(num_qubits):
             worst,
             abs(
                 ex._COMPILED[0](state, *masks)
-                - ex._statevector_term_numpy(state, index, *masks)
+                - npk.qubit_statevector_term(state, index, *masks)
             ),
         )
 
@@ -202,10 +203,10 @@ def test_digit_kernels_match_numpy(case):
     )
 
     assert ex._COMPILED[2](state, *arrays) == pytest.approx(
-        ex._digit_term_numpy(state, index, *arrays, density=False), abs=1e-12
+        npk.digit_term(state, index, *arrays, density=False), abs=1e-12
     )
     assert ex._COMPILED[3](rho, *arrays) == pytest.approx(
-        ex._digit_term_numpy(rho, index, *arrays, density=True), abs=1e-12
+        npk.digit_term(rho, index, *arrays, density=True), abs=1e-12
     )
 
 
@@ -213,7 +214,7 @@ def test_parity_helper_agrees_with_popcount():
     # The kernel needs only popcount & 1, and folds it with XOR shifts rather
     # than counting. Checked against numpy across bit widths, including the
     # high half of a 64-bit mask, where the first fold step matters.
-    from fatqat._expectation_nb import _odd_parity
+    from fatqat.estimator._numba_kernels import _odd_parity
 
     values = [0, 1, 3, 255, 1 << 20, (1 << 33) | 5, (1 << 62) | (1 << 3) | 1]
     for value in values:

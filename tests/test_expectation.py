@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from fatqat._expectation import (
+from fatqat.estimator._planning import (
     _TermOccurrence,
     _combine_term_statistics,
     _plan_term_occurrences,

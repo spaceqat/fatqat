@@ -11,15 +11,14 @@ from typing import Any, final
 
 import numpy as np
 
-from ..._expectation import (
+from ...estimator._exact import expectation_density_matrix, expectation_statevector
+from ...estimator._planning import (
     _ExpectationExecution,
     _TermOccurrence,
     _combine_term_statistics,
     _plan_term_occurrences,
     _reduce_outcome_counts,
     _validate_observable_targets,
-    expectation_density_matrix,
-    expectation_statevector,
 )
 from ..._parameter_binding import (
     _parameter_batch_rows,

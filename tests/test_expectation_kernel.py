@@ -13,7 +13,7 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.observable import NumberOperator, Observable, Projector
-from fatqat._expectation import (
+from fatqat.estimator._exact import (
     expectation_density_matrix,
     expectation_statevector,
 )

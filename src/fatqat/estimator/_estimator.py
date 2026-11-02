@@ -12,17 +12,17 @@ from typing import Any
 
 import numpy as np
 
-from ._parameter_binding import (
+from .._parameter_binding import (
     _normalize_parameter_batch,
     _raise_for_unbound_parameters,
 )
-from .errors import BackendValidationError
-from .job import Job
-from .observable import Observable
-from .operations import Measurement
-from .parameters import Parameter, ParameterVector
-from .program import Program
-from .result import Result
+from ..errors import BackendValidationError
+from ..job import Job
+from ..observable import Observable
+from ..operations import Measurement
+from ..parameters import Parameter, ParameterVector
+from ..program import Program
+from ..result import Result
 
 
 class Estimator:

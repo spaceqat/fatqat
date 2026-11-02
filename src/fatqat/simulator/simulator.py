@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 
 from ._runtime import _validate_runtime, get_default_runtime
-from .._expectation import (
+from ..estimator._planning import (
     _ExpectationExecution,
     _TermOccurrence,
     _combine_term_statistics,
