@@ -202,7 +202,7 @@ def test_unknown_letter_rejected():
         Observable([("ZQ", 1.0)])
     with pytest.raises(ValueError, match="unknown letter"):
         Observable.from_sparse([("PLUS", (0,), 1.0)])
-    with pytest.raises(TypeError, match="factor object"):
+    with pytest.raises(TypeError, match="local operator"):
         Observable.from_sparse([([3], (0,), 1.0)])
 
 

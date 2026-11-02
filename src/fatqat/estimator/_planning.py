@@ -74,7 +74,7 @@ def _reconstruct_term_outcome(
     """
     if len(factors) != len(measured_digits):
         raise ValueError(
-            f"got {len(measured_digits)} measured digits for {len(factors)} factors"
+            f"got {len(measured_digits)} measured digits for {len(factors)} operators"
         )
 
     outcome = 1
@@ -97,7 +97,7 @@ def _reconstruct_term_outcome(
         elif isinstance(factor, NumberOperator):
             outcome *= digit
         else:
-            raise ValueError(f"unsupported measured factor {factor!r}")
+            raise ValueError(f"unsupported measured operator {factor!r}")
     return outcome
 
 
@@ -178,7 +178,7 @@ def _combine_term_statistics(
 def _validate_observable_targets(
     observables: Sequence[Observable], program: Program
 ) -> None:
-    """Check every factor against the program subsystem it names.
+    """Check every local operator against the program subsystem it names.
 
     Observables carry no width or dimension, so this is where an index past
     the program, a Pauli on a non-qubit, or a projector level the subsystem
@@ -201,11 +201,11 @@ def _validate_observable_targets(
                 dim = subsystem_dims[index]
                 if isinstance(factor, _Pauli) and dim != 2:
                     raise BackendValidationError(
-                        f"observable factor {factor} on subsystem {index} is "
+                        f"local operator {factor} on subsystem {index} is "
                         f"defined on qubits only; the subsystem has dim={dim}"
                     )
                 if isinstance(factor, Projector) and factor.level >= dim:
                     raise BackendValidationError(
-                        f"observable factor {factor!r} on subsystem {index} needs "
+                        f"local operator {factor!r} on subsystem {index} needs "
                         f"dim > {factor.level}, but the subsystem has dim={dim}"
                     )

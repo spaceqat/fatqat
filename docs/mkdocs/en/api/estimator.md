@@ -31,10 +31,10 @@ For a guided workflow, see [Estimate observables](../guide/interpret-results.md)
 ## Construct an observable
 
 
-An observable is a sum of real coefficients times products of
-single-subsystem factors:
+An observable is a sum of real coefficients times products of local
+operators, each acting on one subsystem:
 
-- the Pauli factors `X`, `Y`, and `Z`, which act on qubits only;
+- the Pauli operators `X`, `Y`, and `Z`, which act on qubits only;
 - [`Projector(level)`][fatqat.observable.Projector], the projector onto one
   level, with `ZERO` and `ONE` as names for `Projector(0)` and `Projector(1)`;
 - [`NumberOperator()`][fatqat.observable.NumberOperator], `diag(0, 1, ..., d-1)`
@@ -51,10 +51,10 @@ fq.Observable([("ZZ", 1.5)])
 fq.Observable(["ZZ"], coeffs=[1.5])
 ```
 
-[`from_sparse`][fatqat.Observable.from_sparse] names each non-identity factor
-and its subsystem explicitly. A term's factors can be a letter string such as
-`"XY"`, one factor object, or a sequence that mixes both. This is also how you
-write `Projector` and `NumberOperator` factors:
+[`from_sparse`][fatqat.Observable.from_sparse] names each non-identity operator
+and its subsystem explicitly. A term's operators can be a letter string such as
+`"XY"`, one operator object, or a sequence that mixes both. This is also how you
+write `Projector` and `NumberOperator` operators:
 
 ```python
 from fatqat.observable import NumberOperator, Projector
@@ -66,8 +66,8 @@ fq.Observable.from_sparse([([Projector(2), "X"], (0, 1), 0.5)])
 Coefficients must be real.
 
 An observable has no width or subsystem dimensions of its own. The backend
-checks each factor against the program: every index must name a program
-subsystem, Pauli factors need a qubit, and a projector level must be below its
+checks each local operator against the program: every index must name a
+program subsystem, Pauli operators need a qubit, and a projector level must be below its
 subsystem's dimension. This lets one observable describe qudit programs:
 
 ```python
@@ -93,7 +93,7 @@ sample standard error. Constant terms contribute zero standard error; one
 sample of a nonconstant term has undefined standard error and reports `nan`.
 Set `simulation_config["seed"]` to reproduce a sampled run.
 
-Invalid programs, factors that do not fit the program's subsystems, and invalid
+Invalid programs, operators that do not fit the program's subsystems, and invalid
 shot values raise
 [`BackendValidationError`][fatqat.errors.BackendValidationError] before a job
 is returned; unsupported observable types raise `TypeError`. Execution errors
@@ -114,7 +114,7 @@ name, method, runtime, and shots, plus the pulse solver for pulse executions.
 ## Backend support
 
 
-**Matrix simulators** support every factor, exact and sampled, with a
+**Matrix simulators** support every operator, exact and sampled, with a
 statevector or density-matrix method. Unitary and superoperator methods raise
 [`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError] because
 they produce maps rather than states. For an exact expectation with reset or an
@@ -128,7 +128,7 @@ equals `ONE`, and only levels 0 and 1 are valid projector levels.
 
 - Exact statevector evaluation rejects potentially active Lindblad evolution;
   use exact density-matrix execution or a positive-shot trajectory run.
-- Positive-shot evaluation supports the diagonal factors `Z`, `Projector(0)`,
+- Positive-shot evaluation supports the diagonal operators `Z`, `Projector(0)`,
   `Projector(1)`, and `NumberOperator()`.
 - Reset is unsupported.
 

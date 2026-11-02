@@ -709,7 +709,7 @@ class _PulseBackend(ABC):
                 factor._is_diagonal for _index, factor in engine_factors
             ):
                 raise UnsupportedOperationError(
-                    "sampled pulse expectations do not support X or Y basis factors"
+                    "sampled pulse expectations do not support X or Y operators"
                 )
 
             if shots == 0:

@@ -1,4 +1,4 @@
-"""Weighted sums of products of single-subsystem observable factors."""
+"""Weighted sums of products of local operators."""
 
 from __future__ import annotations
 
@@ -31,24 +31,24 @@ def _as_index(value: Any, what: str) -> int:
 
 
 class _Factor:
-    """One single-subsystem factor of an observable term.
+    """One local operator of an observable term, acting on a single subsystem.
 
-    A factor names an operator without a subsystem dimension. The backend that
-    evaluates the observable checks the factor against its target's dimension
-    once that dimension is known.
+    It names an operator without a subsystem dimension. The backend that
+    evaluates the observable checks it against its target's dimension once that
+    dimension is known.
     """
 
     __slots__ = ()
 
     @property
     def _is_diagonal(self) -> bool:
-        """Whether the factor is diagonal in the computational basis."""
+        """Whether the operator is diagonal in the computational basis."""
         return True
 
 
 @dataclass(frozen=True, slots=True, repr=False)
 class _Pauli(_Factor):
-    """A Pauli ``X``, ``Y``, or ``Z`` factor, defined on qubits only."""
+    """A Pauli ``X``, ``Y``, or ``Z`` operator, defined on qubits only."""
 
     letter: str
 
@@ -127,13 +127,14 @@ _Factors = tuple[tuple[int, _Factor], ...]
 
 
 class Observable:
-    """Represent a Hermitian observable as a sum of weighted factor products.
+    """Represent a Hermitian observable as a sum of weighted operator products.
 
-    Each term is a real coefficient times a product of single-subsystem
-    factors: the Pauli letters ``X``, ``Y``, and ``Z``, :class:`Projector`
-    levels (``ZERO`` and ``ONE`` are shorthand for levels 0 and 1), and the
-    :class:`NumberOperator`. An observable has no width or subsystem
-    dimensions; the backend checks every factor against the program it runs.
+    Each term is a real coefficient times a product of local operators, at most
+    one per subsystem: the Pauli letters ``X``, ``Y``, and ``Z``,
+    :class:`Projector` levels (``ZERO`` and ``ONE`` are shorthand for levels 0
+    and 1), and the :class:`NumberOperator`. An observable has no width or
+    subsystem dimensions; the backend checks every local operator against the
+    program it runs.
     Paulis need a qubit, a projector level must be below its subsystem's
     dimension, and every index must name a program subsystem. Unnamed
     subsystems carry the identity. Repeated and zero-coefficient terms are
@@ -228,19 +229,19 @@ class Observable:
         *,
         num_qubits: int | None = None,
     ) -> "Observable":
-        """Build an observable by naming only the non-identity factors.
+        """Build an observable by naming only the non-identity local operators.
 
         Use this form for wide observables, for projectors, and for the number
         operator, none of which fit a dense single-character label.
 
         Args:
-            data: Iterable of ``(factors, indices, coefficient)`` terms.
-                ``factors`` may be an ``I``/``X``/``Y``/``Z`` string such as
-                ``"XY"``; one factor name or object, such as ``"ONE"`` or
+            data: Iterable of ``(operators, indices, coefficient)`` terms.
+                ``operators`` may be an ``I``/``X``/``Y``/``Z`` string such as
+                ``"XY"``; one operator name or object, such as ``"ONE"`` or
                 ``NumberOperator()``; or a sequence mixing names and objects,
                 such as ``["Z", Projector(2)]``. The names are ``I``, ``X``,
                 ``Y``, ``Z``, ``ZERO`` (``Projector(0)``), and ``ONE``
-                (``Projector(1)``). Factors pair with subsystem indices
+                (``Projector(1)``). Operators pair with subsystem indices
                 positionally. Each index may appear at most once in a term.
                 Python and NumPy integers are accepted as indices; booleans
                 are not.
@@ -253,15 +254,16 @@ class Observable:
 
         Raises:
             TypeError: If ``num_qubits`` or an index is not an accepted
-                integer; ``factors`` or ``indices`` is not iterable; or a
-                factor is neither a name nor a factor object.
+                integer; ``operators`` or ``indices`` is not iterable; or an
+                operator is neither a name nor an object such as
+                ``NumberOperator()``.
             ValueError: If no terms are supplied; ``num_qubits`` is less than
-                one; factors and indices have different lengths; an index is
-                negative, at least ``num_qubits``, or repeated; a factor name
+                one; operators and indices have different lengths; an index is
+                negative, at least ``num_qubits``, or repeated; an operator name
                 is unknown; or a coefficient has a nonzero imaginary part.
 
         Examples:
-            Name only the two factors in a wide observable:
+            Name only the two operators in a wide observable:
 
             >>> import fatqat as fq
             >>> occupation = fq.Observable.from_sparse([(["ONE", "Z"], (5, 3), 1.0)])
@@ -281,7 +283,7 @@ class Observable:
             indices = list(indices)
             if len(factors_in) != len(indices):
                 raise ValueError(
-                    f"factors {letters!r} and indices {tuple(indices)} must have "
+                    f"operators {letters!r} and indices {tuple(indices)} must have "
                     "the same length"
                 )
             factors = []
@@ -298,7 +300,7 @@ class Observable:
                 if index in seen:
                     raise ValueError(
                         f"index {index} appears more than once in one term; each "
-                        "term holds a single factor per subsystem"
+                        "term holds at most one local operator per subsystem"
                     )
                 seen.add(index)
                 if factor is not None:
@@ -336,20 +338,20 @@ class Observable:
 
     @property
     def terms(self) -> tuple[tuple[float, _Factors], ...]:
-        """Return normalized ``(coefficient, factors)`` tuples.
+        """Return normalized ``(coefficient, operators)`` tuples.
 
-        Identity factors are absent, so an identity-only term carries an empty
-        factor tuple. Each factor is an ``(index, factor)`` pair, sorted by
-        index. Pauli factors print as their letter; ``ZERO`` and ``ONE`` are
+        Identity operators are absent, so an identity-only term carries an empty
+        operator tuple. Each operator is an ``(index, operator)`` pair, sorted by
+        index. Pauli operators print as their letter; ``ZERO`` and ``ONE`` are
         stored as ``Projector(0)`` and ``Projector(1)``. The returned
         structure is immutable.
         """
         return self._terms
 
     def is_diagonal(self) -> bool:
-        """Return whether every factor is ``Z``, a projector, or ``N``.
+        """Return whether every operator is ``Z``, a projector, or ``N``.
 
-        Identity-only terms are diagonal because identity factors are omitted.
+        Identity-only terms are diagonal because identity operators are omitted.
         """
         return all(
             factor._is_diagonal for _, factors in self._terms for _, factor in factors
@@ -383,7 +385,8 @@ class Observable:
 def _warn_num_qubits_deprecated() -> None:
     warnings.warn(
         "num_qubits is deprecated: an Observable no longer has a width. The "
-        "backend checks factor indices against the program it runs",
+        "backend checks each operator's subsystem index against the program "
+        "it runs",
         DeprecationWarning,
         stacklevel=3,
     )
@@ -392,14 +395,14 @@ def _warn_num_qubits_deprecated() -> None:
 def _split_letters(
     letters: str | _Factor | Sequence[str | _Factor],
 ) -> list[str | _Factor]:
-    """Split a sparse term's factor specification into one entry per index.
+    """Split a sparse term's operator specification into one entry per index.
 
     A plain string is the common shorthand for single-character letters
     (``"XY"`` means X then Y), but ``ZERO``/``ONE`` are multi-character names
     that must not be split into characters. The two cases are distinguished by
     content, not by a flag: a string splits per character only when every
     character is itself a valid single-character letter, which ``"ONE"`` and
-    ``"ZERO"`` are not. A lone factor object names one index. Mixed terms are
+    ``"ZERO"`` are not. A lone operator object names one index. Mixed terms are
     written as an explicit sequence, e.g. ``(["ONE", "Z"], (5, 3), 1.0)``.
     """
     if isinstance(letters, _Factor):
@@ -412,18 +415,18 @@ def _split_letters(
 
 
 def _as_factor(letter: str | _Factor) -> _Factor | None:
-    """Return the factor a name or object stands for; ``None`` for identity."""
+    """Return the operator a name or object stands for; ``None`` for identity."""
     if isinstance(letter, _Factor):
         return letter
     if not isinstance(letter, str):
         raise TypeError(
-            f"a factor must be a name or a factor object such as NumberOperator() "
-            f"or Projector(level), got {letter!r}"
+            f"a local operator must be a name or an object such as "
+            f"NumberOperator() or Projector(level), got {letter!r}"
         )
     if letter not in _LETTER_FACTORS:
         raise ValueError(
             f"unknown letter {letter!r}; expected one of "
-            f"{sorted(_LETTER_FACTORS)}, or a factor object such as "
+            f"{sorted(_LETTER_FACTORS)}, or an object such as "
             "NumberOperator() or Projector(level)"
         )
     return _LETTER_FACTORS[letter]
@@ -465,7 +468,7 @@ def _normalize_dense_input(
 def _require_real(coeff: complex, label: str) -> float:
     """Return ``coeff`` as a float, rejecting a complex coefficient.
 
-    Every supported factor is Hermitian, so the whole observable is Hermitian
+    Every supported operator is Hermitian, so the whole observable is Hermitian
     exactly when its coefficients are real - and then every expectation value
     is real too. Rejecting here, at construction, keeps that guarantee at the
     one place it is cheap to state.

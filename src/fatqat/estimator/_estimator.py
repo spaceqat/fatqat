@@ -71,8 +71,8 @@ class Estimator:
         Args:
             program: Fully bound, measurement-free program.
             observables: One ``Observable`` or a non-empty list or tuple of
-                them. Every factor must name a program subsystem: Pauli factors
-                need a qubit, and a projector level must be below its
+                them. Every local operator must name a program subsystem: Pauli
+                operators need a qubit, and a projector level must be below its
                 subsystem's dimension. Unnamed subsystems carry the identity.
                 A list or tuple preserves its order in the returned arrays.
             shots: Non-negative integer. ``0`` computes exact values. A
@@ -93,8 +93,8 @@ class Estimator:
                 supported collection containing only ``Observable`` values.
             BackendValidationError: If no observables are supplied; ``shots``
                 is not a non-negative integer; the program is measured or
-                unbound; a factor names a subsystem the program lacks, a Pauli
-                factor targets a non-qubit, or a projector level is not below
+                unbound; an operator names a subsystem the program lacks, a Pauli
+                operator targets a non-qubit, or a projector level is not below
                 its subsystem's dimension; or the backend raises this error
                 while preparing its native expectation execution.
         """
@@ -288,7 +288,7 @@ def _validate_program(program: Program) -> None:
     """Reject what the estimator can decide from the public program alone.
 
     Subsystem dimensions may only be known once a backend resolves them, so
-    each backend's expectation hook checks observable factors against the
+    each backend's expectation hook checks observable operators against the
     program, along with its own execution and capability checks.
     """
     if not isinstance(program, Program):
