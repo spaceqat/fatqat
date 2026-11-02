@@ -28,9 +28,8 @@ def _apply_matrix_statevector(
     layouts: Mapping[tuple[int, ...], tuple],
 ) -> np.ndarray:
     """Apply one gate using cached classification and target layout."""
-    code, columns, values = structures.resolve(step)
-    targets = tuple(step.target_indices)
-    layout = layouts[targets]
+    layout = layouts[tuple(step.target_indices)]
+    code, layout, columns, values = structures.prepare(step, layout)
     return _apply_matrix(state, step.matrix, layout, code, columns, values)
 
 
@@ -47,9 +46,10 @@ def _apply_superoperator_to_state(
     Gates and exact Kraus sums share this numerical operation. A sparse local
     superoperator uses CSR arithmetic; the evolving state remains dense.
     """
-    superop, code, columns, values, sparse = superoperators.resolve(step)
-    targets = tuple(step.target_indices)
-    layout = layouts[targets]
+    layout = layouts[tuple(step.target_indices)]
+    superop, code, layout, columns, values, sparse = superoperators.prepare(
+        step, layout
+    )
     return _apply_matrix(state, superop, layout, code, columns, values, sparse=sparse)
 
 

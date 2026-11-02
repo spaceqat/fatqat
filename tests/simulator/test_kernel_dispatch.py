@@ -2,6 +2,8 @@
 
 import gc
 import weakref
+from dataclasses import dataclass
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -13,6 +15,7 @@ import fatqat.operations as ops
 from fatqat.simulator import EvolutionState, Simulator
 from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep, BuiltinKernelKey
 from fatqat.implementation import default_matrix_implementation_map
+from fatqat.operations import Operation
 from fatqat.simulator._execution_contract import (
     _ResultRequest,
     _RunContext,
@@ -367,6 +370,148 @@ def test_coset_chunking_is_bit_identical_across_chunk_counts():
     serial = _apply_resolved_serial(state.copy(), *args)
     parallel = _apply_resolved_parallel(state.copy(), *args, 4)
     assert np.array_equal(serial, parallel)
+
+
+def _phases(rng, size):
+    return np.exp(1j * rng.uniform(0, 2 * np.pi, size))
+
+
+@pytest.mark.parametrize(
+    ("dims", "targets", "kind"),
+    [
+        ((2,) * 8, (3,), "dense"),  # shortest qubit run that takes the run walk
+        ((2,) * 8, (6, 4), "dense"),  # unordered targets, inner target between
+        ((2,) * 8, (3, 6), "diagonal"),  # bit-reversed offsets
+        ((2,) * 8, (3, 6), "permutation"),  # also checked in address order
+        ((256, 64), (1,), "permutation"),  # wide gate: tiles narrower than runs
+        ((3, 3, 2, 3, 2), (2,), "dense"),  # mixed-radix run of 9
+        ((2, 2, 2, 3, 3), (3, 4), "diagonal"),
+    ],
+)
+def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
+    # The run walk must match the coset-by-coset walk exactly, including when
+    # thread chunks start or end inside a run, and for permutations relabelled
+    # into address order.
+    from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
+        _build_apply_layout,
+    )
+    from fatqat.simulator._engine.numerics.numba_kernels._apply import (
+        _apply_dense_range,
+        _apply_diagonal_range,
+        _apply_permutation_range,
+        _apply_resolved_parallel,
+        _apply_resolved_serial,
+        _reorder_permutation,
+    )
+
+    rng = np.random.default_rng(3)
+    size = int(np.prod(dims))
+    local_dim = int(np.prod([dims[t] for t in targets]))
+    state = rng.standard_normal(size) + 1j * rng.standard_normal(size)
+    if kind == "diagonal":
+        matrix = np.diag(_phases(rng, local_dim))
+    elif kind == "permutation":
+        matrix = np.eye(local_dim)[rng.permutation(local_dim)] * _phases(rng, local_dim)
+    else:
+        matrix = rng.standard_normal((local_dim,) * 2) + 1j * rng.standard_normal(
+            (local_dim,) * 2
+        )
+    matrix = np.ascontiguousarray(matrix, dtype=np.complex128)
+    columns = np.empty(local_dim, dtype=np.int64)
+    values = np.empty(local_dim, dtype=np.complex128)
+    code = int(_classify_matrix(matrix, columns, values))
+    offsets, comp_strides, comp_dims, num_cosets, _ = _build_apply_layout(dims, targets)
+    layout = (offsets, comp_strides, comp_dims)
+
+    expected = state.copy()
+    if kind == "diagonal":
+        _apply_diagonal_range(expected, values, *layout, 0, num_cosets)
+    elif kind == "permutation":
+        _apply_permutation_range(expected, columns, values, *layout, 0, num_cosets)
+    else:
+        _apply_dense_range(expected, matrix, *layout, 0, num_cosets)
+
+    operand_sets = [(offsets, columns, values)]
+    if kind == "permutation":  # prepared permutations may arrive reordered
+        order = np.argsort(offsets)
+        operand_sets.append(_reorder_permutation(order, offsets, columns, values))
+    for gate_offsets, gate_columns, gate_values in operand_sets:
+        args = (code, matrix, gate_columns, gate_values, gate_offsets)
+        args += (comp_strides, comp_dims, num_cosets)
+        assert np.array_equal(_apply_resolved_serial(state.copy(), *args), expected)
+        for n_chunks in (3, 7, 32):  # 32 leaves ranges too short for runs
+            parallel = _apply_resolved_parallel(state.copy(), *args, n_chunks)
+            assert np.array_equal(parallel, expected)
+
+
+@pytest.mark.parametrize(
+    ("method", "num_qubits"), [("statevector", 16), ("density_matrix", 8)]
+)
+def test_reordered_permutations_match_numpy_runtime(method, num_qubits):
+    # Large enough that permutations on bit-reversed targets are prepared
+    # with their rows in address order; the result must not change.
+    rng = np.random.default_rng(5)
+    program = fq.Program(num_qubits)
+    for q in range(num_qubits):
+        program.add(ops.U(*rng.uniform(0, 2 * np.pi, 3)), q)
+    program.add(ops.Swap, (4, 1))
+    program.add(ops.CX, (1, 4))
+    program.add(ops.CCX, (0, 4, 1))
+    options = {
+        "shots": 0,
+        "result_config": {"counts": False, "final_state": True},
+        "simulation_config": {"kernel_parallelism": "serial"},
+    }
+    results = [
+        getattr(
+            Simulator(method, runtime=runtime).run(program, **options).result(),
+            f"get_{method}",
+        )()
+        for runtime in ("numpy", "numba")
+    ]
+    np.testing.assert_allclose(results[1], results[0], rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize("permutation_first", [True, False])
+def test_sweep_changing_gate_structure_matches_explicit_runs(permutation_first):
+    # A sweep repacks only the gates that change. TwoTilt is CX at zero and
+    # dense otherwise; on 16 qubits its permutation rows are reordered, so each
+    # row must repack its offsets for the structure it has.
+    @dataclass(frozen=True)
+    class TwoTilt(Operation):
+        theta: float | fq.Parameter
+        name: ClassVar[str] = "TwoTilt"
+        num_subsystems: ClassVar[int] = 2
+
+    def two_tilt(op):
+        cos, sin = np.cos(op.theta / 2), np.sin(op.theta / 2)
+        rx = np.array([[cos, -1j * sin], [-1j * sin, cos]])
+        ry = np.array([[cos, -sin], [sin, cos]])
+        return np.kron(rx, ry) @ np.eye(4)[[0, 1, 3, 2]]
+
+    tau = fq.Parameter("tau")
+    program = fq.Program(16, 2)
+    program.add(ops.H, 3)
+    program.add(ops.RY(0.4), 6)
+    program.add(TwoTilt(tau), (6, 3))
+    program.measure((6, 3), (0, 1))
+    impl_map = default_matrix_implementation_map()
+    impl_map.add(TwoTilt, two_tilt)
+    noise = fq.NoiseModel()
+    noise.add(Depolarizing(p=0.05), operation=ops.H)
+    backend = Simulator("SV", runtime="numba", implementation_map=impl_map, noise=noise)
+    values = [0.0, 1.2, 0.0] if permutation_first else [1.2, 0.0, 0.7]
+    options = {"shots": 64, "simulation_config": {"seed": 3}}
+
+    swept = backend.run_sweep(program, {tau: values}, **options).result()
+
+    explicit = [
+        backend.run(program.assign_parameters({tau: value}), **options)
+        .result()
+        .get_counts()
+        for value in values
+    ]
+    assert [result.get_counts() for result in swept] == explicit
 
 
 def test_fuse_gate_channels_leaves_unfusable_pairs_untouched():

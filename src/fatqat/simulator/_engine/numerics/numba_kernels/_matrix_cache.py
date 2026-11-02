@@ -15,7 +15,14 @@ from ....._backends.steps import (
     ResolvedStep,
 )
 from ._channel import _kraus_stack, _kraus_superop_kernel
-from ._apply import _DENSE, _DIAGONAL, _PERMUTATION, _classify_matrix
+from ._apply import (
+    _DENSE,
+    _DIAGONAL,
+    _PERMUTATION,
+    _classify_matrix,
+    _reorder_permutation,
+    _run_walk_order,
+)
 
 # Declared structure per canonical gate identity: the key-to-kernel table.
 # The numerical runtime owns these declarations; the key carries only identity.
@@ -82,12 +89,41 @@ _KERNEL_SPECS: dict[BuiltinKernelKey, int] = {
 }
 
 
+def _prepared_permutation(
+    prepared: dict[int, tuple],
+    step: ResolvedStep,
+    layout: tuple,
+    columns: np.ndarray,
+    values: np.ndarray,
+) -> tuple[tuple, np.ndarray, np.ndarray]:
+    """Return a permutation's layout and operands with its run-walk row order.
+
+    A permutation whose rows are out of address order, and whose ranges can
+    take the run walk (`_run_walk_order`), gets relabelled offsets, columns,
+    and values; otherwise its own are returned. Cached in ``prepared`` per
+    step, pinning the step and the layout, so a new layout for the same step
+    is prepared again.
+    """
+    cached = prepared.get(id(step))
+    if cached is not None and cached[0] is step and cached[1] is layout:
+        return cached[2]
+    offsets, _, _, num_cosets, n_chunks = layout
+    order = _run_walk_order(layout, num_cosets // max(1, n_chunks))
+    operands = (layout, columns, values)
+    if order is not None:
+        offsets, columns, values = _reorder_permutation(order, offsets, columns, values)
+        operands = ((offsets, *layout[1:]), columns, values)
+    prepared[id(step)] = (step, layout, operands)
+    return operands
+
+
 class _MatrixStructureCache:
     """Resolve frozen gate matrices independently of workflow packing.
 
     Per-step resolutions (code/columns/values) are keyed by ``id(step)`` and
     pin the source step so a recycled identity can never alias another entry.
-    Structure depends only on the step's frozen matrix, not system dimensions.
+    Structure depends only on the step's frozen matrix, not system dimensions;
+    `prepare` adds layout-dependent run-walk operands for permutations.
     Trajectory initialization deliberately keeps these entries: the dynamic
     workflow initializes each shot and must reuse its once-per-plan resolutions.
     Preparing the next payload prunes steps it no longer uses through ``retain``.
@@ -95,6 +131,7 @@ class _MatrixStructureCache:
 
     def __init__(self):
         self._entries: dict[int, tuple] = {}
+        self._prepared: dict[int, tuple] = {}
 
     def retain(self, plan: tuple[ResolvedStep, ...]) -> None:
         """Keep only resolutions used by the next effective plan."""
@@ -102,6 +139,11 @@ class _MatrixStructureCache:
         self._entries = {
             step_id: entry
             for step_id, entry in self._entries.items()
+            if step_id in active_ids
+        }
+        self._prepared = {
+            step_id: entry
+            for step_id, entry in self._prepared.items()
             if step_id in active_ids
         }
 
@@ -132,13 +174,30 @@ class _MatrixStructureCache:
         self._entries[id(step)] = (step, resolved)
         return resolved
 
+    def prepare(
+        self, step: ApplyMatrixStep, layout: tuple
+    ) -> tuple[int, tuple, np.ndarray, np.ndarray]:
+        """Return a step's code with the layout and operands to apply it with.
+
+        Adds the run walk's row order to a resolved permutation, once per step
+        and layout rather than per application (`_prepared_permutation`). Other
+        structures are applied with the layout as it is.
+        """
+        code, columns, values = self.resolve(step)
+        if code == _PERMUTATION:
+            layout, columns, values = _prepared_permutation(
+                self._prepared, step, layout, columns, values
+            )
+        return code, layout, columns, values
+
 
 class _SuperoperatorCache:
     """Prepare gate/channel superoperators independently of workflow packing.
 
     Per-step resolutions (matrix/code/columns/values/sparse) are keyed by
     ``id(step)`` and pin the source step so recycled identities cannot alias.
-    Resolutions depend only on frozen gate/channel payloads, not system dimensions.
+    Resolutions depend only on frozen gate/channel payloads, not system dimensions;
+    `prepare` adds layout-dependent run-walk operands for permutations.
     Trajectory initialization deliberately keeps them so each shot reuses the
     once-per-plan construction and classification. Preparing the next payload
     prunes steps it no longer uses through ``retain``.
@@ -146,6 +205,7 @@ class _SuperoperatorCache:
 
     def __init__(self):
         self._entries: dict[int, tuple] = {}
+        self._prepared: dict[int, tuple] = {}
 
     def retain(self, plan: tuple[ResolvedStep, ...]) -> None:
         """Keep only resolutions used by the next effective plan."""
@@ -153,6 +213,11 @@ class _SuperoperatorCache:
         self._entries = {
             step_id: entry
             for step_id, entry in self._entries.items()
+            if step_id in active_ids
+        }
+        self._prepared = {
+            step_id: entry
+            for step_id, entry in self._prepared.items()
             if step_id in active_ids
         }
 
@@ -195,6 +260,21 @@ class _SuperoperatorCache:
         resolved = (superop, code, columns, values, sparse)
         self._entries[id(step)] = (step, resolved)
         return resolved
+
+    def prepare(
+        self, step: ApplyMatrixStep | ApplyChannelStep, layout: tuple
+    ) -> tuple[np.ndarray, int, tuple, np.ndarray, np.ndarray, tuple | None]:
+        """Return a step's super-operator resolution with the layout to apply it.
+
+        Adds the run walk's row order to a permutation once per step and
+        layout, as `_MatrixStructureCache.prepare` does for gates.
+        """
+        superop, code, columns, values, sparse = self.resolve(step)
+        if code == _PERMUTATION:
+            layout, columns, values = _prepared_permutation(
+                self._prepared, step, layout, columns, values
+            )
+        return superop, code, layout, columns, values, sparse
 
 
 # Walk a super-operator sparsely only when its nonzero fraction is below this,
