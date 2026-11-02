@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from ._runtime import _validate_runtime, get_default_runtime
 from .._expectation import (
     _ExpectationExecution,
     _TermOccurrence,
@@ -193,7 +194,7 @@ class Simulator:
         self,
         method: str = "statevector",
         *,
-        runtime: str = "numba",
+        runtime: str | None = None,
         implementation_map: MatrixImplementationMap | None = None,
         noise: NoiseModel | None = None,
     ) -> None:
@@ -203,11 +204,8 @@ class Simulator:
             method: ``"statevector"``, ``"density_matrix"``, ``"unitary"``, or
                 ``"superop"``. Names are case-insensitive; ``"SV"`` and
                 ``"DM"`` are accepted aliases.
-            runtime: Numerical engine, case-insensitive. ``"numba"`` (the
-                default) lazily JIT-compiles its kernels and provides the
-                runtime's threaded and fusion paths. ``"numpy"`` executes the
-                reference kernels directly without JIT warm-up. Both support
-                every method, but are not promised to be bit-identical.
+            runtime: ``"numpy"`` or ``"numba"``, ``None`` (default) uses
+                the current simulator default.
             implementation_map: Matrix, channel, and custom-operation implementations.
                 ``None`` uses ``default_matrix_implementation_map()``.
             noise: Noise model applied to every run. ``None`` means ideal
@@ -229,11 +227,9 @@ class Simulator:
                 "'statevector'/'SV', 'density_matrix'/'DM', 'unitary', or "
                 "'superop'"
             )
-        normalized_runtime = str(runtime).lower()
-        if normalized_runtime not in ("numpy", "numba"):
-            raise BackendValidationError(
-                f"unsupported runtime={runtime!r}; expected 'numpy' or 'numba'"
-            )
+        normalized_runtime = (
+            get_default_runtime() if runtime is None else _validate_runtime(runtime)
+        )
         # Select implementations here; execution support belongs to the engine.
         spec = _METHOD_SPECS[normalized]
         if normalized_runtime == "numba":
