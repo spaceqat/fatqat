@@ -250,19 +250,20 @@ def _validate_observable_targets(
                     )
 
 
-def _term_masks(factors: _Factors, num_qubits: int) -> tuple[int, int, int, int, int]:
+def _term_masks(
+    factors: _Factors, strides: Sequence[int]
+) -> tuple[int, int, int, int, int]:
     """Pack one qubit term's factors into bit masks.
 
     Returns ``(x_mask, z_mask, zero_mask, one_mask, n_y)``. Only the qubits the
     term actually names are visited, so this is O(factors), not O(num_qubits).
-    On a qubit the number operator is the ``ONE`` projector.
+    A qubit's place value is its bit, so the masks follow whatever order the
+    caller's ``strides`` describe. On a qubit the number operator is the
+    ``ONE`` projector.
     """
     x_mask = z_mask = zero_mask = one_mask = n_y = 0
     for qubit, factor in factors:
-        # Public factors run most-significant first, while integer bit positions
-        # count from the right. Translating these small masks avoids permuting or
-        # copying the state array.
-        bit = 1 << (num_qubits - 1 - qubit)
+        bit = strides[qubit]
         if isinstance(factor, _Pauli):
             if factor.letter in _FLIPS:
                 x_mask |= bit
@@ -284,21 +285,20 @@ _KIND_X, _KIND_Y, _KIND_Z, _KIND_PROJECTOR, _KIND_NUMBER = range(5)
 
 
 def _term_digits(
-    factors: _Factors, dims: Sequence[int]
+    factors: _Factors, dims: Sequence[int], strides: Sequence[int]
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
     """Pack one term's factors into per-factor digit-kernel arrays.
 
-    Returns ``(strides, dims, kinds, levels, n_y)``. Axis 0 is the most
-    significant place, matching the bitmask convention, so a factor's place
-    value is the product of the dimensions after its axis.
+    Returns ``(strides, dims, kinds, levels, n_y)``, with each factor's stride
+    and dimension taken from the caller's per-subsystem ``dims`` and ``strides``.
     """
-    strides = []
+    factor_strides = []
     factor_dims = []
     kinds = []
     levels = []
     n_y = 0
     for axis, factor in factors:
-        strides.append(math.prod(dims[axis + 1 :]))
+        factor_strides.append(strides[axis])
         factor_dims.append(dims[axis])
         level = 0
         if isinstance(factor, _Pauli):
@@ -312,7 +312,7 @@ def _term_digits(
         kinds.append(kind)
         levels.append(level)
     return (
-        np.array(strides, dtype=np.int64),
+        np.array(factor_strides, dtype=np.int64),
         np.array(factor_dims, dtype=np.int64),
         np.array(kinds, dtype=np.int64),
         np.array(levels, dtype=np.int64),
@@ -472,6 +472,7 @@ def _expectation(
     data: np.ndarray,
     terms: tuple[tuple[float, _Factors], ...],
     dims: Sequence[int],
+    strides: Sequence[int],
     *,
     density: bool,
 ) -> float:
@@ -486,7 +487,7 @@ def _expectation(
         for coefficient, factors in terms:
             if coefficient == 0.0:
                 continue  # a zero coefficient contributes nothing; skip the pass
-            x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors, len(dims))
+            x_mask, z_mask, zero_mask, one_mask, n_y = _term_masks(factors, strides)
             value = term_value(x_mask, z_mask, zero_mask, one_mask)
             total += coefficient * value * (1j**n_y)
         return float(total.real)
@@ -495,7 +496,7 @@ def _expectation(
     for coefficient, factors in terms:
         if coefficient == 0.0:
             continue
-        *arrays, n_y = _term_digits(factors, dims)
+        *arrays, n_y = _term_digits(factors, dims, strides)
         total += coefficient * digit_value(*arrays) * (1j**n_y)
     return float(total.real)
 
@@ -504,6 +505,7 @@ def expectation_statevector(
     state: np.ndarray,
     terms: tuple[tuple[float, _Factors], ...],
     dims: Sequence[int],
+    strides: Sequence[int],
 ) -> float:
     """Return ``<psi|O|psi>`` for a statevector and a term list.
 
@@ -512,15 +514,17 @@ def expectation_statevector(
     diagonal weight. The state is read, never modified or copied. Terms are
     evaluated against the same state in turn, which is the whole point of
     evaluating a many-term observable in one place: the evolution is paid for
-    once. ``dims`` lists the subsystem dimensions with axis 0 most significant.
+    once. ``dims`` and ``strides`` give each subsystem's dimension and place
+    value in the flat basis index, indexed like the factors' subsystem numbers
     """
-    return _expectation(state, terms, dims, density=False)
+    return _expectation(state, terms, dims, strides, density=False)
 
 
 def expectation_density_matrix(
     rho: np.ndarray,
     terms: tuple[tuple[float, _Factors], ...],
     dims: Sequence[int],
+    strides: Sequence[int],
 ) -> float:
     """Return ``Tr(rho O)`` for a density matrix and a term list.
 
@@ -528,7 +532,7 @@ def expectation_density_matrix(
     state the term's X/Y factors flip ``j`` to and ``w(j)`` is its diagonal
     weight. The term picks out one shifted diagonal of ``rho``, so only one
     entry per row is read rather than the full square. On qubits ``p(j)`` is
-    ``j XOR x_mask``. ``dims`` lists the subsystem dimensions with axis 0 most
-    significant.
+    ``j XOR x_mask``. ``dims`` and ``strides`` give each subsystem's dimension and
+    place value, indexed like the factors' subsystem numbers.
     """
-    return _expectation(rho, terms, dims, density=True)
+    return _expectation(rho, terms, dims, strides, density=True)

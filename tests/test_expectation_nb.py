@@ -6,6 +6,8 @@ separately: the value must match the NumPy form, and the *error* must not grow
 with the state size, which is what the blocked summation is for.
 """
 
+import math
+
 import numpy as np
 import pytest
 
@@ -13,6 +15,12 @@ import fatqat as fq
 import fatqat.operations as ops
 from fatqat.observable import NumberOperator, Observable, Projector
 from fatqat import _expectation as ex
+
+
+def _msb_strides(dims):
+    """Place values with subsystem 0 most significant."""
+    return [math.prod(dims[index + 1 :]) for index in range(len(dims))]
+
 
 pytest.importorskip("numba")
 
@@ -81,7 +89,8 @@ def _masks(letters, qubits, num_qubits):
     if not qubits:
         return (0, 0, 0, 0)
     observable = Observable.from_sparse([(letters, qubits, 1.0)])
-    return ex._term_masks(observable.terms[0][1], num_qubits)[:4]
+    strides = _msb_strides((2,) * num_qubits)
+    return ex._term_masks(observable.terms[0][1], strides)[:4]
 
 
 @pytest.mark.parametrize("case", _TERMS.values(), ids=_TERMS.keys())
@@ -186,7 +195,11 @@ def test_digit_kernels_match_numpy(case):
     rho = np.outer(state, state.conj())
     index = np.arange(24)
     observable = Observable.from_sparse([(*case, 1.0)])
-    *arrays, _n_y = ex._term_digits(observable.terms[0][1], dims)
+    *arrays, _n_y = ex._term_digits(
+        observable.terms[0][1],
+        dims,
+        _msb_strides(dims),
+    )
 
     assert ex._COMPILED[2](state, *arrays) == pytest.approx(
         ex._digit_term_numpy(state, index, *arrays, density=False), abs=1e-12

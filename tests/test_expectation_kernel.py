@@ -5,6 +5,8 @@ against one assembled explicitly with Kronecker products - an independent
 computation, not a rearrangement of the same arithmetic.
 """
 
+import math
+
 import numpy as np
 import pytest
 
@@ -15,9 +17,17 @@ from fatqat._expectation import (
     expectation_density_matrix,
     expectation_statevector,
 )
+from fatqat.simulator._engine.numerics.numpy_kernels._measurement import _strides
+
+
+def _msb_strides(dims):
+    """Place values with subsystem 0 most significant, like the dense references."""
+    return [math.prod(dims[index + 1 :]) for index in range(len(dims))]
+
 
 _N = 5
 _QUBITS = (2,) * _N
+_QUBIT_STRIDES = _msb_strides(_QUBITS)
 
 _LOCAL = {
     "X": np.array([[0, 1], [1, 0]], dtype=complex),
@@ -95,7 +105,7 @@ def test_statevector_kernel_matches_dense_operator(observable, states):
     reference = complex(np.vdot(statevector, _dense(observable) @ statevector)).real
 
     assert expectation_statevector(
-        statevector, observable.terms, _QUBITS
+        statevector, observable.terms, _QUBITS, _QUBIT_STRIDES
     ) == pytest.approx(reference, abs=1e-12)
 
 
@@ -105,7 +115,7 @@ def test_density_matrix_kernel_matches_dense_operator(observable, states):
     reference = np.trace(density_matrix @ _dense(observable)).real
 
     assert expectation_density_matrix(
-        density_matrix, observable.terms, _QUBITS
+        density_matrix, observable.terms, _QUBITS, _QUBIT_STRIDES
     ) == pytest.approx(reference, abs=1e-12)
 
 
@@ -121,7 +131,7 @@ def test_occupation_equals_probability_of_bit_set(states):
         expected = probabilities[(index >> (_N - 1 - qubit)) & 1 == 1].sum()
 
         assert expectation_statevector(
-            statevector, observable.terms, _QUBITS
+            statevector, observable.terms, _QUBITS, _QUBIT_STRIDES
         ) == pytest.approx(expected, abs=1e-12)
 
 
@@ -131,8 +141,8 @@ def test_zero_and_one_projectors_are_complementary(states):
     one = Observable.from_sparse([("ONE", (1,), 1.0)])
 
     total = expectation_statevector(
-        statevector, zero.terms, _QUBITS
-    ) + expectation_statevector(statevector, one.terms, _QUBITS)
+        statevector, zero.terms, _QUBITS, _QUBIT_STRIDES
+    ) + expectation_statevector(statevector, one.terms, _QUBITS, _QUBIT_STRIDES)
     assert total == pytest.approx(1.0, abs=1e-12)
 
 
@@ -143,19 +153,21 @@ def test_asymmetric_public_factor_matches_complex_state_and_density_oracles():
     operator = np.kron(_LOCAL["X"], _LOCAL["I"])
     observable = Observable([("XI", 1.0)])
 
-    assert expectation_statevector(psi, observable.terms, (2, 2)) == pytest.approx(
-        np.vdot(psi, operator @ psi).real, abs=1e-12
-    )
-    assert expectation_density_matrix(rho, observable.terms, (2, 2)) == pytest.approx(
-        np.trace(rho @ operator).real, abs=1e-12
-    )
+    assert expectation_statevector(
+        psi, observable.terms, (2, 2), (2, 1)
+    ) == pytest.approx(np.vdot(psi, operator @ psi).real, abs=1e-12)
+    assert expectation_density_matrix(
+        rho, observable.terms, (2, 2), (2, 1)
+    ) == pytest.approx(np.trace(rho @ operator).real, abs=1e-12)
 
 
 def test_statevector_kernel_does_not_modify_the_state(states):
     statevector, _ = states
     before = statevector.copy()
 
-    expectation_statevector(statevector, _CASES["projector_with_xy"].terms, _QUBITS)
+    expectation_statevector(
+        statevector, _CASES["projector_with_xy"].terms, _QUBITS, _QUBIT_STRIDES
+    )
 
     assert np.array_equal(statevector, before)
 
@@ -168,7 +180,9 @@ def test_sign_uses_selection_not_uint8_arithmetic(states):
     observable = Observable([("ZZZZZ", 1.0)])
     reference = complex(np.vdot(statevector, _dense(observable) @ statevector)).real
 
-    value = expectation_statevector(statevector, observable.terms, _QUBITS)
+    value = expectation_statevector(
+        statevector, observable.terms, _QUBITS, _QUBIT_STRIDES
+    )
     assert value == pytest.approx(reference, abs=1e-12)
     assert abs(value) <= 1.0  # a Pauli expectation cannot leave [-1, 1]
 
@@ -176,6 +190,7 @@ def test_sign_uses_selection_not_uint8_arithmetic(states):
 # --- mixed subsystem dimensions -----------------------------------------------
 
 _DIMS = (3, 2, 4)
+_DIM_STRIDES = _msb_strides(_DIMS)
 
 _MIXED_CASES = {
     "number": Observable.from_sparse([(NumberOperator(), (2,), 1.0)]),
@@ -235,9 +250,40 @@ def test_mixed_dimension_kernels_match_dense_operator(observable, mixed_states):
     psi, rho = mixed_states
     operator = _mixed_dense(observable)
 
-    assert expectation_statevector(psi, observable.terms, _DIMS) == pytest.approx(
-        np.vdot(psi, operator @ psi).real, abs=1e-12
+    assert expectation_statevector(
+        psi, observable.terms, _DIMS, _DIM_STRIDES
+    ) == pytest.approx(np.vdot(psi, operator @ psi).real, abs=1e-12)
+    assert expectation_density_matrix(
+        rho, observable.terms, _DIMS, _DIM_STRIDES
+    ) == pytest.approx(np.trace(rho @ operator).real, abs=1e-12)
+
+
+@pytest.mark.parametrize(
+    "observable",
+    [_MIXED_CASES["projector_with_x"], _MIXED_CASES["multi_term"]],
+    ids=["projector_with_x", "multi_term"],
+)
+def test_place_values_decouple_the_kernel_from_subsystem_order(
+    observable, mixed_states
+):
+    """An engine that numbers its subsystems the other way round gets the same value."""
+    psi, rho = mixed_states
+    last = len(_DIMS) - 1
+    flipped_terms = tuple(
+        (coefficient, tuple((last - index, factor) for index, factor in factors))
+        for coefficient, factors in observable.terms
     )
-    assert expectation_density_matrix(rho, observable.terms, _DIMS) == pytest.approx(
-        np.trace(rho @ operator).real, abs=1e-12
+    flipped_dims = _DIMS[::-1]
+    flipped_strides = _strides(flipped_dims)  # little-endian
+
+    assert expectation_statevector(
+        psi, flipped_terms, flipped_dims, flipped_strides
+    ) == pytest.approx(
+        expectation_statevector(psi, observable.terms, _DIMS, _DIM_STRIDES), abs=1e-12
+    )
+    assert expectation_density_matrix(
+        rho, flipped_terms, flipped_dims, flipped_strides
+    ) == pytest.approx(
+        expectation_density_matrix(rho, observable.terms, _DIMS, _DIM_STRIDES),
+        abs=1e-12,
     )

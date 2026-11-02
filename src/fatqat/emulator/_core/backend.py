@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
@@ -785,10 +786,11 @@ class _PulseBackend(ABC):
             terms_by_observable[bound.occurrence.observable_index].append(
                 (bound.occurrence.coefficient, bound.engine_factors)
             )
-        # Engine index 0 is the kernel's most significant axis here.
+        # QuTiP-ordered engine: index 0 is the most significant subsystem.
         dims = tuple(program.engine_allocation.system_dims)
+        strides = tuple(math.prod(dims[index + 1 :]) for index in range(len(dims)))
         values = tuple(
-            constant + kernel(state, tuple(terms), dims)
+            constant + kernel(state, tuple(terms), dims, strides)
             for constant, terms in zip(
                 prepared.constants,
                 terms_by_observable,

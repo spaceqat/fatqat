@@ -251,23 +251,16 @@ def test_numpy_integers_are_accepted_as_indices():
     assert all(isinstance(index, np.integer) for index in indices)
 
     observable = Observable.from_sparse([("ZZ", indices, 1.0)])
-
-    assert observable == Observable.from_sparse(
+    expected = Observable.from_sparse(
         [("ZZ", tuple(int(index) for index in indices), 1.0)]
     )
 
-
-def test_numpy_indices_are_narrowed_to_python_ints():
-    # Stored as plain ints so terms hash and repr the same however they were
-    # built, and so an equal term compares equal across construction routes.
-    from_numpy = Observable.from_sparse([("ZZ", (np.int64(1), np.int32(0)), 1.5)])
-    from_python = Observable.from_sparse([("ZZ", (1, 0), 1.5)])
-
+    # Stored as plain ints so terms hash and repr the same however they were built.
     assert all(
-        type(index) is int for _, factors in from_numpy.terms for index, _ in factors
+        type(index) is int for _, factors in observable.terms for index, _ in factors
     )
-    assert from_numpy == from_python
-    assert hash(from_numpy) == hash(from_python)
+    assert observable == expected
+    assert hash(observable) == hash(expected)
 
 
 @pytest.mark.parametrize(

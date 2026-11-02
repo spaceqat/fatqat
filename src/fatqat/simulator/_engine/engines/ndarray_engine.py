@@ -17,6 +17,7 @@ from ...._expectation import expectation_density_matrix, expectation_statevector
 from ....observable import _Factors
 from .._execution_policy import _ExecutionPolicy as ExecutionPolicy
 from ..state import EvolutionState
+from ..numerics.numpy_kernels._measurement import _strides
 from .base import MatrixEngine
 
 
@@ -48,23 +49,12 @@ class _NdarrayEngine(MatrixEngine[np.ndarray]):
             if self._state_field == "statevector"
             else expectation_density_matrix
         )
-        # Kernel axis 0 is the most significant place, the reverse of the
-        # engine's little-endian subsystem order.
-        kernel_dims = tuple(reversed(self._dims))
+        dims = tuple(self._dims)
+        strides = _strides(dims)  # the engine is little-endian
         values = []
         with self._execution_scope(policy):
             for terms in observables:
-                kernel_terms = tuple(
-                    (
-                        coefficient,
-                        tuple(
-                            (self.n_subsystems - 1 - index, factor)
-                            for index, factor in factors
-                        ),
-                    )
-                    for coefficient, factors in terms
-                )
-                values.append(kernel(state, kernel_terms, kernel_dims))
+                values.append(kernel(state, terms, dims, strides))
         return tuple(values)
 
     @abstractmethod
