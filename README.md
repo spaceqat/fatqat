@@ -1,6 +1,6 @@
 # FatQat
 
-English | [简体中文](README.zh-CN.md)
+English | [简体中文](README.zh-CN.md) | [한국어](README-KR.md)
 
 FatQat is a quantum-computing toolkit built around one authoring interface:
 `Program`. Write the computation once, then choose how closely to model the
