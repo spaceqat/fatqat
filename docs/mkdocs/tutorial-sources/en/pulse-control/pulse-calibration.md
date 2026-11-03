@@ -113,7 +113,11 @@ def make_pulse_program(amplitude_scale):
 
 def run_state(program):
     state = (
-        backend.run(program, result_config=final_state_only).result().get_statevector()
+        backend.run(program, result_config=final_state_only)
+        .result()
+        .get_statevector()
+        .full()
+        .ravel()
     )
     assert state.shape == (3,)
     assert np.all(np.isfinite(state))
@@ -247,6 +251,7 @@ def run_unitary(program):
         unitary_backend.run(program, result_config=final_state_only)
         .result()
         .get_unitary()
+        .full()
     )
     assert operator.shape == (3, 3)
     assert np.all(np.isfinite(operator))

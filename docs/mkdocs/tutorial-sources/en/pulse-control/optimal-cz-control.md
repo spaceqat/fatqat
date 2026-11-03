@@ -208,7 +208,7 @@ def block_return_amplitude(coupling, duration, samples=201):
             (fq.emulator.PulseControl(model.control.drive(), waveform),),
         )
     )
-    return complex(block_backend.run(program).result().get_unitary()[0, 0])
+    return complex(block_backend.run(program).result().get_unitary().full()[0, 0])
 
 
 def conditional_phase(single_amplitude, double_amplitude):

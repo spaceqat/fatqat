@@ -120,6 +120,7 @@ def test_real_trajectory_runs_are_reproducible_and_converge_to_mesolve(model):
         .run(ensemble_program)
         .result()
         .get_density_matrix()
+        .full()
     )
     expected_excited = float(np.real(density[1, 1]))
     observed_excited = first.get_counts().get("1", 0) / 400
@@ -187,7 +188,7 @@ def test_one_shot_regional_trajectory_continues_and_is_reproducible(model):
             )
             adapter.evolve(run, context, (True,))
             context.time = run.end_time
-        return adapter.finish_shot(context).final_state
+        return adapter.finish_shot(context).final_state.full().ravel()
 
     first = execute()
     second = execute()

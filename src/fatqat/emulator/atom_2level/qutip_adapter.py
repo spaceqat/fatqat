@@ -199,6 +199,10 @@ class _Atom2LevelQutipAdapter:
             )
         context.state = result.states[-1]
 
+    def identity_operator(self) -> Qobj:
+        """Return the identity on the complete two-level model."""
+        return tensor(*[qeye(2) for _ in range(self._site_count)])
+
     def propagator(
         self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True
     ) -> Any:
@@ -247,8 +251,7 @@ class _Atom2LevelQutipAdapter:
     def finish_shot(self, context: _ShotContext) -> _PulseShotOutcome:
         final_state = None
         if self._retain_final_state:
-            state = self._state_array(context.state)
-            final_state = np.array(state, dtype=complex, copy=True)
+            final_state = self._final_state(context.state)
         return _PulseShotOutcome(
             final_state=final_state,
             final_state_kind=(
@@ -509,7 +512,7 @@ class _Atom2LevelQutipAdapter:
         )
         return outcome
 
-    def _statevector(self, state: Any) -> np.ndarray:
+    def _statevector(self, state: Any) -> Qobj:
         if not isinstance(state, Qobj) or not state.isket:
             raise TypeError("two-level coherent runner requires a QuTiP ket")
         vector = np.asarray(state.full(), dtype=complex).reshape(-1)
@@ -518,9 +521,9 @@ class _Atom2LevelQutipAdapter:
         norm = float(np.linalg.norm(vector))
         if norm <= 0.0 or not np.isfinite(norm):
             raise RuntimeError("two-level coherent runner produced an invalid ket")
-        return vector / norm
+        return Qobj(vector / norm, dims=state.dims)
 
-    def _state_array(self, state: Any) -> np.ndarray:
+    def _final_state(self, state: Any) -> Qobj:
         if self._execution_mode == "density_matrix":
             if not isinstance(state, Qobj) or not state.isoper:
                 raise TypeError(
@@ -532,7 +535,7 @@ class _Atom2LevelQutipAdapter:
                 raise RuntimeError(
                     "two-level density-matrix runner produced an invalid state"
                 )
-            return matrix
+            return Qobj(matrix, dims=state.dims)
         return self._statevector(state)
 
 

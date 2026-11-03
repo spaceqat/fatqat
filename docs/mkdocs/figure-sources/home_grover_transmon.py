@@ -136,7 +136,7 @@ result = emulator.run(
 ).result()
 
 density_matrix = result.get_density_matrix()
-physical = np.clip(np.real(np.diag(density_matrix)), 0.0, None)
+physical = np.clip(np.real(density_matrix.diag()), 0.0, None)
 physical /= physical.sum()
 physical = physical.reshape((3, 3, 3)).transpose(logical_axis_order(compiled, result))
 binary = np.zeros(8)

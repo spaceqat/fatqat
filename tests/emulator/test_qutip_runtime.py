@@ -86,7 +86,7 @@ def test_time_rescaled_sampled_drives_remain_equivalent(
         )
 
         result = backend.run(program).result()
-        states.append(result.get_density_matrix())
+        states.append(result.get_density_matrix().full())
         assert result.metadata["runtime_details"]["solver_options"][
             "max_step"
         ] == pytest.approx(scale / 200.0)

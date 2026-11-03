@@ -11,6 +11,8 @@ import numpy as np
 from .errors import BackendValidationError, ResultFieldUnavailableError
 
 if TYPE_CHECKING:
+    from qutip import Qobj
+
     from .simulator import ClassicalState
 
 
@@ -159,12 +161,12 @@ class Result:
     def __init__(
         self,
         counts: dict[tuple[int, ...], int] | None = None,
-        statevector: np.ndarray | None = None,
+        statevector: np.ndarray | Qobj | None = None,
         available: frozenset[str] = frozenset(),
         metadata: Mapping[str, Any] | None = None,
         classical_dims: Sequence[int] = (),
-        density_matrix: np.ndarray | None = None,
-        unitary: np.ndarray | None = None,
+        density_matrix: np.ndarray | Qobj | None = None,
+        unitary: np.ndarray | Qobj | None = None,
         superop: np.ndarray | None = None,
         data: Mapping[str, Any] | None = None,
         classical_state: ClassicalState | None = None,
@@ -375,16 +377,18 @@ class Result:
             figsize=figsize,
         )
 
-    def get_statevector(self) -> np.ndarray:
+    def get_statevector(self) -> np.ndarray | Qobj:
         """Return the produced statevector.
 
-        Built-in backends return a length-``D`` array, where ``D`` is the
-        product of subsystem dimensions. Basis indices and
+        Simulator backends return a length-``D`` array, where ``D`` is the
+        product of subsystem dimensions. Pulse emulators return a QuTiP ket
+        ``Qobj`` of shape ``(D, 1)`` whose ``dims`` list the subsystem
+        dimensions; use ``.full().ravel()`` for a flat array. Basis indices and
         ``metadata["state_axes"]`` use public most-significant-first subsystem
         order.
 
         Returns:
-            The statevector array.
+            The statevector array, or a ket ``Qobj`` for pulse emulators.
 
         Raises:
             ResultFieldUnavailableError: If a statevector was not produced.
@@ -396,16 +400,18 @@ class Result:
             )
         return self._statevector
 
-    def get_density_matrix(self) -> np.ndarray:
+    def get_density_matrix(self) -> np.ndarray | Qobj:
         """Return the produced density matrix.
 
-        Built-in backends return a ``(D, D)`` array, where ``D`` is the product
-        of subsystem dimensions. Both matrix axes and
-        ``metadata["state_axes"]`` use public most-significant-first subsystem
-        order.
+        Simulator backends return a ``(D, D)`` array, where ``D`` is the
+        product of subsystem dimensions. Pulse emulators return a QuTiP
+        operator ``Qobj`` of the same shape; use ``.full()`` for an array. Both
+        matrix axes and ``metadata["state_axes"]`` use public
+        most-significant-first subsystem order.
 
         Returns:
-            The density-matrix array.
+            The density-matrix array, or an operator ``Qobj`` for pulse
+            emulators.
 
         Raises:
             ResultFieldUnavailableError: If a density matrix was not produced.
@@ -417,15 +423,15 @@ class Result:
             )
         return self._density_matrix
 
-    def get_unitary(self) -> np.ndarray:
+    def get_unitary(self) -> np.ndarray | Qobj:
         """Return the program's unitary matrix.
 
         Rows and columns use the same public most-significant-first basis as
         returned statevectors.
 
         Returns:
-            A ``(D, D)`` array, where ``D`` is the product of the subsystem
-            dimensions. Column ``j`` is the state the program prepares from
+            A ``(D, D)`` array, or an operator ``Qobj`` for pulse emulators,
+            where ``D`` is the product of the subsystem dimensions. Column ``j`` is the state the program prepares from
             basis state ``|j>``. Column 0 matches a default-state statevector
             run only when that backend uses the same terminal-frame convention
             for states and operators.

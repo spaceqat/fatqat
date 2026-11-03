@@ -114,6 +114,7 @@ def computational_subspace_unitary(backend, program, schedule_mode="ASAP"):
         unitary_backend.run(program, simulation_config={"schedule_mode": schedule_mode})
         .result()
         .get_unitary()
+        .full()
     )
     return propagator[np.ix_(indices, indices)]
 
@@ -262,8 +263,8 @@ def test_run_composes_terminal_virtual_frame(backend, method):
     expected_density_matrix = np.outer(expected_state, expected_state.conj())
 
     if method == "statevector":
-        state = result.get_statevector()
+        state = result.get_statevector().full().ravel()
         actual_density_matrix = np.outer(state, state.conj())
     else:
-        actual_density_matrix = result.get_density_matrix()
+        actual_density_matrix = result.get_density_matrix().full()
     assert np.allclose(actual_density_matrix, expected_density_matrix, atol=2e-3)

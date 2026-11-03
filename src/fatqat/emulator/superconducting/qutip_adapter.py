@@ -224,6 +224,10 @@ class _TransmonQutipAdapter:
         context.frame_angles.clear()
         context.frame_angles.update(bound.output_frames)
 
+    def identity_operator(self) -> Qobj:
+        """Return the identity on the complete physical model."""
+        return tensor(*[qeye(dimension) for dimension in self._dims])
+
     def propagator(
         self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True
     ) -> Any:
@@ -409,10 +413,7 @@ class _TransmonQutipAdapter:
                     state = frame_unitary * state * frame_unitary.dag()
                 else:
                     state = frame_unitary * state
-            array = np.asarray(state.full(), dtype=complex)
-            if self._execution_mode != "density_matrix":
-                array = array.reshape(-1)
-            final_state = np.array(array, dtype=complex, copy=True)
+            final_state = state.copy()
         return _PulseShotOutcome(
             final_state=final_state,
             final_state_kind=(

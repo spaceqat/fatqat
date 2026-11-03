@@ -103,10 +103,12 @@ def test_initial_ket_copy_and_finished_statevector_are_binary_and_independent():
     assert initial.full().reshape(-1).tolist() == [1.0, 0.0, 0.0, 0.0]
     assert copied is not initial
     assert outcome.final_state_kind == "statevector"
-    assert outcome.final_state.shape == (4,)
-    assert np.linalg.norm(outcome.final_state) == pytest.approx(1.0)
-    outcome.final_state[0] = 0.0
-    assert initial.full()[0, 0] == 1.0
+    assert isinstance(outcome.final_state, Qobj)
+    assert outcome.final_state.isket
+    assert outcome.final_state.dims == [[2, 2], [1]]
+    assert outcome.final_state.norm() == pytest.approx(1.0)
+    assert outcome.final_state is not context.state
+    assert outcome.final_state is not initial
 
 
 def test_counts_only_finish_does_not_materialize_a_statevector():
@@ -168,7 +170,10 @@ def test_terminal_measurement_uses_supplied_rng_and_collapses_the_complete_ket()
     def sample(seed):
         context = _ShotContext(superposition.copy(), [0], np.random.default_rng(seed))
         adapter.execute_boundary(step, context)
-        return context.classical_memory[0], adapter.finish_shot(context).final_state
+        return (
+            context.classical_memory[0],
+            adapter.finish_shot(context).final_state.full().ravel(),
+        )
 
     first_digit, first_state = sample(2026)
     second_digit, second_state = sample(2026)
@@ -196,8 +201,8 @@ def test_propagator_and_engine_outputs_have_binary_shapes():
     )
 
     assert unitary.shape == (4, 4)
-    assert outcomes[0].final_state.shape == (4,)
-    assert np.linalg.norm(outcomes[0].final_state) == pytest.approx(1.0)
+    assert outcomes[0].final_state.shape == (4, 1)
+    assert outcomes[0].final_state.norm() == pytest.approx(1.0)
 
 
 def test_density_evolution_validates_state_without_copying_it(monkeypatch):
