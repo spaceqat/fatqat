@@ -148,6 +148,19 @@ def test_estimator_rejects_pulse_unitary_at_request_time(atom_3level_model):
         fq.Estimator(backend).run(program, fq.Observable([("ZZ", 1.0)]))
 
 
+def test_estimator_rejects_an_initial_state(atom_3level_model):
+    backend, program, _dimension = _family_case(
+        "atom2", "density_matrix", atom_3level_model
+    )
+
+    with pytest.raises(BackendValidationError, match="fixes the initial product"):
+        fq.Estimator(backend).run(
+            program,
+            fq.Observable([("ZZ", 1.0)]),
+            initial_state=np.array([1.0, 0.0, 0.0, 0.0]),
+        )
+
+
 @pytest.mark.parametrize("family", ("transmon", "atom3", "atom2"))
 def test_counts_only_warns_when_a_declared_clbit_is_never_measured(
     family, atom_3level_model

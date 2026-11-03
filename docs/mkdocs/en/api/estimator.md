@@ -93,12 +93,6 @@ sample standard error. Constant terms contribute zero standard error; one
 sample of a nonconstant term has undefined standard error and reports `nan`.
 Set `simulation_config["seed"]` to reproduce a sampled run.
 
-Invalid programs, operators that do not fit the program's subsystems, and invalid
-shot values raise
-[`BackendValidationError`][fatqat.errors.BackendValidationError] before a job
-is returned; unsupported observable types raise `TypeError`. Execution errors
-follow the backend's error-handling policy.
-
 Configure the simulation method, runtime, and noise on the backend. The
 Estimator forwards `simulation_config` to the backend and accepts the same keys
 as its normal `run()` path; see the tables for

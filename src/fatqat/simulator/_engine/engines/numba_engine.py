@@ -34,6 +34,10 @@ Kronecker product preserves structure (see below).
   later than the statevector path (`_MIN_SIZE_TO_THREAD_DM`). Reset stays the
   NumPy partial-trace numerical function.
 
+`NumbaFixedPhotonEngine` is `NumpyFixedPhotonEngine` with Numba gate and
+measurement functions that walk the rows one at a time; `LOSimulator` alone
+selects it.
+
 Kraus arithmetic lives in ``numerics.numba_kernels._channel``. Channel/readout
 packing and classical readout sequencing live in ``workflows.numba_workflow``.
 Numerical modules do not import engines or workflows; compiled callers import
@@ -152,10 +156,17 @@ from ..numerics.numba_kernels._channel import (
     _apply_channel_statevector,
     _apply_channel_density_matrix,
 )
+from ..numerics.numba_kernels._fixed_photon import (
+    _apply_matrix_fixed_photon_numba,
+    _fixed_photon_levels_numba,
+    _project_fixed_photon_numba,
+)
+from ..numerics.numpy_kernels._fixed_photon import _fixed_photon_probabilities
 from ..numerics.numpy_kernels._reset import _reset_density_matrix, _reset_superoperator
 from ..binding import _bind_parameter_batch
 from ..state import EvolutionState
 from .ndarray_engine import _NdarrayEngine
+from .numpy_engine import NumpyFixedPhotonEngine
 from ..numerics.numpy_kernels._state import (
     _allocate_statevector,
     _allocate_density_matrix,
@@ -892,3 +903,55 @@ class NumbaSuperopEngine(_NumbaOperatorRunMixin, NumbaDMEngine):
         if not policy.fusion:
             return plan
         return tuple(_fuse_gate_channels(list(plan)))
+
+
+# --- fixed-photon engine ---
+
+
+class NumbaFixedPhotonEngine(NumpyFixedPhotonEngine):
+    """Fixed-photon engine with Numba-jitted gate and measurement functions.
+
+    Gates and projections split the rows across kernel threads, like the
+    statevector coset walks.
+    """
+
+    _capabilities = replace(
+        NumpyFixedPhotonEngine._capabilities,
+        kernels=_KernelCapabilities(
+            supports_kernel_threads=True,
+            thread_capacity=_MAX_THREADS,
+            supports_fusion=False,
+        ),
+    )
+
+    def __init__(self, name: str = "numba-fixed-photon"):
+        super().__init__(name)
+
+    def _execution_scope(self, policy: ExecutionPolicy):
+        return _thread_scope(policy)
+
+    def _bind_kernels_to_python_workflow(
+        self,
+        plan: tuple[ResolvedStep, ...],
+        measurements: tuple[tuple[int, int], ...] = (),
+        *,
+        policy: ExecutionPolicy | None = None,
+    ) -> _PythonExecution:
+        threads = {
+            "workers": _kernel_thread_workers(policy) if policy else _MAX_THREADS,
+            "force_parallel": policy is not None
+            and policy.kernel_strategy == "threads",
+        }
+        return _PythonExecution(
+            plan=plan,
+            deferred_measurements=measurements,
+            apply_matrix=partial(_apply_matrix_fixed_photon_numba, **threads),
+            apply_channel=None,
+            measurement=_MeasurementKernels(
+                _fixed_photon_probabilities,
+                partial(_project_fixed_photon_numba, **threads),
+                _sample_basis_indices,
+                _fixed_photon_levels_numba,
+            ),
+            reset=None,
+        )

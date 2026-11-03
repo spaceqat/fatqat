@@ -176,19 +176,24 @@ def _combine_term_statistics(
 
 
 def _validate_observable_targets(
-    observables: Sequence[Observable], program: Program
+    observables: Sequence[Observable],
+    program: Program,
+    subsystem_dims: Sequence[int | None] | None = None,
 ) -> None:
     """Check every local operator against the program subsystem it names.
 
     Observables carry no width or dimension, so this is where an index past
     the program, a Pauli on a non-qubit, or a projector level the subsystem
-    cannot hold is rejected.
+    cannot hold is rejected. A subsystem with no fixed dimension (a mode) is
+    never a qubit; its projector levels are checked once a backend passes the
+    ``subsystem_dims`` it resolved, one per program subsystem.
     """
-    subsystem_dims = tuple(
-        register.dim
-        for register in program.quantum_registers
-        for _ in range(register.size)
-    )
+    if subsystem_dims is None:
+        subsystem_dims = tuple(
+            register.dim
+            for register in program.quantum_registers
+            for _ in range(register.size)
+        )
     width = len(subsystem_dims)
     for observable in observables:
         for _, factors in observable.terms:
@@ -200,11 +205,16 @@ def _validate_observable_targets(
                     )
                 dim = subsystem_dims[index]
                 if isinstance(factor, _Pauli) and dim != 2:
+                    has = "no fixed dimension" if dim is None else f"dim={dim}"
                     raise BackendValidationError(
                         f"local operator {factor} on subsystem {index} is "
-                        f"defined on qubits only; the subsystem has dim={dim}"
+                        f"defined on qubits only; the subsystem has {has}"
                     )
-                if isinstance(factor, Projector) and factor.level >= dim:
+                if (
+                    isinstance(factor, Projector)
+                    and dim is not None
+                    and factor.level >= dim
+                ):
                     raise BackendValidationError(
                         f"local operator {factor!r} on subsystem {index} needs "
                         f"dim > {factor.level}, but the subsystem has dim={dim}"

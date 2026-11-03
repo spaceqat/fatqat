@@ -137,7 +137,9 @@ class _QuantumCapabilities:
     """Representation semantics, independent of numerical runtime."""
 
     # Quantum buffer interpretation and method-native result field.
-    representation: Literal["statevector", "density_matrix", "unitary", "superop"]
+    representation: Literal[
+        "statevector", "density_matrix", "unitary", "superop", "fixed_photon_state"
+    ]
     # Whether this representation can execute reset and finite channel maps.
     supports_nonunitary: bool
     # Reset/channel execution samples a branch per shot instead of evolving

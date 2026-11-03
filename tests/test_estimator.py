@@ -256,6 +256,40 @@ def test_bell_expectation_values(label, expected, method):
     assert result.get_expectation() == pytest.approx(expected, abs=1e-12)
 
 
+def test_initial_state_starts_the_evolution():
+    # |01> -> (|01> + |10>) / sqrt(2), on which ZZ is exactly -1.
+    program = _bell()
+    one = fq.simulator.BasisState({program.quantum_registers[0][1]: 1})
+
+    result = (
+        _estimator().run(program, Observable([("ZZ", 1.0)]), initial_state=one).result()
+    )
+
+    assert result.get_expectation() == pytest.approx(-1.0, abs=1e-12)
+
+
+def test_initial_state_is_reused_for_every_sweep_row():
+    angle = fq.Parameter("angle")
+    program = fq.Program(1)
+    program.add(ops.RY(angle), 0)
+    one = fq.simulator.BasisState({program.quantum_registers[0][0]: 1})
+
+    results = (
+        _estimator()
+        .run_sweep(
+            program,
+            Observable([("Z", 1.0)]),
+            {angle: [0.0, np.pi / 2, np.pi]},
+            initial_state=one,
+        )
+        .result()
+    )
+
+    assert [result.get_expectation() for result in results] == pytest.approx(
+        [-1.0, 0.0, 1.0], abs=1e-12
+    )
+
+
 def test_multi_term_observable_returns_weighted_sum():
     # 1.0*(+1) + 0.5*(+1) + 0.25*(-1)
     observable = Observable([("ZZ", 1.0), ("XX", 0.5), ("YY", 0.25)])

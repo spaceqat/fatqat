@@ -546,13 +546,20 @@ class _PulseBackend(ABC):
         shots: int,
         simulation_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
+        initial_state: Any = None,
     ) -> Job[list[_ExpectationExecution]]:
         """Execute a private exact or sampled pulse expectation request per entry.
 
         ``parameter_values`` are a sweep's validated columns; each entry binds
         and runs the program on its own. Without them the program is one fully
-        bound entry.
+        bound entry. The emulator family fixes the initial product state, so
+        ``initial_state`` must be None, as in `run`.
         """
+        if initial_state is not None:
+            raise BackendValidationError(
+                f"{type(self).__name__} fixes the initial product state and does "
+                "not accept an initial_state"
+            )
         if parameter_values is not None:
             executions: list[_ExpectationExecution] = []
             for row in _parameter_batch_rows(parameter_values):
