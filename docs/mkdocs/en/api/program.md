@@ -82,10 +82,10 @@ outputs positionally. Both sides must be non-empty, have the same length, and
 have matching dimensions at every position. Repeated operands are processed
 in pair order; see [Measurement and structural operations](operations/structural.md) for measurement behavior.
 
-[`measure_all`][fatqat.Program.measure_all] flattens all registers and their members
-in declaration order and appends one grouped measurement. It requires equal,
-non-zero quantum and classical counts and matching dimensions at every
-position. Read [Write quantum computations with Program](../guide/program.md) for a mid-program measurement and
+[`measure_all`][fatqat.Program.measure_all] appends one grouped measurement
+of all quantum slots, using the first corresponding classical slots by default
+or the destinations specified by `outputs`. Read [Write quantum computations
+with Program](../guide/program.md) for a mid-program measurement and
 feedforward workflow.
 
 <a id="program-templates"></a>
