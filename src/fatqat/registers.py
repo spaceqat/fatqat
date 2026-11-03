@@ -129,15 +129,15 @@ class QuantumRegister(Register):
 
 @dataclass(frozen=True, eq=False)
 class ModeRegister(QuantumRegister):
-    """Fixed-size register of optical modes with no fixed local dimension.
+    """Register of optical modes.
 
-    Each slot is one bosonic mode. The number of photons a mode can hold is a
-    simulation approximation rather than part of the program, so ``dim`` is
-    ``None`` and the backend chooses the truncation for each run;
-    `fatqat.simulator.LOSimulator` reads it from
-    ``simulation_config["cutoff"]``. Backends that need a fixed dimension,
-    including the generic `fatqat.simulator.Simulator`, reject this register.
-    Measure a mode into a `CountRegister`.
+    Each slot is one mode, and its level is the number of photons in it. A
+    mode can hold any number of photons, so ``dim`` is ``None``; the
+    simulator limits it per run (`fatqat.simulator.LOSimulator` takes
+    ``simulation_config["cutoff"]``). Run mode Programs on
+    `fatqat.simulator.LOSimulator`; the general
+    `fatqat.simulator.Simulator` rejects them. Measure a mode into a
+    `CountRegister`.
 
     Args:
         size: Positive number of modes. Must be an integer, not ``bool``.
@@ -185,12 +185,11 @@ class ClassicalRegister(Register):
 
 @dataclass(frozen=True, eq=False)
 class CountRegister(ClassicalRegister):
-    """Fixed-size register for photon counts, with no fixed digit range.
+    """Register for photon counts.
 
-    Measuring a `ModeRegister` slot writes its photon count here. A count
-    slot holds values from ``0`` up to the per-run truncation the backend
-    chooses, so ``dim`` is ``None``. A `ModeRegister` measures only into a
-    `CountRegister`, and a `CountRegister` records only mode measurements.
+    Measuring a `ModeRegister` slot writes its photon count here, from ``0``
+    up to the run's cutoff, so ``dim`` is ``None``. Modes measure only into
+    a `CountRegister`, and a `CountRegister` records only mode measurements.
 
     Args:
         size: Positive number of count slots. Must be an integer, not
