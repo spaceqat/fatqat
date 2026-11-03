@@ -88,14 +88,13 @@ print(result.get_counts())
 
 [튜토리얼 모음](https://fatqat.readthedocs.io/en/latest/tutorials/)은 알고리즘과 물리 모델을 다루는 더 상세한 사례를 제공합니다.
 [API 레퍼런스](https://fatqat.readthedocs.io/en/latest/api/)에서는 정확한 함수 시그니처, 지원 연산,
-데이터 형상(shape), 단위, 입력 검증 규칙을 확인할 수 있습니다.
+데이터 형상, 단위, 입력 검증 규칙을 확인하실 수 있습니다.
 
-릴리스별 변경 사항은 [변경 이력](https://github.com/spaceqat/fatqat/blob/main/CHANGELOG.md)을 참고하십시오.
-위 문서 사이트의 링크는 현재 영문 문서로 연결됩니다.
+릴리스별 변경 사항은 [변경 이력](https://github.com/spaceqat/fatqat/blob/main/CHANGELOG.md)을 참고 해주십시오.
 
 ## 개발
 
-기본적인 로컬 개발을 위해 소스와 핵심 테스트 의존성을 설치하세요.
+기본적인 로컬 개발을 위해 소스와 핵심 테스트 의존성을 설치하십시오.
 
 ```sh
 python -m pip install --upgrade pip
@@ -103,7 +102,7 @@ python -m pip install --editable . --group dev
 python -m pytest
 ```
 
-기여를 준비할 때는 전체 테스트 및 코드 검사 환경을 설치하세요.
+기여를 준비할 때는 전체 테스트 및 코드 검사 환경을 설치하십시오.
 
 ```sh
 python -m pip install --editable . --group test-full --group lint
@@ -113,14 +112,14 @@ python -m pip install --editable . --group test-full --group lint
 `lint`는 Black과 Pylint를 추가합니다.
 
 변경 사항을 제출하기 전에 AI 보조 작업에 관한 정책을 포함한
-[FatQat 기여 가이드](https://github.com/spaceqat/fatqat/blob/main/CONTRIBUTING.md)를 읽어 주세요.
+[FatQat 기여 가이드](https://github.com/spaceqat/fatqat/blob/main/CONTRIBUTING.md)를 읽어 주십시오.
 AI 도구를 사용할 수 있지만, 모든 기여자는 자신이 제출하는 작업을 이해하고 책임져야 하며,
-작업과 그에 관한 프로젝트 내 소통을 직접 주도해야 합니다.
+작업과 그에 관한 프로젝트 내 소통을 직접 주도하여야 합니다.
 
-문서를 수정할 때는 [버전을 고정한 환경 설정 및 빌드 절차](https://github.com/spaceqat/fatqat/blob/main/docs/mkdocs/README.md)를 따르세요.
+문서를 수정하실 때는 [버전을 고정한 환경 설정 및 빌드 절차](https://github.com/spaceqat/fatqat/blob/main/docs/mkdocs/README.md)를 따르십시오.
 
 주요 저장소 디렉터리는 다음과 같습니다.
 
 - `src/fatqat/` — 패키지 소스 코드.
-- `tests/` — 동작 중심의 테스트 모음.
-- `docs/mkdocs/` — Material 기반 사용자 가이드, 실행 가능한 튜토리얼, API 레퍼런스.
+- `tests/` — 동작-중심의 테스트 모음.
+- `docs/mkdocs/` — 사용자 가이드, 실행 가능한 튜토리얼, API 레퍼런스.
