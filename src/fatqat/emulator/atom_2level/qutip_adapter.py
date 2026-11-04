@@ -523,12 +523,9 @@ class _Atom2LevelQutipAdapter:
             raise TypeError(f"two-level runner requires a QuTiP {kind}")
         if state.shape != shape or not np.all(np.isfinite(state.full())):
             raise RuntimeError(f"two-level runner produced an invalid {kind}")
-        if density:
-            return state.copy()
-        norm = state.norm()
-        if norm <= 0.0 or not np.isfinite(norm):
+        if not density and state.norm() <= 0.0:
             raise RuntimeError(f"two-level runner produced an invalid {kind}")
-        return state / norm
+        return state.copy()
 
 
 __all__: list[str] = []
