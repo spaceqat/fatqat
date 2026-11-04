@@ -1,21 +1,18 @@
 """Shared engine lifecycle for NumPy-backed state buffers.
 
-NumPy and Numba share storage and expectation arithmetic. Concrete engines
-select workflows, allocate their representation, and bind numerical functions.
+NumPy and Numba share storage. Concrete engines select workflows, allocate
+their representation, and bind their own numerical functions, expectation
+kernels included.
 """
 
 from __future__ import annotations
 
 from abc import abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from copy import deepcopy
 
 import numpy as np
 
-from ....estimator._exact import (
-    expectation_density_matrix,
-    expectation_statevector,
-)
 from ....observable import _Factors
 from .._execution_policy import _ExecutionPolicy as ExecutionPolicy
 from ..state import EvolutionState, _LoweredBasisState
@@ -25,6 +22,10 @@ from .base import MatrixEngine
 
 class _NdarrayEngine(MatrixEngine[np.ndarray]):
     """Initialization and expectation evaluation on owned ndarray state."""
+
+    # ``(state, terms, dims, strides) -> float``; each concrete engine binds the
+    # statevector or density-matrix kernel of its own runtime.
+    _expectation_kernel: Callable[..., float]
 
     def initialize(
         self,
@@ -54,11 +55,7 @@ class _NdarrayEngine(MatrixEngine[np.ndarray]):
         *,
         policy: ExecutionPolicy,
     ) -> tuple[float, ...]:
-        kernel = (
-            expectation_statevector
-            if self._state_field == "statevector"
-            else expectation_density_matrix
-        )
+        kernel = self._expectation_kernel
         dims = tuple(self._dims)
         strides = _strides(dims)  # the engine is little-endian
         values = []

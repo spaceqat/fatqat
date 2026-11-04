@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
@@ -11,7 +10,6 @@ from typing import Any, final
 
 import numpy as np
 
-from ...estimator._exact import expectation_density_matrix, expectation_statevector
 from ...estimator._planning import (
     _ExpectationExecution,
     _TermOccurrence,
@@ -20,6 +18,7 @@ from ...estimator._planning import (
     _reduce_outcome_counts,
     _validate_observable_targets,
 )
+from .._expectation import expectation
 from ..._parameter_binding import (
     _parameter_batch_rows,
     _raise_for_unbound_parameters,
@@ -782,12 +781,6 @@ class _PulseBackend(ABC):
             raise BackendExecutionError(
                 "pulse expectation execution omitted its final state"
             )
-        if self._method == "statevector":
-            kernel = expectation_statevector
-            state = state.full().reshape(-1)
-        else:
-            kernel = expectation_density_matrix
-            state = state.full()
         terms_by_observable = [[] for _constant in prepared.constants]
         for bound in prepared.bound_occurrences:
             terms_by_observable[bound.occurrence.observable_index].append(
@@ -795,9 +788,8 @@ class _PulseBackend(ABC):
             )
         # QuTiP-ordered engine: index 0 is the most significant subsystem.
         dims = tuple(program.engine_allocation.system_dims)
-        strides = tuple(math.prod(dims[index + 1 :]) for index in range(len(dims)))
         values = tuple(
-            constant + kernel(state, tuple(terms), dims, strides)
+            constant + expectation(state, tuple(terms), dims)
             for constant, terms in zip(
                 prepared.constants,
                 terms_by_observable,
