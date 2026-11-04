@@ -3,6 +3,7 @@
 import numpy as np
 
 from fatqat.simulator import EvolutionState
+from fatqat.simulator._engine.state import _LoweredBasisState
 from fatqat.simulator._execution_contract import (
     _ResultRequest,
     _RunContext,
@@ -51,7 +52,10 @@ def test_reported_digit_mapping_precedes_confusion_and_feedforward():
         policy=policy,
     )
     result = engine.execute_payload(
-        context, payload, policy, initial_state=EvolutionState()
+        context,
+        payload,
+        policy,
+        initial_state=EvolutionState(_LoweredBasisState((0, 0))),
     )
 
     # Feedforward receives the confused reported digit, so its X fires.

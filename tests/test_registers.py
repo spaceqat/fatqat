@@ -7,7 +7,9 @@ from fatqat.registers import (
     BlockSelector,
     ClassicalRegister,
     ColumnSelector,
+    CountRegister,
     GridRegister,
+    ModeRegister,
     QuantumRegister,
     RegisterRef,
     RegisterView,
@@ -90,6 +92,21 @@ def test_dim_non_int_rejected():
         QuantumRegister(2, dim=2.0)
     with pytest.raises(TypeError):
         QuantumRegister(2, dim=True)
+
+
+@pytest.mark.parametrize(
+    ("cls", "kind"),
+    [(ModeRegister, QuantumRegister), (CountRegister, ClassicalRegister)],
+)
+def test_dimensionless_registers_leave_dim_to_the_backend(cls, kind):
+    register = cls(3, name="r")
+    assert isinstance(register, kind)
+    assert register.dim is None
+    assert register[2].register is register
+    with pytest.raises(TypeError):
+        cls(2, dim=3)  # pylint: disable=unexpected-keyword-arg
+    with pytest.raises(ValueError):
+        cls(0)
 
 
 def test_distinct_registers_with_identical_fields_are_not_equal():

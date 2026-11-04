@@ -13,7 +13,7 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.errors import BackendValidationError
-from fatqat.simulator import Simulator
+from fatqat.simulator import BasisState, EvolutionState, Simulator
 
 _STATE_ONLY = {"counts": False, "final_state": True}
 
@@ -139,6 +139,86 @@ def test_qudit_registers_are_supported():
     assert result.get_statevector().sum() == pytest.approx(1.0, abs=1e-12)
 
 
+# --- a basis state names levels instead of an array --------------------
+
+
+@pytest.mark.parametrize("runtime", _RUNTIMES)
+@pytest.mark.parametrize("method", ["SV", "DM"])
+@pytest.mark.parametrize("wrap", [False, True], ids=["bare", "evolution_state"])
+def test_basis_state_starts_the_run_like_its_dense_ket(runtime, method, wrap):
+    # Each engine builds the basis state itself, so every runtime is checked.
+    program = _cx_program()
+    qubits = program.quantum_registers[0]
+    basis = BasisState({qubits[0]: 1})  # |10>, qubit 1 left at 0
+
+    def final(initial_state):
+        result = Simulator(method=method, runtime=runtime).run(
+            program, shots=0, initial_state=initial_state, result_config=_STATE_ONLY
+        )
+        if method == "SV":
+            return result.result().get_statevector()
+        return result.result().get_density_matrix()
+
+    started = final(EvolutionState(quantum=basis) if wrap else basis)
+
+    np.testing.assert_allclose(started, final([0, 0, 1, 0]), rtol=0, atol=1e-12)
+
+
+def test_basis_state_uses_public_order_whatever_the_key_order():
+    qubit = fq.QuantumRegister(1)
+    qutrit = fq.QuantumRegister(1, dim=3)
+    program = fq.Program([qubit, qutrit])
+
+    result = (
+        Simulator(method="SV")
+        .run(
+            program,
+            shots=0,
+            initial_state=BasisState({qutrit[0]: 2, qubit[0]: 1}),
+            result_config=_STATE_ONLY,
+        )
+        .result()
+    )
+
+    expected = np.zeros(6)
+    expected[1 * 3 + 2] = 1.0
+    np.testing.assert_allclose(result.get_statevector(), expected, rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("levels", "match"),
+    [
+        (lambda qubits: {qubits[0]: 2}, "outside its dimension 2"),
+        (
+            lambda _qubits: {fq.QuantumRegister(1)[0]: 1},
+            "not quantum references of this program",
+        ),
+    ],
+    ids=["level", "foreign_ref"],
+)
+def test_basis_state_must_fit_the_program(levels, match):
+    program = _cx_program()
+    basis = BasisState(levels(program.quantum_registers[0]))
+
+    with pytest.raises(BackendValidationError, match=match):
+        Simulator().run(program, shots=0, initial_state=basis)
+
+
+@pytest.mark.parametrize(
+    ("levels", "error"),
+    [
+        (lambda ref: {ref: -1}, ValueError),
+        (lambda ref: {ref: True}, TypeError),
+        (lambda ref: {ref: 1.0}, TypeError),
+        (lambda _ref: {0: 1}, TypeError),
+    ],
+    ids=["negative", "bool", "float", "int_key"],
+)
+def test_basis_state_rejects_invalid_levels(levels, error):
+    with pytest.raises(error):
+        BasisState(levels(fq.QuantumRegister(1)[0]))
+
+
 # --- only the shape is checked -------------------------------------------
 
 
@@ -245,7 +325,10 @@ def test_operator_methods_reject_an_initial_state(method):
     ("runtime", "shot_parallelism"),
     [("numpy", "serial"), ("numba", "serial"), ("numba", "threads")],
 )
-def test_every_shot_of_a_dynamic_run_starts_from_the_state(runtime, shot_parallelism):
+@pytest.mark.parametrize("basis", [False, True], ids=["dense", "basis_state"])
+def test_every_shot_of_a_dynamic_run_starts_from_the_state(
+    runtime, shot_parallelism, basis
+):
     # Per-shot replay re-initializes between shots. If the state were applied
     # once rather than held, only the first shot would start from it and the
     # counts would quietly be a mixture of two different experiments.
@@ -256,14 +339,17 @@ def test_every_shot_of_a_dynamic_run_starts_from_the_state(runtime, shot_paralle
     # a wrong answer, not an error.
     if runtime == "numba":
         pytest.importorskip("numba")
+    program = _dynamic_program()
     start = np.array([0, 1, 0, 0], dtype=complex)
     untouched = start.copy()
     counts = (
         Simulator(method="SV", runtime=runtime)
         .run(
-            _dynamic_program(),
+            program,
             shots=400,
-            initial_state=start,
+            initial_state=(
+                BasisState({program.quantum_registers[0][1]: 1}) if basis else start
+            ),
             simulation_config={
                 "seed": 7,
                 "shot_parallelism": shot_parallelism,

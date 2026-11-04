@@ -217,6 +217,8 @@ class TestAngleValidationAtConstruction:
         ops.RX(fq.Parameter("t"))
         ops.U(0.1, 0.2, 0.3)
         ops.SubspaceRY(0.4, (0, 1))
+        ops.PhaseShifter(fq.Parameter("p"))
+        ops.BeamSplitter(0.2, fq.Parameter("p"))
 
     @pytest.mark.parametrize("bad", [True, "a", 1 + 2j, None, [0.1]])
     def test_invalid_angle_types_rejected(self, bad):
@@ -228,6 +230,10 @@ class TestAngleValidationAtConstruction:
             ops.CPhase(bad)
         with pytest.raises(TypeError, match="must be a real number"):
             ops.SubspaceRZ(bad, (0, 1))
+        with pytest.raises(TypeError, match="must be a real number"):
+            ops.PhaseShifter(bad)
+        with pytest.raises(TypeError, match="must be a real number"):
+            ops.BeamSplitter(0.1, bad)
 
     def test_whole_parameter_vector_rejected(self):
         import fatqat as fq

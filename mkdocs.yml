@@ -159,6 +159,7 @@ nav:
           - Performance: guide/performance.md
       - Model hardware and physics:
           - Hardware-profile simulation: guide/hardware-profile-simulation.md
+          - Linear optics simulation: guide/linear-optics.md
           - Hamiltonian emulation: guide/hamiltonian-emulation.md
           - Transmon emulation: guide/transmon-emulation.md
           - Neutral-atom emulation: guide/neutral-atom-emulation.md
@@ -181,6 +182,7 @@ nav:
               - Qubit gates: api/operations/qubit-gates.md
               - Qudit gates: api/operations/qudit-gates.md
               - Atom gates: api/operations/atom-gates.md
+              - Optical gates: api/operations/optical-gates.md
               - Structural operations: api/operations/structural.md
           - Pulse control:
               - api/pulse-control/index.md
@@ -194,6 +196,7 @@ nav:
               - General simulator: api/simulator.md
               - Superconducting profile: api/simulators/sc-qubit.md
               - Atom-array profile: api/simulators/atom-array.md
+              - Linear optics: api/simulators/linear-optics.md
               - Custom operations: api/simulators/custom-operations.md
           - Emulators:
               - api/emulators/index.md

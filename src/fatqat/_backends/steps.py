@@ -82,6 +82,8 @@ class BuiltinKernelKey(enum.Enum):
     SUBSPACE_RY = enum.auto()
     SUBSPACE_RZ = enum.auto()
     CCLOCK = enum.auto()
+    PHASE_SHIFTER = enum.auto()
+    BEAM_SPLITTER = enum.auto()
 
 
 @dataclass(frozen=True)

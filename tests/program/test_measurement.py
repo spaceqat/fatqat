@@ -5,7 +5,13 @@ import pytest
 from fatqat.program import Program
 from fatqat.operations import Measurement
 import fatqat.operations as ops
-from fatqat.registers import GridRegister, QuantumRegister, ClassicalRegister
+from fatqat.registers import (
+    ClassicalRegister,
+    CountRegister,
+    GridRegister,
+    ModeRegister,
+    QuantumRegister,
+)
 
 
 def test_measure_appends_measurement():
@@ -121,6 +127,125 @@ def test_measure_all_appends_one_grouped_instruction_in_flat_order():
     )
 
 
+def test_measure_all_uses_first_n_classical_slots_with_extra_classical_storage():
+    p = Program(2, 4)
+
+    result = p.measure_all()
+
+    assert result is None
+
+    instructions = p.instructions
+    assert len(instructions) == 1
+
+    measurement = instructions[0]
+    assert isinstance(measurement, Measurement)
+
+    assert measurement.targets == (
+        p.quantum_registers[0][0],
+        p.quantum_registers[0][1],
+    )
+
+    assert measurement.outputs == (
+        p.classical_registers[0][0],
+        p.classical_registers[0][1],
+    )
+
+
+def test_measure_all_accepts_explicit_output_destinations():
+    p = Program(2, 4)
+
+    result = p.measure_all(outputs=(2, 3))
+
+    assert result is None
+
+    instructions = p.instructions
+    assert len(instructions) == 1
+
+    measurement = instructions[0]
+    assert isinstance(measurement, Measurement)
+
+    assert measurement.targets == (
+        p.quantum_registers[0][0],
+        p.quantum_registers[0][1],
+    )
+
+    assert measurement.outputs == (
+        p.classical_registers[0][2],
+        p.classical_registers[0][3],
+    )
+
+
+def test_measure_all_repeated_measurements_use_distinct_outputs():
+    p = Program(2, 4)
+
+    p.measure_all(outputs=(0, 1))
+    p.measure_all(outputs=(2, 3))
+
+    instructions = p.instructions
+    assert len(instructions) == 2
+
+    first_measurement = instructions[0]
+    second_measurement = instructions[1]
+
+    assert isinstance(first_measurement, Measurement)
+    assert isinstance(second_measurement, Measurement)
+
+    expected_targets = (
+        p.quantum_registers[0][0],
+        p.quantum_registers[0][1],
+    )
+
+    assert first_measurement.targets == expected_targets
+    assert second_measurement.targets == expected_targets
+
+    assert first_measurement.outputs == (
+        p.classical_registers[0][0],
+        p.classical_registers[0][1],
+    )
+
+    assert second_measurement.outputs == (
+        p.classical_registers[0][2],
+        p.classical_registers[0][3],
+    )
+
+
+def test_measure_all_accepts_explicit_outputs_across_registers():
+    p = Program(
+        [
+            QuantumRegister(2, name="qa"),
+            QuantumRegister(1, name="qb"),
+        ],
+        [
+            ClassicalRegister(1, name="ca"),
+            ClassicalRegister(2, name="cb"),
+        ],
+    )
+
+    outputs = (
+        p.classical_registers[1][0],
+        p.classical_registers[0][0],
+        p.classical_registers[1][1],
+    )
+
+    result = p.measure_all(outputs=outputs)
+
+    assert result is None
+
+    instructions = p.instructions
+    assert len(instructions) == 1
+
+    measurement = instructions[0]
+    assert isinstance(measurement, Measurement)
+
+    assert measurement.targets == (
+        p.quantum_registers[0][0],
+        p.quantum_registers[0][1],
+        p.quantum_registers[1][0],
+    )
+
+    assert measurement.outputs == outputs
+
+
 def test_measure_all_rejects_mismatched_resource_counts():
     p = Program(2, 1)
     with pytest.raises(ValueError, match="same number"):
@@ -148,6 +273,19 @@ def test_measure_matching_dims_ok():
     program.measure(qt[0], ct[0])  # no raise
 
 
+def test_mode_measures_only_into_count_register():
+    modes = ModeRegister(1)
+    qutrit = QuantumRegister(1, dim=3)
+    counts = CountRegister(1)
+    trits = ClassicalRegister(1, dim=3)
+    program = Program([modes, qutrit], [counts, trits])
+    program.measure(modes[0], counts[0])  # no raise
+    with pytest.raises(ValueError, match="CountRegister"):
+        program.measure(modes[0], trits[0])
+    with pytest.raises(ValueError, match="CountRegister"):
+        program.measure(qutrit[0], counts[0])
+
+
 def test_measure_rejects_register_view_target():
     qubits = GridRegister(2, 2, name="qubits")
     cr = ClassicalRegister(4)
@@ -165,3 +303,75 @@ def test_measure_all_dim_mismatch_raises():
     program = Program([qt, qb], [cb, ct])
     with pytest.raises(ValueError):
         program.measure_all()
+
+
+def test_measure_all_preserves_mixed_dimension_validation():
+    p = Program(
+        [
+            QuantumRegister(1, name="qutrit", dim=3),
+            QuantumRegister(1, name="qubit", dim=2),
+        ],
+        [
+            ClassicalRegister(1, name="dit", dim=3),
+            ClassicalRegister(1, name="bit", dim=2),
+        ],
+    )
+
+    result = p.measure_all()
+
+    assert result is None
+
+    measurement = p.instructions[0]
+    assert isinstance(measurement, Measurement)
+
+    assert measurement.targets == (
+        p.quantum_registers[0][0],
+        p.quantum_registers[1][0],
+    )
+
+    assert measurement.outputs == (
+        p.classical_registers[0][0],
+        p.classical_registers[1][0],
+    )
+
+
+def test_measure_all_rejects_mixed_dimension_mismatch():
+    p = Program(
+        [
+            QuantumRegister(1, name="qutrit", dim=3),
+            QuantumRegister(1, name="qubit", dim=2),
+        ],
+        [
+            ClassicalRegister(1, name="bit", dim=2),
+            ClassicalRegister(1, name="dit", dim=3),
+        ],
+    )
+
+    with pytest.raises(ValueError):
+        p.measure_all()
+
+    assert p.instructions == ()
+
+
+def test_measure_all_rejects_integer_outputs_with_multiple_registers():
+    p = Program(
+        [QuantumRegister(2, name="q")],
+        [
+            ClassicalRegister(2, name="ca"),
+            ClassicalRegister(2, name="cb"),
+        ],
+    )
+
+    with pytest.raises(TypeError, match="explicit RegisterRef"):
+        p.measure_all(outputs=(0, 1))
+
+    assert p.instructions == ()
+
+
+def test_measure_all_rejects_explicit_output_count_mismatch():
+    p = Program(2, 4)
+
+    with pytest.raises(ValueError, match="same number"):
+        p.measure_all(outputs=(0,))
+
+    assert p.instructions == ()

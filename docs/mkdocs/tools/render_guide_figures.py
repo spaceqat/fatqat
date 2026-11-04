@@ -31,6 +31,10 @@ GUIDE_SOURCES = (
         FIGURE_SOURCE_ROOT / "atom_loss_lifecycle.py",
         ("atom-loss-lifecycle.svg",),
     ),
+    (
+        FIGURE_SOURCE_ROOT / "hong_ou_mandel_histories.py",
+        ("hong-ou-mandel-histories.svg",),
+    ),
 )
 HOME_SOURCES = (
     (

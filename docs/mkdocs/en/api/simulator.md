@@ -120,9 +120,11 @@ Besides `simulation_config`, [`Simulator.run`][fatqat.simulator.Simulator.run] a
 | --- | --- | --- |
 | `shots` | `1024` | Samples used for counts or a stochastic final state. A deterministic state-only or operator result does not use this value. |
 | `resource_layout` | `None` | Assigns every program quantum reference to a device label. The generic simulator uses integer labels in declaration order. A supplied layout must be complete, one-to-one, and compatible with the backend. |
-| `initial_state` | `None` | Quantum array or [`EvolutionState`][fatqat.simulator.EvolutionState] supplying quantum and classical data for each shot. `None` selects the ground state. Operator methods reject an initial state. |
+| `initial_state` | `None` | Quantum array, [`BasisState`][fatqat.simulator.BasisState], or [`EvolutionState`][fatqat.simulator.EvolutionState] supplying quantum and classical data for each shot. `None` selects the ground state. Operator methods reject an initial state. |
 
-Quantum input uses the public most-significant-first basis. `statevector` accepts
+A `BasisState` names one level per subsystem by register reference, so it does
+not depend on subsystem order; unnamed subsystems start at level 0. Dense
+quantum input uses the public most-significant-first basis. `statevector` accepts
 shape `(D,)`; `density_matrix` accepts `(D,)` or `(D, D)`. Only the quantum shape is
 checked; you are responsible for normalization and, for density matrices,
 Hermiticity and positivity.
@@ -202,3 +204,5 @@ See [Simulate a quantum program](../guide/simulation.md) for an example and
       merge_init_into_class: true
       filters:
         - "!^_"
+
+::: fatqat.simulator.BasisState
