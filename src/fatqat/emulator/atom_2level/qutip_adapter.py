@@ -512,31 +512,23 @@ class _Atom2LevelQutipAdapter:
         )
         return outcome
 
-    def _statevector(self, state: Any) -> Qobj:
-        if not isinstance(state, Qobj) or not state.isket:
-            raise TypeError("two-level coherent runner requires a QuTiP ket")
-        vector = np.asarray(state.full(), dtype=complex).reshape(-1)
-        if vector.shape != (2**self._site_count,) or not np.all(np.isfinite(vector)):
-            raise RuntimeError("two-level coherent runner produced an invalid ket")
-        norm = float(np.linalg.norm(vector))
-        if norm <= 0.0 or not np.isfinite(norm):
-            raise RuntimeError("two-level coherent runner produced an invalid ket")
-        return Qobj(vector / norm, dims=state.dims)
-
     def _final_state(self, state: Any) -> Qobj:
-        if self._execution_mode == "density_matrix":
-            if not isinstance(state, Qobj) or not state.isoper:
-                raise TypeError(
-                    "two-level density-matrix runner requires a QuTiP operator"
-                )
-            matrix = np.asarray(state.full(), dtype=complex)
-            expected = 2**self._site_count
-            if matrix.shape != (expected, expected) or not np.all(np.isfinite(matrix)):
-                raise RuntimeError(
-                    "two-level density-matrix runner produced an invalid state"
-                )
-            return Qobj(matrix, dims=state.dims)
-        return self._statevector(state)
+        density = self._execution_mode == "density_matrix"
+        kind, shape = (
+            ("operator", (2**self._site_count,) * 2)
+            if density
+            else ("ket", (2**self._site_count, 1))
+        )
+        if not isinstance(state, Qobj) or state.isoper != density:
+            raise TypeError(f"two-level runner requires a QuTiP {kind}")
+        if state.shape != shape or not np.all(np.isfinite(state.full())):
+            raise RuntimeError(f"two-level runner produced an invalid {kind}")
+        if density:
+            return state.copy()
+        norm = state.norm()
+        if norm <= 0.0 or not np.isfinite(norm):
+            raise RuntimeError(f"two-level runner produced an invalid {kind}")
+        return state / norm
 
 
 __all__: list[str] = []

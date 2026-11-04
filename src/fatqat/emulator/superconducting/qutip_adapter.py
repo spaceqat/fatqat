@@ -57,9 +57,8 @@ class _TransmonQutipAdapter:
     coherent propagators, and implements physical measurement/reset. The
     :class:`PulseEngine` owns shots, conditions, traversal, and scheduling.
 
-    Inputs and completed-shot outputs use fatqat/NumPy values, so no QuTiP
-    object crosses the backend's public boundary. This class is intentionally
-    not exported from :mod:`fatqat.emulator`.
+    Completed-shot outputs are QuTiP ``Qobj`` values. This class is
+    intentionally not exported from :mod:`fatqat.emulator`.
     """
 
     def __init__(
