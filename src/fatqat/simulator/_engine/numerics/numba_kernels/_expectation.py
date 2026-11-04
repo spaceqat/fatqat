@@ -28,7 +28,7 @@ import numpy as np
 from numba import njit
 
 from .....observable import _Factors
-from ..numpy_kernels._expectation import _sum_terms
+from ..numpy_kernels._expectation import _layout, _sum_terms, _term_masks
 from ._apply import _advance_base, _contiguous_run, _spread_base
 
 
@@ -96,9 +96,96 @@ def qubit_statevector_term(
     return total
 
 
+# Largest digit table the mixed-dimension kernels build. Rows are 24 bytes, so
+# this caps the table at 1.5 MiB. A term that names more combinations than this
+# (many Paulis or number operators) leaves few subsystems to sweep, so the
+# table would save little and could grow as large as the state itself; such a
+# term is evaluated by the streaming kernels instead.
+TABLE_ROWS = 1 << 16
+
+
+@njit(cache=True)
+def _digit_partner_and_weight(
+    j: int,
+    strides: np.ndarray,
+    dims: np.ndarray,
+    kinds: np.ndarray,
+    levels: np.ndarray,
+) -> tuple[int, float]:
+    """Return basis state ``j``'s flip partner and the term's weight on ``j``."""
+    partner = j
+    weight = 1.0
+    for f in range(kinds.shape[0]):
+        digit = (j // strides[f]) % dims[f]
+        kind = kinds[f]
+        if kind <= 1:
+            partner += strides[f] * (1 - 2 * digit)
+        if kind in (1, 2):
+            if digit == 1:
+                weight = -weight
+        elif kind == 3:
+            if digit != levels[f]:
+                return partner, 0.0
+        elif kind == 4:
+            weight *= digit
+    return partner, weight
+
+
+@njit(cache=True)
+def streaming_statevector_term(
+    state: np.ndarray,
+    strides: np.ndarray,
+    dims: np.ndarray,
+    kinds: np.ndarray,
+    levels: np.ndarray,
+) -> complex:
+    """Return ``<psi|T|psi>`` decoding each basis state's digits in turn.
+
+    The fallback for a term whose table would exceed :data:`TABLE_ROWS`. It
+    needs no memory beyond the state.
+    """
+    size = state.shape[0]
+    total = 0.0 + 0.0j
+    for start in range(0, size, _BLOCK):
+        stop = min(start + _BLOCK, size)
+        block = 0.0 + 0.0j
+        for k in range(start, stop):
+            partner, weight = _digit_partner_and_weight(k, strides, dims, kinds, levels)
+            if weight != 0.0:
+                block += weight * np.conj(state[partner]) * state[k]
+        total += block
+    return total
+
+
+@njit(cache=True)
+def streaming_density_matrix_term(
+    rho: np.ndarray,
+    strides: np.ndarray,
+    dims: np.ndarray,
+    kinds: np.ndarray,
+    levels: np.ndarray,
+) -> complex:
+    """Return ``Tr(rho T)`` decoding each basis state's digits in turn."""
+    size = rho.shape[0]
+    total = 0.0 + 0.0j
+    for start in range(0, size, _BLOCK):
+        stop = min(start + _BLOCK, size)
+        block = 0.0 + 0.0j
+        for j in range(start, stop):
+            partner, weight = _digit_partner_and_weight(j, strides, dims, kinds, levels)
+            if weight != 0.0:
+                block += weight * rho[j, partner]
+        total += block
+    return total
+
+
 @njit(cache=True)
 def _digit_table(
-    strides: np.ndarray, dims: np.ndarray, kinds: np.ndarray, levels: np.ndarray
+    strides: np.ndarray,
+    dims: np.ndarray,
+    kinds: np.ndarray,
+    levels: np.ndarray,
+    combinations: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     """Tabulate a term over every combination of its named subsystems' digits.
 
@@ -108,13 +195,15 @@ def _digit_table(
     offset of the combination, the offset of its flip partner, and the weight.
     Only the first ``used`` rows are filled.
 
+    A projector admits one digit, so it is fixed at its level rather than
+    enumerated: ``combinations`` is the product of the other factors'
+    dimensions (the layout's ``rows``), and a projector product tabulates a
+    single row.
+
     Kinds 0, 1, 2 are X, Y, Z (on qubits), 3 a projector onto ``levels[f]``,
     and 4 the number operator.
     """
     n_factors = kinds.shape[0]
-    combinations = 1
-    for f in range(n_factors):
-        combinations *= dims[f]
     offsets = np.empty(combinations, dtype=np.int64)
     partners = np.empty(combinations, dtype=np.int64)
     weights = np.empty(combinations, dtype=np.float64)
@@ -125,18 +214,18 @@ def _digit_table(
         partner = 0
         weight = 1.0
         for f in range(n_factors):
-            digit = remainder % dims[f]
-            remainder //= dims[f]
-            offset += digit * strides[f]
             kind = kinds[f]
+            if kind == 3:
+                digit = levels[f]
+            else:
+                digit = remainder % dims[f]
+                remainder //= dims[f]
+            offset += digit * strides[f]
             partner_digit = 1 - digit if kind <= 1 else digit
             partner += partner_digit * strides[f]
             if kind in (1, 2):
                 if digit == 1:
                     weight = -weight
-            elif kind == 3:
-                if digit != levels[f]:
-                    weight = 0.0
             elif kind == 4:
                 weight *= digit
         if weight != 0.0:
@@ -156,16 +245,17 @@ def statevector_term(
     levels: np.ndarray,
     rest_strides: np.ndarray,
     rest_dims: np.ndarray,
+    rows: int,
 ) -> complex:
     """Return ``<psi|T|psi>`` for one term on a mixed-dimension state.
 
-    Mirrors ``digit_term`` in the NumPy module:
+    Mirrors ``table_term`` in the NumPy module, and takes the same layout:
     ``sum_k conj(psi_{p(k)}) * weight(k) * psi_k``. The term's named digits are
     tabulated once. The remaining subsystems, ``rest_strides`` and ``rest_dims``
     in ascending stride order, are walked with the coset odometer, and the
     leading run of them that is contiguous in memory is swept as an inner loop.
     """
-    offsets, partners, weights, used = _digit_table(strides, dims, kinds, levels)
+    offsets, partners, weights, used = _digit_table(strides, dims, kinds, levels, rows)
     run_count, run_length = _contiguous_run(rest_strides, rest_dims)
     outer_strides = rest_strides[run_count:]
     outer_dims = rest_dims[run_count:]
@@ -201,13 +291,14 @@ def density_matrix_term(
     levels: np.ndarray,
     rest_strides: np.ndarray,
     rest_dims: np.ndarray,
+    rows: int,
 ) -> complex:
     """Return ``Tr(rho T)`` for one term on a mixed-dimension state.
 
-    Mirrors ``digit_term`` in the NumPy module: ``sum_j rho[j, p(j)] * weight(j)``,
+    Mirrors ``table_term`` in the NumPy module: ``sum_j rho[j, p(j)] * weight(j)``,
     walked as in :func:`statevector_term`.
     """
-    offsets, partners, weights, used = _digit_table(strides, dims, kinds, levels)
+    offsets, partners, weights, used = _digit_table(strides, dims, kinds, levels, rows)
     run_count, run_length = _contiguous_run(rest_strides, rest_dims)
     outer_strides = rest_strides[run_count:]
     outer_dims = rest_dims[run_count:]
@@ -273,32 +364,24 @@ def _expectation(
     *,
     density: bool,
 ) -> float:
+    qubits = all(dim == 2 for dim in dims)
     qubit_kernel = qubit_density_matrix_term if density else qubit_statevector_term
-    digit_kernel = density_matrix_term if density else statevector_term
-    place_values = np.asarray(strides, dtype=np.int64)
-    all_dims = np.asarray(dims, dtype=np.int64)
-
-    def digit_value(factor_strides, factor_dims, kinds, levels):
-        # The subsystems no factor names are the ones the kernel walks.
-        other = np.flatnonzero(~np.isin(place_values, factor_strides))
-        other = other[np.argsort(place_values[other])]  # ascending stride
-        return digit_kernel(
-            data,
-            factor_strides,
-            factor_dims,
-            kinds,
-            levels,
-            place_values[other],
-            all_dims[other],
-        )
-
-    return _sum_terms(
-        terms,
-        dims,
-        strides,
-        qubit_value=lambda *masks: qubit_kernel(data, *masks),
-        digit_value=digit_value,
+    table_kernel = density_matrix_term if density else statevector_term
+    streaming_kernel = (
+        streaming_density_matrix_term if density else streaming_statevector_term
     )
+
+    def term_value(factors: _Factors) -> complex:
+        if qubits:
+            return qubit_kernel(data, *_term_masks(factors, strides))
+        term = _layout(factors, dims, strides)
+        if term.rows > TABLE_ROWS:
+            return streaming_kernel(
+                data, term.strides, term.dims, term.kinds, term.levels
+            )
+        return table_kernel(data, *term)
+
+    return _sum_terms(terms, term_value)
 
 
 def expectation_statevector(

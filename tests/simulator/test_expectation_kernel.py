@@ -25,10 +25,23 @@ from fatqat.simulator._engine.numerics.numpy_kernels import (
 from fatqat.simulator._engine.numerics.numpy_kernels._measurement import _strides
 
 
-@pytest.fixture(name="kernels", params=["numpy", "numba"])
-def _kernels(request):
-    """The exact-expectation entry points of one runtime."""
-    return {"numpy": numpy_expectation, "numba": numba_expectation}[request.param]
+@pytest.fixture(
+    name="kernels", params=["numpy", "numpy_table", "numba", "numba_streaming"]
+)
+def _kernels(request, monkeypatch):
+    """The exact-expectation entry points of one runtime.
+
+    Each runtime picks a kernel per term by the size of the term's digit
+    table. The test states are small, which leaves the NumPy runtime on its
+    per-amplitude kernels and the Numba runtime on its table; the ``_table``
+    and ``_streaming`` variants move each threshold so that every case also
+    runs through the other kernel.
+    """
+    if request.param == "numpy_table":
+        monkeypatch.setattr(numpy_expectation, "AMPLITUDES_PER_ROW", 0)
+    if request.param == "numba_streaming":
+        monkeypatch.setattr(numba_expectation, "TABLE_ROWS", 0)
+    return numba_expectation if request.param.startswith("numba") else numpy_expectation
 
 
 def _msb_strides(dims):

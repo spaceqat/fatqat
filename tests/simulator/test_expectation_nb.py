@@ -74,7 +74,7 @@ def _masks(letters, qubits, num_qubits):
         return (0, 0, 0, 0)
     observable = Observable.from_sparse([(letters, qubits, 1.0)])
     strides = _msb_strides((2,) * num_qubits)
-    return npk._term_masks(observable.terms[0][1], strides)[:4]
+    return npk._term_masks(observable.terms[0][1], strides)
 
 
 @pytest.mark.parametrize("case", _TERMS.values(), ids=_TERMS.keys())
@@ -169,6 +169,7 @@ _DIGIT_TERMS = {
     "x_with_projector": (["X", Projector(3)], (1, 2)),
     "y_with_number": ([NumberOperator(), "Y"], (0, 1)),
     "z_with_number": (["Z", NumberOperator()], (1, 2)),
+    "projector_product": ([Projector(1), Projector(0), Projector(3)], (0, 1, 2)),
 }
 _LAYOUTS = {
     "long_runs": ((3, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2), False),
