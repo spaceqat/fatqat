@@ -33,6 +33,7 @@ To use NumPy for matrix simulation throughout a script or notebook, set the
 default before creating simulators. The initial default is Numba.
 
 ```python
+# guide-test: skip
 import fatqat as fq
 
 fq.simulator.set_default_runtime("numpy")

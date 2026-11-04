@@ -29,8 +29,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pytest
 
-import fatqat as fq
-
 MKDOCS = Path(__file__).parents[2] / "docs" / "mkdocs"
 GUIDES = MKDOCS / "en" / "guide"
 # A fenced pycon or python block. A block may be indented, for example inside an
@@ -101,9 +99,6 @@ def test_guide_examples_run_and_match_their_output(page, tmp_path, monkeypatch):
     # One namespace per page, shared by every block, so later blocks can use
     # names defined earlier on the same page.
     namespace = {"__name__": "__main__"}
-    # Guides may change process-wide defaults, such as simulation.md calling
-    # set_default_runtime; restore them so later tests are unaffected.
-    default_runtime = fq.simulator.get_default_runtime()
     parser = doctest.DocTestParser()
     runner = doctest.DocTestRunner(optionflags=OPTIONS)
     try:
@@ -122,7 +117,6 @@ def test_guide_examples_run_and_match_their_output(page, tmp_path, monkeypatch):
             runner.run(test, out=failures.append, clear_globs=False)
             assert not failures, "".join(failures)
     finally:
-        fq.simulator.set_default_runtime(default_runtime)
         # Matplotlib keeps figures open globally; do not leak them into the next
         # page.
         plt.close("all")
