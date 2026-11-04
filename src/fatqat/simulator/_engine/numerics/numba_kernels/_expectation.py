@@ -28,7 +28,7 @@ import numpy as np
 from numba import njit
 
 from .....observable import _Factors
-from ..numpy_kernels._expectation import _layout, _sum_terms, _term_masks
+from ..numpy_kernels._expectation import _layout, _sum_terms, _table, _term_masks
 from ._apply import _advance_base, _contiguous_run, _spread_base
 
 
@@ -112,7 +112,11 @@ def _digit_partner_and_weight(
     kinds: np.ndarray,
     levels: np.ndarray,
 ) -> tuple[int, float]:
-    """Return basis state ``j``'s flip partner and the term's weight on ``j``."""
+    """Return basis state ``j``'s flip partner and the term's weight on ``j``.
+
+    Kinds 0, 1, 2 are X, Y, Z (on qubits), 3 a projector onto ``levels[f]``,
+    and 4 the number operator.
+    """
     partner = j
     weight = 1.0
     for f in range(kinds.shape[0]):
@@ -180,82 +184,23 @@ def streaming_density_matrix_term(
 
 
 @njit(cache=True)
-def _digit_table(
-    strides: np.ndarray,
-    dims: np.ndarray,
-    kinds: np.ndarray,
-    levels: np.ndarray,
-    combinations: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-    """Tabulate a term over every combination of its named subsystems' digits.
-
-    A term acts only on the subsystems its factors name, so its flip partner
-    and weight depend only on those digits. Returns ``(offsets, partners,
-    weights, used)``: for each combination with a nonzero weight, the flat
-    offset of the combination, the offset of its flip partner, and the weight.
-    Only the first ``used`` rows are filled.
-
-    A projector admits one digit, so it is fixed at its level rather than
-    enumerated: ``combinations`` is the product of the other factors'
-    dimensions (the layout's ``rows``), and a projector product tabulates a
-    single row.
-
-    Kinds 0, 1, 2 are X, Y, Z (on qubits), 3 a projector onto ``levels[f]``,
-    and 4 the number operator.
-    """
-    n_factors = kinds.shape[0]
-    offsets = np.empty(combinations, dtype=np.int64)
-    partners = np.empty(combinations, dtype=np.int64)
-    weights = np.empty(combinations, dtype=np.float64)
-    used = 0
-    for combination in range(combinations):
-        remainder = combination
-        offset = 0
-        partner = 0
-        weight = 1.0
-        for f in range(n_factors):
-            kind = kinds[f]
-            if kind == 3:
-                digit = levels[f]
-            else:
-                digit = remainder % dims[f]
-                remainder //= dims[f]
-            offset += digit * strides[f]
-            partner_digit = 1 - digit if kind <= 1 else digit
-            partner += partner_digit * strides[f]
-            if kind in (1, 2):
-                if digit == 1:
-                    weight = -weight
-            elif kind == 4:
-                weight *= digit
-        if weight != 0.0:
-            offsets[used] = offset
-            partners[used] = partner
-            weights[used] = weight
-            used += 1
-    return offsets, partners, weights, used
-
-
-@njit(cache=True)
 def statevector_term(
     state: np.ndarray,
-    strides: np.ndarray,
-    dims: np.ndarray,
-    kinds: np.ndarray,
-    levels: np.ndarray,
+    offsets: np.ndarray,
+    partners: np.ndarray,
+    weights: np.ndarray,
     rest_strides: np.ndarray,
     rest_dims: np.ndarray,
-    rows: int,
 ) -> complex:
     """Return ``<psi|T|psi>`` for one term on a mixed-dimension state.
 
-    Mirrors ``table_term`` in the NumPy module, and takes the same layout:
-    ``sum_k conj(psi_{p(k)}) * weight(k) * psi_k``. The term's named digits are
-    tabulated once. The remaining subsystems, ``rest_strides`` and ``rest_dims``
-    in ascending stride order, are walked with the coset odometer, and the
-    leading run of them that is contiguous in memory is swept as an inner loop.
+    Mirrors ``table_term`` in the NumPy module, and reads the same table:
+    ``sum_k conj(psi_{p(k)}) * weight(k) * psi_k``, one row of ``offsets``,
+    ``partners`` and ``weights`` per combination of the named digits. The
+    remaining subsystems, ``rest_strides`` and ``rest_dims`` in ascending stride
+    order, are walked with the coset odometer, and the leading run of them that
+    is contiguous in memory is swept as an inner loop.
     """
-    offsets, partners, weights, used = _digit_table(strides, dims, kinds, levels, rows)
     run_count, run_length = _contiguous_run(rest_strides, rest_dims)
     outer_strides = rest_strides[run_count:]
     outer_dims = rest_dims[run_count:]
@@ -267,7 +212,7 @@ def statevector_term(
     total = 0.0 + 0.0j
     block = 0.0 + 0.0j
     for step in range(n_outer):
-        for row in range(used):
+        for row in range(offsets.shape[0]):
             ket = base + offsets[row]
             bra = base + partners[row]
             for first in range(0, run_length, _BLOCK):
@@ -285,20 +230,17 @@ def statevector_term(
 @njit(cache=True)
 def density_matrix_term(
     rho: np.ndarray,
-    strides: np.ndarray,
-    dims: np.ndarray,
-    kinds: np.ndarray,
-    levels: np.ndarray,
+    offsets: np.ndarray,
+    partners: np.ndarray,
+    weights: np.ndarray,
     rest_strides: np.ndarray,
     rest_dims: np.ndarray,
-    rows: int,
 ) -> complex:
     """Return ``Tr(rho T)`` for one term on a mixed-dimension state.
 
     Mirrors ``table_term`` in the NumPy module: ``sum_j rho[j, p(j)] * weight(j)``,
     walked as in :func:`statevector_term`.
     """
-    offsets, partners, weights, used = _digit_table(strides, dims, kinds, levels, rows)
     run_count, run_length = _contiguous_run(rest_strides, rest_dims)
     outer_strides = rest_strides[run_count:]
     outer_dims = rest_dims[run_count:]
@@ -310,7 +252,7 @@ def density_matrix_term(
     total = 0.0 + 0.0j
     block = 0.0 + 0.0j
     for step in range(n_outer):
-        for row in range(used):
+        for row in range(offsets.shape[0]):
             ket = base + offsets[row]
             bra = base + partners[row]
             for first in range(0, run_length, _BLOCK):
@@ -379,7 +321,7 @@ def _expectation(
             return streaming_kernel(
                 data, term.strides, term.dims, term.kinds, term.levels
             )
-        return table_kernel(data, *term)
+        return table_kernel(data, *_table(term), term.rest_strides, term.rest_dims)
 
     return _sum_terms(terms, term_value)
 

@@ -18,7 +18,7 @@ from ...estimator._planning import (
     _reduce_outcome_counts,
     _validate_observable_targets,
 )
-from .._expectation import expectation, observable_operator, with_dims
+from .._expectation import expectation, observable_operator
 from ..._parameter_binding import (
     _parameter_batch_rows,
     _raise_for_unbound_parameters,
@@ -817,7 +817,6 @@ class _PulseBackend(ABC):
             )
         # QuTiP-ordered engine: index 0 is the most significant subsystem.
         dims = tuple(program.engine_allocation.system_dims)
-        state = with_dims(state, dims)
         values = []
         for constant, terms in zip(
             prepared.constants, terms_by_observable, strict=True
