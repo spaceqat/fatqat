@@ -11,6 +11,7 @@ FATQAT provides drawing methods on the object that owns the data. A [`Program`][
 Use [`Program.draw`][fatqat.Program.draw] for a circuit diagram:
 
 ```python
+# guide-test: skip
 figure = program.draw()
 text = program.draw(renderer="text")
 ```
@@ -45,6 +46,7 @@ The same composition pattern works for the FATQAT-owned Matplotlib visualization
 First derive the program's logical interaction summary, then draw it:
 
 ```python
+# guide-test: skip
 interaction_frequency = program.interaction_frequency()
 figure = interaction_frequency.draw()
 ```
@@ -84,6 +86,7 @@ Each node represents one logical quantum slot. An edge connects two slots used b
 A result containing counts can draw raw counts or relative frequencies:
 
 ```python
+# guide-test: skip
 figure = result.draw()
 figure = result.draw(stat="frequencies")
 figure = result.draw(number_to_keep=20, sort="count")
@@ -127,6 +130,7 @@ A final NA compilation retains its physical `ZonedPlan` in `.output`. Animate
 that plan with the same architecture used for compilation:
 
 ```python
+# guide-test: skip
 animation = fq.compiler.create_na_animation(na_compiled.output, architecture)
 fq.compiler.save_na_animation(animation, "na-schedule.mp4")
 ```
@@ -141,6 +145,7 @@ produce `na_compiled` and load `architecture`.
 Pass `ax=` to draw into an existing Matplotlib axis:
 
 ```python
+# guide-test: skip
 import matplotlib.pyplot as plt
 
 figure, axis = plt.subplots()
@@ -153,5 +158,6 @@ remain in effect, so plots still compose with an application's own theme. A
 returned figure can be saved with ordinary Matplotlib APIs:
 
 ```python
+# guide-test: skip
 figure.savefig("interactions.png", dpi=200, bbox_inches="tight")
 ```
