@@ -123,12 +123,11 @@ map is empty, so a Program normally contains direct pulse blocks:
 >>> global_program = fq.Program(arrangement.num_sites)
 >>> global_program.add(ops.PulseOperation(1.0, global_controls))
 >>> atom2_state = atom2.run(global_program).result().get_statevector()
->>> atom2_state = atom2_state.full().ravel()
 >>> atom2_state.shape
-(4,)
->>> bool(np.isclose(np.linalg.norm(atom2_state), 1.0))
+(4, 1)
+>>> bool(np.isclose(atom2_state.norm(), 1.0))
 True
->>> round(float(1.0 - abs(atom2_state[0]) ** 2), 3)
+>>> round(float(1.0 - abs(atom2_state[0, 0]) ** 2), 3)
 0.054
 ```
 
