@@ -782,11 +782,12 @@ class _PulseBackend(ABC):
             raise BackendExecutionError(
                 "pulse expectation execution omitted its final state"
             )
-        kernel = (
-            expectation_statevector
-            if self._method == "statevector"
-            else expectation_density_matrix
-        )
+        if self._method == "statevector":
+            kernel = expectation_statevector
+            state = state.full().reshape(-1)
+        else:
+            kernel = expectation_density_matrix
+            state = state.full()
         terms_by_observable = [[] for _constant in prepared.constants]
         for bound in prepared.bound_occurrences:
             terms_by_observable[bound.occurrence.observable_index].append(
@@ -926,21 +927,18 @@ class _PulseBackend(ABC):
         runtime_details = None
         available = frozenset()
         if request.final_state:
+            runner = self._create_runner(
+                prepared,
+                simulation=simulation,
+                execution_mode="statevector",
+                retain_final_state=False,
+            )
             if prepared.plan:
-                runner = self._create_runner(
-                    prepared,
-                    simulation=simulation,
-                    execution_mode="statevector",
-                    retain_final_state=False,
-                )
                 engine = PulseEngine(runner, schedule_mode=simulation.schedule_mode)
-                unitary = np.asarray(
-                    engine.propagator(prepared.plan, apply_final_frame=True).full(),
-                    dtype=complex,
-                )
+                unitary = engine.propagator(prepared.plan, apply_final_frame=True)
                 runtime_details = runner.runtime_details()
             else:
-                unitary = np.eye(self._target.hilbert_dimension, dtype=complex)
+                unitary = runner.identity_operator()
             available = frozenset({"unitary"})
         metadata = self._result_metadata(request, simulation, shots)
         if runtime_details is not None:

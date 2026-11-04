@@ -240,7 +240,7 @@ def test_continuous_depolarization_matches_probability_law(model):
 
     probability = 1.0 - np.exp(-rate * duration)
     expected = (1.0 - probability) * np.diag([1.0, 0.0]) + probability * np.eye(2) / 2
-    assert result.get_density_matrix() == pytest.approx(expected, abs=1e-6)
+    assert result.get_density_matrix().full() == pytest.approx(expected, abs=1e-6)
 
 
 def test_readout_confusion_changes_only_the_reported_digit(model):
@@ -257,7 +257,9 @@ def test_readout_confusion_changes_only_the_reported_digit(model):
     ).result()
 
     assert result.get_counts() == {"1": 1}
-    assert result.get_statevector() == pytest.approx(np.asarray([1.0, 0.0]))
+    assert result.get_statevector().full().ravel() == pytest.approx(
+        np.asarray([1.0, 0.0])
+    )
 
 
 def test_unmeasured_noise_returns_exact_density_matrix(model):
@@ -267,7 +269,7 @@ def test_unmeasured_noise_returns_exact_density_matrix(model):
     result = backend.run(_pulse_program(amplitude=1.1, duration=0.5)).result()
 
     assert result.available_data == frozenset({"density_matrix"})
-    density = result.get_density_matrix()
+    density = result.get_density_matrix().full()
     assert density.shape == (2, 2)
     assert np.trace(density) == pytest.approx(1.0)
 
@@ -285,7 +287,7 @@ def test_two_atom_mesolve_matches_independently_assembled_master_equation(
     program = _pulse_program(
         sites=2, amplitude=amplitude, duration=duration, measured=False
     )
-    actual = backend.run(program).result().get_density_matrix()
+    actual = backend.run(program).result().get_density_matrix().full()
 
     hamiltonian = dense_hamiltonian(
         2,
@@ -333,7 +335,9 @@ def test_noisy_measurement_only_program_reports_the_ground_count(model):
 
 def test_noisy_unitary_allows_empty_identity_but_rejects_elapsed_plan(model):
     backend = _backend(model, _noise(AmplitudeDamping(rate=0.2)), method="unitary")
-    assert backend.run(fq.Program(1)).result().get_unitary() == pytest.approx(np.eye(2))
+    assert backend.run(fq.Program(1)).result().get_unitary().full() == pytest.approx(
+        np.eye(2)
+    )
 
     with pytest.raises(BackendValidationError, match="dissipative Lindblad"):
         backend.run(_pulse_program(amplitude=0.0))

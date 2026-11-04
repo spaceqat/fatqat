@@ -88,9 +88,13 @@ canonical full name, and `result.metadata["method"]` records it.
 
 | Method | Result accessor | Shape for `m` transmons | Meaning |
 | --- | --- | --- | --- |
-| `"statevector"` | [`get_statevector`][fatqat.Result.get_statevector] | `(3**m,)` | A pure coherent state, or one seeded trajectory when Lindblad noise can act. |
+| `"statevector"` | [`get_statevector`][fatqat.Result.get_statevector] | `(3**m, 1)` ket | A pure coherent state, or one seeded trajectory when Lindblad noise can act. |
 | `"density_matrix"` | [`get_density_matrix`][fatqat.Result.get_density_matrix] | `(3**m, 3**m)` | The exact ensemble state under supported Lindblad evolution. |
 | `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | `(3**m, 3**m)` | The complete coherent operator. |
+
+Every method returns a QuTiP `Qobj` whose `dims` list the subsystem
+dimensions. Call `.full()` for a NumPy array (`.full().ravel()` for a flat
+statevector).
 
 All three representations cover the complete physical qutrit model, not just
 the resources declared by the program. They use the same canonical model

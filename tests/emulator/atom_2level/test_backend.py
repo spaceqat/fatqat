@@ -163,11 +163,11 @@ def test_one_backend_applies_interaction_cutoff_independently_per_run(model):
         simulation_config={"interaction_cutoff": 2.0},
     ).result()
 
-    nearest_unitary = nearest.get_unitary()
-    full_unitary = full.get_unitary()
+    nearest_unitary = nearest.get_unitary().full()
+    full_unitary = full.get_unitary().full()
     assert nearest_unitary[5, 5] == pytest.approx(1.0)
     assert full_unitary[5, 5] != pytest.approx(nearest_unitary[5, 5])
-    assert nearest_again.get_unitary() == pytest.approx(nearest_unitary)
+    assert nearest_again.get_unitary().full() == pytest.approx(nearest_unitary)
 
 
 @pytest.mark.parametrize(
@@ -196,7 +196,7 @@ def test_coordinate_arrangement_preserves_pair_phases_and_site_order(coordinates
         ops.PulseOperation(duration, (PulseControl(model.control.drive(), idle),))
     )
 
-    actual = backend.run(program).result().get_unitary()
+    actual = backend.run(program).result().get_unitary().full()
 
     # In input order, distances (0, 1), (0, 2), (1, 2) are sqrt(13), 2, 3.
     energies = np.zeros(8)
@@ -292,7 +292,7 @@ def test_custom_global_gate_requires_and_executes_a_whole_arrangement_occurrence
     result = backend.run(program).result()
 
     assert prepared.plan[0].control_bindings[0].engine_indices == (0, 1)
-    assert result.get_statevector().shape == (4,)
+    assert result.get_statevector().full().ravel().shape == (4,)
 
     narrow = Atom2LevelEmulator(
         model,
@@ -402,13 +402,15 @@ def test_unitary_accepts_coherent_or_empty_programs_and_rejects_measurement(mode
     program = fq.Program(2)
     program.add(_pulse(amplitude=np.pi / 3))
 
-    first = backend.run(program).result().get_unitary()
-    second = backend.run(program).result().get_unitary()
+    first = backend.run(program).result().get_unitary().full()
+    second = backend.run(program).result().get_unitary().full()
     assert first.shape == (4, 4)
     assert first == pytest.approx(second)
     first[0, 0] = 99
     assert second[0, 0] != 99
-    assert backend.run(fq.Program(2)).result().get_unitary() == pytest.approx(np.eye(4))
+    assert backend.run(fq.Program(2)).result().get_unitary().full() == pytest.approx(
+        np.eye(4)
+    )
 
     measured = fq.Program(2, 1)
     measured.measure(0, 0)

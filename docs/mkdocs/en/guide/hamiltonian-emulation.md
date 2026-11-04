@@ -40,13 +40,14 @@ three-level transmons:
 >>> calibrated_program.add(ops.RX(np.pi / 2), 0)
 >>> calibrated_result = backend.run(calibrated_program).result()
 >>> calibrated_result.get_statevector().shape
-(9,)
+(9, 1)
 ```
 
 `RX` remains an ordinary Program operation. At execution time, the emulator's
 gate map obtains a pulse recipe from its calibration and binds that recipe to
 the model's drive channel. The physical model has two qutrits, so the returned
-vector covers all $3^2$ basis states, including the second transmon. The Program
+state, a QuTiP ket `Qobj`, covers all $3^2$ basis states, including the second
+transmon. The Program
 still declares one two-level qubit. Each transmon's third physical level lets
 the result show leakage out of its qubit states, `|0>` and `|1>`.
 
@@ -77,7 +78,7 @@ that order as a [`SampledWaveform`][fatqat.emulator.SampledWaveform], a
 >>> direct_program.add(pulse)
 >>> direct_result = backend.run(direct_program).result()
 >>> direct_result.get_statevector().shape
-(9,)
+(9, 1)
 ```
 
 Notice that `direct_program.add(pulse)` has no logical target. The channel

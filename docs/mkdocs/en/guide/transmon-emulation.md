@@ -111,7 +111,7 @@ The Program declares one qubit, and the result covers all three levels of the
 physical transmon:
 
 ```pycon
->>> calibrated_populations = np.real(np.diag(calibrated_rho))
+>>> calibrated_populations = np.real(calibrated_rho.diag())
 >>> np.allclose(calibrated_populations.sum(), 1.0)
 True
 >>> bool(calibrated_populations[2] < 1e-6)
@@ -139,7 +139,7 @@ nominal \(\pi/2\) area as the calibrated rotation:
 >>> direct = fq.Program(1)
 >>> direct.add(ops.PulseOperation(duration, (control,)))
 >>> direct_rho = backend.run(direct).result().get_density_matrix()
->>> direct_populations = np.real(np.diag(direct_rho))
+>>> direct_populations = np.real(direct_rho.diag())
 >>> np.round(direct_populations, 3)
 array([0.509, 0.491, 0.001])
 >>> f"{100 * direct_populations[2]:.2f}%"
@@ -193,8 +193,8 @@ explicitly through the envelope.
     direct.add(ops.PulseOperation(duration, (control,)))
     direct_rho = backend.run(direct).result().get_density_matrix()
 
-    calibrated_populations = np.real(np.diag(calibrated_rho))
-    direct_populations = np.real(np.diag(direct_rho))
+    calibrated_populations = np.real(calibrated_rho.diag())
+    direct_populations = np.real(direct_rho.diag())
     assert np.allclose(calibrated_populations.sum(), 1.0)
     assert np.allclose(direct_populations.sum(), 1.0)
 

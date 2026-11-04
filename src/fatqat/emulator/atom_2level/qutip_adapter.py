@@ -199,6 +199,10 @@ class _Atom2LevelQutipAdapter:
             )
         context.state = result.states[-1]
 
+    def identity_operator(self) -> Qobj:
+        """Return the identity on the complete two-level model."""
+        return tensor(*[qeye(2) for _ in range(self._site_count)])
+
     def propagator(
         self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True
     ) -> Any:
@@ -247,8 +251,7 @@ class _Atom2LevelQutipAdapter:
     def finish_shot(self, context: _ShotContext) -> _PulseShotOutcome:
         final_state = None
         if self._retain_final_state:
-            state = self._state_array(context.state)
-            final_state = np.array(state, dtype=complex, copy=True)
+            final_state = self._final_state(context.state)
         return _PulseShotOutcome(
             final_state=final_state,
             final_state_kind=(
@@ -509,31 +512,20 @@ class _Atom2LevelQutipAdapter:
         )
         return outcome
 
-    def _statevector(self, state: Any) -> np.ndarray:
-        if not isinstance(state, Qobj) or not state.isket:
-            raise TypeError("two-level coherent runner requires a QuTiP ket")
-        vector = np.asarray(state.full(), dtype=complex).reshape(-1)
-        if vector.shape != (2**self._site_count,) or not np.all(np.isfinite(vector)):
-            raise RuntimeError("two-level coherent runner produced an invalid ket")
-        norm = float(np.linalg.norm(vector))
-        if norm <= 0.0 or not np.isfinite(norm):
-            raise RuntimeError("two-level coherent runner produced an invalid ket")
-        return vector / norm
-
-    def _state_array(self, state: Any) -> np.ndarray:
-        if self._execution_mode == "density_matrix":
-            if not isinstance(state, Qobj) or not state.isoper:
-                raise TypeError(
-                    "two-level density-matrix runner requires a QuTiP operator"
-                )
-            matrix = np.asarray(state.full(), dtype=complex)
-            expected = 2**self._site_count
-            if matrix.shape != (expected, expected) or not np.all(np.isfinite(matrix)):
-                raise RuntimeError(
-                    "two-level density-matrix runner produced an invalid state"
-                )
-            return matrix
-        return self._statevector(state)
+    def _final_state(self, state: Any) -> Qobj:
+        density = self._execution_mode == "density_matrix"
+        kind, shape = (
+            ("operator", (2**self._site_count,) * 2)
+            if density
+            else ("ket", (2**self._site_count, 1))
+        )
+        if not isinstance(state, Qobj) or state.isoper != density:
+            raise TypeError(f"two-level runner requires a QuTiP {kind}")
+        if state.shape != shape or not np.all(np.isfinite(state.full())):
+            raise RuntimeError(f"two-level runner produced an invalid {kind}")
+        if not density and state.norm() <= 0.0:
+            raise RuntimeError(f"two-level runner produced an invalid {kind}")
+        return state.copy()
 
 
 __all__: list[str] = []

@@ -140,14 +140,15 @@ and its corresponding Result accessor, not an internal solver:
 
 | Method | Result accessor | Shape for `N` sites | Interpretation |
 | --- | --- | --- | --- |
-| `"statevector"` | [`get_statevector`][fatqat.Result.get_statevector] | `(d**N,)` | A pure coherent state, or one sampled posterior/trajectory when the execution is stochastic. |
+| `"statevector"` | [`get_statevector`][fatqat.Result.get_statevector] | `(d**N, 1)` ket | A pure coherent state, or one sampled posterior/trajectory when the execution is stochastic. |
 | `"density_matrix"` | [`get_density_matrix`][fatqat.Result.get_density_matrix] | `(d**N, d**N)` | The exact ensemble state under supported Lindblad evolution. |
 | `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | `(d**N, d**N)` | The complete coherent operator in the canonical terminal frame. |
 
-Here `d=2` for [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator]. Its
-results use FATQAT and NumPy types; the public API does not expose QuTiP
-objects or `superop`. Informational QuTiP solver names and options appear
-only in result `runtime_details`.
+Here `d=2` for [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator].
+States and unitaries are QuTiP `Qobj` values whose `dims` list the site
+dimensions; call `.full()` for a NumPy array (`.full().ravel()` for a flat
+statevector). The emulators do not expose `superop`. Informational QuTiP
+solver names and options appear in result `runtime_details`.
 
 Results follow arrangement order, with site 0 as the most-significant factor.
 State and unitary results may still use different documented terminal frames.
