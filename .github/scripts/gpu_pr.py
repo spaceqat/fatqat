@@ -126,7 +126,7 @@ def select_pr(api, event):
 
 
 def check_gpu_environment(api, mode):
-    """Validate the Environment used by this already-approved job."""
+    """Validate the Environment used by the prerequisite approval job."""
     name = "gpu-ci" if mode == "pr" else "gpu-ci-manual"
     try:
         environment = api.request(f"/environments/{name}")
