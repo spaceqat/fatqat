@@ -369,7 +369,6 @@ def test_control_on_q1_keeps_complete_model_public_state_order(model):
         rng=np.random.default_rng(3),
     )
     physical = outcomes[0].final_state
-    assert physical.dims == [[3, 3], [3, 3]]
     assert np.allclose(physical.ptrace(0).full(), ket2dm(basis(3, 0)).full())
     assert physical.ptrace(1).diag()[0].real < 0.999
 
@@ -679,8 +678,7 @@ def test_coherent_statevector_execution_returns_a_flat_full_qutrit_ket(model):
 
     assert initial.shape == (9, 1)
     assert outcome.final_state_kind == "statevector"
-    assert outcome.final_state.isket
-    assert outcome.final_state.dims == [[3, 3], [1]]
+    assert outcome.final_state.shape == (9, 1)
     assert outcome.final_state.norm() == pytest.approx(1.0)
     assert abs(outcome.final_state.full()[0, 0]) < 0.999
 

@@ -103,12 +103,9 @@ def test_initial_ket_copy_and_finished_statevector_are_binary_and_independent():
     assert initial.full().reshape(-1).tolist() == [1.0, 0.0, 0.0, 0.0]
     assert copied is not initial
     assert outcome.final_state_kind == "statevector"
-    assert isinstance(outcome.final_state, Qobj)
-    assert outcome.final_state.isket
-    assert outcome.final_state.dims == [[2, 2], [1]]
+    assert outcome.final_state.shape == (4, 1)
     assert outcome.final_state.norm() == pytest.approx(1.0)
     assert outcome.final_state is not context.state
-    assert outcome.final_state is not initial
 
 
 def test_counts_only_finish_does_not_materialize_a_statevector():

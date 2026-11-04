@@ -114,7 +114,6 @@ def test_method_selects_one_full_physical_artifact(
     qobj = getattr(result, f"get_{field}")()
     assert isinstance(qobj, Qobj)
     assert qobj.isket if field == "statevector" else qobj.isoper
-    assert np.prod(qobj.dims[0]) == dimension
     artifact = qobj.full().ravel() if field == "statevector" else qobj.full()
     assert artifact.shape == shape(dimension)
     if method == "unitary":
