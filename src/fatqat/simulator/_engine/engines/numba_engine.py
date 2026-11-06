@@ -164,6 +164,10 @@ from ..numerics.numba_kernels._fixed_photon import (
 from ..numerics.numpy_kernels._fixed_photon import _fixed_photon_probabilities
 from ..numerics.numpy_kernels._reset import _reset_density_matrix, _reset_superoperator
 from ..binding import _bind_parameter_batch
+from ..numerics.numba_kernels._expectation import (
+    expectation_density_matrix,
+    expectation_statevector,
+)
 from ..state import EvolutionState
 from .ndarray_engine import _NdarrayEngine
 from .numpy_engine import NumpyFixedPhotonEngine
@@ -203,6 +207,8 @@ _BATCH_STATE_BYTES = 256 * 2**20
 
 class NumbaSVEngine(_NdarrayEngine):
     """State-vector engine with Numba-jitted numeric kernels."""
+
+    _expectation_kernel = staticmethod(expectation_statevector)
 
     _capabilities = _EngineCapabilities(
         quantum=_QuantumCapabilities(
@@ -578,6 +584,8 @@ class NumbaDMEngine(_NdarrayEngine):
     analog of the statevector matrix cache: built and classified once
     per plan step, key-aware for gates, content-scanned for channels.
     """
+
+    _expectation_kernel = staticmethod(expectation_density_matrix)
 
     _capabilities = _EngineCapabilities(
         quantum=_QuantumCapabilities(

@@ -1,8 +1,11 @@
 """Expectation kernels against a dense reference operator.
 
-Both kernels avoid building the 2**n x 2**n operator, so every case is checked
+The kernels avoid building the 2**n x 2**n operator, so every case is checked
 against one assembled explicitly with Kronecker products - an independent
-computation, not a rearrangement of the same arithmetic.
+computation, not a rearrangement of the same arithmetic. Each runtime owns its
+kernels, so every direct kernel test runs against both the NumPy and the Numba
+module, and the public ``Simulator`` tests at the end check that each runtime
+reaches its own kernels.
 """
 
 import math
@@ -13,11 +16,32 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.observable import NumberOperator, Observable, Projector
-from fatqat.estimator._exact import (
-    expectation_density_matrix,
-    expectation_statevector,
+from fatqat.simulator._engine.numerics.numba_kernels import (
+    _expectation as numba_expectation,
+)
+from fatqat.simulator._engine.numerics.numpy_kernels import (
+    _expectation as numpy_expectation,
 )
 from fatqat.simulator._engine.numerics.numpy_kernels._measurement import _strides
+
+
+@pytest.fixture(
+    name="kernels", params=["numpy", "numpy_table", "numba", "numba_streaming"]
+)
+def _kernels(request, monkeypatch):
+    """The exact-expectation entry points of one runtime.
+
+    Each runtime picks a kernel per term by the size of the term's digit
+    table. The test states are small, which leaves the NumPy runtime on its
+    per-amplitude kernels and the Numba runtime on its table; the ``_table``
+    and ``_streaming`` variants move each threshold so that every case also
+    runs through the other kernel.
+    """
+    if request.param == "numpy_table":
+        monkeypatch.setattr(numpy_expectation, "AMPLITUDES_PER_ROW", 0)
+    if request.param == "numba_streaming":
+        monkeypatch.setattr(numba_expectation, "TABLE_ROWS", 0)
+    return numba_expectation if request.param.startswith("numba") else numpy_expectation
 
 
 def _msb_strides(dims):
@@ -100,26 +124,26 @@ _CASES = {
 
 
 @pytest.mark.parametrize("observable", _CASES.values(), ids=_CASES.keys())
-def test_statevector_kernel_matches_dense_operator(observable, states):
+def test_statevector_kernel_matches_dense_operator(observable, states, kernels):
     statevector, _ = states
     reference = complex(np.vdot(statevector, _dense(observable) @ statevector)).real
 
-    assert expectation_statevector(
+    assert kernels.expectation_statevector(
         statevector, observable.terms, _QUBITS, _QUBIT_STRIDES
     ) == pytest.approx(reference, abs=1e-12)
 
 
 @pytest.mark.parametrize("observable", _CASES.values(), ids=_CASES.keys())
-def test_density_matrix_kernel_matches_dense_operator(observable, states):
+def test_density_matrix_kernel_matches_dense_operator(observable, states, kernels):
     _, density_matrix = states
     reference = np.trace(density_matrix @ _dense(observable)).real
 
-    assert expectation_density_matrix(
+    assert kernels.expectation_density_matrix(
         density_matrix, observable.terms, _QUBITS, _QUBIT_STRIDES
     ) == pytest.approx(reference, abs=1e-12)
 
 
-def test_occupation_equals_probability_of_bit_set(states):
+def test_occupation_equals_probability_of_bit_set(states, kernels):
     # <ONE_i> is the occupation number of qubit i - the quantity atom-array
     # experiments report - so it must equal P(bit i == 1).
     statevector, _ = states
@@ -130,49 +154,49 @@ def test_occupation_equals_probability_of_bit_set(states):
         observable = Observable.from_sparse([("ONE", (qubit,), 1.0)])
         expected = probabilities[(index >> (_N - 1 - qubit)) & 1 == 1].sum()
 
-        assert expectation_statevector(
+        assert kernels.expectation_statevector(
             statevector, observable.terms, _QUBITS, _QUBIT_STRIDES
         ) == pytest.approx(expected, abs=1e-12)
 
 
-def test_zero_and_one_projectors_are_complementary(states):
+def test_zero_and_one_projectors_are_complementary(states, kernels):
     statevector, _ = states
     zero = Observable.from_sparse([("ZERO", (1,), 1.0)])
     one = Observable.from_sparse([("ONE", (1,), 1.0)])
 
-    total = expectation_statevector(
+    total = kernels.expectation_statevector(
         statevector, zero.terms, _QUBITS, _QUBIT_STRIDES
-    ) + expectation_statevector(statevector, one.terms, _QUBITS, _QUBIT_STRIDES)
+    ) + kernels.expectation_statevector(statevector, one.terms, _QUBITS, _QUBIT_STRIDES)
     assert total == pytest.approx(1.0, abs=1e-12)
 
 
-def test_asymmetric_public_factor_matches_complex_state_and_density_oracles():
+def test_asymmetric_public_factor_matches_complex_state_and_density_oracles(kernels):
     psi = np.asarray([1 + 2j, -3 + 0.5j, 2 - 1j, 0.7 + 1.2j])
     psi = psi / np.linalg.norm(psi)
     rho = np.outer(psi, psi.conj())
     operator = np.kron(_LOCAL["X"], _LOCAL["I"])
     observable = Observable([("XI", 1.0)])
 
-    assert expectation_statevector(
+    assert kernels.expectation_statevector(
         psi, observable.terms, (2, 2), (2, 1)
     ) == pytest.approx(np.vdot(psi, operator @ psi).real, abs=1e-12)
-    assert expectation_density_matrix(
+    assert kernels.expectation_density_matrix(
         rho, observable.terms, (2, 2), (2, 1)
     ) == pytest.approx(np.trace(rho @ operator).real, abs=1e-12)
 
 
-def test_statevector_kernel_does_not_modify_the_state(states):
+def test_statevector_kernel_does_not_modify_the_state(states, kernels):
     statevector, _ = states
     before = statevector.copy()
 
-    expectation_statevector(
+    kernels.expectation_statevector(
         statevector, _CASES["projector_with_xy"].terms, _QUBITS, _QUBIT_STRIDES
     )
 
     assert np.array_equal(statevector, before)
 
 
-def test_sign_uses_selection_not_uint8_arithmetic(states):
+def test_sign_uses_selection_not_uint8_arithmetic(states, kernels):
     # Parity is folded through unsigned intermediates. A Z-heavy term would be
     # wildly wrong while a pure-X term still passed if the sign wrapped, so pin
     # the Z case.
@@ -180,7 +204,7 @@ def test_sign_uses_selection_not_uint8_arithmetic(states):
     observable = Observable([("ZZZZZ", 1.0)])
     reference = complex(np.vdot(statevector, _dense(observable) @ statevector)).real
 
-    value = expectation_statevector(
+    value = kernels.expectation_statevector(
         statevector, observable.terms, _QUBITS, _QUBIT_STRIDES
     )
     assert value == pytest.approx(reference, abs=1e-12)
@@ -246,14 +270,16 @@ def _mixed_states():
 
 
 @pytest.mark.parametrize("observable", _MIXED_CASES.values(), ids=_MIXED_CASES.keys())
-def test_mixed_dimension_kernels_match_dense_operator(observable, mixed_states):
+def test_mixed_dimension_kernels_match_dense_operator(
+    observable, mixed_states, kernels
+):
     psi, rho = mixed_states
     operator = _mixed_dense(observable)
 
-    assert expectation_statevector(
+    assert kernels.expectation_statevector(
         psi, observable.terms, _DIMS, _DIM_STRIDES
     ) == pytest.approx(np.vdot(psi, operator @ psi).real, abs=1e-12)
-    assert expectation_density_matrix(
+    assert kernels.expectation_density_matrix(
         rho, observable.terms, _DIMS, _DIM_STRIDES
     ) == pytest.approx(np.trace(rho @ operator).real, abs=1e-12)
 
@@ -264,7 +290,7 @@ def test_mixed_dimension_kernels_match_dense_operator(observable, mixed_states):
     ids=["projector_with_x", "multi_term"],
 )
 def test_place_values_decouple_the_kernel_from_subsystem_order(
-    observable, mixed_states
+    observable, mixed_states, kernels
 ):
     """An engine that numbers its subsystems the other way round gets the same value."""
     psi, rho = mixed_states
@@ -276,14 +302,44 @@ def test_place_values_decouple_the_kernel_from_subsystem_order(
     flipped_dims = _DIMS[::-1]
     flipped_strides = _strides(flipped_dims)  # little-endian
 
-    assert expectation_statevector(
+    assert kernels.expectation_statevector(
         psi, flipped_terms, flipped_dims, flipped_strides
     ) == pytest.approx(
-        expectation_statevector(psi, observable.terms, _DIMS, _DIM_STRIDES), abs=1e-12
-    )
-    assert expectation_density_matrix(
-        rho, flipped_terms, flipped_dims, flipped_strides
-    ) == pytest.approx(
-        expectation_density_matrix(rho, observable.terms, _DIMS, _DIM_STRIDES),
+        kernels.expectation_statevector(psi, observable.terms, _DIMS, _DIM_STRIDES),
         abs=1e-12,
     )
+    assert kernels.expectation_density_matrix(
+        rho, flipped_terms, flipped_dims, flipped_strides
+    ) == pytest.approx(
+        kernels.expectation_density_matrix(rho, observable.terms, _DIMS, _DIM_STRIDES),
+        abs=1e-12,
+    )
+
+
+# --- each runtime reaches its own kernels -------------------------------------
+
+
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+@pytest.mark.parametrize("method", ["SV", "DM"])
+@pytest.mark.parametrize(
+    "observable",
+    [_CASES[name] for name in ("off_diagonal_xy", "projector_with_xy", "multi_term")],
+    ids=["off_diagonal_xy", "projector_with_xy", "multi_term"],
+)
+def test_simulator_runtime_matches_dense_operator(observable, method, runtime, states):
+    statevector, density_matrix = states
+    operator = _dense(observable)
+    reference = (
+        complex(np.vdot(statevector, operator @ statevector)).real
+        if method == "SV"
+        else np.trace(density_matrix @ operator).real
+    )
+
+    value = (
+        fq.Estimator(fq.simulator.Simulator(method=method, runtime=runtime))
+        .run(_program(), observable)
+        .result()
+        .get_expectation()
+    )
+
+    assert value == pytest.approx(reference, abs=1e-12)
