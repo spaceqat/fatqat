@@ -25,23 +25,34 @@ from fatqat.simulator._engine.numerics.numpy_kernels import (
 from fatqat.simulator._engine.numerics.numpy_kernels._measurement import _strides
 
 
-@pytest.fixture(
-    name="kernels", params=["numpy", "numpy_table", "numba", "numba_streaming"]
-)
-def _kernels(request, monkeypatch):
-    """The exact-expectation entry points of one runtime.
+def _runtime(variant, monkeypatch):
+    """The exact-expectation entry points of one runtime, in one kernel variant.
 
     Each runtime picks a kernel per term by the size of the term's digit
     table. The test states are small, which leaves the NumPy runtime on its
     per-amplitude kernels and the Numba runtime on its table; the ``_table``
-    and ``_streaming`` variants move each threshold so that every case also
-    runs through the other kernel.
+    and ``_streaming`` variants move each threshold so that a case also runs
+    through the other kernel.
     """
-    if request.param == "numpy_table":
+    if variant == "numpy_table":
         monkeypatch.setattr(numpy_expectation, "AMPLITUDES_PER_ROW", 0)
-    if request.param == "numba_streaming":
+    if variant == "numba_streaming":
         monkeypatch.setattr(numba_expectation, "TABLE_ROWS", 0)
-    return numba_expectation if request.param.startswith("numba") else numpy_expectation
+    return numba_expectation if variant.startswith("numba") else numpy_expectation
+
+
+@pytest.fixture(name="kernels", params=["numpy", "numpy_table", "numba"])
+def _kernels(request, monkeypatch):
+    """Qubit-only kernels; Numba evaluates qubits without a table."""
+    return _runtime(request.param, monkeypatch)
+
+
+@pytest.fixture(
+    name="mixed_kernels", params=["numpy", "numpy_table", "numba", "numba_streaming"]
+)
+def _mixed_kernels(request, monkeypatch):
+    """Mixed-dimension kernels, including Numba's streaming fallback."""
+    return _runtime(request.param, monkeypatch)
 
 
 def _msb_strides(dims):
@@ -271,15 +282,15 @@ def _mixed_states():
 
 @pytest.mark.parametrize("observable", _MIXED_CASES.values(), ids=_MIXED_CASES.keys())
 def test_mixed_dimension_kernels_match_dense_operator(
-    observable, mixed_states, kernels
+    observable, mixed_states, mixed_kernels
 ):
     psi, rho = mixed_states
     operator = _mixed_dense(observable)
 
-    assert kernels.expectation_statevector(
+    assert mixed_kernels.expectation_statevector(
         psi, observable.terms, _DIMS, _DIM_STRIDES
     ) == pytest.approx(np.vdot(psi, operator @ psi).real, abs=1e-12)
-    assert kernels.expectation_density_matrix(
+    assert mixed_kernels.expectation_density_matrix(
         rho, observable.terms, _DIMS, _DIM_STRIDES
     ) == pytest.approx(np.trace(rho @ operator).real, abs=1e-12)
 
@@ -290,7 +301,7 @@ def test_mixed_dimension_kernels_match_dense_operator(
     ids=["projector_with_x", "multi_term"],
 )
 def test_place_values_decouple_the_kernel_from_subsystem_order(
-    observable, mixed_states, kernels
+    observable, mixed_states, mixed_kernels
 ):
     """An engine that numbers its subsystems the other way round gets the same value."""
     psi, rho = mixed_states
@@ -302,16 +313,20 @@ def test_place_values_decouple_the_kernel_from_subsystem_order(
     flipped_dims = _DIMS[::-1]
     flipped_strides = _strides(flipped_dims)  # little-endian
 
-    assert kernels.expectation_statevector(
+    assert mixed_kernels.expectation_statevector(
         psi, flipped_terms, flipped_dims, flipped_strides
     ) == pytest.approx(
-        kernels.expectation_statevector(psi, observable.terms, _DIMS, _DIM_STRIDES),
+        mixed_kernels.expectation_statevector(
+            psi, observable.terms, _DIMS, _DIM_STRIDES
+        ),
         abs=1e-12,
     )
-    assert kernels.expectation_density_matrix(
+    assert mixed_kernels.expectation_density_matrix(
         rho, flipped_terms, flipped_dims, flipped_strides
     ) == pytest.approx(
-        kernels.expectation_density_matrix(rho, observable.terms, _DIMS, _DIM_STRIDES),
+        mixed_kernels.expectation_density_matrix(
+            rho, observable.terms, _DIMS, _DIM_STRIDES
+        ),
         abs=1e-12,
     )
 

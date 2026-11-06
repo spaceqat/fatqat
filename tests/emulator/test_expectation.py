@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import qutip
 
-from fatqat.emulator._expectation import expectation, observable_operator, with_dims
+from fatqat.emulator._expectation import expectation, observable_operator
 from fatqat.observable import NumberOperator, Observable, Projector
 
 _DIMS = (3, 2, 4)
@@ -63,9 +63,7 @@ def _dense(observable):
 
 
 def _value(state, observable):
-    return expectation(
-        with_dims(state, _DIMS), observable_operator(observable.terms, _DIMS)
-    )
+    return expectation(state, observable_operator(observable.terms, _DIMS))
 
 
 @pytest.fixture(scope="module", name="states")
@@ -75,8 +73,11 @@ def _states():
     psi /= np.linalg.norm(psi)
     vectors = rng.normal(size=(24, 3)) + 1j * rng.normal(size=(24, 3))
     rho = vectors @ vectors.conj().T
-    # The evaluator restates the tensor structure, so flat dims are accepted.
-    return qutip.Qobj(psi.reshape(-1, 1)), qutip.Qobj(rho / np.trace(rho))
+    dims = list(_DIMS)
+    return (
+        qutip.Qobj(psi.reshape(-1, 1), dims=[dims, [1] * len(dims)]),
+        qutip.Qobj(rho / np.trace(rho), dims=[dims, dims]),
+    )
 
 
 @pytest.mark.parametrize("observable", _CASES.values(), ids=_CASES.keys())
@@ -97,9 +98,3 @@ def test_density_matrix_matches_dense_operator(observable, states):
     assert _value(rho, observable) == pytest.approx(
         np.trace(rho.full() @ _dense(observable)).real, abs=1e-12
     )
-
-
-def test_restating_dims_shares_the_state_data(states):
-    _, rho = states
-
-    assert with_dims(rho, _DIMS).data is rho.data

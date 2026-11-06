@@ -83,32 +83,11 @@ def observable_operator(
     return qutip.Qobj(operator.data, dims=operator.dims, copy=False, isherm=True)
 
 
-def with_dims(state: Any, dims: Sequence[int]) -> Any:
-    """Return ``state`` with the subsystem structure ``dims`` stated explicitly.
-
-    The emulator's state already has it in the usual case, and is then
-    returned as is. Otherwise the data is shared, not copied, and a density
-    operator's Hermitian status is carried over, so it is settled once here
-    rather than by every evaluation.
-    """
-    import qutip  # pylint: disable=import-outside-toplevel
-
-    shape = [list(dims), [1] * len(dims) if state.isket else list(dims)]
-    if state.dims == shape:
-        return state
-    return qutip.Qobj(
-        state.data,
-        dims=shape,
-        copy=False,
-        isherm=None if state.isket else state.isherm,
-    )
-
-
 def expectation(state: Any, operator: Any) -> float:
     """Return ``<psi|O|psi>`` or ``Tr(rho O)`` for a ket or density operator.
 
-    ``state`` must carry the operator's subsystem structure; see
-    :func:`with_dims`.
+    ``state`` must carry the operator's subsystem structure, as the emulator's
+    final state does; QuTiP rejects a mismatch.
     """
     import qutip  # pylint: disable=import-outside-toplevel
 

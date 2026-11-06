@@ -18,7 +18,7 @@ from ...estimator._planning import (
     _reduce_outcome_counts,
     _validate_observable_targets,
 )
-from .._expectation import expectation, observable_operator, with_dims
+from .._expectation import expectation, observable_operator
 from ..._parameter_binding import (
     _parameter_batch_rows,
     _raise_for_unbound_parameters,
@@ -559,17 +559,18 @@ class _PulseBackend(ABC):
                 f"{type(self).__name__} fixes the initial product state and does "
                 "not accept an initial_state"
             )
-        # Observable operators by (terms, dims), built once and shared by every
-        # entry of a sweep; building one costs more than evaluating it.
-        operators: dict[Any, Any] = {}
         if parameter_values is None:
             return self._run_expectation_entry(
                 program,
                 observables,
                 shots=shots,
                 simulation_config=simulation_config,
-                operators=operators,
+                operators=None,
             )
+        # Observable operators by (terms, dims), built once and shared by every
+        # entry of a sweep; building one costs more than evaluating it. A single
+        # entry has nothing to share them with, so it keeps none.
+        operators: dict[Any, Any] = {}
         executions: list[_ExpectationExecution] = []
         for row in _parameter_batch_rows(parameter_values):
             job = self._run_expectation_entry(
@@ -591,7 +592,7 @@ class _PulseBackend(ABC):
         *,
         shots: int,
         simulation_config: dict[str, Any] | None,
-        operators: dict[Any, Any],
+        operators: dict[Any, Any] | None,
     ) -> Job[list[_ExpectationExecution]]:
         """Execute one fully bound entry of an expectation request."""
         prepared = self._prepare_expectation(
@@ -787,12 +788,13 @@ class _PulseBackend(ABC):
     def _execute_exact_expectation(
         self,
         prepared: _PreparedPulseExpectation,
-        operators: dict[Any, Any],
+        operators: dict[Any, Any] | None,
     ) -> tuple[tuple[float, ...], dict[str, Any]]:
         """Contract every observable against one pulse-evolved state.
 
         ``operators`` holds the observables' operators by ``(terms, dims)``;
-        missing ones are built and added.
+        missing ones are built and added. With None, each operator is built,
+        evaluated and released, so at most one is alive at a time.
         """
         program = prepared.program
         summary = self._execute_state(
@@ -817,7 +819,6 @@ class _PulseBackend(ABC):
             )
         # QuTiP-ordered engine: index 0 is the most significant subsystem.
         dims = tuple(program.engine_allocation.system_dims)
-        state = with_dims(state, dims)
         values = []
         for constant, terms in zip(
             prepared.constants, terms_by_observable, strict=True
@@ -826,9 +827,13 @@ class _PulseBackend(ABC):
                 values.append(constant)
                 continue
             key = (tuple(terms), dims)
-            if key not in operators:
-                operators[key] = observable_operator(*key)
-            values.append(constant + expectation(state, operators[key]))
+            if operators is None:
+                operator = observable_operator(*key)
+            else:
+                if key not in operators:
+                    operators[key] = observable_operator(*key)
+                operator = operators[key]
+            values.append(constant + expectation(state, operator))
         return tuple(values), dict(summary.runtime_details)
 
     def _execute_sampled_expectation(

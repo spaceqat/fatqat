@@ -1,9 +1,10 @@
 """Compiled expectation kernels: agreement with NumPy, and error growth.
 
-The compiled kernels exist only to be faster, so every test here asks whether
-they still answer the same question. Two properties matter and are checked
-separately: the value must match the NumPy form, and the *error* must not grow
-with the state size, which is what the blocked summation is for.
+The dense-reference tests run every case through both runtimes; this file
+covers what small states cannot. The error must not grow with the state size,
+which is what the blocked summation is for, and the table sweep must agree
+with the NumPy table on states whose contiguous runs span several summation
+blocks.
 """
 
 import math
@@ -45,60 +46,10 @@ def _statevector(num_qubits):
     )
 
 
-def _density_matrix(num_qubits):
-    return (
-        fq.simulator.Simulator(method="DM")
-        .run(_program(num_qubits), shots=0, result_config=_CONFIG)
-        .result()
-        .get_density_matrix()
-    )
-
-
-# One case per structural shape the kernel branches on, not per letter: a
-# diagonal term (x_mask empty), an off-diagonal one, a Y phase, projectors
-# alone, and projectors mixed with Paulis.
-_TERMS = {
-    "diagonal_zz": ("ZZ", (0, 2)),
-    "off_diagonal_xx": ("XX", (1, 3)),
-    "with_y_phase": ("XY", (0, 3)),
-    "y_only": ("Y", (2,)),
-    "projector_one": ("ONE", (1,)),
-    "projector_zero": ("ZERO", (3,)),
-    "projector_with_pauli": (["ONE", "Z", "X"], (0, 2, 3)),
-    "identity": ((), ()),
-}
-
-
 def _masks(letters, qubits, num_qubits):
-    if not qubits:
-        return (0, 0, 0, 0)
     observable = Observable.from_sparse([(letters, qubits, 1.0)])
     strides = _msb_strides((2,) * num_qubits)
     return npk._term_masks(observable.terms[0][1], strides)
-
-
-@pytest.mark.parametrize("case", _TERMS.values(), ids=_TERMS.keys())
-def test_statevector_kernel_matches_numpy(case):
-    state = _statevector(6)
-    index = np.arange(state.shape[0])
-    masks = _masks(*case, 6)
-
-    compiled = nbk.qubit_statevector_term(state, *masks)
-    reference = npk.qubit_statevector_term(state, index, *masks)
-
-    assert compiled == pytest.approx(reference, abs=1e-14)
-
-
-@pytest.mark.parametrize("case", _TERMS.values(), ids=_TERMS.keys())
-def test_density_matrix_kernel_matches_numpy(case):
-    rho = _density_matrix(5)
-    index = np.arange(rho.shape[0])
-    masks = _masks(*case, 5)
-
-    compiled = nbk.qubit_density_matrix_term(rho, *masks)
-    reference = npk.qubit_density_matrix_term(rho, index, *masks)
-
-    assert compiled == pytest.approx(reference, abs=1e-14)
 
 
 @pytest.mark.parametrize("num_qubits", [4, 8, 12, 16])
@@ -123,41 +74,6 @@ def test_agreement_does_not_degrade_with_state_size(num_qubits):
         )
 
     assert worst < 1e-14
-
-
-def test_estimator_values_are_unchanged_by_the_compiled_path():
-    # The integration check: whichever runtime computes it, the public answer is
-    # the same one the dense reference gives.
-    program = _program(4)
-    observable = Observable.from_sparse(
-        [("ZZ", (0, 1), 1.5), ("XY", (1, 3), -0.5), (["ONE", "Z"], (2, 0), 0.25)]
-    )
-    state = _statevector(4)
-
-    from_estimator = (
-        fq.Estimator(fq.simulator.Simulator(method="SV"))
-        .run(program, observable)
-        .result()
-        .get_expectation()
-    )
-
-    local = {
-        "X": np.array([[0, 1], [1, 0]], dtype=complex),
-        "Y": np.array([[0, -1j], [1j, 0]]),
-        "Z": np.diag([1, -1]).astype(complex),
-        "P1": np.diag([0, 1]).astype(complex),
-        "I": np.eye(2, dtype=complex),
-    }
-    dense = np.zeros((16, 16), dtype=complex)
-    for coefficient, factors in observable.terms:
-        letters = {qubit: str(factor) for qubit, factor in factors}
-        operator = local[letters.get(0, "I")]
-        for qubit in (1, 2, 3):
-            operator = np.kron(operator, local[letters.get(qubit, "I")])
-        dense += coefficient * operator
-    reference = complex(np.vdot(state, dense @ state)).real
-
-    assert from_estimator == pytest.approx(reference, abs=1e-12)
 
 
 # Mixed dimensions: one case per digit-kernel factor kind, alone and combined
