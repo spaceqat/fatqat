@@ -1,0 +1,35 @@
+name: Tutorials
+
+on:
+  push:
+    branches: [main, "v*"]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, "v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  tutorials:
+    name: Execute tutorials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # Install only what the tutorial builder and the tutorials import, without
+      # the MkDocs toolchain. The documentation lock file pins their versions.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . nbformat pyyaml scikit-learn \
+            --constraint docs/mkdocs/requirements.txt
+
+      - name: Execute tutorials
+        run: python docs/mkdocs/tools/build_tutorials.py --execute
