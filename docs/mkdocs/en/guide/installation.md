@@ -120,7 +120,8 @@ def main():
     program.add(ops.CX, (0, 1))
     program.measure_all()
 
-    output_dir = Path(__file__).resolve().parent / "output"
+    base_dir = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+    output_dir = base_dir / "output"
     output_dir.mkdir(exist_ok=True)
 
     circuit_figure, circuit_axis = plt.subplots()
