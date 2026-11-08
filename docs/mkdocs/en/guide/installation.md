@@ -191,13 +191,13 @@ output/
 
 下面是在 Ubuntu 中查看保存结果的例子。`output` 中已经生成两张图片和 `counts.txt`，双击图片即可查看。
 
-![Ubuntu 中的 output 文件夹，以及打开的贝尔态电路图](../assets/installation/ubuntu-saved-result.png)
+![Ubuntu 中的 output 文件夹，以及打开的贝尔态电路图](ubuntu-saved-result.png)
 
 如果当前环境支持图窗，还会弹出两张图。关闭图窗后，程序才会结束。如果提示 `FigureCanvasAgg is non-interactive`，说明当前只能保存图片，直接打开 PNG 查看即可；也可以删去代码末尾的 `plt.show()`，只保留保存图片的部分。
 
 下面是在 Ubuntu 终端中运行的结果。截图中的文件名为 `demo.py`，对应本文的 `first_program.py`。测量结果和图片已经保存，最后的提示表示当前不能弹出图窗。
 
-![Ubuntu 终端显示 Python 和 FatQat 版本、测量次数、图片保存路径，以及 Agg 后端无法弹窗的提示](../assets/installation/ubuntu-terminal-result.png)
+![Ubuntu 终端显示 Python 和 FatQat 版本、测量次数、图片保存路径，以及 Agg 后端无法弹窗的提示](ubuntu-terminal-result.png)
 
 ## 在 Windows 的 VS Code 中运行
 
@@ -215,7 +215,7 @@ output/
 
 运行成功后，可以看到电路图和测量结果柱状图，如下图所示。
 
-![Windows 的 VS Code 中运行示例，显示电路图和测量结果柱状图](../assets/installation/windows-vscode-result.png)
+![Windows 的 VS Code 中运行示例，显示电路图和测量结果柱状图](windows-vscode-result.png)
 
 如果 Windows 的 Git Bash 提示 `command not found`，可以在命令面板中选择 **Terminal: Select Default Profile**，改用 PowerShell，然后关闭旧终端，再点击运行。
 
