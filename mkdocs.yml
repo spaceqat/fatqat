@@ -147,7 +147,6 @@ nav:
   - User guide:
       - guide/index.md
       - Start with one program:
-          - Installation: guide/installation.md
           - Quickstart: guide/quickstart.md
           - Programs and registers: guide/program.md
           - Compile and run a logical circuit: guide/compiler.md
