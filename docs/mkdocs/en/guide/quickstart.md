@@ -6,6 +6,36 @@ shots, and see why only `00` and `11` appear. The computation will live in a
 
 ## Install FatQat
 
+If you are new to Python, install Python 3.12 or later from
+[python.org](https://www.python.org/downloads/). Open PowerShell on Windows,
+or Terminal on macOS or Linux. Enter the following commands in that terminal,
+one at a time.
+
+Create a folder for your examples:
+
+```sh
+mkdir fatqat-learning
+cd fatqat-learning
+```
+
+Create and activate a virtual environment for this folder:
+
+```powershell
+# Windows PowerShell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+```bash
+# macOS or Linux
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+After activation, `python` uses this environment. Continue with the installation
+command below. When you open a new terminal, return to this folder and activate
+the environment again; you do not need to reinstall FatQat.
+
 FatQat requires Python 3.12 or later. In a virtual environment, install FatQat:
 
 ```bash
@@ -51,6 +81,80 @@ Then install FatQat with `pip`:
 python -m pip install --upgrade pip
 python -m pip install .
 ```
+
+## Save and run a Python file
+
+Create a file named `first_program.py` in your `fatqat-learning` folder using a
+text editor. Copy the complete example below into the file and save it. Python
+code belongs in this file; terminal commands belong in the terminal. Avoid
+naming the file `fatqat.py` or accidentally saving it as `first_program.py.txt`.
+
+This small example flips one qubit from `0` to `1`, measures it, and prints the
+counts:
+
+```python
+import fatqat as fq
+import fatqat.operations as ops
+
+example_program = fq.Program(1, 1)
+example_program.add(ops.X, 0)
+example_program.measure_all()
+example_result = (
+    fq.simulator.Simulator(runtime="numpy")
+    .run(example_program, shots=100)
+    .result()
+)
+print(example_result.get_counts())
+```
+
+In your terminal, with the environment activated and the current folder set to
+`fatqat-learning`, run:
+
+```sh
+python first_program.py
+```
+
+The output is `{'1': 100}`. After editing the file, save it and run the same
+command again.
+
+### Run with VS Code on Windows
+
+You can also run the file with a button:
+
+1. Install [VS Code](https://code.visualstudio.com/) and Microsoft's Python extension.
+2. Choose **File > Open Folder**, open `fatqat-learning`, and open `first_program.py`.
+3. Press `Ctrl+Shift+P`, choose **Python: Select Interpreter**, and select this
+   folder's `.venv`. If it is not listed, enter the path to
+   `.venv\Scripts\python.exe` inside your learning folder.
+4. Save the file. Use the triangle button at the top right of the editor and
+   choose **Run Python File in Terminal**.
+
+The output appears in the terminal panel. For later runs, edit, save, and click
+the same button.
+
+### If the example does not run
+
+- **Python cannot find the file:** check that your terminal is in the folder
+  containing `first_program.py`.
+- **`No module named fatqat`:** activate the environment where you installed
+  FatQat. In VS Code, check the selected Python interpreter.
+- **Ubuntu reports that `venv` is unavailable:** for the Python 3.12 supplied
+  with Ubuntu 24.04, install `python3.12-venv` with
+  `sudo apt install python3.12-venv`, then create the environment again.
+  Other releases may use a different package name.
+- **PowerShell blocks the activation script:** you can use the environment
+  without activating it. Install with
+  `.\.venv\Scripts\python.exe -m pip install fatqat`, then run
+  `.\.venv\Scripts\python.exe first_program.py`.
+
+If you still need help, open a [GitHub issue](https://github.com/spaceqat/fatqat/issues)
+with your operating system, Python version, the command you ran, and the first
+error message.
+
+The rest of this page uses a Bell pair to explain Programs, drawing, and
+simulation. Examples beginning with `>>>` show an interactive Python session.
+To put those examples in a `.py` file, omit the `>>>` and `...` prompts and any
+shown output.
 
 ## Write a Bell-state Program
 
