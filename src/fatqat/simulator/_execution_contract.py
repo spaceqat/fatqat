@@ -164,6 +164,29 @@ class _TrajectoryCapabilities:
 
 
 @dataclass(frozen=True, slots=True)
+class _GateFusionLimits:
+    """Engine-declared bounds for merging adjacent gate steps into one matrix.
+
+    Engines and tests build these values directly, so fields are not
+    validated.
+
+    Attributes:
+        min_size: Smallest ``prod(system_dims)`` at which steps are merged.
+        max_dim: Largest local Hilbert dimension of a merged target set.
+        structure_aware: Merge only gates in the same structure class:
+            dense with dense, or diagonal and permutation together.
+        cost_by_dim: ``(local dimension, cost)`` pairs. When set, a merge
+            must be strictly cheaper than applying both parts, and a missing
+            dimension blocks the merge. A tuple keeps the value hashable.
+    """
+
+    min_size: int
+    max_dim: int
+    structure_aware: bool
+    cost_by_dim: tuple[tuple[int, float], ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class _KernelCapabilities:
     """Numerical controls, separate from supported trajectory state."""
 
@@ -176,6 +199,8 @@ class _KernelCapabilities:
     # Plan materialization can combine compatible adjacent operations.
     # This does not enable or disable compiled multi-shot execution.
     supports_fusion: bool
+    # Step-level gate fusion bounds; None leaves bound plans unfused.
+    gate_fusion: _GateFusionLimits | None = None
 
 
 @dataclass(frozen=True, slots=True)
