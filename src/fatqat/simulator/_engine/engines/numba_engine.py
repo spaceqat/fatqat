@@ -535,7 +535,10 @@ class NumbaSVEngine(_NdarrayEngine):
         for bound in _bind_parameter_batch(plan, context.system_dims):
             if policy.workflow != "numba_trajectories":
                 yield self._dispatch_by_shot_strategy(
-                    bound, context, policy, initial_state
+                    self._apply_gate_fusion(bound, context, policy),
+                    context,
+                    policy,
+                    initial_state,
                 )
                 continue
             if packed is None:

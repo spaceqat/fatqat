@@ -1,9 +1,11 @@
-"""Step-level gate fusion: limits, block scheduling, and fused steps."""
+"""Step-level gate fusion: limits, block scheduling, fused steps, and engine runs."""
 
+import itertools
 import subprocess
 import sys
 from dataclasses import replace
 from math import prod
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -13,14 +15,16 @@ import fatqat.operations as ops
 from fatqat._backends import steps
 from fatqat._backends.steps import ApplyMatrixStep, ApplyParametricMatrixStep
 from fatqat._backends.steps import BuiltinKernelKey as Key
-from fatqat.simulator import Simulator
+from fatqat.simulator import ClassicalState, EvolutionState, Simulator
 from fatqat.simulator._engine.binding import _bind_parameter_batch
+from fatqat.simulator._engine.engines import base
 from fatqat.simulator._engine.numerics._gate_matrices import (
     _DENSE,
     _DIAGONAL,
     _KERNEL_SPECS,
     _PERMUTATION,
 )
+from fatqat.simulator._engine.optimization import fusion
 from fatqat.simulator._engine.optimization.fusion import materialize, schedule
 from fatqat.simulator._execution_contract import (
     _GateFusionLimits,
@@ -291,3 +295,367 @@ for name in (
         timeout=60,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+# ---- engine runs ------------------------------------------------------------
+# Engines declare no limits yet, so each test declares forced limits on the
+# engine class that `Simulator` builds, and observes the gate pass through the
+# `fusion` module attributes that the engine entry calls.
+
+SEED = 20261103
+STATE_ONLY = {"counts": False, "final_state": True}
+STATE_GETTERS = {"SV": "get_statevector", "DM": "get_density_matrix"}
+FUSION_ENGINES = [("SV", "numpy"), ("DM", "numpy"), ("SV", "numba"), ("DM", "numba")]
+
+
+def _add_brick_layers(program, n, layers, rng):
+    for layer in range(layers):
+        for qubit in range(n):
+            program.add(ops.RX(float(rng.uniform(0, 2 * np.pi))), qubit)
+        for qubit in range(n):
+            program.add(ops.RZ(float(rng.uniform(0, 2 * np.pi))), qubit)
+        for qubit in range(layer % 2, n - 1, 2):
+            program.add(ops.CZ, (qubit, qubit + 1))
+    return program
+
+
+def _brick(n, layers, clbits=0):
+    """RX and RZ on every qubit, then CZ on alternating pairs, per layer."""
+    program = fq.Program(n, clbits)
+    return _add_brick_layers(program, n, layers, np.random.default_rng(SEED))
+
+
+def _qft(n):
+    program = fq.Program(n)
+    for j in range(n):
+        program.add(ops.H, j)
+        for k in range(j + 1, n):
+            program.add(ops.CPhase(np.pi / 2 ** (k - j)), (k, j))
+    for j in range(n // 2):
+        program.add(ops.Swap, (j, n - 1 - j))
+    return program
+
+
+def _mixed(n, layers=3):
+    """Asymmetric gates whose lowered targets descend.
+
+    Lowering maps program qubit q to index n-1-q, so ``CX(q, q+1)`` lowers to
+    descending target indices; a fused matrix must keep that order.
+    """
+    rng = np.random.default_rng(SEED)
+    program = fq.Program(n)
+    for _ in range(layers):
+        for qubit in range(n):
+            program.add(ops.RX(float(rng.uniform(0, 2 * np.pi))), qubit)
+            program.add(ops.RZ(float(rng.uniform(0, 2 * np.pi))), qubit)
+        for qubit in range(n - 1):
+            program.add(ops.CX, (qubit, qubit + 1))
+        for qubit in reversed(range(n)):
+            program.add(ops.RY(float(rng.uniform(0, 2 * np.pi))), qubit)
+    return program
+
+
+def _qudits(layers=2):
+    """Two qutrits and a qubit, so a pass that assumes qubit dimensions fails.
+
+    Every gate is dense, so blocks form under both structure rules. A qutrit
+    and the qubit (dimension 6) merge, which embeds qutrit matrices; the two
+    qutrits (dimension 9) exceed the forced width limit and never merge.
+    """
+    rng = np.random.default_rng(SEED)
+    qutrits = fq.QuantumRegister(2, dim=3)
+    qubit = fq.QuantumRegister(1)
+    program = fq.Program([qutrits, qubit])
+    for _ in range(layers):
+        for qutrit in qutrits:
+            program.add(ops.SubspaceRX(float(rng.uniform(0, np.pi)), (0, 1)), qutrit)
+            program.add(ops.SubspaceRY(float(rng.uniform(0, np.pi)), (1, 2)), qutrit)
+        program.add(ops.RX(float(rng.uniform(0, np.pi))), qubit[0])
+        program.add(ops.RY(float(rng.uniform(0, np.pi))), qubit[0])
+        program.add(ops.Sum, (qutrits[0], qutrits[1]))
+    return program
+
+
+CIRCUITS = {
+    "brick": lambda: _brick(5, 3),
+    "qft": lambda: _qft(5),
+    "mixed": lambda: _mixed(5),
+    "qudits": _qudits,
+}
+
+
+def _engine_class(method, runtime):
+    return type(Simulator(method=method, runtime=runtime)._engine)
+
+
+def _force_limits(monkeypatch, method, runtime, limits=FORCED):
+    """Declare ``limits`` and fusion support on the engine class."""
+    engine_cls = _engine_class(method, runtime)
+    capabilities = engine_cls._capabilities
+    kernels = replace(capabilities.kernels, gate_fusion=limits, supports_fusion=True)
+    monkeypatch.setattr(
+        engine_cls, "_capabilities", replace(capabilities, kernels=kernels)
+    )
+    return engine_cls
+
+
+def _record(monkeypatch, engine_cls):
+    """Count gate passes and record the plans that ``engine_cls`` receives."""
+    record = SimpleNamespace(
+        calls=0, executed=[], prepared=[], workflows=[], dims=None, process_plans=[]
+    )
+    original_schedule = fusion.schedule
+    original_execute = engine_cls.execute
+    original_prepare = engine_cls.prepare_payload
+    original_processes = base._run_shots_in_processes
+
+    def counting_schedule(*args, **kwargs):
+        record.calls += 1
+        return original_schedule(*args, **kwargs)
+
+    def recording_execute(engine, plan, **kwargs):
+        record.executed.append(plan)
+        return original_execute(engine, plan, **kwargs)
+
+    def recording_prepare(engine, plan, **kwargs):
+        record.prepared.append(plan)
+        record.workflows.append(kwargs["policy"].workflow)
+        record.dims = kwargs["system_dims"]
+        return original_prepare(engine, plan, **kwargs)
+
+    def recording_processes(factory, context, plan, policy, initial_state):
+        record.process_plans.append(plan)
+        return original_processes(factory, context, plan, policy, initial_state)
+
+    monkeypatch.setattr(fusion, "schedule", counting_schedule)
+    monkeypatch.setattr(engine_cls, "execute", recording_execute)
+    monkeypatch.setattr(engine_cls, "prepare_payload", recording_prepare)
+    monkeypatch.setattr(base, "_run_shots_in_processes", recording_processes)
+    return record
+
+
+def _final_state(program, method, runtime, *, fused):
+    result = (
+        Simulator(method=method, runtime=runtime)
+        .run(
+            program,
+            shots=0,
+            result_config=STATE_ONLY,
+            simulation_config={"fusion": fused},
+        )
+        .result()
+    )
+    return getattr(result, STATE_GETTERS[method])()
+
+
+def _matrix_count(plan):
+    return sum(isinstance(step, ApplyMatrixStep) for step in plan)
+
+
+def _widest(plan, dims):
+    return max(prod(dims[target] for target in step.target_indices) for step in plan)
+
+
+def _same_steps(output, plan):
+    return len(output) == len(plan) and all(a is b for a, b in zip(output, plan))
+
+
+def _refuse(*_args, **_kwargs):
+    raise AssertionError("the gate pass ran with fusion disabled")
+
+
+@pytest.mark.parametrize(("method", "runtime"), FUSION_ENGINES)
+def test_disabled_fusion_never_runs_the_gate_pass(monkeypatch, method, runtime):
+    _force_limits(monkeypatch, method, runtime)
+    monkeypatch.setattr(fusion, "schedule", _refuse)
+    monkeypatch.setattr(fusion, "materialize", _refuse)
+
+    state = _final_state(_brick(5, 3), method, runtime, fused=False)
+
+    assert np.all(np.isfinite(state))
+
+
+EQUIVALENCE_CELLS = {
+    "numpy-SV": ("SV", "numpy", FORCED),
+    "numpy-DM": ("DM", "numpy", FORCED),
+    "numba-SV": ("SV", "numba", FORCED),
+    "numba-SV-aware": ("SV", "numba", FORCED_AWARE),
+    "numba-DM": ("DM", "numba", FORCED),
+    "numba-DM-aware": ("DM", "numba", FORCED_AWARE),
+}
+
+
+@pytest.mark.parametrize("circuit", sorted(CIRCUITS))
+@pytest.mark.parametrize("cell", list(EQUIVALENCE_CELLS))
+def test_fused_run_matches_unfused_run(monkeypatch, cell, circuit):
+    method, runtime, limits = EQUIVALENCE_CELLS[cell]
+    record = _record(monkeypatch, _force_limits(monkeypatch, method, runtime, limits))
+    program = CIRCUITS[circuit]()
+
+    reference = _final_state(program, method, runtime, fused=False)
+    unfused = record.prepared.pop()
+    state = _final_state(program, method, runtime, fused=True)
+    fused = record.prepared.pop()
+
+    # The policy is chosen before the gate pass; fusion must not move the run
+    # off the Python workflow that receives the fused plan.
+    assert record.workflows == ["python", "python"]
+    assert _matrix_count(fused) < _matrix_count(unfused)
+    # Width is bounded in physical dimensions; single gates may exceed it.
+    assert _widest(fused, record.dims) <= max(
+        limits.max_dim, _widest(unfused, record.dims)
+    )
+    assert np.allclose(state, reference, atol=1e-10)
+
+
+def _mid_circuit_program():
+    """A mid-circuit measurement makes every shot evolve on its own."""
+    program = _brick(4, 2, clbits=5)
+    program.measure(0, 4)
+    _add_brick_layers(program, 4, 2, np.random.default_rng(3))
+    program.measure(tuple(range(4)), tuple(range(4)))
+    return program
+
+
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_process_shots_run_the_plan_fused_once_in_the_parent(monkeypatch, runtime):
+    record = _record(monkeypatch, _force_limits(monkeypatch, "SV", runtime))
+
+    def counts(fused):
+        config = {"seed": 7, "shot_parallelism": "processes", "fusion": fused}
+        return (
+            Simulator("SV", runtime=runtime)
+            .run(_mid_circuit_program(), shots=64, simulation_config=config)
+            .result()
+            .get_counts()
+        )
+
+    reference = counts(False)
+    unfused = record.process_plans.pop()
+    fused_counts = counts(True)
+    fused = record.process_plans.pop()
+
+    assert record.calls == 1
+    assert len(fused) < len(unfused)
+    assert len(reference) > 1
+    assert fused_counts == reference
+
+
+@pytest.mark.parametrize("method", ["SV", "DM"])
+def test_minimum_size_compares_with_the_physical_dimension(monkeypatch, method):
+    limits = replace(FORCED, min_size=2**5)
+    record = _record(monkeypatch, _force_limits(monkeypatch, method, "numpy", limits))
+
+    _final_state(_brick(5, 2), method, "numpy", fused=False)
+    _final_state(_brick(5, 2), method, "numpy", fused=True)
+    _final_state(_brick(4, 2), method, "numpy", fused=True)
+    unfused, fused, below = record.prepared
+    below_input = record.executed[-1]
+
+    assert _matrix_count(fused) < _matrix_count(unfused)
+    # Without the size threshold the smaller plan would merge.
+    assert len(schedule(below_input, (2,) * 4, FORCED)) < len(below_input)
+    assert _same_steps(below, below_input)
+
+
+@pytest.mark.parametrize("shot_parallelism", ["serial", "processes"])
+def test_sampled_expectation_tail_is_never_fused(monkeypatch, shot_parallelism):
+    engine_cls = _force_limits(monkeypatch, "SV", "numpy")
+    phase = {"tail": False}
+    calls = {"body": 0, "tail": 0, "tail_dispatch": 0}
+    original_schedule = fusion.schedule
+    original_continue = engine_cls.continue_from_states
+    original_dispatch = engine_cls._dispatch_by_shot_strategy
+
+    def counting_schedule(*args, **kwargs):
+        calls["tail" if phase["tail"] else "body"] += 1
+        return original_schedule(*args, **kwargs)
+
+    def continue_tail(engine, *args, **kwargs):
+        phase["tail"] = True
+        try:
+            return original_continue(engine, *args, **kwargs)
+        finally:
+            phase["tail"] = False
+
+    def counting_dispatch(engine, *args, **kwargs):
+        calls["tail_dispatch"] += phase["tail"]
+        return original_dispatch(engine, *args, **kwargs)
+
+    monkeypatch.setattr(fusion, "schedule", counting_schedule)
+    monkeypatch.setattr(engine_cls, "continue_from_states", continue_tail)
+    monkeypatch.setattr(engine_cls, "_dispatch_by_shot_strategy", counting_dispatch)
+    config = {"seed": 5, "fusion": True}
+    initial_state = None
+    if shot_parallelism == "processes":
+        # Atom occupancy needs per-shot evolution, so the automatic strategy
+        # runs the tail's shots in worker processes.
+        occupied = ClassicalState(occupied={0, 1, 2, 3})
+        initial_state = EvolutionState(classical=occupied)
+        config["max_workers"] = 2
+    else:
+        config["shot_parallelism"] = "serial"
+
+    fq.Estimator(Simulator("SV", runtime="numpy")).run(
+        _brick(4, 2),
+        fq.Observable([("ZZII", 1.0), ("XIII", 0.5)]),
+        shots=64,
+        initial_state=initial_state,
+        simulation_config=config,
+    ).result()
+
+    assert calls["body"] >= 1
+    assert calls["tail"] == 0
+    # The tail dispatches only on the process branch.
+    assert (calls["tail_dispatch"] > 0) == (shot_parallelism == "processes")
+
+
+@pytest.mark.parametrize("method", ["unitary", "superop"])
+def test_operator_engines_keep_their_plan_with_fusion_enabled(monkeypatch, method):
+    # Operator engines fuse their own payloads; a gate pass on top would
+    # change the operator fusion they already perform.
+    record = _record(monkeypatch, _engine_class(method, "numba"))
+
+    Simulator(method=method, runtime="numba").run(
+        _brick(5, 3),
+        shots=0,
+        result_config=STATE_ONLY,
+        simulation_config={"fusion": True},
+    ).result()
+
+    assert record.calls == 0
+    (executed,) = record.executed
+    (prepared,) = record.prepared
+    assert _same_steps(prepared, executed)
+
+
+def test_sweep_fuses_every_bound_entry(monkeypatch):
+    record = _record(monkeypatch, _force_limits(monkeypatch, "SV", "numpy"))
+    phi = fq.Parameter("phi")
+    program = _brick(4, 2)
+    program.add(ops.RX(phi), 0)
+    _add_brick_layers(program, 4, 1, np.random.default_rng(1))
+
+    def states(fused):
+        results = (
+            Simulator("SV", runtime="numpy")
+            .run_sweep(
+                program,
+                {phi: np.array([0.1, 0.7, 2.0])},
+                shots=0,
+                result_config=STATE_ONLY,
+                simulation_config={"fusion": fused},
+            )
+            .result()
+        )
+        return [result.get_statevector() for result in results]
+
+    reference = states(False)
+    fused = states(True)
+
+    assert record.calls == 3
+    # Distinct entries, so reusing one entry's fused plan cannot pass.
+    assert not any(
+        np.allclose(a, b, atol=1e-10) for a, b in itertools.combinations(reference, 2)
+    )
+    assert all(np.allclose(a, b, atol=1e-10) for a, b in zip(fused, reference))
