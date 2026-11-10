@@ -10,17 +10,25 @@ Two distinct passes are enabled by ``fusion=True``:
   and width limits then decide which neighbors to merge. CSR payloads are
   barriers. This pass preserves order and does not commute operations.
 
+State evolution (SV and DM) uses neither pass. Its gates are merged by the
+step-level pass in ``optimization.fusion``, which does not import Numba and
+serves both runtimes.
+
 Usage by execution route (when fusion is enabled):
 
     Runtime / representation     Workflow              Fusion passes
-    NumPy / all                  Python                Neither
-    Numba / statevector          Python or compiled SV Neither
-    Numba / density matrix       Python                Neither
+    NumPy / statevector          Python                Step-level gates
+    NumPy / density matrix       Python                Step-level gates
+    NumPy / unitary, superop     Python                None; fusion is rejected
+    Numba / statevector          Python                Step-level gates
+    Numba / statevector          Compiled SV           None
+    Numba / density matrix       Python                Step-level gates
     Numba / unitary              Compiled operator     Operator payloads only
     Numba / superoperator        Compiled operator     Both, in that order
 
-State-evolution fusion (SV and DM) is deferred to a future implementation.
-Process-based shots therefore perform no fusion in either parent or workers.
+The step-level pass runs once per bound plan in the parent, before shot
+dispatch, and only at or above the engine's minimum system size. Process-based
+shots therefore receive the fused plan, and workers do not fuse again.
 
 For compiled superoperator execution, gate/channel fusion precedes construction
 of numerical payloads, then operator fusion precedes packing. Compiled unitary

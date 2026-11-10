@@ -528,9 +528,12 @@ class Simulator:
                   ``result()`` re-raises the original exception. Input and
                   configuration validation always raise directly. Engine
                   planning errors follow this option.
-                - ``"fusion"`` (``bool``, default ``False``): Whether to
-                  combine compatible adjacent operations. ``True`` requires
-                  Numba with ``density_matrix``, ``unitary``, or ``superop``.
+                - ``"fusion"`` (``bool``, default ``False``): ``True`` allows
+                  the engine to merge compatible adjacent operations. It is
+                  accepted for ``statevector`` and ``density_matrix`` on
+                  either runtime, and for ``unitary`` and ``superop`` on
+                  Numba; NumPy rejects it for ``unitary`` and ``superop``.
+                  The engine may skip merging, for example on a small system.
 
                 Unknown or incompatible entries are rejected.
             result_config: Optional output requests. Accepted keys are:
@@ -646,9 +649,8 @@ class Simulator:
                   limit; ``1`` conflicts with an explicit parallel request.
                 - ``"error_handling"``: Same values, default, and behavior as
                   ``run()``.
-                - ``"fusion"`` (``bool``, default ``False``): Whether to
-                  combine compatible operations. ``True`` requires Numba with
-                  ``density_matrix``, ``unitary``, or ``superop``.
+                - ``"fusion"``: Same values, default, and behavior as
+                  ``run()``.
 
                 Unknown or incompatible entries are rejected.
             result_config: Output requests reused for every row. Accepted keys:
