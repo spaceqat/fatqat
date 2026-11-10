@@ -15,9 +15,11 @@ import fatqat.operations as ops
 from fatqat._backends import steps
 from fatqat._backends.steps import ApplyMatrixStep, ApplyParametricMatrixStep
 from fatqat._backends.steps import BuiltinKernelKey as Key
+from fatqat.errors import BackendValidationError
 from fatqat.simulator import ClassicalState, EvolutionState, Simulator
 from fatqat.simulator._engine.binding import _bind_parameter_batch
 from fatqat.simulator._engine.engines import base
+from fatqat.simulator._engine.engines.numpy_engine import NumpyFixedPhotonEngine
 from fatqat.simulator._engine.numerics._gate_matrices import (
     _DENSE,
     _DIAGONAL,
@@ -298,9 +300,9 @@ for name in (
 
 
 # ---- engine runs ------------------------------------------------------------
-# Engines declare no limits yet, so each test declares forced limits on the
-# engine class that `Simulator` builds, and observes the gate pass through the
-# `fusion` module attributes that the engine entry calls.
+# Default limits skip small systems, so each test declares forced limits on
+# the engine class that `Simulator` builds, and observes the gate pass through
+# the `fusion` module attributes that the engine entry calls.
 
 SEED = 20261103
 STATE_ONLY = {"counts": False, "final_state": True}
@@ -659,3 +661,74 @@ def test_sweep_fuses_every_bound_entry(monkeypatch):
         np.allclose(a, b, atol=1e-10) for a, b in itertools.combinations(reference, 2)
     )
     assert all(np.allclose(a, b, atol=1e-10) for a, b in zip(fused, reference))
+
+
+# ---- default limits and the fusion switch -----------------------------------
+# Minimum sizes come from brick-circuit timing: fusion pays off only from the
+# listed physical dimension upward. Timing showed no gain on the Numba density
+# matrix, so its minimum size is an uncalibrated starting point.
+
+DEFAULT_LIMITS = {
+    ("SV", "numpy"): _GateFusionLimits(2**20, max_dim=8, structure_aware=False),
+    ("DM", "numpy"): _GateFusionLimits(2**10, max_dim=8, structure_aware=False),
+    ("SV", "numba"): _GateFusionLimits(2**21, max_dim=8, structure_aware=True),
+    ("DM", "numba"): _GateFusionLimits(2**7, max_dim=4, structure_aware=True),
+}
+
+
+@pytest.mark.parametrize(("method", "runtime"), list(DEFAULT_LIMITS))
+def test_state_engines_declare_calibrated_default_limits(method, runtime):
+    kernels = _engine_class(method, runtime)._capabilities.kernels
+
+    # Limits without the switch, or the switch without limits, would make
+    # `fusion=True` either unreachable or a silent no-op.
+    assert kernels.supports_fusion is True
+    assert kernels.gate_fusion == DEFAULT_LIMITS[(method, runtime)]
+
+
+def test_default_minimum_size_decides_fusion_on_numpy_statevector(monkeypatch):
+    # Calibration found a gain from 20 qubits upward and a loss below.
+    record = _record(monkeypatch, _engine_class("SV", "numpy"))
+
+    _final_state(_brick(20, 1), "SV", "numpy", fused=True)
+    _final_state(_brick(19, 1), "SV", "numpy", fused=True)
+    at_size, below = record.prepared
+    at_size_input, below_input = record.executed
+
+    assert _matrix_count(at_size) < _matrix_count(at_size_input)
+    # Without the size threshold the smaller plan would merge.
+    assert len(schedule(below_input, (2,) * 19, FORCED)) < len(below_input)
+    assert _same_steps(below, below_input)
+
+
+@pytest.mark.parametrize("method", ["SV", "DM"])
+def test_numpy_state_engines_accept_enabling_fusion(method):
+    result = (
+        Simulator(method=method, runtime="numpy")
+        .run(
+            _brick(3, 1),
+            shots=0,
+            result_config=STATE_ONLY,
+            simulation_config={"fusion": True},
+        )
+        .result()
+    )
+
+    assert result.metadata["simulation_config"]["fusion"] is True
+
+
+@pytest.mark.parametrize("method", ["unitary", "superop"])
+def test_numpy_operator_engines_reject_enabling_fusion(method):
+    # These engines have neither operator fusion nor gate fusion limits, so
+    # accepting the switch would promise a speedup that never happens.
+    with pytest.raises(BackendValidationError, match="not supported.*matrix engine"):
+        Simulator(method=method, runtime="numpy").run(
+            _brick(3, 1), simulation_config={"fusion": True}
+        )
+
+
+def test_numpy_fixed_photon_engine_declares_no_fusion():
+    kernels = NumpyFixedPhotonEngine._capabilities.kernels
+
+    assert kernels.gate_fusion is None
+    assert kernels.supports_fusion is False
