@@ -251,7 +251,7 @@ def test_counts_still_come_from_a_normalized_distribution():
             program,
             shots=100,
             initial_state=[0, 0, 3, 0],
-            simulation_config={"seed": 1},
+            execution_config={"seed": 1},
         )
         .result()
         .get_counts()
@@ -350,7 +350,7 @@ def test_every_shot_of_a_dynamic_run_starts_from_the_state(
             initial_state=(
                 BasisState({program.quantum_registers[0][1]: 1}) if basis else start
             ),
-            simulation_config={
+            execution_config={
                 "seed": 7,
                 "shot_parallelism": shot_parallelism,
                 "kernel_parallelism": "serial",
@@ -381,7 +381,7 @@ def test_numba_process_workers_preserve_initial_state():
             program,
             shots=400,
             initial_state=start,
-            simulation_config={"seed": 7, "max_workers": 1},
+            execution_config={"seed": 7, "max_workers": 1},
         )
         .result()
         .get_counts()
@@ -392,7 +392,7 @@ def test_numba_process_workers_preserve_initial_state():
             program,
             shots=400,
             initial_state=start,
-            simulation_config={
+            execution_config={
                 "seed": 7,
                 "max_workers": 2,
                 "shot_parallelism": "processes",

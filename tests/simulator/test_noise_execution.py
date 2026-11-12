@@ -193,7 +193,7 @@ def test_statevector_export_with_noise_requires_single_shot():
     result = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 3},
+        execution_config={"seed": 3},
         result_config={"counts": False, "final_state": True},
     ).result()
     assert np.isclose(np.linalg.norm(result.get_statevector()), 1.0)
@@ -259,7 +259,7 @@ def test_statevector_trajectories_match_density_matrix_statistics():
     program = _x_program(with_measurement=True)
     counts = (
         Simulator(method="SV", noise=_depolarized_x_model(p))
-        .run(program, shots=shots, simulation_config={"seed": 7})
+        .run(program, shots=shots, execution_config={"seed": 7})
         .result()
         .get_counts()
     )
@@ -274,7 +274,7 @@ def test_density_matrix_counts_sample_the_noisy_distribution():
     program = _x_program(with_measurement=True)
     counts = (
         Simulator(method="DM", noise=_depolarized_x_model(p))
-        .run(program, shots=shots, simulation_config={"seed": 7})
+        .run(program, shots=shots, execution_config={"seed": 7})
         .result()
         .get_counts()
     )
@@ -294,7 +294,7 @@ def test_skipped_conditioned_gate_skips_its_channel():
         .run(
             program,
             shots=1,
-            simulation_config={"seed": 5},
+            execution_config={"seed": 5},
             result_config={"final_state": True},
         )
         .result()
@@ -320,7 +320,7 @@ def test_taken_conditioned_gate_applies_its_channel():
         .run(
             program,
             shots=1,
-            simulation_config={"seed": 5},
+            execution_config={"seed": 5},
             result_config={"final_state": True},
         )
         .result()
@@ -338,12 +338,12 @@ def test_seeded_noisy_runs_are_reproducible():
     backend = Simulator(method="SV", noise=_depolarized_x_model())
     program = _x_program(with_measurement=True)
     first = (
-        backend.run(program, shots=64, simulation_config={"seed": 11})
+        backend.run(program, shots=64, execution_config={"seed": 11})
         .result()
         .get_counts()
     )
     second = (
-        backend.run(program, shots=64, simulation_config={"seed": 11})
+        backend.run(program, shots=64, execution_config={"seed": 11})
         .result()
         .get_counts()
     )
@@ -364,7 +364,7 @@ def test_threaded_compiled_shots_match_serial_with_channels():
         .run(
             program,
             shots=8,
-            simulation_config={
+            execution_config={
                 "seed": 13,
                 "shot_parallelism": "serial",
                 "kernel_parallelism": "serial",
@@ -378,7 +378,7 @@ def test_threaded_compiled_shots_match_serial_with_channels():
         .run(
             program,
             shots=8,
-            simulation_config={
+            execution_config={
                 "seed": 13,
                 "shot_parallelism": "threads",
                 "kernel_parallelism": "serial",
@@ -650,7 +650,7 @@ def test_numba_compiled_multi_shot_matches_numpy_on_a_qudit_dynamic_plan():
         program.add(ops.Reset, qreg[0])
         program.measure(qreg[1], creg[1])
         backend = Simulator(method="SV", runtime=runtime, noise=noise)
-        job = backend.run(program, shots=400, simulation_config={"seed": 11})
+        job = backend.run(program, shots=400, execution_config={"seed": 11})
         return job.result().get_counts()
 
     assert _total_variation(counts_for("numba"), counts_for("numpy"), 400) < 0.05
@@ -784,7 +784,7 @@ def test_numba_single_trajectory_counts_agree_with_state_request(seed):
 
     counts = (
         backend.run(
-            program, shots=1, simulation_config=config, result_config={"counts": True}
+            program, shots=1, execution_config=config, result_config={"counts": True}
         )
         .result()
         .get_counts()
@@ -792,7 +792,7 @@ def test_numba_single_trajectory_counts_agree_with_state_request(seed):
     with_state = backend.run(
         program,
         shots=1,
-        simulation_config=config,
+        execution_config=config,
         result_config={"counts": True, "final_state": True},
     ).result()
 

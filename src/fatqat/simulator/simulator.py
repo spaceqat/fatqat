@@ -60,6 +60,7 @@ from .._backends.backend_utils import (
     _LoweringContext,
     _canonicalize_method,
     _normalize_config,
+    _resolve_execution_config,
     _resolve_result_flags,
     _validate_result_shots,
 )
@@ -183,7 +184,7 @@ class Simulator:
     # Subclasses may replace this with a dataclass derived from
     # ``_SimulationConfig`` for hardware-specific simulator controls. The
     # base backend consumes the inherited matrix-execution fields.
-    _simulation_config_cls: type[_SimulationConfig] = _SimulationConfig
+    _execution_config_cls: type[_SimulationConfig] = _SimulationConfig
 
     # Whether this backend implements the per-shot atom-occupancy lifecycle
     # Loss needs (loading, per-shot loss, refill). False on the generic
@@ -470,8 +471,9 @@ class Simulator:
         shots: int = 1024,
         resource_layout: ResourceLayout | None = None,
         initial_state: Any = None,
-        simulation_config: dict[str, Any] | None = None,
+        execution_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
+        simulation_config: dict[str, Any] | None = None,
     ) -> Job[Result]:
         """Validate and execute one program.
 
@@ -499,7 +501,7 @@ class Simulator:
                 physical validity. A ``BasisState`` names one level per
                 subsystem instead, and density-matrix execution starts from its
                 pure state. Operator methods reject an initial state.
-            simulation_config: Optional per-run execution controls. String
+            execution_config: Optional per-run execution controls. String
                 choices are case-sensitive. Accepted keys are:
 
                 - ``"seed"`` (``int | None``, default ``None``): Use a
@@ -549,6 +551,8 @@ class Simulator:
                   (register digits and site occupancy). It is stochastic under
                   the same conditions as the final state and then requires
                   ``shots == 1``. Operator methods reject it.
+            simulation_config: Deprecated alias for ``execution_config``,
+                to be removed before fatqat 0.1.0.
 
         Returns:
             A completed ``Job`` whose result is a ``Result``.
@@ -559,14 +563,19 @@ class Simulator:
             MatrixImplementationError: If a matrix rule cannot build the
                 selected operation for its target dimensions.
             TypeError: If ``program`` is not a ``Program`` or
-                ``ExecutableProgram``, or if ``simulation_config`` or
-                ``result_config`` is not a dictionary or ``None``.
+                ``ExecutableProgram``, if ``execution_config`` or
+                ``result_config`` is not a dictionary or ``None``, or if
+                ``execution_config`` and its deprecated alias are both
+                supplied.
             UnsupportedOperationError: If the program contains an operation
                 without a backend implementation, or one whose target key is
                 illegal for this backend.
             ValueError: If ``resource_layout`` is supplied for an executable
                 compiler result that already carries one.
         """
+        execution_config = _resolve_execution_config(
+            execution_config, simulation_config
+        )
         if isinstance(program, ExecutableProgram):
             if resource_layout is not None:
                 raise ValueError(
@@ -582,7 +591,7 @@ class Simulator:
             program,
             resource_layout=resource_layout,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
         )
         config, context = self._prepare_run(
             execution, shots=shots, result_config=result_config
@@ -601,8 +610,9 @@ class Simulator:
         shots: int = 1024,
         resource_layout: ResourceLayout | None = None,
         initial_state: Any = None,
-        simulation_config: dict[str, Any] | None = None,
+        execution_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
+        simulation_config: dict[str, Any] | None = None,
     ) -> Job[list[Result]]:
         """Bind and run every row of a complete parameter batch.
 
@@ -627,7 +637,7 @@ class Simulator:
             initial_state: Quantum array, ``BasisState``, or ``EvolutionState``
                 used to initialize every shot in every row, following the same
                 rules as ``run()``.
-            simulation_config: Controls reused for every row. Accepted keys:
+            execution_config: Controls reused for every row. Accepted keys:
 
                 - ``"seed"`` (``int | None``, default ``None``): Use a
                   non-negative sampling seed; booleans are rejected. ``None``
@@ -666,6 +676,8 @@ class Simulator:
                   ``run()``.
 
                 ``True`` requests a field and ``False`` suppresses it.
+            simulation_config: Deprecated alias for ``execution_config``,
+                to be removed before fatqat 0.1.0.
 
         Returns:
             An eager job carrying an ordered list of row results.
@@ -673,8 +685,9 @@ class Simulator:
         Raises:
             TypeError: If ``bindings`` is not an object-keyed mapping, a batch
                 contains values other than built-in ``int``/``float`` or NumPy
-                integer/floating scalars, or either configuration is not a
-                dictionary or ``None``.
+                integer/floating scalars, either configuration is not a
+                dictionary or ``None``, or ``execution_config`` and its
+                deprecated alias are both supplied.
             ValueError: If the program is not parameterized, assignments are
                 missing or duplicated, or batch ranks and lengths disagree.
             BackendValidationError: If a bound row or forwarded run option
@@ -704,6 +717,9 @@ class Simulator:
             >>> ["statevector" in result.available_data for result in results]
             [True, True]
         """
+        execution_config = _resolve_execution_config(
+            execution_config, simulation_config
+        )
         columns = _normalize_parameter_batch(program._instructions, bindings)
         # Structural resolution and lowering happen once for the whole batch,
         # on the same direct-raise validation path as run(): layout,
@@ -713,7 +729,7 @@ class Simulator:
             program,
             resource_layout=resource_layout,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             parameter_values=columns,
         )
         config, context = self._prepare_run(
@@ -756,7 +772,7 @@ class Simulator:
         *,
         resource_layout: ResourceLayout | None,
         initial_state: Any,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
     ) -> _PreparedExecution:
         """Resolve and lower one program for direct or derived execution."""
@@ -767,9 +783,9 @@ class Simulator:
                 "ModeRegister and CountRegister programs on LOSimulator"
             )
         simulation = _normalize_config(
-            simulation_config,
-            self._simulation_config_cls,
-            "simulation_config",
+            execution_config,
+            self._execution_config_cls,
+            "execution_config",
             backend_name=type(self).__name__,
         )
         # Both hooks are resolved exactly once per run, before any execution
@@ -848,7 +864,7 @@ class Simulator:
         observables: tuple[Observable, ...],
         *,
         shots: int,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
         initial_state: Any = None,
     ) -> Job[list[_ExpectationExecution]]:
@@ -864,7 +880,7 @@ class Simulator:
             program,
             resource_layout=None,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             parameter_values=parameter_values,
         )
         # pylint: disable-next=fixme
@@ -1474,6 +1490,8 @@ class Simulator:
             "backend_name": type(self).__name__,
             "method": self._state_field,
             "runtime": self._runtime,
+            "execution_config": asdict(simulation),
+            # Deprecated key; remove with the simulation_config keyword.
             "simulation_config": asdict(simulation),
             "result_config": effective_result_config,
         }

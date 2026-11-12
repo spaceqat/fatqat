@@ -160,7 +160,7 @@ def test_counts_seed_and_options_match_manual_repeated_runs():
     program.measure(0, 0)
     layout = ResourceLayout({program.quantum_registers[0][0]: 0})
     initial_state = [0.0, 1.0]
-    simulation_config = {
+    execution_config = {
         "seed": 17,
         "shot_parallelism": "serial",
         "kernel_parallelism": "serial",
@@ -174,7 +174,7 @@ def test_counts_seed_and_options_match_manual_repeated_runs():
         shots=64,
         resource_layout=layout,
         initial_state=initial_state,
-        simulation_config=simulation_config,
+        execution_config=execution_config,
         result_config=result_config,
     ).result()
     explicit = [
@@ -183,7 +183,7 @@ def test_counts_seed_and_options_match_manual_repeated_runs():
             shots=64,
             resource_layout=layout,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             result_config=result_config,
         ).result()
         for value in values
@@ -268,7 +268,7 @@ def test_counts_match_explicit_loop():
     program.measure(0, 0)
     values = np.linspace(0.0, np.pi, 7)
     backend = Simulator("SV")
-    options = {"shots": 16, "simulation_config": {"seed": 5}}
+    options = {"shots": 16, "execution_config": {"seed": 5}}
 
     swept = backend.run_sweep(program, {theta: values}, **options).result()
     explicit = [
@@ -400,7 +400,7 @@ def test_failed_point_execution_produces_failed_outer_job_without_partial_list(
     # assembly fails the second row on any execution path.
     monkeypatch.setattr(backend, "_assemble_result", fail_on_second)
     outer = backend.run_sweep(
-        program, {theta: [0.1, 0.2]}, simulation_config={"error_handling": "capture"}
+        program, {theta: [0.1, 0.2]}, execution_config={"error_handling": "capture"}
     )
 
     with pytest.raises(RuntimeError, match="point failed") as caught:
@@ -423,7 +423,7 @@ def test_point_job_interrupt_propagates_from_sweep(monkeypatch):
     # Captured error handling covers Exception, never an interrupt.
     with pytest.raises(KeyboardInterrupt, match="point interrupted") as caught:
         backend.run_sweep(
-            program, {theta: [0.1]}, simulation_config={"error_handling": "capture"}
+            program, {theta: [0.1]}, execution_config={"error_handling": "capture"}
         )
     assert caught.value is error
 
@@ -602,7 +602,7 @@ def test_noisy_counts_sweep_matches_explicit_runs(parallelism):
     noise.add(fq.noise.Depolarizing(p=0.05), operation=ops.CX)
     backend = Simulator("SV", implementation_map=impl_map, noise=noise)
     values = {theta: [0.1, 1.0, 2.0], phi: [0.0, 0.5, 3.0], tau: [0.0, np.pi, 1.2]}
-    options = {"shots": 64, "simulation_config": {"seed": 11, **parallelism}}
+    options = {"shots": 64, "execution_config": {"seed": 11, **parallelism}}
 
     swept = backend.run_sweep(program, values, **options).result()
 

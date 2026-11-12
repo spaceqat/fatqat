@@ -40,7 +40,7 @@ the normal FatQat result:
 ```pycon
 >>> counts = (
 ...     fq.simulator.Simulator()
-...     .run(program, shots=100, simulation_config={"seed": 7})
+...     .run(program, shots=100, execution_config={"seed": 7})
 ...     .result()
 ...     .get_counts()
 ... )
@@ -97,7 +97,7 @@ circuit.measure([0, 1], [0, 1])
 program = circuit_to_program(circuit)
 result = (
     fq.simulator.Simulator()
-    .run(program, shots=100, simulation_config={"seed": 7})
+    .run(program, shots=100, execution_config={"seed": 7})
     .result()
 )
 counts = result.get_counts()

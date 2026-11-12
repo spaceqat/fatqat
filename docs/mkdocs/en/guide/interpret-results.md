@@ -88,7 +88,7 @@ True
 ...     bell,
 ...     zi,
 ...     shots=400,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result()
 >>> round(float(sampled.get_expectation()), 4)
 -0.045
@@ -128,7 +128,7 @@ below each estimate:
     standard_errors = []
     for index, shots in enumerate(shot_counts):
         result = estimator.run(
-            bell, zi, shots=shots, simulation_config={"seed": 7 + index}
+            bell, zi, shots=shots, execution_config={"seed": 7 + index}
         ).result()
         estimates.append(result.get_expectation())
         standard_errors.append(result.get_standard_error())

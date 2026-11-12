@@ -27,7 +27,7 @@ def test_statevector_not_attached_by_default_with_measurement():
     p = Program(1, 1)
     p.add(ops.H, 0)
     p.measure(0, 0)
-    result = Simulator("SV").run(p, shots=10, simulation_config={"seed": 0}).result()
+    result = Simulator("SV").run(p, shots=10, execution_config={"seed": 0}).result()
     with pytest.raises(fq.errors.ResultFieldUnavailableError):
         result.get_statevector()
 
@@ -40,7 +40,7 @@ def test_result_metadata_records_backend_shots_and_config():
 
     result = (
         Simulator("SV")
-        .run(p, shots=7, simulation_config={"seed": 0}, result_config=config)
+        .run(p, shots=7, execution_config={"seed": 0}, result_config=config)
         .result()
     )
 
@@ -59,7 +59,7 @@ def test_run_accepts_result_config_as_dict():
         .run(
             p,
             shots=7,
-            simulation_config={"seed": 0},
+            execution_config={"seed": 0},
             result_config={"counts": True, "final_state": False},
         )
         .result()
@@ -98,7 +98,7 @@ def test_projected_statevector_shots_one():
         .run(
             p,
             shots=1,
-            simulation_config={"seed": 0},
+            execution_config={"seed": 0},
             result_config={"counts": True, "final_state": True},
         )
         .result()

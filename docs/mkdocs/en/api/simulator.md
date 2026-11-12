@@ -75,8 +75,10 @@ an arbitrary state `psi`, a matrix acting on every subsystem satisfies
 uses the current simulator default, initially `"numba"`. See
 [Simulation](../guide/simulation.md) to set the default for a script or notebook.
 
-`simulation_config` changes one call to [`Simulator.run`][fatqat.simulator.Simulator.run]. Its string
-values are case-sensitive.
+`execution_config` changes one call to [`Simulator.run`][fatqat.simulator.Simulator.run]. Its string
+values are case-sensitive. The former name `simulation_config` is deprecated on
+every backend and on `Estimator`; it still works as an alias and will be removed
+before FATQAT 0.1.0.
 
 | Key | Default | Accepted values and effect |
 | --- | --- | --- |
@@ -114,7 +116,7 @@ The constructor also accepts:
 ## Run inputs and results
 
 
-Besides `simulation_config`, [`Simulator.run`][fatqat.simulator.Simulator.run] accepts:
+Besides `execution_config`, [`Simulator.run`][fatqat.simulator.Simulator.run] accepts:
 
 | Argument | Default | Meaning |
 | --- | --- | --- |

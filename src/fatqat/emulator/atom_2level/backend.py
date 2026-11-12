@@ -96,7 +96,7 @@ class Atom2LevelEmulator(_PulseBackend):
         True
     """
 
-    _simulation_config_cls = _Atom2LevelSimulationConfig
+    _execution_config_cls = _Atom2LevelSimulationConfig
 
     def __init__(
         self,

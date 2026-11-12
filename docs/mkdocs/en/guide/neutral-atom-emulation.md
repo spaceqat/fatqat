@@ -134,7 +134,7 @@ True
 Both controls act on every site. The arrangement supplies the distances and
 the model supplies the signed interaction strength, so changing the spacing
 can change the dynamics without changing the Program. By default every site
-pair interacts. Set `simulation_config={"interaction_cutoff": distance}` on a
+pair interacts. Set `execution_config={"interaction_cutoff": distance}` on a
 particular `run()` to remove terms beyond that distance; this is a numerical
 Hamiltonian truncation rather than a blockade radius.
 

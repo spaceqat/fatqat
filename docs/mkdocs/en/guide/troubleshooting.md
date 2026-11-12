@@ -115,7 +115,7 @@ execution engine.
     result = backend.run(
         program,
         shots=1000,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result()
     ```
 

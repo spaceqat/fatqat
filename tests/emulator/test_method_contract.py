@@ -236,8 +236,8 @@ def test_method_has_no_per_run_override(model):
 
     with pytest.raises(TypeError, match="method"):
         backend.run(program, method="density_matrix")
-    with pytest.raises(BackendValidationError, match="simulation_config"):
-        backend.run(program, simulation_config={"method": "density_matrix"})
+    with pytest.raises(BackendValidationError, match="execution_config"):
+        backend.run(program, execution_config={"method": "density_matrix"})
 
 
 def test_unitary_can_suppress_operator_construction(model, monkeypatch):
@@ -267,17 +267,17 @@ def test_noisy_statevector_defaults_to_metadata_and_explicit_shot_is_seeded(mode
     program = fq.Program(2)
     program.add(ops.RX(np.pi), 0)
 
-    default = backend.run(program, simulation_config={"seed": 7}).result()
+    default = backend.run(program, execution_config={"seed": 7}).result()
     first = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
         result_config={"final_state": True},
     ).result()
     second = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
         result_config={"final_state": True},
     ).result()
     ensemble = (

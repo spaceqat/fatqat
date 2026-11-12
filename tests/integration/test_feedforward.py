@@ -24,7 +24,7 @@ def test_teleportation_moves_one_state_to_target():
     p.measure(2, 0)
     counts = (
         Simulator("SV")
-        .run(p, shots=64, simulation_config={"seed": 1})
+        .run(p, shots=64, execution_config={"seed": 1})
         .result()
         .get_counts()
     )
@@ -37,7 +37,7 @@ def test_teleportation_moves_plus_state_to_target():
     p.measure(2, 0)
     counts = (
         Simulator("SV")
-        .run(p, shots=64, simulation_config={"seed": 3})
+        .run(p, shots=64, execution_config={"seed": 3})
         .result()
         .get_counts()
     )
@@ -59,7 +59,7 @@ def test_bit_flip_code_corrects_single_x_error():
     p.measure(2, 4)
     counts = (
         Simulator("SV")
-        .run(p, shots=32, simulation_config={"seed": 2})
+        .run(p, shots=32, execution_config={"seed": 2})
         .result()
         .get_counts()
     )
@@ -80,7 +80,7 @@ def test_reset_seed_independence_matches_born_rule():
     backend = Simulator("SV")
     for s in range(n):
         counts = (
-            backend.run(program(), shots=1, simulation_config={"seed": s})
+            backend.run(program(), shots=1, execution_config={"seed": s})
             .result()
             .get_counts()
         )

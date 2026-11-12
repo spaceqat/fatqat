@@ -195,7 +195,7 @@ def test_reset_and_reuse_counts():
     p.measure(0, 1)
     counts = (
         Simulator("SV")
-        .run(p, shots=32, simulation_config={"seed": 0})
+        .run(p, shots=32, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -211,7 +211,7 @@ def test_dynamic_counts_use_snapshots_not_final_index():
     p.add(ops.Reset, 0)
     counts = (
         Simulator("SV")
-        .run(p, shots=10, simulation_config={"seed": 0})
+        .run(p, shots=10, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -259,13 +259,13 @@ def test_classical_feedback_starts_fresh_on_each_shot_and_run(runtime, method):
     program.add(ops.Reset, 0)
 
     # The previous shot ends with c0=1. Each shot must still start with c0=0.
-    counts = backend.run(program, shots=8, simulation_config={"seed": 0})
+    counts = backend.run(program, shots=8, execution_config={"seed": 0})
     assert counts.result().get_counts() == {"1": 8}
 
     next_program = Program(1, 1)
     next_program.add(ops.X, 0, condition=(0, 1))
     next_program.measure(0, 0)
-    counts = backend.run(next_program, shots=8, simulation_config={"seed": 0})
+    counts = backend.run(next_program, shots=8, execution_config={"seed": 0})
     assert counts.result().get_counts() == {"0": 8}
 
 
@@ -295,7 +295,7 @@ def test_conditional_reset_fires_when_guard_true():
     p.measure(0, 1)
     counts = (
         Simulator("SV")
-        .run(p, shots=16, simulation_config={"seed": 0})
+        .run(p, shots=16, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -312,7 +312,7 @@ def test_conditional_reset_skipped_when_guard_false():
     p.measure(0, 1)
     counts = (
         Simulator("SV")
-        .run(p, shots=16, simulation_config={"seed": 0})
+        .run(p, shots=16, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -398,7 +398,7 @@ def test_grouped_reset_resets_all_targets_in_dynamic_path():
 
     counts = (
         Simulator("SV")
-        .run(p, shots=8, simulation_config={"seed": 0})
+        .run(p, shots=8, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -415,7 +415,7 @@ def test_grouped_measurement_writes_all_classical_slots_in_dynamic_path():
 
     counts = (
         Simulator("SV")
-        .run(p, shots=8, simulation_config={"seed": 0})
+        .run(p, shots=8, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -436,12 +436,12 @@ def test_dynamic_seed_is_repeatable_with_per_shot_streams():
     backend = Simulator("SV")
 
     a = (
-        backend.run(p, shots=64, simulation_config={"seed": 2026, "max_workers": 1})
+        backend.run(p, shots=64, execution_config={"seed": 2026, "max_workers": 1})
         .result()
         .get_counts()
     )
     b = (
-        backend.run(p, shots=64, simulation_config={"seed": 2026, "max_workers": 1})
+        backend.run(p, shots=64, execution_config={"seed": 2026, "max_workers": 1})
         .result()
         .get_counts()
     )
@@ -459,7 +459,7 @@ def test_dynamic_statevector_single_shot_stays_serial_and_available():
         .run(
             p,
             shots=1,
-            simulation_config={"seed": 2026, "max_workers": 4},
+            execution_config={"seed": 2026, "max_workers": 4},
             result_config={"counts": True, "final_state": True},
         )
         .result()

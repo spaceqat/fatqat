@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Container
 from dataclasses import dataclass, fields
 from typing import Any
@@ -116,6 +117,28 @@ def _normalize_config(
             f"expected {expected}"
         )
     return config_cls(**config)
+
+
+def _resolve_execution_config(
+    execution_config: dict[str, Any] | None,
+    simulation_config: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Return the per-run options, accepting the deprecated keyword.
+
+    Call this directly from a public run method so the warning points at that
+    method's caller.
+    """
+    if simulation_config is None:
+        return execution_config
+    if execution_config is not None:
+        raise TypeError("pass execution_config or simulation_config, not both")
+    warnings.warn(
+        "simulation_config is deprecated and will be removed before fatqat "
+        "0.1.0; use execution_config",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return simulation_config
 
 
 def _resolve_result_flags(

@@ -80,11 +80,11 @@ def test_replaced_plan_releases_steps_and_arrays(
         program = fq.Program(1)
         program.add(ops.RY(angle), 0)
         result = backend.run(
-            program, simulation_config={**config, "fusion": fusion}, **options
+            program, execution_config={**config, "fusion": fusion}, **options
         ).result()
         reference = (
             Simulator(method, runtime="numpy", noise=noise)
-            .run(program, simulation_config=config, **options)
+            .run(program, execution_config=config, **options)
             .result()
         )
         accessor = f"get_{method}"
@@ -189,7 +189,7 @@ def test_next_plan_releases_cache_data_after_execution_failure(monkeypatch):
     program.add(ops.RY(0.1), 0)
     with monkeypatch.context() as patch:
         patch.setattr(cache, "resolve", fail_after_resolving)
-        job = backend.run(program, simulation_config={"error_handling": "capture"})
+        job = backend.run(program, execution_config={"error_handling": "capture"})
         with pytest.raises(RuntimeError, match="execution failed"):
             job.result()
         del job
@@ -211,7 +211,7 @@ def test_reused_engine_layouts_follow_system_dims():
         program.add(ops.RY(0.3), width - 1)
         result = backend.run(
             program,
-            simulation_config={"kernel_parallelism": kernel},
+            execution_config={"kernel_parallelism": kernel},
             **options,
         ).result()
         reference = Simulator("SV", runtime="numpy").run(program, **options).result()

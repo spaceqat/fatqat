@@ -184,7 +184,7 @@ its name, accepted type, default, user-visible effect, and important compatibili
 constraints. For example:
 
 ```text
-simulation_config: Optional execution controls. Accepted keys are:
+execution_config: Optional execution controls. Accepted keys are:
 
     - "seed" (int | None, default None): Random seed.
     - "mode" (str, "auto" | "thread", default "auto"): Execution mode.

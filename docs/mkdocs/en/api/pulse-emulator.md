@@ -108,7 +108,7 @@ An unmeasured statevector run with potentially active Lindblad noise is
 stochastic, so the default result request retains metadata only. Request one
 reproducible trajectory with
 `result_config={"final_state": True}`, `shots=1`, and a non-negative
-`simulation_config["seed"]`. Choose `method="density_matrix"` for the
+`execution_config["seed"]`. Choose `method="density_matrix"` for the
 exact ensemble instead.
 
 Each transmon statevector trajectory is an independent physical evolution, so
@@ -136,9 +136,9 @@ global phase.
 
 
 [`run`][fatqat.emulator.TransmonEmulator.run] accepts these
-`simulation_config` keys:
+`execution_config` keys:
 
-**`simulation_config` keys**
+**`execution_config` keys**
 
 | Key | Type | Default | Effect and constraints |
 | --- | --- | --- | --- |

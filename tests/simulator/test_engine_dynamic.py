@@ -41,7 +41,7 @@ def test_repeated_measurement_reports_the_same_outcome(runtime):
         .run(
             program,
             shots=32,
-            simulation_config={"seed": 0, "shot_parallelism": "serial"},
+            execution_config={"seed": 0, "shot_parallelism": "serial"},
         )
         .result()
         .get_counts()
@@ -73,7 +73,7 @@ def test_measurement_preserves_requested_target_order(runtime):
         .run(
             program,
             shots=1,
-            simulation_config={"seed": 0},
+            execution_config={"seed": 0},
         )
         .result()
         .get_counts_as_tuples()

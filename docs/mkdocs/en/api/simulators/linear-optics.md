@@ -17,7 +17,7 @@ listed below. For a worked example, see
 | --- | --- |
 | Registers | Also accepts [`ModeRegister`][fatqat.ModeRegister] and [`CountRegister`][fatqat.CountRegister]; `Simulator` rejects them |
 | Methods | Adds `"fixed_photon_state"`, the default |
-| `simulation_config` | Adds `"cutoff"` |
+| `execution_config` | Adds `"cutoff"` |
 | [`Estimator`][fatqat.Estimator] | On a mode, accepts [`NumberOperator`][fatqat.observable.NumberOperator] and [`Projector`][fatqat.observable.Projector] up to level `cutoff`; Pauli operators raise at any cutoff |
 | Noise selectors | Select modes by device label; a `ModeRegister` reference is not supported |
 

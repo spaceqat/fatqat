@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+from .._backends.backend_utils import _resolve_execution_config
 from .._parameter_binding import (
     _normalize_parameter_batch,
     _raise_for_unbound_parameters,
@@ -61,6 +62,7 @@ class Estimator:
         *,
         shots: int = 0,
         initial_state: Any = None,
+        execution_config: dict[str, Any] | None = None,
         simulation_config: dict[str, Any] | None = None,
     ) -> Job[Result]:
         """Evaluate one or more observables on a program.
@@ -82,9 +84,11 @@ class Estimator:
             initial_state: Starting state for every shot, or ``None`` for the
                 ground state. Available only for simulators; see
                 :meth:`fatqat.simulator.Simulator.run` for the accepted forms.
-            simulation_config: Backend options for this execution, or
+            execution_config: Backend options for this execution, or
                 ``None``, forwarded unchanged; see the backend's ``run`` method
                 for the accepted keys.
+            simulation_config: Deprecated alias for ``execution_config``,
+                to be removed before fatqat 0.1.0.
 
         Returns:
             A completed ``Job``. A successful job contains a ``Result``; a
@@ -94,7 +98,9 @@ class Estimator:
 
         Raises:
             TypeError: If ``observables`` is not an ``Observable`` or a
-                supported collection containing only ``Observable`` values.
+                supported collection containing only ``Observable`` values,
+                or ``execution_config`` and its deprecated alias are both
+                supplied.
             BackendValidationError: If no observables are supplied; ``shots``
                 is not a non-negative integer; the program is measured or
                 unbound; an operator names a subsystem the program lacks, a Pauli
@@ -102,9 +108,12 @@ class Estimator:
                 its subsystem's dimension; or the backend raises this error
                 while preparing its native expectation execution.
         """
+        execution_config = _resolve_execution_config(
+            execution_config, simulation_config
+        )
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
-        _validate_simulation_config(simulation_config)
+        _validate_execution_config(execution_config)
         _validate_program(program)
         _raise_for_unbound_parameters(program._instructions)
         job = self._evaluate(
@@ -113,7 +122,7 @@ class Estimator:
             is_sequence,
             shots=shots,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
         )
         if job.status != "DONE":
             return job
@@ -128,6 +137,7 @@ class Estimator:
         *,
         shots: int = 0,
         initial_state: Any = None,
+        execution_config: dict[str, Any] | None = None,
         simulation_config: dict[str, Any] | None = None,
     ) -> Job[list[Result]]:
         """Evaluate a complete parameter batch in input order.
@@ -147,8 +157,10 @@ class Estimator:
                 positive value draws this many samples per observable term.
             initial_state: Starting state for every shot in every row, as in
                 :meth:`run`. Available only for simulators.
-            simulation_config: Backend options reused for every row, as in
+            execution_config: Backend options reused for every row, as in
                 :meth:`run`. Reusing a seed can correlate sampled row errors.
+            simulation_config: Deprecated alias for ``execution_config``,
+                to be removed before fatqat 0.1.0.
 
         Returns:
             A completed ``Job`` containing one ``Result`` per row, in batch
@@ -157,7 +169,9 @@ class Estimator:
 
         Raises:
             TypeError: If a mapping key, batch container, scalar value, or
-                observable has an unsupported type.
+                observable has an unsupported type, or if
+                ``execution_config`` and its deprecated alias are both
+                supplied.
             ValueError: If the program is not parameterized; assignments are
                 missing, foreign, or duplicated; or batch ranks, widths, or
                 lengths disagree.
@@ -182,10 +196,13 @@ class Estimator:
             >>> [round(result.get_expectation(), 6) for result in results]
             [1.0, 0.540302]
         """
+        execution_config = _resolve_execution_config(
+            execution_config, simulation_config
+        )
         columns = _normalize_parameter_batch(program._instructions, bindings)
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
-        _validate_simulation_config(simulation_config)
+        _validate_execution_config(execution_config)
         _validate_program(program)
         return self._evaluate(
             program,
@@ -193,7 +210,7 @@ class Estimator:
             is_sequence,
             shots=shots,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             parameter_values=columns,
         )
 
@@ -205,7 +222,7 @@ class Estimator:
         *,
         shots: int,
         initial_state: Any,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
     ) -> Job[list[Result]]:
         """Run the backend's expectation hook once and shape each entry's result.
@@ -218,7 +235,7 @@ class Estimator:
             tuple(observable_list),
             shots=shots,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             parameter_values=parameter_values,
         )
         try:
@@ -285,13 +302,13 @@ def _validate_shots(shots: int) -> None:
         raise BackendValidationError(f"shots must be >= 0, got {shots}")
 
 
-def _validate_simulation_config(
-    simulation_config: dict[str, Any] | None,
+def _validate_execution_config(
+    execution_config: dict[str, Any] | None,
 ) -> None:
-    if simulation_config is not None and not isinstance(simulation_config, dict):
+    if execution_config is not None and not isinstance(execution_config, dict):
         raise TypeError(
-            "simulation_config must be a dict or None, got "
-            f"{type(simulation_config)!r}"
+            "execution_config must be a dict or None, got "
+            f"{type(execution_config)!r}"
         )
 
 

@@ -25,7 +25,7 @@ Prepare a Bell pair and measure both qubits:
 >>> ideal_counts = ideal_backend.run(
 ...     bell,
 ...     shots=4_000,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 >>> ideal_counts
 {'00': 2013, '11': 1987}
@@ -68,7 +68,7 @@ Pass the noise model to another simulator:
 >>> noisy_counts = noisy_backend.run(
 ...     bell,
 ...     shots=4_000,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 >>> noisy_counts
 {'00': 1853, '01': 201, '10': 204, '11': 1742}
@@ -113,7 +113,7 @@ shifting the balance between `00` and `11`.
         method="density_matrix", runtime="numpy", noise=noise
     )
     shots = 4_000
-    run_options = {"shots": shots, "simulation_config": {"seed": 7}}
+    run_options = {"shots": shots, "execution_config": {"seed": 7}}
     ideal = ideal_backend.run(bell, **run_options).result().get_counts()
     noisy = noisy_backend.run(bell, **run_options).result().get_counts()
 

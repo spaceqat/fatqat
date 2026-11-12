@@ -55,11 +55,9 @@ def test_run_with_seed_is_repeatable_and_reinitializes():
     p.add(ops.X, 0)
     p.measure(0, 0)
     backend = Simulator("SV")
-    first = (
-        backend.run(p, shots=10, simulation_config={"seed": 5}).result().get_counts()
-    )
+    first = backend.run(p, shots=10, execution_config={"seed": 5}).result().get_counts()
     second = (
-        backend.run(p, shots=10, simulation_config={"seed": 5}).result().get_counts()
+        backend.run(p, shots=10, execution_config={"seed": 5}).result().get_counts()
     )
     assert first == second == {"1": 10}
 
@@ -99,7 +97,7 @@ def test_condition_now_runs():
     p.measure(1, 1)
     counts = (
         Simulator("SV")
-        .run(p, shots=16, simulation_config={"seed": 0})
+        .run(p, shots=16, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -114,7 +112,7 @@ def test_mid_circuit_measurement_now_runs():
     p.measure(1, 1)
     counts = (
         Simulator("SV")
-        .run(p, shots=64, simulation_config={"seed": 0})
+        .run(p, shots=64, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -145,13 +143,13 @@ def test_measured_statevector_requires_exactly_one_shot(shots):
 def test_deterministic_with_seed():
     a = (
         Simulator("SV")
-        .run(_h_cz_program(), shots=300, simulation_config={"seed": 7})
+        .run(_h_cz_program(), shots=300, execution_config={"seed": 7})
         .result()
         .get_counts()
     )
     b = (
         Simulator("SV")
-        .run(_h_cz_program(), shots=300, simulation_config={"seed": 7})
+        .run(_h_cz_program(), shots=300, execution_config={"seed": 7})
         .result()
         .get_counts()
     )
@@ -168,7 +166,7 @@ def test_grouped_measurements_do_not_warn_about_unmeasured_clbits():
         warnings.simplefilter("always")
         counts = (
             Simulator("SV")
-            .run(p, shots=4, simulation_config={"seed": 0})
+            .run(p, shots=4, execution_config={"seed": 0})
             .result()
             .get_counts()
         )

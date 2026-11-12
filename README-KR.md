@@ -56,7 +56,7 @@ program.measure_all()
 result = fq.simulator.Simulator().run(
     program,
     shots=1000,
-    simulation_config={"seed": 7},
+    execution_config={"seed": 7},
 ).result()
 
 print(result.get_counts())

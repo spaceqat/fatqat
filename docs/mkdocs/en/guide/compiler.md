@@ -53,7 +53,7 @@ sc_backend = fq.simulator.SCQubitSimulator(
 result = sc_backend.run(
     sc_compiled,
     shots=100,
-    simulation_config={"seed": 7},
+    execution_config={"seed": 7},
 ).result()
 
 counts = result.get_counts()

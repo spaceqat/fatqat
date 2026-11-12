@@ -326,18 +326,26 @@ def test_atom_2level_execution_methods_have_exact_public_forwarding_signatures()
         "program",
         "shots",
         "resource_layout",
-        "simulation_config",
+        "execution_config",
         "result_config",
+        "simulation_config",
     )
     assert run["program"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
     assert all(
         run[name].kind is inspect.Parameter.KEYWORD_ONLY
-        for name in ("shots", "resource_layout", "simulation_config", "result_config")
+        for name in (
+            "shots",
+            "resource_layout",
+            "execution_config",
+            "result_config",
+            "simulation_config",
+        )
     )
     assert run["shots"].default == 1024
     assert run["resource_layout"].default is None
-    assert run["simulation_config"].default is None
+    assert run["execution_config"].default is None
     assert run["result_config"].default is None
+    assert run["simulation_config"].default is None
     assert get_type_hints(Atom2LevelEmulator.run)["return"] == Job[fq.Result]
 
     assert not hasattr(Atom2LevelEmulator, "propagator")

@@ -88,7 +88,7 @@ class LOSimulator(Simulator):
     photons, in the order of `fixed_photon_index`. ``metadata["num_photons"]``
     gives the photon number.
 
-    ``simulation_config`` accepts every `Simulator` key plus:
+    ``execution_config`` accepts every `Simulator` key plus:
 
     - ``"cutoff"`` (``int | None``, default ``None``): the most photons one
       mode can hold. ``None`` chooses it from ``initial_state``: the total
@@ -129,7 +129,7 @@ class LOSimulator(Simulator):
         array([0.5, 0. , 0.5])
     """
 
-    _simulation_config_cls = _LOSimulationConfig
+    _execution_config_cls = _LOSimulationConfig
     _method_specs = {
         **_METHOD_SPECS,
         "fixed_photon_state": _MethodSpec(
@@ -179,7 +179,7 @@ class LOSimulator(Simulator):
         *,
         resource_layout: ResourceLayout | None,
         initial_state: Any,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
     ) -> _PreparedExecution:
         """Resolve mode dimensions, then prepare the run like `Simulator`."""
@@ -195,9 +195,9 @@ class LOSimulator(Simulator):
         refs: dict[RegisterRef, RegisterRef] = {}
         if any(register.dim is None for register in registers):
             simulation = _normalize_config(
-                simulation_config,
-                self._simulation_config_cls,
-                "simulation_config",
+                execution_config,
+                self._execution_config_cls,
+                "execution_config",
                 backend_name=type(self).__name__,
             )
             cutoff = simulation.cutoff
@@ -247,7 +247,7 @@ class LOSimulator(Simulator):
             program,
             resource_layout=resource_layout,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             parameter_values=parameter_values,
         )
         if not refs:
@@ -486,10 +486,10 @@ def _infer_cutoff(program: Program, quantum: Any) -> int:
             return dim - 1
         raise BackendValidationError(
             f"cannot infer cutoff from an initial_state of length {shape[0]} "
-            f"for {num_modes} mode(s); pass simulation_config['cutoff']"
+            f"for {num_modes} mode(s); pass execution_config['cutoff']"
         )
     raise BackendValidationError(
-        "a ModeRegister program needs simulation_config['cutoff'] or an "
+        "a ModeRegister program needs execution_config['cutoff'] or an "
         "initial_state to infer it from"
     )
 

@@ -93,7 +93,7 @@ def test_fixed_photon_counts_match_statevector_with_feedforward(runtime):
     _measure_all(program, modes, counts)
     start = BasisState({modes[0]: 1, modes[1]: 1, modes[2]: 1})
     config = {"seed": 3, "shot_parallelism": "serial"}
-    options = {"shots": 300, "initial_state": start, "simulation_config": config}
+    options = {"shots": 300, "initial_state": start, "execution_config": config}
 
     fixed = LOSimulator("fixed_photon_state", runtime=runtime).run(program, **options)
     dense = LOSimulator("SV", runtime=runtime).run(program, **options)
@@ -130,7 +130,7 @@ def test_fixed_photon_expectations_match_the_statevector():
                 observables,
                 shots=shots,
                 initial_state=start,
-                simulation_config={"seed": 3},
+                execution_config={"seed": 3},
             )
             .result()
         )
@@ -186,7 +186,7 @@ def test_fixed_photon_runs_where_a_statevector_cannot_be_stored():
     threaded = LOSimulator("fixed_photon_state").run(
         program,
         initial_state=start,
-        simulation_config={"kernel_parallelism": "threads", "max_workers": 3},
+        execution_config={"kernel_parallelism": "threads", "max_workers": 3},
         **_STATE_ONLY,
     )
     np.testing.assert_allclose(
@@ -251,7 +251,7 @@ def test_fixed_photon_rejects_what_it_cannot_store():
     # Every mode must be able to hold every photon.
     with pytest.raises(BackendValidationError, match="cutoff of at least the 2"):
         LOSimulator("fixed_photon_state").run(
-            program, initial_state=start, simulation_config={"cutoff": 1}
+            program, initial_state=start, execution_config={"cutoff": 1}
         )
 
     qubits = fq.Program(1)

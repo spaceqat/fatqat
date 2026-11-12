@@ -110,7 +110,7 @@ figure = result.draw(number_to_keep=20, sort="count")
 
     result = (
         fq.simulator.Simulator(runtime="numpy")
-        .run(program, shots=1000, simulation_config={"seed": 7})
+        .run(program, shots=1000, execution_config={"seed": 7})
         .result()
     )
 

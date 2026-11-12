@@ -50,7 +50,7 @@ simulator = fq.simulator.Simulator(method="DM", noise=noise)
 result = simulator.run(
     program,
     shots=1_000,
-    simulation_config={"seed": 7},
+    execution_config={"seed": 7},
     result_config={"counts": True},
 ).result()
 ```

@@ -228,7 +228,7 @@ recorded execution error:
 >>> job = backend.run(
 ...     program,
 ...     shots=1000,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... )
 >>> result = job.result()
 >>> counts = result.get_counts()
@@ -260,7 +260,7 @@ so no custom Matplotlib styling is needed.
 
     result = (
         fq.simulator.Simulator(runtime="numpy")
-        .run(program, shots=1000, simulation_config={"seed": 7})
+        .run(program, shots=1000, execution_config={"seed": 7})
         .result()
     )
     counts = result.get_counts()

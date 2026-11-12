@@ -102,7 +102,7 @@ python -m pylint src/fatqat tests conftest.py
 选项说明应足以让用户选择和组合：写明可接受值及默认值、用户可见效果、适用或不生效的条件、不兼容组合和相关错误。可选值为少量有限集合时，必须逐一列出。字典参数的每个公共键应分别说明名称、类型、默认值和兼容性约束。例如：
 
 ```text
-simulation_config: 可选的执行控制参数。接受以下键：
+execution_config: 可选的执行控制参数。接受以下键：
 
     - "seed" (int | None，默认 None)：随机种子。
     - "mode" (str，"auto" | "thread"，默认 "auto")：执行模式。
