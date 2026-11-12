@@ -1,6 +1,6 @@
 # FatQat
 
-[English](README.md) | 简体中文
+[English](README.md) | 简体中文 | [한국어](README-KR.md)
 
 FatQat 是一个量子计算工具包，围绕统一的编写接口 `Program` 构建。只需编写一次计算过程，即可选择对底层机器进行多精细的建模。
 
