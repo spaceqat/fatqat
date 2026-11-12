@@ -16,7 +16,7 @@ For one configured backend, use
 [`validate_noise_model`][fatqat.simulator.Simulator.validate_noise_model] on a simulator or
 [`validate_noise_model`][fatqat.emulator.TransmonEmulator.validate_noise_model] on a pulse
 emulator. These methods validate a model without a program. FATQAT checks
-references, device labels, operation matches, dimensions, and execution-method
+references, device labels, operation matches, dimensions, and simulation-method
 limits when it runs a concrete program.
 
 <a id="noise-simulator-support"></a>
@@ -64,7 +64,7 @@ rejection of built-in rate forms, background channels, or
 rule, whose result still represents one finite channel application. A supplied
 map replaces the default map and is copied when the backend is constructed.
 
-Execution method also matters. `statevector` samples one Kraus trajectory
+Simulation method also matters. `statevector` samples one Kraus trajectory
 per noisy shot, while `density_matrix` and `superop` apply
 probability-form channels exactly. `unitary` rejects any channel that
 matches the program. Only `statevector` and `density_matrix` support the

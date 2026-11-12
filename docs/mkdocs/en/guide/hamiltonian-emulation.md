@@ -119,6 +119,6 @@ not select an internal differential-equation solver.
 
 Continue with [Transmon emulation](transmon-emulation.md) or
 [Neutral-atom emulation](neutral-atom-emulation.md). For pulse object,
-schedule, execution-method, and model contracts, use the
+schedule, simulation-method, and model contracts, use the
 [pulse-control API](../api/pulse-control/index.md) and
 [emulator API](../api/emulators/index.md).

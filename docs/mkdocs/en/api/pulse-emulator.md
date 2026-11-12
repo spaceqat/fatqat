@@ -77,7 +77,7 @@ results may still use different documented terminal frames.
 | `noise` | A [`NoiseModel`][fatqat.NoiseModel]. `None` means no noise. |
 | `gate_implementation_map` | A [`PulseImplementationMap`][fatqat.emulator.PulseImplementationMap] mapping operation families and device labels to pulse definitions. `None` uses the built-in map. |
 
-## Execution methods
+## Simulation methods
 
 
 `method` names a mathematical representation, not the internal differential-

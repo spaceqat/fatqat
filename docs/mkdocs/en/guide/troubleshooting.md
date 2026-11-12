@@ -137,7 +137,7 @@ execution engine.
 
 ???+ question "A Result accessor says its data is unavailable"
 
-    Runs contain only the data that the selected execution method produced and
+    Runs contain only the data that the selected simulation method produced and
     that you requested. Inspect the result before choosing an accessor:
 
     ```python
