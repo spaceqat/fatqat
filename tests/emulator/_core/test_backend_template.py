@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError
 
 import numpy as np
 import pytest
+from qutip import Qobj
 
 import fatqat as fq
 import fatqat.operations as ops
@@ -165,14 +166,6 @@ class _CountingTarget:
         )
 
 
-class _ArrayOperator:
-    def __init__(self, value):
-        self._value = np.asarray(value, dtype=complex)
-
-    def full(self):
-        return self._value
-
-
 class _TemplateRunner:
     def __init__(self, target, execution_mode, retain_final_state):
         self._target = target
@@ -186,14 +179,14 @@ class _TemplateRunner:
                 dtype=complex,
             )
             value[0, 0] = 1.0
-            return value
+            return Qobj(value)
         value = np.zeros(self._target.hilbert_dimension, dtype=complex)
         value[0] = 1.0
-        return value
+        return Qobj(value)
 
     @staticmethod
     def copy_state(state):
-        return np.array(state, copy=True)
+        return state.copy()
 
     @staticmethod
     def evolve(run, context, enabled):
@@ -201,7 +194,10 @@ class _TemplateRunner:
 
     def propagator(self, run, *, apply_final_frame=True):
         del run, apply_final_frame
-        return _ArrayOperator(np.eye(self._target.hilbert_dimension))
+        return self.identity_operator()
+
+    def identity_operator(self):
+        return Qobj(np.eye(self._target.hilbert_dimension))
 
     @staticmethod
     def execute_boundary(step, context):
@@ -217,7 +213,7 @@ class _TemplateRunner:
         else:
             kind = "statevector"
         return _PulseShotOutcome(
-            np.array(context.state, copy=True) if self._retain_final_state else None,
+            context.state.copy() if self._retain_final_state else None,
             kind,
             tuple(context.classical_memory),
         )
@@ -807,11 +803,13 @@ def test_unitary_empty_and_frame_only_paths_return_identity():
         lindblad_map=_lindblad_map(),
     )
 
-    assert np.allclose(backend.run(fq.Program(1)).result().get_unitary(), np.eye(2))
+    assert np.allclose(
+        backend.run(fq.Program(1)).result().get_unitary().full(), np.eye(2)
+    )
 
     program = fq.Program(1)
     program.add(ops.RZ(0.2), 0)
-    assert np.allclose(backend.run(program).result().get_unitary(), np.eye(2))
+    assert np.allclose(backend.run(program).result().get_unitary().full(), np.eye(2))
 
 
 def test_unbound_gate_is_rejected_before_shared_pulse_preparation():

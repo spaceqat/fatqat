@@ -218,7 +218,7 @@ def test_state_copy_measurement_reset_and_completed_payload(atom_3level_model):
     assert isinstance(outcome, _PulseShotOutcome)
     assert outcome.classical_digits == (1,)
     assert outcome.final_state_kind == "density_matrix"
-    assert np.allclose(outcome.final_state, ket2dm(basis(3, 0)).full())
+    assert np.allclose(outcome.final_state.full(), ket2dm(basis(3, 0)).full())
 
 
 def test_measurement_indices_follow_public_qutip_factor_order(atom_3level_model):

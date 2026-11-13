@@ -9,23 +9,35 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: fatqat-hai-gpu
-  cancel-in-progress: false
-  queue: max
-
 jobs:
+  approve:
+    name: GPU approval
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request_target')
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 2
+    environment:
+      name: ${{ github.event_name == 'pull_request_target' && 'gpu-ci' || 'gpu-ci-manual' }}
+    steps:
+      - run: echo "GPU execution authorized."
+
   gpu:
     name: >-
       ${{ github.event_name == 'pull_request_target' && format('GPU PR #{0}', github.event.number) || 'GPU manual' }}
+    needs: approve
     if: >-
+      needs.approve.result == 'success' && !cancelled() &&
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
       (github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request_target')
     runs-on: ubuntu-latest
     # Phase limits total less than 240 minutes, including 17 minutes for shutdown.
     timeout-minutes: 240
-    environment:
-      name: ${{ github.event_name == 'pull_request_target' && 'gpu-ci' || 'gpu-ci-manual' }}
+    concurrency:
+      group: fatqat-hai-gpu
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: read
       actions: read
@@ -39,7 +51,7 @@ jobs:
       GPU_SSH_PORT: ${{ vars.GPU_SSH_PORT }}
 
     steps:
-      # Every step runs after Environment approval. This is upstream control code.
+      # Approval and the GPU execution slot precede every control step.
       - uses: actions/checkout@v7
         id: control
         timeout-minutes: 5

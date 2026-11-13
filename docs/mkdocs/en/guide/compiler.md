@@ -145,6 +145,7 @@ than a simulator-ready result.
 For a neutral-atom compilation, you can animate the resulting schedule:
 
 ```python
+# guide-test: skip
 animation = fq.compiler.create_na_animation(na_compiled.output, architecture)
 fq.compiler.save_na_animation(animation, "na-schedule.mp4")
 ```

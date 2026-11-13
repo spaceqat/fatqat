@@ -370,35 +370,63 @@ def test_archive_fetches_only_pinned_source_without_executing_it(
 
 
 def workflow():
-    return (ROOT / ".github/workflows/gpu.yml").read_text(encoding="utf-8-sig")
+    text = (ROOT / ".github/workflows/gpu.yml").read_text(encoding="utf-8-sig")
+    header, jobs = text.split("jobs:\n", 1)
+    blocks = re.split(r"^  ([\w-]+):\n", jobs, flags=re.M)
+    return header, dict(zip(blocks[1::2], blocks[2::2]))
 
 
-def test_workflow_has_one_hosted_job_and_environment_selected_before_all_steps():
-    text = workflow()
-    assert re.findall(r"^  ([\w-]+):$", text.split("jobs:\n")[1], re.M) == ["gpu"]
-    assert "runs-on: ubuntu-latest" in text
+def test_workflow_approvals_are_independent_of_serial_gpu_execution():
+    header, jobs = workflow()
+    assert list(jobs) == ["approve", "gpu"]
+    approve, gpu = jobs["approve"], jobs["gpu"]
+    gpu_config = gpu.split("    steps:\n", 1)[0]
+    restrictions = (
+        "github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&\n"
+        "      (github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request_target')"
+    )
+    assert f"if: >-\n      {restrictions}\n    runs-on: ubuntu-latest" in approve
     assert (
+        "if: >-\n      needs.approve.result == 'success' && !cancelled() &&\n"
+        f"      {restrictions}\n    runs-on: ubuntu-latest" in gpu_config
+    )
+    assert "    needs: approve\n" in gpu_config
+    assert "always()" not in gpu_config
+    assert "    name: GPU approval\n" in approve
+    assert "    timeout-minutes: 2\n" in approve
+    assert approve.split("    steps:\n", 1)[1].strip() == (
+        '- run: echo "GPU execution authorized."'
+    )
+    for block in (header, approve):
+        assert "permissions: {}\n" in block
+        for forbidden in ("concurrency:", "defaults:", "env:", "needs:", "secrets."):
+            assert forbidden not in block
+    assert (
+        "    environment:\n      "
         "name: ${{ github.event_name == 'pull_request_target' && 'gpu-ci' || 'gpu-ci-manual' }}"
-        in text
+        in approve
+    )
+    assert "environment:" not in header and "environment:" not in gpu
+    assert (
+        "    concurrency:\n      group: fatqat-hai-gpu\n"
+        "      cancel-in-progress: false\n      queue: max\n" in gpu_config
+    )
+    assert (
+        "    permissions:\n      contents: read\n      actions: read\n"
+        "      pull-requests: read\n" in gpu_config
     )
     display_name = (
         "${{ github.event_name == 'pull_request_target' && "
         "format('GPU PR #{0}', github.event.number) || 'GPU manual' }}"
     )
-    assert text.startswith(f"name: GPU Tests\nrun-name: >-\n  {display_name}\n")
-    assert f"    name: >-\n      {display_name}\n" in text
-    assert (
-        "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)"
-        in text
-    )
-    assert "types: [opened, synchronize, reopened]" in text
-    assert "workflow_dispatch:" in text
-    assert "group: fatqat-hai-gpu\n  cancel-in-progress: false\n  queue: max" in text
+    assert header.startswith(f"name: GPU Tests\nrun-name: >-\n  {display_name}\n")
+    assert f"    name: >-\n      {display_name}\n" in gpu_config
+    assert "types: [opened, synchronize, reopened]" in header
+    assert "workflow_dispatch:" in header
     for forbidden in (
         "self-hosted",
         "GH_RUNNER_READ_TOKEN",
         "HAI_RUNNER_NAME",
-        "needs:",
         "paths:",
         "workflow_run:",
         "continue-on-error",
@@ -410,13 +438,14 @@ def test_workflow_has_one_hosted_job_and_environment_selected_before_all_steps()
         "gpu_pr.py report",
         "allow-unsafe-pr-checkout",
     ):
-        assert forbidden not in text
+        assert all(forbidden not in block for block in (header, *jobs.values()))
     hai = (ROOT / ".github/scripts/hai_power.py").read_text()
     assert "/actions/runners" not in hai and "GH_RUNNER_READ_TOKEN" not in hai
 
 
 def test_workflow_orders_shutdown_and_cleanup_after_failure():
-    text = workflow()
+    _, jobs = workflow()
+    text = jobs["gpu"]
     step_ids = re.findall(r"^        id: (\w+)$", text, re.M)
     assert (
         step_ids
@@ -455,7 +484,8 @@ def test_workflow_orders_shutdown_and_cleanup_after_failure():
 
 
 def test_workflow_only_executes_trusted_control_locally():
-    text = workflow()
+    _, jobs = workflow()
+    text = jobs["gpu"]
     assert text.count("uses: actions/checkout") == 1
     assert (
         "ref: ${{ github.sha }}\n          path: control\n          persist-credentials: false"

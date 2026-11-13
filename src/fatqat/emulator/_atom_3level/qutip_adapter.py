@@ -266,6 +266,10 @@ class _Atom3LevelQutipAdapter:
         context.frame_angles.clear()
         context.frame_angles.update(bound.output_frames)
 
+    def identity_operator(self) -> Qobj:
+        """Return the identity on the complete physical model."""
+        return tensor(*tuple(qeye(dim) for dim in self._dims))
+
     def propagator(
         self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True
     ) -> Any:
@@ -323,14 +327,11 @@ class _Atom3LevelQutipAdapter:
                 self._reset(engine_index, context)
 
     def finish_shot(self, context: _ShotContext) -> _PulseShotOutcome:
-        """Convert the solver component to a copied NumPy payload."""
+        """Return an independent copy of the solver state."""
         self._validate_state(context.state)
         final_state = None
         if self._retain_final_state:
-            array = np.asarray(context.state.full(), dtype=complex)
-            if self._execution_mode != "density_matrix":
-                array = array.reshape(-1)
-            final_state = np.array(array, dtype=complex, copy=True)
+            final_state = context.state.copy()
         return _PulseShotOutcome(
             final_state=final_state,
             final_state_kind=(

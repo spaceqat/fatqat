@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
@@ -11,7 +10,6 @@ from typing import Any, final
 
 import numpy as np
 
-from ...estimator._exact import expectation_density_matrix, expectation_statevector
 from ...estimator._planning import (
     _ExpectationExecution,
     _TermOccurrence,
@@ -20,6 +18,7 @@ from ...estimator._planning import (
     _reduce_outcome_counts,
     _validate_observable_targets,
 )
+from .._expectation import expectation, observable_operator
 from ..._parameter_binding import (
     _parameter_batch_rows,
     _raise_for_unbound_parameters,
@@ -560,19 +559,42 @@ class _PulseBackend(ABC):
                 f"{type(self).__name__} fixes the initial product state and does "
                 "not accept an initial_state"
             )
-        if parameter_values is not None:
-            executions: list[_ExpectationExecution] = []
-            for row in _parameter_batch_rows(parameter_values):
-                job = self._run_expectation(
-                    program._assign_normalized_parameters(row),
-                    observables,
-                    shots=shots,
-                    simulation_config=simulation_config,
-                )
-                if job.status != "DONE":
-                    return job
-                executions.extend(job.result())
-            return Job(status="DONE", result=executions)
+        if parameter_values is None:
+            return self._run_expectation_entry(
+                program,
+                observables,
+                shots=shots,
+                simulation_config=simulation_config,
+                operators=None,
+            )
+        # Observable operators by (terms, dims), built once and shared by every
+        # entry of a sweep; building one costs more than evaluating it. A single
+        # entry has nothing to share them with, so it keeps none.
+        operators: dict[Any, Any] = {}
+        executions: list[_ExpectationExecution] = []
+        for row in _parameter_batch_rows(parameter_values):
+            job = self._run_expectation_entry(
+                program._assign_normalized_parameters(row),
+                observables,
+                shots=shots,
+                simulation_config=simulation_config,
+                operators=operators,
+            )
+            if job.status != "DONE":
+                return job
+            executions.extend(job.result())
+        return Job(status="DONE", result=executions)
+
+    def _run_expectation_entry(
+        self,
+        program: Program,
+        observables: tuple[Observable, ...],
+        *,
+        shots: int,
+        simulation_config: dict[str, Any] | None,
+        operators: dict[Any, Any] | None,
+    ) -> Job[list[_ExpectationExecution]]:
+        """Execute one fully bound entry of an expectation request."""
         prepared = self._prepare_expectation(
             program,
             observables,
@@ -585,7 +607,9 @@ class _PulseBackend(ABC):
                 values = prepared.constants
                 standard_errors = (0.0,) * len(values)
             elif shots == 0:
-                values, runtime_details = self._execute_exact_expectation(prepared)
+                values, runtime_details = self._execute_exact_expectation(
+                    prepared, operators
+                )
                 standard_errors = (0.0,) * len(values)
             else:
                 (
@@ -764,8 +788,14 @@ class _PulseBackend(ABC):
     def _execute_exact_expectation(
         self,
         prepared: _PreparedPulseExpectation,
+        operators: dict[Any, Any] | None,
     ) -> tuple[tuple[float, ...], dict[str, Any]]:
-        """Contract every observable against one pulse-evolved state."""
+        """Contract every observable against one pulse-evolved state.
+
+        ``operators`` holds the observables' operators by ``(terms, dims)``;
+        missing ones are built and added. With None, each operator is built,
+        evaluated and released, so at most one is alive at a time.
+        """
         program = prepared.program
         summary = self._execute_state(
             program,
@@ -782,11 +812,6 @@ class _PulseBackend(ABC):
             raise BackendExecutionError(
                 "pulse expectation execution omitted its final state"
             )
-        kernel = (
-            expectation_statevector
-            if self._method == "statevector"
-            else expectation_density_matrix
-        )
         terms_by_observable = [[] for _constant in prepared.constants]
         for bound in prepared.bound_occurrences:
             terms_by_observable[bound.occurrence.observable_index].append(
@@ -794,16 +819,22 @@ class _PulseBackend(ABC):
             )
         # QuTiP-ordered engine: index 0 is the most significant subsystem.
         dims = tuple(program.engine_allocation.system_dims)
-        strides = tuple(math.prod(dims[index + 1 :]) for index in range(len(dims)))
-        values = tuple(
-            constant + kernel(state, tuple(terms), dims, strides)
-            for constant, terms in zip(
-                prepared.constants,
-                terms_by_observable,
-                strict=True,
-            )
-        )
-        return values, dict(summary.runtime_details)
+        values = []
+        for constant, terms in zip(
+            prepared.constants, terms_by_observable, strict=True
+        ):
+            if not terms:
+                values.append(constant)
+                continue
+            key = (tuple(terms), dims)
+            if operators is None:
+                operator = observable_operator(*key)
+            else:
+                if key not in operators:
+                    operators[key] = observable_operator(*key)
+                operator = operators[key]
+            values.append(constant + expectation(state, operator))
+        return tuple(values), dict(summary.runtime_details)
 
     def _execute_sampled_expectation(
         self,
@@ -926,21 +957,18 @@ class _PulseBackend(ABC):
         runtime_details = None
         available = frozenset()
         if request.final_state:
+            runner = self._create_runner(
+                prepared,
+                simulation=simulation,
+                execution_mode="statevector",
+                retain_final_state=False,
+            )
             if prepared.plan:
-                runner = self._create_runner(
-                    prepared,
-                    simulation=simulation,
-                    execution_mode="statevector",
-                    retain_final_state=False,
-                )
                 engine = PulseEngine(runner, schedule_mode=simulation.schedule_mode)
-                unitary = np.asarray(
-                    engine.propagator(prepared.plan, apply_final_frame=True).full(),
-                    dtype=complex,
-                )
+                unitary = engine.propagator(prepared.plan, apply_final_frame=True)
                 runtime_details = runner.runtime_details()
             else:
-                unitary = np.eye(self._target.hilbert_dimension, dtype=complex)
+                unitary = runner.identity_operator()
             available = frozenset({"unitary"})
         metadata = self._result_metadata(request, simulation, shots)
         if runtime_details is not None:

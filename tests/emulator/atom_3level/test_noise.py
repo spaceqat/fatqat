@@ -80,9 +80,11 @@ def test_atom_3level_default_noisy_statevector_is_a_seeded_trajectory(
     second = backend.run(program, **kwargs).result()
 
     assert first.metadata["runtime_details"]["solver"] == "mcsolve"
-    assert first.get_statevector() == pytest.approx(second.get_statevector())
-    assert first.get_statevector().shape == (3,)
-    assert np.linalg.norm(first.get_statevector()) == pytest.approx(1.0)
+    assert first.get_statevector().full().ravel() == pytest.approx(
+        second.get_statevector().full().ravel()
+    )
+    assert first.get_statevector().full().ravel().shape == (3,)
+    assert np.linalg.norm(first.get_statevector().full().ravel()) == pytest.approx(1.0)
 
 
 def test_invalid_attached_noise_is_rejected_before_target_construction(

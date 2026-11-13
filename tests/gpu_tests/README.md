@@ -2,28 +2,31 @@
 
 ## Workflow and approval
 
-[GPU Tests](../../.github/workflows/gpu.yml) has one `ubuntu-latest` job.
-It uses system OpenSSH to run tests on the existing Tencent Cloud HAI instance.
+[GPU Tests](../../.github/workflows/gpu.yml) has two `ubuntu-latest` jobs:
+`approve` waits for approval; `gpu` uses system OpenSSH on the existing HAI instance.
 PR events are `opened`, `synchronize` and `reopened`; there are no file filters.
 CPU `Tests` and `Lint` run independently; the GPU workflow does not query them.
 
-PR jobs use the `gpu-ci` Environment with Required reviewers. Approval happens
-before **any step** runs. The run and job names are `GPU PR #<number>` or
-`GPU manual`. Review the event's PR head before approving. After approval, the
-controller selects the current merge revision and records the full head, base
-and merge SHAs in the logs and run summary.
+Each PR independently waits in `GPU approval`, using the `gpu-ci` Environment
+with Required reviewers. An unapproved PR does not block other PRs. The run and
+execution job names are `GPU PR #<number>` or `GPU manual`. Review the event's PR
+head before approving. After approval and acquiring the GPU execution slot, the
+controller checks the PR before startup, selects the current merge revision and
+records the full head, base and merge SHAs in the logs and run summary.
 The tested base is the merge commit's first parent; the second must be the
 approved event head. A later PR head cannot reuse approval of an earlier event.
 
-Manual dispatch uses `gpu-ci-manual`, without Required reviewers, and is
-restricted to the default branch. Its source is the dispatch event's fixed
-commit. Both modes share `fatqat-hai-gpu`, with `cancel-in-progress: false`
-and `queue: max`. Resolve outdated approval requests so the queue can proceed.
-A rejected approval starts no steps.
+Manual dispatch is restricted to the default branch; its `approve` job succeeds
+using `gpu-ci-manual` without Required reviewers. It tests the event's fixed
+commit. Only `gpu` jobs share `fatqat-hai-gpu`, with `cancel-in-progress: false`
+and `queue: max`: approved PRs and manual runs execute serially. Each round
+finishes shutdown and cleanup before the next starts. Rejected approval starts
+no GPU job or HAI instance.
 
 ## Repository configuration
 
-Configure these under **Settings > Secrets and variables > Actions**:
+Configure these at repository level under **Settings > Secrets and variables >
+Actions**; `gpu` has no Environment and cannot read Environment-only values:
 
 | Type | Name | Value |
 | --- | --- | --- |
@@ -51,8 +54,8 @@ Grant CAM `hai:DescribeInstances`, `hai:StartInstance` and `hai:StopInstance`
 for this instance. No security-group write permission is needed.
 Configure **Settings > Environments** with `gpu-ci` requiring reviewers and
 `gpu-ci-manual` having none; allow the default branch in deployment restrictions.
-The controller validates both configurations and fails explicitly on inaccessible
-or malformed Environment data. Its job token needs `contents: read`,
+The controller validates the approval job's selected Environment and fails on
+inaccessible or malformed data. Its job token needs `contents: read`,
 `actions: read` and `pull-requests: read` (declared in YAML).
 
 Place the workflow and control scripts on the upstream default branch.

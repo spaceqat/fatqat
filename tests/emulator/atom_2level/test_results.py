@@ -88,8 +88,8 @@ def test_unmeasured_ideal_run_defaults_to_a_pure_statevector(backend):
     result = backend.run(_pulse_program()).result()
 
     assert result.available_data == frozenset({"statevector"})
-    assert result.get_statevector().shape == (4,)
-    assert np.linalg.norm(result.get_statevector()) == pytest.approx(1.0)
+    assert result.get_statevector().full().ravel().shape == (4,)
+    assert np.linalg.norm(result.get_statevector().full().ravel()) == pytest.approx(1.0)
     assert result.metadata["backend_name"] == "Atom2LevelEmulator"
     assert result.metadata["runtime"] == "qutip"
     assert result.metadata["runtime_details"] == {
@@ -107,7 +107,7 @@ def test_terminal_measurement_defaults_to_counts_without_final_state(backend):
     assert result.available_data == frozenset({"counts"})
     assert sum(result.get_counts().values()) == 30
     with pytest.raises(ResultFieldUnavailableError):
-        result.get_statevector()
+        result.get_statevector().full().ravel()
 
 
 def test_explicit_counts_without_measurement_keep_all_zero_classical_key(backend):
@@ -167,7 +167,7 @@ def test_one_shot_requested_posterior_is_an_independent_collapsed_ket(backend):
         simulation_config={"seed": 11},
         result_config={"counts": True, "final_state": True},
     ).result()
-    state = result.get_statevector()
+    state = result.get_statevector().full().ravel()
     counts = result.get_counts()
 
     assert state.shape == (4,)
@@ -201,7 +201,7 @@ def test_terminal_density_matrix_measurement_samples_and_collapses():
 
     assert sum(sampled.get_counts().values()) == 30
     assert all(set(key) <= {"0", "1"} for key in sampled.get_counts())
-    state = posterior.get_density_matrix()
+    state = posterior.get_density_matrix().full()
     assert state.shape == (4, 4)
     assert np.trace(state) == pytest.approx(1.0)
     assert np.trace(state @ state) == pytest.approx(1.0)

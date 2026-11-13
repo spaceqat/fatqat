@@ -51,7 +51,7 @@ def test_local_direct_propagator_matches_independent_qutrit_reference(
     program = fq.Program(1)
     program.add(operation)
 
-    actual = backend.run(program).result().get_unitary()
+    actual = backend.run(program).result().get_unitary().full()
     raising = raising.astype(complex)
     hamiltonian = 0.5 * (envelope * raising + envelope.conjugate() * raising.T)
     expected = expm(-1j * hamiltonian * duration)
@@ -86,7 +86,7 @@ def test_coordinate_arrangement_preserves_pair_phases_and_site_order(
         ops.PulseOperation(duration, (PulseControl(model.control.raman(0), idle),))
     )
 
-    actual = backend.run(program).result().get_unitary()
+    actual = backend.run(program).result().get_unitary().full()
 
     # In input order, distances (0, 1), (0, 2), (1, 2) are sqrt(13), 2, 3.
     energies = np.zeros(27)
@@ -198,8 +198,8 @@ def test_direct_rydberg_drives_coexist_with_signed_all_pair_drift(
         == -negative_values[0].signed_strength_rad_per_us
     )
     assert not np.allclose(
-        positive.run(program).result().get_unitary(),
-        negative.run(program).result().get_unitary(),
+        positive.run(program).result().get_unitary().full(),
+        negative.run(program).result().get_unitary().full(),
     )
 
 
@@ -219,11 +219,13 @@ def test_condition_changes_actual_direct_atom_execution(
         backend.run(enabled, result_config={"counts": False, "final_state": True})
         .result()
         .get_density_matrix()
+        .full()
     )
     disabled_state = (
         backend.run(disabled, result_config={"counts": False, "final_state": True})
         .result()
         .get_density_matrix()
+        .full()
     )
 
     assert not np.allclose(enabled_state, disabled_state)

@@ -57,9 +57,8 @@ class _TransmonQutipAdapter:
     coherent propagators, and implements physical measurement/reset. The
     :class:`PulseEngine` owns shots, conditions, traversal, and scheduling.
 
-    Inputs and completed-shot outputs use fatqat/NumPy values, so no QuTiP
-    object crosses the backend's public boundary. This class is intentionally
-    not exported from :mod:`fatqat.emulator`.
+    Completed-shot outputs are QuTiP ``Qobj`` values. This class is
+    intentionally not exported from :mod:`fatqat.emulator`.
     """
 
     def __init__(
@@ -223,6 +222,10 @@ class _TransmonQutipAdapter:
         context.state = state
         context.frame_angles.clear()
         context.frame_angles.update(bound.output_frames)
+
+    def identity_operator(self) -> Qobj:
+        """Return the identity on the complete physical model."""
+        return tensor(*[qeye(dimension) for dimension in self._dims])
 
     def propagator(
         self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True
@@ -409,10 +412,7 @@ class _TransmonQutipAdapter:
                     state = frame_unitary * state * frame_unitary.dag()
                 else:
                     state = frame_unitary * state
-            array = np.asarray(state.full(), dtype=complex)
-            if self._execution_mode != "density_matrix":
-                array = array.reshape(-1)
-            final_state = np.array(array, dtype=complex, copy=True)
+            final_state = state.copy()
         return _PulseShotOutcome(
             final_state=final_state,
             final_state_kind=(

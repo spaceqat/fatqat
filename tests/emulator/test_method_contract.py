@@ -4,6 +4,7 @@ import warnings
 
 import numpy as np
 import pytest
+from qutip import Qobj
 
 import fatqat as fq
 import fatqat.operations as ops
@@ -110,7 +111,10 @@ def test_method_selects_one_full_physical_artifact(
     assert "frame_convention" not in runtime_details
     assert result.available_data == {field}
     assert result.metadata["state_axes"]
-    artifact = getattr(result, f"get_{field}")()
+    qobj = getattr(result, f"get_{field}")()
+    assert isinstance(qobj, Qobj)
+    assert qobj.isket if field == "statevector" else qobj.isoper
+    artifact = qobj.full().ravel() if field == "statevector" else qobj.full()
     assert artifact.shape == shape(dimension)
     if method == "unitary":
         # Reject a materially nonunitary result without demanding accuracy
@@ -285,7 +289,9 @@ def test_noisy_statevector_defaults_to_metadata_and_explicit_shot_is_seeded(mode
     assert default.available_data == frozenset()
     assert default.metadata["method"] == "statevector"
     assert "state_axes" not in default.metadata
-    assert first.get_statevector() == pytest.approx(second.get_statevector())
+    assert first.get_statevector().full() == pytest.approx(
+        second.get_statevector().full()
+    )
     assert ensemble.get_density_matrix().shape == (9, 9)
 
 

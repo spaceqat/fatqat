@@ -75,14 +75,15 @@ directly from the state.
 
 Set `shots` to a positive integer to estimate an expectation from sampled
 measurements. For `ZI` on the original Bell state, each shot gives `+1` or
-`-1` with equal probability. The exact expectation is zero, but a finite
-sample usually gives a small nonzero mean:
+`-1` with equal probability. The exact expectation is zero, up to
+floating-point rounding, but a finite sample usually gives a small nonzero
+mean:
 
 ```pycon
 >>> zi = fq.Observable([("ZI", 1.0)])
 >>> exact = estimator.run(bell, zi, shots=0).result()
->>> round(float(exact.get_expectation()), 4)
-0.0
+>>> abs(float(exact.get_expectation())) < 1e-12
+True
 >>> sampled = estimator.run(
 ...     bell,
 ...     zi,

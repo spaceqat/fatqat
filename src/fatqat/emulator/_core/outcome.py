@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, Mapping
 
-import numpy as np
-
 PulseMethod = Literal["statevector", "density_matrix", "unitary"]
 ExecutionMode = Literal["density_matrix", "statevector", "trajectory"]
 FinalStateKind = Literal["statevector", "density_matrix"]
@@ -26,10 +24,11 @@ class _PulseShotOutcome:
     """One shot in the owning pulse allocation's order at the backend boundary.
 
     Built-in QuTiP adapters use public model/factor order. A retained density
-    matrix uses the same order for both rows and columns.
+    matrix uses the same order for both rows and columns. The state is an
+    independent QuTiP ``Qobj`` (a ket or an operator).
     """
 
-    final_state: np.ndarray | None
+    final_state: Any | None
     final_state_kind: FinalStateKind
     classical_digits: tuple[int, ...]
 

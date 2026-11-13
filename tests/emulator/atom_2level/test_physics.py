@@ -91,7 +91,7 @@ def _evolve(target, block):
     outcome = PulseEngine(adapter).run(
         (block,), shots=1, n_clbits=0, rng=np.random.default_rng(7)
     )[0]
-    return outcome.final_state
+    return outcome.final_state.full().ravel()
 
 
 @pytest.mark.parametrize("phase", [0.0, np.pi / 2, 0.371])

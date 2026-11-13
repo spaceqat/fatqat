@@ -161,7 +161,7 @@ def test_confused_reported_value_drives_later_guarded_pulse(make_backend):
     ).result()
 
     assert result.get_counts() == {"1": 1}
-    density = Qobj(result.get_density_matrix(), dims=[[3, 3], [3, 3]])
+    density = Qobj(result.get_density_matrix().full(), dims=[[3, 3], [3, 3]])
     assert density.ptrace(1).diag()[1].real > 0.8
     assert np.allclose(density.ptrace(0).full(), ket2dm(basis(3, 0)).full())
 
@@ -206,8 +206,10 @@ def test_seeded_noisy_trajectory_continues_across_measurement_regions(model):
     second = backend.run(program, **kwargs).result()
 
     assert first.get_counts() == second.get_counts() == {"1": 1}
-    assert first.get_statevector() == pytest.approx(second.get_statevector())
-    probabilities = np.abs(first.get_statevector()) ** 2
+    assert first.get_statevector().full().ravel() == pytest.approx(
+        second.get_statevector().full().ravel()
+    )
+    probabilities = np.abs(first.get_statevector().full().ravel()) ** 2
     q0_occupied = sum(
         probability
         for index, probability in enumerate(probabilities)
@@ -232,6 +234,7 @@ def test_real_boundary_preserves_frame_ledger_for_later_drive(make_backend):
         )
         .result()
         .get_density_matrix()
+        .full()
     )
 
     continuous = fq.Program(2)
@@ -244,6 +247,7 @@ def test_real_boundary_preserves_frame_ledger_for_later_drive(make_backend):
         )
         .result()
         .get_density_matrix()
+        .full()
     )
     assert np.allclose(boundary_state, continuous_state, atol=2e-7)
 
@@ -262,6 +266,7 @@ def test_reset_and_both_guarded_boundary_outcomes_preserve_later_frame_use(
             )
             .result()
             .get_density_matrix()
+            .full()
         )
         return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(0).full()
 
@@ -297,6 +302,7 @@ def test_both_guarded_pulse_outcomes_flush_before_later_frame_aware_drive(make_b
             )
             .result()
             .get_density_matrix()
+            .full()
         )
         return Qobj(density, dims=[[3, 3], [3, 3]]).ptrace(0).full()
 
@@ -431,6 +437,6 @@ def test_custom_cz_rule_executes_end_to_end_and_yields_a_valid_physical_state(
     result = backend.run(
         program, result_config={"counts": False, "final_state": True}
     ).result()
-    density = result.get_density_matrix()
+    density = result.get_density_matrix().full()
     assert np.isclose(np.trace(density).real, 1.0, atol=1e-6)
     assert np.allclose(density, density.conj().T, atol=1e-9)

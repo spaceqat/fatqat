@@ -180,7 +180,7 @@ def test_atom3_coherent_statevector_is_flat_and_full_physical(
     program.add(ops.RX(np.pi / 2), 0)
 
     result = backend.run(program).result()
-    state = result.get_statevector()
+    state = result.get_statevector().full().ravel()
 
     assert result.available_data == frozenset({"statevector"})
     assert state.shape == (9,)
@@ -260,7 +260,7 @@ def test_atom_3level_supplied_map_is_type_checked_copied_and_empty_is_explicit(
     supplied.remove(ops.RX)
     program = fq.Program(2)
     program.add(ops.RX(0.2), 0)
-    assert backend.run(program).result().get_unitary().shape == (9, 9)
+    assert backend.run(program).result().get_unitary().full().shape == (9, 9)
 
     empty = fq.emulator.PulseImplementationMap()
     direct_only = Atom3LevelEmulator(
@@ -307,8 +307,8 @@ def test_compiled_map_transfers_while_target_c6_and_geometry_control_evolution(
         assert first.channel == second.channel
         assert np.array_equal(first.waveform.values, second.waveform.values)
     assert not np.allclose(
-        source_target.run(program).result().get_unitary(),
-        changed_target.run(program).result().get_unitary(),
+        source_target.run(program).result().get_unitary().full(),
+        changed_target.run(program).result().get_unitary().full(),
     )
 
 
@@ -375,7 +375,7 @@ def test_atom_3level_noise_is_retained_validated_and_binary(
         atom_3level_model,
         atom_3level_calibration,
         method="unitary",
-    ).run(driven).result().get_unitary()
+    ).run(driven).result().get_unitary().full()
 
     with pytest.raises(BackendValidationError, match="2 x 2"):
         _backend(atom_3level_model, atom_3level_calibration, noise=_readout(np.eye(3)))
@@ -416,7 +416,7 @@ def test_atom_3level_binding_is_exact_row_major_all_occupied_for_run_and_unitary
     ).result()
     propagate_program = fq.Program(2)
     propagate_program.add(ops.RZ(0.3), 1)
-    unitary_backend.run(propagate_program).result().get_unitary()
+    unitary_backend.run(propagate_program).result().get_unitary().full()
     assert len(captured) == 2
     for target, allocation in captured:
         assert target in (backend._target, unitary_backend._target)
@@ -437,7 +437,7 @@ def test_atom_3level_declaration_order_binds_multi_register_nonprefix_refs(
     program.add(ops.RZ(0.2), right[0])
     backend = _backend(atom_3level_model, atom_3level_calibration, method="unitary")
     captured = _capture_adapter_bindings(monkeypatch)
-    propagator = backend.run(program).result().get_unitary()
+    propagator = backend.run(program).result().get_unitary().full()
     assert len(captured) == 1
     target, allocation = captured[0]
     assert target is backend._target
@@ -464,7 +464,7 @@ def test_atom_3level_exact_binding_dimension_capacity_and_qutrit_result(
     result = backend.run(
         program, result_config={"counts": False, "final_state": True}
     ).result()
-    assert result.get_density_matrix().shape == (9, 9)
+    assert result.get_density_matrix().full().shape == (9, 9)
 
 
 def test_atom_3level_binary_measurement_reset_and_readout_unitary_inert(
@@ -483,7 +483,7 @@ def test_atom_3level_binary_measurement_reset_and_readout_unitary_inert(
         program, shots=1, result_config={"counts": True, "final_state": True}
     ).result()
     assert result.get_counts() == {"0": 1}
-    assert result.get_density_matrix().shape == (9, 9)
+    assert result.get_density_matrix().full().shape == (9, 9)
     coherent = fq.Program(2)
     coherent.add(ops.RZ(0.2), 0)
     noisy_unitary = _backend(
@@ -494,8 +494,8 @@ def test_atom_3level_binary_measurement_reset_and_readout_unitary_inert(
     )
     empty = _backend(atom_3level_model, atom_3level_calibration, method="unitary")
     assert np.allclose(
-        noisy_unitary.run(coherent).result().get_unitary(),
-        empty.run(coherent).result().get_unitary(),
+        noisy_unitary.run(coherent).result().get_unitary().full(),
+        empty.run(coherent).result().get_unitary().full(),
     )
 
 
@@ -516,6 +516,7 @@ def test_atom_3level_all_computational_inputs_remain_physical_qutrit_states(
         backend.run(program, result_config={"counts": False, "final_state": True})
         .result()
         .get_density_matrix()
+        .full()
     )
     assert density.shape == (9, 9)
     assert density[expected_index, expected_index].real > 0.9999
@@ -532,6 +533,7 @@ def test_atom_3level_superposition_and_final_frame_unitary(
         backend.run(superposition, result_config={"counts": False, "final_state": True})
         .result()
         .get_density_matrix()
+        .full()
     )
     assert density[0, 0].real == pytest.approx(0.5, abs=2e-6)
     assert density[3, 3].real == pytest.approx(0.5, abs=2e-6)
@@ -544,6 +546,7 @@ def test_atom_3level_superposition_and_final_frame_unitary(
         .run(framed)
         .result()
         .get_unitary()
+        .full()
     )
     assert not np.allclose(final, np.eye(9))
 
@@ -561,7 +564,7 @@ def test_atom_3level_sequential_rotations_compose_by_pulse_area(
     for _ in range(count):
         program.add(ops.RX(np.pi / 2), 0)
 
-    unitary = backend.run(program).result().get_unitary()
+    unitary = backend.run(program).result().get_unitary().full()
     computational = unitary[np.ix_([0, 1, 3, 4], [0, 1, 3, 4])]
 
     assert np.diag(computational) == pytest.approx(
@@ -583,7 +586,7 @@ def test_atom_3level_measurement_returns_the_physical_single_shot_posterior_befo
         simulation_config={"seed": 23},
         result_config={"counts": True, "final_state": True},
     ).result()
-    density = result.get_density_matrix()
+    density = result.get_density_matrix().full()
     assert density.shape == (9, 9)
     # Public factor 0 is the most-significant qutrit digit.
     counts = result.get_counts()
@@ -616,7 +619,7 @@ def test_atom_3level_feedforward_uses_the_reported_binary_bit_and_sampling_is_se
         result_config={"counts": True, "final_state": True},
     ).result()
     assert first.get_counts() == second.get_counts() == {"0": 1}
-    assert first.get_density_matrix()[0, 0].real > 0.999
+    assert first.get_density_matrix().full()[0, 0].real > 0.999
 
 
 def test_atom_3level_stochastic_measurement_is_seed_reproducible(
@@ -722,7 +725,7 @@ def test_weak_blockade_neither_rejects_nor_emits_the_removed_advisory(
             atom_3level_calibration,
             spacing=20.0,
             method="unitary",
-        ).run(pair).result().get_unitary()
+        ).run(pair).result().get_unitary().full()
         weak.run(pair, shots=1)
     assert not any("V/Omega" in str(warning.message) for warning in caught)
 
@@ -735,7 +738,7 @@ def test_weak_blockade_neither_rejects_nor_emits_the_removed_advisory(
         atom_3level_calibration,
         spacing=20.0,
         method="unitary",
-    ).run(pair).result().get_unitary()
+    ).run(pair).result().get_unitary().full()
     assert negative._target.interactions[0].signed_strength_rad_per_us < 0
     prepared = negative._prepare_program(pair)
     runner = negative._create_runner(

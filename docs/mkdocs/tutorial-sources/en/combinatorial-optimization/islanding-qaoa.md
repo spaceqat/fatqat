@@ -413,7 +413,8 @@ def greedy_repair(qubo, bits, constraints=(), multiplier=0.0, max_flips=500):
     def score(candidate):
         total = constant + float(linear @ candidate)
         for (i, j), value in quadratic.items():
-            total += value * candidate[i] * candidate[j]
+            if candidate[i] and candidate[j]:
+                total += value
         for members, lower, upper in constraints:
             reached = float(candidate[list(members)].sum())
             total += multiplier * max(0.0, reached - upper, lower - reached)
@@ -513,7 +514,8 @@ def energy_of(qubo, bits):
     constant, linear, quadratic = qubo
     total = constant + float(linear @ bits)
     for (i, j), value in quadratic.items():
-        total += value * bits[i] * bits[j]
+        if bits[i] and bits[j]:
+            total += value
     return total
 
 
@@ -584,6 +586,7 @@ def pvsqa_method1(spec, qubo, bits, rounds=5):
     """Alternate the flip descent and the connectivity repair until both pass."""
     values = np.asarray(bits, dtype=np.int8).copy()
     best = None
+    seen = set()
 
     def consider(candidate):
         """Keep a candidate if it beats the best seen: feasibility, then energy."""
@@ -595,6 +598,10 @@ def pvsqa_method1(spec, qubo, bits, rounds=5):
         return solution
 
     for _ in range(rounds):
+        state = tuple(values)
+        if state in seen:
+            break  # Deterministic repair would repeat the same candidates.
+        seen.add(state)
         values = greedy_repair(qubo, values)
         values = repair_coherency(spec, values)
         if consider(values)["checks"]["connected"]:

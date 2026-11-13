@@ -24,6 +24,9 @@ use its accessor. An unavailable accessor raises
 | `"expectation"` and `"standard_error"` | [`get_expectation`][fatqat.Result.get_expectation] and [`get_standard_error`][fatqat.Result.get_standard_error] | An [`Estimator`][fatqat.Estimator] run |
 | Backend extension name | [`get_data`][fatqat.Result.get_data] | A backend extension |
 
+Pulse emulators return `Qobj` values from `get_statevector`,
+`get_density_matrix`, and `get_unitary`; simulators return NumPy arrays.
+
 `"final_state"` is a request name, not an available-data name. A produced
 state or operator uses its concrete representation name from the table.
 Deterministic unmeasured runs enable method-native output by default. A

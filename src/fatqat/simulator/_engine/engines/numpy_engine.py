@@ -83,6 +83,10 @@ from .._execution_policy import (
     _plan_python_execution,
 )
 from ....observable import _Factors
+from ..numerics.numpy_kernels._expectation import (
+    expectation_density_matrix,
+    expectation_statevector,
+)
 from ..state import EvolutionState, _LoweredBasisState
 from .base import MatrixEngine
 from .ndarray_engine import _NdarrayEngine
@@ -134,6 +138,8 @@ from ..workflows.python_workflow import _MeasurementKernels, _PythonExecution
 
 class NumpySVEngine(_NdarrayEngine):
     """State-vector engine: evolves ``|psi>`` as a flat little-endian array."""
+
+    _expectation_kernel = staticmethod(expectation_statevector)
 
     _capabilities = _EngineCapabilities(
         quantum=_QuantumCapabilities(
@@ -197,6 +203,8 @@ class NumpySVEngine(_NdarrayEngine):
 
 class NumpyDMEngine(_NdarrayEngine):
     """Density-matrix engine: evolves ``rho`` as a ``(size, size)`` matrix."""
+
+    _expectation_kernel = staticmethod(expectation_density_matrix)
 
     _capabilities = _EngineCapabilities(
         quantum=_QuantumCapabilities(
