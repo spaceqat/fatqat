@@ -85,7 +85,7 @@ values are case-sensitive.
 | `kernel_parallelism` | `"auto"` | `"auto"`, `"serial"`, or `"threads"`. Threads require Numba and cannot be requested together with parallel shots. |
 | `max_workers` | `None` | `None` or a positive `int`. It caps the selected parallel mode; `1` conflicts with an explicitly parallel request. |
 | `error_handling` | `"raise"` | `"raise"` or `"capture"`; see the error-handling contract in [`Simulator.run`][fatqat.simulator.Simulator.run]. |
-| `fusion` | `False` | A `bool`. `True` allows the engine to merge compatible adjacent operations. It is accepted for `statevector` and `density_matrix` on either runtime, and for `unitary` and `superop` on Numba; NumPy rejects it for `unitary` and `superop`. The engine may skip merging, for example on a small system. |
+| `fusion` | `False` | A `bool`. `True` allows the engine to merge compatible adjacent operations. It is accepted for `statevector` and `density_matrix` on either runtime, and for `unitary` and `superop` on Numba; NumPy rejects it for `unitary` and `superop`. The engine may skip merging, for example on a small system. It is rejected when the run tracks atom occupancy, so `AtomArraySimulator` always rejects it. A custom operation that enables occupancy during a fused run raises `BackendExecutionError`. |
 
 Shot parallelism requires counts and independent shot evolution, such as a
 program with mid-circuit measurement, reset, conditions, or stochastic channels.

@@ -248,13 +248,14 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
     ) -> tuple[ResolvedStep, ...]:
         """Merge runs of adjacent gates in a bound plan into fewer matrix steps.
 
-        Runs only when ``policy.fusion`` is set and the engine declares gate
-        fusion limits; otherwise returns ``plan`` itself. Each bound entry is
-        fused once here, before shot dispatch, so worker processes receive the
-        fused plan and continued tails are never fused. Limits compare with the
-        physical dimensions, also for density matrices.
+        Runs only when ``policy.fusion`` is set and ``context.gate_fusion``
+        holds limits; otherwise returns ``plan`` itself. The simulator sets
+        those limits, so the engine declaration alone never enables fusion.
+        Each bound entry is fused once here, before shot dispatch, so worker
+        processes receive the fused plan and continued tails are never fused.
+        Limits compare with the physical dimensions, also for density matrices.
         """
-        limits = self.capabilities.kernels.gate_fusion
+        limits = context.gate_fusion
         if not policy.fusion or limits is None:
             return plan
         dims = context.system_dims

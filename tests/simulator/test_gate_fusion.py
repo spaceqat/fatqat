@@ -16,7 +16,13 @@ from fatqat._backends import steps
 from fatqat._backends.steps import ApplyMatrixStep, ApplyParametricMatrixStep
 from fatqat._backends.steps import BuiltinKernelKey as Key
 from fatqat.errors import BackendValidationError
-from fatqat.simulator import ClassicalState, EvolutionState, Simulator
+from fatqat.noise import Depolarizing, NoiseModel
+from fatqat.simulator import (
+    AtomArraySimulator,
+    ClassicalState,
+    EvolutionState,
+    Simulator,
+)
 from fatqat.simulator._engine.binding import _bind_parameter_batch
 from fatqat.simulator._engine.engines import base
 from fatqat.simulator._engine.engines.numpy_engine import NumpyFixedPhotonEngine
@@ -31,6 +37,9 @@ from fatqat.simulator._engine.optimization.fusion import materialize, schedule
 from fatqat.simulator._execution_contract import (
     _GateFusionLimits,
     _KernelCapabilities,
+    _ResultRequest,
+    _RunContext,
+    _SimulationConfig,
 )
 
 # Merging is forced at every size so that each test isolates one rule.
@@ -560,8 +569,7 @@ def test_minimum_size_compares_with_the_physical_dimension(monkeypatch, method):
     assert _same_steps(below, below_input)
 
 
-@pytest.mark.parametrize("shot_parallelism", ["serial", "processes"])
-def test_sampled_expectation_tail_is_never_fused(monkeypatch, shot_parallelism):
+def test_sampled_expectation_tail_is_never_fused(monkeypatch):
     engine_cls = _force_limits(monkeypatch, "SV", "numpy")
     phase = {"tail": False}
     calls = {"body": 0, "tail": 0, "tail_dispatch": 0}
@@ -587,29 +595,161 @@ def test_sampled_expectation_tail_is_never_fused(monkeypatch, shot_parallelism):
     monkeypatch.setattr(fusion, "schedule", counting_schedule)
     monkeypatch.setattr(engine_cls, "continue_from_states", continue_tail)
     monkeypatch.setattr(engine_cls, "_dispatch_by_shot_strategy", counting_dispatch)
-    config = {"seed": 5, "fusion": True}
-    initial_state = None
-    if shot_parallelism == "processes":
-        # Atom occupancy needs per-shot evolution, so the automatic strategy
-        # runs the tail's shots in worker processes.
-        occupied = ClassicalState(occupied={0, 1, 2, 3})
-        initial_state = EvolutionState(classical=occupied)
-        config["max_workers"] = 2
-    else:
-        config["shot_parallelism"] = "serial"
+    config = {"seed": 5, "fusion": True, "shot_parallelism": "serial"}
 
     fq.Estimator(Simulator("SV", runtime="numpy")).run(
         _brick(4, 2),
         fq.Observable([("ZZII", 1.0), ("XIII", 0.5)]),
         shots=64,
-        initial_state=initial_state,
         simulation_config=config,
     ).result()
 
     assert calls["body"] >= 1
     assert calls["tail"] == 0
-    # The tail dispatches only on the process branch.
-    assert (calls["tail_dispatch"] > 0) == (shot_parallelism == "processes")
+    # Fusion rejects the occupancy that routes a public run to the process
+    # branch; an engine-level test covers that branch.
+    assert calls["tail_dispatch"] == 0
+
+
+def test_process_tail_is_not_fused_when_the_context_carries_limits(monkeypatch):
+    # Public runs cannot reach this branch with fusion on: per-shot tails need
+    # occupancy, which rejects fusion. The engine contract still holds.
+    simulator = Simulator("SV", runtime="numpy")
+    engine = simulator._engine
+    tail = simulator._prepare_execution(
+        _brick(4, 1, clbits=4),
+        resource_layout=None,
+        initial_state=None,
+        simulation_config=None,
+    ).plan
+    record = _record(monkeypatch, type(engine))
+    dispatched = []
+    original_dispatch = type(engine)._dispatch_by_shot_strategy
+
+    def recording_dispatch(self, plan, context, policy, initial_state):
+        dispatched.append(policy.shot_strategy)
+        return original_dispatch(self, plan, context, policy, initial_state)
+
+    monkeypatch.setattr(type(engine), "_dispatch_by_shot_strategy", recording_dispatch)
+    state = EvolutionState(
+        np.eye(1, 16, dtype=complex)[0],
+        ClassicalState(clbits=[0] * 4, occupied={0, 1, 2, 3}),
+    )
+    context = _RunContext(
+        request=_ResultRequest(counts=True, final_state=False),
+        system_dims=(2,) * 4,
+        n_clbits=4,
+        shots=64,
+        seed=5,
+        gate_fusion=FORCED,
+    )
+    config = _SimulationConfig(fusion=True, max_workers=2, seed=5)
+
+    engine.continue_from_states(
+        tuple(tail), [state], context=context, simulation_config=config
+    )
+
+    assert dispatched == ["processes"]
+    assert record.calls == 0
+
+
+def test_engine_does_not_fuse_without_limits_in_the_context(monkeypatch):
+    # The engine class declares limits; only the run context may enable them.
+    _force_limits(monkeypatch, "SV", "numpy")
+    simulator = Simulator("SV", runtime="numpy")
+    execution = simulator._prepare_execution(
+        _brick(4, 2),
+        resource_layout=None,
+        initial_state=None,
+        simulation_config={"fusion": True},
+    )
+    record = _record(monkeypatch, type(simulator._engine))
+    context = _RunContext(
+        request=_ResultRequest(counts=False, final_state=True),
+        system_dims=(2,) * 4,
+        n_clbits=0,
+        shots=1,
+        seed=5,
+    )
+
+    list(
+        simulator._engine.execute(
+            execution.plan,
+            context=context,
+            simulation_config=execution.simulation,
+            initial_state=execution.initial_state,
+        )
+    )
+
+    assert record.calls == 0
+
+
+def test_exact_expectation_runs_the_gate_pass(monkeypatch):
+    record = _record(monkeypatch, _force_limits(monkeypatch, "SV", "numpy"))
+
+    fq.Estimator(Simulator("SV", runtime="numpy")).run(
+        _brick(4, 2),
+        fq.Observable([("ZZII", 1.0)]),
+        shots=0,
+        simulation_config={"fusion": True},
+    ).result()
+
+    assert record.calls >= 1
+
+
+def test_sampled_expectation_without_base_state_runs_the_gate_pass(monkeypatch):
+    # A stochastic channel on a statevector gives every shot its own final
+    # state, so each term reruns the whole plan with its measurement tail.
+    record = _record(monkeypatch, _force_limits(monkeypatch, "SV", "numpy"))
+    noise = NoiseModel()
+    noise.add(Depolarizing(p=0.01), operation=ops.H)
+    program = _brick(4, 2)
+    program.add(ops.H, 0)
+
+    fq.Estimator(Simulator("SV", runtime="numpy", noise=noise)).run(
+        program,
+        fq.Observable([("ZZII", 1.0)]),
+        shots=8,
+        simulation_config={"fusion": True, "shot_parallelism": "serial"},
+    ).result()
+
+    assert record.calls >= 1
+
+
+def _occupancy_program():
+    program = fq.Program(2, 1)
+    program.add(ops.RX(np.pi), 0)
+    program.add(ops.RX(np.pi), 1)
+    program.measure(0, 0)
+    return program
+
+
+@pytest.mark.parametrize("simulator_cls", [AtomArraySimulator, Simulator])
+def test_fusion_is_rejected_when_the_run_tracks_occupancy(simulator_cls):
+    # A merged gate is skipped whole when one of its sites is empty, so fusion
+    # would also drop the gate on the occupied site.
+    simulator = simulator_cls(method="statevector", runtime="numpy")
+    # Engine index 1 holds program qubit 0.
+    initial = EvolutionState(classical=ClassicalState(occupied={1}))
+
+    with pytest.raises(BackendValidationError, match="fusion=True.*occupancy"):
+        simulator.run(
+            _occupancy_program(),
+            shots=4,
+            initial_state=initial,
+            simulation_config={"fusion": True},
+        )
+    unfused = simulator.run(_occupancy_program(), shots=4, initial_state=initial)
+
+    assert unfused.result().get_counts() == {"1": 4}
+
+
+def test_atom_array_simulator_rejects_fusion_without_initial_occupancy():
+    # The atom-array simulator tracks occupancy even when no site is filled.
+    with pytest.raises(BackendValidationError, match="fusion=True.*occupancy"):
+        AtomArraySimulator(runtime="numpy").run(
+            _occupancy_program(), shots=4, simulation_config={"fusion": True}
+        )
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
