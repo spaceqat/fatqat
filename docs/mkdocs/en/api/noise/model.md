@@ -50,7 +50,7 @@ simulator = fq.simulator.Simulator(method="DM", noise=noise)
 result = simulator.run(
     program,
     shots=1_000,
-    simulation_config={"seed": 7},
+    execution_config={"seed": 7},
     result_config={"counts": True},
 ).result()
 ```
@@ -211,10 +211,10 @@ measured operand are rejected when the program runs.
 | Creating a noise value | Probabilities, rates, matrices, finite values, and type-specific parameter relationships | `TypeError` or `ValueError` from the noise type |
 | [`add`][fatqat.NoiseModel.add] | Noise type, operation boundary, target form, known width, position ordering/range, and immediately visible conflicts | `TypeError` or `ValueError`; the failed addition changes nothing |
 | Creating the backend | Whether the configured backend accepts every noise form and scope | [`BackendValidationError`][fatqat.errors.BackendValidationError] |
-| Running a program | Whether references belong to the program, device labels belong to the backend's legal device universe, selectors resolve without conflicts, and dimensions and the chosen execution method are compatible | Usually [`BackendValidationError`][fatqat.errors.BackendValidationError] or [`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError] |
+| Running a program | Whether references belong to the program, device labels belong to the backend's legal device universe, selectors resolve without conflicts, and dimensions and the chosen simulation method are compatible | Usually [`BackendValidationError`][fatqat.errors.BackendValidationError] or [`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError] |
 
 A legal selector can still match nothing in a run; in that case, it is a no-op.
-Some checks require a concrete program, resource layout, and execution method.
+Some checks require a concrete program, resource layout, and simulation method.
 
 ## Validate backend support
 

@@ -88,7 +88,7 @@ def test_qasm_target_pipeline_preserves_public_order_through_routing(
         backend.run(
             result,
             shots=256,
-            simulation_config={"seed": 9},
+            execution_config={"seed": 9},
         )
         .result()
         .get_counts()
@@ -141,7 +141,7 @@ def _assert_classical_counts(backend, executable, expected, **run_options):
     result = backend.run(
         executable,
         shots=4,
-        simulation_config={"seed": 7, "shot_parallelism": "serial"},
+        execution_config={"seed": 7, "shot_parallelism": "serial"},
         **run_options,
     ).result()
 
@@ -466,7 +466,7 @@ def test_target_compilation_runs_on_a_compatible_simulator():
     backend = SCQubitSimulator(num_qubits=3, couplings=LINE, runtime="numpy")
 
     counts = (
-        backend.run(compiled, shots=64, simulation_config={"seed": 9})
+        backend.run(compiled, shots=64, execution_config={"seed": 9})
         .result()
         .get_counts()
     )
@@ -678,7 +678,7 @@ def _routed_identity_case():
 def _seeded_counts(program, **run_options):
     backend = SCQubitSimulator(num_qubits=3, couplings=LINE, runtime="numpy")
     return (
-        backend.run(program, shots=16, simulation_config={"seed": 7}, **run_options)
+        backend.run(program, shots=16, execution_config={"seed": 7}, **run_options)
         .result()
         .get_counts()
     )
@@ -813,7 +813,7 @@ def test_a_larger_compatible_simulator_runs_a_target_result():
     backend = SCQubitSimulator(num_qubits=5, couplings=FIVE_SITE_LINE, runtime="numpy")
 
     counts = (
-        backend.run(compiled, shots=16, simulation_config={"seed": 7})
+        backend.run(compiled, shots=16, execution_config={"seed": 7})
         .result()
         .get_counts()
     )

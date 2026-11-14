@@ -91,10 +91,10 @@ nonconstant term independently, and
 [`get_standard_error`][fatqat.Result.get_standard_error] reports the resulting
 sample standard error. Constant terms contribute zero standard error; one
 sample of a nonconstant term has undefined standard error and reports `nan`.
-Set `simulation_config["seed"]` to reproduce a sampled run.
+Set `execution_config["seed"]` to reproduce a sampled run.
 
 Configure the simulation method, runtime, and noise on the backend. The
-Estimator forwards `simulation_config` to the backend and accepts the same keys
+Estimator forwards `execution_config` to the backend and accepts the same keys
 as its normal `run()` path; see the tables for
 [matrix simulators](simulator.md#runtime-and-execution) and
 [the two-level atom emulator](atom-emulators.md#run-configuration-and-results).

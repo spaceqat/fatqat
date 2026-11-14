@@ -207,7 +207,7 @@ perturb the state or remove an atom from the array.
     counts = fq.simulator.AtomArraySimulator().run(
         atoms,
         shots=8,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result().get_counts()
     print(counts)  # {'10': 8}
     ```
@@ -245,7 +245,7 @@ and measuring an empty site returns the erasure digit `2`.
     lossy_counts = fq.simulator.AtomArraySimulator(noise=loss_model).run(
         lossy_atoms,
         shots=100,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result().get_counts()
     print(lossy_counts)  # {'1': 86, '2': 14}
     ```

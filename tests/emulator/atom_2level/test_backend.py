@@ -125,7 +125,7 @@ def test_run_rejects_invalid_interaction_cutoffs(model, cutoff):
     ):
         backend.run(
             fq.Program(2),
-            simulation_config={"interaction_cutoff": cutoff},
+            execution_config={"interaction_cutoff": cutoff},
         )
 
 
@@ -139,10 +139,10 @@ def test_run_normalizes_interaction_cutoff_in_result_metadata(
     backend = _backend(model)
     result = backend.run(
         fq.Program(2),
-        simulation_config={"interaction_cutoff": authored},
+        execution_config={"interaction_cutoff": authored},
     ).result()
 
-    assert result.metadata["simulation_config"]["interaction_cutoff"] == normalized
+    assert result.metadata["execution_config"]["interaction_cutoff"] == normalized
 
 
 def test_one_backend_applies_interaction_cutoff_independently_per_run(model):
@@ -152,15 +152,15 @@ def test_one_backend_applies_interaction_cutoff_independently_per_run(model):
 
     nearest = backend.run(
         program,
-        simulation_config={"interaction_cutoff": 2.0},
+        execution_config={"interaction_cutoff": 2.0},
     ).result()
     full = backend.run(
         program,
-        simulation_config={"interaction_cutoff": None},
+        execution_config={"interaction_cutoff": None},
     ).result()
     nearest_again = backend.run(
         program,
-        simulation_config={"interaction_cutoff": 2.0},
+        execution_config={"interaction_cutoff": 2.0},
     ).result()
 
     nearest_unitary = nearest.get_unitary().full()

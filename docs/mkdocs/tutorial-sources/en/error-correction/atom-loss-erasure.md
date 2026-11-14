@@ -120,7 +120,7 @@ ideal_counts = (
     .run(
         build_repetition_program(3, logical=1),
         shots=100,
-        simulation_config={"seed": SEED},
+        execution_config={"seed": SEED},
     )
     .result()
     .get_counts()
@@ -151,7 +151,7 @@ lossy_counts = (
     .run(
         build_repetition_program(3, logical=1),
         shots=SHOTS,
-        simulation_config={"seed": SEED},
+        execution_config={"seed": SEED},
     )
     .result()
     .get_counts()
@@ -182,7 +182,7 @@ def flagged_fraction(logical: int, distance: int = 3) -> float:
         .run(
             build_repetition_program(distance, logical),
             shots=SHOTS,
-            simulation_config={"seed": SEED},
+            execution_config={"seed": SEED},
         )
         .result()
         .get_counts_as_tuples()
@@ -315,7 +315,7 @@ for distance in distances:
     for p_loss in loss_rates:
         counts = (
             loss_backend(p_loss)
-            .run(program, shots=SHOTS, simulation_config={"seed": SEED})
+            .run(program, shots=SHOTS, execution_config={"seed": SEED})
             .result()
             .get_counts_as_tuples()
         )
@@ -394,7 +394,7 @@ for distance in distances:
         mixed_backend.run(
             build_repetition_program(distance, logical=1),
             shots=SHOTS,
-            simulation_config={"seed": SEED},
+            execution_config={"seed": SEED},
         )
         .result()
         .get_counts_as_tuples()

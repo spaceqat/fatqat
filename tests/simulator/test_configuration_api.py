@@ -44,7 +44,7 @@ class _ExtendedSimulationConfig(_SimulationConfig):
 
 class _ExtendedResultBackend(Simulator):
     _result_config_cls = _ExtendedResultConfig
-    _simulation_config_cls = _ExtendedSimulationConfig
+    _execution_config_cls = _ExtendedSimulationConfig
 
     def _prepare_run(self, execution, *, shots, result_config):
         config, context = super()._prepare_run(
@@ -78,7 +78,7 @@ def test_simulation_and_result_configuration_are_separate():
         .run(
             _measured_superposition(),
             shots=1,
-            simulation_config={
+            execution_config={
                 "seed": 4,
                 "shot_parallelism": "serial",
                 "kernel_parallelism": "serial",
@@ -95,7 +95,7 @@ def test_simulation_and_result_configuration_are_separate():
         "final_state": True,
         "final_classical_state": False,
     }
-    assert result.metadata["simulation_config"] == {
+    assert result.metadata["execution_config"] == {
         "seed": 4,
         "shot_parallelism": "serial",
         "kernel_parallelism": "serial",
@@ -130,11 +130,11 @@ def test_backend_result_schema_controls_accepted_configuration_keys():
     backend = _ExtendedResultBackend()
     result = backend.run(
         program,
-        simulation_config={"maximum_walkers": 32},
+        execution_config={"maximum_walkers": 32},
         result_config={"hardware_trace": True},
     ).result()
     assert result.get_data("hardware_trace") == {"maximum_walkers": 32}
-    assert result.metadata["simulation_config"]["maximum_walkers"] == 32
+    assert result.metadata["execution_config"]["maximum_walkers"] == 32
     assert result.metadata["result_config"]["hardware_trace"] is True
 
     with pytest.raises(BackendValidationError, match="requires maximum_walkers"):
@@ -157,12 +157,12 @@ def test_request_validation_precedes_backend_specific_config_validation():
 def test_result_assembly_error_handling(mode):
     backend = _FailingAssemblyBackend()
     if mode == "capture":
-        job = backend.run(fq.Program(1), simulation_config={"error_handling": mode})
+        job = backend.run(fq.Program(1), execution_config={"error_handling": mode})
         with pytest.raises(RuntimeError, match="result assembly failed"):
             job.result()
     else:
         with pytest.raises(RuntimeError, match="result assembly failed"):
-            backend.run(fq.Program(1), simulation_config={"error_handling": mode})
+            backend.run(fq.Program(1), execution_config={"error_handling": mode})
 
 
 @pytest.mark.parametrize(
@@ -177,13 +177,13 @@ def test_result_rejects_reserved_backend_artifact_names(name):
 @pytest.mark.parametrize(
     ("argument", "config", "match"),
     [
-        ("simulation_config", {"threads": 4}, "does not support simulation_config"),
+        ("execution_config", {"threads": 4}, "does not support execution_config"),
         (
-            "simulation_config",
+            "execution_config",
             {"maximum_walkers": 4},
-            "does not support simulation_config",
+            "does not support execution_config",
         ),
-        ("simulation_config", {"max_workers": 0}, "max_workers must be"),
+        ("execution_config", {"max_workers": 0}, "max_workers must be"),
         ("result_config", {"statevector": True}, "does not support result_config"),
         ("result_config", {"unknown": True, 3: True}, "does not support result_config"),
         ("result_config", {"final_state": "yes"}, "final_state must be bool"),
@@ -263,3 +263,75 @@ def test_method_is_read_only():
 def test_method_does_not_require_a_run():
     # The whole point: it is a precondition, answerable before any evolution.
     assert fq.simulator.Simulator(method="unitary").method == "unitary"
+
+
+_THETA = fq.Parameter("theta")
+_OBSERVABLE = fq.Observable([("Z", 1.0)])
+
+
+def _bound_program():
+    program = fq.Program(1)
+    program.add(ops.RX(0.1), 0)
+    return program
+
+
+def _template_program():
+    program = fq.Program(1)
+    program.add(ops.RX(_THETA), 0)
+    return program
+
+
+_CONFIG_ENTRY_POINTS = {
+    "run": lambda **config: Simulator("SV").run(_bound_program(), **config),
+    "run_sweep": lambda **config: Simulator("SV").run_sweep(
+        _template_program(), {_THETA: [0.1]}, **config
+    ),
+    "estimator_run": lambda **config: fq.Estimator(Simulator("SV")).run(
+        _bound_program(), _OBSERVABLE, **config
+    ),
+    "estimator_run_sweep": lambda **config: fq.Estimator(Simulator("SV")).run_sweep(
+        _template_program(), _OBSERVABLE, {_THETA: [0.1]}, **config
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "entry_point", _CONFIG_ENTRY_POINTS.values(), ids=_CONFIG_ENTRY_POINTS
+)
+def test_deprecated_simulation_config_forwards_with_a_warning(entry_point):
+    with (
+        pytest.warns(DeprecationWarning, match="use execution_config"),
+        pytest.raises(
+            BackendValidationError, match="does not support execution_config"
+        ),
+    ):
+        entry_point(simulation_config={"unknown": 1})
+
+
+@pytest.mark.parametrize(
+    "entry_point", _CONFIG_ENTRY_POINTS.values(), ids=_CONFIG_ENTRY_POINTS
+)
+def test_execution_config_and_its_deprecated_alias_are_exclusive(entry_point):
+    with pytest.raises(TypeError, match="not both"):
+        entry_point(execution_config={}, simulation_config={})
+
+
+@pytest.mark.filterwarnings("error:simulation_config:DeprecationWarning")
+@pytest.mark.parametrize(
+    "entry_point", _CONFIG_ENTRY_POINTS.values(), ids=_CONFIG_ENTRY_POINTS
+)
+def test_execution_config_does_not_warn(entry_point):
+    assert entry_point(execution_config={"seed": 3}).status == "DONE"
+
+
+def test_metadata_keeps_the_deprecated_key_as_an_independent_copy():
+    metadata = (
+        Simulator("SV")
+        .run(_bound_program(), execution_config={"seed": 3})
+        .result()
+        .metadata
+    )
+
+    assert metadata["execution_config"]["seed"] == 3
+    assert metadata["simulation_config"] == metadata["execution_config"]
+    assert metadata["simulation_config"] is not metadata["execution_config"]

@@ -170,7 +170,7 @@ def test_lost_atom_on_a_paired_cz_is_dropped_silently_not_raised():
     assert len(_two_qubit_matrix_steps(plan)) == 1  # kept at lowering
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(p, shots=10, simulation_config={"seed": 0})
+        .run(p, shots=10, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -314,7 +314,7 @@ def test_gate_before_put_executes_while_empty(runtime):
 
     backend = AtomArraySimulator(runtime=runtime)
     counts = (
-        backend.run(program, shots=8, simulation_config={"seed": 0})
+        backend.run(program, shots=8, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -324,7 +324,7 @@ def test_gate_before_put_executes_while_empty(runtime):
     # The previous run left the atom loaded; the next run starts empty again.
     empty = Program(1, 1)
     empty.measure(0, 0)
-    counts = backend.run(empty, shots=8, simulation_config={"seed": 0})
+    counts = backend.run(empty, shots=8, execution_config={"seed": 0})
     assert counts.result().get_counts() == {"2": 8}
 
 
@@ -365,7 +365,7 @@ def test_program_without_put_reports_every_atom_missing():
     p.measure_all()
     counts = (
         AtomArraySimulator()
-        .run(p, shots=4, simulation_config={"seed": 0})
+        .run(p, shots=4, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -382,7 +382,7 @@ def test_empty_site_erasure_is_not_encoded_in_final_state():
             program,
             shots=1,
             result_config={"counts": True, "final_state": True},
-            simulation_config={"seed": 0},
+            execution_config={"seed": 0},
         )
         .result()
     )
@@ -446,7 +446,7 @@ def test_measurement_of_empty_site_reads_erasure():
     p.measure(1, 0)
     counts = (
         AtomArraySimulator()
-        .run(p, shots=4, result_config={"counts": True}, simulation_config={"seed": 0})
+        .run(p, shots=4, result_config={"counts": True}, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -465,7 +465,7 @@ def test_empty_site_erasure_bypasses_readout_noise():
     p.measure(1, 0)
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(p, shots=4, result_config={"counts": True}, simulation_config={"seed": 0})
+        .run(p, shots=4, result_config={"counts": True}, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -483,7 +483,7 @@ def test_put_restores_a_lost_site():
     p.measure(0, 0)
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(p, shots=8, simulation_config={"seed": 0})
+        .run(p, shots=8, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -503,7 +503,7 @@ def test_put_on_occupied_site_is_a_noop():
     def counts(p):
         return (
             AtomArraySimulator()
-            .run(p, shots=8, simulation_config={"seed": 0})
+            .run(p, shots=8, execution_config={"seed": 0})
             .result()
             .get_counts()
         )
@@ -524,7 +524,7 @@ def test_process_workers_preserve_initial_atom_occupancy():
             backend.run(
                 program,
                 shots=8,
-                simulation_config={
+                execution_config={
                     "seed": 7,
                     "shot_parallelism": shot_parallelism,
                     "kernel_parallelism": "serial",
@@ -567,7 +567,7 @@ def test_cz_local_relaxation_with_absent_partner(
     program.measure(1 - survivor, 1)
     counts = (
         AtomArraySimulator(runtime=runtime, method=method, noise=noise)
-        .run(program, shots=8, simulation_config={"seed": 23})
+        .run(program, shots=8, execution_config={"seed": 23})
         .result()
         .get_counts()
     )
@@ -604,7 +604,7 @@ def test_atom_array_accepts_local_channels_on_cz(channel):
     program.measure(1, 0)
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(program, shots=64, simulation_config={"seed": 23})
+        .run(program, shots=64, execution_config={"seed": 23})
         .result()
         .get_counts()
     )
@@ -624,7 +624,7 @@ def test_atom_loss_ejects_the_atom(runtime):
     p.measure(0, 0)
     counts = (
         AtomArraySimulator(runtime=runtime, noise=noise)
-        .run(p, shots=10, simulation_config={"seed": 0})
+        .run(p, shots=10, execution_config={"seed": 0})
         .result()
         .get_counts()
     )

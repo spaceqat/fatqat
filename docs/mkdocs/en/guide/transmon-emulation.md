@@ -324,4 +324,4 @@ nominal exchange area; it does not recalibrate phases or fidelity.
 Use the calibrated path to study the supplied gate recipe. Use direct controls
 when the waveform itself is the experiment; the two forms can also coexist in
 one Program. The [transmon emulator API](../api/pulse-emulator.md) lists the
-supported units, gates, noise forms, and execution methods.
+supported units, gates, noise forms, and simulation methods.

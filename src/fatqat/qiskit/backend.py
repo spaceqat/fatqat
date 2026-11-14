@@ -230,7 +230,7 @@ class FatqatBackend(BackendV2):
                     backend.run(
                         program,
                         shots=shots,
-                        simulation_config={"seed": circuit_seed},
+                        execution_config={"seed": circuit_seed},
                         result_config=result_config,
                     ).result()
                 )

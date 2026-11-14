@@ -111,7 +111,7 @@ def computational_subspace_unitary(backend, program, schedule_mode="ASAP"):
     )
     unitary_backend = fq.emulator.TransmonEmulator(backend.model, method="unitary")
     propagator = (
-        unitary_backend.run(program, simulation_config={"schedule_mode": schedule_mode})
+        unitary_backend.run(program, execution_config={"schedule_mode": schedule_mode})
         .result()
         .get_unitary()
         .full()

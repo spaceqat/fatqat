@@ -26,30 +26,30 @@ def test_fusion_is_off_by_default():
     result = Simulator(method="DM", runtime="numba").run(
         _noisy_program(), shots=0, result_config=_STATE_ONLY
     )
-    assert result.result().metadata["simulation_config"]["fusion"] is False
+    assert result.result().metadata["execution_config"]["fusion"] is False
 
 
 def test_numpy_runtime_rejects_enabling_fusion():
     with pytest.raises(BackendValidationError, match="not supported.*matrix engine"):
         Simulator(method="DM", runtime="numpy").run(
-            _noisy_program(), simulation_config={"fusion": True}
+            _noisy_program(), execution_config={"fusion": True}
         )
 
 
 def test_numpy_runtime_accepts_fusion_off():
     result = (
         Simulator(method="DM", runtime="numpy")
-        .run(_noisy_program(), simulation_config={"fusion": False})
+        .run(_noisy_program(), execution_config={"fusion": False})
         .result()
     )
-    assert result.metadata["simulation_config"]["fusion"] is False
+    assert result.metadata["execution_config"]["fusion"] is False
 
 
 @pytest.mark.parametrize("method", ["SV", "DM"])
 def test_numba_state_evolution_rejects_enabling_fusion(method):
     with pytest.raises(BackendValidationError, match="fusion=True is not supported"):
         Simulator(method=method, runtime="numba").run(
-            _noisy_program(), simulation_config={"fusion": True}
+            _noisy_program(), execution_config={"fusion": True}
         )
 
 
@@ -57,5 +57,5 @@ def test_numba_state_evolution_rejects_enabling_fusion(method):
 def test_a_non_boolean_is_rejected(bad):
     with pytest.raises(BackendValidationError, match="fusion must be a bool"):
         Simulator(method="DM", runtime="numba").run(
-            _noisy_program(), simulation_config={"fusion": bad}
+            _noisy_program(), execution_config={"fusion": bad}
         )

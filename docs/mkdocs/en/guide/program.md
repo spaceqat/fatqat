@@ -97,7 +97,7 @@ writes qubit 1 to classical bit 1, so the two classical bits agree:
 ```pycon
 >>> counts = (
 ...     fq.simulator.Simulator()
-...     .run(dynamic, shots=100, simulation_config={"seed": 7})
+...     .run(dynamic, shots=100, execution_config={"seed": 7})
 ...     .result()
 ...     .get_counts()
 ... )
@@ -172,7 +172,7 @@ classical slot of the same dimension:
 ```pycon
 >>> hybrid_result = (
 ...     fq.simulator.Simulator("SV")
-...     .run(hybrid, shots=20, simulation_config={"seed": 7})
+...     .run(hybrid, shots=20, execution_config={"seed": 7})
 ...     .result()
 ... )
 >>> hybrid_result.get_counts_as_tuples()

@@ -131,14 +131,14 @@ def test_sampled_sweep_matches_same_seed_repeated_runs(monkeypatch, noisy, chunk
         observable,
         {angle: values},
         shots=256,
-        simulation_config=config,
+        execution_config=config,
     ).result()
     explicit = [
         estimator.run(
             program.assign_parameters({angle: value}),
             observable,
             shots=256,
-            simulation_config=config,
+            execution_config=config,
         ).result()
         for value in values
     ]
@@ -238,7 +238,7 @@ def test_sampled_asymmetric_observables_keep_public_target_association():
 
     values = (
         _estimator("SV")
-        .run(program, observables, shots=64, simulation_config={"seed": 7})
+        .run(program, observables, shots=64, execution_config={"seed": 7})
         .result()
         .get_expectation()
     )
@@ -413,7 +413,7 @@ def test_noisy_statevector_sampling_uses_native_trajectories():
     observable = Observable([("ZZ", 1.0)])
     sampled = (
         _estimator("SV", noise=_noise_model())
-        .run(_bell(), observable, shots=4_000, simulation_config={"seed": 17})
+        .run(_bell(), observable, shots=4_000, execution_config={"seed": 17})
         .result()
     )
     exact = _estimator("DM", noise=_noise_model()).run(_bell(), observable).result()
@@ -443,7 +443,7 @@ def test_statevector_reset_sampling_uses_native_trajectories():
             program,
             Observable([("Z", 1.0)]),
             shots=64,
-            simulation_config={"seed": 9},
+            execution_config={"seed": 9},
         )
         .result()
     )
@@ -496,12 +496,12 @@ def test_invalid_shots_rejected(shots):
         _estimator().run(_bell(), Observable([("ZZ", 1.0)]), shots=shots)
 
 
-def test_simulation_config_must_be_a_dict_or_none():
+def test_execution_config_must_be_a_dict_or_none():
     with pytest.raises(TypeError, match="dict or None"):
         _estimator().run(
             _bell(),
             Observable([("ZZ", 1.0)]),
-            simulation_config=[("seed", 1)],
+            execution_config=[("seed", 1)],
         )
 
 
@@ -548,7 +548,7 @@ def test_sampled_value_converges_to_the_exact_one(method):
 
     exact = estimator.run(program, observable).result().get_expectation()
     sampled = estimator.run(
-        program, observable, shots=200_000, simulation_config={"seed": 11}
+        program, observable, shots=200_000, execution_config={"seed": 11}
     ).result()
 
     assert sampled.get_expectation() == pytest.approx(
@@ -567,7 +567,7 @@ def test_projector_term_sampling_converges():
 
     exact = estimator.run(program, observable).result().get_expectation()
     sampled = estimator.run(
-        program, observable, shots=200_000, simulation_config={"seed": 5}
+        program, observable, shots=200_000, execution_config={"seed": 5}
     ).result()
 
     assert sampled.get_expectation() == pytest.approx(
@@ -594,7 +594,7 @@ def test_deterministic_term_has_no_spread():
     result = (
         _estimator()
         .run(
-            _bell(), Observable([("ZZ", 1.0)]), shots=100, simulation_config={"seed": 3}
+            _bell(), Observable([("ZZ", 1.0)]), shots=100, execution_config={"seed": 3}
         )
         .result()
     )
@@ -613,7 +613,7 @@ def test_sampling_is_reproducible_under_a_seed():
     def sample(seed):
         return (
             estimator.run(
-                program, observable, shots=500, simulation_config={"seed": seed}
+                program, observable, shots=500, execution_config={"seed": seed}
             )
             .result()
             .get_expectation()
@@ -628,7 +628,7 @@ def test_sampled_sequence_returns_arrays_for_both_fields():
 
     result = (
         _estimator()
-        .run(_bell(), observables, shots=1_000, simulation_config={"seed": 1})
+        .run(_bell(), observables, shots=1_000, execution_config={"seed": 1})
         .result()
     )
 
@@ -641,7 +641,7 @@ def test_one_shot_sequence_reports_uncertainty_only_for_sampled_terms():
 
     result = (
         _estimator()
-        .run(_bell(), observables, shots=1, simulation_config={"seed": 1})
+        .run(_bell(), observables, shots=1, execution_config={"seed": 1})
         .result()
     )
 
@@ -656,7 +656,7 @@ def test_sampling_works_with_a_noisy_density_matrix():
 
     exact = estimator.run(program, observable).result().get_expectation()
     sampled = estimator.run(
-        program, observable, shots=200_000, simulation_config={"seed": 4}
+        program, observable, shots=200_000, execution_config={"seed": 4}
     ).result()
 
     assert sampled.get_expectation() == pytest.approx(
@@ -735,7 +735,7 @@ def test_unrelated_validation_errors_are_not_rewrapped():
     assert "no single final state" not in str(caught.value)
 
 
-def test_bad_simulation_config_error_is_not_rewrapped():
+def test_bad_execution_config_error_is_not_rewrapped():
     program = fq.Program(1)
     program.add(ops.H, 0)
 
@@ -743,6 +743,6 @@ def test_bad_simulation_config_error_is_not_rewrapped():
         _estimator().run(
             program,
             Observable([("Z", 1.0)]),
-            simulation_config={"no_such_option": True},
+            execution_config={"no_such_option": True},
         )
     assert "no single final state" not in str(caught.value)

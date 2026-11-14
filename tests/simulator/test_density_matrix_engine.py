@@ -99,7 +99,7 @@ def test_measurement_counts_agree_with_collapsed_bell_state(runtime):
         result = simulator.run(
             program,
             shots=1,
-            simulation_config={"seed": seed},
+            execution_config={"seed": seed},
             result_config={"counts": True, "final_state": True},
         ).result()
         counts = result.get_counts()

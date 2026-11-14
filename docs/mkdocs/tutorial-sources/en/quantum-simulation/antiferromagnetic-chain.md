@@ -341,12 +341,12 @@ double_results = {}
 staggered_results = {}
 connected_results = {}
 
-for label, simulation_config in run_configs.items():
+for label, execution_config in run_configs.items():
     values = np.asarray(
         estimator.run(
             program,
             observables,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
         )
         .result()
         .get_expectation()

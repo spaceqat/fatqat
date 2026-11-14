@@ -53,7 +53,7 @@ from fatqat.simulator import EvolutionState, Simulator
 )
 def test_public_execution_configuration_rejects_invalid_values(config, match):
     with pytest.raises(BackendValidationError, match=match):
-        Simulator("SV").run(fq.Program(1), simulation_config=config)
+        Simulator("SV").run(fq.Program(1), execution_config=config)
 
 
 @pytest.mark.parametrize(
@@ -110,13 +110,13 @@ def test_engine_support_validates_execution_controls(
 
     with pytest.raises(BackendValidationError, match=match):
         if request_kind == "sweep":
-            backend.run_sweep(program, {theta: [0.1, 0.2]}, simulation_config=config)
+            backend.run_sweep(program, {theta: [0.1, 0.2]}, execution_config=config)
         elif request_kind == "expectation":
             fq.Estimator(backend).run(
-                program, fq.Observable([("Z", 1.0)]), simulation_config=config
+                program, fq.Observable([("Z", 1.0)]), execution_config=config
             )
         else:
-            backend.run(program, simulation_config=config)
+            backend.run(program, execution_config=config)
 
 
 @pytest.mark.parametrize("mode", [None, "raise", "capture"])
@@ -139,16 +139,16 @@ def test_execution_error_handling(monkeypatch, mode, request_kind):
     def run():
         if request_kind == "sweep":
             return backend.run_sweep(
-                program, {theta: [0.1, 0.2]}, simulation_config=config
+                program, {theta: [0.1, 0.2]}, execution_config=config
             )
         if request_kind in {"expectation", "sampled_expectation"}:
             return fq.Estimator(backend).run(
                 program,
                 fq.Observable([("Z", 1.0)]),
                 shots=8 if request_kind == "sampled_expectation" else 0,
-                simulation_config=config,
+                execution_config=config,
             )
-        return backend.run(program, simulation_config=config)
+        return backend.run(program, execution_config=config)
 
     if mode == "capture":
         job = run()
@@ -170,14 +170,14 @@ def test_capture_returns_engine_planning_errors_in_job(request_kind):
 
     def run():
         if request_kind == "sweep":
-            return backend.run_sweep(program, {theta: [0.1]}, simulation_config=config)
+            return backend.run_sweep(program, {theta: [0.1]}, execution_config=config)
         if request_kind in {"expectation", "constant"}:
             return fq.Estimator(backend).run(
                 program,
                 fq.Observable([("I" if request_kind == "constant" else "Z", 1.0)]),
-                simulation_config=config,
+                execution_config=config,
             )
-        return backend.run(program, simulation_config=config)
+        return backend.run(program, execution_config=config)
 
     job = run()
     with pytest.raises(BackendValidationError, match="requires independent per-shot"):
@@ -356,7 +356,7 @@ def test_run_rejects_inapplicable_shot_parallelism(
         Simulator("SV", runtime=runtime).run(
             request.getfixturevalue(program_fixture),
             shots=shots,
-            simulation_config=config,
+            execution_config=config,
             result_config=result_config,
         ).result()
 
@@ -376,13 +376,13 @@ def test_run_rejects_threading_without_worker_capacity(
     )
     with pytest.raises(BackendValidationError, match="thread capacity of at least two"):
         backend.run(
-            dynamic_program, shots=64, simulation_config={axis: "threads"}
+            dynamic_program, shots=64, execution_config={axis: "threads"}
         ).result()
 
 
-def test_run_rejects_non_dict_simulation_config():
+def test_run_rejects_non_dict_execution_config():
     with pytest.raises(TypeError, match="dict or None"):
-        Simulator("SV").run(fq.Program(1), simulation_config=object())
+        Simulator("SV").run(fq.Program(1), execution_config=object())
 
 
 def test_runtime_is_keyword_only():
@@ -403,7 +403,7 @@ def test_backend_accepts_custom_implementation_map():
     program.measure(0, 0)
     program.measure(1, 1)
     counts = (
-        backend.run(program, shots=200, simulation_config={"seed": 0})
+        backend.run(program, shots=200, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -420,7 +420,7 @@ def test_backend_none_implementation_map_uses_defaults():
     program.measure(0, 0)
 
     assert backend.run(
-        program, shots=10, simulation_config={"seed": 0}
+        program, shots=10, execution_config={"seed": 0}
     ).result().get_counts() == {"1": 10}
 
 
@@ -435,5 +435,5 @@ def test_backend_copies_implementation_map_defensively():
     program.add(ops.X, 0)
     program.measure(0, 0)
     assert backend.run(
-        program, shots=10, simulation_config={"seed": 0}
+        program, shots=10, execution_config={"seed": 0}
     ).result().get_counts() == {"1": 10}

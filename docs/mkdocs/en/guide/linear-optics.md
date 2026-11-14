@@ -43,7 +43,7 @@ mode, and unnamed modes start empty. Send one photon into mode 0:
 >>> one_photon = BasisState({modes[0]: 1})
 >>> simulator.run(
 ...     splitter, shots=1000, initial_state=one_photon,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 {'01': 502, '10': 498}
 ```
@@ -62,7 +62,7 @@ both in mode 1, and half would put one in each mode, `"11"`:
 >>> two_photons = BasisState({modes[0]: 1, modes[1]: 1})
 >>> simulator.run(
 ...     splitter, shots=1000, initial_state=two_photons,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 {'02': 502, '20': 498}
 ```

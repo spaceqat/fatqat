@@ -19,7 +19,7 @@ def test_counts_default_with_measurement():
     p = Program(1, 1)
     p.add(ops.X, 0)
     p.measure(0, 0)
-    result = Simulator("DM").run(p, shots=10, simulation_config={"seed": 0}).result()
+    result = Simulator("DM").run(p, shots=10, execution_config={"seed": 0}).result()
     assert result.get_counts() == {"1": 10}
 
 
@@ -55,7 +55,7 @@ def test_density_matrix_not_attached_by_default_with_measurement():
     p = Program(1, 1)
     p.add(ops.H, 0)
     p.measure(0, 0)
-    result = Simulator("DM").run(p, shots=10, simulation_config={"seed": 0}).result()
+    result = Simulator("DM").run(p, shots=10, execution_config={"seed": 0}).result()
     with pytest.raises(ResultFieldUnavailableError):
         result.get_density_matrix()
 
@@ -100,7 +100,7 @@ def test_reset_program_counts_are_deterministic_for_any_shots():
     p.add(ops.Reset, 0)
     p.add(ops.X, 0)
     p.measure(0, 0)
-    result = Simulator("DM").run(p, shots=50, simulation_config={"seed": 3}).result()
+    result = Simulator("DM").run(p, shots=50, execution_config={"seed": 3}).result()
     assert result.get_counts() == {"1": 50}
 
 
@@ -110,7 +110,7 @@ def test_counts_distribution_matches_born_rule():
     p.measure(0, 0)
     counts = (
         Simulator("DM")
-        .run(p, shots=2000, simulation_config={"seed": 11})
+        .run(p, shots=2000, execution_config={"seed": 11})
         .result()
         .get_counts()
     )
@@ -127,7 +127,7 @@ def test_density_matrix_with_measurement_shots_one():
         .run(
             p,
             shots=1,
-            simulation_config={"seed": 0},
+            execution_config={"seed": 0},
             result_config={"counts": True, "final_state": True},
         )
         .result()
@@ -165,7 +165,7 @@ def test_feedforward_condition_applies():
     p.measure(1, 1)
     counts = (
         Simulator("DM")
-        .run(p, shots=20, simulation_config={"seed": 0})
+        .run(p, shots=20, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -180,10 +180,10 @@ def test_dynamic_counts_deterministic_for_fixed_seed():
     p.measure(1, 1)
     backend = Simulator("DM")
     first = (
-        backend.run(p, shots=64, simulation_config={"seed": 42}).result().get_counts()
+        backend.run(p, shots=64, execution_config={"seed": 42}).result().get_counts()
     )
     second = (
-        backend.run(p, shots=64, simulation_config={"seed": 42}).result().get_counts()
+        backend.run(p, shots=64, execution_config={"seed": 42}).result().get_counts()
     )
     assert first == second
     # feedforward correlates the two clbits: only 00 and 11 can appear
@@ -202,7 +202,7 @@ def test_dynamic_counts_process_batches_match_serial(runtime):
         .run(
             p,
             shots=40,
-            simulation_config={
+            execution_config={
                 "seed": 9,
                 "shot_parallelism": "serial",
                 "kernel_parallelism": "serial",
@@ -216,7 +216,7 @@ def test_dynamic_counts_process_batches_match_serial(runtime):
         .run(
             p,
             shots=40,
-            simulation_config={
+            execution_config={
                 "seed": 9,
                 "shot_parallelism": "processes",
                 "kernel_parallelism": "serial",
@@ -259,7 +259,7 @@ def test_result_metadata_records_backend_shots_and_config():
     config = {"counts": True, "final_state": False, "final_classical_state": False}
     result = (
         Simulator("DM")
-        .run(p, shots=7, simulation_config={"seed": 0}, result_config=config)
+        .run(p, shots=7, execution_config={"seed": 0}, result_config=config)
         .result()
     )
     assert result.metadata["shots"] == 7
@@ -274,11 +274,11 @@ def test_run_rejects_unknown_result_config_keys():
         Simulator("DM").run(p, result_config={"counts": False, "statevector": True})
 
 
-def test_run_rejects_unknown_simulation_config_keys():
+def test_run_rejects_unknown_execution_config_keys():
     with pytest.raises(
-        BackendValidationError, match="does not support simulation_config"
+        BackendValidationError, match="does not support execution_config"
     ):
-        Simulator("DM").run(Program(1), simulation_config={"gpu": True})
+        Simulator("DM").run(Program(1), execution_config={"gpu": True})
 
 
 def test_run_rejects_non_dict_result_config():

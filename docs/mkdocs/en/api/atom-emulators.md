@@ -96,14 +96,14 @@ no separate capacity setting.
 ## Run configuration and results
 
 
-The `run()` method has the signature `(program, *, shots=1024, resource_layout=None, simulation_config=None, result_config=None)`. The
+The `run()` method has the signature `(program, *, shots=1024, resource_layout=None, execution_config=None, result_config=None)`. The
 optional layout must still cover every arrangement site exactly once; the
 default uses declaration order. Validation errors are raised
 directly from `run()` before a job is returned. A failure after execution
 starts is represented by a failed job, and `job.result()` raises
 [`BackendExecutionError`][fatqat.errors.BackendExecutionError].
 
-`simulation_config` accepts the shared pulse controls plus an Atom2-specific
+`execution_config` accepts the shared pulse controls plus an Atom2-specific
 Hamiltonian cutoff:
 
 **Simulation configuration**
@@ -158,7 +158,7 @@ stochastic. In those cases, the default request returns counts when the
 program contains measurement and otherwise returns metadata only. Request a
 single seeded final state explicitly with
 `result_config={"final_state": True}`, `shots=1`, and
-`simulation_config={"seed": ...}`. Select `method="density_matrix"` for
+`execution_config={"seed": ...}`. Select `method="density_matrix"` for
 an exact supported Lindblad ensemble.
 
 For unitary execution, construct the backend with `method="unitary"`, call
@@ -199,12 +199,12 @@ At runtime, read this unit from each selector's `coefficient_unit` property.
 ### Interaction cutoff
 
 
-Set `interaction_cutoff` per run through `simulation_config`. The default
+Set `interaction_cutoff` per run through `execution_config`. The default
 `None` keeps every pair and preserves the complete `C6/R^6` Hamiltonian. A
 finite nonnegative cutoff keeps pairs whose Euclidean distance is at or below
 that value in `arrangement.distance_unit` (currently micrometres); `0.0`
 disables pair interactions. For a rectangular arrangement with scalar spacing,
-`simulation_config={"interaction_cutoff": arrangement.spacing}` keeps only
+`execution_config={"interaction_cutoff": arrangement.spacing}` keeps only
 horizontal and vertical nearest pairs. This is a numerical Hamiltonian
 truncation, not a physical blockade radius. One emulator can therefore be
 reused to compare several truncations without rebuilding its model or

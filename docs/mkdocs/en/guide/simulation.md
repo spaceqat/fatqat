@@ -67,7 +67,7 @@ one outcome:
 >>> measured_result = backend.run(
 ...     measured,
 ...     shots=200,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result()
 >>> counts = measured_result.get_counts()
 >>> counts
@@ -103,7 +103,7 @@ The dashed line below marks the exact probability for both outcomes:
     measured = rotation.copy()
     measured.measure(0, 0)
     result = backend.run(
-        measured, shots=200, simulation_config={"seed": 7}
+        measured, shots=200, execution_config={"seed": 7}
     ).result()
 
     figure, axis = plt.subplots(figsize=(6.2, 3.4))

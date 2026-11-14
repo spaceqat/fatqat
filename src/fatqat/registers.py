@@ -134,7 +134,7 @@ class ModeRegister(QuantumRegister):
     Each slot is one mode, and its level is the number of photons in it. A
     mode can hold any number of photons, so ``dim`` is ``None``; the
     simulator limits it per run (`fatqat.simulator.LOSimulator` takes
-    ``simulation_config["cutoff"]``). Run mode Programs on
+    ``execution_config["cutoff"]``). Run mode Programs on
     `fatqat.simulator.LOSimulator`; the general
     `fatqat.simulator.Simulator` rejects them. Measure a mode into a
     `CountRegister`.

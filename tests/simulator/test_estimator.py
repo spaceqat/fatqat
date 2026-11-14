@@ -68,7 +68,7 @@ def test_synthetic_basis_is_ideal_and_readout_confusion_is_applied():
         program,
         observable,
         shots=64,
-        simulation_config={"seed": 4},
+        execution_config={"seed": 4},
     ).result()
 
     assert sampled.get_expectation() == -1.0
@@ -88,7 +88,7 @@ def test_atom_array_expectations_use_evolved_occupancy(shots):
         program,
         Observable([("ZI", 1.0)]),
         shots=shots,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result()
 
     assert loaded.get_expectation() == -1.0
@@ -120,7 +120,7 @@ def test_sampled_observables_start_from_independent_base_states(runtime, method)
     observables = [Observable([(label, 1.0)]) for label in ("XX", "YY", "ZZ", "XX")]
 
     result = estimator.run(
-        program, observables, shots=32, simulation_config={"seed": 7}
+        program, observables, shots=32, execution_config={"seed": 7}
     ).result()
 
     assert result.get_expectation() == pytest.approx([1.0, -1.0, 1.0, 1.0])
@@ -192,7 +192,7 @@ def test_qudit_expectations_match_a_dense_reference(runtime, method):
 
     exact = estimator.run(program, observables).result()
     sampled = estimator.run(
-        program, observables, shots=20_000, simulation_config={"seed": 3}
+        program, observables, shots=20_000, execution_config={"seed": 3}
     ).result()
 
     assert exact.get_expectation() == pytest.approx(reference, abs=1e-12)
@@ -217,7 +217,7 @@ def test_sampled_qudit_factors_read_every_level_through_readout_confusion():
     ]
 
     sampled = estimator.run(
-        program, observables, shots=16, simulation_config={"seed": 2}
+        program, observables, shots=16, execution_config={"seed": 2}
     ).result()
 
     assert sampled.get_expectation() == pytest.approx([1.0, 0.0])

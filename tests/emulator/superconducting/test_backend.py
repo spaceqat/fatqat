@@ -173,10 +173,10 @@ def test_seeded_dynamic_replay_is_reproducible(make_backend):
     program.measure(0, 0)
     config = {"counts": True, "final_state": False}
     first = backend.run(
-        program, shots=40, simulation_config={"seed": 19}, result_config=config
+        program, shots=40, execution_config={"seed": 19}, result_config=config
     ).result()
     second = backend.run(
-        program, shots=40, simulation_config={"seed": 19}, result_config=config
+        program, shots=40, execution_config={"seed": 19}, result_config=config
     ).result()
     assert first.get_counts_as_tuples() == second.get_counts_as_tuples()
 
@@ -198,7 +198,7 @@ def test_seeded_noisy_trajectory_continues_across_measurement_regions(model):
     program.add(ops.RX(pi), 1, condition=(0, 1))
     kwargs = {
         "shots": 1,
-        "simulation_config": {"seed": 71},
+        "execution_config": {"seed": 71},
         "result_config": {"counts": True, "final_state": True},
     }
 

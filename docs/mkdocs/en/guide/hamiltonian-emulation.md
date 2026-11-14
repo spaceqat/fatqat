@@ -105,7 +105,7 @@ All controls inside one `PulseOperation` share its interval; `start_offset`
 can move an individual waveform within that interval. Between operations, the
 schedule preserves source order for blocks that use the same physical resource
 and may overlap independent blocks. Choose `"ASAP"` or
-`"ALAP"` through `simulation_config` when that placement matters.
+`"ALAP"` through `execution_config` when that placement matters.
 
 Drift and background continuous noise evolve throughout elapsed time. On an
 emulator that supports classical conditions, a false condition can skip a
@@ -119,6 +119,6 @@ not select an internal differential-equation solver.
 
 Continue with [Transmon emulation](transmon-emulation.md) or
 [Neutral-atom emulation](neutral-atom-emulation.md). For pulse object,
-schedule, execution-method, and model contracts, use the
+schedule, simulation-method, and model contracts, use the
 [pulse-control API](../api/pulse-control/index.md) and
 [emulator API](../api/emulators/index.md).
