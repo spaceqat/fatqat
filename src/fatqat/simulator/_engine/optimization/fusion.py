@@ -42,6 +42,13 @@ def schedule(
 
     Every other step is a barrier. A barrier closes the open block and forms a
     block of its own, whatever its targets.
+
+    The scan follows plan order and never reorders gates. Adjacent gates on
+    different subsystems merge into one wider matrix, their tensor product, up
+    to ``limits.max_dim``. On a register wider than that limit, a program that
+    groups its gates by subsystem merges more gates into each step than a
+    program that groups them by layer: ``RX(q0), RZ(q0), RX(q1), RZ(q1), ...``
+    rather than ``RX(q0), RX(q1), ..., RZ(q0), RZ(q1), ...``.
     """
     if prod(system_dims) < limits.min_size:
         return tuple(range(index, index + 1) for index in range(len(plan)))

@@ -535,6 +535,11 @@ class Simulator:
                   either runtime, and for ``unitary`` and ``superop`` on
                   Numba; NumPy rejects it for ``unitary`` and ``superop``.
                   The engine may skip merging, for example on a small system.
+                  Merging follows program order and does not reorder gates.
+                  One merged matrix spans only a few qubits. On a wider
+                  register, gates on the same qubits merge best when they are
+                  adjacent: write ``RX(q0), RZ(q0), RX(q1), RZ(q1), ...``
+                  rather than ``RX(q0), RX(q1), ..., RZ(q0), RZ(q1), ...``.
                   It is rejected when the run tracks atom occupancy, so
                   ``AtomArraySimulator`` always rejects it. A custom operation
                   that enables occupancy during a fused run raises
