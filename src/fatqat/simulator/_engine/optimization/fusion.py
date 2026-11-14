@@ -3,7 +3,7 @@
 `schedule` splits a plan into blocks of adjacent gate steps that one matrix
 can replace. It reads step types, conditions, targets, dimensions, and kernel
 keys, never matrices, so a lowered plan and each of its bound plans get the
-same blocks. `materialize` then builds one matrix step for each block.
+same blocks. `fuse_blocks` then builds one matrix step for each block.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ def schedule(
     return tuple(blocks)
 
 
-def materialize(
+def fuse_blocks(
     plan: Sequence[ResolvedStep],
     blocks: Sequence[range],
     system_dims: Sequence[int],

@@ -259,7 +259,7 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
         if not policy.fusion or limits is None:
             return plan
         dims = context.system_dims
-        return fusion.materialize(plan, fusion.schedule(plan, dims, limits), dims)
+        return fusion.fuse_blocks(plan, fusion.schedule(plan, dims, limits), dims)
 
     def continue_from_states(
         self,

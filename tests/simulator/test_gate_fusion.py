@@ -33,7 +33,7 @@ from fatqat.simulator._engine.numerics._gate_matrices import (
     _PERMUTATION,
 )
 from fatqat.simulator._engine.optimization import fusion
-from fatqat.simulator._engine.optimization.fusion import materialize, schedule
+from fatqat.simulator._engine.optimization.fusion import fuse_blocks, schedule
 from fatqat.simulator._execution_contract import (
     _GateFusionLimits,
     _KernelCapabilities,
@@ -182,7 +182,7 @@ def test_barrier_closes_block_and_keeps_identity(barrier):
     plan = (_gate((0,)), barrier, _gate((0,)))
 
     blocks = _schedule(plan, (2,), FORCED)
-    fused = materialize(plan, blocks, (2,))
+    fused = fuse_blocks(plan, blocks, (2,))
 
     assert len(blocks) == 3
     assert len(fused) == 3 and all(out is step for out, step in zip(fused, plan))
@@ -206,11 +206,11 @@ def _sweep_plan():
     return plan
 
 
-def test_materialize_rejects_unbound_parametric_plan():
+def test_fuse_blocks_rejects_unbound_parametric_plan():
     plan = _sweep_plan()
 
     with pytest.raises(RuntimeError, match="bound"):
-        materialize(plan, schedule(plan, (2, 2), FORCED), (2, 2))
+        fuse_blocks(plan, schedule(plan, (2, 2), FORCED), (2, 2))
 
 
 @pytest.mark.parametrize("limits", [FORCED, FORCED_AWARE], ids=["unaware", "aware"])
@@ -258,7 +258,7 @@ def _fused(*gates):
     for operation, targets in gates:
         program.add(operation, targets)
     plan, _facts = Simulator("SV")._lower_program(program)
-    fused = materialize(plan, schedule(plan, (2, 2), FORCED_AWARE), (2, 2))
+    fused = fuse_blocks(plan, schedule(plan, (2, 2), FORCED_AWARE), (2, 2))
     assert len(fused) == 1
     return fused[0]
 
@@ -479,7 +479,7 @@ def _refuse(*_args, **_kwargs):
 def test_disabled_fusion_never_runs_the_gate_pass(monkeypatch, method, runtime):
     _force_limits(monkeypatch, method, runtime)
     monkeypatch.setattr(fusion, "schedule", _refuse)
-    monkeypatch.setattr(fusion, "materialize", _refuse)
+    monkeypatch.setattr(fusion, "fuse_blocks", _refuse)
 
     state = _final_state(_brick(5, 3), method, runtime, fused=False)
 
