@@ -31,6 +31,7 @@ from .._execution_policy import (
     _ExecutionPolicy as ExecutionPolicy,
 )
 from ..binding import _bind_parameter_batch
+from ..optimization import fusion
 from ..parallel import _run_shots_in_processes
 from ..state import EvolutionState, QuantumDataT
 from ..workflows.python_workflow import (
@@ -232,7 +233,33 @@ class MatrixEngine(ABC, Generic[QuantumDataT]):
                     simulation_config=simulation_config,
                     initial_state=initial_state,
                 )
-            yield self._dispatch_by_shot_strategy(bound, context, policy, initial_state)
+            yield self._dispatch_by_shot_strategy(
+                self._apply_gate_fusion(bound, context, policy),
+                context,
+                policy,
+                initial_state,
+            )
+
+    def _apply_gate_fusion(
+        self,
+        plan: tuple[ResolvedStep, ...],
+        context: _RunContext,
+        policy: ExecutionPolicy,
+    ) -> tuple[ResolvedStep, ...]:
+        """Merge runs of adjacent gates in a bound plan into fewer matrix steps.
+
+        Runs only when ``policy.fusion`` is set and ``context.gate_fusion``
+        holds limits; otherwise returns ``plan`` itself. The simulator sets
+        those limits, so the engine declaration alone never enables fusion.
+        Each bound entry is fused once here, before shot dispatch, so worker
+        processes receive the fused plan and continued tails are never fused.
+        Limits compare with the physical dimensions, also for density matrices.
+        """
+        limits = context.gate_fusion
+        if not policy.fusion or limits is None:
+            return plan
+        dims = context.system_dims
+        return fusion.fuse_blocks(plan, fusion.schedule(plan, dims, limits), dims)
 
     def continue_from_states(
         self,

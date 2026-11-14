@@ -66,6 +66,7 @@ from .._backends.backend_utils import (
 from . import planning
 from ._engine.state import BasisState, EvolutionState, _LoweredBasisState
 from ._execution_contract import (
+    _GateFusionLimits,
     _RunContext,
     _PlanFacts,
     RawResult,
@@ -528,9 +529,21 @@ class Simulator:
                   ``result()`` re-raises the original exception. Input and
                   configuration validation always raise directly. Engine
                   planning errors follow this option.
-                - ``"fusion"`` (``bool``, default ``False``): Whether to
-                  combine compatible adjacent operations. ``True`` requires
-                  Numba with ``density_matrix``, ``unitary``, or ``superop``.
+                - ``"fusion"`` (``bool``, default ``False``): ``True`` allows
+                  the engine to merge compatible adjacent operations. It is
+                  accepted for ``statevector`` and ``density_matrix`` on
+                  either runtime, and for ``unitary`` and ``superop`` on
+                  Numba; NumPy rejects it for ``unitary`` and ``superop``.
+                  The engine may skip merging, for example on a small system.
+                  Merging follows program order and does not reorder gates.
+                  One merged matrix spans only a few qubits. On a wider
+                  register, gates on the same qubits merge best when they are
+                  adjacent: write ``RX(q0), RZ(q0), RX(q1), RZ(q1), ...``
+                  rather than ``RX(q0), RX(q1), ..., RZ(q0), RZ(q1), ...``.
+                  It is rejected when the run tracks atom occupancy, so
+                  ``AtomArraySimulator`` always rejects it. A custom operation
+                  that enables occupancy during a fused run raises
+                  ``BackendExecutionError``.
 
                 Unknown or incompatible entries are rejected.
             result_config: Optional output requests. Accepted keys are:
@@ -646,9 +659,8 @@ class Simulator:
                   limit; ``1`` conflicts with an explicit parallel request.
                 - ``"error_handling"``: Same values, default, and behavior as
                   ``run()``.
-                - ``"fusion"`` (``bool``, default ``False``): Whether to
-                  combine compatible operations. ``True`` requires Numba with
-                  ``density_matrix``, ``unitary``, or ``superop``.
+                - ``"fusion"``: Same values, default, and behavior as
+                  ``run()``.
 
                 Unknown or incompatible entries are rejected.
             result_config: Output requests reused for every row. Accepted keys:
@@ -747,6 +759,7 @@ class Simulator:
             n_clbits=execution.lowering.classical_allocation.n_clbits,
             shots=shots,
             seed=execution.simulation.seed,
+            gate_fusion=self._gate_fusion_limits(execution),
         )
         return config, context
 
@@ -1029,6 +1042,7 @@ class Simulator:
             n_clbits=execution.lowering.classical_allocation.n_clbits,
             shots=1,
             seed=execution.simulation.seed,
+            gate_fusion=self._gate_fusion_limits(execution),
         )
         for raw in self._engine.execute(
             execution.plan,
@@ -1063,6 +1077,7 @@ class Simulator:
             n_clbits=execution.lowering.classical_allocation.n_clbits,
             shots=1 if has_terms else shots,
             seed=execution.simulation.seed,
+            gate_fusion=self._gate_fusion_limits(execution),
         )
         values = self._engine.expectation_values(
             plan,
@@ -1125,6 +1140,7 @@ class Simulator:
                 ),
                 shots=shots,
                 seed=int(child_seed.generate_state(1, dtype=np.uint64)[0]),
+                gate_fusion=self._gate_fusion_limits(execution),
             )
             for child_seed, bound in zip(child_seeds, bound_occurrences, strict=True)
         ]
@@ -1366,6 +1382,14 @@ class Simulator:
                 )
         return request
 
+    def _gate_fusion_limits(
+        self, execution: _PreparedExecution
+    ) -> _GateFusionLimits | None:
+        """Return the gate fusion limits for this run, or ``None`` without fusion."""
+        if not execution.simulation.fusion:
+            return None
+        return self._engine.capabilities.kernels.gate_fusion
+
     def _validate_engine_support(self, execution: _PreparedExecution) -> None:
         """Check the lowered program, controls and initial state against the engine."""
         facts = execution.facts
@@ -1384,6 +1408,15 @@ class Simulator:
             raise BackendValidationError(
                 "fusion=True is not supported by the selected matrix engine; fusion "
                 "does not control compiled multi-shot execution"
+            )
+        # A fused gate skips its whole block when one site is empty.
+        if (
+            simulation_config.fusion
+            and execution.initial_state.classical.occupied is not None
+        ):
+            raise BackendValidationError(
+                "fusion=True is not supported when the run tracks atom occupancy. "
+                "Run with fusion=False."
             )
         if (
             simulation_config.shot_parallelism == "processes"

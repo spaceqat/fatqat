@@ -24,6 +24,7 @@ from ...._backends.steps import (
     ResetStep,
     ResolvedStep,
 )
+from ....errors import BackendExecutionError
 from ....result import _decode_engine_indices_to_clbit_rows, reduce_to_counts
 from ..._execution_contract import _RunContext
 from ...custom_operations import ExecutionContext
@@ -284,6 +285,12 @@ def _run_one_shot(
                 classical = state.classical
                 clbits = classical.clbits
                 occupied = classical.occupied
+                # A fused gate skips its whole block when one site is empty.
+                if occupied is not None and context.gate_fusion is not None:
+                    raise BackendExecutionError(
+                        "A custom operation enabled atom occupancy in a run "
+                        "with gate fusion. Run this program with fusion=False."
+                    )
         elif isinstance(step, ApplyMatrixStep) and (
             occupied is None or all(t in occupied for t in step.target_indices)
         ):

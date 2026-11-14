@@ -10,17 +10,25 @@ Two distinct passes are enabled by ``fusion=True``:
   and width limits then decide which neighbors to merge. CSR payloads are
   barriers. This pass preserves order and does not commute operations.
 
+State evolution (SV and DM) uses neither pass. Its gates are merged by the
+step-level pass in ``optimization.fusion``, which does not import Numba and
+serves both runtimes.
+
 Usage by execution route (when fusion is enabled):
 
     Runtime / representation     Workflow              Fusion passes
-    NumPy / all                  Python                Neither
-    Numba / statevector          Python or compiled SV Neither
-    Numba / density matrix       Python                Neither
+    NumPy / statevector          Python                Step-level gates
+    NumPy / density matrix       Python                Step-level gates
+    NumPy / unitary, superop     Python                None; fusion is rejected
+    Numba / statevector          Python                Step-level gates
+    Numba / statevector          Compiled SV           None
+    Numba / density matrix       Python                Step-level gates
     Numba / unitary              Compiled operator     Operator payloads only
     Numba / superoperator        Compiled operator     Both, in that order
 
-State-evolution fusion (SV and DM) is deferred to a future implementation.
-Process-based shots therefore perform no fusion in either parent or workers.
+The step-level pass runs once per bound plan in the parent, before shot
+dispatch, and only at or above the engine's minimum system size. Process-based
+shots therefore receive the fused plan, and workers do not fuse again.
 
 For compiled superoperator execution, gate/channel fusion precedes construction
 of numerical payloads, then operator fusion precedes packing. Compiled unitary
@@ -38,6 +46,7 @@ import numpy as np
 from numba import njit
 
 from ....._backends.steps import ApplyChannelStep, ApplyMatrixStep
+from .._gate_matrices import _embed_dense, _local_places
 from ._apply import _DENSE, _DIAGONAL, _PERMUTATION
 
 # --- gate/channel fusion ---
@@ -135,40 +144,6 @@ class _FusionBlock:
 # --- operator embedding and composition ---
 
 
-def _local_places(dims: Sequence[int]) -> list[int]:
-    """Mixed-radix place values with element 0 most significant."""
-    places = [1] * len(dims)
-    for i in range(len(dims) - 2, -1, -1):
-        places[i] = places[i + 1] * dims[i + 1]
-    return places
-
-
-def _embedding(
-    from_targets: tuple[int, ...], to_targets: tuple[int, ...], dims: Sequence[int]
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Index maps embedding a ``from_targets`` operator into ``to_targets``.
-
-    Returns ``(local, base, offsets)``: ``local[x]`` is the narrow row wide
-    index ``x`` selects, ``base[x]`` is ``x`` with the narrow digits cleared,
-    and ``offsets[r]`` is the wide offset of narrow index ``r``. Both index
-    spaces are most-significant-first in their own target order.
-    """
-    to_dims = [dims[t] for t in to_targets]
-    from_dims = [dims[t] for t in from_targets]
-    to_places = _local_places(to_dims)
-    from_places = _local_places(from_dims)
-    positions = [to_targets.index(t) for t in from_targets]
-
-    wide = np.arange(prod(to_dims), dtype=np.int64)
-    narrow = np.arange(prod(from_dims), dtype=np.int64)
-    local = np.zeros_like(wide)
-    offsets = np.zeros_like(narrow)
-    for i, position in enumerate(positions):
-        local += ((wide // to_places[position]) % to_dims[position]) * from_places[i]
-        offsets += ((narrow // from_places[i]) % from_dims[i]) * to_places[position]
-    return local, wide - offsets[local], offsets
-
-
 def _monomial_operand(
     targets: tuple[int, ...], union: tuple[int, ...], dims: Sequence[int]
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -230,22 +205,6 @@ def _compose_monomials(
         out_columns[x] = y - b_offsets[row_b] + b_offsets[b_columns[row_b]]
         out_values[x] = s_values[row_s] * b_values[row_b]
     return out_columns, out_values
-
-
-def _embed_dense(
-    matrix: np.ndarray,
-    from_targets: tuple[int, ...],
-    to_targets: tuple[int, ...],
-    dims: Sequence[int],
-) -> np.ndarray:
-    """Widen a dense matrix onto ``to_targets``, tensoring identity onto the rest."""
-    local, base, offsets = _embedding(from_targets, to_targets, dims)
-    size = len(local)
-    out = np.zeros((size, size), dtype=np.complex128)
-    rows = np.arange(size, dtype=np.int64)
-    for column, offset in enumerate(offsets):
-        out[rows, base + offset] = matrix[local, column]
-    return out
 
 
 def _widen_dense(

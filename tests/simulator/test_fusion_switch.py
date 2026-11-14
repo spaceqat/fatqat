@@ -1,4 +1,4 @@
-"""Fusion controls and unsupported state-evolution routes."""
+"""Fusion controls on the Numba runtime."""
 
 import pytest
 
@@ -29,13 +29,6 @@ def test_fusion_is_off_by_default():
     assert result.result().metadata["simulation_config"]["fusion"] is False
 
 
-def test_numpy_runtime_rejects_enabling_fusion():
-    with pytest.raises(BackendValidationError, match="not supported.*matrix engine"):
-        Simulator(method="DM", runtime="numpy").run(
-            _noisy_program(), simulation_config={"fusion": True}
-        )
-
-
 def test_numpy_runtime_accepts_fusion_off():
     result = (
         Simulator(method="DM", runtime="numpy")
@@ -46,11 +39,27 @@ def test_numpy_runtime_accepts_fusion_off():
 
 
 @pytest.mark.parametrize("method", ["SV", "DM"])
-def test_numba_state_evolution_rejects_enabling_fusion(method):
-    with pytest.raises(BackendValidationError, match="fusion=True is not supported"):
-        Simulator(method=method, runtime="numba").run(
-            _noisy_program(), simulation_config={"fusion": True}
+def test_numba_state_evolution_accepts_enabling_fusion(method):
+    result = (
+        Simulator(method=method, runtime="numba")
+        .run(
+            _noisy_program(),
+            shots=0,
+            result_config=_STATE_ONLY,
+            simulation_config={"fusion": True},
         )
+        .result()
+    )
+    assert result.metadata["simulation_config"]["fusion"] is True
+
+
+def test_numba_fixed_photon_engine_declares_no_fusion():
+    from fatqat.simulator._engine.engines.numba_engine import NumbaFixedPhotonEngine
+
+    kernels = NumbaFixedPhotonEngine._capabilities.kernels
+
+    assert kernels.gate_fusion is None
+    assert kernels.supports_fusion is False
 
 
 @pytest.mark.parametrize("bad", ["yes", 1, 0])

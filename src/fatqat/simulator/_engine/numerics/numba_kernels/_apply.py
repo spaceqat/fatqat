@@ -5,15 +5,10 @@ from __future__ import annotations
 import numpy as np
 from numba import njit, prange
 
-# Gate-matrix structure codes. A diagonal or (phased) permutation matrix has at
-# most one nonzero per row, so its application is a single multiply per amplitude
-# instead of the D-term dot product a dense row needs - a machine-independent
-# constant-factor win that covers most common gates (Z/S/T/RZ/CPhase/CZ are
-# diagonal; X/CX/CCX/SWAP/iSwap are permutations).
-_DENSE = 0
-_DIAGONAL = 1
-_PERMUTATION = 2
+from .._gate_matrices import _DENSE, _DIAGONAL, _PERMUTATION
+
 # CSR is selected during operand preparation, not by `_classify_matrix`.
+# `_SPARSE` extends the structure codes in `_gate_matrices`; values must stay distinct.
 _SPARSE = 3
 
 

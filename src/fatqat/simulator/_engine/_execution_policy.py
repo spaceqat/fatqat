@@ -308,8 +308,9 @@ def _process_child_policy(parent: _ExecutionPolicy) -> _ExecutionPolicy:
     or Numba kernels. Compiled Numba trajectories and operator workflows do not
     use this process route.
 
-    Fusion is unsupported on these state-evolution routes. Compiled operator
-    fusion is independent of this policy.
+    Step-level gate fusion runs in the parent before shot dispatch, so every
+    worker receives the already fused plan and does not fuse again. Compiled
+    operator fusion is independent of this policy.
     """
     assert parent.shot_strategy == "processes"
     return replace(

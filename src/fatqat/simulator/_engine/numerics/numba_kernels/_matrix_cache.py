@@ -11,84 +11,17 @@ import numpy as np
 from ....._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
-    BuiltinKernelKey,
     ResolvedStep,
 )
 from ._channel import _kraus_stack, _kraus_superop_kernel
 from ._apply import (
     _DENSE,
-    _DIAGONAL,
     _PERMUTATION,
     _classify_matrix,
     _reorder_permutation,
     _run_walk_order,
 )
-
-# Declared structure per canonical gate identity: the key-to-kernel table.
-# The numerical runtime owns these declarations; the key carries only identity.
-#
-# How kernel selection flows (one classifier, one kernel family):
-#   standard path   _apply_matrix_statevector calls _MatrixStructureCache.resolve.
-#                   A key declared _DENSE skips the scan; everything else takes ONE
-#                   `_classify_matrix` scan at plan preparation, cached per
-#                   step - never per application, never per shot.
-#   fallback path   _apply_unclassified_matrix handles bare Kraus matrices:
-#                   the same single
-#                   `_classify_matrix` scan, then the same resolved kernels.
-#   compiled path   _compile_dynamic_plan bakes each gate's resolved code into
-#                   the plan arrays, so the shots kernel never classifies.
-#
-# An entry may claim _DIAGONAL or _PERMUTATION only if that structure holds
-# for EVERY parameter value of the gate (RZ is diagonal for all theta); a
-# parametric gate whose structure varies claims _DENSE, which is always safe
-# (RX at theta=pi happens to be a permutation, but _DENSE stays correct).
-# The spec-vs-content test in test_kernel_dispatch.py enforces agreement
-# with `_classify_matrix` over the whole default map.
-_K = BuiltinKernelKey
-_KERNEL_SPECS: dict[BuiltinKernelKey, int] = {
-    # diagonal for every parameter value
-    _K.I: _DIAGONAL,
-    _K.Z: _DIAGONAL,
-    _K.S: _DIAGONAL,
-    _K.SDG: _DIAGONAL,
-    _K.T: _DIAGONAL,
-    _K.TDG: _DIAGONAL,
-    _K.CZ: _DIAGONAL,
-    _K.CS: _DIAGONAL,
-    _K.RZ: _DIAGONAL,
-    _K.PHASE: _DIAGONAL,
-    _K.U1: _DIAGONAL,
-    _K.CPHASE: _DIAGONAL,
-    _K.CLOCK: _DIAGONAL,
-    _K.CCLOCK: _DIAGONAL,
-    _K.SUBSPACE_RZ: _DIAGONAL,
-    _K.PHASE_SHIFTER: _DIAGONAL,
-    # exactly one nonzero per row, for every parameter value
-    _K.X: _PERMUTATION,
-    _K.Y: _PERMUTATION,
-    _K.CX: _PERMUTATION,
-    _K.CY: _PERMUTATION,
-    _K.SWAP: _PERMUTATION,
-    _K.ISWAP: _PERMUTATION,
-    _K.CCX: _PERMUTATION,
-    _K.CSWAP: _PERMUTATION,
-    _K.SHIFT: _PERMUTATION,
-    _K.SUM: _PERMUTATION,
-    _K.SWAP_LEVELS: _PERMUTATION,
-    # generically dense
-    _K.H: _DENSE,
-    _K.SX: _DENSE,
-    _K.RX: _DENSE,
-    _K.RY: _DENSE,
-    _K.U: _DENSE,
-    _K.U2: _DENSE,
-    _K.U3: _DENSE,
-    _K.FOURIER: _DENSE,
-    _K.FOURIERDG: _DENSE,
-    _K.SUBSPACE_RX: _DENSE,
-    _K.SUBSPACE_RY: _DENSE,
-    _K.BEAM_SPLITTER: _DENSE,
-}
+from .._gate_matrices import _KERNEL_SPECS
 
 
 def _prepared_permutation(
