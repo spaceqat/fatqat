@@ -116,10 +116,10 @@ dynamics are introduced.
 
 -   :material-sine-wave:{ .lg .middle } **`TransmonEmulator`**
 
-    ![The three-level TransmonEmulator result gives the target outcome 101 a probability of about 64.05 percent with the same coherence times.](assets/generated/home/grover-transmon.png){ loading=lazy width=714 height=515 }
+    ![The three-level TransmonEmulator result gives the target outcome 101 a probability of about 74.02 percent with the same coherence times.](assets/generated/home/grover-transmon.png){ loading=lazy width=714 height=515 }
 
     Calibrated pulses, three physical levels, and the same coherence times
-    return `101` with about **64.05%** probability; physical leakage is **0.0649%**.
+    return `101` with about **74.02%** probability; physical leakage is **0.0669%**.
     This run realizes the compiled X/SX/RZ/CZ gates with calibrated pulses.
 
 </div>

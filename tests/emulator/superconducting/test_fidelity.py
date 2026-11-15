@@ -191,14 +191,17 @@ def test_native_gate_process_fidelity_and_leakage(
     assert abs(leakage) < 5e-5
 
 
+# The CZ and iSwap pulses carry their own error (a local Z of about 0.1 rad
+# for CZ, a conditional |11> phase for iSwap). The old DRAG phase error partly
+# cancelled it in some sequences, so these thresholds follow the pulses alone.
 @pytest.mark.parametrize("schedule_mode", ("ASAP", "ALAP"))
 @pytest.mark.parametrize(
     ("operations", "minimum_fidelity"),
     (
         (_PARALLEL_ROTATIONS, 0.9999),
-        (_H0_CZ, 0.998),
-        (_HH_CZ, 0.989),
-        (_MIXED_CZ_ISWAP, 0.991),
+        (_H0_CZ, 0.994),
+        (_HH_CZ, 0.994),
+        (_MIXED_CZ_ISWAP, 0.978),
         (_MULTIPLE_FRAMES, 0.9998),
     ),
     ids=("parallel-rotations", "h-cz", "hh-cz", "mixed-cz-iswap", "frames"),
@@ -216,11 +219,43 @@ def test_composed_process_fidelity_in_both_schedule_modes(
     assert abs(leakage) < 5e-5
 
 
+@pytest.mark.parametrize("theta", (pi, pi / 2), ids=("pi", "half-pi"))
+def test_rx_preserves_phase_of_superposition_inputs(theta):
+    """The DRAG frame update must cancel the recipe's own Z phase.
+
+    A residual Z rotation leaves |0> and |1> untouched, so only superposition
+    inputs expose it. It grows with the rotation angle.
+    """
+    model = fq.emulator.TransmonModel.from_document(
+        fq.emulator.load_model_document("transmon.single")
+    )
+    program = fq.Program(1)
+    program.add(ops.RX(theta), 0)
+    propagator = (
+        fq.emulator.TransmonEmulator(model, method="unitary")
+        .run(program)
+        .result()
+        .get_unitary()
+        .full()[:2, :2]
+    )
+    ideal = np.array(
+        (
+            (np.cos(theta / 2), -1j * np.sin(theta / 2)),
+            (-1j * np.sin(theta / 2), np.cos(theta / 2)),
+        )
+    )
+    amplitude = 1 / np.sqrt(2)
+    for phase in (1, -1, 1j, -1j):
+        initial = np.array((amplitude, phase * amplitude))
+        fidelity = abs(np.vdot(ideal @ initial, propagator @ initial)) ** 2
+        assert fidelity > 1 - 1e-4, phase
+
+
 @pytest.mark.parametrize(
     ("operations", "minimum_fidelity"),
     (
         (_HH_CZ, 0.985),
-        (_MIXED_CZ_ISWAP, 0.995),
+        (_MIXED_CZ_ISWAP, 0.992),
     ),
     ids=("hh-cz", "mixed-cz-iswap"),
 )

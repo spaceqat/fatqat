@@ -167,10 +167,14 @@ def _drag_definition(operation: Operation, context: _DragContext) -> PulseDefini
     # DRAG is derived in Hamiltonian-coefficient units; expose full Omega only
     # after its nonlinear corrections and frame rotation are complete.
     envelope *= 2.0
+    # The exp(+i*phase) envelope ramp equals driving in a frame rotated by
+    # exp(+i*phase*n), so the lab-frame state carries an extra
+    # exp(+i*phase[-1]*n). Since PhaseShift(+angle) applies exp(+i*angle*n)
+    # (the RZ(+angle) convention), undoing it takes the negative angle.
     return PulseDefinition(
         context.duration,
         (PulseControl(context.drive, SampledWaveform(tlist, envelope)),),
-        (PhaseShift(context.frame, float(phase[-1])),),
+        (PhaseShift(context.frame, -float(phase[-1])),),
     )
 
 
