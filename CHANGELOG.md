@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0a3 - Unreleased
+## 0.1.0a3 - 2026-11-16
 
 This alpha adds linear-optics simulation, speeds up circuit execution and
 expectation values, and expands control over measurements and custom operations.
