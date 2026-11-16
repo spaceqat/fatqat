@@ -1,127 +1,75 @@
 # Performance and scaling
 
-Before tuning runtimes, estimate how much state FatQat must carry. Subsystem
-dimensions and the chosen representation usually matter sooner than a runtime
-switch.
+Simulation cost depends on the state representation, requested results, and
+how you organize repeated runs. This guide covers these choices for
+[`Simulator`][fatqat.simulator.Simulator] and [`Estimator`][fatqat.Estimator].
 
-First choose the simplest execution level that contains the effect you need;
-[Choose how much physics to model](execution-models.md) draws that boundary.
-Then use the estimates and benchmark pattern below on your own
-[`Program`][fatqat.Program].
+## Choose the state and results you need
 
-## Count the state space before running
+For subsystem dimensions `d0, d1, ...`, the total state-space dimension is
+`D = d0 * d1 * ...`. Each extra qubit doubles `D`; each extra qutrit triples
+it. The simulation method determines the number of entries you store:
 
-If the local dimensions are `d0, d1, ...`, the state-space dimension is their
-product. This makes FatQat's mixed-dimensional Program support useful and also
-makes its scaling explicit:
+| Method | Complex entries | Use it to |
+| --- | --- | --- |
+| `statevector` | `D` | Evolve a pure state or sample noisy trajectories |
+| `density_matrix` | `D**2` | Evolve a mixed state and apply noise channels directly |
+| `unitary` | `D**2` | Find the circuit's action on every input state |
+| `superop` | `D**4` | Find the full channel acting on density matrices |
 
-```pycon
->>> import math
->>> local_dimensions = (2, 2, 2, 2, 3, 3)  # four qubits and two qutrits
->>> dimension = math.prod(local_dimensions)
->>> dimension
-144
->>> dimension**2
-20736
-```
+For example, 20 qubits need about 16 MiB for a complex128 statevector alone.
+A density matrix of the same system needs about 16 TiB. Temporary arrays add
+to these storage costs. For noisy simulations, this makes statevector
+trajectories useful at sizes where a density matrix is too large; the
+tradeoff is sampling uncertainty.
 
-A statevector stores one complex entry per basis state. A density matrix or
-unitary stores a square array, and a super-operator is square in the already
-squared density-matrix space. In terms of total dimension `D`, their entry
-counts scale as `D`, `D**2`, `D**2`, and `D**4`, respectively. Temporary work
-space and backend overhead add to these lower-level counts.
+Choose results to match the question. Use counts for a measurement
+distribution, an Estimator for correlations or energies, and a final state
+when you need the quantum state itself. A counts-only run can use
+`result_config={"counts": True, "final_state": False}`. This avoids retaining
+a final quantum array in the result, although simulation still needs a state
+while it runs.
 
-The growth is exponential in both subsystem count and local dimension:
-
-![Logarithmic curves show statevector and density-matrix entry counts growing faster for qutrits than for qubits as subsystem count increases.](../assets/generated/guide/performance-1.png)
-
-??? example "Reproduce this figure"
-
-    ```python
-    import numpy as np
-    import matplotlib.pyplot as plt
-
-    subsystems = np.arange(1, 9)
-    qubit_state = 2 ** subsystems
-    qutrit_state = 3 ** subsystems
-    qubit_density = qubit_state ** 2
-    qutrit_density = qutrit_state ** 2
-
-    assert np.all(np.diff(qubit_state) > 0)
-    assert np.all(np.diff(qutrit_density) > 0)
-
-    fig, ax = plt.subplots(figsize=(6.4, 3.7))
-    ax.semilogy(
-        subsystems,
-        qubit_state,
-        marker="o",
-        label="qubit statevector",
-    )
-    ax.semilogy(
-        subsystems,
-        qubit_density,
-        marker="o",
-        label="qubit density matrix",
-    )
-    ax.semilogy(
-        subsystems,
-        qutrit_state,
-        marker="s",
-        label="qutrit statevector",
-    )
-    ax.semilogy(
-        subsystems,
-        qutrit_density,
-        marker="s",
-        label="qutrit density matrix",
-    )
-    ax.set(
-        xlabel="number of equal-dimension subsystems",
-        ylabel="complex array entries",
-        xticks=subsystems,
-    )
-    ax.grid(alpha=0.25, which="both")
-    ax.legend(frameon=False, ncols=2, fontsize="small")
-    fig.tight_layout()
-    ```
-
-This plot counts entries rather than bytes so it does not assume a dtype or
-allocator. Estimate the Program you actually intend to run, including physical
-levels that an emulator models even when the logical Program addresses only
-qubits.
-
-## Request only the answer you need
-
-Result choice can dominate scaling. A complete unitary or super-operator asks
-for the action on every input, while a state run asks for one input state.
-Likewise, a full state is unnecessary when you only need counts or a few
-expectation values.
-
-Shot cost also depends on the Program. A circuit that evolves deterministically
-and measures only at the end can reuse more work than one with mid-circuit
-measurement, reset, feedforward, or stochastic trajectories. Avoid estimating
-shot cost from `shots` alone; benchmark the same Program and result request you
-will use in practice.
-
-See [Estimate observables](interpret-results.md) for expectation values and
-uncertainty, and the [Simulator API](../api/simulator.md) for method and result
-constraints.
+Specialized representations can save much more than runtime tuning. For
+linear optics, `LOSimulator` uses fixed-photon states by default: four photons
+in twelve modes require just 1,365 amplitudes. See
+[Simulate larger interferometers](linear-optics.md#simulate-larger-interferometers).
+For physical models, first [choose how much physics to model](execution-models.md);
+extra physical levels and pulse integration change the cost of the problem.
 
 ## Compare NumPy and Numba on your workload
 
-FatQat's general simulator offers two CPU runtimes:
+FatQat offers two CPU runtimes. NumPy starts executing directly, which makes
+it useful when compilation startup would dominate the workload. Numba
+compiles numerical kernels on first use and spreads that startup cost over
+repeated work. The initial simulator default is Numba; set `runtime`
+explicitly when comparing them.
 
-- NumPy executes directly and avoids JIT compilation startup.
-- Numba compiles numerical kernels on first use and can reuse compatible
-  compiled work on later calls.
+The runtime and the execution workflow serve different roles. A **kernel**
+does numerical work, such as applying a gate to a state. A **workflow**
+sequences those operations and handles repeated shots or parameter points.
+NumPy uses Python workflows with NumPy numerical operations. Numba uses
+compiled kernels, with compiled workflows for eligible statevector
+trajectories and parameter batches.
 
-Neither choice changes the Program or the modeled mathematics. Compilation,
-array-library behavior, CPU, operating system, Program shape, and repetition
-count all affect the result, so benchmark rather than assuming one runtime is
-always preferable. FatQat does not currently provide a GPU runtime.
+For statevector simulation, choosing `runtime="numba"` does not require the
+whole program to fit a compiled workflow. If an otherwise supported operation
+cannot run in that workflow, the simulator uses a Python workflow with Numba
+kernels for supported numerical operations. Custom Python callbacks still
+execute in Python. Python workflows also support process-based shots and
+threading within kernels.
 
-The following harness separates one untimed warm-up from repeated measurements
-and compares like-for-like final states:
+For repeated runs, parameter sweeps, or many independent shots, start with
+Numba and automatic execution settings. Even small circuits can benefit from
+compiled workflows and shot parallelism when each shot evolves a separate
+noisy trajectory or follows measurement-dependent control flow.
+
+Workflow selection is automatic: you choose the runtime and parallelism
+options, and the simulator selects the workflow. For parallelism choices, see
+[Match parallelism to the work](#match-parallelism-to-the-work).
+
+The following example compares warmed execution times and checks that both
+runtimes agree within floating-point tolerance. Times are in seconds.
 
 ```python
 import statistics
@@ -131,6 +79,17 @@ import numpy as np
 import fatqat as fq
 import fatqat.operations as ops
 
+
+def median_seconds(run, repeats=5):
+    run()  # Warm up compilation and other first-use setup.
+    samples = []
+    for _ in range(repeats):
+        start = time.perf_counter()
+        run()
+        samples.append(time.perf_counter() - start)
+    return statistics.median(samples)
+
+
 program = fq.Program(8)
 for _ in range(6):
     for target in range(8):
@@ -138,68 +97,70 @@ for _ in range(6):
     for control in range(7):
         program.add(ops.CX, (control, control + 1))
 
-result_config = {"counts": False, "final_state": True}
-numpy_backend = fq.simulator.Simulator("SV", runtime="numpy")
-numba_backend = fq.simulator.Simulator("SV", runtime="numba")
+state_only = {"counts": False, "final_state": True}
+states = {}
+for runtime in ("numpy", "numba"):
+    backend = fq.simulator.Simulator("statevector", runtime=runtime)
+    run = lambda: backend.run(program, result_config=state_only).result()
+    print(runtime, median_seconds(run))
+    states[runtime] = run().get_statevector()
 
-def warm_and_measure(backend, repeats=7):
-    # Keep compilation and other first-use setup outside steady-state samples.
-    backend.run(program, result_config=result_config).result()
-    samples = []
-    for _ in range(repeats):
-        start = time.perf_counter()
-        backend.run(program, result_config=result_config).result()
-        samples.append(time.perf_counter() - start)
-    return statistics.median(samples)
-
-numpy_state = numpy_backend.run(program, result_config=result_config).result()
-numba_state = numba_backend.run(program, result_config=result_config).result()
-assert np.allclose(
-    numpy_state.get_statevector(),
-    numba_state.get_statevector(),
-)
-
-numpy_seconds = warm_and_measure(numpy_backend)
-numba_seconds = warm_and_measure(numba_backend)
-print({"numpy": numpy_seconds, "numba": numba_seconds})
+assert np.allclose(states["numpy"], states["numba"])
 ```
 
-Treat the printed values as local evidence, not package guarantees. If startup
-latency matters, measure the first run separately instead of discarding it.
-If sustained throughput matters, increase the repetition count and Program
-size to match the intended workload.
+Measure a representative circuit with the same method and result request.
+For startup latency, time the first call in a fresh Python process separately.
 
-## Tune parallelism and fusion only after measuring
+## Sweep parameters without rebuilding
 
-Automatic execution settings are the appropriate baseline. Manual shot
-parallelism, kernel parallelism, worker limits, and operation fusion apply only
-to compatible workloads, and overhead can outweigh saved numerical work.
+Parameter scans and variational algorithms repeatedly run the same circuit
+with different angles. Express those angles as `Parameter` objects and pass
+the values to `run_sweep()`: the simulator can share preparation across the batch.
 
-When tuning:
+Requesting final states retains one state per parameter point. Use an
+estimator sweep when you only need energies or correlations. See
+[Sweep without rebuilding](simulation.md#sweep-without-rebuilding) for a
+worked example.
 
-1. Keep the Program, method, runtime, seed, and result request fixed.
-2. Warm any compiled path before measuring steady state.
-3. Measure several repetitions and report a robust statistic such as the
-   median.
-4. Change one execution choice at a time.
-5. Verify the resulting state, counts distribution, or observable before
-   accepting the timing.
-6. Repeat at the problem sizes that matter; a small example may rank choices
-   differently from the target workload.
+## Evaluate observables together
 
-For eligible combinations and error behavior, see
-[Simulator runtime and execution](../api/simulator.md). Fusion is opt-in,
-and explicit parallel modes can be rejected when the Program cannot use them.
+An Estimator computes expectation values directly from structured
+[`Observable`][fatqat.Observable] objects. For matrix simulation, it evaluates
+their local factors without constructing a dense operator over the full
+system. Pass related observables together so they share the state evolution.
 
-## Account for physical emulation separately
+`shots=0` calculates expectations without shot sampling. Positive shots
+introduce measurement sampling and give a standard error alongside each estimate. For exact
+expectations with stochastic channels or reset, choose a density-matrix
+backend; use positive shots for noisy statevector trajectories.
 
-Hamiltonian emulators add costs that a circuit-level array-size estimate does
-not capture: the model's physical levels, unaddressed modeled subsystems,
-time-dependent controls, scheduling, integration intervals, and open-system
-evolution. A logical qubit may therefore contribute three physical levels in a
-transmon model.
+`Estimator.run_sweep()` retains expectation results instead of a final state
+for every point, saving memory in large scans. See
+[Estimate observables](interpret-results.md) for examples and uncertainty,
+and the [Estimator API](../api/estimator.md#parameter-sweeps) for sweeps.
 
-Benchmark the actual model, arrangement, controls, duration, solver settings,
-and requested result. Do not extrapolate an emulator run from a gate-level
-Simulator timing. The [emulator API](../api/emulators/index.md) lists the
-solver and schedule controls available to each physical model.
+## Match parallelism to the work
+
+Start with automatic execution settings. For explicit control, set these
+options in `execution_config`:
+
+| Workload | Parallelism |
+| --- | --- |
+| General use | Keep the default `"auto"` settings; use `max_workers` to cap the worker count |
+| Large state with Numba | `kernel_parallelism="threads"`, `shot_parallelism="serial"` |
+| Independent shots, counts only | `shot_parallelism="threads"` for compatible Numba statevector runs, or `"processes"` for other supported workloads; keep kernel parallelism serial |
+| Little total work, or a serial timing baseline | Set both `kernel_parallelism` and `shot_parallelism` to `"serial"` |
+
+A deterministic circuit with terminal measurements evolves once and samples
+its output distribution. Increasing its shot count does not repeat the whole
+circuit, so explicit shot parallelism does not apply to that workload.
+
+Parallelism pays off when there is enough work across state entries or
+independent shots to outweigh worker overhead. Choose one parallel axis at a
+time. The [Simulator API](../api/simulator.md#runtime-and-execution) lists the supported
+combinations.
+
+When comparing sampled runs, set `execution_config["seed"]` and compare
+observables or distributions: changing runtime or parallel mode can change
+the individual samples. For deterministic runs, compare final states within
+floating-point tolerance.
