@@ -133,6 +133,7 @@ def test_direct_drive_propagator_matches_independent_full_hamiltonian(backend):
         .run(program)
         .result()
         .get_unitary()
+        .full()
     )
     target = _TransmonTarget(backend.model)
     adapter = _TransmonQutipAdapter(
@@ -167,11 +168,13 @@ def test_direct_condition_changes_actual_execution(backend):
         backend.run(enabled, result_config={"counts": False, "final_state": True})
         .result()
         .get_density_matrix()
+        .full()
     )
     disabled_state = (
         backend.run(disabled, result_config={"counts": False, "final_state": True})
         .result()
         .get_density_matrix()
+        .full()
     )
 
     assert not np.allclose(enabled_state, disabled_state)

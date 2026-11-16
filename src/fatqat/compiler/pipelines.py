@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from .._sc_target import SCTarget
 from ..logical_program import LogicalProgram
 from ..simulator import SCQubitSimulator
 from .core import (
@@ -136,7 +137,7 @@ def _package_na_result(result: CompilationResult) -> CompilationResult:
 
 def compile_qasm_to_sc(
     source: str | QasmSource,
-    backend: SCQubitSimulator,
+    backend: SCTarget | SCQubitSimulator,
     *,
     emit: str = SCNativeProgram.IR_ID,
     filename: str | None = None,
@@ -146,7 +147,8 @@ def compile_qasm_to_sc(
 
     Args:
         source: OpenQASM 2 or 3 text, or an existing QasmSource.
-        backend: SCQubitSimulator supplying capacity and connectivity.
+        backend: SCTarget or SCQubitSimulator that supplies capacity and
+            connectivity. The gate rules of an SCQubitSimulator also apply.
         emit: Representation to return; defaults to SCNativeProgram.IR_ID.
             Supported values are QasmSource.IR_ID, LogicalIR.IR_ID,
             SCProgram.IR_ID, and SCNativeProgram.IR_ID.
@@ -178,7 +180,7 @@ def compile_qasm_to_sc(
 
 def compile_to_sc(
     source: LogicalProgram,
-    backend: SCQubitSimulator,
+    backend: SCTarget | SCQubitSimulator,
     *,
     emit: str = SCNativeProgram.IR_ID,
     seed: int = 0,
@@ -192,7 +194,8 @@ def compile_to_sc(
 
     Args:
         source: An exact LogicalProgram containing static numeric gates.
-        backend: SCQubitSimulator supplying the capacity and coupling graph.
+        backend: SCTarget or SCQubitSimulator that supplies the capacity and
+            coupling graph. The gate rules of an SCQubitSimulator also apply.
         emit: Representation to return; defaults to SCNativeProgram.IR_ID.
             Supported values are LogicalProgram.IR_ID, LogicalIR.IR_ID,
             SCProgram.IR_ID, and SCNativeProgram.IR_ID.

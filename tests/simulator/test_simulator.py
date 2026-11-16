@@ -56,17 +56,17 @@ def test_method_like_values_keep_string_coercion():
 
 def test_alias_selects_identical_behavior():
     p = _bell()
-    a = Simulator(method="SV").run(p, shots=64, simulation_config={"seed": 7}).result()
+    a = Simulator(method="SV").run(p, shots=64, execution_config={"seed": 7}).result()
     b = (
         Simulator(method="statevector")
-        .run(p, shots=64, simulation_config={"seed": 7})
+        .run(p, shots=64, execution_config={"seed": 7})
         .result()
     )
     assert a.get_counts() == b.get_counts()
-    c = Simulator(method="DM").run(p, shots=64, simulation_config={"seed": 7}).result()
+    c = Simulator(method="DM").run(p, shots=64, execution_config={"seed": 7}).result()
     d = (
         Simulator(method="density_matrix")
-        .run(p, shots=64, simulation_config={"seed": 7})
+        .run(p, shots=64, execution_config={"seed": 7})
         .result()
     )
     assert c.get_counts() == d.get_counts()
@@ -87,13 +87,13 @@ def test_run_accepts_an_executable_program_with_its_bundled_layout():
     actual = backend.run(
         executable,
         shots=32,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result()
     expected = backend.run(
         program,
         shots=32,
         resource_layout=layout,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result()
 
     assert actual.get_counts() == expected.get_counts()
@@ -142,7 +142,7 @@ def test_method_selects_native_state_field():
 def test_metadata_records_method_and_backend_name():
     p = _bell()
     result = (
-        Simulator(method="DM").run(p, shots=5, simulation_config={"seed": 0}).result()
+        Simulator(method="DM").run(p, shots=5, execution_config={"seed": 0}).result()
     )
     assert result.metadata["backend_name"] == "Simulator"
     assert result.metadata["method"] == "density_matrix"
@@ -165,12 +165,12 @@ def test_barrier_is_skipped_in_lowering():
 def test_barrier_does_not_change_counts(method):
     with_b = (
         Simulator(method=method)
-        .run(_bell(with_barriers=True), shots=128, simulation_config={"seed": 11})
+        .run(_bell(with_barriers=True), shots=128, execution_config={"seed": 11})
         .result()
     )
     without = (
         Simulator(method=method)
-        .run(_bell(), shots=128, simulation_config={"seed": 11})
+        .run(_bell(), shots=128, execution_config={"seed": 11})
         .result()
     )
     assert with_b.get_counts() == without.get_counts()

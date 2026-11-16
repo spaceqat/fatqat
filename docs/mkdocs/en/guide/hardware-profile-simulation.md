@@ -26,7 +26,7 @@ The general-purpose simulator can run this Bell Program, which uses `H` and
 >>> counts = fq.simulator.Simulator(runtime="numpy").run(
 ...     bell,
 ...     shots=16,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 >>> sum(counts.values())
 16
@@ -122,7 +122,7 @@ measured_native.measure_all()
 noisy_counts = noisy_profile.run(
     measured_native,
     shots=100,
-    simulation_config={"seed": 7},
+    execution_config={"seed": 7},
 ).result().get_counts()
 ```
 
@@ -156,7 +156,7 @@ trajectory. `AtomArraySimulator` records no coordinates or movement duration;
 >>> atom_counts = fq.simulator.AtomArraySimulator().run(
 ...     atoms,
 ...     shots=8,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 >>> atom_counts
 {'10': 8}
@@ -181,7 +181,7 @@ instruction occurs:
 >>> noisy_counts = noisy_atom_backend.run(
 ...     atoms,
 ...     shots=100,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 >>> sum(noisy_counts.values())
 100
@@ -206,7 +206,7 @@ so surviving atoms return `1`, while lost atoms return `2`:
 >>> lossy_counts = fq.simulator.AtomArraySimulator(noise=loss_model).run(
 ...     lossy_atoms,
 ...     shots=100,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 >>> lossy_counts
 {'1': 86, '2': 14}

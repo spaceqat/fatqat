@@ -47,6 +47,10 @@ jobs:
       - name: Run tests
         run: python -m pytest
 
+      - name: Run GPU CI infrastructure tests
+        if: matrix.os == 'ubuntu-latest'
+        run: python -m pytest .github/ci_tests -v
+
       - name: Run doctests
         if: matrix.run_doctests
         run: python -m pytest -p scipy_doctest --doctest-modules --pyargs fatqat

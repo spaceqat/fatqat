@@ -1,10 +1,13 @@
 """Estimator: exact expectation values, result shape, and rejected programs."""
 
+import tracemalloc
+
 import numpy as np
 import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
+import fatqat.simulator.simulator as simulator_module
 from fatqat.errors import (
     BackendExecutionError,
     BackendValidationError,
@@ -12,8 +15,7 @@ from fatqat.errors import (
     UnsupportedOperationError,
 )
 from fatqat.job import Job
-from fatqat.observable import Observable
-from fatqat.result import Result
+from fatqat.observable import Observable, Projector
 
 
 def _bell(measured=False):
@@ -103,38 +105,40 @@ def test_qnn_shaped_vector_sweep_preserves_multi_observable_shape():
     )
 
 
-def test_sampled_sweep_matches_same_seed_repeated_runs_and_forwards_options(
-    monkeypatch,
-):
+@pytest.mark.parametrize(
+    "noisy, chunk_bytes",
+    [(False, None), (False, 1), (True, None)],
+    ids=["deterministic", "deterministic-row-chunks", "stochastic"],
+)
+def test_sampled_sweep_matches_same_seed_repeated_runs(monkeypatch, noisy, chunk_bytes):
+    # Noise makes a statevector run stochastic, so every term reruns the plan.
+    # A tiny state budget samples deterministic base states one row at a time.
+    if chunk_bytes is not None:
+        monkeypatch.setattr(simulator_module, "_SAMPLED_BASE_STATE_BYTES", chunk_bytes)
     angle = fq.Parameter("angle")
     program = fq.Program(1)
     program.add(ops.RY(angle), 0)
     observable = Observable([("X", 1.0)])
     values = np.array([0.2, 0.9])
-    estimator = _estimator()
-    original_run = estimator.run
-    forwarded = []
-
-    def record(bound, supplied_observables, **kwargs):
-        forwarded.append((supplied_observables, kwargs))
-        return original_run(bound, supplied_observables, **kwargs)
-
-    monkeypatch.setattr(estimator, "run", record)
+    noise = None
+    if noisy:
+        noise = fq.NoiseModel()
+        noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.RY)
+    estimator = _estimator(noise=noise)
     config = {"seed": 23}
     swept = estimator.run_sweep(
         program,
         observable,
         {angle: values},
         shots=256,
-        simulation_config=config,
+        execution_config=config,
     ).result()
-    monkeypatch.setattr(estimator, "run", original_run)
     explicit = [
-        original_run(
+        estimator.run(
             program.assign_parameters({angle: value}),
             observable,
             shots=256,
-            simulation_config=config,
+            execution_config=config,
         ).result()
         for value in values
     ]
@@ -145,72 +149,59 @@ def test_sampled_sweep_matches_same_seed_repeated_runs_and_forwards_options(
     assert [result.get_standard_error() for result in swept] == pytest.approx(
         [result.get_standard_error() for result in explicit]
     )
-    assert forwarded == [
-        (observable, {"shots": 256, "simulation_config": config}),
-        (observable, {"shots": 256, "simulation_config": config}),
-    ]
 
 
-def test_estimator_sweep_direct_inner_failure_propagates(monkeypatch):
+def test_exact_sweep_keeps_one_evolved_state_at_a_time():
+    # Exact values need each row's state only until it is contracted.
+    n_qubits, rows = 8, 64
+    angles = [fq.Parameter(f"angle{i}") for i in range(n_qubits)]
+    program = fq.Program(n_qubits)
+    for qubit, angle in enumerate(angles):
+        program.add(ops.RY(angle), qubit)
+    observable = Observable([("Z" * n_qubits, 1.0)])
+    values = {angle: np.linspace(0.0, 1.0, rows) for angle in angles}
+    estimator = _estimator("density_matrix")
+    estimator.run_sweep(program, observable, values, shots=0).result()
+
+    tracemalloc.start()
+    try:
+        estimator.run_sweep(program, observable, values, shots=0).result()
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    state_bytes = 16 * 4**n_qubits
+    assert peak < 8 * state_bytes
+
+
+@pytest.mark.parametrize(
+    "error, fails_job",
+    [
+        (BackendValidationError("direct backend failure"), False),
+        (RuntimeError("stored backend failure"), True),
+        (KeyboardInterrupt("backend interrupted"), False),
+    ],
+    ids=["raised", "failed-job", "interrupt"],
+)
+def test_estimator_sweep_backend_failure_keeps_the_same_exception(
+    monkeypatch, error, fails_job
+):
     angle = fq.Parameter("angle")
     program = fq.Program(1)
     program.add(ops.RX(angle), 0)
     observable = Observable([("Z", 1.0)])
     estimator = _estimator()
 
-    def fail_on_second(bound, _observables, **_kwargs):
-        if bound._instructions[0].operation.theta == 0.2:
-            raise BackendValidationError("direct point failure")
-        return Job(
-            status="DONE",
-            result=Result(data={"expectation": 1.0, "standard_error": 0.0}),
-        )
-
-    monkeypatch.setattr(estimator, "run", fail_on_second)
-    with pytest.raises(BackendValidationError, match="direct point failure"):
-        estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
-
-
-def test_estimator_sweep_failed_point_job_fails_outer_job(monkeypatch):
-    angle = fq.Parameter("angle")
-    program = fq.Program(1)
-    program.add(ops.RX(angle), 0)
-    observable = Observable([("Z", 1.0)])
-    estimator = _estimator()
-    error = RuntimeError("stored point failure")
-
-    def fail_on_second(bound, _observables, **_kwargs):
-        if bound._instructions[0].operation.theta == 0.2:
+    def fail(*_args, **_kwargs):
+        if fails_job:
             return Job(status="ERROR", error=error)
-        return Job(
-            status="DONE",
-            result=Result(data={"expectation": 1.0, "standard_error": 0.0}),
-        )
+        raise error
 
-    monkeypatch.setattr(estimator, "run", fail_on_second)
-    outer = estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
-
-    with pytest.raises(RuntimeError, match="stored point failure") as caught:
+    monkeypatch.setattr(estimator._backend, "_run_expectation", fail)
+    with pytest.raises(type(error)) as caught:
+        outer = estimator.run_sweep(program, observable, {angle: [0.1, 0.2]})
+        assert outer.status == "ERROR"
         outer.result()
-    assert caught.value is error
-
-
-def test_estimator_sweep_propagates_point_job_interrupt(monkeypatch):
-    angle = fq.Parameter("angle")
-    program = fq.Program(1)
-    program.add(ops.RX(angle), 0)
-    observable = Observable([("Z", 1.0)])
-    estimator = _estimator()
-    error = KeyboardInterrupt("point interrupted")
-
-    monkeypatch.setattr(
-        estimator,
-        "run",
-        lambda *_args, **_kwargs: Job(status="ERROR", error=error),
-    )
-
-    with pytest.raises(KeyboardInterrupt, match="point interrupted") as caught:
-        estimator.run_sweep(program, observable, {angle: [0.1]})
     assert caught.value is error
 
 
@@ -247,7 +238,7 @@ def test_sampled_asymmetric_observables_keep_public_target_association():
 
     values = (
         _estimator("SV")
-        .run(program, observables, shots=64, simulation_config={"seed": 7})
+        .run(program, observables, shots=64, execution_config={"seed": 7})
         .result()
         .get_expectation()
     )
@@ -263,6 +254,40 @@ def test_bell_expectation_values(label, expected, method):
     result = _estimator(method).run(_bell(), Observable([(label, 1.0)])).result()
 
     assert result.get_expectation() == pytest.approx(expected, abs=1e-12)
+
+
+def test_initial_state_starts_the_evolution():
+    # |01> -> (|01> + |10>) / sqrt(2), on which ZZ is exactly -1.
+    program = _bell()
+    one = fq.simulator.BasisState({program.quantum_registers[0][1]: 1})
+
+    result = (
+        _estimator().run(program, Observable([("ZZ", 1.0)]), initial_state=one).result()
+    )
+
+    assert result.get_expectation() == pytest.approx(-1.0, abs=1e-12)
+
+
+def test_initial_state_is_reused_for_every_sweep_row():
+    angle = fq.Parameter("angle")
+    program = fq.Program(1)
+    program.add(ops.RY(angle), 0)
+    one = fq.simulator.BasisState({program.quantum_registers[0][0]: 1})
+
+    results = (
+        _estimator()
+        .run_sweep(
+            program,
+            Observable([("Z", 1.0)]),
+            {angle: [0.0, np.pi / 2, np.pi]},
+            initial_state=one,
+        )
+        .result()
+    )
+
+    assert [result.get_expectation() for result in results] == pytest.approx(
+        [-1.0, 0.0, 1.0], abs=1e-12
+    )
 
 
 def test_multi_term_observable_returns_weighted_sum():
@@ -281,7 +306,7 @@ def test_identity_term_contributes_its_coefficient():
 
 def test_occupation_via_one_projector():
     # Bell state: each qubit is |1> half the time.
-    occupation = Observable.from_sparse([("ONE", (0,), 1.0)], num_qubits=2)
+    occupation = Observable.from_sparse([("ONE", (0,), 1.0)])
 
     value = _estimator().run(_bell(), occupation).result().get_expectation()
     assert value == pytest.approx(0.5, abs=1e-12)
@@ -357,15 +382,24 @@ def test_measured_program_rejected():
         _estimator().run(_bell(measured=True), Observable([("ZZ", 1.0)]))
 
 
-def test_observable_width_must_match_the_program():
-    with pytest.raises(BackendValidationError, match="3 qubit"):
+def test_observable_factors_must_name_program_subsystems():
+    with pytest.raises(BackendValidationError, match="names subsystem 2"):
         _estimator().run(_bell(), Observable([("ZZZ", 1.0)]))
+    # Unnamed subsystems carry the identity: Z on qubit 0 of a Bell pair.
+    shorter = _estimator().run(_bell(), Observable([("Z", 1.0)])).result()
+    assert shorter.get_expectation() == pytest.approx(0.0, abs=1e-12)
 
 
-def test_qudit_program_rejected():
+def test_factors_are_checked_against_subsystem_dimensions():
     program = fq.Program([fq.QuantumRegister(1, dim=3)])
     with pytest.raises(BackendValidationError, match="qubits only"):
         _estimator().run(program, Observable([("Z", 1.0)]))
+    with pytest.raises(BackendValidationError, match="needs dim > 3"):
+        _estimator().run(program, Observable.from_sparse([(Projector(3), (0,), 1.0)]))
+    with pytest.raises(BackendValidationError, match="needs dim > 2"):
+        _estimator("DM").run(
+            _bell(), Observable.from_sparse([(Projector(2), (0,), 1.0)]), shots=8
+        )
 
 
 def test_noisy_statevector_exact_request_is_rejected():
@@ -379,7 +413,7 @@ def test_noisy_statevector_sampling_uses_native_trajectories():
     observable = Observable([("ZZ", 1.0)])
     sampled = (
         _estimator("SV", noise=_noise_model())
-        .run(_bell(), observable, shots=4_000, simulation_config={"seed": 17})
+        .run(_bell(), observable, shots=4_000, execution_config={"seed": 17})
         .result()
     )
     exact = _estimator("DM", noise=_noise_model()).run(_bell(), observable).result()
@@ -409,7 +443,7 @@ def test_statevector_reset_sampling_uses_native_trajectories():
             program,
             Observable([("Z", 1.0)]),
             shots=64,
-            simulation_config={"seed": 9},
+            execution_config={"seed": 9},
         )
         .result()
     )
@@ -462,12 +496,12 @@ def test_invalid_shots_rejected(shots):
         _estimator().run(_bell(), Observable([("ZZ", 1.0)]), shots=shots)
 
 
-def test_simulation_config_must_be_a_dict_or_none():
+def test_execution_config_must_be_a_dict_or_none():
     with pytest.raises(TypeError, match="dict or None"):
         _estimator().run(
             _bell(),
             Observable([("ZZ", 1.0)]),
-            simulation_config=[("seed", 1)],
+            execution_config=[("seed", 1)],
         )
 
 
@@ -514,7 +548,7 @@ def test_sampled_value_converges_to_the_exact_one(method):
 
     exact = estimator.run(program, observable).result().get_expectation()
     sampled = estimator.run(
-        program, observable, shots=200_000, simulation_config={"seed": 11}
+        program, observable, shots=200_000, execution_config={"seed": 11}
     ).result()
 
     assert sampled.get_expectation() == pytest.approx(
@@ -527,13 +561,13 @@ def test_projector_term_sampling_converges():
     # the term's second moment, so a Pauli-only sampler would be biased here.
     program = _sampling_program()
     observable = Observable.from_sparse(
-        [("ONE", (0,), 1.0), (["ONE", "Z"], (1, 2), 0.5)], num_qubits=3
+        [("ONE", (0,), 1.0), (["ONE", "Z"], (1, 2), 0.5)]
     )
     estimator = _estimator()
 
     exact = estimator.run(program, observable).result().get_expectation()
     sampled = estimator.run(
-        program, observable, shots=200_000, simulation_config={"seed": 5}
+        program, observable, shots=200_000, execution_config={"seed": 5}
     ).result()
 
     assert sampled.get_expectation() == pytest.approx(
@@ -560,7 +594,7 @@ def test_deterministic_term_has_no_spread():
     result = (
         _estimator()
         .run(
-            _bell(), Observable([("ZZ", 1.0)]), shots=100, simulation_config={"seed": 3}
+            _bell(), Observable([("ZZ", 1.0)]), shots=100, execution_config={"seed": 3}
         )
         .result()
     )
@@ -579,7 +613,7 @@ def test_sampling_is_reproducible_under_a_seed():
     def sample(seed):
         return (
             estimator.run(
-                program, observable, shots=500, simulation_config={"seed": seed}
+                program, observable, shots=500, execution_config={"seed": seed}
             )
             .result()
             .get_expectation()
@@ -594,7 +628,7 @@ def test_sampled_sequence_returns_arrays_for_both_fields():
 
     result = (
         _estimator()
-        .run(_bell(), observables, shots=1_000, simulation_config={"seed": 1})
+        .run(_bell(), observables, shots=1_000, execution_config={"seed": 1})
         .result()
     )
 
@@ -607,7 +641,7 @@ def test_one_shot_sequence_reports_uncertainty_only_for_sampled_terms():
 
     result = (
         _estimator()
-        .run(_bell(), observables, shots=1, simulation_config={"seed": 1})
+        .run(_bell(), observables, shots=1, execution_config={"seed": 1})
         .result()
     )
 
@@ -622,7 +656,7 @@ def test_sampling_works_with_a_noisy_density_matrix():
 
     exact = estimator.run(program, observable).result().get_expectation()
     sampled = estimator.run(
-        program, observable, shots=200_000, simulation_config={"seed": 4}
+        program, observable, shots=200_000, execution_config={"seed": 4}
     ).result()
 
     assert sampled.get_expectation() == pytest.approx(
@@ -701,7 +735,7 @@ def test_unrelated_validation_errors_are_not_rewrapped():
     assert "no single final state" not in str(caught.value)
 
 
-def test_bad_simulation_config_error_is_not_rewrapped():
+def test_bad_execution_config_error_is_not_rewrapped():
     program = fq.Program(1)
     program.add(ops.H, 0)
 
@@ -709,6 +743,6 @@ def test_bad_simulation_config_error_is_not_rewrapped():
         _estimator().run(
             program,
             Observable([("Z", 1.0)]),
-            simulation_config={"no_such_option": True},
+            execution_config={"no_such_option": True},
         )
     assert "no single final state" not in str(caught.value)

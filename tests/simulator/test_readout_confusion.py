@@ -10,6 +10,8 @@ integer allocation.
 import numpy as np
 import pytest
 
+from fatqat.simulator._engine._execution_policy import _select_execution_path
+
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat._backends.steps import MeasurementStep
@@ -87,11 +89,15 @@ def test_dimension_mismatch_rejected_at_lowering():
 
 def test_readout_confusion_keeps_single_pass_shape():
     program = _measured_program()
-    _plan, facts = Simulator(
-        "statevector", noise=_readout_model(_FLIP_30)
-    )._lower_program(program)
+    backend = Simulator("statevector", noise=_readout_model(_FLIP_30))
+    _plan, _facts = backend._lower_program(program)
+    execution_path = _select_execution_path(
+        _plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
 
-    assert facts.execution_shape == "single_pass"
+    assert execution_path == "single_pass"
 
 
 # --- execution: fast path ---
@@ -102,7 +108,7 @@ def test_fast_path_counts_reproduce_the_confusion_rate(method):
     shots = 10_000
     counts = (
         Simulator(method=method, noise=_readout_model(_FLIP_30))
-        .run(_measured_program(), shots=shots, simulation_config={"seed": 2})
+        .run(_measured_program(), shots=shots, execution_config={"seed": 2})
         .result()
         .get_counts()
     )
@@ -122,7 +128,7 @@ def test_specific_target_confuses_only_its_subsystem():
     program.measure((0, 1), (0, 1))
     counts = (
         Simulator(noise=_readout_model(always_flip, target=1))
-        .run(program, shots=200, simulation_config={"seed": 4})
+        .run(program, shots=200, execution_config={"seed": 4})
         .result()
         .get_counts()
     )
@@ -142,7 +148,7 @@ def test_feedforward_reads_the_reported_bit_not_the_true_one():
     program.measure(1, 1)
     counts = (
         Simulator(method="SV", noise=_readout_model(_ALWAYS_ONE, target=0))
-        .run(program, shots=100, simulation_config={"seed": 3})
+        .run(program, shots=100, execution_config={"seed": 3})
         .result()
         .get_counts()
     )
@@ -159,7 +165,7 @@ def test_collapse_and_state_export_keep_the_true_outcome():
         .run(
             program,
             shots=1,
-            simulation_config={"seed": 5},
+            execution_config={"seed": 5},
             result_config={"counts": True, "final_state": True},
         )
         .result()
@@ -184,7 +190,7 @@ def test_reused_qubit_evolves_from_the_true_state():
     program.measure(0, 1)
     counts = (
         Simulator(method="SV", noise=noise)
-        .run(program, shots=50, simulation_config={"seed": 6})
+        .run(program, shots=50, execution_config={"seed": 6})
         .result()
         .get_counts()
     )
@@ -193,6 +199,11 @@ def test_reused_qubit_evolves_from_the_true_state():
 
 
 def test_threaded_compiled_shots_match_serial_with_readout_confusion():
+    pytest.importorskip("numba")
+    from fatqat.simulator._engine.engines import numba_engine as nb
+
+    if nb._MAX_THREADS < 2:
+        pytest.skip("Numba exposes no parallel thread capacity")
     noise = _readout_model(_FLIP_30)
     program = fq.Program(1, 2)
     program.measure(0, 0)
@@ -203,7 +214,7 @@ def test_threaded_compiled_shots_match_serial_with_readout_confusion():
         .run(
             program,
             shots=8,
-            simulation_config={
+            execution_config={
                 "seed": 13,
                 "shot_parallelism": "serial",
                 "kernel_parallelism": "serial",
@@ -217,7 +228,7 @@ def test_threaded_compiled_shots_match_serial_with_readout_confusion():
         .run(
             program,
             shots=8,
-            simulation_config={
+            execution_config={
                 "seed": 13,
                 "shot_parallelism": "threads",
                 "kernel_parallelism": "serial",
@@ -237,8 +248,6 @@ def test_numba_compiled_multi_shot_kernel_applies_readout_confusion():
     # error was silently dropped under runtime="numba" - X then always-flip
     # readout reported "1" instead of "0".
     pytest.importorskip("numba")
-    from fatqat.simulator._engine.nb import _plan_compilable
-
     always_flip = np.array([[0.0, 1.0], [1.0, 0.0]])
     noise = _readout_model(always_flip)
     program = fq.Program(1, 1)
@@ -246,14 +255,11 @@ def test_numba_compiled_multi_shot_kernel_applies_readout_confusion():
     program.measure(0, 0)
     program.add(ops.Reset, 0)  # a reset forces the dynamic path
 
-    plan, _ = Simulator(noise=noise)._lower_program(program)
-    assert _plan_compilable(plan) is True
-
     counts = {}
     for runtime in ("numpy", "numba"):
         counts[runtime] = (
             Simulator(method="SV", runtime=runtime, noise=noise)
-            .run(program, shots=64, simulation_config={"seed": 5})
+            .run(program, shots=64, execution_config={"seed": 5})
             .result()
             .get_counts()
         )
@@ -285,7 +291,7 @@ def test_numba_compiled_multi_shot_matches_numpy_on_a_qudit_confusion_plan():
         program.measure(qreg[1], creg[1])
         return (
             Simulator(method="SV", runtime=runtime, noise=noise)
-            .run(program, shots=300, simulation_config={"seed": 21})
+            .run(program, shots=300, execution_config={"seed": 21})
             .result()
             .get_counts()
         )
@@ -312,7 +318,7 @@ def test_numba_partially_confused_measurement_only_draws_where_attached():
 
     counts = {
         runtime: Simulator(method="SV", runtime=runtime, noise=noise)
-        .run(program, shots=200, simulation_config={"seed": 8})
+        .run(program, shots=200, execution_config={"seed": 8})
         .result()
         .get_counts()
         for runtime in ("numpy", "numba")

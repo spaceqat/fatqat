@@ -21,7 +21,7 @@ from .registers import (
     _view_members,
 )
 
-__all__ = ["Program"]
+__all__ = ["Program", "OperationInstruction"]
 
 ConditionTerm = tuple[RegisterRef, int]
 Condition = tuple[ConditionTerm, ...] | None
@@ -36,6 +36,15 @@ RegisterT = TypeVar("RegisterT", QuantumRegister, ClassicalRegister)
 # `RegisterView` selecting multiple members of one `QuantumRegister`.
 # See `_AppliedOperation.targets` and `Program.add`.
 QuantumTarget = RegisterRef | RegisterView
+
+
+@dataclass(frozen=True)
+class OperationInstruction:
+    """Public read-only representation of an operation instruction"""
+
+    operation: Operation
+    targets: tuple[RegisterRef | RegisterView, ...]
+    condition: Condition = None
 
 
 @dataclass(frozen=True)
@@ -96,7 +105,7 @@ class _AppliedOperation:
                 _validate_view_pair(first, second, op_name=self.operation.name)
             member_groups = tuple(_view_members(view) for view in views)
             for targets in zip(*member_groups, strict=True):
-                self.operation.validate_targets(targets)
+                _validate_targets(self.operation, targets)
             return
 
         seen: set[tuple[int, int]] = set()
@@ -107,7 +116,18 @@ class _AppliedOperation:
                     f"{self.operation.name}: target qubit {t!r} appears more than once"
                 )
             seen.add(key)
-        self.operation.validate_targets(self.targets)
+        _validate_targets(self.operation, self.targets)
+
+
+def _validate_targets(operation: Operation, targets: tuple[RegisterRef, ...]) -> None:
+    """Run an operation's target checks once every target dimension is known.
+
+    A dimensionless `ModeRegister` target defers dimension-dependent checks to
+    the backend that resolves its dimension and rebuilds the instruction.
+    """
+    if any(target.register.dim is None for target in targets):
+        return
+    operation.validate_targets(targets)
 
 
 class Program:
@@ -184,6 +204,22 @@ class Program:
         # must fail the dict copy below, exactly as Register.__post_init__
         # does, instead of silently becoming {}.
         self.metadata: dict[str, Any] = dict(metadata) if metadata is not None else {}
+
+    @property
+    def instructions(self) -> tuple[OperationInstruction | Measurement, ...]:
+        """Return instructions in insertion order as a read-only snapshot."""
+        return tuple(
+            (
+                instruction
+                if isinstance(instruction, Measurement)
+                else OperationInstruction(
+                    operation=instruction.operation,
+                    targets=instruction.targets,
+                    condition=instruction.condition,
+                )
+            )
+            for instruction in self._instructions
+        )
 
     @property
     def _instructions(self) -> tuple[_AppliedOperation | Measurement, ...]:
@@ -484,7 +520,11 @@ class Program:
                     f"condition literal must be int, got {type(literal).__name__!r}"
                 )
             value = int(literal)
-            if not 0 <= value < ref.register.dim:
+            if ref.register.dim is None:
+                # A CountRegister's range is chosen per run by the backend.
+                if value < 0:
+                    raise ValueError(f"condition literal {value} must be non-negative")
+            elif not 0 <= value < ref.register.dim:
                 raise ValueError(
                     f"condition literal {value} out of range for clbit dim "
                     f"{ref.register.dim} (must be 0 <= literal < dim)"
@@ -549,31 +589,52 @@ class Program:
         self._operations.append(Measurement(targets=target_refs, outputs=output_refs))
         self._operations_view = None
 
-    def measure_all(self) -> None:
-        """Append one measurement pairing all quantum and classical slots.
+    def measure_all(
+        self,
+        outputs: (
+            int
+            | RegisterRef
+            | tuple[int | RegisterRef, ...]
+            | list[int | RegisterRef]
+            | None
+        ) = None,
+    ) -> None:
+        """Append one measurement pairing all quantum slots with classical outputs.
 
-        Registers and their members are flattened in declaration order. The
-        new measurement does not replace earlier measurements.
+        Quantum registers and their members are flattened in declaration order. By
+        default, the first N classical slots are used, where N is the number of
+        quantum slots.
+
+        Args:
+            outputs: Optional classical output position(s). If None, use the
+                first N classical slots in declaration order. Explicit outputs
+                follow measure() operand rules: bare integers require exactly
+                one classical register; otherwise use explicit RegisterRef objects.
 
         Returns:
             ``None``.
 
         Raises:
-            ValueError: If either flattened side is empty, their counts differ,
-                or any position pairs registers with different dimensions.
+            TypeError: If explicit output operands have invalid types or are
+                ambiguous.
+            ValueError: If either side is empty, the counts differ, or any
+                paired quantum and classical positions have different dimensions.
+            IndexError: If an integer output position is out of range.
         """
         targets = tuple(
             ref
             for reg in self.quantum_registers
             for ref in (reg[i] for i in range(reg.size))
         )
-        outputs = tuple(
-            ref
-            for reg in self.classical_registers
-            for ref in (reg[i] for i in range(reg.size))
-        )
-        # Equal-count and non-empty invariants are enforced once in
-        # Measurement.__post_init__, reached through measure.
+
+        if outputs is None:
+            classical_refs = tuple(
+                ref
+                for reg in self.classical_registers
+                for ref in (reg[i] for i in range(reg.size))
+            )
+            outputs = classical_refs[: len(targets)]
+
         self.measure(targets, outputs)
 
     def copy(self) -> "Program":
@@ -676,8 +737,8 @@ class Program:
     ) -> "Program":
         """Bind one trusted sweep row without repeating public validation.
 
-        ``_normalize_parameter_batch`` guarantees complete identity-keyed
-        scalar rows before this method is called. Keeping this seam separate
+        ``_normalize_parameter_batch`` and ``_parameter_batch_rows`` guarantee
+        complete identity-keyed scalar rows before this method is called. Keeping this seam separate
         prevents every sweep point from rechecking the same batch contract.
         """
         operations = _replace_parameterized_instructions(self._instructions, values)

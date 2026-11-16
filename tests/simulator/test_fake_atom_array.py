@@ -2,14 +2,25 @@
 connectivity, and the Put/loss atom lifecycle.
 """
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
+
+from fatqat.simulator._engine._execution_policy import _select_execution_path
 
 import fatqat.operations as ops
 from fatqat._backends.steps import ApplyMatrixStep, LossStep, PutStep
 from fatqat.simulator import AtomArraySimulator, Simulator
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
-from fatqat.noise import Loss, NoiseModel, ReadoutConfusion
+from fatqat.noise import (
+    AmplitudeDamping,
+    Depolarizing,
+    Loss,
+    NoiseModel,
+    PauliChannel,
+    ReadoutConfusion,
+)
 from fatqat.program import Program
 from fatqat.registers import QuantumRegister
 
@@ -159,7 +170,7 @@ def test_lost_atom_on_a_paired_cz_is_dropped_silently_not_raised():
     assert len(_two_qubit_matrix_steps(plan)) == 1  # kept at lowering
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(p, shots=10, simulation_config={"seed": 0})
+        .run(p, shots=10, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -214,16 +225,20 @@ def test_conditional_unpair_rejected():
 # --- Put atom lifecycle -------------------------------------------------------
 
 
-def test_atom_lifecycle_translates_to_common_facts_and_occupancy():
+def test_atom_lifecycle_translates_to_common_facts():
     program = Program(1)
     program.add(ops.Put, 0)
 
-    _plan, facts, occupied = AtomArraySimulator()._prepare_program(program)
+    backend = AtomArraySimulator()
+    _plan, facts = backend._prepare_program(program)
+    execution_path = _select_execution_path(
+        _plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
 
-    assert facts.execution_shape == "per_shot"
+    assert execution_path == "per_shot"
     assert facts.stochastic_final_state is False
-    assert facts.deferred_measurements == ()
-    assert occupied == frozenset()
 
 
 def test_atom_loss_translates_to_stochastic_per_shot_execution():
@@ -233,11 +248,16 @@ def test_atom_loss_translates_to_stochastic_per_shot_execution():
     program.add(ops.Put, 0)
     program.add(ops.RX(0.1), 0)
 
-    _plan, facts, occupied = AtomArraySimulator(noise=noise)._prepare_program(program)
+    backend = AtomArraySimulator(noise=noise)
+    _plan, facts = backend._prepare_program(program)
+    execution_path = _select_execution_path(
+        _plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
 
-    assert facts.execution_shape == "per_shot"
+    assert execution_path == "per_shot"
     assert facts.stochastic_final_state is True
-    assert occupied == frozenset()
 
 
 @pytest.mark.parametrize(
@@ -256,40 +276,78 @@ def test_atom_extension_steps_preserve_conditions(step_kind, step_type):
 
     backend = AtomArraySimulator(noise=noise)
     plan, _facts = backend._lower_program(program)
+    execution_path = _select_execution_path(
+        plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
     extension = next(step for step in plan if isinstance(step, step_type))
 
     assert extension.condition == ((0, 0),)
-    facts, _occupied = backend._analyze_lowered_plan((extension,))
-    assert facts.execution_shape == "per_shot"
+    facts = backend._analyze_lowered_plan((extension,))
+    assert execution_path == "per_shot"
     assert facts.has_condition is True
 
 
-def test_atom_lifecycle_clears_deferred_measurements():
+def test_atom_measurement_uses_per_shot_execution():
     program = Program(1, 1)
     program.add(ops.Put, 0)
     program.measure(0, 0)
 
-    _plan, facts = AtomArraySimulator()._lower_program(program)
+    backend = AtomArraySimulator()
+    _plan, _facts = backend._lower_program(program)
+    execution_path = _select_execution_path(
+        _plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
 
-    assert facts.execution_shape == "per_shot"
-    assert facts.deferred_measurements == ()
-    assert facts.written_clbits == frozenset({0})
+    assert execution_path == "per_shot"
 
 
-def test_gate_before_put_executes_while_empty():
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_gate_before_put_executes_while_empty(runtime):
     program = Program(1, 1)
     program.add(ops.RX(np.pi), 0)  # native X-equivalent; skipped while empty
     program.add(ops.Put, 0)
     program.measure(0, 0)
 
+    backend = AtomArraySimulator(runtime=runtime)
     counts = (
-        AtomArraySimulator()
-        .run(program, shots=8, simulation_config={"seed": 0})
+        backend.run(program, shots=8, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
 
     assert counts == {"0": 8}
+
+    # The previous run left the atom loaded; the next run starts empty again.
+    empty = Program(1, 1)
+    empty.measure(0, 0)
+    counts = backend.run(empty, shots=8, execution_config={"seed": 0})
+    assert counts.result().get_counts() == {"2": 8}
+
+
+def test_engine_without_occupancy_accepts_only_implicit_occupancy(monkeypatch):
+    backend = AtomArraySimulator(runtime="numpy")
+    trajectory = backend._engine.capabilities.trajectory
+    monkeypatch.setattr(
+        backend._engine,
+        "_capabilities",
+        replace(
+            backend._engine.capabilities,
+            trajectory=replace(trajectory, occupancy=False),
+        ),
+    )
+    program = Program(1, 1)
+    program.measure(0, 0)
+
+    standard = Simulator(runtime="numpy")
+    standard._engine = backend._engine
+    assert standard.run(program, shots=1).result().get_counts() == {"0": 1}
+
+    with pytest.raises(BackendValidationError, match="cannot track carrier occupancy"):
+        backend.run(program)
 
 
 def test_plain_simulator_rejects_atom_put():
@@ -307,7 +365,7 @@ def test_program_without_put_reports_every_atom_missing():
     p.measure_all()
     counts = (
         AtomArraySimulator()
-        .run(p, shots=4, simulation_config={"seed": 0})
+        .run(p, shots=4, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -324,7 +382,7 @@ def test_empty_site_erasure_is_not_encoded_in_final_state():
             program,
             shots=1,
             result_config={"counts": True, "final_state": True},
-            simulation_config={"seed": 0},
+            execution_config={"seed": 0},
         )
         .result()
     )
@@ -333,7 +391,7 @@ def test_empty_site_erasure_is_not_encoded_in_final_state():
     assert np.allclose(result.get_statevector(), [1, 0])
 
 
-def test_never_loaded_operations_do_not_change_default_final_state():
+def test_never_loaded_operations_do_not_change_final_state():
     backend = AtomArraySimulator()
 
     def final_state(*, include_empty_site_operations):
@@ -343,7 +401,11 @@ def test_never_loaded_operations_do_not_change_default_final_state():
         if include_empty_site_operations:
             program.add(ops.RX(np.pi), 1)
             program.add(ops.Reset, 1)
-        return backend.run(program).result().get_statevector()
+        return (
+            backend.run(program, shots=1, result_config={"final_state": True})
+            .result()
+            .get_statevector()
+        )
 
     assert np.allclose(
         final_state(include_empty_site_operations=True),
@@ -384,7 +446,7 @@ def test_measurement_of_empty_site_reads_erasure():
     p.measure(1, 0)
     counts = (
         AtomArraySimulator()
-        .run(p, shots=4, result_config={"counts": True}, simulation_config={"seed": 0})
+        .run(p, shots=4, result_config={"counts": True}, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -403,7 +465,7 @@ def test_empty_site_erasure_bypasses_readout_noise():
     p.measure(1, 0)
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(p, shots=4, result_config={"counts": True}, simulation_config={"seed": 0})
+        .run(p, shots=4, result_config={"counts": True}, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -421,7 +483,7 @@ def test_put_restores_a_lost_site():
     p.measure(0, 0)
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(p, shots=8, simulation_config={"seed": 0})
+        .run(p, shots=8, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -441,7 +503,7 @@ def test_put_on_occupied_site_is_a_noop():
     def counts(p):
         return (
             AtomArraySimulator()
-            .run(p, shots=8, simulation_config={"seed": 0})
+            .run(p, shots=8, execution_config={"seed": 0})
             .result()
             .get_counts()
         )
@@ -462,7 +524,7 @@ def test_process_workers_preserve_initial_atom_occupancy():
             backend.run(
                 program,
                 shots=8,
-                simulation_config={
+                execution_config={
                     "seed": 7,
                     "shot_parallelism": shot_parallelism,
                     "kernel_parallelism": "serial",
@@ -482,6 +544,77 @@ def test_process_workers_preserve_initial_atom_occupancy():
 
 
 @pytest.mark.parametrize("runtime", ["numpy", "numba"])
+@pytest.mark.parametrize("method", ["statevector", "density_matrix"])
+@pytest.mark.parametrize("survivor", [0, 1])
+@pytest.mark.parametrize("lost", [False, True])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_cz_local_relaxation_with_absent_partner(
+    runtime, method, survivor, lost, enabled
+):
+    noise = NoiseModel()
+    noise.add(Loss(p=1), operation=ops.RY)
+    for position in (0, 1):
+        noise.add(AmplitudeDamping(p=1), operation=ops.CZ, target_positions=position)
+    program = Program(2, 2)
+    program.add(ops.Put, survivor)
+    program.add(ops.RX(np.pi), survivor)
+    if lost:
+        program.add(ops.Put, 1 - survivor)
+        program.add(ops.RY(0), 1 - survivor)
+    program.add(ops.Pair, (0, 1))
+    program.add(ops.CZ, (0, 1), condition=(0, 0 if enabled else 1))
+    program.measure(survivor, 0)
+    program.measure(1 - survivor, 1)
+    counts = (
+        AtomArraySimulator(runtime=runtime, method=method, noise=noise)
+        .run(program, shots=8, execution_config={"seed": 23})
+        .result()
+        .get_counts()
+    )
+    assert counts == {"02" if enabled else "12": 8}
+
+
+@pytest.mark.parametrize("operation", [ops.CZ, ops.Pair, ops.Unpair])
+@pytest.mark.parametrize("channel", [Depolarizing(p=0.1), PauliChannel({"XX": 0.1})])
+@pytest.mark.parametrize("loaded", [False, True])
+def test_atom_array_rejects_joint_channels(operation, channel, loaded):
+    noise = NoiseModel()
+    noise.add(channel, operation=operation)
+    program = Program(2)
+    if loaded:
+        program.add(ops.Put, 0)
+        program.add(ops.Put, 1)
+    program.add(ops.Pair, (0, 1))
+    if operation is not ops.Pair:
+        program.add(operation, (0, 1))
+    with pytest.raises(
+        BackendValidationError, match="single-subsystem.*target_positions"
+    ):
+        AtomArraySimulator(noise=noise).run(program).result()
+
+
+@pytest.mark.parametrize("channel", [Depolarizing(p=1), PauliChannel({"X": 1})])
+def test_atom_array_accepts_local_channels_on_cz(channel):
+    noise = NoiseModel()
+    noise.add(channel, operation=ops.CZ, target_positions=1)
+    program = Program(2, 1)
+    program.add(ops.Put, 1)
+    program.add(ops.Pair, (0, 1))
+    program.add(ops.CZ, (0, 1))
+    program.measure(1, 0)
+    counts = (
+        AtomArraySimulator(noise=noise)
+        .run(program, shots=64, execution_config={"seed": 23})
+        .result()
+        .get_counts()
+    )
+    if isinstance(channel, PauliChannel):
+        assert counts == {"1": 64}
+    else:
+        assert set(counts) == {"0", "1"}
+
+
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
 def test_atom_loss_ejects_the_atom(runtime):
     noise = NoiseModel()
     noise.add(Loss(p=1.0), operation=ops.RX)
@@ -491,7 +624,7 @@ def test_atom_loss_ejects_the_atom(runtime):
     p.measure(0, 0)
     counts = (
         AtomArraySimulator(runtime=runtime, noise=noise)
-        .run(p, shots=10, simulation_config={"seed": 0})
+        .run(p, shots=10, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -582,6 +715,18 @@ def test_put_only_final_state_remains_deterministic_for_any_shots():
         .get_statevector()
     )
     assert np.allclose(np.abs(state), [0, 1])
+
+
+def test_final_classical_state_reports_occupancy_after_put():
+    program = Program(2)
+    program.add(ops.Put, (0, 1))
+    classical = (
+        AtomArraySimulator()
+        .run(program, shots=10, result_config={"final_classical_state": True})
+        .result()
+        .get_classical_state()
+    )
+    assert classical.occupied == {0, 1}
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])

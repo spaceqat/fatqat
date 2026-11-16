@@ -24,7 +24,9 @@ from .parameters import Parameter, ParameterVector
 from .program import Program
 from .registers import (
     ClassicalRegister,
+    CountRegister,
     GridRegister,
+    ModeRegister,
     QuantumRegister,
     Register,
     RegisterRef,
@@ -33,7 +35,7 @@ from .registers import (
 from .resource_layout import DeviceOperand, ResourceLayout
 from .result import Result
 
-__version__ = "0.1.0a2"
+__version__ = "0.1.0a3"
 
 
 def __getattr__(name: str):
@@ -69,6 +71,8 @@ __all__ = [
     "Register",
     "QuantumRegister",
     "ClassicalRegister",
+    "ModeRegister",
+    "CountRegister",
     "RegisterRef",
     "GridRegister",
     "RegisterView",

@@ -1,105 +1,53 @@
-"""Tests statevector simulator probabilities, sampling, and collapse."""
+"""Measurement mathematics and observable sampling behavior."""
 
 import numpy as np
+import pytest
 
-from fatqat.simulator._engine.np import NumpySVEngine
-from fatqat._backends.steps import ApplyMatrixStep
-
-_H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
-
-
-def _h_engine(n_qubits, target):
-    eng = NumpySVEngine()
-    eng.initialize((2,) * n_qubits)
-    eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(target,)))
-    return eng
+from fatqat.program import Program
+from fatqat.simulator import Simulator
+import fatqat.operations as ops
+from fatqat.simulator._engine.numerics.numpy_kernels._measurement import (
+    _project_statevector,
+    _statevector_probabilities,
+)
 
 
 def test_probabilities():
-    eng = _h_engine(1, 0)
-    assert np.allclose(eng.probabilities(), [0.5, 0.5])
+    state = np.array([1, 1j], dtype=complex) / np.sqrt(2)
+    assert np.allclose(_statevector_probabilities(state), [0.5, 0.5])
 
 
-def test_sample_indices_deterministic_state():
-    eng = NumpySVEngine()
-    eng.initialize((2, 2))  # always |00> -> index 0
-    rng = np.random.default_rng(0)
-    idx = eng.sample_indices(100, rng)
-    assert idx.shape == (100,)
-    assert np.all(idx == 0)
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_samples_follow_the_born_distribution(runtime):
+    program = Program(1, 1)
+    program.add(ops.H, 0)
+    program.measure(0, 0)
+    counts = (
+        Simulator("SV", runtime=runtime)
+        .run(program, shots=2000, execution_config={"seed": 42})
+        .result()
+        .get_counts()
+    )
+    assert sum(counts.values()) == 2000
+    assert 0.45 < counts.get("1", 0) / 2000 < 0.55
 
 
-def test_sample_indices_balanced_with_seed():
-    eng = _h_engine(1, 0)
-    rng = np.random.default_rng(42)
-    idx = eng.sample_indices(2000, rng)
-    frac_one = np.mean(idx == 1)
-    assert 0.45 < frac_one < 0.55
-
-
-def test_collapse_returns_flat_index_and_projects():
-    eng = _h_engine(1, 0)
-    rng = np.random.default_rng(1)
-    idx = eng.collapse([0], rng)
-    assert idx in (0, 1)
-    expected = np.zeros(2, dtype=complex)
-    expected[idx] = 1.0
-    assert np.allclose(eng.export_state(), expected)
-    assert np.isclose(np.linalg.norm(eng.export_state()), 1.0)
-
-
-def test_collapse_partial_measurement_preserves_compatible_superposition():
-    eng = _h_engine(2, 0)
-    rng = np.random.default_rng(1)
-    idx = eng.collapse([1], rng)
-
-    bit = (idx >> 1) & 1
+@pytest.mark.parametrize("outcome", [0, 2])
+def test_partial_projection_preserves_compatible_superposition_and_input(outcome):
+    state = np.full(4, 0.5, dtype=complex)
+    original = state.copy()
+    projected = _project_statevector(state, outcome, (1,), (2, 2))
     expected = np.zeros(4, dtype=complex)
-    expected[bit << 1] = 1 / np.sqrt(2)
-    expected[(bit << 1) | 1] = 1 / np.sqrt(2)
+    expected[outcome : outcome + 2] = 1 / np.sqrt(2)
+    assert np.array_equal(state, original)
+    assert np.allclose(projected, expected)
+    assert np.isclose(np.linalg.norm(projected), 1.0)
 
-    assert np.allclose(eng.export_state(), expected)
-    assert np.isclose(np.linalg.norm(eng.export_state()), 1.0)
 
-
-def test_collapse_all_qubits_projects_to_single_basis_state():
-    eng = _h_engine(2, 0)
-    eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(1,)))
-    rng = np.random.default_rng(2)
-    idx = eng.collapse([0, 1], rng)
-
+@pytest.mark.parametrize("outcome", range(4))
+def test_full_projection_produces_normalized_basis_state(outcome):
+    state = np.full(4, 0.5, dtype=complex)
+    projected = _project_statevector(state, outcome, (0, 1), (2, 2))
     expected = np.zeros(4, dtype=complex)
-    expected[idx] = 1.0
-
-    assert np.allclose(eng.export_state(), expected)
-    assert np.isclose(np.linalg.norm(eng.export_state()), 1.0)
-
-
-def test_collapse_returns_index_and_projects_without_mutating_prior_buffer():
-    eng = NumpySVEngine()
-    eng.initialize((2, 2))
-    eng.state = np.array([0.5, 0.5, 0.5, 0.5], dtype=complex)
-    prior = eng.state  # collapse must not mutate this buffer in place
-    original = prior.copy()
-    rng = np.random.default_rng(1)
-
-    idx = eng.collapse([1], rng)
-
-    bit = (idx >> 1) & 1
-    expected = np.zeros(4, dtype=complex)
-    expected[bit << 1] = 1 / np.sqrt(2)
-    expected[(bit << 1) | 1] = 1 / np.sqrt(2)
-
-    assert np.allclose(prior, original)  # prior buffer left untouched
-    assert np.allclose(eng.export_state(), expected)
-    assert np.isclose(np.linalg.norm(eng.export_state()), 1.0)
-
-
-def test_measure_qutrit_digit_extraction():
-    from fatqat.implementation.matrices import shift_matrix
-
-    eng = NumpySVEngine()
-    eng.initialize((3,))
-    eng._state = shift_matrix(3, 2) @ eng.export_state()
-    (digit,) = eng.measure_subsystems((0,), np.random.default_rng(0))
-    assert digit == 2
+    expected[outcome] = 1
+    assert np.allclose(projected, expected)

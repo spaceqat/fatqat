@@ -33,7 +33,9 @@ evolution matters.
 | [`Simulator`][fatqat.simulator.Simulator] | General circuit simulation and custom matrix implementations | No device topology |
 | [`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] | Constrained superconducting native-gate experiments | `X`, `SX`, `RZ`; `CZ` on configured couplings |
 | [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] | Neutral-atom occupancy, loss, and dynamic connectivity | `RX`, `RY`, `RZ`, and paired `CZ` |
+| [`LOSimulator`][fatqat.simulator.LOSimulator] | Linear-optical Programs on photon modes | Modes truncated to a per-run photon cutoff |
 
 - [Simulator](../simulator.md)
 - [SCQubitSimulator](sc-qubit.md)
 - [AtomArraySimulator](atom-array.md)
+- [LOSimulator](linear-optics.md)

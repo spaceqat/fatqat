@@ -42,6 +42,52 @@ sites in declaration order by default:
 2
 ```
 
+To choose individual positions, supply `(x, y)` coordinates for a 2D layout
+or `(x, y, z)` coordinates for a 3D layout. All sites in an arrangement must
+use the same number of components, and distances are in micrometres:
+
+```pycon
+>>> planar = fq.emulator.AtomArrangement.from_coordinates([(0, 0), (3, 4)])
+>>> planar.coordinates
+((0.0, 0.0, 0.0), (3.0, 4.0, 0.0))
+>>> planar.spatial_dimension
+2
+>>> spatial = fq.emulator.AtomArrangement.from_coordinates([(0, 0, 0), (3, 4, 5)])
+>>> spatial.spatial_dimension
+3
+```
+
+The factory preserves input order as site order and copies the positions
+into immutable tuples. Explicit z values select 3D even when every z value
+is zero. `chain()` and `rectangular()` describe layouts embedded in 2D.
+Custom coordinates have no declared row count, column count, or uniform
+spacing; their `rows`, `cols`, and `spacing` attributes are `None`. See the
+[arrangement API](../api/atom-emulators.md#arrangements-and-program-resources)
+for input constraints.
+
+You can give rectangular layouts different x and y spacings, then combine
+layouts in the order their sites should appear. Labels let you retrieve the
+site indices belonging to each part:
+
+```pycon
+>>> storage = fq.emulator.AtomArrangement.rectangular(
+...     rows=2, cols=2, spacing=(4.0, 6.0), label="storage"
+... )
+>>> interaction = fq.emulator.AtomArrangement.from_coordinates(
+...     [(12, 0), (12, 6)], label="interaction"
+... )
+>>> combined = fq.emulator.AtomArrangement.combine(storage, interaction)
+>>> combined.group("storage")
+(0, 1, 2, 3)
+>>> combined.group("interaction")
+(4, 5)
+```
+
+Combining layouts requires distinct positions and unique group names. A
+combination containing any 3D layout is 3D. Nested combinations retain their
+groups with indices adjusted to the final site order. You can also give
+`combine()` a label for a group covering the entire result.
+
 The arrangement is fixed geometry, not an atom-transport instruction. It sets
 the distances used by Rydberg interactions, and the Program must declare
 exactly one dimension-two resource per site.
@@ -78,17 +124,17 @@ map is empty, so a Program normally contains direct pulse blocks:
 >>> global_program.add(ops.PulseOperation(1.0, global_controls))
 >>> atom2_state = atom2.run(global_program).result().get_statevector()
 >>> atom2_state.shape
-(4,)
->>> bool(np.isclose(np.linalg.norm(atom2_state), 1.0))
+(4, 1)
+>>> bool(np.isclose(atom2_state.norm(), 1.0))
 True
->>> round(float(1.0 - abs(atom2_state[0]) ** 2), 3)
+>>> round(float(1.0 - abs(atom2_state[0, 0]) ** 2), 3)
 0.054
 ```
 
 Both controls act on every site. The arrangement supplies the distances and
 the model supplies the signed interaction strength, so changing the spacing
 can change the dynamics without changing the Program. By default every site
-pair interacts. Set `simulation_config={"interaction_cutoff": distance}` on a
+pair interacts. Set `execution_config={"interaction_cutoff": distance}` on a
 particular `run()` to remove terms beyond that distance; this is a numerical
 Hamiltonian truncation rather than a blockade radius.
 

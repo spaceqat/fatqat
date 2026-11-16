@@ -91,7 +91,7 @@ def test_production_matches_the_calibrated_analytic_oracle(
     backend = _backend(
         atom_3level_model, atom_3level_calibration, CALIBRATED_V_OVER_OMEGA
     )
-    produced = backend.run(_program()).result().get_unitary()
+    produced = backend.run(_program()).result().get_unitary().full()
     production = analyze_cz_propagator(
         produced, atom_3level_calibration, apply_correction=False
     )
@@ -147,7 +147,7 @@ def test_production_grid_metadata_sampled_reference_and_convergence(
     ]
     assert {len(control.waveform.times) for control in controls} == {points}
     production = analyze_cz_propagator(
-        backend.run(program).result().get_unitary(),
+        backend.run(program).result().get_unitary().full(),
         atom_3level_calibration,
         apply_correction=False,
     )

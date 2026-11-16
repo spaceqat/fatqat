@@ -40,7 +40,7 @@ the normal FatQat result:
 ```pycon
 >>> counts = (
 ...     fq.simulator.Simulator()
-...     .run(program, shots=100, simulation_config={"seed": 7})
+...     .run(program, shots=100, execution_config={"seed": 7})
 ...     .result()
 ...     .get_counts()
 ... )
@@ -83,6 +83,7 @@ Use [`circuit_to_program`][fatqat.qiskit.circuit_to_program] when you want to cr
 boundary into FatQat and then use its backends and result model:
 
 ```python
+# guide-test: skip
 from qiskit import QuantumCircuit
 
 import fatqat as fq
@@ -96,7 +97,7 @@ circuit.measure([0, 1], [0, 1])
 program = circuit_to_program(circuit)
 result = (
     fq.simulator.Simulator()
-    .run(program, shots=100, simulation_config={"seed": 7})
+    .run(program, shots=100, execution_config={"seed": 7})
     .result()
 )
 counts = result.get_counts()
@@ -113,6 +114,7 @@ application should remain a Qiskit workflow. Transpile to the backend's target
 before submitting the circuit:
 
 ```python
+# guide-test: skip
 from qiskit import QuantumCircuit, generate_preset_pass_manager
 from fatqat.qiskit import FatqatBackend
 

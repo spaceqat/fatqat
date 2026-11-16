@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.1.0a3 - 2026-11-16
+
+- Added linear-optics simulation with optical gates, mode and count registers,
+  and `LOSimulator`, including fixed-photon-number states.
+- Faster Numba statevector simulation, parameter sweeps, noisy trajectories,
+  and expectation values. A new performance guide explains how to choose
+  runtimes and parallelism settings.
+- Custom operations can now update both quantum and classical state. Gates
+  and noise channels share an implementation map with target-specific rules.
+- Added measurement destinations via `Program.measure_all(outputs=...)`,
+  final classical-state output via `Result.get_classical_state()`, and qudit
+  observables for expectation values.
+- Added `fatqat.simulator.set_default_runtime()` to choose the runtime for
+  new simulators.
+- Atom arrangements can now be created directly from coordinates.
+- Fixed multi-block pulse composition and the DRAG virtual-Z frame-update sign.
+- Added installation guidance, Chinese repository documentation, a Korean
+  README, and tutorials on surface-code memory, qutrit-assisted Toffoli gates,
+  QAOA, and pulse calibration.
+
+**Compatibility and migration:**
+
+- `execution_config=` replaces `simulation_config=`, which is deprecated and
+  will be removed before 0.1.0. Do not pass both. Result metadata includes both
+  keys during the transition.
+- Pulse emulators now return QuTiP `Qobj` values for final states and unitaries.
+  Use `.full()` to obtain a NumPy array. Gate-level simulators still return arrays.
+- Custom noise rules now belong in `MatrixImplementationMap`, passed through
+  `implementation_map=`. This replaces `ChannelImplementationMap`,
+  `default_channel_implementation_map()`, and `channel_implementation_map=`.
+  Use `default_matrix_implementation_map()` to keep the built-in rules.
+- `AtomArraySimulator` now rejects finite noise channels acting on multiple
+  subsystems. `Loss` still supports multiple targets, sampled independently.
+
+This is an alpha release; pin the exact version for reproducible studies.
+
 ## 0.1.0a2 - 2026-10-04
 
 This alpha updates the documentation and examples, with targeted compiler
@@ -20,8 +56,7 @@ an exact `LogicalProgram` input. In 0.1.0a1 they also accepted `Program` and
 converted it automatically. Construct a `LogicalProgram` before calling either
 compiler entry point. OpenQASM compiler entry points remain available.
 
-Requires Python 3.12 or newer. This is an alpha release; pin the exact version
-for reproducible studies.
+This is an alpha release; pin the exact version for reproducible studies.
 
 ## 0.1.0a1 - 2026-09-12
 
@@ -38,5 +73,4 @@ the `Program` authoring interface.
 - Work with OpenQASM and optional Qiskit integration, draw programs, and
   follow executable algorithm and physics tutorials.
 
-Requires Python 3.12 or newer. This is an alpha release: interfaces may change
-between releases. Pin the exact package version for reproducible studies.
+This is an alpha release; pin the exact version for reproducible studies.

@@ -3,7 +3,7 @@
 import inspect
 import pickle
 import typing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from typing import ClassVar
 
@@ -13,18 +13,19 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat._backends.backend_utils import _LoweringContext
-from fatqat._backends import steps as steps_module
-from fatqat._backends.steps import ApplyMatrixStep, ResolvedStep
+from fatqat._backends.steps import (
+    ApplyMatrixStep,
+    ApplyParametricMatrixStep,
+    ResolvedStep,
+)
 from fatqat._index_allocation import _ClassicalAllocation
-from fatqat._parameter_binding import _discover_parameters
 from fatqat.errors import BackendValidationError, MatrixImplementationError
 from fatqat.implementation import MatrixImplementationMap
-from fatqat.job import Job
 from fatqat.operations import Operation
 from fatqat.resource_layout import ResourceLayout
 from fatqat.result import Result
 from fatqat.simulator import Simulator
-from fatqat.simulator.planning import _MatrixRecipe, _ParametricPlan
+from fatqat.simulator._engine.binding import _bind_parameter_batch
 
 
 def _rx_matrix(angle):
@@ -68,6 +69,27 @@ def test_scalar_parameter_sweep_returns_ordered_results():
     assert len(results) == len(values)
     assert np.allclose(results[0].get_statevector(), [1, 0])
     assert np.allclose(np.abs(results[2].get_statevector()), [0, 1])
+
+
+def test_sweep_returns_each_rows_final_classical_state():
+    theta = fq.Parameter("theta")
+    program = fq.Program(1, 1)
+    program.add(ops.RX(theta), 0)
+    program.measure(0, 0)
+    results = (
+        Simulator("SV")
+        .run_sweep(
+            program,
+            {theta: [0.0, np.pi]},
+            shots=1,
+            result_config={"final_classical_state": True},
+        )
+        .result()
+    )
+    assert [result.get_classical_state().clbits for result in results] == [
+        [0],
+        [1],
+    ]
 
 
 def test_vector_and_multiple_parameter_batches_match_explicit_loop():
@@ -138,7 +160,7 @@ def test_counts_seed_and_options_match_manual_repeated_runs():
     program.measure(0, 0)
     layout = ResourceLayout({program.quantum_registers[0][0]: 0})
     initial_state = [0.0, 1.0]
-    simulation_config = {
+    execution_config = {
         "seed": 17,
         "shot_parallelism": "serial",
         "kernel_parallelism": "serial",
@@ -152,7 +174,7 @@ def test_counts_seed_and_options_match_manual_repeated_runs():
         shots=64,
         resource_layout=layout,
         initial_state=initial_state,
-        simulation_config=simulation_config,
+        execution_config=execution_config,
         result_config=result_config,
     ).result()
     explicit = [
@@ -161,7 +183,7 @@ def test_counts_seed_and_options_match_manual_repeated_runs():
             shots=64,
             resource_layout=layout,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             result_config=result_config,
         ).result()
         for value in values
@@ -170,6 +192,103 @@ def test_counts_seed_and_options_match_manual_repeated_runs():
     assert [result.get_counts() for result in swept] == [
         result.get_counts() for result in explicit
     ]
+
+
+_STATE_ONLY = {"shots": 0, "result_config": {"counts": False, "final_state": True}}
+
+
+@pytest.mark.parametrize(
+    ("arity", "build", "targets", "dim"),
+    [
+        (1, lambda p: ops.RX(p[0]), 0, 2),
+        (1, lambda p: ops.RY(p[0]), 0, 2),
+        (1, lambda p: ops.RZ(p[0]), 0, 2),
+        (1, lambda p: ops.Phase(p[0]), 0, 2),
+        (2, lambda p: ops.U(p[0], p[1], 0.7), 0, 2),
+        (1, lambda p: ops.U1(p[0]), 0, 2),
+        (1, lambda p: ops.U2(0.3, p[0]), 0, 2),
+        (3, lambda p: ops.U3(p[0], p[1], p[2]), 0, 2),
+        (1, lambda p: ops.CPhase(p[0]), (0, 1), 2),
+        (1, lambda p: ops.SubspaceRX(p[0], (0, 2)), 0, 3),
+        (1, lambda p: ops.SubspaceRY(p[0], (1, 2)), 0, 3),
+        (1, lambda p: ops.SubspaceRZ(p[0], (0, 2)), 0, 3),
+        (1, lambda p: ops.PhaseShifter(p[0]), 0, 3),
+        (2, lambda p: ops.BeamSplitter(p[0], p[1]), (0, 1), 3),
+    ],
+    ids=[
+        "RX",
+        "RY",
+        "RZ",
+        "Phase",
+        "U-mixed",
+        "U1",
+        "U2",
+        "U3",
+        "CPhase",
+        "SubspaceRX",
+        "SubspaceRY",
+        "SubspaceRZ",
+        "PhaseShifter",
+        "BeamSplitter",
+    ],
+)
+def test_every_builtin_parametric_gate_matches_explicit_loop(
+    arity, build, targets, dim
+):
+    params = [fq.Parameter(f"p{index}") for index in range(arity)]
+    program = fq.Program([fq.QuantumRegister(2, dim=dim)])
+    for qudit in range(2):
+        program.add(ops.H if dim == 2 else ops.Fourier, qudit)
+    program.add(build(params), targets)
+    values = np.random.default_rng(11).uniform(-7.0, 7.0, size=(5, arity))
+    backend = Simulator("SV")
+
+    swept = backend.run_sweep(
+        program,
+        {param: values[:, index] for index, param in enumerate(params)},
+        **_STATE_ONLY,
+    ).result()
+    explicit = [
+        backend.run(program.assign_parameters(dict(zip(params, row))), **_STATE_ONLY)
+        .result()
+        .get_statevector()
+        for row in values
+    ]
+
+    for result, expected in zip(swept, explicit, strict=True):
+        np.testing.assert_allclose(
+            result.get_statevector(), expected, rtol=0, atol=1e-12
+        )
+
+
+def test_counts_match_explicit_loop():
+    theta = fq.Parameter("theta")
+    program = fq.Program(1, 1)
+    program.add(ops.RY(theta), 0)
+    program.measure(0, 0)
+    values = np.linspace(0.0, np.pi, 7)
+    backend = Simulator("SV")
+    options = {"shots": 16, "execution_config": {"seed": 5}}
+
+    swept = backend.run_sweep(program, {theta: values}, **options).result()
+    explicit = [
+        backend.run(program.assign_parameters({theta: value}), **options)
+        .result()
+        .get_counts()
+        for value in values
+    ]
+
+    assert [result.get_counts() for result in swept] == explicit
+
+
+def test_batched_builder_failure_raises_matrix_implementation_error():
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(ops.U(theta, 10**400, 0), 0)
+
+    # The NumPy runtime binds sweep values through the host batched rules.
+    with pytest.raises(MatrixImplementationError, match="implementation for U"):
+        Simulator("SV", runtime="numpy").run_sweep(program, {theta: [0.1, 0.2]})
 
 
 def test_batch_validation_finishes_before_row_zero(monkeypatch):
@@ -267,7 +386,7 @@ def test_failed_point_execution_produces_failed_outer_job_without_partial_list(
     program.add(ops.RX(theta), 0)
     backend = Simulator()
     error = RuntimeError("point failed")
-    original_execute = backend._execute_plan
+    original_assemble = backend._assemble_result
     calls = 0
 
     def fail_on_second(*args, **kwargs):
@@ -275,10 +394,14 @@ def test_failed_point_execution_produces_failed_outer_job_without_partial_list(
         calls += 1
         if calls == 2:
             raise error
-        return original_execute(*args, **kwargs)
+        return original_assemble(*args, **kwargs)
 
-    monkeypatch.setattr(backend, "_execute_plan", fail_on_second)
-    outer = backend.run_sweep(program, {theta: [0.1, 0.2]})
+    # Every sweep row's result is assembled separately, so failing the second
+    # assembly fails the second row on any execution path.
+    monkeypatch.setattr(backend, "_assemble_result", fail_on_second)
+    outer = backend.run_sweep(
+        program, {theta: [0.1, 0.2]}, execution_config={"error_handling": "capture"}
+    )
 
     with pytest.raises(RuntimeError, match="point failed") as caught:
         outer.result()
@@ -292,14 +415,16 @@ def test_point_job_interrupt_propagates_from_sweep(monkeypatch):
     backend = Simulator()
     error = KeyboardInterrupt("point interrupted")
 
-    monkeypatch.setattr(
-        backend,
-        "_execute_plan",
-        lambda *_args, **_kwargs: Job(status="ERROR", error=error),
-    )
+    def interrupt(*_args, **_kwargs):
+        raise error
 
+    monkeypatch.setattr(backend._engine, "execute", interrupt)
+
+    # Captured error handling covers Exception, never an interrupt.
     with pytest.raises(KeyboardInterrupt, match="point interrupted") as caught:
-        backend.run_sweep(program, {theta: [0.1]})
+        backend.run_sweep(
+            program, {theta: [0.1]}, execution_config={"error_handling": "capture"}
+        )
     assert caught.value is error
 
 
@@ -399,39 +524,122 @@ def test_parametric_program_lowers_to_deferred_picklable_steps():
     program.add(ops.RX(theta), 0)
     backend = Simulator("SV")
     layout = backend._resolve_resource_layout(program)
-    param_order = _discover_parameters(program._instructions)
     context = _LoweringContext(
         resource_layout=layout,
         engine_allocation=backend._allocate_engine_indices(program, layout),
         classical_allocation=_ClassicalAllocation.from_program(program),
     )
 
-    plan, _facts, _occupied = backend._prepare_parametric_program(
-        program, context=context, param_order=param_order
+    column = np.array([0.3, 0.6])
+    plan, _facts = backend._prepare_program(
+        program, context=context, parameter_values={theta: column}
     )
 
-    assert isinstance(plan, _ParametricPlan)
-    assert plan.param_order == param_order
-    assert [type(step) for step in plan.steps] == [ApplyMatrixStep, _MatrixRecipe]
-    deferred = plan.steps[1]
-    assert deferred.param_slots == (0,)
-    assert deferred.target_dims == (2,)
-    assert deferred.target_indices == (0,)
-    # Non-parametric steps are shared with the materialized plans, not rebuilt.
-    materialized = plan.materialize((0.3,))
-    assert materialized[0] is plan.steps[0]
-    assert isinstance(materialized[1], ApplyMatrixStep)
-    assert np.allclose(materialized[1].matrix, _rx_matrix(0.3))
-    # The deferred plan is a plain execution payload: it pickles by value.
-    restored = pickle.loads(pickle.dumps(plan))
-    assert np.allclose(restored.materialize((0.3,))[1].matrix, _rx_matrix(0.3))
+    assert [type(step) for step in plan] == [ApplyMatrixStep, ApplyParametricMatrixStep]
+    assert plan[1].operation.theta is theta
+    assert plan[1].target_indices == (0,)
+    ((name, injected),) = plan[1].values
+    assert name == "theta" and injected is column
+    # Non-parametric steps are shared with the bound plans, not rebuilt.
+    first, second = _bind_parameter_batch(plan, (2,))
+    assert first[0] is plan[0]
+    assert isinstance(first[1], ApplyMatrixStep)
+    assert np.allclose(first[1].matrix, _rx_matrix(0.3))
+    assert np.allclose(second[1].matrix, _rx_matrix(0.6))
+    # The value-injected plan is plain data: it pickles by value on its own.
+    restored, _ = _bind_parameter_batch(pickle.loads(pickle.dumps(plan)), (2,))
+    assert np.allclose(restored[1].matrix, _rx_matrix(0.3))
 
 
-def test_resolved_step_union_holds_only_engine_executable_steps():
-    # ResolvedStep promises every member can be handed to an engine as-is; the
-    # deferred sweep recipe lives in the simulator's private plan type instead.
-    assert _MatrixRecipe not in typing.get_args(ResolvedStep)
-    assert not hasattr(steps_module, "ParametricMatrixStep")
+def test_engines_reject_unbound_parametric_steps():
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(ops.RX(theta), 0)
+    backend = Simulator("SV")
+    plan, _facts = backend._prepare_program(
+        program, parameter_values={theta: np.array([0.1])}
+    )
+    template = (replace(plan[0], values=()),)
+
+    assert ApplyParametricMatrixStep in typing.get_args(ResolvedStep)
+    with pytest.raises(RuntimeError, match="injected before binding"):
+        next(_bind_parameter_batch(template, (2,)))
+    with pytest.raises(RuntimeError, match="bound before execution"):
+        # The guard runs before the context, policy, or state is read.
+        backend._engine._dispatch_by_shot_strategy(template, None, None, None)
+
+
+@pytest.mark.parametrize(
+    "parallelism",
+    [{}, {"shot_parallelism": "threads", "max_workers": 2}],
+    ids=["auto", "threads"],
+)
+def test_noisy_counts_sweep_matches_explicit_runs(parallelism):
+    # Noise, counts, and repeated shots select per-shot trajectories. Tilt has
+    # a custom rule whose matrix structure changes with its angle: diagonal at
+    # 0, a permutation at pi, dense otherwise. Every row must match its own run,
+    # also when shots run in threads.
+    @dataclass(frozen=True)
+    class Tilt(Operation):
+        theta: float | fq.Parameter
+        name: ClassVar[str] = "Tilt"
+        num_subsystems: ClassVar[int] = 1
+
+    def tilt(op):
+        return _rx_matrix(op.theta)
+
+    theta, phi, tau = fq.Parameter("theta"), fq.Parameter("phi"), fq.Parameter("tau")
+    program = fq.Program(2, 2)
+    program.add(ops.RY(theta), 0)
+    program.add(ops.CX, (0, 1))
+    program.add(ops.RZ(phi), 1)
+    program.add(Tilt(tau), 0)
+    program.measure(0, 0)
+    program.measure(1, 1)
+    impl_map = fq.implementation.default_matrix_implementation_map()
+    impl_map.add(Tilt, tilt)
+    noise = fq.NoiseModel()
+    noise.add(fq.noise.Depolarizing(p=0.05), operation=ops.CX)
+    backend = Simulator("SV", implementation_map=impl_map, noise=noise)
+    values = {theta: [0.1, 1.0, 2.0], phi: [0.0, 0.5, 3.0], tau: [0.0, np.pi, 1.2]}
+    options = {"shots": 64, "execution_config": {"seed": 11, **parallelism}}
+
+    swept = backend.run_sweep(program, values, **options).result()
+
+    explicit = [
+        backend.run(
+            program.assign_parameters(
+                {key: column[row] for key, column in values.items()}
+            ),
+            **options,
+        )
+        .result()
+        .get_counts()
+        for row in range(3)
+    ]
+    assert [result.get_counts() for result in swept] == explicit
+
+
+def test_custom_rule_receives_each_row_value():
+    theta = fq.Parameter("theta")
+    program = fq.Program(1)
+    program.add(ops.RX(theta), 0)
+    received = []
+
+    def recording_rx(op):
+        received.append(op.theta)
+        return _rx_matrix(op.theta)
+
+    impl_map = MatrixImplementationMap()
+    impl_map.add(ops.RX, recording_rx)
+    backend = Simulator("SV", implementation_map=impl_map)
+
+    results = backend.run_sweep(program, {theta: [0, 0.5, 1.5]}, **_STATE_ONLY)
+
+    assert received == [0, 0.5, 1.5]
+    for result, value in zip(results.result(), received, strict=True):
+        expected = _rx_matrix(value) @ np.array([1, 0])
+        assert np.allclose(result.get_statevector(), expected)
 
 
 def test_replay_validates_realized_matrix_shape():
@@ -476,4 +684,37 @@ def test_replay_revalidates_targets_after_substitution():
             {theta: [0.5, -0.5]},
             shots=0,
             result_config={"counts": False, "final_state": True},
+        )
+
+
+def test_compiled_sweep_formulas_match_numpy_runtime():
+    # Every built-in parametric gate, including constant fields, U2's fixed
+    # theta, and qutrit subspace rotations, bound inside the compiled sweep.
+    a, b, c = fq.Parameter("a"), fq.Parameter("b"), fq.Parameter("c")
+    qubits = fq.QuantumRegister(2)
+    qutrit = fq.QuantumRegister(1, dim=3)
+    program = fq.Program([qubits, qutrit])
+    program.add(ops.RX(a), qubits[0])
+    program.add(ops.RY(b), qubits[1])
+    program.add(ops.RZ(c), qubits[0])
+    program.add(ops.Phase(a), qubits[1])
+    program.add(ops.U(a, b, 0.3), qubits[0])
+    program.add(ops.U1(b), qubits[1])
+    program.add(ops.U2(a, c), qubits[0])
+    program.add(ops.U3(c, a, b), qubits[1])
+    program.add(ops.CPhase(b), (qubits[0], qubits[1]))
+    program.add(ops.SubspaceRX(a, (0, 2)), qutrit[0])
+    program.add(ops.SubspaceRY(b, (1, 2)), qutrit[0])
+    program.add(ops.SubspaceRZ(c, (0, 1)), qutrit[0])
+    values = np.random.default_rng(4).uniform(-np.pi, np.pi, (3, 5))
+    bindings = {a: values[0], b: values[1], c: values[2]}
+
+    swept = Simulator("SV").run_sweep(program, bindings, **_STATE_ONLY).result()
+    reference = (
+        Simulator("SV", runtime="numpy").run_sweep(program, bindings, **_STATE_ONLY)
+    ).result()
+
+    for result, expected in zip(swept, reference, strict=True):
+        np.testing.assert_allclose(
+            result.get_statevector(), expected.get_statevector(), rtol=0, atol=1e-12
         )

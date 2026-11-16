@@ -4,6 +4,7 @@ import warnings
 
 import numpy as np
 import pytest
+from qutip import Qobj
 
 import fatqat as fq
 import fatqat.operations as ops
@@ -14,6 +15,14 @@ from fatqat.errors import (
     UnsupportedOperationError,
 )
 from fatqat.noise import NoiseModel, TransitionRelaxation
+
+
+@pytest.fixture
+def numpy_simulator_default():
+    previous = fq.simulator.get_default_runtime()
+    fq.simulator.set_default_runtime("numpy")
+    yield
+    fq.simulator.set_default_runtime(previous)
 
 
 def _family_case(name, method, atom_3level_model):
@@ -58,6 +67,7 @@ def _family_case(name, method, atom_3level_model):
     )
 
 
+@pytest.mark.usefixtures("numpy_simulator_default")
 @pytest.mark.parametrize("family", ("transmon", "atom3", "atom2"))
 @pytest.mark.parametrize(
     ("method", "field", "shape"),
@@ -101,7 +111,10 @@ def test_method_selects_one_full_physical_artifact(
     assert "frame_convention" not in runtime_details
     assert result.available_data == {field}
     assert result.metadata["state_axes"]
-    artifact = getattr(result, f"get_{field}")()
+    qobj = getattr(result, f"get_{field}")()
+    assert isinstance(qobj, Qobj)
+    assert qobj.isket if field == "statevector" else qobj.isoper
+    artifact = qobj.full().ravel() if field == "statevector" else qobj.full()
     assert artifact.shape == shape(dimension)
     if method == "unitary":
         # Reject a materially nonunitary result without demanding accuracy
@@ -137,6 +150,19 @@ def test_estimator_rejects_pulse_unitary_at_request_time(atom_3level_model):
         match="unitary execution computes an operator",
     ):
         fq.Estimator(backend).run(program, fq.Observable([("ZZ", 1.0)]))
+
+
+def test_estimator_rejects_an_initial_state(atom_3level_model):
+    backend, program, _dimension = _family_case(
+        "atom2", "density_matrix", atom_3level_model
+    )
+
+    with pytest.raises(BackendValidationError, match="fixes the initial product"):
+        fq.Estimator(backend).run(
+            program,
+            fq.Observable([("ZZ", 1.0)]),
+            initial_state=np.array([1.0, 0.0, 0.0, 0.0]),
+        )
 
 
 @pytest.mark.parametrize("family", ("transmon", "atom3", "atom2"))
@@ -210,8 +236,8 @@ def test_method_has_no_per_run_override(model):
 
     with pytest.raises(TypeError, match="method"):
         backend.run(program, method="density_matrix")
-    with pytest.raises(BackendValidationError, match="simulation_config"):
-        backend.run(program, simulation_config={"method": "density_matrix"})
+    with pytest.raises(BackendValidationError, match="execution_config"):
+        backend.run(program, execution_config={"method": "density_matrix"})
 
 
 def test_unitary_can_suppress_operator_construction(model, monkeypatch):
@@ -241,17 +267,17 @@ def test_noisy_statevector_defaults_to_metadata_and_explicit_shot_is_seeded(mode
     program = fq.Program(2)
     program.add(ops.RX(np.pi), 0)
 
-    default = backend.run(program, simulation_config={"seed": 7}).result()
+    default = backend.run(program, execution_config={"seed": 7}).result()
     first = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
         result_config={"final_state": True},
     ).result()
     second = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
         result_config={"final_state": True},
     ).result()
     ensemble = (
@@ -263,7 +289,9 @@ def test_noisy_statevector_defaults_to_metadata_and_explicit_shot_is_seeded(mode
     assert default.available_data == frozenset()
     assert default.metadata["method"] == "statevector"
     assert "state_axes" not in default.metadata
-    assert first.get_statevector() == pytest.approx(second.get_statevector())
+    assert first.get_statevector().full() == pytest.approx(
+        second.get_statevector().full()
+    )
     assert ensemble.get_density_matrix().shape == (9, 9)
 
 

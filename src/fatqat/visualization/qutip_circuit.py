@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 #     fatqat's - e.g. Hadamard is "SNOT", sqrt-X is "SQRTNOT").
 #   - n_controls : how many of the operation's *leading* operands are controls.
 #     fatqat's operand convention puts control(s) first and target(s) last
-#     (see ``implementation/base.py``), so ``wires[:n_controls]`` are the
+#     (see ``implementation/matrix_map.py``), so ``wires[:n_controls]`` are the
 #     controls and ``wires[n_controls:]`` the targets.
 #   - param_attr : the operation attribute to pass to QuTiP as ``arg_value``
 #     (the rotation/phase angle), or ``None`` for a non-parametric gate.

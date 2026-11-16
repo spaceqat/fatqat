@@ -47,8 +47,8 @@ categories:
     en:
       title: Error correction
       description: >-
-        Study repetition-code memories, parity checks, and decoding with
-        information about atom loss.
+        Study repetition-code and surface-code memories, parity checks, and
+        decoding with syndrome histories or information about atom loss.
   quantum-simulation:
     en:
       title: Quantum simulation

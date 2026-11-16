@@ -1,9 +1,14 @@
 # Contributing to fatqat
 
+English | [简体中文](CONTRIBUTING.zh-CN.md)
+
 Contributions to fatqat are welcome. Development setup and test commands are
 documented in the [README](README.md#development). Contributors should discuss
 substantial features or architectural changes with the maintainers before
 investing in a large implementation.
+
+For a practical introduction to asking useful questions, reviewing changes,
+and contributing, read [Contributing in the AI era](https://fatqat.readthedocs.io/en/latest/contributing/contributing-in-the-ai-era/).
 
 ## AI tools usage policy
 
@@ -179,7 +184,7 @@ its name, accepted type, default, user-visible effect, and important compatibili
 constraints. For example:
 
 ```text
-simulation_config: Optional execution controls. Accepted keys are:
+execution_config: Optional execution controls. Accepted keys are:
 
     - "seed" (int | None, default None): Random seed.
     - "mode" (str, "auto" | "thread", default "auto"): Execution mode.

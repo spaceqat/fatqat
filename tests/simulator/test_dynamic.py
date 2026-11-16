@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+from fatqat.simulator._engine._execution_policy import _select_execution_path
+
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat._backends.steps import (
@@ -18,10 +20,14 @@ def test_lower_terminal_measurement_is_not_dynamic():
     p.add(ops.CZ, (0, 1))
     p.measure(0, 0)
     p.measure(1, 1)
-    _plan, facts = Simulator("SV")._lower_program(p)
-    assert facts.execution_shape == "single_pass"
-    assert facts.deferred_measurements == ((1, 0), (0, 1))
-    assert facts.written_clbits == frozenset({0, 1})
+    backend = Simulator("SV")
+    _plan, facts = backend._lower_program(p)
+    execution_path = _select_execution_path(
+        _plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
+    assert execution_path == "single_pass"
     assert facts.stochastic_final_state is True
     assert facts.has_measurement is True
     assert facts.has_reset is False
@@ -33,9 +39,14 @@ def test_lower_measure_then_gate_on_disjoint_qubit_is_not_dynamic():
     p.measure(0, 0)
     p.add(ops.X, 1)  # different qubit -> still fast path
     p.measure(1, 1)
-    _plan, facts = Simulator("SV")._lower_program(p)
-    assert facts.execution_shape == "single_pass"
-    assert facts.deferred_measurements == ((1, 0), (0, 1))
+    backend = Simulator("SV")
+    _plan, _facts = backend._lower_program(p)
+    execution_path = _select_execution_path(
+        _plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
+    assert execution_path == "single_pass"
 
 
 def test_lower_gate_on_measured_qubit_is_dynamic():
@@ -43,9 +54,14 @@ def test_lower_gate_on_measured_qubit_is_dynamic():
     p.add(ops.H, 0)
     p.measure(0, 0)
     p.add(ops.X, 0)  # gate on already-measured qubit
-    _plan, facts = Simulator("SV")._lower_program(p)
-    assert facts.execution_shape == "per_shot"
-    assert facts.deferred_measurements == ()
+    backend = Simulator("SV")
+    _plan, _facts = backend._lower_program(p)
+    execution_path = _select_execution_path(
+        _plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
+    assert execution_path == "per_shot"
 
 
 def test_repeated_measurement_of_one_subsystem_is_per_shot():
@@ -53,18 +69,28 @@ def test_repeated_measurement_of_one_subsystem_is_per_shot():
     program.measure(0, 0)
     program.measure(0, 1)
 
-    _plan, facts = Simulator("SV")._lower_program(program)
+    backend = Simulator("SV")
+    _plan, _facts = backend._lower_program(program)
+    execution_path = _select_execution_path(
+        _plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
 
-    assert facts.execution_shape == "per_shot"
-    assert facts.deferred_measurements == ()
-    assert facts.written_clbits == frozenset({0, 1})
+    assert execution_path == "per_shot"
 
 
 def test_lower_condition_is_dynamic_and_resolves_indices():
     p = Program(2, 2)
     p.add(ops.X, 1, condition=(0, 1))
-    plan, facts = Simulator("SV")._lower_program(p)
-    assert facts.execution_shape == "per_shot"
+    backend = Simulator("SV")
+    plan, facts = backend._lower_program(p)
+    execution_path = _select_execution_path(
+        plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
+    assert execution_path == "per_shot"
     assert facts.stochastic_final_state is False
     assert facts.has_condition is True
     gate = plan[0]
@@ -95,11 +121,15 @@ def test_nonunitary_semantics_are_method_owned(
         noise = fq.NoiseModel()
         noise.add(fq.noise.Depolarizing(p=0.1), operation=ops.X)
 
-    _plan, facts = Simulator(method, runtime="numpy", noise=noise)._lower_program(
-        program
+    backend = Simulator(method, runtime="numpy", noise=noise)
+    _plan, facts = backend._lower_program(program)
+    execution_path = _select_execution_path(
+        _plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
     )
 
-    assert facts.execution_shape == expected_shape
+    assert execution_path == expected_shape
     assert facts.stochastic_final_state is expected_stochastic
     assert facts.has_reset is (step_kind == "reset")
     assert facts.has_channel is (step_kind == "channel")
@@ -110,11 +140,15 @@ def test_per_shot_trigger_does_not_stop_later_fact_collection():
     program.add(ops.X, 1, condition=(0, 0))
     program.measure(0, 1)
 
-    _plan, facts = Simulator("SV")._lower_program(program)
+    backend = Simulator("SV")
+    _plan, facts = backend._lower_program(program)
+    execution_path = _select_execution_path(
+        _plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
 
-    assert facts.execution_shape == "per_shot"
-    assert facts.deferred_measurements == ()
-    assert facts.written_clbits == frozenset({1})
+    assert execution_path == "per_shot"
     assert facts.has_condition is True
     assert facts.has_measurement is True
 
@@ -161,7 +195,7 @@ def test_reset_and_reuse_counts():
     p.measure(0, 1)
     counts = (
         Simulator("SV")
-        .run(p, shots=32, simulation_config={"seed": 0})
+        .run(p, shots=32, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -177,7 +211,7 @@ def test_dynamic_counts_use_snapshots_not_final_index():
     p.add(ops.Reset, 0)
     counts = (
         Simulator("SV")
-        .run(p, shots=10, simulation_config={"seed": 0})
+        .run(p, shots=10, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -192,8 +226,8 @@ def test_measurement_feedforward_and_reset_keep_public_targets(runtime, method):
     program = Program(2, 2)
     program.add(ops.X, 0)
     program.measure(0, 0)
-    program.add(ops.X, 1, condition=(0, 1))
     program.add(ops.Reset, 0)
+    program.add(ops.X, 1, condition=(0, 1))
     program.measure(1, 1)
 
     backend = Simulator(method, runtime=runtime)
@@ -213,6 +247,26 @@ def test_measurement_feedforward_and_reset_keep_public_targets(runtime, method):
         expected = np.zeros((4, 4), dtype=complex)
         expected[1, 1] = 1.0
         assert np.allclose(final.get_density_matrix(), expected)
+
+
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+@pytest.mark.parametrize("method", ["SV", "DM"])
+def test_classical_feedback_starts_fresh_on_each_shot_and_run(runtime, method):
+    backend = Simulator(method, runtime=runtime)
+    program = Program(1, 1)
+    program.add(ops.X, 0, condition=(0, 0))
+    program.measure(0, 0)
+    program.add(ops.Reset, 0)
+
+    # The previous shot ends with c0=1. Each shot must still start with c0=0.
+    counts = backend.run(program, shots=8, execution_config={"seed": 0})
+    assert counts.result().get_counts() == {"1": 8}
+
+    next_program = Program(1, 1)
+    next_program.add(ops.X, 0, condition=(0, 1))
+    next_program.measure(0, 0)
+    counts = backend.run(next_program, shots=8, execution_config={"seed": 0})
+    assert counts.result().get_counts() == {"0": 8}
 
 
 def test_condition_only_statevector_default_at_many_shots():
@@ -241,7 +295,7 @@ def test_conditional_reset_fires_when_guard_true():
     p.measure(0, 1)
     counts = (
         Simulator("SV")
-        .run(p, shots=16, simulation_config={"seed": 0})
+        .run(p, shots=16, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -258,7 +312,7 @@ def test_conditional_reset_skipped_when_guard_false():
     p.measure(0, 1)
     counts = (
         Simulator("SV")
-        .run(p, shots=16, simulation_config={"seed": 0})
+        .run(p, shots=16, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -285,10 +339,16 @@ def test_lower_grouped_measurement_emits_one_grouped_step():
     p = Program(3, 3)
     p.measure((0, 2), (1, 0))
 
-    plan, facts = Simulator("SV")._lower_program(p)
+    backend = Simulator("SV")
+    plan, facts = backend._lower_program(p)
+    execution_path = _select_execution_path(
+        plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
 
     assert facts.has_measurement is True
-    assert facts.execution_shape == "single_pass"
+    assert execution_path == "single_pass"
     assert plan == (MeasurementStep(measured_indices=(2, 0), classical_indices=(1, 0)),)
 
 
@@ -297,9 +357,15 @@ def test_lower_adjacent_single_measurements_stay_separate_steps():
     p.measure(0, 0)
     p.measure(1, 1)
 
-    plan, facts = Simulator("SV")._lower_program(p)
+    backend = Simulator("SV")
+    plan, _facts = backend._lower_program(p)
+    execution_path = _select_execution_path(
+        plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
 
-    assert facts.execution_shape == "single_pass"
+    assert execution_path == "single_pass"
     assert plan == (
         MeasurementStep(measured_indices=(1,), classical_indices=(0,)),
         MeasurementStep(measured_indices=(0,), classical_indices=(1,)),
@@ -310,9 +376,15 @@ def test_lower_grouped_reset_uses_all_targets():
     p = Program(3)
     p.add(ops.Reset, (0, 2))
 
-    plan, facts = Simulator("SV")._lower_program(p)
+    backend = Simulator("SV")
+    plan, facts = backend._lower_program(p)
+    execution_path = _select_execution_path(
+        plan,
+        quantum_capabilities=backend._engine.capabilities.quantum,
+        initial_state=backend._prepare_initial_state(None),
+    )
 
-    assert facts.execution_shape == "per_shot"
+    assert execution_path == "per_shot"
     assert facts.has_reset is True
     assert plan == (ResetStep(reset_indices=(2, 0)),)
 
@@ -326,7 +398,7 @@ def test_grouped_reset_resets_all_targets_in_dynamic_path():
 
     counts = (
         Simulator("SV")
-        .run(p, shots=8, simulation_config={"seed": 0})
+        .run(p, shots=8, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -343,7 +415,7 @@ def test_grouped_measurement_writes_all_classical_slots_in_dynamic_path():
 
     counts = (
         Simulator("SV")
-        .run(p, shots=8, simulation_config={"seed": 0})
+        .run(p, shots=8, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -364,12 +436,12 @@ def test_dynamic_seed_is_repeatable_with_per_shot_streams():
     backend = Simulator("SV")
 
     a = (
-        backend.run(p, shots=64, simulation_config={"seed": 2026, "max_workers": 1})
+        backend.run(p, shots=64, execution_config={"seed": 2026, "max_workers": 1})
         .result()
         .get_counts()
     )
     b = (
-        backend.run(p, shots=64, simulation_config={"seed": 2026, "max_workers": 1})
+        backend.run(p, shots=64, execution_config={"seed": 2026, "max_workers": 1})
         .result()
         .get_counts()
     )
@@ -387,7 +459,7 @@ def test_dynamic_statevector_single_shot_stays_serial_and_available():
         .run(
             p,
             shots=1,
-            simulation_config={"seed": 2026, "max_workers": 4},
+            execution_config={"seed": 2026, "max_workers": 4},
             result_config={"counts": True, "final_state": True},
         )
         .result()

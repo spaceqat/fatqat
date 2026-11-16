@@ -116,10 +116,10 @@ dynamics are introduced.
 
 -   :material-sine-wave:{ .lg .middle } **`TransmonEmulator`**
 
-    ![The three-level TransmonEmulator result gives the target outcome 101 a probability of about 64.05 percent with the same coherence times.](assets/generated/home/grover-transmon.png){ loading=lazy width=714 height=515 }
+    ![The three-level TransmonEmulator result gives the target outcome 101 a probability of about 74.02 percent with the same coherence times.](assets/generated/home/grover-transmon.png){ loading=lazy width=714 height=515 }
 
     Calibrated pulses, three physical levels, and the same coherence times
-    return `101` with about **64.05%** probability; physical leakage is **0.0649%**.
+    return `101` with about **74.02%** probability; physical leakage is **0.0669%**.
     This run realizes the compiled X/SX/RZ/CZ gates with calibrated pulses.
 
 </div>
@@ -207,7 +207,7 @@ perturb the state or remove an atom from the array.
     counts = fq.simulator.AtomArraySimulator().run(
         atoms,
         shots=8,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result().get_counts()
     print(counts)  # {'10': 8}
     ```
@@ -245,7 +245,7 @@ and measuring an empty site returns the erasure digit `2`.
     lossy_counts = fq.simulator.AtomArraySimulator(noise=loss_model).run(
         lossy_atoms,
         shots=100,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result().get_counts()
     print(lossy_counts)  # {'1': 86, '2': 14}
     ```

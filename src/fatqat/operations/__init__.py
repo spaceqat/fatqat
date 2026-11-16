@@ -7,7 +7,7 @@ from __future__ import annotations
 
 # Prefer Barrier, Reset, Put, Pair, and Unpair over their backing `*Gate`
 # classes, which are internal implementation details.
-from .base import Operation
+from .base import CustomOperation, Operation
 from .barrier import Barrier
 from .fixed_gates import (
     CCX,
@@ -30,6 +30,7 @@ from .fixed_gates import (
     iSwap,
 )
 from .measurement import Measurement
+from .optical_gates import BeamSplitter, PhaseShifter
 from .pairing import Pair, Unpair
 from .parametric_gates import CPhase, Phase, RX, RY, RZ, U, U1, U2, U3
 from .put import Put
@@ -50,6 +51,7 @@ from .reset import Reset
 
 __all__ = [
     "Operation",
+    "CustomOperation",
     "I",
     "H",
     "S",
@@ -93,5 +95,7 @@ __all__ = [
     "SubspaceRY",
     "SubspaceRZ",
     "CClock",
+    "PhaseShifter",
+    "BeamSplitter",
     "PulseOperation",
 ]

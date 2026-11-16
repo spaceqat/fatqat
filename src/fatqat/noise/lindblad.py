@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 from math import sqrt
+from typing import Callable
 
 import numpy as np
 
 from ..errors import BackendValidationError, UnsupportedOperationError
 from ..implementation.matrices import clock_matrix, shift_matrix
-from .base import Channel, _ChannelImplementationRegistry
+from ..implementation.base_map import _BaseImplementationMap
+from .base import Channel
 from .catalog import AmplitudeDamping, Depolarizing, PhaseDamping
 from .relaxation import ThermalRelaxation
 from .transition_relaxation import TransitionRelaxation, transition_operator
 
 
-class LindbladImplementationMap(_ChannelImplementationRegistry):
+def _resolve_channel_type(channel_type: type[Channel]) -> type[Channel]:
+    if not isinstance(channel_type, type) or not issubclass(channel_type, Channel):
+        raise TypeError(f"expected a Channel subclass, got {channel_type!r}")
+    return channel_type
+
+
+class LindbladImplementationMap(_BaseImplementationMap[Callable]):
     """Map exact channel types to local Lindblad rules.
 
     A registered rule has the call shape
@@ -27,8 +35,21 @@ class LindbladImplementationMap(_ChannelImplementationRegistry):
 
     FATQAT validates only the returned count, array types, and shapes. A custom
     rule is responsible for the physical meaning and units of its operators.
-    Lookup is by exact channel type.
+    Registration and lookup accept channel classes, not instances.
     """
+
+    def __init__(self) -> None:
+        super().__init__(_resolve_channel_type)
+
+    def add(self, op: type[Channel], implementation: Callable) -> None:
+        """Register or replace a callable for an exact channel type."""
+        if not callable(implementation):
+            raise TypeError(f"rule must be callable, got {implementation!r}")
+        self._add_unconstrained(op, lambda _: implementation)
+
+    def supported_channels(self) -> frozenset[type[Channel]]:
+        """Return an immutable snapshot of the registered channel types."""
+        return self._registered_types()
 
 
 def _qubit_amplitude_operator(
@@ -150,7 +171,7 @@ def resolve_lindblad_operators(
     physical_dimension: int,
 ) -> tuple[np.ndarray, ...]:
     """Resolve a channel to validated local Lindblad-operator matrices."""
-    rule = implementation_map.get(type(channel))
+    rule = implementation_map.implementation_for(type(channel))
     if rule is None:
         raise UnsupportedOperationError(
             f"{type(channel).__name__} has no Lindblad implementation on this backend"

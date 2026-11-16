@@ -20,8 +20,12 @@ use its accessor. An unavailable accessor raises
 | `"density_matrix"` | [`get_density_matrix`][fatqat.Result.get_density_matrix] | A density-matrix run with final-state output enabled |
 | `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | A unitary run with final-state output enabled |
 | `"superop"` | [`get_superop`][fatqat.Result.get_superop] | A super-operator run with final-state output enabled |
+| `"classical_state"` | [`get_classical_state`][fatqat.Result.get_classical_state] | A state-method simulator run with `result_config={"final_classical_state": True}` |
 | `"expectation"` and `"standard_error"` | [`get_expectation`][fatqat.Result.get_expectation] and [`get_standard_error`][fatqat.Result.get_standard_error] | An [`Estimator`][fatqat.Estimator] run |
 | Backend extension name | [`get_data`][fatqat.Result.get_data] | A backend extension |
+
+Pulse emulators return `Qobj` values from `get_statevector`,
+`get_density_matrix`, and `get_unitary`; simulators return NumPy arrays.
 
 `"final_state"` is a request name, not an available-data name. A produced
 state or operator uses its concrete representation name from the table.
@@ -42,8 +46,9 @@ least 10, commas make multi-digit outcomes unambiguous: `(10, 3)` renders as
 
 Most other accessors return the value stored in the result. Copy arrays or
 dictionaries before changing them if you need to preserve the original.
-Metadata from a direct backend run records the normalized `simulation_config`
-and `result_config`. Backend extensions may add fields. Pulse-emulator metadata records
+Metadata from a direct backend run records the normalized `execution_config`
+and `result_config`; the deprecated key `simulation_config` holds a copy of
+`execution_config` until it is removed before FATQAT 0.1.0. Backend extensions may add fields. Pulse-emulator metadata records
 `runtime="qutip"` and a `runtime_details` mapping with `solver` and
 `solver_options`. A run that invokes multiple solvers reports their names as
 a tuple. These numerical-runtime details are informational. Keep the

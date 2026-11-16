@@ -91,7 +91,7 @@ under different assumptions:
     ... )
     >>> emulator = fq.emulator.TransmonEmulator(model)
     >>> physical_result = emulator.run(program, shots=0).result()
-    >>> physical_state = physical_result.get_statevector()
+    >>> physical_state = physical_result.get_statevector().full().ravel()
     >>> joint_populations = (np.abs(physical_state) ** 2).reshape(3, 3)
     >>> q0_populations = joint_populations.sum(axis=1)
     >>> np.round(q0_populations, 3)
@@ -147,6 +147,7 @@ ideal two-level system would reach equal populations after 10 ns.
             control = fq.emulator.PulseControl(model.control.drive("q0"), waveform)
             pulse_program.add(ops.PulseOperation(stop_time, (control,)))
         state = emulator.run(pulse_program, shots=0).result().get_statevector()
+        state = state.full().ravel()
         populations.append((np.abs(state) ** 2).reshape(3, 3).sum(axis=1))
 
     populations = np.array(populations)

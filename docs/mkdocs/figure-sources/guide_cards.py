@@ -220,7 +220,7 @@ def render(output: Path) -> tuple[str, ...]:
         )
         program = fq.Program(arrangement.num_sites)
         program.add(ops.PulseOperation(step, (drive, offset)))
-        propagator = backend.run(program).result().get_unitary()
+        propagator = backend.run(program).result().get_unitary().full()
 
         state = ground_state.copy()
         for column in range(1, len(durations)):

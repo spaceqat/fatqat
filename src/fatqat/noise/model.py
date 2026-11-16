@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, overload
 
 from ..errors import BackendValidationError
-from ..implementation._operation_registry import _resolve_operation_class
+from ..implementation.base_map import _resolve_operation_class
 from ..operations import Barrier, Operation, Put, Reset
 from ..program import Program
 from ..registers import QuantumRegister, RegisterRef, RegisterView

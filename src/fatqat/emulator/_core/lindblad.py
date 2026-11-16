@@ -127,7 +127,7 @@ def _lindblad_noise_rejection_reasons(
             )
         elif not background and not allow_operation_scoped:
             reason = "only background generators are supported"
-        elif implementation_map.get(channel_type) is None:
+        elif implementation_map.implementation_for(channel_type) is None:
             reason = "no registered Lindblad implementation"
 
         if reason is not None:

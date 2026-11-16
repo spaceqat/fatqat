@@ -6,14 +6,13 @@ behavior uses supported probability forms on matching operations. Emulator
 behavior uses supported rate or time forms as local Lindblad operators over
 elapsed time. FATQAT never converts a probability into a rate implicitly.
 
-`ChannelImplementationMap` is the extension API for custom simulator noise
-types. Pulse-emulator Lindblad realizations are owned by each emulator family.
+`fatqat.implementation.MatrixImplementationMap` registers custom simulator channel
+rules. Pulse-emulator Lindblad realizations are owned by each emulator family.
 """
 
 from .base import (
     Channel,
     ChannelImplementation,
-    ChannelImplementationMap,
 )
 from .catalog import (
     AmplitudeDamping,
@@ -24,14 +23,12 @@ from .catalog import (
 from .relaxation import ThermalRelaxation
 from .transition_relaxation import TransitionRelaxation
 from .model import NoiseModel
-from .registry import default_channel_implementation_map
 from .loss import Loss
 from .readout import ReadoutConfusion
 
 __all__ = [
     "Channel",
     "ChannelImplementation",
-    "ChannelImplementationMap",
     "ThermalRelaxation",
     "Depolarizing",
     "AmplitudeDamping",
@@ -39,7 +36,6 @@ __all__ = [
     "PhaseDamping",
     "PauliChannel",
     "NoiseModel",
-    "default_channel_implementation_map",
     "Loss",
     "ReadoutConfusion",
 ]

@@ -70,6 +70,7 @@ target, continue with [Compile a logical circuit](compiler.md).
     ---
 
     [Hardware profiles](hardware-profile-simulation.md) ·
+    [Linear optics](linear-optics.md) ·
     [Hamiltonian emulation](hamiltonian-emulation.md) ·
     [Transmons](transmon-emulation.md) ·
     [Neutral atoms](neutral-atom-emulation.md)

@@ -243,7 +243,7 @@ def _rx_pi_program():
 def test_backend_is_ideal_by_default():
     counts = (
         _SCQubitRotationSimulator()
-        .run(_rx_pi_program(), shots=100, simulation_config={"seed": 1})
+        .run(_rx_pi_program(), shots=100, execution_config={"seed": 1})
         .result()
         .get_counts()
     )
@@ -267,7 +267,7 @@ def test_noisy_backend_leaks_errors_but_stays_mostly_correct():
     )
     shots = 4000
     counts = (
-        backend.run(_rx_pi_program(), shots=shots, simulation_config={"seed": 1})
+        backend.run(_rx_pi_program(), shots=shots, execution_config={"seed": 1})
         .result()
         .get_counts()
     )
@@ -286,7 +286,7 @@ def test_ry_carries_relaxation_like_rx():
     program.add(ops.RY(np.pi), 0)
     program.measure(0, 0)
     counts = (
-        backend.run(program, shots=4000, simulation_config={"seed": 1})
+        backend.run(program, shots=4000, execution_config={"seed": 1})
         .result()
         .get_counts()
     )

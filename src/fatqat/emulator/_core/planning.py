@@ -14,7 +14,7 @@ from ..._backends.backend_utils import (
 from ..._backends.steps import MeasurementStep, ResetStep
 from ..._index_allocation import _ClassicalAllocation, _EngineAllocation
 from ...errors import BackendValidationError
-from ...implementation._operation_registry import _select_implementation
+from ...implementation.base_map import _select_implementation
 from ...noise import NoiseModel
 from ...noise.lindblad import (
     LindbladImplementationMap,

@@ -19,7 +19,7 @@ class _EmulatorConfig:
     """Internal normalized schema for one public pulse-emulator run.
 
     Each of the three public emulators accepts this schema through
-    ``run(simulation_config={...})``.
+    ``run(execution_config={...})``.
 
     Deliberately standalone rather than derived from the matrix family's
     ``_SimulationConfig``: that base carries ``shot_parallelism``,

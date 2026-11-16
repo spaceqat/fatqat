@@ -20,8 +20,9 @@ examples for all four paths.
 
 ## Compile a LogicalProgram
 
-Build a circuit with `LogicalProgram`, then provide either an SC backend or a
-neutral-atom architecture:
+Build a circuit with `LogicalProgram`, then provide either an
+[SC target](sc-target.md) or a neutral-atom architecture. Run an SC result on
+a simulator that provides the sites and couplings it uses:
 
 ```python
 import fatqat as fq
@@ -31,10 +32,16 @@ circuit.add(fq.operations.H, 0)
 circuit.add(fq.operations.CX, (0, 1))
 circuit.measure_all()
 
-backend = fq.simulator.SCQubitSimulator()
-compiled = fq.compiler.compile_to_sc(circuit, backend)
+target = fq.compiler.SCTarget(num_qubits=3, couplings=((0, 1), (1, 2)))
+compiled = fq.compiler.compile_to_sc(circuit, target)
+
+backend = fq.simulator.SCQubitSimulator(num_qubits=3, couplings=target.couplings)
 result = backend.run(compiled, shots=100).result()
 ```
+
+You can also pass an `SCQubitSimulator` in place of the target. The compiler
+then uses its sites and couplings and checks the emitted gates against its
+implementation map.
 
 ::: fatqat.compiler.compile_to_sc
 
@@ -58,6 +65,11 @@ target representation through `.output`, or review the stages through
 
 When `emit` selects an earlier boundary, the return value is a
 `CompilationResult` intended for inspection.
+
+A compiler created with `create_sc_pipeline()` or `create_na_pipeline()`
+returns a `CompilationResult` at every boundary, including the final one.
+Convert a final-boundary `output` with the
+[simulator translation](#simulator-translation) functions before running it.
 
 ::: fatqat.compiler.ExecutableCompilationResult
 

@@ -87,7 +87,7 @@ def test_matrix_execution_knobs_are_rejected_rather_than_silently_ignored(
     program = fq.Program(1)
     program.add(ops.RZ(0.2), 0)
     with pytest.raises(BackendValidationError, match=knob):
-        backend.run(program, simulation_config={knob: value})
+        backend.run(program, execution_config={knob: value})
 
 
 def test_run_directly_validates_config_and_executes_ideal_program(backend):
@@ -97,13 +97,13 @@ def test_run_directly_validates_config_and_executes_ideal_program(backend):
         backend.run(program, result_config={"density_matrix": True})
 
     with pytest.raises(BackendValidationError, match="schedule_mode"):
-        backend.run(program, simulation_config={"schedule_mode": "SIDEWAYS"})
+        backend.run(program, execution_config={"schedule_mode": "SIDEWAYS"})
 
     result = backend.run(
         program, result_config={"counts": False, "final_state": True}
     ).result()
-    assert result.get_density_matrix().shape == (9, 9)
-    assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
+    assert result.get_density_matrix().full().shape == (9, 9)
+    assert result.metadata["execution_config"]["schedule_mode"] == "ASAP"
 
 
 def test_result_metadata_keeps_common_runtime_facts(backend):
@@ -120,7 +120,7 @@ def test_result_metadata_keeps_common_runtime_facts(backend):
             "max_step": 0.078125,
         },
     }
-    assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
+    assert result.metadata["execution_config"]["schedule_mode"] == "ASAP"
     assert result.metadata["result_config"] == {
         "counts": False,
         "final_state": True,
@@ -143,7 +143,7 @@ def test_runtime_details_report_every_solver_used_across_dynamic_regions(
     result = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 1},
+        execution_config={"seed": 1},
         result_config={"counts": True, "final_state": True},
     ).result()
 
@@ -162,7 +162,7 @@ def test_unitary_result_applies_the_terminal_frame(backend):
     program.add(ops.RZ(angle), 0)
 
     unitary_backend = TransmonEmulator(backend.model, method="unitary")
-    complete = unitary_backend.run(program).result().get_unitary()
+    complete = unitary_backend.run(program).result().get_unitary().full()
     expected_frame = np.diag(np.exp(1j * angle * np.arange(3)))
 
     assert np.allclose(complete, np.kron(expected_frame, np.eye(3)))
@@ -202,13 +202,15 @@ def test_unitary_ignores_inactive_noise_and_applies_the_terminal_frame(make_back
     program.add(ops.RZ(0.2), 0)
 
     expected = np.kron(np.diag(np.exp(0.2j * np.arange(3))), np.eye(3))
-    assert np.allclose(backend.run(program).result().get_unitary(), expected)
+    assert np.allclose(backend.run(program).result().get_unitary().full(), expected)
 
 
 def test_unitary_empty_program_is_full_model_identity(backend):
     empty = fq.Program(0)
     unitary_backend = TransmonEmulator(backend.model, method="unitary")
-    assert np.allclose(unitary_backend.run(empty).result().get_unitary(), np.eye(9))
+    assert np.allclose(
+        unitary_backend.run(empty).result().get_unitary().full(), np.eye(9)
+    )
 
 
 def test_final_state_measurement_constraint_and_reset_only_determinism_validate_before_execution(
@@ -234,7 +236,7 @@ def test_final_state_measurement_constraint_and_reset_only_determinism_validate_
     result = backend.run(
         reset_only, shots=0, result_config={"final_state": True}
     ).result()
-    assert result.get_density_matrix().shape == (9, 9)
+    assert result.get_density_matrix().full().shape == (9, 9)
 
 
 def test_invalid_shots_follow_preparation_but_precede_runner(make_backend, monkeypatch):
@@ -346,7 +348,7 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
         program,
         resource_layout=layout,
         shots=1,
-        simulation_config={"seed": 17},
+        execution_config={"seed": 17},
         result_config={"counts": True, "final_state": True},
     ).result()
 
@@ -360,7 +362,7 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
     ]
     assert all("engine_index" not in axis for axis in result.metadata["state_axes"])
     assert result.get_counts() == {"1": 1}
-    density = result.get_density_matrix()
+    density = result.get_density_matrix().full()
     q2_excited_indices = (1, 2)
     assert sum(np.real(density[index, index]) for index in q2_excited_indices) == (
         pytest.approx(1.0)

@@ -17,7 +17,7 @@ def test_minimal_workflow_from_spec():
     job = backend.run(
         program,
         shots=1000,
-        simulation_config={"seed": 2024},
+        execution_config={"seed": 2024},
         result_config={"counts": True},
     )
     result = job.result()
@@ -42,7 +42,7 @@ def test_phase3_grouped_measure_reset_and_parallel_counts_workflow():
         .run(
             program,
             shots=12,
-            simulation_config={
+            execution_config={
                 "seed": 2026,
                 "max_workers": 2,
                 "shot_parallelism": "processes",
@@ -118,13 +118,13 @@ def test_fast_and_dynamic_counts_match_for_qutrit():
 
     fast_counts = (
         fq.simulator.Simulator("SV")
-        .run(build(False), shots=8, simulation_config={"seed": 7})
+        .run(build(False), shots=8, execution_config={"seed": 7})
         .result()
         .get_counts_as_tuples()
     )
     dyn_counts = (
         fq.simulator.Simulator("SV")
-        .run(build(True), shots=8, simulation_config={"seed": 7})
+        .run(build(True), shots=8, execution_config={"seed": 7})
         .result()
         .get_counts_as_tuples()
     )
@@ -186,7 +186,7 @@ def test_qutrit_circuit_with_new_gates_produces_expected_counts():
         .run(
             program,
             shots=50,
-            simulation_config={"seed": 0},
+            execution_config={"seed": 0},
             result_config={"counts": True},
         )
         .result()

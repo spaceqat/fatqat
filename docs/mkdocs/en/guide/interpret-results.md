@@ -3,7 +3,7 @@
 Use [`Estimator`][fatqat.Estimator] to calculate expectation values, such as
 spin correlations or energies. Define the quantity with an
 [`Observable`][fatqat.Observable], then supply a Program and a
-[compatible simulator or emulator](../api/estimator.md#exact-and-sampled-results).
+[compatible simulator or emulator](../api/estimator.md#backend-support).
 You can calculate the expectation directly from the state or estimate it
 from a finite number of measurement shots.
 
@@ -62,32 +62,33 @@ agree for the original Bell state and are always opposite for the
 phase-flipped state.
 
 Each tuple in an `Observable` contains a Pauli label and its real coefficient.
-For example, `("ZZ", 1.0)` represents Z on both qubits with coefficient 1.
 Labels follow qubit order from left to right, and `I` is the identity:
 `ZI` measures Z on qubit 0 alone. To calculate a weighted sum, such as an
-energy, include its terms in the same `Observable`.
+energy, include its terms in the same `Observable`. The
+[Estimator API](../api/estimator.md#construct-an-observable) describes the
+other ways to write an observable.
 
-By default, `Estimator.run` uses `shots=0` to calculate the expectation
-directly from the state. The Program must be unmeasured; the estimator adds
-the required measurements when you request sampling.
+`Estimator.run` uses `shots=0` by default, which calculates the expectation
+directly from the state.
 
 ## Estimate from samples
 
 Set `shots` to a positive integer to estimate an expectation from sampled
 measurements. For `ZI` on the original Bell state, each shot gives `+1` or
-`-1` with equal probability. The exact expectation is zero, but a finite
-sample usually gives a small nonzero mean:
+`-1` with equal probability. The exact expectation is zero, up to
+floating-point rounding, but a finite sample usually gives a small nonzero
+mean:
 
 ```pycon
 >>> zi = fq.Observable([("ZI", 1.0)])
 >>> exact = estimator.run(bell, zi, shots=0).result()
->>> round(float(exact.get_expectation()), 4)
-0.0
+>>> abs(float(exact.get_expectation())) < 1e-12
+True
 >>> sampled = estimator.run(
 ...     bell,
 ...     zi,
 ...     shots=400,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result()
 >>> round(float(sampled.get_expectation()), 4)
 -0.045
@@ -127,7 +128,7 @@ below each estimate:
     standard_errors = []
     for index, shots in enumerate(shot_counts):
         result = estimator.run(
-            bell, zi, shots=shots, simulation_config={"seed": 7 + index}
+            bell, zi, shots=shots, execution_config={"seed": 7 + index}
         ).result()
         estimates.append(result.get_expectation())
         standard_errors.append(result.get_standard_error())

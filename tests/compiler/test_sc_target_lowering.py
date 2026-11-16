@@ -11,13 +11,19 @@ from fatqat.compiler.dialects import (
     SCNativeProgram,
     verify_sc_program,
 )
+from fatqat.compiler import CompileContext, SCTarget, ValidationError
 from fatqat.compiler.dialects.sc_native import _RotationNativeProgram
 from fatqat.compiler.passes import (
+    LowerScToNativePass,
+    lower_sc_to_native,
     lower_sc_to_native_program,
     normalize_sc_program,
     snapshot_program,
 )
-from fatqat.compiler.passes.sc_target import _lower_sc_to_rotation_program
+from fatqat.compiler.passes.sc_target import (
+    _lower_sc_to_rotation_program,
+    _verify_against_target,
+)
 from fatqat.implementation import default_matrix_implementation_map
 from fatqat.operations.fixed_gates import CZGate, SXGate, XGate, iSwapGate
 from fatqat.operations.parametric_gates import RX, RY, RZ
@@ -208,3 +214,293 @@ def test_lowering_retains_partial_interleaved_classical_declarations(
     bridged, _layout = fq.compiler.to_sc_simulator_program(native)
 
     assert bridged.classical_registers == (first, second)
+
+
+CANONICAL_GATE_TYPES = (XGate, SXGate, RZ, CZGate)
+
+
+def _block_simulator_construction(monkeypatch):
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("SCQubitSimulator constructed during compilation")
+
+    monkeypatch.setattr(SCQubitSimulator, "__init__", forbidden)
+
+
+def _reset_and_routed_program():
+    return _sc_program(
+        3,
+        (
+            (fq.operations.X, 0),
+            (fq.operations.Reset, 0),
+            (fq.operations.CZ, (0, 1)),
+            (fq.operations.CZ, (1, 2)),
+            (fq.operations.CZ, (0, 2)),
+        ),
+        measure=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "lower",
+    (
+        lambda source, target: LowerScToNativePass().run(
+            source, CompileContext(target=target, options={"seed": 7})
+        ),
+        lambda source, target: lower_sc_to_native.run(
+            source, CompileContext(target=target, options={"seed": 7})
+        ),
+        lambda source, target: lower_sc_to_native_program(source, target, seed=7),
+        lambda source, target: lower_sc_to_native_program(
+            source, backend=target, seed=7
+        ),
+    ),
+    ids=("pass-class", "pass-singleton", "function", "function-backend-keyword"),
+)
+def test_direct_lowering_accepts_target_without_building_a_simulator(
+    monkeypatch, lower
+):
+    source = _reset_and_routed_program()
+    target = SCTarget(num_qubits=3, couplings=LINE)
+    _block_simulator_construction(monkeypatch)
+
+    result = lower(source, target)
+
+    # Direct pass calls return the native IR itself, never a Compiler result.
+    assert type(result) is SCNativeProgram
+    assert result == lower_sc_to_native_program(source, target, seed=7)
+
+
+def test_target_lowering_output_stays_inside_target_sites_and_edges():
+    source = _reset_and_routed_program()
+    target = SCTarget(num_qubits=3, couplings=LINE)
+
+    result = lower_sc_to_native_program(source, target, seed=7)
+
+    legal_sites = set(range(target.num_qubits))
+    edges = {frozenset(edge) for edge in target.couplings}
+    for layout in (result.initial_layout, result.final_layout):
+        assert {site for _qubit, site in layout} <= legal_sites
+    kinds = {type(instruction) for instruction in result.operations}
+    assert {NativeGate, NativeMeasure, NativeReset} <= kinds
+    assert any(
+        isinstance(instruction, NativeGate) and instruction.generated_by
+        for instruction in result.operations
+    )
+    for instruction in result.operations:
+        if isinstance(instruction, NativeGate):
+            assert type(instruction.operation) in CANONICAL_GATE_TYPES
+            assert set(instruction.sites) <= legal_sites
+            if type(instruction.operation) is CZGate:
+                assert frozenset(instruction.sites) in edges
+        else:
+            assert instruction.site in legal_sites
+
+
+def _replace_first(native, kind, **changes):
+    index = next(
+        position
+        for position, instruction in enumerate(native.operations)
+        if isinstance(instruction, kind)
+        and (kind is not NativeGate or len(instruction.sites) == 2)
+    )
+    operations = list(native.operations)
+    operations[index] = replace(operations[index], **changes)
+    return replace(native, operations=tuple(operations))
+
+
+@pytest.mark.parametrize(
+    ("corrupt", "message"),
+    (
+        (
+            lambda native: replace(
+                native,
+                initial_layout=((native.initial_layout[0][0], 9),)
+                + native.initial_layout[1:],
+            ),
+            "native layout names a site outside target",
+        ),
+        (
+            lambda native: replace(
+                native,
+                final_layout=((native.final_layout[0][0], 9),)
+                + native.final_layout[1:],
+            ),
+            "native layout names a site outside target",
+        ),
+        (
+            lambda native: _replace_first(native, NativeGate, sites=(0, 9)),
+            "native instruction names a site outside target",
+        ),
+        (
+            lambda native: _replace_first(native, NativeGate, sites=(0, 2)),
+            "native CZ on sites (0, 2) is outside target couplings",
+        ),
+        (
+            lambda native: _replace_first(native, NativeMeasure, site=9),
+            "native instruction names a site outside target",
+        ),
+        (
+            lambda native: _replace_first(native, NativeReset, site=9),
+            "native instruction names a site outside target",
+        ),
+    ),
+    ids=("initial-layout", "final-layout", "gate-site", "cz-edge", "measure", "reset"),
+)
+def test_target_check_rejects_native_outside_the_target(corrupt, message):
+    target = SCTarget(num_qubits=3, couplings=LINE)
+    native = lower_sc_to_native_program(_reset_and_routed_program(), target, seed=7)
+    _verify_against_target(native, target)
+
+    with pytest.raises(ValidationError) as error:
+        _verify_against_target(corrupt(native), target)
+
+    assert str(error.value) == message
+
+
+@pytest.mark.parametrize(
+    ("target", "message"),
+    (
+        (
+            SCTarget(num_qubits=2, couplings=((0, 1),)),
+            "not enough physical sites for SC program qubits",
+        ),
+        (
+            SCTarget(num_qubits=3, couplings=()),
+            "SC interaction is unreachable in coupling graph",
+        ),
+    ),
+    ids=("capacity", "no-edges"),
+)
+def test_target_lowering_rejects_capacity_and_unreachable_interaction(target, message):
+    with pytest.raises(ValueError) as error:
+        lower_sc_to_native_program(_triangle_program(), target)
+
+    assert str(error.value) == message
+
+
+def _restricted_simulator(defect):
+    class Restricted(SCQubitSimulator):
+        @property
+        def implementation_map(self):
+            result = super().implementation_map
+            if defect == "missing-sx":
+                result.remove(fq.operations.SX)
+                return result
+            rule = result.implementation_for(fq.operations.CZ, device_operands=(0, 1))
+            result.remove(fq.operations.CZ)
+            if defect == "uniform-cz":
+                result.add(fq.operations.CZ, rule)
+            else:
+                result.add(fq.operations.CZ, rule, device_operands=(0, 1))
+            return result
+
+    return Restricted(num_qubits=2, couplings=((0, 1),))
+
+
+@pytest.mark.parametrize(
+    ("defect", "operation", "error_type", "message"),
+    (
+        (
+            "missing-sx",
+            fq.operations.RX(0.3),
+            ValidationError,
+            "native operation SX is illegal on sites (0,)",
+        ),
+        (
+            "one-way-cz",
+            fq.operations.Swap,
+            ValidationError,
+            "native operation CZ is illegal on sites (1, 0)",
+        ),
+        (
+            "uniform-cz",
+            fq.operations.Swap,
+            ValueError,
+            "SC interaction is unreachable in coupling graph",
+        ),
+    ),
+)
+def test_legacy_gate_rules_still_reject_for_the_same_reason(
+    defect, operation, error_type, message
+):
+    # The backend's construction target still lists (0, 1), so these
+    # rejections must come from its implementation map, not from the target.
+    backend = _restricted_simulator(defect)
+    targets = 0 if operation is not fq.operations.Swap else (0, 1)
+    source = _sc_program(2, ((operation, targets),))
+
+    with pytest.raises(error_type) as error:
+        lower_sc_to_native_program(source, backend)
+
+    assert type(error.value) is error_type
+    assert str(error.value) == message
+
+
+def test_legacy_lowering_ignores_a_missing_gate_that_is_never_emitted():
+    source = _sc_program(1, ((fq.operations.RZ(0.25), 0),))
+    backend = _restricted_simulator("missing-sx")
+    reference = SCQubitSimulator(num_qubits=2, couplings=((0, 1),))
+
+    result = lower_sc_to_native_program(source, backend)
+
+    assert result == lower_sc_to_native_program(source, reference)
+
+
+class _UnreadableSimulator(SCQubitSimulator):
+    @property
+    def implementation_map(self):
+        raise RuntimeError("constraint-read")
+
+
+@pytest.mark.parametrize(
+    "lower",
+    (
+        lambda source, backend: LowerScToNativePass().run(
+            source, CompileContext(target=backend)
+        ),
+        lambda source, backend: lower_sc_to_native.run(
+            source, CompileContext(target=backend)
+        ),
+        lower_sc_to_native_program,
+    ),
+    ids=("pass-class", "pass-singleton", "function"),
+)
+@pytest.mark.parametrize(
+    ("backend", "error_type", "message"),
+    (
+        (object(), TypeError, "SC lowering requires SCTarget or SCQubitSimulator"),
+        (
+            _SCQubitRotationSimulator(num_qubits=3, couplings=LINE),
+            TypeError,
+            "SC lowering requires SCTarget or SCQubitSimulator",
+        ),
+        (
+            _UnreadableSimulator(num_qubits=3, couplings=LINE),
+            RuntimeError,
+            "constraint-read",
+        ),
+        (
+            SCTarget(num_qubits=2, couplings=((0, 1),)),
+            ValueError,
+            "not enough physical sites for SC program qubits",
+        ),
+    ),
+    ids=("object", "rotation-backend", "unreadable-map", "capacity"),
+)
+def test_direct_lowering_propagates_the_original_exception(
+    lower, backend, error_type, message
+):
+    with pytest.raises(error_type) as error:
+        lower(_triangle_program(), backend)
+
+    assert type(error.value) is error_type
+    assert str(error.value) == message
+
+
+def test_rotation_lowering_rejects_an_independent_target():
+    with pytest.raises(
+        TypeError, match="rotation lowering requires _SCQubitRotationSimulator"
+    ):
+        _lower_sc_to_rotation_program(
+            _triangle_program(), SCTarget(num_qubits=3, couplings=LINE)
+        )

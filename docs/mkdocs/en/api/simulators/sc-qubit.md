@@ -19,7 +19,7 @@ schedule, or reproduce a named processor.
 | Connected native gate | [`fatqat.operations.CZ`][fatqat.operations.CZ] on the supplied couplings |
 | Other built-in operations | Measurement and [`fatqat.operations.Reset`][fatqat.operations.Reset] follow the method rules described by [`Simulator`][fatqat.simulator.Simulator] |
 | Methods | All methods supported by [`Simulator`][fatqat.simulator.Simulator]; default `statevector` |
-| Runtime | `numba` by default; `numpy` is also supported |
+| Runtime | Global default (`numba` unless configured); explicit `numpy` or `numba` overrides it |
 | Noise | Ideal by default; a built-in reference model is available explicitly |
 
 ## Native gates and layout

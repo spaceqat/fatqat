@@ -1,10 +1,9 @@
 """Private infrastructure shared by the simulator and emulator backend families.
 
 This package holds everything the two families have in common and nothing
-specific to either: the lowered execution plan (`steps`), the backend/engine
-run contract (`engine_contract`), the lowering helpers and config normalizer
-(`backend_utils`), program view normalization, and terminal-measurement
-analysis.
+specific to either: the lowered execution plan (`steps`), the lowering helpers
+and config normalizer (`backend_utils`), program view normalization, and
+terminal-measurement analysis.
 
 It is private. Users reach simulation through :mod:`fatqat.simulator` and
 :mod:`fatqat.emulator`; nothing here is part of the public API. Keeping it

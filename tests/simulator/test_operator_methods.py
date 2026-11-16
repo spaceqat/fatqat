@@ -21,7 +21,7 @@ import fatqat as fq
 import fatqat.operations as ops
 from fatqat.errors import BackendValidationError, ResultFieldUnavailableError
 from fatqat.implementation import MatrixImplementationMap
-from fatqat.noise import Channel, ChannelImplementationMap
+from fatqat.noise import Channel
 from fatqat.program import Program
 from fatqat.simulator import Simulator
 
@@ -323,8 +323,9 @@ def test_nonadjacent_channel_and_superop_use_public_target_positions(runtime, fu
 
     matrix_map = MatrixImplementationMap()
     matrix_map.add(Carrier, np.eye(4, dtype=complex))
-    channel_map = ChannelImplementationMap()
-    channel_map.add(EmbeddedChannel, lambda _channel, *, targets: (kraus,))
+    matrix_map.add(
+        EmbeddedChannel, lambda _channel, *, targets: (kraus,), device_operands=(2, 0)
+    )
     noise = fq.NoiseModel()
     noise.add(EmbeddedChannel(), operation=Carrier)
     program = Program(3)
@@ -332,7 +333,6 @@ def test_nonadjacent_channel_and_superop_use_public_target_positions(runtime, fu
     kwargs = {
         "runtime": runtime,
         "implementation_map": matrix_map,
-        "channel_implementation_map": channel_map,
         "noise": noise,
     }
     config = {"fusion": fusion}
@@ -342,7 +342,6 @@ def test_nonadjacent_channel_and_superop_use_public_target_positions(runtime, fu
         .run(
             program,
             initial_state=rho,
-            simulation_config=config,
             result_config={"counts": False, "final_state": True},
         )
         .result()
@@ -350,7 +349,7 @@ def test_nonadjacent_channel_and_superop_use_public_target_positions(runtime, fu
     )
     superop = (
         Simulator("superop", **kwargs)
-        .run(program, simulation_config=config)
+        .run(program, execution_config=config)
         .result()
         .get_superop()
     )
@@ -381,7 +380,7 @@ def test_numpy_and_numba_runtimes_agree(method):
 
 def _numba_engines():
     pytest.importorskip("numba")
-    from fatqat.simulator._engine import nb
+    from fatqat.simulator._engine.engines import numba_engine as nb
 
     return nb
 
@@ -418,10 +417,10 @@ def test_column_kernel_matches_the_per_gate_kernels_bit_for_bit(method, no_fusio
     for step in nb._fuse_gate_channels(plan) if method == "superop" else plan:
         if isinstance(step, nb.ApplyMatrixStep):
             engine.apply(step)
-        elif isinstance(step, nb.ApplyChannelStep):
-            engine.apply_channel(step, generator)
         else:
-            engine.reset_subsystems(step.reset_indices, generator)
+            # This program contains gates and noise channels, with no resets.
+            assert isinstance(step, nb.ApplyChannelStep)
+            engine.apply_channel(step, generator)
 
     assert np.array_equal(fused, engine.export_state())
 
@@ -462,13 +461,13 @@ def test_gate_fusion_preserves_the_operator(method, force_fusion):
     program = _fusion_programs()["rotations"]
     fused = getattr(
         Simulator(method, runtime="numba")
-        .run(program, simulation_config={"fusion": True})
+        .run(program, execution_config={"fusion": True})
         .result(),
         f"get_{method}",
     )()
     unfused = getattr(
         Simulator(method, runtime="numba")
-        .run(program, simulation_config={"fusion": False})
+        .run(program, execution_config={"fusion": False})
         .result(),
         f"get_{method}",
     )()
@@ -496,7 +495,7 @@ def test_fusion_preserves_reversed_nonadjacent_target_positions(method, force_fu
     def run(fusion):
         result = (
             Simulator(method, runtime="numba")
-            .run(program, simulation_config={"fusion": fusion})
+            .run(program, execution_config={"fusion": fusion})
             .result()
         )
         return getattr(result, f"get_{method}")()
@@ -526,6 +525,8 @@ def test_gate_fusion_collapses_whole_runs(name, expected_steps):
 def test_gate_fusion_keeps_a_diagonal_run_diagonal():
     """A run of phase gates stays on the in-place diagonal kernel, at any width."""
     nb = _numba_engines()
+    from fatqat.simulator._engine.numerics.numba_kernels._apply import _DIAGONAL
+
     backend = Simulator("unitary", runtime="numba")
     program = Program(4)
     for target in range(4):
@@ -537,7 +538,7 @@ def test_gate_fusion_keeps_a_diagonal_run_diagonal():
         engine._operator_payloads(plan), engine._operator_row_dims()
     )
     assert len(fused) == 1
-    assert fused[0][1] == nb._DIAGONAL
+    assert fused[0][1] == _DIAGONAL
     assert fused[0][5] == (0, 1, 2, 3)  # one pass over all four subsystems
 
 
@@ -598,7 +599,8 @@ def test_gate_fusion_leaves_a_sparse_step_alone():
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
 def test_serial_and_threaded_numba_give_identical_operators(method):
-    _numba_engines()
+    if _numba_engines()._MAX_THREADS < 2:
+        pytest.skip("Numba exposes no parallel thread capacity")
     program = _mixed_program()
     backend = Simulator(method, runtime="numba")
     read = f"get_{method}"
@@ -607,7 +609,7 @@ def test_serial_and_threaded_numba_give_identical_operators(method):
         return getattr(
             backend.run(
                 program,
-                simulation_config={
+                execution_config={
                     "shot_parallelism": "serial",
                     "kernel_parallelism": kernel_parallelism,
                     "max_workers": 1 if kernel_parallelism == "serial" else 2,
@@ -633,7 +635,9 @@ def test_empty_program_returns_the_identity(method, runtime):
 
 def test_fused_superop_covers_every_structure_code():
     """Diagonal, permutation, dense, and CSR-sparse steps in one packed plan."""
-    nb = _numba_engines()
+    _numba_engines()
+    from fatqat.simulator._engine.workflows.numba_workflow import operators
+
     program = Program(2)
     program.add(ops.RZ(0.4), 0)  # diagonal super-operator
     program.add(ops.X, 1)  # permutation super-operator
@@ -646,10 +650,15 @@ def test_fused_superop_covers_every_structure_code():
     plan, _ = backend._lower_program(program)
     backend.run(program).result()  # populates the engine's resolution caches
     codes = {
-        payload[1] if payload[4] is None else nb._SPARSE
+        payload[1] if payload[4] is None else operators._SPARSE
         for payload in backend._engine._operator_payloads(plan)
     }
-    assert {nb._DENSE, nb._DIAGONAL, nb._PERMUTATION, nb._SPARSE} <= codes
+    assert {
+        operators._DENSE,
+        operators._DIAGONAL,
+        operators._PERMUTATION,
+        operators._SPARSE,
+    } <= codes
 
     assert np.allclose(
         backend.run(program).result().get_superop(),
@@ -718,38 +727,42 @@ def test_backend_instance_is_reusable_across_system_sizes(runtime):
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_measurement_is_rejected(method):
+def test_measurement_is_rejected(method, runtime):
     program = Program(2, 2)
     program.add(ops.H, 0)
     program.measure((0, 1), (0, 1))
     with pytest.raises(BackendValidationError, match="cannot execute a measurement"):
-        Simulator(method).run(program)
+        Simulator(method, runtime=runtime).run(program)
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_counts_request_is_rejected(method):
+def test_counts_request_is_rejected(method, runtime):
     with pytest.raises(BackendValidationError, match="cannot produce counts"):
-        Simulator(method).run(_ghz_program(2), result_config={"counts": True})
+        Simulator(method, runtime=runtime).run(
+            _ghz_program(2), result_config={"counts": True}
+        )
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
-def test_feedforward_condition_is_rejected(method):
+def test_feedforward_condition_is_rejected(method, runtime):
     program = Program(1, 1)
     program.add(ops.X, 0, condition=(program.classical_registers[0][0], 0))
     with pytest.raises(BackendValidationError, match="feedforward condition"):
-        Simulator(method).run(program)
+        Simulator(method, runtime=runtime).run(program)
 
 
-def test_unitary_rejects_reset():
+def test_unitary_rejects_reset(runtime):
     program = _ghz_program(2)
     program.add(ops.Reset, 0)
     with pytest.raises(BackendValidationError, match="cannot execute reset"):
-        Simulator("unitary").run(program)
+        Simulator("unitary", runtime=runtime).run(program)
 
 
-def test_unitary_rejects_channel_noise():
+def test_unitary_rejects_channel_noise(runtime):
     with pytest.raises(BackendValidationError, match="cannot execute channel noise"):
-        Simulator("unitary", noise=_depolarizing_noise()).run(_noisy_program())
+        Simulator("unitary", runtime=runtime, noise=_depolarizing_noise()).run(
+            _noisy_program()
+        )
 
 
 def test_unitary_accepts_a_noise_model_that_never_fires():

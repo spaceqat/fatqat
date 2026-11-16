@@ -39,6 +39,7 @@ from .._core.value_validation import TIME_EPSILON
 from .._qutip_boundaries import (
     _apply_qutip_reset,
     _expand_qutip_local,
+    _qutip_time_window,
     _sample_projective_qutip_state,
     _solve_one_qutip_trajectory,
 )
@@ -56,9 +57,8 @@ class _TransmonQutipAdapter:
     coherent propagators, and implements physical measurement/reset. The
     :class:`PulseEngine` owns shots, conditions, traversal, and scheduling.
 
-    Inputs and completed-shot outputs use fatqat/NumPy values, so no QuTiP
-    object crosses the backend's public boundary. This class is intentionally
-    not exported from :mod:`fatqat.emulator`.
+    Completed-shot outputs are QuTiP ``Qobj`` values. This class is
+    intentionally not exported from :mod:`fatqat.emulator`.
     """
 
     def __init__(
@@ -223,6 +223,10 @@ class _TransmonQutipAdapter:
         context.frame_angles.clear()
         context.frame_angles.update(bound.output_frames)
 
+    def identity_operator(self) -> Qobj:
+        """Return the identity on the complete physical model."""
+        return tensor(*[qeye(dimension) for dimension in self._dims])
+
     def propagator(
         self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True
     ) -> Any:
@@ -274,7 +278,7 @@ class _TransmonQutipAdapter:
             raise BackendValidationError("placed pulse runs must be time ordered")
 
         frames = dict(input_frames)
-        pulses: list[Pulse] = []
+        pulses: list[tuple[Pulse, float, float]] = []
         noise_pulses: list[Pulse] = []
         pending_actions: list[tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]] = (
             []
@@ -290,7 +294,13 @@ class _TransmonQutipAdapter:
             if not enabled[source_index]:
                 continue
             for child, binding in zip(block.controls, block.control_bindings):
-                pulses.append(self._bind_child(child, binding, start_time, frames))
+                pulses.append(
+                    (
+                        self._bind_child(child, binding, start_time, frames),
+                        start_time,
+                        start_time + block.duration,
+                    )
+                )
             # A zero-duration block cannot contribute noise: even a
             # rate-mode descriptor's effect over zero time is a no-op, and a
             # nonzero-probability one was already rejected at lowering.
@@ -314,13 +324,18 @@ class _TransmonQutipAdapter:
             return _BoundFrames(output_frames=frames)
 
         hamiltonian = self._drift.get_ideal_qobjevo(self._dims)
-        for pulse in pulses:
+        for pulse, start_time, end_time in pulses:
             contribution, collapse = pulse.get_noisy_qobjevo(self._dims)
             if collapse:
                 raise BackendValidationError(
                     "ideal pulse binding unexpectedly produced collapse terms"
                 )
-            hamiltonian += contribution
+            hamiltonian += contribution * _qutip_time_window(
+                start_time,
+                end_time,
+                run_start_time=input_time,
+                run_end_time=run.end_time,
+            )
         local_collapse: list[Any] = []
         for noise_pulse in noise_pulses:
             _zero, collapse = noise_pulse.get_noisy_qobjevo(self._dims)
@@ -397,10 +412,7 @@ class _TransmonQutipAdapter:
                     state = frame_unitary * state * frame_unitary.dag()
                 else:
                     state = frame_unitary * state
-            array = np.asarray(state.full(), dtype=complex)
-            if self._execution_mode != "density_matrix":
-                array = array.reshape(-1)
-            final_state = np.array(array, dtype=complex, copy=True)
+            final_state = state.copy()
         return _PulseShotOutcome(
             final_state=final_state,
             final_state_kind=(

@@ -1,7 +1,7 @@
 """Concrete matrix builders: fixed-gate constants, rotation/phase gates, and
 dimension-generic (qudit) gate families.
 
-See `implementation.base` for the local-matrix convention every builder here
+See `implementation.matrix_map` for the local-matrix convention every builder here
 follows (target/control operand ordering, MSB/LSB layout).
 
 Adding a new gate's rule (registered in `implementation.registry`):
@@ -20,6 +20,7 @@ Adding a new gate's rule (registered in `implementation.registry`):
 from __future__ import annotations
 
 import numpy as np
+import scipy.linalg
 
 from .. import operations as ops
 from ..registers import RegisterRef
@@ -176,6 +177,39 @@ def _cclock_rule(op: "ops.CClock", targets: tuple[RegisterRef, ...]) -> np.ndarr
     return cclock_matrix(dims, op.power)
 
 
+def phase_shifter_matrix(dim: int, phi: float) -> np.ndarray:
+    """Photon-number phase ``diag(exp(i*n*phi))`` for ``n = 0 .. dim - 1``."""
+    return np.diag(np.exp(1j * phi * np.arange(dim)))
+
+
+def beam_splitter_matrix(dim: int, theta: float, phi: float) -> np.ndarray:
+    """Two-mode beam splitter truncated to ``dim`` levels per mode.
+
+    Returns ``expm(theta * (exp(i*phi) a1^dag a0 - exp(-i*phi) a0^dag a1))``
+    on the ``dim**2`` local space, where mode 0 (the first target) is the MSB.
+    The generator stays anti-Hermitian and commutes with the total photon
+    number after truncation, so the result is unitary and number conserving.
+    """
+    annihilation = np.diag(np.sqrt(np.arange(1, dim)), 1).astype(complex)
+    identity = np.eye(dim, dtype=complex)
+    a0 = np.kron(annihilation, identity)
+    a1 = np.kron(identity, annihilation)
+    hop = np.exp(1j * phi) * a1.conj().T @ a0
+    return scipy.linalg.expm(theta * (hop - hop.conj().T))
+
+
+def _phase_shifter_rule(
+    op: "ops.PhaseShifter", targets: tuple[RegisterRef, ...]
+) -> np.ndarray:
+    return phase_shifter_matrix(targets[0].register.dim, float(op.phi))
+
+
+def _beam_splitter_rule(
+    op: "ops.BeamSplitter", targets: tuple[RegisterRef, ...]
+) -> np.ndarray:
+    return beam_splitter_matrix(targets[0].register.dim, float(op.theta), float(op.phi))
+
+
 # Module-level constant matrices (reused; do not rebuild per call).
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
 _Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
@@ -270,3 +304,162 @@ def _cphase(op: ops.CPhase) -> np.ndarray:
     """Build the CPhase matrix from the operation's angle."""
     theta = op.theta
     return np.diag([1, 1, 1, np.exp(1j * theta)]).astype(complex)
+
+
+# Batched twins of the parametric built-in rules, for sweep replay. Each takes
+# its angle fields as scalars or equal-length 1-D arrays and returns an
+# ``(N, d, d)`` stack whose row ``i`` is the scalar builder's matrix for row
+# ``i``'s values. The arithmetic mirrors the scalar builder term by term, so
+# the scalar builder stays the single source of truth for the matrix.
+
+
+def _matrix_stack(dim: int, *fields: object, identity: bool = False) -> np.ndarray:
+    """Allocate the ``(N, dim, dim)`` output for the broadcast field rows."""
+    (rows,) = np.broadcast_shapes(*(np.shape(field) for field in fields))
+    stack = np.zeros((rows, dim, dim), dtype=complex)
+    if identity:
+        stack[:] = np.eye(dim, dtype=complex)
+    return stack
+
+
+def _rx_batch(theta: np.ndarray) -> np.ndarray:
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    m = _matrix_stack(2, theta)
+    m[:, 0, 0] = c
+    m[:, 0, 1] = -1j * s
+    m[:, 1, 0] = -1j * s
+    m[:, 1, 1] = c
+    return m
+
+
+def _ry_batch(theta: np.ndarray) -> np.ndarray:
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    m = _matrix_stack(2, theta)
+    m[:, 0, 0] = c
+    m[:, 0, 1] = -s
+    m[:, 1, 0] = s
+    m[:, 1, 1] = c
+    return m
+
+
+def _rz_batch(theta: np.ndarray) -> np.ndarray:
+    m = _matrix_stack(2, theta)
+    m[:, 0, 0] = np.exp(-1j * theta / 2)
+    m[:, 1, 1] = np.exp(1j * theta / 2)
+    return m
+
+
+def _phase_batch(theta: np.ndarray) -> np.ndarray:
+    m = _matrix_stack(2, theta)
+    m[:, 0, 0] = 1
+    m[:, 1, 1] = np.exp(1j * theta)
+    return m
+
+
+def _u_matrix_batch(theta: object, phi: object, lam: object) -> np.ndarray:
+    c = np.cos(theta / 2)
+    s = np.sin(theta / 2)
+    m = _matrix_stack(2, theta, phi, lam)
+    m[:, 0, 0] = c
+    m[:, 0, 1] = -np.exp(1j * lam) * s
+    m[:, 1, 0] = np.exp(1j * phi) * s
+    m[:, 1, 1] = np.exp(1j * (phi + lam)) * c
+    return m
+
+
+def _cphase_batch(theta: np.ndarray) -> np.ndarray:
+    m = _matrix_stack(4, theta, identity=True)
+    m[:, 3, 3] = np.exp(1j * theta)
+    return m
+
+
+def _subspace_rx_batch(
+    dim: int, subspace: tuple[int, int], theta: np.ndarray
+) -> np.ndarray:
+    j, k = subspace
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    m = _matrix_stack(dim, theta, identity=True)
+    m[:, j, j] = c
+    m[:, k, k] = c
+    m[:, j, k] = -1j * s
+    m[:, k, j] = -1j * s
+    return m
+
+
+def _subspace_ry_batch(
+    dim: int, subspace: tuple[int, int], theta: np.ndarray
+) -> np.ndarray:
+    j, k = subspace
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    m = _matrix_stack(dim, theta, identity=True)
+    m[:, j, j] = c
+    m[:, k, k] = c
+    m[:, j, k] = -s
+    m[:, k, j] = s
+    return m
+
+
+def _subspace_rz_batch(
+    dim: int, subspace: tuple[int, int], theta: np.ndarray
+) -> np.ndarray:
+    j, k = subspace
+    m = _matrix_stack(dim, theta, identity=True)
+    m[:, j, j] = np.exp(-1j * theta / 2)
+    m[:, k, k] = np.exp(1j * theta / 2)
+    return m
+
+
+# Batched rules for sweep replay, registered beside the scalar rules in
+# `registry`. Each receives a field accessor (a float64 column for a
+# `Parameter` field, the declared value otherwise) and the program targets.
+# They are module-level functions so implementation maps stay picklable.
+
+
+def _rx_batch_rule(field, _targets) -> np.ndarray:
+    return _rx_batch(field("theta"))
+
+
+def _ry_batch_rule(field, _targets) -> np.ndarray:
+    return _ry_batch(field("theta"))
+
+
+def _rz_batch_rule(field, _targets) -> np.ndarray:
+    return _rz_batch(field("theta"))
+
+
+def _phase_batch_rule(field, _targets) -> np.ndarray:
+    return _phase_batch(field("theta"))
+
+
+def _u_batch_rule(field, _targets) -> np.ndarray:
+    return _u_matrix_batch(field("theta"), field("phi"), field("lam"))
+
+
+def _u1_batch_rule(field, _targets) -> np.ndarray:
+    return _phase_batch(field("lam"))
+
+
+def _u2_batch_rule(field, _targets) -> np.ndarray:
+    return _u_matrix_batch(np.pi / 2, field("phi"), field("lam"))
+
+
+def _cphase_batch_rule(field, _targets) -> np.ndarray:
+    return _cphase_batch(field("theta"))
+
+
+def _subspace_rx_batch_rule(field, targets) -> np.ndarray:
+    return _subspace_rx_batch(
+        targets[0].register.dim, field("subspace"), field("theta")
+    )
+
+
+def _subspace_ry_batch_rule(field, targets) -> np.ndarray:
+    return _subspace_ry_batch(
+        targets[0].register.dim, field("subspace"), field("theta")
+    )
+
+
+def _subspace_rz_batch_rule(field, targets) -> np.ndarray:
+    return _subspace_rz_batch(
+        targets[0].register.dim, field("subspace"), field("theta")
+    )

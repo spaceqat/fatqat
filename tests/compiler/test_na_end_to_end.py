@@ -192,7 +192,7 @@ def test_qasm_na_compilation_runs_directly_on_the_atom_array_simulator():
 
     counts = (
         fq.simulator.AtomArraySimulator(runtime="numpy")
-        .run(compiled, shots=32, simulation_config={"seed": 3})
+        .run(compiled, shots=32, execution_config={"seed": 3})
         .result()
         .get_counts()
     )

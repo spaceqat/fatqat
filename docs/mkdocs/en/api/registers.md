@@ -22,6 +22,8 @@ registers, grids, metadata, or local dimensions greater than two.
 | [`QuantumRegister`][fatqat.QuantumRegister] | Quantum operation and measurement targets | Explicit positive `size` |
 | [`ClassicalRegister`][fatqat.ClassicalRegister] | Measurement outputs and condition values | Explicit positive `size` |
 | [`GridRegister`][fatqat.GridRegister] | Quantum targets with rectangular selection helpers | Derived as `rows * cols` |
+| [`ModeRegister`][fatqat.ModeRegister] | Optical modes with no fixed dimension; run on [`LOSimulator`](simulators/linear-optics.md) | Explicit positive `size` |
+| [`CountRegister`][fatqat.CountRegister] | Photon counts from measuring a `ModeRegister` | Explicit positive `size` |
 
 Names are labels and need not be unique. Keep and index the same register
 objects that you pass to [`Program`][fatqat.Program]; a newly constructed register
@@ -77,6 +79,22 @@ example.
         - "!^_"
 
 ::: fatqat.ClassicalRegister
+    options:
+      inherited_members: true
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.ModeRegister
+    options:
+      inherited_members: true
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.CountRegister
     options:
       inherited_members: true
       show_bases: true

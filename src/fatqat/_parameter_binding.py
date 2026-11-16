@@ -37,40 +37,6 @@ def _discover_parameters(instructions: Sequence[Any]) -> tuple[Parameter, ...]:
     return tuple(discovered)
 
 
-def _parameter_field_slots(
-    operation: object,
-    param_order: Sequence[Parameter] | None,
-) -> tuple[int, ...] | None:
-    """Return the θ-slot positions of one operation's `Parameter` fields.
-
-    Slots follow dataclass field order, matching the replay-time substitution
-    in ``simulator.planning._materialize_recipe``. Returns ``None``
-    when no direct field holds a `Parameter`, so concrete operations stay on
-    the ordinary lowering path.
-
-    A ``None`` ``param_order`` means the lowering run has no θ vector at all
-    (every non-sweep entry point); those paths reject unbound programs before
-    lowering, so a parameter field reaching this case is an internal routing
-    error and is reported like the public unbound guard.
-    """
-    if not is_dataclass(operation) or isinstance(operation, type):
-        return None
-    parameter_fields = [
-        getattr(operation, field_info.name)
-        for field_info in fields(operation)
-        if isinstance(getattr(operation, field_info.name), Parameter)
-    ]
-    if not parameter_fields:
-        return None
-    if param_order is None:
-        raise BackendValidationError(
-            "program has unbound parameters: "
-            + _format_unbound_parameters(parameter_fields)
-        )
-    positions = {parameter: index for index, parameter in enumerate(param_order)}
-    return tuple(positions[parameter] for parameter in parameter_fields)
-
-
 def _validate_parameter_scalar(value: object) -> Real:
     """Enforce the shared scalar policy without coercing the accepted value.
 
@@ -202,13 +168,16 @@ def _normalize_parameter_mapping(
 def _materialize_batch_array(value: object, *, expected_ndim: int) -> np.ndarray:
     """Materialize one batch value and enforce its rank and positive length.
 
-    Object dtype permits element-wise use of the shared scalar validator.
-    Width and cross-column length checks belong to the batch normalizer, which
-    has the necessary parameter context.
+    NumPy integer and floating arrays are kept as they are; anything else
+    becomes an object array so the shared scalar validator can check each
+    element. Width and cross-column length checks belong to the batch
+    normalizer, which has the necessary parameter context.
     """
     if isinstance(value, (str, bytes, Mapping)):
         raise TypeError("parameter batch values must be array-like containers")
-    if isinstance(value, np.ndarray) or np.isscalar(value):
+    if isinstance(value, np.ndarray) and value.dtype.kind in "iuf":
+        array = value
+    elif isinstance(value, np.ndarray) or np.isscalar(value):
         array = np.asarray(value, dtype=object)
     else:
         try:
@@ -235,12 +204,13 @@ def _materialize_batch_array(value: object, *, expected_ndim: int) -> np.ndarray
 def _normalize_parameter_batch(
     instructions: Sequence[Any],
     bindings: Mapping[Parameter | ParameterVector, object],
-) -> tuple[dict[Parameter, Real], ...]:
-    """Validate a complete binding batch and return trusted ordered rows.
+) -> dict[Parameter, np.ndarray]:
+    """Validate a complete binding batch and return one column per parameter.
 
-    This is the sole batch-validation boundary. Each returned mapping covers
-    every discovered parameter and is safe for ``_assign_normalized_parameters``
-    without repeating public binding checks.
+    This is the sole batch-validation boundary. The result covers every
+    discovered parameter in discovery order; each column is a read-only
+    one-dimensional array of the batch length. `_parameter_batch_rows` turns
+    it into trusted rows for ``_assign_normalized_parameters``.
     """
 
     def normalize_parameter(value: object) -> np.ndarray:
@@ -275,17 +245,36 @@ def _normalize_parameter_batch(
     lengths = {len(column) for column in columns.values()}
     if len(lengths) != 1:
         raise ValueError("parameter batch values must share one leading length")
-    batch_length = lengths.pop()
 
-    validated_columns: dict[Parameter, tuple[Real, ...]] = {}
-    for parameter in discovered:
-        validated_columns[parameter] = tuple(
-            _validate_parameter_scalar(value) for value in columns[parameter]
-        )
+    return {
+        parameter: _validate_batch_column(columns[parameter])
+        for parameter in discovered
+    }
 
+
+def _validate_batch_column(column: np.ndarray) -> np.ndarray:
+    """Return a read-only copy of one column that passed the scalar policy.
+
+    NumPy integer and floating columns satisfy the policy by dtype. Other
+    columns are checked element by element and converted once, so a column of
+    Python floats becomes float64.
+    """
+    if column.dtype.kind in "iuf":
+        validated = np.array(column)
+    else:
+        validated = np.array([_validate_parameter_scalar(value) for value in column])
+    validated.flags.writeable = False
+    return validated
+
+
+def _parameter_batch_rows(
+    columns: Mapping[Parameter, np.ndarray],
+) -> tuple[dict[Parameter, Real], ...]:
+    """Split validated batch columns into one parameter mapping per row."""
+    length = len(next(iter(columns.values())))
     return tuple(
-        {parameter: validated_columns[parameter][row_index] for parameter in discovered}
-        for row_index in range(batch_length)
+        {parameter: column[index] for parameter, column in columns.items()}
+        for index in range(length)
     )
 
 

@@ -159,6 +159,7 @@ nav:
           - Performance: guide/performance.md
       - Model hardware and physics:
           - Hardware-profile simulation: guide/hardware-profile-simulation.md
+          - Linear optics simulation: guide/linear-optics.md
           - Hamiltonian emulation: guide/hamiltonian-emulation.md
           - Transmon emulation: guide/transmon-emulation.md
           - Neutral-atom emulation: guide/neutral-atom-emulation.md
@@ -172,13 +173,16 @@ nav:
       - Build programs:
           - Program: api/program.md
           - LogicalProgram: api/logical-program.md
-          - Compiler: api/compiler.md
+          - Compiler:
+              - api/compiler.md
+              - SC target: api/sc-target.md
           - Registers: api/registers.md
           - Operations:
               - api/operations.md
               - Qubit gates: api/operations/qubit-gates.md
               - Qudit gates: api/operations/qudit-gates.md
               - Atom gates: api/operations/atom-gates.md
+              - Optical gates: api/operations/optical-gates.md
               - Structural operations: api/operations/structural.md
           - Pulse control:
               - api/pulse-control/index.md
@@ -192,6 +196,8 @@ nav:
               - General simulator: api/simulator.md
               - Superconducting profile: api/simulators/sc-qubit.md
               - Atom-array profile: api/simulators/atom-array.md
+              - Linear optics: api/simulators/linear-optics.md
+              - Custom operations: api/simulators/custom-operations.md
           - Emulators:
               - api/emulators/index.md
               - Transmon emulator: api/pulse-emulator.md
@@ -222,3 +228,6 @@ nav:
       - Errors and stability:
           - Exceptions: api/exceptions.md
           - Experimental APIs: api/experimental.md
+  - How to contribute:
+      - Contributing in the AI era: contributing/contributing-in-the-ai-era.md
+      - How to work on an issue: contributing/how-to-work-on-an-issue.md

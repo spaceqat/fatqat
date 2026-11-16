@@ -4,22 +4,25 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any, final
 
 import numpy as np
 
-from ..._expectation import (
+from ...estimator._planning import (
     _ExpectationExecution,
     _TermOccurrence,
     _combine_term_statistics,
     _plan_term_occurrences,
     _reduce_outcome_counts,
-    expectation_density_matrix,
-    expectation_statevector,
+    _validate_observable_targets,
 )
-from ..._parameter_binding import _raise_for_unbound_parameters
+from .._expectation import expectation, observable_operator
+from ..._parameter_binding import (
+    _parameter_batch_rows,
+    _raise_for_unbound_parameters,
+)
 from ..._index_allocation import (
     _ClassicalAllocation,
     _EngineAllocation,
@@ -28,6 +31,7 @@ from ..._index_allocation import (
 from ..._backends.backend_utils import (
     _canonicalize_method,
     _normalize_config,
+    _resolve_execution_config,
     _resolve_result_flags,
     _validate_result_shots,
 )
@@ -44,7 +48,8 @@ from ...errors import (
 from ...job import Job
 from ...noise import NoiseModel
 from ...noise.lindblad import LindbladImplementationMap
-from ...observable import Observable
+from ...observable import Observable, _Factors
+from ...parameters import Parameter
 from ...operations import Barrier, Measurement, PulseOperation, Reset
 from ...program import Program, _AppliedOperation
 from ...resource_layout import ResourceLayout
@@ -77,7 +82,7 @@ class _BoundPulseExpectation:
     """One logical term occurrence bound to pulse-engine resources."""
 
     occurrence: _TermOccurrence
-    engine_factors: tuple[tuple[int, str], ...]
+    engine_factors: _Factors
     scratch_indices: tuple[int, ...]
     measurement: MeasurementStep | None
 
@@ -108,7 +113,7 @@ class _PulseBackend(ABC):
     # Families may replace this with a dataclass derived from
     # ``_EmulatorConfig`` for family-specific per-run controls. The normalizer
     # derives accepted keys from the schema, so other families reject them.
-    _simulation_config_cls: type[_EmulatorConfig] = _EmulatorConfig
+    _execution_config_cls: type[_EmulatorConfig] = _EmulatorConfig
 
     def __init__(
         self,
@@ -288,8 +293,9 @@ class _PulseBackend(ABC):
         *,
         shots: int = 1024,
         resource_layout: ResourceLayout | None = None,
-        simulation_config: dict[str, Any] | None = None,
+        execution_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
+        simulation_config: dict[str, Any] | None = None,
     ) -> Job[Result]:
         """Run a program on this pulse emulator.
 
@@ -303,7 +309,7 @@ class _PulseBackend(ABC):
                 final state requires ``shots == 1``.
             resource_layout: Optional program-to-device mapping. The emulator
                 uses its default mapping when omitted.
-            simulation_config: Optional ``dict`` of pulse-execution settings.
+            execution_config: Optional ``dict`` of pulse-execution settings.
                 Every pulse emulator accepts:
 
                 - ``"seed"`` (``int | None``, default ``None``): Seed
@@ -336,6 +342,8 @@ class _PulseBackend(ABC):
                   ``shots == 1``.
 
                 Other keys are rejected.
+            simulation_config: Deprecated alias for ``execution_config``,
+                to be removed before fatqat 0.1.0.
 
         Returns:
             A terminal ``Job``. Validation errors are raised by ``run()``.
@@ -346,17 +354,21 @@ class _PulseBackend(ABC):
             BackendValidationError: If the program, noise, or configuration
                 is unsupported, or if requested results are incompatible with
                 ``shots`` and measurement.
-            TypeError: If ``simulation_config`` or ``result_config`` is not a
-                ``dict`` or ``None``.
+            TypeError: If ``execution_config`` or ``result_config`` is not a
+                ``dict`` or ``None``, or if ``execution_config`` and its
+                deprecated alias are both supplied.
             UnsupportedOperationError: If no pulse implementation exists for
                 an operation family or its ordered device operands.
             PulseImplementationError: If a selected custom pulse rule fails
                 unexpectedly or returns the wrong value type.
         """
+        execution_config = _resolve_execution_config(
+            execution_config, simulation_config
+        )
         simulation = _normalize_config(
-            simulation_config,
-            self._simulation_config_cls,
-            "simulation_config",
+            execution_config,
+            self._execution_config_cls,
+            "execution_config",
             backend_name=self._backend_name(),
         )
         result = _normalize_config(
@@ -539,14 +551,63 @@ class _PulseBackend(ABC):
         observables: tuple[Observable, ...],
         *,
         shots: int,
-        simulation_config: dict[str, Any] | None,
-    ) -> Job[_ExpectationExecution]:
-        """Execute one private exact or sampled pulse expectation request."""
+        execution_config: dict[str, Any] | None,
+        parameter_values: Mapping[Parameter, np.ndarray] | None = None,
+        initial_state: Any = None,
+    ) -> Job[list[_ExpectationExecution]]:
+        """Execute a private exact or sampled pulse expectation request per entry.
+
+        ``parameter_values`` are a sweep's validated columns; each entry binds
+        and runs the program on its own. Without them the program is one fully
+        bound entry. The emulator family fixes the initial product state, so
+        ``initial_state`` must be None, as in `run`.
+        """
+        if initial_state is not None:
+            raise BackendValidationError(
+                f"{type(self).__name__} fixes the initial product state and does "
+                "not accept an initial_state"
+            )
+        if parameter_values is None:
+            return self._run_expectation_entry(
+                program,
+                observables,
+                shots=shots,
+                execution_config=execution_config,
+                operators=None,
+            )
+        # Observable operators by (terms, dims), built once and shared by every
+        # entry of a sweep; building one costs more than evaluating it. A single
+        # entry has nothing to share them with, so it keeps none.
+        operators: dict[Any, Any] = {}
+        executions: list[_ExpectationExecution] = []
+        for row in _parameter_batch_rows(parameter_values):
+            job = self._run_expectation_entry(
+                program._assign_normalized_parameters(row),
+                observables,
+                shots=shots,
+                execution_config=execution_config,
+                operators=operators,
+            )
+            if job.status != "DONE":
+                return job
+            executions.extend(job.result())
+        return Job(status="DONE", result=executions)
+
+    def _run_expectation_entry(
+        self,
+        program: Program,
+        observables: tuple[Observable, ...],
+        *,
+        shots: int,
+        execution_config: dict[str, Any] | None,
+        operators: dict[Any, Any] | None,
+    ) -> Job[list[_ExpectationExecution]]:
+        """Execute one fully bound entry of an expectation request."""
         prepared = self._prepare_expectation(
             program,
             observables,
             shots=shots,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
         )
         try:
             runtime_details = None
@@ -554,7 +615,9 @@ class _PulseBackend(ABC):
                 values = prepared.constants
                 standard_errors = (0.0,) * len(values)
             elif shots == 0:
-                values, runtime_details = self._execute_exact_expectation(prepared)
+                values, runtime_details = self._execute_exact_expectation(
+                    prepared, operators
+                )
                 standard_errors = (0.0,) * len(values)
             else:
                 (
@@ -565,13 +628,15 @@ class _PulseBackend(ABC):
             solver = None if runtime_details is None else runtime_details.get("solver")
             return Job(
                 status="DONE",
-                result=_ExpectationExecution(
-                    values,
-                    standard_errors,
-                    method=self._method,
-                    runtime=self._runtime_name,
-                    solver=solver,
-                ),
+                result=[
+                    _ExpectationExecution(
+                        values,
+                        standard_errors,
+                        method=self._method,
+                        runtime=self._runtime_name,
+                        solver=solver,
+                    )
+                ],
             )
         except Exception as exc:
             failure = BackendExecutionError("Pulse backend execution failed")
@@ -584,13 +649,14 @@ class _PulseBackend(ABC):
         observables: tuple[Observable, ...],
         *,
         shots: int,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
     ) -> _PreparedPulseExpectation:
         """Validate, lower, and bind one pulse expectation request."""
+        _validate_observable_targets(observables, program)
         simulation = _normalize_config(
-            simulation_config,
-            self._simulation_config_cls,
-            "simulation_config",
+            execution_config,
+            self._execution_config_cls,
+            "execution_config",
             backend_name=self._backend_name(),
         )
         prepared = self._prepare_program(program)
@@ -663,26 +729,26 @@ class _PulseBackend(ABC):
         bound_occurrences = []
         for occurrence in occurrences:
             factor_refs = tuple(
-                logical_refs[index] for index, _letter in occurrence.logical_factors
+                logical_refs[index] for index, _factor in occurrence.logical_factors
             )
             engine_factors = tuple(
                 (
                     prepared.engine_allocation.engine_index(
                         prepared.resource_layout.device_label(ref)
                     ),
-                    letter,
+                    factor,
                 )
-                for ref, (_index, letter) in zip(
+                for ref, (_index, factor) in zip(
                     factor_refs,
                     occurrence.logical_factors,
                     strict=True,
                 )
             )
-            if shots > 0 and any(
-                letter in {"X", "Y"} for _index, letter in engine_factors
+            if shots > 0 and not all(
+                factor._is_diagonal for _index, factor in engine_factors
             ):
                 raise UnsupportedOperationError(
-                    "sampled pulse expectations do not support X or Y basis factors"
+                    "sampled pulse expectations do not support X or Y operators"
                 )
 
             if shots == 0:
@@ -709,7 +775,7 @@ class _PulseBackend(ABC):
             else:
                 measurement = planning._build_expectation_measurement(
                     factor_refs,
-                    tuple(index for index, _letter in engine_factors),
+                    tuple(index for index, _factor in engine_factors),
                     scratch_start=scratch_start,
                     target=self._target,
                     resource_layout=prepared.resource_layout,
@@ -730,8 +796,14 @@ class _PulseBackend(ABC):
     def _execute_exact_expectation(
         self,
         prepared: _PreparedPulseExpectation,
+        operators: dict[Any, Any] | None,
     ) -> tuple[tuple[float, ...], dict[str, Any]]:
-        """Contract every observable against one pulse-evolved state."""
+        """Contract every observable against one pulse-evolved state.
+
+        ``operators`` holds the observables' operators by ``(terms, dims)``;
+        missing ones are built and added. With None, each operator is built,
+        evaluated and released, so at most one is alive at a time.
+        """
         program = prepared.program
         summary = self._execute_state(
             program,
@@ -748,25 +820,29 @@ class _PulseBackend(ABC):
             raise BackendExecutionError(
                 "pulse expectation execution omitted its final state"
             )
-        kernel = (
-            expectation_statevector
-            if self._method == "statevector"
-            else expectation_density_matrix
-        )
         terms_by_observable = [[] for _constant in prepared.constants]
         for bound in prepared.bound_occurrences:
             terms_by_observable[bound.occurrence.observable_index].append(
                 (bound.occurrence.coefficient, bound.engine_factors)
             )
-        values = tuple(
-            constant + kernel(state, tuple(terms))
-            for constant, terms in zip(
-                prepared.constants,
-                terms_by_observable,
-                strict=True,
-            )
-        )
-        return values, dict(summary.runtime_details)
+        # QuTiP-ordered engine: index 0 is the most significant subsystem.
+        dims = tuple(program.engine_allocation.system_dims)
+        values = []
+        for constant, terms in zip(
+            prepared.constants, terms_by_observable, strict=True
+        ):
+            if not terms:
+                values.append(constant)
+                continue
+            key = (tuple(terms), dims)
+            if operators is None:
+                operator = observable_operator(*key)
+            else:
+                if key not in operators:
+                    operators[key] = observable_operator(*key)
+                operator = operators[key]
+            values.append(constant + expectation(state, operator))
+        return tuple(values), dict(summary.runtime_details)
 
     def _execute_sampled_expectation(
         self,
@@ -889,21 +965,18 @@ class _PulseBackend(ABC):
         runtime_details = None
         available = frozenset()
         if request.final_state:
+            runner = self._create_runner(
+                prepared,
+                simulation=simulation,
+                execution_mode="statevector",
+                retain_final_state=False,
+            )
             if prepared.plan:
-                runner = self._create_runner(
-                    prepared,
-                    simulation=simulation,
-                    execution_mode="statevector",
-                    retain_final_state=False,
-                )
                 engine = PulseEngine(runner, schedule_mode=simulation.schedule_mode)
-                unitary = np.asarray(
-                    engine.propagator(prepared.plan, apply_final_frame=True).full(),
-                    dtype=complex,
-                )
+                unitary = engine.propagator(prepared.plan, apply_final_frame=True)
                 runtime_details = runner.runtime_details()
             else:
-                unitary = np.eye(self._target.hilbert_dimension, dtype=complex)
+                unitary = runner.identity_operator()
             available = frozenset({"unitary"})
         metadata = self._result_metadata(request, simulation, shots)
         if runtime_details is not None:
@@ -1027,6 +1100,8 @@ class _PulseBackend(ABC):
                 "solver_options": {},
             },
             "shots": shots,
+            "execution_config": asdict(simulation),
+            # Deprecated key; remove with the simulation_config keyword.
             "simulation_config": asdict(simulation),
             "result_config": {
                 "counts": request.counts,

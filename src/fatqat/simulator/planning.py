@@ -2,26 +2,26 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass, fields, replace
+from collections.abc import Mapping, Sequence
+from dataclasses import fields, replace
 from math import prod
-from numbers import Real
 from typing import Any, cast
 
+import numpy as np
+
 from .._index_allocation import _ClassicalAllocation, _EngineAllocation
-from .._parameter_binding import _parameter_field_slots
-from ..errors import (
-    BackendValidationError,
-    MatrixImplementationError,
-    UnsupportedOperationError,
-)
-from ..implementation import MatrixImplementation, MatrixImplementationMap
-from ..implementation._operation_registry import _select_implementation
+from .._parameter_binding import _discover_parameters
+from ..errors import UnsupportedOperationError
+from ..implementation import MatrixImplementationMap
+from ..implementation.matrix_map import _build_matrix
+from ..implementation.base_map import _select_implementation
 from ..implementation.matrices import _H, _SDG
-from ..noise import ChannelImplementationMap, NoiseModel
+from ..noise import NoiseModel
 from ..noise.base import _validate_kraus_shapes
-from ..operations import Measurement, Operation, PulseOperation
+from .. import operations as ops
+from ..operations import Measurement, PulseOperation
 from ..noise.loss import Loss
+from ..observable import _Factors, _Pauli
 from ..parameters import Parameter
 from ..program import _AppliedOperation
 from ..registers import RegisterRef
@@ -35,57 +35,15 @@ from .._backends.backend_utils import (
 from .._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
+    ApplyParametricMatrixStep,
     BuiltinKernelKey,
+    CustomOperationStep,
     LossStep,
     MeasurementStep,
     ResetStep,
     PutStep,
     ResolvedStep,
 )
-
-
-@dataclass(frozen=True)
-class _MatrixRecipe:
-    """Deferred local matrix for a gate whose fields still hold `Parameter`s.
-
-    Not a `ResolvedStep`: an engine never receives one. A recipe records
-    everything lowering resolved structurally - rule selection, engine
-    indices, condition, kernel identity, expected shape - and defers only the
-    numeric matrix to sweep replay, when `_ParametricPlan.materialize`
-    substitutes one θ vector and turns it into an ordinary `ApplyMatrixStep`.
-
-    The fields form two halves. ``kernel_key``, ``param_slots``,
-    ``target_indices``, ``target_dims`` and ``condition`` are plain data an
-    engine could read directly. ``rule``, ``operation_template`` and
-    ``targets`` are the Python fallback: the same registered rule the
-    fully-bound path calls, so matrix math keeps one source of truth, plus the
-    program targets the rule protocol (``rule(op, *, targets)``) needs for
-    dimension context.
-
-    Attributes:
-        rule: The matrix implementation selected at lowering.
-        operation_template: The operation as declared, with `Parameter`
-            objects still in its fields.
-        param_slots: θ-vector positions consumed by the template's
-            `Parameter` fields, in dataclass field order.
-        targets: The operation's program targets, passed to ``rule`` at
-            replay.
-        target_indices: Flat subsystem indices the resolved matrix acts on.
-        target_dims: Local dimensions of the addressed subsystems, for
-            replay-time shape validation.
-        condition: Lowered feedforward guard, or ``None``.
-        kernel_key: Canonical identity of the selected implementation; a
-            structural constant per registration.
-    """
-
-    rule: MatrixImplementation
-    operation_template: Operation
-    param_slots: tuple[int, ...]
-    targets: tuple[RegisterRef, ...]
-    target_indices: tuple[int, ...]
-    target_dims: tuple[int, ...]
-    condition: tuple[tuple[int, int], ...] | None = None
-    kernel_key: BuiltinKernelKey | None = None
 
 
 def _lower_measurement(
@@ -128,29 +86,36 @@ def _lower_measurement(
 
 def _expectation_confusions(
     factor_refs: tuple[RegisterRef, ...],
+    factor_dims: tuple[int, ...],
     resource_layout: ResourceLayout,
     noise_model: NoiseModel,
 ) -> tuple[Any, ...] | None:
-    """Resolve readout confusion for a qubit expectation measurement."""
+    """Resolve readout confusion for an expectation measurement of every level."""
     return _resolve_confusions(
         factor_refs,
-        ((0, 1),) * len(factor_refs),
+        tuple(tuple(range(dim)) for dim in factor_dims),
         resource_layout,
         noise_model,
     )
 
 
 def _build_expectation_tail(
-    factor_axes: tuple[tuple[int, str], ...],
+    factor_axes: _Factors,
     factor_refs: tuple[RegisterRef, ...],
+    factor_dims: tuple[int, ...],
     *,
     scratch_start: int,
     resource_layout: ResourceLayout,
     noise_model: NoiseModel,
 ) -> tuple[ResolvedStep, ...]:
-    """Build ideal basis changes followed by normally routed readout."""
+    """Build ideal basis changes followed by normally routed readout.
+
+    Pauli factors rotate their qubit into the Z basis; projector and number
+    factors read the measured level directly.
+    """
     tail: list[ResolvedStep] = []
-    for engine_index, letter in factor_axes:
+    for engine_index, factor in factor_axes:
+        letter = factor.letter if isinstance(factor, _Pauli) else None
         if letter == "X":
             tail.append(
                 ApplyMatrixStep(
@@ -175,15 +140,16 @@ def _build_expectation_tail(
                 )
             )
 
-    reported_digit_maps = ((0, 1),) * len(factor_axes)
+    reported_digit_maps = tuple(tuple(range(dim)) for dim in factor_dims)
     confusions = _expectation_confusions(
         factor_refs,
+        factor_dims,
         resource_layout,
         noise_model,
     )
     tail.append(
         MeasurementStep(
-            measured_indices=tuple(index for index, _letter in factor_axes),
+            measured_indices=tuple(index for index, _factor in factor_axes),
             classical_indices=tuple(
                 range(scratch_start, scratch_start + len(factor_axes))
             ),
@@ -259,7 +225,7 @@ def _lower_channels(
     resource_layout: ResourceLayout,
     engine_allocation: _EngineAllocation,
     noise_model: NoiseModel,
-    channel_map: ChannelImplementationMap,
+    impl_map: MatrixImplementationMap,
 ) -> list[ResolvedStep]:
     """Lower the channel noise attached to one occurrence into steps.
 
@@ -286,12 +252,10 @@ def _lower_channels(
                 )
             )
             continue
-        channel_rule = channel_map.get(type(channel))
-        if channel_rule is None:
-            raise UnsupportedOperationError(
-                f"{type(channel).__name__} has no channel "
-                "implementation on this backend"
-            )
+        device_operands = tuple(
+            resource_layout.device_label(target) for target in extent
+        )
+        channel_rule = _select_implementation(channel, device_operands, impl_map)
         kraus_ops = tuple(channel_rule(channel, targets=extent))
         extent_dim = prod(
             engine_allocation.system_dims[index] for index in extent_indices
@@ -314,20 +278,14 @@ def _lower_gate(
     classical_allocation: _ClassicalAllocation,
     impl_map: MatrixImplementationMap,
     noise_model: NoiseModel,
-    channel_map: ChannelImplementationMap,
-    *,
-    param_order: tuple[Parameter, ...] | None = None,
-) -> list[ResolvedStep | _MatrixRecipe]:
-    """Lower one ordinary-gate operation and its attached channel noise.
+) -> list[ResolvedStep]:
+    """Lower one registered operation and its attached channel noise.
 
     Structural resolution (device operands, engine indices, condition, rule
-    selection, kernel identity, target dimensions) reads only the operation's
-    type and targets, never its field values. A gate whose fields hold
-    `Parameter`s therefore lowers here without a concrete matrix: when
-    ``param_order`` supplies the sweep's θ order it becomes a
-    `_MatrixRecipe`, deferring the rule call and shape validation to
-    replay. Without ``param_order`` (an ordinary run) or without parameter
-    fields, the fully-bound path is exactly today's behavior.
+    selection) reads only the operation's type and targets, never its field
+    values. A gate whose fields hold `Parameter`s therefore lowers here to an
+    `ApplyParametricMatrixStep`, deferring the rule call and shape validation
+    to sweep binding. Ordinary runs reject unbound programs before lowering.
     """
     if isinstance(step.operation, PulseOperation):
         raise UnsupportedOperationError(
@@ -341,39 +299,31 @@ def _lower_gate(
     condition = _resolve_condition(step.condition, classical_allocation)
 
     rule = _select_implementation(step.operation, device_operands, impl_map)
-    target_dims = tuple(engine_allocation.system_dims[i] for i in engine_indices)
-    param_slots = _parameter_field_slots(step.operation, param_order)
-    steps: list[ResolvedStep | _MatrixRecipe] = []
-    if param_slots is not None:
+    steps: list[ResolvedStep] = []
+    if isinstance(step.operation, ops.CustomOperation):
         steps.append(
-            _MatrixRecipe(
-                rule=rule,
-                operation_template=step.operation,
-                param_slots=param_slots,
+            CustomOperationStep(
+                operation=step.operation,
+                implementation=rule,
+                target_indices=engine_indices,
+                condition=condition,
+            )
+        )
+    elif _discover_parameters((step,)):
+        steps.append(
+            ApplyParametricMatrixStep(
+                operation=step.operation,
+                implementation=rule,
                 targets=step.targets,
                 target_indices=engine_indices,
-                target_dims=target_dims,
                 condition=condition,
-                kernel_key=rule._kernel_key(step.operation, targets=step.targets),
             )
         )
     else:
-        try:
-            matrix = rule(step.operation, targets=step.targets)
-        except Exception as exc:
-            raise MatrixImplementationError(
-                f"implementation for {type(step.operation).__name__} raised: {exc}"
-            ) from exc
-
-        expected = prod(target_dims)
-        if matrix.shape != (expected, expected):
-            raise BackendValidationError(
-                f"{type(step.operation).__name__} resolved to a "
-                f"{matrix.shape} matrix, incompatible with target "
-                f"dimensions {target_dims} (expected "
-                f"{(expected, expected)})"
-            )
-
+        target_dims = tuple(engine_allocation.system_dims[i] for i in engine_indices)
+        matrix = _build_matrix(
+            rule, step.operation, targets=step.targets, target_dims=target_dims
+        )
         steps.append(
             ApplyMatrixStep(
                 matrix=matrix,
@@ -390,84 +340,37 @@ def _lower_gate(
             resource_layout,
             engine_allocation,
             noise_model,
-            channel_map,
+            impl_map,
         )
     )
     return steps
 
 
-def _materialize_recipe(
-    recipe: _MatrixRecipe, theta: Sequence[Real]
-) -> ApplyMatrixStep:
-    """Realize one recipe into a concrete step for one θ vector.
+def _inject_parameter_values(
+    plan: Sequence[ResolvedStep],
+    columns: Mapping[Parameter, np.ndarray],
+) -> tuple[ResolvedStep, ...]:
+    """Give each parametric step the value columns its `Parameter` fields read.
 
-    Substitutes the θ values the recipe's ``param_slots`` point at into the
-    template's `Parameter` fields, re-runs the operation's ``validate_targets``
-    hook, then calls the rule with the same error wrapping and shape
-    validation the fully-bound lowering path applies.
-    Failures raise directly, exactly as they raise from lowering in ``run()``.
+    Lowering stays independent of parameter values; a sweep injects its
+    validated columns afterwards, so the plan an engine binds never refers to
+    `Parameter` objects. Columns are shared by reference, not copied.
     """
-    replacements: dict[str, Real] = {}
-    slot_index = 0
-    for field_info in fields(recipe.operation_template):
-        value = getattr(recipe.operation_template, field_info.name)
-        if isinstance(value, Parameter):
-            replacements[field_info.name] = theta[recipe.param_slots[slot_index]]
-            slot_index += 1
-    operation = replace(recipe.operation_template, **replacements)
-    # Binding through Program re-runs this hook when it rebuilds the applied
-    # operation; a replayed recipe must give a parameter-dependent target
-    # check the same chance to reject the substituted value.
-    operation.validate_targets(recipe.targets)
-    try:
-        matrix = recipe.rule(operation, targets=recipe.targets)
-    except Exception as exc:
-        raise MatrixImplementationError(
-            f"implementation for {type(operation).__name__} raised: {exc}"
-        ) from exc
-    expected = prod(recipe.target_dims)
-    if matrix.shape != (expected, expected):
-        raise BackendValidationError(
-            f"{type(operation).__name__} resolved to a "
-            f"{matrix.shape} matrix, incompatible with target "
-            f"dimensions {recipe.target_dims} (expected "
-            f"{(expected, expected)})"
-        )
-    return ApplyMatrixStep(
-        matrix=matrix,
-        target_indices=recipe.target_indices,
-        condition=recipe.condition,
-        kernel_key=recipe.kernel_key,
-    )
-
-
-@dataclass(frozen=True)
-class _ParametricPlan:
-    """A lowered plan whose parameter-holding gates are still recipes.
-
-    The sweep counterpart of a ``tuple[ResolvedStep, ...]``, kept as its own
-    type so the `ResolvedStep` contract ("an engine can execute every member")
-    stays true. Structural lowering happened once; ``materialize`` turns the
-    plan into an engine-ready step tuple for one θ vector. Non-parametric
-    steps are shared by reference across rows (their payloads are frozen).
-
-    Attributes:
-        steps: Lowered steps in program order; a recipe stands where its
-            `ApplyMatrixStep` will go.
-        param_order: The flat θ order (first-appearance discovery order)
-            that every recipe's ``param_slots`` index into.
-    """
-
-    steps: tuple[ResolvedStep | _MatrixRecipe, ...]
-    param_order: tuple[Parameter, ...]
-
-    def materialize(self, theta: Sequence[Real]) -> tuple[ResolvedStep, ...]:
-        """Return the concrete, engine-ready plan for one θ vector."""
-        return tuple(
-            (
-                _materialize_recipe(step, theta)
-                if isinstance(step, _MatrixRecipe)
-                else step
+    return tuple(
+        (
+            replace(
+                step,
+                values=tuple(
+                    (field_info.name, columns[value])
+                    for field_info in fields(step.operation)
+                    if isinstance(
+                        (value := getattr(step.operation, field_info.name)),
+                        Parameter,
+                    )
+                ),
             )
-            for step in self.steps
+            if isinstance(step, ApplyParametricMatrixStep)
+            else step
         )
+        for step in plan
+    )

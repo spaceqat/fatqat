@@ -82,10 +82,10 @@ outputs positionally. Both sides must be non-empty, have the same length, and
 have matching dimensions at every position. Repeated operands are processed
 in pair order; see [Measurement and structural operations](operations/structural.md) for measurement behavior.
 
-[`measure_all`][fatqat.Program.measure_all] flattens all registers and their members
-in declaration order and appends one grouped measurement. It requires equal,
-non-zero quantum and classical counts and matching dimensions at every
-position. Read [Write quantum computations with Program](../guide/program.md) for a mid-program measurement and
+[`measure_all`][fatqat.Program.measure_all] appends one grouped measurement
+of all quantum slots, using the first corresponding classical slots by default
+or the destinations specified by `outputs`. Read [Write quantum computations
+with Program](../guide/program.md) for a mid-program measurement and
 feedforward workflow.
 
 <a id="program-templates"></a>
@@ -120,6 +120,26 @@ binding and execution contracts are specified here and in [Simulator](simulator.
 [`add`][fatqat.Program.add], [`measure`][fatqat.Program.measure], and
 [`measure_all`][fatqat.Program.measure_all] update the current program and return
 `None`.
+
+## Read instructions
+
+Use [`Program.instructions`][fatqat.Program.instructions] to read a program's
+instructions in insertion order. It returns a read-only snapshot containing
+[`OperationInstruction`][fatqat.program.OperationInstruction] and
+[`Measurement`][fatqat.operations.Measurement] records.
+
+```python
+from fatqat.program import OperationInstruction
+
+for instruction in program.instructions:
+    if isinstance(instruction, OperationInstruction):
+        print(instruction.operation, instruction.targets, instruction.condition)
+```
+
+Backends and other program readers should use this interface instead of
+depending on FatQat's private instruction representation.
+
+::: fatqat.program.OperationInstruction
 
 ## Draw
 

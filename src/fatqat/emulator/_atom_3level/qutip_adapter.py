@@ -38,6 +38,7 @@ from .._core.value_validation import TIME_EPSILON
 from .._qutip_boundaries import (
     _apply_qutip_reset,
     _expand_qutip_local,
+    _qutip_time_window,
     _sample_projective_qutip_state,
     _solve_one_qutip_trajectory,
 )
@@ -265,6 +266,10 @@ class _Atom3LevelQutipAdapter:
         context.frame_angles.clear()
         context.frame_angles.update(bound.output_frames)
 
+    def identity_operator(self) -> Qobj:
+        """Return the identity on the complete physical model."""
+        return tensor(*tuple(qeye(dim) for dim in self._dims))
+
     def propagator(
         self, run: _ScheduledPulseRun, *, apply_final_frame: bool = True
     ) -> Any:
@@ -322,14 +327,11 @@ class _Atom3LevelQutipAdapter:
                 self._reset(engine_index, context)
 
     def finish_shot(self, context: _ShotContext) -> _PulseShotOutcome:
-        """Convert the solver component to a copied NumPy payload."""
+        """Return an independent copy of the solver state."""
         self._validate_state(context.state)
         final_state = None
         if self._retain_final_state:
-            array = np.asarray(context.state.full(), dtype=complex)
-            if self._execution_mode != "density_matrix":
-                array = array.reshape(-1)
-            final_state = np.array(array, dtype=complex, copy=True)
+            final_state = context.state.copy()
         return _PulseShotOutcome(
             final_state=final_state,
             final_state_kind=(
@@ -425,7 +427,7 @@ class _Atom3LevelQutipAdapter:
             raise BackendValidationError("placed pulse runs must be time ordered")
 
         frames = dict(input_frames)
-        pulses: list[Pulse] = []
+        pulses: list[tuple[Pulse, float, float]] = []
         pending_actions: list[tuple[float, int, tuple[PhaseShift | PhaseSwap, ...]]] = (
             []
         )
@@ -438,7 +440,11 @@ class _Atom3LevelQutipAdapter:
             if not enabled[source_index]:
                 continue
             pulses.extend(
-                self._bind_child(child, binding, start_time, frames)
+                (
+                    self._bind_child(child, binding, start_time, frames),
+                    start_time,
+                    start_time + block.duration,
+                )
                 for child, binding in zip(block.controls, block.control_bindings)
             )
             pending_actions.append(
@@ -453,13 +459,18 @@ class _Atom3LevelQutipAdapter:
             return _BoundFrames(output_frames=frames)
 
         hamiltonian = self.interaction_drift()
-        for pulse in pulses:
+        for pulse, start_time, end_time in pulses:
             contribution, collapse = pulse.get_noisy_qobjevo(self._dims)
             if collapse:
                 raise BackendValidationError(
                     "atom coherent pulse binding produced collapse terms"
                 )
-            hamiltonian += contribution
+            hamiltonian += contribution * _qutip_time_window(
+                start_time,
+                end_time,
+                run_start_time=input_time,
+                run_end_time=run.end_time,
+            )
         return _BoundDynamics(hamiltonian=hamiltonian, output_frames=frames)
 
     def _frame_unitary(self, frames: dict[Any, float]) -> Qobj:

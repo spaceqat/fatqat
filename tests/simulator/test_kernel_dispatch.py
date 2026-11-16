@@ -1,30 +1,50 @@
 """Key-driven numba kernel dispatch: spec/content agreement and parity."""
 
+import gc
+import weakref
+from dataclasses import dataclass
+from typing import ClassVar
+
 import numpy as np
 import pytest
 
+from fatqat.simulator._engine._execution_policy import _select_execution_path
+
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.simulator import Simulator
+from fatqat.simulator import EvolutionState, Simulator
+from fatqat.simulator._engine.state import _LoweredBasisState
 from fatqat._backends.steps import ApplyChannelStep, ApplyMatrixStep, BuiltinKernelKey
 from fatqat.implementation import default_matrix_implementation_map
-from fatqat.simulator._execution_contract import _ExecutionContext, _ExecutionPolicy
+from fatqat.operations import Operation
+from fatqat.simulator._execution_contract import (
+    _ResultRequest,
+    _RunContext,
+)
+from fatqat.simulator._engine._execution_policy import _ExecutionPolicy
 
 numba = pytest.importorskip("numba")
 
 # pylint: disable=wrong-import-position  # these need the importorskip above
-from fatqat.simulator._engine.nb import (
-    _classify_matrix,
-    _DENSE,
+from fatqat.simulator._engine.engines.numba_engine import (
     _fuse_gate_channels,
-    _KERNEL_SPECS,
-    _superop_csr,
     NumbaSVEngine,
 )
-from fatqat.simulator._engine.np import NumpySVEngine
+from fatqat.simulator._engine.numerics.numba_kernels._apply import (
+    _DENSE,
+    _classify_matrix,
+)
+from fatqat.simulator._engine.numerics.numba_kernels._matrix_cache import (
+    _KERNEL_SPECS,
+    _superop_csr,
+)
+from fatqat.simulator._engine.engines.numpy_engine import NumpySVEngine
 from fatqat.noise import Depolarizing
 from fatqat.noise.catalog import depolarizing_rule
-from fatqat.noise.nb import _kraus_stack, _kraus_superop_kernel
+from fatqat.simulator._engine.numerics.numba_kernels._channel import (
+    _kraus_stack,
+    _kraus_superop_kernel,
+)
 
 # pylint: enable=wrong-import-position
 
@@ -73,6 +93,8 @@ _GATE_CASES = [
     (ops.SubspaceRY(0.3, (0, 1)), (_QUTRIT[0],)),
     (ops.SubspaceRZ(0.3, (0, 1)), (_QUTRIT[0],)),
     (ops.CClock(1), (_QUTRIT[0], _QUTRIT[1])),
+    (ops.PhaseShifter(0.3), (_QUTRIT[0],)),
+    (ops.BeamSplitter(0.3, 0.4), (_QUTRIT[0], _QUTRIT[1])),
 ]
 
 
@@ -108,43 +130,46 @@ def test_kernel_specs_agree_with_content_classification():
     assert seen == set(BuiltinKernelKey)  # the case table covers every gate
 
 
-def _counts(engine_cls, plan, facts, dims, n_clbits, shots, seed, request):
+def _counts(engine_cls, plan, dims, n_clbits, shots, seed, request):
     simulator = engine_cls()
-    context = _ExecutionContext(
-        execution_shape=facts.execution_shape,
+    context = _RunContext(
         request=request,
         system_dims=tuple(dims),
         n_clbits=n_clbits,
         shots=shots,
         seed=seed,
-        initial_state=None,
-        initial_occupied=None,
+    )
+    execution_path = _select_execution_path(
+        plan,
+        quantum_capabilities=simulator.capabilities.quantum,
+        initial_state=EvolutionState(),
     )
     policy = _ExecutionPolicy(
+        execution_path=execution_path,
         shot_strategy="serial",
         kernel_strategy="serial",
         worker_limit=1,
         fusion=False,
     )
-    payload = simulator.materialize_execution(
+    payload = simulator.prepare_payload(
         tuple(plan),
         system_dims=context.system_dims,
         n_clbits=context.n_clbits,
-        deferred_measurements=facts.deferred_measurements,
         policy=policy,
     )
-    raw = simulator.execute_local(
+    raw = simulator.execute_payload(
         context,
         payload,
         policy,
+        initial_state=EvolutionState(_LoweredBasisState((0,) * len(dims))),
     )
     return list(zip(raw.outcome_keys.tolist(), raw.outcome_counts.tolist()))
 
 
 def _plan_and_request(program):
     backend = Simulator()
-    plan, facts = backend._lower_program(program)
-    return plan, facts, backend._request_cls(counts=True, statevector=False)
+    plan, _facts = backend._lower_program(program)
+    return plan, _ResultRequest(counts=True, final_state=False)
 
 
 def test_keyed_dispatch_matches_numpy_across_structure_classes():
@@ -159,10 +184,10 @@ def test_keyed_dispatch_matches_numpy_across_structure_classes():
     program.add(ops.RX(1.1), 2)
     program.add(ops.X, 1)
     program.measure((0, 1, 2), (0, 1, 2))
-    plan, facts, request = _plan_and_request(program)
+    plan, request = _plan_and_request(program)
 
-    numpy_counts = _counts(NumpySVEngine, plan, facts, (2, 2, 2), 3, 300, 11, request)
-    numba_counts = _counts(NumbaSVEngine, plan, facts, (2, 2, 2), 3, 300, 11, request)
+    numpy_counts = _counts(NumpySVEngine, plan, (2, 2, 2), 3, 300, 11, request)
+    numba_counts = _counts(NumbaSVEngine, plan, (2, 2, 2), 3, 300, 11, request)
     assert numpy_counts == numba_counts
 
 
@@ -173,10 +198,10 @@ def test_keyed_dispatch_matches_numpy_on_the_dynamic_path():
     program.add(ops.X, 1, condition=(0, 1))
     program.add(ops.RZ(0.7), 1)
     program.measure(1, 1)
-    plan, facts, request = _plan_and_request(program)
+    plan, request = _plan_and_request(program)
 
-    numpy_counts = _counts(NumpySVEngine, plan, facts, (2, 2), 2, 20, 13, request)
-    numba_counts = _counts(NumbaSVEngine, plan, facts, (2, 2), 2, 20, 13, request)
+    numpy_counts = _counts(NumpySVEngine, plan, (2, 2), 2, 20, 13, request)
+    numba_counts = _counts(NumbaSVEngine, plan, (2, 2), 2, 20, 13, request)
     assert numpy_counts == numba_counts
 
 
@@ -214,10 +239,8 @@ def test_dense_declaration_stays_correct_at_special_parameters():
     assert np.allclose(simulator.export_state(), [0.0, -1.0j])
 
 
-def test_fallback_path_matches_the_standard_path():
-    # apply(step) (standard, key-aware, cached) and _apply_local (matrix-only
-    # fallback used by reset shifts and Kraus branches) must produce the same
-    # state through the same resolved kernels.
+def test_deterministic_channel_matches_equivalent_gate():
+    # A gate and a deterministic channel implementing the same matrix agree.
     matrix = np.array([[0, 1], [1, 0]], dtype=complex)
     standard = NumbaSVEngine()
     standard.initialize((2, 2), 0)
@@ -228,24 +251,34 @@ def test_fallback_path_matches_the_standard_path():
     )
     fallback = NumbaSVEngine()
     fallback.initialize((2, 2), 0)
-    fallback._state = fallback._apply_local(fallback.state, matrix, (1,))
+    fallback.apply_channel(
+        ApplyChannelStep(kraus_ops=(matrix,), target_indices=(1,)),
+        np.random.default_rng(0),
+    )
 
     assert np.array_equal(standard.export_state(), fallback.export_state())
 
 
-def test_structure_cache_pins_steps_and_reuses_resolutions():
-    simulator = NumbaSVEngine()
-    simulator.initialize((2,), 0)
+def test_structure_cache_retains_source_until_plan_pruned():
+    from fatqat.simulator._engine.numerics.numba_kernels._matrix_cache import (
+        _MatrixStructureCache,
+    )
+
+    cache = _MatrixStructureCache()
     step = ApplyMatrixStep(
         matrix=np.eye(2, dtype=complex),
         target_indices=(0,),
         kernel_key=BuiltinKernelKey.I,
     )
-    first = simulator._resolve_structure(step)
-    # Trajectory initialization resets state without discarding this plan's work.
-    simulator.initialize((2,), 0)
-    assert simulator._resolve_structure(step) is first  # cached, not re-resolved
-    assert simulator._structure_cache[id(step)][0] is step  # pinned identity
+    cache.resolve(step)
+    step_ref = weakref.ref(step)
+    del step
+    gc.collect()
+    # Pinning the source prevents recycled step identities from aliasing.
+    assert step_ref() is not None
+    cache.retain(())
+    gc.collect()
+    assert step_ref() is None
 
 
 def _reconstruct(csr, d):
@@ -292,31 +325,33 @@ def test_fuse_gate_channels_merges_an_adjacent_same_target_pair():
     assert np.allclose(fused[0].kraus_ops[1], k1 @ m)
 
 
-def test_plan_chunks_floor_scales_with_thread_count():
+def test_choose_chunk_count_floor_scales_with_thread_count():
     # The parallel floor is per-thread (`_MAX_THREADS * _GRAIN_TO_THREAD`), so a
     # state stays serial just below it and splits across threads at it - the
     # absolute crossover tracks the core count, not a fixed size.
-    from fatqat.simulator._engine.nb import (
+    from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
         _GRAIN_TO_THREAD,
         _MAX_THREADS,
         _MIN_SIZE_TO_THREAD,
-        _plan_chunks,
+        _choose_chunk_count,
     )
 
     assert _MIN_SIZE_TO_THREAD == _MAX_THREADS * _GRAIN_TO_THREAD
     cosets = _MIN_SIZE_TO_THREAD  # >> _MAX_THREADS, so the chunk count is thread-bound
-    assert _plan_chunks(cosets, _MIN_SIZE_TO_THREAD - 1) == 1
-    assert _plan_chunks(cosets, _MIN_SIZE_TO_THREAD) == min(_MAX_THREADS, cosets)
+    assert _choose_chunk_count(cosets, _MIN_SIZE_TO_THREAD - 1) == 1
+    assert _choose_chunk_count(cosets, _MIN_SIZE_TO_THREAD) == min(_MAX_THREADS, cosets)
 
 
 def test_coset_chunking_is_bit_identical_across_chunk_counts():
     # The floor only ever changes the chunk COUNT; disjoint cosets make the
     # result independent of it, which is why moving the floor never changes an
     # amplitude. A dense gate applied as one chunk equals it applied as many.
-    from fatqat.simulator._engine.nb import (
+    from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
+        _build_apply_layout,
+    )
+    from fatqat.simulator._engine.numerics.numba_kernels._apply import (
         _apply_resolved_parallel,
         _apply_resolved_serial,
-        _compute_apply_plan,
     )
 
     rng = np.random.default_rng(0)
@@ -330,7 +365,7 @@ def test_coset_chunking_is_bit_identical_across_chunk_counts():
     columns = np.empty(2, dtype=np.int64)
     values = np.empty(2, dtype=np.complex128)
     code = int(_classify_matrix(matrix, columns, values))
-    offsets, comp_strides, comp_dims, num_cosets, _ = _compute_apply_plan(
+    offsets, comp_strides, comp_dims, num_cosets, _ = _build_apply_layout(
         (2,) * 6, (0,)
     )
 
@@ -338,6 +373,148 @@ def test_coset_chunking_is_bit_identical_across_chunk_counts():
     serial = _apply_resolved_serial(state.copy(), *args)
     parallel = _apply_resolved_parallel(state.copy(), *args, 4)
     assert np.array_equal(serial, parallel)
+
+
+def _phases(rng, size):
+    return np.exp(1j * rng.uniform(0, 2 * np.pi, size))
+
+
+@pytest.mark.parametrize(
+    ("dims", "targets", "kind"),
+    [
+        ((2,) * 8, (3,), "dense"),  # shortest qubit run that takes the run walk
+        ((2,) * 8, (6, 4), "dense"),  # unordered targets, inner target between
+        ((2,) * 8, (3, 6), "diagonal"),  # bit-reversed offsets
+        ((2,) * 8, (3, 6), "permutation"),  # also checked in address order
+        ((256, 64), (1,), "permutation"),  # wide gate: tiles narrower than runs
+        ((3, 3, 2, 3, 2), (2,), "dense"),  # mixed-radix run of 9
+        ((2, 2, 2, 3, 3), (3, 4), "diagonal"),
+    ],
+)
+def test_contiguous_run_walk_matches_coset_walk(dims, targets, kind):
+    # The run walk must match the coset-by-coset walk exactly, including when
+    # thread chunks start or end inside a run, and for permutations relabelled
+    # into address order.
+    from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
+        _build_apply_layout,
+    )
+    from fatqat.simulator._engine.numerics.numba_kernels._apply import (
+        _apply_dense_range,
+        _apply_diagonal_range,
+        _apply_permutation_range,
+        _apply_resolved_parallel,
+        _apply_resolved_serial,
+        _reorder_permutation,
+    )
+
+    rng = np.random.default_rng(3)
+    size = int(np.prod(dims))
+    local_dim = int(np.prod([dims[t] for t in targets]))
+    state = rng.standard_normal(size) + 1j * rng.standard_normal(size)
+    if kind == "diagonal":
+        matrix = np.diag(_phases(rng, local_dim))
+    elif kind == "permutation":
+        matrix = np.eye(local_dim)[rng.permutation(local_dim)] * _phases(rng, local_dim)
+    else:
+        matrix = rng.standard_normal((local_dim,) * 2) + 1j * rng.standard_normal(
+            (local_dim,) * 2
+        )
+    matrix = np.ascontiguousarray(matrix, dtype=np.complex128)
+    columns = np.empty(local_dim, dtype=np.int64)
+    values = np.empty(local_dim, dtype=np.complex128)
+    code = int(_classify_matrix(matrix, columns, values))
+    offsets, comp_strides, comp_dims, num_cosets, _ = _build_apply_layout(dims, targets)
+    layout = (offsets, comp_strides, comp_dims)
+
+    expected = state.copy()
+    if kind == "diagonal":
+        _apply_diagonal_range(expected, values, *layout, 0, num_cosets)
+    elif kind == "permutation":
+        _apply_permutation_range(expected, columns, values, *layout, 0, num_cosets)
+    else:
+        _apply_dense_range(expected, matrix, *layout, 0, num_cosets)
+
+    operand_sets = [(offsets, columns, values)]
+    if kind == "permutation":  # prepared permutations may arrive reordered
+        order = np.argsort(offsets)
+        operand_sets.append(_reorder_permutation(order, offsets, columns, values))
+    for gate_offsets, gate_columns, gate_values in operand_sets:
+        args = (code, matrix, gate_columns, gate_values, gate_offsets)
+        args += (comp_strides, comp_dims, num_cosets)
+        assert np.array_equal(_apply_resolved_serial(state.copy(), *args), expected)
+        for n_chunks in (3, 7, 32):  # 32 leaves ranges too short for runs
+            parallel = _apply_resolved_parallel(state.copy(), *args, n_chunks)
+            assert np.array_equal(parallel, expected)
+
+
+@pytest.mark.parametrize(
+    ("method", "num_qubits"), [("statevector", 16), ("density_matrix", 8)]
+)
+def test_reordered_permutations_match_numpy_runtime(method, num_qubits):
+    # Large enough that permutations on bit-reversed targets are prepared
+    # with their rows in address order; the result must not change.
+    rng = np.random.default_rng(5)
+    program = fq.Program(num_qubits)
+    for q in range(num_qubits):
+        program.add(ops.U(*rng.uniform(0, 2 * np.pi, 3)), q)
+    program.add(ops.Swap, (4, 1))
+    program.add(ops.CX, (1, 4))
+    program.add(ops.CCX, (0, 4, 1))
+    options = {
+        "shots": 0,
+        "result_config": {"counts": False, "final_state": True},
+        "execution_config": {"kernel_parallelism": "serial"},
+    }
+    results = [
+        getattr(
+            Simulator(method, runtime=runtime).run(program, **options).result(),
+            f"get_{method}",
+        )()
+        for runtime in ("numpy", "numba")
+    ]
+    np.testing.assert_allclose(results[1], results[0], rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize("permutation_first", [True, False])
+def test_sweep_changing_gate_structure_matches_explicit_runs(permutation_first):
+    # A sweep repacks only the gates that change. TwoTilt is CX at zero and
+    # dense otherwise; on 16 qubits its permutation rows are reordered, so each
+    # row must repack its offsets for the structure it has.
+    @dataclass(frozen=True)
+    class TwoTilt(Operation):
+        theta: float | fq.Parameter
+        name: ClassVar[str] = "TwoTilt"
+        num_subsystems: ClassVar[int] = 2
+
+    def two_tilt(op):
+        cos, sin = np.cos(op.theta / 2), np.sin(op.theta / 2)
+        rx = np.array([[cos, -1j * sin], [-1j * sin, cos]])
+        ry = np.array([[cos, -sin], [sin, cos]])
+        return np.kron(rx, ry) @ np.eye(4)[[0, 1, 3, 2]]
+
+    tau = fq.Parameter("tau")
+    program = fq.Program(16, 2)
+    program.add(ops.H, 3)
+    program.add(ops.RY(0.4), 6)
+    program.add(TwoTilt(tau), (6, 3))
+    program.measure((6, 3), (0, 1))
+    impl_map = default_matrix_implementation_map()
+    impl_map.add(TwoTilt, two_tilt)
+    noise = fq.NoiseModel()
+    noise.add(Depolarizing(p=0.05), operation=ops.H)
+    backend = Simulator("SV", runtime="numba", implementation_map=impl_map, noise=noise)
+    values = [0.0, 1.2, 0.0] if permutation_first else [1.2, 0.0, 0.7]
+    options = {"shots": 64, "execution_config": {"seed": 3}}
+
+    swept = backend.run_sweep(program, {tau: values}, **options).result()
+
+    explicit = [
+        backend.run(program.assign_parameters({tau: value}), **options)
+        .result()
+        .get_counts()
+        for value in values
+    ]
+    assert [result.get_counts() for result in swept] == explicit
 
 
 def test_fuse_gate_channels_leaves_unfusable_pairs_untouched():

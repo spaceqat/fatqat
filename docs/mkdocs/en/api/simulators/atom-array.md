@@ -21,7 +21,7 @@ timing, transport, or physical interactions, use the
 | Connectivity | No fixed topology; `CZ` is legal only while its two atoms are paired |
 | Dimensions | Qubits only |
 | Methods | `statevector` and `density_matrix` |
-| Runtime | `numba` by default; `numpy` is also supported |
+| Runtime | Global default (`numba` unless configured); explicit `numpy` or `numba` overrides it |
 | Noise | Ideal by default; no built-in reference model |
 
 ## Program size, mapping, and native operations
@@ -32,11 +32,12 @@ needs no separate site-count or capacity setting. Registers map to integer
 device labels in declaration order. A [`GridRegister`][fatqat.GridRegister] is
 flattened because its coordinates have no physical meaning on this backend.
 
-Only `RX`, `RY`, `RZ`, and `CZ` are native. The simulator does not decompose
-other gates, so it rejects `CX` even when the atoms are paired.
+The default gate set contains `RX`, `RY`, `RZ`, and `CZ`. The simulator does not
+decompose other gates, so it rejects `CX` unless an implementation is supplied.
 [`AtomArraySimulator.implementation_map`][fatqat.simulator.AtomArraySimulator.implementation_map]
 exposes this gate set, while the current `Pair` graph determines where `CZ`
-is legal.
+is legal. Add rules to this independent map and pass it as `implementation_map=`
+to extend the default, including [custom operations](custom-operations.md).
 
 Native-gate support and `CZ` pairing are checked before occupancy is
 considered. An unsupported gate or unpaired `CZ` is therefore rejected even
@@ -52,9 +53,10 @@ applies. Both must be unconditional.
 ## Occupancy and loss
 
 
-Occupancy is tracked independently for each shot, and every declared site
-starts empty whether or not the program contains `Put` or has a matching loss
-source.
+Occupancy is tracked independently for each shot. Sites start empty unless
+`initial_state` supplies an explicit `ClassicalState.occupied` set through an
+[`EvolutionState`][fatqat.simulator.EvolutionState]. `occupied=None` keeps the
+empty default. Initial occupancy does not change the supplied quantum state.
 [`fatqat.operations.Put`][fatqat.operations.Put] loads a fresh `\|0>` atom into
 an empty target and leaves an occupied target unchanged. Until a site is
 loaded—or after it is lost—supported gates and reset have no effect there,
@@ -62,19 +64,31 @@ while measurement reports erasure digit `2`. A later `Put` can refill the
 site, and pairing instructions continue to update connectivity throughout.
 
 Occupancy is tracked outside the quantum-state representation. Final
-statevectors, density matrices, and [`Estimator`][fatqat.Estimator]
-calculations still include one qubit subsystem per declared site, whether or
+statevectors and density matrices still include one qubit subsystem per
+declared site, whether or
 not an atom is present. With the default initial state, a never-loaded site is
-represented by `|0>`: measuring it returns `2`, while evaluating `Z` returns
-`+1`. These quantum-state exports cannot reveal whether a site is occupied;
-use measurements and counts for that distinction.
+represented by `|0>`, but measuring it returns `2`.
+These quantum-state exports cannot reveal whether a site is occupied;
+use measurements and counts, or request `final_classical_state`, for that
+distinction.
+
+[`Estimator`][fatqat.Estimator] supports loss-free programs only. It preserves
+both quantum state and occupancy when reusing a base execution. An observable
+targeting an unloaded site raises
+[`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError] before
+execution.
 
 [`fatqat.noise.Loss`][fatqat.noise.Loss] can eject gate targets, make `Put` fail, or model
 loss during `Pair` and `Unpair`. Its selector runs only after a matching
 operation; `p=0` removes nothing and leaves the loading rule unchanged. No
 other gate-level simulator accepts `Loss`. If an otherwise-valid paired `CZ`
-finds a missing atom, it does nothing for that shot; an unpaired `CZ` still
+finds a missing atom, the entangling gate is skipped; an unpaired `CZ` still
 fails before execution.
+
+Noise channels can act on only one qubit. For a two-qubit operation, add noise
+for each qubit separately, using `target_positions` to select it. If one atom
+is missing, the gate is skipped, but noise still applies to the remaining
+atom. `Loss` can act on multiple atoms.
 
 Because an empty site produces no physical readout digit, its erasure value
 `2` bypasses readout-confusion noise. Atom loss also makes the final state

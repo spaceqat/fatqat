@@ -37,6 +37,14 @@ def on_pre_build(config) -> None:
         raise RuntimeError(f"Content validation failed:\n{details}")
 
 
+def on_page_markdown(markdown: str, page, config, files) -> str:
+    """Hide the guide-test skip markers from rendered code blocks."""
+
+    del page, config, files
+    lines = markdown.splitlines(keepends=True)
+    return "".join(line for line in lines if line.strip() != "# guide-test: skip")
+
+
 def on_post_page(output: str, page, config) -> str:
     """Reject duplicate HTML IDs in each rendered page."""
 

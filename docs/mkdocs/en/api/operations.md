@@ -34,12 +34,14 @@ without parentheses. Construct parameterized gates and
 | [Qudit gates](operations/qudit-gates.md) | Qudit gates, level constraints, and basis actions. |
 | [Measurement and structural operations](operations/structural.md) | Measurement and reset behavior, and compiler barriers. |
 | [Atom-array operations](operations/atom-gates.md) | Atom-array occupancy, pairing, and attached-noise constraints. |
+| [Optical gates](operations/optical-gates.md) | Beam splitter and phase shifter on optical modes. |
 | [PulseOperation](pulse-control/pulse-operation.md) | Channel-addressed `PulseOperation`—still imported from `fatqat.operations`—with its timing and backend support. |
 
 - [Qubit gates](operations/qubit-gates.md)
 - [Qudit gates](operations/qudit-gates.md)
 - [Measurement and structural operations](operations/structural.md)
 - [Atom-array operations](operations/atom-gates.md)
+- [Optical gates](operations/optical-gates.md)
 
 ## Construction
 

@@ -27,6 +27,7 @@ execution engine.
     references you created:
 
     ```python
+    # guide-test: skip
     qubit = fq.QuantumRegister(1, name="qubit")
     qutrit = fq.QuantumRegister(1, dim=3, name="qutrit")
     program = fq.Program([qubit, qutrit])
@@ -44,6 +45,7 @@ execution engine.
     local dimension. A qutrit needs a classical trit, not an ordinary bit:
 
     ```python
+    # guide-test: skip
     qutrit = fq.QuantumRegister(1, dim=3)
     trit = fq.ClassicalRegister(1, dim=3)
     program = fq.Program([qutrit], [trit])
@@ -56,6 +58,7 @@ execution engine.
     Keep the returned value and submit that one:
 
     ```python
+    # guide-test: skip
     bound_program = template.assign_parameters({theta: 0.4})
     backend.run(bound_program)
     ```
@@ -108,10 +111,11 @@ execution engine.
     set a seed when you need to reproduce a particular sample:
 
     ```python
+    # guide-test: skip
     result = backend.run(
         program,
         shots=1000,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result()
     ```
 
@@ -133,10 +137,11 @@ execution engine.
 
 ???+ question "A Result accessor says its data is unavailable"
 
-    Runs contain only the data that the selected execution method produced and
+    Runs contain only the data that the selected simulation method produced and
     that you requested. Inspect the result before choosing an accessor:
 
     ```python
+    # guide-test: skip
     print(result.available_data)
     if "statevector" in result.available_data:
         state = result.get_statevector()

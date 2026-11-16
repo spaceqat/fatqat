@@ -6,9 +6,35 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
-from qutip import Qobj, mcsolve, qeye, tensor
+from qutip import Qobj, coefficient, mcsolve, qeye, tensor
 
 from ..errors import BackendValidationError
+
+
+def _qutip_time_window(
+    start_time: float,
+    end_time: float,
+    *,
+    run_start_time: float,
+    run_end_time: float,
+) -> Any:
+    """Scope a block to the solved run with a step-function coefficient.
+
+    Hold the terminal value beyond the run endpoint: adaptive integrators may
+    evaluate there while interpolating the requested final state. Internal
+    block boundaries still switch off exactly at the block's end.
+    """
+    times = np.asarray(sorted({run_start_time, start_time, end_time, run_end_time}))
+    values = np.asarray(
+        [
+            float(
+                start_time <= time
+                and (time < end_time or time == end_time == run_end_time)
+            )
+            for time in times
+        ]
+    )
+    return coefficient(values, tlist=times, order=0)
 
 
 def _solve_one_qutip_trajectory(

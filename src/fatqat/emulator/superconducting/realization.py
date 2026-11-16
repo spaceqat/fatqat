@@ -51,12 +51,6 @@ class _TransmonPulseImplementationMap(PulseImplementationMap):
         super().__init__()
         self._transmon_compatibility = compatibility
 
-    def copy(self) -> "_TransmonPulseImplementationMap":
-        """Return an independent map while retaining compatibility facts."""
-        clone = _TransmonPulseImplementationMap(self._transmon_compatibility)
-        clone._registry = self._registry.copy()
-        return clone
-
 
 def _canonical_model_edges(model: TransmonModel) -> tuple[_CanonicalEdge, ...]:
     return tuple(
@@ -173,10 +167,14 @@ def _drag_definition(operation: Operation, context: _DragContext) -> PulseDefini
     # DRAG is derived in Hamiltonian-coefficient units; expose full Omega only
     # after its nonlinear corrections and frame rotation are complete.
     envelope *= 2.0
+    # The exp(+i*phase) envelope ramp equals driving in a frame rotated by
+    # exp(+i*phase*n), so the lab-frame state carries an extra
+    # exp(+i*phase[-1]*n). Since PhaseShift(+angle) applies exp(+i*angle*n)
+    # (the RZ(+angle) convention), undoing it takes the negative angle.
     return PulseDefinition(
         context.duration,
         (PulseControl(context.drive, SampledWaveform(tlist, envelope)),),
-        (PhaseShift(context.frame, float(phase[-1])),),
+        (PhaseShift(context.frame, -float(phase[-1])),),
     )
 
 

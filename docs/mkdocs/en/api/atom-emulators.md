@@ -20,13 +20,72 @@ for a complete executable example.
 ## Arrangements and program resources
 
 
-The backend requires a regular
-[`AtomArrangement`][fatqat.emulator.AtomArrangement]. Coordinates are row-major,
-`(column * spacing, row * spacing, 0)`, and the atom model interprets
-spacing in micrometres. A program must declare exactly one dimension-two
-quantum resource per site; declaration order binds resources to coordinates.
-The arrangement describes fixed geometry; it does not track atom loading or
-loss.
+The backend requires an immutable
+[`AtomArrangement`][fatqat.emulator.AtomArrangement] with coordinates in
+micrometres (`distance_unit == "um"`). Use `chain()` or `rectangular()` for a
+regular layout, or `from_coordinates()` to supply explicit sites:
+
+```python
+import fatqat as fq
+
+planar = fq.emulator.AtomArrangement.from_coordinates([(0, 0), (3, 4)])
+spatial = fq.emulator.AtomArrangement.from_coordinates([(0, 0, 0), (3, 4, 5)])
+```
+
+`from_coordinates()` accepts a nonempty ordered iterable. Every coordinate
+must contain two components `(x, y)`, or every coordinate must contain three
+`(x, y, z)`; mixed dimensions are rejected. Components must be finite
+`numbers.Real` values, excluding booleans. Negative coordinates are allowed.
+Strings, mappings, and sets are not accepted as the outer iterable or as
+individual coordinates. Invalid input, including duplicate positions after
+conversion to floats, raises `ValueError`.
+
+`coordinates` contains a copy of the input as immutable `(x, y, z)` tuples,
+with `z=0.0` added to two-component input. Input order defines site indices.
+`spatial_dimension` records the input dimension, so explicit z components
+give `3` even when they are all zero. For arrangements created with
+`from_coordinates()`, `rows`, `cols`, and `spacing` are `None`, even if the
+coordinates form a regular grid.
+
+`rectangular()` accepts a positive finite scalar `spacing` for equal spacing
+along both axes, or an ordered iterable of two positive finite real values
+`(x_spacing, y_spacing)` to set each axis separately. Booleans are rejected.
+The `spacing` attribute stores a scalar as a float and a pair as an immutable
+tuple of floats, including when both values are equal. Its coordinates are
+row-major,
+`(column * x_spacing, row * y_spacing, 0)`. Regular factories retain their row
+and column counts. Their `spatial_dimension` is `2`, including chains
+embedded in the xy plane. Spatial dimension is independent of the atom's
+number of energy levels.
+
+Use `AtomArrangement.combine(A, B, C)` to concatenate two or more arrangements
+in argument order, preserving the site order within each input. The result's
+`spatial_dimension` is the largest input dimension, so a combination containing
+any 3D arrangement is 3D. Its `rows`, `cols`, and `spacing` are `None`.
+Overlapping coordinates or fewer than two inputs raise `ValueError`;
+non-arrangement inputs raise `TypeError`.
+
+Every factory, including `combine()`, accepts a keyword-only `label`, default
+`None`, to name all of its sites. A label must be a string containing at least
+one non-whitespace character; it is preserved without stripping spaces.
+The `label` attribute stores that value, and the read-only `groups` mapping
+contains group names and immutable tuples of site indices. `group(label)`
+retrieves one tuple and raises `KeyError` for an unknown name. A combination
+retains all input groups, adjusting their indices to the new site order;
+its own optional label adds a group covering every site. This also preserves
+groups from nested combinations. Invalid labels and duplicate group names
+raise `ValueError`.
+
+For any layout, `row_groups` maps each y coordinate to the site indices in
+that row, and `column_groups` maps each x coordinate to its column's indices.
+Both mappings are read-only, with keys in first-seen coordinate order and
+immutable index tuples in site order. Grouping uses exact equality of the
+stored float coordinates across the entire arrangement. It ignores z, so
+these groups describe the xy projection of a 3D layout.
+
+A program must declare exactly one dimension-two quantum resource per site;
+declaration order binds resources to coordinates. The arrangement describes
+fixed geometry; it does not track atom loading or loss.
 `arrangement.num_sites` and `len(arrangement)` both return the site count,
 which must exactly match the number of quantum resources declared by a pulse
 program.
@@ -37,14 +96,14 @@ no separate capacity setting.
 ## Run configuration and results
 
 
-The `run()` method has the signature `(program, *, shots=1024, resource_layout=None, simulation_config=None, result_config=None)`. The
+The `run()` method has the signature `(program, *, shots=1024, resource_layout=None, execution_config=None, result_config=None)`. The
 optional layout must still cover every arrangement site exactly once; the
 default uses declaration order. Validation errors are raised
 directly from `run()` before a job is returned. A failure after execution
 starts is represented by a failed job, and `job.result()` raises
 [`BackendExecutionError`][fatqat.errors.BackendExecutionError].
 
-`simulation_config` accepts the shared pulse controls plus an Atom2-specific
+`execution_config` accepts the shared pulse controls plus an Atom2-specific
 Hamiltonian cutoff:
 
 **Simulation configuration**
@@ -81,14 +140,15 @@ and its corresponding Result accessor, not an internal solver:
 
 | Method | Result accessor | Shape for `N` sites | Interpretation |
 | --- | --- | --- | --- |
-| `"statevector"` | [`get_statevector`][fatqat.Result.get_statevector] | `(d**N,)` | A pure coherent state, or one sampled posterior/trajectory when the execution is stochastic. |
+| `"statevector"` | [`get_statevector`][fatqat.Result.get_statevector] | `(d**N, 1)` ket | A pure coherent state, or one sampled posterior/trajectory when the execution is stochastic. |
 | `"density_matrix"` | [`get_density_matrix`][fatqat.Result.get_density_matrix] | `(d**N, d**N)` | The exact ensemble state under supported Lindblad evolution. |
 | `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | `(d**N, d**N)` | The complete coherent operator in the canonical terminal frame. |
 
-Here `d=2` for [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator]. Its
-results use FATQAT and NumPy types; the public API does not expose QuTiP
-objects or `superop`. Informational QuTiP solver names and options appear
-only in result `runtime_details`.
+Here `d=2` for [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator].
+States and unitaries are QuTiP `Qobj` values whose `dims` list the site
+dimensions; call `.full()` for a NumPy array (`.full().ravel()` for a flat
+statevector). The emulators do not expose `superop`. Informational QuTiP
+solver names and options appear in result `runtime_details`.
 
 Results follow arrangement order, with site 0 as the most-significant factor.
 State and unitary results may still use different documented terminal frames.
@@ -98,7 +158,7 @@ stochastic. In those cases, the default request returns counts when the
 program contains measurement and otherwise returns metadata only. Request a
 single seeded final state explicitly with
 `result_config={"final_state": True}`, `shots=1`, and
-`simulation_config={"seed": ...}`. Select `method="density_matrix"` for
+`execution_config={"seed": ...}`. Select `method="density_matrix"` for
 an exact supported Lindblad ensemble.
 
 For unitary execution, construct the backend with `method="unitary"`, call
@@ -139,12 +199,12 @@ At runtime, read this unit from each selector's `coefficient_unit` property.
 ### Interaction cutoff
 
 
-Set `interaction_cutoff` per run through `simulation_config`. The default
+Set `interaction_cutoff` per run through `execution_config`. The default
 `None` keeps every pair and preserves the complete `C6/R^6` Hamiltonian. A
 finite nonnegative cutoff keeps pairs whose Euclidean distance is at or below
 that value in `arrangement.distance_unit` (currently micrometres); `0.0`
-disables pair interactions. For a rectangular arrangement,
-`simulation_config={"interaction_cutoff": arrangement.spacing}` keeps only
+disables pair interactions. For a rectangular arrangement with scalar spacing,
+`execution_config={"interaction_cutoff": arrangement.spacing}` keeps only
 horizontal and vertical nearest pairs. This is a numerical Hamiltonian
 truncation, not a physical blockade radius. One emulator can therefore be
 reused to compare several truncations without rebuilding its model or
@@ -186,12 +246,20 @@ complete two-level workflow, see
 ::: fatqat.emulator.AtomArrangement
     options:
       members:
+        - "from_coordinates"
         - "chain"
         - "rectangular"
+        - "combine"
+        - "group"
+        - "label"
+        - "groups"
+        - "row_groups"
+        - "column_groups"
         - "rows"
         - "cols"
         - "spacing"
         - "coordinates"
+        - "spatial_dimension"
         - "num_sites"
         - "distance_unit"
       inherited_members: true

@@ -9,6 +9,8 @@ kernel and the serial fallback.
 import numpy as np
 import pytest
 
+from fatqat.implementation import default_matrix_implementation_map
+
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.noise import (
@@ -18,7 +20,6 @@ from fatqat.noise import (
     NoiseModel,
     PauliChannel,
     PhaseDamping,
-    default_channel_implementation_map,
 )
 from fatqat.noise.base import _unitary_branch_probabilities
 from fatqat.noise.catalog import (
@@ -65,7 +66,7 @@ def _counts(runtime, noise, program, shots=2000, seed=7):
         .run(
             program,
             shots=shots,
-            simulation_config={
+            execution_config={
                 "seed": seed,
                 "shot_parallelism": "serial",
                 "kernel_parallelism": "serial",
@@ -168,12 +169,13 @@ def test_sampled_unitary_route_reproduces_the_jump_route_exactly(runtime, monkey
     sampled = _counts(runtime, noise, program)
 
     monkeypatch.setattr(
-        "fatqat.simulator._engine.np._sampled_unitary_branches",
+        "fatqat.simulator._engine.numerics.numpy_kernels._channel._sampled_unitary_branches",
         lambda _kraus_ops: None,
     )
     if runtime == "numba":
         monkeypatch.setattr(
-            "fatqat.noise.nb._sampled_unitary_branches", lambda _kraus_ops: None
+            "fatqat.simulator._engine.workflows.numba_workflow.trajectories._sampled_unitary_branches",
+            lambda _kraus_ops: None,
         )
     jumped = _counts(runtime, noise, program)
 
@@ -210,7 +212,7 @@ def test_statevector_pauli_sampling_matches_the_density_matrix(runtime):
     sampled = _counts(_runtime(runtime), noise, program, shots=shots)
     exact = (
         Simulator("DM", noise=noise)
-        .run(program, shots=shots, simulation_config={"seed": 7})
+        .run(program, shots=shots, execution_config={"seed": 7})
         .result()
         .get_counts()
     )
@@ -243,7 +245,7 @@ def test_a_mixed_plan_routes_each_channel_independently(runtime):
     sampled = _counts(_runtime(runtime), noise, program, shots=shots)
     exact = (
         Simulator("DM", noise=noise)
-        .run(program, shots=shots, simulation_config={"seed": 7})
+        .run(program, shots=shots, execution_config={"seed": 7})
         .result()
         .get_counts()
     )
@@ -263,7 +265,7 @@ def test_a_custom_non_unitary_channel_rule_still_runs():
             np.array([[0.0, np.sqrt(0.5)], [0.0, 0.0]], dtype=complex),
         )
 
-    channel_map = default_channel_implementation_map()
+    channel_map = default_matrix_implementation_map()
     channel_map.add(_Leak, _leak_rule)
     assert _unitary_branch_probabilities(_leak_rule(_Leak(), targets=())) is None
 
@@ -274,8 +276,8 @@ def test_a_custom_non_unitary_channel_rule_still_runs():
     program.measure(0, 0)
 
     counts = (
-        Simulator("SV", noise=noise, channel_implementation_map=channel_map)
-        .run(program, shots=512, simulation_config={"seed": 3})
+        Simulator("SV", noise=noise, implementation_map=channel_map)
+        .run(program, shots=512, execution_config={"seed": 3})
         .result()
         .get_counts()
     )
@@ -292,7 +294,7 @@ def test_pauli_channel_process_batches_match_serial():
         .run(
             program,
             shots=8,
-            simulation_config={
+            execution_config={
                 "seed": 13,
                 "shot_parallelism": "processes",
                 "kernel_parallelism": "serial",
@@ -308,15 +310,28 @@ def test_pauli_channel_process_batches_match_serial():
 
 def test_pauli_sampling_does_not_change_the_per_shot_draw_budget():
     pytest.importorskip("numba")
-    from fatqat.simulator._engine.nb import NumbaSVEngine
+    from functools import partial
+
+    from fatqat.simulator._engine.numerics.numba_kernels._layouts import (
+        _build_apply_layout,
+    )
+    from fatqat.simulator._engine.numerics.numba_kernels._matrix_cache import (
+        _MatrixStructureCache,
+    )
+    from fatqat.simulator._engine.workflows.numba_workflow.trajectories import (
+        _compile_dynamic_plan,
+    )
 
     backend = Simulator("SV", noise=_pauli_noise())
     program = _ghz_program()
     plan, _ = backend._lower_program(program)
-    engine = NumbaSVEngine()
-    engine.initialize((2, 2, 2), 3)
-
-    _, max_draws = engine._compile_dynamic_plan(plan)
+    dims = (2, 2, 2)
+    max_draws = _compile_dynamic_plan(
+        plan,
+        dims,
+        partial(_build_apply_layout, dims),
+        _MatrixStructureCache().resolve,
+    ).max_draws
 
     # One draw per measurement plus one per channel occurrence (3 gates) - the
     # same budget the general jump path needs.

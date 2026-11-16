@@ -2,11 +2,16 @@
 
 import numpy as np
 
-from fatqat._backends.engine_contract import _StateVectorResultRequest
+from fatqat.simulator import EvolutionState
+from fatqat.simulator._engine.state import _LoweredBasisState
+from fatqat.simulator._execution_contract import (
+    _ResultRequest,
+    _RunContext,
+)
 from fatqat._backends.steps import ApplyMatrixStep, MeasurementStep
 from fatqat.implementation.matrices import shift_matrix
-from fatqat.simulator._engine.np import NumpySVEngine
-from fatqat.simulator._execution_contract import _ExecutionContext, _ExecutionPolicy
+from fatqat.simulator._engine.engines.numpy_engine import NumpySVEngine
+from fatqat.simulator._engine._execution_policy import _ExecutionPolicy
 
 
 def test_reported_digit_mapping_precedes_confusion_and_feedforward():
@@ -26,30 +31,32 @@ def test_reported_digit_mapping_precedes_confusion_and_feedforward():
         ),
         ApplyMatrixStep(matrix=x, target_indices=(1,), condition=((0, 0),)),
     )
-    context = _ExecutionContext(
-        execution_shape="per_shot",
-        request=_StateVectorResultRequest(counts=True, statevector=True),
+    context = _RunContext(
+        request=_ResultRequest(counts=True, final_state=True),
         system_dims=(3, 2),
         n_clbits=1,
         shots=1,
         seed=9,
-        initial_state=None,
-        initial_occupied=None,
     )
     policy = _ExecutionPolicy(
+        execution_path="per_shot",
         shot_strategy="serial",
         kernel_strategy="serial",
         worker_limit=1,
         fusion=False,
     )
-    payload = engine.materialize_execution(
+    payload = engine.prepare_payload(
         plan,
         system_dims=context.system_dims,
         n_clbits=context.n_clbits,
-        deferred_measurements=(),
         policy=policy,
     )
-    result = engine.execute_local(context, payload, policy)
+    result = engine.execute_payload(
+        context,
+        payload,
+        policy,
+        initial_state=EvolutionState(_LoweredBasisState((0, 0))),
+    )
 
     # Feedforward receives the confused reported digit, so its X fires.
     assert result.outcome_keys.tolist() == [[0]]

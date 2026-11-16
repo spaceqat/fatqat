@@ -4,7 +4,12 @@ import pytest
 
 from fatqat.program import Program
 import fatqat.operations as ops
-from fatqat.registers import QuantumRegister, ClassicalRegister
+from fatqat.registers import (
+    ClassicalRegister,
+    CountRegister,
+    ModeRegister,
+    QuantumRegister,
+)
 
 
 def test_single_condition_normalized_to_and_list():
@@ -79,6 +84,15 @@ def test_condition_literal_in_range_ok():
     ct = ClassicalRegister(1, dim=3)
     program = Program([qt], [ct])
     program.add(ops.Shift(1), qt[0], condition=(ct[0], 2))  # 2 < dim 3, ok
+
+
+def test_count_condition_accepts_any_non_negative_literal():
+    modes = ModeRegister(1)
+    counts = CountRegister(1)
+    program = Program([modes], [counts])
+    program.add(ops.PhaseShifter(0.1), modes[0], condition=(counts[0], 12))
+    with pytest.raises(ValueError, match="non-negative"):
+        program.add(ops.PhaseShifter(0.1), modes[0], condition=(counts[0], -1))
 
 
 def test_dim2_condition_literal_two_still_rejected():

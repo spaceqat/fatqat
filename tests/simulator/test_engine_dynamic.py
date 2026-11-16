@@ -1,114 +1,107 @@
 import numpy as np
+import pytest
 
-from fatqat.simulator._engine.np import NumpySVEngine
-from fatqat._backends.steps import ApplyMatrixStep
-
-_X = np.array([[0, 1], [1, 0]], dtype=complex)
-_H = np.array([[1, 1], [1, -1]], dtype=complex) / np.sqrt(2)
-
-
-def test_measure_qubit_deterministic_one():
-    eng = NumpySVEngine()
-    eng.initialize((2,))
-    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))  # |1>
-    bit = eng.measure_subsystem(0, np.random.default_rng(0))
-    assert bit == 1
-    assert np.allclose(eng.export_state(), np.array([0, 1], dtype=complex))
-
-
-def test_measure_qubit_collapses_and_is_repeatable():
-    eng = NumpySVEngine()
-    eng.initialize((2,))
-    eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))  # (|0>+|1>)/sqrt2
-    first = eng.measure_subsystem(0, np.random.default_rng(0))
-    # after collapse the state is a basis state; re-measuring returns the same bit
-    second = eng.measure_subsystem(0, np.random.default_rng(123))
-    assert first == second
+from fatqat.program import Program
+from fatqat.simulator import Simulator
+import fatqat.operations as ops
+from fatqat.simulator._engine.state import EvolutionState
+from fatqat.simulator._engine.numerics.numpy_kernels._measurement import (
+    _statevector_probabilities,
+    _project_statevector,
+    _sample_basis_indices,
+)
+from fatqat.simulator._engine.workflows.python_workflow import (
+    _MeasurementKernels,
+    _measure_subsystems,
+)
 
 
-def test_reset_qubit_from_one_returns_zero():
-    eng = NumpySVEngine()
-    eng.initialize((2,))
-    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))  # |1>
-    eng.reset_subsystem(0, np.random.default_rng(0))
-    assert np.allclose(eng.export_state(), np.array([1, 0], dtype=complex))
-
-
-def test_reset_qubit_on_entangled_pair_conditions_the_partner():
-    # Bell pair (|00>+|11>)/sqrt2; reset qubit 0 -> partner is |0> or |1>, 50/50.
-    outcomes = []
-    for s in range(200):
-        eng = NumpySVEngine()
-        eng.initialize((2, 2))
-        eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
-        cx = np.array(
-            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]],
-            dtype=complex,
+@pytest.fixture(name="sv_reset", params=["numpy", "numba"])
+def fixture_sv_reset(request):
+    if request.param == "numba":
+        pytest.importorskip("numba")
+        from fatqat.simulator._engine.numerics.numba_kernels._measurement import (
+            _reset_statevector,
         )
-        eng.apply(ApplyMatrixStep(matrix=cx, target_indices=(0, 1)))
-        eng.reset_subsystem(0, np.random.default_rng(s))
-        st = eng.export_state()
-        # qubit 0 must be |0>: only indices with bit0 == 0 are allowed.
-        # Amplitude is on index 0 (partner 0) or 2 (partner 1).
-        nz = np.flatnonzero(np.round(np.abs(st), 6))
-        assert nz.size == 1 and nz[0] in (0, 2)
-        outcomes.append(int(nz[0] == 2))  # partner==1
-    frac = sum(outcomes) / len(outcomes)
-    assert 0.35 < frac < 0.65
+    else:
+        from fatqat.simulator._engine.numerics.numpy_kernels._reset import (
+            _reset_statevector,
+        )
+    return _reset_statevector
 
 
-def test_measure_subsystems_returns_bits_in_requested_order():
-    eng = NumpySVEngine()
-    eng.initialize((2, 2, 2))
-    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
-    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(2,)))
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_repeated_measurement_reports_the_same_outcome(runtime):
+    program = Program(1, 2)
+    program.add(ops.H, 0)
+    program.measure(0, 0)
+    program.measure(0, 1)
+    counts = (
+        Simulator("SV", runtime=runtime)
+        .run(
+            program,
+            shots=32,
+            execution_config={"seed": 0, "shot_parallelism": "serial"},
+        )
+        .result()
+        .get_counts()
+    )
+    assert sum(counts.values()) == 32
+    assert set(counts) <= {"00", "11"}
 
-    bits = eng.measure_subsystems((2, 0), np.random.default_rng(0))
 
-    assert bits == (1, 1)
-    assert np.allclose(eng.export_state()[0b101], 1.0)
+def test_reset_qubit_on_entangled_pair_conditions_the_partner(sv_reset):
+    # Resetting q0 of a Bell pair conditions q1 on the sampled branch.
+    bell = np.array([1, 0, 0, 1], dtype=complex) / np.sqrt(2)
+    outcomes = []
+    for seed in range(200):
+        state = sv_reset(bell.copy(), (0,), (2, 2), np.random.default_rng(seed))
+        nonzero = np.flatnonzero(np.abs(state) > 1e-12)
+        assert nonzero.size == 1 and nonzero[0] in (0, 2)
+        assert np.isclose(np.linalg.norm(state), 1)
+        outcomes.append(int(nonzero[0] == 2))
+    assert 0.35 < sum(outcomes) / len(outcomes) < 0.65
+
+
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_measurement_preserves_requested_target_order(runtime):
+    program = Program(3, 2)
+    program.add(ops.X, 2)
+    program.measure((2, 0), (0, 1))
+    counts = (
+        Simulator("SV", runtime=runtime)
+        .run(
+            program,
+            shots=1,
+            execution_config={"seed": 0},
+        )
+        .result()
+        .get_counts_as_tuples()
+    )
+    assert counts == {(1, 0): 1}
 
 
 def test_measure_subsystems_consumes_one_rng_draw_for_grouped_event():
-    eng_grouped = NumpySVEngine()
-    eng_grouped.initialize((2, 2))
-    eng_grouped.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
-    eng_grouped.apply(
-        ApplyMatrixStep(
-            matrix=np.array(
-                [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]],
-                dtype=complex,
-            ),
-            target_indices=(0, 1),
-        )
-    )
+    # Seed compatibility deliberately constrains grouped measurement to one draw.
+    state = EvolutionState(np.array([1, 0, 0, 1], dtype=complex) / np.sqrt(2))
     rng_grouped = np.random.default_rng(11)
-    eng_grouped.measure_subsystems((0, 1), rng_grouped)
-    after_grouped = rng_grouped.random()
-
+    kernels = _MeasurementKernels(
+        _statevector_probabilities, _project_statevector, _sample_basis_indices
+    )
+    _measure_subsystems(state, kernels, (2, 2), (0, 1), rng_grouped)
     rng_one_draw = np.random.default_rng(11)
     rng_one_draw.choice(4, p=np.array([0.5, 0.0, 0.0, 0.5]))
-    after_one_draw = rng_one_draw.random()
-
-    assert after_grouped == after_one_draw
+    assert rng_grouped.random() == rng_one_draw.random()
 
 
-def test_reset_subsystems_resets_all_targets_with_one_grouped_collapse():
-    eng = NumpySVEngine()
-    eng.initialize((2, 2))
-    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
-    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(1,)))
-
-    eng.reset_subsystems((0, 1), np.random.default_rng(0))
-
-    assert np.allclose(eng.export_state(), np.array([1, 0, 0, 0], dtype=complex))
-
-
-def test_single_qubit_wrappers_delegate_to_grouped_methods():
-    eng = NumpySVEngine()
-    eng.initialize((2,))
-    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
-
-    bit = eng.measure_subsystem(0, np.random.default_rng(0))
-
-    assert bit == 1
+def test_reset_subsystems_resets_all_targets_with_one_grouped_collapse(sv_reset):
+    state = np.zeros(12, dtype=complex)
+    state[[5, 11]] = 1 / np.sqrt(2)  # q0=1, q1=2; q2 remains in superposition.
+    rng = np.random.default_rng(0)
+    result = sv_reset(state, (1, 0), (2, 3, 2), rng)
+    expected = np.zeros(12, dtype=complex)
+    expected[[0, 6]] = 1 / np.sqrt(2)
+    assert np.allclose(result, expected)
+    reference_rng = np.random.default_rng(0)
+    reference_rng.random()
+    assert rng.random() == reference_rng.random()

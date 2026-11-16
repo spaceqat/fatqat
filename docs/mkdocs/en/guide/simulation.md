@@ -29,6 +29,16 @@ the next example.
 [Performance and scaling](performance.md) explains when to compare it with
 the Numba runtime.
 
+To use NumPy for matrix simulation throughout a script or notebook, set the
+default before creating simulators. The initial default is Numba.
+
+```python
+# guide-test: skip
+import fatqat as fq
+
+fq.simulator.set_default_runtime("numpy")
+```
+
 ## Choose a simulation method
 
 Set `method` to choose how the simulator represents the state:
@@ -57,7 +67,7 @@ one outcome:
 >>> measured_result = backend.run(
 ...     measured,
 ...     shots=200,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result()
 >>> counts = measured_result.get_counts()
 >>> counts
@@ -93,7 +103,7 @@ The dashed line below marks the exact probability for both outcomes:
     measured = rotation.copy()
     measured.measure(0, 0)
     result = backend.run(
-        measured, shots=200, simulation_config={"seed": 7}
+        measured, shots=200, execution_config={"seed": 7}
     ).result()
 
     figure, axis = plt.subplots(figsize=(6.2, 3.4))

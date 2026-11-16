@@ -1,7 +1,7 @@
 """Neutral-atom simulator with occupancy and dynamic pairing.
 
-The backend has a fixed native gate set but no fixed geometry. Every site
-declared by the program starts empty, and ``Put`` loads atoms explicitly.
+The backend has a default native gate set but no fixed geometry. Sites start
+empty unless initial occupancy is supplied; ``Put`` loads atoms explicitly.
 
 This simulator is intended for program and compiler testing. It does not model
 pulse timing, transport, or Hamiltonian dynamics.
@@ -10,11 +10,12 @@ pulse timing, transport, or Hamiltonian dynamics.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .. import operations as ops
 from .._backends.backend_utils import _canonicalize_method
-from ..errors import BackendValidationError
+from ..errors import BackendValidationError, UnsupportedOperationError
+from ..implementation.registry import _add_default_channel_rules
 from ..implementation import (
     MatrixImplementationMap,
     default_matrix_implementation_map,
@@ -23,24 +24,33 @@ from ..noise import NoiseModel
 from ..program import Program, _AppliedOperation
 from ..resource_layout import ResourceLayout
 from .._backends.steps import (
+    ApplyChannelStep,
     LossStep,
     PutStep,
 )
+from ._engine.state import EvolutionState
 from ._connectivity import _AtomConnectivity
-from ._execution_contract import _PlanFacts
+from ._execution_contract import (
+    _PlanFacts,
+)
 from .planning import _lower_channels, _lower_put
 from .simulator import Simulator
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    import numpy as np
+
     from ..implementation import MatrixImplementation
     from ..operations import Operation
-    from ..parameters import Parameter
     from ..registers import RegisterRef
+    from ..observable import Observable
     from .._backends.backend_utils import _LoweringContext
-    from .planning import _MatrixRecipe
-    from .simulator import ProgramInstruction
+    from .simulator import (
+        ProgramInstruction,
+        _PreparedExecution,
+        _BoundExpectationOccurrence,
+    )
     from .._backends.steps import ResolvedStep
 
 
@@ -58,6 +68,7 @@ def _fake_atom_array_implementation_map() -> MatrixImplementationMap:
     cz_rule = defaults.implementation_for(ops.CZ)
 
     m = MatrixImplementationMap()
+    _add_default_channel_rules(m)
     m.add(ops.RX, rx_rule)
     m.add(ops.RY, ry_rule)
     m.add(ops.RZ, rz_rule)
@@ -75,9 +86,12 @@ class AtomArraySimulator(Simulator):
       is legal only while its atoms are paired. There is no fixed geometry.
     - Layout: the program declares the site count, and registers map to flat
       labels in declaration order.
-    - Occupancy: every declared site starts empty. ``Put`` loads an atom;
-      supported, correctly paired gates and reset do nothing on an empty site,
-      which measures as the erasure digit ``2``.
+    - Occupancy: sites start empty unless initial occupancy is supplied.
+      ``Put`` loads an atom; supported, correctly paired gates and reset do
+      nothing on an empty site, which measures as the erasure digit ``2``.
+    - Noise: finite channels select one subsystem; a present atom's channel
+      runs even when another gate operand is absent. ``Loss`` may select
+      multiple subsystems and samples each present atom independently.
     - Methods: atom occupancy requires ``statevector`` or ``density_matrix``.
 
     The simulator validates the program as written; it does not transport,
@@ -90,19 +104,25 @@ class AtomArraySimulator(Simulator):
         self,
         *,
         method: str = "statevector",
-        runtime: str = "numba",
+        runtime: str | None = None,
         noise: NoiseModel | None = None,
+        implementation_map: MatrixImplementationMap | None = None,
     ) -> None:
         """Create a constrained neutral-atom simulator.
 
         Args:
             method: ``"statevector"`` (or ``"SV"``), ``"density_matrix"``
                 (or ``"DM"``). Names are case-insensitive.
-            runtime: ``"numba"`` (default, lazy JIT) or ``"numpy"`` (direct
-                execution). See ``Simulator`` for runtime-specific
-                execution controls.
+            runtime: ``"numpy"`` or ``"numba"``, ``None`` (default) uses
+                the current simulator default.
             noise: Optional ``NoiseModel``. ``None`` keeps the backend ideal;
-                this class has no built-in reference noise model.
+                this class has no built-in reference noise model. Finite
+                channels must select one subsystem; use ``target_positions``
+                on multi-subsystem operations. This limit is checked when
+                running a program; ``Loss`` may select multiple subsystems.
+            implementation_map: Operation implementations. None uses RX/RY/RZ/CZ.
+                To extend the default, add rules to the independent map returned
+                by ``simulator.implementation_map`` and pass it here.
 
         Raises:
             BackendValidationError: If ``method`` or ``runtime`` is invalid,
@@ -119,7 +139,11 @@ class AtomArraySimulator(Simulator):
         super().__init__(
             method=canonical_method,
             runtime=runtime,
-            implementation_map=_fake_atom_array_implementation_map(),
+            implementation_map=(
+                _fake_atom_array_implementation_map()
+                if implementation_map is None
+                else implementation_map
+            ),
             noise=noise,
         )
 
@@ -158,17 +182,15 @@ class AtomArraySimulator(Simulator):
         self,
         operations: Sequence[ProgramInstruction],
         context: _LoweringContext,
-        *,
-        param_order: tuple[Parameter, ...] | None = None,
-    ) -> list[ResolvedStep | _MatrixRecipe]:
+    ) -> list[ResolvedStep]:
         """Apply this program's atom lifecycle, then lower normally.
 
-        Every site starts empty and `~fatqat.operations.Put` loads a fresh
+        By default sites start empty; `~fatqat.operations.Put` loads a fresh
         ``|0>`` atom into its targets. Operation support and pairing are
         validated independently of occupancy. After validation, gates and
-        resets targeting a site that is never named in any ``Put`` are omitted
-        from the execution plan; a valid operation on a site emptied by loss
-        has no effect for that shot.
+        resets are retained and guarded by runtime occupancy. Initial evolution
+        data or a custom implementation can populate sites without ``Put``.
+        Finite noise channels act on surviving selected operands.
 
         Two-qubit-gate legality follows the connectivity graph, not a fixed
         topology. Connectivity starts empty and evolves at each
@@ -182,43 +204,28 @@ class AtomArraySimulator(Simulator):
         noise. The resource layout carries no coordinates and never changes, so
         every segment lowers under the same layout.
 
-        Occupancy is seeded empty and ``Put`` then fills its targets per shot.
+        Occupancy defaults to empty, or uses supplied initial evolution data.
         That empty seed is not a plan step - it is an initialization input the
-        engine receives at run start (see ``_initial_occupancy``), because
+        engine receives at run start, because
         seeding occupancy is the atom simulator's own setup, not an operation.
-        ``Measurement`` always lowers normally; an empty (never-``Put``) site
+        ``Measurement`` always lowers normally; an empty site
         measures the erasure digit ``2`` under the occupancy guard.
 
         Raises:
             BackendValidationError: If a ``Pair`` or ``Unpair`` carries a
                 condition, or if a two-qubit gate targets a pair that is not
-                currently paired (see :py:meth:`_require_pairing`).
+                currently paired, or a
+                finite noise channel selects more than one subsystem.
         """
         resource_layout = context.resource_layout
-        put_targets = frozenset(
-            target
-            for step in operations
-            if isinstance(step, _AppliedOperation)
-            and isinstance(step.operation, type(ops.Put))
-            for target in step.targets
-        )
-
         connectivity = _AtomConnectivity()
-        plan: list[ResolvedStep | _MatrixRecipe] = []
+        plan: list[ResolvedStep] = []
         segment: list[ProgramInstruction] = []
         for step in operations:
             if isinstance(step, _AppliedOperation) and isinstance(
                 step.operation, (type(ops.Pair), type(ops.Unpair))
             ):
-                plan.extend(
-                    self._lower_segment(
-                        segment,
-                        connectivity,
-                        put_targets,
-                        context,
-                        param_order=param_order,
-                    )
-                )
+                plan.extend(self._lower_segment(segment, connectivity, context))
                 segment = []
                 plan.extend(
                     _lower_channels(
@@ -228,55 +235,96 @@ class AtomArraySimulator(Simulator):
                         resource_layout,
                         context.engine_allocation,
                         self._noise_model,
-                        self._channel_map,
+                        self._impl_map,
                     )
                 )
                 connectivity = self._apply_pairing(connectivity, step)
                 continue
             segment.append(step)
-        plan.extend(
-            self._lower_segment(
-                segment, connectivity, put_targets, context, param_order=param_order
+        plan.extend(self._lower_segment(segment, connectivity, context))
+        if any(
+            isinstance(step, ApplyChannelStep) and len(step.target_indices) != 1
+            for step in plan
+        ):
+            raise BackendValidationError(
+                "AtomArraySimulator only supports single-subsystem noise channels; "
+                "use target_positions to register a separate channel on each "
+                "operand of a multi-subsystem operation"
             )
-        )
         return plan
 
-    def _initial_occupancy(self) -> frozenset[int]:
-        """Return the empty per-shot occupancy seed for this atom array."""
-        return frozenset()
+    def _prepare_initial_state(self, initial: Any) -> EvolutionState[Any]:
+        """Start each trajectory with the atom array's initial occupancy."""
+        initial = super()._prepare_initial_state(initial)
+        if initial.classical.occupied is None:
+            initial.classical.occupied = set()
+        return initial
+
+    def _prepare_expectation(
+        self,
+        execution: _PreparedExecution,
+        program: Program,
+        observables: tuple[Observable, ...],
+        *,
+        shots: int,
+    ) -> tuple[tuple[float, ...], tuple[_BoundExpectationOccurrence, ...]]:
+        if any(isinstance(step, LossStep) for step in execution.plan):
+            raise UnsupportedOperationError(
+                "expectation values are undefined for programs containing carrier loss"
+            )
+        constants, bound_occurrences = super()._prepare_expectation(
+            execution, program, observables, shots=shots
+        )
+        classical = execution.initial_state.classical
+        if classical.occupied is not None:
+            occupied = set(classical.occupied)
+            # Estimator programs have no measurements or loss, so Put guards
+            # depend only on the initial classical digits.
+            for step in execution.plan:
+                if isinstance(step, PutStep) and all(
+                    (0 if classical.clbits is None else classical.clbits[index])
+                    == value
+                    for index, value in (step.condition or ())
+                ):
+                    occupied.update(step.target_indices)
+            lowering = execution.lowering
+            for bound in bound_occurrences:
+                for index, letter in bound.engine_factors:
+                    if index not in occupied:
+                        operand = lowering.engine_allocation.device_operands[index]
+                        ref = lowering.resource_layout._ref_for_label(operand)
+                        raise UnsupportedOperationError(
+                            f"observable factor {letter} targets unoccupied atom {ref!r}"
+                        )
+        return constants, bound_occurrences
 
     def _lower_segment(
         self,
         segment: Sequence[ProgramInstruction],
         connectivity: _AtomConnectivity,
-        put_targets: frozenset[RegisterRef],
         context: _LoweringContext,
-        *,
-        param_order: tuple[Parameter, ...] | None = None,
-    ) -> list[ResolvedStep | _MatrixRecipe]:
+    ) -> list[ResolvedStep]:
         """Lower one inter-pairing segment, rejecting unpaired two-qubit gates.
 
         The layout never changes, so the segment lowers under the unchanged
         context. A two-qubit gate whose pair is not currently paired is a
         program-construction error - the pairing graph is fixed at compile time
         by ``Pair``/``Unpair``, independent of any shot - so it is rejected
-        here (see :py:meth:`_require_pairing`), distinct from a per-shot atom
-        loss, which the engine drops silently. Operations on sites that no
-        ``Put`` can load still pass through common lowering for validation;
-        their resolved work is then omitted from the execution plan.
+        here, distinct from a per-shot atom
+        loss, which the engine drops silently. Initial occupancy and custom
+        operations can populate sites without ``Put``, so occupancy guards stay
+        in the runtime rather than being inferred from the circuit.
         """
         for step in segment:
             self._require_pairing(step, connectivity)
 
-        plan: list[ResolvedStep | _MatrixRecipe] = []
+        plan: list[ResolvedStep] = []
         ordinary: list[ProgramInstruction] = []
         lower_common = super()._lower
 
         def flush_ordinary() -> None:
             if ordinary:
-                plan.extend(
-                    lower_common(tuple(ordinary), context, param_order=param_order)
-                )
+                plan.extend(lower_common(tuple(ordinary), context))
                 ordinary.clear()
 
         for step in segment:
@@ -293,13 +341,6 @@ class AtomArraySimulator(Simulator):
                         self._noise_model,
                     )
                 )
-            elif isinstance(step, _AppliedOperation) and any(
-                target not in put_targets for target in step.targets
-            ):
-                flush_ordinary()
-                # Reuse canonical lowering for validation, then omit work that
-                # can never execute because at least one target is never loaded.
-                lower_common((step,), context, param_order=param_order)
             else:
                 ordinary.append(step)
         flush_ordinary()
@@ -328,6 +369,8 @@ class AtomArraySimulator(Simulator):
         """
         if not isinstance(step, _AppliedOperation):
             return
+        if isinstance(step.operation, ops.CustomOperation):
+            return
         if isinstance(
             step.operation,
             (
@@ -354,22 +397,17 @@ class AtomArraySimulator(Simulator):
                 "silently per shot."
             )
 
-    def _analyze_lowered_plan(
-        self, plan: tuple[ResolvedStep, ...]
-    ) -> tuple[_PlanFacts, frozenset[int] | None]:
+    def _analyze_lowered_plan(self, plan: tuple[ResolvedStep, ...]) -> _PlanFacts:
         """Translate atom lifecycle semantics into common plan consequences."""
         common = self._analyze_common_plan_facts(
             plan,
             claimed_step_types=(LossStep, PutStep),
         )
         has_loss = any(isinstance(step, LossStep) for step in plan)
-        translated = replace(
+        return replace(
             common,
-            execution_shape="per_shot",
-            deferred_measurements=(),
             stochastic_final_state=common.stochastic_final_state or has_loss,
         )
-        return translated, self._initial_occupancy()
 
     def _apply_pairing(
         self, connectivity: _AtomConnectivity, applied: _AppliedOperation

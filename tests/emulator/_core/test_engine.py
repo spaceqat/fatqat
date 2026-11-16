@@ -82,6 +82,9 @@ class _FakeRunner:
     def propagator(self, run, *, apply_final_frame=True):
         raise AssertionError("the execution fake does not construct propagators")
 
+    def identity_operator(self):
+        raise AssertionError("the execution fake does not construct operators")
+
     def execute_boundary(self, step, context):
         self.context_ids.append(id(context))
         self.boundaries.append((type(step), context.time))

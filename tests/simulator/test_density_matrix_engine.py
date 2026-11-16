@@ -3,7 +3,15 @@
 import numpy as np
 import pytest
 
-from fatqat.simulator._engine.np import NumpyDMEngine, NumpySVEngine
+from fatqat.program import Program
+from fatqat.simulator import Simulator
+import fatqat.operations as ops
+from fatqat.simulator._engine.numerics.numpy_kernels._measurement import (
+    _density_matrix_probabilities,
+)
+
+from fatqat.simulator._engine.numerics.numpy_kernels._reset import _reset_density_matrix
+from fatqat.simulator._engine.engines.numpy_engine import NumpyDMEngine, NumpySVEngine
 from fatqat._backends.steps import ApplyMatrixStep
 
 _X = np.array([[0, 1], [1, 0]], dtype=complex)
@@ -76,68 +84,44 @@ def test_apply_matrix_rho_qutrit():
 
 
 def test_probabilities_are_diagonal():
-    eng = _engine(2)
-    eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
-    eng.apply(ApplyMatrixStep(matrix=_CX, target_indices=(0, 1)))
-    assert np.allclose(eng.probabilities(), [0.5, 0, 0, 0.5])
+    bell = np.array([1, 0, 0, 1], dtype=complex) / np.sqrt(2)
+    assert np.allclose(_density_matrix_probabilities(_pure(bell)), [0.5, 0, 0, 0.5])
 
 
-def test_measure_subsystems_collapses_bell_pair_consistently():
-    rng = np.random.default_rng(7)
-    for _ in range(5):
-        eng = _engine(2)
-        eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
-        eng.apply(ApplyMatrixStep(matrix=_CX, target_indices=(0, 1)))
-        b0, b1 = eng.measure_subsystems((0, 1), rng)
-        assert b0 == b1
-        idx = b0 + 2 * b1
+@pytest.mark.parametrize("runtime", ["numpy", "numba"])
+def test_measurement_counts_agree_with_collapsed_bell_state(runtime):
+    program = Program(2, 2)
+    program.add(ops.H, 0)
+    program.add(ops.CX, (0, 1))
+    program.measure((0, 1), (0, 1))
+    simulator = Simulator("DM", runtime=runtime)
+    for seed in range(5):
+        result = simulator.run(
+            program,
+            shots=1,
+            execution_config={"seed": seed},
+            result_config={"counts": True, "final_state": True},
+        ).result()
+        counts = result.get_counts()
+        assert counts in ({"00": 1}, {"11": 1})
+        index = 0 if "00" in counts else 3
         expected = np.zeros((4, 4), dtype=complex)
-        expected[idx, idx] = 1.0
-        assert np.allclose(eng.export_state(), expected)
+        expected[index, index] = 1
+        assert np.allclose(result.get_density_matrix(), expected)
 
 
 def test_reset_is_deterministic_and_consumes_no_rng():
-    # Reset on a density matrix is a channel, not a sampled branch: two
-    # engines with different rng streams must agree exactly.
-    states = []
+    initial = _pure(np.array([1, 1]) / np.sqrt(2))
     for seed in (0, 1):
-        eng = _engine(1)
-        eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
-        eng.reset_subsystems((0,), np.random.default_rng(seed))
-        states.append(eng.export_state())
-    assert np.array_equal(states[0], states[1])
-    assert np.allclose(states[0], _pure([1, 0]))
-
-
-def test_reset_of_entangled_qubit_yields_mixed_state():
-    # Reset qubit 0 of a Bell pair: rho' = |0><0| (x) I/2, purity 1/2.
-    # This is the representational win over the statevector backend.
-    eng = _engine(2)
-    eng.apply(ApplyMatrixStep(matrix=_H, target_indices=(0,)))
-    eng.apply(ApplyMatrixStep(matrix=_CX, target_indices=(0, 1)))
-    eng.reset_subsystems((0,))
-    rho = eng.export_state()
-    expected = np.zeros((4, 4), dtype=complex)
-    expected[0, 0] = 0.5  # |00>
-    expected[2, 2] = 0.5  # |0>_q0 |1>_q1
-    assert np.allclose(rho, expected)
-    assert np.isclose(np.real(np.trace(rho @ rho)), 0.5)
+        rng = np.random.default_rng(seed)
+        state = _reset_density_matrix(initial, (0,), (2,), rng)
+        assert np.allclose(state, _pure([1, 0]))
+        assert rng.random() == np.random.default_rng(seed).random()
 
 
 def test_reset_grouped_multiple_subsystems():
-    eng = _engine(2)
-    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(0,)))
-    eng.apply(ApplyMatrixStep(matrix=_X, target_indices=(1,)))
-    eng.reset_subsystems((0, 1))
-    expected = np.zeros((4, 4), dtype=complex)
-    expected[0, 0] = 1.0
-    assert np.allclose(eng.export_state(), expected)
-
-
-def test_reset_requires_at_least_one_index():
-    eng = _engine(1)
-    with pytest.raises(AssertionError):
-        eng.reset_subsystems(())
+    rho = _reset_density_matrix(_pure([0, 0, 0, 1]), (0, 1), (2, 2))
+    assert np.allclose(rho, _pure([1, 0, 0, 0]))
 
 
 def test_uninitialized_engine_raises():

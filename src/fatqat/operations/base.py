@@ -112,3 +112,35 @@ class Operation:
                 the targets.
         """
         return
+
+
+class CustomOperation(Operation):
+    """Base description for user-defined circuit operations.
+
+    Define ``name``, any parameters, and ``num_subsystems``: a positive target
+    count, ``0`` for classical-only operations, or ``None`` for one or more
+    targets. If omitted, ``num_subsystems`` defaults to ``1``.
+
+    Examples:
+        Describe a parameterized single-subsystem operation:
+
+        >>> from dataclasses import dataclass
+        >>> import fatqat.operations as ops
+        >>> @dataclass(frozen=True)
+        ... class CustomRX(ops.CustomOperation):
+        ...     name = "CustomRX"
+        ...     num_subsystems = 1
+        ...     theta: float
+        >>> rotation = CustomRX(theta=0.5)
+
+        Reuse one instance for a parameter-free operation, like ``ops.X``:
+
+        >>> import fatqat as fq
+        >>> class MyOperationGate(ops.CustomOperation):
+        ...     name = "MyOperation"
+        ...     num_subsystems = 1
+        >>> MyOperation = MyOperationGate()
+        >>> program = fq.Program(2)
+        >>> program.add(MyOperation, 0)
+        >>> program.add(MyOperation, 1)
+    """

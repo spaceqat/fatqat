@@ -88,8 +88,8 @@ def test_unmeasured_ideal_run_defaults_to_a_pure_statevector(backend):
     result = backend.run(_pulse_program()).result()
 
     assert result.available_data == frozenset({"statevector"})
-    assert result.get_statevector().shape == (4,)
-    assert np.linalg.norm(result.get_statevector()) == pytest.approx(1.0)
+    assert result.get_statevector().full().ravel().shape == (4,)
+    assert np.linalg.norm(result.get_statevector().full().ravel()) == pytest.approx(1.0)
     assert result.metadata["backend_name"] == "Atom2LevelEmulator"
     assert result.metadata["runtime"] == "qutip"
     assert result.metadata["runtime_details"] == {
@@ -107,7 +107,7 @@ def test_terminal_measurement_defaults_to_counts_without_final_state(backend):
     assert result.available_data == frozenset({"counts"})
     assert sum(result.get_counts().values()) == 30
     with pytest.raises(ResultFieldUnavailableError):
-        result.get_statevector()
+        result.get_statevector().full().ravel()
 
 
 def test_explicit_counts_without_measurement_keep_all_zero_classical_key(backend):
@@ -146,11 +146,9 @@ def test_terminal_many_shot_counts_are_seeded_and_counts_only_retains_no_arrays(
 
     monkeypatch.setattr(PulseEngine, "run", record)
     program = _pulse_program(measured=True)
-    first = backend.run(
-        program, shots=40, simulation_config={"seed": 20260807}
-    ).result()
+    first = backend.run(program, shots=40, execution_config={"seed": 20260807}).result()
     second = backend.run(
-        program, shots=40, simulation_config={"seed": 20260807}
+        program, shots=40, execution_config={"seed": 20260807}
     ).result()
 
     assert first.get_counts() == second.get_counts()
@@ -164,10 +162,10 @@ def test_one_shot_requested_posterior_is_an_independent_collapsed_ket(backend):
     result = backend.run(
         _pulse_program(measured=True),
         shots=1,
-        simulation_config={"seed": 11},
+        execution_config={"seed": 11},
         result_config={"counts": True, "final_state": True},
     ).result()
-    state = result.get_statevector()
+    state = result.get_statevector().full().ravel()
     counts = result.get_counts()
 
     assert state.shape == (4,)
@@ -190,18 +188,18 @@ def test_terminal_density_matrix_measurement_samples_and_collapses():
     sampled = backend.run(
         program,
         shots=30,
-        simulation_config={"seed": 20260830},
+        execution_config={"seed": 20260830},
     ).result()
     posterior = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 11},
+        execution_config={"seed": 11},
         result_config={"counts": True, "final_state": True},
     ).result()
 
     assert sum(sampled.get_counts().values()) == 30
     assert all(set(key) <= {"0", "1"} for key in sampled.get_counts())
-    state = posterior.get_density_matrix()
+    state = posterior.get_density_matrix().full()
     assert state.shape == (4, 4)
     assert np.trace(state) == pytest.approx(1.0)
     assert np.trace(state @ state) == pytest.approx(1.0)
@@ -216,20 +214,24 @@ def test_estimator_exact_x_and_sampled_diagonal_projector_execution():
 
     exact_x = estimator.run(program, fq.Observable([("X", 1.0)])).result()
     diagonal = fq.Observable.from_sparse(
-        [("Z", (0,), 1.0), ("ONE", (0,), 0.5)],
-        num_qubits=1,
+        [
+            ("Z", (0,), 1.0),
+            ("ONE", (0,), 0.5),
+            # On a qubit the number operator is the ONE projector.
+            (fq.observable.NumberOperator(), (0,), 0.25),
+        ],
     )
     sampled = estimator.run(
         program,
         diagonal,
         shots=1_000,
-        simulation_config={"seed": 19},
+        execution_config={"seed": 19},
     ).result()
 
     assert exact_x.get_expectation() == pytest.approx(1.0, abs=1e-5)
     assert exact_x.get_standard_error() == 0.0
     assert sampled.get_expectation() == pytest.approx(
-        0.25, abs=6 * sampled.get_standard_error()
+        0.375, abs=6 * sampled.get_standard_error()
     )
     assert sampled.metadata == {
         "backend_name": "Atom2LevelEmulator",

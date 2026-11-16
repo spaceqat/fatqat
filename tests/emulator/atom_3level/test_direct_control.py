@@ -51,12 +51,51 @@ def test_local_direct_propagator_matches_independent_qutrit_reference(
     program = fq.Program(1)
     program.add(operation)
 
-    actual = backend.run(program).result().get_unitary()
+    actual = backend.run(program).result().get_unitary().full()
     raising = raising.astype(complex)
     hamiltonian = 0.5 * (envelope * raising + envelope.conjugate() * raising.T)
     expected = expm(-1j * hamiltonian * duration)
 
     assert np.allclose(actual, expected, atol=2e-7)
+
+
+@pytest.mark.parametrize(
+    "coordinates",
+    [
+        ((2, 3), (0, 0), (0, 3)),
+        ((2, 3, 0), (0, 0, 0), (0, 3, 0)),
+        ((0, 3, 2), (0, 0, 0), (0, 3, 0)),
+    ],
+    ids=("2d", "3d-planar", "3d-z-separated"),
+)
+def test_coordinate_arrangement_preserves_pair_phases_and_site_order(
+    atom_3level_model_document, coordinates
+):
+    atom_3level_model_document["parameters"]["c6"] = 64.0
+    model = Atom3LevelModel.from_document(atom_3level_model_document)
+    backend = Atom3LevelEmulator(
+        model,
+        arrangement=fq.emulator.AtomArrangement.from_coordinates(coordinates),
+        method="unitary",
+    )
+    duration = 0.3
+    # The waveform grid caps integration steps for the analytic phase check.
+    idle = SampledWaveform(np.linspace(0.0, duration, 1001), np.zeros(1001))
+    program = fq.Program(3)
+    program.add(
+        ops.PulseOperation(duration, (PulseControl(model.control.raman(0), idle),))
+    )
+
+    actual = backend.run(program).result().get_unitary().full()
+
+    # In input order, distances (0, 1), (0, 2), (1, 2) are sqrt(13), 2, 3.
+    energies = np.zeros(27)
+    energies[[8, 17]] = 64.0 / 3**6  # |0rr>, |1rr>
+    energies[[20, 23]] = 64.0 / 2**6  # |r0r>, |r1r>
+    energies[[24, 25]] = 64.0 / 13**3  # |rr0>, |rr1>
+    energies[26] = energies[8] + energies[20] + energies[24]
+    expected = np.diag(np.exp(-1j * duration * energies))
+    assert actual == pytest.approx(expected, abs=1e-6)
 
 
 def test_concurrent_disjoint_raman_and_rydberg_controls_share_one_block(
@@ -159,8 +198,8 @@ def test_direct_rydberg_drives_coexist_with_signed_all_pair_drift(
         == -negative_values[0].signed_strength_rad_per_us
     )
     assert not np.allclose(
-        positive.run(program).result().get_unitary(),
-        negative.run(program).result().get_unitary(),
+        positive.run(program).result().get_unitary().full(),
+        negative.run(program).result().get_unitary().full(),
     )
 
 
@@ -180,11 +219,13 @@ def test_condition_changes_actual_direct_atom_execution(
         backend.run(enabled, result_config={"counts": False, "final_state": True})
         .result()
         .get_density_matrix()
+        .full()
     )
     disabled_state = (
         backend.run(disabled, result_config={"counts": False, "final_state": True})
         .result()
         .get_density_matrix()
+        .full()
     )
 
     assert not np.allclose(enabled_state, disabled_state)

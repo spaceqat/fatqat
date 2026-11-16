@@ -16,7 +16,7 @@ For one configured backend, use
 [`validate_noise_model`][fatqat.simulator.Simulator.validate_noise_model] on a simulator or
 [`validate_noise_model`][fatqat.emulator.TransmonEmulator.validate_noise_model] on a pulse
 emulator. These methods validate a model without a program. FATQAT checks
-references, device labels, operation matches, dimensions, and execution-method
+references, device labels, operation matches, dimensions, and simulation-method
 limits when it runs a concrete program.
 
 <a id="noise-simulator-support"></a>
@@ -50,16 +50,21 @@ them, so loss attached to `Put` can model a loading failure. Other simulators
 reject `Loss`. Because an empty site produces no physical readout digit, its
 erasure value `2` bypasses readout confusion.
 
+`AtomArraySimulator` accepts only single-subsystem finite channels. Use
+`target_positions` to select an operand of a multi-subsystem operation; see
+[occupancy and loss](../simulators/atom-array.md#occupancy-and-loss) for an example
+and behavior when an atom is absent.
+
 Attach every supported probability-form channel above to an operation; matrix
 backends reject background channels.
-A custom [`ChannelImplementationMap`][fatqat.noise.ChannelImplementationMap] can add a finite
+A custom [`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap] can add a finite
 channel type or replace the rule for an existing one. It cannot override the
 rejection of built-in rate forms, background channels, or
 `ThermalRelaxation`. A custom type's parameter names are interpreted by its
 rule, whose result still represents one finite channel application. A supplied
 map replaces the default map and is copied when the backend is constructed.
 
-Execution method also matters. `statevector` samples one Kraus trajectory
+Simulation method also matters. `statevector` samples one Kraus trajectory
 per noisy shot, while `density_matrix` and `superop` apply
 probability-form channels exactly. `unitary` rejects any channel that
 matches the program. Only `statevector` and `density_matrix` support the

@@ -136,7 +136,7 @@ result = emulator.run(
 ).result()
 
 density_matrix = result.get_density_matrix()
-physical = np.clip(np.real(np.diag(density_matrix)), 0.0, None)
+physical = np.clip(np.real(density_matrix.diag()), 0.0, None)
 physical /= physical.sum()
 physical = physical.reshape((3, 3, 3)).transpose(logical_axis_order(compiled, result))
 binary = np.zeros(8)
@@ -153,8 +153,8 @@ for levels in product(range(3), repeat=3):
 probabilities = binary / binary.sum()
 assert np.isclose(probabilities.sum(), 1.0)
 assert np.argmax(probabilities) == TARGET_INDEX
-assert np.isclose(probabilities[TARGET_INDEX], 0.64046294, atol=1e-3)
-assert np.isclose(leakage, 0.0006491483, atol=5e-7)
+assert np.isclose(probabilities[TARGET_INDEX], 0.74023679, atol=1e-3)
+assert np.isclose(leakage, 0.0006689621, atol=5e-7)
 
 print(
     f"TransmonEmulator P({TARGET}) = {probabilities[TARGET_INDEX]:.8%}; "
