@@ -34,6 +34,8 @@
 - `AtomArraySimulator` now rejects finite noise channels acting on multiple
   subsystems. `Loss` still supports multiple targets, sampled independently.
 
+This is an alpha release; pin the exact version for reproducible studies.
+
 ## 0.1.0a2 - 2026-10-04
 
 This alpha updates the documentation and examples, with targeted compiler
@@ -54,6 +56,8 @@ an exact `LogicalProgram` input. In 0.1.0a1 they also accepted `Program` and
 converted it automatically. Construct a `LogicalProgram` before calling either
 compiler entry point. OpenQASM compiler entry points remain available.
 
+This is an alpha release; pin the exact version for reproducible studies.
+
 ## 0.1.0a1 - 2026-09-12
 
 First alpha release of FatQat, a quantum-computing toolkit built around
@@ -68,3 +72,5 @@ the `Program` authoring interface.
   neutral-atom placement and routing.
 - Work with OpenQASM and optional Qiskit integration, draw programs, and
   follow executable algorithm and physics tutorials.
+
+This is an alpha release; pin the exact version for reproducible studies.
