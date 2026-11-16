@@ -2,46 +2,37 @@
 
 ## 0.1.0a3 - 2026-11-16
 
-This alpha adds linear-optics simulation, speeds up circuit execution and
-expectation values, and expands control over measurements and custom operations.
-
-- Simulate optical modes with `ModeRegister`, `CountRegister`, optical gates,
-  and `LOSimulator`, including fixed-photon-number state evolution.
-- Improve Numba statevector execution, parameter sweeps, noisy trajectories,
-  and expectation-value evaluation. Add a performance guide covering runtime
-  selection, parallelism, repeated runs, and result storage.
-- Configure the runtime used by newly constructed simulators with
-  `fatqat.simulator.set_default_runtime()`. Numba remains the initial default.
-- Add custom operations that can update quantum and classical state, with
-  target-specific implementation rules shared by gates and noise channels.
-- Choose measurement destinations with `Program.measure_all(outputs=...)`,
-  retrieve final classical state with `Result.get_classical_state()`, and use
-  qudit observables in expectation values.
-- Construct atom arrangements from coordinates. Fix multi-block pulse
-  composition and the sign of the DRAG virtual-Z frame update.
-- Expand installation and first-run guidance, add Chinese repository documents
-  and a Korean README, and add tutorials on surface-code memory, qutrit-assisted
-  Toffoli gates, QAOA, and pulse calibration.
+- Added linear-optics simulation with optical gates, mode and count registers,
+  and `LOSimulator`, including fixed-photon-number states.
+- Faster Numba statevector simulation, parameter sweeps, noisy trajectories,
+  and expectation values. A new performance guide explains how to choose
+  runtimes and parallelism settings.
+- Custom operations can now update both quantum and classical state. Gates
+  and noise channels share an implementation map with target-specific rules.
+- Added measurement destinations via `Program.measure_all(outputs=...)`,
+  final classical-state output via `Result.get_classical_state()`, and qudit
+  observables for expectation values.
+- Added `fatqat.simulator.set_default_runtime()` to choose the runtime for
+  new simulators.
+- Atom arrangements can now be created directly from coordinates.
+- Fixed multi-block pulse composition and the DRAG virtual-Z frame-update sign.
+- Added installation guidance, Chinese repository documentation, a Korean
+  README, and tutorials on surface-code memory, qutrit-assisted Toffoli gates,
+  QAOA, and pulse calibration.
 
 **Compatibility and migration:**
 
-- Use `execution_config=` for per-run execution settings. `simulation_config=`
-  remains a deprecated alias and is scheduled for removal before 0.1.0;
-  supplying both is an error. Result metadata now includes `execution_config`
-  and retains a copy under the deprecated `simulation_config` key.
+- `execution_config=` replaces `simulation_config=`, which is deprecated and
+  will be removed before 0.1.0. Do not pass both. Result metadata includes both
+  keys during the transition.
 - Pulse emulators now return QuTiP `Qobj` values for final states and unitaries.
-  Use `.full()` when a NumPy array is needed. Gate-level simulators continue
-  to return NumPy arrays.
-- Register custom noise channels in `MatrixImplementationMap` and pass it as
+  Use `.full()` to obtain a NumPy array. Gate-level simulators still return arrays.
+- Custom noise rules now belong in `MatrixImplementationMap`, passed through
   `implementation_map=`. This replaces `ChannelImplementationMap`,
-  `default_channel_implementation_map()`, and `channel_implementation_map=`;
-  start with `default_matrix_implementation_map()` to retain built-in rules.
-- `AtomArraySimulator` accepts only single-subsystem finite noise channels;
-  multi-subsystem channels are rejected. `Loss` can still target multiple
-  subsystems, sampling each present atom independently.
-
-Requires Python 3.12 or newer. This is an alpha release; pin the exact version
-for reproducible studies.
+  `default_channel_implementation_map()`, and `channel_implementation_map=`.
+  Use `default_matrix_implementation_map()` to keep the built-in rules.
+- `AtomArraySimulator` now rejects finite noise channels acting on multiple
+  subsystems. `Loss` still supports multiple targets, sampled independently.
 
 ## 0.1.0a2 - 2026-10-04
 
@@ -63,9 +54,6 @@ an exact `LogicalProgram` input. In 0.1.0a1 they also accepted `Program` and
 converted it automatically. Construct a `LogicalProgram` before calling either
 compiler entry point. OpenQASM compiler entry points remain available.
 
-Requires Python 3.12 or newer. This is an alpha release; pin the exact version
-for reproducible studies.
-
 ## 0.1.0a1 - 2026-09-12
 
 First alpha release of FatQat, a quantum-computing toolkit built around
@@ -80,6 +68,3 @@ the `Program` authoring interface.
   neutral-atom placement and routing.
 - Work with OpenQASM and optional Qiskit integration, draw programs, and
   follow executable algorithm and physics tutorials.
-
-Requires Python 3.12 or newer. This is an alpha release: interfaces may change
-between releases. Pin the exact package version for reproducible studies.
