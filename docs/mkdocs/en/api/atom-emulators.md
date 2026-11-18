@@ -14,7 +14,7 @@ pulse-resolved physical emulator rather than a mode of
 
 Use [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator] for directly authored
 global controls in the physical `|g>, |r>` model. See
-[Choose and run a neutral-atom workflow](../guide/neutral-atom-emulation.md)
+[Emulate neutral atoms with laser pulses](../guide/neutral-atom-emulation.md)
 for a complete executable example.
 
 ## Arrangements and program resources
@@ -238,7 +238,7 @@ state without time evolution.
 
 See [Pulse control](pulse-control/index.md) for direct pulse authoring. For the
 complete two-level workflow, see
-[Choose and run a neutral-atom workflow](../guide/neutral-atom-emulation.md).
+[Emulate neutral atoms with laser pulses](../guide/neutral-atom-emulation.md).
 
 ## API
 

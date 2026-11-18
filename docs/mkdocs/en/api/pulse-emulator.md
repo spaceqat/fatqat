@@ -382,7 +382,7 @@ The two-level atom backend also accepts an optional gate implementation map.
 It has its own continuous-noise implementations. `Atom2LevelEmulator` has an
 empty built-in gate map and global direct controls; user-supplied maps can add
 gate rules. See [Neutral-atom emulator](atom-emulators.md) for its API and
-[Choose and run a neutral-atom workflow](../guide/neutral-atom-emulation.md)
+[Emulate neutral atoms with laser pulses](../guide/neutral-atom-emulation.md)
 for the complete workflow.
 
 ## API

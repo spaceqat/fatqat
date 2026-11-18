@@ -10,7 +10,7 @@ title: "Pulse control"
     supported behavior may change between releases. Pin an exact FatQat
     version when reproducibility matters.
 
-Read [Follow a Program into physical dynamics](../../guide/hamiltonian-emulation.md) first for the gate-calibration,
+Read [Write and run pulse programs](../../guide/hamiltonian-emulation.md) first for the gate-calibration,
 direct-control, and scheduling workflow. This section defines the exact pulse
 objects and validation rules.
 

@@ -35,6 +35,10 @@ GUIDE_SOURCES = (
         FIGURE_SOURCE_ROOT / "hong_ou_mandel_histories.py",
         ("hong-ou-mandel-histories.svg",),
     ),
+    (
+        FIGURE_SOURCE_ROOT / "transmon_cosine_well.py",
+        ("transmon-cosine-well.svg",),
+    ),
 )
 HOME_SOURCES = (
     (
