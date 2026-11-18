@@ -20,7 +20,7 @@ one that still contains the effect you want to study:
 </div>
 
 The atom-array simulator is the profile introduced in
-[Hardware-profile simulation](hardware-profile-simulation.md); it does not
+[Neutral-atom array simulation](atom-array-simulation.md); it does not
 integrate a Hamiltonian. The physical emulator below uses the pulse workflow
 from [Hamiltonian emulation](hamiltonian-emulation.md).
 

@@ -92,7 +92,7 @@ execution engine.
     connected. Inspect or choose a [`ResourceLayout`][fatqat.ResourceLayout] and keep the
     ordered logical targets distinct from their device labels. The worked
     failure-and-fix is in [Test a Program against a hardware
-    profile](hardware-profile-simulation.md).
+    profile](superconducting-simulation.md).
 
 ??? question "A direct control is rejected by an emulator"
 

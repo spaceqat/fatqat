@@ -73,7 +73,7 @@ question in front of you.
 
     Add native gates and connectivity when device constraints matter.
 
-    [:octicons-arrow-right-24: Model a hardware profile](guide/hardware-profile-simulation.md)
+    [:octicons-arrow-right-24: Model a hardware profile](guide/hardware-constraints.md)
 
 -   :material-sine-wave:{ .lg .middle } **Hamiltonian emulation**
 
@@ -249,7 +249,7 @@ and measuring an empty site returns the erasure digit `2`.
     ).result().get_counts()
     print(lossy_counts)  # {'1': 86, '2': 14}
     ```
-[:octicons-arrow-right-24: Track occupancy, pairing, and loss](guide/hardware-profile-simulation.md#atom-occupancy-and-pairing)
+[:octicons-arrow-right-24: Track occupancy, pairing, and loss](guide/atom-array-simulation.md#atom-occupancy-and-pairing)
 
 ## Explore the documentation
 

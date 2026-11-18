@@ -10,8 +10,8 @@ use the same run and result API. Choose [`Simulator`][fatqat.simulator.Simulator
 gate-level work, or a profile when the program must obey a native gate set,
 layout, or connectivity rule.
 
-Start with [Choose how much physics to model](../../guide/execution-models.md) to choose an execution level, or
-follow [Test a Program against a hardware profile](../../guide/hardware-profile-simulation.md) for the profile workflow.
+Start with [Choose a simulation or emulation approach](../../guide/execution-models.md) to choose an execution level, or
+follow [Test a Program against a hardware profile](../../guide/superconducting-simulation.md) for the profile workflow.
 
 [`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] uses a configurable
 superconducting coupling graph and accepts `X`, `SX`, virtual `RZ`, and

@@ -197,5 +197,3 @@ angle grid to show that dependence:
     ```
 
 For more sweep options, see the [Simulator API](../api/simulator.md).
-Continue with [Estimate observables](interpret-results.md) to calculate
-correlations and understand the uncertainty of sampled estimates.

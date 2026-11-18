@@ -146,25 +146,28 @@ nav:
   - Home: index.md
   - User guide:
       - guide/index.md
-      - Start with one program:
+      - Get started:
           - Quickstart: guide/quickstart.md
-          - Programs and registers: guide/program.md
-          - Compile and run a logical circuit: guide/compiler.md
-          - Execution models: guide/execution-models.md
-      - Run and analyze programs:
-          - Simulation: guide/simulation.md
+          - Program & Register: guide/program.md
+          - Simulation choices: guide/execution-models.md
+      - Run & analyze:
+          - Simulate programs: guide/simulation.md
           - Estimate observables: guide/interpret-results.md
           - Ideal and noisy runs: guide/ideal-and-noisy.md
-          - Visualization: guide/visualization.md
-          - Performance: guide/performance.md
-      - Model hardware and physics:
-          - Hardware-profile simulation: guide/hardware-profile-simulation.md
-          - Linear optics simulation: guide/linear-optics.md
-          - Hamiltonian emulation: guide/hamiltonian-emulation.md
+          - Visualize results: guide/visualization.md
+          - Improve performance: guide/performance.md
+      - Hardware constraints:
+          - Hardware overview: guide/hardware-constraints.md
+          - Superconducting qubits: guide/superconducting-simulation.md
+          - Neutral-atom arrays: guide/atom-array-simulation.md
+          - Linear optics: guide/linear-optics.md
+          - Compile circuits: guide/compiler.md
+      - Hamiltonian emulation:
+          - Pulse programs: guide/hamiltonian-emulation.md
           - Transmon emulation: guide/transmon-emulation.md
           - Neutral-atom emulation: guide/neutral-atom-emulation.md
-      - Connect and diagnose:
-          - Interoperability: guide/interoperability.md
+      - Connect & debug:
+          - OpenQASM & Qiskit: guide/interoperability.md
           - Troubleshooting: guide/troubleshooting.md
   - Tutorials:
       - tutorials/index.md

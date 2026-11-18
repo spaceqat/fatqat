@@ -1,5 +1,9 @@
 # Performance and scaling
 
+As the number of qubits grows or you repeat a calculation for many parameter
+values, simulation time and memory use can rise quickly. A method that works
+well for a small example may become too costly for a larger study.
+
 Simulation cost depends on the state representation, requested results, and
 how you organize repeated runs. This guide covers these choices for
 [`Simulator`][fatqat.simulator.Simulator] and [`Estimator`][fatqat.Estimator].
@@ -34,7 +38,7 @@ Specialized representations can save much more than runtime tuning. For
 linear optics, `LOSimulator` uses fixed-photon states by default: four photons
 in twelve modes require just 1,365 amplitudes. See
 [Simulate larger interferometers](linear-optics.md#simulate-larger-interferometers).
-For physical models, first [choose how much physics to model](execution-models.md);
+For physical models, first [choose a simulation or emulation approach](execution-models.md);
 extra physical levels and pulse integration change the cost of the problem.
 
 ## Compare NumPy and Numba on your workload

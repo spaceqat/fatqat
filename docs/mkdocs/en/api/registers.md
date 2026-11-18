@@ -140,7 +140,7 @@ complete target collection and records one variadic operation. Measurements
 and QASM export require scalar targets. The
 backend validates physical placement and connectivity. See
 [Write quantum computations with Program](../guide/program.md) for the ordinary Program workflow and
-[Test a Program against a hardware profile](../guide/hardware-profile-simulation.md) for physical placement.
+[Test a Program against a hardware profile](../guide/superconducting-simulation.md) for physical placement.
 
 ::: fatqat.GridRegister
     options:
