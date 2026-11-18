@@ -1,5 +1,5 @@
 ---
-title: "Build antiferromagnetic correlations in a Rydberg chain"
+title: "Drive antiferromagnetic correlations in a Rydberg chain with a pulse"
 description: "Design a three-stage Rydberg pulse from physical units and watch short-range antiferromagnetic order emerge in a ten-site chain."
 icon: material-sine-wave
 figure_alts:
@@ -8,7 +8,7 @@ figure_alts:
 ---
 
 
-# Build antiferromagnetic correlations in a Rydberg chain
+# Drive antiferromagnetic correlations in a Rydberg chain with a pulse
 
 
 A single atom performs Rabi oscillations. Put several atoms close together and

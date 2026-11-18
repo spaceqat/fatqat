@@ -483,16 +483,14 @@ def _render_index(tutorials: tuple[Tutorial, ...]) -> str:
         "---",
         f"title: {json.dumps(content['title'], ensure_ascii=False)}",
         f"description: {json.dumps(content['description'], ensure_ascii=False)}",
+        "hide:",
+        "  - toc",
         "---",
         "<!-- Generated from tutorial category folders; do not edit here. -->",
         "",
         f"# {content['title']}",
         "",
         content["introduction"],
-        "",
-        f'!!! tip "{content["tip_title"]}"',
-        "",
-        f"    {content['tip']}",
         "",
     ]
     discovered = {tutorial.category for tutorial in tutorials}
@@ -510,19 +508,42 @@ def _render_index(tutorials: tuple[Tutorial, ...]) -> str:
             category,
         ),
     )
+    lines.extend(
+        (
+            f"## {content['browse']}",
+            "",
+            '<div class="fatqat-case-topics" markdown>',
+            "",
+        )
+    )
+    for category in categories:
+        title, _ = _category_label(category)
+        lines.append(f"- [{title}](#{category})")
+    lines.extend(("", "</div>", ""))
     for category in categories:
         title, description = _category_label(category)
         lines.extend(
             (
-                f"## {title}",
+                f"## {title} {{#{category}}}",
                 "",
                 description,
                 "",
-                '<div class="grid cards" markdown>',
+                '<div class="grid cards fatqat-case-cards" markdown>',
                 "",
             )
         )
-        for tutorial in (item for item in tutorials if item.category == category):
+        members = [item for item in tutorials if item.category == category]
+        order = GALLERY["categories"].get(category, {}).get("order", [])
+        unknown = set(order) - {item.slug for item in members}
+        if len(order) != len(set(order)) or unknown:
+            raise ValueError(f"invalid case-study order for {category}: {order}")
+        members.sort(
+            key=lambda item: (
+                order.index(item.slug) if item.slug in order else len(order),
+                item.slug,
+            )
+        )
+        for tutorial in members:
             source = tutorial.source
             thumbnail = f"{tutorial.slug}-01.png"
             lines.extend(
@@ -530,7 +551,7 @@ def _render_index(tutorials: tuple[Tutorial, ...]) -> str:
                     f"-   [![{source.figure_alts[0]}](../assets/generated/tutorials/{thumbnail})"
                     f"{{ loading=lazy }}]({tutorial.slug}.md)",
                     "",
-                    f"    :{source.icon}:{{ .lg .middle }} **{source.title}**",
+                    f"    :{source.icon}:{{ .lg .middle }} **[{source.title}]({tutorial.slug}.md)**",
                     "",
                     "    ---",
                     "",

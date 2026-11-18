@@ -169,8 +169,28 @@ nav:
       - Connect & debug:
           - OpenQASM & Qiskit: guide/interoperability.md
           - Troubleshooting: guide/troubleshooting.md
-  - Tutorials:
+  - Case studies:
       - tutorials/index.md
+      - Circuits and entanglement:
+          - Eight-atom GHZ: tutorials/atom-array-ghz8.md
+          - Qutrit-assisted Toffoli: tutorials/qutrit-assisted-toffoli.md
+      - Error correction:
+          - Atom loss in repetition codes: tutorials/atom-loss-erasure.md
+          - Surface-code memory: tutorials/surface-code-memory.md
+      - Quantum simulation:
+          - Rydberg spin correlations: tutorials/antiferromagnetic-chain.md
+          - PXP state revivals: tutorials/pxp-z2-revival.md
+          - H₂ ground-state energy: tutorials/vqe-h2.md
+      - Combinatorial optimization:
+          - QUBO with QAOA: tutorials/qubo-qaoa.md
+          - Grid islanding model: tutorials/islanding-model.md
+          - Grid splitting with QAOA: tutorials/islanding-qaoa.md
+      - Quantum machine learning:
+          - QNN digit recognition: tutorials/qnn-digits.md
+          - ADMET circuit search: tutorials/quantum-admet.md
+      - Pulse control and calibration:
+          - Gate calibration: tutorials/pulse-calibration.md
+          - Rydberg CZ pulses: tutorials/optimal-cz-control.md
   - API reference:
       - api/index.md
       - Build programs:

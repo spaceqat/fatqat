@@ -271,13 +271,13 @@ and measuring an empty site returns the erasure digit `2`.
 
     [:octicons-arrow-right-24: Read the guide](guide/index.md)
 
--   :material-flask-outline:{ .lg .middle } **Tutorials**
+-   :material-flask-outline:{ .lg .middle } **Case studies**
 
     ---
 
     Explore executable algorithm and physics studies.
 
-    [:octicons-arrow-right-24: Run a tutorial](tutorials/index.md)
+    [:octicons-arrow-right-24: Explore case studies](tutorials/index.md)
 
 -   :material-format-list-bulleted:{ .lg .middle } **API reference**
 
