@@ -23,14 +23,14 @@ workflow.
 - [Simulators](simulators/index.md)
 - [Emulators](emulators/index.md)
 - [Noise](noise.md)
+- [Backend](backend.md)
 - [Observables and estimation](estimator.md)
 - [Job](job.md)
 - [Result](result.md)
 
 ## Integrate and extend
 
-- [Backend](backend.md)
-- [Interoperability](interoperability/index.md)
+- [OpenQASM & Qiskit](interoperability/index.md)
 - [Matrix implementations](implementation.md)
 
 ## Errors and stability

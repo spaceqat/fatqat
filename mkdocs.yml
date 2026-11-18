@@ -223,7 +223,7 @@ nav:
           - Job: api/job.md
           - Result: api/result.md
       - Integrate and extend:
-          - Interoperability:
+          - OpenQASM & Qiskit:
               - api/interoperability/index.md
               - OpenQASM: api/interoperability/openqasm.md
               - Qiskit: api/interoperability/qiskit.md
