@@ -1,21 +1,9 @@
 # Write quantum computations with Program
 
-[`Program`][fatqat.Program] is what you build and pass to every FatQat
-backend. If you are used to a `Circuit` class, this is FatQat's broader
+[`Program`][fatqat.Program] is the object used to describe a quantum computation
+in FatQat. If you are used to a `Circuit` class, this is FatQat's broader
 equivalent: it can contain circuit gates, measurements, classical conditions,
-symbolic parameters, qubits and qudits, and direct physical controls. A Program
-records its resources and ordered instructions without deciding how a backend
-will execute them.
-
-If you want the compiler to map and route a static gate circuit before it is
-run, construct a [`LogicalProgram`][fatqat.LogicalProgram] instead. It keeps
-the same register and authoring model while restricting operations to the
-device-independent compiler frontend. The [compiler workflow](compiler.md)
-describes its supported gates and source restrictions.
-
-This chapter begins with a small qubit circuit, then introduces registers,
-feedforward, reusable parameters, mixed local dimensions, drawing, and direct
-controls.
+symbolic parameters, qubits and qudits, and direct physical controls.
 
 ## Declare the program's resources
 
@@ -268,9 +256,6 @@ plt.show()
     plt.show()
     ```
 
-Both renderers show the instructions recorded in the Program, not the result
-of executing them.
-
 !!! important
 
     The circuit drawing uses one wire per quantum or classical slot and does not
@@ -293,7 +278,5 @@ measured quantum and classical dimensions must agree. The selected backend
 then checks whether it supports those operations, dimensions, controls, and
 classical behavior.
 
-Continue with [choose how much physics to model](execution-models.md) to see
-how different backends interpret a Program. Use the
-[Program API](../api/program.md) when you need exact accepted forms or
-validation behavior.
+See the [Program API](../api/program.md) for accepted input forms and validation
+rules.

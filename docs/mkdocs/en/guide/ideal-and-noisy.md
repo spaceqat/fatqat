@@ -1,5 +1,12 @@
 # Compare the same Program ideally and noisily
 
+Real quantum devices are affected by their environment, imperfect controls,
+and measurement errors. These effects can change the state or the recorded
+outcomes. An ideal simulation helps you understand the intended computation;
+adding a noise model lets you study how selected imperfections affect it and
+bring the simulation closer to the conditions of an implementation. Which
+effects it captures depends on the model and parameters you choose.
+
 Attach a [`NoiseModel`][fatqat.NoiseModel] to a simulator to study how errors
 affect your results. The model specifies which errors occur and where they
 apply; you can run the same [`Program`][fatqat.Program] with or without it.

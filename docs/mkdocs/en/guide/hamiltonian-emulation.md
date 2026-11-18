@@ -1,32 +1,33 @@
-# Follow a Program into physical dynamics
+# Write and run pulse programs
 
-A FatQat emulator follows the physical state during timed controls. It accepts
-a [`Program`][fatqat.Program], builds a physical schedule, and integrates a
-time-dependent Hamiltonian (and, when requested, Lindblad evolution). Use it
-to study pulse duration, coupling, leakage, or noise acting continuously over
-elapsed time. Circuit simulators can include noise channels without resolving
-this time evolution.
+Quantum computation is ultimately implemented in physical systems. A gate in
+a circuit may correspond to a control pulse on a device, during which the
+system also evolves under its own dynamics and interactions. To understand
+what happens during that pulse, we need to model the physical system and
+calculate how it evolves under its Hamiltonian.
 
-Two authoring paths meet at that same schedule:
+A FatQat emulator takes a [`Program`][fatqat.Program] and follows the state
+while the controls are applied. You can use it to see how pulse duration and
+coupling affect the result, or how much population leaks into higher levels.
+It can also include noise that acts continuously during the evolution.
 
-```text
-Program gate ----> calibration ----\
-                                  +----> physical schedule
-PulseOperation --> controls ------/               |
-                                                   v
-                                    Hamiltonian/Lindblad evolution
-```
+In digital quantum computation, you describe the computation with gates.
+At the pulse level, a gate calibration tells the emulator which control
+signals realize each gate. In analog quantum computation, you work with the
+system's evolution directly and can specify control pulses to shape its
+Hamiltonian over time.
 
-The model supplies the physical levels, units, drift, channels, and coupling.
-A gate implementation map turns an ordinary gate into calibrated controls.
-A direct pulse supplies those controls explicitly. The following pages apply
-this shared workflow to transmons and atoms.
+Whether controls come from a gate calibration or a pulse you write directly,
+the emulator schedules when to apply them and uses that timing to calculate
+the system's evolution.
 
-## Run a calibrated gate
+![Calibrated gates and direct pulses both supply controls to the physical schedule. The schedule determines when the controls act during Hamiltonian or Lindblad evolution.](../assets/images/pulse-schedule.svg)
 
-Use a packaged physical model as a reproducible baseline, then construct its
-emulator. Here a one-qubit Program is realized on a model containing two
-three-level transmons:
+## Realize a gate with calibrated pulses
+
+Start with a one-qubit Program that applies a single `RX` gate. We run it
+with a built-in model of two three-level transmons. The model defines the
+physical levels, units, drift, control channels, and coupling.
 
 ```pycon
 >>> import numpy as np
@@ -43,25 +44,22 @@ three-level transmons:
 (9, 1)
 ```
 
-`RX` remains an ordinary Program operation. At execution time, the emulator's
-gate map obtains a pulse recipe from its calibration and binds that recipe to
-the model's drive channel. The physical model has two qutrits, so the returned
-state, a QuTiP ket `Qobj`, covers all $3^2$ basis states, including the second
-transmon. The Program
-still declares one two-level qubit. Each transmon's third physical level lets
-the result show leakage out of its qubit states, `|0>` and `|1>`.
+When the emulator runs `RX`, its gate implementation map supplies a calibrated
+pulse on the drive channel for the addressed transmon. The returned state is a
+QuTiP ket `Qobj` with $3^2$ amplitudes because it describes both three-level
+transmons in the model. Including the third level lets you see population leak
+out of the qubit states `|0>` and `|1>`.
 
-Packaged models and calibrations are reference snapshots. Supply a validated
-model document and implementation map when the physical system or calibration
-changes; do not interpret the packaged data as a live-device calibration.
+To model a different system or use a different calibration, supply its model
+document and gate implementation map.
 
-## Add a pulse directly
+## Specify a control pulse directly
 
-A direct pulse has three pieces: waveform samples, the physical channel they
-drive, and the duration of the control block. The code below builds them in
-that order as a [`SampledWaveform`][fatqat.emulator.SampledWaveform], a
-[`PulseControl`][fatqat.emulator.PulseControl], and finally a
-[`PulseOperation`][fatqat.operations.PulseOperation]:
+Use the same model to see how a waveform of your choice drives a transmon.
+A [`SampledWaveform`][fatqat.emulator.SampledWaveform] sets the signal at three
+times. A [`PulseControl`][fatqat.emulator.PulseControl] sends it to a physical
+drive channel, and a [`PulseOperation`][fatqat.operations.PulseOperation] sets
+the duration of the control block.
 
 ```pycon
 >>> duration = 20.0
@@ -81,31 +79,27 @@ that order as a [`SampledWaveform`][fatqat.emulator.SampledWaveform], a
 (9, 1)
 ```
 
-Notice that `direct_program.add(pulse)` has no logical target. The channel
-already names physical transmon `q0`, and a
-[`ResourceLayout`][fatqat.ResourceLayout] does not remap that address. The model and
-channel define the time and value units; the API reference records the exact
-domains for each emulator.
+In `direct_program.add(pulse)`, the drive channel already specifies physical
+transmon `q0`. A [`ResourceLayout`][fatqat.ResourceLayout] maps logical qubits
+to physical positions. The pulse uses the physical address and the time and
+signal units defined by the model and its channel.
 
-## Read a pulse as continuous evolution
+## How the state evolves during a pulse
 
-The three waveform samples above specify a drive over the full 20-unit
-interval. The emulator interpolates between them, combines the drive with
-drift and coupling terms, and integrates the physical state. The state covers
-every level in the physical model throughout the pulse, including levels that
-the Program did not declare.
+In the example above, the drive is zero at time 0, reaches 0.02 at time 10,
+and returns to zero at time 20. The emulator interpolates between those three
+samples to get a continuous waveform. At each instant, the drive combines
+with drift and coupling to determine the Hamiltonian and how the quantum
+state changes.
 
-The next chapter turns this mechanism into a concrete transmon experiment: it
-compares a calibrated rotation with a direct drive and makes the resulting
-leakage visible.
+## Schedule multiple pulses
 
-## Understand scheduling
-
-All controls inside one `PulseOperation` share its interval; `start_offset`
-can move an individual waveform within that interval. Between operations, the
-schedule preserves source order for blocks that use the same physical resource
-and may overlap independent blocks. Choose `"ASAP"` or
-`"ALAP"` through `execution_config` when that placement matters.
+The schedule determines when each pulse block starts. Two blocks that use the
+same drive channel run one after the other, in Program order. Blocks can
+overlap when their physical resources are independent. Use `execution_config`
+to choose `"ASAP"` or `"ALAP"` for the earliest or latest valid start times.
+Within one `PulseOperation`, use `start_offset` to delay an individual waveform
+relative to the start of that block.
 
 Drift and background continuous noise evolve throughout elapsed time. On an
 emulator that supports classical conditions, a false condition can skip a
@@ -113,12 +107,11 @@ control block without deleting its duration, so the model still evolves during
 the interval. This lets you study the effect of elapsed time even when no
 control is active.
 
-The constructor's `method` selects the mathematical representation and Result
-accessor: `statevector` (the default), `density_matrix`, or `unitary`. It does
-not select an internal differential-equation solver.
+Choose `method` when creating the emulator to set the representation used for
+the simulation and the corresponding Result accessor. The options are
+`statevector` (the default), `density_matrix`, and `unitary`.
 
-Continue with [Transmon emulation](transmon-emulation.md) or
-[Neutral-atom emulation](neutral-atom-emulation.md). For pulse object,
+For pulse object,
 schedule, simulation-method, and model contracts, use the
 [pulse-control API](../api/pulse-control/index.md) and
 [emulator API](../api/emulators/index.md).

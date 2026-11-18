@@ -1,5 +1,5 @@
 ---
-title: "Revivals and entanglement growth in an open PXP chain"
+title: "Initial-state revivals and entanglement growth in an open PXP chain"
 description: "Trotterize the constrained PXP Hamiltonian and compare many-body revivals and half-chain entropy with an independent exact solve."
 icon: material-waveform
 figure_alts:
@@ -7,7 +7,7 @@ figure_alts:
 ---
 
 
-# Revivals and entanglement growth in an open PXP chain
+# Initial-state revivals and entanglement growth in an open PXP chain
 
 
 Push the Rydberg blockade to its strong-coupling extreme and you are left

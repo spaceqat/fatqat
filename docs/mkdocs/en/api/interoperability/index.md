@@ -1,12 +1,12 @@
 ---
-title: "Interoperability"
+title: "OpenQASM & Qiskit"
 ---
 
-# Interoperability
+# OpenQASM & Qiskit
 
 
 Import or export supported OpenQASM, convert compatible Qiskit circuits, or use
-FatQat through Qiskit's backend interface. See [Bring Programs to and from OpenQASM and Qiskit](../../guide/interoperability.md)
+FatQat through Qiskit's backend interface. See [Connect FatQat with OpenQASM and Qiskit](../../guide/interoperability.md)
 for the guided workflows.
 
 - [OpenQASM](openqasm.md)

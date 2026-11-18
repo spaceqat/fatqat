@@ -3,26 +3,26 @@ template: home.html
 hide:
   - navigation
   - toc
-description: Build one FatQat Program and choose the physical detail each quantum study needs.
+description: Explore quantum algorithms, hardware constraints, and physical dynamics with FatQat, a Python package for quantum simulation and emulation.
 hero:
-  eyebrow: Model and execute quantum programs
+  eyebrow: A Python toolkit for quantum simulation and emulation
   title: One Program. Three levels of physical detail.
   summary: >-
-    Write a quantum program once.
-    Use the same Program to explore algorithm behavior,
-    test device constraints, or follow time-dependent physical dynamics.
+    Explore algorithms, check hardware constraints, and study pulse-driven dynamics.
+    FatQat brings these tasks together with a shared Program representation
+    and consistent interfaces for running computations and reading results.
   primary_action: Build your first Program
-  secondary_action: Compare execution levels
+  secondary_action: Choose a simulation approach
   install_action: Install from source
   structure_alt: One FatQat Program runs through general simulation, hardware-profile simulation, or Hamiltonian emulation, with every path returning a Result.
-  choice_label: Choose one execution level
+  choice_label: Choose the physical detail you need
   general_title: General simulation
   general_detail: states · counts · noise
   hardware_title: Hardware-profile simulation
   hardware_detail: native gates · connectivity
   hamiltonian_title: Hamiltonian emulation
   hamiltonian_detail: pulses · leakage · dynamics
-  visual_note: Start with one Program, then choose the physical detail at run time.
+  visual_note: A shared Program interface, with operations and controls suited to each backend.
 ---
 
 !!! warning "Under active development"
@@ -34,28 +34,30 @@ hero:
 
 <div class="grid cards" markdown>
 
--   :material-code-braces-box:{ .lg .middle } **One quantum program**
+-   :material-code-braces-box:{ .lg .middle } **More than a gate circuit**
 
-    Keep gates, measurements, conditions, parameters, qudits, and direct
-    controls in a single `Program`.
+    Express gates, measurements, classical conditions, and parameters in a
+    `Program`, alongside qudits and direct physical controls.
 
 -   :material-tune-variant:{ .lg .middle } **Only the detail you need**
 
-    Start with algorithm behavior, add device constraints when needed, or
-    follow continuous-time dynamics when the physics matters.
+    Study an algorithm at the circuit level, check whether operations obey
+    device rules, or follow the dynamics during a control pulse.
 
 -   :material-transit-connection-variant:{ .lg .middle } **One execution workflow**
 
-    Every backend accepts a `Program` and uses the same `Result`
-    interface, while validating what it can realize.
+    Run computations and inspect their results through consistent `Job` and
+    `Result` interfaces. Each backend checks that the `Program` uses operations
+    it supports.
 
 </div>
 
-## One workflow, three execution levels
+## Three ways to explore a quantum computation
 
-Every path starts from the same [`Program`][fatqat.Program] and returns familiar
-`Job` and `Result` objects. Choose the least physical detail that can answer the
-question in front of you.
+Choose a model around the question you want to answer. All three approaches
+use [`Program`][fatqat.Program], but the supported operations and required
+controls depend on the backend. A gate circuit may need compilation or pulse
+definitions before it can run on a hardware model.
 
 <div class="grid cards" markdown>
 
@@ -63,7 +65,8 @@ question in front of you.
 
     ---
 
-    Inspect states, counts, and channel noise when algorithm behavior is the question.
+    Understand an algorithm through quantum states and measurement outcomes,
+    and explore how noise changes its behavior.
 
     [:octicons-arrow-right-24: Study simulation](guide/simulation.md)
 
@@ -71,9 +74,10 @@ question in front of you.
 
     ---
 
-    Add native gates and connectivity when device constraints matter.
+    Check supported gates and connectivity, or track atom loading, pairing,
+    and loss as part of the computation.
 
-    [:octicons-arrow-right-24: Model a hardware profile](guide/hardware-profile-simulation.md)
+    [:octicons-arrow-right-24: Model a hardware profile](guide/hardware-constraints.md)
 
 -   :material-sine-wave:{ .lg .middle } **Hamiltonian emulation**
 
@@ -86,12 +90,13 @@ question in front of you.
 
 </div>
 
-## One Grover algorithm, three execution levels
+## One Grover algorithm, three models
 
-This three-qubit Grover search begins with all eight bit strings equally
-likely. Two iterations mark `101` and amplify it. The results below show how
-three execution levels change the outcome as hardware constraints and physical
-dynamics are introduced.
+How does an algorithm behave when it meets a device model? This three-qubit
+Grover search starts with all eight bit strings equally likely, then marks and
+amplifies `101` over two iterations. Starting from the same algorithm, the
+examples below compare ideal circuit evolution, noisy native gates, and
+calibrated control pulses. Each model reveals different effects on the result.
 
 <figure markdown="span">
 
@@ -120,7 +125,6 @@ dynamics are introduced.
 
     Calibrated pulses, three physical levels, and the same coherence times
     return `101` with about **74.02%** probability; physical leakage is **0.0669%**.
-    This run realizes the compiled X/SX/RZ/CZ gates with calibrated pulses.
 
 </div>
 
@@ -169,12 +173,13 @@ algorithm behavior, but the gate decomposition and routing affect noisy results.
         --8<-- "docs/mkdocs/figure-sources/home_grover_transmon.py"
         ```
 
-## Encode hardware behavior when needed
+## Make hardware operations part of the program
 
-Algorithm developers can stay with general simulation. When their work requires
-more detail, compiler and hardware developers can add device-specific operations
-to a `Program`. The backend validates when those operations are allowed and
-tracks their effects.
+Some hardware behavior changes more than the quantum state: atoms can be
+loaded or lost, and the available interactions can change during a computation.
+A `Program` can express these device-specific operations alongside quantum
+gates. The backend tracks their effects and checks which operations are
+allowed at each step.
 
 [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] provides one example.
 Sites begin empty, so `Put` loads the atoms; `Pair` makes native `CZ` available,
@@ -249,7 +254,7 @@ and measuring an empty site returns the erasure digit `2`.
     ).result().get_counts()
     print(lossy_counts)  # {'1': 86, '2': 14}
     ```
-[:octicons-arrow-right-24: Track occupancy, pairing, and loss](guide/hardware-profile-simulation.md#atom-occupancy-and-pairing)
+[:octicons-arrow-right-24: Track occupancy, pairing, and loss](guide/atom-array-simulation.md#atom-occupancy-and-pairing)
 
 ## Explore the documentation
 
@@ -271,13 +276,13 @@ and measuring an empty site returns the erasure digit `2`.
 
     [:octicons-arrow-right-24: Read the guide](guide/index.md)
 
--   :material-flask-outline:{ .lg .middle } **Tutorials**
+-   :material-flask-outline:{ .lg .middle } **Case studies**
 
     ---
 
     Explore executable algorithm and physics studies.
 
-    [:octicons-arrow-right-24: Run a tutorial](tutorials/index.md)
+    [:octicons-arrow-right-24: Explore case studies](tutorials/index.md)
 
 -   :material-format-list-bulleted:{ .lg .middle } **API reference**
 

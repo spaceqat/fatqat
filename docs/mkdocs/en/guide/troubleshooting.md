@@ -1,33 +1,17 @@
-# Diagnose a Program workflow
+# Troubleshoot common problems { #diagnose-a-program-workflow }
 
-Most first-run problems occur at one of four boundaries:
-
-```text
-write the Program
-       |
-       v
-match the target
-       |
-       v
-configure the run
-       |
-       v
-read the Result
-```
-
-Start with the symptom below. You should not need to inspect FatQat's internal
-execution engine.
+Find the symptom that matches what you see. Start with the suggested check or
+fix, then follow the linked example if you need more context.
 
 ## Writing the Program
 
 ???+ question "An integer target is ambiguous"
 
-    Bare integers are convenient for `Program(2)`, where there is only one
-    quantum register. Once a Program contains several registers, use the register
-    references you created:
+    If your Program has multiple quantum registers, specify the register as
+    well as the index. For example, use `qubit[0]` to pick slot 0 in `qubit`.
 
+    <!-- guide-test: skip -->
     ```python
-    # guide-test: skip
     qubit = fq.QuantumRegister(1, name="qubit")
     qutrit = fq.QuantumRegister(1, dim=3, name="qutrit")
     program = fq.Program([qubit, qutrit])
@@ -36,16 +20,15 @@ execution engine.
     program.add(ops.Shift(1), qutrit[0])
     ```
 
-    This also makes each target's local dimension unambiguous. See
-    [Write quantum computations with Program](program.md).
+    See [Program & Register](program.md) for more examples of register references.
 
 ??? question "Measurement reports a dimension mismatch"
 
-    A measured quantum resource and its classical destination must have the same
-    local dimension. A qutrit needs a classical trit, not an ordinary bit:
+    Check that the classical destination has the same dimension as the resource
+    you measure. For a qutrit, use a classical register with `dim=3`.
 
+    <!-- guide-test: skip -->
     ```python
-    # guide-test: skip
     qutrit = fq.QuantumRegister(1, dim=3)
     trit = fq.ClassicalRegister(1, dim=3)
     program = fq.Program([qutrit], [trit])
@@ -54,11 +37,11 @@ execution engine.
 
 ??? question "The Program still contains an unbound parameter"
 
-    Binding returns a new Program; it does not modify the template in place.
-    Keep the returned value and submit that one:
+    Run the Program returned by `assign_parameters()`. That Program contains the
+    bound values, and the original is available for binding another set.
 
+    <!-- guide-test: skip -->
     ```python
-    # guide-test: skip
     bound_program = template.assign_parameters({theta: 0.4})
     backend.run(bound_program)
     ```
@@ -70,48 +53,34 @@ execution engine.
 
 ???+ question "An operation works on Simulator but is unsupported here"
 
-    That usually means the selected hardware profile or emulator cannot realize
-    the instruction as written. The general simulator accepts a wider logical
-    operation set; constrained targets intentionally do not.
+    Check the device or emulator's supported operations first. Use the general
+    `Simulator` to check the algorithm itself. To model the selected device,
+    write the Program using its native operations or
+    [compile a supported logical circuit](compiler.md) for that target.
 
-    Check the target's supported operations and ask which detail you meant to
-    study:
+??? question "A two-qubit gate fails on the selected positions"
 
-    - return to the general simulator for unrestricted algorithm behavior;
-    - rewrite the Program in the profile's native operations when hardware
-      constraints are the point; or
-    - supply an implementation/calibration only if you are deliberately extending
-      the target.
-
-    FatQat does not silently transpile or route the Program. See [Choose how much
-    physics to model](execution-models.md).
-
-??? question "A two-resource gate fails because of placement"
-
-    The operation can be native while its two physical locations are not
-    connected. Inspect or choose a [`ResourceLayout`][fatqat.ResourceLayout] and keep the
-    ordered logical targets distinct from their device labels. The worked
-    failure-and-fix is in [Test a Program against a hardware
-    profile](hardware-profile-simulation.md).
+    Look up the two physical positions in the
+    [`ResourceLayout`][fatqat.ResourceLayout] and check that the device connects
+    them. Use a pair that shares a connection, as in
+    [the superconducting device example](superconducting-simulation.md).
 
 ??? question "A direct control is rejected by an emulator"
 
-    Each pulse channel comes from a particular physical model and identifies one
-    of that model's resources. Build the control from the same model used by the
-    emulator. Then check that the waveform uses the model's time and control units,
-    that its values are allowed, and that the operation duration covers every
-    control. [Follow a Program into physical
-    dynamics](hamiltonian-emulation.md) builds this chain one piece at a time.
+    First check that the channel is available on the model passed to the
+    emulator. Then check the waveform's units and allowed values, and make sure
+    the pulse duration covers every control. See
+    [Write and run pulse programs](hamiltonian-emulation.md) for a worked example.
 
 ## Configuring the run
 
 ??? question "Counts change each time"
 
-    Counts are sampled. Increase `shots` when you want a steadier estimate, and
-    set a seed when you need to reproduce a particular sample:
+    Increase `shots` for a steadier estimate. Set a seed when you need the
+    same sample to reproduce a result.
 
+    <!-- guide-test: skip -->
     ```python
-    # guide-test: skip
     result = backend.run(
         program,
         shots=1000,
@@ -119,29 +88,27 @@ execution engine.
     ).result()
     ```
 
-    A fixed seed aids debugging; it does not make a small sample more accurate.
-
 ??? question "A statevector is unavailable for a noisy or dynamic run"
 
-    After measurement, reset, or trajectory noise, one statevector is only one
-    sampled history. Request it with `shots=1` when that single history is what you
-    want. Use density-matrix simulation for an exact mixed state.
+    To inspect one trajectory after measurement, reset, or trajectory noise,
+    run with `shots=1` and request the final state. Use density-matrix simulation
+    when you need the mixed state averaged over trajectories.
 
 ??? question "The first Numba run is unexpectedly slow"
 
-    Numba compiles kernels lazily. Warm the workload before measuring repeated
-    runtime, or choose NumPy when predictable one-off latency matters more. The
-    benchmark pattern is in [Performance and scaling](performance.md).
+    Run the same workload once before timing it. Numba compiles kernels the first
+    time they run. To time a one-off run, try NumPy. See
+    [Performance and scaling](performance.md) for the benchmark setup.
 
 ## Reading the Result
 
-???+ question "A Result accessor says its data is unavailable"
+???+ question "A requested field is missing from the Result"
 
-    Runs contain only the data that the selected simulation method produced and
-    that you requested. Inspect the result before choosing an accessor:
+    Inspect `result.available_data` to see which fields the run produced. If
+    the field you need is missing, check the requested outputs and simulation method.
 
+    <!-- guide-test: skip -->
     ```python
-    # guide-test: skip
     print(result.available_data)
     if "statevector" in result.available_data:
         state = result.get_statevector()
@@ -152,12 +119,12 @@ execution engine.
 
 ??? question "How are count strings ordered?"
 
-    Displayed count strings and tuple keys both put classical slot 0 first, on
-    the left or at tuple position 0. When local dimensions differ, tuple keys
-    avoid string-token parsing; native strings use commas if any classical
-    dimension is at least 10.
+    Read a FatQat count string from classical slot 0 on the left. Tuple keys
+    follow the same order and are easier to read when slots have different
+    dimensions. When any classical dimension is at least 10, the strings
+    separate entries with commas.
 
-## Reduce the problem without losing the clue
+## Make a small example that reproduces the problem { #reduce-the-problem-without-losing-the-clue }
 
 If none of those matches, make a copy of the failing workflow and reduce it:
 

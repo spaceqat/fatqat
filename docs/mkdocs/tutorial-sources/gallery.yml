@@ -6,26 +6,23 @@ ui:
     downloads: Downloads
     python_script: Python script
     notebook: Jupyter notebook
-    default_category_description: Tutorials collected from the {title} source folder.
+    default_category_description: Case studies in {title}.
 
 index:
   en:
-    title: Tutorials
+    title: Case studies
     description: Executable FatQat case studies in circuits, control, error correction, simulation, optimization, and machine learning.
     introduction: >-
-      Explore complete, executable case studies grouped by topic. If you are new
-      to FatQat, start with the [quickstart](../guide/quickstart.md) to learn how
-      to build, run, and inspect a program.
-    tip_title: Choose a path
-    tip: >-
-      Follow [eight-atom GHZ preparation](atom-array-ghz8.md) with
-      [atom-loss error correction](atom-loss-erasure.md), or move from
-      [gate calibration](pulse-calibration.md) to
-      [Rydberg CZ pulse design](optimal-cz-control.md). For optimization, work
-      through [QUBO and QAOA](qubo-qaoa.md),
-      [the islanding model](islanding-model.md), and
-      [islanding with QAOA](islanding-qaoa.md).
-    open: Open tutorial
+      How does atom loss affect error correction? How does a control pulse change
+      a quantum gate's behavior? And how can a power-grid partition be expressed
+      as an optimization problem? These case studies turn questions like these
+      into models you can run and explore with FatQat. Follow each problem from
+      its background and assumptions through runnable code to plots and an
+      explanation of the results. Choose a topic that interests you, run the
+      example, and change its parameters to investigate further. For the basic
+      use of individual features, see the [user guide](../guide/index.md).
+    browse: Browse by topic
+    open: Explore case study
 
 # Change this list to choose the gallery order. Unlisted folders follow alphabetically.
 category_order:
@@ -56,6 +53,7 @@ categories:
         Estimate molecular ground-state energies and explore correlations,
         revivals, and entanglement in interacting quantum systems.
   combinatorial-optimization:
+    order: [qubo-qaoa, islanding-model, islanding-qaoa]
     en:
       title: Combinatorial optimization
       description: >-
@@ -68,6 +66,7 @@ categories:
         Train parameterized circuits and search circuit structures for
         classification and regression with batched parameter sweeps.
   pulse-control:
+    order: [pulse-calibration, optimal-cz-control]
     en:
       title: Pulse control and calibration
       description: >-

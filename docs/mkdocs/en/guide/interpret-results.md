@@ -1,7 +1,12 @@
 # Estimate observables
 
-Use [`Estimator`][fatqat.Estimator] to calculate expectation values, such as
-spin correlations or energies. Define the quantity with an
+Many quantum-physics problems ask about quantities such as energy or spin
+correlations, rather than every component of the quantum state. For these tasks,
+you often need only the expectation value of one observable or a group of
+observables, without requesting the full state as an output.
+
+Use [`Estimator`][fatqat.Estimator] to calculate these expectation values.
+Define each quantity with an
 [`Observable`][fatqat.Observable], then supply a Program and a
 [compatible simulator or emulator](../api/estimator.md#backend-support).
 You can calculate the expectation directly from the state or estimate it

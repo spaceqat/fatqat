@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 184">
+  <title>SWAP from site 4 to 1, then CZ on sites 0 and 1</title>
+  <rect width="520" height="184" rx="12" fill="#f5f8fa"/>
+  <g font-family="sans-serif" text-anchor="middle" font-size="17" fill="#213742">
+    <text x="32" y="58">0</text><text x="32" y="110">1</text><text x="32" y="162">4</text>
+    <text x="215" y="25">SWAP</text><text x="337" y="25">CZ</text>
+    <text x="83" y="58">A</text><text x="83" y="110">|0⟩</text><text x="83" y="162">B</text>
+    <text x="459" y="58">A</text><text x="459" y="110">B</text><text x="459" y="162">|0⟩</text>
+  </g>
+  <path d="M106 52h326 M106 104h326 M106 156h326" fill="none" stroke="#8597a1" stroke-width="2"/>
+  <g stroke="#126a75" stroke-width="4" fill="none">
+    <path d="M215 104v52 M208 97l14 14 M208 111l14 -14 M208 149l14 14 M208 163l14 -14 M337 52v52"/>
+  </g>
+  <g fill="#126a75"><circle cx="337" cy="52" r="7"/><circle cx="337" cy="104" r="7"/></g>
+</svg>

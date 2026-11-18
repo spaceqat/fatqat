@@ -1,55 +1,81 @@
-# Choose and run a neutral-atom workflow
+# Emulate neutral atoms with laser pulses
 
-FatQat offers two neutral-atom execution levels. Choose the least detailed
-one that still contains the effect you want to study:
+Optical tweezers hold individual neutral atoms at chosen positions. A laser
+can drive an atom from its ground state $\lvert g\rangle$ to an excited Rydberg
+state $\lvert r\rangle$. When two nearby atoms are both in $\lvert r\rangle$,
+their interaction shifts the energy of the pair. A pulse tuned to excite one
+atom then has a much harder time exciting both. This suppression is called
+Rydberg blockade.
 
-<div class="grid cards" markdown>
+With [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator], you can study
+that effect using the [pulse workflow](hamiltonian-emulation.md). The example
+below changes only the distance between two atoms and checks how often both
+are excited at the end of the same pulse. For loading, moving, or pairing
+atoms in a gate-level Program, see [Neutral-atom array simulation](atom-array-simulation.md).
 
--   **Gate-level array**
+## Drive two atoms with the same pulse { #drive-the-array-with-the-two-level-model }
 
-    [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] adds occupancy and a changing
-    pairing graph to finite qubit gates. Use it for fast loading, loss, and
-    connectivity checks.
-
--   **Two physical levels**
-
-    [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator] follows $\lvert g\rangle$ and
-    $\lvert r\rangle$. Use it for global drive, detuning, and many-body Rydberg
-    dynamics.
-
-</div>
-
-The atom-array simulator is the profile introduced in
-[Hardware-profile simulation](hardware-profile-simulation.md); it does not
-integrate a Hamiltonian. The physical emulator below uses the pulse workflow
-from [Hamiltonian emulation](hamiltonian-emulation.md).
-
-## Describe the sites once
-
-The physical emulator uses a fixed set of sites described by an
-[`AtomArrangement`][fatqat.emulator.AtomArrangement]. Program resources map to those
-sites in declaration order by default:
+The example starts with both atoms in $\lvert g\rangle$. Write one resonant
+drive pulse that acts on both atoms for 1 µs, with a peak Rabi rate of 3 rad/µs.
+The two-qubit Program provides one two-level resource per atom. The emulator
+gets the positions separately from an
+[`AtomArrangement`][fatqat.emulator.AtomArrangement].
 
 ```pycon
 >>> import numpy as np
 >>> import fatqat as fq
 >>> import fatqat.operations as ops
->>> arrangement = fq.emulator.AtomArrangement.chain(
-...     num_sites=2,
-...     spacing=6.0,
+>>> model = fq.emulator.Atom2LevelModel.from_document(
+...     fq.emulator.load_model_document("atom2level.reference")
 ... )
->>> arrangement.num_sites
-2
+>>> duration = 1.0
+>>> times = (0.0, 0.5, duration)
+>>> drive = fq.emulator.SampledWaveform(times, (0.0, 3.0, 0.0))
+>>> drive_control = fq.emulator.PulseControl(model.control.drive(), drive)
+>>> program = fq.Program(2)
+>>> program.add(ops.PulseOperation(duration, (drive_control,)))
 ```
 
-To choose individual positions, supply `(x, y)` coordinates for a 2D layout
-or `(x, y, z)` coordinates for a 3D layout. All sites in an arrangement must
-use the same number of components, and distances are in micrometres:
+Run that Program at 4 µm and 12 µm. The statevector lists amplitudes in the
+order $\lvert gg\rangle$, $\lvert gr\rangle$, $\lvert rg\rangle$, and
+$\lvert rr\rangle$. Square their magnitudes to get the probabilities, and
+add the middle two to find the probability of exactly one excitation.
+
+```pycon
+>>> print("Distance   0 excited   1 excited   2 excited")
+Distance   0 excited   1 excited   2 excited
+>>> for distance in (4.0, 12.0):
+...     arrangement = fq.emulator.AtomArrangement.chain(2, spacing=distance)
+...     emulator = fq.emulator.Atom2LevelEmulator(model, arrangement=arrangement)
+...     state = emulator.run(program).result().get_statevector()
+...     probabilities = np.abs(state.full().ravel()) ** 2
+...     zero = probabilities[0]
+...     one = probabilities[1:3].sum()
+...     two = probabilities[3]
+...     print(f"{distance:>2g} µm       {zero:>7.3%}     {one:>7.3%}     {two:>7.3%}")
+ 4 µm        2.502%     97.496%      0.002%
+12 µm        8.521%     41.347%     50.132%
+```
+
+At 4 µm, the pulse almost always excites exactly one atom, and the chance of
+exciting both is about 0.002%. At 12 µm, the chance of exciting both rises to
+about 50%. In this model, the interaction between two Rydberg excitations
+scales as $C_6/R^6$, where $R$ is their separation. The larger separation
+weakens the interaction, so the same pulse can excite both atoms much more
+readily.
+
+## Describe other arrangements { #describe-the-sites-once }
+
+Each arrangement fixes the positions used by the emulator. By default, it
+maps Program resources to those positions in declaration order. Use a
+[`ResourceLayout`][fatqat.ResourceLayout] to supply a different mapping.
+
+To specify positions yourself, pass $(x, y)$ coordinates for two dimensions
+or $(x, y, z)$ coordinates for three. Use the same number of components for
+every site. Distances are in micrometres.
 
 ```pycon
 >>> planar = fq.emulator.AtomArrangement.from_coordinates([(0, 0), (3, 4)])
->>> planar.coordinates
-((0.0, 0.0, 0.0), (3.0, 4.0, 0.0))
 >>> planar.spatial_dimension
 2
 >>> spatial = fq.emulator.AtomArrangement.from_coordinates([(0, 0, 0), (3, 4, 5)])
@@ -57,17 +83,9 @@ use the same number of components, and distances are in micrometres:
 3
 ```
 
-The factory preserves input order as site order and copies the positions
-into immutable tuples. Explicit z values select 3D even when every z value
-is zero. `chain()` and `rectangular()` describe layouts embedded in 2D.
-Custom coordinates have no declared row count, column count, or uniform
-spacing; their `rows`, `cols`, and `spacing` attributes are `None`. See the
-[arrangement API](../api/atom-emulators.md#arrangements-and-program-resources)
-for input constraints.
-
-You can give rectangular layouts different x and y spacings, then combine
-layouts in the order their sites should appear. Labels let you retrieve the
-site indices belonging to each part:
+For a rectangular array, you can set separate spacings along $x$ and $y$. To
+describe several regions in one arrangement, combine them in the desired site
+order and use labels to look up their indices.
 
 ```pycon
 >>> storage = fq.emulator.AtomArrangement.rectangular(
@@ -83,77 +101,27 @@ site indices belonging to each part:
 (4, 5)
 ```
 
-Combining layouts requires distinct positions and unique group names. A
-combination containing any 3D layout is 3D. Nested combinations retain their
-groups with indices adjusted to the final site order. You can also give
-`combine()` a label for a group covering the entire result.
+See the [arrangement API](../api/atom-emulators.md#arrangements-and-program-resources)
+for coordinate and group rules.
 
-The arrangement is fixed geometry, not an atom-transport instruction. It sets
-the distances used by Rydberg interactions, and the Program must declare
-exactly one dimension-two resource per site.
+## Add detuning to the drive
 
-Use a [`ResourceLayout`][fatqat.ResourceLayout] only when you need to override the
-default declaration-order mapping.
+Detuning sets how far the drive frequency is from the atomic transition.
+Use a second control alongside the drive to vary it during the pulse. Both
+channels act on every atom and use rad/µs.
 
-## Drive the array with the two-level model
-
-The two-level model uses global drive and detuning channels. Its default gate
-map is empty, so a Program normally contains direct pulse blocks:
-
-```pycon
->>> atom2_model = fq.emulator.Atom2LevelModel.from_document(
-...     fq.emulator.load_model_document("atom2level.reference")
-... )
->>> atom2 = fq.emulator.Atom2LevelEmulator(
-...     atom2_model,
-...     arrangement=arrangement,
-... )
->>> drive = fq.emulator.SampledWaveform(
-...     (0.0, 0.5, 1.0),
-...     (0.0, 0.5, 0.0),
-... )
->>> detuning = fq.emulator.SampledWaveform(
-...     (0.0, 0.5, 1.0),
-...     (0.0, 0.1, 0.0),
-... )
->>> global_controls = (
-...     fq.emulator.PulseControl(atom2_model.control.drive(), drive),
-...     fq.emulator.PulseControl(atom2_model.control.detuning(), detuning),
-... )
->>> global_program = fq.Program(arrangement.num_sites)
->>> global_program.add(ops.PulseOperation(1.0, global_controls))
->>> atom2_state = atom2.run(global_program).result().get_statevector()
->>> atom2_state.shape
-(4, 1)
->>> bool(np.isclose(atom2_state.norm(), 1.0))
-True
->>> round(float(1.0 - abs(atom2_state[0, 0]) ** 2), 3)
-0.054
+```python
+detuning = fq.emulator.SampledWaveform(times, (0.0, 0.1, 0.0))
+detuning_control = fq.emulator.PulseControl(model.control.detuning(), detuning)
+detuned_program = fq.Program(2)
+detuned_program.add(
+    ops.PulseOperation(duration, (drive_control, detuning_control))
+)
 ```
 
-Both controls act on every site. The arrangement supplies the distances and
-the model supplies the signed interaction strength, so changing the spacing
-can change the dynamics without changing the Program. By default every site
-pair interacts. Set `execution_config={"interaction_cutoff": distance}` on a
-particular `run()` to remove terms beyond that distance; this is a numerical
-Hamiltonian truncation rather than a blockade radius.
+The emulator includes interactions between every pair of atoms by default.
+Use `execution_config={"interaction_cutoff": distance}` on a run to truncate
+the Hamiltonian by dropping pairs farther apart than that distance.
 
-For this short pulse, about 5.4% of the final probability lies outside the
-all-ground state. That number is a physical consequence of the waveform,
-detuning, spacing, interaction model, and duration—not a gate label.
-
-The default method returns the complete two-level statevector. With supported
-Lindblad noise it follows one seeded trajectory when a final state is
-explicitly requested; choose `method="density_matrix"` for the exact ensemble.
-Terminal measurement returns counts. Mid-circuit measurement, reset,
-conditions, and per-site direct controls are not part of this two-level
-workflow.
-
-## Continue with a physics study
-
-Continue with the tutorials for a
-[PXP revival](../tutorials/pxp-z2-revival.md),
-[antiferromagnetic chain](../tutorials/antiferromagnetic-chain.md),
-or [gate-level GHZ preparation](../tutorials/atom-array-ghz8.md).
-For model schemas, units, channel limits, and noise support, use the
+For units, channel limits, noise, and measurement support, see the
 [neutral-atom emulator API](../api/atom-emulators.md).

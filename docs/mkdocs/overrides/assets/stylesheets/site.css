@@ -61,3 +61,44 @@
     max-height: 14rem;
   }
 }
+
+/* Keep the original dark mark legible in both color schemes. */
+.md-header__button.md-logo img,
+.md-nav__button.md-logo img {
+  box-sizing: content-box;
+  padding: 0.15rem;
+  border-radius: 0.2rem;
+  background: #fff;
+}
+
+/* Topic links and consistent previews in the case-study gallery. */
+.md-typeset .fatqat-case-topics ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.md-typeset .fatqat-case-topics li {
+  margin: 0;
+}
+
+.md-typeset .fatqat-case-topics a {
+  display: block;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.3rem;
+}
+
+.md-typeset .fatqat-case-topics a:hover {
+  border-color: var(--md-accent-fg-color);
+}
+
+.md-typeset .fatqat-case-cards > ul > li > p:first-child img {
+  display: block;
+  width: 100%;
+  height: 10rem;
+  object-fit: contain;
+}

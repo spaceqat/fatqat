@@ -1,5 +1,16 @@
 # Compile and run a logical circuit
 
+A logical circuit describes which gates to apply to which qubits. To run it
+on a device model, the gates also need to fit the device's instruction set
+and layout. A superconducting device may use `CZ` as its native two-qubit
+gate, for example, and allow it only between directly connected qubits.
+The compiler translates the gates, assigns logical qubits to physical
+positions, and adds routing operations when needed.
+
+You can simulate a logical circuit directly to check your algorithm.
+Compile it when you want to see how it runs under the constraints of a
+particular device, or to compare the same circuit on different devices.
+
 FatQat can prepare the same logical circuit for a superconducting simulator or
 a neutral-atom simulator. The normal workflow has three steps:
 
