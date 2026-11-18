@@ -62,6 +62,15 @@
   }
 }
 
+/* Keep the original dark mark legible in both color schemes. */
+.md-header__button.md-logo img,
+.md-nav__button.md-logo img {
+  box-sizing: content-box;
+  padding: 0.15rem;
+  border-radius: 0.2rem;
+  background: #fff;
+}
+
 /* Topic links and consistent previews in the case-study gallery. */
 .md-typeset .fatqat-case-topics ul {
   display: flex;

@@ -187,3 +187,22 @@
     gap: 0.15rem;
   }
 }
+
+.fatqat-hero__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+  color: var(--md-default-fg-color);
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.fatqat-hero__brand img {
+  box-sizing: content-box;
+  width: 3.6rem;
+  height: auto;
+  padding: 0.4rem;
+  border-radius: 0.5rem;
+  background: #fff;
+}
