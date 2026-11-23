@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/mkdocs/en/assets/images/space-qat-logo.png" alt="FatQat logo" width="160">
+</p>
+
 # FatQat
 
 [English](README.md) | 简体中文 | [한국어](README-KR.md)
