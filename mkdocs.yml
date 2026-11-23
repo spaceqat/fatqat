@@ -252,7 +252,7 @@ nav:
               - api/interoperability/index.md
               - OpenQASM: api/interoperability/openqasm.md
               - Qiskit: api/interoperability/qiskit.md
-          - Implementation maps: api/implementation.md
+          - Matrix implementation maps: api/implementation.md
       - Errors and stability:
           - Exceptions: api/exceptions.md
           - Experimental APIs: api/experimental.md

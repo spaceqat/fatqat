@@ -1144,7 +1144,9 @@ def to_qasm(program: Program, version: int = 3) -> str:
     The qudit gate families are also accepted when their registers have
     ``dim == 2`` and are lowered to the equivalent qubit gates. ``iSwap``
     (both versions) and ``SX`` (OpenQASM 2 only, up to global phase) add one
-    local gate definition each to the output.
+    local gate definition each to the output. A ``Barrier`` exports as
+    a native ``barrier`` statement. Any condition on the barrier is ignored,
+    as in the built-in simulators.
 
     OpenQASM 3 can express FATQAT's arbitrary AND of bit comparisons. OpenQASM
     2 can express a condition only when it fixes every bit of one classical
@@ -1162,10 +1164,8 @@ def to_qasm(program: Program, version: int = 3) -> str:
         BackendValidationError: If the program has unbound parameters.
         QasmExportError: If a register has ``dim != 2``; an operation has no
             defined lowering; a target is a :class:`~fatqat.RegisterView`; or
-            a QASM 2 condition cannot be represented. Barriers export as
-            native ``barrier`` statements (a condition on a barrier is
-            ignored, matching the built-in simulators); direct pulse
-            operations are not exportable.
+            a QASM 2 condition cannot be represented. Direct pulse
+            operations have no lowering.
         ValueError: If ``version`` is neither ``2`` nor ``3``.
 
     Examples:
