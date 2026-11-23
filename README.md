@@ -1,20 +1,21 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/spaceqat/fatqat/main/docs/mkdocs/en/assets/images/space-qat-logo.png" alt="" width="120">
-  <h1>FatQat</h1>
-  <p><strong>One Program, from algorithm to hardware.</strong></p>
-  <p>
-    <a href="https://github.com/spaceqat/fatqat/actions/workflows/tests.yml"><img src="https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
-    <a href="https://pypi.org/project/fatqat/"><img src="https://img.shields.io/pypi/v/fatqat" alt="PyPI"></a>
-    <a href="https://pypi.org/project/fatqat/"><img src="https://img.shields.io/pypi/pyversions/fatqat" alt="Python"></a>
-    <a href="https://fatqat.readthedocs.io/en/latest/"><img src="https://img.shields.io/readthedocs/fatqat" alt="Documentation"></a>
-    <a href="https://github.com/spaceqat/fatqat/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/fatqat" alt="License"></a>
-  </p>
-  <p>
-    <a href="https://fatqat.readthedocs.io/en/latest/guide/quickstart/">Quickstart</a> ·
-    <a href="https://fatqat.readthedocs.io/en/latest/">Documentation</a> ·
-    <a href="https://fatqat.readthedocs.io/en/latest/tutorials/">Case studies</a>
-  </p>
-  <p>English | <a href="README.zh-CN.md">简体中文</a> | <a href="README-KR.md">한국어</a></p>
+
+<img src="https://raw.githubusercontent.com/spaceqat/fatqat/main/docs/mkdocs/en/assets/images/space-qat-logo.png" alt="" width="120">
+
+# FatQat
+
+**One Program, from algorithm to hardware.**
+
+[![Tests](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/fatqat)](https://pypi.org/project/fatqat/)
+[![Python](https://img.shields.io/pypi/pyversions/fatqat)](https://pypi.org/project/fatqat/)
+[![Documentation](https://img.shields.io/readthedocs/fatqat)](https://fatqat.readthedocs.io/en/latest/)
+[![License](https://img.shields.io/pypi/l/fatqat)](https://github.com/spaceqat/fatqat/blob/main/LICENSE)
+
+[Quickstart](https://fatqat.readthedocs.io/en/latest/guide/quickstart/) · [Documentation](https://fatqat.readthedocs.io/en/latest/) · [Case studies](https://fatqat.readthedocs.io/en/latest/tutorials/)
+
+English | [简体中文](README.zh-CN.md) | [한국어](README-KR.md)
+
 </div>
 
 FatQat is a Python toolkit for building, compiling, and running quantum

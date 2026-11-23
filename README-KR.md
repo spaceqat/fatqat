@@ -1,20 +1,21 @@
 <div align="center">
-  <img src="docs/mkdocs/en/assets/images/space-qat-logo.png" alt="" width="120">
-  <h1>FatQat</h1>
-  <p><strong>하나의 Program, 알고리즘에서 하드웨어까지.</strong></p>
-  <p>
-    <a href="https://github.com/spaceqat/fatqat/actions/workflows/tests.yml"><img src="https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
-    <a href="https://pypi.org/project/fatqat/"><img src="https://img.shields.io/pypi/v/fatqat" alt="PyPI"></a>
-    <a href="https://pypi.org/project/fatqat/"><img src="https://img.shields.io/pypi/pyversions/fatqat" alt="Python"></a>
-    <a href="https://fatqat.readthedocs.io/ko/latest/"><img src="https://img.shields.io/readthedocs/fatqat" alt="Documentation"></a>
-    <a href="https://github.com/spaceqat/fatqat/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/fatqat" alt="License"></a>
-  </p>
-  <p>
-    <a href="https://fatqat.readthedocs.io/ko/latest/guide/quickstart/">빠른 시작 가이드</a> ·
-    <a href="https://fatqat.readthedocs.io/ko/latest/">문서</a> ·
-    <a href="https://fatqat.readthedocs.io/ko/latest/tutorials/">튜토리얼 모음</a>
-  </p>
-  <p><a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | 한국어</p>
+
+<img src="docs/mkdocs/en/assets/images/space-qat-logo.png" alt="" width="120">
+
+# FatQat
+
+**하나의 Program, 알고리즘에서 하드웨어까지.**
+
+[![Tests](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/fatqat)](https://pypi.org/project/fatqat/)
+[![Python](https://img.shields.io/pypi/pyversions/fatqat)](https://pypi.org/project/fatqat/)
+[![Documentation](https://img.shields.io/readthedocs/fatqat)](https://fatqat.readthedocs.io/ko/latest/)
+[![License](https://img.shields.io/pypi/l/fatqat)](https://github.com/spaceqat/fatqat/blob/main/LICENSE)
+
+[빠른 시작 가이드](https://fatqat.readthedocs.io/ko/latest/guide/quickstart/) · [문서](https://fatqat.readthedocs.io/ko/latest/) · [튜토리얼 모음](https://fatqat.readthedocs.io/ko/latest/tutorials/)
+
+[English](README.md) | [简体中文](README.zh-CN.md) | 한국어
+
 </div>
 
 FatQat은 양자 프로그램을 작성하고, 컴파일하고, 실행하기 위한 Python 툴킷입니다.

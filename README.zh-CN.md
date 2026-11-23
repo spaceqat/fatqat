@@ -1,20 +1,21 @@
 <div align="center">
-  <img src="docs/mkdocs/en/assets/images/space-qat-logo.png" alt="" width="120">
-  <h1>FatQat</h1>
-  <p><strong>一个 Program，从算法到硬件。</strong></p>
-  <p>
-    <a href="https://github.com/spaceqat/fatqat/actions/workflows/tests.yml"><img src="https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
-    <a href="https://pypi.org/project/fatqat/"><img src="https://img.shields.io/pypi/v/fatqat" alt="PyPI"></a>
-    <a href="https://pypi.org/project/fatqat/"><img src="https://img.shields.io/pypi/pyversions/fatqat" alt="Python"></a>
-    <a href="https://fatqat.readthedocs.io/zh-cn/latest/"><img src="https://img.shields.io/readthedocs/fatqat" alt="Documentation"></a>
-    <a href="https://github.com/spaceqat/fatqat/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/fatqat" alt="License"></a>
-  </p>
-  <p>
-    <a href="https://fatqat.readthedocs.io/zh-cn/latest/guide/quickstart/">快速入门</a> ·
-    <a href="https://fatqat.readthedocs.io/zh-cn/latest/">文档</a> ·
-    <a href="https://fatqat.readthedocs.io/zh-cn/latest/tutorials/">应用案例</a>
-  </p>
-  <p><a href="README.md">English</a> | 简体中文 | <a href="README-KR.md">한국어</a></p>
+
+<img src="docs/mkdocs/en/assets/images/space-qat-logo.png" alt="" width="120">
+
+# FatQat
+
+**一个 Program，从算法到硬件。**
+
+[![Tests](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/fatqat)](https://pypi.org/project/fatqat/)
+[![Python](https://img.shields.io/pypi/pyversions/fatqat)](https://pypi.org/project/fatqat/)
+[![Documentation](https://img.shields.io/readthedocs/fatqat)](https://fatqat.readthedocs.io/zh-cn/latest/)
+[![License](https://img.shields.io/pypi/l/fatqat)](https://github.com/spaceqat/fatqat/blob/main/LICENSE)
+
+[快速入门](https://fatqat.readthedocs.io/zh-cn/latest/guide/quickstart/) · [文档](https://fatqat.readthedocs.io/zh-cn/latest/) · [应用案例](https://fatqat.readthedocs.io/zh-cn/latest/tutorials/)
+
+[English](README.md) | 简体中文 | [한국어](README-KR.md)
+
 </div>
 
 FatQat 是一个用于编写、编译和运行量子程序的 Python 工具包。`Program`
