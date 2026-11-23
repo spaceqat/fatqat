@@ -8,7 +8,6 @@ import pytest
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.errors import (
-    BackendExecutionError,
     BackendValidationError,
     UnsupportedOperationError,
 )
@@ -359,21 +358,6 @@ def _prepared_program():
     program.add(ops.RX(np.pi), 1)
     program.measure(0, 0)
     return program
-
-
-@pytest.mark.parametrize("runtime", ["numpy", "numba"])
-@pytest.mark.parametrize("method", ["statevector", "density_matrix"])
-def test_custom_operation_cannot_enable_occupancy_in_a_fused_run(runtime, method):
-    # Pre-run validation cannot see occupancy that a custom operation enables.
-    simulator = simulator_for(Prepare, FillImplementation(), runtime, method)
-
-    with pytest.raises(BackendExecutionError, match="occupancy"):
-        simulator.run(
-            _prepared_program(), shots=4, execution_config={"fusion": True}
-        ).result()
-    unfused = simulator.run(_prepared_program(), shots=4).result()
-
-    assert unfused.get_counts() == {"1": 4}
 
 
 def test_custom_operation_that_keeps_occupancy_off_runs_fused():

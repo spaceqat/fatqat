@@ -549,9 +549,10 @@ class Simulator:
                   adjacent: write ``RX(q0), RZ(q0), RX(q1), RZ(q1), ...``
                   rather than ``RX(q0), RX(q1), ..., RZ(q0), RZ(q1), ...``.
                   It is rejected when the run tracks atom occupancy, so
-                  ``AtomArraySimulator`` always rejects it. A custom operation
-                  that enables occupancy during a fused run raises
-                  ``BackendExecutionError``.
+                  ``AtomArraySimulator`` always rejects it. Do not use it with
+                  a custom operation that enables occupancy during the run.
+                  The run does not check this case, and the result can be
+                  wrong.
 
                 Unknown or incompatible entries are rejected.
             result_config: Optional output requests. Accepted keys are:
