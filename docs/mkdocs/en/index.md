@@ -3,14 +3,15 @@ template: home.html
 hide:
   - navigation
   - toc
-description: Explore quantum algorithms, hardware constraints, and physical dynamics with FatQat, a Python package for quantum simulation and emulation.
+description: Build, compile, and run quantum programs with FatQat, from ideal simulation to physical models of quantum devices.
 hero:
-  eyebrow: A Python toolkit for quantum simulation and emulation
-  title: One Program. Three levels of physical detail.
+  eyebrow: A Python toolkit for building, compiling, and running quantum programs
+  title: One Program, from algorithm to hardware.
   summary: >-
-    Explore algorithms, check hardware constraints, and study pulse-driven dynamics.
-    FatQat brings these tasks together with a shared Program representation
-    and consistent interfaces for running computations and reading results.
+    Test algorithms under realistic device conditions, study how a device
+    responds to controls and noise, or learn quantum computing from first
+    circuits to device physics.
+    FatQat runs one Program through the same interface on every backend.
   primary_action: Build your first Program
   secondary_action: Choose a simulation approach
   install_action: Install from source
