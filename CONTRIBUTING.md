@@ -139,10 +139,9 @@ errors must update the corresponding documentation in the same pull request.
   scripts, and notebooks are generated.
 
 A public class with substantial behavior or configuration should have its own
-API page. Begin with why and when a user would choose it, then explain its
-behavior, constraints, and configuration, include a minimal example, and finish
-with the generated API reference. Explain shared behavior once and link to it
-from the relevant pages.
+API page. Explain shared behavior once and link to it from the relevant pages.
+See [Writing documentation](docs/mkdocs/en/development/writing-documentation.md)
+for guidance on structuring User Guides, API pages, and public docstrings.
 
 ### Contributing tutorials
 
