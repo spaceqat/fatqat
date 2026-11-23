@@ -290,11 +290,12 @@ class Program:
         return _draw_program(self, renderer, **kwargs)
 
     def dag(self):
-        """Return the hardware-independent logical instruction DAG.
+        """Return a dependency graph with one node per source instruction.
 
-        The returned graph contains logical operations, measurements,
-        conditions, and barriers. Backend directives such as ``Put``,
-        ``Pair``, and ``Unpair`` are intentionally excluded.
+        Instructions that share a quantum target appear in source order,
+        including ``Put``, ``Pair``, ``Unpair``, and barriers. A condition
+        reads the classical value before a later measurement can overwrite it.
+        Direct pulse blocks keep their position relative to every other instruction.
         """
         from ._program_graph import _build_instruction_dag
 
