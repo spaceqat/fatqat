@@ -59,19 +59,30 @@ _LOGICAL_OPERATION_TYPES = frozenset(
 
 
 class LogicalProgram(Program):
-    """Build a device-independent circuit for compilation or simulation.
+    """Describe a device-independent circuit for simulation or compilation.
 
-    Use Program's constructor, add(), and measurement interface. Authoring
-    methods mutate in place and return None. Built-in circuit gates, including
-    qudit gates, reset, and barriers are accepted; device operations and custom
-    Operation subclasses are rejected. Use measure() for measurements.
+    Construct it with quantum and classical register counts or explicit
+    register collections, as for `Program`. Use `add` for built-in logical
+    operations and `Program.measure` or `Program.measure_all` for measurements.
+    These methods modify the program in place. Copying or binding parameters
+    returns another `LogicalProgram`.
 
-    Conditions remain valid for direct simulation. Static compiler and target
-    restrictions apply when compiling. The copy() and assign_parameters()
-    methods preserve LogicalProgram.
+    Direct simulation supports classical conditions. Compilation requires
+    numeric parameters, terminal measurements, and no classical conditions.
+    Each compilation target also restricts the supported gates.
 
     Attributes:
-        IR_ID: Compiler identity for this editable source representation.
+        IR_ID: Source boundary name for compiler pipelines.
+
+    Examples:
+        Prepare a Bell state and measure both qubits:
+
+        >>> import fatqat as fq
+        >>> import fatqat.operations as ops
+        >>> circuit = fq.LogicalProgram(2, 2)
+        >>> circuit.add(ops.H, 0)
+        >>> circuit.add(ops.CX, (0, 1))
+        >>> circuit.measure_all()
     """
 
     IR_ID: ClassVar[str] = "gate.logical.source.v1"
@@ -93,14 +104,21 @@ class LogicalProgram(Program):
     ) -> LogicalProgram:
         """Return a LogicalProgram with selected parameters replaced.
 
-        Matching uses object identity rather than names. Binding may be
-        partial or empty and never mutates the template. Scalar and vector
-        values follow Program.assign_parameters() validation, including vector
-        length and duplicate-assignment checks.
+        Bind by object identity. Two parameters with the same name are
+        distinct. The original program is unchanged. A binding may be partial
+        or empty, but compilation and numeric simulation require concrete values.
 
         Args:
-            values: Parameter keys map to real numeric scalars. ParameterVector
-                keys map to matching-length one-dimensional numeric iterables.
+            values: A mapping from parameters used directly as operation
+                arguments to numeric values:
+
+                - `Parameter`: A built-in integer or float, or a NumPy
+                  integer or floating scalar. Booleans are not accepted.
+                - `ParameterVector`: A one-dimensional NumPy array or a
+                  non-string, non-bytes, non-mapping iterable of those
+                  scalars. Supply one value per element in index order. Every
+                  element must be used, and no element may also be bound
+                  separately.
 
         Returns:
             A LogicalProgram containing the selected numeric values.
@@ -127,23 +145,37 @@ class LogicalProgram(Program):
     ) -> None:
         """Append a built-in device-independent operation in place.
 
-        Arguments and target/condition validation follow Program.add.
-        Device operations and custom Operation subclasses raise ValueError
-        before the program changes. Measurements use measure() instead.
+        Use `Program.measure` to add measurements. A valid instruction may
+        still be unsupported by a particular compilation target.
 
         Args:
-            op: A built-in device-independent Operation instance.
-            targets: Scalar register operands or compatible register views,
-                using the same forms as Program.add.
-            condition: Optional classical condition, default None; uses the
-                same register/literal pairs and conjunction rules as Program.add.
+            op: A built-in logical gate, including qudit gates, or a reset
+                or barrier. Device operations and custom operations are
+                rejected.
+            targets: One operand, or a tuple or list in operand order.
+
+                - ``int``: Zero-based index when there is exactly one
+                  quantum register.
+                - `RegisterRef`: A slot from a quantum register in this program.
+                - `RegisterView`: A selection for a gate that supports views.
+                  Provide one compatible view per operand, all of the same
+                  selection kind and length. Do not mix views and scalar
+                  targets, or overlap views from the same register.
+
+            condition: ``None`` (default), one ``(classical_slot, value)`` pair,
+                or a non-empty tuple or list of pairs that must all match.
+                Use a zero-based index if there is only one classical register,
+                or a classical `RegisterRef` from this program. Values are
+                Python integers in the slot's range; booleans are accepted.
+                Conditions can be used in direct simulation.
 
         Returns:
             None.
 
         Raises:
-            ValueError: If op is not a built-in logical operation, or inherited
-                target or condition validation fails.
+            ValueError: If the operation is unsupported, targets have the
+                wrong arity or are incompatible, a ref is outside the program,
+                or a condition has an invalid shape or value.
             TypeError: If an argument has an unsupported type.
             IndexError: If an integer operand is outside its register.
         """

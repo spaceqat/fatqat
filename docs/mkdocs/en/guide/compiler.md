@@ -1,5 +1,11 @@
 # Compile and run a logical circuit
 
+!!! warning "Compiler under development"
+
+    The compiler module is under active development. Its interfaces and
+    supported behavior may change between releases. Pin an exact FatQat
+    version when reproducibility matters.
+
 A logical circuit describes which gates to apply to which qubits. To run it
 on a device model, the gates also need to fit the device's instruction set
 and layout. A superconducting device may use `CZ` as its native two-qubit
@@ -49,11 +55,15 @@ target = fq.compiler.SCTarget(num_qubits=3, couplings=((0, 1), (1, 2)))
 sc_compiled = fq.compiler.compile_to_sc(circuit, target, seed=7)
 ```
 
-The target describes only the device's qubits and connections. Choose how to
-run the result separately: create an
-[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] that provides the
-qubits and connections the result uses, and select its runtime, simulation
-method, and noise model there.
+This target describes three sites in a chain: `0–1–2`. A `CZ` can run
+directly between sites `0` and `1` or between `1` and `2`. There is no
+direct connection between `0` and `2`, so the compiler must use the
+available connections when it maps and routes the circuit.
+
+You can choose how to simulate the circuit after compiling it. Create an
+[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] with the sites and
+connections the compiled circuit uses, then choose its runtime, method,
+and noise settings for the run.
 
 ```python
 sc_backend = fq.simulator.SCQubitSimulator(
@@ -71,19 +81,18 @@ counts = result.get_counts()
 ```
 
 A simulator with more qubits or additional connections can run the same
-result. If the simulator lacks a qubit or connection that the result uses,
-`run()` raises an error immediately. The
-[SCTarget reference](../api/sc-target.md#when-errors-are-raised) lists these
-errors.
+result. If compilation succeeds but the simulator rejects the result, first
+check that it provides the sites and connections used by the compiled circuit.
 
 `couplings` can describe any valid graph; the topology does not need to be a
 grid. The current public SC profile uses X, SX, RZ, and CZ as its native gate
 set. Toffoli (`CCX`) gates are decomposed into one- and two-qubit gates before
 routing.
 
-Code that passes a simulator to the compiler continues to work. The compiler
-then uses the simulator's qubits and connections, and also checks the emitted
-gates against its implementation map:
+If you already have a simulator, call
+[`get_compiler_target()`][fatqat.simulator.SCQubitSimulator.get_compiler_target]
+to reuse its sites and connections. Pass the simulator itself when you want
+its implementation map to constrain routing and the emitted gates:
 
 ```python
 sc_compiled = fq.compiler.compile_to_sc(circuit, sc_backend, seed=7)

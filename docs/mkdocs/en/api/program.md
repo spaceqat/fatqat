@@ -4,210 +4,58 @@ title: "Program"
 
 # Program
 
+A [`Program`][fatqat.Program] describes a quantum computation. Its registers
+identify the quantum and classical slots it uses, and its instructions record
+which operations and measurements to perform and in what order. A backend
+executes the instructions and checks whether it supports them.
 
-[`Program`][fatqat.Program] records a quantum workload without tying it to a
-device. Add operations and measurements in execution order, then choose a
-backend when you run it.
+<a id="registers"></a>
 
-FATQAT catches malformed targets, measurements, and conditions while you build
-the program. The backend checks whether it supports the requested operations,
-dimensions, placement, and feedforward.
-
-```python
-import fatqat as fq
-import fatqat.operations as ops
-
-program = fq.Program(2, 2, metadata={"name": "bell"})
-program.add(ops.H, 0)
-program.add(ops.CX, (0, 1))
-program.measure_all()
-```
-
-## Registers
-
-
-The two register arguments accept these forms:
-
-**Register inputs**
-
-| Form | Result | Constraints |
-| --- | --- | --- |
-| Non-negative integer `n` | `n > 0` creates one dimension-2 register named `"q"` or `"c"`; `0` creates no register. | The value must be an exact integer, not a boolean. A negative value is rejected. |
-| List or tuple of registers | Preserves the supplied register objects in a tuple. | Every item must have the matching quantum or classical register kind. Use this form for names, multiple registers, grids, or qudits. |
-
-See [Registers](registers.md) for explicit registers, dimensions, and grid selections.
+Quantum registers identify the slots that operations act on. Classical
+registers hold measurement results and values that conditions can read.
+See [Registers](registers.md) for register types and how to select their slots.
 
 ## Targets
 
+Targets tell an operation which slots to act on. For example, in
+`program.add(ops.CX, (0, 1))`, the two indices select the control and target
+from the program's only quantum register. The same addressing rules apply
+when selecting measurement outputs or the classical slots a condition reads.
 
-A bare integer indexes the sole register of the relevant kind; it is not a
-global index across several registers. With multiple registers, index the
-register you want and pass the resulting [`RegisterRef`][fatqat.RegisterRef].
-
-**Target forms**
-
-| Form | Accepted by | Rule |
+| Form | Accepted by | When to use it |
 | --- | --- | --- |
-| Integer | [`add`][fatqat.Program.add], [`measure`][fatqat.Program.measure], and conditions | Requires exactly one register of the relevant kind and must be within its zero-based bounds. |
-| [`RegisterRef`][fatqat.RegisterRef] | [`add`][fatqat.Program.add], [`measure`][fatqat.Program.measure], and conditions | Must have the required register kind and come from a register in this program. |
-| [`RegisterView`](registers.md#fatqat.RegisterView) | [`add`][fatqat.Program.add] only | Every built-in unitary gate accepts views. Unary gates map over one view; multi-target gates zip one compatible view per operand. `Put` accepts one view as its complete target collection. Measurement does not accept views. |
+| Integer | `add()`, `measure()`, `measure_all(outputs=...)`, conditions | Use a zero-based index when the program has exactly one register of the required kind. |
+| [`RegisterRef`][fatqat.RegisterRef] | `add()`, `measure()`, `measure_all(outputs=...)`, conditions | Use `q[0]` or `c[0]` to select a slot from a specific register. Required when there is more than one register of that kind. |
+| [`RegisterView`](registers.md#fatqat.RegisterView) | `add()` with gates that support views, or `Put` | A single-target gate acts on each selected slot. A multi-target gate uses one slot from each view at each position. `Put` takes one view as its complete target collection. |
 
-A [`PulseOperation`][fatqat.operations.PulseOperation] does not use the target forms
-above. Add it with `program.add(operation)` and no `targets` argument.
-See [PulseOperation](pulse-control/pulse-operation.md) for details.
+For a controlled gate, list controls before targets. For a
+[`PulseOperation`][fatqat.operations.PulseOperation], omit `targets`: the pulse
+channels specify the physical resources directly.
 
-For other operations, `targets` is one tuple in operand order. Controlled
-gates list controls before targets. See [Registers](registers.md) for view selection and
-compatibility, and [Write quantum computations with Program](../guide/program.md) for the ordinary construction
-workflow.
-
-## Conditions
-
-
-Pass `condition=(slot, literal)` to [`add`][fatqat.Program.add], or pass a
-non-empty tuple or list of such pairs for logical AND. A slot follows the same
-integer-or-ref rules as other classical operands. Each literal is a Python
-integer in `0 <= literal < slot.dim`; booleans are also accepted. Every term
-is compared with the current classical value when the operation is reached.
-
-FATQAT checks each condition when the operation is added. A condition may refer
-to an unmeasured slot, whose initial value is zero; an earlier measurement
-replaces that value. The backend decides whether it supports feedforward.
-
-## Measurements
-
-
-[`measure`][fatqat.Program.measure] pairs quantum targets with classical
-outputs positionally. Both sides must be non-empty, have the same length, and
-have matching dimensions at every position. Repeated operands are processed
-in pair order; see [Measurement and structural operations](operations/structural.md) for measurement behavior.
-
-[`measure_all`][fatqat.Program.measure_all] appends one grouped measurement
-of all quantum slots, using the first corresponding classical slots by default
-or the destinations specified by `outputs`. Read [Write quantum computations
-with Program](../guide/program.md) for a mid-program measurement and
-feedforward workflow.
-
+<a id="conditions"></a>
+<a id="measurements"></a>
 <a id="program-templates"></a>
+<a id="parameter-binding"></a>
+<a id="draw"></a>
+<a id="logical-interaction-frequency"></a>
+<a id="read-instructions"></a>
 
-
-## Parameter binding
-
-
-Parameters are immutable identity objects. Names are labels only: two
-`Parameter("theta")` objects are different binding keys. Reuse one object
-when several operation arguments should share a value.
-
-**Binding forms**
-
-| Mapping key | Accepted value | Constraint |
-| --- | --- | --- |
-| [`Parameter`][fatqat.Parameter] | Built-in integer or float, or NumPy integer or floating scalar | The same object must be supplied directly to an operation parameter. |
-| [`ParameterVector`][fatqat.ParameterVector] | One-dimensional NumPy array, or a non-string, non-bytes, non-mapping iterable of accepted scalars | Consumed once in iteration order. The value length must match and every vector element must be used directly as an operation parameter. Bind individual elements for a partial vector. |
-
-[`assign_parameters`][fatqat.Program.assign_parameters] accepts an empty or partial
-mapping and returns a new program. It binds only [`Parameter`][fatqat.Parameter]
-objects used directly as operation arguments. Unbound parameters remain
-symbolic and are rejected by numeric execution and export. String keys,
-positional assignments, boolean or complex values, and assigning both a vector
-and one of its elements are rejected. Replacement values still undergo the
-operation's normal validation. Read [Write quantum computations with Program](../guide/program.md) for the authoring
-workflow and [Simulate a quantum program](../guide/simulation.md) for a parameter sweep. The complete
-binding and execution contracts are specified here and in [Simulator](simulator.md).
-
-[`copy`][fatqat.Program.copy] and
-[`assign_parameters`][fatqat.Program.assign_parameters] return new programs.
-[`add`][fatqat.Program.add], [`measure`][fatqat.Program.measure], and
-[`measure_all`][fatqat.Program.measure_all] update the current program and return
-`None`.
-
-## Read instructions
-
-Use [`Program.instructions`][fatqat.Program.instructions] to read a program's
-instructions in insertion order. It returns a read-only snapshot containing
-[`OperationInstruction`][fatqat.program.OperationInstruction] and
-[`Measurement`][fatqat.operations.Measurement] records.
-
-```python
-from fatqat.program import OperationInstruction
-
-for instruction in program.instructions:
-    if isinstance(instruction, OperationInstruction):
-        print(instruction.operation, instruction.targets, instruction.condition)
-```
-
-Backends and other program readers should use this interface instead of
-depending on FatQat's private instruction representation.
-
-::: fatqat.program.OperationInstruction
-
-## Draw
-
-
-FatQat's circuit drawing is based on QuTiP-QIP's circuit drawing tools.
-`Program.draw()` translates the Program's instructions to a rendering
-adapter before invoking the selected QuTiP-QIP renderer.
-
-**Renderers**
-
-| `renderer` | Return value | Notes |
-| --- | --- | --- |
-| `"matplotlib"` (default) | Matplotlib `Figure` | Pass `ax=` to draw on an existing axis; other keyword arguments are forwarded to the renderer. |
-| `"text"` | Terminal diagram string | The string is returned, not printed. |
-| Another QuTiP-QIP renderer name | Renderer-defined | The name and keyword arguments are forwarded unchanged. |
-
-Circuit drawings use one wire per slot but do not depict register dimension.
-Unknown or custom operations appear as labeled boxes. A direct
-[`PulseOperation`][fatqat.operations.PulseOperation] cannot be represented and raises
-[`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError].
-The Matplotlib renderer uses FATQAT's palette by default. Pass a QuTiP-QIP
-`theme` or configure Matplotlib's color cycle to use a different palette.
-
-Use
-[`fatqat.visualization.to_qubit_circuit`][fatqat.visualization.to_qubit_circuit]
-only for low-level integration with QuTiP-QIP's drawing tools:
-
-```python
-from fatqat.visualization import to_qubit_circuit
-
-circuit = to_qubit_circuit(program)
-```
-
-The returned circuit is a rendering adapter, not an execution object. The old
-`fatqat.draw` import path has been removed.
-
-::: fatqat.visualization.to_qubit_circuit
-
-### Logical interaction frequency
-
-Logical interaction frequency is derived separately from circuit drawing:
-
-```python
-interaction_frequency = program.interaction_frequency()
-figure = interaction_frequency.draw()
-```
-
-The graph counts source-level two-target logical operations across the complete
-program. It is not a device connectivity graph and does not include `Put`,
-`Pair`, or `Unpair` directives. See [Visualization](../guide/visualization.md)
-for drawing, styling, embedding, and saving examples.
-
-## Reference
-
+## API reference { #reference }
 
 ::: fatqat.Program
     options:
+      heading_level: 3
       inherited_members: true
       show_bases: false
-      merge_init_into_class: false
+      merge_init_into_class: true
       filters:
         - "!^_"
 
-## Parameter values
-
+### Parameter values
 
 ::: fatqat.Parameter
     options:
+      heading_level: 4
       inherited_members: true
       show_bases: true
       merge_init_into_class: false
@@ -216,8 +64,19 @@ for drawing, styling, embedding, and saving examples.
 
 ::: fatqat.ParameterVector
     options:
+      heading_level: 4
       inherited_members: true
       show_bases: true
       merge_init_into_class: false
       filters:
         - "!^_"
+
+### Helpers
+
+::: fatqat.program.OperationInstruction
+    options:
+      heading_level: 4
+
+::: fatqat.visualization.to_qubit_circuit
+    options:
+      heading_level: 4

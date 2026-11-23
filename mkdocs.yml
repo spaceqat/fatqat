@@ -95,7 +95,7 @@ plugins:
           extensions:
             - docs/mkdocs/extensions/docstring_roles.py:DocstringRolesExtension
           filters: public
-          inherited_members: true
+          inherited_members: true  # Docstring-only blocks set both members and inherited_members to false.
           members_order: source
           merge_init_into_class: true
           separate_signature: true
@@ -199,18 +199,19 @@ nav:
       - api/index.md
       - Build programs:
           - Program: api/program.md
+          - Registers: api/registers.md
           - LogicalProgram: api/logical-program.md
           - Compiler:
               - api/compiler.md
-              - SC target: api/sc-target.md
-          - Registers: api/registers.md
+              - SCTarget: api/sc-target.md
+              - "Compiler pipelines & IR": api/compiler-pipelines.md
           - Operations:
               - api/operations.md
               - Qubit gates: api/operations/qubit-gates.md
               - Qudit gates: api/operations/qudit-gates.md
-              - Atom gates: api/operations/atom-gates.md
               - Optical gates: api/operations/optical-gates.md
-              - Structural operations: api/operations/structural.md
+              - Atom-array operations: api/operations/atom-gates.md
+              - "Measure, reset & barrier": api/operations/structural.md
           - Pulse control:
               - api/pulse-control/index.md
               - Pulse operation: api/pulse-control/pulse-operation.md

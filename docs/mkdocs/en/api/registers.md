@@ -4,125 +4,36 @@ title: "Registers"
 
 # Registers
 
-
-Registers give quantum and classical program slots stable identities. With
-`Program(quantum_count, classical_count)`, each positive count creates one
-default register named `"q"` or `"c"`; zero creates no register of that
-kind. Construct registers explicitly when you need other names, multiple
-registers, grids, metadata, or local dimensions greater than two.
+A register groups the slots a [`Program`][fatqat.Program] can address.
+Quantum slots are where operations act. Classical slots store measurement
+results and values that conditions can read. Use the same register object
+you passed to the program when selecting a slot: names are labels, and two
+registers with the same name are still distinct.
 
 ## Register types
 
+| Type | When to use it |
+| --- | --- |
+| [`QuantumRegister`][fatqat.QuantumRegister] | Use a fixed number of qubits, or specify a larger `dim` for qudits. |
+| [`ClassicalRegister`][fatqat.ClassicalRegister] | Store measurement results in bits or in digits with a larger `dim`. |
+| [`GridRegister`][fatqat.GridRegister] | Organize quantum slots in rows and columns so you can select parts of a grid. |
+| [`ModeRegister`][fatqat.ModeRegister] | Represent optical modes in an [`LOSimulator`](simulators/linear-optics.md) program. |
+| [`CountRegister`][fatqat.CountRegister] | Store photon counts measured from a `ModeRegister`. |
 
-**Register choices**
-
-| Type | Program role | Size |
-| --- | --- | --- |
-| [`Register`][fatqat.Register] | Common base class; not itself accepted as a quantum or classical register by [`Program`][fatqat.Program] | Explicit positive `size` |
-| [`QuantumRegister`][fatqat.QuantumRegister] | Quantum operation and measurement targets | Explicit positive `size` |
-| [`ClassicalRegister`][fatqat.ClassicalRegister] | Measurement outputs and condition values | Explicit positive `size` |
-| [`GridRegister`][fatqat.GridRegister] | Quantum targets with rectangular selection helpers | Derived as `rows * cols` |
-| [`ModeRegister`][fatqat.ModeRegister] | Optical modes with no fixed dimension; run on [`LOSimulator`](simulators/linear-optics.md) | Explicit positive `size` |
-| [`CountRegister`][fatqat.CountRegister] | Photon counts from measuring a `ModeRegister` | Explicit positive `size` |
-
-Names are labels and need not be unique. Keep and index the same register
-objects that you pass to [`Program`][fatqat.Program]; a newly constructed register
-with the same fields is not interchangeable. `metadata` is a mutable,
-string-keyed mapping for application data.
-
-Indexing with `register[index]` creates an immutable
-[`RegisterRef`][fatqat.RegisterRef]. In a program with multiple registers, pass the
-explicit ref rather than an ambiguous integer:
-
-```python
-import fatqat as fq
-import fatqat.operations as ops
-
-left = fq.QuantumRegister(2, name="left")
-right = fq.QuantumRegister(2, name="right")
-program = fq.Program([left, right])
-program.add(ops.H, right[0])
-```
-
-Call [`quantum_register.all()`][fatqat.QuantumRegister.all] to select every
-member in increasing index order. It returns a [`RegisterView`](#fatqat.RegisterView),
-which can be passed to view-capable operations:
-
-```python
-atoms = fq.QuantumRegister(3, name="atoms")
-program = fq.Program([atoms])
-program.add(ops.Put, atoms.all())
-```
-
-`dim=2` creates qubits or classical bits. A larger value creates qudits or
-d-ary classical digits; the quantum and classical dimensions of each
-measurement pair must match. Register construction accepts every integer
-dimension of at least two, but individual operations and backends may support
-only some dimensions. See [Write quantum computations with Program](../guide/program.md) for a mixed qubit-qutrit
-example.
-
-::: fatqat.Register
-    options:
-      inherited_members: true
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-        - "^(?:__getitem__)$"
-
-::: fatqat.QuantumRegister
-    options:
-      inherited_members: true
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.ClassicalRegister
-    options:
-      inherited_members: true
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.ModeRegister
-    options:
-      inherited_members: true
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.CountRegister
-    options:
-      inherited_members: true
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.RegisterRef
-    options:
-      inherited_members: true
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
+[`Register`][fatqat.Register] is the shared base class. Pass a concrete
+quantum or classical register to `Program`.
 
 ## Register selections
 
+Index a register, for example `q[0]`, to get a
+[`RegisterRef`][fatqat.RegisterRef] for one slot. Use
+[`all()`][fatqat.QuantumRegister.all] or a grid selection helper to get a
+[`RegisterView`](#fatqat.RegisterView) for a group of quantum slots. See
+[`Program.add()`][fatqat.Program.add] for which operations accept views.
 
-Every [`QuantumRegister`][fatqat.QuantumRegister] provides `all()`. A
-[`GridRegister`][fatqat.GridRegister] additionally arranges logical targets in
-row-major order and provides `row()`, `column()`, and `block()` selections. It
-does not assign physical coordinates. The flat index of `(row, col)` is
-`row * cols + col`, and all selection helpers return
-[`RegisterView`](#fatqat.RegisterView) objects rather than tuples of refs.
-
-For a `GridRegister(2, 3)`, the helpers select these flat indices:
-
-**Grid selection order**
+A grid organizes logical slots. It does not place qubits on a device. Flat
+indices run across each row, then continue on the next. For a
+`GridRegister(2, 3)`, the helpers select these slots:
 
 | Expression | Selected indices, in order |
 | --- | --- |
@@ -131,19 +42,70 @@ For a `GridRegister(2, 3)`, the helpers select these flat indices:
 | `grid.column(1)` | `(1, 4)` |
 | `grid.block((0, 2), (1, 3))` | `(1, 2, 4, 5)` |
 
-Pass views to [`add`][fatqat.Program.add]. Every built-in unitary gate accepts
-them. Unary gates act independently on each selected member; multi-target
-gates zip corresponding members from one view per operand. All views must use
-the same selector kind and cardinality, and selections on the same
-register cannot overlap. [`Put`][fatqat.operations.Put] accepts one view as its
-complete target collection and records one variadic operation. Measurements
-and QASM export require scalar targets. The
-backend validates physical placement and connectivity. See
-[Write quantum computations with Program](../guide/program.md) for the ordinary Program workflow and
-[Test a Program against a hardware profile](../guide/superconducting-simulation.md) for physical placement.
+## API reference { #reference }
+
+### Register classes
+
+::: fatqat.QuantumRegister
+    options:
+      heading_level: 4
+      inherited_members: true
+      show_bases: true
+      merge_init_into_class: true
+      filters:
+        - "!^_"
+
+::: fatqat.ClassicalRegister
+    options:
+      heading_level: 4
+      inherited_members: true
+      show_bases: true
+      merge_init_into_class: true
+      filters:
+        - "!^_"
 
 ::: fatqat.GridRegister
     options:
+      heading_level: 4
+      inherited_members: true
+      show_bases: true
+      merge_init_into_class: true
+      filters:
+        - "!^_"
+
+::: fatqat.ModeRegister
+    options:
+      heading_level: 4
+      inherited_members: true
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.CountRegister
+    options:
+      heading_level: 4
+      inherited_members: true
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.Register
+    options:
+      heading_level: 4
+      inherited_members: true
+      show_bases: true
+      merge_init_into_class: true
+      filters:
+        - "!^_"
+        - "^(?:__getitem__)$"
+
+### References and views
+
+::: fatqat.RegisterRef
+    options:
+      heading_level: 4
       inherited_members: true
       show_bases: true
       merge_init_into_class: false
@@ -151,7 +113,7 @@ backend validates physical placement and connectivity. See
         - "!^_"
 
 <a id="fatqat.registers.RegisterView"></a>
-### class `fatqat.RegisterView` { #fatqat.RegisterView }
+#### class `fatqat.RegisterView` { #fatqat.RegisterView }
 
 Immutable, hashable target returned by quantum-register selection helpers. Its
 [`register`](#fatqat.RegisterView.register) attribute identifies the selected
@@ -159,32 +121,26 @@ quantum register. Obtain views from register helpers; direct construction is
 unsupported.
 
 <a id="fatqat.registers.RegisterView.register"></a>
-#### attribute `register` { #fatqat.RegisterView.register }
+##### attribute `register` { #fatqat.RegisterView.register }
 
 **Type:** `fatqat.QuantumRegister`
 
 Quantum register containing the selected members.
 
+### Resource layouts
 
-## Resource layouts
-
-
-A [`ResourceLayout`][fatqat.ResourceLayout] associates scalar quantum
-[`RegisterRef`][fatqat.RegisterRef] operands with device labels. Most applications can
-use the backend's default layout; pass `resource_layout=` when you need a
-specific supported placement. Each backend defines the labels it accepts and
-checks coverage, uniqueness, dimensions, placement, and connectivity when the
-program runs. [`PulseOperation`][fatqat.operations.PulseOperation] channels address the
-emulator model directly and do not use this layout.
+Use [`ResourceLayout`][fatqat.ResourceLayout] to map individual quantum slots
+to device labels when the backend's default placement is not suitable.
 
 ::: fatqat.ResourceLayout
     options:
+      heading_level: 4
       inherited_members: true
       show_bases: true
-      merge_init_into_class: false
+      merge_init_into_class: true
       filters:
         - "!^_"
 
-### type `fatqat.DeviceOperand` { #fatqat.DeviceOperand }
+#### type `fatqat.DeviceOperand` { #fatqat.DeviceOperand }
 
 Backend-defined opaque, hashable label for one device resource.

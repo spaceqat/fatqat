@@ -76,7 +76,13 @@ class Pipeline:
 
 @dataclass(frozen=True, slots=True)
 class CompilationResult(Generic[TargetT]):
-    """The output program plus the pass names actually executed."""
+    """Inspect the result at the requested compiler boundary.
+
+    Attributes:
+        output: The representation produced at that boundary.
+        route: Names of the passes that ran, in execution order. Empty if
+            no passes ran.
+    """
 
     output: TargetT
     route: tuple[str, ...]
@@ -84,7 +90,15 @@ class CompilationResult(Generic[TargetT]):
 
 @dataclass(frozen=True, slots=True)
 class ExecutableCompilationResult(CompilationResult[TargetT]):
-    """A compiler result carrying the simulator program and device layout."""
+    """A final compilation result that a compatible simulator can run directly.
+
+    Attributes:
+        output: The final compiler representation.
+        route: Names of the passes that ran, in execution order.
+        program: The translated simulator program.
+        resource_layout: The mapping from program resources to device resources
+            used to run that program.
+    """
 
     program: Program
     resource_layout: ResourceLayout
@@ -121,6 +135,55 @@ class Compiler:
         emit: str | None = None,
         context: CompileContext | None = None,
     ) -> CompilationResult:
+        """Run a registered pipeline up to the requested representation.
+
+        The result's ``output`` is a compiler representation, even at the
+        final stage. To run a built-in hardware pipeline's final output,
+        use `fatqat.compiler.to_sc_simulator_program` or
+        `fatqat.compiler.to_na_simulator_program`.
+
+        Args:
+            source: Input to compile. Its type must exactly match the selected
+                pipeline's input type.
+            pipeline: Name of a registered pipeline.
+            emit: ``IR_ID`` of the input or of any pass output in that pipeline.
+                The default, ``None``, selects the final pass's output ID.
+                Compilation stops the first time it reaches the selected ID.
+            context: Target and options passed to each pass. The default,
+                ``None``, supplies no target or options. Pass a
+                `CompileContext` with whatever the chosen pipeline requires.
+
+        Returns:
+            The output representation and the names of the passes that ran.
+                If ``emit`` selects the input ID, ``output`` is the validated
+                input unchanged and ``route`` is empty.
+
+        Raises:
+            PipelineNotFoundError: If the pipeline name is not registered.
+            EmitNotFoundError: If ``emit`` is not a stage of the pipeline.
+            ValidationError: If the source type does not match or an input
+                or output fails built-in IR validation. Exceptions raised
+                by custom IR validators propagate unchanged.
+            PassError: If a pass raises an exception or returns the wrong type.
+
+        Examples:
+            Run a built-in pipeline and inspect its final representation:
+
+            >>> from fatqat import LogicalProgram
+            >>> import fatqat.operations as ops
+            >>> from fatqat.compiler import (
+            ...     CompileContext, LOGICAL_SC_PIPELINE, SCTarget, create_sc_pipeline,
+            ... )
+            >>> circuit = LogicalProgram(1)
+            >>> circuit.add(ops.H, 0)
+            >>> target = SCTarget(num_qubits=1, couplings=())
+            >>> result = create_sc_pipeline().compile(
+            ...     circuit, pipeline=LOGICAL_SC_PIPELINE,
+            ...     context=CompileContext(target=target),
+            ... )
+            >>> result.output.IR_ID
+            'sc.native.v1'
+        """
         try:
             selected = self._pipelines[pipeline]
         except KeyError as exc:
