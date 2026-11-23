@@ -1,4 +1,4 @@
-"""Private logical program graph extraction."""
+"""Private source instruction and logical interaction graph extraction."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ class _DependencyEdge:
 
 @dataclass(frozen=True, slots=True)
 class _InstructionDAG:
-    """Immutable, hardware-independent logical instruction dependency graph."""
+    """Immutable source instruction dependency graph."""
 
     nodes: tuple[_InstructionNode, ...]
     edges: tuple[_DependencyEdge, ...]
@@ -238,6 +238,8 @@ def _node_info(
         node_type = "pair"
     elif is_unpair:
         node_type = "unpair"
+    elif operation._is_direct_control:
+        node_type = "pulse"
     else:
         node_type = "operation"
     return (
@@ -252,12 +254,9 @@ def _node_info(
 def _build_instruction_dag(program: Program) -> _InstructionDAG:
     """Build the private dependency DAG for a program.
 
-    The builder deliberately consumes ``Program._instructions``. This is a
-    circuit-level graph: it knows about logical quantum resources, classical
-    predicates, and barriers, but it does not inspect a device topology or
-    decide whether a two-qubit gate is physically legal.
-
-    Every dependency points from an earlier source position to a later one, so a malformed or cyclic graph cannot be introduced by this extraction strategy. Multiple reasons between the same pair of nodes are retained because they are useful to future renderers and diagnostics.
+    Dependencies follow source order on register slots. Direct pulse blocks
+    fence the instruction stream because their channels address physical
+    resources. Device topology and legality are checked by the backend.
     """
     nodes: list[_InstructionNode] = []
     edges: list[_DependencyEdge] = []
@@ -265,7 +264,11 @@ def _build_instruction_dag(program: Program) -> _InstructionDAG:
 
     last_quantum: dict[tuple[int, int], int] = {}
     last_classical_write: dict[tuple[int, int], int] = {}
+    classical_readers: dict[tuple[int, int], list[int]] = {}
     last_barrier: dict[tuple[int, int], int] = {}
+    last_pulse: int | None = None
+    # The current sinks cover all earlier nodes by reachability.
+    sinks: dict[int, None] = {}
 
     def add_edge(source: int, target: int, reason: str) -> None:
         if source == target:
@@ -274,12 +277,9 @@ def _build_instruction_dag(program: Program) -> _InstructionDAG:
         if key not in edge_keys:
             edges.append(_DependencyEdge(source, target, reason))
             edge_keys.add(key)
+            sinks.pop(source, None)
 
     for program_index, step in enumerate(program._instructions):
-        if _is_hardware_instruction(step):
-            # Hardware directives are not logical circuit nodes and must not
-            # affect the generic DAG.
-            continue
         (
             operation_name,
             targets,
@@ -288,6 +288,13 @@ def _build_instruction_dag(program: Program) -> _InstructionDAG:
             outputs,
         ) = _node_info(step)
         node_id = program_index
+
+        if node_type == "pulse":
+            for previous in tuple(sinks):
+                add_edge(previous, node_id, "pulse")
+            last_pulse = node_id
+        elif last_pulse is not None:
+            add_edge(last_pulse, node_id, "pulse")
 
         target_keys = tuple(_ref_key(ref) for ref in targets)
         for key in target_keys:
@@ -300,9 +307,11 @@ def _build_instruction_dag(program: Program) -> _InstructionDAG:
 
         if condition:
             for ref, _ in condition:
-                previous = last_classical_write.get(_ref_key(ref))
+                key = _ref_key(ref)
+                previous = last_classical_write.get(key)
                 if previous is not None:
                     add_edge(previous, node_id, "classical")
+                classical_readers.setdefault(key, []).append(node_id)
 
         node = _InstructionNode(
             node_id=node_id,
@@ -329,7 +338,11 @@ def _build_instruction_dag(program: Program) -> _InstructionDAG:
             previous = last_classical_write.get(key)
             if previous is not None:
                 add_edge(previous, node_id, "classical")
+            for reader in classical_readers.pop(key, []):
+                add_edge(reader, node_id, "classical")
             last_classical_write[key] = node_id
+
+        sinks[node_id] = None
 
     return _InstructionDAG(
         nodes=tuple(nodes),
@@ -361,7 +374,6 @@ def _build_interaction_frequency_graph(program: Program) -> _InteractionFrequenc
 
     The graph counts source-level two-target logical operations, including conditionally executed operations as potential interactions. It excludes backend directives such as Put, Pair, Unpair, and direct pulse controls; those are not logical circuit interactions.
     """
-    dag = _build_instruction_dag(program)
     nodes = tuple(
         ref
         for register in program.quantum_registers
@@ -371,8 +383,10 @@ def _build_interaction_frequency_graph(program: Program) -> _InteractionFrequenc
     node_order = {key: index for index, key in enumerate(node_keys)}
     counts: dict[tuple[tuple[int, int], tuple[int, int]], int] = {}
 
-    for node in dag.nodes:
-        for first, second in _interaction_pairs(node.instruction):
+    for step in program._instructions:
+        if _is_hardware_instruction(step):
+            continue
+        for first, second in _interaction_pairs(step):
             first_key = _ref_key(first)
             second_key = _ref_key(second)
             if first_key not in node_keys or second_key not in node_keys:
