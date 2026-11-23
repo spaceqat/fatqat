@@ -6,7 +6,7 @@
     <a href="https://github.com/spaceqat/fatqat/actions/workflows/tests.yml"><img src="https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
     <a href="https://pypi.org/project/fatqat/"><img src="https://img.shields.io/pypi/v/fatqat" alt="PyPI"></a>
     <a href="https://pypi.org/project/fatqat/"><img src="https://img.shields.io/pypi/pyversions/fatqat" alt="Python"></a>
-    <a href="https://fatqat.readthedocs.io/en/latest/"><img src="https://readthedocs.org/projects/fatqat/badge/?version=latest" alt="Documentation"></a>
+    <a href="https://fatqat.readthedocs.io/en/latest/"><img src="https://img.shields.io/readthedocs/fatqat" alt="Documentation"></a>
     <a href="https://github.com/spaceqat/fatqat/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/fatqat" alt="License"></a>
   </p>
   <p>
