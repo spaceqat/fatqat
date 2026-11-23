@@ -502,18 +502,3 @@ second-order Trotter step with $dt=0.01$ µs reproduces the exact PXP
 dynamics. The peaks are spaced by about 1.5 µs, consistent with
 $T\approx 4.7/g$, and at each peak the state returns to its own Néel
 configuration rather than to $|\bar Z_2\rangle$.
-
-## Summary and next steps
-
-Custom operations with a `MatrixImplementationMap` and a chosen
-`initial_state` let FatQat's gate-level simulator study a constrained model
-that the pulse emulators cannot start from.
-
-Two extensions use the same code:
-
-- Increase `DT_TROTTER` to `0.05` µs, one Trotter step per sampling
-  interval, and compare the printed fidelity gap with the run above to see
-  how the Trotter error grows with the step size.
-- Set `NUM_SITES` to 12 and compare the revival fidelities and entropy with
-  the ten-site results to see how the decay of the revivals depends on the
-  chain length.
