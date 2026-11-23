@@ -241,7 +241,13 @@ def test_engine_quantum_support_controls_early_validation(monkeypatch, operation
             64, ResetStep((0,)), "numba_trajectories", id="repeated-trajectories"
         ),
         pytest.param(
-            64, LossStep((0,), p=0.1), "python", id="unsupported-step-fallback"
+            64, LossStep((0,), p=0.1), "numba_trajectories", id="carrier-loss"
+        ),
+        pytest.param(
+            64,
+            MeasurementStep((0,), (0,), reported_digit_maps=((1, 0),)),
+            "python",
+            id="unsupported-step-fallback",
         ),
     ],
 )

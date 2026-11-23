@@ -1,8 +1,9 @@
 """Compiled statevector trajectory sequencing with direct Numba numerical calls.
 
-Each shot owns its quantum and classical state. The workflow interprets the
-packed plan, applies conditions, records measurement reports, and advances the
-random-draw cursor; numerical modules manipulate the quantum buffer.
+Each shot owns its quantum state, classical register, and carrier occupancy.
+The workflow interprets the packed plan, applies conditions and occupancy
+guards, records measurement reports, and advances the random-draw cursor;
+numerical modules manipulate the quantum buffer.
 """
 
 from collections.abc import Callable, Sequence
@@ -15,12 +16,15 @@ from numba import njit, prange
 from ....._backends.steps import (
     ApplyChannelStep,
     ApplyMatrixStep,
+    LossStep,
     MeasurementStep,
+    PutStep,
     ResetStep,
     ResolvedStep,
 )
 from .....noise.base import _sampled_unitary_branches
 from ._reporting import _report_digit_kernel
+from .._reporting import ERASURE_DIGIT
 from ...._execution_contract import (
     _RunContext,
 )
@@ -65,7 +69,7 @@ def _plan_compilable(plan: Sequence[ResolvedStep]) -> bool:
     """Whether the compiled multi-shot kernel understands every plan step.
 
     The workflow supports matrix, channel, measurement (including readout
-    confusion), and reset steps. It does not yet encode non-identity
+    confusion), reset, loss, and Put steps. It does not yet encode non-identity
     physical-to-reported measurement maps. An unsupported
     step or map must not reach ``_compile_dynamic_plan``; the caller falls back
     to the Python per-shot workflow with the selected numerical runtime.
@@ -77,7 +81,15 @@ def _plan_compilable(plan: Sequence[ResolvedStep]) -> bool:
     # per-shot workflow rather than silently reporting the physical digit.
     return all(
         isinstance(
-            step, (ApplyMatrixStep, ApplyChannelStep, MeasurementStep, ResetStep)
+            step,
+            (
+                ApplyMatrixStep,
+                ApplyChannelStep,
+                MeasurementStep,
+                ResetStep,
+                LossStep,
+                PutStep,
+            ),
         )
         and not (
             isinstance(step, MeasurementStep)
@@ -276,10 +288,14 @@ def _compile_dynamic_plan(
     measurement hands its confusion tuple to `_compile_readout_table`, whose
     pointers are indexed by the measured-subsystem position built here.
 
+    Occupancy tables follow the channel table, so the gate positions used by
+    `_patch_gate_matrices` stay valid.
+
     Returns a host record of positional plan arrays and the per-shot uniform-draw
     budget: one per measurement, one more per confusion-bearing measured
-    subsystem, and one per reset and channel - the upper bound on RNG draws
-    (a conditioned reset or channel that never fires simply draws less).
+    subsystem, one per reset and channel, two per loss target, and one per Put
+    target - the upper bound on RNG draws (a conditioned or guarded transition
+    that never fires simply draws less).
     """
     strides = [prod(dims[:q]) for q in range(len(dims))]
 
@@ -305,6 +321,15 @@ def _compile_dynamic_plan(
     readout_entries: list[tuple] = []
     num_measurements = 0
     num_resets = 0
+    # Occupancy: per-step targets that must be present, each measured
+    # subsystem's engine index, and the loss/Put target table.
+    step_guard_ptr: list[int] = []
+    step_guard_len: list[int] = []
+    guard_target: list[int] = []
+    me_target: list[int] = []
+    cr_ptr, cr_len, cr_p = [], [], []
+    cr_target, cr_stride, cr_dim = [], [], []
+    carrier_draws = 0
 
     def add_condition(condition):
         step_cond_ptr.append(len(cond_clbit))
@@ -312,6 +337,11 @@ def _compile_dynamic_plan(
         for clbit, value in condition or ():
             cond_clbit.append(clbit)
             cond_value.append(value)
+
+    def add_guard(targets):
+        step_guard_ptr.append(len(guard_target))
+        step_guard_len.append(len(targets))
+        guard_target.extend(targets)
 
     for step in plan:
         if isinstance(step, ApplyMatrixStep):
@@ -348,15 +378,18 @@ def _compile_dynamic_plan(
             ap_comp_len.append(comp_strides.shape[0])
             comp_stride_flat.extend(int(s) for s in comp_strides)
             comp_dim_flat.extend(int(d) for d in comp_dims)
+            add_guard(step.target_indices)
         elif isinstance(step, MeasurementStep):
             step_kind.append(1)
             step_data.append(len(me_len))
             add_condition(None)
+            add_guard(())
             me_ptr.append(len(me_stride))
             me_len.append(len(step.measured_indices))
             for q in step.measured_indices:
                 me_stride.append(strides[q])
                 me_dim.append(dims[q])
+                me_target.append(q)
             me_classical.extend(step.classical_indices)
             readout_entries.append((len(step.measured_indices), step.confusions))
             num_measurements += 1
@@ -367,11 +400,28 @@ def _compile_dynamic_plan(
             step_kind.append(3)
             step_data.append(len(channel_entries))
             add_condition(step.condition)
+            add_guard(step.target_indices)
             channel_entries.append((step.kraus_ops, offsets, comp_strides, comp_dims))
+        elif isinstance(step, (LossStep, PutStep)):
+            is_loss = isinstance(step, LossStep)
+            step_kind.append(4 if is_loss else 5)
+            step_data.append(len(cr_len))
+            add_condition(step.condition)
+            add_guard(())
+            cr_ptr.append(len(cr_target))
+            cr_len.append(len(step.target_indices))
+            cr_p.append(step.p if is_loss else 0.0)
+            for q in step.target_indices:
+                cr_target.append(q)
+                cr_stride.append(strides[q])
+                cr_dim.append(dims[q])
+            # A loss draw per target, plus the reset draw when it hits.
+            carrier_draws += (2 if is_loss else 1) * len(step.target_indices)
         else:  # ResetStep
             step_kind.append(2)
             step_data.append(len(rs_len))
             add_condition(step.condition)
+            add_guard(step.reset_indices)
             rs_ptr.append(len(rs_stride))
             rs_len.append(len(step.reset_indices))
             for q in step.reset_indices:
@@ -414,9 +464,25 @@ def _compile_dynamic_plan(
         i64(rs_stride),
         i64(rs_dim),
         *_compile_channel_table(channel_entries),
+        i64(step_guard_ptr),
+        i64(step_guard_len),
+        i64(guard_target),
+        i64(me_target),
+        i64(cr_ptr),
+        i64(cr_len),
+        np.asarray(cr_p, dtype=np.float64),
+        i64(cr_target),
+        i64(cr_stride),
+        i64(cr_dim),
     )
     num_confusions = int(np.count_nonzero(me_conf_ptr >= 0))
-    max_draws = num_measurements + num_confusions + num_resets + len(channel_entries)
+    max_draws = (
+        num_measurements
+        + num_confusions
+        + num_resets
+        + len(channel_entries)
+        + carrier_draws
+    )
     return _NumbaTrajectoryExecution(plan_arrays, max_draws, tuple(gate_rows))
 
 
@@ -504,6 +570,12 @@ def _execute_sv_trajectories(
     )
     clbits = initial_state.classical.clbits
     clbits_start = np.asarray(clbits if clbits is not None else (), dtype=np.int64)
+    # None means every carrier is present; a set lists exactly those present.
+    occupied = initial_state.classical.occupied
+    occupied_start = np.ones(len(context.system_dims), dtype=np.bool_)
+    if occupied is not None:
+        occupied_start[:] = False
+        occupied_start[list(occupied)] = True
     return _run_sv_trajectories(
         *compiled.plan_arrays,
         start,
@@ -511,11 +583,23 @@ def _execute_sv_trajectories(
         custom_start,
         start_index,
         clbits_start,
+        occupied_start,
         context.n_clbits,
         shots,
         uniforms,
         max_draws,
     )
+
+
+@njit(cache=True)
+def _targets_present(
+    occupied, guard_target, start, length
+) -> bool:  # pragma: no cover - compiled by Numba
+    """Whether every target guarding this step is occupied."""
+    for t in range(length):
+        if not occupied[guard_target[start + t]]:
+            return False
+    return True
 
 
 @njit(cache=True)
@@ -589,6 +673,8 @@ def _measure_step(
     me_dim,
     me_conf_ptr,
     conf_flat,
+    occupied,
+    me_target,
     uniforms,
     draw,
 ):  # pragma: no cover - compiled by Numba
@@ -603,6 +689,9 @@ def _measure_step(
     while feedforward reads the report - the same semantics, and the same draw
     order, as ``_run_one_shot``'s ``_report_digit`` on the NumPy path.
 
+    The collapse covers the whole group even when some sites are empty. An
+    empty site then reports the erasure digit and draws no confusion uniform.
+
     Returns the projected state and the advanced cursor.
     """
     start = me_ptr[m]
@@ -613,6 +702,9 @@ def _measure_step(
         state, me_stride[start : start + length], me_dim[start : start + length], index
     )
     for j in range(length):
+        if not occupied[me_target[start + j]]:
+            clbits[me_classical[start + j]] = ERASURE_DIGIT
+            continue
         digit = (index // me_stride[start + j]) % me_dim[start + j]
         conf_ptr = me_conf_ptr[start + j]
         if conf_ptr >= 0:
@@ -636,6 +728,74 @@ def _reset_step(
     )
 
 
+@njit(cache=True)
+def _loss_step(
+    state,
+    occupied,
+    k,
+    cr_ptr,
+    cr_len,
+    cr_p,
+    cr_target,
+    cr_stride,
+    cr_dim,
+    uniforms,
+    draw,
+):  # pragma: no cover - compiled by Numba
+    """Sample loss for each occupied target of carrier step ``k`` in order.
+
+    Each occupied target takes one draw and is lost when it falls below ``p``.
+    A lost target is marked empty and reset to ``|0>`` with the next draw,
+    before the following target is sampled. Returns the state and cursor.
+    """
+    start = cr_ptr[k]
+    for i in range(start, start + cr_len[k]):
+        q = cr_target[i]
+        if not occupied[q]:
+            continue
+        lost = uniforms[draw] < cr_p[k]
+        draw += 1
+        if lost:
+            occupied[q] = False
+            state = _sv_reset_kernel(
+                state, cr_stride[i : i + 1], cr_dim[i : i + 1], uniforms[draw]
+            )
+            draw += 1
+    return state, draw
+
+
+@njit(cache=True)
+def _put_step(
+    state,
+    occupied,
+    k,
+    cr_ptr,
+    cr_len,
+    cr_target,
+    cr_stride,
+    cr_dim,
+    uniforms,
+    draw,
+):  # pragma: no cover - compiled by Numba
+    """Load each empty target of carrier step ``k`` in order.
+
+    A loaded target is marked occupied and reset to ``|0>`` with one draw;
+    an occupied target is unchanged and draws nothing. Returns the state and
+    cursor.
+    """
+    start = cr_ptr[k]
+    for i in range(start, start + cr_len[k]):
+        q = cr_target[i]
+        if occupied[q]:
+            continue
+        occupied[q] = True
+        state = _sv_reset_kernel(
+            state, cr_stride[i : i + 1], cr_dim[i : i + 1], uniforms[draw]
+        )
+        draw += 1
+    return state, draw
+
+
 def _start_template(
     initial_state: EvolutionState, system_dims: Sequence[int]
 ) -> tuple[np.ndarray, bool, int]:
@@ -656,7 +816,7 @@ def _start_template(
 
 @njit(cache=True, inline="always")
 def _initialize_shot_state(
-    start, state_size, custom_start, start_index, n_clbits, clbits_start
+    start, state_size, custom_start, start_index, n_clbits, clbits_start, occupied_start
 ):
     """Allocate one shot's quantum and classical buffers without sharing them."""
     if custom_start:
@@ -669,14 +829,16 @@ def _initialize_shot_state(
     clbits = (
         clbits_start.copy() if clbits_start.size else np.zeros(n_clbits, dtype=np.int64)
     )
-    return NumbaEvolutionState(quantum, NumbaClassicalState(clbits))
+    return NumbaEvolutionState(
+        quantum, NumbaClassicalState(clbits, occupied_start.copy())
+    )
 
 
 @njit(cache=True, parallel=True)
 def _run_sv_trajectories(
     # per-step sequencer (one entry per plan step, in program order)
-    step_kind,  # 0=gate, 1=measurement, 2=reset
-    step_data,  # row index into this kind's table (gate/measure/reset)
+    step_kind,  # 0=gate, 1=measurement, 2=reset, 3=channel, 4=loss, 5=Put
+    step_data,  # row index into this kind's table
     step_cond_ptr,  # start of this step's condition in the condition pool
     step_cond_len,  # number of (clbit, value) terms in the condition
     # condition pool (flat, shared by all conditioned steps)
@@ -728,11 +890,25 @@ def _run_sv_trajectories(
     ch_comp_dim_flat,  # concatenated complement dimensions
     ch_cdf_flat,  # concatenated scaled-unitary branch cdfs, normalized (float64)
     ch_ident_flat,  # 1 where that branch is the identity, so the draw is a no-op
+    # occupancy guards (one entry per plan step; empty for measurement/loss/Put)
+    step_guard_ptr,  # start of this step's required targets in guard_target
+    step_guard_len,  # number of targets that must be occupied for it to fire
+    guard_target,  # concatenated engine subsystem indices of guarded targets
+    me_target,  # engine subsystem of each measured subsystem (aligned with me_*)
+    # carrier table (one entry per LossStep or PutStep)
+    cr_ptr,  # start of this step's targets in cr_*
+    cr_len,  # number of targets
+    cr_p,  # loss probability per step (unused for Put)
+    # carrier flat backing
+    cr_target,  # engine subsystem index of each target
+    cr_stride,  # flat stride of each target
+    cr_dim,  # dimension of each target
     start,  # custom-state template; empty when a basis state is requested
     state_size,  # flat state width, kept explicit when `start` is empty
     custom_start,  # whether each shot must copy `start`, not build a basis state
     start_index,  # basis state each shot builds when `custom_start` is false
     clbits_start,  # initial report digits; empty for zero initialization
+    occupied_start,  # initial occupancy per subsystem, copied by every shot
     n_clbits,  # classical-register width: per-shot clbits and result columns
     shots,  # number of independent trajectories - the `prange` extent
     uniforms,  # pre-drawn uniforms, shots*max_draws in execution order
@@ -742,18 +918,25 @@ def _run_sv_trajectories(
 
     Each shot (a `prange` iteration) owns a local `NumbaEvolutionState`
     and interprets the compiled plan: conditioned gate application, projective
-    measurement with readout confusion, conditioned reset, and conditioned channel
-    noise. Uniforms are pre-drawn per shot in execution order (slice
-    ``uniforms[s*max_draws:]``), consumed one per measurement, one more per
-    confusion-bearing measured subsystem, and one per firing reset or channel -
-    matching the serial path's RNG stream, so counts are identical. Shots are
+    measurement with readout confusion, conditioned reset, conditioned channel
+    noise, and conditioned carrier loss and Put. Gates, channels, and resets
+    fire only when all their targets are occupied. Uniforms are pre-drawn per
+    shot (slice ``uniforms[s*max_draws:]``) and consumed in execution order,
+    as each step helper describes - matching the serial path's RNG stream, so
+    counts are identical. Shots are
     independent, so the result is deterministic regardless of thread scheduling.
     """
     num_steps = step_kind.shape[0]
     results = np.zeros((shots, n_clbits), dtype=np.int64)
     for shot in prange(shots):  # pylint: disable=not-an-iterable
         evolution = _initialize_shot_state(
-            start, state_size, custom_start, start_index, n_clbits, clbits_start
+            start,
+            state_size,
+            custom_start,
+            start_index,
+            n_clbits,
+            clbits_start,
+            occupied_start,
         )
         draw = shot * max_draws
 
@@ -778,11 +961,51 @@ def _run_sv_trajectories(
                     me_dim,
                     me_conf_ptr,
                     conf_flat,
+                    evolution.classical.occupied,
+                    me_target,
                     uniforms,
                     draw,
                 )
                 evolution = NumbaEvolutionState(quantum, evolution.classical)
-            elif kind == 0 and passes:  # gate
+            elif not passes:
+                continue
+            elif kind == 4:  # carrier loss
+                quantum, draw = _loss_step(
+                    evolution.quantum,
+                    evolution.classical.occupied,
+                    step_data[st],
+                    cr_ptr,
+                    cr_len,
+                    cr_p,
+                    cr_target,
+                    cr_stride,
+                    cr_dim,
+                    uniforms,
+                    draw,
+                )
+                evolution = NumbaEvolutionState(quantum, evolution.classical)
+            elif kind == 5:  # Put
+                quantum, draw = _put_step(
+                    evolution.quantum,
+                    evolution.classical.occupied,
+                    step_data[st],
+                    cr_ptr,
+                    cr_len,
+                    cr_target,
+                    cr_stride,
+                    cr_dim,
+                    uniforms,
+                    draw,
+                )
+                evolution = NumbaEvolutionState(quantum, evolution.classical)
+            elif not _targets_present(
+                evolution.classical.occupied,
+                guard_target,
+                step_guard_ptr[st],
+                step_guard_len[st],
+            ):
+                continue
+            elif kind == 0:  # gate
                 _apply_matrix_step(
                     evolution.quantum,
                     step_data[st],
@@ -800,7 +1023,7 @@ def _run_sv_trajectories(
                     comp_dim_flat,
                     state_size,
                 )
-            elif kind == 2 and passes:  # reset
+            elif kind == 2:  # reset
                 quantum = _reset_step(
                     evolution.quantum,
                     step_data[st],
@@ -812,7 +1035,7 @@ def _run_sv_trajectories(
                 )
                 evolution = NumbaEvolutionState(quantum, evolution.classical)
                 draw += 1
-            elif kind == 3 and passes:  # channel noise (applied in place)
+            elif kind == 3:  # channel noise (applied in place)
                 _apply_channel_step(
                     evolution.quantum,
                     step_data[st],

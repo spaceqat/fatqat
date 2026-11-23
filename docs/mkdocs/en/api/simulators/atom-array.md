@@ -39,6 +39,9 @@ attach [`Loss`][fatqat.noise.Loss] to the operation where it can occur. For the
 rules on other channels, see [Noise
 support](../noise/backend-support.md#simulators).
 
+With the Numba runtime and `statevector`, counts-only runs with several shots,
+including those with `Put` and `Loss`, accept `shot_parallelism="threads"`.
+
 ## Read an empty-site measurement { #example }
 
 Measurement reports `2` for an empty site. This erasure value bypasses readout

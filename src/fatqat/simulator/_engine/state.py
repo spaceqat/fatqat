@@ -141,9 +141,10 @@ class EvolutionState(Generic[QuantumDataT]):
 
 
 class NumbaClassicalState(NamedTuple):
-    """Classical report digits for a compiled shot; occupancy remains implicit."""
+    """Classical report digits and per-subsystem occupancy for a compiled shot."""
 
     clbits: np.ndarray
+    occupied: np.ndarray
 
 
 class NumbaEvolutionState(NamedTuple):

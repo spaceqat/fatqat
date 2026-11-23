@@ -233,8 +233,9 @@ class NumbaSVEngine(_NdarrayEngine):
     ) -> ExecutionPolicy:
         """Choose a compiled workflow or Python sequencing with Numba kernels.
 
-        Eligible repeated trajectories use the compiled loop with serial inner
-        kernels and serial or threaded shots. A parameter batch on the
+        Eligible repeated trajectories, including atom runs with occupancy,
+        loss, and Put, use the compiled loop with serial inner kernels and
+        serial or threaded shots. A parameter batch on the
         single-pass path, too small for threaded kernels, whose parametric
         gates all have compiled formulas, evolves its entries in a compiled
         call and is sampled by the Python workflow; packing costs more than it
@@ -280,7 +281,6 @@ class NumbaSVEngine(_NdarrayEngine):
             or not context.request.counts
             or context.request.final_state
             or context.request.final_classical_state
-            or initial_state.classical.occupied is not None
             or not _plan_compilable(plan)
         )
         if use_python:
