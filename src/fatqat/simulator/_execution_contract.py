@@ -199,8 +199,7 @@ class _KernelCapabilities:
     # Plan materialization can combine compatible adjacent operations.
     # This does not enable or disable compiled multi-shot execution.
     supports_fusion: bool
-    # Default step-level gate fusion bounds. The simulator copies them into
-    # the run context; engines read the context, not this declaration.
+    # Step-level gate fusion bounds; None leaves bound plans unfused.
     gate_fusion: _GateFusionLimits | None = None
 
 
@@ -228,16 +227,10 @@ class _EngineCapabilities:
 
 @dataclass(frozen=True, slots=True)
 class _RunContext:
-    """System dimensions, requested outputs, sampling and fusion controls for a run.
-
-    ``gate_fusion`` holds the gate fusion limits in effect for this run. The
-    simulator sets it from the engine default when fusion is enabled. ``None``
-    leaves bound plans unfused.
-    """
+    """System dimensions, requested outputs, and sampling controls for a run."""
 
     request: _ResultRequest
     system_dims: tuple[int, ...]
     n_clbits: int
     shots: int
     seed: int | None
-    gate_fusion: _GateFusionLimits | None = None

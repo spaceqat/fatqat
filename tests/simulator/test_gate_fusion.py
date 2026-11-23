@@ -611,9 +611,10 @@ def test_sampled_expectation_tail_is_never_fused(monkeypatch):
     assert calls["tail_dispatch"] == 0
 
 
-def test_process_tail_is_not_fused_when_the_context_carries_limits(monkeypatch):
+def test_process_tail_is_not_fused_when_fusion_is_enabled(monkeypatch):
     # Public runs cannot reach this branch with fusion on: per-shot tails need
     # occupancy, which rejects fusion. The engine contract still holds.
+    _force_limits(monkeypatch, "SV", "numpy")
     simulator = Simulator("SV", runtime="numpy")
     engine = simulator._engine
     tail = simulator._prepare_execution(
@@ -641,7 +642,6 @@ def test_process_tail_is_not_fused_when_the_context_carries_limits(monkeypatch):
         n_clbits=4,
         shots=64,
         seed=5,
-        gate_fusion=FORCED,
     )
     config = _SimulationConfig(fusion=True, max_workers=2, seed=5)
 
@@ -650,37 +650,6 @@ def test_process_tail_is_not_fused_when_the_context_carries_limits(monkeypatch):
     )
 
     assert dispatched == ["processes"]
-    assert record.calls == 0
-
-
-def test_engine_does_not_fuse_without_limits_in_the_context(monkeypatch):
-    # The engine class declares limits; only the run context may enable them.
-    _force_limits(monkeypatch, "SV", "numpy")
-    simulator = Simulator("SV", runtime="numpy")
-    execution = simulator._prepare_execution(
-        _brick(4, 2),
-        resource_layout=None,
-        initial_state=None,
-        execution_config={"fusion": True},
-    )
-    record = _record(monkeypatch, type(simulator._engine))
-    context = _RunContext(
-        request=_ResultRequest(counts=False, final_state=True),
-        system_dims=(2,) * 4,
-        n_clbits=0,
-        shots=1,
-        seed=5,
-    )
-
-    list(
-        simulator._engine.execute(
-            execution.plan,
-            context=context,
-            simulation_config=execution.simulation,
-            initial_state=execution.initial_state,
-        )
-    )
-
     assert record.calls == 0
 
 
