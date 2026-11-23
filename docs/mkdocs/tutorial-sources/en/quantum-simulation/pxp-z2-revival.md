@@ -1,18 +1,18 @@
 ---
-title: "Initial-state revivals and entanglement growth in an open PXP chain"
-description: "Trotterize the constrained PXP Hamiltonian and compare many-body revivals and half-chain entropy with an independent exact solve."
+title: "Observe Z₂ revivals and entanglement in a PXP chain"
+description: "Trotterize the constrained PXP Hamiltonian, quench a ten-site chain from the Z₂ Néel state, and compare its revivals and half-chain entropy with an exact QuTiP solution."
 icon: material-waveform
 figure_alts:
   - "PXP revival fidelities, entanglement entropy, and site occupations"
 ---
 
 
-# Initial-state revivals and entanglement growth in an open PXP chain
+# Observe Z₂ revivals and entanglement in a PXP chain
 
 
-Push the Rydberg blockade to its strong-coupling extreme and you are left
-with the PXP model, and quenching it from the Neel state produces one of the
-strangest sights in many-body physics.
+In the strong-coupling limit of the Rydberg blockade, the Rydberg Hamiltonian
+reduces to the PXP model, and quenching it from the Néel state produces
+persistent many-body revivals.
 
 You would expect a ten-site chain to scramble and forget where it started.
 The PXP chain, for the most part, does exactly that -- except when it starts
@@ -22,14 +22,15 @@ many-body scars (see [Turner et al., Nature Physics 14, 745 (2018)](https://doi.
 quench, but it is not a one-way street either: every revival comes with a
 visible dip in the half-chain entropy.
 
-One practical wrinkle: fatqat's pulse emulators always start from the
-all-ground state and only offer global controls, so they cannot host a quench
-from $|Z_2\rangle$. The workaround below is to Trotterize the PXP
+One practical wrinkle: FatQat's pulse emulators reject `initial_state`, so
+every run starts from the ground state, and the two-level Rydberg emulator
+offers only global drive and detuning controls, so a quench from
+$|Z_2\rangle$ cannot be expressed there. The workaround below is to Trotterize the PXP
 Hamiltonian into small custom gates and run them on the gate-level simulator,
 which does accept an arbitrary `initial_state`. An independent QuTiP solve
 of the exact PXP model checks every curve along the way.
 
-## 1. Where PXP comes from: the blockade limit of the Rydberg Hamiltonian
+## Where PXP comes from: the blockade limit of the Rydberg Hamiltonian
 
 Start from the Rydberg Hamiltonian,
 
@@ -41,7 +42,7 @@ H(t) = \frac{\Omega(t)}{2}\sum_i X_i
 n_i=|r\rangle\langle r|_i.
 $$
 
-Now crank $U$ up and set $\Delta=0$. Once two neighbouring
+Now make $U$ large and set $\Delta=0$. Once two neighbouring
 excitations cost more energy than anything else in the problem, "no two
 neighbours both in $|r\rangle$" stops being a preference and becomes
 a hard rule. Inside that constrained subspace, first-order perturbation
@@ -53,8 +54,8 @@ H_{\mathrm{PXP}} = \frac{\Omega}{2}\sum_i P_{i-1} X_i P_{i+1},
 P_i = |g\rangle\langle g|_i = I - n_i,
 $$
 
-with open boundaries, meaning $P_{-1}=P_L=1$. Read each term out
-loud: site $i$ may flip, but only while both of its neighbours sit in
+with open boundaries, meaning $P_{-1}=P_L=1$. In each term,
+site $i$ may flip, but only while both of its neighbours sit in
 $|g\rangle$. The bulk terms involve three sites; the two boundary
 terms, $X_0 P_1$ and $P_{L-2}X_{L-1}$, only two.
 
@@ -62,9 +63,9 @@ A word on scope: this is an ideal model study. The constraint is imposed
 exactly (not approximated by a big-but-finite $U$), and there is no
 decoherence and no atom loss.
 
-## 2. The Z2 state and why it revives
+## The Z2 state and why it revives
 
-Two Neel configurations live inside the constrained subspace,
+Two Néel configurations live inside the constrained subspace,
 
 $$
 |Z_2\rangle = |r\,g\,r\,g\,\ldots\rangle,
@@ -76,16 +77,16 @@ We prepare $|Z_2\rangle$, let it go, and watch the return probability
 $F(t)=|\langle Z_2|\psi(t)\rangle|^2$. A handful of special scarred
 eigenstates dominate this quench, so $F(t)$ oscillates with a period
 near $T\approx 4.7/g$, where $g=\Omega/2$ is the PXP
-coefficient. For the drive used below that means $T\approx 1.5$ us --
+coefficient. For the drive used below that means $T\approx 1.5$ µs --
 but rather than trusting the estimate, we will simply measure where the
 peaks actually land.
 
 ## Imports, constants, and the Z2 vector
 
-Ten sites, working in rad/us and us units, and the familiar drive scale $\Omega=2\pi$ rad/us, so the PXP coefficient is
-$g=\pi$ rad/us. One convention to keep straight: FATQAT stores the
+Ten sites, working in rad/µs and µs units, and the familiar drive scale $\Omega=2\pi$ rad/µs, so the PXP coefficient is
+$g=\pi$ rad/µs. One convention to keep straight: FatQat stores the
 amplitude of $|b_0\ldots b_9\rangle$ at index
-$\sum_i b_i 2^{N-1-i}$ (site 0 is the most significant bit), so each Neel
+$\sum_i b_i 2^{N-1-i}$ (site 0 is the most significant bit), so each Néel
 state is a single basis vector -- just two index numbers to remember.
 
 ```python
@@ -99,9 +100,9 @@ NUM_SITES = 10
 HALF = NUM_SITES // 2
 DIM = 2**NUM_SITES
 
-OMEGA = 2 * np.pi  # rad/us -> PXP coefficient g = OMEGA / 2
-T_MAX = 6.0  # us, covers the first three revivals
-DT_TROTTER = 0.01  # us, one symmetric second-order Trotter step
+OMEGA = 2 * np.pi  # rad/µs -> PXP coefficient g = OMEGA / 2
+T_MAX = 6.0  # µs, covers the first four revivals
+DT_TROTTER = 0.01  # µs, one symmetric second-order Trotter step
 TIME_GRID = np.linspace(0.0, T_MAX, 121)
 
 Z2_BITS = tuple(1 - (i % 2) for i in range(NUM_SITES))  # |r g r g ...>
@@ -109,7 +110,7 @@ Z2_INDEX = sum(2 ** (NUM_SITES - 1 - i) for i in range(NUM_SITES) if Z2_BITS[i])
 Z2 = np.zeros(DIM, dtype=complex)
 Z2[Z2_INDEX] = 1.0
 
-ALT_BITS = tuple(1 - bit for bit in Z2_BITS)  # the twin Neel branch
+ALT_BITS = tuple(1 - bit for bit in Z2_BITS)  # the twin Néel branch
 ALT_INDEX = sum(2 ** (NUM_SITES - 1 - i) for i in range(NUM_SITES) if ALT_BITS[i])
 ALT = np.zeros(DIM, dtype=complex)
 ALT[ALT_INDEX] = 1.0
@@ -118,12 +119,11 @@ print(f"Z2 branch |r g r g ...> sits at statevector index {Z2_INDEX}")
 print(f"twin branch |g r g r ...> sits at statevector index {ALT_INDEX}")
 ```
 
-## 3. Trotterizing PXP into a fatqat program
+## Trotterizing PXP into a FatQat program
 
-Two constraints decided the approach. First, the pulse emulators always
-start from $|g\ldots g\rangle$ and only offer global controls, so a
-quench from $|Z_2\rangle$ is simply not expressible there; the
-gate-level [`Simulator`][fatqat.simulator.Simulator], on the other hand, happily
+Two constraints decided the approach. First, as noted above, the pulse
+emulators cannot start from $|Z_2\rangle$; the
+gate-level [`Simulator`][fatqat.simulator.Simulator], on the other hand,
 accepts an `initial_state`. Second, no native gate set contains a PXP
 term, so we use [`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap]
 to supply a local matrix for each PXP operation.
@@ -174,10 +174,10 @@ uses the one angle $\theta=\Omega\,dt/4$. Repeating this symmetric
 step `round(duration / dt)` times walks the quench out to durations that
 are integer multiples of `dt`.
 
-A small warning from experience: when fatqat flattens a local matrix, the
+Note that when FatQat flattens a local matrix, the
 FIRST target is the most significant bit -- index
 $b_{t_0}\cdot 2^{k-1} + \cdots + b_{t_{k-1}}$. It is easy to get
-this backwards (we did), and the result is silently wrong dynamics rather
+this backwards, and the result is silently wrong dynamics rather
 than an error message.
 
 ```python
@@ -222,7 +222,7 @@ def _rotation_matrix(dimension: int, pair: tuple[int, int], angle: float) -> np.
     return matrix
 
 
-# fatqat flattens local matrices with the FIRST target as the most
+# FatQat flattens local matrices with the FIRST target as the most
 # significant bit: index = b_{t0} * 2**(k-1) + ... + b_{t_{k-1}}.
 # Keep that in mind or the edge terms quietly act on the wrong site.
 # Bulk (i-1, i, i+1): flip the middle site -> pair (|ggg>, |grg>) = (0, 2).
@@ -268,9 +268,9 @@ def trotter_program(duration: float) -> fq.Program:
     return program
 ```
 
-## 4. The exact oracle
+## The exact oracle
 
-Never trust a hand-built Trotter circuit without a second opinion. fatqat's
+FatQat's
 own physics tests check numerics against an independent oracle, so we do
 the same here: assemble the exact PXP Hamiltonian directly with QuTiP and
 solve it once over the whole time grid, starting from the same
@@ -303,12 +303,12 @@ def evolve_oracle(index: int) -> np.ndarray:
     return np.asarray(ORACLE_RESULT.states[index].full()).reshape(-1)
 ```
 
-## 5. What to measure: fidelity and half-chain entropy
+## What to measure: fidelity and half-chain entropy
 
-Two numbers tell the whole story. The fidelity
+The fidelity
 $F(t)=|\langle Z_2|\psi(t)\rangle|^2$ says how much of the state
 comes back, and the fidelity to the twin branch tells us whether a revival
-lands on the *same* Neel orientation or the mirrored one. The half-chain
+lands on the *same* Néel orientation or the mirrored one. The half-chain
 von Neumann entropy
 
 $$
@@ -318,7 +318,7 @@ S(t) = -\mathrm{Tr}\left[\rho_A\ln\rho_A\right],
 $$
 
 with $A$ the first five sites, tracks how entangled the two halves
-get. Both curves come from the same small helpers, so the fatqat and
+get. Both curves come from the same small helpers, so the FatQat and
 oracle numbers are directly comparable.
 
 ```python
@@ -351,7 +351,7 @@ def site_occupations(state: np.ndarray) -> np.ndarray:
     )
 ```
 
-## 6. Run the quench and collect the time series
+## Run the quench and collect the time series
 
 Build one Trotter program for the interval between samples. Starting from
 $|Z_2\rangle$, pass each final state into the next run through
@@ -386,7 +386,7 @@ def evolve_states(
     return states
 
 
-# The uniform grid samples every 0.05 us: five Trotter steps per interval.
+# The uniform grid samples every 0.05 µs: five Trotter steps per interval.
 sample_dt = TIME_GRID[1] - TIME_GRID[0]
 interval_program = trotter_program(sample_dt)
 fatqat_states = evolve_states(
@@ -410,7 +410,7 @@ print(f"Largest fidelity gap between Trotter and oracle: {max_gap:.5f}")
 ```
 
 Revival peaks are just local maxima of the fidelity after the initial
-decay. Notice that each peak lands on the *same* Neel branch -- the
+decay. Notice that each peak lands on the *same* Néel branch -- the
 twin-branch fidelity stays negligible there, so the state really does
 come back to where it started.
 
@@ -418,8 +418,8 @@ come back to where it started.
 peaks = argrelextrema(fatqat_fidelity, np.greater, order=4)[0]
 peaks = [p for p in peaks if TIME_GRID[p] > 0.2 and fatqat_fidelity[p] > 0.2]
 
-print("\nRevivals of the |Z2> quench (fatqat Trotter):")
-print(f"{'time (us)':>10} {'F(Z2)':>8} {'F(alt)':>8} {'S(t)':>8}")
+print("\nRevivals of the |Z2> quench (FatQat Trotter):")
+print(f"{'time (µs)':>10} {'F(Z2)':>8} {'F(alt)':>8} {'S(t)':>8}")
 for p in peaks[:4]:
     print(
         f"{TIME_GRID[p]:>10.2f} {fatqat_fidelity[p]:>8.3f} "
@@ -432,14 +432,14 @@ first_peak_entropy = fatqat_entropy[peaks[0]]
 print(f"Entropy maximum: {fatqat_entropy.max():.3f}")
 ```
 
-## 7. Read the revival and the entropy growth
+## Read the revival and the entropy growth
 
-The left panel is the money plot: three revivals around
-$t\approx 1.5, 3.0, 4.5$ us, each a little weaker than the last --
+The left panel shows the revivals around
+$t\approx 1.5, 3.0, 4.5, 5.9$ µs, each a little weaker than the last --
 the fingerprint of PXP scars. The middle panel shows why these dynamics
 are not thermal: the half-chain entropy grows, but it *dips* at every
 revival, as if the state briefly remembered how to be a product state
-again. The right panel tells the same story in real space, with the Neel
+again. The right panel tells the same story in real space, with the Néel
 stripes melting during the quench and partially reassembling each time the
 fidelity peaks.
 
@@ -449,7 +449,7 @@ figure, (fid_axis, ent_axis, occ_axis) = plt.subplots(1, 3, figsize=(16, 4))
 fid_axis.plot(
     TIME_GRID,
     fatqat_fidelity,
-    label="fatqat Trotter",
+    label="FatQat Trotter",
     linewidth=2,
 )
 fid_axis.plot(TIME_GRID, oracle_fidelity, "k--", label="exact PXP oracle")
@@ -462,19 +462,19 @@ fid_axis.scatter(
     label="revival peaks",
 )
 fid_axis.set(
-    xlabel="Time (us)",
+    xlabel="Time (µs)",
     ylabel=r"Fidelity $|\langle Z_2|\psi(t)\rangle|^2$",
     ylim=(0, 1.05),
     title="Z2 revival",
 )
 fid_axis.legend(fontsize="small")
 
-ent_axis.plot(TIME_GRID, fatqat_entropy, label="fatqat Trotter", linewidth=2)
+ent_axis.plot(TIME_GRID, fatqat_entropy, label="FatQat Trotter", linewidth=2)
 ent_axis.plot(TIME_GRID, oracle_entropy, "k--", label="exact PXP oracle")
-for p in peaks[:3]:
+for p in peaks:
     ent_axis.axvline(TIME_GRID[p], color="0.8", linestyle=":", linewidth=1)
 ent_axis.set(
-    xlabel="Time (us)",
+    xlabel="Time (µs)",
     ylabel=r"Half-chain entropy $S(t)$",
     title="Entanglement growth",
 )
@@ -488,7 +488,7 @@ image = occ_axis.imshow(
     cmap="viridis",
 )
 occ_axis.set(
-    xlabel="Time (us)",
+    xlabel="Time (µs)",
     ylabel="Site",
     title=r"Rydberg population $\langle n_i(t)\rangle$",
 )
@@ -496,3 +496,24 @@ figure.colorbar(image, ax=occ_axis, fraction=0.046, pad=0.04)
 figure.tight_layout()
 plt.show()
 ```
+
+The Trotter and exact curves differ by less than $10^{-3}$, so the
+second-order Trotter step with $dt=0.01$ µs reproduces the exact PXP
+dynamics. The peaks are spaced by about 1.5 µs, consistent with
+$T\approx 4.7/g$, and at each peak the state returns to its own Néel
+configuration rather than to $|\bar Z_2\rangle$.
+
+## Summary and next steps
+
+Custom operations with a `MatrixImplementationMap` and a chosen
+`initial_state` let FatQat's gate-level simulator study a constrained model
+that the pulse emulators cannot start from.
+
+Two extensions use the same code:
+
+- Increase `DT_TROTTER` to `0.05` µs, one Trotter step per sampling
+  interval, and compare the printed fidelity gap with the run above to see
+  how the Trotter error grows with the step size.
+- Set `NUM_SITES` to 12 and compare the revival fidelities and entropy with
+  the ten-site results to see how the decay of the revivals depends on the
+  chain length.

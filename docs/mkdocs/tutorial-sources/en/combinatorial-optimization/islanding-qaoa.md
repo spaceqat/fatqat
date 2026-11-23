@@ -1,6 +1,6 @@
 ---
 title: "Split a power grid into islands with QAOA"
-description: "Run the controlled-islanding QUBO on a FatQat simulator, then repair every measured bitstring into a feasible split with pVSQA postprocessing."
+description: "Run the controlled-islanding QUBO on a FatQat simulator, then repair the measured bitstrings into feasible splits with pVSQA postprocessing."
 icon: material-flash-triangle-outline
 figure_alts:
   - "Mean energy and best-feasible-split probability against QAOA depth"
@@ -14,15 +14,15 @@ figure_alts:
 splitting a transmission network into a quadratic function of binary variables:
 the objective is the power interrupted by the cut lines, and generator
 coherency and island balance are penalties that vanish when the requirement
-holds. This tutorial takes that model, runs it on a quantum circuit, and deals
-with what comes back.
+holds [6]. The coherent generator groups are input data, identified by methods
+such as slow-coherency analysis [4]. This tutorial takes that model, runs it
+on a quantum circuit, and deals with what comes back.
 
 The headline difficulty is that a shallow QAOA circuit on a constrained problem
 returns mostly unusable bitstrings. Out of 2000 measurements of the 14-bus
 model below, around 25 describe a split the grid could actually operate. The
-fix is not a deeper circuit; it is to stop treating a measurement as an answer
-and start treating it as a starting point, which is what the postprocessing
-half of this tutorial does.
+fix is not a deeper circuit but classical postprocessing, which is the second
+half of this tutorial.
 
 The pipeline as a whole — the coherency-informed QUBO, sampling it with a
 shallow circuit, and repairing what comes back — follows REGRID-QAOA [1]. The
@@ -240,9 +240,10 @@ pointed at this model is being pointed slightly past the answer.
 
 ## Running QAOA on the 14-bus model
 
-The circuit construction is exactly the one from the QUBO tutorial: substitute
-$x_i = (1 - z_i)/2$ to get an Ising Hamiltonian, then emit an `RZ` per field
-term, a `CX`-`RZ`-`CX` ladder per coupling, and an `RX` mixer per layer.
+The circuit is the standard QAOA ansatz [3], built exactly as in the QUBO
+tutorial: substitute $x_i = (1 - z_i)/2$ to get an Ising Hamiltonian, then
+emit an `RZ` per field term, a `CX`-`RZ`-`CX` ladder per coupling, and an `RX`
+mixer per layer.
 
 ```python
 def to_ising(constant, linear, quadratic, n, tolerance=1e-9):
@@ -385,8 +386,8 @@ large shot budget, and most of what it collected would be unusable.
 
 The fix is to stop treating a measurement as an answer and start treating it as
 a *starting point*. The postprocessing variationally scheduled quantum
-algorithm (pVSQA) [2] walks each measured bitstring downhill to the nearest
-feasible assignment, so every shot yields a usable split.
+algorithm (pVSQA) [2] walks each measured bitstring downhill toward a nearby
+feasible assignment.
 
 Method 1 is the two-stage form. The first stage is that paper's Algorithm 1:
 repeatedly flip whichever single variable most decreases
@@ -436,28 +437,43 @@ def greedy_repair(qubo, bits, constraints=(), multiplier=0.0, max_flips=500):
     return values
 
 
+def energy_of(qubo, bits):
+    constant, linear, quadratic = qubo
+    total = constant + float(linear @ bits)
+    for (i, j), value in quadratic.items():
+        if bits[i] and bits[j]:
+            total += value
+    return total
+
+
 rng = np.random.default_rng(7)
 trials = [rng.integers(0, 2, N) for _ in range(300)]
 stage_one = [greedy_repair(QUBO, bits) for bits in trials]
 feasible_after_stage_one = sum(decode(spec, bits)["feasible"] for bits in stage_one)
 distinct = {"".join(map(str, bits)) for bits in stage_one}
+at_ground_state = sum(
+    abs(energy_of(QUBO, bits) - spectrum.min()) < 1e-6 for bits in stage_one
+)
 
 print(f"stage 1 alone, from {len(trials)} random bitstrings:")
 print(f"  {feasible_after_stage_one} feasible, {len(distinct)} distinct results")
+print(f"  {at_ground_state} reach the QUBO ground state")
 failing = decode(spec, stage_one[0])["checks"]
 print(f"  checks on a typical result: {failing}")
 ```
 
-Every descent lands on the QUBO's ground state, and none of them is feasible —
-because that ground state is the disconnected split found earlier. The greedy
-stage is doing exactly what it was asked to do, and it is not enough.
+None of the descents ends on a feasible split. More than half reach the QUBO's
+ground state, and that is the disconnected split found earlier; the rest stop
+in other local minima that are no better. A stronger optimizer would not help:
+the lowest-energy split the QUBO can describe is itself infeasible, because
+connectivity was deliberately left out of it. The greedy stage is doing
+exactly what it was asked to do, and it is not enough.
 
 The second stage handles what the QUBO deliberately left out. When an island
 falls into several connected components, each stray fragment can be fixed two
 ways: hand it to a neighboring island, or annex the buses along the shortest
-path back to the island's main body. Exile is cheaper, but it is impossible
-when a coherency group straddles the fragment. Both moves are constructed,
-scored with the model's own energy, and the better one wins.
+path back to the island's main body. Both moves are constructed, scored with
+the model's own energy, and the better one wins.
 
 ```python
 def components_of(members, lines):
@@ -510,17 +526,8 @@ def shortest_bridge(fragment, target, lines):
     return []
 
 
-def energy_of(qubo, bits):
-    constant, linear, quadratic = qubo
-    total = constant + float(linear @ bits)
-    for (i, j), value in quadratic.items():
-        if bits[i] and bits[j]:
-            total += value
-    return total
-
-
 def repair_connectivity(spec, qubo, bits, max_moves=20):
-    """Reconnect broken islands by exiling or annexing, whichever scores lower."""
+    """Reconnect broken islands by moving or annexing, whichever scores lower."""
     values = np.asarray(bits, dtype=np.int8).copy()
     positions = {bus: position for position, bus in enumerate(spec["buses"])}
 
@@ -631,19 +638,20 @@ print(f"  {len({''.join(map(str, bits)) for bits in repaired})} distinct results
 ```
 
 Together the two stages turn most random bitstrings into feasible splits, and
-most of those are the best feasible split. Stage 2 is what made the difference:
-the same descent that produced nothing usable on its own now lands on the
-answer four times out of five.
+in this run every feasible result is the best feasible split. Stage 2 is what
+made the difference: the same descent that produced nothing usable on its own
+now reaches the answer for most starting points. The rest end on infeasible
+splits, so the repair is strong but not guaranteed.
 
 That number is also a warning, and the next section takes it seriously.
 
 ## A control the demonstration needs
 
 Repairing random bitstrings already reaches the best feasible split most of the
-time. So before claiming that QAOA contributes anything, the honest thing to do
-is run the classical half on its own and compare. Uniform random bitstrings,
-repaired with the same Method 1, are the baseline; anything the quantum sampler
-is worth has to show up as a difference against it.
+time. So before claiming that QAOA contributes anything, the classical half has
+to be run on its own for comparison. Uniform random bitstrings, repaired with
+the same Method 1, are the baseline; anything the quantum sampler is worth has
+to show up as a difference against it.
 
 ```python
 def optimal_rate(bitstrings):
@@ -681,23 +689,20 @@ print(f"  {'uniform random + repair':<24}: {uniform_rate:.3f}")
 print(f"  {label:<24}: {quantum_rate:.3f}")
 ```
 
-The two rates are close. On a 14-bus network the repair is strong enough to
-find the answer from almost anywhere, so the quantum sampler has nothing left
-to contribute, and no claim of advantage is supportable from this run. What
-these results do establish is that the pipeline is correct end to end: the
-model, the circuit, the repair, and the decoding all agree with an exhaustive
-classical reference.
+In this run the QAOA samples reach the answer somewhat more often after
+repair, but uniform random bitstrings already reach it most of the time, so
+one run does not establish an advantage.
 
 Separating the two claims needs a network where the classical descent gets
 stuck — larger, more strongly meshed, or with tighter coherency groups. That
 is exactly where the qubit accounting at the end of this tutorial becomes the
-binding constraint, and it is the honest place to put the effort next.
+binding constraint, and it is where the effort should go next.
 
 ## What postprocessing does to a QAOA run
 
 Applied to a real measurement, the effect is a shift in what the shot budget
 buys. Raw outcomes spread across the whole energy range and are mostly
-infeasible; repaired outcomes collapse onto feasible splits. Repair runs once
+infeasible; repaired outcomes mostly land on feasible splits. Repair runs once
 per *distinct* outcome rather than once per shot, which is what keeps it
 affordable.
 
@@ -767,8 +772,7 @@ Qubit count is what decides whether a network is reachable at all, and it
 follows directly from the encoding and the components in use. Three numbers
 matter per system: the one-hot width $n_\text{buses} \times k$, the binary
 width $n_\text{buses}$ when $k = 2$, and the width once the slack-carrying
-requirements are added. The two encodings and the reason they agree on the
-answer are developed in
+requirements are added. The two encodings are developed in
 [Model controlled islanding as a QUBO](islanding-model.md).
 
 The slack-carrying components — "at least $M$ buses", "at least one generator",
@@ -839,17 +843,19 @@ messier decoding.
 
 ## Where this leaves the problem
 
-The pipeline is complete and each piece is checkable: the QUBO reproduces the
-operating requirements, the two encodings agree on the answer, the circuit
-construction matches an independent estimator, and every measured bitstring
-becomes a feasible split.
+The pipeline is complete and each piece is checkable: the QUBO encodes
+coherency and balance, the decoding checks the remaining operating
+requirements, and the repair turns most measured bitstrings into feasible
+splits, as the shot counts above show. The best split it finds matches the one
+from exhaustive enumeration.
 
 What it does not yet show is a quantum advantage, and it is worth being precise
 about why. On networks small enough to simulate, the classical repair reaches
-the optimum from any starting point, so the quantum sampler's contribution is
-unmeasurable. Making that contribution visible needs a network where the
-classical descent has somewhere to get stuck — and there, the width numbers
-above become the binding constraint rather than the runtime. Approaches aimed
+the optimum from most starting points, uniform random ones included, so the
+quantum sampler's contribution is hard to separate from it. Making that
+contribution visible needs a network where the classical descent has somewhere
+to get stuck — and there, the width numbers above become the binding
+constraint rather than the runtime. Approaches aimed
 at exactly that constraint are developed in [7] and [8].
 
 The parts most worth pushing on:
@@ -858,10 +864,12 @@ The parts most worth pushing on:
   islands, and merging buses that will never separate shrinks the problem
   before any encoding is chosen [7]. Solving regional subproblems in sequence
   keeps the circuit width independent of the network size altogether [8].
-- **Constraint-preserving mixers.** An XY mixer confines the state to the
-  one-hot subspace, so amplitude is never spent on assignments the penalty
-  would only have to reject.
-- **Warm starts.** Seeding QAOA from a classical partition and letting the
+- **Constraint-preserving mixers.** The binary encoding used here has no
+  one-hot constraint, but the one-hot encoding needed for more than two
+  islands does. There an XY mixer confines the state to the one-hot subspace,
+  so amplitude is never spent on assignments the penalty would only have to
+  reject.
+- **Warm starts.** Seeding QAOA from a classical partition [5] and letting the
   circuit search nearby uses shallow depth where it helps most.
 - **Noise.** Every run here is noiseless. Attaching a `fatqat.NoiseModel` to
   the simulator turns the same code into a study of how much depth this

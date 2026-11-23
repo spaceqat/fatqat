@@ -222,7 +222,7 @@ plot compares the final populations for these two recipes.
     ```
 
 For a complete amplitude scan, parameter selection, and checks on other input
-states, follow [Calibrating a quantum gate](../tutorials/pulse-calibration.md).
+states, follow [Calibrate an X gate on a transmon](../tutorials/pulse-calibration.md).
 
 ## Start with a transmon grid
 

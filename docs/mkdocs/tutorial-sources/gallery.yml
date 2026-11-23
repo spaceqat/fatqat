@@ -11,7 +11,7 @@ ui:
 index:
   en:
     title: Case studies
-    description: Executable FatQat case studies in circuits, control, error correction, simulation, optimization, and machine learning.
+    description: Executable FatQat case studies in circuits, error correction, simulation, optimization, machine learning, and pulse control.
     introduction: >-
       How does atom loss affect error correction? How does a control pulse change
       a quantum gate's behavior? And how can a power-grid partition be expressed

@@ -1,12 +1,13 @@
 ---
-title: "Defining a near-time-optimal Rydberg CZ pulse"
+title: "Design a near-time-optimal Rydberg CZ pulse"
 description: "Recreate a compact approximation to the constant-amplitude, phase-shaped Rydberg CZ pulse of Jandura and Pupillo, simulate its two blockade-limit control blocks, and locate the conditional-phase crossing."
+icon: material-pulse
 figure_alts:
   - "The authored Rydberg pulse over its dimensionless duration: constant unit-normalized amplitude and a smooth phase made from a linear ramp and two sine harmonics."
   - "Conditional phase versus dimensionless pulse duration between 7.5 and 7.7, showing a nearly linear crossing of pi near 7.614 while the computational-state return probability remains close to one."
 ---
 
-# Defining a near-time-optimal Rydberg CZ pulse
+# Design a near-time-optimal Rydberg CZ pulse
 
 Jandura and Pupillo identify a time-optimal global pulse for a two-atom
 Rydberg CZ gate in the infinite-blockade limit. Their result has a particularly
@@ -100,9 +101,9 @@ For a self-contained tutorial, we use the compact three-term approximation
 \varphi(s)=c_0s+c_1\sin(2\pi s)+c_2\sin(4\pi s),
 \]
 
-with the coefficients below. It reaches unit fidelity in the reduced model at
-\(T\Omega_{\max}\simeq7.614\), within \(0.03\%\) of the paper's optimized
-value \(7.612\).
+with the coefficients below. In the reduced model it reaches an average CZ
+fidelity indistinguishable from one at \(T\Omega_{\max}\simeq7.614\), within
+\(0.03\%\) of the paper's optimized value \(7.612\).
 
 ```python
 import matplotlib.pyplot as plt
@@ -181,9 +182,10 @@ plt.show()
 ```
 
 This curve is one member of the symmetry pair discussed in the paper. Complex
-conjugation reverses the phase profile and changes the removable single-qubit
-phase, but implements the same CZ gate in the infinite-blockade limit. The
-matrix convention above selects the member used by FatQat's drive channel.
+conjugation negates the phase profile, \(\varphi\to-\varphi\), and changes
+the removable single-qubit phase, but implements the same CZ gate in the
+infinite-blockade limit. The matrix convention above selects the member used
+by FatQat's drive channel.
 
 ## Simulate both control blocks
 
@@ -352,7 +354,8 @@ blockade-limit CZ pulse:
 * a smooth phase profile coordinates blocks whose Rabi frequencies differ by
   \(\sqrt2\);
 * both blocks return to the computational subspace; and
-* their phases differ by the nonlocal angle \(\pi\).
+* their return phases combine to the nonlocal phase
+  \(\Phi_{\mathrm{CZ}}=\xi_{11}-2\xi_{01}=\pi\).
 
 The compact harmonic phase is an approximation to the published pulse, so the
 tutorial calls it *near*-time-optimal. Proving time optimality requires the

@@ -1,5 +1,5 @@
 ---
-title: "Atom loss as an erasure in a repetition code"
+title: "Decode atom loss as an erasure in a repetition code"
 description: "Run a repetition-code memory on AtomArraySimulator with atom loss, see what the parity checks reveal about a lost atom, and measure how much the erasure flag in the final readout is worth to a simple decoder."
 icon: material-atom
 figure_alts:
@@ -7,7 +7,7 @@ figure_alts:
 ---
 
 
-# Atom loss as an erasure in a repetition code
+# Decode atom loss as an erasure in a repetition code
 
 
 A neutral-atom processor can lose an atom from its trap. The atom takes its
@@ -46,9 +46,9 @@ SEED = 7
 
 The distance-$d$ repetition code stores one bit in $d$ data atoms,
 $|0_L\rangle = |0\cdots0\rangle$ and $|1_L\rangle = |1\cdots1\rangle$. Between
-neighbouring data atoms sits an ancilla that measures the parity
+neighboring data atoms sits an ancilla that measures the parity
 $Z_j Z_{j+1}$: prepared in $|+\rangle$, it picks up a phase from a `CZ` with
-each neighbour, and a final Hadamard turns that phase into a bit. A round of
+each neighbor, and a final Hadamard turns that phase into a bit. A round of
 these measurements is a *syndrome*. For an intact code it reports even parity
 everywhere.
 
@@ -56,7 +56,7 @@ The atom array accepts only `RX`, `RY`, `RZ`, and `CZ`, and a `CZ` needs its
 two atoms to be paired first, as in the
 [eight-atom GHZ tutorial](atom-array-ghz8.md). Each round pairs every ancilla
 with its left data atom, applies the `CZ` gates, and then does the same with the
-right neighbours. The pairs within a layer are disjoint, so the gates of a layer
+right neighbors. The pairs within a layer are disjoint, so the gates of a layer
 can run in parallel.
 
 Every site starts empty. [`Put`][fatqat.operations.Put] loads the data atoms
@@ -92,7 +92,7 @@ def build_repetition_program(distance: int, logical: int) -> fq.Program:
         program.add(ops.Put, ancilla.all())  # refill any ancilla lost earlier
         for j in checks:
             native_h(program, ancilla[j])
-        for side in (0, 1):  # left neighbours, then right neighbours
+        for side in (0, 1):  # left neighbors, then right neighbors
             pairs = [(ancilla[j], data[j + side]) for j in checks]
             for pair in pairs:
                 program.add(ops.Pair, pair)
@@ -171,7 +171,7 @@ readout, and nothing in the record says when the atom was lost.
 
 A `CZ` with an empty trap applies no phase, exactly as an atom in $|0\rangle$
 would. A check next to a lost data atom therefore measures its surviving
-neighbour alone: instead of $Z_j Z_{j+1}$ it measures a single $Z$. The next
+neighbor alone: instead of $Z_j Z_{j+1}$ it measures a single $Z$. The next
 cell selects shots in which exactly one data atom and no ancilla was lost, and
 counts how often the last syndrome round shows an odd parity.
 
@@ -269,8 +269,10 @@ When loss is the only noise, every surviving atom reads the stored value. The
 erasure-aware vote then fails only when all $d$ data atoms are lost and it has
 to guess. No decoder that sees only the final readout can do better, since such
 a shot contains no information about the logical bit. A decoder that also reads
-the syndrome history can do better, because of the leak described in the
-previous section, so this is not a lower bound on the LER of the experiment.
+the syndrome history can do better: as the previous section showed, a check
+next to a lost atom measures the logical bit, so the syndrome history can
+carry the stored value in shots where the final readout carries none. This
+is therefore not a lower bound on the LER of the experiment.
 
 The two error rates also have exact values under pure loss. Data atom $i$ takes
 part in $n_i$ `CZ` gates: $R$ at either end of the chain and $2R$ in between,
@@ -402,6 +404,11 @@ for distance in distances:
     unaware, aware = logical_error_rates(counts, distance, 1, rng)
     print(f"  {distance}  {unaware:12.4f}  {aware:13.4f}")
 ```
+
+The erasure flag still helps, lowering the logical error rate from 0.061 to
+0.042 at distance 3 and from 0.039 to 0.021 at distance 5, but far less than
+under pure loss. Bit flips on surviving atoms now cause most failures, and the
+flag cannot help with those.
 
 ## Takeaways and next steps
 

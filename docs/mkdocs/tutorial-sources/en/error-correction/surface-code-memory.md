@@ -22,9 +22,9 @@ decoding the final logical Z readout. You will learn how to construct a noisy
 syndrome-extraction circuit, interpret detection events, and apply a classical
 decoder. Finally, we will examine how the decoded logical error rate changes with the number of QEC cycles and fit an effective error rate per cycle.
 
-## 1. Specify the code and initial state
+## Specify the code and initial state
 
-Data qubits 0 through 8 form a row-major $3\times3$ square. Each ancilla qubit measures the product of X or Z on its neighbouring data qubits. $H_X$ and $H_Z$ record those stabilizers as binary matrices and the commutation relation requires $H_X H_Z^T=0\pmod2$. The chosen logical operators are $Z_L=Z_0Z_3Z_6$ and $X_L=X_0X_1X_2$.
+Data qubits 0 through 8 form a row-major $3\times3$ square. Each ancilla qubit measures the product of X or Z on its neighboring data qubits. $H_X$ and $H_Z$ record those stabilizers as binary matrices and the commutation relation requires $H_X H_Z^T=0\pmod2$. The chosen logical operators are $Z_L=Z_0Z_3Z_6$ and $X_L=X_0X_1X_2$.
 
 `POSITIONS` assigns dimensionless coordinates to this code diagram. These coordinates
 are used to draw the patch and generate the
@@ -127,7 +127,7 @@ print("Four independent checks of each type; code distance 3")
 print("Initial data: |0>^9; initial Z checks and logical Z have eigenvalue +1")
 ```
 
-## 2. Construct the backend and noise model
+## Construct the backend and noise model
 
 We use illustrative noise parameters to model gate errors, relaxation,
 dephasing, and readout errors. All qubits share the same coherence times and
@@ -230,12 +230,12 @@ decoherence only to the data qubits. Leakage, crosstalk, and dynamical decouplin
 Initialization is ideal, so no additional state-preparation error is applied
 to the default all-zero state.
 
-## 3. Build the syndrome extraction circuit
+## Build the syndrome extraction circuit
 
 Z-type stabilizers are measured using CNOT gates with the data qubits as controls and the ancilla as the target. For X-type stabilizers, the ancilla acts as the control and the data qubits as targets. A Hadamard gate is applied to each X-check ancilla before and after its CNOT sequence. All ancillas are then measured in the Z basis.
 
 
-The CNOT gates are scheduled in four layers. Each Z-check ancilla interacts with its neighbouring data qubits in the order northwest, northeast, southwest, southeast. Each X-check ancilla uses the order northwest, southwest, northeast, southeast. These directions refer to the positions of data qubits relative to the ancilla in the patch diagram. Missing neighbours at the boundaries are skipped. Each layer contains six CNOT gates acting on disjoint qubit pairs. The ordering controls how ancilla faults propagate into correlated data errors. Any alternative schedule should be checked for correct stabilizer extraction and hook-error propagation.
+The CNOT gates are scheduled in four layers. Each Z-check ancilla interacts with its neighboring data qubits in the order northwest, northeast, southwest, southeast. Each X-check ancilla uses the order northwest, southwest, northeast, southeast. These directions refer to the positions of data qubits relative to the ancilla in the patch diagram. Missing neighbors at the boundaries are skipped. Each layer contains six CNOT gates acting on disjoint qubit pairs. The ordering controls how ancilla faults propagate into correlated data errors. Any alternative schedule should be checked for correct stabilizer extraction and hook-error propagation.
 See [Tomita and Svore](https://arxiv.org/abs/1404.3747).
 
 ```python
@@ -328,7 +328,7 @@ print("Classical record: eight check bits per QEC cycle, then nine data bits")
 print("Each cycle: 600 ns ancilla readout with data qubit idling, then ideal reset")
 ```
 
-## 4. Construct detection events
+## Construct detection events
 
 With every ancilla initialized or reset to $|0\rangle$ before extraction,
 an ideal measurement directly returns the stabilizer bit $s_t$.
@@ -403,7 +403,7 @@ def unpack_record(record, rounds):
     return detectors, measured_logical
 ```
 
-## 5. Predict the logical correction from the syndrome
+## Predict the logical correction from the syndrome
 
 An X error on a data qubit reverses the sign of each Z stabilizer acting on
 that qubit. The decoder uses the resulting detection events to infer a
@@ -429,7 +429,7 @@ close the syndrome history at the last time boundary.
 The decoder selects a minimum-weight error history consistent with the
 observed detection events. Each elementary error has weight
 $w=\log[(1-p)/p]$. We set `data_error=readout_error=0.01`, so both error
-types have equal weight and the decoder favours histories with fewer
+types have equal weight and the decoder favors histories with fewer
 faults.
 
 Let $x_t$ describe the data X errors in interval $t$, and let $e_{t-1}$ and
@@ -588,7 +588,7 @@ always receive the same recovery prediction.
     The reference model should match the experiment's circuit and measurement
     protocol.
 
-## 6. Measure logical error after decoding
+## Measure logical error after decoding
 
 At the end of each shot, all nine data qubits are measured in the Z basis,
 giving the reported bits $b_0,\ldots,b_8$. The measurement outcome of the
@@ -728,7 +728,7 @@ available. Fixed seeds reproduce counts for the same runtime, parallelism
 settings, and result requests.
 
 
-## 7. Fit logical error per cycle
+## Fit logical error per cycle
 
 The detector map shows changes in the measured Z-stabilizer parities during
 storage. Its final column compares the last ancilla results with the Z-check
@@ -758,6 +758,12 @@ figure.colorbar(display, ax=axis, label="Detection probability")
 figure.tight_layout()
 plt.show()
 ```
+
+The first column is low because its detectors compare the first ancilla
+result with the known initial value; later detectors also see the previous
+cycle's readout errors and data idling. Weight-four checks fire more often
+than weight-two boundary checks, because they touch more data qubits. With
+128 shots, the final column shows no clear excess from the data readout.
 
 The data points estimate the logical error rate after $R$ cycles.
 To extract a rate per cycle, assume that each cycle independently flips
@@ -852,6 +858,13 @@ axis.legend(loc="upper left")
 figure.tight_layout()
 plt.show()
 ```
+
+The fit gives $\epsilon_L\approx0.035$: each QEC cycle flips the decoded
+logical Z value with a probability of about 3.5%, comparable to the error a
+single data qubit accumulates in one cycle from up to four CZ gates and a
+600 ns idle. At these illustrative parameters a distance-three code therefore
+does not suppress the logical error rate; that needs lower physical error
+rates, confirmed by comparing code distances.
 
 Detection events reveal changes in stabilizer outcomes. A readout error
 can trigger a detector without changing the data state, while a logical X
