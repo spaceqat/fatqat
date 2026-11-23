@@ -77,6 +77,6 @@ channels specify the physical resources directly.
     options:
       heading_level: 4
 
-::: fatqat.visualization.to_qubit_circuit
+::: fatqat.visualization.to_qutip_circuit
     options:
       heading_level: 4

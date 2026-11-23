@@ -5,6 +5,6 @@ drawing. The public helpers exported here are intended for integrations that
 need access to intermediate visualization objects.
 """
 
-from .qutip_circuit import to_qubit_circuit
+from .qutip_circuit import to_qubit_circuit, to_qutip_circuit
 
-__all__ = ["to_qubit_circuit"]
+__all__ = ["to_qutip_circuit", "to_qubit_circuit"]
