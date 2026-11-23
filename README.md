@@ -14,7 +14,7 @@
 
 [Quickstart](https://fatqat.readthedocs.io/en/latest/guide/quickstart/) · [Documentation](https://fatqat.readthedocs.io/en/latest/) · [Case studies](https://fatqat.readthedocs.io/en/latest/tutorials/)
 
-English | [简体中文](README.zh-CN.md) | [한국어](README-KR.md)
+English | [简体中文](https://github.com/spaceqat/fatqat/blob/main/README.zh-CN.md) | [한국어](https://github.com/spaceqat/fatqat/blob/main/README-KR.md)
 
 </div>
 
