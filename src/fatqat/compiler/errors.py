@@ -24,7 +24,16 @@ class UnsupportedFeatureError(CompilerError, ValueError):
 
 
 class PassError(CompilerError):
-    """A translation pass failed while transforming one IR into another."""
+    """A compiler pass raised an exception or returned the wrong type.
+
+    If the pass raised, ``__cause__`` holds the original exception. A wrong
+    return type is reported directly and has no underlying exception.
+
+    Attributes:
+        pass_name: Name of the failed pass.
+        source_ir: IR ID the pass accepts.
+        target_ir: IR ID the pass is expected to produce.
+    """
 
     def __init__(self, pass_name: str, source_ir: str, target_ir: str, detail: str):
         self.pass_name = pass_name

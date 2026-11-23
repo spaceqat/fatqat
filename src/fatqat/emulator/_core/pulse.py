@@ -368,12 +368,15 @@ class PulseImplementationMap(_BaseImplementationMap[_PulseImplementation]):
     not program register references. See ``add()`` for the accepted rule
     forms.
 
-    When a rule is used, its ``BackendValidationError`` is reported unchanged.
-    Other exceptions and return values other than ``PulseDefinition`` are
-    reported as ``PulseImplementationError``.
+    When a rule is used, raise ``BackendValidationError`` to report unsupported
+    operands or parameters. The emulator propagates that error unchanged.
+    It expects a ``PulseDefinition`` and reports an incompatible return
+    value or any other exception as ``PulseImplementationError``.
 
     Examples:
-        Register a fixed definition for one physical operand:
+        Register a test waveform for ``X`` on physical transmon ``q0`` and
+        run a program with that map. The reference model has two three-level
+        transmons, so its statevector has nine amplitudes.
 
         >>> import fatqat as fq
         >>> import fatqat.operations as ops
@@ -391,8 +394,13 @@ class PulseImplementationMap(_BaseImplementationMap[_PulseImplementation]):
         >>> implementations.add(
         ...     ops.X, definition, device_operands=("q0",)
         ... )
-        >>> implementations.supports(ops.X, device_operands=("q0",))
-        True
+        >>> backend = fq.emulator.TransmonEmulator(
+        ...     model, gate_implementation_map=implementations
+        ... )
+        >>> program = fq.Program(1)
+        >>> program.add(ops.X, 0)
+        >>> backend.run(program).result().get_statevector().shape
+        (9, 1)
     """
 
     def __init__(self) -> None:
@@ -407,10 +415,6 @@ class PulseImplementationMap(_BaseImplementationMap[_PulseImplementation]):
     ) -> None:
         """Add a general or device-specific pulse implementation.
 
-        With explicit ``device_operands``, use a fixed ``PulseDefinition`` or
-        a callable that accepts the operation and may also accept
-        ``device_operands`` by keyword. Without explicit operands, the callable
-        must accept ``device_operands`` by keyword.
         An operation family cannot mix general and device-specific rules;
         remove it before switching forms. Adding the same family or operand
         tuple again replaces its previous rule.
@@ -418,9 +422,16 @@ class PulseImplementationMap(_BaseImplementationMap[_PulseImplementation]):
         Args:
             op: Operation instance or class to implement, with fixed or
                 variable arity.
-            implementation: A ``PulseDefinition`` or a callable that returns
-                one. When ``device_operands`` is omitted, the callable must
-                explicitly accept that keyword.
+            implementation: A fixed definition or callable, depending on how
+                the rule is registered.
+
+                - With ``device_operands``, pass a fixed ``PulseDefinition``
+                  or a callable that returns one. The callable takes the
+                  operation and may also accept ``device_operands`` by keyword.
+                - Without ``device_operands``, pass a callable that returns
+                  a ``PulseDefinition``. The callable takes the operation and
+                  explicitly declares ``device_operands`` as a parameter that
+                  accepts a keyword argument.
             device_operands: Ordered physical labels for a device-specific
                 rule. The tuple length must match ``num_subsystems`` when it
                 is not ``None``. Variable-arity operations match the exact

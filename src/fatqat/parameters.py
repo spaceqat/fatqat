@@ -66,14 +66,9 @@ class ParameterVector:
     indices, and iteration follows increasing index order; slices and other
     index types are not accepted.
 
-    Bind a non-empty vector with `Program.assign_parameters` when every element
-    is used directly as an operation argument. The value must be a
-    matching-length, one-dimensional NumPy array or another non-string,
-    non-bytes, non-mapping iterable. Values are consumed once and paired with
-    elements in index order. Individual elements are ordinary `Parameter` keys
-    and support partial binding. A zero-length vector is valid as an empty
-    container but not as a binding key. Parameters nested inside another
-    container are not discovered for binding.
+    Use `Program.assign_parameters` to bind a non-empty vector in index order
+    when every element is used directly as an operation argument. To bind
+    only some elements, use the individual `Parameter` objects as keys.
 
     Args:
         name: Non-empty base label. Element labels use ``name[index]``.

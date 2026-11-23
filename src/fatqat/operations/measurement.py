@@ -18,10 +18,10 @@ class Measurement:
     Create measurements with `fatqat.Program.measure` or
     `fatqat.Program.measure_all`, not `fatqat.Program.add`. Measurements cannot carry a ``condition=`` argument.
 
-    Repeated targets and outputs are accepted and processed in tuple order. A
-    repeated target reports its already-collapsed outcome, with reporting noise
-    applied independently to each pair. For a repeated classical output, the
-    last write wins.
+    Repeated targets and outputs are accepted and processed in tuple order.
+    Measuring the same target again in the group reads the state left by its
+    first measurement. If multiple results are written to the same classical
+    output, the last write wins.
 
     Args:
         targets: Non-empty tuple of quantum references to measure.

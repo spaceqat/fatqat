@@ -290,6 +290,10 @@ class TransmonModel:
     def control(self) -> _TransmonControls:
         """Return the ``drive``, ``detuning``, and ``exchange`` selectors.
 
+        The selectors accept any finite coefficient in their supported
+        coefficient domain. Pulse timing follows the standard pulse-block
+        rules, with no additional model limits on amplitude or duration.
+
         Returns:
             The available channel selectors.
         """

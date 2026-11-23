@@ -590,19 +590,16 @@ def _expand_targets(targets: tuple) -> tuple[tuple[RegisterRef, ...], ...]:
 def to_qubit_circuit(program: Program, *, _barrier_markers: bool = False):
     """Convert a program to a QuTiP-QIP circuit for drawing.
 
-    Quantum and classical slots become wires in register declaration order.
-    Native gates use QuTiP-QIP symbols; gates it cannot draw natively,
-    including custom and qudit operations, become boxes labeled with the
-    operation name. Measurements, reset, barriers, and classical conditions
-    are retained; a barrier appears as a box labeled ``barrier`` (fatqat's
-    own `fatqat.Program.draw` renders it as a dashed separator instead), and
-    a condition attached to a barrier is not depicted. Register dimensions
-    are not shown.
+    Use the returned circuit with QuTiP-QIP's drawing methods. Wires follow
+    register declaration order and do not show register dimensions. Operations
+    without a native drawing symbol, such as custom gates, appear as labeled
+    boxes. Barriers appear as boxes without any attached condition.
 
-    Use the returned circuit for drawing only. Placeholder gates for non-native operations cannot be simulated with QuTiP-QIP.
+    The returned circuit is for drawing only. QuTiP-QIP cannot execute the
+    placeholders used for operations it does not support.
 
     Args:
-        program: Program to translate. Qudit registers are accepted, but their dimensions are not visible in the diagram.
+        program: Program to draw, including programs with qudit registers.
 
     Returns:
         A ``qutip_qip.circuit.QubitCircuit`` ready for QuTiP-QIP's drawing methods.

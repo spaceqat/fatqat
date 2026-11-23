@@ -5,34 +5,116 @@ title: "Qudit gates"
 # Qudit gates
 
 
-These gates are defined for local dimensions `d >= 2`; the table gives any
-additional dimension rules. [`add`][fatqat.Program.add] records the
-operation, and the backend checks support when the program runs.
-Integer `power` values are reduced modulo the relevant target dimension, so
-negative and oversized values are valid.
-
-Unary gates accept one scalar target or one [`RegisterView`](../registers.md#fatqat.RegisterView).
-Two-target gates accept scalars or two compatible views and zip their members.
-
-**Qudit gates**
+These gates act on qudits, systems of dimension `d >= 2`. The table lists each
+gate's target count and any additional dimension or level requirements. For
+scalar and grouped targets, see [`Program.add()`][fatqat.Program.add].
+Integer `power` values wrap modulo the relevant dimension, including
+negative values.
 
 | Value or constructor | Targets and constraints | Basis action |
 | --- | --- | --- |
-| [`Shift`][fatqat.operations.Shift] `(power)` | One scalar or view; any `d >= 2` | `\|k> -> \|(k + power) mod d>`. `Shift(1)` is X for `d=2`. |
-| [`Clock`][fatqat.operations.Clock] `(power)` | One scalar or view; any `d >= 2` | `\|k> -> omega**(k*power)\|k>`, `omega=exp(2*pi*i/d)`. `Clock(1)` is Z for `d=2`. |
-| [`Sum`][fatqat.operations.Sum] | Scalar or view pair with equal dimensions | `\|i,j> -> \|i,(i+j) mod d>`. It is CX for `d=2`. |
-| [`SwapLevels`][fatqat.operations.SwapLevels] `(j, k)` | One scalar or view; `0 <= j,k < d` and `j != k` | Exchanges `\|j>` and `\|k>` and fixes every other level. |
-| [`Fourier`][fatqat.operations.Fourier] | One scalar or view; any `d >= 2` | `\|j> -> sum(exp(2*pi*i*j*k/d)\|k>) / sqrt(d)`. It is H for `d=2`. |
-| [`InverseFourier`][fatqat.operations.InverseFourier] | One scalar or view; any `d >= 2` | Conjugate transpose of `Fourier`; uses the negative exponent. |
-| [`SubspaceRX`][fatqat.operations.SubspaceRX] `(theta, (j, k))` | One scalar or view; two distinct in-range levels | With `c=cos(theta/2)`, `s=sin(theta/2)`: `\|j> -> c\|j>-i*s\|k>` and `\|k> -> -i*s\|j>+c\|k>`. |
-| [`SubspaceRY`][fatqat.operations.SubspaceRY] `(theta, (j, k))` | One scalar or view; two distinct in-range levels | `\|j> -> c\|j>+s\|k>` and `\|k> -> -s\|j>+c\|k>`. Reversing `(j, k)` reverses the rotation. |
-| [`SubspaceRZ`][fatqat.operations.SubspaceRZ] `(theta, (j, k))` | One scalar or view; two distinct in-range levels | `\|j>` gains `exp(-i*theta/2)` and `\|k>` gains `exp(i*theta/2)`. Reversing the pair reverses the rotation. |
-| [`CClock`][fatqat.operations.CClock] `(power)` | Scalar or view pair; dimensions may differ | `\|i,j>` gains `omega**(i*j*power)` using the target's `omega=exp(2*pi*i/d_target)`. It is CZ for two qubits and power 1. |
+| [`Shift`][fatqat.operations.Shift] `(power)` | One target | `\|k> -> \|(k + power) mod d>`. `Shift(1)` is X for `d=2`. |
+| [`Clock`][fatqat.operations.Clock] `(power)` | One target | `\|k> -> omega**(k*power)\|k>`, `omega=exp(2*pi*i/d)`. `Clock(1)` is Z for `d=2`. |
+| [`Sum`][fatqat.operations.Sum] | Two targets `(control, target)` with equal dimensions | `\|i,j> -> \|i,(i+j) mod d>`. It is CX for `d=2`. |
+| [`SwapLevels`][fatqat.operations.SwapLevels] `(j, k)` | One target; `0 <= j,k < d` and `j != k` | Exchanges `\|j>` and `\|k>` and fixes every other level. |
+| [`Fourier`][fatqat.operations.Fourier] | One target | `\|j> -> sum(exp(2*pi*i*j*k/d)\|k>) / sqrt(d)`. It is H for `d=2`. |
+| [`InverseFourier`][fatqat.operations.InverseFourier] | One target | Conjugate transpose of `Fourier`; uses the negative exponent. |
+| [`SubspaceRX`][fatqat.operations.SubspaceRX] `(theta, (j, k))` | One target; two distinct, in-range levels | With `c=cos(theta/2)`, `s=sin(theta/2)`: `\|j> -> c\|j>-i*s\|k>` and `\|k> -> -i*s\|j>+c\|k>`. |
+| [`SubspaceRY`][fatqat.operations.SubspaceRY] `(theta, (j, k))` | One target; two distinct, in-range levels | `\|j> -> c\|j>+s\|k>` and `\|k> -> -s\|j>+c\|k>`. Reversing `(j, k)` reverses the rotation. |
+| [`SubspaceRZ`][fatqat.operations.SubspaceRZ] `(theta, (j, k))` | One target; two distinct, in-range levels | `\|j>` gains `exp(-i*theta/2)` and `\|k>` gains `exp(i*theta/2)`. Reversing the pair reverses the rotation. |
+| [`CClock`][fatqat.operations.CClock] `(power)` | Two targets `(control, target)`; dimensions may differ | `\|i,j>` gains `omega**(i*j*power)` using the target's `omega=exp(2*pi*i/d_target)`. It is CZ for two qubits and power 1. |
 
 Level pairs must contain distinct, non-negative integers. Equality and
 negativity are checked at construction, and the target dimension is checked
 when the operation is added. `Sum` requires equal control and target
 dimensions; the backend rejects a mismatch when the program runs.
+
+## API reference
+
+
+Common operation properties are documented on the [Operations overview](../operations.md).
+
+::: fatqat.operations.Shift
+    options:
+      heading_level: 3
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.Clock
+    options:
+      heading_level: 3
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.Sum
+    options:
+      heading_level: 3
+      show_attribute_values: false
+
+::: fatqat.operations.SwapLevels
+    options:
+      heading_level: 3
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+        - "!^(?:validate_targets)$"
+
+::: fatqat.operations.Fourier
+    options:
+      heading_level: 3
+      show_attribute_values: false
+
+::: fatqat.operations.InverseFourier
+    options:
+      heading_level: 3
+      show_attribute_values: false
+
+::: fatqat.operations.SubspaceRX
+    options:
+      heading_level: 3
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+        - "!^(?:validate_targets)$"
+
+::: fatqat.operations.SubspaceRY
+    options:
+      heading_level: 3
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+        - "!^(?:validate_targets)$"
+
+::: fatqat.operations.SubspaceRZ
+    options:
+      heading_level: 3
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+        - "!^(?:validate_targets)$"
+
+::: fatqat.operations.CClock
+    options:
+      heading_level: 3
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
 
 ## Matrix definitions
 
@@ -135,80 +217,3 @@ $$
 = \sum_{i=0}^{d_c-1}\sum_{j=0}^{d_t-1}
   \omega_t^{ijp}\lvert i,j\rangle\!\langle i,j\rvert.
 $$
-
-## API reference
-
-
-Common operation properties are documented on the [Operations overview](../operations.md).
-
-::: fatqat.operations.Shift
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.Clock
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.Sum
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.SwapLevels
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-        - "!^(?:validate_targets)$"
-
-::: fatqat.operations.Fourier
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.InverseFourier
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.SubspaceRX
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-        - "!^(?:validate_targets)$"
-
-::: fatqat.operations.SubspaceRY
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-        - "!^(?:validate_targets)$"
-
-::: fatqat.operations.SubspaceRZ
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-        - "!^(?:validate_targets)$"
-
-::: fatqat.operations.CClock
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"

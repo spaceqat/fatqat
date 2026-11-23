@@ -4,78 +4,51 @@ title: "Operations"
 
 # Operations
 
-
-Import `fatqat.operations` as `ops`, then add operations to a program with
-[`fatqat.Program.add`][fatqat.Program.add]:
+An operation describes what to apply to a program's targets. Pass
+parameter-free operations such as `ops.H` directly to
+[`Program.add()`][fatqat.Program.add]. Call a parameterized constructor such
+as `ops.RX(0.2)` first.
 
 ```python
 import fatqat as fq
 import fatqat.operations as ops
 
-program = fq.Program(2)
-program.add(ops.H, 0)            # ready-to-use operation
-program.add(ops.RX(0.2), 1)      # parameterized operation
-program.add(ops.CX, (0, 1))      # ordered targets
+program = fq.Program(2, 2)
+program.add(ops.H, 0)
+program.add(ops.RX(0.2), 1)
+program.measure_all()
 ```
 
-Parameter-free operations such as `ops.H` and `ops.Reset` are ready to use
-without parentheses. Construct parameterized gates and
-[`PulseOperation`][fatqat.operations.PulseOperation] values before adding them. Create measurements with
-[`measure`][fatqat.Program.measure] or [`measure_all`][fatqat.Program.measure_all].
+Create measurements with [`measure()`][fatqat.Program.measure] or
+[`measure_all()`][fatqat.Program.measure_all]. For target forms and conditions,
+see [`Program.add()`][fatqat.Program.add]. The backend checks whether it can
+run the requested operations.
+
+<a id="construction"></a>
 
 ## Reference pages
 
-
-**Operation families**
-
-| Page | Contents |
+| Page | Use it to look up |
 | --- | --- |
-| [Qubit gates](operations/qubit-gates.md) | Fixed and parameterized qubit gates, exact target order, matrices, and constructor reference. |
-| [Qudit gates](operations/qudit-gates.md) | Qudit gates, level constraints, and basis actions. |
-| [Measurement and structural operations](operations/structural.md) | Measurement and reset behavior, and compiler barriers. |
-| [Atom-array operations](operations/atom-gates.md) | Atom-array occupancy, pairing, and attached-noise constraints. |
-| [Optical gates](operations/optical-gates.md) | Beam splitter and phase shifter on optical modes. |
-| [PulseOperation](pulse-control/pulse-operation.md) | Channel-addressed `PulseOperation`—still imported from `fatqat.operations`—with its timing and backend support. |
-
-- [Qubit gates](operations/qubit-gates.md)
-- [Qudit gates](operations/qudit-gates.md)
-- [Measurement and structural operations](operations/structural.md)
-- [Atom-array operations](operations/atom-gates.md)
-- [Optical gates](operations/optical-gates.md)
-
-## Construction
-
-
-For target-based operations, [`add`][fatqat.Program.add] resolves target
-references, checks arity, and rejects repeated scalar targets. The selected
-backend checks operation and device support when you submit the program; an
-unsupported family raises
-[`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError]. A direct
-[`PulseOperation`][fatqat.operations.PulseOperation] follows the channel-addressing rules on
-[PulseOperation](pulse-control/pulse-operation.md) and is added without targets.
-
-Most targets are a scalar [`RegisterRef`][fatqat.RegisterRef] or an integer. Use an
-integer when the program has one quantum register; with multiple registers,
-index the register you want. Controlled gates use control-first order, and the
-first local operand is the most-significant digit in the matrices and basis
-actions on the family pages.
-
-Every built-in unitary gate accepts [`RegisterView`](registers.md#fatqat.RegisterView) targets.
-A unary gate acts on each selected member. A multi-target gate accepts one
-compatible view per operand and zips their members in order. See
-[Registers](registers.md) for the compatibility rules and [Write quantum computations with Program](../guide/program.md) for
-the ordinary construction workflow.
+| [Qubit gates](operations/qubit-gates.md) | Fixed gates and rotations on qubits. |
+| [Qudit gates](operations/qudit-gates.md) | Gates on multilevel systems, including level and dimension requirements. |
+| [Optical gates](operations/optical-gates.md) | Phase shifts and beam splitters on optical modes. |
+| [Atom-array operations](operations/atom-gates.md) | Loading atoms and changing their pairings. |
+| [Measurement, reset, and barriers](operations/structural.md) | Readout, reset to the ground state, and compiler barriers. |
+| [PulseOperation](pulse-control/pulse-operation.md) | Direct pulse controls, addressed by channel rather than by register target. |
 
 ## Operation base
 
 
-Subclassing [`Operation`][fatqat.operations.Operation] defines a new program-level value; it does
-not register a matrix or pulse realization. See [Matrix implementations](implementation.md) for the
-custom matrix contract and [Gate realization](pulse-control/gate-realization.md) for pulse
-realizations.
+When defining a custom [`Operation`][fatqat.operations.Operation], use
+`accepts_views` to opt into grouped targets and `validate_targets()` to
+check parameters against the target registers. To make the operation runnable,
+see [Matrix implementation maps](implementation.md) or
+[Custom gate pulses](pulse-control/gate-realization.md).
 
 ::: fatqat.operations.Operation
     options:
+      heading_level: 3
       members:
         - "name"
         - "num_subsystems"

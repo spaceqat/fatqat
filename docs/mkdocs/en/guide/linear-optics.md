@@ -6,9 +6,9 @@ three ways:
 
 - **A mode holds any number of photons.** Its level $n$ is a photon count, not
   one of two states.
-- **Photons are moved, never created.** Beam splitters and phase shifters
-  redistribute photons among modes; the total number that entered stays the
-  same.
+- **These operations conserve photon number.** A beam splitter mixes two modes. A
+  phase shifter changes a mode's phase and can affect the outcome when modes
+  interfere later.
 - **Photons are identical.** When two photons could have taken different paths
   to the same outcome, those paths interfere, and some outcomes disappear.
 
@@ -204,7 +204,6 @@ probability that the photons leave in the four modes they entered is
 0.0056
 ```
 
-The method needs a `BasisState` start and modes only, and it rejects noise.
-For qubits alongside modes, dense initial states, or noise, choose
-`LOSimulator("statevector")` or `LOSimulator("density_matrix")`; see
-[`LOSimulator`][fatqat.simulator.LOSimulator] for the full rules.
+For help choosing a method or setting the photon cutoff for another program, see
+the [LOSimulator
+API](../api/simulators/linear-optics.md#choose-an-optical-simulation-method).

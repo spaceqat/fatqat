@@ -4,20 +4,44 @@ title: "Optical gates"
 
 # Optical gates
 
+These gates conserve total photon number. Use them on
+[`ModeRegister`][fatqat.ModeRegister] with
+[`LOSimulator`](../simulators/linear-optics.md), or on fixed-dimension
+[`QuantumRegister`][fatqat.QuantumRegister], where level `n` represents
+`n` photons.
 
-These gates act on optical modes, where level `n` is the photon number. They
-run on [`ModeRegister`][fatqat.ModeRegister] slots under
-[`LOSimulator`](../simulators/linear-optics.md), and on fixed-dimension
-[`QuantumRegister`][fatqat.QuantumRegister] slots, where level `d - 1` is the
-largest photon number. Both gates keep the total photon number.
+| Constructor | Use it to |
+| --- | --- |
+| [`PhaseShifter`][fatqat.operations.PhaseShifter] `(phi)` | Apply a photon-number-dependent phase to one mode. |
+| [`BeamSplitter`][fatqat.operations.BeamSplitter] `(theta, phi=0.0)` | Mix two modes with reflectivity `sin(theta)**2`. Use `theta=pi/4` for a balanced splitter. See [basis order and phase convention](#beam-splitter-definition). |
 
-| Constructor | Targets | Action |
-| --- | --- | --- |
-| [`PhaseShifter`][fatqat.operations.PhaseShifter] `(phi)` | One mode or view | `\|n> -> exp(i*n*phi)\|n>`. On a dimension-2 target it is `Phase(phi)`. |
-| [`BeamSplitter`][fatqat.operations.BeamSplitter] `(theta, phi=0.0)` | Two modes `(mode_0, mode_1)`, or two views | Mixes the modes with reflectivity `sin(theta)**2`; `theta=pi/4` is a 50:50 splitter. |
+<a id="api"></a>
 
-Angles are numbers in radians or [`Parameter`][fatqat.Parameter] values to
-bind before execution.
+## API reference
+
+
+::: fatqat.operations.PhaseShifter
+    options:
+      heading_level: 3
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+<a id="truncation"></a>
+
+<a id="fatqat.operations.BeamSplitter.validate_targets"></a>
+
+::: fatqat.operations.BeamSplitter
+    options:
+      heading_level: 3
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+        - "!^(?:validate_targets)$"
 
 ## Beam splitter definition
 
@@ -39,34 +63,3 @@ $$
 e^{i\phi}\sin\theta & \cos\theta
 \end{pmatrix}.
 $$
-
-For a dual-rail qubit with $\lvert 0\rangle = \lvert 1, 0\rangle$ and
-$\lvert 1\rangle = \lvert 0, 1\rangle$, `BeamSplitter(a / 2, -pi / 2)` acts as
-`RX(a)` and `BeamSplitter(a / 2)` acts as `RY(a)`.
-
-## Truncation
-
-
-A finite cutoff keeps both gates unitary. `PhaseShifter` is always exact.
-`BeamSplitter` is exact while its two modes hold at most `cutoff` photons in
-total (`d - 1` on dimension-`d` targets); beyond that, its result is an
-approximation.
-
-## API
-
-
-::: fatqat.operations.PhaseShifter
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.BeamSplitter
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"

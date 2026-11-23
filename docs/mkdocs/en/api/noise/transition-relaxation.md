@@ -4,10 +4,12 @@ title: "TransitionRelaxation"
 
 # TransitionRelaxation
 
-[`TransitionRelaxation`][fatqat.noise.TransitionRelaxation] describes exactly
-one explicitly authored local jump operator. It is independent of hardware
-kind: the same interface can describe a transmon ladder, one atomic decay
-branch, or another finite-dimensional relaxation mechanism.
+A [`TransitionRelaxation`][fatqat.noise.TransitionRelaxation] describes one local
+jump operator from the transition coefficients you supply. The same interface can
+describe a transmon ladder or a decay branch in an atom.
+
+Choose either `p` for the jump strength of a finite simulator channel or `rate`
+for continuous evolution in a pulse emulator.
 
 Each coefficient key is `(source, destination)`, and one descriptor defines
 
@@ -52,15 +54,16 @@ channel applications in registration order. Putting both atom transitions
 in one descriptor would instead make them components of one coherent jump
 and can produce coherence between the destination states.
 
-This distinction is explicit. FATQAT does not infer it from labels such as
-`atom` or `transmon`, and it does not insert harmonic-oscillator
-coefficients. Supply `1`, `sqrt(2)`, or measured matrix elements directly.
+Supply the transition coefficients directly. Their values determine the relative
+strength and phase of the terms in the jump.
 
 Coefficient scale is not normalized: rescaling every coefficient by
 $\alpha\ne0$ and the strength by $1/|\alpha|^2$ leaves the channel or
 dissipator unchanged, subject to the finite-form bounds below.
 
-## Finite channel form
+<a id="finite-channel-form"></a>
+
+## Simulators
 
 Use a scalar `p` in `[0, 1]` for one elementary Kraus-channel application
 on a matrix simulator.
@@ -92,7 +95,9 @@ $$
 = p\sum_d |c_{sd}|^2.
 $$
 
-## Continuous form
+<a id="continuous-form"></a>
+
+## Pulse emulators
 
 Use a finite, nonnegative scalar `rate` on a compatible pulse emulator. One
 descriptor resolves to
@@ -113,7 +118,7 @@ cascaded jumps.
 
 See [Backend support](backend-support.md) for accepted forms and scopes.
 
-## API
+## API reference { #api }
 
 ::: fatqat.noise.TransitionRelaxation
     options:

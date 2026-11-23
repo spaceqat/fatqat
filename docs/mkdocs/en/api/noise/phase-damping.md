@@ -4,32 +4,19 @@ title: "PhaseDamping"
 
 # PhaseDamping
 
+[`PhaseDamping`][fatqat.noise.PhaseDamping] reduces coherence between energy
+levels without changing the probability of finding the system in each level.
 
-[`PhaseDamping`][fatqat.noise.PhaseDamping] removes coherence without transferring population. Its
-`p` simulator channel and `rate`/`t_phi` emulator Lindblad operator use
-different multilevel conventions, so choose the form required by the target
-backend rather than relying on an implicit conversion.
+<a id="choose-a-form"></a>
 
-## Choose a form
-
-
-Supply exactly one keyword:
-
-**Parameterizations**
-
-| Argument | Meaning | Constraint |
-| --- | --- | --- |
-| `p` | Full-dephasing weight for one simulator channel application | Finite real in `[0, 1]` |
-| `rate` | Rate scaling the local dephasing Lindblad operator | Finite nonnegative real in inverse time |
-| `t_phi` | Pure-dephasing time, normalized to `rate = 1 / t_phi` | Finite positive real in the backend's time unit |
-
-`t_phi` is a convenient way to supply a rate. The object stores
-`rate = 1 / t_phi` rather than keeping `t_phi` as a separate value.
+Supply exactly one parameter. Use `p` in a simulator. In a pulse emulator, specify
+the rate with `rate` or the pure-dephasing time with `t_phi`. In a multilevel
+system, the simulator and emulator describe different coherence decay.
 
 ## Simulators
 
-
-For a target of dimension $d$, probability mode implements
+`p` is the weight of complete dephasing in one channel application. It must be
+finite and in `[0, 1]`. For a target of dimension $d$, the channel is
 
 $$
 \mathcal{E}_p(\rho)
@@ -42,8 +29,9 @@ acts on one selected operand.
 
 ## Pulse emulators
 
-
-The `rate` and `t_phi` forms use the local Lindblad operator
+Pass a finite nonnegative `rate` in inverse time or a finite positive `t_phi` in
+the model's time unit. If you supply a time, the object stores `rate = 1 / t_phi`.
+The local Lindblad operator for rate $r$ is
 
 $$
 L=\sqrt{2r}\,\operatorname{diag}(0,1,\ldots,d-1).
@@ -55,11 +43,10 @@ $$
 \rho_{jk}(t)=e^{-r(j-k)^2t}\rho_{jk}(0).
 $$
 
-See [Pulse emulators](backend-support.md#noise-emulator-support) for the accepted scopes and implementation-map
-requirements of each built-in emulator.
+See [Pulse emulators](backend-support.md#noise-emulator-support) for the supported
+scopes.
 
 ## Converting between forms
-
 
 [`PhaseDamping.as_probability`][fatqat.noise.PhaseDamping.as_probability] uses $p=1-e^{-rt}$, and
 [`PhaseDamping.as_rate`][fatqat.noise.PhaseDamping.as_rate] uses $r=-\log(1-p)/t$. These relations match
@@ -70,8 +57,7 @@ Lindblad evolution scales the decay with $(j-k)^2$.
 Duration must be finite and nonnegative. Probability 1 has no finite rate, and
 a nonzero probability cannot be converted at zero duration.
 
-## API
-
+## API reference { #api }
 
 ::: fatqat.noise.PhaseDamping
     options:

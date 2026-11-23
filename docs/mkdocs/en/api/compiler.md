@@ -4,48 +4,37 @@ title: "Compiler"
 
 # Compiler
 
+!!! warning "Compiler under development"
+
+    The compiler module is under active development. Its interfaces and
+    supported behavior may change between releases. Pin an exact FatQat
+    version when reproducibility matters.
+
 Use the compiler to prepare a device-independent circuit for a superconducting
 or neutral-atom target. A final compilation can be passed directly to the
 matching simulator.
 
-Choose an entry point from the source and target you have:
+Choose a function based on your input and target:
 
 | Source | Superconducting target | Neutral-atom target |
 | --- | --- | --- |
-| [`LogicalProgram`](logical-program.md) | `compile_to_sc()` | `compile_to_na()` |
-| OpenQASM 2 or 3 | `compile_qasm_to_sc()` | `compile_qasm_to_na()` |
+| [`LogicalProgram`](logical-program.md) | [`compile_to_sc()`][fatqat.compiler.compile_to_sc] | [`compile_to_na()`][fatqat.compiler.compile_to_na] |
+| OpenQASM 2 or 3 | [`compile_qasm_to_sc()`][fatqat.compiler.compile_qasm_to_sc] | [`compile_qasm_to_na()`][fatqat.compiler.compile_qasm_to_na] |
 
-The [compiler guide](../guide/compiler.md) shows complete compile-and-run
-examples for all four paths.
+For superconducting compilation, pass an [`SCTarget`](sc-target.md) or an
+[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator]. For neutral-atom
+compilation, pass an architecture such as one returned by
+[`load_architecture()`][fatqat.compiler.algorithms.load_architecture].
 
 ## Compile a LogicalProgram
 
-Build a circuit with `LogicalProgram`, then provide either an
-[SC target](sc-target.md) or a neutral-atom architecture. Run an SC result on
-a simulator that provides the sites and couplings it uses:
-
-```python
-import fatqat as fq
-
-circuit = fq.LogicalProgram(2, 2)
-circuit.add(fq.operations.H, 0)
-circuit.add(fq.operations.CX, (0, 1))
-circuit.measure_all()
-
-target = fq.compiler.SCTarget(num_qubits=3, couplings=((0, 1), (1, 2)))
-compiled = fq.compiler.compile_to_sc(circuit, target)
-
-backend = fq.simulator.SCQubitSimulator(num_qubits=3, couplings=target.couplings)
-result = backend.run(compiled, shots=100).result()
-```
-
-You can also pass an `SCQubitSimulator` in place of the target. The compiler
-then uses its sites and couplings and checks the emitted gates against its
-implementation map.
-
 ::: fatqat.compiler.compile_to_sc
+    options:
+      heading_level: 3
 
 ::: fatqat.compiler.compile_to_na
+    options:
+      heading_level: 3
 
 ## Compile OpenQASM
 
@@ -53,29 +42,35 @@ Pass OpenQASM source text directly to the target compiler. The returned result
 uses the same execution interface as a compiled `LogicalProgram`.
 
 ::: fatqat.compiler.compile_qasm_to_sc
+    options:
+      heading_level: 3
 
 ::: fatqat.compiler.compile_qasm_to_na
+    options:
+      heading_level: 3
 
 ## Compilation results
 
-At the final target boundary, the compile functions return an
-`ExecutableCompilationResult`. Pass it to the matching simulator, inspect the
-target representation through `.output`, or review the stages through
-`.route`.
-
-When `emit` selects an earlier boundary, the return value is a
-`CompilationResult` intended for inspection.
-
-A compiler created with `create_sc_pipeline()` or `create_na_pipeline()`
-returns a `CompilationResult` at every boundary, including the final one.
-Convert a final-boundary `output` with the
-[simulator translation](#simulator-translation) functions before running it.
+With the default `emit`, the four compile functions return an
+[`ExecutableCompilationResult`][fatqat.compiler.ExecutableCompilationResult].
+Pass it directly to a compatible simulator. To inspect an intermediate
+representation, set `emit` to the boundary you want and read `output` from the
+returned [`CompilationResult`][fatqat.compiler.CompilationResult].
 
 ::: fatqat.compiler.ExecutableCompilationResult
+    options:
+      heading_level: 3
 
 ::: fatqat.compiler.CompilationResult
+    options:
+      heading_level: 3
 
-::: fatqat.ExecutableProgram
+<a id="fatqat.ExecutableProgram"></a>
+<a id="fatqat.ExecutableProgram.program"></a>
+<a id="fatqat.ExecutableProgram.resource_layout"></a>
+
+For the protocol used by simulators, see
+[`ExecutableProgram`][fatqat.ExecutableProgram] in the simulator reference.
 
 ## Neutral-atom architectures and animation
 
@@ -83,77 +78,64 @@ Convert a final-boundary `output` with the
 Use the same architecture for compilation and schedule visualization.
 
 ::: fatqat.compiler.algorithms.load_architecture
+    options:
+      heading_level: 3
 
 ::: fatqat.compiler.create_na_animation
+    options:
+      heading_level: 3
 
 ::: fatqat.compiler.save_na_animation
-
-## Advanced compiler APIs
-
-Most applications only need the four compile functions above. The following
-APIs expose intermediate translation and pipeline construction for compiler
-extensions and IR inspection.
-
-### Simulator translation
-
-Use these functions when working with a final compiler IR that was constructed
-or modified directly. Results returned by the normal compile functions are
-already ready for simulation.
-
-SC native programs can declare `classical_registers` as a keyword-only tuple
-of the original register objects in output order. The bridge retains all slots,
-including unwritten slots and entirely unused registers. Distinct registers may
-share a name; declaring the same object twice is invalid. Measurement outputs
-must belong to declared registers. The bridge and native verifier raise
-`ValidationError` for invalid explicit declarations.
-
-The default `None` preserves compatibility with native programs constructed
-without declarations: the bridge discovers registers in first measurement
-occurrence order. This fallback cannot recover original declaration order or
-registers with no measurements. Use `()` to declare no classical registers;
-it does not request inference. Compiler-generated native programs always carry
-explicit declarations. Adding this field preserves the existing three positional
-constructor arguments; it also participates in dataclass equality and reflection.
-
-::: fatqat.compiler.dialects.SCNativeProgram
-
-::: fatqat.compiler.to_sc_simulator_program
-
-::: fatqat.compiler.to_na_simulator_program
-
-### Pipelines and IRs
-
-::: fatqat.compiler.Compiler
-
-::: fatqat.compiler.CompileContext
-
-::: fatqat.compiler.Pipeline
-
-::: fatqat.compiler.TranslationPass
-
-::: fatqat.compiler.create_sc_pipeline
-
-::: fatqat.compiler.create_na_pipeline
-
-::: fatqat.compiler.IRRegistry
-
-::: fatqat.compiler.IRDefinition
-
-::: fatqat.compiler.IRProgram
+    options:
+      heading_level: 3
 
 ## Errors
 
-Compiler errors share the `CompilerError` base class. `PassError` includes the
-stage that failed and preserves the original error as its cause.
+Compiler errors share the `CompilerError` base class. Check
+`PassError.pass_name` to find the failing stage. If `__cause__` is set, it
+contains the original exception.
 
 ::: fatqat.compiler.CompilerError
+    options:
+      heading_level: 3
 
 ::: fatqat.compiler.ValidationError
+    options:
+      heading_level: 3
 
 ::: fatqat.compiler.PassError
+    options:
+      heading_level: 3
 
 ::: fatqat.compiler.EmitNotFoundError
+    options:
+      heading_level: 3
 
 ::: fatqat.compiler.PipelineNotFoundError
+    options:
+      heading_level: 3
 
 ::: fatqat.compiler.UnsupportedFeatureError
+    options:
+      heading_level: 3
+
+## Advanced compiler APIs
+
+<a id="pipelines-and-irs"></a>
+<a id="simulator-translation"></a>
+<a id="fatqat.compiler.dialects.SCNativeProgram"></a>
+<a id="fatqat.compiler.to_sc_simulator_program"></a>
+<a id="fatqat.compiler.to_na_simulator_program"></a>
+<a id="fatqat.compiler.Compiler"></a>
+<a id="fatqat.compiler.CompileContext"></a>
+<a id="fatqat.compiler.Pipeline"></a>
+<a id="fatqat.compiler.TranslationPass"></a>
+<a id="fatqat.compiler.create_sc_pipeline"></a>
+<a id="fatqat.compiler.create_na_pipeline"></a>
+<a id="fatqat.compiler.IRRegistry"></a>
+<a id="fatqat.compiler.IRDefinition"></a>
+<a id="fatqat.compiler.IRProgram"></a>
+
+See [Compiler pipelines & IR](compiler-pipelines.md) to configure compiler
+passes, inspect intermediate representations, or
+[convert a final representation for simulation](compiler-pipelines.md#simulator-translation).

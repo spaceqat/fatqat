@@ -5,53 +5,250 @@ title: "Qubit gates"
 # Qubit gates
 
 
-Every gate on this page is defined for dimension-2 targets (qubits).
-[`add`][fatqat.Program.add] records the operation without checking target
-dimensions. The backend checks that requirement and any device-specific limits
-when the program runs.
-
-Every unary gate accepts either one scalar target or one
-[`RegisterView`](../registers.md#fatqat.RegisterView). Every multi-qubit gate accepts either scalar
-operands or one compatible view per operand and zips the views in order.
+These gates act on qubits (dimension 2). Choose the gate and operand order
+from the tables below. For grouped targets, see
+[`Program.add()`][fatqat.Program.add]. The backend checks dimensions and
+device support when the program runs.
 
 ## Fixed gates
 
 
-Fixed gates are ready-to-use values and must not be called. The single-qubit
-matrices use `|0>, |1>` basis order.
+Pass fixed gates such as `ops.H` directly to `add()`.
 
 **Fixed single-qubit gates**
 
 | Value | Basis action |
 | --- | --- |
-| [`I`][fatqat.operations.I] | Leaves $\|0\rangle$ and $\|1\rangle$ unchanged. |
-| [`H`][fatqat.operations.H] | Maps $\|0\rangle$ to $(\|0\rangle+\|1\rangle)/\sqrt{2}$ and $\|1\rangle$ to $(\|0\rangle-\|1\rangle)/\sqrt{2}$. |
-| [`X`][fatqat.operations.X] | Exchanges $\|0\rangle$ and $\|1\rangle$. |
-| [`Y`][fatqat.operations.Y] | Maps $\|0\rangle$ to $i\|1\rangle$ and $\|1\rangle$ to $-i\|0\rangle$. |
-| [`Z`][fatqat.operations.Z] | Maps $\|1\rangle$ to $-\|1\rangle$. |
-| [`S`][fatqat.operations.S] | Maps $\|1\rangle$ to $i\|1\rangle$. |
-| [`Sdg`][fatqat.operations.Sdg] | Maps $\|1\rangle$ to $-i\|1\rangle$. |
+| [`I`][fatqat.operations.I] | Leaves $\lvert 0\rangle$ and $\lvert 1\rangle$ unchanged. |
+| [`H`][fatqat.operations.H] | Maps $\lvert 0\rangle$ to $(\lvert 0\rangle+\lvert 1\rangle)/\sqrt{2}$ and $\lvert 1\rangle$ to $(\lvert 0\rangle-\lvert 1\rangle)/\sqrt{2}$. |
+| [`X`][fatqat.operations.X] | Exchanges $\lvert 0\rangle$ and $\lvert 1\rangle$. |
+| [`Y`][fatqat.operations.Y] | Maps $\lvert 0\rangle$ to $i\lvert 1\rangle$ and $\lvert 1\rangle$ to $-i\lvert 0\rangle$. |
+| [`Z`][fatqat.operations.Z] | Maps $\lvert 1\rangle$ to $-\lvert 1\rangle$. |
+| [`S`][fatqat.operations.S] | Maps $\lvert 1\rangle$ to $i\lvert 1\rangle$. |
+| [`Sdg`][fatqat.operations.Sdg] | Maps $\lvert 1\rangle$ to $-i\lvert 1\rangle$. |
 | [`SX`][fatqat.operations.SX] | Two applications have the same action as X. |
-| [`T`][fatqat.operations.T] | Maps $\|1\rangle$ to $e^{i\pi/4}\|1\rangle$. |
-| [`Tdg`][fatqat.operations.Tdg] | Maps $\|1\rangle$ to $e^{-i\pi/4}\|1\rangle$. |
-
-For the multi-qubit values below, targets are ordered exactly as shown.
+| [`T`][fatqat.operations.T] | Maps $\lvert 1\rangle$ to $e^{i\pi/4}\lvert 1\rangle$. |
+| [`Tdg`][fatqat.operations.Tdg] | Maps $\lvert 1\rangle$ to $e^{-i\pi/4}\lvert 1\rangle$. |
 
 **Fixed multi-qubit gates**
 
 | Value | Target order | Basis action |
 | --- | --- | --- |
-| [`CX`][fatqat.operations.CX] | `(control, target)` | Applies X to the target when the control is `\|1>`. |
-| [`CY`][fatqat.operations.CY] | `(control, target)` | Applies Y to the target when the control is `\|1>`. |
-| [`CZ`][fatqat.operations.CZ] | `(control, target)` | Negates `\|11>`. |
-| [`CS`][fatqat.operations.CS] | `(control, target)` | Applies S to the target when the control is `\|1>`. |
+| [`CX`][fatqat.operations.CX] | `(control, target)` | Applies X to the target when the control is $\lvert 1\rangle$. |
+| [`CY`][fatqat.operations.CY] | `(control, target)` | Applies Y to the target when the control is $\lvert 1\rangle$. |
+| [`CZ`][fatqat.operations.CZ] | `(control, target)` | Negates $\lvert 11\rangle$. |
+| [`CS`][fatqat.operations.CS] | `(control, target)` | Applies S to the target when the control is $\lvert 1\rangle$. |
 | [`Swap`][fatqat.operations.Swap] | `(target0, target1)` | Exchanges the two target states. |
-| [`iSwap`][fatqat.operations.iSwap] | `(target0, target1)` | Maps `\|01>` to `i\|10>` and `\|10>` to `i\|01>`. |
-| [`CCX`][fatqat.operations.CCX] | `(control0, control1, target)` | Toffoli: applies X when both controls are `\|1>`. |
-| [`CSwap`][fatqat.operations.CSwap] | `(control, target0, target1)` | Fredkin: exchanges the two targets when the control is `\|1>`. |
+| [`iSwap`][fatqat.operations.iSwap] | `(target0, target1)` | Maps $\lvert 01\rangle$ to $i\lvert 10\rangle$ and $\lvert 10\rangle$ to $i\lvert 01\rangle$. |
+| [`CCX`][fatqat.operations.CCX] | `(control0, control1, target)` | Toffoli: applies X when both controls are $\lvert 1\rangle$. |
+| [`CSwap`][fatqat.operations.CSwap] | `(control, target0, target1)` | Fredkin: exchanges the two targets when the control is $\lvert 1\rangle$. |
 
-### Matrix definitions
+## Parameterized gates
 
+
+All angles are in radians and are not normalized. Every angle field accepts a
+[`Parameter`][fatqat.Parameter] for later binding through
+[`fatqat.Program.assign_parameters`][fatqat.Program.assign_parameters].
+
+**Parameterized qubit gates**
+
+| Constructor | Targets | Definition |
+| --- | --- | --- |
+| [`RX`][fatqat.operations.RX] `(theta)` | One scalar or one view | Rotation about the X axis by `theta`. |
+| [`RY`][fatqat.operations.RY] `(theta)` | One scalar or one view | Rotation about the Y axis by `theta`. |
+| [`RZ`][fatqat.operations.RZ] `(theta)` | One scalar or one view | Rotation about the Z axis by `theta`. |
+| [`Phase`][fatqat.operations.Phase] `(theta)` | One scalar or one view | Differs from RZ only by global phase. |
+| [`U`][fatqat.operations.U] `(theta, phi, lam)` | One scalar or one view | General single-qubit gate using Qiskit's parameter convention. |
+| [`U1`][fatqat.operations.U1] `(lam)` | One scalar or one view | Equivalent to `Phase(lam)`. |
+| [`U2`][fatqat.operations.U2] `(phi, lam)` | One scalar or one view | Equivalent to `U(pi/2, phi, lam)`. |
+| [`U3`][fatqat.operations.U3] `(theta, phi, lam)` | One scalar or one view | Same matrix as `U(theta, phi, lam)`; retained for Qiskit compatibility. |
+| [`CPhase`][fatqat.operations.CPhase] `(theta)` | `(control, target)` scalars or compatible views | Multiplies $\lvert 11\rangle$ by $e^{i\theta}$. |
+
+## API reference
+
+
+Common operation properties are documented on the [Operations overview](../operations.md).
+
+### Fixed values
+
+
+::: fatqat.operations.I
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.H
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.X
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.Y
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.Z
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.S
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.Sdg
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.SX
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.T
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.Tdg
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.CX
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.CY
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.CZ
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.CS
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.Swap
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.iSwap
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.CCX
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+::: fatqat.operations.CSwap
+    options:
+      heading_level: 4
+      show_attribute_values: false
+
+### Parameterized classes
+
+
+::: fatqat.operations.RX
+    options:
+      heading_level: 4
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.RY
+    options:
+      heading_level: 4
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.RZ
+    options:
+      heading_level: 4
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.Phase
+    options:
+      heading_level: 4
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.U
+    options:
+      heading_level: 4
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.U1
+    options:
+      heading_level: 4
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.U2
+    options:
+      heading_level: 4
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.U3
+    options:
+      heading_level: 4
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+::: fatqat.operations.CPhase
+    options:
+      heading_level: 4
+      inherited_members: false
+      show_bases: true
+      merge_init_into_class: false
+      filters:
+        - "!^_"
+
+## Matrix definitions
+
+### Fixed gate matrices
 
 These matrices act on column state vectors. For the single-qubit gates, rows
 and columns use basis order
@@ -169,29 +366,9 @@ $$
 \end{pmatrix}
 $$
 
-## Parameterized gates
+<a id="matrix-definitions_1"></a>
 
-
-All angles are in radians and are not normalized. Every angle field accepts a
-[`Parameter`][fatqat.Parameter] for later binding through
-[`fatqat.Program.assign_parameters`][fatqat.Program.assign_parameters].
-
-**Parameterized qubit gates**
-
-| Constructor | Targets | Definition |
-| --- | --- | --- |
-| [`RX`][fatqat.operations.RX] `(theta)` | One scalar or one view | Rotation about the X axis by `theta`. |
-| [`RY`][fatqat.operations.RY] `(theta)` | One scalar or one view | Rotation about the Y axis by `theta`. |
-| [`RZ`][fatqat.operations.RZ] `(theta)` | One scalar or one view | Rotation about the Z axis by `theta`. |
-| [`Phase`][fatqat.operations.Phase] `(theta)` | One scalar or one view | Differs from RZ only by global phase. |
-| [`U`][fatqat.operations.U] `(theta, phi, lam)` | One scalar or one view | General single-qubit gate using Qiskit's parameter convention. |
-| [`U1`][fatqat.operations.U1] `(lam)` | One scalar or one view | Equivalent to `Phase(lam)`. |
-| [`U2`][fatqat.operations.U2] `(phi, lam)` | One scalar or one view | Equivalent to `U(pi/2, phi, lam)`. |
-| [`U3`][fatqat.operations.U3] `(theta, phi, lam)` | One scalar or one view | Same matrix as `U(theta, phi, lam)`; retained for Qiskit compatibility. |
-| [`CPhase`][fatqat.operations.CPhase] `(theta)` | `(control, target)` scalars or compatible views | Multiplies $\|11\rangle$ by $e^{i\theta}$. |
-
-### Matrix definitions
-
+### Parameterized gate matrices
 
 These matrices act on column state vectors. The single-qubit matrices below
 use row and column basis order
@@ -264,158 +441,3 @@ $$
 0&0&0&e^{i\theta}
 \end{pmatrix}
 $$
-
-## API reference
-
-
-Common operation properties are documented on the [Operations overview](../operations.md).
-
-### Fixed values
-
-
-::: fatqat.operations.I
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.H
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.X
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.Y
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.Z
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.S
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.Sdg
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.SX
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.T
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.Tdg
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.CX
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.CY
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.CZ
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.CS
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.Swap
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.iSwap
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.CCX
-    options:
-      show_attribute_values: false
-
-::: fatqat.operations.CSwap
-    options:
-      show_attribute_values: false
-
-### Parameterized classes
-
-
-::: fatqat.operations.RX
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.RY
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.RZ
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.Phase
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.U
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.U1
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.U2
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.U3
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"
-
-::: fatqat.operations.CPhase
-    options:
-      inherited_members: false
-      show_bases: true
-      merge_init_into_class: false
-      filters:
-        - "!^_"

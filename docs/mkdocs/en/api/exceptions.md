@@ -4,17 +4,33 @@ title: "Exceptions"
 
 # Exceptions
 
+Catch [`FatqatError`][fatqat.errors.FatqatError] when you handle FatQat's
+execution and conversion errors in the same way. Catch a specific subclass when
+the action depends on what failed. An invalid argument type or value can also
+raise Python's `TypeError` or `ValueError`.
 
-Catch [`FatqatError`][fatqat.errors.FatqatError] when one handler can recover from
-any FATQAT error, or catch a subclass when recovery depends on the failure.
-Invalid argument types and values may instead raise Python's `TypeError` or
-`ValueError`.
+## Run and result errors { #errors-when-running-a-program }
 
-[`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError] is a subtype of
-[`BackendValidationError`][fatqat.errors.BackendValidationError]. A backend normally raises
-validation errors before `run` returns a job. A later execution failure may
-be stored on the returned [`Job`][fatqat.Job] and raised by
-[`result`][fatqat.Job.result].
+- **Before execution.**
+  [`BackendValidationError`][fatqat.errors.BackendValidationError] means the
+  backend cannot run the request as supplied.
+  [`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError] is the
+  subclass for an operation or feature the backend does not support.
+
+- **During execution.** The backend's error settings determine whether the run
+  call raises an execution error directly or returns a failed [`Job`][fatqat.Job].
+  For a failed job, [`result()`][fatqat.Job.result] raises the stored error.
+
+- **Reading results.**
+  [`ResultFieldUnavailableError`][fatqat.errors.ResultFieldUnavailableError] means
+  the requested field is absent from the result. Use `available_data` to see what
+  the run produced.
+
+For conversion errors, see [OpenQASM](interoperability/openqasm.md#errors) and
+[Qiskit](interoperability/qiskit.md#backend-execution). The
+[compiler](compiler.md) has a separate exception hierarchy.
+
+## API reference
 
 ::: fatqat.errors.FatqatError
     options:

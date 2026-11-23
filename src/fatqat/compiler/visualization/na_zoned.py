@@ -61,7 +61,7 @@ def create_na_animation(
 
     Returns:
         A Matplotlib FuncAnimation showing transfers, movements, gate batches,
-        and crosstalk events.
+            and crosstalk events.
 
     Raises:
         ValidationError: If plan violates the ZonedPlan contract.

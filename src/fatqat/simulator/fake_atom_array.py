@@ -77,25 +77,18 @@ def _fake_atom_array_implementation_map() -> MatrixImplementationMap:
 
 
 class AtomArraySimulator(Simulator):
-    """Simulate a neutral-atom connectivity and occupancy hardware profile.
+    """Run gate-level programs that model neutral-atom loading, pairing, and loss.
 
-    Hardware profile:
+    The program declares the number of sites. Use ``Put`` to load initially
+    empty sites, or supply their initial occupancy in an ``EvolutionState``.
+    An empty site measures as the erasure digit ``2``.
 
-    - Native gates: ``RX``, ``RY``, ``RZ``, and ``CZ``.
-    - Connectivity: ``Pair`` and ``Unpair`` update the pairing graph; ``CZ``
-      is legal only while its atoms are paired. There is no fixed geometry.
-    - Layout: the program declares the site count, and registers map to flat
-      labels in declaration order.
-    - Occupancy: sites start empty unless initial occupancy is supplied.
-      ``Put`` loads an atom; supported, correctly paired gates and reset do
-      nothing on an empty site, which measures as the erasure digit ``2``.
-    - Noise: finite channels select one subsystem; a present atom's channel
-      runs even when another gate operand is absent. ``Loss`` may select
-      multiple subsystems and samples each present atom independently.
-    - Methods: atom occupancy requires ``statevector`` or ``density_matrix``.
+    The native gates are ``RX``, ``RY``, ``RZ``, and ``CZ``. Use ``Pair`` and
+    ``Unpair`` to control which pairs can run ``CZ``. The simulator checks gate
+    support and pairing before considering whether a target site is occupied.
 
-    The simulator validates the program as written; it does not transport,
-    pair, route, or transpile atoms automatically.
+    Use ``statevector`` or ``density_matrix`` to track the state. Attach ``Loss``
+    to an operation to sample loss independently on each selected atom.
     """
 
     _supports_loss = True

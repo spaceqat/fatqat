@@ -10,8 +10,9 @@ T = TypeVar("T")
 class Job(Generic[T]):
     """Hold the result of a completed submission.
 
-    Jobs returned by current backends and estimators are already terminal.
-    ``result()`` returns the result value or raises the execution error.
+    Built-in backends and estimators return completed jobs.
+    Call ``result()`` to obtain a ``Result`` for one run or a list of results
+    for a sweep. If the job holds an execution error, ``result()`` raises it.
 
     Attributes:
         status: ``"DONE"`` for a successful submission or ``"ERROR"`` for a
@@ -47,7 +48,8 @@ class Job(Generic[T]):
 
         Raises:
             BaseException: The error from an ``"ERROR"`` job.
-            RuntimeError: If ``status`` is neither ``"DONE"`` nor ``"ERROR"``.
+            RuntimeError: If the job is incomplete or failed without a recorded
+                error.
         """
         if self.status == "DONE":
             return cast(T, self._result)

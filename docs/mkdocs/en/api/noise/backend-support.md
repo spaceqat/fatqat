@@ -4,31 +4,24 @@ title: "Backend support"
 
 <a id="noise-backend-support"></a>
 
-
 # Backend support
 
-
-Use these tables to see which built-in backends accept each noise type and
-form. **Built in** means the standard backend accepts it. **Unsupported** means
-the backend family rejects it.
-
-For one configured backend, use
-[`validate_noise_model`][fatqat.simulator.Simulator.validate_noise_model] on a simulator or
-[`validate_noise_model`][fatqat.emulator.TransmonEmulator.validate_noise_model] on a pulse
-emulator. These methods validate a model without a program. FATQAT checks
-references, device labels, operation matches, dimensions, and simulation-method
-limits when it runs a concrete program.
+Use this page to check which noise forms a backend accepts. You can also call
+[`validate_noise_model`][fatqat.simulator.Simulator.validate_noise_model] on a
+simulator or
+[`validate_noise_model`][fatqat.emulator.TransmonEmulator.validate_noise_model] on
+a pulse emulator before running a program. Program-specific constraints, such as
+target dimensions, apply at run time.
 
 <a id="noise-simulator-support"></a>
 
-
 ## Simulators
 
-
-[`Simulator`][fatqat.simulator.Simulator],
-[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator], and
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] share these channel rules. The two hardware profiles may impose
-additional operation, placement, and dimension limits.
+[`Simulator`][fatqat.simulator.Simulator] and
+[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] use the finite channel
+forms below. [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] and
+[`LOSimulator`][fatqat.simulator.LOSimulator] have additional restrictions
+described after the table.
 
 **Built-in simulator channels**
 
@@ -42,18 +35,17 @@ additional operation, placement, and dimension limits.
 | Built-in rate forms and [`ThermalRelaxation`][fatqat.noise.ThermalRelaxation] | **Unsupported.** Simulators have no physical timeline and do not convert rates or times into a channel application. |
 | [`ReadoutConfusion`][fatqat.noise.ReadoutConfusion] | **Built in.** Applies universally or to one measured operand. The matrix size must equal the reported digit dimension; [`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] therefore requires `2 x 2`. |
 
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] also supports
-[`Loss`][fatqat.noise.Loss], sampling each selected carrier that is present
-after a matching operation. Sites begin empty and
-[`Put`][fatqat.operations.Put] loads
-them, so loss attached to `Put` can model a loading failure. Other simulators
-reject `Loss`. Because an empty site produces no physical readout digit, its
-erasure value `2` bypasses readout confusion.
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] accepts only
+single-subsystem finite channels. Use `target_positions` to select one operand of
+a multi-subsystem operation. It is also the only built-in simulator that supports
+[`Loss`][fatqat.noise.Loss]. Attach it to [`Put`][fatqat.operations.Put] to model
+loading failure. An empty site's erasure digit `2` bypasses readout confusion. See
+[occupancy and loss](../simulators/atom-array.md#occupancy-and-loss).
 
-`AtomArraySimulator` accepts only single-subsystem finite channels. Use
-`target_positions` to select an operand of a multi-subsystem operation; see
-[occupancy and loss](../simulators/atom-array.md#occupancy-and-loss) for an example
-and behavior when an atom is absent.
+[`LOSimulator`][fatqat.simulator.LOSimulator] uses its matrix methods for finite
+channels. When a selector names a mode, use its device label. For channel
+dimensions and method selection, see the [linear optics
+simulator](../simulators/linear-optics.md).
 
 Attach every supported probability-form channel above to an operation; matrix
 backends reject background channels.
@@ -73,9 +65,7 @@ AtomArray occupancy lifecycle; requesting a final state with loss requires
 
 <a id="noise-emulator-support"></a>
 
-
 ## Pulse emulators
-
 
 Pulse emulators use local Lindblad operators built from supported rates and
 times. They do not infer a rate from a probability. Built-in probability
@@ -99,7 +89,3 @@ use that unit directly on families that accept them. The reference
 [`time_unit`][fatqat.emulator.TransmonModel.time_unit] is nanoseconds,
 while [`time_unit`][fatqat.emulator.Atom2LevelModel.time_unit] is microseconds. Read
 the chosen model's `time_unit` rather than guessing from a value's magnitude.
-
-Unsupported continuous declarations cannot be enabled through emulator
-construction. Use `NoiseModel` for the declarations listed above and call
-the family's `validate_noise_model()` method for an eager support check.

@@ -180,9 +180,10 @@ noisy state or an expectation value without sampling noise trajectories.
 | Circuit simulator | finite probabilities and channels | at matched operation boundaries |
 | Physical emulator | rates and relaxation times | throughout elapsed Hamiltonian/Lindblad evolution |
 
-Circuit noise probabilities and continuous-time rates require different
-inputs; FatQat does not convert between them automatically. Move to
-[Hamiltonian-level emulation](hamiltonian-emulation.md) for pulse duration,
-idle evolution, leakage, or continuous-time noise. For supported combinations,
-selectors, and validation rules, see the [noise-backend-support](../api/noise/backend-support.md#noise-backend-support) table
-and [Noise model API](../api/noise/model.md).
+Use [Hamiltonian-level emulation](hamiltonian-emulation.md) to study how noise
+accumulates during pulses and idle periods. Start with the [pulse-emulator
+configuration example](../api/noise.md#during-pulse-evolution) for a rate-based
+model. The [backend support
+table](../api/noise/backend-support.md#noise-backend-support) lists available
+noise forms, and the [NoiseModel API](../api/noise/model.md) explains how to
+select operations and targets.

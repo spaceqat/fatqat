@@ -4,92 +4,73 @@ title: "Result"
 
 # Result
 
+A [`Result`][fatqat.Result] contains the data produced by one execution, such as
+measurement counts, a final state, or expectation values. Its `available_data`
+lists the fields you can read. Accessing a missing field raises
+[`ResultFieldUnavailableError`][fatqat.errors.ResultFieldUnavailableError].
 
-A [`Result`][fatqat.Result] contains only the fields produced by one run.
-Inspect `available_data` when a field is optional, then
-use its accessor. An unavailable accessor raises
-[`ResultFieldUnavailableError`][fatqat.errors.ResultFieldUnavailableError] instead of returning
-`None`.
-
-**Result fields**
+## Find result fields
 
 | Field | Accessor | Produced by |
 | --- | --- | --- |
 | `"counts"` | [`get_counts`][fatqat.Result.get_counts] or [`get_counts_as_tuples`][fatqat.Result.get_counts_as_tuples] | A backend run with measurement counts |
 | `"statevector"` | [`get_statevector`][fatqat.Result.get_statevector] | A statevector run with final-state output enabled |
 | `"density_matrix"` | [`get_density_matrix`][fatqat.Result.get_density_matrix] | A density-matrix run with final-state output enabled |
+| `"fixed_photon_state"` | [`get_fixed_photon_state`][fatqat.Result.get_fixed_photon_state] | A linear-optics run that returns fixed-photon amplitudes |
 | `"unitary"` | [`get_unitary`][fatqat.Result.get_unitary] | A unitary run with final-state output enabled |
 | `"superop"` | [`get_superop`][fatqat.Result.get_superop] | A super-operator run with final-state output enabled |
 | `"classical_state"` | [`get_classical_state`][fatqat.Result.get_classical_state] | A state-method simulator run with `result_config={"final_classical_state": True}` |
 | `"expectation"` and `"standard_error"` | [`get_expectation`][fatqat.Result.get_expectation] and [`get_standard_error`][fatqat.Result.get_standard_error] | An [`Estimator`][fatqat.Estimator] run |
 | Backend extension name | [`get_data`][fatqat.Result.get_data] | A backend extension |
 
-Pulse emulators return `Qobj` values from `get_statevector`,
-`get_density_matrix`, and `get_unitary`; simulators return NumPy arrays.
+A backend's `result_config` uses `"final_state"` to request a state or operator.
+Look for its representation name in `available_data`, such as `"statevector"` or
+`"fixed_photon_state"`. The [simulator](simulator.md#run-inputs-and-results) and
+[pulse emulator](emulators/index.md#choose-a-result) pages describe the defaults
+and how to request a single trajectory.
 
-`"final_state"` is a request name, not an available-data name. A produced
-state or operator uses its concrete representation name from the table.
-Deterministic unmeasured runs enable method-native output by default. A
-stochastic pulse-emulator state—caused by measurement, statevector reset, or
-potentially active statevector Lindblad evolution—must be requested explicitly
-with `shots=1`.
+<a id="ordering-and-mutable-values"></a>
 
-## Ordering and mutable values
+## Read counts and states
 
+### Count keys
 
-[`get_counts`][fatqat.Result.get_counts] returns a new dictionary of display strings.
-Classical slot 0 is on the left, matching tuple position 0 from
-[`get_counts_as_tuples`][fatqat.Result.get_counts_as_tuples]. Thus tuple `(1, 0)` renders as
-`"10"`, and `(0, 1)` renders as `"01"`. If any classical dimension is at
-least 10, commas make multi-digit outcomes unambiguous: `(10, 3)` renders as
-`"10,3"`.
+Choose [`get_counts()`][fatqat.Result.get_counts] for display strings or
+[`get_counts_as_tuples()`][fatqat.Result.get_counts_as_tuples] for integer tuples.
+Both follow classical register order. A tuple key `(1, 0)` is displayed as `"10"`
+in a binary register.
 
-Most other accessors return the value stored in the result. Copy arrays or
-dictionaries before changing them if you need to preserve the original.
-Metadata from a direct backend run records the normalized `execution_config`
-and `result_config`; the deprecated key `simulation_config` holds a copy of
-`execution_config` until it is removed before FATQAT 0.1.0. Backend extensions may add fields. Pulse-emulator metadata records
-`runtime="qutip"` and a `runtime_details` mapping with `solver` and
-`solver_options`. A run that invokes multiple solvers reports their names as
-a tuple. These numerical-runtime details are informational. Keep the
-model, arrangement, controls, and application metadata alongside a result when
-they are needed to reproduce a physical run.
+A classical register member that no measurement writes stays at zero. Pulse
+emulators also issue a `UserWarning` if you request counts without a final state
+and leave a declared member unwritten.
 
-When a result includes a state or operator, `metadata["state_axes"]` lists
-its physical subsystems from most to least significant. Each entry contains a
-`device_operand` and its program `register_ref`; `register_ref` is
-`None` when a physical model contains a subsystem the Program did not
-address. Position 0 is the most-significant subsystem of a flat basis index.
-For local dimensions `dims`, position `q` has place value
-`prod(dims[q + 1:])`. Statevectors, both density-matrix and unitary axes, and
-the global operator basis of super-operators use this same public order.
+<a id="draw-counts"></a>
 
-A counts-only run zero-fills every declared classical slot that was never
-written by measurement and emits a standard `UserWarning`. This usually
-indicates a missing measurement.
+A result with measurement counts can plot them with
+[`draw()`][fatqat.Result.draw].
 
-For examples of reading states and measurement counts, see
-[Simulation](../guide/simulation.md). For expectation values and standard
-errors, see [Estimate observables](../guide/interpret-results.md).
+### State axes
 
-## Draw counts
+Read `metadata["state_axes"]` to match state and operator entries to physical
+subsystems. Each entry gives a device label (`device_operand`) and its program
+reference (`register_ref`). An unused physical subsystem has reference `None`. The
+first subsystem is the most significant in the basis index. For dimensions `dims`,
+position `q` has place value `prod(dims[q + 1:])`. This order applies to
+statevectors, both axes of density matrices and unitaries, and the underlying
+basis of superoperators.
 
-A result containing counts can draw them directly:
+Simulators return NumPy arrays. For statevectors, density matrices, and unitaries,
+pulse emulators return QuTiP `Qobj` values. The individual state accessors
+document the shapes and how to convert to arrays.
 
-```python
-figure = result.draw()
-figure = result.draw(stat="frequencies")
-figure = result.draw(number_to_keep=20, sort="count")
-```
+## Result metadata
 
-The default `stat="counts"` plots raw occurrences. `stat="frequencies"`
-divides each value by the total number of shots. FATQAT supplies the default
-categorical palette and preserves an explicitly configured Matplotlib color
-cycle and other `rcParams`. `number_to_keep` retains the most frequent outcomes
-and combines the remainder into an `other` bar.
+Built-in simulators and pulse emulators record the effective `execution_config`
+and `result_config` in `metadata` for direct runs. The [`Result`][fatqat.Result]
+reference also describes solver information available from pulse runs. If you plan
+to edit a stored array or dictionary, copy it first to preserve the original.
 
-## Detailed reference
-
+## API reference { #detailed-reference }
 
 ::: fatqat.Result
     options:

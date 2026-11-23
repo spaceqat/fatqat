@@ -4,38 +4,23 @@ title: "Simulators"
 
 # Simulators
 
+FatQat's simulators run general quantum circuits and can account for the rules
+of a device. On a superconducting layout, for example, a `CZ` can act only on
+two connected sites. FatQat also simulates linear-optical circuits, following
+how photons are distributed across modes after passing through optical
+components.
 
-FatQat provides a general circuit simulator and two hardware profiles. They
-use the same run and result API. Choose [`Simulator`][fatqat.simulator.Simulator] for unrestricted
-gate-level work, or a profile when the program must obey a native gate set,
-layout, or connectivity rule.
+All four simulators execute programs with `run()` and use the same interface
+to read results. The table shows what each simulator is suited to.
 
-Start with [Choose a simulation or emulation approach](../../guide/execution-models.md) to choose an execution level, or
-follow [Test a Program against a hardware profile](../../guide/superconducting-simulation.md) for the profile workflow.
+| Simulator | Use it to |
+| --- | --- |
+| [`Simulator`](../simulator.md) | Run gate-level programs with qubits, qudits, or a mix of subsystem dimensions. |
+| [`SCQubitSimulator`](sc-qubit.md) | Check superconducting native gates and qubit connectivity. |
+| [`AtomArraySimulator`](atom-array.md) | Model neutral-atom loading, pairing, and loss during a run. |
+| [`LOSimulator`](linear-optics.md) | Compute photon counts and quantum states for optical modes. |
 
-[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] uses a configurable
-superconducting coupling graph and accepts `X`, `SX`, virtual `RZ`, and
-coupled `CZ`. It offers an optional reference noise model.
-
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] has no fixed
-connectivity. Every program site starts empty: `Put` loads atoms, `Loss`
-removes them, and `Pair` and `Unpair` change which atoms can interact.
-
-The profiles validate the program as written: they do not transpile or route
-it, and they do not reproduce a named processor. Use the
-[pulse emulators](../emulators/index.md) when timing or Hamiltonian
-evolution matters.
-
-**Choose a simulator**
-
-| Class | Use it for | Main constraint |
-| --- | --- | --- |
-| [`Simulator`][fatqat.simulator.Simulator] | General circuit simulation and custom matrix implementations | No device topology |
-| [`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] | Constrained superconducting native-gate experiments | `X`, `SX`, `RZ`; `CZ` on configured couplings |
-| [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] | Neutral-atom occupancy, loss, and dynamic connectivity | `RX`, `RY`, `RZ`, and paired `CZ` |
-| [`LOSimulator`][fatqat.simulator.LOSimulator] | Linear-optical Programs on photon modes | Modes truncated to a per-run photon cutoff |
-
-- [Simulator](../simulator.md)
-- [SCQubitSimulator](sc-qubit.md)
-- [AtomArraySimulator](atom-array.md)
-- [LOSimulator](linear-optics.md)
+A program can also include [custom operations](custom-operations.md) that read
+or update the state of an individual shot. If the question is how pulses drive
+a system over time, the [emulators](../emulators/index.md) describe that
+evolution with a Hamiltonian.

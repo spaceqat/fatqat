@@ -101,7 +101,9 @@ figure = result.draw(stat="frequencies")
 figure = result.draw(number_to_keep=20, sort="count")
 ```
 
-`number_to_keep` retains the most frequent outcomes and combines the remainder into an `other` bar. See [Result](../api/result.md#draw-counts) for the complete option reference.
+`number_to_keep` keeps the most frequent outcomes and groups the rest into an
+`other` bar. All plot options are listed under
+[`Result.draw()`][fatqat.Result.draw].
 
 ![Bell-state measurement frequencies with bars for the zero-zero and one-one outcomes.](../assets/generated/guide/visualization-counts.png)
 

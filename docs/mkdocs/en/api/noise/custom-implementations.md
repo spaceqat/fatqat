@@ -4,15 +4,11 @@ title: "Custom noise implementations"
 
 # Custom noise implementations
 
-
-This page is for simulator extension authors. Most applications need only
-FATQAT's built-in noise types. Use this API to define a new [`Channel`][fatqat.noise.Channel]
-or change how a matrix simulator applies an existing type. Pulse-emulator
-continuous-noise realizations are family-owned and are not a public extension
-surface.
+Use a custom [`Channel`][fatqat.noise.Channel] when you need a finite noise
+channel beyond the built-in types, or register a different rule for an existing
+type. These extensions are for matrix simulators.
 
 ## Define a custom noise type
-
 
 A custom noise type subclasses [`Channel`][fatqat.noise.Channel] and stores its physical
 parameters. Set `Channel.num_subsystems` to the fixed number of targets,
@@ -25,7 +21,6 @@ cover subclasses.
 
 ## Register and reuse rules
 
-
 Use the same [implementation map](../implementation.md) for gates, custom
 operations, and channels. `add(ChannelType, rule)` registers a uniform rule;
 `device_operands=` restricts it to an exact ordered device tuple. These are the
@@ -36,7 +31,6 @@ and `copy` makes an independently editable map.
 
 ## Simulator rules
 
-
 A channel rule receives the channel and an ordered tuple of program
 [`RegisterRef`][fatqat.RegisterRef] targets. It returns Kraus operators acting
 on their combined space for one finite channel application:
@@ -46,19 +40,16 @@ def rule(channel, *, targets):
     return (kraus_0, kraus_1)
 ```
 
-If the ordered targets have dimensions `d_0, d_1, ...`, their combined
-dimension is `D = d_0 * d_1 * ...`. The result must be nonempty, and every
-element must be a NumPy array with shape `(D, D)`. FATQAT checks only those
-structural requirements. It does not verify complete positivity, trace
-preservation, Hermiticity preservation, or any parameter convention for a
-custom rule.
+For ordered target dimensions `d_0, d_1, ...`, return at least one NumPy array of
+shape `(D, D)`, where `D = d_0 * d_1 * ...`. Use the target order for the tensor
+factors. Supply a valid Kraus representation satisfying $\sum_i K_i^\dagger K_i =
+I$ for a trace-preserving channel.
 
 Start with [`default_matrix_implementation_map`][fatqat.implementation.default_matrix_implementation_map] when you want to keep
 FATQAT's built-in simulator rules. See [Simulators](backend-support.md#noise-simulator-support) for
 backend limits.
 
 ### Minimal example
-
 
 This custom qubit channel and rule add bit-flip noise while
 retaining all built-in gate and channel implementations:
@@ -70,7 +61,6 @@ import numpy as np
 import fatqat as fq
 import fatqat.operations as ops
 from fatqat.implementation import default_matrix_implementation_map
-
 
 @dataclass(frozen=True)
 class BitFlip(fq.noise.Channel):
@@ -85,14 +75,12 @@ class BitFlip(fq.noise.Channel):
         ):
             raise ValueError("p must be a real number in [0, 1]")
 
-
 def bit_flip_rule(channel, *, targets):
     if targets[0].register.dim != 2:
         raise fq.errors.BackendValidationError("BitFlip requires a qubit")
     identity = np.eye(2, dtype=complex)
     x = np.array([[0, 1], [1, 0]], dtype=complex)
     return np.sqrt(1 - channel.p) * identity, np.sqrt(channel.p) * x
-
 
 implementations = default_matrix_implementation_map()
 implementations.add(BitFlip, bit_flip_rule)
@@ -106,11 +94,9 @@ backend = fq.simulator.Simulator(
 )
 ```
 
-## API
-
+## API reference { #api }
 
 ### Simulator types
-
 
 ::: fatqat.noise.Channel
     options:

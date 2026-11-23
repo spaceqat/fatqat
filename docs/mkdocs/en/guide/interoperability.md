@@ -141,10 +141,9 @@ With the seeds shown, both routes return 50 counts for `"00"` and 50 for
 your run produced. The backend route gives a Qiskit job and result, with
 counts formatted using Qiskit's conventions.
 
-For asymmetric circuits, check bit order when comparing results. FatQat
-puts slot 0 on the left in count strings. Qiskit puts bit 0 on the right
-within a register. When comparing arrays or Pauli labels, use the conversions
-in the [Qiskit API reference](../api/interoperability/qiskit.md).
+When using an asymmetric circuit, compare the [bit and basis
+order](../api/interoperability/qiskit.md#compare-bit-and-basis-order) before
+comparing counts, arrays, or Pauli labels.
 
 The adapter accepts static circuits with bound parameters. Transpile each
 circuit for the backend's target, and use a FatQat `NoiseModel` for noisy runs.

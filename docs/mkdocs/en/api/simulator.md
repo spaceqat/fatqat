@@ -4,200 +4,112 @@ title: "Simulator"
 
 # Simulator
 
+[`Simulator`][fatqat.simulator.Simulator] runs a [`Program`][fatqat.Program] at
+the gate level. It supports qubits, qudits, and registers whose members have
+different dimensions. It executes the operations as written, without imposing
+a device topology.
 
-[`Simulator`][fatqat.simulator.Simulator] runs gate-level programs with matrix
-operations and finite noise channels. It supports qubits, qudits, mixed register
-dimensions, and custom implementation maps. Programs run as written, without
-transpilation or routing.
+## Choose a simulation method { #methods }
 
-## Quick start
+Use `statevector` or `density_matrix` to follow the evolution of a state. Use
+`unitary` or `superop` to compute the action of the entire program on an
+arbitrary input. In the table, `D` is the product of the subsystem dimensions.
 
+| Method | What it computes | Result shape |
+| --- | --- | --- |
+| `statevector` (default) | A final pure state. Reset and noise channels may sample a trajectory. | `(D,)` |
+| `density_matrix` | A final density matrix. Reset and noise channels act directly on the density matrix. | `(D, D)` |
+| `unitary` | The matrix of a program made up of unitary operations. | `(D, D)` |
+| `superop` | The linear map on density matrices, including reset and finite noise channels. | `(D**2, D**2)` |
+
+Both state methods support measurement and classical conditions. Both operator
+methods require a program without measurements or classical conditions, and
+return the map without taking an initial state or producing counts. Their
+memory use grows with the size of the returned matrix.
+
+To apply a `superop` to a density matrix `rho`, flatten it by stacking its
+columns and reshape the result in the same order.
 
 ```python
-import fatqat as fq
-import fatqat.operations as ops
-
-bell = fq.Program(2, 2)
-bell.add(ops.H, 0)
-bell.add(ops.CX, (0, 1))
-bell.measure_all()
-
-backend = fq.simulator.Simulator(method="statevector")
-counts = backend.run(bell, shots=1000).result().get_counts()
+rho_out = (superop @ rho.reshape(-1, order="F")).reshape(rho.shape, order="F")
 ```
 
-The default implementation map covers FATQAT's built-in matrix gates.
-State methods also support measurement, reset, and classical conditions.
-`Barrier` has no numerical effect.
+For a program of unitary operations, the superoperator is
+`numpy.kron(unitary.conj(), unitary)`.
 
-## Methods
+See [Result](result.md#ordering-and-mutable-values) for the basis order used
+by states and operators.
 
+<a id="quick-start"></a>
 
-Method names are case-insensitive. `SV` and `DM` are aliases; the
-read-only [`Simulator.method`][fatqat.simulator.Simulator.method] property returns the full name. If the
-program's Hilbert-space dimension is `D`:
+## Run and read results { #run-inputs-and-results }
 
-| Method | Result | Reset and finite channels | Restrictions |
-| --- | --- | --- | --- |
-| `statevector` / `SV` | `statevector`, shape `(D,)` | Samples one trajectory | A stochastic final state represents one shot |
-| `density_matrix` / `DM` | `density_matrix`, shape `(D, D)` | Applies them exactly | Uses more memory than `statevector` |
-| `unitary` | `unitary`, shape `(D, D)` | Rejected | Rejects measurement, conditions, counts, and `initial_state` |
-| `superop` | `superop`, shape `(D**2, D**2)` | Applies them exactly | Rejects measurement, conditions, counts, and `initial_state` |
+[`run()`][fatqat.simulator.Simulator.run] accepts a `Program` or an
+[`ExecutableProgram`][fatqat.ExecutableProgram] that carries its own resource
+layout. It returns a completed job. This example reads the measurement counts
+from a Bell-state program.
 
-Super-operators use column-stacking vectorization:
-
-```python
-rho_out = (
-    superop @ rho_in.reshape(-1, order="F")
-).reshape(rho_in.shape, order="F")
+```pycon
+>>> import fatqat as fq
+>>> import fatqat.operations as ops
+>>> bell = fq.Program(2, 2)
+>>> bell.add(ops.H, 0)
+>>> bell.add(ops.CX, (0, 1))
+>>> bell.measure_all()
+>>> simulator = fq.simulator.Simulator(runtime="numpy")
+>>> counts = simulator.run(
+...     bell, shots=1000, execution_config={"seed": 42}
+... ).result().get_counts()
+>>> sorted(counts)
+['00', '11']
+>>> sum(counts.values())
+1000
 ```
 
-For a noise-free program, `superop` equals
-`numpy.kron(unitary.conj(), unitary)`. A unitary contains `4**n` complex
-entries for `n` qubits, while a super-operator contains `16**n`; use the
-operator methods only for programs small enough to hold the result.
+A program with measurements returns counts by default. A run with a
+deterministic final state or operator returns that result by default. To inspect
+the final state of a single sampled trajectory, request
+`result_config={"final_state": True}` with `shots=1`. See [Result](result.md)
+for the available fields and their accessors.
 
-All returned quantum arrays list subsystem 0 as the most-significant factor.
-For two qubits, `X(q0)|00>` is nonzero at flat index
-2, while `X(q1)|00>` is nonzero at index 1. For dimensions `(3, 2)`, digits
-`(1, 0)` and `(0, 1)` likewise have indices 2 and 1. Ordinary NumPy C-order
-reshape follows this order.
+The simulator starts in the ground state by default. Pass a
+[`BasisState`][fatqat.simulator.BasisState] as `initial_state` to select a
+level for each subsystem by register reference.
 
-The same basis applies to input states and to operator rows and columns. For
-an arbitrary state `psi`, a matrix acting on every subsystem satisfies
-`unitary @ psi == state_out`; density matrices satisfy
-`unitary @ rho @ unitary.conj().T == rho_out`.
+<a id="sweeps"></a>
 
-## Runtime and execution
+Use [`run_sweep()`][fatqat.simulator.Simulator.run_sweep] to run a parameterized
+program for several sets of values and read the results in the same order.
 
+## Configure a run { #runtime-and-execution }
 
-`runtime` accepts `"numpy"` or `"numba"` (case-insensitive). `None` (default)
-uses the current simulator default, initially `"numba"`. See
-[Simulation](../guide/simulation.md) to set the default for a script or notebook.
+The constructor's `runtime` selects NumPy or Numba for numerical execution.
+If you omit it, new simulators use the current default, initially Numba.
+Use [`set_default_runtime()`][fatqat.simulator.set_default_runtime] to change
+the default for new simulators.
 
-`execution_config` changes one call to [`Simulator.run`][fatqat.simulator.Simulator.run]. Its string
-values are case-sensitive. The former name `simulation_config` is deprecated on
-every backend and on `Estimator`; it still works as an alias and will be removed
-before FATQAT 0.1.0.
+Pass `execution_config` to [`run()`][fatqat.simulator.Simulator.run] to set a
+sampling seed, choose parallelism, or control error handling for that call.
+The `run()` entry below lists the accepted keys, defaults, and restrictions.
 
-| Key | Default | Accepted values and effect |
-| --- | --- | --- |
-| `seed` | `None` | Use a non-negative `int` or `None`; booleans are rejected. It controls measurement, reset, channel, loss, and readout sampling. A negative value fails when execution starts and follows `error_handling`. |
-| `shot_parallelism` | `"auto"` | `"auto"`, `"serial"`, `"threads"`, or `"processes"`. Explicit parallel modes require an eligible counts-only, per-shot run with at least two shots and workers. Threads require a compatible Numba statevector run. |
-| `kernel_parallelism` | `"auto"` | `"auto"`, `"serial"`, or `"threads"`. Threads require Numba and cannot be requested together with parallel shots. |
-| `max_workers` | `None` | `None` or a positive `int`. It caps the selected parallel mode; `1` conflicts with an explicitly parallel request. |
-| `error_handling` | `"raise"` | `"raise"` or `"capture"`; see the error-handling contract in [`Simulator.run`][fatqat.simulator.Simulator.run]. |
-| `fusion` | `False` | A `bool`. `True` combines compatible adjacent operations and is supported by Numba for `unitary` and `superop`. Statevector and density-matrix evolution do not support fusion. |
+With the automatic settings, the simulator uses at most one kind of parallelism,
+either across shots or within one evolution. See
+[Performance and scaling](../guide/performance.md#match-parallelism-to-the-work)
+for examples of matching parallelism to a workload.
 
-Shot parallelism requires counts and independent shot evolution, such as a
-program with mid-circuit measurement, reset, conditions, or stochastic channels.
-Programs with only terminal measurement sampling are not eligible. Threaded
-shots require a Numba statevector run without atom-occupancy operations;
-processes support other eligible workloads. Automatic selection uses at most
-one parallel axis. Unsupported explicit choices raise an error.
+<a id="noise"></a>
 
-A fixed `seed` reproduces sampled results when the program, configuration,
-FatQat version, and execution environment are the same. Different runtimes or
-parallel modes may produce different samples. Deterministic results are
-independent of the seed and subject to floating-point tolerances.
+Pass a [`NoiseModel`][fatqat.NoiseModel] through the constructor's `noise`
+argument to use it on every run. Matrix simulation uses probability-form
+channels applied at operation boundaries. See [Noise](noise.md#backend-support)
+for supported noise sources.
 
-See [Performance and scaling](../guide/performance.md) for benchmarking guidance.
+<a id="customize-the-backend"></a>
 
-## Customize the backend
+Use `implementation_map` to supply your own matrices, channels, or
+[custom operations](simulators/custom-operations.md).
 
-
-The constructor also accepts:
-
-| Argument | Meaning |
-| --- | --- |
-| `implementation_map` | Matrix, channel, and [custom-operation implementations](simulators/custom-operations.md). `None` uses FATQAT's built-in rules. |
-| `noise` | A [`NoiseModel`][fatqat.NoiseModel] used by every run. `None` is ideal. |
-
-## Run inputs and results
-
-
-Besides `execution_config`, [`Simulator.run`][fatqat.simulator.Simulator.run] accepts:
-
-| Argument | Default | Meaning |
-| --- | --- | --- |
-| `shots` | `1024` | Samples used for counts or a stochastic final state. A deterministic state-only or operator result does not use this value. |
-| `resource_layout` | `None` | Assigns every program quantum reference to a device label. The generic simulator uses integer labels in declaration order. A supplied layout must be complete, one-to-one, and compatible with the backend. |
-| `initial_state` | `None` | Quantum array, [`BasisState`][fatqat.simulator.BasisState], or [`EvolutionState`][fatqat.simulator.EvolutionState] supplying quantum and classical data for each shot. `None` selects the ground state. Operator methods reject an initial state. |
-
-A `BasisState` names one level per subsystem by register reference, so it does
-not depend on subsystem order; unnamed subsystems start at level 0. Dense
-quantum input uses the public most-significant-first basis. `statevector` accepts
-shape `(D,)`; `density_matrix` accepts `(D,)` or `(D, D)`. Only the quantum shape is
-checked; you are responsible for normalization and, for density matrices,
-Hermiticity and positivity.
-
-`result_config` accepts the keys below. `counts` and `final_state` accept
-`True`, `False`, or `None`; an omitted or `None` value uses the default shown.
-`final_classical_state` accepts only `True` or `False`.
-
-| Key | Default | Constraint |
-| --- | --- | --- |
-| `counts` | Enabled when the program measures | Requires an integer `shots > 0` |
-| `final_state` | Enabled when the method-native state or map is deterministic | A requested stochastic final state requires `shots == 1` |
-| `final_classical_state` | Disabled | Requires `shots == 1` when the final state is stochastic; rejected by `unitary` and `superop` |
-
-`final_classical_state=True` returns one shot's final [`ClassicalState`][fatqat.simulator.ClassicalState]
-(register digits and site occupancy) through [`Result.get_classical_state`][fatqat.Result.get_classical_state].
-
-The concrete final-state field is named `statevector`, `density_matrix`,
-`unitary`, or `superop`. Check `fatqat.Result.available_data` before
-reading a field that may not have been requested.
-
-`run()` completes execution before returning a [`Job`][fatqat.Job]. Program and
-option validation errors raise directly. Execution errors follow
-`error_handling`, as specified in [`Simulator.run`][fatqat.simulator.Simulator.run]. See
-[Result](result.md) for available fields, accessors, count ordering, and
-state-axis metadata.
-
-## Noise
-
-
-Matrix simulation has no physical timeline. Built-in damping and depolarizing
-descriptors therefore use their probability form and apply at operation
-boundaries. [`AmplitudeDamping(p=...)`][fatqat.noise.AmplitudeDamping] is the
-conventional finite qubit channel. Use
-[`TransitionRelaxation(p=..., coefficients=...)`](noise/transition-relaxation.md)
-for one explicit finite-dimensional jump. Matching transition descriptors are
-applied sequentially in registration order.
-
-Rate forms, background sources, and
-[`ThermalRelaxation`][fatqat.noise.ThermalRelaxation] are rejected. For a known qubit
-operation duration, add probability-form
-[`AmplitudeDamping`][fatqat.noise.AmplitudeDamping] and
-[`PhaseDamping`][fatqat.noise.PhaseDamping] descriptors to the relevant operation.
-Custom descriptors require a matching channel rule.
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator] additionally supports atom loss.
-
-[`Simulator.validate_noise_model`][fatqat.simulator.Simulator.validate_noise_model] validates a model without running a
-program. A method can still impose a stricter rule: for example, `unitary`
-rejects a finite channel that the backend otherwise recognizes when that
-channel matches the program. See [Noise](noise.md) for selectors and the support
-table.
-
-## Sweeps
-
-
-[`Simulator.run_sweep`][fatqat.simulator.Simulator.run_sweep] runs a program for
-each row of a parameter batch. It completes before returning a job containing
-a `list[Result]` in row order. Batch and row validation errors raise directly;
-execution errors follow `error_handling`. A failed sweep returns no partial
-result list. A supplied seed is reused for every row, so sampled errors can be
-correlated.
-
-See [Simulate a quantum program](../guide/simulation.md) for an example and
-[`run_sweep`][fatqat.simulator.Simulator.run_sweep] for accepted batch shapes.
-
-## API
-
-
-::: fatqat.simulator.get_default_runtime
-
-::: fatqat.simulator.set_default_runtime
+## API reference { #api }
 
 ::: fatqat.simulator.Simulator
     options:
@@ -208,3 +120,11 @@ See [Simulate a quantum program](../guide/simulation.md) for an example and
         - "!^_"
 
 ::: fatqat.simulator.BasisState
+
+::: fatqat.ExecutableProgram
+    options:
+      heading_level: 3
+
+::: fatqat.simulator.get_default_runtime
+
+::: fatqat.simulator.set_default_runtime

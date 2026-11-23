@@ -354,6 +354,10 @@ class MatrixImplementationMap(
     device-specific rules for an operation family; the two registration modes
     cannot be mixed for the same operation. ``CustomOperation`` classes require
     ``CustomOperationImplementation`` objects. Channel rules return Kraus matrices.
+
+    The simulator copies the registrations at construction. Implementation
+    objects are shared with the original map; later additions and removals
+    affect only the map you edit.
     """
 
     def __init__(self) -> None:
@@ -375,7 +379,9 @@ class MatrixImplementationMap(
 
         Args:
             op: Operation or Channel instance or subclass.
-                Instances and their classes select the same operation family.
+                Instances and their exact classes select the same family.
+                Adding another rule for the same uniform registration or the
+                same device tuple replaces the previous rule.
             implementation: The rule for the registered operation or channel:
 
                 - Matrix operation: a `MatrixImplementation`, a NumPy array,

@@ -4,33 +4,28 @@ title: "Experimental APIs"
 
 # Experimental APIs
 
-
-The APIs listed here are public, but their signatures and behavior may change
-between releases. Use them only when the stable backend workflow does not
-cover your integration.
+These APIs are available for use while their interfaces are under development.
+Their signatures and behavior may change between releases.
 
 ## Compiler
 
-The [compiler](compiler.md) is under development; its interfaces and supported
-behavior may change. Its [LogicalProgram](logical-program.md) frontend accepts
-built-in device-independent operations and is required by the Python compiler
-entry points.
+Start with [LogicalProgram](logical-program.md) if you write the logical gates in
+Python. If you already have OpenQASM source, choose the OpenQASM entry point for
+your target. [Compiler pipelines](compiler-pipelines.md) lists the inputs each
+entry point accepts.
 
-## Direct construction
+## Custom backends { #direct-construction }
 
+An implementation of [`Backend`][fatqat.Backend] puts its output fields in a
+[`Result`][fatqat.Result] and returns a [`Job`][fatqat.Job]. Use `Job("DONE",
+result=value)` to return the result. To store an execution failure for the caller,
+use `Job("ERROR", error=exc)`.
 
-Backends return [`Job`][fatqat.Job] and [`Result`][fatqat.Result];
-applications normally should not construct either class. When writing a
-backend integration, create a successful job as `Job("DONE", result=value)`
-or a failed job as `Job("ERROR", error=exc)`, and translate the backend's
-output into a `Result`. See [Job](job.md) and [Result](result.md) for the interfaces.
+## Extend a backend { #extension-points }
 
-## Extension points
+- [Matrix implementation maps](implementation.md) let a simulator use your own
+  gate matrices or pick a rule for a specific device location.
 
-
-The following extension points are also evolving:
-
-- [Matrix implementations](implementation.md) for custom matrices and device-specific gate rules
-- [Gate realization](pulse-control/gate-realization.md) for custom pulse definitions
-
-Built-in pulse maps are listed under [Emulators](emulators/index.md).
+- [Custom gate pulses](pulse-control/gate-realization.md) let you specify the
+  physical controls that implement a gate. The [emulator
+  pages](emulators/index.md) describe the built-in gate-to-pulse maps.

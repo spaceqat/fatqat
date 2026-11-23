@@ -4,110 +4,68 @@ title: "SCQubitSimulator"
 
 # SCQubitSimulator
 
+[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] runs gate-level programs
+on a configurable superconducting qubit layout. Use it to check whether a program
+fits the available qubit sites, uses native gates, and applies `CZ` only between
+connected sites.
 
-[`SCQubitSimulator`][fatqat.simulator.SCQubitSimulator] applies the [`Simulator`][fatqat.simulator.Simulator] execution model to
-a configurable synthetic superconducting coupling graph. Use it when native
-gates, capacity, and target connectivity matter. It does not transpile, route,
-schedule, or reproduce a named processor.
+## Configure layout and noise { #native-gates-and-layout }
 
-**Hardware profile**
+Choose the number of qubit sites and which pairs can interact. The default is a
+4×4 nearest-neighbor grid, with sites numbered from 0 to 15 in row order. To use
+another graph, set `num_qubits` and `couplings`.
 
-| Property | Value |
-| --- | --- |
-| Default device | `num_qubits=16`; a 4×4 reference coupling graph |
-| Uniform native gates | [`fatqat.operations.X`][fatqat.operations.X], [`fatqat.operations.SX`][fatqat.operations.SX], [`fatqat.operations.RZ`][fatqat.operations.RZ] |
-| Connected native gate | [`fatqat.operations.CZ`][fatqat.operations.CZ] on the supplied couplings |
-| Other built-in operations | Measurement and [`fatqat.operations.Reset`][fatqat.operations.Reset] follow the method rules described by [`Simulator`][fatqat.simulator.Simulator] |
-| Methods | All methods supported by [`Simulator`][fatqat.simulator.Simulator]; default `statevector` |
-| Runtime | Global default (`numba` unless configured); explicit `numpy` or `numba` overrides it |
-| Noise | Ideal by default; a built-in reference model is available explicitly |
+By default, qubits map to consecutive device labels in register declaration order,
+including the members of a [`GridRegister`][fatqat.GridRegister]. Pass a complete
+[`ResourceLayout`][fatqat.ResourceLayout] to place those qubits at other sites. To
+compile a logical circuit for the same layout, pass the target returned by
+[`get_compiler_target()`][fatqat.simulator.SCQubitSimulator.get_compiler_target]
+to the compiler.
 
-## Native gates and layout
+### Built-in noise { #built-in-noise }
 
+To include gate damping and readout errors, pass the model returned by
+[`default_noise_model()`][fatqat.simulator.SCQubitSimulator.default_noise_model]
+as `noise`. Its API entry lists the gate and readout parameters.
 
-The default row-major numbering is:
+## Check native gates { #check-native-gates }
 
-```text
- 0   1   2   3
- 4   5   6   7
- 8   9  10  11
-12  13  14  15
+The simulator accepts `X`, `SX`, and `RZ` at every site. A `CZ` accepts either
+order of a connected pair, such as `(0, 1)` or `(1, 0)` on the default grid.
+Measurement and reset follow the [rules for the chosen simulation
+method](../simulator.md#methods).
+
+To check a pair before running a program, query
+[`implementation_map`][fatqat.simulator.SCQubitSimulator.implementation_map]. On
+the default grid, sites 0 and 5 are diagonal neighbors, so this pair cannot run
+`CZ`.
+
+```pycon
+>>> import fatqat as fq
+>>> import fatqat.operations as ops
+>>> sim = fq.simulator.SCQubitSimulator(runtime="numpy")
+>>> sim.implementation_map.supports(ops.CZ, device_operands=(0, 5))
+False
 ```
 
-Both operand orders of every coupling are legal, so `CZ` is accepted on
-device labels `(0, 1)` and `(1, 0)`, but not `(0, 5)` in the default data.
-The grid is only the default test topology; callers may provide any valid
-undirected coupling graph.
+## API reference { #api }
 
-With the automatic layout, a program maps all quantum registers to device labels
-`0, 1, ...` in declaration order. A [`GridRegister`][fatqat.GridRegister] is
-flattened in the same order as any other register; frontend geometry does not
-define hardware placement. An explicit, complete
-[`ResourceLayout`][fatqat.ResourceLayout] can place program references differently.
-Capacity and the qubit-only restriction still apply.
+<a id="fatqat.simulator.SCQubitSimulator.method"></a>
 
-The backend executes only programs already written in its native gate set.
-For example, [`fatqat.operations.CX`][fatqat.operations.CX] is rejected even on neighbouring
-qubits. Inspect [`SCQubitSimulator.implementation_map`][fatqat.simulator.SCQubitSimulator.implementation_map] instead of
-hard-coding these rules:
+<a id="fatqat.simulator.SCQubitSimulator.run"></a>
 
-```python
-import fatqat as fq
-import fatqat.operations as ops
+<a id="fatqat.simulator.SCQubitSimulator.run_sweep"></a>
 
-backend = fq.simulator.SCQubitSimulator(
-    num_qubits=5,
-    couplings=((0, 1), (1, 2), (1, 3), (3, 4)),
-)
-native = backend.implementation_map
+<a id="fatqat.simulator.SCQubitSimulator.validate_noise_model"></a>
 
-assert native.supports(ops.SX)
-assert native.supports(ops.CZ, device_operands=(0, 1))
-assert not native.supports(ops.CZ, device_operands=(0, 3))
-```
-
-`device_operands_for(operation)` returns an empty set for a gate available
-everywhere and ordered tuples for a connectivity-limited gate.
-
-## Built-in noise
-
-
-The simulator remains ideal unless a noise model is supplied. To use the
-built-in profile, request it explicitly:
-
-```python
-import fatqat as fq
-
-Sim = fq.simulator.SCQubitSimulator
-backend = Sim(noise=Sim.default_noise_model())
-```
-
-The profile uses `T1 = 60 us` and `T2 = 48 us`. Each call returns a fresh
-[`NoiseModel`][fatqat.NoiseModel] that you can extend before passing it to the
-simulator.
-
-**Built-in profile**
-
-| Operation | Duration | Noise |
-| --- | --- | --- |
-| `X`, `SX` | 20 ns | T1/T2-derived amplitude and phase damping |
-| `RZ` | 0 ns (virtual) | None |
-| `CZ` | 50 ns | Relaxation on each qubit, followed by joint depolarizing noise with `p = 0.001` |
-| Measurement | — | `P(report 1 \| true 0) = 0.02` and `P(report 0 \| true 1) = 0.04` |
-
-See [Noise](../noise.md) for how the selected simulation method applies this model.
-
-## API
-
-
-[`Simulator.method`][fatqat.simulator.Simulator.method], [`SCQubitSimulator.implementation_map`][fatqat.simulator.SCQubitSimulator.implementation_map],
-[`Simulator.run`][fatqat.simulator.Simulator.run], [`Simulator.run_sweep`][fatqat.simulator.Simulator.run_sweep], and
-[`Simulator.validate_noise_model`][fatqat.simulator.Simulator.validate_noise_model] follow the general Simulator API and are
-included below for a complete class reference.
+Use [`Simulator.run()`][fatqat.simulator.Simulator.run] for a single program and
+[`Simulator.run_sweep()`][fatqat.simulator.Simulator.run_sweep] for a parameter
+sweep. The entries below cover the simulator-specific interfaces.
 
 ::: fatqat.simulator.SCQubitSimulator
     options:
-      inherited_members: true
+      inherited_members:
+        - implementation_map
       show_bases: false
       merge_init_into_class: true
       filters:
