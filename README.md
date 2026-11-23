@@ -1,14 +1,21 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/spaceqat/fatqat/main/docs/mkdocs/en/assets/images/space-qat-logo.png" alt="FatQat logo" width="160">
-</p>
-
-# FatQat
-
-[![Tests](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml) [![PyPI](https://img.shields.io/pypi/v/fatqat)](https://pypi.org/project/fatqat/) [![Python](https://img.shields.io/pypi/pyversions/fatqat)](https://pypi.org/project/fatqat/) [![Documentation](https://readthedocs.org/projects/fatqat/badge/?version=latest)](https://fatqat.readthedocs.io/en/latest/) [![License](https://img.shields.io/pypi/l/fatqat)](https://github.com/spaceqat/fatqat/blob/main/LICENSE)
-
-English | [简体中文](README.zh-CN.md) | [한국어](README-KR.md)
-
-**One Program, from algorithm to hardware.**
+<div align="center">
+  <img src="https://raw.githubusercontent.com/spaceqat/fatqat/main/docs/mkdocs/en/assets/images/space-qat-logo.png" alt="" width="120">
+  <h1>FatQat</h1>
+  <p><strong>One Program, from algorithm to hardware.</strong></p>
+  <p>
+    <a href="https://github.com/spaceqat/fatqat/actions/workflows/tests.yml"><img src="https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
+    <a href="https://pypi.org/project/fatqat/"><img src="https://img.shields.io/pypi/v/fatqat" alt="PyPI"></a>
+    <a href="https://pypi.org/project/fatqat/"><img src="https://img.shields.io/pypi/pyversions/fatqat" alt="Python"></a>
+    <a href="https://fatqat.readthedocs.io/en/latest/"><img src="https://readthedocs.org/projects/fatqat/badge/?version=latest" alt="Documentation"></a>
+    <a href="https://github.com/spaceqat/fatqat/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/fatqat" alt="License"></a>
+  </p>
+  <p>
+    <a href="https://fatqat.readthedocs.io/en/latest/guide/quickstart/">Quickstart</a> ·
+    <a href="https://fatqat.readthedocs.io/en/latest/">Documentation</a> ·
+    <a href="https://fatqat.readthedocs.io/en/latest/tutorials/">Case studies</a>
+  </p>
+  <p>English | <a href="README.zh-CN.md">简体中文</a> | <a href="README-KR.md">한국어</a></p>
+</div>
 
 FatQat is a Python toolkit for building, compiling, and running quantum
 programs. Write a `Program` once and run it through the same interface on every
@@ -28,11 +35,6 @@ The current backends offer three levels of physical detail:
 | General simulation | Does the algorithm work, and how does noise change it? |
 | Hardware-profile simulation | Does it fit the device's native gates, connectivity, and atoms? |
 | Hamiltonian emulation | What happens during the pulses: leakage, coupling, and timing? |
-
-The same three-qubit Grover search finds its target 94.5% of the time in ideal
-simulation, 81.7% after compilation to a noisy superconducting profile, and
-74.0% under calibrated transmon pulses.
-[See how each model reaches its result.](https://fatqat.readthedocs.io/en/latest/)
 
 A `Program` is more than a gate circuit. It can hold:
 
