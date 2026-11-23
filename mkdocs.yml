@@ -222,8 +222,8 @@ nav:
           - Simulators:
               - api/simulators/index.md
               - General simulator: api/simulator.md
-              - Superconducting profile: api/simulators/sc-qubit.md
-              - Atom-array profile: api/simulators/atom-array.md
+              - SC qubits: api/simulators/sc-qubit.md
+              - Atom arrays: api/simulators/atom-array.md
               - Linear optics: api/simulators/linear-optics.md
               - Custom operations: api/simulators/custom-operations.md
           - Emulators:

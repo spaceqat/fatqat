@@ -4,147 +4,94 @@ title: "Observables and estimation"
 
 # Observables and estimation
 
+[`Estimator`][fatqat.Estimator] computes expectation values for one or more
+[`Observable`][fatqat.Observable] objects. Both entry points take a program
+without measurement operations. Choose the entry point by how you want to supply
+the program parameters.
 
-Use [`Estimator`][fatqat.Estimator] to evaluate one or more
-[`Observable`][fatqat.Observable] values on a backend. The program must be
-unmeasured and fully bound with no free Parameters.
+<a id="parameter-sweeps"></a>
 
-## Estimate an observable
+## Run once or sweep
 
+- [`run()`][fatqat.Estimator.run] evaluates a single program. Bind all its
+  parameters before calling it. The job returns one [`Result`][fatqat.Result].
 
-```python
-import fatqat as fq
-import fatqat.operations as ops
-
-program = fq.Program(2)
-program.add(ops.H, 0)
-program.add(ops.CX, (0, 1))
-
-estimator = fq.Estimator(fq.simulator.Simulator("SV"))
-observable = fq.Observable([("ZZ", 1.0)])
-result = estimator.run(program, observable).result()
-expectation = result.get_expectation()
-```
-
-For a guided workflow, see [Estimate observables](../guide/interpret-results.md).
+- [`run_sweep()`][fatqat.Estimator.run_sweep] takes a parameterized program and a
+  batch of complete `bindings` in the same call. The job returns one result per
+  binding row, in input order.
 
 ## Construct an observable
 
+Each term is the product of operators on individual subsystems, multiplied by a
+real coefficient. Use a dense string of `I`, `X`, `Y`, and `Z` for Pauli operators
+on qubits. The leftmost letter acts on subsystem 0. For example, `"XI"` applies X
+to the first qubit and the identity to the second.
 
-An observable is a sum of real coefficients times products of local
-operators, each acting on one subsystem:
+Use [`from_sparse()`][fatqat.Observable.from_sparse] to name the operators and
+their subsystem indices directly. This form also accepts
+[`Projector(level)`][fatqat.observable.Projector] for the probability of finding a
+subsystem in a level and [`NumberOperator()`][fatqat.observable.NumberOperator]
+for its mean level or photon number. Unspecified subsystems carry the identity.
 
-- the Pauli operators `X`, `Y`, and `Z`, which act on qubits only;
-- [`Projector(level)`][fatqat.observable.Projector], the projector onto one
-  level, with `ZERO` and `ONE` as names for `Projector(0)` and `Projector(1)`;
-- [`NumberOperator()`][fatqat.observable.NumberOperator], `diag(0, 1, ..., d-1)`
-  on a subsystem of dimension `d`: the mean level of a qudit, or `ONE` on a
-  qubit.
+## Estimate an expectation value { #estimate-an-observable }
 
-A string label gives one letter per subsystem, from `I`, `X`, `Y`, and `Z`. The
-character at position `q` acts on subsystem `q`, and subsystems past the end of
-the label carry the identity. `"XI"` means `X(q0) tensor I(q1)`; on the state
-`|10>`, `<ZI> = -1` and `<IZ> = +1`. These forms are equivalent:
+For a three-level system prepared in level 2, this example reads the mean level
+index and the probability of being in level 2.
 
-```python
-fq.Observable([("ZZ", 1.5)])
-fq.Observable(["ZZ"], coeffs=[1.5])
-```
-
-[`from_sparse`][fatqat.Observable.from_sparse] names each non-identity operator
-and its subsystem explicitly. A term's operators can be a letter string such as
-`"XY"`, one operator object, or a sequence that mixes both. This is also how you
-write `Projector` and `NumberOperator` operators:
-
-```python
-from fatqat.observable import NumberOperator, Projector
-
-fq.Observable.from_sparse([(["ONE", "Z"], (5, 3), 1.5)])
-fq.Observable.from_sparse([([Projector(2), "X"], (0, 1), 0.5)])
-```
-
-Coefficients must be real.
-
-An observable has no width or subsystem dimensions of its own. The backend
-checks each local operator against the program: every index must name a
-program subsystem, Pauli operators need a qubit, and a projector level must be below its
-subsystem's dimension. This lets one observable describe qudit programs:
-
-```python
-qutrit = fq.Program([fq.QuantumRegister(1, dim=3)])
-qutrit.add(ops.Shift(2), 0)  # |0> -> |2>
-
-mean_level = fq.Observable.from_sparse([(NumberOperator(), (0,), 1.0)])
-in_level_2 = fq.Observable.from_sparse([(Projector(2), (0,), 1.0)])
-result = estimator.run(qutrit, [mean_level, in_level_2]).result()
-result.get_expectation()  # [2.0, 1.0]
+```pycon
+>>> import fatqat as fq
+>>> import fatqat.operations as ops
+>>> from fatqat.observable import NumberOperator, Projector
+>>> program = fq.Program([fq.QuantumRegister(1, dim=3)])
+>>> program.add(ops.Shift(2), 0)
+>>> mean_level = fq.Observable.from_sparse([(NumberOperator(), (0,), 1.0)])
+>>> in_level_2 = fq.Observable.from_sparse([(Projector(2), (0,), 1.0)])
+>>> estimator = fq.Estimator(fq.simulator.Simulator(runtime="numpy"))
+>>> result = estimator.run(program, [mean_level, in_level_2]).result()
+>>> result.get_expectation().tolist()
+[2.0, 1.0]
 ```
 
 ## Exact and sampled results
 
-
-Pass one observable to receive scalar expectation and standard-error values,
-or a list or tuple to receive arrays in the same order.
-
-`shots=0` computes an exact value. A positive `shots` value samples each
-nonconstant term independently, and
-[`get_standard_error`][fatqat.Result.get_standard_error] reports the resulting
-sample standard error. Constant terms contribute zero standard error; one
-sample of a nonconstant term has undefined standard error and reports `nan`.
-Set `execution_config["seed"]` to reproduce a sampled run.
-
-Configure the simulation method, runtime, and noise on the backend. The
-Estimator forwards `execution_config` to the backend and accepts the same keys
-as its normal `run()` path; see the tables for
-[matrix simulators](simulator.md#runtime-and-execution) and
-[the two-level atom emulator](atom-emulators.md#run-configuration-and-results).
-`result_config` is not accepted.
-
-Read estimator results with [`get_expectation`][fatqat.Result.get_expectation]
-and [`get_standard_error`][fatqat.Result.get_standard_error]. Run the backend
-separately if you also need its final state. Result metadata is compact: backend
-name, method, runtime, and shots, plus the pulse solver for pulse executions.
+`shots=0` (the default) computes the expectation directly and reports zero
+standard error. A positive `shots` sets the number of samples per nonconstant
+term. Read the values with [`get_expectation()`][fatqat.Result.get_expectation]
+and [`get_standard_error()`][fatqat.Result.get_standard_error].
 
 ## Backend support
 
+Set the method, numerical runtime, and noise on the backend. Pass per-run options
+such as the seed through `execution_config`. Simulators also accept an
+`initial_state`.
 
-**Matrix simulators** support every operator, exact and sampled, with a
-statevector or density-matrix method. Unitary and superoperator methods raise
-[`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError] because
-they produce maps rather than states. For an exact expectation with reset or an
-applicable stochastic channel, use a density-matrix method; a statevector
-method can run those programs with positive shots. Programs with carrier loss
-are rejected.
+- **Gate-level simulators:** Use `statevector` or `density_matrix`. For an exact
+  result with stochastic reset or gate noise, use `density_matrix`. A statevector
+  method can sample those runs with positive `shots`. Programs that use custom
+  operations are unsupported.
 
-**The two-level atom pulse emulator** evaluates observables on its qubit
-programs with a statevector or density-matrix method. There, `NumberOperator()`
-equals `ONE`, and only levels 0 and 1 are valid projector levels.
+- **Linear optics:** [`LOSimulator`][fatqat.simulator.LOSimulator] also supports
+  `fixed_photon_state`. To evaluate an optical mode, use
+  [`NumberOperator`][fatqat.observable.NumberOperator] or a
+  [`Projector`][fatqat.observable.Projector] with a level at or below the photon
+  cutoff. Set the input photons with `initial_state`.
 
-- Exact statevector evaluation rejects potentially active Lindblad evolution;
-  use exact density-matrix execution or a positive-shot trajectory run.
-- Positive-shot evaluation supports the diagonal operators `Z`, `Projector(0)`,
-  `Projector(1)`, and `NumberOperator()`.
-- Reset is unsupported.
+- **Neutral-atom arrays:** On
+  [`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator], the observable must
+  target loaded sites in a loss-free program.
 
-Transmon and three-level atom emulators are rejected: their local dimensions
-exceed the qubit observable space.
+- **Pulse emulation:** [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator]
+  supports both state methods, without reset. Use a density matrix for exact
+  evaluation with Lindblad noise, or sample with positive `shots`. Sampled runs
+  accept only diagonal operators, including `Z`, `Projector(0)`, `Projector(1)`,
+  and `NumberOperator()`. Transmon and three-level atom pulse models are
+  unsupported.
 
-**Readout noise.** Exact evaluation rejects readout-confusion noise, since it
-has no exact meaning. Positive-shot evaluation applies readout confusion to the
-measurements. On matrix simulators, a sampled `X` or `Y` is measured after an
-ideal basis change that gate noise does not affect.
+When readout confusion applies to an observable, use positive `shots`. Gate-level
+simulators measure sampled `X` and `Y` terms after ideal basis changes. Gate noise
+acts on the program's operations but leaves those basis changes ideal.
 
-## Parameter sweeps
-
-
-[`run_sweep`][fatqat.Estimator.run_sweep] evaluates binding rows in input order.
-Validation errors raise directly; execution errors follow the backend's
-error-handling policy. No partial result list is returned. See
-[Simulate a quantum program](../guide/simulation.md) for a guided parameter
-sweep; accepted binding shapes and seed behavior are specified here.
-
-## Detailed reference
-
+## API reference { #detailed-reference }
 
 ::: fatqat.Observable
     options:

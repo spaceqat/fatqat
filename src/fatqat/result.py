@@ -149,13 +149,24 @@ def format_count_key(key: tuple[int, ...], classical_dims: Sequence[int]) -> str
 class Result:
     """Expose the data produced by one backend or estimator run.
 
-    ``available_data`` is the immutable set of fields produced by this run.
-    An unavailable accessor raises ``ResultFieldUnavailableError`` instead of
-    returning ``None``. ``metadata`` is a mutable dictionary whose keys and
-    values depend on the producer.
+    Check ``available_data`` before reading an optional field. Its accessor
+    raises ``ResultFieldUnavailableError`` if the field is absent. Accessors
+    generally return stored objects. ``get_counts()`` returns a new dictionary.
 
-    Treat values returned by accessors as read-only. ``get_counts`` is the
-    exception: it returns a new dictionary of formatted string keys.
+    Attributes:
+        available_data: Immutable set of the available field names.
+        metadata: Mutable dictionary of run information. Direct simulator and
+            emulator results record the normalized ``execution_config`` and
+            ``result_config``. The deprecated ``simulation_config`` key holds a
+            copy of ``execution_config`` until its removal before FatQat 0.1.0.
+            For states and operators, ``state_axes`` lists physical subsystems
+            from most to least significant, with their ``device_operand`` and
+            program ``register_ref`` (or ``None`` for an unused physical
+            subsystem). Pulse results can report QuTiP ``solver`` and
+            ``solver_options`` in ``runtime_details``. Multiple solver names
+            are returned as a tuple. When present, ``max_step`` is the
+            integration cap, half the shortest interval between consecutive
+            control samples in the model's time unit.
     """
 
     def __init__(
@@ -269,9 +280,9 @@ class Result:
     def get_standard_error(self) -> Any:
         """Return estimator standard errors.
 
-        The shape matches ``get_expectation``. An exact run with ``shots=0``
-        reports zero. For a sampled run, this is the statistical standard
-        error reported by the estimator, not a sample standard deviation.
+        The shape matches ``get_expectation()``. Exact runs report zero.
+        A sampled value reports the standard error of the estimate. It is
+        ``nan`` if a nonconstant term was sampled only once.
 
         Raises:
             ResultFieldUnavailableError: If this result did not come from an
@@ -319,7 +330,8 @@ class Result:
         """Return counts keyed by ascending flat classical-slot index.
 
         Returns:
-            A dictionary whose tuple position 0 is classical slot 0.
+            The stored dictionary, where tuple position 0 is classical
+            index 0. Copy it before editing if you need the original counts.
 
         Raises:
             ResultFieldUnavailableError: If counts were not produced.
@@ -346,7 +358,8 @@ class Result:
 
         Args:
             view: Result view to draw. Must be ``"counts"``.
-            stat: Plot raw ``"counts"`` or relative ``"frequencies"``.
+            stat: ``"counts"`` (default) shows raw counts.
+                ``"frequencies"`` divides each count by the total shot count.
             number_to_keep: Keep the most frequent outcomes and combine the
                 remainder into an ``"other"`` bar. ``None`` keeps all outcomes.
             sort: Display outcomes by ``"key"`` or descending ``"count"``.
@@ -431,10 +444,10 @@ class Result:
 
         Returns:
             A ``(D, D)`` array, or an operator ``Qobj`` for pulse emulators,
-            where ``D`` is the product of the subsystem dimensions. Column ``j`` is the state the program prepares from
-            basis state ``|j>``. Column 0 matches a default-state statevector
-            run only when that backend uses the same terminal-frame convention
-            for states and operators.
+            where ``D`` is the product of the subsystem dimensions. Column
+            ``j`` is the state prepared from basis state ``|j>``. To compare
+            column 0 with a statevector from a pulse emulator, use the
+            backend's frame convention for each output.
 
         Raises:
             ResultFieldUnavailableError: If a unitary was not produced.

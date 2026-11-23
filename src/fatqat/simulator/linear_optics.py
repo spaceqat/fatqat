@@ -82,11 +82,13 @@ class LOSimulator(Simulator):
       `fatqat.operations.BeamSplitter` and `fatqat.operations.PhaseShifter`.
       Reset, noise channels, and custom operations are rejected.
 
-    For anything else, choose ``"statevector"`` or ``"density_matrix"``; every
-    `Simulator` method is available. Read the final state with
-    ``Result.get_fixed_photon_state()``: one amplitude per arrangement of the
-    photons, in the order of `fixed_photon_index`. ``metadata["num_photons"]``
-    gives the photon number.
+    Use ``"statevector"`` or ``"density_matrix"`` for dense initial states,
+    mixed registers, reset, or noise channels. The operator methods from
+    ``Simulator`` are also available.
+
+    Read a fixed-photon result with ``Result.get_fixed_photon_state()``. It
+    contains one amplitude per photon arrangement, in the order given by
+    ``fixed_photon_index()``. ``metadata["num_photons"]`` gives the photon count.
 
     ``execution_config`` accepts every `Simulator` key plus:
 
@@ -102,31 +104,18 @@ class LOSimulator(Simulator):
     A noise model selects modes by device label, not by
     `fatqat.ModeRegister` reference.
 
-    `fatqat.Estimator` works with every state method. Pass the photons as its
-    ``initial_state``. On a mode, use `fatqat.observable.NumberOperator` or
-    `fatqat.observable.Projector` up to level ``cutoff``; Pauli operators
-    apply to qubits only.
+    ``fatqat.Estimator`` can use any of this simulator's state methods.
 
     Examples:
-        Two photons meeting on a balanced beam splitter always leave
-        together (Hong-Ou-Mandel interference):
+        To start from vacuum, pass the photon cutoff explicitly:
 
-        >>> import math
-        >>> import numpy as np
         >>> import fatqat as fq
-        >>> import fatqat.operations as ops
-        >>> from fatqat.simulator import BasisState, LOSimulator
         >>> modes = fq.ModeRegister(2)
         >>> program = fq.Program([modes])
-        >>> program.add(ops.BeamSplitter(math.pi / 4), (modes[0], modes[1]))
-        >>> state = (
-        ...     LOSimulator()
-        ...     .run(program, initial_state=BasisState({modes[0]: 1, modes[1]: 1}))
-        ...     .result()
-        ...     .get_fixed_photon_state()
-        ... )
-        >>> np.round(np.abs(state) ** 2, 3)  # (0, 2), (1, 1), (2, 0)
-        array([0.5, 0. , 0.5])
+        >>> simulator = fq.simulator.LOSimulator(runtime="numpy")
+        >>> result = simulator.run(program, execution_config={"cutoff": 1}).result()
+        >>> result.get_fixed_photon_state()
+        array([1.+0.j])
     """
 
     _execution_config_cls = _LOSimulationConfig
@@ -150,9 +139,10 @@ class LOSimulator(Simulator):
 
         Args:
             method: ``"fixed_photon_state"`` (default), or any `Simulator`
-                method. The default stores only the photon number sent in;
-                choose ``"statevector"`` or ``"density_matrix"`` for qubit
-                registers, dense initial states, noise, or reset.
+                method. The default stores amplitudes for arrangements with
+                the initial photon count. Use ``"statevector"`` or
+                ``"density_matrix"`` for qubit registers, dense initial states,
+                noise, or reset.
             runtime: ``"numpy"`` or ``"numba"``, ``None`` (default) uses
                 the current simulator default.
             implementation_map: Matrix, channel, and custom-operation implementations.

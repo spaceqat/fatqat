@@ -162,5 +162,6 @@ A density-matrix backend can calculate the expectation with noise channels
 directly; increasing the shot count improves the precision of a sampled
 estimate of that noisy expectation.
 
-See the [Estimator API](../api/estimator.md) for supported backends, observable
-construction, and run options.
+To compare expectation values at different parameter settings, pass the
+parameterized program and its binding values to
+[`Estimator.run_sweep()`][fatqat.Estimator.run_sweep].

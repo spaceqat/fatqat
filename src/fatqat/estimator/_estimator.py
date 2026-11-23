@@ -27,17 +27,21 @@ from ..result import Result
 
 
 class Estimator:
-    """Evaluate observables with backend-owned expectation execution.
+    """Calculate expectation values after running a program.
 
-    Configure the method, runtime, noise model, and physical model on the
-    backend before constructing the estimator. Built-in matrix simulators and
-    pulse emulators implement the private execution seam used here.
+    Choose the method, runtime, and noise on the backend. Supported choices
+    include gate-level simulators with a state method, ``LOSimulator`` with a
+    state method or ``"fixed_photon_state"``, and ``Atom2LevelEmulator`` with
+    a state method. The chosen backend and method determine which observable
+    operators and noise models can be used. A backend that implements only
+    the ``Backend.run()`` protocol does not necessarily support estimation.
 
     Args:
-        backend: Constructed backend with a callable expectation hook.
+        backend: Configured backend that supports expectation evaluation.
 
     Raises:
-        BackendValidationError: If the backend lacks the required hook.
+        BackendValidationError: If the backend does not implement expectation
+            evaluation.
 
     Examples:
         >>> import fatqat as fq
@@ -78,29 +82,35 @@ class Estimator:
                 operators need a qubit, and a projector level must be below its
                 subsystem's dimension. Unnamed subsystems carry the identity.
                 A list or tuple preserves its order in the returned arrays.
-            shots: Non-negative integer. ``0`` computes exact values. A
-                positive value draws this many independent samples for each
-                term and reports the resulting statistical standard error.
+            shots: Nonnegative Python ``int`` other than ``bool``.
+                ``0`` computes exact values. A positive value draws this many
+                independent samples for each nonconstant term. One sample
+                makes that term's standard error undefined (``nan``).
+                Constant terms contribute zero standard error.
             initial_state: Starting state for every shot, or ``None`` for the
                 ground state. Available only for simulators; see
                 :meth:`fatqat.simulator.Simulator.run` for the accepted forms.
-            execution_config: Backend options for this execution, or
-                ``None``, forwarded unchanged; see the backend's ``run`` method
-                for the accepted keys.
+            execution_config: Options accepted by the backend's ``run()``
+                method, or ``None`` for defaults. In particular, set ``"seed"``
+                to reproduce sampled results.
             simulation_config: Deprecated alias for ``execution_config``,
                 to be removed before fatqat 0.1.0.
 
         Returns:
             A completed ``Job``. A successful job contains a ``Result``; a
-            single observable produces scalar expectation and standard-error
-            values, while a list or tuple produces one-dimensional arrays.
-            Exact runs report zero standard error.
+            single observable produces scalar values, while a list or tuple
+            produces one-dimensional NumPy arrays in input order. Read them
+            with ``get_expectation()`` and ``get_standard_error()``. Exact runs
+            report zero standard error. The result contains no final state.
+            Result metadata includes ``backend_name``, ``method``,
+            ``runtime``, and ``shots``. Pulse results also include
+            ``runtime_details["solver"]`` when a solver was used.
 
         Raises:
             TypeError: If ``observables`` is not an ``Observable`` or a
                 supported collection containing only ``Observable`` values,
-                or ``execution_config`` and its deprecated alias are both
-                supplied.
+                if ``execution_config`` is neither a dictionary nor ``None``,
+                or if it and its deprecated alias are both supplied.
             BackendValidationError: If no observables are supplied; ``shots``
                 is not a non-negative integer; the program is measured or
                 unbound; an operator names a subsystem the program lacks, a Pauli
@@ -147,7 +157,8 @@ class Estimator:
         row never exposes a partial result list.
 
         Args:
-            program: Parameterized template program.
+            program: Parameterized program without measurement operations.
+                Supply its free parameters through ``bindings``.
             observables: One observable or a sequence evaluated for every row.
             bindings: Complete object-keyed batch. A ``Parameter`` maps to a
                 rank-1 batch. A length-M ``ParameterVector`` maps to a rank-2

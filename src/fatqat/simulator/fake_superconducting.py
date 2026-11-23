@@ -225,20 +225,17 @@ def _sx_implementation_map(
 
 
 class SCQubitSimulator(_SCProfileSimulator):
-    """Simulate FatQat's constrained superconducting reference profile.
+    """Run a gate-level program on a superconducting qubit layout.
 
-    A thin statevector-method :py:class:`~fatqat.simulator.Simulator`
-    specialization: same execution engine, same
-    :py:class:`~fatqat.Result`/:py:class:`~fatqat.Job` semantics. The
-    differences are a configurable coupling graph, a fixed native gate set
-    (:py:data:`~fatqat.operations.X`,
-    :py:data:`~fatqat.operations.SX`, :py:class:`~fatqat.operations.RZ`, and
-    coupled :py:data:`~fatqat.operations.CZ`), rejecting programs
-    with too many qubits or any non-qubit-dimension register, and
-    declaration-order resource mapping. Qubits here are always "on" - there is no
-    atom-loading concept, unlike :py:class:`~fatqat.simulator.AtomArraySimulator`.
-    The simulator validates the program as written; it does not decompose,
-    route, or schedule operations.
+    Use this simulator to check device capacity, native gates, and which pairs
+    can execute ``CZ``. Each site supports ``X``, ``SX``, and ``RZ``. The device
+    accepts qubits and assigns them to sites in register declaration order by
+    default. Pass a complete resource layout to place them at other sites.
+
+    Run a program that already uses the device's native gates and connections.
+    Use ``get_compiler_target()`` to obtain the layout constraints for compiling
+    a logical circuit. Simulation methods and execution options follow
+    ``Simulator``.
     """
 
     def __init__(
@@ -253,17 +250,18 @@ class SCQubitSimulator(_SCProfileSimulator):
         """Create a constrained superconducting simulator.
 
         Args:
-            num_qubits: Number of integer-labeled device sites.
-            couplings: Undirected pairs of connected device sites.
-            method: State representation, exactly as on
-                :py:class:`~fatqat.simulator.Simulator`.
+            num_qubits: Number of device sites, labeled from 0. Defaults to 16.
+            couplings: Undirected pairs of connected sites. By default,
+                these are the nearest-neighbor edges of a 4×4 grid.
+            method: Simulation method, as on ``Simulator``. Defaults to
+                ``"statevector"``.
             runtime: ``"numpy"`` or ``"numba"``, ``None`` (default) uses
                 the current simulator default.
             noise: Optional :py:class:`~fatqat.NoiseModel`, exactly as on
                 :py:class:`~fatqat.simulator.Simulator`. ``None`` (the
-                default) keeps the backend ideal; pass
-                ``self.default_noise_model()`` for the device's
-                calibration-derived profile.
+                default) keeps the backend ideal. Pass
+                ``SCQubitSimulator.default_noise_model()`` to use the built-in
+                reference noise model.
 
         Raises:
             TypeError: If the site count or coupling endpoints are not integers.

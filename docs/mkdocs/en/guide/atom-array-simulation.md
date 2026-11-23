@@ -18,10 +18,9 @@ is legal:
 
 ![Two occupied atoms begin separated, move together when Pair applies with depolarizing noise, remain paired for CZ, and separate again when Unpair applies with depolarizing noise.](../assets/generated/guide/atom-pairing-lifecycle.svg)
 
-The changing distance is a picture of the pairing intent, not a simulated
-trajectory. `AtomArraySimulator` records no coordinates or movement duration;
-`Pair` declares that the two occupied sites may execute native `CZ`, and
-`Unpair` removes that eligibility.
+In the diagram, bringing the atoms together represents creating a pair. The
+program below loads an atom at each site and then uses `Pair` to make `CZ`
+available on those sites. `Unpair` removes that connection.
 
 ```pycon
 >>> import numpy as np
