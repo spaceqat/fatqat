@@ -267,9 +267,30 @@ def generate_transmon_grid_documents(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Return matching model and calibration documents for a transmon grid.
 
-    This function constructs model and analytic reference-calibration JSON. It
-    performs no numerical calibration or simulation. Both returned mappings
-    are mutable and owned by the caller.
+    The calibration contains analytic starting values for pulse recipes.
+    A warning is issued if the nominal frequency groups touch or overlap, or
+    if the generated frequencies overlap or change the expected order on
+    neighboring sites.
+
+    Args:
+        shape: Positive integer tuple ``(rows, columns)`` with at least two
+            transmons.
+        frequency_groups_ghz: Two distinct positive idle-frequency centers in
+            GHz, assigned in a checkerboard pattern.
+        frequency_std_ghz: Nonnegative standard deviation of the frequency
+            variation, in GHz. Defaults to 0.010.
+        anharmonicity_ghz: Finite negative anharmonicity for each site, in GHz.
+            Defaults to -0.22.
+        seed: Nonnegative integer seed for reproducible frequencies. Defaults
+            to 0.
+
+    Returns:
+        The model document and matching calibration document, in that order,
+        as mutable JSON-compatible dictionaries.
+
+    Raises:
+        TypeError: If an argument has the wrong type.
+        ValueError: If a shape, frequency, or seed is outside the valid range.
     """
     rows, columns = _validate_shape(shape)
     centers = _validate_frequency_groups(frequency_groups_ghz)

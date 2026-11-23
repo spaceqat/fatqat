@@ -158,7 +158,12 @@ class _PulseBackend(ABC):
     @property
     @final
     def method(self) -> str:
-        """Return the canonical mathematical representation for this emulator."""
+        """Return the canonical result representation for this emulator.
+
+        Method names are case-insensitive at construction. This property and
+        ``result.metadata["method"]`` use the full name, even when the method
+        was selected with ``"SV"`` or ``"DM"``.
+        """
 
         return self._method
 
@@ -299,8 +304,10 @@ class _PulseBackend(ABC):
     ) -> Job[Result]:
         """Run a program on this pulse emulator.
 
-        The emulator family fixes the initial product state; pulse backends do
-        not accept an ``initial_state`` argument.
+        State runs start in the emulator family's fixed product ground state.
+
+        The ``"unitary"`` method requires a program without measurement, reset,
+        classical conditions, or potentially active Lindblad noise.
 
         Args:
             program: Program to execute.
@@ -320,20 +327,21 @@ class _PulseBackend(ABC):
                   or as late as possible while preserving dependencies and
                   physical-resource conflicts.
 
-                ``Atom2LevelEmulator`` additionally accepts
-                ``"interaction_cutoff"`` (finite nonnegative ``Real`` or
-                ``None``, default ``None``) to truncate that run's static
-                ``C6/R^6`` interaction Hamiltonian by pair distance.
+                ``Atom2LevelEmulator`` also accepts ``"interaction_cutoff"``
+                (finite nonnegative ``Real`` or ``None``, default ``None``).
+                It keeps interactions at or below that distance in
+                micrometres. ``None`` keeps all pairs and ``0.0`` disables pair
+                interactions. Booleans are rejected.
 
-                Other keys, including matrix-only execution settings, are
-                rejected.
+                Unknown keys are rejected.
             result_config: Optional ``dict`` of output requests. Accepted keys
                 are:
 
                 - ``"counts"`` (``bool | None``, default ``None``):
                   ``True`` requests classical counts, ``False`` suppresses
                   them, and ``None`` enables them when measurement exists.
-                  Counts require a positive integer ``shots`` value.
+                  Counts require a positive integer ``shots`` value and a
+                  state method.
                 - ``"final_state"`` (``bool | None``, default ``None``):
                   ``True`` requests the method-native ``statevector``,
                   ``density_matrix``, or ``unitary``; ``False`` suppresses it;

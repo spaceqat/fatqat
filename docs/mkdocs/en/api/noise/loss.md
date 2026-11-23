@@ -27,7 +27,7 @@ controls its loss: a false condition skips the attached loss.
 backends and [the occupancy lifecycle](../simulators/atom-array.md#occupancy-and-loss)
 for loading, later operations, measurement, and result behavior.
 
-## API
+## API reference { #api }
 
 
 ::: fatqat.noise.Loss

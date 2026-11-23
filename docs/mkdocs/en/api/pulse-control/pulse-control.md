@@ -10,24 +10,22 @@ title: "PulseControl"
     supported behavior may change between releases. Pin an exact FatQat
     version when reproducibility matters.
 
-[`PulseControl`][fatqat.emulator.PulseControl] assigns a waveform to one physical control channel.
-Get the channel from a model's `control` selectors and use the result in a
-[PulseOperation](pulse-operation.md) or [Gate realization](gate-realization.md) definition. Do not construct
-[`ControlChannel`][fatqat.emulator.ControlChannel] directly.
+[`PulseControl`][fatqat.emulator.PulseControl] assigns a waveform to one
+physical control channel at an offset within a pulse block. Select the
+channel from `model.control`, for example `model.control.drive("q0")`, then
+include the control in a [PulseOperation](pulse-operation.md) or a
+[`PulseDefinition`](gate-realization.md#fatqat.emulator.PulseDefinition).
 
-Methods on `model.control` check their address arguments when they create a
-channel. When the control is used, the emulator checks that its model family
-and named resources are compatible and that the waveform meets the model's
-limits. A channel can therefore be reused with another compatible model that
-contains the same resource. The built-in methods and their units are listed
-in [Pulse control](index.md); see
-[SampledWaveform](sampled-waveform.md) for interpolation outside the sample grid.
+See the [model control references](index.md#built-in-support) for channels
+and units, and [SampledWaveform](sampled-waveform.md#interpolation) for how
+emulators handle samples between and outside the grid points.
 
-## Reference
+## API reference { #reference }
 
 
 ::: fatqat.emulator.PulseControl
     options:
+      heading_level: 3
       inherited_members: false
       show_bases: false
       merge_init_into_class: false
@@ -36,6 +34,7 @@ in [Pulse control](index.md); see
 
 ::: fatqat.emulator.ControlChannel
     options:
+      heading_level: 3
       members: false
       inherited_members: false
       show_bases: false

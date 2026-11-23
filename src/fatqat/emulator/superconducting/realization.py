@@ -269,9 +269,11 @@ def default_transmon_gate_implementation_map(
 ) -> PulseImplementationMap:
     """Build the standard transmon gate-to-pulse map.
 
-    The returned rules use the model's channels, frames, subsystem parameters,
-    and coupling graph together with the supplied calibration. Rebuild the map
-    after changing values that should alter those pulse recipes.
+    The returned rules use the model's channels and frames together with
+    the supplied calibration. You can reuse the map with a model that has
+    the same subsystem labels, anharmonicities, and coupling edges. To
+    change a CZ recipe, including which transmon it detunes, create a new map
+    with the updated calibration.
 
     Args:
         model: Model whose physical resources and parameters the rules use.

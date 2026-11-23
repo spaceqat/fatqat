@@ -24,7 +24,9 @@ class ReadoutConfusion:
 
     Confusion is applied after physical measurement. It changes the classical
     digit used for counts and feedforward, but not the true collapse outcome or
-    post-measurement quantum state. A backend checks the side length against
+    post-measurement quantum state. In a grouped measurement, reported digits
+    are sampled independently for each matching target/output pair, even when
+    a target appears more than once. A backend checks the side length against
     its reported classical digit dimension when a concrete measurement is
     prepared. In NoiseModel, readout confusion always applies at measurement.
 

@@ -4,22 +4,18 @@ title: "AmplitudeDamping"
 
 # AmplitudeDamping
 
+[`AmplitudeDamping`][fatqat.noise.AmplitudeDamping] models the decay of one qubit
+from $|1\rangle$ to $|0\rangle$.
 
-[`AmplitudeDamping`][fatqat.noise.AmplitudeDamping] describes conventional
-qubit decay from $|1\rangle$ to $|0\rangle$. Use `p` for a simulator channel
-or `rate` for a local Lindblad operator on a compatible emulator.
+<a id="choose-probabilities-or-rates"></a>
 
-## Choose probabilities or rates
+Supply exactly one parameter. Use `p` for a single channel application in a
+simulator, or `rate` for continuous noise in a pulse emulator.
 
-
-Supply exactly one scalar `p` or `rate`. A probability must lie in
-`[0, 1]`; a rate must be finite and nonnegative. The descriptor acts on one
-qubit and does not accept an iterable. Use
-[`TransitionRelaxation`](transition-relaxation.md) for an explicitly authored
-finite-dimensional jump operator.
+To specify your own transitions or work with more than two levels, use
+[`TransitionRelaxation`](transition-relaxation.md).
 
 ## Simulators
-
 
 For probability $p$, the simulator uses
 
@@ -39,19 +35,17 @@ built-in availability.
 
 ## Pulse emulators
 
-
 For rate $r$, a compatible pulse backend uses the local Lindblad operator
 
 $$
 L = \sqrt{r}|0\rangle\!\langle1|.
 $$
 
-Rates are finite, nonnegative, and measured in the inverse of the backend's
-time unit. See [Pulse emulators](backend-support.md#noise-emulator-support) for each built-in emulator's local
-dimension, accepted scope, and implementation-map requirements.
+Use the inverse of the model's time unit for `rate`. The built-in
+[`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator] accepts this form as
+background noise.
 
 ## Converting between forms
-
 
 The conversion methods apply
 
@@ -67,8 +61,7 @@ Duration must be finite and nonnegative. A probability of 1 has no finite
 rate, and a nonzero probability cannot be converted to a finite rate at zero
 duration.
 
-## API
-
+## API reference { #api }
 
 ::: fatqat.noise.AmplitudeDamping
     options:

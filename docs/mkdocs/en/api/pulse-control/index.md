@@ -10,56 +10,46 @@ title: "Pulse control"
     supported behavior may change between releases. Pin an exact FatQat
     version when reproducibility matters.
 
-Read [Write and run pulse programs](../../guide/hamiltonian-emulation.md) first for the gate-calibration,
-direct-control, and scheduling workflow. This section defines the exact pulse
-objects and validation rules.
+A pulse emulator runs physical controls with specified waveforms, channels,
+and timing. When the program contains a gate, the emulator uses the gate's
+pulse implementation to obtain those controls. A direct pulse operation
+specifies the controls in the program.
 
-A direct pulse block is built from three values:
+## Choose a pulse interface { #direct-pulses-and-gate-pulses }
 
-* [SampledWaveform](sampled-waveform.md) holds the samples for one signal.
-* [PulseControl](pulse-control.md) assigns that signal to a model channel.
-* [PulseOperation](pulse-operation.md) groups one or more controls into a timed program
-  instruction.
+| What you want to do | What goes in the program | Where the pulse comes from |
+| --- | --- | --- |
+| Run a gate with its existing pulse implementation | A gate and its logical targets, such as `program.add(ops.X, 0)` | The emulator's gate implementation map |
+| Specify a waveform on a physical channel | A [PulseOperation](pulse-operation.md) | A [SampledWaveform](sampled-waveform.md) assigned to a channel through [PulseControl](pulse-control.md) |
+| Supply your own pulses for a gate | A gate and its logical targets | A [`PulseDefinition`][fatqat.emulator.PulseDefinition] registered in a [`PulseImplementationMap`][fatqat.emulator.PulseImplementationMap]. See [Custom gate pulses](gate-realization.md). |
 
-`PulseOperation` is imported from `fatqat.operations` and is normally used
-as `ops.PulseOperation`. `PulseControl` and `SampledWaveform` are in
-`fatqat.emulator`. Unlike an ordinary gate, a pulse operation is added
-without targets because its channels already name the physical resources to
-drive.
+For example, suppose logical target `0` maps to physical transmon `q0`.
+For `program.add(ops.X, 0)`, the emulator looks up the `X` implementation for
+`q0` when it prepares the program. For a direct pulse, select
+`model.control.drive("q0")` when creating the `PulseControl`, then add its
+block with `program.add(pulse)`. The control already carries the physical
+channel.
 
-To implement an ordinary gate with pulses, register a
-[`PulseImplementationMap`][fatqat.emulator.PulseImplementationMap] rule that returns a
-[`PulseDefinition`][fatqat.emulator.PulseDefinition]. See [Gate realization](gate-realization.md).
+By default, [`TransmonEmulator`][fatqat.emulator.TransmonEmulator] provides a
+built-in gate implementation map. The default map for
+[`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator] is empty, so ordinary
+gates there require a custom map.
+
+<a id="built-in-support"></a>
+
+Durations, offsets, and sample times use the model's time unit. For channels,
+waveform units, and limits, see [Transmon controls](../pulse-emulator.md#direct-controls)
+or [two-level atom controls](../atom-emulators.md#model-and-controls).
 
 ## Validation
 
-
-FatQat checks sample structure and timing when you construct these values. It
-rejects invalid offsets, non-positive block durations, repeated channels, and
-controls that extend past the block. A model's channel factory checks its
-address arguments when you create a channel.
-
-When a control is used, the emulator checks model compatibility, resource
-names, real or complex sample requirements, amplitude and duration limits,
-and channel combinations that cannot run together.
-
-## Built-in support
-
-
-Use the model's time unit for every duration, offset, and sample time. Sample
-values use the channel's unit and may be restricted to real values.
-
-**Direct pulse support**
-
-| Backend | Channels | Time / sample units | Conditions in `run()` |
-| --- | --- | --- | --- |
-| [`TransmonEmulator`][fatqat.emulator.TransmonEmulator] | `drive(id)` accepts complex values; `detuning(id)` and `exchange(first, second)` require real values. | `ns`, `rad/ns` | Yes |
-| [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator] | Global `drive()` accepts complex values; global `detuning()` requires real values. | `us`, `rad/us` | No |
-| [`Simulator`][fatqat.simulator.Simulator] | Direct pulse operations are not supported. | -- | -- |
-
-The [transmon](../pulse-emulator.md) and
-[neutral-atom](../atom-emulators.md) pages document model resources and
-limits.
+The value constructors check the sample grid, offsets, and block timing,
+including whether controls fit within the block and use distinct channels.
+Channel selectors check the form of an address, such as whether a subsystem
+label is nonempty. When the emulator prepares the block for execution, it
+checks the channel's model family and whether the named resources exist. It
+also checks real or complex sample requirements, amplitude and duration
+limits, and which channels can run together.
 
 <a id="pulse-probability-noise"></a>
 
@@ -67,17 +57,6 @@ limits.
 ## Continuous-time noise
 
 
-Pulse emulators evolve noise over time, so their family-owned Lindblad
-realizations use rates or relaxation times. They do not infer a rate from a
-finite probability.
-In particular, [`PauliChannel`][fatqat.noise.PauliChannel] remains a discrete
-Simulator channel: its probabilities do not specify a duration or conversion
-convention. Use
-[`Simulator`][fatqat.simulator.Simulator] for discrete Pauli noise, or a
-rate-form declaration listed for the pulse-emulator family in
-[Pulse emulators](../noise/backend-support.md#noise-emulator-support).
-
-- [PulseOperation](pulse-operation.md)
-- [PulseControl](pulse-control.md)
-- [SampledWaveform](sampled-waveform.md)
-- [Gate realization](gate-realization.md)
+Pulse emulators use Lindblad noise specified by rates or relaxation times.
+See the [supported pulse noise models](../noise/backend-support.md#noise-emulator-support)
+for each emulator.

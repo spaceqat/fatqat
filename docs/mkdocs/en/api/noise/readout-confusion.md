@@ -4,13 +4,11 @@ title: "ReadoutConfusion"
 
 # ReadoutConfusion
 
-
 [`ReadoutConfusion`][fatqat.noise.ReadoutConfusion] is a classical channel applied to the digit reported
 after physical measurement. It changes counts and feedforward inputs, not the
 post-measurement quantum state.
 
 ## Matrix convention
-
 
 For confusion matrix C,
 
@@ -31,49 +29,28 @@ $$
 means that true 0 is reported as 1 with probability 0.02, while true 1 is
 reported as 0 with probability 0.04.
 
-The input may be any float-convertible array-like value. It must produce a
-finite square matrix of side length at least 2, with entries in `[0, 1]` and
-columns that sum to 1 within numerical tolerance. The matrix size must also
-match the backend's reported digit dimension.
-
-FATQAT converts the matrix to float and stores its own read-only copy. Changing
-the input array later does not affect the noise object.
-
 ## How measurements are reported
 
-
-The backend first samples the true physical outcome and collapses the quantum
-state. It then samples the reported digit from the corresponding matrix
-column. The reported value is written to classical memory, so subsequent
-feedforward sees the confused value. Reusing the measured subsystem still
-evolves from its true collapsed state.
+A later classical condition uses the reported digit. A later quantum operation on
+the measured subsystem starts from the state set by the true measurement outcome.
 
 ## Where it applies
-
 
 Readout confusion always applies at measurement in
 [`NoiseModel`][fatqat.NoiseModel]:
 
 ```python
-noise.add(confusion)  # Every measured operand.
+import fatqat as fq
 
-# Alternatively, target the "q0" device label on a transmon model.
-targeted_noise = fq.NoiseModel()
-targeted_noise.add(confusion, targets="q0")
+confusion = fq.noise.ReadoutConfusion([[0.98, 0.04], [0.02, 0.96]])
+noise = fq.NoiseModel()
+noise.add(confusion, targets="q0")
 ```
 
-Omit `targets` to affect every measured operand, or pass one quantum
-[`RegisterRef`][fatqat.RegisterRef] or device label. Correlated multi-operand
-readout is not supported. Do not pass `operation` or `target_positions`,
-even as `None`.
-
-A universal registration cannot coexist with targeted registrations, and the
-same target cannot be registered twice. Logical and device-label registrations
-that select the same operand are rejected when the program runs with a
-concrete layout.
+For target selectors and overlapping rules, see
+[`NoiseModel.add()`][fatqat.NoiseModel.add].
 
 ## Simulators
-
 
 Simulators require the matrix side length to match the measured subsystem's
 reported digit dimension. An empty-site erasure bypasses confusion because no
@@ -82,13 +59,11 @@ and dimension details.
 
 ## Pulse emulators
 
+The built-in pulse emulators report binary digits, so they require a `2 x 2`
+matrix. [`TransmonEmulator`][fatqat.emulator.TransmonEmulator] reports either
+excited level as `1` before readout confusion is applied.
 
-Readout confusion remains a classical reporting step; it is not represented by
-a Lindblad operator. See [Pulse emulators](backend-support.md#noise-emulator-support) for each emulator's
-reported digit dimension and physical-level mapping.
-
-## API
-
+## API reference { #api }
 
 ::: fatqat.noise.ReadoutConfusion
     options:

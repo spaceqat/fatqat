@@ -4,29 +4,18 @@ title: "Depolarizing"
 
 # Depolarizing
 
+[`Depolarizing`][fatqat.noise.Depolarizing] mixes the quantum state with the
+maximally mixed state.
 
-[`Depolarizing`][fatqat.noise.Depolarizing] describes uniform mixing with the maximally mixed state.
-Choose `p` for a simulator channel or `rate` for Lindblad operators on a
-compatible pulse emulator. Backends do not convert between the two forms.
+<a id="choose-a-form"></a>
 
-## Choose a form
-
-
-**Parameterizations**
-
-| Form | Meaning | Applies to | Typical backend |
-| --- | --- | --- | --- |
-| `p` | Complete-depolarization weight for one channel application, in `[0, 1]` | The selected operands | Matrix simulator |
-| `rate` | Finite, nonnegative rate scaling local depolarization Lindblad operators | One subsystem | Lindblad-capable pulse emulator |
-
-Exactly one form is required. A rate is measured in the inverse of the
-selected backend's time unit. For example, a backend whose durations are in
-microseconds interprets the rate in inverse microseconds.
+Supply exactly one parameter. Use `p` for a single channel application in a
+simulator, or `rate` for continuous noise in a pulse emulator.
 
 ## Simulators
 
-
-For selected operands with combined dimension $d$, probability mode is
+`p` is the weight of complete depolarization and lies in `[0, 1]`. For selected
+operands with combined dimension $d$, the channel is
 
 $$
 \mathcal{E}_p(\rho) = (1-p)\rho + p\frac{I_d}{d}.
@@ -41,22 +30,26 @@ Here `p` is the weight of complete depolarization, not the probability of
 choosing a nonidentity error. For one qubit, the total probability assigned to
 the nonidentity branches is $3p/4$.
 
-On supported methods, `statevector` samples one Kraus branch per application,
-`density_matrix` applies the exact Kraus sum, and `superop` constructs the
-complete channel. See [Simulators](backend-support.md#noise-simulator-support) for restrictions.
+See [Simulators](backend-support.md#noise-simulator-support) for method and
+backend support.
 
 ## Pulse emulators
 
-
-For local dimension $d$, rate mode is normalized so its Lindblad
-generator is
+`rate` is finite and nonnegative, in the inverse of the model's time unit. It acts
+on one subsystem. For local dimension $d$, the Lindblad generator is
 
 $$
 \mathcal{L}_r(\rho)
 = r\left(\operatorname{Tr}(\rho)\frac{I_d}{d}-\rho\right).
 $$
 
-Over duration $t$, the corresponding probability parameter is
+See [Pulse emulators](backend-support.md#noise-emulator-support) for the supported
+scopes and local dimensions.
+
+## Converting between forms
+
+For depolarizing noise acting on its own for a duration $t$, the corresponding
+probability parameter is
 
 $$
 p(t)=1-e^{-rt}.
@@ -67,11 +60,7 @@ this parameter conversion when you know the duration. A duration must be
 finite and nonnegative. Probability 1 has no finite rate, and a nonzero
 probability cannot be converted at zero duration.
 
-Rate mode requires a registered Lindblad implementation. See
-[Pulse emulators](backend-support.md#noise-emulator-support) for built-in and custom-map availability.
-
-## API
-
+## API reference { #api }
 
 ::: fatqat.noise.Depolarizing
     options:

@@ -214,10 +214,10 @@ nav:
               - "Measure, reset & barrier": api/operations/structural.md
           - Pulse control:
               - api/pulse-control/index.md
-              - Pulse operation: api/pulse-control/pulse-operation.md
-              - Pulse control: api/pulse-control/pulse-control.md
-              - Sampled waveform: api/pulse-control/sampled-waveform.md
-              - Gate realization: api/pulse-control/gate-realization.md
+              - SampledWaveform: api/pulse-control/sampled-waveform.md
+              - PulseControl: api/pulse-control/pulse-control.md
+              - PulseOperation: api/pulse-control/pulse-operation.md
+              - Custom gate pulses: api/pulse-control/gate-realization.md
       - Run and inspect:
           - Simulators:
               - api/simulators/index.md

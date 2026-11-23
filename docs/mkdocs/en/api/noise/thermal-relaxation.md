@@ -4,7 +4,6 @@ title: "ThermalRelaxation"
 
 # ThermalRelaxation
 
-
 [`ThermalRelaxation`][fatqat.noise.ThermalRelaxation] models zero-temperature qubit T1 and T2 relaxation on an
 emulator. It combines downward population decay with the additional pure
 dephasing needed to reproduce T2. It is a continuous-time emulator
@@ -13,7 +12,6 @@ operation-bound probability-form [`AmplitudeDamping`][fatqat.noise.AmplitudeDamp
 [`PhaseDamping`][fatqat.noise.PhaseDamping] descriptors.
 
 ## Times and rates
-
 
 `t1` and `t2` are finite positive values in the same unit; they have no
 intrinsic unit of their own. When registering the noise with an emulator, use
@@ -37,7 +35,6 @@ $T_2=2T_1$.
 
 ## Pulse emulators
 
-
 For a qubit pulse model, the emulator uses the local Lindblad
 operators
 
@@ -53,11 +50,7 @@ excitation or equilibrium-population parameter. Built-in support is limited
 to background noise on
 [`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator].
 
-See [Pulse emulators](backend-support.md#noise-emulator-support) for the accepted scopes and implementation-map
-requirements of each built-in emulator.
-
 ## Matrix simulators
-
 
 For a known qubit operation duration $t$, the corresponding finite
 probabilities are below. The duration must use the same time unit as `t1`
@@ -103,8 +96,7 @@ dephasing separately. See
 [Simulators](backend-support.md#noise-simulator-support) for simulator
 support.
 
-## API
-
+## API reference { #api }
 
 ::: fatqat.noise.ThermalRelaxation
     options:

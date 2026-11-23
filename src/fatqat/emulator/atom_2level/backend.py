@@ -65,8 +65,10 @@ def _default_lindblad_map() -> LindbladImplementationMap:
 class Atom2LevelEmulator(_PulseBackend):
     """Emulate global two-level Rydberg controls on a fixed arrangement.
 
-    Every run starts with each site in ``|g>``. The built-in gate map is empty,
-    so programs normally use channel-addressed ``PulseOperation`` values.
+    Every run starts with each site in ``|g>``. The default gate map is empty,
+    so programs normally use global ``PulseOperation`` values. Place any
+    measurements at the end of the program. Reset and classically conditioned
+    operations are unsupported.
 
     Args:
         model: Two-level atom model created with
