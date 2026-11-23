@@ -4,7 +4,7 @@
 
 # FatQat
 
-**同一个量子程序，从算法到硬件**
+**同一个量子程序，贯通算法与硬件**
 
 [![Tests](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/fatqat)](https://pypi.org/project/fatqat/)
