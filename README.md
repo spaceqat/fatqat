@@ -33,7 +33,7 @@ The current backends offer three levels of physical detail:
 | Model | Question it answers |
 | --- | --- |
 | General simulation | Does the algorithm work, and how does noise change it? |
-| Hardware-profile simulation | Does it fit the device's native gates, connectivity, and atoms? |
+| Hardware-profile simulation | Does it fit the device's native gates, connectivity, and atom occupancy? |
 | Hamiltonian emulation | What happens during the pulses: leakage, coupling, and timing? |
 
 A `Program` is more than a gate circuit. It can hold:
