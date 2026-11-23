@@ -46,9 +46,9 @@ SEED = 7
 
 The distance-$d$ repetition code stores one bit in $d$ data atoms,
 $|0_L\rangle = |0\cdots0\rangle$ and $|1_L\rangle = |1\cdots1\rangle$. Between
-neighboring data atoms sits an ancilla that measures the parity
+neighbouring data atoms sits an ancilla that measures the parity
 $Z_j Z_{j+1}$: prepared in $|+\rangle$, it picks up a phase from a `CZ` with
-each neighbor, and a final Hadamard turns that phase into a bit. A round of
+each neighbour, and a final Hadamard turns that phase into a bit. A round of
 these measurements is a *syndrome*. For an intact code it reports even parity
 everywhere.
 
@@ -56,7 +56,7 @@ The atom array accepts only `RX`, `RY`, `RZ`, and `CZ`, and a `CZ` needs its
 two atoms to be paired first, as in the
 [eight-atom GHZ tutorial](atom-array-ghz8.md). Each round pairs every ancilla
 with its left data atom, applies the `CZ` gates, and then does the same with the
-right neighbors. The pairs within a layer are disjoint, so the gates of a layer
+right neighbours. The pairs within a layer are disjoint, so the gates of a layer
 can run in parallel.
 
 Every site starts empty. [`Put`][fatqat.operations.Put] loads the data atoms
@@ -92,7 +92,7 @@ def build_repetition_program(distance: int, logical: int) -> fq.Program:
         program.add(ops.Put, ancilla.all())  # refill any ancilla lost earlier
         for j in checks:
             native_h(program, ancilla[j])
-        for side in (0, 1):  # left neighbors, then right neighbors
+        for side in (0, 1):  # left neighbours, then right neighbours
             pairs = [(ancilla[j], data[j + side]) for j in checks]
             for pair in pairs:
                 program.add(ops.Pair, pair)
@@ -171,7 +171,7 @@ readout, and nothing in the record says when the atom was lost.
 
 A `CZ` with an empty trap applies no phase, exactly as an atom in $|0\rangle$
 would. A check next to a lost data atom therefore measures its surviving
-neighbor alone: instead of $Z_j Z_{j+1}$ it measures a single $Z$. The next
+neighbour alone: instead of $Z_j Z_{j+1}$ it measures a single $Z$. The next
 cell selects shots in which exactly one data atom and no ancilla was lost, and
 counts how often the last syndrome round shows an odd parity.
 

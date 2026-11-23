@@ -24,7 +24,7 @@ decoder. Finally, we will examine how the decoded logical error rate changes wit
 
 ## Specify the code and initial state
 
-Data qubits 0 through 8 form a row-major $3\times3$ square. Each ancilla qubit measures the product of X or Z on its neighboring data qubits. $H_X$ and $H_Z$ record those stabilizers as binary matrices and the commutation relation requires $H_X H_Z^T=0\pmod2$. The chosen logical operators are $Z_L=Z_0Z_3Z_6$ and $X_L=X_0X_1X_2$.
+Data qubits 0 through 8 form a row-major $3\times3$ square. Each ancilla qubit measures the product of X or Z on its neighbouring data qubits. $H_X$ and $H_Z$ record those stabilizers as binary matrices and the commutation relation requires $H_X H_Z^T=0\pmod2$. The chosen logical operators are $Z_L=Z_0Z_3Z_6$ and $X_L=X_0X_1X_2$.
 
 `POSITIONS` assigns dimensionless coordinates to this code diagram. These coordinates
 are used to draw the patch and generate the
@@ -235,7 +235,7 @@ to the default all-zero state.
 Z-type stabilizers are measured using CNOT gates with the data qubits as controls and the ancilla as the target. For X-type stabilizers, the ancilla acts as the control and the data qubits as targets. A Hadamard gate is applied to each X-check ancilla before and after its CNOT sequence. All ancillas are then measured in the Z basis.
 
 
-The CNOT gates are scheduled in four layers. Each Z-check ancilla interacts with its neighboring data qubits in the order northwest, northeast, southwest, southeast. Each X-check ancilla uses the order northwest, southwest, northeast, southeast. These directions refer to the positions of data qubits relative to the ancilla in the patch diagram. Missing neighbors at the boundaries are skipped. Each layer contains six CNOT gates acting on disjoint qubit pairs. The ordering controls how ancilla faults propagate into correlated data errors. Any alternative schedule should be checked for correct stabilizer extraction and hook-error propagation.
+The CNOT gates are scheduled in four layers. Each Z-check ancilla interacts with its neighbouring data qubits in the order northwest, northeast, southwest, southeast. Each X-check ancilla uses the order northwest, southwest, northeast, southeast. These directions refer to the positions of data qubits relative to the ancilla in the patch diagram. Missing neighbours at the boundaries are skipped. Each layer contains six CNOT gates acting on disjoint qubit pairs. The ordering controls how ancilla faults propagate into correlated data errors. Any alternative schedule should be checked for correct stabilizer extraction and hook-error propagation.
 See [Tomita and Svore](https://arxiv.org/abs/1404.3747).
 
 ```python
@@ -429,7 +429,7 @@ close the syndrome history at the last time boundary.
 The decoder selects a minimum-weight error history consistent with the
 observed detection events. Each elementary error has weight
 $w=\log[(1-p)/p]$. We set `data_error=readout_error=0.01`, so both error
-types have equal weight and the decoder favors histories with fewer
+types have equal weight and the decoder favours histories with fewer
 faults.
 
 Let $x_t$ describe the data X errors in interval $t$, and let $e_{t-1}$ and

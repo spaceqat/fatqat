@@ -16,7 +16,7 @@ target. It builds on the [quickstart](../guide/quickstart.md) in two ways: the s
 spans eight atoms instead of two, and the circuit runs on a backend whose
 two-qubit-gate connectivity is *reconfigured mid-circuit* rather than fixed.
 
-The GHZ state generalizes the Bell state to $n$ qubits,
+The GHZ state generalises the Bell state to $n$ qubits,
 
 $$
 |\mathrm{GHZ}_8\rangle
@@ -97,7 +97,7 @@ def native_cx(program: fq.Program, control: int, target: int) -> None:
 ## A log-depth entangling tree
 
 We could grow the GHZ state with a chain of seven controlled-X gates, atom
-`0` reaching each neighbor in turn. Instead we use a *binary tree*, which
+`0` reaching each neighbour in turn. Instead we use a *binary tree*, which
 reaches all eight atoms in only three layers and lets the gates within each
 layer run in parallel on independent atom pairs:
 
@@ -127,7 +127,7 @@ The tree deliberately couples atoms that are far apart. Layer 1 entangles
 atoms `0` and `4`; layer 2 needs `0` with `2` and `4` with `6`; layer 3
 needs `0` with `1`. Atom `0` therefore needs three partners, which no fixed
 one-dimensional layout can provide, because each site in a line has at most
-two neighbors.
+two neighbours.
 
 Reconfigurable connectivity solves this. Just before a
 layer's gates we [`Pair`][fatqat.operations.Pair] its atoms -- transporting
@@ -230,7 +230,7 @@ the identical histogram. To see the quantum coherence we measure observables
 the mixture and the superposition disagree on, using the exact
 [`Estimator`][fatqat.Estimator] on the unmeasured state.
 
-Two families pin down $|\mathrm{GHZ}_8\rangle$. Each neighbor parity
+Two families pin down $|\mathrm{GHZ}_8\rangle$. Each neighbour parity
 $\langle Z_i Z_{i+1}\rangle = 1$ says adjacent atoms always agree --
 something the classical mixture also satisfies. The global
 $X$-parity $\langle X_0 X_1 \cdots X_7\rangle = 1$ is the
