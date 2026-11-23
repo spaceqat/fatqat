@@ -11,7 +11,12 @@ from fatqat.simulator._engine._execution_policy import _select_execution_path
 
 import fatqat.operations as ops
 from fatqat._backends.steps import ApplyMatrixStep, LossStep, PutStep
-from fatqat.simulator import AtomArraySimulator, Simulator
+from fatqat.simulator import (
+    AtomArraySimulator,
+    ClassicalState,
+    EvolutionState,
+    Simulator,
+)
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (
     AmplitudeDamping,
@@ -538,6 +543,64 @@ def test_process_workers_preserve_initial_atom_occupancy():
     # Empty occupancy skips RX, then Put loads |0>. Dropping the explicit
     # occupancy seed in a worker would apply RX first and report 1 instead.
     assert counts("processes") == counts("serial") == {"0": 8}
+
+
+def test_compiled_atom_trajectories_match_the_python_workflow():
+    # Serial and threaded Numba shots run the compiled trajectory loop; Numba
+    # process workers and NumPy run the Python workflow. Each shot uses its own
+    # seed stream, so the routes agree only if loss, reload, and reset draws
+    # happen in the same order and change the same later outcomes.
+    pytest.importorskip("numba")
+    from fatqat.simulator._engine.engines import numba_engine as nb
+
+    noise = NoiseModel()
+    noise.add(Loss(p=0.3), operation=ops.RX)
+    noise.add(Loss(p=0.2), operation=ops.Put)
+    noise.add(Depolarizing(p=0.3), operation=ops.CZ, target_positions=0)
+    noise.add(ReadoutConfusion(np.array([[0.9, 0.2], [0.1, 0.8]])), targets=2)
+    program = Program(4, 4)
+    program.add(ops.RX(np.pi / 2), 0)
+    program.add(ops.RX(np.pi / 2), 2)
+    program.add(ops.Put, 1)
+    program.add(ops.RX(np.pi / 3), 1)
+    program.add(ops.Pair, (0, 1))
+    # Local noise on site 0 still applies when its partner is gone.
+    program.add(ops.CZ, (0, 1))
+    program.measure(0, 0)
+    program.add(ops.Put, 0)  # reloads site 0 only if it was lost
+    program.add(ops.RX(np.pi / 2), 0, condition=(0, 1))
+    program.add(ops.Put, 3, condition=(0, 0))  # otherwise site 3 stays empty
+    program.add(ops.RX(np.pi / 4), 3)
+    program.measure((0, 1, 2, 3), (0, 1, 2, 3))
+    initial = EvolutionState(classical=ClassicalState(occupied={0, 2}))
+
+    def counts(runtime, shot_parallelism):
+        return (
+            AtomArraySimulator(runtime=runtime, noise=noise)
+            .run(
+                program,
+                shots=150,
+                initial_state=initial,
+                execution_config={
+                    "seed": 2026,
+                    "shot_parallelism": shot_parallelism,
+                    "kernel_parallelism": "serial",
+                    "max_workers": 1 if shot_parallelism == "serial" else 2,
+                },
+            )
+            .result()
+            .get_counts()
+        )
+
+    reference = counts("numba", "processes")
+    assert counts("numpy", "serial") == reference
+    assert counts("numba", "serial") == reference
+    if nb._MAX_THREADS >= 2:
+        assert counts("numba", "threads") == reference
+    # The run must be stochastic and report both lost and never-loaded sites.
+    assert len(reference) > 10
+    assert any(key[0] == "2" for key in reference)
+    assert any(key[-1] == "2" for key in reference)
 
 
 # --- atom loss ----------------------------------------------------------------
